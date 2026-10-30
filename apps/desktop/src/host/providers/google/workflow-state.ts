@@ -151,11 +151,20 @@ interface Published {
   /** Copies opened before the write: superseded once the written copy has been read back from Gmail. */
   covered: string[];
   verified: boolean;
+  /**
+   * Gmail's receive time for the read-back copy honours its floor. False only when an own-only compaction accepted
+   * the copy anyway (a clock days off: the floor check fails, yet the copy is provably this device's own and whole).
+   */
+  floorTrusted?: boolean;
 }
 
-/** True when an opened copy is exactly what was written: same floor, same records. */
-function sameAsPublished(payload: WorkflowPayload, published: Published): boolean {
-  if ((payload.floor ?? 0) !== published.floor) return false;
+/** True when an opened copy is exactly what was written: this device's, same floor, same records. */
+function sameAsPublished(
+  payload: WorkflowPayload,
+  published: Published,
+  device: DeviceId,
+): boolean {
+  if (payload.device !== device || (payload.floor ?? 0) !== published.floor) return false;
   if (payload.records.length !== published.records.size) return false;
   return payload.records.every(r => {
     const held = published.records.get(r.key);
@@ -283,11 +292,13 @@ class StateChannel implements WorkflowStateChannel {
   async compact(ctx: AdapterContext, options: CompactOptions = {}): Promise<number> {
     const published = this.published;
     if (!published || this.view().length > this.maxRecords) return 0;
-    if (!published.verified && !(await this.verify(published, ctx))) return 0;
+    const ownOnly = options.ownOnly === true;
+    if (!published.verified && !(await this.verify(published, ctx, ownOnly))) return 0;
+    if (!ownOnly && published.floorTrusted === false) return 0;
     const superseded: string[] = [];
     for (const [id, flag] of this.opened) {
       if (superseded.length >= COMPACT_BATCH) break;
-      if (options.ownOnly && !this.own.has(id)) continue;
+      if (ownOnly && !this.own.has(id)) continue;
       if (flag && id !== published.remoteId) superseded.push(id);
     }
     if (!superseded.length) return 0;
@@ -302,19 +313,27 @@ class StateChannel implements WorkflowStateChannel {
   /**
    * Downloads the written copy and opens it as another device would. Only when it comes back exactly as written, with
    * a floor readers honour, do the copies it covers count as superseded; otherwise nothing is compacted against it.
+   * For an own-only compaction a floor Gmail's time does not honour is no bar (the copy is this device's own, sealed
+   * and read back whole), but the copy stays unusable for a full compaction (`floorTrusted: false`).
    */
-  private async verify(published: Published, ctx: AdapterContext): Promise<boolean> {
+  private async verify(
+    published: Published,
+    ctx: AdapterContext,
+    ownOnly: boolean,
+  ): Promise<boolean> {
     const key = await this.key();
     if (!key) return false;
     const copy = await this.options.transport.readBack(published.remoteId, ctx);
     if (this.published !== published) return false;
     const reason = copy ? this.readBackFailure(copy, published, key, ctx.log) : 'readBack';
-    if (reason) {
+    const ownDespiteClock = reason === 'clock' && ownOnly;
+    if (reason && !ownDespiteClock) {
       if (reason !== 'logged') logSkipped(ctx.log, reason);
       this.distrust();
       return false;
     }
     published.verified = true;
+    published.floorTrusted = !ownDespiteClock;
     for (const id of published.covered) if (this.opened.has(id)) this.opened.set(id, true);
     return true;
   }
@@ -328,7 +347,7 @@ class StateChannel implements WorkflowStateChannel {
   ): string | undefined {
     const payload = this.openCopy(copy, key, log);
     if (!payload) return 'logged';
-    if (!sameAsPublished(payload, published)) return 'readBack';
+    if (!sameAsPublished(payload, published, this.options.device)) return 'readBack';
     if (published.floor && !floorTrusted(published.floor, copy.writtenAt)) return 'clock';
     return undefined;
   }

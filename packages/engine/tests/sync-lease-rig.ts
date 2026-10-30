@@ -1,4 +1,5 @@
 import type {
+  AdapterContext,
   PlanInput,
   PlannedStep,
   SyncLane,
@@ -37,9 +38,22 @@ export interface ChannelLog {
   /** Full compactions (a primary's) and own-only ones (a device the clock gate blocks). */
   compacts: number;
   ownCompacts: number;
-  /** A compaction is running (it takes `compactMs` on the writer's clock). */
+  /** A compaction is running. */
   compacting: boolean;
-  compactMs?: number;
+  /**
+   * Copies each compaction trashes, one governed `enrichment` request (20 units) at a time taking `trashMs` on the
+   * wire, as the Gmail transport does; it stops between calls once the context's signal aborts. `trashedAt` lists when
+   * each trash went out.
+   */
+  trashes?: number;
+  trashMs?: number;
+  trashedAt: number[];
+  /** Writes go through the governor (one `enrichment` insert, 25 units, `writeMs` on the wire), as Gmail's do. */
+  governed?: boolean;
+  writeMs?: number;
+  /** Write attempts, failed ones included; the next `failWrites` attempts throw. */
+  attempts: number;
+  failWrites?: number;
   states: SyncState[];
   /** What each write reports as this device's clock offset (undefined: not measured), when `serverNow` is absent. */
   clockOffsetMs?: number;
@@ -47,6 +61,8 @@ export interface ChannelLog {
   serverNow?: () => number;
   /** A bracket each write reports instead, when set. */
   offset?: ClockOffset;
+  /** Called per write, ahead of everything above: its bracket, or undefined (the check failed). */
+  nextOffset?: () => ClockOffset | undefined;
 }
 
 export const channelLog = (): ChannelLog => ({
@@ -57,6 +73,8 @@ export const channelLog = (): ChannelLog => ({
   compacts: 0,
   ownCompacts: 0,
   compacting: false,
+  trashedAt: [],
+  attempts: 0,
   states: [],
   clockOffsetMs: 0,
 });
@@ -95,6 +113,15 @@ export function remoteChannel(
       };
     },
     async write(entries, ctx) {
+      log.attempts++;
+      if (log.failWrites) {
+        log.failWrites--;
+        throw new Error('injected write failure');
+      }
+      if (log.governed)
+        await governed(ctx, 'fake.insert', 25, 'write', signal =>
+          wireTime(ctx, log.writeMs, signal),
+        );
       log.writes++;
       for (const e of entries) {
         remote.records.set(e.key, {
@@ -103,24 +130,54 @@ export function remoteChannel(
           value: e.value,
         });
       }
-      const point = log.serverNow ? ctx.clock.now() - log.serverNow() : log.clockOffsetMs;
-      const clockOffset =
-        log.offset ?? (point !== undefined ? { lowMs: point, highMs: point } : undefined);
+      const clockOffset = offsetOf(log, ctx);
       return { remoteId: `copy-${remote.gen}`, ...(clockOffset ? { clockOffset } : {}) };
     },
     async compact(ctx, options) {
       if (options?.ownOnly) log.ownCompacts++;
       else log.compacts++;
-      if (!log.compactMs) return 0;
       log.compacting = true;
       try {
-        await ctx.clock.sleep(log.compactMs);
+        for (let i = 0; i < (log.trashes ?? 0); i++) {
+          ctx.signal.throwIfAborted();
+          await governed(ctx, 'fake.trash', 20, 'idempotentWrite', async signal => {
+            log.trashedAt.push(ctx.clock.now());
+            await wireTime(ctx, log.trashMs, signal);
+          });
+        }
       } finally {
         log.compacting = false;
       }
-      return 0;
+      return log.trashes ?? 0;
     },
   };
+}
+
+/** What a write reports as the clock bracket (see `ChannelLog`). */
+function offsetOf(log: ChannelLog, ctx: AdapterContext): ClockOffset | undefined {
+  if (log.nextOffset) return log.nextOffset();
+  if (log.offset) return log.offset;
+  const point = log.serverNow ? ctx.clock.now() - log.serverNow() : log.clockOffsetMs;
+  return point !== undefined ? { lowMs: point, highMs: point } : undefined;
+}
+
+/** Time on the wire; none at all for 0 (a zero sleep on the manual fake clock would wait for the next advance). */
+async function wireTime(ctx: AdapterContext, ms: number | undefined, signal: AbortSignal) {
+  if (ms) await ctx.clock.sleep(ms, signal);
+}
+
+/** One governed `enrichment` request on the Gmail budget, with the context's signal (a quit aborts it). */
+async function governed(
+  ctx: AdapterContext,
+  method: string,
+  cost: number,
+  kind: 'write' | 'idempotentWrite',
+  wire: (signal: AbortSignal) => Promise<void> = async () => {},
+): Promise<void> {
+  await ctx.governor.run(
+    { budget: 'gmail', lane: 'enrichment', kind, method, cost, signal: ctx.signal },
+    io => wire(io.signal),
+  );
 }
 
 /** The account's baseline sync is done, as the account row records it (the lease rounds wait for it). */

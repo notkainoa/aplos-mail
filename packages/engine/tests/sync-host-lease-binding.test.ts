@@ -98,9 +98,10 @@ test('a pin is dropped when the gate starts blocking, so it cannot win once the 
     );
     assert.equal(a.host.status(ACCOUNT)!.lease?.pinned, false);
     assert.equal(b.host.status(ACCOUNT)!.lease?.role, 'primary');
-    // The clock is fixed: A measures again within the blocked cadence, and B keeps the lease (no stale pin wins).
+    // The clock is fixed: two ok readings at the blocked cadence lift the block, a live claim follows after the
+    // cool-down, and B keeps the lease (no stale pin wins).
     logA.serverNow = () => a.clock.now();
-    await pump([a, b], 40 * MINUTE);
+    await pump([a, b], 75 * MINUTE);
     assert.ok(claimOf(rem, 'device-a')!.until > 0, 'A counts again');
     assert.equal(b.host.status(ACCOUNT)!.lease?.role, 'primary');
     assert.equal(a.host.status(ACCOUNT)!.lease?.holder, 'device-b');
@@ -134,21 +135,33 @@ test('a Mac 45 minutes fast rewrites its dead claim twice an hour and compacts o
   }
 });
 
-test('a quit during a compaction still publishes the dead claim within the stop wait', async () => {
+test('a quit aborts a running compaction: no trash call goes out after it, and the dead claim is published', async () => {
   const d = disk();
   const rem = remote();
   const log = channelLog();
+  log.governed = true;
   const a = channelWorld(d, rem, log, []);
   try {
     await a.host.start(ACCOUNT);
     await pump(a, 3 * MINUTE);
     assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'primary');
-    // The renewal at 10 minutes compacts; that compaction takes 20 seconds.
-    log.compactMs = 20_000;
-    await drive(a, 10 * MINUTE, () => log.compacting);
+    // The renewal at 10 minutes compacts 25 copies on the enrichment lane, half a second on the wire each; the quit's
+    // dead claim then takes 3 seconds to upload, on the same lane.
+    log.trashes = 25;
+    log.trashMs = 500;
+    await drive(a, 10 * MINUTE, () => log.trashedAt.length >= 3);
     assert.ok(log.compacting, 'a compaction is running');
+    log.writeMs = 3_000;
+    const stopAt = a.clock.now();
     await settleWithin(a, a.host.stop(ACCOUNT, 'quit'), MINUTE);
     assert.equal(claimOf(rem, 'device-a')?.until, 0, 'the dead claim was published');
+    for (let i = 0; i < 30; i++) {
+      await a.clock.advance(1_000);
+      await settle(2);
+    }
+    const after = log.trashedAt.filter(at => at > stopAt);
+    assert.deepEqual(after, [], 'no trash call after the quit began');
+    assert.equal(log.compacting, false, 'the compaction stopped');
   } finally {
     await a.kill();
     d.cleanup();

@@ -18,7 +18,8 @@ import { contractError } from '../runtime/errors';
  * 3. A device is primary only when its own *published* claim wins: it never promotes on a claim others have not been
  *    able to see, and its own record is always the last claim it wrote successfully (never a local-only one). So two
  *    devices starting together both write a candidacy first and converge on the lower id the round after, and a
- *    failed write keeps the role the last published claim gives, until that claim runs out.
+ *    failed write keeps the role the last published claim gives, until that claim runs out or the clock reading goes
+ *    stale (below).
  *
  * Handover: a holder that can no longer renew gives up `LEASE_GIVE_UP_MS` before its `until` (its own clock, and
  * `next()` wakes it then); another device takes over at `until + LEASE_SKEW_MS` (its clock). That leaves no overlap for
@@ -31,9 +32,18 @@ import { contractError } from '../runtime/errors';
  * (`clockReading`, `LeaseDeps.clockGate`). A device whose whole bracket is not within the limit (`off`), or whose
  * bracket is wider than `LEASE_CLOCK_SPAN_MS` or missing (`unmeasurable`), is blocked: it publishes a claim that never
  * counts (`holder: false, until: 0`) without a pin (a pin's time would come from the wrong clock), stays secondary,
- * and rewrites that claim once per `LEASE_GATED_RENEW_MS` only, to measure again. "Use this Mac" is refused while the
- * gate blocks or before the first measurement; a controller with no reading yet (`unmeasured`) writes at its first
- * round so it never acts on an unchecked clock for long.
+ * and rewrites that claim once per `LEASE_GATED_RENEW_MS` only, to measure again. A block holds until
+ * `LEASE_CLOCK_OK_STREAK` ok readings at least a round apart (`measureClock`), and after a dead claim no live claim is
+ * written for `LEASE_RENEW_MS` (an owner's pin aside), so a reading flapping around the limit stays at that cadence.
+ * A device is primary only on an `ok` reading younger than `LEASE_CLOCK_FRESH_MS` (`gateReading`); with none
+ * (`unmeasured`: a fresh process, or a renewal that failed) it is secondary, writes at its next round to measure, and
+ * retries a failed measuring write after one round, backing off to `LEASE_WRITE_RETRY_MS`. "Use this Mac" is refused
+ * unless the gate reads `ok` after one fresh measuring write.
+ *
+ * A pin is published by the very write that measures the clock, so a clock that went off since its last reading shows
+ * only after that write; the next round (at once) replaces the claim with the dead one, without the pin. That one
+ * round errs safe: peers judge its `until` and `pinnedAt` by their own clocks (rule 1), so a fast clock's pin is
+ * ignored as absurd and a slow one's loses to any later pin.
  *
  * "Use this Mac" on device B overlaps the old primary A until A's next *successful* read shows B's pin: one round when
  * A's reads work, but up to A's own give-up time (`until - LEASE_GIVE_UP_MS`, about 28 minutes after its last renewal)
@@ -66,6 +76,13 @@ export const LEASE_CLOCK_MAX_MS = 5 * 60_000;
 export const LEASE_CLOCK_SPAN_MS = 60_000;
 /** A blocked device rewrites its dead claim this often, only to measure its clock again. */
 export const LEASE_GATED_RENEW_MS = LEASE_TTL_MS;
+/**
+ * An ok reading is trusted this long: a renewal re-measures every `LEASE_RENEW_MS`, plus slack for a late tick, so a
+ * healthy primary never sees its reading go stale; one whose renewal failed does.
+ */
+export const LEASE_CLOCK_FRESH_MS = LEASE_RENEW_MS + LEASE_GIVE_UP_MS;
+/** Ok readings in a row, at least `LEASE_ROUND_MS` apart, that lift a block. */
+export const LEASE_CLOCK_OK_STREAK = 2;
 /** After a failed write, the next try waits this long (four tries fit in the slack before the claim expires). */
 export const LEASE_WRITE_RETRY_MS = 5 * 60_000;
 export const LEASE_PREFIX = 'lease:';
@@ -236,6 +253,42 @@ export function clockReading(offset: ClockOffset | undefined): ClockReading {
 
 const blocks = (reading: ClockReading) => reading === 'off' || reading === 'unmeasurable';
 
+/** What the host keeps of this device's clock between writes (and across a 'restart'). */
+export interface ClockGate {
+  /** Set by an off or unmeasurable reading; held until `LEASE_CLOCK_OK_STREAK` ok readings a round apart. */
+  blocked?: 'off' | 'unmeasurable';
+  /** Ok readings counted toward lifting the block. */
+  okStreak: number;
+  /** When the last counted ok reading was taken (this device's clock). */
+  okAt?: number;
+}
+
+export const unmeasuredGate = (): ClockGate => ({ okStreak: 0 });
+
+/** The gate after one write's measurement at `now` (hysteresis: see the header). */
+export function measureClock(
+  gate: ClockGate,
+  offset: ClockOffset | undefined,
+  now: number,
+): ClockGate {
+  const reading = clockReading(offset);
+  if (reading === 'off' || reading === 'unmeasurable') return { blocked: reading, okStreak: 0 };
+  if (!gate.blocked) return { okStreak: 1, okAt: now };
+  const apart = gate.okAt === undefined || now < gate.okAt || now - gate.okAt >= LEASE_ROUND_MS;
+  if (!apart) return gate;
+  const okStreak = gate.okStreak + 1;
+  if (okStreak >= LEASE_CLOCK_OK_STREAK) return { okStreak, okAt: now };
+  return { blocked: gate.blocked, okStreak, okAt: now };
+}
+
+/** The gate as the lease reads it at `now`: blocked, `ok` while the last ok reading is fresh, else `unmeasured`. */
+export function gateReading(gate: ClockGate, now: number): ClockReading {
+  if (gate.blocked) return gate.blocked;
+  if (gate.okAt === undefined) return 'unmeasured';
+  const age = now - gate.okAt;
+  return age >= 0 && age < LEASE_CLOCK_FRESH_MS ? 'ok' : 'unmeasured';
+}
+
 /** The owner's "Use this Mac" refused because of this device's clock (the sentence the UI shows). */
 function clockRefusal(reading: ClockReading): Error {
   const message =
@@ -359,6 +412,8 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   let stopped = false;
   let nextAt = 0;
   let retryAt = 0;
+  /** Measuring writes failed in a row: their retry backs off from one round to `LEASE_WRITE_RETRY_MS`. */
+  let measureFails = 0;
   let queue: Promise<unknown> = Promise.resolve();
 
   /** One round at a time: an owner's `claim` never interleaves with a timer `tick`. */
@@ -376,9 +431,28 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
 
   const demote = () => report({ role: 'secondary', pinned: !!pin });
 
-  /** Without a fresh read the role is the last one, until this device's published claim runs out. */
+  const reading = (): ClockReading => deps.clockGate?.() ?? 'ok';
+  const gated = () => blocks(reading());
+
+  /**
+   * Without a fresh read the role is the last one, until this device's published claim runs out or its clock reading
+   * is no longer a fresh `ok` (a primary only ever acts on a checked clock).
+   */
   const expire = (now: number) => {
-    if (lease.role === 'primary' && (lease.until ?? 0) - LEASE_GIVE_UP_MS <= now) demote();
+    if (lease.role !== 'primary') return;
+    if ((lease.until ?? 0) - LEASE_GIVE_UP_MS <= now || reading() !== 'ok') demote();
+  };
+
+  /** The decision as this device may act on it: primary only on a fresh `ok` clock reading. */
+  const trusted = (decision: LeaseDecision): LeaseDecision =>
+    reading() === 'ok' ? decision : { ...decision, role: 'secondary' };
+
+  /** A failed measuring write is retried after one round, doubling up to `LEASE_WRITE_RETRY_MS`; others after that. */
+  const retryDelay = (): number => {
+    if (reading() !== 'unmeasured') return LEASE_WRITE_RETRY_MS;
+    const delay = Math.min(LEASE_ROUND_MS * 2 ** measureFails, LEASE_WRITE_RETRY_MS);
+    measureFails++;
+    return delay;
   };
 
   /** A pin survives a restart through our claim; a later pin elsewhere replaces ours (the latest intent). */
@@ -403,10 +477,11 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       publishedAt = now;
       unsure = false;
       retryAt = 0;
+      measureFails = 0;
       return true;
     } catch {
       unsure = true;
-      retryAt = now + LEASE_WRITE_RETRY_MS;
+      retryAt = now + retryDelay();
       return false;
     }
   };
@@ -418,9 +493,6 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       return undefined;
     }
   };
-
-  const reading = (): ClockReading => deps.clockGate?.() ?? 'ok';
-  const gated = () => blocks(reading());
 
   /** A claim that never counts: what an ineligible or quitting device publishes. */
   const deadClaim = (): LeaseClaim => ({
@@ -440,6 +512,10 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     if (published.pinned !== claim.pinned || published.pinnedAt !== claim.pinnedAt) return true;
     return now - publishedAt >= LEASE_GATED_RENEW_MS || now < publishedAt;
   };
+
+  /** After a dead claim, no automatic live claim for `LEASE_RENEW_MS`: a flapping clock reading keeps a slow cadence. */
+  const coolingDown = (now: number): boolean =>
+    published?.until === 0 && now >= publishedAt && now - publishedAt < LEASE_RENEW_MS;
 
   /**
    * A round on a device the clock gate refuses: decided on the other claims only, so it is never primary. Its pin goes:
@@ -485,11 +561,13 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     adoptPin(decision, now, intent);
     const claim = claimFor(decision, pin, now);
     const ownLive = decision.own !== undefined && isLive(decision.own, device, now);
-    // No reading yet (a fresh process): write now, so the clock is checked before this device acts on the claim.
+    // No fresh reading (a fresh process, a failed renewal): write now, so the clock is checked before this device
+    // acts on the claim.
     const force = measure || pinDirty || unsure || reading() === 'unmeasured';
     const due = force || writeDue(decision.own, ownLive, claim, now);
-    if (!due || (!intent && !measure && now < retryAt)) {
-      report(leaseOf(decision, pin));
+    const automatic = !intent && !measure;
+    if (!due || (automatic && (now < retryAt || coolingDown(now)))) {
+      report(leaseOf(trusted(decision), pin));
       return { read: true, decision };
     }
     const wrote = await write(claim, now);
@@ -507,7 +585,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       nextAt = now;
       immediate = true;
     }
-    report(leaseOf(decision, pin, wrote ? claim : undefined));
+    report(leaseOf(trusted(decision), pin, wrote ? claim : undefined));
     return { read: true, wrote, decision };
   };
 

@@ -44,7 +44,8 @@ import type { SentWindow, WorkflowTransport } from './workflow-state';
  *      restart), first looks for it by its content-derived Message-ID (5), so an uncertain insert lands once; a first
  *      `put` pays nothing extra. A 404 from history or insert drops the cached label id and resolves it once more.
  *    - `compact(ids, ctx)` trashes superseded copies (`gmail.modify` cannot delete), 20 each, and refuses ids it never
- *      read as an Aplos copy, so user mail filed under the label is never touched. The state channel hands it at most
+ *      read as an Aplos copy, so user mail filed under the label is never touched. It stops (throws) between trash
+ *      calls once `ctx.signal` aborts. The state channel hands it at most
  *      `COMPACT_BATCH` ids per call.
  *    - `readBack(id, ctx)` downloads one copy the way a round does (60 units), so a writer can check that the copy it
  *      put is readable from Gmail before it trashes anything that copy supersedes.
@@ -274,6 +275,8 @@ export class GmailWorkflowTransport implements WorkflowTransport {
   async compact(remoteIds: string[], ctx: AdapterContext): Promise<void> {
     const client = new GmailClient(this.deps, ctx);
     for (const id of remoteIds) {
+      // A quit aborts a compaction between trash calls, so it never holds the lane the dead claim needs.
+      ctx.signal.throwIfAborted();
       if (this.seen.get(id) !== 'copy') continue;
       await this.trash(client, id);
     }

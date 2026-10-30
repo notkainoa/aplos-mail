@@ -91,9 +91,28 @@ test("an own-only compaction trashes this device's superseded copies, never anot
   assert.deepEqual(live(r).sort(), [a3, b1].sort());
 });
 
+test('a Mac 3 days fast compacts its own copies (verified by their sealed payload), but never all copies', async () => {
+  const r = await rig();
+  const fast = device(r, 'device-a', { skewMs: 3 * 86_400_000 });
+  const lease = (v: number) => [{ key: 'lease:device-a', value: { v } }];
+  const first = (await fast.channel.write(lease(1), fast.ctx())).remoteId;
+  const second = (await fast.channel.write(lease(2), fast.ctx())).remoteId;
+  assert.equal(
+    await fast.channel.compact(fast.ctx()),
+    0,
+    'its floor is not honoured for a full compaction',
+  );
+  const third = (await fast.channel.write(lease(3), fast.ctx())).remoteId;
+  assert.equal(await fast.channel.compact(fast.ctx(), { ownOnly: true }), 2);
+  assert.deepEqual(live(r), [third]);
+  assert.ok(![first, second].some(id => live(r).includes(id)));
+  assert.equal(await fast.channel.compact(fast.ctx()), 0, 'still no full compaction against it');
+});
+
 for (const [what, skewMs] of [
   ['45 minutes fast', 45 * MINUTE],
   ['12 minutes slow', -12 * MINUTE],
+  ['3 days fast', 3 * 24 * 60 * MINUTE],
 ] as const) {
   test(`a lone Mac ${what} keeps its copies few over an idle hour and never becomes primary`, async () => {
     const mail = mailWorld(4);
