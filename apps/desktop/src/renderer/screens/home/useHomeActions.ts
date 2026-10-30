@@ -1,0 +1,136 @@
+/**
+ * Wires `createHomeActions` to the live screen: the latest snapshot through a ref, the hold gate, the registry, the
+ * shell's toasts and the data layer's `api`. The actions object is stable for the life of the screen, so the
+ * registry's handlers attach once; everything that changes is read when a key arrives.
+ */
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import type { CommandContext, Registry } from '../../commands';
+import { api, undoStack, type HoldController, type ThreadId } from '../../data';
+import {
+  dismissToast,
+  pushToast,
+  useRegisterCommands,
+  useShellRegistry,
+  useToasts,
+} from '../../shell';
+import type { ToastData } from '../../ui/props';
+import type { CommitKind } from '../../ui/props';
+import {
+  createHomeActions,
+  type HomeActions,
+  type HomeDeps,
+  type HomeSnapshot,
+  type OpenHow,
+  type RunStatus,
+} from './homeActions';
+import { commandsForHome } from './homeCommands';
+
+/** The screen's inputs to its actions. */
+export interface HomeActionInputs {
+  readonly snapshot: RefObject<HomeSnapshot>;
+  /** The command context a command run from here (Space on a reply) gets. */
+  readonly context: () => CommandContext;
+  readonly hold: HoldController;
+  readonly setCursor: (key: string | null) => void;
+  /** Draws a commit on the row that is leaving (the one acted on, not necessarily under the cursor) and extends the hold. */
+  readonly commit: (kind: CommitKind, holdIds: readonly string[], rowId: ThreadId) => void;
+  readonly openThread: (id: ThreadId, how: OpenHow) => void;
+  readonly openLow: () => void;
+  readonly oneByOne: () => void;
+  readonly openMore: () => void;
+  /** Opens the Later date presets for this thread. */
+  readonly openDatePicker: (id: ThreadId) => void;
+}
+
+/** What the screen reads back: the thread a Remind toast is offering (so R is live), and the actions. */
+export interface HomeActionState {
+  readonly actions: HomeActions;
+  readonly remindOffer: boolean;
+}
+
+function statusOf(result: ReturnType<Registry['run']>): RunStatus {
+  switch (result.status) {
+    case 'ran':
+    case 'failed':
+    case 'unknown':
+    case 'unhandled':
+    case 'disabled':
+      return result.status;
+    default:
+      return 'other';
+  }
+}
+
+/** Whether the toast that offers the reminder is still on screen; an offer with no toast of its own never lives. */
+export function offerLives(opId: string | undefined, toasts: readonly ToastData[]): boolean {
+  return opId !== undefined && toasts.some(toast => toast.id === opId);
+}
+
+function undoLabelOf(registry: Registry, commandId: string, fallback: string): string {
+  const entry = registry.get(commandId);
+  return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
+}
+
+/** The actions for one mounted Home, attached to `registry` until it unmounts. */
+export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
+  const { registry } = useShellRegistry();
+  const latest = useRef(inputs);
+  useEffect(() => {
+    latest.current = inputs;
+  });
+  const offer = useRef<ThreadId | null>(null);
+  // The offer lives as long as its own toast does: the toast owns the clock (it waits while hovered or focused).
+  const [current, setCurrent] = useState<{ readonly id: ThreadId; readonly opId?: string } | null>(
+    null,
+  );
+  const remindOffer = current !== null;
+  const toasts = useToasts();
+
+  useEffect(() => {
+    if (!current || offerLives(current.opId, toasts)) return;
+    offer.current = null;
+    setCurrent(null);
+  }, [current, toasts]);
+
+  const actions = useMemo(() => {
+    const now = () => latest.current;
+    const deps: HomeDeps = {
+      snapshot: () => now().snapshot.current ?? EMPTY,
+      setCursor: key => now().setCursor(key),
+      act: args => api.thread.act(args),
+      push: pushToast,
+      dismiss: dismissToast,
+      hold: { extend: ids => now().hold.extend(ids) },
+      commit: (kind, ids, rowId) => now().commit(kind, ids, rowId),
+      offerReminder: (id, opId) => {
+        offer.current = id;
+        setCurrent(id === null ? null : { id, opId });
+      },
+      openDatePicker: id => now().openDatePicker(id),
+      reminderOffer: () => offer.current,
+      runCommand: id => statusOf(registry.run(id, now().context())),
+      openThread: (id, how) => now().openThread(id, how),
+      openLow: () => now().openLow(),
+      oneByOne: () => now().oneByOne(),
+      openMore: () => now().openMore(),
+      undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
+    };
+    return createHomeActions(deps);
+  }, [registry]);
+
+  const { oneByOne, openMore } = inputs;
+  const table = useMemo(
+    () => commandsForHome(actions, { oneByOne, more: openMore, undo: () => undoLast(actions) }),
+    [actions, oneByOne, openMore],
+  );
+  useRegisterCommands(table);
+  return { actions, remindOffer };
+}
+
+const EMPTY: HomeSnapshot = { items: [], key: null, rowOf: () => undefined, state: null };
+
+/** Z: undoes the newest change; if it was the operation behind the live reminder offer, the offer ends with it. */
+function undoLast(actions: HomeActions): void {
+  const outcome = undoStack.undoLast();
+  if (outcome?.kind === 'operation') actions.undone(outcome.opId);
+}

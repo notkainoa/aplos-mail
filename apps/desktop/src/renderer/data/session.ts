@@ -63,11 +63,16 @@ export function pickStatus(
 ): StatusSlotState | undefined {
   const scope = accountId ? accounts.filter(a => a.id === accountId) : accounts;
   if (!scope.length) return undefined;
+  const soonRank = STATUS_PRIORITY.indexOf('reconnectSoon');
   let best = scope[0]!;
   let bestRank = rankOf(best, now);
   for (const account of scope.slice(1)) {
     const rank = rankOf(account, now);
-    if (rank < bestRank) [best, bestRank] = [account, rank];
+    const earlier =
+      rank === soonRank &&
+      bestRank === soonRank &&
+      (account.health.reconnectBy ?? Infinity) < (best.health.reconnectBy ?? Infinity);
+    if (rank < bestRank || earlier) [best, bestRank] = [account, rank];
   }
   const raw = best.health.status;
   const status: AccountStatus = KNOWN_STATES.has(raw.state)
@@ -131,6 +136,8 @@ const CONNECTING: ConnectionView = {
 export class SessionStore {
   session: Session | undefined;
   accounts: readonly Account[] = [];
+  /** True once `Account/get` has answered at least once (an empty list is then a real answer, not "not yet"). */
+  accountsLoaded = false;
   counts: Counts | undefined;
   settings: Settings | undefined;
   consent: Consent | undefined;
@@ -243,10 +250,11 @@ export class SessionStore {
       case 'accounts':
         call('Account/get', {}).then(r => {
           if (!current()) return;
-          if (!sameJson(r.list, this.accounts)) {
-            this.accounts = r.list;
-            this.emitter.emit(SESSION_TOPIC);
-          }
+          const first = !this.accountsLoaded;
+          this.accountsLoaded = true;
+          if (!sameJson(r.list, this.accounts)) this.accounts = r.list;
+          else if (!first) return;
+          this.emitter.emit(SESSION_TOPIC);
         }, noop);
         return;
       case 'counts':

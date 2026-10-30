@@ -105,3 +105,23 @@ test('the surface throws until a data layer is connected, then serves hooks and 
   }
   assert.throws(() => getNow(), DataLayerNotConnectedError, 'closing uninstalls the runtime');
 });
+
+test('accountsLoaded flips once Account/get has answered, and stays true', async () => {
+  const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
+  const scheduler = createManualScheduler();
+  const connection = connectDataLayer({
+    session: engine.connect(),
+    scheduler,
+    timers: createManualTimers(defaultNow),
+  });
+  try {
+    const { session } = connection.layer;
+    assert.equal(session.accountsLoaded, false);
+    session.want('accounts');
+    await settle(() => scheduler.flush());
+    assert.equal(session.accountsLoaded, true);
+    assert.ok(session.accounts.length > 0);
+  } finally {
+    connection.close();
+  }
+});

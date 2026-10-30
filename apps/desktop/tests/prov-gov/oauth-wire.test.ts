@@ -165,10 +165,12 @@ test('WIRE-b a reconnect answered by an unknown subject is revoked, even with a 
 
 test('WIRE-b another subject that is an Aplos account, or with no knownSubject at all, is not revoked', async () => {
   const asked: string[] = [];
+  const signals: AbortSignal[] = [];
   const known = scriptedRig(clock => tokenReply(clock), {
     deps: {
-      knownSubject: sub => {
+      knownSubject: (sub, signal) => {
         asked.push(sub);
+        signals.push(signal);
         return sub === 'sub-1';
       },
     },
@@ -178,6 +180,7 @@ test('WIRE-b another subject that is an Aplos account, or with no knownSubject a
   );
   assert.equal(wrong.error.reason, 'wrongAccount');
   assert.deepEqual(asked, ['sub-1'], 'asked about the sub Google answered with');
+  assert.ok(signals[0] instanceof AbortSignal, 'the lookup can stop with the attempt');
   assert.deepEqual(revokedIn(known.forms), [], 'that account’s stored grant could die with it');
 
   const defaulted = scriptedRig(clock => tokenReply(clock));
@@ -244,8 +247,11 @@ function hostConnect(
   fetchFn: typeof fetch,
   open: (url: string) => Promise<void>,
   clock = manualClock(),
+  extra: { accountIsCommitted?: (id: string) => boolean } = {},
 ) {
   return createGoogleHostConnect({
+    accountIsCommitted: () => false,
+    ...extra,
     http: createHttpClient({ fetch: fetchFn, clock, userAgent: 'aplos-test' }),
     openExternal: open,
     clientInputs: () => ({
@@ -257,11 +263,14 @@ function hostConnect(
 }
 
 /** A host whose connects succeed, and a context for account `id`. */
-function connectingHost(vault: MemoryVault) {
+function connectingHost(
+  vault: MemoryVault,
+  extra: { accountIsCommitted?: (id: string) => boolean } = {},
+) {
   const clock = manualClock();
   const endpoint = tokenEndpoint(() => tokenReply(clock));
   const browser = fakeBrowser(withCode);
-  const host = hostConnect(vault, endpoint.fetch, browser.openExternal, clock);
+  const host = hostConnect(vault, endpoint.fetch, browser.openExternal, clock, extra);
   const base = scriptedRig(c => tokenReply(c), { clock }).ctx;
   const ctxFor = (id: string) => ({ ...base, accountId: id });
   return { host, ctxFor };
@@ -556,6 +565,7 @@ test('WIRE-host createGoogleHostConnect runs every connect on governor.bindConne
   const endpoint = tokenEndpoint(() => tokenReply(clock));
   const vault = memoryVault(oldBundle);
   const host = createGoogleHostConnect({
+    accountIsCommitted: () => false,
     http: createHttpClient({ fetch: endpoint.fetch, clock, userAgent: 'aplos-test' }),
     openExternal: browser.openExternal,
     clientInputs: () => ({ env: { APLOS_GOOGLE_CLIENT_ID: clientId }, bundled: {} }),
@@ -580,4 +590,30 @@ test('WIRE-host createGoogleHostConnect runs every connect on governor.bindConne
   assert.deepEqual(bound, [account]);
   assert.equal(result.credentialRef, account);
   assert.equal(vault.entries.get(account)?.refreshToken, newRefresh);
+});
+
+test('WIRE-b discardCredential refuses a minted ref once its account has a committed row', async () => {
+  const vault = memoryVault(oldBundle);
+  const committed = new Set<string>();
+  const { host, ctxFor } = connectingHost(vault, { accountIsCommitted: id => committed.has(id) });
+  const factory = createGoogleProvider({ fetch, ...host });
+  await factory.connect(newConnect, ctxFor('acct-new'));
+  committed.add('acct-new');
+  const error = await refusal(factory.discardCredential!('acct-new'));
+  assert.equal(error.error.reason, 'notThisHostsCredential');
+  assert.ok(vault.entries.has('acct-new'), 'a committed account’s bundle stays');
+  committed.delete('acct-new');
+  await factory.discardCredential!('acct-new');
+  assert.equal(vault.entries.has('acct-new'), false);
+});
+
+test('createGoogleHostConnect needs accountIsCommitted: leaving it out does not typecheck', () => {
+  // @ts-expect-error accountIsCommitted is required; an optional check would be silently off.
+  const missing: Parameters<typeof createGoogleHostConnect>[0] = {
+    http: createHttpClient({ fetch, clock: manualClock(), userAgent: 'aplos-test' }),
+    openExternal: async () => {},
+    clientInputs: () => ({ env: {}, bundled: {} }),
+    vault: memoryVault(oldBundle),
+  };
+  assert.ok(missing);
 });

@@ -561,7 +561,7 @@ test('windows below a compacted log are voided with a reset frame', async () => 
   });
 });
 
-test('with the timer loop injected, the engine is one deadline source and runs when it fires', async () => {
+test('with the timer loop injected, the views module is one deadline source and runs when it fires', async () => {
   const world = makeWorld(5, BIG_NOW, 60);
   const sources: DeadlineSource[] = [];
   const deadlines: DeadlineRegistry = {
@@ -573,12 +573,17 @@ test('with the timer loop injected, the engine is one deadline source and runs w
   };
   const t = await openEngine(world.store, { ports: { deadlines } });
   try {
-    assert.equal(sources.length, 0, 'no source while no window is open');
+    // Other lanes (the outbox) register their own sources; this test is about the views source only.
+    assert.equal(
+      sources.filter(s => s.id === 'views').length,
+      0,
+      'no views source while no window is open',
+    );
     const win = await t.call('View/watch', { spec: { kind: 'done' } });
     const source = sources.find(s => s.id === 'views')!;
     assert.ok(source, 'a window registers the views source');
     t.commit([patch(win.ids[0]!, { status: 'later' })]);
-    t.clock.advance(300);
+    await t.clock.advance(300);
     assert.equal(t.windowFrames(win.windowId).length, 0, 'nothing runs on its own clock timer');
     assert.equal(typeof (await source.next()), 'number');
     await source.fire(t.clock.now());

@@ -1,6 +1,5 @@
 /** The prov-gov attack rig on the real stack: the emulated world, the engine on a Mac, the clock driver and store/log readers (see gov-stack-attack.test.ts). */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { removeScratchDir, scratchDir } from './scratch';
 import { join } from 'node:path';
 import {
   ProviderError,
@@ -30,10 +29,16 @@ import {
 } from '@aplos/emulators';
 import { Governor } from '../../../../packages/engine/src/sync/governor';
 import { ActorHost } from '../../../../packages/engine/src/sync/host';
+import { storeLookup } from '../../../../packages/engine/src/sync/lookup';
 import { opPayload } from '../../../../packages/engine/src/sync/ops';
 import { openSqlite } from '../../src/host/sqlite';
 import { createGoogleProvider } from '../../src/host/providers/google/adapter';
 import { googleError } from '../../src/host/providers/google/classify';
+import {
+  googleWorkflowChannel,
+  googleWorkflowMerged,
+} from '../../src/host/providers/google/workflow-host';
+import { keysOf } from './workflow-rig';
 
 export const ACCOUNT = 'acct-gov-attack';
 const CLIENT_ID = 'prov-gov-attack.apps.example.test';
@@ -161,7 +166,7 @@ interface Sent {
 }
 
 export class Mac {
-  readonly dir = mkdtempSync(join(tmpdir(), 'aplos-attack-'));
+  readonly dir = scratchDir('aplos-attack-');
   readonly path = join(this.dir, 'mail.db');
   readonly log: RequestLogEntry[] = [];
   readonly sent: Sent[] = [];
@@ -187,7 +192,7 @@ export class Mac {
     this.vault = new Vault(this.fetch, mail.clock);
   }
   cleanup(): void {
-    rmSync(this.dir, { recursive: true, force: true });
+    removeScratchDir(this.dir);
   }
 }
 
@@ -248,17 +253,51 @@ interface CommitRecord {
   messages: { remoteId: string; internalDate: number }[];
 }
 
+export interface BootOptions {
+  /**
+   * Wires the Gmail workflow channel the way a real account does (`google/workflow-host.ts`): the provider gets
+   * `workflow`, the host gets `workflowChannel`/`onWorkflowMerged` over the emulator's shared mailbox, and a
+   * stand-in timer loop fires the `lease:` deadline sources as the clock moves.
+   */
+  workflow?: boolean;
+}
+
 interface Engine {
   store: StorePort;
   governor: Governor;
   host: ActorHost;
+  deadlines: Deadlines;
   commits: CommitRecord[];
   kill(): Promise<void>;
 }
 
 let commitIds = 0;
 
-export async function boot(mac: Mac, lease?: 'primary' | 'secondary'): Promise<Engine> {
+/** The timer loop's stand-in for a workflow Mac: fires every `lease:` source whose `next()` is due. */
+async function pumpLease(
+  clock: FakeClock,
+  deadlines: Deadlines,
+  signal: AbortSignal,
+): Promise<void> {
+  while (!signal.aborted) {
+    try {
+      await clock.sleep(250, signal);
+    } catch {
+      return;
+    }
+    for (const source of [...deadlines.sources.values()]) {
+      if (signal.aborted || !source.id.startsWith('lease:')) continue;
+      const next = await source.next();
+      if (next !== undefined && next <= clock.now()) await source.fire(clock.now());
+    }
+  }
+}
+
+export async function boot(
+  mac: Mac,
+  lease?: 'primary' | 'secondary',
+  options: BootOptions = {},
+): Promise<Engine> {
   const { clock } = mac.mail;
   const raw = openStore(openSqlite(mac.path), { now: () => clock.now() });
   const commits: CommitRecord[] = [];
@@ -272,13 +311,18 @@ export async function boot(mac: Mac, lease?: 'primary' | 'secondary'): Promise<E
     return raw.commit(input);
   };
   const governor = new Governor({ clock, tokens: mac.vault, random: () => 0, role: 'secondary' });
-  const provider = createGoogleProvider({ fetch: mac.fetch, pace: false });
+  const provider = createGoogleProvider({
+    fetch: mac.fetch,
+    pace: false,
+    ...(options.workflow ? { workflow: {} } : {}),
+  });
   const factory: ProviderFactory = {
     kind: 'google',
     connect: (req, ctx) => connectGoogle(mac, req, ctx),
     budgets: (account, memory) => provider.budgets(account, memory),
     open: account => provider.open(account),
   };
+  const deadlines = new Deadlines();
   const host = new ActorHost(
     {
       store,
@@ -287,13 +331,31 @@ export async function boot(mac: Mac, lease?: 'primary' | 'secondary'): Promise<E
       tokens: mac.vault,
       clock: portClock(clock),
       log: quietLog,
-      deadlines: new Deadlines(),
+      deadlines,
       deviceId: mac.id,
       env: () => ({ ...mac.mail.env, now: clock.now() }),
     },
-    { newId: () => `${mac.id}-commit-${++commitIds}`, random: () => 0 },
+    {
+      newId: () => `${mac.id}-commit-${++commitIds}`,
+      random: () => 0,
+      ...(options.workflow
+        ? {
+            workflowChannel: googleWorkflowChannel({ keys: keysOf('shared'), device: mac.id }),
+            onWorkflowMerged: googleWorkflowMerged({
+              store: raw,
+              lookup: account => storeLookup(raw, account),
+              log: quietLog,
+            }),
+          }
+        : {}),
+    },
   );
-  if (lease)
+  const pumpStop = new AbortController();
+  if (options.workflow) void pumpLease(clock, deadlines, pumpStop.signal);
+  // With the workflow channel the lease is the controller's: a primary asks for it ("Use this Mac") like the owner.
+  if (lease && options.workflow) {
+    if (lease === 'primary') await host.claimLease(ACCOUNT);
+  } else if (lease)
     host.leaseChanged(ACCOUNT, {
       role: lease,
       holder: lease === 'primary' ? mac.id : 'another-mac',
@@ -327,8 +389,10 @@ export async function boot(mac: Mac, lease?: 'primary' | 'secondary'): Promise<E
     store: raw,
     governor,
     host,
+    deadlines,
     commits,
     async kill() {
+      pumpStop.abort();
       await host.dispose();
       raw.close();
     },

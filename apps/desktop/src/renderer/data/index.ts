@@ -121,6 +121,7 @@ export interface DataRuntime {
   readonly useSession: typeof useSession;
   readonly useConnection: typeof useConnection;
   readonly useAccounts: typeof useAccounts;
+  readonly useAccountsLoaded: typeof useAccountsLoaded;
   readonly useStatus: typeof useStatus;
   readonly useCounts: typeof useCounts;
   readonly useAgenda: typeof useAgenda;
@@ -553,6 +554,11 @@ export function useConnection(): ConnectionView {
 /** All accounts (`Account/get`), in sidebar order, each with `health` (status, `reasonCode`, `reconnectBy`, `lastSyncAt`). */
 export function useAccounts(): readonly Account[] {
   return connected('useAccounts').useAccounts();
+}
+
+/** True once `Account/get` has answered, so an empty `useAccounts()` list means "no accounts" and not "not loaded yet". Additive. */
+export function useAccountsLoaded(): boolean {
+  return connected('useAccountsLoaded').useAccountsLoaded();
 }
 
 /** What the status slot shows (DESIGN 7.1 table). */

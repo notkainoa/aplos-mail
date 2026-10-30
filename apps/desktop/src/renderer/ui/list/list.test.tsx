@@ -20,8 +20,8 @@ describe('ListRow', () => {
     assert.doesNotMatch(m, /data-unread/);
     assert.match(m, /Tuesday<\/time>/);
     assert.match(m, /class="ui-list-row__actions"/);
-    assert.match(m, /aria-label="Later" title="Later · L" tabindex="-1" aria-hidden="true"/);
-    assert.match(m, /aria-label="Done" title="Done · E" tabindex="-1" aria-hidden="true"/);
+    assert.match(m, /aria-label="Later" title="Later · L" aria-hidden="true"/);
+    assert.match(m, /aria-label="Done" title="Done · E" aria-hidden="true"/);
     assert.doesNotMatch(m, /ui-list-row__account/, 'one account: no dot');
   });
 
@@ -118,7 +118,7 @@ describe('ListRow', () => {
     const retry = m.match(/<button[^>]*title="Retry"[^>]*>/)?.[0] ?? '';
     assert.ok(retry, 'Retry renders');
     assert.doesNotMatch(retry, /tabindex|aria-hidden/);
-    assert.match(m, /<button[^>]*aria-label="Later"[^>]*tabindex="-1" aria-hidden="true"/);
+    assert.match(m, /<span[^>]*aria-label="Later"[^>]*aria-hidden="true"/);
   });
 
   test('dates: weekday names only earlier this week, month-day before that', () => {
@@ -224,8 +224,8 @@ describe('ListBox, ListGroup, SectionHeader', () => {
     );
     assert.match(
       m,
-      /title="Go one by one · S" tabindex="-1" aria-hidden="true"/,
-      'pointer duplicate of S inside the listbox',
+      /title="Go one by one · S" aria-hidden="true"/,
+      'pointer duplicate of S inside the listbox (a span: not focusable, so not nested-interactive)',
     );
     assert.doesNotMatch(m, /<h1|<h2|page-title/, 'no page title, no heading inside the listbox');
   });
@@ -319,7 +319,7 @@ describe('FocusSlot and FocusLetter', () => {
     );
     assert.match(
       m,
-      /data-variant="filled" data-size="md" title="Reply · Space" tabindex="-1" aria-hidden="true">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
+      /data-variant="filled" data-size="md" title="Reply · Space" aria-hidden="true">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
     );
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);

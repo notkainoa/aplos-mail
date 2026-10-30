@@ -39,9 +39,13 @@ function Gallery(): ReactElement {
     <KeyHintsProvider value={{ showKeys: 'tooltips' }}>
       <CommandKeysProvider describe={(id, stack) => registry.describeKeys(id, stack)}>
         <div className="stage" data-frame={frame} data-state={state.id}>
-          <div className={frame === 'pane' ? 'stage__pane' : 'stage__box'}>
+          {frame === 'shell' ? (
             <Scene />
-          </div>
+          ) : (
+            <div className={frame === 'pane' ? 'stage__pane' : 'stage__box'}>
+              <Scene />
+            </div>
+          )}
         </div>
       </CommandKeysProvider>
     </KeyHintsProvider>
@@ -64,6 +68,10 @@ async function settle(): Promise<void> {
     document.fonts.load('400 16px Newsreader'),
   ]).catch(() => undefined);
   await document.fonts.ready;
+  // A scene that boots an engine marks itself `data-gallery-pending` until its screen has painted (scenes.home.tsx).
+  for (let waits = 0; document.querySelector('[data-gallery-pending]') && waits < 300; waits += 1) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
   // Two frames: React commits, floating surfaces measure their anchors, then layout is final.
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   window.__galleryReady = true;

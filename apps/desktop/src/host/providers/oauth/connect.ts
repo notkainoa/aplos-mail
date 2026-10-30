@@ -73,9 +73,10 @@ export interface GoogleConnectDeps extends FlowDeps {
    * Whether a Google `sub` is an account Aplos holds (the engine store's `remote_subject`). A foreign grant is revoked
    * only when its sub is NOT known: the usual foreign sub is the owner picking another of their accounts in Google's
    * chooser, often one already in Aplos, whose stored grant a whole-grant revoke would end. Default: every sub is
-   * known, so nothing is ever revoked. A throw counts as known.
+   * known, so nothing is ever revoked. A throw counts as known. It gets the attempt's signal (`boundedKnownSubject`
+   * answers known at once when it aborts).
    */
-  knownSubject?: (subject: string) => boolean | Promise<boolean>;
+  knownSubject?: (subject: string, signal: AbortSignal) => boolean | Promise<boolean>;
 }
 
 /**
@@ -297,10 +298,14 @@ function foreignSubject(attempt: Attempt, body: Record<string, unknown>): string
 }
 
 /** Unknown to Aplos, so no credential it holds can share the grant. Default and on any failure: known. */
-async function unknownToAplos(deps: GoogleConnectDeps, subject: string): Promise<boolean> {
+async function unknownToAplos(
+  deps: GoogleConnectDeps,
+  subject: string,
+  signal: AbortSignal,
+): Promise<boolean> {
   if (!deps.knownSubject) return false;
   try {
-    return (await deps.knownSubject(subject)) === false;
+    return (await deps.knownSubject(subject, signal)) === false;
   } catch {
     return false;
   }
@@ -329,7 +334,7 @@ async function revokeIfForeign(
 ): Promise<void> {
   const token = grantTokenOf(exchange.body);
   const subject = foreignSubject(attempt, exchange.body);
-  if (!token || !subject || !(await unknownToAplos(deps, subject))) return;
+  if (!token || !subject || !(await unknownToAplos(deps, subject, attempt.flow.signal))) return;
   const { signal, done } = revokeSignal(attempt.flow);
   try {
     await revokeGrant(deps, { ...attempt.flow, signal }, token);

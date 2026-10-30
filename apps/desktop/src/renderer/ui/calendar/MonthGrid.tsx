@@ -78,8 +78,8 @@ export function MonthGrid({
                 className="ui-calendar-grid__mcell"
                 data-out={parseYearMonth(day.slice(0, 7)).m === month ? undefined : 'true'}
                 data-today={isToday ? 'true' : undefined}
-                aria-label={dayTitle(day)}
               >
+                <span className="ui-sr-only">{dayTitle(day)}</span>
                 <span
                   className="ui-calendar-grid__mnum"
                   aria-current={isToday ? 'date' : undefined}

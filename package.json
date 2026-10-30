@@ -34,6 +34,7 @@
     "score:mutation": "node scripts/audit/hillclimb/scorers/mutation.mjs",
     "score:knip": "node scripts/audit/hillclimb/scorers/knip.mjs",
     "score:depcruise": "node scripts/audit/hillclimb/scorers/depcruise.mjs",
+    "hillclimb": "node scripts/audit/hillclimb/run.mjs",
     "release": "node scripts/release.mjs",
     "release:build": "npm run release:build -w @aplos/desktop",
     "update-feed": "npm run update-feed -w @aplos/desktop --",
@@ -58,6 +59,7 @@
     "lint:design": "node tools/lint/design/run.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.64.1",
     "@stryker-mutator/core": "10.0.0",
