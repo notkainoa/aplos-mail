@@ -1037,9 +1037,10 @@ export function mainCheckoutIntact(repoRoot, startCommit) {
       }
     }
     if (ctx?.moduleSnapshot && ctx?.moduleRoots?.length) {
-      // Roots linked after the baseline was taken (the eval worktree's) are already
-      // baselined at link time; extending here too keeps any other late addition watched.
-      snapshotModuleTrees(ctx.moduleRoots, ctx.moduleSnapshot);
+      // The baseline is fixed BEFORE the agent ran — roots linked later (the eval
+      // worktree's) join it at link time, in prepareEval. Re-baselining here would
+      // adopt a root swapped under its own path (mv + recreate) as if original;
+      // instead a root whose dev:ino is missing or changed is itself a hit.
       const hits = findModuleChanges(ctx.moduleRoots, ctx.moduleSnapshot, {
         relativeTo: repoRoot,
       });

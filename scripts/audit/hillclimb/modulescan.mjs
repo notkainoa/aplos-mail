@@ -163,8 +163,11 @@ export function snapshotModuleTrees(roots, into = null) {
  * hash, size and mtime changes via the entry records (a write-through with the mtime
  * restored still differs by size, a rename with the directory mtime restored still
  * differs by names), entries appearing or vanishing mid-walk, and watched dirs or
- * roots that can no longer be walked at all. Bounded at WRITE_SCAN_LIMIT hits: the
- * first few are all a rejection reason needs.
+ * roots that can no longer be walked at all. A watched root that is missing, no
+ * longer a directory, never baselined, or swapped under its own path (mv + recreate,
+ * rm + mkdir — a new inode under an unchanged name) is itself a hit: the audit must
+ * never adopt a post-run inode as if it were the original tree. Bounded at
+ * WRITE_SCAN_LIMIT hits: the first few are all a rejection reason needs.
  */
 export function findModuleChanges(roots, snap, { relativeTo = null } = {}) {
   const hits = [];
@@ -200,6 +203,16 @@ export function findModuleChanges(roots, snap, { relativeTo = null } = {}) {
   };
   for (const root of roots) {
     if (hits.length >= WRITE_SCAN_LIMIT) break;
+    let rootSt = null;
+    try {
+      rootSt = statSync(root); // follows links: the key is the real directory
+    } catch {
+      // Removed or unreadable — reported below.
+    }
+    if (!rootSt?.isDirectory() || !snap.roots.has(`${rootSt.dev}:${rootSt.ino}`)) {
+      push(root);
+      continue;
+    }
     scanModuleTree(root, visit);
   }
   return hits;

@@ -468,6 +468,57 @@ describe('mainCheckoutIntact (main-checkout drift)', () => {
     utimesSync(join(r.dir, 'node_modules'), new Date(), new Date(Date.now() + 10_000));
     await assert.rejects(intact(), /node_modules touched/);
   });
+
+  it('flags a watched root swapped under its own path — root and workspace level', async () => {
+    const r = freshRepo();
+    // node_modules* also covers the .old spelling the swap below parks the tree under.
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules*\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    mkdirSync(join(r.dir, 'packages', 'foo'), { recursive: true });
+    writeFileSync(join(r.dir, 'packages', 'foo', 'package.json'), '{"name":"foo"}\n');
+    r.commit('workspace fixture');
+    const mods = join(r.dir, 'node_modules');
+    const xmods = join(r.dir, 'packages', 'foo', 'node_modules');
+    mkdirSync(join(mods, 'dep'), { recursive: true });
+    writeFileSync(join(mods, 'dep', 'x.js'), 'x\n');
+    mkdirSync(join(xmods, 'dep2'), { recursive: true });
+    writeFileSync(join(xmods, 'dep2', 'y.js'), 'y\n');
+    const intact = mainCheckoutIntact(r.dir, r.head());
+    const ctx = {
+      dir: r.dir,
+      moduleRoots: [mods, xmods],
+      moduleSnapshot: snapshotModuleTrees([mods, xmods]),
+    };
+    await intact(ctx); // clean passes
+
+    // mv + recreate: same path, same kind, a planted file inside — but a new inode.
+    // Re-baselining here would adopt the swap; the audit must treat it as a hit.
+    // The recreated dir's mtime is restored too, so only the inode says anything.
+    const modsTimes = lstatSync(mods);
+    renameSync(mods, `${mods}.old`);
+    mkdirSync(mods);
+    writeFileSync(join(mods, 'planted.js'), 'p\n');
+    utimesSync(mods, modsTimes.atimeMs / 1000, modsTimes.mtimeMs / 1000);
+    await assert.rejects(intact(ctx), /node_modules write-through/);
+    rmSync(mods, { recursive: true, force: true });
+    renameSync(`${mods}.old`, mods);
+
+    // rm -rf + mkdir on the workspace-level root: the same swap one level down.
+    rmSync(xmods, { recursive: true, force: true });
+    mkdirSync(xmods);
+    writeFileSync(join(xmods, 'planted2.js'), 'p\n');
+    await assert.rejects(intact(ctx), /node_modules write-through/);
+    rmSync(xmods, { recursive: true, force: true });
+    mkdirSync(join(xmods, 'dep2'), { recursive: true });
+    writeFileSync(join(xmods, 'dep2', 'y.js'), 'y\n');
+
+    // And a root simply removed mid-run is a hit, not a fresh baseline either.
+    rmSync(xmods, { recursive: true, force: true });
+    await assert.rejects(intact(ctx), /node_modules write-through/);
+  });
 });
 
 describe('linkNodeModules + worktrees', () => {
