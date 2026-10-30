@@ -5,7 +5,7 @@
  * wanted letter lays itself out off paper and tells the reader when it is measured, and only then does it replace the
  * letter on paper (the no-blank-sheet double buffer, `letterController`).
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   api,
   toIsoDateTime,
@@ -18,6 +18,7 @@ import type { MailFrameKey, MailFrameReady } from '../../mailframe';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
 import { EarlierMessages, ReaderHead, ReplyStub } from '../../ui/reader';
+import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
 import { ReaderMessage } from './ReaderMessage';
 import {
@@ -43,12 +44,22 @@ const TRIAGE_COMMANDS = {
   done: 'mail.done',
 } as const;
 
+/** Pop out of the inline reply: the saved draft's id, or (nothing saved yet) the message the reply answers. */
+export interface PopOut {
+  readonly draftId: string | null;
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly replyAll: boolean;
+}
+
 /** What the letter's buttons and the frame's keys call. The screen implements them. */
 export interface LetterControls {
   readonly suggest: () => void;
   readonly later: () => void;
   readonly done: () => void;
   readonly reply: () => void;
+  /** Pop out of the inline reply to the compose page. */
+  readonly popOut?: (pop: PopOut) => void;
   /** A key pressed inside a frame, relayed to the shell's key listener; true when it ran a command. */
   readonly relayKey: (key: MailFrameKey) => boolean;
 }
@@ -133,6 +144,50 @@ interface BodyProps extends ReaderLetterProps {
   readonly onRetry: () => void;
 }
 
+interface ReplyAreaProps {
+  readonly threadId: string;
+  readonly messageId: string;
+  readonly ui: ReaderUi;
+  readonly dispatch: (event: UiEvent) => void;
+  readonly controls: LetterControls;
+}
+
+/** The Reply stub, or (once asked for) the composer's inline reply in its place. */
+function ReplyArea({
+  threadId,
+  messageId,
+  ui,
+  dispatch,
+  controls,
+  stub,
+}: ReplyAreaProps & { readonly stub: ReactNode }) {
+  const request = ui.reply;
+  const replyAll = request?.replyAll ?? false;
+  const { popOut } = controls;
+  const onClose = useCallback(() => dispatch({ type: 'closeReply' }), [dispatch]);
+  const onOpenChange = useCallback(
+    (open: boolean) => dispatch({ type: 'replyOpen', open }),
+    [dispatch],
+  );
+  const onPopOut = useCallback(
+    (draftId: string | null) => popOut?.({ draftId, threadId, messageId, replyAll }),
+    [popOut, threadId, messageId, replyAll],
+  );
+  if (!request) return stub;
+  return (
+    <InlineReplyHost
+      threadId={threadId}
+      messageId={messageId}
+      replyAll={request.replyAll}
+      dictate={request.dictate}
+      suggest={request.suggest}
+      onClose={onClose}
+      onOpenChange={onOpenChange}
+      onPopOut={popOut ? onPopOut : undefined}
+    />
+  );
+}
+
 function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']> }) {
   const { row, data, ui, dispatch, controls } = props;
   const accounts = useAccounts();
@@ -162,7 +217,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       summary={summaryFor(row)}
       suggestion={suggestionFor(row)}
       commands={TRIAGE_COMMANDS}
-      demoted={false}
+      demoted={ui.replyOpen}
       onSuggestion={controls.suggest}
       onLater={controls.later}
       onDone={controls.done}
@@ -192,10 +247,19 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         />
         {earlier.filter(m => ui.opened.includes(m.id)).map(m => message(m, ui.cursor === m.id))}
         {message(latest, ui.cursor === null || ui.cursor === latest.id)}
-        <ReplyStub
-          recipientName={replyName(latest, me)}
-          commandId="mail.reply"
-          onOpen={controls.reply}
+        <ReplyArea
+          threadId={props.threadId}
+          messageId={latest.id}
+          ui={ui}
+          dispatch={dispatch}
+          controls={controls}
+          stub={
+            <ReplyStub
+              recipientName={replyName(latest, me)}
+              commandId="mail.reply"
+              onOpen={controls.reply}
+            />
+          }
         />
       </section>
     </>

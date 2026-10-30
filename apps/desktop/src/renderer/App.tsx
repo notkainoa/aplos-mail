@@ -19,9 +19,13 @@ import { EmptyLine, LowBand, SectionHeader } from './ui/list';
 import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus, api } from './data';
 import { statusCopy } from './ui/status';
 import {
+  closeCompose,
   navigate,
+  openCompose,
   openThread,
   useAccountScope,
+  useComposeRequest,
+  usePaneHeader,
   useHomeShellProps,
   type HomeShellProps,
   type Screen,
@@ -30,7 +34,9 @@ import { HomeScreen as HomeRoute } from './screens/home';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
+import { ComposeScreen, composeHeader } from './screens/compose';
 import { ReaderScreen } from './screens/reader';
+import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
@@ -269,15 +275,22 @@ function HomeSlot() {
   return <HomeRoute {...useHomeShellProps()} />;
 }
 
-/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
+/** What opening a list row does: a thread opens in the reader, a draft in the compose page, a submission nothing. */
+export function listOpener(from: Screen): (id: string, kind: OpenKind) => void {
+  return (id, kind) => {
+    if (kind === 'thread') openThread(id, { from });
+    if (kind === 'draft') openCompose({ draftId: id });
+  };
+}
+
+/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader, drafts in the compose page; submissions have no opener. */
 function useListProps(from: Screen) {
   const scope = useAccountScope();
   const place = typeof from === 'string' ? from : from.label;
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: (id: string, kind: OpenKind) =>
-        kind === 'thread' ? openThread(id, { from }) : undefined,
+      onOpen: listOpener(from),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `from` is a new object every render; `place` is its value
     [scope, place],
@@ -297,8 +310,24 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
   return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps(which)} />;
 }
 
-/** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['one by one', 'Search', 'Help', 'New message'];
+/** The compose page: C, the sidebar's New message, a Drafts row and the inline reply's Pop out land here. Esc and × keep the draft and go back. */
+function ComposeSlot() {
+  const request = useComposeRequest();
+  const runCommand = useRunCommand();
+  usePaneHeader(composeHeader({ close: () => runCommand('compose.close'), saved: false }));
+  if (!request) return null;
+  return (
+    <ComposeScreen
+      key={request.seq}
+      draftId={request.draftId}
+      replyTo={request.replyTo}
+      onClose={closeCompose}
+    />
+  );
+}
+
+/** Labels other lanes open as placeholders (one by one, search, help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['one by one', 'Search', 'Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -309,6 +338,7 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
 /** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
+  if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />

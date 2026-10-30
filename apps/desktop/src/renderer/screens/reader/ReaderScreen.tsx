@@ -2,7 +2,8 @@
  * The reader (DESIGN 7.5): the thread opened from a list, in one 640 px column. J and K move to the next and previous
  * thread of the list it was opened from; the letter on paper stays until the next one reports it is laid out, and a
  * 12 px line shows after 1.5 s (the no-blank-sheet double buffer). E, L, Space and R, Esc, O, ⌘F and ↑/↓ are the
- * registry's. Compose and the inline reply are a later slice's: R and the Reply stub call `onReply`.
+ * registry's. R, ⇧R, hold R, a Reply suggestion and the Reply stub open the inline reply under the thread (the composer's
+ * `InlineReplyHost`, mounted by `ReaderLetter`); Pop out opens the compose page.
  */
 import { useCallback, useMemo, useReducer, useRef } from 'react';
 import { api, useRow, type ThreadRow } from '../../data';
@@ -10,6 +11,7 @@ import {
   closeThread,
   dismissToast,
   navigate,
+  openCompose,
   openThread,
   pushToast,
   screenLabel,
@@ -30,8 +32,15 @@ import { crumbPosition, stepThread } from './readerModel';
 import { readerHeader } from './readerHeader';
 import { createReaderActions, type ReaderActions, type ReaderDeps } from './readerActions';
 import { commandsForReader, relayToShell } from './readerCommands';
-import { freshUi, reduceFor, uiFor, type UiEvent } from './readerUi';
-import { ReaderLetter, type LetterControls } from './ReaderLetter';
+import {
+  PLAIN_REPLY,
+  freshUi,
+  reduceFor,
+  uiFor,
+  type ReplyRequest,
+  type UiEvent,
+} from './readerUi';
+import { ReaderLetter, type LetterControls, type PopOut } from './ReaderLetter';
 import { useLetterBuffer, useLetterController, usePrefetchAround } from './useLetterBuffer';
 import { useReaderList } from './useReaderList';
 
@@ -44,8 +53,6 @@ export interface ReaderScreenProps {
   readonly listIds?: readonly string[];
   /** Where Esc and "no thread left" go. Absent: the screen `openThread` recorded (`from`), else Home. */
   readonly backTo?: Screen;
-  /** Reply (R, the stub, or a Reply suggestion). The composer lane implements it; absent until it lands. */
-  readonly onReply?: (threadId: string) => void;
   /** Any suggestion that is neither a reply nor Done ("View invoice", "Add to calendar"); a later slice's. */
   readonly onSuggested?: (threadId: string, action: SuggestedAction) => void;
 }
@@ -57,6 +64,8 @@ interface Live {
   readonly wanted: string;
   readonly ids: readonly string[];
   readonly row: ThreadRow | undefined;
+  /** Opens the inline reply under the letter on paper. */
+  readonly openReply: (request: ReplyRequest) => void;
 }
 
 function useLive<T>(value: T) {
@@ -86,7 +95,7 @@ function useReaderActions(live: { readonly current: Live }): ReaderActions {
         const entry = registry.get(commandId);
         return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
       },
-      reply: id => live.current.props.onReply?.(id),
+      reply: (_id, request) => live.current.openReply(request ?? PLAIN_REPLY),
       suggested: (id, action) => live.current.props.onSuggested?.(id, action),
     };
     return createReaderActions(deps);
@@ -123,12 +132,22 @@ function useReaderHeader(input: {
 
 function controlsOf(actions: ReaderActions): LetterControls {
   return {
+    popOut: popOutToCompose,
     suggest: actions.suggest,
     later: actions.later,
     done: actions.done,
     reply: actions.reply,
     relayKey: relayToShell,
   };
+}
+
+/** Pop out: the compose page opens on the saved draft, or on a reply to the message when nothing was saved yet. */
+function popOutToCompose(pop: PopOut): void {
+  if (pop.draftId) openCompose({ draftId: pop.draftId });
+  else
+    openCompose({
+      replyTo: { threadId: pop.threadId, messageId: pop.messageId, replyAll: pop.replyAll },
+    });
 }
 
 function ignore(_event: UiEvent): void {
@@ -143,7 +162,18 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
   const buffer = useLetterBuffer(controller, open);
   const shown = buffer.letter;
   const row = useRow('Thread', shown ?? undefined);
-  const live = useLive<Live>({ props, shown, wanted: open, ids, row });
+  const [ui, send] = useReducer(reduceFor, freshUi(null));
+  const dispatchShown = useCallback(
+    (event: UiEvent) => {
+      if (shown !== null) send({ threadId: shown, event });
+    },
+    [shown],
+  );
+  const openReply = useCallback(
+    (request: ReplyRequest) => dispatchShown({ type: 'openReply', request }),
+    [dispatchShown],
+  );
+  const live = useLive<Live>({ props, shown, wanted: open, ids, row, openReply });
   const actions = useReaderActions(live);
   useRegisterCommands(useMemo(() => commandsForReader(actions), [actions]));
   useShellKeyLayer({ contexts: ['reader'] });
@@ -157,13 +187,6 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
     back: actions.back,
   });
 
-  const [ui, send] = useReducer(reduceFor, freshUi(null));
-  const dispatchShown = useCallback(
-    (event: UiEvent) => {
-      if (shown !== null) send({ threadId: shown, event });
-    },
-    [shown],
-  );
   const controls = useMemo(() => controlsOf(actions), [actions]);
   // A stable order, so a letter that stays mounted is never moved in the DOM (moving a frame reloads it).
   const letters = [...new Set([shown, open].filter((id): id is string => id !== null))].sort();

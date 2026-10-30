@@ -15,7 +15,7 @@ import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import { harnessClock } from '../../data/clock';
 import { api, setClock, undoStack, type ThreadRow } from '../../data';
-import { dismissToast, pushToast, runToastAction } from '../../shell';
+import { dismissToast, navigate, pushToast, runToastAction } from '../../shell';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { DoneScreen } from '../done';
 import { commandsForDone } from '../done/doneCommands';
@@ -37,6 +37,9 @@ import { setFormatClock } from '../../ui/list/internal/format';
 import { ListScreen } from './ListScreen';
 import { ListEmpty, ListFailed } from './ListStates';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
+import { getComposeRequest } from '../../shell/store-compose';
+import { getScreen } from '../../shell/store-route';
+import { listOpener } from '../../App';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -457,4 +460,22 @@ test('a list that failed with nothing to show says so in one sentence, with Try 
   const html = renderToStaticMarkup(createElement(ListFailed));
   assert.match(html, /Couldn’t load this list\./);
   assert.match(html, /Try again/);
+});
+
+test('Enter on a draft opens it in the compose page, coming from Drafts', async () => {
+  const world = await boot();
+  try {
+    const { deps, state } = depsOver(world, DRAFTS_CONFIG);
+    navigate('drafts');
+    const open = listOpener('drafts');
+    createListActions({ ...deps, open }).open();
+    assert.deepEqual(state.opened, [], 'the opener of the screen got it, not the test double');
+    assert.deepEqual(getScreen(), { label: 'compose' });
+    const request = getComposeRequest();
+    assert.ok(request?.draftId, 'the draft row is the one opened');
+    assert.equal(request?.from, 'drafts');
+  } finally {
+    navigate('home');
+    world.connection.close();
+  }
 });

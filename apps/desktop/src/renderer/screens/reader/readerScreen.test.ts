@@ -23,7 +23,7 @@ import { createReaderActions, type ReaderDeps } from './readerActions';
 import { commandsForReader } from './readerCommands';
 import { ReaderLetter, GONE_COPY } from './ReaderLetter';
 import { ReaderScreen, NO_THREAD_COPY } from './ReaderScreen';
-import { freshUi } from './readerUi';
+import { PLAIN_REPLY, freshUi, reduceUi, type ReplyRequest } from './readerUi';
 
 const NO_CONTROLS = {
   suggest: () => undefined,
@@ -85,6 +85,7 @@ function depsOver(world: World, start: string, readyOnGo = true) {
     open: start,
     left: 0,
     replies: [] as string[],
+    requests: [] as Array<ReplyRequest | undefined>,
     suggested: [] as string[],
   };
   controller.want(start);
@@ -104,7 +105,10 @@ function depsOver(world: World, start: string, readyOnGo = true) {
     push: pushToast,
     dismiss: () => undefined,
     undoLabel: (_id, fallback) => fallback,
-    reply: id => void state.replies.push(id),
+    reply: (id, request) => {
+      state.replies.push(id);
+      state.requests.push(request);
+    },
     suggested: (id, action) => void state.suggested.push(`${id}:${action.verb}`),
   };
   return { deps, state, controller };
@@ -392,6 +396,89 @@ test('bookmark toggles in place and keeps the reader on the thread', async () =>
       getToasts().some(t => t.message === 'Bookmarked' || t.message === 'Bookmark removed'),
     );
     await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('R, ⇧R and hold R go through the registry to the inline reply, each asking for its own kind', async () => {
+  const world = await boot();
+  try {
+    const { deps, state } = depsOver(world, world.doIds()[0]!);
+    const registry = createAppRegistry();
+    const detach = shellRegistryFor(registry).register(
+      commandsForReader(createReaderActions(deps)),
+    );
+    const context: CommandContext = {
+      stack: ['global', 'list', 'reader'],
+      target: null,
+      selection: [],
+      conditions: {},
+      prefs: DEFAULT_KEY_PREFS,
+      focus: 'none',
+    };
+    const key = (k: string, shiftKey = false) => ({
+      key: k,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey,
+    });
+    const press = (k: string, shift = false) => {
+      const resolution = registry.resolve(key(k, shift), context);
+      assert.ok(resolution, `${k} resolves`);
+      return registry.run(resolution.commandId, context);
+    };
+    assert.equal(press('r').status, 'ran');
+    assert.equal(press('R', true).status, 'ran');
+    assert.equal(registry.run('mail.dictateReply', context).status, 'ran');
+    assert.deepEqual(state.requests, [
+      PLAIN_REPLY,
+      { replyAll: true, dictate: false },
+      { replyAll: false, dictate: true },
+    ]);
+    detach();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('an open reply replaces the stub and demotes the filled suggestion; closed, the stub is back', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    await world.threadWindow(id);
+    const render = (ui: ReturnType<typeof freshUi>) =>
+      renderToStaticMarkup(
+        createElement(ReaderLetter, {
+          threadId: id,
+          paper: true,
+          ui,
+          dispatch: () => undefined,
+          controls: NO_CONTROLS,
+          onReady: () => undefined,
+        }),
+      );
+    const closed = render(freshUi(id));
+    assert.match(closed, /ui-reply-stub/);
+    assert.equal(closed.match(/data-variant="filled"/g)?.length, 1);
+    assert.doesNotMatch(closed, /data-demoted="true"/);
+
+    let ui = reduceUi(freshUi(id), { type: 'openReply', request: PLAIN_REPLY });
+    ui = reduceUi(ui, { type: 'replyOpen', open: true });
+    const open = render(ui);
+    assert.doesNotMatch(open, /ui-reply-stub/, 'the host stands where the stub was');
+    assert.match(open, /data-demoted="true"/);
+    assert.equal(
+      open.match(/data-variant="filled"/g)?.length ?? 0,
+      0,
+      'the filled button belongs to the open composer',
+    );
+
+    ui = reduceUi(ui, { type: 'closeReply' });
+    assert.equal(ui.reply, null);
+    assert.equal(ui.replyOpen, false);
+    assert.match(render(ui), /ui-reply-stub/, 'Esc closed it: the stub shows again');
   } finally {
     world.connection.close();
   }

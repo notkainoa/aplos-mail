@@ -31,6 +31,7 @@ import { accountReconnectMode } from './status-map';
 import {
   closeSheet,
   navigate,
+  openCompose,
   openSheet,
   pushToast,
   setAccountScope,
@@ -200,7 +201,7 @@ function ShellFrame({ renderScreen }: ShellProps) {
         counts={placeCounts(counts.counts, counts.hidden)}
         minimised={minimised}
         onNavigate={navigate}
-        onCompose={() => navigate({ label: 'New message' })}
+        onCompose={() => openCompose({})}
         accountSwitcher={account}
         status={<StatusHost />}
         toasts={<ToastHost />}

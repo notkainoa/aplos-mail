@@ -45,6 +45,8 @@ import {
   subscribeOpenThreadContext,
 } from './store-thread';
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import { getComposeRequest, subscribeComposeRequest } from './store-compose';
+import type { ComposeRequest } from './store-compose';
 import {
   clearPaneHeader,
   getPaneHeader,
@@ -363,6 +365,20 @@ export function useOpenThreadContext(): OpenThreadContext {
 }
 
 export type { OpenThreadContext, OpenThreadOptions };
+
+// ---------------------------------------------------------------------------
+// The compose route (additive): the composer lane renders it on the `{ label: 'compose' }` screen
+// ---------------------------------------------------------------------------
+
+/** Shows the compose page (new message, a draft, or a reply popped out of the reader); `closeCompose` goes back. */
+export { openCompose, closeCompose } from './store-compose';
+
+/** What the compose page was asked to open on, live; null when it is not showing. */
+export function useComposeRequest(): ComposeRequest | null {
+  return useSyncExternalStore(subscribeComposeRequest, getComposeRequest, getComposeRequest);
+}
+
+export type { ComposeRequest, ComposeTarget } from './store-compose';
 
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {

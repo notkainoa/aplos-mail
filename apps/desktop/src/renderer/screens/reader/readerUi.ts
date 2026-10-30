@@ -5,6 +5,19 @@
  */
 import type { CursorDirection } from './model/threadCursor';
 import { stepMessage } from './readerModel';
+import type { InlineReplyHostProps } from '../compose';
+
+/** The inline reply the letter shows under the thread: how it was asked for (R, ⇧R, hold R, a suggestion). */
+export interface ReplyRequest {
+  readonly replyAll: boolean;
+  /** Opened by holding R: the host starts listening at once. */
+  readonly dictate: boolean;
+  /** The dim text to offer: the Follow up nudge. */
+  readonly suggest?: InlineReplyHostProps['suggest'];
+}
+
+/** A plain R. */
+export const PLAIN_REPLY: ReplyRequest = { replyAll: false, dictate: false };
 
 /** The letter's interface state. */
 export interface ReaderUi {
@@ -19,6 +32,10 @@ export interface ReaderUi {
   readonly imagesLoaded: readonly string[];
   /** The find bar: closed (null) or open with its query. */
   readonly find: string | null;
+  /** The inline reply under the thread, or null while only the stub shows. */
+  readonly reply: ReplyRequest | null;
+  /** The reply card is open (a sent reply's tray is not): the filled suggestion belongs to the card while it is. */
+  readonly replyOpen: boolean;
 }
 
 /** A thread's untouched state. */
@@ -30,6 +47,8 @@ export function freshUi(threadId: string | null): ReaderUi {
     cursor: null,
     imagesLoaded: [],
     find: null,
+    reply: null,
+    replyOpen: false,
   };
 }
 
@@ -41,7 +60,10 @@ export type UiEvent =
   | { readonly type: 'loadImages'; readonly id: string }
   | { readonly type: 'openFind' }
   | { readonly type: 'setFind'; readonly query: string }
-  | { readonly type: 'closeFind' };
+  | { readonly type: 'closeFind' }
+  | { readonly type: 'openReply'; readonly request: ReplyRequest }
+  | { readonly type: 'closeReply' }
+  | { readonly type: 'replyOpen'; readonly open: boolean };
 
 function withId(list: readonly string[], id: string): readonly string[] {
   return list.includes(id) ? list : [...list, id];
@@ -64,6 +86,12 @@ export function reduceUi(state: ReaderUi, event: UiEvent): ReaderUi {
       return { ...state, find: event.query };
     case 'closeFind':
       return { ...state, find: null };
+    case 'openReply':
+      return state.reply ? state : { ...state, reply: event.request };
+    case 'closeReply':
+      return { ...state, reply: null, replyOpen: false };
+    case 'replyOpen':
+      return state.replyOpen === event.open ? state : { ...state, replyOpen: event.open };
   }
 }
 

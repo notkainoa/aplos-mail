@@ -13,6 +13,7 @@ import { suggestionFor } from './readerRows';
 import type { CursorDirection } from './model/threadCursor';
 import { afterRemoval, stepThread } from './readerModel';
 import type { SuggestedAction } from '../../ui/props';
+import { PLAIN_REPLY, type ReplyRequest } from './readerUi';
 
 /** The screen's side of the actions. */
 export interface ReaderDeps {
@@ -32,8 +33,9 @@ export interface ReaderDeps {
   dismiss(id: string): void;
   /** The confirmed toast text of a command, read from the registry. */
   undoLabel(commandId: string, fallback: string): string;
-  /** Reply, and any suggestion that is not a reply or Done, are a later slice's: the screen forwards them. */
-  reply(id: string): void;
+  /** Opens the inline reply under the thread (R, ⇧R, hold R, a Reply suggestion). */
+  reply(id: string, request?: ReplyRequest): void;
+  /** Any suggestion that is not a reply or Done ("View invoice", "Add to calendar"): a later slice's, the screen forwards it. */
   suggested(id: string, action: SuggestedAction): void;
 }
 
@@ -47,8 +49,15 @@ export interface ReaderActions {
   /** Space: the filled button's action. */
   suggest(): void;
   reply(): void;
+  replyAll(): void;
+  /** Hold R: the reply opens listening. */
+  dictate(): void;
   back(): void;
 }
+
+/** Home's Follow up section suggests this; the reply opens with the nudge as dim text. */
+const FOLLOW_UP_VERB = 'Reply with a nudge';
+const NUDGE: ReplyRequest = { ...PLAIN_REPLY, suggest: { kind: 'followUp' } };
 
 type Toasted = Omit<PushedToast, 'id' | 'undoable' | 'actions' | 'onAction'>;
 
@@ -132,9 +141,9 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     );
   }
 
-  function reply(): void {
+  function replyWith(request: ReplyRequest): void {
     const id = deps.shown();
-    if (id !== null) deps.reply(id);
+    if (id !== null) deps.reply(id, request);
   }
 
   return {
@@ -152,10 +161,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       if (!row) return;
       const suggestion = suggestionFor(row);
       if (suggestion.isDone) return done();
-      if (suggestion.verb === 'Reply' || suggestion.icon === 'reply') return reply();
+      if (suggestion.verb === FOLLOW_UP_VERB) return replyWith(NUDGE);
+      if (suggestion.verb === 'Reply' || suggestion.icon === 'reply') return replyWith(PLAIN_REPLY);
       deps.suggested(row.id, suggestion);
     },
-    reply,
+    reply: () => replyWith(PLAIN_REPLY),
+    replyAll: () => replyWith({ ...PLAIN_REPLY, replyAll: true }),
+    dictate: () => replyWith({ ...PLAIN_REPLY, dictate: true }),
     back: () => deps.leave(),
   };
 }
