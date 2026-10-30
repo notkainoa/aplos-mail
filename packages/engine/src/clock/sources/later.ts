@@ -111,9 +111,10 @@ const firedThrough = (q: StoreReader) =>
 export function createLater({ store, clock, frames, zone }: LaterDeps): LaterService {
   /** Where the watermark starts when none is stored yet: the engine's first look, so old dates stay quiet. */
   const startedAt = clock.now();
-  const through = (q: StoreReader) => {
+  /** A stored watermark past `now` came from a clock that was ahead: it must not silence what is due, so this run's start stands in. */
+  const through = (q: StoreReader, now: number) => {
     const stored = Number(firedThrough(q));
-    return Number.isFinite(stored) ? stored : startedAt;
+    return Number.isFinite(stored) && stored <= now ? stored : startedAt;
   };
 
   function announceReturn(row: Row, now: number) {
@@ -130,11 +131,12 @@ export function createLater({ store, clock, frames, zone }: LaterDeps): LaterSer
     // The recheck is the loop's only way to learn of a Later set while it sleeps (nothing calls `changed` yet).
     next: async () =>
       Math.min(
-        store.read(q => q.get<{ at: number | null }>(NEXT, through(q))?.at) ?? Infinity,
+        store.read(q => q.get<{ at: number | null }>(NEXT, through(q, clock.now()))?.at) ??
+          Infinity,
         clock.now() + RECHECK_MS,
       ),
     async fire(now) {
-      const due = store.read(q => q.all<Row>(DUE, through(q), now, MAX_LATER_NOTICES));
+      const due = store.read(q => q.all<Row>(DUE, through(q, now), now, MAX_LATER_NOTICES));
       for (const row of due) announceReturn(row, now);
       // After the announcements: a throw above leaves the watermark, and the retry replays what was announced.
       // It may move back with the clock: the per-thread opIds keep a return from being announced twice.

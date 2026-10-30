@@ -600,6 +600,30 @@ test('Later announcements are idempotent per thread and capped per fire', async 
   }
 });
 
+test('a watermark written by a clock that was ahead does not silence a Later that is due now', async () => {
+  const w = world('2026-10-28T16:00:00Z');
+  try {
+    const first = w.boot();
+    await first.loop.idle();
+    first.stop();
+    w.store.commit({
+      opId: 'ahead',
+      origin: 'system',
+      writes: [
+        { kind: 'meta', key: 'later.fired_through', value: String(w.clock.now() + 10 * DAY) },
+      ],
+    });
+    w.snooze(1, w.clock.now() + HOUR);
+    const e = w.boot();
+    await w.clock.set(w.clock.now() + HOUR);
+    await e.loop.idle();
+    assert.deepEqual(idsOf(w), [threadId(1)]);
+    e.stop();
+  } finally {
+    w.done();
+  }
+});
+
 // ------------------------------------------------------------ the queries
 
 test('the due and next queries use the indexes built for them', () => {
