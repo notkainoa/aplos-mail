@@ -445,6 +445,25 @@ describe('scratch-sweep.mjs', () => {
       assert.equal(existsSync(stale), true);
     });
 
+    it('a NaN or non-numeric age never means "sweep everything"', async () => {
+      const pid = await deadPid();
+      const { root } = fixture();
+      const fresh = join(root, 'aplos-scratch-nanx-abc123');
+      mkdirSync(fresh);
+      writeFileSync(
+        join(fresh, scratchMarkerName),
+        JSON.stringify({ pid, startedAt: 'gone', createdAt: Date.now() }),
+      );
+      for (const maxAgeHours of [Number.NaN, 'soon', undefined, null, -5, 0]) {
+        const result = sweepStaleScratch({ dir: root, maxAgeHours, delete: true });
+        assert.deepEqual(result.removed, [], `maxAgeHours ${String(maxAgeHours)}`);
+        assert.equal(existsSync(fresh), true, `maxAgeHours ${String(maxAgeHours)}`);
+      }
+      const result = sweepStaleScratch({ dir: root, now: Number.NaN, delete: true });
+      assert.deepEqual(result.removed, [], 'a NaN clock falls back to the real clock');
+      assert.equal(existsSync(fresh), true);
+    });
+
     it('--delete together with --dry-run reports and removes nothing (dry-run is a veto)', async () => {
       const pid = await deadPid();
       const { root } = fixture();

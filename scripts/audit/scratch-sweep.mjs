@@ -142,7 +142,11 @@ function removeVerified(path, remove, lstat) {
  */
 export function sweepStaleScratch(options = {}) {
   const dir = options.dir ?? tmpdir();
-  const maxAgeHours = Math.max(1, options.maxAgeHours ?? defaultMaxAgeHours);
+  // A NaN or non-numeric age would make every `newest > cutoff` comparison false, i.e. every
+  // dir stale: anything not a finite number falls back to the default, never to 'sweep all'.
+  const requested = Number(options.maxAgeHours ?? defaultMaxAgeHours);
+  const maxAgeHours = Number.isFinite(requested) ? Math.max(1, requested) : defaultMaxAgeHours;
+  const nowMs = Number.isFinite(options.now) ? options.now : Date.now();
   // --dry-run is a veto: `--delete --dry-run` must report, never remove. Legacy callers that only
   // pass dryRun: false still delete.
   const del =
@@ -153,7 +157,7 @@ export function sweepStaleScratch(options = {}) {
   const lstat = options.lstat ?? lstatSync;
   const ctx = {
     uid: currentUid(),
-    cutoff: (options.now ?? Date.now()) - maxAgeHours * hourMs,
+    cutoff: nowMs - maxAgeHours * hourMs,
     kill: options.kill ?? ((pid, signal) => process.kill(pid, signal)),
     startKey: options.startKey ?? (pid => processStartKey(pid)),
     lstat,

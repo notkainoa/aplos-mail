@@ -75,13 +75,10 @@ export function processStartKey(pid, readers = {}) {
         .split(/\s+/);
       const ticks = rest[19];
       if (!/^\d+$/.test(ticks ?? '')) return null;
-      let btime = '';
-      try {
-        btime = readFile('/proc/stat').match(/^btime (\d+)$/m)?.[1] ?? '';
-      } catch {
-        // btime only disambiguates across reboots; ticks alone still compare correctly.
-      }
-      return `linux:${btime}:${ticks}`;
+      // Ticks alone, no boot time: /proc/stat btime can drift by a second as the clock is
+      // disciplined, which would make a live owner's key mismatch its marker and read as a
+      // recycled pid. A pid recycled across a reboot is covered by /tmp itself being cleared.
+      return `linux:${ticks}`;
     }
     const started = String(ps(pid)).trim().replace(/\s+/g, ' ');
     return started ? `${platform}:${started}` : null;

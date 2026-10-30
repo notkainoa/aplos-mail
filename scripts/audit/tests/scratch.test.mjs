@@ -143,27 +143,25 @@ describe('scratch.mjs', () => {
       }
     });
 
-    it('reads field 22 of /proc/<pid>/stat plus btime on linux', () => {
+    it('uses field 22 of /proc/<pid>/stat alone on linux, never the boot time', () => {
       // starttime (field 22) is index 19 of the fields after the last ')'.
       const stat = '4242 (weird ) comm) S 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 555666\n';
+      let bootTimeReads = 0;
       const readFile = path => {
         if (path === '/proc/4242/stat') return stat;
-        if (path === '/proc/stat') return 'cpu 1\nbtime 1717000000\n';
+        // btime drifts by a second as the clock is disciplined: a key built from it would
+        // mismatch a live owner's marker and read as a recycled pid. It must not be read.
+        if (path === '/proc/stat') {
+          bootTimeReads++;
+          return `cpu 1\nbtime ${1717000000 + bootTimeReads}\n`;
+        }
         throw new Error(`unexpected read ${path}`);
       };
-      assert.equal(
-        processStartKey(4242, { platform: 'linux', readFile }),
-        'linux:1717000000:555666',
-      );
-    });
-
-    it('still returns a linux key when btime is unreadable', () => {
-      const stat = '4242 (node) S 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 777\n';
-      const readFile = path => {
-        if (path === '/proc/4242/stat') return stat;
-        throw new Error('gone');
-      };
-      assert.equal(processStartKey(4242, { platform: 'linux', readFile }), 'linux::777');
+      const first = processStartKey(4242, { platform: 'linux', readFile });
+      const second = processStartKey(4242, { platform: 'linux', readFile });
+      assert.equal(first, 'linux:555666');
+      assert.equal(second, first);
+      assert.equal(bootTimeReads, 0);
     });
 
     it('returns null on linux when the stat read fails or has no starttime', () => {
