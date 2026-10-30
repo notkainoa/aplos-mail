@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import { releaseBuild, syntaxOptions } from '../../scripts/build-options.mjs';
 
@@ -53,4 +54,12 @@ test('a release bundle carries no trace of a test-only call site, a dev bundle k
   const dev = await bundle({}, true);
   assert.match(dev, /killpointCanary/);
   assert.match(dev, /before-marker/);
+});
+
+test('every bundle build in build-main.mjs spreads the release syntax options', () => {
+  const source = readFileSync(new URL('../../scripts/build-main.mjs', import.meta.url), 'utf8');
+  const builds = source.match(/\bbuild\(\{/g) ?? [];
+  const spreads = source.match(/\.\.\.syntaxOptions\(process\.env\)/g) ?? [];
+  assert.equal(builds.length, 3, 'electron, engine and preload bundles');
+  assert.equal(spreads.length, builds.length, 'a bundle build is missing ...syntaxOptions(process.env)');
 });
