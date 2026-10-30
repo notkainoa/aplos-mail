@@ -1,153 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IMAGE_PROXY_LIMITS } from '@aplos/engine/ports';
-import type { ImageRefusal, ProxiedImage } from '@aplos/engine/ports';
+import type { ImageRefusal } from '@aplos/engine/ports';
 import { classifyAddress } from '../../src/host/proxy/classify';
 import {
   createImageProxy,
   type Connector,
-  type ImageProxyOptions,
   type UpstreamResponse,
 } from '../../src/host/proxy/fetch';
-import { pinTarget, type PinnedTarget, type Resolver } from '../../src/host/proxy/resolve';
-import { proxyLimits, tokenBudget, TRACKED_TOKENS } from '../../src/host/proxy/limits';
-
-const PUBLIC = '93.184.216.34';
-
-// --- Original image headers, just enough bytes for each format's dimensions -----------------------------------------
-
-function bytes(...parts: (number[] | string | Uint8Array)[]): Uint8Array {
-  const flat = parts.flatMap(part =>
-    typeof part === 'string' ? [...part].map(c => c.charCodeAt(0)) : [...part],
-  );
-  return Uint8Array.from(flat);
-}
-
-const u16le = (n: number) => [n & 255, (n >>> 8) & 255];
-const u16be = (n: number) => [(n >>> 8) & 255, n & 255];
-const u24le = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255];
-const u32le = (n: number) => [...u16le(n & 0xffff), ...u16le(n >>> 16)];
-const u32be = (n: number) => [...u16be(n >>> 16), ...u16be(n & 0xffff)];
-
-function png(width: number, height: number): Uint8Array {
-  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  return bytes(
-    signature,
-    u32be(13),
-    'IHDR',
-    u32be(width),
-    u32be(height),
-    [8, 6, 0, 0, 0],
-    [0, 0, 0, 0],
-  );
-}
-
-function jpeg(width: number, height: number, { noFrame = false } = {}): Uint8Array {
-  const app0 = bytes([0xff, 0xe0], u16be(16), 'JFIF\0', [1, 1, 0, 0, 1, 0, 1, 0, 0]);
-  const sof0 = bytes(
-    [0xff, 0xc0],
-    u16be(17),
-    [8],
-    u16be(height),
-    u16be(width),
-    [3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1],
-  );
-  const sos = bytes([0xff, 0xda], u16be(12), [3, 1, 0, 2, 0x11, 3, 0x11, 0, 0x3f, 0]);
-  return bytes([0xff, 0xd8], app0, noFrame ? [] : sof0, sos, [0, 0, 0xff, 0xd9]);
-}
-
-function gif(width: number, height: number): Uint8Array {
-  return bytes('GIF89a', u16le(width), u16le(height), [0, 0, 0], [0x3b]);
-}
-
-function riff(chunk: string, payload: Uint8Array): Uint8Array {
-  return bytes('RIFF', u32le(payload.length + 12), 'WEBP', chunk, u32le(payload.length), payload);
-}
-
-function webpVp8(width: number, height: number): Uint8Array {
-  return riff('VP8 ', bytes([0x10, 0x02, 0], [0x9d, 0x01, 0x2a], u16le(width), u16le(height)));
-}
-
-function webpVp8l(width: number, height: number): Uint8Array {
-  const bits = ((width - 1) | ((height - 1) << 14)) >>> 0;
-  return riff('VP8L', bytes([0x2f], u32le(bits), [0, 0, 0]));
-}
-
-function webpVp8x(width: number, height: number): Uint8Array {
-  return riff('VP8X', bytes([0, 0, 0, 0], u24le(width - 1), u24le(height - 1)));
-}
-
-function svg(): Uint8Array {
-  return bytes(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>1</script></svg>',
-  );
-}
-
-/** A fake DNS: names map to answers; anything else fails like ENOTFOUND. Every call is recorded. */
-function dns(table: Record<string, string[]>) {
-  const calls: string[] = [];
-  const resolve: Resolver = async host => {
-    calls.push(host);
-    const answers = table[host];
-    if (!answers) throw Object.assign(new Error('not found'), { code: 'ENOTFOUND' });
-    return answers.map(address => ({ address, family: address.includes(':') ? 6 : 4 }));
-  };
-  return { resolve, calls };
-}
-
-const NAMES = {
-  'img.example': [PUBLIC],
-  'img.example.': [PUBLIC],
-  'cdn.example': ['1.1.1.1'],
-  'v6.example': ['2606:4700::1111'],
-  'metadata.google.internal': ['169.254.169.254'],
-  'mixed.example': [PUBLIC, '10.0.0.1'],
-  'mixed6.example': ['2606:4700::1111', 'fd00::1'],
-  'mapped.example': ['::ffff:127.0.0.1'],
-  'nat64.example': ['64:ff9b::a9fe:a9fe'],
-  'empty.example': [],
-  'private.example': ['192.168.1.20'],
-};
-
-function chunks(body: Uint8Array | Uint8Array[]): AsyncIterable<Uint8Array> {
-  const list = Array.isArray(body) ? body : [body];
-  return (async function* () {
-    yield* list;
-  })();
-}
-
-function reply(
-  status: number,
-  body: Uint8Array | Uint8Array[] = new Uint8Array(),
-  extra: Partial<UpstreamResponse> = {},
-): UpstreamResponse {
-  return { status, body: chunks(body), close: () => undefined, ...extra };
-}
-
-const redirect = (location: string) => reply(302, new Uint8Array(), { location });
-
-/** A fake connector: every call records its pinned target and gets the handler's answer. */
-function upstream(handler: (target: PinnedTarget, n: number) => UpstreamResponse) {
-  const targets: PinnedTarget[] = [];
-  const connect: Connector = async target => {
-    targets.push(target);
-    return handler(target, targets.length);
-  };
-  return { connect, targets };
-}
-
-function proxyWith(
-  handler: (target: PinnedTarget, n: number) => UpstreamResponse,
-  extra: ImageProxyOptions = {},
-) {
-  const resolver = dns(NAMES);
-  const server = upstream(handler);
-  const proxy = createImageProxy({ resolve: resolver.resolve, connect: server.connect, ...extra });
-  return { proxy, resolver, server };
-}
-
-const run = (signal = new AbortController().signal) => ({ token: 't1', signal });
-const refusedAs = (reason: ImageRefusal): ProxiedImage => ({ kind: 'refused', reason });
+import {
+  parseTarget,
+  pinTarget,
+  type PinnedTarget,
+  type Resolver,
+} from '../../src/host/proxy/resolve';
+import {
+  MAX_IN_FLIGHT,
+  PER_TOKEN_BYTES,
+  proxyLimits,
+  tokenBudget,
+  TRACKED_TOKENS,
+} from '../../src/host/proxy/limits';
+import {
+  dns,
+  NAMES,
+  png,
+  jpeg,
+  gif,
+  webpVp8,
+  webpVp8l,
+  webpVp8x,
+  svg,
+  reply,
+  redirect,
+  upstream,
+  proxyWith,
+  run,
+  refusedAs,
+  PUBLIC,
+} from './proxy-fixtures';
 
 // --- The classifier ---------------------------------------------------------------------------------------------
 
@@ -185,6 +76,13 @@ const REFUSED_ADDRESSES: [string, string][] = [
   ['TEST-NET-3', '203.0.113.1'],
   ['6to4 relay anycast', '192.88.99.1'],
   ['AS112', '192.31.196.1'],
+  ['AS112, top of /24', '192.31.196.255'],
+  ['AMT 192.52.193/24', '192.52.193.1'],
+  ['AMT 192.52.193/24, bottom', '192.52.193.0'],
+  ['direct delegation AS112 192.175.48/24', '192.175.48.1'],
+  ['direct delegation AS112 192.175.48/24, top', '192.175.48.255'],
+  ['mapped AMT', '::ffff:192.52.193.1'],
+  ['mapped direct delegation AS112', '::ffff:192.175.48.1'],
   ['reserved 240/4', '240.0.0.1'],
   ['limited broadcast', '255.255.255.255'],
   ['documentation v6', '2001:db8::1'],
@@ -249,6 +147,10 @@ const ALLOWED_ADDRESSES: [string, string, 4 | 6][] = [
   ['172.32.0.1', '172.32.0.1', 4],
   ['192.169.0.1', '192.169.0.1', 4],
   ['198.20.0.1', '198.20.0.1', 4],
+  ['192.52.192.255', '192.52.192.255', 4],
+  ['192.52.194.0', '192.52.194.0', 4],
+  ['192.175.47.255', '192.175.47.255', 4],
+  ['192.175.49.0', '192.175.49.0', 4],
   ['223.255.255.254', '223.255.255.254', 4],
   ['2606:4700::1111', '2606:4700::1111', 6],
   ['[2606:4700::1111]', '2606:4700::1111', 6],
@@ -302,6 +204,25 @@ const REFUSED_URLS: [string, ImageRefusal][] = [
   ['http://localhost./', 'address'],
   ['http://tracker.localhost/', 'address'],
   ['http://metadata.google.internal/computeMetadata/v1/', 'address'],
+  ['http://intranet/', 'address'],
+  ['http://intranet./', 'address'],
+  ['http://printer.local/', 'address'],
+  ['http://printer.local./', 'address'],
+  ['http://nas.lan/', 'address'],
+  ['http://service.internal/', 'address'],
+  ['http://router.home.arpa/', 'address'],
+  ['http://home.arpa/', 'address'],
+  ['http://printer.local../', 'address'],
+  ['http://intranet../', 'address'],
+  ['http://a.internal.%2e/', 'address'],
+  ['http://x.home.arpa../', 'address'],
+  ['http://localhost../', 'address'],
+  ['http://tracker.localhost../', 'address'],
+  ['http://a..b.example/', 'address'],
+  ['http://.example.com/', 'address'],
+  ['http://img.example../', 'address'],
+  ['http://img.example.%2E/', 'address'],
+  ['http://LOCAL/', 'address'],
   ['http://mixed.example/', 'address'],
   ['http://mixed6.example/', 'address'],
   ['http://mapped.example/', 'address'],
@@ -335,6 +256,46 @@ for (const [url, reason] of REFUSED_URLS)
     const result = await pinTarget(url, IMAGE_PROXY_LIMITS.ports, dns(NAMES).resolve);
     assert.deepEqual(result, { ok: false, reason });
   });
+
+test('one trailing root dot on an ordinary name is still accepted, and resolved without it', async () => {
+  const resolver = dns({ 'example.com.': [PUBLIC] });
+  const result = await pinTarget(
+    'https://example.com./',
+    IMAGE_PROXY_LIMITS.ports,
+    resolver.resolve,
+  );
+  assert.ok(result.ok);
+  assert.equal(result.target.servername, 'example.com');
+  assert.equal(result.target.hostHeader, 'example.com.');
+  assert.deepEqual(resolver.calls, ['example.com.']);
+});
+
+test('an https-only caller has http refused as scheme before anything is resolved', async () => {
+  const resolver = dns(NAMES);
+  const ports = IMAGE_PROXY_LIMITS.ports;
+  const cases = [
+    'http://img.example/',
+    'http://8.8.8.8/',
+    'http://img.example:443/',
+    'ftp://img.example/',
+  ];
+  for (const url of cases)
+    assert.deepEqual(await pinTarget(url, ports, resolver.resolve, undefined, ['https']), {
+      ok: false,
+      reason: 'scheme',
+    });
+  assert.deepEqual(resolver.calls, []);
+  assert.equal(parseTarget('http://img.example/', ports, ['https']), 'scheme');
+  const secure = await pinTarget('https://img.example/', ports, resolver.resolve, undefined, [
+    'https',
+  ]);
+  assert.ok(secure.ok);
+  assert.deepEqual(resolver.calls, ['img.example']);
+  for (const url of ['http://img.example/', 'https://img.example/'])
+    assert.ok((await pinTarget(url, ports, resolver.resolve)).ok, `${url} by default`);
+  assert.equal(parseTarget('https://img.example/', ports, ['http']), 'scheme');
+  assert.equal(parseTarget('https://img.example/', ports, []), 'scheme');
+});
 
 test('a URL is pinned to the checked address, with the original name kept for Host and SNI', async () => {
   const resolver = dns(NAMES);
@@ -409,7 +370,7 @@ test('a resolver answering public and private is refused without connecting', as
 
 test('a metadata-style name resolving to 169.254.169.254 is refused without connecting', async () => {
   const { proxy, server } = proxyWith(() => reply(200, png(1, 1)));
-  const result = await proxy.fetch('http://metadata.google.internal/', run());
+  const result = await proxy.fetch('http://metadata.example/', run());
   assert.deepEqual(result, refusedAs('address'));
   assert.equal(server.targets.length, 0);
 });
@@ -621,7 +582,7 @@ test('redirect hops spend the budget too', async () => {
 });
 
 test('budgets track a bounded number of tokens, forgetting the oldest first', () => {
-  const budget = tokenBudget({ perToken: 1, maxTokens: 2 });
+  const budget = tokenBudget({ perToken: 1, perTokenBytes: 10, maxTokens: 2 });
   assert.equal(budget.take('a'), true);
   assert.equal(budget.take('b'), true);
   assert.equal(budget.take('a'), false);
@@ -685,6 +646,8 @@ test('limits can be tightened but never loosened', () => {
     { maxPixels: IMAGE_PROXY_LIMITS.maxPixels + 1 },
     { timeoutMs: IMAGE_PROXY_LIMITS.timeoutMs + 1 },
     { perToken: 101 },
+    { perTokenBytes: PER_TOKEN_BYTES + 1 },
+    { maxInFlight: MAX_IN_FLIGHT + 1 },
     { maxTokens: TRACKED_TOKENS + 1 },
     { maxBytes: -1 },
     { timeoutMs: Number.NaN },
