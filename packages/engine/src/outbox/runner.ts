@@ -5,7 +5,9 @@ import type { SendReceipt, SubmissionPayload } from '../ports/provider';
 import type { DeadlineSource } from '../ports/time';
 import { dueSubmissions, type DueSubmission, type StoreReader } from '../store';
 import {
+  AUTH_COPY,
   NO_BYTES_COPY,
+  OFFLINE_COPY,
   OVERDUE_COPY,
   PAUSE_POLL_MS,
   transition,
@@ -114,11 +116,8 @@ function problemOf(error: ClassifiedError, now: number): SubmissionProblem {
     };
   const own = UNRETRYABLE[error.class];
   if (own) return { ...own, at: now };
-  return {
-    reasonCode: error.class === 'auth' ? 'auth.expired' : 'net.offline',
-    message: 'Your message was not sent. Check your connection, then try again.',
-    at: now,
-  };
+  if (error.class === 'auth') return { reasonCode: 'auth.expired', message: AUTH_COPY, at: now };
+  return { reasonCode: 'net.offline', message: OFFLINE_COPY, at: now };
 }
 
 /** The payload: the pinned MIME, plus the remote draft only when its synced copy is provably this revision (FR-7). */
@@ -147,15 +146,12 @@ function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): Submis
   // The remote copy leaves only under its own Message-ID, which `prepareSend` reused for this row when the copy was
   // synced at this revision. Any other draft would send under an id `findSent` could never find (a second copy).
   if (!draft?.remote_draft_id || draft.remote_internet_id !== row.internet_id) return payload;
-  payload.remoteDraftId = draft.remote_draft_id;
   // DECISION (time-2): Graph (`microsoft`) keeps a message's id across edits and the store has no change-key column
-  // for the submission, so the id alone cannot prove the remote copy is the pinned revision. For those accounts the
-  // outbox never sets baseRemoteMessageId or baseChangeKey: they always send the pinned MIME.
-  if (
-    draft.provider !== 'microsoft' &&
-    draft.synced_revision === row.revision &&
-    draft.remote_message_id
-  )
+  // for the submission, so neither the id nor the revision proves the remote copy is the pinned one. For those accounts
+  // the outbox never names the remote draft (nor baseRemoteMessageId / baseChangeKey): they always send the pinned MIME.
+  if (draft.provider === 'microsoft') return payload;
+  payload.remoteDraftId = draft.remote_draft_id;
+  if (draft.synced_revision === row.revision && draft.remote_message_id)
     payload.baseRemoteMessageId = draft.remote_message_id;
   return payload;
 }
@@ -280,7 +276,8 @@ function settlePaused(ctx: OutboxCtx, a: Attempt, error: PausedError) {
         from: ['sending'],
         to: a.waiting,
         ifAttemptAt: a.attemptAt,
-        set: { attemptAt: null },
+        // Back to the marker the row had before this attempt: an earlier attempt's bytes may be out there.
+        set: { attemptAt: a.row.attempt_at, attempted: extraOf(a.row).attempted === true },
       },
       { was: 'sending', why: 'paused' },
     ),
@@ -305,7 +302,7 @@ function commitMarker(ctx: OutboxCtx, row: SubmissionRow, attemptAt: number): bo
         from: [row.state],
         to: 'sending',
         ifNotBefore: row.not_before,
-        set: { attemptAt, problem: null },
+        set: { attemptAt, attempted: true, problem: null },
       },
       { was: row.state, why: 'due' },
     );
