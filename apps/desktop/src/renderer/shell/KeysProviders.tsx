@@ -2,7 +2,7 @@
  * The key-hint providers the shell mounts once (ui README "Keys"): `KeyHintsProvider` (tooltips, ⌘ held, or all) and
  * `CommandKeysProvider` (the registry's `describeKeys`, closed over the current context stack). They only describe keys.
  * Binding keys is the registry's resolver and the key listener, which are not mounted here. It also hands the toast
- * store a command runner over the same registry and stack, so a toast's Undo runs `app.undo`.
+ * store a command runner over the same registry and stack, so a toast's Undo runs `app.undo` unless it can undo its own operation.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
@@ -11,9 +11,9 @@ import {
   keyPrefsFromUi,
   type ContextName,
 } from '../commands';
-import { useSettings } from '../data';
+import { api, useSettings } from '../data';
 import { CommandKeysProvider, KeyHintsProvider, resolveShowKeys } from '../ui/buttons-keys';
-import { setToastCommandRunner, type Screen } from './index';
+import { setToastCommandRunner, setToastUndoRunner, type Screen } from './index';
 import { useShellKeys } from './keys-dispatch';
 import { ShellRegistryProvider, shellRegistryFor } from './ShellRegistry';
 import { getKeyLayers, layerConditions, shellStack, subscribeKeyLayers } from './store-keys';
@@ -21,6 +21,16 @@ import { getTarget } from './store-target';
 import { toastCommandRunner, toastContext } from './toast-runner';
 
 const META_KEY = 'Meta';
+
+/** A toast's Undo: undoes that toast's own operation (its id), not the newest change. True once the data layer took the request. */
+export function undoToastOperation(opId: string): boolean {
+  try {
+    api.operation.undo({ opId }).receipt.catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Whether ⌘ is down, for the held-key badges. Cleared when the window loses focus so it cannot stick. */
 function useCommandHeld(): boolean {
@@ -95,6 +105,10 @@ export function KeysProviders({ screen, sheetOpen, children }: KeysProvidersProp
     );
     return () => setToastCommandRunner(null);
   }, [registry, stack, prefs]);
+  useEffect(() => {
+    setToastUndoRunner(undoToastOperation);
+    return () => setToastUndoRunner(null);
+  }, []);
   const showKeys = resolveShowKeys({ all: ui?.keyHints === 'always', held });
   return (
     <ShellRegistryProvider value={shell}>
