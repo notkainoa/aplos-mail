@@ -268,6 +268,29 @@ export class GmailWorkflowTransport implements WorkflowTransport {
     }
   }
 
+  /**
+   * Gmail's receive time (`internalDate`) for a copy just put, from a minimal get (20 units): the lease's clock gate
+   * compares it with the writer's clock. Undefined when the message is gone or carries none.
+   */
+  async receivedAt(remoteId: string, ctx: AdapterContext): Promise<number | undefined> {
+    const client = new GmailClient(this.deps, ctx);
+    try {
+      const message = await client.call<RawMessage>({
+        method: 'gmail.messages.get',
+        path: `/messages/${encodeURIComponent(remoteId)}`,
+        format: 'minimal',
+        fields: 'id,internalDate',
+        lane: LANE,
+        item: remoteId,
+      });
+      const at = Number(message.internalDate ?? 0);
+      return at > 0 ? at : undefined;
+    } catch (error) {
+      if (is404(error)) return undefined;
+      throw error;
+    }
+  }
+
   /** One copy downloaded by id, without handing it to a round; undefined when it is gone or not an Aplos copy. */
   async readBack(remoteId: string, ctx: AdapterContext): Promise<WorkflowCopy | undefined> {
     const client = new GmailClient(this.deps, ctx);

@@ -11,7 +11,21 @@ export function manualClock(start = T0) {
   let timers: { at: number; fire: () => void; live: boolean }[] = [];
   const clock: Clock & { advance(ms: number): void; pending(): number } = {
     now: () => now,
-    sleep: ms => new Promise(resolve => clock.timer(now + ms, resolve)),
+    // Like the real clocks, an aborted sleep cancels its timer: the loop's and outbox's grace and timeout sleeps abort
+    // once their work settles, and must not read as pending timers afterwards.
+    sleep: (ms, signal) =>
+      new Promise((resolve, reject) => {
+        if (signal?.aborted) return reject(signal.reason);
+        const timer = clock.timer(now + ms, () => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve();
+        });
+        function onAbort() {
+          timer.cancel();
+          reject(signal!.reason);
+        }
+        signal?.addEventListener('abort', onAbort, { once: true });
+      }),
     timer(at, fire): Timer {
       const entry = { at, fire, live: true };
       timers.push(entry);

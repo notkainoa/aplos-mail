@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { SearchFieldProps } from '../props';
 import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
@@ -7,6 +7,18 @@ import { OperatorToken } from './OperatorToken';
 /** The fixed hint under an empty field (DESIGN §7.9). */
 export const SEARCH_HINT =
   'Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done';
+
+/** aria-controls must name an element that exists: true until the mounted page shows the results listbox is absent. */
+function useControlsRendered(id: string): boolean {
+  const [rendered, setRendered] = useState(true);
+  // After every commit, not on [id]: the results listbox may mount or unmount while the id stays the same. The
+  // state only changes when the answer does, so this settles after one extra render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setRendered(document.getElementById(id) !== null);
+  });
+  return rendered;
+}
 
 /**
  * The Search page field at `heading` size in the PageHead row, with a 2 px accent underline while it has focus
@@ -27,6 +39,8 @@ export function SearchField(props: SearchFieldProps) {
     onLeaveToList,
     inputRef,
   } = props;
+
+  const controls = useControlsRendered(resultsId);
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
@@ -55,8 +69,8 @@ export function SearchField(props: SearchFieldProps) {
           type="text"
           role="combobox"
           aria-label="Search mail"
-          aria-controls={resultsId}
-          aria-expanded={true}
+          aria-controls={controls ? resultsId : undefined}
+          aria-expanded={controls}
           aria-autocomplete="list"
           placeholder="Search mail"
           autoComplete="off"

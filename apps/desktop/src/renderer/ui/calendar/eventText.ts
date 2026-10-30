@@ -41,14 +41,13 @@ export function whenOf(event: CalendarEventData): string {
   return event.allDay ? 'all day' : rangeOf(event.start, event.end);
 }
 
-/** Accessible name of an entry: title, time, then its calendar or its status. */
+/** Accessible name of an entry: title, time, then its calendar or its status. A plan says "from mail" right after the
+ * title, in the order the outline draws it, so the name holds the visible text (WCAG 2.5.3). */
 export function eventLabel(event: CalendarEventData): string {
-  const parts = [event.title, whenOf(event)];
-  if (event.kind === 'plan') parts.push('found in mail, not added yet');
-  else {
-    parts.push(event.calendar.name);
-    if (event.unanswered) parts.push('invitation, not answered yet');
-  }
+  if (event.kind === 'plan')
+    return [event.title, 'from mail', whenOf(event), 'not added yet'].join(', ');
+  const parts = [event.title, whenOf(event), event.calendar.name];
+  if (event.unanswered) parts.push('invitation, not answered yet');
   return parts.join(', ');
 }
 

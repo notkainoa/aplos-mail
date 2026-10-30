@@ -130,3 +130,12 @@ body {
   background: var(--canvas);
   box-shadow: var(--elev-pane);
 }
+
+/* The whole shell (sidebar and pane) fills the window; the shell's own pane carries the margin. */
+.stage[data-frame='shell'] {
+  padding: 0;
+}
+
+.stage[data-frame='shell'] .aplos-shell {
+  height: 100%;
+}

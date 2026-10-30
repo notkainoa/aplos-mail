@@ -282,8 +282,9 @@ function deltaWrites(id: AccountId, result: StepResult, gen: number | undefined)
   return writes;
 }
 
-function syncStateWrites(id: AccountId, result: StepResult): StoreWrite[] {
-  return result.nextStates.map((s): StoreWrite => ({
+/** One `sync_state` row as a write, exactly as a step commits it (the lease's channel rounds use it too). */
+export function syncStateWrite(id: AccountId, s: SyncState): StoreWrite {
+  return {
     kind: 'syncState',
     accountId: id,
     scope: s.scope,
@@ -293,7 +294,11 @@ function syncStateWrites(id: AccountId, result: StepResult): StoreWrite[] {
     ...(s.phase !== undefined ? { phase: s.phase } : {}),
     ...(s.oldestLoaded !== undefined ? { oldestLoaded: s.oldestLoaded } : {}),
     ...(s.pending?.length ? { pending: s.pending } : {}),
-  }));
+  };
+}
+
+function syncStateWrites(id: AccountId, result: StepResult): StoreWrite[] {
+  return result.nextStates.map(s => syncStateWrite(id, s));
 }
 
 function sweepWrites(account: AdapterAccount, result: StepResult): StoreWrite[] {

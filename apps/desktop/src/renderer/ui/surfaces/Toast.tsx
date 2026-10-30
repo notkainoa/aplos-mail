@@ -133,7 +133,7 @@ export function Toast({
           onClick={() => onAction(action.id)}
         >
           <span>{action.label}</span>
-          <PartKeys chords={keysFor(action.commandId)} />
+          <PartKeys chords={keysFor(action.commandId ?? action.keysFrom)} />
         </button>
       ))}
     </div>

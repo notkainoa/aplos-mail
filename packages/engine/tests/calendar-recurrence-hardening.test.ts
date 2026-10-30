@@ -44,7 +44,8 @@ test('24 start times a day still expand, and a series from decades ago costs no 
   });
   assert.ok(r?.ok);
   assert.deepEqual(ids(r), ['20261027T120000Z', '20261027T130000Z', '20261027T140000Z']);
-  assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
+  // Alone this takes 20-70 ms; walking 8,000 years would take minutes, so the bound is loose enough for a loaded box.
+  assert.ok(ms < 5000, `took ${ms.toFixed(0)} ms`);
   const tooMany = expand({
     ...la('2026-01-01T00:00:00', `FREQ=WEEKLY;BYHOUR=${hours};BYMINUTE=0,30`),
     range: { from: 0, to: Date.UTC(2027, 0, 1) },
@@ -199,7 +200,8 @@ test('splitFollowing: a far-off id is answered at once, and a series running sin
     results.map(r => r.ok),
     [true, false],
   );
-  assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
+  // Alone this takes 20-70 ms; walking 8,000 years would take minutes, so the bound is loose enough for a loaded box.
+  assert.ok(ms < 5000, `took ${ms.toFixed(0)} ms`);
   const r = splitFollowing(s, '20261027T160000Z');
   assert.ok(r.ok, r.ok ? '' : r.reason);
   assert.equal(r.before.rrule, 'FREQ=DAILY;UNTIL=20261027T155959Z');
