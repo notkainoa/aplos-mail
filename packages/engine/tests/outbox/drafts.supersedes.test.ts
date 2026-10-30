@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT, fields, gate, SEC } from './helpers';
+import type { DraftFields } from '@aplos/contract';
+import { ACCOUNT, fields, gate, SEC, type World } from './helpers';
 import {
   CAP,
   edit,
@@ -306,6 +307,68 @@ test('body: html over the limit next to a text that fits leaves the draft incomp
       internetId: '<both@phone.example>',
     });
     assert.equal(syncOf(w, `${ACCOUNT}:both`).incomplete, true);
+  }));
+
+const WITH_FILE = [{ id: 'att-1', name: 'z.txt', mime: 'text/plain', size: 1 }];
+
+/** A synced draft, then an edit whose reply is lost (`uploading` stays set): the fact of the landed copy comes next. */
+async function lostUpdate(w: World, extra: Partial<DraftFields> = {}) {
+  const s = await synced(w, fields(extra));
+  w.remoteDrafts.script.push({ result: 'lost' });
+  edit(w, s.draft, fields({ subject: 'Second', ...extra }), true);
+  await wait(w, 1);
+  const attempt = w.remoteDrafts.saves.at(-1)!;
+  return {
+    s,
+    attempt,
+    ours: echoOf({ internetId: attempt.internetId, messageId: s.messageId }, { subject: 'Second' }),
+  };
+}
+
+test('supersedes: a draft with an attachment gets no proof from a fact that shows none (the phone may have removed it)', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w, { attachments: WITH_FILE });
+    fact(w, s.remoteDraftId, 'msg-d', ours);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId, 'the base did not move');
+  }));
+
+test('supersedes: a draft with a sign-off gets no proof either', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w, { signature: true });
+    fact(w, s.remoteDraftId, 'msg-d', ours);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('supersedes: a copy that says it has attachments gets no proof', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w);
+    fact(w, s.remoteDraftId, 'msg-d', { ...ours, hasAttachments: true });
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('supersedes: the same content from another sender address is not our copy', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w);
+    fact(w, s.remoteDraftId, 'msg-d', { ...ours, from: { address: 'alias@mail.example' } });
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      s.messageId,
+      'a changed From is a phone edit',
+    );
+  }));
+
+test('supersedes: a finished upload with an attachment gets no proof from the last synced fingerprint either', () =>
+  world(async w => {
+    const s = await synced(w, fields({ attachments: WITH_FILE }));
+    fact(w, s.remoteDraftId, 'msg-new', echoOf(s));
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId, 'the base did not move');
+  }));
+
+test('supersedes: without those, the same content from our own address still moves the base', () =>
+  world(async w => {
+    const { s, ours } = await lostUpdate(w);
+    fact(w, s.remoteDraftId, 'msg-c', ours);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg-c');
   }));
 
 test('body: an oversize text is dropped before it is escaped or wrapped, and the draft stays snippet-only', () =>
