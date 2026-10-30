@@ -5,14 +5,16 @@ import type { SendPort } from '../ports/engine';
  * delivers one Message-ID twice and never loses a message silently. They exist only in test builds.
  *
  * HOW THEY LEAVE THE RELEASE BUNDLE. `apps/desktop/scripts/build-main.mjs` sets the `__APLOS_TEST_MODE__` define to
- * `false` for a release build (`APLOS_RELEASE_BUILD=1`) and does not minify. esbuild folds a call site written exactly as
+ * `false` for a release build (`APLOS_RELEASE_BUILD=1`), and a release build minifies SYNTAX only (`syntaxOptions` in
+ * `apps/desktop/scripts/build-options.mjs`: no renaming, whitespace kept). esbuild folds a call site written exactly as
  *
  *     if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__) killpoint(KP.AFTER_MARKER);
  *
- * to `if (false) killpoint(KP.AFTER_MARKER)`, leaves the dead statement's text in a non-minified bundle, and drops every
- * declaration only that dead text refers to: `killpoint`, `killableSend`, the hook and `KP` itself. The name strings
+ * to `if (false) killpoint(KP.AFTER_MARKER)`, minifySyntax then removes that dead statement, and every declaration only
+ * the dead text referred to goes with it: `killpoint`, `killableSend`, the hook and `KP` itself (a build without syntax
+ * minification would keep the dead text, which is why `release-grep.test.ts` builds with `syntaxOptions`). The name strings
  * (`'after-marker'`...) live only in `KP` below, so they are not in the bundle. The call sites must therefore (1) test
- * the define inline (a `const KILLPOINTS` imported from here would survive an unminified build) and (2) name a point
+ * the define inline (a `const KILLPOINTS` imported from here would survive a build without whole-program minification) and (2) name a point
  * through `KP.SOME_CONSTANT`, never a string literal (a literal at a dead call site would stay in the output). Without
  * the define (tests under tsx, a dev build) the `typeof` guard makes them live, and without an installed hook they do
  * nothing. The hook is installed only by test code (`tests/outbox/killpoint-child.ts`), which also reads the
@@ -23,7 +25,8 @@ import type { SendPort } from '../ports/engine';
  * process entry) keep every kill point live and their names in the output, unless that bundle defines
  * `__APLOS_TEST_MODE__` false for a release build the way `build-main.mjs` does. A new bundle must define it;
  * `release-grep.test.ts` proves a bundle without the define keeps the names and checks the one define we ship.
- * `tests/outbox/release-grep.test.ts` builds the engine the way the release does and greps for every name.
+ * `tests/outbox/release-grep.test.ts` builds the engine the way the release does and requires none of the names, the
+ * environment variable or the canary identifiers in it.
  */
 declare global {
   const __APLOS_TEST_MODE__: boolean | undefined;
