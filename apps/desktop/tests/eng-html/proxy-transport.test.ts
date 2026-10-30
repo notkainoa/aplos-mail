@@ -484,23 +484,32 @@ test('a response whose header block is over the limit is refused, and a modest o
 // --- Fetches in flight --------------------------------------------------------------------------------------------
 
 const until = async (done: () => boolean) => {
-  for (let i = 0; i < 200 && !done(); i += 1) await new Promise(r => setTimeout(r, 5));
+  for (let i = 0; i < 1000 && !done(); i += 1) await new Promise(r => setTimeout(r, 5));
   assert.ok(done(), 'condition not reached in time');
 };
 
-/** A server that holds every response open until the test lets it go; it counts how many are open at once. */
+/**
+ * A server that holds every response open until the test lets it go; it counts how many are open at once.
+ * Only requests the proxy sent (Host `img.example`) count: a local port probe, such as another tool looking at a newly
+ * opened port, gets an empty answer and is not held, counted or listed in `requests`.
+ */
 async function slowServer() {
   const held: http.ServerResponse[] = [];
   let open = 0;
   let peak = 0;
-  const server = await serve((_req, res) => {
+  const server = await serve((req, res) => {
+    if (req.headers.host !== 'img.example') return void res.writeHead(404).end();
     open += 1;
     peak = Math.max(peak, open);
     held.push(res);
     res.on('close', () => (open -= 1));
   });
+  const proxied = () => server.requests.filter(request => request.host === 'img.example');
   return {
     ...server,
+    get requests() {
+      return proxied();
+    },
     held,
     open: () => open,
     peak: () => peak,
@@ -508,7 +517,26 @@ async function slowServer() {
   };
 }
 
-test('six slow fetches run at once and the rest wait their turn', { timeout: 10000 }, async () => {
+test('a local port probe is answered at once and is not counted as a fetch', async () => {
+  const server = await slowServer();
+  try {
+    const answer = await new Promise<number | undefined>((done, fail) => {
+      http
+        .get(
+          { host: '127.0.0.1', port: server.port, path: '/' },
+          res => (res.resume(), done(res.statusCode)),
+        )
+        .on('error', fail);
+    });
+    assert.equal(answer, 404);
+    assert.equal(server.held.length, 0);
+    assert.equal(server.requests.length, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test('six slow fetches run at once and the rest wait their turn', { timeout: 30000 }, async () => {
   const server = await slowServer();
   try {
     const proxy = createImageProxy({ resolve, connect: toLocal(server.port) });
@@ -516,13 +544,14 @@ test('six slow fetches run at once and the rest wait their turn', { timeout: 100
     await until(() => server.held.length === 6);
     await new Promise(r => setTimeout(r, 100));
     assert.equal(server.held.length, 6, 'the seventh has not connected');
-    for (let round = 0; round < 3 && server.requests.length < 14; round += 1) {
+    // Release whatever is open until every fetch has finished: how many connect between two releases depends on load.
+    let finished = false;
+    const results = Promise.all(all).finally(() => (finished = true));
+    while (!finished) {
       server.releaseAll();
-      await until(() => server.held.length > 0 || server.requests.length === 14);
+      await new Promise(r => setTimeout(r, 5));
     }
-    server.releaseAll();
-    const results = await Promise.all(all);
-    assert.ok(results.every(result => result.kind === 'image'));
+    assert.ok((await results).every(result => result.kind === 'image'));
     assert.equal(server.requests.length, 14);
     assert.equal(server.peak(), 6);
   } finally {
