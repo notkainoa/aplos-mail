@@ -156,6 +156,10 @@ export const IMAGE_PROXY_LIMITS = {
  * original name as SNI and `Host` (no second lookup, so a rebinding resolver cannot swap it); follow redirects by hand,
  * each one re-checked from scratch; send no cookies, credentials, `Referer` or client headers; check the type from the
  * bytes, not `Content-Type`. Never throws for a refusal: it resolves `refused`, and aborts with `signal`.
+ *
+ * The `img/<n>` route that serves the result (`Mail/serve`, not written yet) MUST answer with `Content-Type` set from the
+ * sniffed `mime` (never from the sender), `X-Content-Type-Options: nosniff`, and no header taken from the remote
+ * response. Do the same for every route that serves bytes a stranger chose.
  */
 export interface ImageProxy {
   fetch(url: string, opts: { token: string; signal: AbortSignal }): Promise<ProxiedImage>;
@@ -183,6 +187,8 @@ export interface UnsubscribePort {
   run(request: {
     from: string;
     headers: ListHeaders;
+    /** The caller's `opId` for this attempt, when it sent one; the same value on a retry. Not a secret. */
+    opId?: string;
     signal: AbortSignal;
   }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
 }
