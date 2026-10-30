@@ -376,3 +376,48 @@ test('stop() leaves no listener, no source and no timer behind', async () => {
   assert.equal(w.clock.pending(), 0);
   w.close();
 });
+
+// ------------------------------------------------------------------ banner text is plain and short
+
+function claimedOne(from: { address: string; name?: string }, subject: string) {
+  const w = world();
+  w.setup(true);
+  w.commit('incremental', [mail('m1', { from, subject })]);
+  const [item] = w.notes.service.claim();
+  w.close();
+  return item!;
+}
+
+test('bidi, zero-width, BOM and soft-hyphen characters are stripped from the subject', () => {
+  const subject = '‮Report‬ ⁦for⁩ ‍you​﻿ to­day‏';
+  const item = claimedOne({ address: 'a@mail.example', name: 'Ann' }, subject);
+  assert.equal(item.body, 'Report for you today');
+});
+
+test('the sender name is cleaned the same way', () => {
+  const item = claimedOne({ address: 'a@mail.example', name: '‮evil​﻿⁦ Ann­\n' }, 'Hi');
+  assert.equal(item.title, 'evil Ann');
+});
+
+test('a 5,000-character subject becomes a 200-character body', () => {
+  const item = claimedOne({ address: 'a@mail.example', name: 'Ann' }, 'word '.repeat(1000));
+  assert.ok(item.body!.length <= 200);
+  assert.ok(item.body!.length >= 199);
+  assert.ok(!item.body!.endsWith(' '), 'it does not end on a space');
+});
+
+test('an emoji at the body boundary is kept whole or dropped, never split', () => {
+  const at199 = claimedOne({ address: 'a@mail.example', name: 'Ann' }, `${'x'.repeat(199)}😀tail`);
+  assert.equal(at199.body, `${'x'.repeat(199)}😀`);
+  assert.equal([...at199.body!].length, 200);
+  const at200 = claimedOne({ address: 'a@mail.example', name: 'Ann' }, `${'x'.repeat(200)}😀`);
+  assert.equal(at200.body, 'x'.repeat(200));
+  for (const body of [at199.body!, at200.body!]) {
+    assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(body));
+  }
+});
+
+test('the title keeps its own limit of 500 characters', () => {
+  const item = claimedOne({ address: 'a@mail.example', name: 'N'.repeat(900) }, 'Hi');
+  assert.equal(item.title.length, 500);
+});

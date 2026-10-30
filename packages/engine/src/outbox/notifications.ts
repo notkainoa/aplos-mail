@@ -43,7 +43,8 @@ export const BADGE_DEBOUNCE_MS = 250;
 export const DEFAULT_CLAIM = 20;
 
 const TITLE_MAX = 500;
-const BODY_MAX = 1_000;
+/** The subject goes into an OS banner, which shows a line or two; the contract would allow 1,000. */
+const BODY_MAX = 200;
 const MAIL_PREFIX = 'mail:';
 
 export type AckState = 'posted' | 'dropped';
@@ -293,15 +294,22 @@ interface ClaimedRow {
   [k: string]: string | number | null;
 }
 
+/**
+ * Plain, one-line text for an OS banner: control characters become spaces, format characters (bidi overrides and
+ * isolates, zero-width, BOM, soft hyphen) are removed, whitespace collapses. The clamp counts code points, so a
+ * surrogate pair is never split.
+ */
 const flat = (s: string | null | undefined, max: number) =>
   [
     ...(s ?? '')
       .replace(/\p{Cc}+/gu, ' ')
+      .replace(/\p{Cf}+/gu, '')
       .replace(/\s+/g, ' ')
       .trim(),
   ]
     .slice(0, max)
-    .join('');
+    .join('')
+    .trimEnd();
 
 /** The contract allows a sender and a subject, nothing from the body. */
 export function itemOf(row: ClaimedRow): NotificationItem {
