@@ -379,10 +379,19 @@ export function deadlinesChanged(deps: CommandDeps, writes: readonly StoreWrite[
   const patches = writes.flatMap(w => (w.kind === 'workflow' ? [w.patch] : []));
   for (const [id, fields] of DEADLINE_FIELDS) {
     if (!patches.some(patch => fields.some(f => f in patch))) continue;
-    try {
-      deps.deadlines.changed(id);
-    } catch {
-      // The sources re-read every minute anyway.
-    }
+    tell(deps, id);
+  }
+  // Read state or folder membership moved (flags, trash, labels, restore): the Dock badge may have changed.
+  if (writes.some(w => MAIL_EDITS.has(w.kind))) tell(deps, 'notifications');
+}
+
+/** Write kinds that edit a message's seen flag or folders (an op row carries the local edit; undo writes it directly). */
+const MAIL_EDITS: ReadonlySet<string> = new Set(['op', 'flags', 'placements']);
+
+function tell(deps: CommandDeps, id: string): void {
+  try {
+    deps.deadlines.changed(id);
+  } catch {
+    // The sources re-read on their own schedule anyway.
   }
 }
