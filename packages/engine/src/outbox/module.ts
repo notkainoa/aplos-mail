@@ -1,8 +1,10 @@
 import type { State, Submission, SubmissionAction } from '@aplos/contract';
-import type { CommitExtension } from '../store';
+import type { EngineServices, LaneModule } from '../runtime/services';
+import type { CommitExtension } from '../store/port';
+import { STOP_GRACE_MS } from '../clock/loop';
 import type { OutboxCtx, OutboxDeps } from './context';
 import { outboxSource } from './runner';
-import { applyStartRule } from './start';
+import { applyStartRule, recheckUncertain } from './start';
 import { outboxExtension } from './store';
 import { getSubmissions, setSubmission, type SetResult } from './submissions';
 
@@ -24,24 +26,25 @@ export interface OutboxService {
   pending(): OutboxPending;
 }
 
+declare module '../runtime/services' {
+  interface EngineServices {
+    /** The send state machine (time-2): `Submission/get|set` and `Outbox/pending`. */
+    outbox: OutboxService;
+  }
+}
+
 export interface OutboxModule {
   service: OutboxService;
   /** Pass to `openStore({ extensions })`; the same value as `outboxExtension`. */
   extension: CommitExtension;
   /** Launch: the start rule turns every lost `sending` row `uncertain` before anything sends. */
   start(): void;
-  /** The Mac woke or the network returned: pauses are re-asked and the start rule runs again. */
+  /** The Mac woke or the network returned: pauses are re-asked and lost rows are recovered at once. */
   wake(): void;
-  /** Unregisters the deadline source. */
-  stop(): void;
+  /** Unregisters the deadline source and lets a send already running settle, for at most `STOP_GRACE_MS`. */
+  close(): Promise<void>;
   /** Resolves once no send or `findSent` of this instance is running (tests and quit). */
   idle(): Promise<void>;
-}
-
-declare module '../methods/types' {
-  interface EngineServices {
-    outbox: OutboxService;
-  }
 }
 
 function pendingOf(ctx: OutboxCtx): OutboxPending {
@@ -67,6 +70,10 @@ function pendingOf(ctx: OutboxCtx): OutboxPending {
   });
 }
 
+async function settled(ctx: OutboxCtx) {
+  while (ctx.busy.size) await Promise.all([...ctx.busy.values()]);
+}
+
 /**
  * The outbox (time-2): the submission state machine, its `outbox` deadline source and the service its handlers use.
  * Open the store with `outboxExtension` first, then build this over it; the runtime calls `start()` at launch and
@@ -79,7 +86,6 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     busy: new Map(),
     inflight: new Set(),
     paused: new Map(),
-    startRulePending: true,
   };
   const unregister = deps.deadlines.register(outboxSource(ctx));
   const service: OutboxService = {
@@ -95,6 +101,7 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     extension: outboxExtension,
     start() {
       applyStartRule(ctx);
+      recheckUncertain(ctx);
       ctx.deadlines.changed('outbox');
     },
     wake() {
@@ -102,9 +109,40 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       applyStartRule(ctx);
       ctx.deadlines.changed('outbox');
     },
-    stop: unregister,
-    async idle() {
-      while (ctx.busy.size) await Promise.all([...ctx.busy.values()]);
+    async close() {
+      unregister();
+      const abort = new AbortController();
+      const grace = ctx.clock.sleep(STOP_GRACE_MS, abort.signal).catch(() => {});
+      await Promise.race([settled(ctx), grace]);
+      abort.abort();
     },
+    idle: () => settled(ctx),
+  };
+}
+
+/**
+ * Seam 1: lane `eng-time`'s outbox module, imported by the composition root (`src/index.ts`) from this fixed path.
+ * It registers the `outbox` deadline source with the timer loop the clock module provides and serves the `submission`
+ * and `outbox` areas. Drafts (time-3) and notifications (time-5) join this module later.
+ */
+export const lane = 'eng-time';
+
+/** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
+export const extensions: readonly CommitExtension[] = [outboxExtension];
+
+/** Builds the outbox once the core services exist; runs once, in the root's fixed order, after the clock module. */
+export function createModule(services: EngineServices): LaneModule {
+  const outbox = createOutboxModule({
+    store: services.store,
+    send: services.send,
+    clock: services.clock,
+    deadlines: services.deadlines,
+    log: services.log,
+    randomBytes: services.randomBytes,
+  });
+  return {
+    services: { outbox: outbox.service },
+    start: () => outbox.start(),
+    stop: () => outbox.close(),
   };
 }
