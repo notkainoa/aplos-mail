@@ -198,6 +198,8 @@ export interface GmailServerOptions {
   serverClockOffsetMs?: number;
   /** The search shows a delivery only this long after the send request arrived (engine time). Default: at once. */
   lagMs?: number;
+  /** The same for the label listing (`labelIds=SENT`, no `q`): the `findSent` fallback sees the delivery only this late. */
+  listingLagMs?: number;
   /** Plant a DRAFT carrying the outgoing Message-ID when the send request arrives (the "Sent only, never a draft" rule). */
   draftTwin?: boolean;
 }
@@ -239,6 +241,7 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
     sendAt: Number.POSITIVE_INFINITY,
     errors: [],
     lagMs: options.lagMs,
+    listingLagMs: options.listingLagMs,
   };
   const server = createServer((req, res) => {
     void answer(bridge, req, res, state);
@@ -271,6 +274,7 @@ interface ServerState {
   /** Engine time of the first send request (the search lag counts from it). */
   sendAt: number;
   lagMs: number | undefined;
+  listingLagMs: number | undefined;
   errors: string[];
   breakNext?: Error;
 }
@@ -317,7 +321,8 @@ async function answer(bridge: UploadBridge, req: Req, res: Res, state: ServerSta
     const method = req.method ?? 'GET';
     if (isSendRequest(url.pathname, method, url.searchParams) && state.sendAt > now)
       state.sendAt = now;
-    const hidden = state.lagMs !== undefined && now < state.sendAt + state.lagMs;
+    const lagging = (lagMs: number | undefined) =>
+      lagMs !== undefined && now < state.sendAt + lagMs;
     if (state.breakNext) {
       const error = state.breakNext;
       state.breakNext = undefined;
@@ -330,7 +335,9 @@ async function answer(bridge: UploadBridge, req: Req, res: Res, state: ServerSta
     });
     const body = Buffer.from(await reply.arrayBuffer());
     res.writeHead(reply.status, forwardedBack(reply.headers));
-    res.end(hidden && isSearch(url) ? withoutHits(body) : body);
+    const hidden =
+      (isSearch(url) && lagging(state.lagMs)) || (isListing(url) && lagging(state.listingLagMs));
+    res.end(hidden ? withoutHits(body) : body);
   } catch (error) {
     fail(req, res, error, state);
   }
@@ -353,7 +360,13 @@ function fail(req: Req, res: Res, error: unknown, state: ServerState) {
 
 const isSearch = (url: URL) => /\/messages$/.test(url.pathname) && url.searchParams.has('q');
 
-/** A search that does not show the message yet: the index lags. */
+/** The label listing the `findSent` fallback reads: `messages.list` by `labelIds`, with no `q`. */
+const isListing = (url: URL) =>
+  /\/messages$/.test(url.pathname) &&
+  !url.searchParams.has('q') &&
+  url.searchParams.has('labelIds');
+
+/** A search or listing that does not show the message yet: the index lags. */
 function withoutHits(body: Buffer): Buffer {
   const json = JSON.parse(body.toString('utf8')) as Record<string, unknown>;
   delete json.messages;
