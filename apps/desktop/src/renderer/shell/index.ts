@@ -1,8 +1,8 @@
 /**
  * The shell surface other lanes call (F9, frozen on day 3; DESIGN 6, 7.1, 7.9; plan 30 4.2, 4.5).
  *
- * Signatures only. Lane `ui-shell` implements them on days 4-11; until then every function
- * throws `NotImplementedError` naming that lane. After the freeze, changes are additive only.
+ * Lane `ui-shell` implements them on module-level stores (`store-*.ts`); React reads them with
+ * `useSyncExternalStore`. After the freeze, changes are additive only.
  *
  * What lives here: the sheet host (one reconnect or consent sheet at a time, opened from the
  * status slot, Settings or Ask), the command target screens set for the palette's context
@@ -10,12 +10,43 @@
  * stay in `renderer/data`; keys and the palette's entries stay in `renderer/commands`.
  */
 
-import type { SettingRoute, TargetSummary } from '../commands';
-import type { AccountId, AiProviderId } from '../data';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { addTargetSlot, getTarget, subscribeTarget } from './store-target';
+import type { TargetSlot } from './store-target';
+import type { RefObject } from 'react';
+import {
+  getSheet,
+  hideSheet,
+  registerSheetCancel,
+  setSheetOpener,
+  showSheet,
+  subscribeSheet,
+} from './store-sheet';
+import { addToast, getToasts, patchToast, removeToast, subscribeToasts } from './store-toast';
+import {
+  getRoute,
+  getScreen,
+  setRoute,
+  setScreen,
+  subscribeRoute,
+  subscribeScreen,
+} from './store-route';
+import type { Screen } from './store-route';
+import type { RouteTarget } from './store-route';
+import { addKeyLayer, type KeyLayer } from './store-keys';
+import { getScope, setScope, subscribeScope } from './store-scope';
+import {
+  getOpenThread,
+  OPEN_THREAD_SCREEN,
+  setOpenThread,
+  subscribeOpenThread,
+} from './store-thread';
+import type { ContextName, SettingRoute, TargetSummary } from '../commands';
+import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
 
 // ---------------------------------------------------------------------------
-// Lane marker and the not-implemented error
+// Lane marker and the not-implemented error (kept for the frozen surface; nothing throws it now)
 // ---------------------------------------------------------------------------
 
 /** The lane that implements this surface (roadmap 2.3). */
@@ -37,10 +68,6 @@ export class NotImplementedError extends Error {
     this.name = 'NotImplementedError';
     this.member = member;
   }
-}
-
-function notImplemented(member: string): never {
-  throw new NotImplementedError(member);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,20 +113,25 @@ export type SheetArgsParam<K extends SheetName> =
  * nothing behind it answers. Focus returns to the opener when it closes.
  */
 export function openSheet<K extends SheetName>(name: K, ...args: SheetArgsParam<K>): void {
-  void name;
-  void args;
-  notImplemented('openSheet');
+  showSheet({ name, args: args[0] ?? {} } as OpenSheet);
 }
 
 /** Closes the open sheet (Cancel, Esc, or the flow finished: "Reconnected" toast); a no-op when none is open. */
 export function closeSheet(): void {
-  notImplemented('closeSheet');
+  hideSheet();
 }
 
 /** The open sheet, live; null when none. The shell's sheet slot renders ui-onboard's sheet for it. */
 export function useSheet(): OpenSheet | null {
-  return notImplemented('useSheet');
+  return useSyncExternalStore(subscribeSheet, getSheet, getSheet);
 }
+
+/** True while a sheet is open: the shell adds the modal `sheet` context to its key stack (`buildStack`) then. Additive. */
+export function useSheetContextActive(): boolean {
+  return useSheet() !== null;
+}
+
+export { registerSheetCancel, setSheetOpener };
 
 // ---------------------------------------------------------------------------
 // The command target (gap list U1, A12): what the palette's context line names
@@ -110,15 +142,35 @@ export function useSheet(): OpenSheet | null {
  * the reader sets its thread ("Drew Bell · October illustrations"), the calendar the open
  * event, Settings the focused account row. The innermost focused setter wins; null clears.
  * Compared by value (kind, id, title, detail), so an inline object never re-renders the shell.
+ *
+ * `options.region` (additive) is the ref of the element the component draws. Of the setters, the one whose region
+ * is the deepest to contain the focused element wins; without a region (or with focus outside every region) the
+ * latest-mounted setter wins.
  */
-export function useCommandTarget(target: TargetSummary | null): void {
-  void target;
-  notImplemented('useCommandTarget');
+export function useCommandTarget(
+  target: TargetSummary | null,
+  options?: { readonly region?: RefObject<HTMLElement | null> },
+): void {
+  const slot = useRef<TargetSlot | null>(null);
+  const region = options?.region;
+  useEffect(() => {
+    slot.current = addTargetSlot(region);
+    return () => {
+      slot.current?.remove();
+      slot.current = null;
+    };
+  }, [region]);
+  const { kind, id, title, detail } = target ?? {};
+  useEffect(() => {
+    slot.current?.set(
+      kind && id !== undefined && title !== undefined ? { kind, id, title, detail } : null,
+    );
+  }, [region, kind, id, title, detail]);
 }
 
 /** The current command target, live; the shell puts it in every `CommandContext` and the palette's context line (`contextLine`). */
 export function useCurrentTarget(): TargetSummary | null {
-  return notImplemented('useCurrentTarget');
+  return useSyncExternalStore(subscribeTarget, getTarget, getTarget);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,27 +185,35 @@ export interface PushedToast extends ToastData {
 
 /** Pushes a toast onto the shell's stack and returns its id. One operation, one notice: use the operation's opId as the id. Undo toasts are never silently replaced; the stack shows three. Navigation, saves and sync ticks never toast. */
 export function pushToast(toast: PushedToast): string {
-  void toast;
-  return notImplemented('pushToast');
+  return addToast(toast);
 }
 
 /** Rewords a toast in place as its operation moves on ("Archiving…" → "Done · Undo Z", DESIGN 7.13); a no-op when it has already closed. */
 export function updateToast(id: string, patch: Partial<Omit<PushedToast, 'id'>>): void {
-  void id;
-  void patch;
-  notImplemented('updateToast');
+  patchToast(id, patch);
 }
 
 /** Closes a toast early (its operation failed and an inline error took over, or Undo ran). */
 export function dismissToast(id: string): void {
-  void id;
-  notImplemented('dismissToast');
+  removeToast(id);
 }
 
 /** The live stack, newest last, for the shell's own ToastStack. Screens don't render toasts themselves. */
 export function useToasts(): readonly ToastData[] {
-  return notImplemented('useToasts');
+  return useSyncExternalStore(subscribeToasts, getToasts, getToasts);
 }
+
+export {
+  holdToast,
+  isUndoToast,
+  PLAIN_TOAST_MS,
+  releaseToast,
+  runToastAction,
+  setToastCommandRunner,
+  setToastUndoRunner,
+  TOAST_LIMIT,
+  UNDO_TOAST_MS,
+} from './store-toast';
 
 // ---------------------------------------------------------------------------
 // Routes (gap list U3, S15): Settings deep links from the palette and from Ask
@@ -164,6 +224,110 @@ export type ShellRoute = SettingRoute;
 
 /** Opens a route: for a setting entry's route, Settings on that section with the row scrolled into view and its control focused. The palette calls it for a `navigate` run result; Ask's "Use another provider" for `settings/ai`. */
 export function openRoute(route: ShellRoute): void {
-  void route;
-  notImplemented('openRoute');
+  setRoute(route);
+}
+
+/** The pending Settings deep link, live; null when none. Settings opens the section, scrolls the row in, focuses its control, then calls `consumeRoute(seq)`. Additive. */
+export function useSettingsTarget(): RouteTarget | null {
+  return useSyncExternalStore(subscribeRoute, getRoute, getRoute);
+}
+
+/** The pending route, live (same value as `useSettingsTarget`). Additive. */
+export function useRoute(): RouteTarget | null {
+  return useSettingsTarget();
+}
+
+/** The shell's current screen, live (default 'home'). Additive. */
+export function useAppRoute(): Screen {
+  return useSyncExternalStore(subscribeScreen, getScreen, getScreen);
+}
+
+/** Shows a screen. Additive. */
+export function navigate(screen: Screen): void {
+  setScreen(screen);
+}
+
+export { consumeRoute } from './store-route';
+export type { RouteTarget, Screen } from './store-route';
+
+// ---------------------------------------------------------------------------
+// The shared registry and key layers (additive): one CommandRegistry and one key listener for the app
+// ---------------------------------------------------------------------------
+
+export { useRegisterCommands, useShellRegistry } from './ShellRegistry';
+export type { CommandHandlerTable, ShellRegistry } from './ShellRegistry';
+export type { KeyLayer } from './store-keys';
+
+/**
+ * Adds contexts (such as Home's `lowImportance` sheet) and conditions (`remindOffer`) to the key stack while the calling
+ * component is mounted, on top of the shell's own (global, the screen, the open sheet). Later layers win a condition.
+ * The `sheet` context always stays last. Compared by value, so an inline object is fine.
+ */
+export function useShellKeyLayer(layer: KeyLayer): void {
+  const contexts = (layer.contexts ?? []).join(',');
+  const conditions = JSON.stringify(layer.conditions ?? {});
+  useEffect(
+    () =>
+      addKeyLayer({
+        contexts: contexts ? (contexts.split(',') as ContextName[]) : [],
+        conditions: JSON.parse(conditions) as KeyLayer['conditions'],
+      }),
+    [contexts, conditions],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The account scope (additive): what the sidebar's switcher selects
+// ---------------------------------------------------------------------------
+
+/** The account the switcher selects; null is All accounts. Counts in the sidebar and screens that scope their data follow it. */
+export function useAccountScope(): AccountId | null {
+  return useSyncExternalStore(subscribeScope, getScope, getScope);
+}
+
+/** Selects one account, or null for All accounts (what the AccountSwitcher's menu calls). */
+export function setAccountScope(accountId: AccountId | null): void {
+  setScope(accountId);
+}
+
+// ---------------------------------------------------------------------------
+// The open thread (additive): the reader lane renders it on the `{ label: 'thread' }` screen
+// ---------------------------------------------------------------------------
+
+/** Records `id` as the open thread and shows the `{ label: 'thread' }` screen (a placeholder until the reader lane renders it). */
+export function openThread(id: ThreadId): void {
+  setOpenThread(id);
+  setScreen(OPEN_THREAD_SCREEN);
+}
+
+/** Clears the open thread; the reader calls it when it closes. Does not navigate. */
+export function closeThread(): void {
+  setOpenThread(null);
+}
+
+/** The open thread's id, live; null when none. */
+export function useOpenThread(): ThreadId | null {
+  return useSyncExternalStore(subscribeOpenThread, getOpenThread, getOpenThread);
+}
+
+/** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
+export interface HomeShellProps {
+  readonly accountId: AccountId | undefined;
+  readonly onOpen: (id: ThreadId) => void;
+  readonly onOneByOne: () => void;
+}
+
+const ONE_BY_ONE_SCREEN = { label: 'one by one' } as const;
+
+/** The props Home needs from the shell: `<HomeScreen {...useHomeShellProps()} />`. Stable between scope changes. */
+export function useHomeShellProps(): HomeShellProps {
+  const scope = useAccountScope();
+  return useMemo(
+    () => ({
+      accountId: scope ?? undefined,
+      onOpen: openThread,
+      onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
+    }),
+    [scope],
+  );
 }

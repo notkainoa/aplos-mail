@@ -42,6 +42,7 @@ import {
   SettingsScene,
   StatusScene,
 } from './scenes.more';
+import { shellScenes } from './scenes.shell';
 
 export const registry = createAppRegistry();
 
@@ -619,4 +620,6 @@ export const scenes: Record<string, () => ReactElement> = {
   'onboarding-step': OnboardingScene,
   'onboarding-choice-group': ChoiceGroupScene,
   'progress-first-sync': FirstSyncScene,
+  // ui-shell
+  ...shellScenes,
 };
