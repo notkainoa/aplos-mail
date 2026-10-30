@@ -518,9 +518,10 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
   if (live) throw new DraftConflict('live', live.state);
   // The text of this draft never arrived: the copy is the other device's draft and is not this device's to delete.
   if (meta.incomplete) return deleteHidden(tx, w.id);
-  // A sent draft whose copy holds another device's version (a conflict, or an edit made while the send held the draft)
-  // forgets the copy: deleting it would delete that version, and on some providers the id is the sent message.
-  const theirs = (meta.conflict || meta.changedElsewhere) && sentAt(tx, row);
+  // A draft whose copy holds another device's version forgets the copy: deleting it would delete that version, and on
+  // some providers the id is the sent message. That is an edit made while a send held the draft (even when the owner then
+  // cancels the send and discards: the other device's copy is left alone, no conflict is asked), or a conflict on a sent draft.
+  const theirs = meta.changedElsewhere || (meta.conflict && sentAt(tx, row));
   const columns = theirs ? FORGET_REMOTE : {};
   if ((theirs || row.remote_draft_id === null) && !meta.uploading) return deleteHidden(tx, w.id);
   // Before the copy is known the removal waits for the upload's result, or for history to report the copy.
@@ -735,14 +736,15 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   const { fields, meta } = parseData(row.data);
   if (isEcho(w, row, meta)) return;
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
-  // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted.
+  // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
+  // includes a removal (the other device sent it): the id may now name its sent message.
   if (
     tx.get(
       `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,
       row.id,
     )
   )
-    return w.removed ? undefined : markChangedElsewhere(tx, row, fields, meta);
+    return markChangedElsewhere(tx, row, fields, meta);
   // The same version again is known, unless it brings what the conflict lacks (their body). A removal is always news:
   // the other device sent or deleted the copy, and its id must be forgotten.
   const known = meta.conflict;

@@ -168,6 +168,45 @@ test('N3: a phone edit during the undo hold does not get its copy deleted after 
     assert.equal(count(w), 0);
   }));
 
+test('N3: a phone edit during the undo hold, then the owner discards the draft: the phone’s only complete version is not deleted', () =>
+  world(async w => {
+    const s = await synced(w);
+    const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
+    const sub = w.send(w.first, s.draft.id, { revision: mine.revision });
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', html: '<p>Their body</p>' });
+    assert.equal(
+      syncOf(w, s.draft.id).conflict,
+      undefined,
+      'no conflict while the send holds the draft',
+    );
+    service(w).destroy(next(), s.draft.id);
+    assert.equal(w.get(sub.id).state, 'cancelled', 'discarding cancelled the send');
+    assert.equal(service(w).get([s.draft.id]).notFound.length, 1, 'gone from every reader');
+    await wait(w, 5 * MIN);
+    assert.equal(w.server.payloads.length, 0, 'nothing was sent');
+    assert.deepEqual(w.remoteDrafts.removeAttempts, [], 'the phone’s copy is left alone');
+    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId, theirId);
+    assert.equal(count(w), 0, 'no hidden row waiting to delete anything');
+  }));
+
+test('N3: history reports the draft removed (the phone sent it) during our live send: their sent message is not deleted after ours', () =>
+  world(async w => {
+    const s = await synced(w);
+    const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
+    w.send(w.first, s.draft.id, { revision: mine.revision });
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', removed: true });
+    await wait(w, 30 * SEC);
+    assert.equal(w.server.payloads.length, 1, 'the message was sent');
+    assert.deepEqual(
+      w.remoteDrafts.removeAttempts,
+      [],
+      'the id may now name the phone’s sent message',
+    );
+    assert.equal(count(w), 0);
+  }));
+
 test('N3: a sent draft whose copy nobody touched still has the copy deleted', () =>
   world(async w => {
     const s = await synced(w);
