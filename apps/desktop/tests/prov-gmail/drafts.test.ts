@@ -271,7 +271,7 @@ test('prov-gmail-drafts a 404 on update while the draft still exists is uncertai
 });
 
 test('prov-gmail-drafts a trashed draft is gone; a reply without labelIds is invalid, not "not a draft"', async () => {
-  const s = await setup();
+  const s = await setup({ adapter: { deleteDrafts: true } });
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
   const again = () =>
     s.upload(
@@ -363,7 +363,7 @@ test('prov-gmail-drafts a create that Gmail refused is not uncertain, and a 5xx 
 // ---- deleteDraft ----
 
 test('prov-gmail-drafts deleteDraft removes the copy; a missing draft is success with no delete request', async () => {
-  const s = await setup();
+  const s = await setup({ adapter: { deleteDrafts: true } });
   const first = saved(await s.r.adapter.saveDraft(s.upload(), s.r.ctx()));
   await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
   assert.equal(s.remoteDrafts().length, 0);
@@ -374,7 +374,7 @@ test('prov-gmail-drafts deleteDraft removes the copy; a missing draft is success
 });
 
 test('prov-gmail-drafts deleteDraft of a draft that was sent does nothing', async () => {
-  const s = await setup();
+  const s = await setup({ adapter: { deleteDrafts: true } });
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Out.' }), s.r.ctx()));
   const sentMessage = s.r.emu.mailbox.sendDraft(first.remoteDraftId);
   await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
@@ -506,7 +506,7 @@ test('prov-gmail-drafts a resumable session URI that is not Google over HTTPS is
 
 test('prov-gmail-drafts 429 pauses (throttle, zero requests while paused); 5xx on an update is transient and nothing is lost', async () => {
   const faults = createFaultInjector();
-  const s = await setup({ emulator: { faults } });
+  const s = await setup({ adapter: { deleteDrafts: true }, emulator: { faults } });
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
   const base = { remoteDraftId: first.remoteDraftId, baseRemoteMessageId: first.remoteMessageId };
 
@@ -571,7 +571,7 @@ test('prov-gmail-drafts a create refused with 429 stops: the engine learns of th
 // ---- PORT GAP 3 (closed by #153): removal is guarded by the expected message id ----
 
 test('prov-gmail-drafts deleteDraft without an expected message id never deletes and sends no request', async () => {
-  const s = await setup();
+  const s = await setup({ adapter: { deleteDrafts: undefined } });
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
   const { mime } = mimeOf(s.r.account.address, { body: 'Phone edit, newer than the last poll.' });
   s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);

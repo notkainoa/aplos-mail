@@ -13,7 +13,29 @@ export type PostResult = 'posted' | 'dropped';
 export interface NotificationLoopOptions {
   /** Where failures go. It gets a short fixed message and an error name, never notification text. */
   log?: (message: string, errorName?: string) => void;
+  /** Timer functions for the claim retry; tests pass fakes. Default: `setTimeout` (unref'd) and `clearTimeout`. */
+  timers?: RetryTimers;
 }
+
+export interface RetryTimers {
+  set(run: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const systemTimers: RetryTimers = {
+  set: (run, ms) => {
+    const handle = setTimeout(run, ms);
+    handle.unref?.();
+    return handle;
+  },
+  clear: handle => clearTimeout(handle as NodeJS.Timeout),
+};
+
+/** A failed claim is retried after this long, doubling per consecutive failure up to the cap. */
+const RETRY_MIN_MS = 5_000;
+const RETRY_MAX_MS = 5 * 60_000;
+export const retryDelay = (failures: number) =>
+  Math.min(RETRY_MAX_MS, RETRY_MIN_MS * 2 ** Math.max(0, failures - 1));
 
 /** The contract's limit for `Notification/claim` `max` and for the ids of one `Notification/ack`. */
 const BATCH = 50;
@@ -48,8 +70,9 @@ function chunks<T>(list: T[]): T[][] {
  *
  * One run drains in batches of 50 (`Notification/claim { max: 50 }` until a batch is short or empty), posts each item,
  * then acks the posted ids and the dropped ids, one call per state and at most 50 ids per call. Runs never overlap:
- * notifies that arrive during a run schedule exactly one more run after it. A failing claim is swallowed and tried
- * again at the next notify, not on a timer.
+ * notifies that arrive during a run schedule exactly one more run after it. A failing claim is swallowed and retried
+ * by one unref'd timer (5 s, doubling per consecutive failure, capped at 5 min); a claim that works resets the delay
+ * and a new run cancels the pending timer. The returned stop function clears it.
  *
  * Delivery is at least once with stable ids. A post that throws leaves its item unacked, so the engine offers it
  * again once its lease ends. An id this loop has posted is never posted again in this session, and an id whose ack
@@ -65,7 +88,10 @@ export function runNotificationLoop(
   options: NotificationLoopOptions = {},
 ): () => void {
   const log = options.log ?? (() => undefined);
+  const timers = options.timers ?? systemTimers;
   let active = true;
+  let failures = 0;
+  let retry: unknown;
   let running = false;
   let again = false;
   /** Acked, so never posted again. Insertion order is age; the oldest go first. */
@@ -107,14 +133,33 @@ export function runNotificationLoop(
     }
   };
 
+  const cancelRetry = () => {
+    if (retry === undefined) return;
+    timers.clear(retry);
+    retry = undefined;
+  };
+
+  /** One pending timer at most; it runs a whole new run, which may fail and arm the next, longer one. */
+  const armRetry = () => {
+    cancelRetry();
+    if (!active) return;
+    failures += 1;
+    retry = timers.set(() => {
+      retry = undefined;
+      if (active) void schedule();
+    }, retryDelay(failures));
+  };
+
   const batch = async (): Promise<number | undefined> => {
     let items: NotificationItem[];
     try {
       items = itemsOf(await session.call('Notification/claim', { max: BATCH }));
     } catch (error) {
-      log('Notification/claim failed; it is retried at the next notify', errorName(error));
+      log('Notification/claim failed; it is retried on a timer', errorName(error));
+      armRetry();
       return undefined;
     }
+    failures = 0;
     const outcomes: Settled = new Map();
     for (const i of items) if (active) await postOne(i, outcomes);
     for (const [id, state] of outcomes) unacked.set(id, state);
@@ -136,6 +181,7 @@ export function runNotificationLoop(
       return;
     }
     running = true;
+    cancelRetry();
     try {
       do {
         again = false;
@@ -152,6 +198,7 @@ export function runNotificationLoop(
   void schedule();
   return () => {
     active = false;
+    cancelRetry();
     unsubscribe();
   };
 }

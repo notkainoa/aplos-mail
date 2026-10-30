@@ -54,7 +54,7 @@ export async function setup(options: Parameters<typeof rig>[0] = {}): Promise<Se
   const bridge = new DraftBridge();
   const r = await rig({
     ...options,
-    adapter: { deleteDrafts: true, ...options.adapter, fetch: bridge.fetch },
+    adapter: { ...options.adapter, fetch: bridge.fetch },
   });
   bridge.attach(r.emu);
   let revision = 0;
