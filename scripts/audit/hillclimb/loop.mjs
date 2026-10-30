@@ -8,6 +8,7 @@
 // after stopAfterNoGain consecutive fruitless rounds or at roundLimit. At the end the kept
 // head is squashed into ONE commit on the best branch; everything else is removed.
 import { composeBrief } from './brief.mjs';
+import { defaults } from './config.mjs';
 import { checkDiff } from './diffguard.mjs';
 
 export function combinedScore(scorers, scoresByName) {
@@ -97,6 +98,10 @@ async function runAttempt(ctx, config, best, deps) {
       round: ctx.round,
     });
     const agent = await deps.runAttemptAgent(ctx, brief);
+    if (agent.logOverflow) {
+      rec.verdict = `rejected: agent log exceeded ${config.maxLogMB ?? defaults.maxLogMB} MB cap (process group killed)`;
+      return rec;
+    }
     if (agent.timedOut) {
       rec.verdict = `rejected: agent timed out after ${config.attempt.timeoutSec}s`;
       return rec;

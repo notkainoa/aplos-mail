@@ -63,7 +63,11 @@ function fakes(script = {}) {
     },
     async runAttemptAgent(ctx) {
       const b = at(ctx.id);
-      return { code: b.agentCode ?? 0, timedOut: b.agentTimedOut ?? false };
+      return {
+        code: b.agentCode ?? 0,
+        timedOut: b.agentTimedOut ?? false,
+        logOverflow: b.logOverflow ?? false,
+      };
     },
     async finalizeAttempt(ctx) {
       const b = at(ctx.id);
@@ -374,6 +378,16 @@ describe('runHillClimb', () => {
     const result = await runHillClimb(config, deps);
     assert.match(result.rounds[0].attempts[0].verdict, /agent exited 137/);
     assert.match(result.rounds[0].attempts[1].verdict, /uncommitted changes remain/);
+  });
+
+  it('rejects an attempt whose log overran the cap before judging exit code', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: { logOverflow: true, agentCode: null },
+      },
+    });
+    const result = await runHillClimb({ ...config, maxLogMB: 7 }, deps);
+    assert.match(result.rounds[0].attempts[0].verdict, /log exceeded 7 MB cap/);
   });
 
   it('stops after stopAfterNoGain consecutive fruitless rounds', async () => {

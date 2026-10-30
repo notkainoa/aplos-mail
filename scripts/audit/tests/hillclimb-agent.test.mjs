@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { rmSync } from 'node:fs';
+import { rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -284,6 +285,61 @@ describe('runLogged', () => {
     child.emit('close', 0, null);
     const res = await promise;
     assert.equal(res.code, 0);
+  });
+
+  it('kills the group and stops writing when the log passes maxLogBytes', async () => {
+    const child = fakeChild();
+    let killed = false;
+    child.kill = () => {
+      killed = true;
+    };
+    const capLog = join(tmpdir(), `hillclimb-cap-${process.pid.toString(36)}.log`);
+    const promise = runLogged(
+      { command: 'x', args: [], logPath: capLog, timeoutMs: 0, maxLogBytes: 16 },
+      { spawnFn: () => child },
+    );
+    child.stdout.write('a'.repeat(10));
+    assert.equal(killed, false);
+    child.stdout.write('b'.repeat(10)); // 20 bytes > 16: overflow
+    assert.equal(killed, true);
+    child.stdout.write('c'.repeat(100)); // past the cap: never reaches the file
+    child.stdout.end();
+    child.stderr.end();
+    child.emit('close', null, 'SIGKILL');
+    const res = await promise;
+    assert.equal(res.logOverflow, true);
+    rmSync(capLog, { force: true });
+  });
+
+  it('reaps a real process group that floods its log', async () => {
+    const capLog = join(tmpdir(), `hillclimb-cap-real-${process.pid.toString(36)}.log`);
+    const res = await runLogged(
+      {
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("x".repeat(1 << 20)); setInterval(() => {}, 1000)'],
+        logPath: capLog,
+        timeoutMs: 30_000,
+        maxLogBytes: 64 * 1024,
+      },
+      { spawnFn: spawn },
+    );
+    assert.equal(res.logOverflow, true);
+    assert.equal(res.signal, 'SIGKILL');
+    assert.ok(statSync(capLog).size <= 64 * 1024);
+    rmSync(capLog, { force: true });
+  });
+
+  it('leaves maxLogBytes unset (uncapped) by default', async () => {
+    const child = fakeChild();
+    const promise = runLogged(
+      { command: 'x', args: [], logPath, timeoutMs: 0 },
+      { spawnFn: () => child },
+    );
+    child.stdout.end('small\n');
+    child.stderr.end();
+    child.emit('close', 0, null);
+    const res = await promise;
+    assert.equal(res.logOverflow, false);
   });
 
   it('kills the group on timeout and reports the leader exit', async () => {

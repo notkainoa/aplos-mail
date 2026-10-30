@@ -172,6 +172,7 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
         workdir: ctx.dir,
         env: agentEnv(),
         logPath: join(artifactsDir, `${ctx.id}-agent.log`),
+        maxLogBytes: config.maxLogMB * 1024 * 1024,
         onSpawn: track,
       });
     },

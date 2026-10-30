@@ -16,6 +16,7 @@ export const defaults = {
   attemptTimeoutSec: 1800,
   lockWaitMin: 180, // matches lock.mjs defaultTimeoutMs (3 h)
   maxAddedFileKB: 512,
+  maxLogMB: 50,
 };
 
 export const agents = ['swe-2', 'claude', 'command'];
@@ -37,6 +38,7 @@ const TOP_KEYS = new Set([
   'stopAfterNoGain',
   'maxConcurrent',
   'lockWaitMin',
+  'maxLogMB',
 ]);
 const GATE_KEYS = new Set(['name', 'command', 'timeoutSec']);
 const SCORER_KEYS = new Set(['name', 'command', 'weight', 'noRegress', 'timeoutSec']);
@@ -67,6 +69,16 @@ function needPositiveInt(value, where, fallback) {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value < 1) {
     throw new ConfigError(`${where} must be a positive integer`);
+  }
+  return value;
+}
+
+// Attempt log size lives between "always enough for debugging" and "a disk-fill attack":
+// an integer megabyte count, bounded so a stray zero or absurd number fails at load time.
+function needLogMB(value) {
+  if (value === undefined) return defaults.maxLogMB;
+  if (!Number.isInteger(value) || value < 1 || value > 500) {
+    throw new ConfigError('maxLogMB must be an integer between 1 and 500');
   }
   return value;
 }
@@ -201,6 +213,7 @@ export function validateConfig(raw) {
     maxConcurrent: needPositiveInt(raw.maxConcurrent, 'maxConcurrent', defaults.maxConcurrent),
     maxAddedFileKB: needPositiveInt(raw.maxAddedFileKB, 'maxAddedFileKB', defaults.maxAddedFileKB),
     lockWaitMin: needTimeout(raw.lockWaitMin, 'lockWaitMin', defaults.lockWaitMin, 'minutes'),
+    maxLogMB: needLogMB(raw.maxLogMB),
   };
   // Sanity check the globs now, not mid-run when an attempt is rejected for the wrong
   // reason — with the same matcher the diff guard uses, so a valid glob here is a valid

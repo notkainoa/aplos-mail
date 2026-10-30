@@ -131,6 +131,7 @@ export function runLogged(
     logPath,
     tailBytes = 256 * 1024,
     graceMs = 2000,
+    maxLogBytes = Infinity,
     onSpawn,
   },
   { spawnFn = spawn } = {},
@@ -146,8 +147,19 @@ export function runLogged(
     onSpawn?.(child);
     let tail = '';
     let stdoutTail = '';
+    let logBytes = 0;
+    let logOverflow = false;
     const capture = chunk => {
       tail = (tail + chunk.toString('utf8')).slice(-tailBytes);
+      if (logOverflow) return;
+      logBytes += chunk.length;
+      if (logBytes > maxLogBytes) {
+        // A child filling its log is a runaway or a disk-fill attack: kill the whole
+        // group and stop appending. The caller turns logOverflow into a rejection.
+        logOverflow = true;
+        killTree(child);
+        return;
+      }
       log.write(chunk);
     };
     child.stdout.on('data', chunk => {
@@ -175,7 +187,7 @@ export function runLogged(
       if (timer) clearTimeout(timer);
       if (graceTimer) clearTimeout(graceTimer);
       log.end();
-      resolvePromise({ code, signal, timedOut, tail, stdoutTail });
+      resolvePromise({ code, signal, timedOut, logOverflow, tail, stdoutTail });
     };
     child.on('exit', (code, signal) => {
       // Leader exited but 'close' may never come (a grandchild keeping the pipes open).
@@ -218,7 +230,7 @@ function killTree(child) {
  */
 export async function runAgent(
   attempt,
-  { briefFile, briefText, workdir, env, logPath, spawnFn, onSpawn },
+  { briefFile, briefText, workdir, env, logPath, maxLogBytes, spawnFn, onSpawn },
 ) {
   const invocation = buildAgentInvocation(attempt, { briefFile, briefText });
   return runLogged(
@@ -228,6 +240,7 @@ export async function runAgent(
       env: env ?? agentEnv(),
       timeoutMs: attempt.timeoutSec * 1000,
       logPath,
+      maxLogBytes,
       onSpawn,
     },
     { spawnFn },

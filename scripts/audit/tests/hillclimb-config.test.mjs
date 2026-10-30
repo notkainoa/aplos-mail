@@ -148,6 +148,17 @@ describe('validateConfig', () => {
     bad({ lockWaitMin: 'forever' }, 'lockWaitMin');
   });
 
+  it('accepts a maxLogMB override in 1..500 and defaults to 50', () => {
+    assert.equal(validateConfig({ ...good }).maxLogMB, 50);
+    assert.equal(validateConfig({ ...good, maxLogMB: 1 }).maxLogMB, 1);
+    assert.equal(validateConfig({ ...good, maxLogMB: 500 }).maxLogMB, 500);
+    bad({ maxLogMB: 0 }, 'maxLogMB');
+    bad({ maxLogMB: 501 }, 'maxLogMB');
+    bad({ maxLogMB: -1 }, 'maxLogMB');
+    bad({ maxLogMB: 1.5 }, 'maxLogMB');
+    bad({ maxLogMB: '50' }, 'maxLogMB');
+  });
+
   it('rejects non-object configs', () => {
     assert.throws(() => validateConfig(null), /object/);
     assert.throws(() => validateConfig([1, 2]), /object/);
