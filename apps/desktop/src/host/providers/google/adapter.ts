@@ -34,6 +34,7 @@ import { historyStep } from './history';
 import { applyOp, coalesceOps } from './ops';
 import { retryStep } from './retry';
 import { search } from './search';
+import { findSentCopy, sendSubmission } from './send';
 import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
 import { GmailWorkflowTransport, type TransportLimits } from './workflow';
 import type { WorkflowTransport } from './workflow-state';
@@ -41,8 +42,7 @@ import type { WorkflowTransport } from './workflow-state';
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
- * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), send and findSent (prov-gmail-write),
- * drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
+ * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
  */
 
 export class NotInThisLaneError extends NotImplementedError {
@@ -250,12 +250,14 @@ export class GmailAdapter implements ProviderAdapter {
     return applyOp(this.rt.deps, op, this.paced(ctx));
   }
 
-  send(_submission: SubmissionPayload, _ctx: AdapterContext): Promise<SendReceipt> {
-    return Promise.reject(new NotInThisLaneError('send', 'prov-gmail-write'));
+  /** prov-gmail-write's transport (`send.ts`): the pinned bytes, `drafts.send` only under `sendsRemoteDraft`. */
+  send(submission: SubmissionPayload, ctx: AdapterContext): Promise<SendReceipt> {
+    return sendSubmission(this.rt.deps, submission, this.paced(ctx));
   }
 
-  findSent(_internetId: string, _since: number, _ctx: AdapterContext): Promise<FindSentResult> {
-    return Promise.reject(new NotInThisLaneError('findSent', 'prov-gmail-write'));
+  /** Searches Sent only (`in:sent`, never a DRAFT), so an unsent draft with the same Message-ID is never found. */
+  findSent(internetId: string, since: number, ctx: AdapterContext): Promise<FindSentResult> {
+    return findSentCopy(this.rt.deps, internetId, since, this.paced(ctx));
   }
 
   /** Aborts every request this adapter has in flight or queued (D23); later calls fail at once. */
