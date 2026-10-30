@@ -612,11 +612,14 @@ test('a vault loading in this process never removes a temporary file another vau
         await hang.opened;
       },
     });
-    const vault = await createVault<{ v: number }>({ dataDir: dir, ...crypto, fs });
+    // However short the grace period, it starts only once a call has timed out.
+    const options = { dataDir: dir, ...crypto, fs, writeTimeoutMs: 5_000, abandonedGraceMs: 0 };
+    const vault = await createVault<{ v: number }>(options);
     await vault.set('a', { v: 1 });
     plan.hang = true;
     const saving = vault.set('a', { v: 5 });
     await written.opened;
+    await new Promise(resolve => setTimeout(resolve, 50));
     await open(dir);
     hang.release();
     await saving;
@@ -741,3 +744,118 @@ test('a hung read fails the load instead of hanging it', { timeout: 10_000 }, as
     await assert.rejects(loading, /could not be read/);
   });
 });
+
+const exists = (path: string) =>
+  nodeFs.stat(path).then(
+    () => true,
+    () => false,
+  );
+
+/** Ref'd timers only: an unref'd one does not show up, since it does not keep the process alive. */
+const liveTimers = () => process.getActiveResourcesInfo().filter(kind => kind === 'Timeout').length;
+
+/**
+ * A vault whose next save hangs for good once the vault has given it up, leaving a temporary file behind:
+ * `write` creates the file only after the timeout (and after the vault's own cleanup) and then never settles;
+ * `rename` never settles and the vault's own removal of the file fails.
+ */
+async function hungVault(dir: string, step: 'write' | 'rename', abandonedGraceMs: number) {
+  const seen = { temporary: '', hang: false, unlinkFails: false };
+  const fs = realFs({
+    writeFileSynced: async (path, data, mode) => {
+      seen.temporary = path;
+      if (!seen.hang || step !== 'write') return syncedWrite(path, data, mode);
+      await new Promise(resolve => setTimeout(resolve, HUNG_MS * 2));
+      await syncedWrite(path, data, mode);
+      await new Promise(() => {});
+    },
+    rename: async (from, to) => {
+      if (!seen.hang || step !== 'rename') return nodeFs.rename(from, to);
+      seen.unlinkFails = true;
+      await new Promise(() => {});
+    },
+    unlink: async path => {
+      if (!seen.unlinkFails) return nodeFs.unlink(path);
+      seen.unlinkFails = false;
+      throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+    },
+  });
+  const vault = await createVault<{ v: number }>({
+    dataDir: dir,
+    ...crypto,
+    fs,
+    writeTimeoutMs: HUNG_MS,
+    abandonedGraceMs,
+  });
+  await vault.set('a', { v: 1 });
+  seen.hang = true;
+  return { vault, seen };
+}
+
+for (const step of ['write', 'rename'] as const) {
+  test(
+    `the temporary file of a ${step} that never settles is protected only for its grace period`,
+    { timeout: 10_000 },
+    async () => {
+      await withDir(async dir => {
+        const { vault, seen } = await hungVault(dir, step, 1_500);
+        const timersBefore = liveTimers();
+        await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+        await eventually(() => exists(seen.temporary), 'the hung call leaves its file behind');
+        assert.equal(liveTimers(), timersBefore, 'the grace timer does not keep the process alive');
+        await open(dir);
+        assert.ok(await exists(seen.temporary), 'kept while the hung call may still finish');
+        await eventually(async () => {
+          await open(dir);
+          return !(await exists(seen.temporary));
+        }, 'a load after the grace period removes the stale temporary file');
+        assert.deepEqual(vault.get('a'), { v: 1 });
+        assert.deepEqual((await open(dir)).get('a'), { v: 1 });
+      });
+    },
+  );
+}
+
+test(
+  'a write gives its temporary name up when it settles, on time or late, not after the grace period',
+  { timeout: 10_000 },
+  async () => {
+    await withDir(async dir => {
+      const hang = gate();
+      const seen = { temporary: '', hang: false, unlinked: 0 };
+      const fs = realFs({
+        writeFileSynced: async (path, data, mode) => {
+          await syncedWrite(path, data, mode);
+          seen.temporary = path;
+          if (seen.hang) await hang.opened;
+        },
+        // Counts the vault's own removals of the temporary file once each has settled.
+        unlink: async path => {
+          try {
+            await nodeFs.unlink(path);
+          } finally {
+            if (path === seen.temporary) seen.unlinked += 1;
+          }
+        },
+      });
+      const options = { dataDir: dir, ...crypto, fs, writeTimeoutMs: HUNG_MS };
+      const vault = await createVault<{ v: number }>({ ...options, abandonedGraceMs: 60_000 });
+      const leftoverIsRemoved = async () => {
+        await nodeFs.writeFile(seen.temporary, 'leftover');
+        await open(dir);
+        return !(await exists(seen.temporary));
+      };
+      await vault.set('a', { v: 1 });
+      assert.ok(await leftoverIsRemoved(), 'a saved write released its name at once');
+      seen.hang = true;
+      await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+      assert.equal(seen.unlinked, 1, 'the timeout removed the file');
+      assert.equal(await leftoverIsRemoved(), false, 'the abandoned write still holds its name');
+      hang.release();
+      // The straggler removes its file again, then releases the name; wait for both before the next leftover.
+      await eventually(async () => seen.unlinked === 2, 'the late write is removed');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.ok(await leftoverIsRemoved(), 'the late write released its name on settle');
+    });
+  },
+);

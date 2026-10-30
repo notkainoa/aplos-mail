@@ -285,22 +285,33 @@ const LINEAR_GROWTH_LIMIT = 11;
  * 4 for linear code, about 16 for quadratic. A run that stays fast even at the largest size is linear enough on its own:
  * it only has to finish the 4x input quickly.
  */
-function assertNotQuadratic(label: string, run: (size: number) => void, start: number): void {
+function measureOnce(run: (size: number) => void, start: number): { ok: boolean; message: string } {
   run(start); // warm-up: compile, allocate
   let size = start;
   while (timeOf(run, size) < MEASURABLE_MS && size < MAX_SIZE) size *= 2;
   const sample = (n: number) => median(Array.from({ length: 5 }, () => timeOf(run, n)));
   const small = sample(size);
   const large = sample(size * 4);
-  if (small < MEASURABLE_MS) {
-    assert.ok(large < 2_000, `${label}: the 4x input took ${large.toFixed(0)} ms`);
-    return;
-  }
+  if (small < MEASURABLE_MS)
+    return { ok: large < 2_000, message: `the 4x input took ${large.toFixed(0)} ms` };
   const ratio = large / small;
-  assert.ok(
-    ratio < LINEAR_GROWTH_LIMIT,
-    `${label}: 4x the input took ${ratio.toFixed(1)}x the time (${small.toFixed(0)} ms to ${large.toFixed(0)} ms)`,
-  );
+  return {
+    ok: ratio < LINEAR_GROWTH_LIMIT,
+    message: `4x the input took ${ratio.toFixed(1)}x the time (${small.toFixed(0)} ms to ${large.toFixed(0)} ms)`,
+  };
+}
+
+/** Quadratic code fails every attempt (about 16x each time); a GC pause or a loaded machine rarely repeats. */
+const ATTEMPTS = 3;
+
+function assertNotQuadratic(label: string, run: (size: number) => void, start: number): void {
+  const seen: string[] = [];
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const result = measureOnce(run, start);
+    if (result.ok) return;
+    seen.push(result.message);
+  }
+  assert.fail(`${label}: ${seen.join('; ')}`);
 }
 
 test('htmlToText is linear on hostile input (no regex backtracking over a megabyte)', () => {

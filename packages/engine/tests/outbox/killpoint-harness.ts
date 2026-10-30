@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Submission } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { createTimerLoop, fakeClock, type FakeClock } from '../../src/clock/module';
 import { createLogger } from '../../src/diag/log';
 import { UNCERTAIN_COPY } from '../../src/outbox/context';
-import type { KillPoint } from '../../src/outbox/killpoints';
+import { installKillHook, KP, type KillPoint } from '../../src/outbox/killpoints';
 import { createOutboxModule, outboxExtension } from '../../src/outbox/module';
 import type { SendPort } from '../../src/ports/engine';
 import { openStore } from '../../src/store';
@@ -78,6 +79,66 @@ export interface RunSpec {
   clockStart: number;
   runMs: number;
   port: PortSpec;
+  /** `during-commit` only: the one move this life dies in (see `MOVES`). */
+  move?: MoveName;
+  /** The owner's scripted actions in this life (see `ActionSpec`). */
+  actions?: ActionSpec[];
+  /** Where this life appends what the owner did (`JournalLine`). */
+  journalPath?: string;
+  /** This life's index in the scenario (the journal says which life acted). */
+  life?: number;
+}
+
+/**
+ * The state moves a `during-commit` kill can name. The hook sees `from>to:why` (`killpoints.ts`); each name is one move.
+ * `startup-uncertain` is the launch's start rule (`sending` row nobody awaits); `uncertain` is the same move made by a
+ * `send` whose outcome is unknown; `check-uncertain` is a `findSent` that found nothing (count and next check).
+ */
+export type MoveName =
+  | 'marker'
+  | 'sent'
+  | 'uncertain'
+  | 'startup-uncertain'
+  | 'check-uncertain'
+  | 'failed'
+  | 'cancelled'
+  | 'queued-after-sendAnyway';
+
+export const MOVES: Record<MoveName, (detail: string) => boolean> = {
+  marker: d => /^[^>]*>sending:/.test(d),
+  sent: d => />sent:/.test(d),
+  uncertain: d => d.endsWith('>uncertain:uncertain'),
+  'startup-uncertain': d => d === 'sending>uncertain:startRule',
+  'check-uncertain': d => d === 'uncertain>uncertain:findSent',
+  failed: d => />failed:/.test(d),
+  cancelled: d => />cancelled:/.test(d),
+  'queued-after-sendAnyway': d => d.endsWith('>queued:sendAnyway'),
+};
+
+/**
+ * The owner pressing a button in one life. `when`: a number is fake ms into the life (once, answered or refused);
+ * `asked` is the first moment the row shows the prompt, retried every step until the machine accepts it (Send anyway and
+ * Cancel are refused while a check is pending, as in the app); a kill point name runs it synchronously AT that point,
+ * before the engine goes on (the race: the click lands between two steps of the send), and then the engine carries on.
+ */
+export interface ActionSpec {
+  do: 'undo' | 'cancel' | 'sendAnyway';
+  when: number | 'asked' | KillPoint;
+  /** Which life (index into `killAt`; the restarted engine is `killAt.length`). Default 0. */
+  life?: number;
+}
+
+/** One line of the journal: the owner's action, as the machine saw it. A line with no outcome died inside the call. */
+export interface JournalLine {
+  key: string;
+  phase: 'issued' | 'ok' | 'refused';
+  do?: ActionSpec['do'];
+  life?: number;
+  at?: number;
+  /** The row's state and problem code when the owner acted (did they see the prompt?). */
+  state?: string;
+  reason?: string;
+  sentence?: string;
 }
 
 export async function loadPort(spec: PortSpec, clock: FakeClock): Promise<SendPort> {
@@ -87,8 +148,88 @@ export async function loadPort(spec: PortSpec, clock: FakeClock): Promise<SendPo
   return mod.createSendPort({ clock, config: spec.config });
 }
 
-/** One engine life on `dbPath`: opens it, starts (the real start rule), lets `runMs` of fake time pass, closes. */
-export async function driveEngine(run: RunSpec): Promise<Submission[]> {
+/** `SIGKILL` runs no handlers, no `finally` and no store close, like a crash or a force quit. */
+export function dieNow(): never {
+  process.kill(process.pid, 'SIGKILL');
+  // The signal is delivered asynchronously: nothing of the engine may run meanwhile.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);
+  process.exit(99);
+}
+
+type Outbox = ReturnType<typeof createOutboxModule>;
+
+/** The owner's scripted actions of one life; every call is journaled before and after, so a death inside it shows. */
+function ownerOf(
+  run: RunSpec,
+  clock: FakeClock,
+  outbox: Outbox,
+  store: ReturnType<typeof openStore>,
+) {
+  const pending = [...(run.actions ?? [])];
+  let n = 0;
+  const journal = (line: Omit<JournalLine, 'key'>, key: string) => {
+    if (run.journalPath) appendFileSync(run.journalPath, `${JSON.stringify({ key, ...line })}\n`);
+  };
+  const current = () => {
+    const id = store.read(q => q.get<{ id: string }>('SELECT id FROM submissions'))!.id;
+    return { id, row: outbox.service.get([id]).list[0] };
+  };
+  /** True when the machine accepted the action. */
+  const issue = (spec: ActionSpec): boolean => {
+    const key = `${run.life ?? 0}:${n++}`;
+    const { id, row } = current();
+    journal(
+      {
+        phase: 'issued',
+        do: spec.do,
+        life: run.life ?? 0,
+        at: clock.now(),
+        state: row?.state,
+        reason: row?.problem?.reasonCode,
+      },
+      key,
+    );
+    try {
+      outbox.service.set(`kp-${key}`, { type: spec.do, submissionId: id });
+      journal({ phase: 'ok' }, key);
+      return true;
+    } catch (error) {
+      if (!(error instanceof ContractError)) throw error;
+      journal({ phase: 'refused', sentence: error.message }, key);
+      return false;
+    }
+  };
+  const asked = () => {
+    const row = current().row;
+    return row?.state === 'uncertain' && row.problem?.reasonCode === 'send.uncertain';
+  };
+  return {
+    /** At a kill point: the actions that wait for it run once, then the engine carries on. */
+    atPoint(name: KillPoint) {
+      for (const spec of pending.filter(a => a.when === name)) {
+        pending.splice(pending.indexOf(spec), 1);
+        issue(spec);
+      }
+    },
+    /** After a clock step. */
+    atTime(elapsed: number) {
+      for (const spec of [...pending]) {
+        if (typeof spec.when === 'number' && elapsed >= spec.when) {
+          pending.splice(pending.indexOf(spec), 1);
+          issue(spec);
+        } else if (spec.when === 'asked' && asked() && issue(spec)) {
+          pending.splice(pending.indexOf(spec), 1);
+        }
+      }
+    },
+  };
+}
+
+/**
+ * One engine life on `dbPath`: opens it, starts (the real start rule), lets `runMs` of fake time pass, closes. `point`
+ * is where it dies (and, for `during-commit`, `run.move` is the move), if anywhere.
+ */
+export async function driveEngine(run: RunSpec, point?: KillPoint): Promise<Submission[]> {
   const clock = fakeClock(run.clockStart);
   const log = createLogger({ sink: { write: () => {} }, salt: 'kill', clock, level: 'error' });
   const store = openStore(openSqlite(run.dbPath), {
@@ -123,10 +264,16 @@ export async function driveEngine(run: RunSpec): Promise<Submission[]> {
       LIFE_BUDGET_MS,
     );
   });
+  const owner = ownerOf(run, clock, outbox, store);
+  installKillHook((name, detail) => {
+    owner.atPoint(name);
+    if (name !== point) return;
+    if (name !== KP.DURING_COMMIT || (run.move && MOVES[run.move](detail ?? ''))) dieNow();
+  });
   outbox.start();
   loop.start();
   try {
-    await Promise.race([hung, advanceThrough(run, clock, loop, outbox, progress)]);
+    await Promise.race([hung, advanceThrough(run, clock, loop, outbox, progress, owner)]);
   } finally {
     clearTimeout(timer);
   }
@@ -145,6 +292,7 @@ async function advanceThrough(
   loop: { idle(): Promise<void> },
   outbox: { idle(): Promise<void> },
   progress: { steps: number; at: number },
+  owner: { atTime(elapsed: number): void },
 ) {
   // Fine steps while the checks run (they are due at once and after 60 s), minutes after that.
   while (progress.at < run.runMs) {
@@ -154,6 +302,8 @@ async function advanceThrough(
     await clock.advance(step);
     await settle(clock, loop, outbox);
     progress.at += step;
+    owner.atTime(progress.at);
+    await settle(clock, loop, outbox);
   }
 }
 
@@ -253,6 +403,20 @@ export interface KillScenario {
   downtimeMs?: number;
   /** How long the last life runs; the default (3 minutes) passes the 60 s recheck. */
   recoverMs?: number;
+  /** How long a killed life may run to reach its point (default 30 s); longer when it first waits for the prompt. */
+  killedRunMs?: number;
+  /**
+   * The move each `during-commit` step dies in, in order (one entry per such step; a bare name for one). A kill point that
+   * fires on every state move needs the move named: there is no default.
+   */
+  onMove?: MoveName | readonly MoveName[];
+  /** The owner's scripted actions (undo, cancel, Send anyway), each in a named life. */
+  actions?: readonly ActionSpec[];
+  /**
+   * The counting fake only: what the k-th `send` call for this Message-ID does, whatever `deliver` says: `drop` (the bytes
+   * are lost, nothing delivered), `lose` (delivered, the answer is lost), `ok` (delivered and answered).
+   */
+  script?: readonly ('drop' | 'lose' | 'ok')[];
   /** The server's own count of deliveries of one Message-ID. Default: the counting fake's log. */
   countDeliveries?: (internetId: string) => number | Promise<number>;
 }
@@ -268,6 +432,44 @@ export interface KillResult {
   findCalls: number;
   /** One entry per child: the signal that ended it. */
   signals: (NodeJS.Signals | null)[];
+  /** The owner's actions as the machine saw them, in order. */
+  actions: ActionRecord[];
+  /** Deliveries / `send` calls from the first Send anyway the machine did not refuse on (0 without one; -1: another port). */
+  newDeliveries: number;
+  newSendCalls: number;
+}
+
+/** An action of the journal with its outcome: `killed` is an action whose call never returned (the process died in it). */
+export interface ActionRecord {
+  do: ActionSpec['do'];
+  life: number;
+  at: number;
+  state?: string;
+  reason?: string;
+  outcome: 'ok' | 'refused' | 'killed';
+  sentence?: string;
+}
+
+function readJournal(path: string): ActionRecord[] {
+  if (!existsSync(path)) return [];
+  const lines = readFileSync(path, 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as JournalLine);
+  return lines
+    .filter(l => l.phase === 'issued')
+    .map(issued => {
+      const end = lines.find(l => l.key === issued.key && l.phase !== 'issued');
+      return {
+        do: issued.do!,
+        life: issued.life!,
+        at: issued.at!,
+        state: issued.state,
+        reason: issued.reason,
+        outcome: end ? (end.phase as 'ok' | 'refused') : 'killed',
+        ...(end?.sentence ? { sentence: end.sentence } : {}),
+      };
+    });
 }
 
 interface ChildEnd {
@@ -340,14 +542,9 @@ export async function runKillScenario(scenario: KillScenario): Promise<KillResul
   }
 }
 
-async function runIn(
-  dir: string,
-  s: KillScenario,
-  children: Set<ChildProcess>,
-): Promise<KillResult> {
-  const dbPath = join(dir, 'mail.db');
-  const logPath = join(dir, 'server.jsonl');
-  const port: PortSpec = s.port ?? {
+/** The counting fake as the scenario configures it. */
+function fakePort(s: KillScenario, logPath: string): PortSpec {
+  return {
     module: FAKE_PORT,
     config: {
       logPath,
@@ -359,16 +556,41 @@ async function runIn(
         : {}),
       ...(s.refuse !== undefined ? { refuse: s.refuse } : {}),
       ...(s.answerLost ? { answerLost: true } : {}),
+      ...(s.script ? { script: s.script } : {}),
     },
   };
+}
+
+async function runIn(
+  dir: string,
+  s: KillScenario,
+  children: Set<ChildProcess>,
+): Promise<KillResult> {
+  const dbPath = join(dir, 'mail.db');
+  const logPath = join(dir, 'server.jsonl');
+  const port: PortSpec = s.port ?? fakePort(s, logPath);
+  const journalPath = join(dir, 'actions.jsonl');
+  const moves = [s.onMove ?? []].flat();
+  let duringCommit = 0;
   const sent = seed(dbPath);
   const points = typeof s.killAt === 'string' ? [s.killAt] : s.killAt;
   const downtime = s.downtimeMs ?? 20 * SEC;
   let clockStart = T0;
   const signals: KillResult['signals'] = [];
-  for (const point of points) {
-    const runMs = LIFE_MS[point] ?? KILLED_RUN_MS;
-    const end = await runChild(point, { dbPath, clockStart, runMs, port }, children);
+  const lifeSpec = (life: number, runMs: number, point?: KillStep): RunSpec => {
+    const spec: RunSpec = { dbPath, clockStart, runMs, port, journalPath, life };
+    const actions = (s.actions ?? []).filter(a => (a.life ?? 0) === life);
+    if (actions.length) spec.actions = actions;
+    if (point === KP.DURING_COMMIT) {
+      const move = moves[duringCommit++];
+      if (!move) throw new Error('a during-commit step needs its move in `onMove`');
+      spec.move = move;
+    }
+    return spec;
+  };
+  for (const [life, point] of points.entries()) {
+    const runMs = LIFE_MS[point] ?? s.killedRunMs ?? KILLED_RUN_MS;
+    const end = await runChild(point, lifeSpec(life, runMs, point), children);
     const quiet = point === 'none' || point === 'quit';
     const wanted = quiet ? null : 'SIGKILL';
     assert.equal(
@@ -382,7 +604,7 @@ async function runIn(
   }
   // The last life runs in a child too: an engine that spins is killed with its process, never hangs the suite.
   const runMs = s.recoverMs ?? 180 * SEC;
-  const last = await runChild('none', { dbPath, clockStart, runMs, port }, children);
+  const last = await runChild('none', lifeSpec(points.length, runMs), children);
   assert.ok(
     last.code === 0,
     `the restarted engine failed (exit ${last.code}): ${last.stderr.slice(-600)}`,
@@ -390,38 +612,78 @@ async function runIn(
   const list = JSON.parse(last.stdout) as Submission[];
   const submission = list.find(x => x.id === sent.id);
   assert.ok(submission, 'the submission row is still there after the restart');
+  return summarize(s, { submission, sent, logPath, journalPath, signals });
+}
+
+/** What the server's record, the journal and the final row say about one scenario. */
+async function summarize(
+  s: KillScenario,
+  from: {
+    submission: Submission;
+    sent: { internetId: string };
+    logPath: string;
+    journalPath: string;
+    signals: KillResult['signals'];
+  },
+): Promise<KillResult> {
+  const { submission, sent, logPath, signals } = from;
   const fake = s.port === undefined;
   const log = fake ? readLog(logPath).filter(l => l.internetId === sent.internetId) : [];
   const deliveries = s.countDeliveries
     ? await s.countDeliveries(sent.internetId)
     : (deliveryCounts(logPath).get(sent.internetId) ?? 0);
+  const actions = readJournal(from.journalPath);
+  const anyway = actions.find(a => a.do === 'sendAnyway' && a.outcome !== 'refused');
+  const after = (op: 'send' | 'deliver') =>
+    anyway ? log.filter(l => l.op === op && l.at >= anyway.at).length : 0;
   return {
     submission,
     deliveries,
     sendCalls: fake ? log.filter(l => l.op === 'send').length : -1,
     findCalls: fake ? log.filter(l => l.op === 'findSent').length : -1,
     signals,
+    actions,
+    newDeliveries: fake ? after('deliver') : -1,
+    newSendCalls: fake ? after('send') : -1,
   };
 }
 
 // ---------------------------------------------------------------- the invariant
 
 /**
- * What must hold after any kill and restart, whatever the server did. Never two deliveries. Never a lost message:
- * the row ends `sent`, `failed` with a reason, `uncertain` with the prompt, or `suspended` with the overdue sentence;
- * never `queued` or `sending`. Never a lie: `sent` means the server has it, and `failed` ("not sent, Retry") never
- * stands on a message the server accepted. The engine never calls `send` twice for one Message-ID.
+ * What must hold after any kill and restart, whatever the server did. Never two deliveries, except the one the owner
+ * chose: after Send anyway (the machine accepted it, or died inside accepting it) at most ONE new delivery and ONE new
+ * `send` call on top of the one an earlier life may already have made. Never a lost message: the row ends `sent`, `failed`
+ * with a reason, `uncertain` with the prompt, or `suspended` with the overdue sentence; or `cancelled` when the owner did
+ * it, and a cancelled message the server has was cancelled from the prompt (the owner saw "Check Sent, or Send anyway"):
+ * never `cancelled` AND delivered with no prompt, never `queued` or `sending`. Never a lie: `sent` means the server has
+ * it, and `failed` ("not sent, Retry") never stands on a message the server accepted.
  */
 export function assertSendInvariant(r: KillResult): void {
   const { submission: s } = r;
-  assert.ok(r.deliveries <= 1, `delivered ${r.deliveries} times`);
-  assert.ok(r.sendCalls <= 1, `send was called ${r.sendCalls} times for one Message-ID`);
+  const anyway = r.actions.some(a => a.do === 'sendAnyway' && a.outcome !== 'refused');
+  if (!anyway) {
+    assert.ok(r.deliveries <= 1, `delivered ${r.deliveries} times`);
+    assert.ok(r.sendCalls <= 1, `send was called ${r.sendCalls} times for one Message-ID`);
+  } else if (r.newDeliveries >= 0) {
+    assert.ok(r.newDeliveries <= 1, `Send anyway delivered ${r.newDeliveries} new times`);
+    assert.ok(r.newSendCalls <= 1, `Send anyway called send ${r.newSendCalls} new times`);
+    assert.ok(r.deliveries - r.newDeliveries <= 1, 'delivered twice before Send anyway');
+    assert.ok(r.sendCalls - r.newSendCalls <= 1, 'send called twice before Send anyway');
+  } else assert.ok(r.deliveries <= 2, `delivered ${r.deliveries} times`);
+  const cancel = r.actions.find(a => a.outcome === 'ok' && (a.do === 'undo' || a.do === 'cancel'));
+  const settled = ['sent', 'failed', 'uncertain', 'suspended', ...(cancel ? ['cancelled'] : [])];
   assert.ok(
-    ['sent', 'failed', 'uncertain', 'suspended'].includes(s.state),
+    settled.includes(s.state),
     `ended ${s.state}, which is neither settled nor asking the owner`,
   );
+  if (s.state === 'cancelled' && r.deliveries > 0)
+    assert.ok(
+      cancel?.state === 'uncertain' && cancel.reason === 'send.uncertain',
+      'cancelled and delivered, but the owner never saw the prompt',
+    );
   if (s.state === 'sent')
-    assert.equal(r.deliveries, 1, '`sent` without a delivery is a lost message');
+    assert.ok(r.deliveries >= 1, '`sent` without a delivery is a lost message');
   if (s.state === 'uncertain') {
     assert.equal(s.problem?.reasonCode, 'send.uncertain');
     assert.equal(s.problem?.message, UNCERTAIN_COPY);

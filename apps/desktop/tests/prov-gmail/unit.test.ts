@@ -4,7 +4,6 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NotImplementedError } from '@aplos/contract/contract-error';
 import type { AdapterAccount, PlanEnv, ProviderAdapter, SyncState } from '@aplos/engine/ports';
 import { NotInThisLaneError, createGoogleProvider } from '../../src/host/providers/google/adapter';
 import {
@@ -658,8 +657,7 @@ test('prov-gmail parts owned by other lanes are typed not-in-this-lane stubs', a
   assert.equal(factory.budgets(ACCOUNT, new Map())[0].id, 'gmail');
   await assert.rejects(factory.connect({ mode: 'new' }, {} as never), NotInThisLaneError);
   const adapter: ProviderAdapter = factory.open(ACCOUNT);
-  await assert.rejects(adapter.send({} as never, {} as never), NotImplementedError);
-  await assert.rejects(adapter.findSent('x', 0, {} as never), NotInThisLaneError);
+  // send and findSent are built (prov-gmail-write, send.test.ts and send-contract.test.ts).
   assert.deepEqual(adapter.coalesce([]), [], 'ops are built (prov-gmail-ops.test.ts)');
   assert.throws(
     () =>
