@@ -49,7 +49,7 @@ export interface GmailRequest {
   kind?: RequestKind;
   /** The remote item, so a one-item 404 is classified `permanent` with it. */
   item?: string;
-  /** Default GET. Writes (`modify`, `trash`) are POSTs. */
+  /** Default GET. Writes (`modify`, `trash`) are POSTs; `drafts.delete` is a DELETE. */
   httpMethod?: 'GET' | 'POST' | 'DELETE';
   /** JSON request body of a POST. */
   body?: unknown;

@@ -8,6 +8,8 @@ import type {
   ConnectContext,
   ConnectRequest,
   ConnectResult,
+  DraftSaveResult,
+  DraftUpload,
   FindSentResult,
   OpenedThread,
   OpOutcome,
@@ -30,6 +32,7 @@ import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
+import { deleteDraftCopy, saveDraftCopy } from './drafts';
 import { RETRY_SCOPE } from './failures';
 import { gmailRules } from './filters';
 import { historyStep } from './history';
@@ -44,9 +47,10 @@ import type { WorkflowTransport } from './workflow-state';
 /**
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
- * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), drafts, the workflow channel and calendar
- * (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal). Send and findSent are prov-gmail-write's (send.ts).
- * `rules` is prov-gmail-write's sender-rule mirror on `users.settings.filters` (filters.ts).
+ * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), the workflow channel and calendar
+ * (left undefined; prov-gmail workflow, prov-cal). Send and findSent are prov-gmail-write's (send.ts).
+ * `rules` is prov-gmail-write's sender-rule mirror on `users.settings.filters` (filters.ts); `saveDraft` and
+ * `deleteDraft` are its drafts API (drafts.ts).
  */
 
 export class NotInThisLaneError extends NotImplementedError {
@@ -103,6 +107,12 @@ export interface GoogleProviderOptions {
   workflow?: GoogleWorkflowOptions;
   /** Default false: sends never use `drafts.send` until the live gate proves it (`SendOptions.useDraftsSend` in send.ts). */
   useDraftsSend?: boolean;
+  /**
+   * Default false: `deleteDraft` resolves without deleting anything (PORT GAP 3 in drafts.ts: `DraftSyncPort.remove`
+   * carries no expected message id, so a delete would destroy a phone edit made after the last history poll). Keep it
+   * off until the port carries the expected message id; saving and replacing drafts is unaffected.
+   */
+  deleteDrafts?: boolean;
 }
 
 /**
@@ -141,6 +151,7 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly transport?: WorkflowTransport;
   private readonly workflowRoundMs: number;
   private readonly useDraftsSend: boolean;
+  private readonly deleteDrafts: boolean;
   readonly workflow?: WorkflowChannel;
   /** The sender-rules mirror (prov-gmail-write): the account's granted scopes decide what it answers. */
   readonly rules: RulesAdapter;
@@ -163,6 +174,7 @@ export class GmailAdapter implements ProviderAdapter {
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
     this.useDraftsSend = options.useDraftsSend === true;
+    this.deleteDrafts = options.deleteDrafts === true;
     const rules = gmailRules(deps);
     this.rules = {
       list: ctx => rules.list(this.paced(ctx)),
@@ -276,6 +288,16 @@ export class GmailAdapter implements ProviderAdapter {
   /** Searches Sent only (`in:sent`, never a DRAFT), so an unsent draft with the same Message-ID is never found. */
   findSent(internetId: string, since: number, ctx: AdapterContext): Promise<FindSentResult> {
     return findSentCopy(this.rt.deps, internetId, since, this.paced(ctx));
+  }
+
+  saveDraft(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult> {
+    return saveDraftCopy(this.rt.deps, draft, this.paced(ctx));
+  }
+
+  deleteDraft(remoteDraftId: string, ctx: AdapterContext): Promise<void> {
+    // Removal is off by default (PORT GAP 3): resolving leaves the copy in place, which the engine reads as removed.
+    if (!this.deleteDrafts) return Promise.resolve();
+    return deleteDraftCopy(this.rt.deps, remoteDraftId, this.paced(ctx));
   }
 
   /** Aborts every request this adapter has in flight or queued (D23); later calls fail at once. */
