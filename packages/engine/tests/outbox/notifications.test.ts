@@ -2,134 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { NotificationItem } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { fakeClock } from '../../src/clock/module';
-import { createLogger } from '../../src/diag/log';
 import { dispatch, type Caller, type EngineServices } from '../../src/methods/index';
-import { outboxExtension } from '../../src/outbox/extension';
-import {
-  CLAIM_LEASE_MS,
-  createNotifications,
-  ingestNotifications,
-  type NotificationModule,
-} from '../../src/outbox/notifications';
-import type { DeadlineSource } from '../../src/ports/time';
-import type { EngineFrame } from '../../src/runtime/frames';
-import {
-  openStore,
-  type CommitExtensionTx,
-  type IngestBatch,
-  type IngestedMessage,
-  type MessageWrite,
-  type StorePort,
-  type StoreWrite,
-} from '../../src/store';
-import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-
-const T0 = Date.UTC(2026, 9, 30, 9, 0, 0);
-
-const SPAM = {
-  kind: 'folder',
-  accountId: ACCOUNT,
-  remoteId: 'SPAM',
-  name: 'Spam',
-  role: 'spam',
-  folderKind: 'system',
-} as const;
-const SENT = {
-  kind: 'folder',
-  accountId: ACCOUNT,
-  remoteId: 'SENT',
-  name: 'Sent',
-  role: 'sent',
-  folderKind: 'system',
-} as const;
-
-type Step = 'baseline' | 'incremental' | 'backfill' | 'search' | 'resync' | 'prefetch';
-
-function world(options: { account?: Record<string, unknown> } = {}) {
-  const file = tempDb();
-  const clock = fakeClock(T0);
-  const log = createLogger({ sink: { write: () => {} }, salt: 's', clock });
-  const events: Extract<EngineFrame, { frame: 'host' }>['event'][] = [];
-  const sources: DeadlineSource[] = [];
-  let store: StorePort;
-  let notes: NotificationModule;
-  let opSeq = 0;
-  const open = () => {
-    store = openStore(file.open(), { extensions: [outboxExtension], now: () => clock.now() });
-    const frames = {
-      emit: (f: EngineFrame) => void events.push((f as never as { event: never }).event),
-    };
-    notes = createNotifications({
-      store,
-      clock,
-      log,
-      randomBytes: n => globalThis.crypto.getRandomValues(new Uint8Array(n)),
-      deadlines: {
-        register: s => {
-          sources.push(s);
-          return () => {};
-        },
-        changed: () => {},
-      },
-      frames,
-    });
-  };
-  open();
-  const commit = (
-    step: Step | undefined,
-    writes: StoreWrite[],
-    origin: 'sync' | 'local' = 'sync',
-  ) => store.commit({ opId: `t${opSeq++}`, origin, ...(step ? { step } : {}), writes });
-  const setup = (baselineDone: boolean) =>
-    commit('baseline', [
-      {
-        ...accountWrite,
-        ...options.account,
-        ...(baselineDone ? { baselineDoneAt: clock.now() } : {}),
-      },
-      ...folderWrites,
-      SPAM,
-      SENT,
-    ] as unknown as StoreWrite[]);
-  return {
-    file,
-    clock,
-    events,
-    sources,
-    commit,
-    setup,
-    get store() {
-      return store;
-    },
-    get notes() {
-      return notes;
-    },
-    /** The process dies: the store closes with whatever state it was in, and a new engine opens the same file. */
-    reopen() {
-      notes.stop();
-      store.close();
-      open();
-    },
-    rows: () =>
-      store.read(q =>
-        q
-          .all<{ remote_id: string; state: string }>(
-            'SELECT m.remote_id, n.state FROM notifications n JOIN messages m ON m.id = n.message_id ORDER BY m.remote_id',
-          )
-          .map(r => ({ ...r })),
-      ),
-    close() {
-      notes.stop();
-      store.close();
-      file.cleanup();
-    },
-  };
-}
-
-const ids = (items: NotificationItem[]) => items.map(i => i.id);
-const mail = (remoteId: string, extra: Partial<MessageWrite> = {}) =>
-  msg(remoteId, `th-${remoteId}`, 1, extra);
+import { CLAIM_LEASE_MS, BADGE_POLL_MS, ingestNotifications } from '../../src/outbox/notifications';
+import type { CommitExtensionTx, IngestBatch, IngestedMessage } from '../../src/store';
+import { ACCOUNT } from '../store/helpers';
+import { SEEN, T0, ids, mail, simulatedHost, world } from './notifications-world';
 
 test('a new unread Inbox message after the baseline writes one pending row', () => {
   const w = world();
@@ -203,19 +80,16 @@ test('a message seen again is not notified twice', () => {
   w.close();
 });
 
-test('exactly once: 50 syncs with a crash between written and posted', async () => {
+test('at least once with a stable id: 50 syncs with crashes before the ack', async () => {
   const w = world();
   w.setup(true);
-  const posted: string[] = [];
+  const host = simulatedHost(w);
   for (let i = 0; i < 50; i++) {
     const good = mail(`good-${i}`, { internalDate: T0 + i, date: T0 + i });
     const batch = [
       good,
       mail(`spam-${i}`, { folders: [{ folder: 'SPAM' }] }),
-      mail(`sent-${i}`, {
-        folders: [{ folder: 'SENT' }],
-        flags: { seen: true, flagged: false, draft: false, fromMe: true },
-      }),
+      mail(`sent-${i}`, { folders: [{ folder: 'SENT' }], flags: { ...SEEN, fromMe: true } }),
     ];
     w.commit('incremental', batch);
     w.commit('backfill', [mail(`old-${i}`)]);
@@ -223,27 +97,26 @@ test('exactly once: 50 syncs with a crash between written and posted', async () 
     w.commit('incremental', [good]);
     // Every fifth round the engine dies after the commit and before anything is posted.
     if (i % 5 === 0) w.reopen();
-    // Every third round main claims, posts and dies before it acknowledges.
+    // Every third round main claims and posts, then dies before it acknowledges: the item comes back after the lease.
     if (i % 3 === 0) {
-      w.notes.service.claim();
+      host.claim();
       w.reopen();
     }
     if (i % 2 === 0) {
       await w.clock.set(w.clock.now() + 2 * CLAIM_LEASE_MS);
-      const items = w.notes.service.claim();
-      posted.push(...ids(items));
-      w.notes.service.ack(ids(items), 'posted');
+      host.ack(host.claim());
     }
   }
   await w.clock.set(w.clock.now() + 2 * CLAIM_LEASE_MS);
-  for (;;) {
-    const items = w.notes.service.claim();
-    if (!items.length) break;
-    posted.push(...ids(items));
-    w.notes.service.ack(ids(items), 'posted');
-  }
-  const expected = Array.from({ length: 50 }, (_, i) => `mail:${ACCOUNT}:good-${i}`);
-  assert.deepEqual([...posted].sort(), [...expected].sort());
+  host.drain();
+  const expected = new Set(Array.from({ length: 50 }, (_, i) => `mail:${ACCOUNT}:good-${i}`));
+  const counts = new Map<string, number>();
+  for (const id of host.posts) counts.set(id, (counts.get(id) ?? 0) + 1);
+  // Every qualifying message is posted at least once, always under its own stable id, and nothing else is.
+  assert.deepEqual([...counts.keys()].sort(), [...expected].sort());
+  // The crashes really produced reposts: this is at-least-once, not exactly once.
+  assert.ok(host.posts.length > expected.size, 'a post that died before its ack is posted again');
+  assert.ok([...counts.values()].every(n => n >= 1));
   assert.equal(w.rows().length, 50);
   assert.ok(w.rows().every(r => r.state === 'posted' && r.remote_id.startsWith('good-')));
   w.close();
@@ -279,7 +152,7 @@ test('an item has a sender title, the subject as body and never more', () => {
   w.close();
 });
 
-test('claim hands each row out once, up to max, oldest first, until its lease ends', async () => {
+test('a claim leases each row to one caller, up to max, oldest first, until its lease ends', async () => {
   const w = world();
   w.setup(true);
   for (let i = 0; i < 5; i++) {
@@ -297,7 +170,7 @@ test('claim hands each row out once, up to max, oldest first, until its lease en
   w.close();
 });
 
-test('a claim nobody acknowledges is offered again once its lease ends, and only once', async () => {
+test('a claim nobody acknowledges is offered again once its lease ends, then leased again', async () => {
   const w = world();
   w.setup(true);
   w.commit('incremental', [mail('m1')]);
@@ -321,14 +194,18 @@ test('the lease deadline source tells main to claim again', async () => {
   w.commit('incremental', [mail('m1')]);
   const [source] = w.sources;
   assert.equal(source.id, 'notifications');
-  assert.equal(await source.next(), undefined);
+  // No lease: the source only wants its next look at the store.
+  assert.equal(await source.next(), w.clock.now() + BADGE_POLL_MS);
   w.notes.service.claim();
   assert.equal(await source.next(), w.clock.now() + CLAIM_LEASE_MS);
   await w.clock.advance(CLAIM_LEASE_MS);
   w.events.length = 0;
   await source.fire(w.clock.now());
-  assert.deepEqual(w.events, [{ type: 'notify', pending: 1 }]);
-  assert.equal(await source.next(), undefined);
+  assert.deepEqual(
+    w.events.filter(e => e.type === 'notify'),
+    [{ type: 'notify', pending: 1 }],
+  );
+  assert.equal(await source.next(), w.clock.now() + BADGE_POLL_MS);
   w.close();
 });
 
