@@ -27,6 +27,11 @@ export interface VaultOptions {
   fs?: VaultFs;
   /** How long one file call of a load or save may take before it fails. Default: 15 s. */
   writeTimeoutMs?: number;
+  /**
+   * How long a temporary file of a write that timed out stays protected from load-time cleanup, in case the
+   * abandoned call still finishes. Default: 30 s.
+   */
+  abandonedGraceMs?: number;
 }
 
 /**
@@ -58,6 +63,7 @@ interface Target {
   fs: VaultFs;
   path: string;
   timeoutMs: number;
+  graceMs: number;
 }
 
 /** `replaced`: the file was renamed into place but the write did not finish, so the disk may hold it. */
@@ -71,6 +77,9 @@ const UNSAVED = 'Account credentials could not be saved securely. Check the data
 const HALF_KEYCHAIN =
   'Secure credential storage can only partly open saved account credentials. Restart Aplos Mail.';
 const WRITE_TIMEOUT_MS = 15_000;
+const ABANDONED_GRACE_MS = 30_000;
+// The longest delay `setTimeout` takes as given.
+const MAX_DELAY_MS = 2 ** 31 - 1;
 // Writes of the committed entries a queued repair tries before it leaves the vault dirty for the next turn.
 const REPAIR_ATTEMPTS = 3;
 // A directory cannot be flushed on Windows and on some file systems; there the rename is as durable as it gets.
@@ -104,8 +113,29 @@ async function syncDir(path: string): Promise<void> {
   }
 }
 
-/** Temporary files this process is still writing; a vault loading meanwhile must not remove them. */
-const writing = new Set<string>();
+/**
+ * Temporary files this process is still writing; a vault loading meanwhile must not remove them. A name stays
+ * until its write settles, or, for a write that timed out and never settles, until its grace period ends (the
+ * timer), so a hung call holds neither a name for the life of the process nor its file from cleanup.
+ */
+const writing = new Map<string, NodeJS.Timeout | undefined>();
+
+function claim(temporary: string): void {
+  writing.set(temporary, undefined);
+}
+
+function release(temporary: string): void {
+  clearTimeout(writing.get(temporary));
+  writing.delete(temporary);
+}
+
+/** Starts the grace period of an abandoned write that has not settled yet; it never keeps the process alive. */
+function expire(temporary: string, ms: number): void {
+  if (!writing.has(temporary) || writing.get(temporary)) return;
+  const timer = setTimeout(() => writing.delete(temporary), ms);
+  timer.unref();
+  writing.set(temporary, timer);
+}
 
 /** A file call that did not settle in time; it may still settle (and take effect) later. */
 class TimedOut extends Error {}
@@ -257,12 +287,13 @@ async function writeAtomically(
   const temporary = `${path}.${randomUUID()}.tmp`;
   // A failed write must not leave an encrypted copy of a value that was reported as unsaved.
   const discard = () => removeQuietly(target, temporary);
-  const forget = () => writing.delete(temporary);
+  const forget = () => release(temporary);
   const abandon = () => void discard().finally(forget);
-  writing.add(temporary);
   let renamed = false;
   try {
-    await bounded(() => fs.mkdir(dir, { recursive: true, mode: 0o700 }), timeoutMs, forget);
+    // A late mkdir creates no temporary file: nothing runs after it once this write has given up.
+    await bounded(() => fs.mkdir(dir, { recursive: true, mode: 0o700 }), timeoutMs);
+    claim(temporary);
     await bounded(() => writeNew(fs, temporary, text), timeoutMs, abandon);
     await bounded(
       () => fs.rename(temporary, path),
@@ -278,8 +309,10 @@ async function writeAtomically(
     return 'saved';
   } catch (error) {
     if (renamed) return 'replaced';
+    // A call that timed out may still create the file; its late handler removes it and forgets the name, or
+    // the grace period ends first and a later load may remove the file.
+    if (error instanceof TimedOut) expire(temporary, target.graceMs);
     await discard();
-    // A call that timed out may still create the file; its late handler removes it and forgets the name.
     if (!(error instanceof TimedOut)) forget();
     return 'unsaved';
   }
@@ -402,7 +435,13 @@ class SealedVault<T> implements Vault<T> {
 /** `setTimeout` fires at once for 0, NaN, negative or over-2^31 delays, which would fail every save. */
 function writeTimeout(ms: number | undefined): number {
   if (ms === undefined || !Number.isFinite(ms) || ms <= 0) return WRITE_TIMEOUT_MS;
-  return Math.min(ms, 2 ** 31 - 1);
+  return Math.min(ms, MAX_DELAY_MS);
+}
+
+/** 0 is allowed (the name is released when the call times out); NaN, negative or missing is the default. */
+function abandonedGrace(ms: number | undefined): number {
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return ABANDONED_GRACE_MS;
+  return Math.min(ms, MAX_DELAY_MS);
 }
 
 /** For tests and shutdown: waits for queued writes and retries a repair the vault still owes the disk. */
@@ -417,6 +456,7 @@ export async function createVault<T>(options: VaultOptions): Promise<Vault<T>> {
     fs: options.fs ?? nodeVaultFs,
     path: join(options.dataDir, options.file ?? 'credentials.enc.json'),
     timeoutMs: writeTimeout(options.writeTimeoutMs),
+    graceMs: abandonedGrace(options.abandonedGraceMs),
   };
   if (!options.decrypt) return new SealedVault<T>(options, target, new Map());
   await removeStaleTemporaries(target);
