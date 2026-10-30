@@ -152,6 +152,49 @@ test('Send anyway after uncertain sends the pinned MIME without the remote draft
     assert.equal(w.server.worst(), 1);
   }));
 
+test('the attempt survives a restart: after a hung send and a kill, Send anyway still sends the pinned MIME without the remote draft', () =>
+  inWorld(async w => {
+    syncedDraft(w);
+    let hung: { remoteDraftId?: string } | undefined;
+    w.server.script.push({ result: 'hang', observe: p => void (hung = p) });
+    const s = w.send(w.first, 'd1');
+    const mime = storedMime(w, s.id);
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sending', 'the send is hanging when the app dies');
+    // The first (hung, never delivered) attempt named the synced draft, as a first attempt does.
+    assert.equal(hung?.remoteDraftId, 'rd-1');
+    w.first.kill();
+    const next = w.open();
+    await w.settle();
+    assert.equal(
+      w.get(s.id, next).state,
+      'uncertain',
+      'a lost sending row becomes uncertain, never re-sent',
+    );
+    await w.clock.advance(2 * MIN);
+    await w.settle();
+    assert.equal(
+      w.get(s.id, next).state,
+      'uncertain',
+      'both checks found nothing: the owner is asked',
+    );
+    assert.equal(w.server.calls.filter(c => c.op === 'send').length, 1, 'the restart sent nothing');
+    w.act(next, { type: 'sendAnyway', submissionId: s.id, revision: 1 });
+    await w.settle();
+    await w.clock.advance(SEC);
+    await w.settle();
+    assert.equal(w.get(s.id, next).state, 'sent');
+    const sends = w.server.calls.filter(c => c.op === 'send');
+    assert.equal(sends.length, 2, 'the hung attempt and the deliberate second one');
+    // The attempt flag is durable: the engine that took over remembers the first attempt happened.
+    const second = w.server.payloads[0];
+    noRemoteDraft(second);
+    assert.equal(second.internetId, REMOTE_ID, 'the same Message-ID');
+    assert.deepEqual(second.mime, mime, 'the same bytes');
+    assert.deepEqual(w.server.consumed, [], 'no remote draft was consumed by the second attempt');
+  }));
+
 test('Retry after a failed attempt sends the pinned MIME without the remote draft', () =>
   inWorld(async w => {
     syncedDraft(w);

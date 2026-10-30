@@ -3,7 +3,14 @@ import https from 'node:https';
 import type { LookupFunction } from 'node:net';
 import type { ImageProxy, ImageRefusal, ProxiedImage } from '@aplos/engine/ports';
 import { readImageHeader, sniffMime, SNIFF_BYTES } from './image-type';
-import { proxyLimits, tokenBudget, type LimitOverrides, type ProxyLimits } from './limits';
+import {
+  createSemaphore,
+  proxyLimits,
+  tokenBudget,
+  type LimitOverrides,
+  type ProxyLimits,
+  type Release,
+} from './limits';
 import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from './resolve';
 
 /**
@@ -20,7 +27,8 @@ export const REQUEST_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   Connection: 'close',
 });
 
-const MAX_HEADER_BYTES = 16 * 1024;
+/** Half Node's default: an image host's response headers are a few hundred bytes. */
+const MAX_HEADER_BYTES = 8 * 1024;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
 export interface UpstreamResponse {
@@ -133,6 +141,7 @@ async function readImage(
   response: UpstreamResponse,
   limits: ProxyLimits,
   signal: AbortSignal,
+  spend: (bytes: number) => boolean,
 ): Promise<ProxiedImage> {
   if ((response.contentLength ?? 0) > limits.maxBytes) return refusal('size');
   const chunks: Uint8Array[] = [];
@@ -142,6 +151,7 @@ async function readImage(
     signal.throwIfAborted();
     total += chunk.byteLength;
     if (total > limits.maxBytes) return refusal('size');
+    if (!spend(chunk.byteLength)) return refusal('budget');
     chunks.push(chunk);
     if (!sniffed && total >= SNIFF_BYTES) {
       if (!sniffMime(joined(chunks, total))) return refusal('type');
@@ -168,34 +178,103 @@ function whenAborted(signal: AbortSignal): Promise<never> {
   });
 }
 
+/** A time allowance that runs only between `resume` and `pause`; it calls `expire` once the allowance is used up. */
+interface Allowance {
+  resume(): void;
+  pause(): void;
+  stop(): void;
+}
+
+function allowance(ms: number, expire: () => void): Allowance {
+  let left = ms;
+  let since = 0;
+  let timer: NodeJS.Timeout | undefined;
+  function pause() {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = undefined;
+    left -= Date.now() - since;
+  }
+  function resume() {
+    if (timer) return;
+    since = Date.now();
+    timer = setTimeout(expire, Math.max(left, 0));
+  }
+  return { resume, pause, stop: pause };
+}
+
+/** The two clocks of one fetch: `work` runs while it does something, `wait` while it queues for a slot. */
+interface Clocks {
+  signal: AbortSignal;
+  work: Allowance;
+  wait: Allowance;
+  /** True once either allowance ran out (the caller's own abort is not a timeout). */
+  expired(): boolean;
+}
+
+function clocks(caller: AbortSignal, limits: ProxyLimits): Clocks {
+  const deadline = new AbortController();
+  const work = allowance(limits.timeoutMs, () => deadline.abort());
+  const wait = allowance(limits.waitMs, () => deadline.abort());
+  return {
+    signal: AbortSignal.any([caller, deadline.signal]),
+    work,
+    wait,
+    expired: () => deadline.signal.aborted,
+  };
+}
+
 export function createImageProxy(options: ImageProxyOptions = {}): HostImageProxy {
   const limits = proxyLimits(options.limits);
   const resolve = options.resolve ?? systemResolver;
   const connect = options.connect ?? nodeConnector;
   const budget = tokenBudget(limits);
+  const slots = createSemaphore(limits.maxInFlight);
 
-  async function request(target: PinnedTarget, signal: AbortSignal): Promise<Step> {
-    const response = await connect(target, signal);
+  /** Waits for a slot on the wait clock, so the work clock (the fetch's own time limit) starts at the grant. */
+  async function granted(token: string, clock: Clocks): Promise<Release> {
+    clock.work.pause();
+    clock.wait.resume();
     try {
-      if (REDIRECTS.has(response.status)) return redirectStep(response, target.url);
-      if (response.status < 200 || response.status > 299) return refusal('http');
-      return await readImage(response, limits, signal);
+      return await slots.acquire(clock.signal, token);
     } finally {
-      response.close();
+      clock.wait.pause();
+      clock.work.resume();
     }
   }
 
-  async function follow(start: string, token: string, signal: AbortSignal): Promise<ProxiedImage> {
+  /** One hop in a slot: a hostile mail's hundred URLs queue here instead of buffering a hundred bodies at once. */
+  async function request(target: PinnedTarget, token: string, clock: Clocks): Promise<Step> {
+    const { signal } = clock;
+    const release = await granted(token, clock);
+    try {
+      const response = await connect(target, signal);
+      try {
+        if (REDIRECTS.has(response.status)) return redirectStep(response, target.url);
+        if (response.status < 200 || response.status > 299) return refusal('http');
+        return await readImage(response, limits, signal, bytes => budget.spendBytes(token, bytes));
+      } finally {
+        response.close();
+      }
+    } finally {
+      release();
+    }
+  }
+
+  async function follow(start: string, token: string, clock: Clocks): Promise<ProxiedImage> {
+    const { signal } = clock;
     let url: string | URL = start;
     for (let hop = 0; ; hop += 1) {
       signal.throwIfAborted();
       if (hop > limits.maxRedirects) return refusal('redirects');
       if (!budget.take(token)) return refusal('budget');
-      const pin = await pinTarget(url, limits.ports, resolve);
+      const pin = await pinTarget(url, limits.ports, resolve, signal);
       if (!pin.ok) return refusal(hop === 0 ? pin.reason : 'redirects');
       signal.throwIfAborted();
-      const step = await request(pin.target, signal);
+      const step = await request(pin.target, token, clock);
       if (step.kind !== 'redirect') return step;
+      // A secure page's image must not fall back to plain http, where anyone on the path can swap it.
+      if (pin.target.secure && step.location.protocol !== 'https:') return refusal('redirects');
       url = step.location;
     }
   }
@@ -205,16 +284,16 @@ export function createImageProxy(options: ImageProxyOptions = {}): HostImageProx
     { token, signal }: { token: string; signal: AbortSignal },
   ): Promise<ProxiedImage> {
     signal.throwIfAborted();
-    const deadline = new AbortController();
-    const timer = setTimeout(() => deadline.abort(), limits.timeoutMs);
-    const either = AbortSignal.any([signal, deadline.signal]);
+    const clock = clocks(signal, limits);
+    clock.work.resume();
     try {
-      return await Promise.race([follow(url, token, either), whenAborted(either)]);
+      return await Promise.race([follow(url, token, clock), whenAborted(clock.signal)]);
     } catch {
       if (signal.aborted) throw signal.reason;
-      return refusal(deadline.signal.aborted ? 'timeout' : 'http');
+      return refusal(clock.expired() ? 'timeout' : 'http');
     } finally {
-      clearTimeout(timer);
+      clock.work.stop();
+      clock.wait.stop();
     }
   }
 
