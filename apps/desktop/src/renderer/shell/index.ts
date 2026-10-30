@@ -37,10 +37,21 @@ import { addKeyLayer, type KeyLayer } from './store-keys';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
+  getOpenThreadContext,
+  leaveOpenThread,
   OPEN_THREAD_SCREEN,
   setOpenThread,
   subscribeOpenThread,
+  subscribeOpenThreadContext,
 } from './store-thread';
+import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import {
+  clearPaneHeader,
+  getPaneHeader,
+  setPaneHeader,
+  subscribePaneHeader,
+  type ScreenPaneHeader,
+} from './store-header';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
@@ -248,6 +259,7 @@ export function navigate(screen: Screen): void {
 }
 
 export { consumeRoute } from './store-route';
+export { screenLabel } from './nav';
 export type { RouteTarget, Screen } from './store-route';
 
 // ---------------------------------------------------------------------------
@@ -277,6 +289,33 @@ export function useShellKeyLayer(layer: KeyLayer): void {
 }
 
 // ---------------------------------------------------------------------------
+// The pane header (additive): a screen describes its own back, crumb and tools
+// ---------------------------------------------------------------------------
+
+/**
+ * Describes the pane header (back or close, crumb, tools) while the calling component is mounted; null clears it. The
+ * shell adds Ask and the calendar button. Compared by value, so an inline object is fine; cleared on unmount. A tool
+ * press runs the tool's command through the registry unless the header has its own `onTool`.
+ */
+export function usePaneHeader(header: ScreenPaneHeader | null): void {
+  const owner = useRef<object>({});
+  useEffect(() => {
+    setPaneHeader(owner.current, header);
+  });
+  useEffect(() => {
+    const who = owner.current;
+    return () => clearPaneHeader(who);
+  }, []);
+}
+
+/** The screen's pane header, live; null when none. The shell reads it. */
+export function usePaneHeaderValue(): ScreenPaneHeader | null {
+  return useSyncExternalStore(subscribePaneHeader, getPaneHeader, getPaneHeader);
+}
+
+export type { ScreenPaneHeader };
+
+// ---------------------------------------------------------------------------
 // The account scope (additive): what the sidebar's switcher selects
 // ---------------------------------------------------------------------------
 
@@ -294,21 +333,36 @@ export function setAccountScope(accountId: AccountId | null): void {
 // The open thread (additive): the reader lane renders it on the `{ label: 'thread' }` screen
 // ---------------------------------------------------------------------------
 
-/** Records `id` as the open thread and shows the `{ label: 'thread' }` screen (a placeholder until the reader lane renders it). */
-export function openThread(id: ThreadId): void {
-  setOpenThread(id);
+/**
+ * Records `id` as the open thread and shows the `{ label: 'thread' }` screen. `options` (additive) says where the
+ * thread was opened from (`from`: Esc goes back there) and the ids of the list it was opened in (`listIds`: J and K
+ * walk them). Opening again from the reader itself (J, K) without options keeps the earlier place and list.
+ */
+export function openThread(id: ThreadId, options?: OpenThreadOptions): void {
+  setOpenThread(id, options);
   setScreen(OPEN_THREAD_SCREEN);
 }
 
-/** Clears the open thread; the reader calls it when it closes. Does not navigate. */
+/** Clears the open thread and, when the thread screen is showing, goes back to the screen it was opened from (Home when none was recorded). */
 export function closeThread(): void {
-  setOpenThread(null);
+  leaveOpenThread();
 }
 
 /** The open thread's id, live; null when none. */
 export function useOpenThread(): ThreadId | null {
   return useSyncExternalStore(subscribeOpenThread, getOpenThread, getOpenThread);
 }
+
+/** Where the open thread came from and the list it was opened in, live; null fields when `openThread` was given none. Additive. */
+export function useOpenThreadContext(): OpenThreadContext {
+  return useSyncExternalStore(
+    subscribeOpenThreadContext,
+    getOpenThreadContext,
+    getOpenThreadContext,
+  );
+}
+
+export type { OpenThreadContext, OpenThreadOptions };
 
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {
@@ -325,7 +379,7 @@ export function useHomeShellProps(): HomeShellProps {
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: openThread,
+      onOpen: id => openThread(id, { from: 'home' }),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

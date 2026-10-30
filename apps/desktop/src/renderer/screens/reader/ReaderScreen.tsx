@@ -12,8 +12,11 @@ import {
   navigate,
   openThread,
   pushToast,
+  screenLabel,
   useCommandTarget,
   useOpenThread,
+  useOpenThreadContext,
+  usePaneHeader,
   useRegisterCommands,
   useShellKeyLayer,
   useShellRegistry,
@@ -23,6 +26,8 @@ import { EmptyLine } from '../../ui/list';
 import { LoadingLine } from '../../ui/reader';
 import type { SuggestedAction } from '../../ui/props';
 import { senderOf, subjectOf } from '../home/homeRows';
+import { crumbPosition, stepThread } from './readerModel';
+import { readerHeader } from './readerHeader';
 import { createReaderActions, type ReaderActions, type ReaderDeps } from './readerActions';
 import { commandsForReader, relayToShell } from './readerCommands';
 import { freshUi, reduceFor, uiFor, type UiEvent } from './readerUi';
@@ -35,9 +40,9 @@ export const NO_THREAD_COPY = 'No email is open.';
 
 /** Props for `ReaderScreen`. */
 export interface ReaderScreenProps {
-  /** The list the reader was opened from, in order, for J and K. Absent: Home's order. */
+  /** The list the reader was opened from, in order, for J and K. Absent: the ids `openThread` recorded, else Home's order. */
   readonly listIds?: readonly string[];
-  /** Where Esc and "no thread left" go: the screen the reader was opened from. Default Home. */
+  /** Where Esc and "no thread left" go. Absent: the screen `openThread` recorded (`from`), else Home. */
   readonly backTo?: Screen;
   /** Reply (R, the stub, or a Reply suggestion). The composer lane implements it; absent until it lands. */
   readonly onReply?: (threadId: string) => void;
@@ -70,8 +75,9 @@ function useReaderActions(live: { readonly current: Live }): ReaderActions {
       rowOf: id => (live.current.row?.id === id ? live.current.row : undefined),
       go: openThread,
       leave: () => {
-        navigate(live.current.props.backTo ?? 'home');
         closeThread();
+        const { backTo } = live.current.props;
+        if (backTo) navigate(backTo);
       },
       act: args => api.thread.act(args),
       push: pushToast,
@@ -94,6 +100,27 @@ function useReaderTarget(row: ThreadRow | undefined): void {
   );
 }
 
+/** The pane header (DESIGN 7.1): back with Esc, "Home  1 of 16", K and J, ⋯. The shell draws it. */
+function useReaderHeader(input: {
+  readonly ids: readonly string[];
+  readonly at: string;
+  readonly row: ThreadRow | undefined;
+  readonly from: Screen | null;
+  readonly back: () => void;
+}): void {
+  const { ids, at, row, from, back } = input;
+  const header = readerHeader({
+    origin: screenLabel(from ?? 'home'),
+    position: crumbPosition(ids, at),
+    subject: row ? subjectOf(row) : '',
+    summaryScrolledAway: false,
+    hasPrevious: stepThread(ids, at, 'previous') !== null,
+    hasNext: stepThread(ids, at, 'next') !== null,
+    back,
+  });
+  usePaneHeader({ ...header, askScope: 'thisEmail' });
+}
+
 function controlsOf(actions: ReaderActions): LetterControls {
   return {
     suggest: actions.suggest,
@@ -110,7 +137,8 @@ function ignore(_event: UiEvent): void {
 
 function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
   const { open } = props;
-  const ids = useReaderList(props.listIds);
+  const context = useOpenThreadContext();
+  const ids = useReaderList(props.listIds ?? context.listIds ?? undefined);
   const controller = useLetterController();
   const buffer = useLetterBuffer(controller, open);
   const shown = buffer.letter;
@@ -121,6 +149,13 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
   useShellKeyLayer({ contexts: ['reader'] });
   useReaderTarget(row);
   usePrefetchAround(ids, open);
+  useReaderHeader({
+    ids,
+    at: shown ?? open,
+    row,
+    from: props.backTo ?? context.from,
+    back: actions.back,
+  });
 
   const [ui, send] = useReducer(reduceFor, freshUi(null));
   const dispatchShown = useCallback(

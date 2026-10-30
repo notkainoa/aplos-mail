@@ -270,28 +270,31 @@ function HomeSlot() {
 }
 
 /** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
-function useListProps() {
+function useListProps(from: Screen) {
   const scope = useAccountScope();
+  const place = typeof from === 'string' ? from : from.label;
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: (id: string, kind: OpenKind) => (kind === 'thread' ? openThread(id) : undefined),
+      onOpen: (id: string, kind: OpenKind) =>
+        kind === 'thread' ? openThread(id, { from }) : undefined,
     }),
-    [scope],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `from` is a new object every render; `place` is its value
+    [scope, place],
   );
 }
 
 function LaterSlot() {
-  return <LaterScreen {...useListProps()} />;
+  return <LaterScreen {...useListProps('later')} />;
 }
 
 function DoneSlot() {
-  return <DoneScreen {...useListProps()} />;
+  return <DoneScreen {...useListProps('done')} />;
 }
 
 function ListSlot({ which }: { readonly which: ListWhich }) {
   // Keyed by place, so Trash -> Spam -> All mail never carries an open Confirm or a cursor across.
-  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps()} />;
+  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps(which)} />;
 }
 
 /** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
@@ -303,14 +306,9 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The place the reader was opened from (the last screen shown before `{ label: 'thread' }`), for Esc. The shell keeps no history. */
-let readerOrigin: Screen = 'home';
-
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s; nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
-  if (typeof screen !== 'string' && screen.label === 'thread')
-    return <ReaderScreen backTo={readerOrigin} />;
-  readerOrigin = screen;
+  if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />
