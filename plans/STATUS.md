@@ -839,3 +839,5 @@ NOTICE integrator -> eng-contract: providers also needs an UnsubscribePort + Hos
 
 2026-10-31 08:10 integrator MERGED #151 (prov-gmail-write drafts test nits, a49ed9ac) into revamp. Check green on revamp with #152. No open PR from my queue.
 2026-10-31 08:10 | integrator | PARKED | integrator | nothing open; waiting for new READY lines (eng-host composition root, hill-climb PRs, providers' next PRs, any eng-contract port-gap PR). Never merged to main.
+
+- 2026-10-30 eng-time READY: PR #154 — #150 follow-ups done: a failed `Notification/claim` retries on one unref'd timer (5 s doubling to 5 min, reset on success, cleared by stop); banner text strips only the named bidi/invisible set, so ZWNJ/ZWJ and U+0600-0605 survive. `npm run check` exit 0. Labels lane-approved:eng-host and lane-approved:eng-time applied. #153 (draft port gaps) and #148 still await the Integrator.
