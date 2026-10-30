@@ -114,7 +114,18 @@ export function createLater({ store, clock, frames, zone }: LaterDeps): LaterSer
   /** A stored watermark past `now` came from a clock that was ahead: it must not silence what is due, so this run's start stands in. */
   const through = (q: StoreReader, now: number) => {
     const stored = Number(firedThrough(q));
-    return Number.isFinite(stored) && stored <= now ? stored : startedAt;
+    const base = Number.isFinite(stored) && stored <= now ? stored : startedAt;
+    // Idle fires move the watermark here only; it is committed when something was announced or it is a day old.
+    return seenThrough !== undefined && seenThrough <= now ? Math.max(base, seenThrough) : base;
+  };
+  /** Where the last fire looked up to: kept in memory so an idle minute costs no commit row (the `commits` table is never pruned). */
+  let seenThrough: number | undefined;
+
+  /** True when the stored watermark must be written: absent, from a clock that was ahead, or more than a day behind. */
+  const staleWatermark = (now: number) => {
+    const raw = store.read(firedThrough);
+    const stored = Number(raw);
+    return raw === undefined || !Number.isFinite(stored) || stored > now || now - stored > DAY_MS;
   };
 
   function announceReturn(row: Row, now: number) {
@@ -138,6 +149,11 @@ export function createLater({ store, clock, frames, zone }: LaterDeps): LaterSer
     async fire(now) {
       const due = store.read(q => q.all<Row>(DUE, through(q, now), now, MAX_LATER_NOTICES));
       for (const row of due) announceReturn(row, now);
+      // Nothing due and a fresh watermark: nothing to protect, and no row for the table that keeps every opId.
+      if (due.length === 0 && !staleWatermark(now)) {
+        seenThrough = now;
+        return;
+      }
       // After the announcements: a throw above leaves the watermark, and the retry replays what was announced.
       // It may move back with the clock: the per-thread opIds keep a return from being announced twice.
       store.commit({
@@ -145,6 +161,7 @@ export function createLater({ store, clock, frames, zone }: LaterDeps): LaterSer
         origin: 'system',
         writes: [{ kind: 'meta', key: FIRED_THROUGH, value: String(now) }],
       });
+      seenThrough = now;
     },
   };
 

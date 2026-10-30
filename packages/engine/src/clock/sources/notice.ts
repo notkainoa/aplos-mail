@@ -20,7 +20,8 @@ export interface DueThread {
 export const threadIdOf = (row: Pick<DueThread, 'accountId' | 'remoteId'>) =>
   `${row.accountId}:${row.remoteId}`;
 
-const title = (subject: string | null) =>
+/** A thread subject as shown in a notice or `Reminder/list`: one line, at most 500 characters (the contract allows 2,000). */
+export const clampTitle = (subject: string | null) =>
   (subject || '(no subject)').replace(/\s+/g, ' ').slice(0, 500);
 
 /**
@@ -38,7 +39,7 @@ export function noticeFor(
     kind,
     accountId: row.accountId,
     threadId: threadIdOf(row),
-    title: title(row.subject),
+    title: clampTitle(row.subject),
     at: firedAt,
     ...(late ? { wasDueAt: row.at, body: `Was due ${dueText(row.at, firedAt, zone)}` } : {}),
   };

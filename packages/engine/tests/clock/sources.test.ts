@@ -1,121 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Frame, NotificationItem } from '@aplos/contract';
-import type { LogRecord } from '@aplos/contract/log/events';
-import { createTimerLoop, fakeClock, type FakeClock } from '../../src/clock/module';
-import { LATER_QUERIES, createLater, resolvePresets } from '../../src/clock/sources/later';
-import { createReminders, REMINDER_QUERIES } from '../../src/clock/sources/reminders';
+import { fakeClock } from '../../src/clock/module';
+import { LATER_QUERIES, resolvePresets } from '../../src/clock/sources/later';
+import {
+  createReminders,
+  MAX_REMINDERS_PER_FIRE,
+  REMINDER_QUERIES,
+} from '../../src/clock/sources/reminders';
 import { localDayAndHour } from '../../src/clock/zone';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
-import type { FrameBus } from '../../src/runtime/frames';
 import { openStore, type StorePort } from '../../src/store';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-
-const LA = 'America/Los_Angeles';
-const LONDON = 'Europe/London';
-const SEC = 1_000;
-const MIN = 60 * SEC;
-const HOUR = 60 * MIN;
-const DAY = 24 * HOUR;
-const utc = (iso: string) => Date.parse(iso);
-const threadId = (n: number) => `${ACCOUNT}:t${n}`;
-
-/** One engine instance over `store`: the timer loop and both sources, announcing into `events`. */
-function boot(store: StorePort, clock: FakeClock, zone: string, events: NotificationItem[]) {
-  const records: LogRecord[] = [];
-  const log = createLogger({ sink: { write: r => records.push(r) }, salt: 's', clock });
-  const loop = createTimerLoop({ clock, log });
-  const frames: Pick<FrameBus, 'emit'> = {
-    emit(frame) {
-      if (frame.frame === 'host' && frame.event.type === 'reminder') events.push(frame.event.item);
-    },
-  };
-  const deps = { store, clock, frames, zone: () => zone };
-  const reminders = createReminders(deps);
-  const later = createLater(deps);
-  loop.register(reminders.source);
-  loop.register(later.source);
-  later.start();
-  loop.start();
-  return {
-    loop,
-    reminders,
-    later,
-    stuck: () => records.filter(r => r.event === 'engine.watchdog').length,
-    stop: () => loop.stop(),
-  };
-}
-
-/** A temp `mail.db` with threads t1..tN, a fake clock and any number of engine instances ("restarts") on it. */
-function world(start: string, zone = LA, threads = 3) {
-  const file = tempDb();
-  const clock = fakeClock(utc(start));
-  const open = () => openStore(file.open(), { now: () => clock.now() });
-  const store = open();
-  store.commit({
-    opId: 'seed',
-    origin: 'import',
-    writes: [
-      accountWrite,
-      ...folderWrites,
-      ...Array.from({ length: threads }, (_, i) => msg(`m${i + 1}`, `t${i + 1}`, i)),
-    ],
-  });
-  const events: NotificationItem[] = [];
-  const open_ = new Set<StorePort>([store]);
-  let ops = 0;
-  /** The workflow write `Thread/act` makes, so the tests set deadlines the way the views lane does. */
-  const patch = (s: StorePort, n: number, fields: Record<string, unknown>) =>
-    s.commit({
-      opId: `edit-${ops++}`,
-      origin: 'local',
-      writes: [
-        {
-          kind: 'workflow',
-          accountId: ACCOUNT,
-          remoteThreadId: `t${n}`,
-          patch: { ...fields, editedAt: clock.now() },
-        },
-      ],
-    });
-  return {
-    clock,
-    store,
-    events,
-    patch: (n: number, fields: Record<string, unknown>) => patch(store, n, fields),
-    remind: (n: number, at: number) => patch(store, n, { reminderAt: at, reminderFiredAt: null }),
-    snooze: (n: number, until: number | null) =>
-      patch(store, n, { status: 'later', laterUntil: until, hiddenFromHome: false }),
-    boot: (s: StorePort = store) => boot(s, clock, zone, events),
-    /** A second connection to the same file: another engine process (or a restart's new store). */
-    reopen() {
-      const s = open();
-      open_.add(s);
-      return s;
-    },
-    row: (n: number) =>
-      store.read(q =>
-        q.get<{
-          status: string;
-          later_until: number | null;
-          reminder_at: number | null;
-          reminder_fired_at: number | null;
-        }>(
-          `SELECT w.status, w.later_until, w.reminder_at, w.reminder_fired_at FROM thread_workflow w
-           JOIN threads t ON t.id = w.thread_id WHERE t.remote_id = ?`,
-          `t${n}`,
-        ),
-      )!,
-    done() {
-      for (const s of open_) s.close();
-      file.cleanup();
-    },
-  };
-}
-
-type World = ReturnType<typeof world>;
-const idsOf = (w: World) => w.events.map(e => e.threadId);
+import { DAY, HOUR, idsOf, LA, LONDON, MIN, SEC, threadId, utc, world } from './world.helpers';
 
 // ------------------------------------------------------------ Later presets
 
@@ -416,7 +314,9 @@ test('a fire repeated after a hung call, or run by a second engine, notifies onc
     // A second engine that read the due set before the first committed: its commit replays, so it stays silent.
     w.remind(2, due);
     const other = w.reopen();
-    const stale = other.read(q => q.all(REMINDER_QUERIES.due, w.clock.now()));
+    const stale = other.read(q =>
+      q.all(REMINDER_QUERIES.due, w.clock.now(), MAX_REMINDERS_PER_FIRE),
+    );
     assert.equal(stale.length, 1);
     const racing = Object.create(other) as StorePort;
     racing.read = fn =>
@@ -451,7 +351,9 @@ test('a thread deleted between the read and the commit is not announced and does
   try {
     w.remind(1, at('2026-10-28T15:00:00Z'));
     w.remind(2, at('2026-10-28T15:30:00Z'));
-    const stale = w.store.read(q => q.all(REMINDER_QUERIES.due, w.clock.now()));
+    const stale = w.store.read(q =>
+      q.all(REMINDER_QUERIES.due, w.clock.now(), MAX_REMINDERS_PER_FIRE),
+    );
     w.store.commit({
       opId: 'gone',
       origin: 'sync',

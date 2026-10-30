@@ -1,7 +1,7 @@
 import type { DeadlineSource } from '../../ports/time';
 import type { FrameBus } from '../../runtime/frames';
 import type { StorePort, StoreReader, WorkflowWrite } from '../../store/port';
-import { announce, noticeFor, RECHECK_MS, threadIdOf, type DueThread } from './notice';
+import { announce, clampTitle, noticeFor, RECHECK_MS, threadIdOf, type DueThread } from './notice';
 
 export interface ReminderItem {
   threadId: string;
@@ -37,13 +37,25 @@ const COLUMNS = `t.account_id AS accountId, t.remote_id AS remoteId, t.subject A
 const FROM = 'FROM thread_workflow w JOIN threads t ON t.id = w.thread_id';
 // Spells out the partial index `timers_wf`'s own condition, so SQLite can use it.
 const PENDING = 'w.reminder_at IS NOT NULL AND w.reminder_fired_at IS NULL';
-const DUE = `SELECT ${COLUMNS} ${FROM} WHERE ${PENDING} AND w.reminder_at <= ? ORDER BY w.reminder_at, w.thread_id`;
+const ORDER = 'ORDER BY w.reminder_at, w.thread_id';
+const DUE = `SELECT ${COLUMNS} ${FROM} WHERE ${PENDING} AND w.reminder_at <= ? ${ORDER} LIMIT ?`;
 const NEXT =
   'SELECT min(reminder_at) AS at FROM thread_workflow WHERE reminder_at IS NOT NULL AND reminder_fired_at IS NULL';
-const LISTED = `SELECT ${COLUMNS} ${FROM} WHERE w.reminder_at IS NOT NULL ORDER BY w.reminder_at, w.thread_id`;
+// `Reminder/list` is two bounded reads: the upcoming ones (the partial index `timers_wf`) and the fired ones the owner
+// has not acked. No index covers the fired ones (a REQUEST to eng-store, DECISIONS.md), so that read scans; its LIMIT
+// bounds what it returns, not what it reads. `ack` needs the fired ones without a limit (it matches by id).
+const UPCOMING = `SELECT ${COLUMNS} ${FROM} WHERE ${PENDING} ${ORDER} LIMIT ?`;
+const FIRED_WHERE = 'w.reminder_at IS NOT NULL AND w.reminder_fired_at IS NOT NULL';
+const FIRED = `SELECT ${COLUMNS} ${FROM} WHERE ${FIRED_WHERE} ORDER BY w.reminder_fired_at DESC, w.thread_id LIMIT ?`;
+const FIRED_ALL = `SELECT ${COLUMNS} ${FROM} WHERE ${FIRED_WHERE} ${ORDER}`;
 
-/** For the plan test: the SQL whose query plan must use `timers_wf`. */
-export const REMINDER_QUERIES = { due: DUE, next: NEXT } as const;
+/** A fire announces at most this many reminders; `next()` stays due while more are left, so the loop comes back. */
+export const MAX_REMINDERS_PER_FIRE = 50;
+/** `Reminder/list` returns at most this many upcoming and this many fired reminders. */
+export const MAX_LISTED = 200;
+
+/** For the plan test: the SQL whose query plan must use `timers_wf` (`fired` is the scan documented above). */
+export const REMINDER_QUERIES = { due: DUE, next: NEXT, upcoming: UPCOMING, fired: FIRED } as const;
 
 type SqlRow = Row & Record<string, string | number | null>;
 
@@ -55,7 +67,7 @@ const toItem = (row: Row): ReminderItem => ({
   ...(row.firedAt === null ? {} : { firedAt: row.firedAt }),
   // The workflow row has no "only if nobody replied" column yet (an eng-store request): never stored, so false.
   ifNoReply: false,
-  title: row.subject || '(no subject)',
+  title: clampTitle(row.subject),
 });
 
 const workflowPatch = (row: Row, patch: WorkflowWrite['patch']): WorkflowWrite => ({
@@ -89,7 +101,7 @@ export function createReminders({ store, clock, frames, zone }: ReminderDeps): R
     // The recheck is the loop's only way to learn of a reminder set while it sleeps (nothing calls `changed` yet).
     next: async () => Math.min(store.read(nextAt) ?? Infinity, clock.now() + RECHECK_MS),
     async fire(now) {
-      const due = store.read(q => q.all<SqlRow>(DUE, now));
+      const due = store.read(q => q.all<SqlRow>(DUE, now, MAX_REMINDERS_PER_FIRE));
       let failure: unknown;
       for (const row of due)
         try {
@@ -104,12 +116,16 @@ export function createReminders({ store, clock, frames, zone }: ReminderDeps): R
 
   return {
     source,
-    list: () => store.read(q => q.all<SqlRow>(LISTED)).map(toItem),
+    list: () =>
+      store
+        .read(q => [...q.all<SqlRow>(UPCOMING, MAX_LISTED), ...q.all<SqlRow>(FIRED, MAX_LISTED)])
+        .sort((a, b) => a.at - b.at)
+        .map(toItem),
     ack(opId, threadIds) {
       const wanted = new Set(threadIds);
       const seen = store
-        .read(q => q.all<SqlRow>(LISTED))
-        .filter(row => row.firedAt !== null && wanted.has(threadIdOf(row)));
+        .read(q => q.all<SqlRow>(FIRED_ALL))
+        .filter(row => wanted.has(threadIdOf(row)));
       const result = store.commit({
         opId,
         origin: 'local',
