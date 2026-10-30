@@ -637,6 +637,8 @@ const bodies = new WeakMap<RemoteDraftWrite, string | undefined>();
 function bodyOf(w: RemoteDraftWrite): string | undefined {
   if (bodies.has(w)) return bodies.get(w);
   const found = candidates(w);
+  // A source over the limit means the provider's real body is too big to keep: never settle for another source then.
+  if (found.some(c => c.over)) return void bodies.set(w, undefined);
   const snippet = w.message?.snippet;
   const body = found.find(c => !c.blank) ?? (snippet ? undefined : found[0]);
   const html = body && !body.over && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
@@ -733,9 +735,19 @@ function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
  * does not tell a phone edit from our own copy. No body, attachments or a body over the limit: no proof.
  */
 function holdsOurContent(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta, base: DraftFields) {
-  if (meta.fingerprint === undefined || !completes(w)) return false;
+  return hasFingerprint(w, row, base, meta.fingerprint);
+}
+
+/** Does the fact's delivered content hash to `fingerprint`? No fingerprint, no body or attachments: no proof. */
+function hasFingerprint(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  base: DraftFields,
+  fingerprint: string | undefined,
+) {
+  if (fingerprint === undefined || !completes(w)) return false;
   const theirs = theirsFields(row.account_id, messageOf(w), base);
-  return fingerprintOf(theirs.fields) === meta.fingerprint;
+  return fingerprintOf(theirs.fields) === fingerprint;
 }
 
 /**
@@ -750,21 +762,24 @@ function supersedesOwn(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta, fiel
   const wrote = meta.wrote ?? [];
   const replaces = w.supersedes.some(id => id === row.remote_message_id || wrote.includes(id));
   if (!replaces) return false;
-  return explainedByAttempt(w, row, meta) || holdsOurContent(w, row, meta, fields);
+  return explainedByAttempt(w, row, meta, fields) || holdsOurContent(w, row, meta, fields);
 }
 
 /**
- * The running (or unanswered) upload explains one move of the base: from the message id it was made against to the
- * copy that replaces it. Once the base has moved, the attempt has used its move; a later fact under the same
- * Message-ID (a phone edit that keeps it) needs its content to prove it is ours.
+ * The running (or unanswered) upload's echo: the same Message-ID and content that hashes to what the upload sends. The
+ * Message-ID alone proves nothing (a phone edit can keep it, and a retry of the same revision reuses it), so there is
+ * no "one move per attempt" rule to get wrong: a fact whose content differs, or that delivers no body, is never
+ * explained by the upload and goes the ordinary way (a conflict is the safe direction).
  */
-function explainedByAttempt(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
+function explainedByAttempt(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  base: DraftFields,
+) {
   const attempt = meta.uploading;
   if (!attempt || attempt.internetId !== w.internetId) return false;
-  const base = attempt.base;
-  return (
-    typeof base === 'string' && base === row.remote_message_id && !!w.supersedes?.includes(base)
-  );
+  return hasFingerprint(w, row, base, attempt.fingerprint);
 }
 
 /** The echo of our own upload under a new message id: the row's base moves to it, nothing else changes. */

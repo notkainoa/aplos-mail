@@ -308,7 +308,7 @@ test('stepWrites turns clearedFailures into failure:null writes after the quaran
   ]);
 });
 
-test('stepWrites carries a remote draft body up to the draft limit and drops one over it', () => {
+test('stepWrites carries a remote draft body up to the draft limit and cuts one over it just past the limit', () => {
   const account = { id: 'acct-1', provider: 'google', address: 'a@b.test' } as AdapterAccount;
   const draft = (id: string, size: number) => ({
     remoteDraftId: id,
@@ -336,8 +336,8 @@ test('stepWrites carries a remote draft body up to the draft limit and drops one
   );
   assert.equal(byId.get('fits')!.html?.length, 1_000_000);
   assert.equal(byId.get('fits')!.text?.length, 1_000_000);
-  assert.equal(byId.get('over')!.html, undefined);
-  assert.equal(byId.get('over')!.text, undefined);
+  assert.equal(byId.get('over')!.html?.length, 1_000_001, 'still over, so the engine sees it');
+  assert.equal(byId.get('over')!.text?.length, 1_000_001);
 });
 
 test('a failed factory discard is logged once, with the kind and no ref, and still rejects', async () => {

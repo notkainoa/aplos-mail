@@ -213,6 +213,10 @@ function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internet
   return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
 }
 
+/** The fingerprint of the content an upload of this draft sends. */
+const uploadFingerprint = (meta: DraftMeta, fields: DraftFields) =>
+  meta.cur ?? fingerprintOf(fields);
+
 function uploadOf(
   row: UploadRow,
   fields: DraftFields,
@@ -224,7 +228,7 @@ function uploadOf(
   const upload: DraftUpload = {
     draftId: row.id,
     revision: row.revision,
-    fingerprint: meta.cur ?? fingerprintOf(fields),
+    fingerprint: uploadFingerprint(meta, fields),
     internetId,
     mime,
   };
@@ -365,7 +369,11 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
     ctx,
     id,
     {
-      uploading: { internetId, revision: row.revision, base: row.remote_message_id },
+      uploading: {
+        internetId,
+        revision: row.revision,
+        fingerprint: uploadFingerprint(meta, fields),
+      },
       ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
       ...(old.length && earlier.length ? { earlier } : {}),
     },
