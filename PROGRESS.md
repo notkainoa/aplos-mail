@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-29 — eng-time time-1: clock, fake clock and timer loop review and repair
+
+- **Change.** `rv/eng-time/clock-fix` (merged `origin/revamp`, conflict in `clock/module.ts` resolved to the `LaneModuleSource` seam). Re-derived and fixed the review's defects in `packages/engine/src/clock/{loop,fake,system,module}.ts`: non-finite `next()` treated as unreadable with watchdog backoff; system timers and sleeps `unref`'d; pass-level throws no longer reject `idle()` or orphan the armed timer; wake budget and stale backoff stamps survive backward wall-clock jumps; NaN timer targets treated as already due; `advance`/`set` reject non-finite and negative input; a throwing fake timer callback no longer skips later timers or corrupts the clock; `advance`/`set`/`flush` now settle chained async arms instead of a fixed three turns; a source unregistered or replaced inside its own `fire` is not read again; `maxWakesPerHour <= 0` clamped; `createModule` yields `services.deadlines` when the host injects one. The every-fire 1 s gap is removed as contract-breaking (DECISIONS 2026-10-29).
+- **Evidence.** `npx tsx --test 'packages/engine/tests/clock/**/*.test.ts'`: 29/29 pass (13 baseline plus 16 adversarial defect tests that failed before the fixes). `npx tsc --noEmit -p packages/engine`, prettier and eslint clean on the touched files. `npm run test:engine`: 790/806; the 13 failures are all outside `eng-time` — 12 views tests starved by the synchronous `manualClock` in `tests/runtime.helpers.ts` (reproduced: one tick inside a 300 ms synchronous `advance` vs six inside `fakeClock.advance(300)`) and one stale assertion in `tests/runtime.modules.test.ts` (`isAbsent(deadlines)` predates this lane landing).
+- **Not done yet.** eng-views' harness needs `advance` to drain microtasks or `manualClock` swapped for `fakeClock` (a structural drop-in; `advance` becomes `Promise<void>`); `tests/runtime.modules.test.ts` needs its `isAbsent(deadlines)` assertion updated now that the clock lane provides a real registry; `plans/OWNERS.md` needs `packages/engine/tests/clock/**` added to `eng-time` (owners-check flags `loop.test.ts` and will flag `defects.test.ts`). time-2 (send state machine) not started.
+
 ## 2026-10-28 — Revamp Phase 0 artifacts F1-F5 and F7
 
 - **Change.** `@aplos/contract` v1 (147 methods with zod/mini schemas, frames with `{dbEpoch, seq}`, registry, generated allowlists and OpenAPI, typed client, the 66 legacy names mapped, `GAPS.md`); `packages/engine/src/ports/**` (F3) with a five-provider paper walk; `packages/engine/src/store/**` (F4: SQL port, `node:sqlite` adapter, forward-only migrations, schema 0001, `StorePort`, minimal idempotent commit, sweep); `packages/engine/src/methods/**` (F5: dispatch table, 29 area stubs); the log catalog, `Logger` and redactor, and `apps/desktop/src/host/logsink.ts` (F7).
@@ -472,3 +478,34 @@ Evidence:
 
 Not verified: a live provider accepting a real key from the Settings field (Test against real Groq/OpenAI/Claude etc.), and the macOS microphone prompt itself from the welcome (needs a person at the screen).
 
+
+## 2026-10-28 — Platform: Q2 Electron hardening (plan 40 Q2)
+
+- Fuses on (RunAsNode, NODE_OPTIONS and the Node inspector off; asar integrity and app-from-asar-only on), macOS 13 minimum, a separate ad-hoc entitlements file for `npm run package`; `verify-hardening --expect adhoc` passes 10/10 static rows on a local package.
+- `src/main/security.ts`: one guard for every webContents (navigation, redirects, subframes, window.open, `<webview>`, permission, device and display-media requests denied; the trusted window's microphone rule kept; links still open in the browser) and the release-only debug guard (exit 78, before the single-instance lock), proven on a release-define build for seven switch spellings.
+- Production renderer CSP without dev ports or inline script, set at build time.
+- `release-build.mjs` and the Release workflow verify before they upload; only a Developer ID release is ever uploaded; the workflow's checkout keeps no token.
+- Closed (#40, 2026-10-28): DevTools and the Toggle Developer Tools menu are gated on the release define, and release builds ignore `APLOS_TEST` and `APLOS_DATA_DIR` via `test-mode.ts`; the entitlement-removal experiment still needs the second Mac.
+## 2026-10-27/28 — Revamp F9: Paper design foundation (UI-core, ui-foundation)
+
+- **Tokens.** `renderer/ui/tokens.json` → `ui/generated/{tokens.css,motion.ts,contrast-pairs.json}`. The generator's `--check` mode passes. Contrast is checked for 268 pairs in light, dark and Increase Contrast, with one accepted exception: the resting field ring, DESIGN decision 20. The identity check runs 152 distances against DESIGN 12.4's reference list. The shell's Lab b* is −0.48 in light and −0.74 in dark. The five springs reproduce DESIGN 4.8 within 0.0014 per sample. Sizes are in rem.
+- **Design lint.** 11 rules (`tools/lint/design`), each with failing and passing fixtures. An adversarial "rule breaker" tried 30 evasions and all are caught. 45 tests.
+- **Skill.** `.claude/skills/aplos-design/SKILL.md` v1.1. A token-sync check runs against it. A fresh agent given only the skill built a toast with Undo that passed the lint.
+- **Components.** Frozen props for 75 components (`renderer/ui/props.ts`), with plain implementations of all of them. Each family was built, reviewed adversarially (break-ui data, hover shifts, DESIGN and mockup conformance) and fixed. 514 renderer tests.
+- **Commands.** Catalog, registry, pure resolver, hold tracker, key queue and the generated shortcut sheet. The property test runs 2,500 sequences.
+- **Data surface.** Signatures of the data hooks and shell, typed from `@aplos/contract` (freeze findings FR-1 and FR-21 fixed). A new dev entry (`renderer/main.tsx`) boots on the stand-in engine.
+- **Fonts.** Newsreader is bundled (OFL), with metric-matched New York and Georgia fallbacks.
+- **Not verified here.** The live engine. Real Gmail is out of scope until Phase 2 (WP5.6).
+
+## 2026-10-29 — Providers: the primary-device lease and the Gmail workflow channel wired into the actor host (plan 20 PV3, ARCH 6.5)
+
+- `ActorHost` runs `createLeaseController` over `ActorHostOptions.workflowChannel` when the adapter exposes a workflow port: `claimLease`/`releaseLease` publish the pin as `lease:<deviceId>` records, `tick()` is the `lease:<account>` deadline source, quit and disconnect publish the expired claim while 'restart' keeps it, and each channel read commits its `nextState` as the `workflow` scope's `sync_state` row. A controller made on a restart is seeded with the last reported lease (`LeaseDeps.initial`, snapshotted in `stop`), so a quit before its first read still retires the live claim. Accounts without a channel keep the local claim/release.
+- The actor plans the `workflow` scope on the primary (or while no holder is known — `allowed()` gates on the live holder since `PlanInput` has no lease field), at most once a minute via the adapter's own round clock (the lease's reads do not move it), through the governor; pause/block means zero requests.
+- Gmail: `GoogleProviderOptions.workflow` opts in the paced `GmailWorkflowTransport`; `google/workflow-host.ts` supplies `workflowChannel` (the `WorkflowStateChannel`) and `onWorkflowMerged` (merged `thread:` records → `workflowFacts` → `WorkflowWrite` commit with content op ids). `StepResult` has no facts field (frozen port), so facts commit in a following transaction — documented there.
+- Verified: `npx tsx --test packages/engine/tests/sync-*.test.ts packages/engine/tests/sync/*.test.ts 'apps/desktop/tests/prov-gmail/*.test.ts'` 365 pass 0 fail (7 new `sync-host-lease`, 5 new `workflow-host` e2e on the emulator: two-Mac lease, cadence+charge, throttle→pause→resume, quit/restart handover, `thread_workflow` facts); `npm run typecheck`, ESLint and Prettier clean.
+
+## eng-time time-2: submission state machine (2026-10-29, branch rv/eng-time/submissions-v2)
+
+- Merged the unreviewed WIP (b756418) and reviewed it line by line; defects listed in DECISIONS.md. Rewrote `outbox/store.ts` (no new columns), `start.ts` and `runner.ts` (start rule on every fire, payload before the marker, admission send-limit, overdue rule behind a hung send), hardened `mime.ts`, registered `outbox/module.ts` as the `eng-time` lane module (extension, `services.outbox`, `start`/`stop`) and wired `Submission/get|set` and `Outbox/pending`.
+- Tests: `tests/outbox/{machine,start-rules,mime,module}.test.ts` with the counting fake `SendPort`; every scenario asserts the fake never saw two deliveries of one Message-ID: kill-equivalents (drop the engine, reopen the same file), two engines on one store, clock jumps both ways, undo racing send, uncertain + `findSent` found / absent / found after 60 s / throwing / killed mid-check, `PausedError`, `NotSentError`, `send_limit`.
+- Not done (other lanes): the real kill-point harness (time-6), `alsoDone`, draft cleanup after `sent` and the `Draft/*` lock (time-3), `Operation/undo` on a send's opId (views), settings/blob services for `undoSendSeconds` and attachment bytes (the module uses the 10 s default and refuses attachments until `EngineServices` has them).

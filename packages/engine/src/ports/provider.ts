@@ -250,6 +250,14 @@ export interface Quarantine {
   error: ClassifiedError;
 }
 
+/** The failures a step really clears: `clearedFailures` minus every item the same step quarantines (quarantine wins). */
+export function effectiveClearedFailures(
+  step: Pick<StepResult, 'clearedFailures' | 'quarantine'>,
+): string[] {
+  const quarantined = new Set((step.quarantine ?? []).map(q => q.item));
+  return (step.clearedFailures ?? []).filter(item => !quarantined.has(item));
+}
+
 /** Everything one bounded step learned, committed by the actor in one transaction with every `nextStates` row. */
 export interface StepResult {
   upserts?: MessageFacts[];
@@ -282,6 +290,12 @@ export interface StepResult {
   /** `provider_memory` writes; null deletes. */
   memory?: Record<string, string | null>;
   quarantine?: Quarantine[];
+  /**
+   * Clears the `sync_failures` rows of items that synced after a retry (`item` as in `Quarantine.item`). The store write is
+   * `SyncFailureWrite { failure: null }`; an item named here and in `quarantine` stays quarantined. The rule is
+   * `effectiveClearedFailures`; the fact writer must call it rather than reading this field directly.
+   */
+  clearedFailures?: string[];
   costUnits: number;
 }
 
@@ -371,10 +385,21 @@ export interface ConnectRequest {
   /**
    * Vault reference of an app password or API token; never the secret. A `reconnect` of an app-password or API-token
    * account (iCloud, generic IMAP, Fastmail) carries the NEW secret's reference, stored by the host before the call.
+   * A reconnect stages under a FRESH ref, never the one its account already uses (not `refFor(accountId)`): the engine
+   * never discards for an account with a committed row (`AccountActorHost.discardCredential`), so a late or refused
+   * attempt cannot delete a live credential, and the host removes the superseded ref after the engine commits the new one.
    */
   secretRef?: string;
   /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
   calendarSecretRef?: string;
+  /**
+   * `Account/cancelConnect` aborts this: the host stops its browser or loopback flow and `connect` rejects (the host's
+   * `ConnectContext.signal` follows it), so a cancelled attempt never lingers and a reconnect cannot start a parallel
+   * flow. A host must store nothing after the signal aborts. A result that still arrives after the abort is discarded
+   * by the engine for a first-time connect (`AccountActorHost.discardCredential`; an existing account's credential is
+   * kept) and `connect` rejects with the abort reason.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -402,7 +427,10 @@ export interface ConnectResult {
    * `client` is the OAuth client id the grant belongs to (`accounts.oauth_client`, D21).
    */
   grant?: { grantedAt: number; refreshExpiresAt?: number; client?: string };
-  /** Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. */
+  /**
+   * Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. A reconnect
+   * returns a fresh ref, not the account's current one (see `ConnectRequest.secretRef`).
+   */
   credentialRef: string;
   /** Initial `provider_memory`: limits learned at connect (JMAP session, IMAP host table), capabilities detail. */
   memory?: Record<string, string>;
@@ -446,6 +474,8 @@ export interface SearchResult {
   upserts: MessageFacts[];
   remoteThreadIds: string[];
   nextPageToken?: string;
+  /** True when the provider could only return part of the matches (a cap, a timeout, a limited-mode host). */
+  partial?: boolean;
   costUnits: number;
 }
 
@@ -654,9 +684,17 @@ export interface ProviderAdapter {
    * adapter picks each request's kind: an in-place update by id (Gmail `drafts.update`, Graph PATCH) is
    * `idempotentWrite`; a create, and an update that is a create plus destroy (IMAP `APPEND` then delete, JMAP
    * `Email/set`), is `write` and never re-sent, and an uncertain create is recognised by `DraftUpload.internetId`.
+   * A target that is no longer a draft (sent from another device: no `$draft` keyword, not in Drafts, a sent message on
+   * a provider where the draft and the sent message are one entity) is `gone`: it is never replaced, and a JMAP
+   * replace (create then destroy) must not destroy it, or it would delete sent mail. `DraftUpload.mime` never carries
+   * Bcc: the engine keeps Bcc out of draft copies, so an adapter that sends a copy itself sends it without Bcc.
    */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
-  /** Idempotent: an absent draft is success. */
+  /**
+   * Idempotent: an absent draft is success. It must also do nothing when the target is no longer a draft (no `$draft`
+   * keyword, not in Drafts): a send that used the remote draft (`SendReceipt.draftConsumed`) can leave the same entity
+   * as the sent message (JMAP keeps the `Email` id), and deleting it would delete the sent mail.
+   */
   deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
   /**
    * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
@@ -689,4 +727,10 @@ export interface ProviderFactory {
   /** Static for Gmail; from `provider_memory` (JMAP session, IMAP host table) elsewhere. Includes the calendar's budget. */
   budgets(account: AdapterAccount, memory: ReadonlyMap<string, string>): BudgetSpec[];
   open(account: AdapterAccount): ProviderAdapter;
+  /**
+   * Deletes a credential this factory's `connect` stored (or `ConnectRequest.secretRef` named) when the engine refuses
+   * the result. The factory owns the vault, so only it can; a ref that is not stored is not an error. A factory without
+   * this method cannot be discarded from: the host fails closed and rejects rather than keep an orphaned credential.
+   */
+  discardCredential?(ref: string): Promise<void>;
 }

@@ -1,0 +1,56 @@
+/* The shell's layout (DESIGN 7.1): a gray window, the sidebar on it, one white pane. Every control is a ui component;
+   this file only places them, and uses tokens for every value. */
+
+.aplos-shell {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  background: var(--shell);
+  color: var(--ink);
+}
+
+.aplos-sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  padding: var(--space-3) var(--space-2) var(--space-2) var(--space-3);
+  overflow-y: auto;
+}
+
+/* Rows are 28 px with no gaps; groups sit 20 px apart (NavHead carries its own margin). */
+.aplos-sidebar > .ui-puck + .ui-puck {
+  margin-top: var(--space-5);
+}
+
+.aplos-sidebar__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.aplos-sidebar__foot {
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.aplos-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-2) 0 var(--space-3);
+}
+
+.aplos-shell > .ui-pane:first-child {
+  margin-left: var(--shell-pad);
+}
+
+/* The screen slot fills the pane body. */
+.aplos-screen {
+  min-height: 100%;
+}

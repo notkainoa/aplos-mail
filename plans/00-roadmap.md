@@ -330,26 +330,111 @@ flowchart LR
 | Platform and website | `plat-ci`, `plat-release`, `web` | 3 | Opus for hardening and release security; Claude for the website; cheap models for CI plumbing |
 | Integrator | none; dependency and infrastructure merges, the full suite, the conformance burn-down, Phase 2 lead, the owner's review queue and digests | 1 plus reviewers | Opus for judgement; Haiku for test runs and summaries |
 
-### 5.1a Model routing to save Claude usage (owner, 2026-10-28)
+### 5.1a Lean mode: the token budget (owner, 2026-10-28; SWE-2 routing 2026-10-29; replaces the earlier routing rules)
 
-> **What this means:** Free models do the simple, checkable work. Claude does the thinking, the design and every final check. The quality bar stays the same.
+> **What this means:** Devin's SWE-2 (free through November) takes the volume work, Sonnet runs the threads and does UI, tricky code and reviews, and Opus takes the hardest and riskiest calls. Quality comes first; SWE-2 is extra capacity, not a downgrade. Agents read less, live shorter, and fewer of them run at once. Tests and one review per change keep quality where it was.
 
-Claude's 5-hour limit was hit on day 1, so every thread routes work by tier:
+**Why.** In the first 26 hours the revamp hit Claude's 5-hour limit three times. The causes, measured from the logs:
+- Opus made about 87% of the calls, because subagents inherit their parent's model and every parent was Opus.
+- The average call re-read about 200,000 tokens of context, and over 1,300 calls re-read more than 400,000, because threads lived forever and agents read whole plans.
+- Orchestrators were nested three layers deep.
+- Every PR got multi-round Opus review panels.
+- The orchestrator and the Integrator polled every 30 minutes.
+- About 20 agents ran at once. The limit caps work per 5 hours, so running wider only hit the cap sooner.
 
-| Tier | Models | Use for |
+**Models.** Every agent, workflow and delegate names its model explicitly. Nothing inherits.
+
+| Tier | Model | Use for |
 |---|---|---|
-| Free | OpenCode Zen free models: `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/mimo-v2.6-flash-free`, `opencode/beam-free`, `opencode/flint-40b-free`. Run them with `delegate_task` on provider `opencode`, or with `opencode run -m <model>`. Do not use `opencode/nemotron-3-ultra-free`, which hangs | Searching and summarizing code; running tests and builds and summarizing the results; mechanical edits, renames and codemods; boilerplate; turning a written test plan into test cases; fixtures and emulator data; lint and format fixes; STATUS and doc formatting; first-pass bug hunts, with each finding verified by Claude |
-| Cursor Grok | `grok-4.7` or `grok-4.6`, through `delegate_task` on provider `cursor` or with `cursor-agent -p --model grok-4.7-medium` | Well-scoped coding with a clear spec; second-opinion reviews. Its free monthly allowance ran out on day 1. Try it, and on "usage limit" or "unavailable on Free" fall back to the next tier without retrying |
-| Claude Haiku | `claude-haiku-5-5` | Easy work when a free model fails or is too slow |
-| Claude Sonnet | `claude-sonnet-5-5` | Scoped features, bug fixes with a repro, routine UI |
-| Claude Opus | `claude-opus-5-5` | The contract, store, governor, sync, security, complex UI, adversarial reviews, and the final check before any merge |
+| Volume (free through November) | Devin `swe-2-high` (`delegate_task` provider `acpRegistry_devin`; `thought_level` `max` for harder items) | Well-specified non-UI code a subagent writes: scoped features from a lane card, bug fixes with a repro, tests, fixtures, scripts, CI, file splits, lint fixes. Also codebase searches, plan reading, test-run summaries, first-pass reviews and extra parallel attempts. Keep each task scoped and testable; it is weak at long open-ended terminal sessions |
+| Sonnet | `claude-sonnet-5-5` | Thread orchestrators; all UI code (renderer and site); non-UI work with tricky logic, cross-module changes or unclear specs; the one Claude review per PR; and any task where SWE-2's result is not clearly as good |
+| Opus | `claude-opus-5-5` | Contract changes; security code (send guard, live-run guard, sanitizer and frame, hardening, auth and tokens); the store's commit path and sync correctness; the final review of PRs in those areas; high-visibility UI; and really hard work: architecture calls and subtle bugs Sonnet could not crack |
+| Haiku | `claude-haiku-5-5` | Trivial checks when Devin is down |
 
-Rules:
-- All UI and design code goes to Claude only: Opus for complex or high-visibility UI, Sonnet for routine UI.
-- Never use a paid plan or upgrade. OpenCode Go and Factory need subscriptions the owner doesn't have, so don't use them.
-- Free and Cursor models never see secrets, `.env`, Keychain values, or mail and addresses from the agent test account. Give them code and demo data only.
-- Non-Claude output is checked before it counts: tests run, and a Claude agent reviews the diff. If a free model fails twice, or makes no progress for 10 minutes, cancel it and move up a tier.
-- When Claude reports a usage limit, don't stall. Shift queued low-judgment work to the free tier, and resume Claude work after the reset.
+**Quality comes first.** SWE-2 is extra capacity, not a downgrade: pick the model that gives the best result for each task. When unsure between SWE-2 and Sonnet, use Sonnet; when a SWE-2 result falls short, redo it on Sonnet rather than patching around it. The savings come from moving volume (mechanical code, tests, searches, reading, extra attempts and first-pass reviews) to SWE-2, not from moving judgment off Claude.
+
+OpenCode and Cursor Grok are retired for this project (they were never used in practice). If Devin is down or rate-limited, fall back to Sonnet, not to free models.
+
+**SWE-2 is free, so spend it.** Claude usage stays lean; SWE-2 does not need to be:
+- Up to 6 SWE-2 subagents at once per thread (Claude subagents stay at 4), limited by machine load: run full `npm run check` suites one at a time.
+- SWE-2 may read whole plans and files; the lane-card reading limits below apply to Claude agents.
+- For a tricky item, run two SWE-2 attempts in separate worktrees and keep the better one.
+- Give SWE-2 a first-pass review (bugs, tests, lane rules) before the Claude review, so the Claude review is short.
+- Briefs for SWE-2 are complete and self-contained: goal, lane card path, owned paths, done criteria and test commands. It never sees `.env` or keys.
+
+**Context.**
+- **Lane cards.** Each lane has a lane card of at most one page in `plans/lanes/<lane>.md`: goal, owned paths, the exact plan sections and line ranges to read, done criteria and test commands. Agents read the card and only the sections it names, never whole plans. The 22,000-word DESIGN.md is read by section only.
+- **Fresh threads.** A thread whose context passes about 150,000 tokens writes `plans/<thread>/HANDOFF.md` (at most one page), and a fresh thread continues from it. Subagents are one task each and end when it's done.
+- **Short STATUS.** `plans/STATUS.md` keeps only the last 3 days. Older entries move to `plans/status-archive/`. Agents read only new lines (`git diff` since the last read), not the whole file.
+- **No pasting.** No raw test or build logs in context: scripts summarize results to pass or fail counts plus the first failure.
+
+**Structure.**
+- At most two layers: a thread runs its own subagents directly. No lane-lead orchestrators or delegates that spawn more delegates.
+- At most 3 building threads plus the Integrator at once, working down the critical path. The others are parked until their inputs exist.
+- At most 4 concurrent Claude subagents per thread, plus up to 6 SWE-2 subagents.
+
+**Reviews.**
+- One Sonnet review per PR, of the diff only, plus passing tests.
+- An Opus adversarial review only for the Opus areas above.
+- No multi-round panels: a second review round only checks the fixes for the first round's findings.
+- SWE-2 code always gets the Sonnet review (after its own SWE-2 first pass).
+
+**Polling.**
+- No agent polls.
+- `plans/tools/watch.sh` checks STATUS, PRs and thread state in shell. An agent wakes only when it prints a change, and that agent starts as a fresh small thread.
+- The Integrator is event-driven: it merges when a READY or HANDOFF-READY entry appears.
+
+**Measurement.** `python3 plans/tools/token-report.py` prints tokens by model and by thread since a given time. The daily digest includes one line from it. If Opus goes above 25% of calls, or the average context goes above 120,000 tokens, the orchestrator tightens routing the same day.
+
+**Unchanged:** every test gate, the security reviews, the owner's feature review loop, and the hard rules.
+
+### 5.1c Hill climbing (owner, 2026-10-29)
+
+> **What this means:** agents improve code in rounds against automatic scores. Several attempts run in parallel, each is scored, and only a better one that breaks no gate is kept. SWE-2 makes most attempts for free; Claude judges taste and reviews the final result.
+
+**The loop.** For a target (a screen, a module or an AI prompt):
+1. Score the current code with the target's scorers and run its gates.
+2. Start N attempts in parallel, each in its own git worktree, with the brief, the current scores and the worst findings.
+3. Score every attempt. Keep the best one only if its combined score is higher and every gate still passes.
+4. Repeat from the new best. Stop after 2 rounds without gain or at the round limit (default 5 rounds of 4 attempts).
+5. The thread opens a normal PR from the result. It gets the usual Sonnet review (Opus in the named areas).
+
+**Gates** (must pass, never traded for score): the lane's tests, typecheck, the owners check, the security checks in the target's area, and no regression on any scorer marked `noRegress`.
+
+**Anti-gaming.** An attempt may only touch the target's allowed paths. The harness rejects any diff that touches scorers, gates, test expectations, baselines, budgets, suppression files (except to shrink them), mockups or DESIGN.md. AI prompt targets score on a dev set and must not regress on a held-out set the attempts never see.
+
+**Who makes the attempts** (owner's choice "C"):
+- SWE-2 for all non-UI targets, and for the mechanical UI checks: accessibility (axe), design lint, stylelint and contrast.
+- Sonnet for visual or taste work on screens (Opus for high-visibility screens), 2–3 attempts per round. A Sonnet taste judge scores screenshots against DESIGN.md and the matching mockup.
+- Visual changes to a screen happen before its READY-FOR-OWNER. After the owner approves, a hill climb may only change things that keep the approved look; anything visible goes back to the owner.
+
+**Scorers by area:**
+
+| Area | Existing | To add |
+|---|---|---|
+| UI | `lint:design`, `check:contrast`, `check:tokens`, `check:budgets` | axe (approved 2026-10-29), visual diff against `mockups/`, Sonnet taste judge |
+| Engine and providers | tests, typecheck, `bench:mailbox`, `check:budgets`, ESLint suppression count | coverage, mutation testing (Stryker), dead code (knip), layer rules (dependency-cruiser) |
+| AI features | `eval:groq`, `eval:ask` | dev and held-out splits |
+
+**Builders.**
+- Platform (`plat-ci`) builds the harness, `npm run hillclimb -- <target config>`, in `scripts/audit/hillclimb/`, plus the non-UI scorers.
+  - A target config lists its allowed paths, gates, weighted scorers (each a command that prints `{"score": n, "details": [...]}`), the model per attempt, attempts per round and the round limit.
+  - Attempts run headless: SWE-2 with `devin -p --model swe-2-high` in the attempt's worktree, Claude with `claude -p --model <model>`.
+  - It takes the shared check slot (`scripts/audit/slot.mjs`) so full suites never overlap.
+  - It prints a score table per round, no raw logs.
+- UI-core (`ui-foundation`) builds the UI scorers (axe, visual diff, taste judge) in `tests/visual/`.
+- Engine (`eng-ai`) adds the dev and held-out splits to the AI evals.
+- Each thread keeps its target configs in its own lane paths.
+
+**Where it runs.** Heavy rounds run on kainoas-linux-mba, because the Mac is loaded.
+
+### 5.1b Machines (owner, 2026-10-28)
+
+> **What this means:** tests that only need a headless browser or Node run on the Linux box when it helps the Mac; anything needing macOS stays on the Mac.
+
+- **This Mac:** the Integrator and Engine (Electron host, Keychain, live Gmail runs), plus Platform's release and hardening work.
+- **Linux box (`kainoas-linux-mba`, its own T3 server, repo at `~/Dev/aplos-mail`, Node 24 through nvm):** browser-tested UI work (UI-core, UI-screens) and Node-only provider work, when they're active.
+- Threads on different machines talk only through STATUS. Live Gmail runs and Mac-only checks go to the Integrator as a REQUEST in STATUS.
 
 ### 5.2 Why six
 

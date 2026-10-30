@@ -84,8 +84,71 @@ jobs:
       - run: npm run typecheck
       - run: npm audit --omit=dev --audit-level=high
 
-  unit:
-    name: Unit tests
+  # The unit suite is split across parallel jobs to stay under the static+unit wall-clock
+  # budget: Electron-Node suites in one job, the desktop workspace sharded by test file,
+  # and the remaining workspaces together. Names all start with "Unit tests" because
+  # scripts/audit/measure-budgets.mjs takes the longest of them for ci.wall-clock-static-unit.
+  unit-engine:
+    name: Unit tests (engine, Electron Node)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # The Electron binary is needed by check:sqlite and test:engine: node:sqlite uses
+      # the SQLite of the runtime that loads it, and the database suites (store, service,
+      # queue, sync-safety) run under Electron's own Node (ELECTRON_RUN_AS_NODE=1, no
+      # display needed) rather than system Node.
+      - run: node node_modules/electron/install.js
+      - run: npm run check:sqlite
+      - run: npm run test:engine
+
+  unit-desktop:
+    name: Unit tests (desktop ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. test-shard.mjs re-expands the workspace's own test globs and
+      # runs a deterministic shard, so the shards together run exactly what npm test runs.
+      - run: node scripts/audit/test-shard.mjs apps/desktop '${{ matrix.shard }}' --run
+
+  unit-packages:
+    name: Unit tests (packages)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. The engine suite also runs under Electron's Node in the
+      # engine job — the same double coverage the old combined job had.
+      - run: npm test -w @aplos/engine -w @aplos/contract -w @aplos/contract-fixture -w @aplos/emulators
+
+  e2e-browser:
+    name: Browser E2E (headless, loopback only)
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
@@ -97,10 +160,15 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci --ignore-scripts
-      # Runs under system Node. The suites that touch node:sqlite (store, service, queue,
-      # sync-safety, sql) move under Electron's own Node in Q3, because node:sqlite uses the
-      # SQLite of the host runtime and the two differ.
-      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      # The base config starts the preview on its own ports with a temporary APLOS_DATA_DIR and no AI keys.
+      - run: npm run test:e2e:browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-browser-results
+          path: artifacts/e2e
+          retention-days: 7
 
   web:
     name: Website (typecheck, build)
@@ -135,6 +203,8 @@ jobs:
       - run: npm test
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
+      # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).
+      - run: APLOS_E2E_ELECTRON=1 npx playwright test -c tests/e2e/playwright.config.ts --project electron
 
   slots:
     name: slots

@@ -9,7 +9,7 @@ const keys: [string, string, string[]][] = [
   ['→', 'Mark it Done', ['ArrowRight']],
   ['Z', 'Undo the last action', ['z', 'Z']],
   ['B', 'Bookmark', ['b', 'B']],
-  ['A', 'Ask, or hold it to talk', ['a', 'A']],
+  ['A', 'Ask, or hold it to dictate', ['a', 'A']],
   ['C', 'Compose', ['c', 'C']],
   ['?', 'Every shortcut in the app', ['?']],
 ];
@@ -44,7 +44,7 @@ export function KeyList() {
     };
   }, []);
   return (
-    <dl className="keylist" data-ui ref={ref}>
+    <dl className="keylist" data-ui data-claim="key-list" ref={ref}>
       {keys.map(([key, label], i) => (
         <div
           key={key}
@@ -125,6 +125,7 @@ const providers = [
   'your own server',
 ];
 const local = new Set(['Ollama', 'LM Studio']);
+const routers = new Set(['OpenRouter', 'OpenCode Go']); // they pass each request on to the company that runs the model
 const speech = new Set(['Groq', 'OpenAI']);
 export function ProviderPicker() {
   const [feature, setFeature] = useState<Feature>('Summaries');
@@ -139,14 +140,21 @@ export function ProviderPicker() {
   const what =
     feature === 'Voice' ? 'Voice recordings' : feature === 'Ask' ? 'Questions to Ask' : feature;
   const where = local.has(provider)
-    ? `${provider}, on your Mac. Nothing leaves it.`
-    : provider === 'your own server'
-      ? 'your own server, at the address you set.'
-      : `${provider}${provider === 'Groq' ? ', the default' : ''}, and to no one else.`;
+    ? `${provider}, running on your Mac at its default address, so they stay there.`
+    : routers.has(provider)
+      ? `${provider}, which passes them to the company that runs the model you pick.`
+      : provider === 'your own server'
+        ? 'your own server, at the address you set.'
+        : `${provider}${provider === 'Groq' ? ', the default' : ''}, and to no one else.`;
   return (
     <div className="picker">
       <Segmented label="AI feature" options={features} value={feature} onChange={setFeature} />
-      <p className="providers" role="group" aria-label={`Provider for ${feature}`}>
+      <p
+        className="providers"
+        role="group"
+        aria-label={`Provider for ${feature}`}
+        data-claim="ai-providers"
+      >
         {providers.map((p, i) => {
           const off = feature === 'Voice' && !speech.has(p);
           return (
@@ -169,10 +177,15 @@ export function ProviderPicker() {
           );
         })}
       </p>
-      <p className="picker-result" aria-live="polite">
+      <p
+        className="picker-result"
+        aria-live="polite"
+        data-claim="provider-per-feature ai-providers ai-routers local-models no-training-providers"
+      >
         <span key={`${feature}${provider}`}>
           {what} go to {where}
           {feature === 'Voice' ? ' Only Groq and OpenAI turn speech into text.' : ''}
+          {provider === 'Gemini' ? ' Mail goes to Gemini only with a paid key.' : ''}
         </span>
       </p>
     </div>

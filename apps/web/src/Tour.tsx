@@ -20,7 +20,7 @@ const names: Record<string, string> = {
   home: 'Home, with the email that needs you in focus and the Ask panel beside it',
   'home-maple': 'Home, with the Maple Library email in focus',
   'home-rowan': 'Home, with the Rowan Pottery email in focus',
-  later: 'Later, with the emails set aside as to-dos',
+  later: 'Later, with the emails set aside for later',
   'later-bookmarks': 'Later, showing bookmarked emails',
   'all-mail': 'All mail',
   drafts: 'Drafts',
@@ -109,6 +109,7 @@ export function Tour({ id, eager, focus = 0 }: { id: TourId; eager?: boolean; fo
   return (
     <div
       className={`tour${glint ? ' is-glint' : ''}`}
+      data-claim="several-accounts"
       ref={root}
       tabIndex={-1}
       onPointerEnter={warm}
