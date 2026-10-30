@@ -53,6 +53,8 @@ export interface GmailRequest {
   httpMethod?: 'GET' | 'POST';
   /** JSON request body of a POST. */
   body?: unknown;
+  /** Called with this device's clock as each try goes out, after any wait for the governor (the clock gate's bracket). */
+  onSend?: (at: number) => void;
 }
 
 export type PartOutcome<T> = { ok: true; data: T } | { ok: false; error: ProviderError };
@@ -138,6 +140,7 @@ export class GmailClient {
       { budget: 'gmail', lane: req.lane, kind, method: req.method, cost, signal: this.signal() },
       async io => {
         const started = this.ctx.clock.now();
+        req.onSend?.(started);
         const waitMs = started - asked;
         const fail = (error: ProviderError): never => {
           this.ctx.log.event('sync.gmail.request_refused', {
