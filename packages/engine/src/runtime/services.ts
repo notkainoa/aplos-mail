@@ -12,6 +12,7 @@ import type {
   RulesPort,
   SendPort,
   StorePort,
+  UnsubscribePort,
 } from '../ports';
 import type { CommitExtension } from '../store/port';
 import type { FrameBus } from './frames';
@@ -43,6 +44,8 @@ export interface EngineServices {
   laneFor: LaneFor;
   /** Injected by the host (Node networking); `Mail/serve`'s image route only. */
   images: ImageProxy;
+  /** Injected by the host (Node networking); `Unsubscribe/get` and `Unsubscribe/run` only. */
+  unsubscribe: UnsubscribePort;
   /** The data key that seals credentials, unwrapped by the host (`eng-host`). */
   keys: KeyProvider;
   /** Frames out to connections, stamped with `{dbEpoch, seq}`. */
