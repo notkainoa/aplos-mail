@@ -9,6 +9,9 @@
  * `drafts.update` with the uploaded bytes then `drafts.send` (what Google's drafts guide describes for a send that
  * carries a message). Faults injected on the emulator's send methods therefore still fire.
  */
+import assert from 'node:assert/strict';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { ClassifiedError } from '@aplos/contract';
 import {
   type AccountId,
@@ -29,6 +32,7 @@ import {
   type FaultInjector,
   type GmailEmulator,
 } from '@aplos/emulators';
+import { oauthBudget } from '../../../../packages/engine/src/sync/budgets';
 import { Governor } from '../../../../packages/engine/src/sync/governor';
 import {
   buildEnvelope,
@@ -46,7 +50,22 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const UPLOAD = 'https://gmail.googleapis.com/upload/gmail/v1/users/me';
 
-const quietLog: Logger = { event() {}, with: () => quietLog, enabled: () => false };
+export interface LoggedEvent {
+  name: string;
+  fields: unknown;
+}
+
+/** A logger that keeps every event, for tests that check what a log line may hold. */
+function recordingLog(events: LoggedEvent[]): Logger {
+  const log: Logger = {
+    event(name, fields) {
+      events.push({ name, fields });
+    },
+    with: () => log,
+    enabled: () => false,
+  };
+  return log;
+}
 
 /** The host's token source, cut down: one access token and refreshes against the emulator's token endpoint. */
 class Tokens implements TokenSource {
@@ -103,13 +122,21 @@ interface Session {
   length: number;
 }
 
-const bad = (message: string) =>
+const failure = (status: number, reason: string, message = reason) =>
   new Response(
-    JSON.stringify({ error: { code: 400, message, errors: [{ reason: 'badRequest', message }] } }),
+    JSON.stringify({ error: { code: status, message, errors: [{ reason, message }] } }),
     {
-      status: 400,
+      status,
       headers: { 'content-type': 'application/json' },
     },
+  );
+
+const bad = (message: string) => failure(400, 'badRequest', message);
+
+/** A request that never answers; only its own abort ends it. */
+const hang = (signal: AbortSignal | null | undefined) =>
+  new Promise<Response>((_, reject) =>
+    signal?.addEventListener('abort', () => reject(signal.reason), { once: true }),
   );
 
 const bytesOf = (body: unknown): Buffer =>
@@ -142,10 +169,17 @@ export class UploadBridge {
   readonly uploads: UploadRecord[] = [];
   /** Runs after an upload is parsed and before it reaches the emulator (a phone edit landing mid-send). */
   beforeDelivery?: (upload: UploadRecord) => void | Promise<void>;
-  /** The next upload request fails like this instead of reaching the emulator. */
-  failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt' | 'portal';
+  /**
+   * The next upload request fails like this instead of reaching the emulator. `acceptThenHang`: Gmail applies the send,
+   * then the answer never arrives (only the caller's abort ends it).
+   */
+  failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt' | 'portal' | 'acceptThenHang';
   /** Rewrites a `messages.list` search (to prove the metadata check stands even if the search let a draft through). */
   rewriteQuery?: (q: string) => string;
+  /** Every `messages.list` by label alone (no `q`: the recent-SENT fallback) answers 500. */
+  failSentListing?: boolean;
+  /** Upload requests go to this fetch instead of the bridge (a real HTTP server, for redirect tests). */
+  uploadVia?: typeof fetch;
   private readonly sessions = new Map<string, Session>();
   private nextSession = 0;
 
@@ -153,15 +187,23 @@ export class UploadBridge {
 
   readonly fetch: typeof fetch = (input, init) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
-    if (url.href.startsWith(UPLOAD)) return this.upload(url, init ?? {});
-    if (this.rewriteQuery && url.pathname.endsWith('/messages') && url.searchParams.has('q'))
+    if (url.href.startsWith(UPLOAD)) return this.toUpload(url, init ?? {});
+    const listing = url.pathname.endsWith('/messages') && (init?.method ?? 'GET') === 'GET';
+    if (this.failSentListing && listing && !url.searchParams.has('q'))
+      return Promise.resolve(failure(500, 'backendError'));
+    if (this.rewriteQuery && listing && url.searchParams.has('q'))
       url.searchParams.set('q', this.rewriteQuery(url.searchParams.get('q')!));
     return this.emu.fetch(url.href, init);
   };
 
+  private toUpload(url: URL, init: RequestInit): Promise<Response> {
+    return this.uploadVia ? this.uploadVia(url.href, init) : this.upload(url, init);
+  }
+
   private fault(signal: AbortSignal | null | undefined): Promise<Response> | undefined {
     const fault = this.failNext;
-    if (fault === undefined || fault === 'dropInitiate' || fault === 'corrupt') return undefined;
+    const later = fault === 'dropInitiate' || fault === 'corrupt' || fault === 'acceptThenHang';
+    if (fault === undefined || later) return undefined;
     this.failNext = undefined;
     if (fault === 'portal')
       return Promise.resolve(
@@ -174,10 +216,7 @@ export class UploadBridge {
       return Promise.reject(
         Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }),
       );
-    // Never answers; only the caller's abort ends it.
-    return new Promise((_, reject) =>
-      signal?.addEventListener('abort', () => reject(signal.reason), { once: true }),
-    );
+    return hang(signal);
   }
 
   private async upload(url: URL, init: RequestInit): Promise<Response> {
@@ -192,7 +231,7 @@ export class UploadBridge {
     if (type !== 'multipart' || init.method !== 'POST') return bad('unsupported upload');
     const parsed = parseRelated(headers.get('content-type') ?? '', bytesOf(init.body));
     if (!parsed) return bad('malformed multipart/related upload');
-    return this.deliver({ endpoint, uploadType: 'multipart', ...parsed }, headers);
+    return this.deliver({ endpoint, uploadType: 'multipart', ...parsed }, headers, init.signal);
   }
 
   private async initiate(endpoint: 'messages' | 'drafts', headers: Headers, init: RequestInit) {
@@ -217,10 +256,14 @@ export class UploadBridge {
     const raw = bytesOf(init.body);
     if (headers.get('content-type') !== 'message/rfc822') return bad('wrong media type');
     if (raw.length !== session.length) return bad('upload length mismatch');
-    return this.deliver({ ...session, uploadType: 'resumable', raw }, headers);
+    return this.deliver({ ...session, uploadType: 'resumable', raw }, headers, init.signal);
   }
 
-  private async deliver(upload: UploadRecord, headers: Headers): Promise<Response> {
+  private async deliver(
+    upload: UploadRecord,
+    headers: Headers,
+    signal: AbortSignal | null | undefined,
+  ): Promise<Response> {
     this.uploads.push(upload);
     await this.beforeDelivery?.(upload);
     const auth = {
@@ -236,6 +279,10 @@ export class UploadBridge {
             body: JSON.stringify({ raw, ...upload.metadata }),
           })
         : await this.sendDraft(upload, auth, raw);
+    if (this.failNext === 'acceptThenHang') {
+      this.failNext = undefined;
+      return hang(signal);
+    }
     if (this.failNext !== 'corrupt') return reply;
     this.failNext = undefined;
     return new Response('{"id": "trunc', {
@@ -261,6 +308,90 @@ export class UploadBridge {
   }
 }
 
+// ---- a redirecting upload endpoint, over real HTTP ----
+
+export type RedirectAt = 'initiate' | 'send';
+
+export interface RedirectingGmail {
+  /** The adapter's upload fetch: Node's own `fetch`, so its real redirect handling is what runs. */
+  fetch: typeof fetch;
+  /**
+   * HTTP requests the redirect target parsed (method, URL, body size): must stay empty. A bare connection that opens
+   * and closes without a request is not one (the server's request handler never runs for it).
+   */
+  requests: { method: string; url: string; bytes: number }[];
+  close(): Promise<void>;
+}
+
+const bodyOf = async (req: IncomingMessage): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+};
+
+const listen = (server: Server): Promise<number> =>
+  new Promise(resolve =>
+    server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)),
+  );
+
+const stop = (server: Server): Promise<void> =>
+  new Promise(resolve => {
+    server.closeAllConnections();
+    server.close(() => resolve());
+  });
+
+/** The guard's meaning: the redirect target parsed no request at all, so not one body byte reached it. */
+export function assertNothingReached(gmail: RedirectingGmail): void {
+  assert.deepEqual(
+    gmail.requests,
+    [],
+    'not one HTTP request, and so not one byte, went to the redirect target',
+  );
+}
+
+/**
+ * Gmail's upload host on 127.0.0.1 answering `status` (307 or 308) at `at`, pointing at a second server (another
+ * origin) that would accept the bytes as sent mail. A resumable session opens normally when the redirect is at `send`.
+ */
+export async function redirectingGmail(
+  status: 307 | 308,
+  at: RedirectAt,
+): Promise<RedirectingGmail> {
+  const requests: RedirectingGmail['requests'] = [];
+  const target = createServer((req, res) => {
+    void bodyOf(req).then(body => {
+      requests.push({ method: req.method ?? '', url: req.url ?? '', bytes: body.length });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"id":"18c0ffee00000001","threadId":"18c0ffee00000001"}');
+    });
+  });
+  const targetPort = await listen(target);
+  const gmail = createServer((req, res) => {
+    void bodyOf(req).then(() => {
+      const initiate = req.method === 'POST' && req.url?.includes('uploadType=resumable');
+      if (initiate && at === 'send') {
+        res.writeHead(200, {
+          location: `${UPLOAD}/messages/send?uploadType=resumable&upload_id=s1`,
+        });
+        return res.end();
+      }
+      res.writeHead(status, { location: `http://127.0.0.1:${targetPort}/upload/elsewhere` });
+      res.end();
+    });
+  });
+  const gmailPort = await listen(gmail);
+  const local = `http://127.0.0.1:${gmailPort}`;
+  return {
+    fetch: (input, init) =>
+      fetch(String(input).replace('https://gmail.googleapis.com', local), init),
+    requests,
+    close: async () => {
+      await stop(gmail);
+      await stop(target);
+    },
+  };
+}
+
 // ---- the world ----
 
 export interface SendWorld {
@@ -280,6 +411,8 @@ export interface SendWorld {
   /** Requests that reached the emulator's send endpoints (`messages.send`, `drafts.send`), refused ones included. */
   sendRequests(): number;
   sentMessages(): { id: string; threadId: string; messageId: string; raw: Buffer }[];
+  /** Every log event the adapter wrote through a `ctx()` of this world. */
+  events: LoggedEvent[];
 }
 
 export interface SendWorldOptions {
@@ -307,7 +440,8 @@ export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWor
   });
   const governor = new Governor({
     clock,
-    budgets: [GMAIL_BUDGET],
+    // The token endpoint's own budget, as in the engine's defaults: a 401's forced refresh is governed there.
+    budgets: [GMAIL_BUDGET, oauthBudget],
     tokens,
     random: () => 0,
     role: 'primary',
@@ -332,6 +466,8 @@ export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWor
     },
   };
   const bridge = new UploadBridge(emu);
+  const events: LoggedEvent[] = [];
+  const log = recordingLog(events);
   const adapter = new GmailAdapter(account, {
     fetch: bridge.fetch,
     pace: options.pace ?? false,
@@ -345,7 +481,7 @@ export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWor
       sleep: (ms, s) => clock.sleep(ms, s),
       timer: () => ({ cancel() {} }),
     },
-    log: quietLog,
+    log,
     signal,
     // send and findSent never read the store.
     lookup: {} as KnownLookup,
@@ -368,6 +504,7 @@ export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWor
     address,
     ctx,
     port,
+    events,
     gmailRequests: () => emu.log.filter(e => e.service === 'gmail').length,
     sendRequests: () =>
       emu.log.filter(e => /^gmail\.users\.(messages|drafts)\.send$/.test(e.apiMethod)).length,

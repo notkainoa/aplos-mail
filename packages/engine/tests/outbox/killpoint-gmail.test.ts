@@ -24,8 +24,12 @@ import {
 } from './killpoint-harness';
 import { readCalls, startGmailServer, type GmailServer } from './killpoint-gmail-port';
 
-type Find = 'finds' | 'lags' | 'throws';
-const FINDS: readonly Find[] = ['finds', 'lags', 'throws'];
+/**
+ * How `findSent` fares: `lags` is a search index that shows the delivery late while the SENT label listing (the
+ * adapter's fallback) already shows it; `misses` is both of them stale; `throws` is a search that fails.
+ */
+type Find = 'finds' | 'lags' | 'misses' | 'throws';
+const FINDS: readonly Find[] = ['finds', 'lags', 'misses', 'throws'];
 const SEND = 'gmail.users.messages.send';
 const LIST = 'gmail.users.messages.list';
 const MIN = 60_000;
@@ -60,7 +64,8 @@ interface Row {
 
 const REACHED: Record<Find, Pick<Row, 'state' | 'deliveries'>> = {
   finds: { state: 'sent', deliveries: 1 },
-  lags: { state: 'uncertain', deliveries: 1 },
+  lags: { state: 'sent', deliveries: 1 },
+  misses: { state: 'uncertain', deliveries: 1 },
   throws: { state: 'uncertain', deliveries: 1 },
 };
 const LOST: Pick<Row, 'state' | 'deliveries'> = { state: 'uncertain', deliveries: 0 };
@@ -119,20 +124,22 @@ function rows(): Row[] {
       sendCalls: 1,
     });
   }
+  // Only a stale listing too keeps the delivery unseen into the third life, where the kill point is reached.
   out.push({
     killAt: ['after-bytes', 'none', 'during-find-sent'],
     deliver: true,
-    find: 'lags',
-    ...REACHED.lags,
+    find: 'misses',
+    ...REACHED.misses,
     sendCalls: 1,
   });
-  out.push({
-    killAt: ['after-marker', 'none', 'during-find-sent'],
-    deliver: true,
-    find: 'lags',
-    ...LOST,
-    sendCalls: 0,
-  });
+  for (const find of ['lags', 'misses'] as const)
+    out.push({
+      killAt: ['after-marker', 'none', 'during-find-sent'],
+      deliver: true,
+      find,
+      ...LOST,
+      sendCalls: 0,
+    });
   out.push({
     killAt: ['after-bytes', 'during-commit'],
     onMove: 'sent',
@@ -158,7 +165,7 @@ function rows(): Row[] {
 
 /** The wall clock moves while the app is quit between the first `findSent` (absent) and the relaunch. */
 function clockRows(): Row[] {
-  const base = { killAt: 'quit', find: 'lags', sendCalls: 1, findCalls: 2 } as const;
+  const base = { killAt: 'quit', find: 'misses', sendCalls: 1, findCalls: 2 } as const;
   return [
     {
       ...base,
@@ -258,7 +265,7 @@ const label = (r: Row) =>
 /** The emulator's fault rules and the server's lag for one row. */
 function indexLag(row: Row): number | undefined {
   if (row.indexLagMs) return row.indexLagMs;
-  return row.find === 'lags' ? 10 * MIN : undefined;
+  return row.find === 'lags' || row.find === 'misses' ? 10 * MIN : undefined;
 }
 
 interface Run {
@@ -273,6 +280,7 @@ async function runRow(row: Row): Promise<Run> {
   const lagMs = indexLag(row);
   const server = await startGmailServer({
     ...(lagMs ? { lagMs } : {}),
+    ...(row.find === 'misses' || row.indexLagMs ? { listingLagMs: lagMs } : {}),
     ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
     ...(row.draftTwin ? { draftTwin: true } : {}),
   });
