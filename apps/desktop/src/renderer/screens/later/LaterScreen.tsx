@@ -28,7 +28,7 @@ import {
   type LaterGroupKey,
   groupsOf,
 } from './laterGroups';
-import { CLOSED, pickerReducer } from './laterPicker';
+import { CLOSED, pickerReducer } from './laterPickerState';
 import { laterPresets, momentLabel } from './laterPresets';
 import { LaterPicker } from './LaterPicker';
 import { groupDomId, useLaterDrag } from './useLaterDrag';

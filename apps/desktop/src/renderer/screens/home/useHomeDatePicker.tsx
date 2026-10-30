@@ -22,7 +22,7 @@ import {
 } from '../../data';
 import { dismissToast, pushToast } from '../../shell';
 import { reschedule } from '../later/laterActions';
-import { CLOSED, pickerReducer } from '../later/laterPicker';
+import { CLOSED, pickerReducer } from '../later/laterPickerState';
 import { laterPresets, momentLabel } from '../later/laterPresets';
 import { LaterPicker } from '../later/LaterPicker';
 import { rowDomId } from './HomeList';

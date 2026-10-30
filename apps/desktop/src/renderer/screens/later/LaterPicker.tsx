@@ -1,6 +1,6 @@
 /**
  * The Later date picker (DESIGN 6 DatePresets, 7.3, later-picker.html): the five presets on 1 to 5, "Pick a date…" with
- * a month and a time, Return to confirm. `DatePresets` is controlled; this holds its model (`laterPicker`) and turns a
+ * a month and a time, Return to confirm. `DatePresets` is controlled; this holds its model (`laterPickerState`) and turns a
  * choice into a moment. It owns no keys beyond the component's own; the screen puts the `datePicker` context on the
  * key stack while it shows.
  */
@@ -8,7 +8,7 @@ import { useMemo, type Dispatch } from 'react';
 import { DatePresets } from '../../ui/calendar';
 import type { Anchor, DatePresetId } from '../../ui/props';
 import { presetById, presetName, presetOptions, type LaterPreset } from './laterPresets';
-import { pickedUntil, type PickerEvent, type PickerState } from './laterPicker';
+import { pickedUntil, type PickerEvent, type PickerState } from './laterPickerState';
 
 /** What a choice resolved to. */
 export interface LaterChoice {

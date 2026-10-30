@@ -22,7 +22,7 @@ import { asListRow } from '../lists/listRows';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { reschedule } from './laterActions';
 import { commandsForLater, type LaterActions } from './laterCommands';
-import { CLOSED, pickerReducer } from './laterPicker';
+import { CLOSED, pickerReducer } from './laterPickerState';
 import { laterPresets } from './laterPresets';
 import { LaterPicker } from './LaterPicker';
 import { LaterScreen } from './LaterScreen';
