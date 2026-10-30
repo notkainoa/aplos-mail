@@ -24,8 +24,30 @@ checkout was an escape hatch, not a fallback.) The write audit snapshots every
 watched main node_modules tree before the agent runs — per-file size + mtime,
 per-directory a hash of its sorted entry names — and re-walks it after, so
 adds, deletes, renames, size changes and mtime edits are all reported even when
-the agent restores the timestamps afterwards. What still evades it: a
-same-size in-place content patch with the mtime restored, and
-chmod/chown/xattr changes — only the clone strategy (copy-on-write) isolates
-those fully, which is why hardlink mode stays tripwire-only, as the run summary
-line states (`node_modules: hardlinked N files (tripwire only)`).
+the agent restores the timestamps afterwards, and a watched root swapped under
+its own path (mv + recreate, rm + mkdir) counts as a hit rather than a fresh
+baseline. What still evades it:
+
+- a same-size in-place content patch with the mtime restored, and a
+  replacement file carrying the same size with a restored mtime (inode and
+  ctime are not recorded);
+- chmod/chown/xattr changes;
+- writes inside pruned `.cache`/`.vite` REAL directories at any depth —
+  linter/bundler caches the suites legitimately rewrite; a symlink with that
+  name is NOT pruned and cannot hide writes;
+- anything outside the walked roots — the audit watches exactly the
+  node_modules trees a run links.
+
+One consequence of the walk: it follows symlinked workspace dirs
+(`node_modules/@scope/pkg -> ../../packages/pkg`) into the main checkout's
+source tree, so edits to main SOURCE during a run show as hits and abort the
+run — even innocent ones. Only the clone strategy (copy-on-write) isolates the
+residual classes fully, which is why hardlink mode stays tripwire-only, as the
+run summary line states (`node_modules: hardlinked N files (tripwire only)`).
+
+The same tripwire logic bounds WHERE the harness may run: a dedicated clone
+with its own `.git` is required (`git clone --reference <your checkout> <url>
+/tmp/hc-clone`), not a linked worktree — other worktrees change the shared git
+dir (config, refs/heads/main, info/) during ordinary pushes and pulls and
+would read as a sandbox breach. A real run has already aborted on exactly
+that.
