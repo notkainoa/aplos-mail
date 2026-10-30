@@ -264,26 +264,47 @@ test('htmlToText: a lone < is text, an unclosed script drops the rest, and ASCII
   assert.equal(htmlToText('İİİ<script>x</script>after<SCRIPT>y</SCRIPT>end'), 'İİİafterend');
 });
 
+/**
+ * How much slower `run` gets when its input grows 4x: about 4 for linear code, about 16 for quadratic. Compares the
+ * best of three runs at each size, so a busy machine slows both sides alike instead of tripping a fixed time bound.
+ */
+function growth(run: (size: number) => void, size: number): number {
+  const best = (n: number) => {
+    let fastest = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const started = performance.now();
+      run(n);
+      fastest = Math.min(fastest, performance.now() - started);
+    }
+    return Math.max(fastest, 1);
+  };
+  return best(size * 4) / best(size);
+}
+
+/** Between linear (4) and quadratic (16); the old quadratic code measured 14 or more here. */
+const LINEAR_GROWTH_LIMIT = 9;
+
 test('htmlToText is linear on hostile input (no regex backtracking over a megabyte)', () => {
-  const started = Date.now();
-  const inputs = [
-    '<'.repeat(1_000_000),
-    '<li '.repeat(250_000),
-    '<a '.repeat(300_000) + '>',
-    '&#'.repeat(500_000),
+  const shapes: Array<(n: number) => string> = [
+    n => '<'.repeat(n),
+    n => '<li '.repeat(n / 4),
+    n => '<a '.repeat(n / 3) + '>',
+    n => '&#'.repeat(n / 2),
   ];
-  for (const html of inputs) htmlToText(html);
-  assert.ok(Date.now() - started < 3_000, `took ${Date.now() - started} ms`);
+  for (const shape of shapes) {
+    const ratio = growth(n => void htmlToText(shape(n)), 250_000);
+    assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the input took ${ratio.toFixed(1)}x the time`);
+  }
 });
 
 test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &nbsp; between text', () => {
   // The old per-line `/[ \t]+$/` was quadratic: 50,000 spaces took 28 s, so these would take minutes.
-  const started = Date.now();
+  const ratio = growth(n => void htmlToText('a' + ' '.repeat(n) + 'b'), 12_000);
+  assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the spaces took ${ratio.toFixed(1)}x the time`);
   const spaces = htmlToText('a' + ' '.repeat(100_000) + 'b');
   const mixed = htmlToText('a' + ' \t'.repeat(60_000) + 'b');
   const nbsp = htmlToText('a' + '&nbsp;'.repeat(60_000) + 'b');
   const tail = htmlToText('x' + ' '.repeat(200_000) + '\ny');
-  assert.ok(Date.now() - started < 5_000, `took ${Date.now() - started} ms`);
   assert.equal(spaces.length, 100_002, 'inner spaces are kept');
   assert.equal(mixed.length, 120_002);
   assert.equal(nbsp.length, 60_002);
@@ -291,23 +312,29 @@ test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &
   assert.equal(htmlToText('a \t \nb\t\n\n\n\nc  '), 'a\nb\n\nc');
 });
 
-test('htmlToText stays linear on 400,000 characters of tags that each end or start a line', () => {
-  // `out.endsWith('\n')` per tag flattened the growing string every time: `<br>` took 6.9 s, `x<p>` 22.8 s.
-  const started = Date.now();
+test('htmlToText stays linear on tags that each end or start a line', () => {
+  // `out.endsWith('\n')` per tag flattened the growing string every time: `<br>` took 6.9 s, `x<p>` 22.8 s at 100k tags.
+  for (const unit of ['<br>', 'x<p>']) {
+    const ratio = growth(n => void htmlToText(unit.repeat(n)), 25_000);
+    assert.ok(
+      ratio < LINEAR_GROWTH_LIMIT,
+      `${unit}: 4x the tags took ${ratio.toFixed(1)}x the time`,
+    );
+  }
   const breaks = htmlToText('<br>'.repeat(100_000));
   const paragraphs = htmlToText('x<p>'.repeat(100_000));
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed < 2_000, `took ${elapsed} ms`);
   assert.equal(breaks, '');
   assert.equal(paragraphs.split('\n').filter(Boolean).length, 100_000);
   assert.equal(htmlToText('a<br>b<p>c</p>d<div>e'), 'a\nb\nc\n\nd\ne');
 });
 
 test('a subject of 100,000 spaces folds in linear time and never into a whitespace-only line', () => {
-  const started = Date.now();
+  const ratio = growth(
+    n => void buildMime(input({ subject: 'Re:' + ' '.repeat(n) + 'x' })),
+    25_000,
+  );
+  assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the spaces took ${ratio.toFixed(1)}x the time`);
   const out = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).head;
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed < 300, `took ${elapsed} ms`);
   for (const line of out.split('\r\n')) assert.ok(line.trim() !== '', 'no whitespace-only line');
   const subject = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).headers;
   assert.equal(named(subject, 'Subject')[0].value, 'Re: x', 'a run of spaces is one space');
