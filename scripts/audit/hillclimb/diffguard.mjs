@@ -195,6 +195,12 @@ export const SUPPRESSION_DIRECTIVES = {
   'tslint-disable': /tslint\s*:\s*disable/i,
   nosonar: /nosonar/i,
   noqa: /\bnoqa\b/i,
+  // Scorer-side tampering: node's own coverage comments, Stryker disable comments and its active-mutant
+  // switch (source that reads it can kill every mutant), knip/ts-prune ignore tags.
+  'node-coverage': /node:coverage/i,
+  'stryker-disable': /stryker\s+(disable|restore)/i,
+  'stryker-identifier': /__stryker|stryker_active_mutant/i,
+  'knip-ignore': /@(lintignore|knipignore|ts-prune-ignore-next)\b/i,
 };
 
 /** True for files an attempt may not modify or delete unless allowedTestPaths allows it. */

@@ -13,7 +13,7 @@ const FORBIDDEN_WORDS = [
   '.github/, mockups/, plans/, .husky/, scripts/hooks/ and every .git* file',
   'existing test files (*.test.*, *.spec.*, test/, tests/, __tests__/, e2e/) unless the config lists them under allowedTestPaths',
   SUPPRESSION_HINT,
-  'suppression-by-comment directives in added lines (eslint-disable, /* eslint rule: */ inline config, eslint-env, @ts-ignore, @ts-nocheck, @ts-expect-error, istanbul/c8/v8 ignore, stylelint-disable, prettier-ignore, biome-ignore, tslint:disable, nosonar, noqa) unless the config allows them',
+  'suppression-by-comment directives in added lines (eslint-disable, /* eslint rule: */ inline config, eslint-env, @ts-ignore, @ts-nocheck, @ts-expect-error, istanbul/c8/v8 ignore, stylelint-disable, prettier-ignore, biome-ignore, tslint:disable, nosonar, noqa, node:coverage, Stryker disable, __stryker identifiers, @knipignore/@lintignore) unless the config allows them',
   'symlinks, gitlinks and executable-bit changes',
 ];
 

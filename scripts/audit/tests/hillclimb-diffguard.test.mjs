@@ -467,6 +467,12 @@ describe('checkDiff: more suppression directives', () => {
       ['// NOSONAR', 'nosonar'],
       ['x = eval(y)  # noqa', 'noqa'],
       ['# noqa: E501', 'noqa'],
+      ['/* node:coverage disable */', 'node-coverage'],
+      ['// Stryker disable next-line all', 'stryker-disable'],
+      ['// stryker restore all', 'stryker-disable'],
+      ['if (process.env.__STRYKER_ACTIVE_MUTANT__) throw 1;', 'stryker-identifier'],
+      ['/** @knipignore */', 'knip-ignore'],
+      ['/** @lintignore */', 'knip-ignore'],
     ]) {
       const result = scan([line]);
       assert.equal(result.ok, false, line);
