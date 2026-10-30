@@ -794,17 +794,32 @@ async function hungVault(dir: string, step: 'write' | 'rename', abandonedGraceMs
 
 for (const step of ['write', 'rename'] as const) {
   test(
-    `the temporary file of a ${step} that never settles is protected only for its grace period`,
+    `the temporary file of a ${step} that never settles is kept while the grace period runs`,
     { timeout: 10_000 },
     async () => {
       await withDir(async dir => {
-        const { vault, seen } = await hungVault(dir, step, 1_500);
+        // A grace far longer than any load makes this independent of how fast the machine is.
+        const { vault, seen } = await hungVault(dir, step, 120_000);
         const timersBefore = liveTimers();
         await assert.rejects(vault.set('a', { v: 7 }), unsaved);
         await eventually(() => exists(seen.temporary), 'the hung call leaves its file behind');
         assert.equal(liveTimers(), timersBefore, 'the grace timer does not keep the process alive');
         await open(dir);
         assert.ok(await exists(seen.temporary), 'kept while the hung call may still finish');
+        assert.deepEqual(vault.get('a'), { v: 1 });
+      });
+    },
+  );
+
+  test(
+    `the temporary file of a ${step} that never settles is removed by a load after its grace period`,
+    { timeout: 10_000 },
+    async () => {
+      await withDir(async dir => {
+        // A short grace expires on its own: nothing here depends on loading inside the window.
+        const { vault, seen } = await hungVault(dir, step, 50);
+        await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+        await eventually(() => exists(seen.temporary), 'the hung call leaves its file behind');
         await eventually(async () => {
           await open(dir);
           return !(await exists(seen.temporary));
