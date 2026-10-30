@@ -21,6 +21,9 @@ export async function openEngine(
   const clock = fakeClock(start);
   const log = createLogger({ sink: { write: () => undefined }, salt: 'views-test', clock });
   const engine: Engine = await createEngine({ store, clock, log, ...options });
+  // The lanes' start rules (e.g. the outbox marking a seeded `sending` row uncertain) run on the loop's first pass;
+  // let them commit now, so a test's seq arithmetic does not depend on microtask timing.
+  await clock.flush();
   const session = engine.connect();
   const frames: Frame[] = [];
   session.subscribe(f => frames.push(f));
