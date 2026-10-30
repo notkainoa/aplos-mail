@@ -1,9 +1,9 @@
-import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { FROZEN_NOW, type Theme } from '../states';
+import { STATES, type Theme } from '../states';
 import { openState } from '../support/gallery';
-import { repoRoot, visualDir } from '../support/paths';
+import { visualDir } from '../support/paths';
 import {
   log,
   isFresh,
@@ -14,22 +14,21 @@ import {
   stateList,
   type ScorerState,
 } from './common';
+import { finish, runScorer } from './lifecycle';
 import {
   CELL,
-  MOCKUP_OVERRIDES,
   compareImages,
   detailLine,
-  detailLines,
   implRegion,
-  overallScore,
-  parseMockup,
-  resolveMockupState,
+  mockupReport,
+  unresolvedScore,
   type Comparison,
   type Region,
   type Rgba,
   type StateScore,
 } from './mockup-diff-score';
-import { startGalleryServer } from './server';
+import { isPaneState, loadExcluded, mockupTarget, shootMockup, staleExcludes } from './mockup';
+import { launchBrowser, startGalleryServer } from './server';
 
 // Hill-climb scorer: how close is each implementation state to its mockup in layout and style?
 // Usage: npx tsx tests/visual/scorers/mockup-diff.score.ts [--size 1440x900] [--state prefix]
@@ -37,11 +36,6 @@ import { startGalleryServer } from './server';
 // Maths in mockup-diff-score.ts; states that cannot be compared are listed in mockup-diff.exclude.json.
 
 const CONCURRENCY = 4;
-const MOCKUPS = join(repoRoot, 'mockups');
-const EXCLUDE_FILE = join(import.meta.dirname, 'mockup-diff.exclude.json');
-const QUIET_CSS =
-  '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' +
-  '.mockbar,.tooltip{display:none!important}';
 
 interface Job {
   entry: ScorerState;
@@ -51,36 +45,6 @@ interface Job {
 interface Outcome {
   score: StateScore | null;
   skipped?: string;
-}
-
-function loadExcluded(): Record<string, string> {
-  return JSON.parse(readFileSync(EXCLUDE_FILE, 'utf8')) as Record<string, string>;
-}
-
-function listedStates(file: string): string[] {
-  const html = readFileSync(join(MOCKUPS, file), 'utf8');
-  const match = /<html[^>]*data-states="([^"]*)"/.exec(html);
-  return (match?.[1] ?? '')
-    .split(',')
-    .map(part => part.trim())
-    .filter(Boolean);
-}
-
-interface MockupTarget {
-  url: string;
-  label: string;
-}
-
-/** The file URL of the mockup for a state at a theme, or the reason it cannot be resolved. */
-function mockupTarget(entry: ScorerState, theme: Theme): MockupTarget | string {
-  const parsed = parseMockup(MOCKUP_OVERRIDES[entry.id] ?? entry.mockup);
-  if (!parsed) return `no mockup page in "${entry.mockup}"`;
-  if (!existsSync(join(MOCKUPS, parsed.file))) return `mockups/${parsed.file} does not exist`;
-  const state = resolveMockupState(parsed.label, listedStates(parsed.file));
-  if (state === null) return `mockups/${parsed.file} has no state "${parsed.label}"`;
-  const query = new URLSearchParams({ shot: '1', theme });
-  if (state) query.set('state', state);
-  return { url: `file://${join(MOCKUPS, parsed.file)}?${query.toString()}`, label: parsed.label };
 }
 
 async function newContext(
@@ -114,23 +78,6 @@ async function shootImpl(
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, png);
   return png;
-}
-
-/** The mockup's white pane (`.main`) for a pane state, otherwise its whole window. */
-async function shootMockup(page: Page, url: string, pane: boolean) {
-  await page.clock.setFixedTime(new Date(FROZEN_NOW));
-  await page.goto(url);
-  await page.addStyleTag({ content: QUIET_CSS });
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
-  const region = await page.evaluate((wantPane: boolean) => {
-    const element =
-      (wantPane && document.querySelector('.main')) || document.querySelector('.window');
-    const r = (element ?? document.body).getBoundingClientRect();
-    return { x: r.x, y: r.y, width: r.width, height: r.height };
-  }, pane);
-  const png = await page.screenshot({ animations: 'disabled', caret: 'hide' });
-  return { png, region };
 }
 
 /** Decodes a PNG in a blank page, crops it to `region` and resamples to `width` x `height`. */
@@ -223,7 +170,8 @@ async function scoreJob(
 ): Promise<Outcome> {
   const { entry, theme } = job;
   const target = mockupTarget(entry, theme);
-  if (typeof target === 'string') return { score: null, skipped: target };
+  if (typeof target === 'string')
+    return { score: unresolvedScore(entry.id, theme, target), skipped: target };
 
   const context = await newContext(browser, origin, args.size, theme);
   try {
@@ -238,7 +186,7 @@ async function scoreJob(
     } catch (error) {
       return failed(`state-failed-to-open ${firstLine(error)}`);
     }
-    const pane = (entry.state.frame ?? 'pane') === 'pane';
+    const pane = isPaneState(entry);
     const mockPage = await context.newPage();
     let mock: { png: Buffer; region: Region };
     try {
@@ -315,29 +263,38 @@ async function main(): Promise<void> {
   const entries = stateList(args.state);
   if (entries.length === 0) throw new Error(`no state id starts with "${args.state}"`);
   const excluded = loadExcluded();
+  const stale = staleExcludes(
+    excluded,
+    STATES.map(state => state.id),
+  );
+  if (stale.length > 0)
+    throw new Error(`mockup-diff.exclude.json lists unknown states: ${stale.join(', ')}`);
   const kept = entries.filter(entry => !(entry.id in excluded));
   log(`mockup-diff: ${kept.length} states, ${entries.length - kept.length} excluded`);
   const jobs = kept.flatMap(entry => args.themes.map(theme => ({ entry, theme })));
+  const total = entries.length * args.themes.length;
+  const excludedPages = total - jobs.length;
 
   const server = await startGalleryServer();
-  const browser = await chromium.launch({ headless: true });
   try {
-    const started = Date.now();
-    const outcomes = await runJobs(browser, server.origin, args, jobs);
-    const scored = outcomes.flatMap(outcome => (outcome.score ? [outcome.score] : []));
-    outcomes.forEach((outcome, i) => {
-      if (outcome.skipped) log(`skipped ${jobs[i]?.entry.id}: ${outcome.skipped}`);
-    });
-    log(`mockup-diff: ${scored.length} compared, ${Date.now() - started} ms`);
-    printScore(overallScore(scored.map(entry => entry.score)), detailLines(scored));
+    const browser = await launchBrowser();
+    try {
+      const started = Date.now();
+      const outcomes = await runJobs(browser, server.origin, args, jobs);
+      const scored = outcomes.flatMap(outcome => (outcome.score ? [outcome.score] : []));
+      outcomes.forEach((outcome, i) => {
+        if (outcome.skipped) log(`unresolved ${jobs[i]?.entry.id}: ${outcome.skipped}`);
+      });
+      log(`mockup-diff: ${scored.length} compared, ${Date.now() - started} ms`);
+      const report = mockupReport(scored, total, excludedPages);
+      printScore(report.score, report.details);
+    } finally {
+      await browser.close();
+    }
   } finally {
-    await browser.close();
     server.stop();
   }
-  process.exit(0);
+  await finish(0);
 }
 
-main().catch(error => {
-  log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-  process.exit(1);
-});
+runScorer(main);

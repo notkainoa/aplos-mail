@@ -306,6 +306,39 @@ export function compareImages(a: Rgba, b: Rgba, cell = CELL): Comparison {
   return compareGrids(downsample(a, cell), downsample(b, cell));
 }
 
+/** First detail line: how much of the state list was really compared. */
+export function comparedLine(compared: number, total: number, excluded: number): string {
+  return `compared ${compared} of ${total} (excluded ${excluded})`;
+}
+
+/**
+ * The final report. `total` counts every state-and-theme page asked for, `excluded` those listed in
+ * the exclude file (the only ones allowed out of the mean). Everything else counts: a page that
+ * could not be compared (unresolved mockup, failed to open) scores 0 and is flagged, so shrinking
+ * the compared set never raises the mean.
+ */
+export function mockupReport(
+  scored: readonly StateScore[],
+  total: number,
+  excluded: number,
+): { score: number; details: string[] } {
+  const compared = scored.filter(entry => !entry.note).length;
+  const missing = Math.max(0, total - excluded - scored.length);
+  const mean = overallScore([
+    ...scored.map(entry => entry.score),
+    ...Array.from({ length: missing }, () => 0),
+  ]);
+  return {
+    score: mean,
+    details: [comparedLine(compared, total, excluded), ...detailLines(scored)],
+  };
+}
+
+/** A page whose mockup cannot be resolved: it scores 0 and says why. */
+export function unresolvedScore(state: string, theme: string, reason: string): StateScore {
+  return { state, theme, score: 0, worst: null, note: `mockup-unresolved ${reason}` };
+}
+
 /** Mean of the scores; an empty list scores 0. */
 export function overallScore(scores: readonly number[]): number {
   if (scores.length === 0) return 0;

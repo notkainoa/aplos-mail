@@ -1,7 +1,9 @@
+import { chromium, type Browser } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { repoRoot } from '../support/paths';
 import { log } from './common';
+import { killGroup, onShutdown } from './lifecycle';
 
 // Starts the harness's Vite gallery on a free port, as playwright.config.ts does (same command,
 // blank AI keys), and stops it again. An explicit APLOS_VISUAL_PORT that already answers is reused;
@@ -67,15 +69,36 @@ export async function startGalleryServer(): Promise<GalleryServer> {
   });
   child.stderr?.on('data', chunk => log(String(chunk).trimEnd()));
   const stop = (): void => {
-    if (child.exitCode === null && child.pid) process.kill(-child.pid, 'SIGTERM');
+    killGroup(child.pid, 'SIGTERM');
   };
-  process.once('exit', stop);
+  // Last resort on any way out of this process: nothing in the group may outlive the scorer.
+  process.once('exit', () => killGroup(child.pid, 'SIGKILL'));
+  const forget = onShutdown(stop);
   try {
     await waitUntilUp(`${origin}${PAGE}`, child, 120_000);
   } catch (error) {
     stop();
+    forget();
     throw error;
   }
   log(`gallery server on ${origin}`);
-  return { origin, stop };
+  return {
+    origin,
+    stop: () => {
+      stop();
+      forget();
+    },
+  };
+}
+
+/** Headless Chromium that closes on a signal too (Playwright's own signal handlers are off). */
+export async function launchBrowser(): Promise<Browser> {
+  const browser = await chromium.launch({
+    headless: true,
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
+  });
+  onShutdown(() => browser.close());
+  return browser;
 }
