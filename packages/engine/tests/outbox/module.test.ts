@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LogRecord } from '@aplos/contract/log/events';
 import { ContractError } from '@aplos/contract/contract-error';
+import type { Input, Output, EngineMethodName } from '@aplos/contract';
 import { fakeClock } from '../../src/clock/module';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
@@ -24,11 +25,15 @@ async function engineWorld() {
     'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
   ).run('d1', accountWrite.id, JSON.stringify(fields()), T0);
   db.close();
+  const session = engine.connect();
+  /** A typed call through the engine's dispatch, as a window. */
+  const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
+    session.call(method, args) as Promise<Output<M>>;
   return {
     engine,
     clock,
     server,
-    session: engine.connect(),
+    call,
     async cleanup() {
       await engine.close();
       store.close();
@@ -40,20 +45,20 @@ async function engineWorld() {
 test('Submission/set, Submission/get and Outbox/pending run through the engine and the clock loop sends once', async () => {
   const w = await engineWorld();
   try {
-    const out = await w.session.call('Submission/set', {
+    const out = await w.call('Submission/set', {
       opId: 'op-1',
       action: { type: 'send', draftId: 'd1', revision: 1 },
     });
     assert.equal(out.submission.state, 'queued');
     assert.equal(out.receipt.undoable, true);
-    assert.equal((await w.session.call('Outbox/pending', {})).scheduledSends, 1);
+    assert.equal((await w.call('Outbox/pending', {})).scheduledSends, 1);
 
     await w.clock.advance(10 * SEC);
     await w.clock.flush();
-    const got = await w.session.call('Submission/get', { ids: [out.submission.id] });
+    const got = await w.call('Submission/get', { ids: [out.submission.id] });
     assert.equal(got.list[0].state, 'sent');
     assert.equal(w.server.worst(), 1);
-    assert.equal((await w.session.call('Outbox/pending', {})).scheduledSends, 0);
+    assert.equal((await w.call('Outbox/pending', {})).scheduledSends, 0);
   } finally {
     await w.cleanup();
   }
@@ -64,13 +69,13 @@ test('the window cannot undo a send that is already sending: stateMismatch, one 
   try {
     let release!: () => void;
     w.server.script.push({ wait: new Promise<void>(resolve => (release = resolve)) });
-    const { submission } = await w.session.call('Submission/set', {
+    const { submission } = await w.call('Submission/set', {
       opId: 'op-1',
       action: { type: 'send', draftId: 'd1', revision: 1 },
     });
     await w.clock.advance(10 * SEC);
     await assert.rejects(
-      w.session.call('Submission/set', {
+      w.call('Submission/set', {
         opId: 'op-2',
         action: { type: 'undo', submissionId: submission.id },
       }),
@@ -78,10 +83,7 @@ test('the window cannot undo a send that is already sending: stateMismatch, one 
     );
     release();
     await w.clock.flush();
-    assert.equal(
-      (await w.session.call('Submission/get', { ids: [submission.id] })).list[0].state,
-      'sent',
-    );
+    assert.equal((await w.call('Submission/get', { ids: [submission.id] })).list[0].state, 'sent');
     assert.equal(w.server.worst(), 1);
   } finally {
     await w.cleanup();
@@ -91,7 +93,7 @@ test('the window cannot undo a send that is already sending: stateMismatch, one 
 test('closing the engine gives a hung send the grace, then leaves its marker for the start rule', async () => {
   const w = await engineWorld();
   try {
-    const { submission } = await w.session.call('Submission/set', {
+    const { submission } = await w.call('Submission/set', {
       opId: 'op-1',
       action: { type: 'send', draftId: 'd1', revision: 1 },
     });

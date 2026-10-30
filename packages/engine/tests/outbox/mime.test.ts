@@ -44,7 +44,7 @@ function parse(bytes: Uint8Array) {
   return { text, headers, body: text.slice(at + 4), head: text.slice(0, at) };
 }
 
-const named = (headers: { name: string }[], name: string) =>
+const named = <T extends { name: string }>(headers: T[], name: string) =>
   headers.filter(h => h.name.toLowerCase() === name.toLowerCase());
 
 /** RFC 2047: whitespace between two encoded words is not part of the text. */
