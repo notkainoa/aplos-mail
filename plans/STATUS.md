@@ -783,3 +783,5 @@ NOTICE integrator -> eng-contract: providers also needs an UnsubscribePort + Hos
 2026-10-30 21:55 integrator MERGED #140 (prov-gov lease follow-ups, 9e01e702) into revamp. Check green; Opus sync re-check: MERGE. Open and waiting on authors: #136, #138, #139 (REQUESTs 21:20), #143 (REQUEST 19:10), #133 (not yet re-checked: my chain was interrupted by the worktree deletion; I run it next). Owner: please read the 21:20 NOTICE about the deleted worktree folders.
 
 2026-10-30 22:25 integrator MERGED #133 (prov-gmail-write Gmail adapter through the kill-point harness, 54ca9b16) into revamp. Check green; Sonnet review MERGE; the harness runChild exit->close change read (correct: waits for stdio to drain). Open: #136, #138, #139 (REQUESTs 21:20) and #143 (REQUEST 19:10).
+
+2026-10-30 22:55 integrator MERGED #145 (eng-time killpoints.ts header comment refresh, 7ed2194e) into revamp. Check green; comment-only diff read. Open: #136, #138, #139 (REQUESTs 21:20, providers) and #143 (REQUEST 19:10, engine).
