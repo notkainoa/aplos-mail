@@ -9,3 +9,15 @@
 export const releaseBuild = env => env.APLOS_RELEASE_BUILD === '1';
 
 export const syntaxOptions = env => (releaseBuild(env) ? { minifySyntax: true } : {});
+
+// release-build.mjs refuses to package a bundle that was not built for release. It used to look for the text
+// `var releaseBuild = true;`, which syntax minification inlines away, so a release bundle now carries this explicit
+// banner instead. The banner and the define come from the same build() call (build-main.mjs spreads the options),
+// so a bundle with the banner was built with APLOS_RELEASE_BUILD=1.
+export const RELEASE_BANNER = '/* aplos-build: release */';
+
+export const bannerOptions = env => (releaseBuild(env) ? { banner: { js: RELEASE_BANNER } } : {});
+
+/** True for a bundle source that build-main.mjs produced for a release build. */
+export const isReleaseBundle = source =>
+  typeof source === 'string' && source.includes(RELEASE_BANNER);
