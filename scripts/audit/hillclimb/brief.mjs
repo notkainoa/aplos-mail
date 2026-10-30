@@ -8,12 +8,12 @@ import { SUPPRESSION_HINT } from './diffguard.mjs';
 const FORBIDDEN_WORDS = [
   'scripts/audit/ and tools/lint/ (the harness and lint tooling that score you)',
   'the target config file',
-  'config and dotfile names: *.config.*, budgets.json, stylelint*, tsconfig*.json(c), package.json, package-lock.json, .npmrc, .prettierrc*, .eslintrc*, .stylelintrc*, .editorconfig, Makefile, *.lock, .node-version, .nvmrc, in any workspace',
-  'any file whose name contains baseline, snapshot or golden, and anything under __snapshots__/',
+  'config and dotfile names: *.config.*, *.setup.*, budgets.json, stylelint*, tsconfig*.json(c), package.json, package-lock.json, .npmrc, .prettierrc*, .eslintrc*, .stylelintrc*, .eslintignore, .prettierignore, .stylelintignore, .editorconfig, Makefile, *.lock, .node-version, .nvmrc, in any workspace',
+  'any file whose name contains baseline, snapshot or golden, and anything under __snapshots__/, __mocks__/ or fixtures/',
   '.github/, mockups/, plans/, .husky/, scripts/hooks/ and every .git* file',
-  'existing test files (*.test.*, *.spec.*, tests/, __tests__/) unless the config lists them under allowedTestPaths',
+  'existing test files (*.test.*, *.spec.*, test/, tests/, __tests__/, e2e/) unless the config lists them under allowedTestPaths',
   SUPPRESSION_HINT,
-  'suppression-by-comment directives in added lines (eslint-disable, @ts-ignore, @ts-nocheck, @ts-expect-error, istanbul/c8 ignore, stylelint-disable, prettier-ignore) unless the config allows them',
+  'suppression-by-comment directives in added lines (eslint-disable, /* eslint rule: */ inline config, eslint-env, @ts-ignore, @ts-nocheck, @ts-expect-error, istanbul/c8/v8 ignore, stylelint-disable, prettier-ignore, biome-ignore, tslint:disable, nosonar, noqa) unless the config allows them',
   'symlinks, gitlinks and executable-bit changes',
 ];
 

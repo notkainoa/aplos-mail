@@ -122,6 +122,24 @@ describe('validateConfig', () => {
     bad({ allowDirectives: [42] }, 'allowDirectives');
   });
 
+  it('accepts allowBinary globs and a maxAddedFileKB cap, defaulting safely', () => {
+    const config = validateConfig({
+      ...good,
+      allowBinary: ['apps/desktop/assets/**'],
+      maxAddedFileKB: 1024,
+    });
+    assert.deepEqual(config.allowBinary, ['apps/desktop/assets/**']);
+    assert.equal(config.maxAddedFileKB, 1024);
+    const plain = validateConfig({ ...good });
+    assert.deepEqual(plain.allowBinary, []);
+    assert.equal(plain.maxAddedFileKB, 512);
+    bad({ allowBinary: 'src/**' }, 'allowBinary');
+    bad({ allowBinary: [42] }, 'allowBinary');
+    bad({ maxAddedFileKB: 0 }, 'maxAddedFileKB');
+    bad({ maxAddedFileKB: -1 }, 'maxAddedFileKB');
+    bad({ maxAddedFileKB: 'big' }, 'maxAddedFileKB');
+  });
+
   it('accepts a lockWaitMin override and rejects bad values', () => {
     assert.equal(validateConfig({ ...good, lockWaitMin: 600 }).lockWaitMin, 600);
     assert.equal(validateConfig({ ...good }).lockWaitMin, 180);

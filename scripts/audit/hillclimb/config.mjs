@@ -15,6 +15,7 @@ export const defaults = {
   scorerTimeoutSec: 300,
   attemptTimeoutSec: 1800,
   lockWaitMin: 180, // matches lock.mjs defaultTimeoutMs (3 h)
+  maxAddedFileKB: 512,
 };
 
 export const agents = ['swe-2', 'claude', 'command'];
@@ -26,6 +27,8 @@ const TOP_KEYS = new Set([
   'allowedPaths',
   'allowedTestPaths',
   'allowDirectives',
+  'allowBinary',
+  'maxAddedFileKB',
   'gates',
   'scorers',
   'attempt',
@@ -180,6 +183,7 @@ export function validateConfig(raw) {
       ? needStringList(raw.allowedTestPaths, 'allowedTestPaths')
       : [],
     allowDirectives: raw.allowDirectives ? needDirectives(raw.allowDirectives) : [],
+    allowBinary: raw.allowBinary ? needStringList(raw.allowBinary, 'allowBinary') : [],
     gates: needGateList(raw.gates),
     scorers: raw.scorers.map(needScorer),
     attempt,
@@ -195,6 +199,7 @@ export function validateConfig(raw) {
       defaults.stopAfterNoGain,
     ),
     maxConcurrent: needPositiveInt(raw.maxConcurrent, 'maxConcurrent', defaults.maxConcurrent),
+    maxAddedFileKB: needPositiveInt(raw.maxAddedFileKB, 'maxAddedFileKB', defaults.maxAddedFileKB),
     lockWaitMin: needTimeout(raw.lockWaitMin, 'lockWaitMin', defaults.lockWaitMin, 'minutes'),
   };
   // Sanity check the globs now, not mid-run when an attempt is rejected for the wrong
@@ -203,6 +208,7 @@ export function validateConfig(raw) {
   for (const [where, globs] of [
     ['allowedPaths', config.allowedPaths],
     ['allowedTestPaths', config.allowedTestPaths],
+    ['allowBinary', config.allowBinary],
   ]) {
     for (const glob of globs) {
       if (!validGlob(glob)) throw new ConfigError(`${where}: invalid glob "${glob}"`);

@@ -246,6 +246,15 @@ describe('isShrinkOnly', () => {
     );
   });
 
+  it('treats prototype keys as absent entries, not existing ones', () => {
+    // 'constructor' in {} is true through the prototype chain — a new file key named
+    // "constructor" would silently pass a plain `in` test as "already present".
+    assert.match(
+      isShrinkOnly('{}', JSON.stringify({ constructor: { r: { count: 1 } } })).reason,
+      /adds suppressions for constructor/,
+    );
+  });
+
   it('treats a missing old file as empty, so any content is an addition', () => {
     assert.equal(isShrinkOnly(null, '{}').ok, true);
     assert.match(
@@ -431,11 +440,162 @@ describe('isTestPath', () => {
       ['deep/x.spec.js', true],
       ['tests/e2e/x.ts', true],
       ['pkg/__tests__/y.ts', true],
+      ['src/test/helpers.ts', true],
+      ['packages/engine/e2e/flow.ts', true],
       ['src/attest.ts', false],
       ['src/testing/foo.ts', false],
     ]) {
       assert.equal(isTestPath(path), expected, path);
     }
+  });
+});
+
+describe('checkDiff: more suppression directives', () => {
+  const changes = [M('src/a.ts')];
+  const scan = (added, extra = {}) => checkDiff({ ...base, changes, addedLines: added, ...extra });
+
+  it("rejects inline eslint config, eslint-env and other linters' escapes", () => {
+    for (const [line, name] of [
+      ['/* eslint no-console: "off" */', 'eslint-inline-config'],
+      ['/*eslint @typescript-eslint/no-explicit-any: 0*/', 'eslint-inline-config'],
+      ['/* eslint-env browser, node */', 'eslint-env'],
+      ['/* v8 ignore next */', 'v8-ignore'],
+      ['// v8 ignore start', 'v8-ignore'],
+      ['// biome-ignore lint/style/useConst: reason', 'biome-ignore'],
+      ['/* tslint:disable */', 'tslint-disable'],
+      ['// tslint:disable-next-line:semicolon', 'tslint-disable'],
+      ['// NOSONAR', 'nosonar'],
+      ['x = eval(y)  # noqa', 'noqa'],
+      ['# noqa: E501', 'noqa'],
+    ]) {
+      const result = scan([line]);
+      assert.equal(result.ok, false, line);
+      assert.match(result.reasons.join(' '), new RegExp(`"${name}"`), line);
+    }
+  });
+
+  it('does not flag words that merely contain a directive substring', () => {
+    assert.equal(scan(['const noqualms = true;']).ok, true);
+  });
+
+  it('honours allowDirectives for the new names', () => {
+    const result = scan(['/* v8 ignore next */'], { allowDirectives: ['v8-ignore'] });
+    assert.equal(result.ok, true);
+  });
+});
+
+describe('checkDiff: test-adjacent paths', () => {
+  it('rejects mock and fixture dirs, setup files and lint ignore-files', () => {
+    const loose = { allowedPaths: ['**'], allowedTestPaths: [] };
+    for (const path of [
+      'src/__mocks__/api.ts',
+      'pkg/fixtures/mail.json',
+      'src/vitest.setup.ts',
+      '.eslintignore',
+      'apps/desktop/.prettierignore',
+      '.stylelintignore',
+    ]) {
+      const result = checkDiff({ ...loose, changes: [M(path)] });
+      assert.equal(result.ok, false, path);
+    }
+  });
+
+  it('treats test/ and e2e/ as test dirs (modify rejected, add inside scope allowed)', () => {
+    for (const path of ['src/test/x.ts', 'packages/engine/e2e/y.ts']) {
+      assert.equal(ok([M(path)]).ok, false, `modify ${path}`);
+      assert.equal(ok([D(path)]).ok, false, `delete ${path}`);
+    }
+    assert.equal(ok([A('src/test/new.ts')]).ok, true);
+  });
+});
+
+describe('checkDiff: binary files, size cap and tree collisions', () => {
+  it('rejects added/modified files git classifies as binary unless allowBinary lists them', () => {
+    const changes = [A('src/img.png'), M('src/bin.dat')];
+    const result = checkDiff({
+      ...base,
+      changes,
+      binaryPaths: ['src/img.png', 'src/bin.dat'],
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /src\/img\.png: binary file/);
+    assert.match(result.reasons.join(' '), /src\/bin\.dat: binary file/);
+    const allowed = checkDiff({
+      ...base,
+      changes,
+      binaryPaths: ['src/img.png'],
+      allowBinary: ['src/*.png'],
+    });
+    assert.equal(allowed.ok, true);
+  });
+
+  it('does not flag a deleted binary file', () => {
+    const result = checkDiff({
+      ...base,
+      changes: [D('src/old.png')],
+      binaryPaths: ['src/old.png'],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it('rejects added/modified files over maxAddedFileKB (default 512)', () => {
+    const sizes = { 'src/huge.ts': 600 * 1024, 'src/big.ts': 513 * 1024, 'src/fine.ts': 100 };
+    const result = checkDiff({
+      ...base,
+      changes: [A('src/huge.ts'), M('src/big.ts'), A('src/fine.ts')],
+      fileSize: path => sizes[path],
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /src\/huge\.ts: added\/modified file exceeds 512 KB/);
+    assert.match(result.reasons.join(' '), /src\/big\.ts: added\/modified file exceeds 512 KB/);
+    assert.doesNotMatch(result.reasons.join(' '), /fine\.ts/);
+  });
+
+  it('allows a file exactly at the cap and honours a custom cap', () => {
+    const at = checkDiff({
+      ...base,
+      changes: [A('src/edge.ts')],
+      fileSize: () => 512 * 1024,
+    });
+    assert.equal(at.ok, true);
+    const custom = checkDiff({
+      ...base,
+      changes: [A('src/edge.ts')],
+      fileSize: () => 11 * 1024,
+      maxAddedFileKB: 10,
+    });
+    assert.match(custom.reasons.join(' '), /exceeds 10 KB/);
+  });
+
+  it('rejects a tree whose paths collide under NFC + case folding', () => {
+    const result = checkDiff({
+      ...base,
+      changes: [A('src/foo.test.ts')],
+      treePaths: ['src/Foo.test.ts', 'src/foo.test.ts', 'src/other.ts'],
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /collide.*src\/Foo\.test\.ts vs src\/foo\.test\.ts/);
+  });
+
+  it('rejects names differing only by unicode normalisation', () => {
+    // NFC "café" and NFD "café" (e + combining acute) are different byte strings that a
+    // filesystem may treat as the same file.
+    const result = checkDiff({
+      ...base,
+      changes: [],
+      treePaths: ['src/café.ts', 'src/café.ts'],
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /collide/);
+  });
+
+  it('accepts a collision-free tree', () => {
+    const result = checkDiff({
+      ...base,
+      changes: [A('src/x.ts')],
+      treePaths: ['src/x.ts', 'src/y.ts'],
+    });
+    assert.equal(result.ok, true);
   });
 });
 

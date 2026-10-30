@@ -154,16 +154,22 @@ const FORBIDDEN_NAME_GLOBS = [
   'jest.config.*',
   'makefile',
   '*.lock',
+  '*.setup.*',
   '.node-version',
   '.nvmrc',
+  '.eslintignore',
+  '.prettierignore',
+  '.stylelintignore',
 ];
 const SUPPRESSION_NAMES = new Set(['eslint-suppressions.json', 'stylelint-suppressions.json']);
 // Shared wording for the attempt brief; the rule itself lives in isShrinkOnly below.
 export const SUPPRESSION_HINT =
   'eslint-suppressions.json and stylelint-suppressions.json except to shrink counts (no new files, rules or higher counts)';
 const TEST_NAME_GLOBS = ['*.test.*', '*.spec.*'];
-const SNAPSHOT_DIR = '__snapshots__';
-const TEST_DIRS = new Set(['tests', '__tests__']);
+// Directories whose files an attempt may never touch at all: test data can shape scores
+// just as much as test code can.
+const FORBIDDEN_DIRS = new Set(['__snapshots__', '__mocks__', 'fixtures']);
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'e2e']);
 const FORBIDDEN_MODES = new Set(['120000', '160000']); // symlink, gitlink
 const EXECUTABLE = '100755';
 
@@ -177,8 +183,18 @@ export const SUPPRESSION_DIRECTIVES = {
   'ts-expect-error': /@ts-expect-error/i,
   'istanbul-ignore': /istanbul ignore/i,
   'c8-ignore': /c8 ignore/i,
+  'v8-ignore': /\bv8\s+ignore\b/i,
   'stylelint-disable': /stylelint-disable/i,
   'prettier-ignore': /prettier-ignore/i,
+  // The eslint-disable patterns above miss inline config comments that turn individual
+  // rules off without the word "disable": /* eslint no-console: "off" */ and
+  // /* eslint-env browser */ (which changes which globals lint allows).
+  'eslint-inline-config': /\/\*\s*eslint\s+[\w@/-]+\s*:/i,
+  'eslint-env': /\/\*\s*eslint-env/i,
+  'biome-ignore': /biome-ignore/i,
+  'tslint-disable': /tslint\s*:\s*disable/i,
+  nosonar: /nosonar/i,
+  noqa: /\bnoqa\b/i,
 };
 
 /** True for files an attempt may not modify or delete unless allowedTestPaths allows it. */
@@ -189,7 +205,7 @@ export function isTestPath(path) {
 
 const isSuppressionPath = path => SUPPRESSION_NAMES.has(norm(segments(path).at(-1)));
 
-const isSnapshotPath = path => segments(path).includes(SNAPSHOT_DIR);
+const isSnapshotPath = path => segments(path).some(segment => FORBIDDEN_DIRS.has(segment));
 
 /**
  * The reason a single path is always forbidden, or null. Suppression files are exempt from
@@ -203,7 +219,7 @@ export function forbiddenReason(path, configPath) {
   if (matchesAny(clean, FORBIDDEN_PATH_GLOBS)) {
     return 'always-forbidden path (audit/lint tooling, .github, mockups, plans or hooks)';
   }
-  if (isSnapshotPath(clean)) return 'a file under __snapshots__/';
+  if (isSnapshotPath(clean)) return 'a file under __snapshots__/, __mocks__/ or fixtures/';
   if (nameMatches(clean, FORBIDDEN_NAME_GLOBS)) {
     return 'always-forbidden name (config, budget, baseline, snapshot, golden or .git*)';
   }
@@ -254,14 +270,14 @@ export function isShrinkOnly(oldText, newText) {
     }
   }
   for (const [file, rules] of Object.entries(newParsed.value)) {
-    if (!(file in oldParsed.value)) {
+    if (!Object.hasOwn(oldParsed.value, file)) {
       return { ok: false, reason: `adds suppressions for ${file}` };
     }
     const newRules = asRules(rules, file, 'new');
     if (newRules.error) return { ok: false, reason: newRules.error };
     const oldRules = { value: oldParsed.value[file] };
     for (const [rule, entry] of Object.entries(newRules.value)) {
-      if (!(rule in oldRules.value)) {
+      if (!Object.hasOwn(oldRules.value, rule)) {
         return { ok: false, reason: `adds suppressed rule ${rule} for ${file}` };
       }
       const newCount = entry?.count;
@@ -321,25 +337,56 @@ function unsafeReason(path) {
   return null;
 }
 
+const MAX_ADDED_FILE_KB = 512;
+
+/**
+ * Paths colliding under NFC + case folding (what a case-insensitive checkout would
+ * merge) or differing only by unicode normalisation — names the guard's per-path rules
+ * cannot tell apart but a commit can smuggle past them.
+ */
+export function pathCollisions(treePaths) {
+  const seen = new Map();
+  const pairs = [];
+  for (const path of treePaths) {
+    const folded = norm(path);
+    const prev = seen.get(folded);
+    if (prev !== undefined && prev !== path) pairs.push([prev, path]);
+    else if (prev === undefined) seen.set(folded, path);
+  }
+  return pairs;
+}
+
 /**
  * Validates one attempt's change list. Options: changes, allowedPaths, allowedTestPaths,
  * configPath (repo-relative, forbidden always), allowDirectives (named suppression
- * directives the target permits), addedLines (added diff text for the directive scan),
- * readOldFile/readNewFile (path -> text or null, for the suppressions shrink check).
+ * directives the target permits), allowBinary (globs permitted to be binary),
+ * addedLines (added diff text for the directive scan), binaryPaths (paths git
+ * classifies as binary — a text diff cannot be reviewed), treePaths (every path in the
+ * attempt's tree, for the case/normalisation collision check), fileSize (path -> bytes
+ * or null), maxAddedFileKB (size cap for added/modified files), readOldFile/readNewFile
+ * (path -> text or null, for the suppressions shrink check).
  * Returns { ok: true } or { ok: false, reasons }.
  */
-export function checkDiff({
-  changes,
-  allowedPaths,
-  allowedTestPaths = [],
-  allowDirectives = [],
-  addedLines = [],
-  configPath = null,
-  readOldFile,
-  readNewFile,
-}) {
-  const reasons = [];
+export function checkDiff(options) {
+  const reasons = [
+    ...directiveReasons(options.addedLines ?? [], options.allowDirectives ?? []),
+    ...pathCollisions(options.treePaths ?? []).map(
+      ([a, b]) => `tree paths collide under case/unicode folding: ${a} vs ${b}`,
+    ),
+  ];
+  for (const change of options.changes) {
+    const mode = modeReason(change);
+    if (mode) reasons.push(mode);
+    for (const end of endsOf(change)) {
+      reasons.push(...endReasons(change, end, options));
+    }
+  }
+  return reasons.length ? { ok: false, reasons } : { ok: true };
+}
+
+function directiveReasons(addedLines, allowDirectives) {
   const permitted = new Set(allowDirectives);
+  const reasons = [];
   for (const [name, pattern] of Object.entries(SUPPRESSION_DIRECTIVES)) {
     if (permitted.has(name)) continue;
     const hit = addedLines.find(line => pattern.test(line));
@@ -349,36 +396,43 @@ export function checkDiff({
       );
     }
   }
-  for (const change of changes) {
-    const mode = modeReason(change);
-    if (mode) reasons.push(mode);
-    for (const end of endsOf(change)) {
-      const path = slash(end.path);
-      const unsafe = unsafeReason(path);
-      if (unsafe) {
-        reasons.push(`${path}: unsafe path (${unsafe})`);
-        continue;
-      }
-      const forbidden = forbiddenReason(path, configPath);
-      if (forbidden) {
-        reasons.push(`${path}: forbidden (${forbidden})`);
-        continue;
-      }
-      if (!matchesAny(path, allowedPaths)) {
-        reasons.push(`${path}: outside allowedPaths`);
-        continue;
-      }
-      if (isSuppressionPath(path)) {
-        reasons.push(...suppressionReasons(change, end, { readOldFile, readNewFile }));
-        continue;
-      }
-      const touchesExisting = end.side === 'old' || change.status === 'M';
-      if (touchesExisting && isTestPath(path) && !matchesAny(path, allowedTestPaths)) {
-        reasons.push(`${path}: existing test file not in allowedTestPaths`);
-      }
-    }
+  return reasons;
+}
+
+function endReasons(change, end, options) {
+  const path = slash(end.path);
+  const unsafe = unsafeReason(path);
+  if (unsafe) return [`${path}: unsafe path (${unsafe})`];
+  const forbidden = forbiddenReason(path, options.configPath ?? null);
+  if (forbidden) return [`${path}: forbidden (${forbidden})`];
+  if (!matchesAny(path, options.allowedPaths)) {
+    return [`${path}: outside allowedPaths`];
   }
-  return reasons.length ? { ok: false, reasons } : { ok: true };
+  if (isSuppressionPath(path)) {
+    return suppressionReasons(change, end, options);
+  }
+  const reasons = [];
+  const touchesExisting = end.side === 'old' || change.status === 'M';
+  if (touchesExisting && isTestPath(path) && !matchesAny(path, options.allowedTestPaths ?? [])) {
+    reasons.push(`${path}: existing test file not in allowedTestPaths`);
+  }
+  reasons.push(...newContentReasons(change, end, path, options));
+  return reasons;
+}
+
+function newContentReasons(change, end, path, options) {
+  if (end.side !== 'new' || change.status === 'D') return [];
+  const reasons = [];
+  const binary = new Set((options.binaryPaths ?? []).map(norm));
+  if (binary.has(norm(path)) && !matchesAny(path, options.allowBinary ?? [])) {
+    reasons.push(`${path}: binary file (diff cannot be reviewed)`);
+  }
+  const maxKB = options.maxAddedFileKB ?? MAX_ADDED_FILE_KB;
+  const size = options.fileSize?.(path);
+  if (typeof size === 'number' && size > maxKB * 1024) {
+    reasons.push(`${path}: added/modified file exceeds ${maxKB} KB (${Math.ceil(size / 1024)} KB)`);
+  }
+  return reasons;
 }
 
 function suppressionReasons(change, end, { readOldFile, readNewFile }) {

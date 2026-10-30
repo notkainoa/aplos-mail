@@ -270,6 +270,43 @@ describe('runHillClimb', () => {
     assert.equal(calls.promoted, null);
   });
 
+  it('rejects an attempt whose tree has case/unicode-colliding paths', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: {
+          score: 99,
+          treePaths: ['src/Foo.test.ts', 'src/foo.test.ts', 'src/ok.ts'],
+        },
+        r1a2: { score: 11 },
+      },
+    });
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    const [a1, a2] = result.rounds[0].attempts;
+    assert.match(a1.verdict, /rejected:.*collide.*Foo\.test\.ts/);
+    assert.equal(a2.verdict, 'kept');
+  });
+
+  it('rejects an attempt adding a binary file or one over maxAddedFileKB', async () => {
+    const { deps } = fakes({
+      attempts: {
+        r1a1: {
+          score: 99,
+          changes: [{ status: 'A', path: 'src/x.bin', oldMode: '000000', newMode: '100644' }],
+          binaryPaths: ['src/x.bin'],
+        },
+        r1a2: {
+          score: 88,
+          changes: [{ status: 'A', path: 'src/huge.ts', oldMode: '000000', newMode: '100644' }],
+          sizes: { 'src/huge.ts': 600 * 1024 },
+        },
+      },
+    });
+    const result = await runHillClimb({ ...config, roundLimit: 1 }, deps);
+    const [a1, a2] = result.rounds[0].attempts;
+    assert.match(a1.verdict, /rejected:.*binary file/);
+    assert.match(a2.verdict, /rejected:.*exceeds 512 KB/);
+  });
+
   it('aborts with a clear error when the baseline gate fails', async () => {
     const { deps, calls } = fakes({ baselineGateOk: false });
     await assert.rejects(runHillClimb(config, deps), /baseline gate g failed.*exit 1/);
