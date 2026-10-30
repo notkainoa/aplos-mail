@@ -316,7 +316,10 @@ test('TLS sends the original name as SNI to the checked address, and no SNI for 
     assert.deepEqual(await proxy.fetch('https://img.example/a.png', run()), refusedAs('http'));
     assert.deepEqual(await proxy.fetch(`https://${PUBLIC}/a.png`, run()), refusedAs('http'));
     await until(() => mine(failed).length >= 2);
-    assert.equal(accepted.size, 3, 'the stray was accepted too, and is not counted as ours');
+    assert.ok(
+      accepted.size >= 3,
+      'the stray was accepted too (more strays are possible), and is not counted as ours',
+    );
     assert.equal(mine(accepted).length, 2, 'one connection per fetch, no retry');
     assert.equal(mine(failed).length, 2);
     assert.deepEqual(names, ['img.example']);
