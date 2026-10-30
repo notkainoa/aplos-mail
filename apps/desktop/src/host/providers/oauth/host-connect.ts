@@ -25,8 +25,9 @@ export interface GoogleHostConnectDeps extends Omit<GoogleConnectDeps, 'resolveC
   /**
    * Whether the engine store holds a committed row for this account id. A ref minted for an account that has one is
    * a live credential and is never deleted (the engine checks the same rule; this keeps the host safe on its own).
+   * Required: an optional check would be silently off wherever the composition root forgot it.
    */
-  accountIsCommitted?(accountId: string): boolean;
+  accountIsCommitted(accountId: string): boolean;
 }
 
 export interface GoogleHostConnect {
@@ -69,7 +70,7 @@ function discarder(deps: GoogleHostConnectDeps, minted: Map<string, string>) {
   return async (ref: string): Promise<void> => {
     const owner = minted.get(ref);
     // Minted by a new connect here, and the account it was minted for has no committed row since.
-    if (!wellFormedRef(ref) || owner === undefined || deps.accountIsCommitted?.(owner)) {
+    if (!wellFormedRef(ref) || owner === undefined || deps.accountIsCommitted(owner)) {
       throw connectError('permanent', 'notThisHostsCredential', { extra: { uncertain: false } });
     }
     try {
