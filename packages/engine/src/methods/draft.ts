@@ -1,3 +1,4 @@
+import { requireScope } from '@aplos/contract/access';
 import { notImplemented, type AreaHandlers } from './types';
 // Brings in the `EngineServices.draftBox` declaration.
 import type {} from '../outbox/module';
@@ -14,7 +15,9 @@ export const handlers: AreaHandlers<'draft'> = {
       ...(args.baseRevision !== undefined ? { baseRevision: args.baseRevision } : {}),
       fields: args.fields,
     }),
-  'Draft/destroy': (args, { services }) => services.draftBox.destroy(args.opId, args.id),
+  // Discarding a draft with a live send cancels that send, so it needs `send` as well (scopeRule 'originating').
+  'Draft/destroy': (args, { services, caller }) =>
+    services.draftBox.destroy(args.opId, args.id, () => requireScope(caller, 'send')),
   'Contact/suggest': notImplemented('Contact/suggest'),
   'Draft/resolve': (args, { services }) =>
     services.draftBox.resolve(args.opId, args.id, args.choice),

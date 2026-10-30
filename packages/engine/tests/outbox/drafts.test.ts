@@ -441,8 +441,14 @@ test("another device's draft shows in Drafts, never in a thread", () =>
     assert.equal((await changedFrames(w)).length, 1);
     await wait(w, 30 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 0, 'never uploaded back');
+    // Its text has not arrived (a snippet only): editing it would upload the snippet over the phone's draft.
+    assert.throws(() => edit(w, d, { ...fields(), subject: 'Edited here' }), /not arrived/);
+    phone(w, 'phone-draft-1', 'pm-1', {
+      subject: 'Written on the phone',
+      html: '<p>Full text</p>',
+    });
     // Opening it and editing makes it ours: the edit goes to the same remote draft.
-    const e = edit(w, d, { ...fields(), subject: 'Edited here' });
+    const e = edit(w, read(w, id), { ...fields(), subject: 'Edited here' });
     assert.equal(e.origin, 'local');
     w.remoteDrafts.remote.set('phone-draft-1', { messageId: 'pm-1', internetId: 'x', revision: 1 });
     await wait(w, 5 * SEC);

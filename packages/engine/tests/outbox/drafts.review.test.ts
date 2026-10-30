@@ -609,7 +609,8 @@ test('the upload fingerprint covers Bcc and attachments: a Bcc-only and an attac
     const withBcc = edit(w, s.draft, fields({ bcc }));
     await wait(w, 5 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 2, 'a Bcc-only change uploads');
-    assert.match(header(w.remoteDrafts.saves[1].mime, 'Bcc') ?? '', /quiet@mail\.example/);
+    // Bcc is never in a draft copy (a provider sending the copy itself would show it): the change is saved, not written.
+    assert.equal(header(w.remoteDrafts.saves[1].mime, 'Bcc'), undefined);
     w.blobs.set('blob-1', new TextEncoder().encode('hello'));
     const attachment = {
       id: 'att-1',

@@ -124,7 +124,14 @@ declare module '../store/port' {
 }
 
 export type ConflictReason =
-  'draftMissing' | 'draftRevision' | 'live' | 'alreadySent' | 'checking' | 'state';
+  | 'draftMissing'
+  | 'draftRevision'
+  | 'live'
+  | 'alreadySent'
+  | 'checking'
+  | 'state'
+  | 'unresolved'
+  | 'bodyPending';
 
 /** A compare-and-set lost: the row (or its draft) is not what the caller saw. Thrown inside the commit, so nothing lands. */
 export class SubmissionConflict extends Error {
@@ -226,13 +233,29 @@ export function toSubmission(row: SubmissionRow): Submission {
   return out;
 }
 
+interface DraftGate {
+  revision: number;
+  removing: number | null;
+  conflicted: number;
+  incomplete: number | null;
+  [k: string]: SqlValue;
+}
+
 function create(tx: CommitExtensionTx, row: NewSubmission) {
-  const draft = tx.get<{ revision: number }>(
-    'SELECT revision FROM drafts WHERE id = ?',
+  const draft = tx.get<DraftGate>(
+    `SELECT revision,
+            json_extract(data, '$._sync.removing') AS removing,
+            json_extract(data, '$._sync.conflict') IS NOT NULL AS conflicted,
+            json_extract(data, '$._sync.incomplete') AS incomplete
+     FROM drafts WHERE id = ?`,
     row.draftId,
   );
-  if (!draft) throw new SubmissionConflict('draftMissing');
+  // A discarded draft waiting for its copy to go does not exist; one with a version from another device waiting for the
+  // owner's choice is not sent (the send would delete the copy holding that version); one without its text is not either.
+  if (!draft || draft.removing) throw new SubmissionConflict('draftMissing');
   if (draft.revision !== row.revision) throw new SubmissionConflict('draftRevision');
+  if (draft.conflicted) throw new SubmissionConflict('unresolved');
+  if (draft.incomplete) throw new SubmissionConflict('bodyPending');
   const live = tx.get<{ state: SubmissionState }>(
     `SELECT state FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}) LIMIT 1`,
     row.draftId,

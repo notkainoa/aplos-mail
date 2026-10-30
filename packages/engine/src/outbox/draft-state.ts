@@ -59,6 +59,12 @@ export interface DraftMeta {
   /** The seq of the last change the owner's other windows should hear about (`Draft/changed`). */
   announce?: number;
   /**
+   * The text of a draft another device wrote has not arrived: the fields hold its snippet. Such a draft is neither
+   * edited nor sent here (an edit would upload the snippet over the full draft); it clears when a version with its
+   * body is reported.
+   */
+  incomplete?: true;
+  /**
    * The owner discarded this draft (or it was sent) and its remote copy is still to be deleted. The row stays, hidden from
    * every read, so the removal survives a restart and a late fact for the copy is not taken for another device's draft.
    * It goes once the provider confirms the removal.
@@ -249,6 +255,14 @@ export function theirsFields(
   return { fields, complete: message.html !== undefined };
 }
 
+/**
+ * Did these fields keep something from this device's draft that the other copy does not hold? `theirsFields` carries the
+ * attachments and the sign-off over, and a provider's metadata has neither, so such a copy is not the draft.
+ */
+export function keepsMine(fields: Pick<DraftFields, 'attachments' | 'signature'>): boolean {
+  return fields.attachments.length > 0 || fields.signature;
+}
+
 // ---------------------------------------------------------------- announcements
 
 /** Called (after the commit, from a microtask) with the id of a draft a remote change touched. */
@@ -275,7 +289,8 @@ export function announce(draftId: string) {
 export class DraftConflict extends Error {
   override readonly name = 'DraftConflict';
   constructor(
-    readonly reason: 'exists' | 'missing' | 'stale' | 'live' | 'noTheirs' | 'incomplete',
+    readonly reason:
+      'exists' | 'missing' | 'stale' | 'live' | 'noTheirs' | 'incomplete' | 'bodyPending',
     readonly live?: SubmissionState,
   ) {
     super(`draft conflict: ${reason}`);

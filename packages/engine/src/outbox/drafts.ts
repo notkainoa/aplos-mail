@@ -32,7 +32,11 @@ export interface DraftSetInput {
 export interface DraftService {
   get(ids: readonly string[]): { state: State; list: Draft[]; notFound: string[] };
   set(opId: string, input: DraftSetInput): { draft: Draft; receipt: Receipt };
-  destroy(opId: string, id: string): Receipt;
+  /**
+   * `mayCancelSend` runs before a live send of the draft is cancelled (and only then): it throws when the caller may not
+   * cancel the owner's send. A discard of a draft with no send never calls it.
+   */
+  destroy(opId: string, id: string, mayCancelSend?: () => void): Receipt;
   resolve(
     opId: string,
     id: string,
@@ -53,6 +57,8 @@ const UNCONFIRMED =
   'We are checking whether this message was sent. Wait for that before discarding it.';
 const NO_CHOICE = 'This draft has no other version to choose.';
 const CANNOT_READ = "Their version can't be read here. Keep yours, or open it on the other device.";
+const TEXT_PENDING =
+  'The text of this draft has not arrived from your other device yet. Try again in a moment.';
 const NOT_ARRIVED = 'The other version has not arrived yet. Try again in a moment.';
 
 function fail(type: string, message: string): never {
@@ -101,6 +107,8 @@ function conflictError(error: DraftConflict): never {
       return fail('unavailable', NOT_ARRIVED);
     case 'incomplete':
       return fail('unavailable', CANNOT_READ);
+    case 'bodyPending':
+      return fail('unavailable', TEXT_PENDING);
     default:
       return fail('stateMismatch', CHANGED);
   }
@@ -154,9 +162,16 @@ function answerSet(ctx: DraftsCtx, opId: string, id: string) {
 // ---------------------------------------------------------------- destroy
 
 /** A send that has not started is cancelled; one that is sending or unconfirmed blocks the discard. */
-function cancelSend(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id: string) {
+function cancelSend(
+  ctx: DraftsCtx,
+  canceller: SendCanceller,
+  opId: string,
+  id: string,
+  mayCancelSend: () => void,
+) {
   const live = ctx.store.read(q => liveOf(q, id));
   if (!live) return;
+  mayCancelSend();
   if (live.state === 'sending') fail('conflict', SENDING);
   if (live.state === 'uncertain') fail('conflict', UNCONFIRMED);
   const waiting = live.state === 'queued' || live.state === 'scheduled';
@@ -166,11 +181,17 @@ function cancelSend(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id: 
   });
 }
 
-function destroyDraft(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id: string) {
+function destroyDraft(
+  ctx: DraftsCtx,
+  canceller: SendCanceller,
+  opId: string,
+  id: string,
+  mayCancelSend: () => void,
+) {
   if (replayed(ctx, opId)) return receiptOf(ctx, opId);
   const row: DraftRow | undefined = ctx.store.read(q => readDraftRow(q, id));
   if (!row) return fail('notFound', GONE);
-  cancelSend(ctx, canceller, opId, id);
+  cancelSend(ctx, canceller, opId, id, mayCancelSend);
   // The row stays, hidden, while a remote copy exists: the provider's removal runs from it (and survives a restart).
   commit(ctx, opId, { kind: 'draftDelete', id, at: ctx.clock.now() });
   touchDue(ctx, id);
@@ -215,7 +236,8 @@ export function createDraftService(ctx: DraftsCtx, canceller: SendCanceller): Dr
       };
     },
     set: (opId, input) => setDraft(ctx, opId, input),
-    destroy: (opId, id) => destroyDraft(ctx, canceller, opId, id),
+    destroy: (opId, id, mayCancelSend = () => {}) =>
+      destroyDraft(ctx, canceller, opId, id, mayCancelSend),
     resolve: (opId, id, choice) => resolveDraft(ctx, opId, id, choice),
   };
 }

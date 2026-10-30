@@ -27,6 +27,7 @@ import {
   needsUpload,
   parseData,
   readAnyRow,
+  remembered,
   readDraftRow,
   toDraft,
   type DraftMeta,
@@ -177,22 +178,27 @@ function writable(list: readonly MimeAddress[]): MimeAddress[] {
   });
 }
 
-function draftMime(
-  ctx: DraftsCtx,
-  row: UploadRow,
-  fields: DraftFields,
-  internetId: string,
-): Uint8Array {
+interface DraftCopy {
+  mime: Uint8Array;
+  /** The copy left something out (an attachment whose bytes are gone), so it is not this revision. */
+  partial: boolean;
+}
+
+/**
+ * The bytes of a draft's copy at the provider. Bcc is never in it: a provider that sends the copy itself (Gmail
+ * `drafts.send`) would put the header on the wire for every recipient to read, so a draft with Bcc recipients leaves as
+ * the pinned MIME with the envelope instead (`prepareSend` gives it a Message-ID of its own).
+ */
+function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internetId: string) {
   const reply = ctx.store.read(q => replyHeaders(q, row, fields));
   // A draft copy keeps the attachments it can read; one whose bytes are gone stays listed in the local draft.
   const readable = fields.attachments.filter(
     a => a.blobId !== undefined && ctx.blobs?.get(a.blobId),
   );
-  return buildMime({
+  const mime = buildMime({
     from: senderOf(row, fields),
     to: writable(fields.to),
     cc: writable(fields.cc),
-    bcc: writable(fields.bcc),
     subject: fields.subject,
     html: fields.html,
     messageId: internetId,
@@ -201,6 +207,7 @@ function draftMime(
     attachments: attachmentsOf(ctx, { ...fields, attachments: readable }),
     randomBytes: ctx.random,
   });
+  return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
 }
 
 function uploadOf(
@@ -227,13 +234,14 @@ function uploadOf(
   return upload;
 }
 
-function problemFor(ctx: DraftsCtx, row: UploadRow, message: string) {
+/** `attempt` is the upload this answers: once a choice or a newer attempt replaced it, its answer is dropped. */
+function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: string) {
   const at = ctx.clock.now();
   setMeta(
     ctx,
     row.id,
     { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null },
-    { ifRevision: row.revision },
+    { ifRevision: row.revision, ...(attempt !== undefined ? { ifUploading: attempt } : {}) },
   );
 }
 
@@ -251,33 +259,38 @@ function retryAt(ctx: DraftsCtx, row: UploadRow, at: number, uncertain: boolean)
 }
 
 /** What a refused upload does: wait for the pause, try again later, or give up with a problem. Never drops the draft. */
-function refused(ctx: DraftsCtx, row: UploadRow, error: unknown) {
+function refused(ctx: DraftsCtx, row: UploadRow, error: unknown, attempt: string) {
   const now = ctx.clock.now();
   if (error instanceof PausedError)
     return retryAt(ctx, row, error.until ?? now + DRAFT_RETRY_MS, false);
   const classified: ClassifiedError | undefined =
     error instanceof NotSentError || error instanceof ProviderError ? error.error : undefined;
   if (classified) ctx.log.event('draft.sync_failed', { draft: row.id, error: classified });
-  if (classified && PERMANENT.has(classified.class)) return problemFor(ctx, row, PROBLEM_COPY);
+  if (classified && PERMANENT.has(classified.class))
+    return problemFor(ctx, row, PROBLEM_COPY, attempt);
   // A refusal says nothing was written; anything else (a timeout, a 5xx) may have been.
   retryAt(ctx, row, now + DRAFT_RETRY_MS, !(error instanceof NotSentError));
 }
 
-function raiseConflict(ctx: DraftsCtx, row: UploadRow, result: DraftSaveResult) {
-  const { meta } = parseData(row.data);
-  const seen = (meta.theirsSeen ?? 0) + 1;
-  const conflict: NonNullable<typeof meta.conflict> = {
-    theirsRevision: seen,
+function raiseConflict(
+  ctx: DraftsCtx,
+  row: UploadRow,
+  internetId: string,
+  result: DraftSaveResult,
+) {
+  const write: DraftWrite = {
+    kind: 'draft',
+    op: 'conflict',
+    id: row.id,
+    revision: row.revision,
+    internetId,
+    gone: result.kind === 'gone',
+    ...(result.kind === 'conflict' && result.remoteMessageId !== undefined
+      ? { remoteMessageId: result.remoteMessageId }
+      : {}),
     at: ctx.clock.now(),
   };
-  if (result.kind === 'gone') conflict.gone = true;
-  else if (result.remoteMessageId !== undefined) conflict.theirsMessageId = result.remoteMessageId;
-  setMeta(
-    ctx,
-    row.id,
-    { conflict, theirsSeen: seen, dueAt: null, uploading: null },
-    { ifRevision: row.revision, announce: true },
-  );
+  tryCommit(ctx, write, row.id);
 }
 
 function recordSaved(
@@ -285,6 +298,7 @@ function recordSaved(
   upload: DraftUpload,
   saved: Extract<DraftSaveResult, { kind: 'saved' }>,
   account: string,
+  partial: boolean,
 ) {
   const write: DraftWrite = {
     kind: 'draft',
@@ -296,6 +310,7 @@ function recordSaved(
     remoteMessageId: saved.remoteMessageId,
     internetId: upload.internetId,
     ...(saved.changeKey !== undefined ? { changeKey: saved.changeKey } : {}),
+    ...(partial ? { partial: true as const } : {}),
     at: ctx.clock.now(),
   };
   // The draft was discarded or sent while the upload ran: the copy it just made is nobody's, so it goes.
@@ -319,29 +334,37 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
     meta.uploading?.revision === row.revision
       ? meta.uploading.internetId
       : newMessageId(ctx.random, domainOf(row.address));
-  let mime: Uint8Array;
+  let copy: DraftCopy;
   try {
-    mime = draftMime(ctx, row, fields, internetId);
+    copy = draftMime(ctx, row, fields, internetId);
   } catch (error) {
     const known = error instanceof MimeError || error instanceof ContractError;
     return problemFor(ctx, row, known ? error.message : PROBLEM_COPY);
   }
+  // A first create nobody answered, then an edit: the new attempt takes the old one's place, and the old Message-ID is
+  // kept so history reporting the copy it made is recognised as ours (no phantom draft).
+  const old =
+    meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
   const marked = setMeta(
     ctx,
     id,
-    { uploading: { internetId, revision: row.revision } },
+    {
+      uploading: { internetId, revision: row.revision },
+      ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
+    },
     { ifRevision: row.revision },
   );
   if (!marked) return;
-  const upload = uploadOf(row, fields, internetId, mime);
+  const upload = uploadOf(row, fields, internetId, copy.mime);
   let result: DraftSaveResult;
   try {
     result = await ctx.port.save(row.account_id, upload);
   } catch (error) {
-    return refused(ctx, row, error);
+    return refused(ctx, row, error, internetId);
   }
-  if (result.kind === 'saved') return recordSaved(ctx, upload, result, row.account_id);
-  raiseConflict(ctx, row, result);
+  if (result.kind === 'saved')
+    return recordSaved(ctx, upload, result, row.account_id, copy.partial);
+  raiseConflict(ctx, row, internetId, result);
 }
 
 // ---------------------------------------------------------------- remote copies

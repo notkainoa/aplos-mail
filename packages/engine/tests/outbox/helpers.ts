@@ -156,10 +156,10 @@ export type CountingSend = ReturnType<typeof countingSend>;
 
 /**
  * What one `save` call does (default `ok`). `lost` throws a plain Error before anything is written; `landedLost` writes the
- * copy and then throws the same Error (a timeout whose request got through).
+ * copy and then throws the same Error (a timeout whose request got through). `conflictBare` answers `conflict` with no id.
  */
 export interface DraftStep {
-  result?: 'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost';
+  result?: 'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost' | 'conflictBare';
   /** The `ClassifiedError` class a `notSent` step throws (default `permanent`). */
   notSentClass?: string;
   until?: number;
@@ -197,6 +197,8 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
       if (step.result === 'lost') throw new Error('socket hang up');
+      // A conflict that names no remote message id (an adapter that cannot read it).
+      if (step.result === 'conflictBare') return { kind: 'conflict' };
       const known = upload.remoteDraftId ? remote.get(upload.remoteDraftId) : undefined;
       if (upload.remoteDraftId && !known) return { kind: 'gone' };
       if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)

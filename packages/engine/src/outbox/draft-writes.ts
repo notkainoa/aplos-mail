@@ -6,6 +6,7 @@ import {
   DRAFT_REMOVE_GRACE_MS,
   DraftConflict,
   fingerprintOf,
+  keepsMine,
   liveOf,
   LIVE_SQL,
   needsUpload,
@@ -54,6 +55,23 @@ export type DraftWrite =
       remoteMessageId: string;
       internetId: string;
       changeKey?: string;
+      /** The copy left something out (an attachment it could not read): it is the draft's copy, but not this revision. */
+      partial?: true;
+      at: number;
+    }
+  | {
+      /**
+       * The upload of `revision` under `internetId` was answered `conflict` or `gone`. Only the attempt the row still
+       * expects (`uploading.internetId`) raises it; an answer from an attempt a choice or a newer conflict replaced
+       * is dropped, and an existing conflict is never replaced by it.
+       */
+      kind: 'draft';
+      op: 'conflict';
+      id: string;
+      revision: number;
+      internetId: string;
+      gone: boolean;
+      remoteMessageId?: string;
       at: number;
     }
   | {
@@ -76,6 +94,8 @@ export type DraftWrite =
       patch: MetaPatch;
       /** The patch belongs to this revision; a newer one wins. */
       ifRevision?: number;
+      /** The patch belongs to the upload attempt under this Message-ID; once a choice or a newer attempt replaced it, it is dropped. */
+      ifUploading?: string;
       /** Tell the owner's other windows (`Draft/changed`). */
       announce?: true;
     }
@@ -201,6 +221,8 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
   if (!row) throw new DraftConflict('missing');
   const { fields: current, meta } = parseData(row.data);
   if (meta.removing) throw new DraftConflict('missing');
+  // Editing a snippet would upload it over the full draft on the other device.
+  if (meta.incomplete) throw new DraftConflict('bodyPending');
   if (row.revision !== w.baseRevision) throw new DraftConflict('stale');
   const live = liveOf(tx, row.id);
   if (live) throw new DraftConflict('live', live.state);
@@ -244,7 +266,8 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // A draft waiting for a choice, or for its copy to be deleted, uploads nothing more.
   const idle = done || meta.conflict !== undefined || meta.removing === true;
   const next = patched(meta, {
-    fingerprint: w.fingerprint,
+    // A copy that left something out is not the content this fingerprint names.
+    fingerprint: w.partial ? null : w.fingerprint,
     uploading: null,
     problem: null,
     wrote: remembered(meta, w.internetId, w.remoteMessageId),
@@ -259,12 +282,31 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
       remote_draft_id: w.remoteDraftId,
       remote_message_id: w.remoteMessageId,
       remote_internet_id: w.internetId,
-      synced_revision: w.revision,
+      synced_revision: w.partial ? null : w.revision,
       remote_change_key: w.changeKey ?? null,
     },
     fields,
     next,
   );
+}
+
+function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'conflict' }>) {
+  const row = readRow(tx, w.id);
+  if (row.revision !== w.revision) throw new DraftConflict('stale');
+  const { fields, meta } = parseData(row.data);
+  if (meta.uploading?.internetId !== w.internetId) return;
+  const gone = w.gone;
+  // The copy is gone: its id names nothing a delete or a replace may touch (on some providers it is now the sent message).
+  const columns = gone ? FORGET_REMOTE : {};
+  if (meta.removing || meta.conflict)
+    return writeRow(tx, row.id, columns, fields, patched(meta, { uploading: null }));
+  const seen = (meta.theirsSeen ?? 0) + 1;
+  const conflict: NonNullable<DraftMeta['conflict']> = { theirsRevision: seen, at: w.at };
+  if (gone) conflict.gone = true;
+  else if (w.remoteMessageId !== undefined) conflict.theirsMessageId = w.remoteMessageId;
+  const patch = { conflict, theirsSeen: seen, dueAt: null, uploading: null, announce: tx.seq };
+  writeRow(tx, row.id, columns, fields, patched(meta, patch));
+  announce(row.id);
 }
 
 function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
@@ -300,6 +342,8 @@ function setMeta(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'meta' }>) 
   const row = readRow(tx, w.id);
   if (w.ifRevision !== undefined && row.revision !== w.ifRevision) throw new DraftConflict('stale');
   const { fields, meta } = parseData(row.data);
+  if (w.ifUploading !== undefined && meta.uploading?.internetId !== w.ifUploading)
+    throw new DraftConflict('stale');
   const base = w.announce ? { ...meta, announce: tx.seq } : meta;
   writeRow(tx, w.id, {}, fields, patched(base, w.patch));
   if (w.announce) announce(w.id);
@@ -327,7 +371,8 @@ function keepMine(tx: CommitExtensionTx, row: DraftRow, at: number) {
   const columns: Record<string, SqlValue> = gone
     ? FORGET_REMOTE
     : { synced_revision: null, remote_internet_id: null, remote_change_key: null };
-  if (!gone && theirsId !== undefined) columns.remote_message_id = theirsId;
+  // A conflict that named no copy leaves no base: the upload replaces whatever is there, as the owner chose.
+  if (!gone) columns.remote_message_id = theirsId ?? null;
   writeRow(tx, row.id, columns, fields, patched(next, { dueAt: due ?? null }));
 }
 
@@ -365,7 +410,7 @@ function takeTheirs(tx: CommitExtensionTx, row: DraftRow, at: number) {
       revision: row.revision + 1,
       remote_message_id: conflict.theirsMessageId ?? row.remote_message_id,
       remote_internet_id: conflict.theirsInternetId ?? null,
-      synced_revision: known ? row.revision + 1 : null,
+      synced_revision: known && !keepsMine(theirs) ? row.revision + 1 : null,
       remote_change_key: null,
       updated_at: at,
     },
@@ -412,6 +457,7 @@ export function applyDraft(write: { kind: string }, tx: CommitExtensionTx) {
   const w = write as DraftWrite;
   if (w.op === 'save') return save(tx, w);
   if (w.op === 'synced') return synced(tx, w);
+  if (w.op === 'conflict') return uploadConflict(tx, w);
   if (w.op === 'retry') return retry(tx, w);
   if (w.op === 'meta') return setMeta(tx, w);
   if (w.op === 'resolve') return resolve(tx, w);
@@ -469,15 +515,17 @@ function remoteThreadId(w: RemoteDraftWrite) {
 }
 
 function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
-  const { fields } = theirsFields(w.accountId, messageOf(w));
+  const { fields, complete } = theirsFields(w.accountId, messageOf(w));
   const thread = remoteThreadId(w);
   if (thread !== undefined) fields.threadId = thread;
   const fp = fingerprintOf(fields);
+  const meta: DraftMeta = { rev: tx.seq, cur: fp, fingerprint: fp, announce: tx.seq };
+  if (!complete) meta.incomplete = true;
   insertRow(tx, {
     id: `${w.accountId}:${w.remoteDraftId}`,
     accountId: w.accountId,
     fields,
-    meta: { rev: tx.seq, cur: fp, fingerprint: fp, announce: tx.seq },
+    meta,
     at: w.changedAt,
     origin: 'remote',
     remote: w,
@@ -539,23 +587,31 @@ function deleteRow(tx: CommitExtensionTx, row: DraftRow) {
 
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
-  if (w.remoteMessageId === row.remote_message_id) return;
   const { fields: base, meta } = parseData(row.data);
-  const { fields } = theirsFields(row.account_id, messageOf(w), base);
+  const same = w.remoteMessageId === row.remote_message_id;
+  // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for.
+  if (same && !(meta.incomplete && messageOf(w)?.html !== undefined)) return;
+  const { fields, complete } = theirsFields(row.account_id, messageOf(w), base);
   const fp = fingerprintOf(fields);
+  // Their copy's Message-ID, or none: the previous copy's id does not name a newer one.
+  const internetId = w.internetId ?? (same ? row.remote_internet_id : null);
   writeRow(
     tx,
     row.id,
     {
       revision: row.revision + 1,
       remote_message_id: w.remoteMessageId,
-      // Their copy's Message-ID, or none: the previous copy's id does not name this one.
-      remote_internet_id: w.internetId ?? null,
-      synced_revision: w.internetId !== undefined ? row.revision + 1 : null,
+      remote_internet_id: internetId,
+      synced_revision: internetId !== null && !keepsMine(fields) ? row.revision + 1 : null,
       updated_at: w.changedAt,
     },
     fields,
-    patched(meta, { cur: fp, fingerprint: fp, announce: tx.seq }),
+    patched(meta, {
+      cur: fp,
+      fingerprint: fp,
+      incomplete: complete ? null : true,
+      announce: tx.seq,
+    }),
   );
   announce(row.id);
 }
@@ -569,8 +625,11 @@ function raise(
   w: RemoteDraftWrite,
   theirs: { fields: DraftFields; complete: boolean } | undefined,
 ) {
-  const seen = (meta.theirsSeen ?? 0) + 1;
+  // The same copy described again (an upload's bare conflict, then history) completes the conflict; it is not a new one.
+  const prior = meta.conflict?.theirsMessageId === w.remoteMessageId ? meta.conflict : undefined;
+  const seen = prior ? prior.theirsRevision : (meta.theirsSeen ?? 0) + 1;
   const conflict: NonNullable<DraftMeta['conflict']> = {
+    ...prior,
     theirsRevision: seen,
     at: w.changedAt,
     theirsMessageId: w.remoteMessageId,
@@ -581,10 +640,12 @@ function raise(
     conflict.theirs = theirs.fields;
     conflict.complete = theirs.complete;
   }
+  // A copy that is gone is forgotten before the row can be hidden: its id may now name a sent message, and a delete or a
+  // replace of it must never be asked.
   writeRow(
     tx,
     row.id,
-    {},
+    w.removed ? FORGET_REMOTE : {},
     fields,
     patched(meta, { conflict, theirsSeen: seen, dueAt: null, uploading: null, announce: tx.seq }),
   );
@@ -606,7 +667,7 @@ function replaceWithTheirs(
       revision: row.revision + 1,
       remote_message_id: w.remoteMessageId,
       remote_internet_id: w.internetId ?? null,
-      synced_revision: w.internetId !== undefined ? row.revision + 1 : null,
+      synced_revision: w.internetId !== undefined && !keepsMine(theirs) ? row.revision + 1 : null,
       remote_change_key: null,
       updated_at: w.changedAt,
     },
@@ -632,7 +693,13 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     )
   )
     return;
-  if (meta.conflict?.theirsMessageId === w.remoteMessageId) return;
+  // The same version again is known, unless it brings what the conflict lacks (their body).
+  const known = meta.conflict;
+  if (
+    known?.theirsMessageId === w.remoteMessageId &&
+    (known.complete === true || (known.theirs !== undefined && messageOf(w)?.html === undefined))
+  )
+    return;
   const clean =
     !meta.conflict &&
     meta.dueAt === undefined &&

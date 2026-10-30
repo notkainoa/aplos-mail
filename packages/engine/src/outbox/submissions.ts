@@ -10,6 +10,7 @@ import {
   UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
+import { parseData } from './draft-state';
 import {
   buildEnvelope,
   buildMime,
@@ -59,6 +60,10 @@ const ALLOWED: Record<RowAction['type'], readonly SubmissionState[]> = {
 
 const DRAFT_CHANGED = 'This draft changed in another window. Reopen it before sending.';
 const ON_ITS_WAY = 'This message is already on its way.';
+const UNRESOLVED =
+  'This draft has a version from another device waiting for your choice. Choose one before sending.';
+const TEXT_PENDING =
+  'The text of this draft has not arrived from your other device yet. Try again in a moment.';
 const ALREADY_SENT = 'This message was already sent. Change it to send another.';
 const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
@@ -238,10 +243,19 @@ export function senderOf(
  *   remote draft, so revision R+1 could share R's id after R went uncertain, was cancelled or actually left);
  * - any other provider skips an id that an earlier submission of ANOTHER revision of this draft already used.
  */
-function messageIdOf(ctx: OutboxCtx, q: StoreReader, draft: DraftRow, sender: string): string {
+function messageIdOf(
+  ctx: OutboxCtx,
+  q: StoreReader,
+  draft: DraftRow,
+  fields: DraftFields,
+  sender: string,
+): string {
   const remote = draft.remote_internet_id;
+  // A draft copy never holds Bcc (see `draftMime`), so a draft with Bcc recipients never leaves as its copy: its id is
+  // not shared with the copy, `payloadOf` then sends the pinned MIME, and the Bcc goes in the envelope.
   if (
     remote &&
+    !fields.bcc.length &&
     draft.provider !== 'microsoft' &&
     draft.synced_revision === draft.revision &&
     isMessageId(remote) &&
@@ -285,6 +299,9 @@ function prepareSend(
   });
   if (draft.row.revision !== action.revision) fail('stateMismatch', DRAFT_CHANGED);
   if (live) fail('stateMismatch', ON_ITS_WAY);
+  const sync = parseData(draft.row.data).meta;
+  if (sync.conflict) fail('stateMismatch', UNRESOLVED);
+  if (sync.incomplete) fail('unavailable', TEXT_PENDING);
   const { fields } = draft;
   if (!fields.to.length && !fields.cc.length && !fields.bcc.length)
     fail('validation', 'Add at least one recipient.', { path: ['action', 'draftId'] });
@@ -297,7 +314,7 @@ function prepareSend(
   let envelope: SubmissionMeta['envelope'];
   let internetId: string;
   try {
-    internetId = ctx.store.read(q => messageIdOf(ctx, q, draft.row, from.address));
+    internetId = ctx.store.read(q => messageIdOf(ctx, q, draft.row, fields, from.address));
     envelope = buildEnvelope(from, fields);
     mime = buildMime({
       from,
@@ -340,6 +357,8 @@ function prepareSend(
 function conflictSentence(error: SubmissionConflict, checking = STILL_CHECKING) {
   if (error.reason === 'draftMissing') return fail('notFound', 'This draft no longer exists.');
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
+  if (error.reason === 'unresolved') return fail('stateMismatch', UNRESOLVED);
+  if (error.reason === 'bodyPending') return fail('unavailable', TEXT_PENDING);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
   if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
   if (error.reason === 'checking') return fail('stateMismatch', checking);
