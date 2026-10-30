@@ -9,6 +9,7 @@
  * `drafts.update` with the uploaded bytes then `drafts.send` (what Google's drafts guide describes for a send that
  * carries a message). Faults injected on the emulator's send methods therefore still fire.
  */
+import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ClassifiedError } from '@aplos/contract';
@@ -314,8 +315,11 @@ export type RedirectAt = 'initiate' | 'send';
 export interface RedirectingGmail {
   /** The adapter's upload fetch: Node's own `fetch`, so its real redirect handling is what runs. */
   fetch: typeof fetch;
-  /** Bodies the redirect target received: must stay empty. */
-  received: Buffer[];
+  /**
+   * HTTP requests the redirect target parsed (method, URL, body size): must stay empty. A bare connection that opens
+   * and closes without a request is not one (the server's request handler never runs for it).
+   */
+  requests: { method: string; url: string; bytes: number }[];
   close(): Promise<void>;
 }
 
@@ -336,6 +340,15 @@ const stop = (server: Server): Promise<void> =>
     server.close(() => resolve());
   });
 
+/** The guard's meaning: the redirect target parsed no request at all, so not one body byte reached it. */
+export function assertNothingReached(gmail: RedirectingGmail): void {
+  assert.deepEqual(
+    gmail.requests,
+    [],
+    'not one HTTP request, and so not one byte, went to the redirect target',
+  );
+}
+
 /**
  * Gmail's upload host on 127.0.0.1 answering `status` (307 or 308) at `at`, pointing at a second server (another
  * origin) that would accept the bytes as sent mail. A resumable session opens normally when the redirect is at `send`.
@@ -344,10 +357,10 @@ export async function redirectingGmail(
   status: 307 | 308,
   at: RedirectAt,
 ): Promise<RedirectingGmail> {
-  const received: Buffer[] = [];
+  const requests: RedirectingGmail['requests'] = [];
   const target = createServer((req, res) => {
     void bodyOf(req).then(body => {
-      received.push(body);
+      requests.push({ method: req.method ?? '', url: req.url ?? '', bytes: body.length });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{"id":"18c0ffee00000001","threadId":"18c0ffee00000001"}');
     });
@@ -371,7 +384,7 @@ export async function redirectingGmail(
   return {
     fetch: (input, init) =>
       fetch(String(input).replace('https://gmail.googleapis.com', local), init),
-    received,
+    requests,
     close: async () => {
       await stop(gmail);
       await stop(target);

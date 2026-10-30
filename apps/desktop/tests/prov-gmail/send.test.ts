@@ -14,6 +14,7 @@ import {
 } from '../../src/host/providers/google/send';
 import {
   ACCOUNT,
+  assertNothingReached,
   classOf,
   headerEndOf,
   redirectingGmail,
@@ -443,7 +444,7 @@ for (const [name, big, at] of [
         const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
         assert.ok(isUncertain(error), `got ${String(error)}`);
         assert.equal(classOf(error)?.status, status);
-        assert.deepEqual(gmail.received, [], 'not one byte went to the redirect target');
+        assertNothingReached(gmail);
       } finally {
         await gmail.close();
       }
@@ -461,7 +462,7 @@ test('send: a 307 on the resumable session open proves nothing left, and is not 
     const pinned = submission(world, { attachments });
     const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
     assert.ok(error instanceof NotSentError, `got ${String(error)}`);
-    assert.deepEqual(gmail.received, []);
+    assertNothingReached(gmail);
   } finally {
     await gmail.close();
   }
