@@ -46,6 +46,8 @@ export function countingSend(clock: FakeClock) {
   /** The server's Drafts folder: Message-ID -> remote draft id. A draft copy is not a sent message, same id or not. */
   const drafts = new Map<string, string>();
   const payloads: SubmissionPayload[] = [];
+  /** Remote drafts a `drafts.send` consumed: the provider's Drafts folder no longer has them. */
+  const consumed: string[] = [];
   const calls: { op: 'send' | 'findSent'; internetId: string; at: number; since?: number }[] = [];
   /** `findSent` reports a delivery only from this time on (a search index that lags). */
   let visibleAt = 0;
@@ -61,7 +63,10 @@ export function countingSend(clock: FakeClock) {
     deliveries.set(p.internetId, (deliveries.get(p.internetId) ?? 0) + 1);
     sent.set(p.internetId, clock.now());
     // `drafts.send` consumes the draft it sends; a plain `messages.send` leaves any draft copy where it was.
-    if (p.remoteDraftId) drafts.delete(p.internetId);
+    if (p.remoteDraftId) {
+      drafts.delete(p.internetId);
+      consumed.push(p.remoteDraftId);
+    }
     payloads.push(p);
   };
   const classified = (cls: string) => ({
@@ -83,7 +88,12 @@ export function countingSend(clock: FakeClock) {
       const result = step.result ?? 'ok';
       if (step.delivered ?? result === 'ok') deliver(payload);
       if (result === 'ok')
-        return { acceptedAt: clock.now(), remoteMessageId: `r-${payload.submissionId}` };
+        return {
+          acceptedAt: clock.now(),
+          remoteMessageId: `r-${payload.submissionId}`,
+          // `drafts.send` consumes the draft it sends; the receipt says so.
+          ...(payload.remoteDraftId ? { draftConsumed: true } : {}),
+        };
       if (result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'transient'));
       if (result === 'paused')
@@ -111,6 +121,7 @@ export function countingSend(clock: FakeClock) {
     sent,
     drafts,
     payloads,
+    consumed,
     calls,
     setAdmission: (a: Admission) => {
       admission = a;

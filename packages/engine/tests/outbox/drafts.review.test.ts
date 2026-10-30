@@ -162,6 +162,24 @@ test('keep mine then an immediate send: the send is our content under a new id, 
     assert.equal(header(payload.mime, 'Subject'), 'Mine', 'the pinned MIME is the local content');
   }));
 
+test('a snippet-only phone edit of a clean draft, keep mine, send: nothing of their copy leaves, the MIME is the local content', () =>
+  world(async w => {
+    const s = await synced(w);
+    // The draft is clean here (nothing unsent); the phone edit arrives as a snippet only, so the owner is asked.
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', internetId: THEIRS_ID });
+    assert.equal(syncOf(w, s.draft.id).conflict?.complete, false);
+    service(w).resolve(next(), s.draft.id, 'keepMine');
+    const sub = w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    await wait(w, 15 * SEC);
+    const payload = w.server.payloads[0];
+    assert.equal(payload.internetId, sub.internetId);
+    assert.equal(payload.remoteDraftId, undefined, 'their copy is not what is sent');
+    assert.equal(payload.baseRemoteMessageId, undefined);
+    assert.equal(header(payload.mime, 'Subject'), 'Lunch', 'the MIME is the local content');
+    assert.deepEqual(w.server.consumed, [], 'no remote draft was sent');
+  }));
+
 // ---------------------------------------------------------------- take theirs
 
 test('take theirs with their Message-ID known: the copy is theirs and a send leaves under their id', () =>
@@ -323,7 +341,7 @@ test('a permanent refusal keeps the hidden row, logs, and is asked again later',
     assert.equal(count(w), 0);
   }));
 
-test('a discard while the first upload runs removes the copy that upload makes, and survives a restart', () =>
+test('a discard while the first upload runs removes the copy that upload makes', () =>
   world(async w => {
     const g = gate();
     w.remoteDrafts.script.push({ wait: g.wait });
@@ -664,8 +682,9 @@ test('with 2,000 drafts a save does not scan them all, and an upload still goes 
 
 test('a due time written by another process is found by the periodic scan within a minute', () =>
   world(async w => {
-    const d = create(w);
-    await w.settle();
+    create(w);
+    await wait(w, 5 * SEC);
+    assert.equal(w.remoteDrafts.saves.length, 1, 'the cache is warm and nothing is pending');
     // Another process makes a draft due (the engine here saw no write for it).
     insertMany(w, 1);
     const db = w.file.open();
@@ -676,13 +695,192 @@ test('a due time written by another process is found by the periodic scan within
     data._sync = { rev: 1, dueAt: w.clock.now() + 1_000 };
     db.prepare('UPDATE drafts SET data = ? WHERE id = ?').run(JSON.stringify(data), 'bulk-0');
     db.close();
+    // No draft activity, no changed('drafts'): time passes, then the loop asks every source again (a wake).
     await wait(w, 61 * SEC);
-    // Any change to a draft makes the source look again.
-    edit(w, read(w, d.id), fields({ subject: 'Poke' }));
-    await wait(w, 6 * SEC);
+    assert.equal(w.remoteDrafts.saves.length, 1, 'nothing asked the source yet');
+    w.first.loop.wake();
+    await w.settle();
     const subjects = w.remoteDrafts.saves.map(s => header(s.mime, 'Subject'));
-    assert.ok(
-      subjects.includes('Bulk 0'),
-      `the other process's draft uploaded (${subjects.join(', ')})`,
+    assert.deepEqual(subjects, ['Lunch', 'Bulk 0'], 'the other process draft uploaded');
+  }));
+
+// ---------------------------------------------------------------- second round
+
+test('an old upload that lands after keep mine does not undo it: the draft still needs its upload, which happens once', () =>
+  world(async w => {
+    const s = await synced(w);
+    const first = w.remoteDrafts.saves.length;
+    const gOld = gate();
+    const gMine = gate();
+    w.remoteDrafts.script.push({ wait: gOld.wait }, { wait: gMine.wait });
+    edit(w, s.draft, fields({ subject: 'Mine' }), true);
+    await wait(w, 1);
+    assert.equal(w.remoteDrafts.saves.length, first + 1, 'the upload of the edit is in flight');
+    // The phone edit raises the choice (clearing `uploading`); the owner keeps theirs-or-mine while the upload runs.
+    phone(w, s.remoteDraftId, 'pm-x', { subject: 'Theirs' });
+    assert.ok(read(w, s.draft.id).conflict, 'a choice is needed');
+    service(w).resolve(next(), s.draft.id, 'keepMine');
+    assert.notEqual(syncOf(w, s.draft.id).dueAt, undefined, 'keeping mine makes an upload due');
+    // The old upload's acknowledgement lands now.
+    gOld.open();
+    await w.settle();
+    const r = row(w, s.draft.id)!;
+    assert.equal(r.synced_revision, null, 'the old ack did not mark the revision synced');
+    assert.equal(
+      r.remote_message_id,
+      'pm-x',
+      'and the copy is still theirs, to be replaced knowingly',
     );
+    assert.equal(r.remote_internet_id, null);
+    assert.notEqual(read(w, s.draft.id).sync, 'synced');
+    assert.equal(w.remoteDrafts.saves.length, first + 2, 'the keep-mine upload started');
+    // Their write landed after ours: the provider's copy is theirs again, and the keep-mine upload replaces it.
+    const copy = w.remoteDrafts.remote.get(s.remoteDraftId)!;
+    w.remoteDrafts.remote.set(s.remoteDraftId, { ...copy, messageId: 'pm-x' });
+    gMine.open();
+    await wait(w, 40 * SEC);
+    assert.equal(w.remoteDrafts.saves.length, first + 2, 'exactly one keep-mine upload');
+    const mine = w.remoteDrafts.saves.at(-1)!;
+    assert.equal(header(mine.mime, 'Subject'), 'Mine');
+    assert.equal(mine.baseRemoteMessageId, 'pm-x');
+    assert.equal(read(w, s.draft.id).sync, 'synced');
+    assert.equal(row(w, s.draft.id)!.remote_internet_id, mine.internetId);
+    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.internetId, mine.internetId);
+  }));
+
+test('an upload that settles after close raises no unhandled rejection', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    create(w);
+    await wait(w, 5 * SEC);
+    assert.equal(w.remoteDrafts.saves.length, 1, 'in flight');
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', listen);
+    try {
+      w.first.kill();
+      w.first.store.close();
+      g.open();
+      for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(unhandled, []);
+    } finally {
+      process.off('unhandledRejection', listen);
+    }
+  }));
+
+test('a send that consumed the remote draft does not delete it afterwards; the hidden row just goes', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    await wait(w, 15 * SEC);
+    assert.equal(w.server.payloads[0].remoteDraftId, s.remoteDraftId, 'the draft itself is sent');
+    assert.deepEqual(w.server.consumed, [s.remoteDraftId]);
+    assert.equal(w.get(sub.id).state, 'sent');
+    await wait(w, 2 * SEC);
+    assert.deepEqual(
+      w.remoteDrafts.removeAttempts,
+      [],
+      'nothing is asked to delete the sent message',
+    );
+    assert.equal(count(w), 0, 'the hidden row is gone');
+  }));
+
+test('a send of the pinned MIME leaves the remote draft in place, and it is deleted afterwards', () =>
+  world(async w => {
+    const s = await synced(w);
+    // Edited and sent before the edit synced: the copy is an older revision, so the pinned MIME leaves instead.
+    const edited = edit(w, s.draft, fields({ subject: 'Edited' }));
+    const sub = w.send(w.first, s.draft.id, { revision: edited.revision });
+    await wait(w, 15 * SEC);
+    assert.equal(w.get(sub.id).state, 'sent');
+    assert.equal(w.server.payloads[0].remoteDraftId, undefined, 'the copy is not what is sent');
+    assert.deepEqual(w.server.consumed, []);
+    await wait(w, 2 * SEC);
+    assert.deepEqual(
+      w.remoteDrafts.removes,
+      [s.remoteDraftId],
+      'the copy that was left is deleted',
+    );
+    assert.equal(count(w), 0);
+  }));
+
+test('a first create that timed out, then an edit: the old Message-ID still names the copy history reports', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait, result: 'landedLost' });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    const firstId = w.remoteDrafts.saves[0].internetId;
+    edit(w, d, fields({ subject: 'Edited' }));
+    g.open();
+    await w.settle();
+    assert.equal(w.remoteDrafts.remote.size, 1, 'the first create landed');
+    const [remoteDraftId, copy] = [...w.remoteDrafts.remote.entries()][0];
+    // History reports the copy the lost reply hid, under the Message-ID of the first upload.
+    w.first.store.commit({
+      opId: `review-late-${++ops}`,
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'remoteDraft',
+          accountId: ACCOUNT,
+          remoteDraftId,
+          remoteMessageId: copy.messageId,
+          internetId: firstId,
+          changedAt: w.clock.now(),
+        },
+      ],
+    });
+    assert.equal(
+      service(w).get([`${ACCOUNT}:${remoteDraftId}`]).notFound.length,
+      1,
+      'no phantom draft',
+    );
+    await wait(w, 40 * SEC);
+    assert.equal(
+      w.remoteDrafts.remote.size,
+      1,
+      'the edit replaced the copy, it did not make a second one',
+    );
+    assert.equal(row(w, d.id)!.remote_draft_id, remoteDraftId);
+    assert.equal(header(w.remoteDrafts.saves.at(-1)!.mime, 'Subject'), 'Edited');
+    assert.equal(read(w, d.id).sync, 'synced');
+  }));
+
+test('a discard while the first upload runs, then a restart: history reports the copy and it is removed', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait, result: 'landedLost' });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    const internetId = w.remoteDrafts.saves[0].internetId;
+    service(w).destroy(next(), d.id);
+    assert.equal(count(w), 1, 'the row waits for the upload to say what it made');
+    // The process dies after the provider took the draft and before the reply was recorded.
+    w.first.kill();
+    w.first.store.close();
+    g.open();
+    for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(w.remoteDrafts.remote.size, 1, 'the copy exists');
+    const second = w.open();
+    assert.equal(service(w, second).get([d.id]).notFound.length, 1, 'still discarded');
+    second.store.commit({
+      opId: `review-restart-${++ops}`,
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'remoteDraft',
+          accountId: ACCOUNT,
+          remoteDraftId: 'rd1',
+          remoteMessageId: 'msg2',
+          internetId,
+          changedAt: w.clock.now(),
+        },
+      ],
+    });
+    assert.equal(service(w, second).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');
+    await wait(w, 2 * SEC);
+    assert.deepEqual(w.remoteDrafts.removes, ['rd1']);
+    assert.equal(count(w, second), 0);
   }));

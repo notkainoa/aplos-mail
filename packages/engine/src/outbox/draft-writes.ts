@@ -232,6 +232,12 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
 function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>) {
   const row = readRow(tx, w.id);
   const { fields, meta } = parseData(row.data);
+  // An ack for an upload this row no longer expects (a conflict, a choice or a newer attempt cleared `uploading`) says
+  // what the provider now holds, not what this draft is: only its ids are kept, to recognise their echo in history.
+  if (meta.uploading?.internetId !== w.internetId) {
+    const wrote = remembered(meta, w.internetId, w.remoteMessageId);
+    return writeRow(tx, w.id, {}, fields, patched(meta, { wrote }));
+  }
   const same = (meta.cur ?? fingerprintOf(fields)) === w.fingerprint;
   // An edit that landed during the upload keeps its own upload due; this copy is the revision that was sent.
   const done = row.revision === w.revision || same;
@@ -274,13 +280,19 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
     return writeRow(tx, w.id, {}, fields, patched(meta, { dueAt: w.at }));
   if (!w.uncertain) return;
   // The reply may hide a write of the old revision: the copy is not the one the fingerprint names. Upload what the
-  // draft holds now, and forget the old attempt (its Message-ID belongs to a revision that is gone).
+  // draft holds now. The old attempt's Message-ID is kept in `wrote`, so history reporting that copy is recognised.
+  const old = meta.uploading ? [meta.uploading.internetId] : [];
   writeRow(
     tx,
     w.id,
     {},
     fields,
-    patched(meta, { fingerprint: null, uploading: null, dueAt: meta.dueAt ?? w.at }),
+    patched(meta, {
+      fingerprint: null,
+      uploading: null,
+      wrote: remembered(meta, ...old),
+      dueAt: meta.dueAt ?? w.at,
+    }),
   );
 }
 
@@ -473,27 +485,38 @@ function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
   announce(`${w.accountId}:${w.remoteDraftId}`);
 }
 
-/** The draft whose upload (not yet recorded) history reports: the Message-ID is the one that upload was made under. */
+/**
+ * The draft whose upload (not yet recorded) history reports: the Message-ID is the one that upload was made under,
+ * whether it is still running (`uploading`) or was set aside for a newer revision (`wrote`).
+ */
 function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
   if (w.internetId === undefined) return undefined;
   return tx.get<DraftRow>(
     `SELECT * FROM drafts WHERE account_id = ?
-       AND json_extract(data, '$._sync.uploading.internetId') = ? LIMIT 1`,
+       AND (json_extract(data, '$._sync.uploading.internetId') = ?
+         OR EXISTS (SELECT 1 FROM json_each(data, '$._sync.wrote') WHERE value = ?)) LIMIT 1`,
     w.accountId,
+    w.internetId,
     w.internetId,
   );
 }
 
-/** A discarded draft's upload landed without its result being recorded: the copy history reports is the one to delete. */
+/**
+ * An upload landed without its result being recorded. A discarded draft's copy is the one to delete; a live draft with
+ * no copy yet takes it as its own, so its next upload replaces it instead of making a second one.
+ */
 function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   const { fields, meta } = parseData(row.data);
-  if (!meta.removing || row.remote_draft_id !== null || w.removed) return;
+  if (row.remote_draft_id !== null || w.removed) return;
   writeRow(
     tx,
     row.id,
     { remote_draft_id: w.remoteDraftId, remote_message_id: w.remoteMessageId },
     fields,
-    patched(meta, { removeAt: w.changedAt }),
+    patched(
+      meta,
+      meta.removing ? { removeAt: w.changedAt } : { wrote: remembered(meta, w.remoteMessageId) },
+    ),
   );
   announce(row.id);
 }

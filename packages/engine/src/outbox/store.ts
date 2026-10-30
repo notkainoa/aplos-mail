@@ -58,6 +58,8 @@ export interface RowExtra extends SubmissionMeta {
   sentAt?: number;
   /** The `sending` marker was committed at least once: the bytes may have left, so they are never changed again. */
   attempted?: true;
+  /** The send used the remote draft (`SendReceipt.draftConsumed`): it is gone, so nothing is left to delete. */
+  draftConsumed?: true;
   problem?: Omit<SubmissionProblem, 'until'>;
 }
 
@@ -86,6 +88,8 @@ export interface SubmissionPatch {
   problem?: SubmissionProblem | null;
   checkCount?: number;
   checkAt?: number | null;
+  /** The provider reported the remote draft consumed by the send. */
+  draftConsumed?: true;
   /** Drops the pinned MIME: only once `sent` is committed. */
   dropMime?: true;
   /** The same message re-dated by a reschedule or Send now (same Message-ID); the move's state guard keeps it off a `sending` row. */
@@ -265,6 +269,7 @@ function patchedExtra(current: RowExtra, set: SubmissionPatch, seq: number): Row
   if (set.sentAt !== undefined) next.sentAt = set.sentAt;
   if (set.attempted === true) next.attempted = true;
   else if (set.attempted === false) delete next.attempted;
+  if (set.draftConsumed) next.draftConsumed = true;
   if (set.checkCount !== undefined) next.checkCount = set.checkCount;
   if (set.checkAt === null) delete next.checkAt;
   else if (set.checkAt !== undefined) next.checkAt = set.checkAt;

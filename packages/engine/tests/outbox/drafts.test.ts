@@ -400,14 +400,15 @@ test('a draft whose send is sending cannot be discarded or resolved', () =>
     assert.equal(w.server.worst(), 1);
   }));
 
-test('a sent draft leaves Drafts and its remote copy is deleted', () =>
+test('a sent draft leaves Drafts; the remote draft its send consumed is not deleted again', () =>
   world(async w => {
     const s = await synced(w);
     const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
     await wait(w, 10 * SEC);
     assert.equal(w.get(sub.id).state, 'sent');
     assert.equal(service(w).get([s.draft.id]).notFound.length, 1, 'cleaned up');
-    assert.deepEqual(w.remoteDrafts.removes, [s.remoteDraftId]);
+    assert.deepEqual(w.server.consumed, [s.remoteDraftId], 'the send used the remote draft');
+    assert.deepEqual(w.remoteDrafts.removeAttempts, []);
   }));
 
 test('discarding a synced draft deletes the remote copy, and a paused removal is retried', () =>

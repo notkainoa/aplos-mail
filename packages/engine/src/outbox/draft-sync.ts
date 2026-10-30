@@ -107,6 +107,20 @@ function hex(bytes: Uint8Array) {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Re-reads a draft's row into the deadline index. It runs in `finally` blocks and in jobs nobody awaits, so it must never
+ * throw: a store closed under a late upload (the shutdown grace ended first) would otherwise hide the original error or
+ * become an unhandled rejection. A missed entry is found by the next full scan, and the draft's row holds the truth.
+ * (There is no registered log event for this; the announce listener in `module.ts` swallows the same way.)
+ */
+function touchQuietly(ctx: DraftsCtx, id: string) {
+  try {
+    touchDue(ctx, id);
+  } catch {
+    // The store is closing or closed.
+  }
+}
+
 /** Commits a write of the drafts' own; false when it lost its compare-and-set (the draft changed meanwhile). */
 function tryCommit(ctx: DraftsCtx, write: StoreWrite, tag: string): boolean {
   const input: CommitInput = {
@@ -121,7 +135,7 @@ function tryCommit(ctx: DraftsCtx, write: StoreWrite, tag: string): boolean {
     if (error instanceof DraftConflict) return false;
     throw error;
   } finally {
-    if (write.kind === 'draft' || write.kind === 'draftDelete') touchDue(ctx, write.id);
+    if (write.kind === 'draft' || write.kind === 'draftDelete') touchQuietly(ctx, write.id);
   }
 }
 
@@ -391,13 +405,28 @@ function removalRefused(ctx: DraftsCtx, row: DraftRow, meta: DraftMeta, error: u
   setMeta(ctx, row.id, { removeTries: tries, removeAt: now + wait });
 }
 
+/** Did a send of this draft consume its remote copy (`SendReceipt.draftConsumed`, kept on the submission)? */
+function consumedBySend(ctx: DraftsCtx, draftId: string): boolean {
+  return (
+    ctx.store.read(q =>
+      q.get(
+        `SELECT 1 FROM submissions WHERE draft_id = ? AND state = 'sent'
+           AND json_extract(error, '$.draftConsumed') = 1 LIMIT 1`,
+        draftId,
+      ),
+    ) !== undefined
+  );
+}
+
 /** Deletes the provider's copy of a discarded or sent draft, then the hidden row. */
 async function removeHidden(ctx: DraftsCtx, id: string) {
   const row = ctx.store.read(q => readAnyRow(q, id));
   if (!row) return;
   const { meta } = parseData(row.data);
   if (!meta.removing) return;
-  if (row.remote_draft_id !== null) {
+  // A send that consumed the remote draft left nothing to delete, and on a provider where the draft and the sent message
+  // are one entity (JMAP) deleting it would delete the sent message.
+  if (row.remote_draft_id !== null && !consumedBySend(ctx, id)) {
     try {
       await ctx.port.remove(row.account_id, row.remote_draft_id);
     } catch (error) {
@@ -444,7 +473,7 @@ function start(ctx: DraftsCtx, key: string, job: () => Promise<void>) {
     .finally(() => {
       ctx.inflight.delete(key);
       ctx.jobs.delete(done);
-      if (!key.startsWith('remove:')) touchDue(ctx, key.replace(/^removing:/, ''));
+      if (!key.startsWith('remove:')) touchQuietly(ctx, key.replace(/^removing:/, ''));
       ctx.deadlines.changed('drafts');
     });
   ctx.jobs.add(done);
