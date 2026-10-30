@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { evalEnv } from './agent.mjs';
 import {
+  constants,
+  copyFileSync,
   existsSync,
   linkSync,
   lstatSync,
@@ -13,6 +15,7 @@ import {
   opendirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   statSync,
@@ -117,7 +120,13 @@ function workspaceMap(repoRoot) {
     const abs = join(repoRoot, parent);
     if (parent === pattern || !existsSync(abs)) continue;
     for (const entry of readdirSync(abs, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+      // statSync follows links: npm's glob matches a symlinked dir, so a workspace that
+      // is a link must register here — the verify pass then refuses one pointing out.
+      try {
+        if (!statSync(join(abs, entry.name)).isDirectory()) continue;
+      } catch {
+        continue;
+      }
       const rel = `${parent}/${entry.name}`;
       dirs.push(rel);
       try {
@@ -141,10 +150,13 @@ const lexists = path => {
   }
 };
 
-// A workspace link as npm itself writes it — relative from the link's directory, so the
-// worktree resolves the package inside ITSELF (and matches what .package-lock.json records).
-const linkWorkspace = (linkPath, workdir, wsRel) =>
-  symlinkSync(relative(dirname(linkPath), join(workdir, wsRel)), linkPath, 'junction');
+const realOrSelf = path => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
 
 // stat-based dir test (follows links): a package dir reached through a symlink still has
 // to be rebuilt as a real dir, or npm flags the package at it as extraneous.
@@ -161,146 +173,347 @@ const isDir = path => {
 const MODULES_DEPTH_LIMIT = 12;
 
 /**
- * The .bin shim dir: a single link to the main copy, unless some shim resolves into a
- * workspace dir (a workspace "bin"). Then .bin becomes a real dir — workspace-bound shims
- * are re-created against the worktree's own workspaces, the rest link to the main entries.
+ * A workspace link as npm itself writes it — relative from the link's directory, so the
+ * worktree resolves the package inside ITSELF (and matches what .package-lock.json
+ * records). Fails closed when the worktree lacks the workspace dir: a dangling link is
+ * exactly the hole the verify pass at the end of linkNodeModules exists to rule out.
  */
-function linkBinDir(mainBin, linkBin, wsDirs, workdir) {
+export const linkWorkspace = (linkPath, workdir, wsRel, ctx = null) => {
+  const target = join(workdir, wsRel);
+  if (!existsSync(target)) {
+    throw new Error(`workspace dir ${wsRel} missing in the worktree — refusing a dangling link`);
+  }
+  symlinkSync(relative(dirname(linkPath), target), linkPath, 'junction');
+  ctx?.wsLinks.push(linkPath);
+};
+
+/**
+ * The .bin shim dir: ALWAYS a real dir of per-shim links, like npm writes it — a
+ * whole-dir symlink into the main checkout would let `rm node_modules/.bin/<x>` inside an
+ * attempt delete the main copy's shim, and a deletion leaves no file mtime for the write
+ * scan to compare. A shim resolving into a workspace dir is rebuilt against the
+ * worktree's own workspace; one resolving inside the same container becomes the
+ * npm-style relative link to the mirrored file; anything else (absolute links, dangling
+ * shims) is copied verbatim. File-level links only — never a dir link into main.
+ */
+function linkBinDir(mainBin, linkBin, ctx) {
   let names;
   try {
     names = readdirSync(mainBin);
   } catch {
     return;
   }
-  const bound = new Map(); // shim name -> { wsRel, suffix } for workspace-bound entries
-  for (const name of names) {
-    let real;
-    try {
-      real = realpathSync(join(mainBin, name));
-    } catch {
-      continue; // dangling shim — linked whole below
-    }
-    const hit = wsDirs.find(ws => real === ws.real || real.startsWith(`${ws.real}${sep}`));
-    if (hit) bound.set(name, { wsRel: hit.rel, suffix: real.slice(hit.real.length) });
-  }
-  if (!bound.size) {
-    symlinkSync(mainBin, linkBin, 'dir');
-    return;
-  }
   mkdirSync(linkBin, { recursive: true });
+  const linkModules = dirname(linkBin);
+  const containerReal = realOrSelf(dirname(mainBin));
   for (const name of names) {
     const sub = join(linkBin, name);
     if (lexists(sub)) continue;
-    const hit = bound.get(name);
-    if (hit) {
-      symlinkSync(relative(linkBin, join(workdir, hit.wsRel) + hit.suffix), sub, 'junction');
+    const mainPath = join(mainBin, name);
+    let lst;
+    try {
+      lst = lstatSync(mainPath);
+    } catch {
+      continue; // vanished mid-populate
+    }
+    if (lst.isSymbolicLink()) {
+      let real = null;
+      try {
+        real = realpathSync(mainPath);
+      } catch {
+        // Dangling shim — copied verbatim below, exactly as it dangles in main.
+      }
+      const hit =
+        real && ctx.wsDirs.find(ws => real === ws.real || real.startsWith(`${ws.real}${sep}`));
+      if (hit) {
+        symlinkSync(
+          relative(linkBin, join(ctx.workdir, hit.rel) + real.slice(hit.real.length)),
+          sub,
+          'junction',
+        );
+        ctx.wsLinks.push(sub);
+      } else if (real && (real === containerReal || real.startsWith(`${containerReal}${sep}`))) {
+        symlinkSync(
+          relative(linkBin, join(linkModules, relative(containerReal, real))),
+          sub,
+          'junction',
+        );
+      } else {
+        symlinkSync(readlinkSync(mainPath), sub);
+      }
+    } else if (lst.isDirectory()) {
+      mirrorDir(mainPath, sub, ctx, 0);
     } else {
-      symlinkSync(join(mainBin, name), sub);
+      linkFile(mainPath, sub, ctx);
     }
   }
 }
 
 /**
- * A file-level entry (code, manifests, license texts): hardlinked to the main copy so the
- * worktree entry is itself a regular file — tools that filter dirents by isFile() or
- * isDirectory() (npm's tree loader is not the only reader; license scanners recurse
- * package dirs that way) must not see a symlink anywhere a real install would have a file.
- * A symlink hardlinks the link inode itself; cross-filesystem or permission failures fall
- * back to a plain symlink — everything still resolves, only dirent fidelity degrades.
- * Writes through a hardlink land in the same inode the moduleRoots scan watches.
+ * A file-level entry (code, manifests, license texts): first a copy-on-write clone —
+ * the worktree gets its OWN inode, so an in-place append, truncate or patch inside the
+ * attempt cannot reach the main checkout (APFS and other reflink filesystems give real
+ * isolation; elsewhere FICLONE degrades to a full copy, which is still isolated). Only
+ * when cloning is unsupported does the entry become a hardlink — one inode shared with
+ * the main copy, which a write-through then mutates: that mode is tripwire-only (the
+ * write scan reports content writes after the fact; chmod/chown/utimes it cannot see).
+ * A plain symlink is the last resort for a failed hardlink — everything still resolves,
+ * only dirent fidelity degrades.
  */
-const linkFile = (mainPath, linkPath) => {
+const CLONE_UNSUPPORTED = new Set(['ENOTSUP', 'EXDEV', 'EOPNOTSUPP', 'EINVAL', 'ENOSYS']);
+// Strict clone first (Linux ioctl), then the best-effort form — macOS's copyfile(3)
+// rejects CLONE_FORCE with ENOSYS but clones fine through the plain FICLONE flag.
+const CLONE_FLAGS = [constants.COPYFILE_FICLONE_FORCE, constants.COPYFILE_FICLONE];
+// A tree is ~36k files: a listed errno means "this filesystem cannot clone", and a run
+// of any other failure must not be retried per file either — stop after a few.
+const CLONE_RETRY_LIMIT = 8;
+
+const linkFile = (mainPath, linkPath, ctx) => {
+  ctx.stats.files++;
+  if (!ctx.stats.cloneBroken) {
+    const flags = ctx.cloneFlag === undefined ? CLONE_FLAGS : [ctx.cloneFlag];
+    let exhausted = true;
+    for (const flag of flags) {
+      try {
+        ctx.copyFile(mainPath, linkPath, flag);
+        ctx.cloneFlag = flag;
+        ctx.stats.cloned++;
+        return;
+      } catch (error) {
+        if (CLONE_UNSUPPORTED.has(error?.code)) continue;
+        // A real failure (space, perms, a vanished source): bounded retries, not 36k.
+        exhausted = ++ctx.stats.cloneFailures >= CLONE_RETRY_LIMIT;
+        break;
+      }
+    }
+    if (exhausted) ctx.stats.cloneBroken = true;
+  }
   try {
     linkSync(mainPath, linkPath);
+    ctx.stats.hardlinked++;
   } catch {
     symlinkSync(mainPath, linkPath);
+    ctx.stats.symlinked++;
   }
 };
 
 /**
+ * A node_modules entry that is itself a symlink into the checkout's TRACKED tree (its
+ * realpath lands inside the repo but outside every node_modules) while NOT being a
+ * workspace of this commit: a leftover from a revision with a different workspace set.
+ * Mirroring it as a package would let a stale workspace keep resolving — skip it.
+ */
+const staleRepoLink = (mainPath, ctx) => {
+  let lst;
+  try {
+    lst = lstatSync(mainPath);
+  } catch {
+    return false;
+  }
+  if (!lst.isSymbolicLink()) return false;
+  const real = realOrSelf(mainPath);
+  if (real === mainPath) return false; // dangling or unresolvable — kept verbatim below
+  const rel = relative(ctx.repoReal, real);
+  if (rel === '' || rel.startsWith('..')) return false;
+  return !rel.split(sep).includes('node_modules');
+};
+
+// A directory entry either recurses or — past the depth cap, or when it is a symlink
+// re-entering a directory already on the mirror stack (a link cycle) — stays a real but
+// EMPTY dir. Never a whole-dir symlink into the main checkout. Real dirs cannot cycle,
+// so only symlinked ones pay for the realpath.
+const cutDir = (mainPath, ctx, depth) => {
+  if (depth > MODULES_DEPTH_LIMIT) return true;
+  return lstatSync(mainPath).isSymbolicLink() && ctx.activeDirs.has(realOrSelf(mainPath));
+};
+
+/**
  * One installed package dir or any other non-container dir inside the tree: a REAL dir in
- * the worktree, entries hardlinked to the main copy's — except a nested node_modules,
- * which recurses as a container of its own. npm only accepts a package at a real
- * directory (a symlink reads as "extraneous"), runtime imports need contents reachable at
- * their logical paths, and dirent-based readers need real files in real subdirs.
+ * the worktree whose entries are cloned/hardlinked copies of the main copy's — except a
+ * nested node_modules, which recurses as a container of its own. npm only accepts a
+ * package at a real directory (a symlink reads as "extraneous"), runtime imports need
+ * contents reachable at their logical paths, and dirent-based readers need real files in
+ * real subdirs.
  */
 function mirrorDir(mainDir, linkDir, ctx, depth) {
   mkdirSync(linkDir, { recursive: true });
-  for (const name of readdirSync(mainDir)) {
-    const linkPath = join(linkDir, name);
-    if (lexists(linkPath)) continue;
-    const mainPath = join(mainDir, name);
-    if (name === 'node_modules' && isDir(mainPath)) {
-      populateModules(mainPath, linkPath, { ...ctx, allWorkspaces: false }, depth + 1);
-    } else if (isDir(mainPath)) {
-      mirrorDir(mainPath, linkPath, ctx, depth + 1);
-    } else {
-      linkFile(mainPath, linkPath);
+  const mainReal = realOrSelf(mainDir);
+  const fresh = !ctx.activeDirs.has(mainReal);
+  if (fresh) ctx.activeDirs.add(mainReal);
+  try {
+    for (const name of readdirSync(mainDir)) {
+      const linkPath = join(linkDir, name);
+      if (lexists(linkPath)) continue;
+      const mainPath = join(mainDir, name);
+      if (name === 'node_modules' && isDir(mainPath)) {
+        populateModules(mainPath, linkPath, { ...ctx, allWorkspaces: false }, depth + 1);
+      } else if (isDir(mainPath)) {
+        if (cutDir(mainPath, ctx, depth + 1)) mkdirSync(linkPath, { recursive: true });
+        else mirrorDir(mainPath, linkPath, ctx, depth + 1);
+      } else {
+        linkFile(mainPath, linkPath, ctx);
+      }
     }
+  } finally {
+    if (fresh) ctx.activeDirs.delete(mainReal);
   }
+}
+
+/**
+ * The collapsed form of a container (depth cap or a link cycle): still a REAL dir — a
+ * whole-dir symlink into the main checkout would let an attempt write straight into it —
+ * mirroring one level. Files are linked, workspace names link into the worktree, .bin is
+ * rebuilt like anywhere else, and every subdirectory becomes a real but EMPTY dir:
+ * recursing into it is exactly the cycle (or the pathological depth) the collapse cuts.
+ */
+function collapseModules(mainModules, linkModules, ctx) {
+  const shallow = (mainDir, linkDir, prefix) => {
+    mkdirSync(linkDir, { recursive: true });
+    for (const name of readdirSync(mainDir)) {
+      const linkPath = join(linkDir, name);
+      if (lexists(linkPath)) continue;
+      const mainPath = join(mainDir, name);
+      const wsRel = ctx.workspaces.names.get(prefix + name);
+      if (wsRel) {
+        linkWorkspace(linkPath, ctx.workdir, wsRel, ctx);
+      } else if (name === '.bin' && isDir(mainPath)) {
+        linkBinDir(mainPath, linkPath, ctx);
+      } else if (name.startsWith('@') && lstatSync(mainPath).isDirectory()) {
+        shallow(mainPath, linkPath, `${name}/`);
+      } else if (staleRepoLink(mainPath, ctx)) {
+        // A leftover workspace link this commit does not have — it must not survive.
+      } else if (isDir(mainPath)) {
+        mkdirSync(linkPath, { recursive: true });
+      } else {
+        linkFile(mainPath, linkPath, ctx);
+      }
+    }
+  };
+  shallow(mainModules, linkModules, '');
 }
 
 /**
  * One node_modules container: a REAL dir in the worktree. Every directory inside it —
  * scope dirs, package dirs, nested node_modules deeper down — must also be real, because
  * npm's tree loader marks any package reached through a symlinked ancestor (and linked
- * packages themselves) extraneous; file-level contents are hardlinked so dirent-based
- * readers see real files. Workspace names become the relative links npm itself writes;
- * .bin links whole unless a shim is workspace-bound; files and other dot-entries link to
- * the main copies. A nested container already mirrored on another path (or the depth cap)
- * collapses to a link instead of being rebuilt. When `allWorkspaces` is set (the root
+ * packages themselves) extraneous; file-level contents are cloned or hardlinked so
+ * dirent-based readers see real files. Workspace names become the relative links npm
+ * itself writes; .bin is always a real dir of per-shim links; files and other
+ * dot-entries are copied from the main checkout. A nested container re-entered through a
+ * link cycle (or past the depth cap) collapses to the shallow real-dir mirror above —
+ * never a whole-dir symlink into main. When `allWorkspaces` is set (the root
  * node_modules) every workspace name is linked even if the main tree lacks it, matching
  * what npm would have installed there.
  */
 function populateModules(mainModules, linkModules, ctx, depth = 0) {
-  let mainReal;
-  try {
-    mainReal = realpathSync(mainModules);
-  } catch {
-    mainReal = mainModules;
-  }
-  if (depth > MODULES_DEPTH_LIMIT || ctx.seenContainers.has(mainReal)) {
-    if (!lexists(linkModules)) symlinkSync(mainModules, linkModules, 'junction');
+  const mainReal = realOrSelf(mainModules);
+  mkdirSync(linkModules, { recursive: true });
+  if (depth > MODULES_DEPTH_LIMIT || ctx.activeDirs.has(mainReal)) {
+    collapseModules(mainModules, linkModules, ctx);
     return;
   }
-  ctx.seenContainers.add(mainReal);
-  const { workspaces, wsDirs, workdir, allWorkspaces } = ctx;
-  mkdirSync(linkModules, { recursive: true });
-  for (const name of readdirSync(mainModules)) {
-    const linkPath = join(linkModules, name);
-    if (lexists(linkPath)) continue; // idempotent: never replace what is already there
-    const mainPath = join(mainModules, name);
-    const wsRel = workspaces.names.get(name);
-    if (wsRel) {
-      linkWorkspace(linkPath, workdir, wsRel);
-      continue;
-    }
-    if (name === '.bin' && isDir(mainPath)) {
-      linkBinDir(mainPath, linkPath, wsDirs, workdir);
-      continue;
-    }
-    if (name.startsWith('@') && lstatSync(mainPath).isDirectory()) {
-      mkdirSync(linkPath, { recursive: true });
-      for (const sub of readdirSync(mainPath)) {
-        const subLink = join(linkPath, sub);
-        if (lexists(subLink)) continue;
-        const subWs = workspaces.names.get(`${name}/${sub}`);
-        if (subWs) linkWorkspace(subLink, workdir, subWs);
-        else if (isDir(join(mainPath, sub))) {
-          mirrorDir(join(mainPath, sub), subLink, ctx, depth + 1);
-        } else linkFile(join(mainPath, sub), subLink);
-      }
-      continue;
-    }
-    if (isDir(mainPath)) mirrorDir(mainPath, linkPath, ctx, depth + 1);
-    else linkFile(mainPath, linkPath);
-  }
-  if (allWorkspaces) {
-    for (const [name, wsRel] of workspaces.names) {
+  ctx.activeDirs.add(mainReal);
+  try {
+    for (const name of readdirSync(mainModules)) {
       const linkPath = join(linkModules, name);
-      if (lexists(linkPath)) continue;
-      mkdirSync(dirname(linkPath), { recursive: true });
-      linkWorkspace(linkPath, workdir, wsRel);
+      if (lexists(linkPath)) continue; // idempotent: never replace what is already there
+      const mainPath = join(mainModules, name);
+      const wsRel = ctx.workspaces.names.get(name);
+      if (wsRel) {
+        linkWorkspace(linkPath, ctx.workdir, wsRel, ctx);
+        continue;
+      }
+      if (name === '.bin' && isDir(mainPath)) {
+        linkBinDir(mainPath, linkPath, ctx);
+        continue;
+      }
+      if (name.startsWith('@') && lstatSync(mainPath).isDirectory()) {
+        mkdirSync(linkPath, { recursive: true });
+        for (const sub of readdirSync(mainPath)) {
+          const subLink = join(linkPath, sub);
+          if (lexists(subLink)) continue;
+          const subMain = join(mainPath, sub);
+          const subWs = ctx.workspaces.names.get(`${name}/${sub}`);
+          if (subWs) {
+            linkWorkspace(subLink, ctx.workdir, subWs, ctx);
+          } else if (staleRepoLink(subMain, ctx)) {
+            // A leftover workspace link this commit does not have — it must not survive.
+          } else if (isDir(subMain)) {
+            if (cutDir(subMain, ctx, depth + 1)) mkdirSync(subLink, { recursive: true });
+            else mirrorDir(subMain, subLink, ctx, depth + 1);
+          } else {
+            linkFile(subMain, subLink, ctx);
+          }
+        }
+        continue;
+      }
+      if (staleRepoLink(mainPath, ctx)) continue;
+      if (isDir(mainPath)) {
+        if (cutDir(mainPath, ctx, depth + 1)) mkdirSync(linkPath, { recursive: true });
+        else mirrorDir(mainPath, linkPath, ctx, depth + 1);
+      } else {
+        linkFile(mainPath, linkPath, ctx);
+      }
+    }
+    if (ctx.allWorkspaces) {
+      for (const [name, wsRel] of ctx.workspaces.names) {
+        const linkPath = join(linkModules, name);
+        if (lexists(linkPath)) continue;
+        mkdirSync(dirname(linkPath), { recursive: true });
+        linkWorkspace(linkPath, ctx.workdir, wsRel, ctx);
+      }
+    }
+  } finally {
+    ctx.activeDirs.delete(mainReal);
+  }
+}
+
+const statsLine = stats => {
+  const { files, cloned, hardlinked, symlinked } = stats;
+  if (!hardlinked && !symlinked) return `node_modules: cloned ${cloned} files`;
+  if (!cloned && !symlinked) return `node_modules: hardlinked ${hardlinked} files (tripwire only)`;
+  return `node_modules: cloned ${cloned}, hardlinked ${hardlinked}, symlinked ${symlinked} of ${files} files (hardlinks are tripwire only)`;
+};
+
+// The most recent linkNodeModules result, for the harness's one-line strategy report.
+let lastLink = { stats: { files: 0, cloned: 0, hardlinked: 0, symlinked: 0 }, line: '' };
+export const lastLinkStats = () => lastLink;
+
+/**
+ * Fail-closed checks on the link set just built — any violation throws, so the harness
+ * aborts the worktree instead of running gates against a layout that can escape:
+ *  - no committed node_modules path may exist in the worktree (checkout would keep it
+ *    silently — a symlink among them could resolve back into the main checkout);
+ *  - no linked node_modules dir may be a symlink (a whole-dir link writes through);
+ *  - every workspace link must resolve to a target inside the worktree itself.
+ */
+function verifyLinkSet(workdir, linked, ctx) {
+  const committed = git(['ls-files', '-z'], workdir)
+    .split('\0')
+    .filter(path => path.split('/').includes('node_modules'));
+  if (committed.length) {
+    throw new Error(
+      `committed node_modules paths materialized in the worktree: ${committed.slice(0, 5).join(', ')}`,
+    );
+  }
+  for (const root of linked) {
+    const modules = join(workdir, root, 'node_modules');
+    if (lstatSync(modules).isSymbolicLink()) {
+      throw new Error(
+        `worktree ${join(root, 'node_modules')} is a symlink — refusing a dependency dir outside the worktree`,
+      );
+    }
+  }
+  const workReal = realpathSync(workdir);
+  for (const linkPath of ctx.wsLinks) {
+    let real;
+    try {
+      real = realpathSync(linkPath);
+    } catch {
+      throw new Error(`workspace link ${linkPath} does not resolve`);
+    }
+    if (real !== workReal && !real.startsWith(`${workReal}${sep}`)) {
+      throw new Error(`workspace link ${linkPath} escapes the worktree -> ${real}`);
     }
   }
 }
@@ -308,24 +521,31 @@ function populateModules(mainModules, linkModules, ctx, depth = 0) {
 /**
  * Gives a worktree its dependencies without an install: at the root and at every workspace
  * dir that actually has node_modules in the main checkout, builds a REAL node_modules
- * container of real package dirs whose CONTENTS are symlinks to the main checkout's
- * copies, while node_modules/<workspace-name> links INSIDE the worktree, exactly like
- * npm's own "node_modules/@aplos/engine -> ../../packages/engine" links.
+ * container of real package dirs whose CONTENTS are cloned or hardlinked from the main
+ * checkout's copies, while node_modules/<workspace-name> links INSIDE the worktree,
+ * exactly like npm's own "node_modules/@aplos/engine -> ../../packages/engine" links.
  *
  * A whole-dir node_modules symlink fails twice: it redirects even the workspace links at
  * the main checkout (attempt changes under packages/* are invisible to gates, and tests
  * crossing a package boundary load each workspace twice — instanceof breaks), and npm
  * itself reports every linked package extraneous. Per-package symlinks still fail the
  * second half of that — only real dirs all the way down to each package satisfy npm ls.
+ * The workspace map is read from the WORKTREE's own manifest, so a worktree whose commit
+ * adds or renames a workspace gets the links that commit implies.
  *
  * Returns the linked roots ('.' plus workspace dirs); callers map them to the main
- * checkout's real node_modules trees for the post-attempt write-through scan — the same
- * dirs these symlinks resolve into. node_modules is git-ignored and pathspec-excluded, so
- * nothing created here enters the diff the guard analyses. Idempotent: existing entries
- * are left alone, only missing ones are added.
+ * checkout's real node_modules trees for the post-attempt write-through scan. The verify
+ * pass at the end throws on a committed node_modules, a whole-dir symlink or an escaping
+ * workspace link. Stats of the last call (clone vs hardlink counts and the summary line)
+ * come from lastLinkStats(). Idempotent: existing entries are left alone, only missing
+ * ones are added.
  */
-export function linkNodeModules(repoRoot, workdir) {
-  const workspaces = workspaceMap(repoRoot);
+export function linkNodeModules(repoRoot, workdir, { copyFile = copyFileSync } = {}) {
+  const workspaces = workspaceMap(workdir);
+  // The shim-binding check compares against a .bin shim's realpath — a MAIN-side path —
+  // so workspace dirs are resolved under repoRoot. A workspace that exists only in the
+  // worktree has no main-side entry to match; its shims still resolve through the
+  // worktree's own relative links.
   const wsDirs = workspaces.dirs
     .map(rel => {
       try {
@@ -335,27 +555,33 @@ export function linkNodeModules(repoRoot, workdir) {
       }
     })
     .filter(Boolean);
+  const ctx = {
+    workspaces,
+    wsDirs,
+    workdir,
+    repoReal: realOrSelf(repoRoot),
+    copyFile,
+    wsLinks: [],
+    activeDirs: new Set(),
+    stats: { files: 0, cloned: 0, hardlinked: 0, symlinked: 0, cloneFailures: 0 },
+  };
   const linked = [];
   for (const root of ['.', ...workspaces.dirs]) {
     const mainModules = join(repoRoot, root, 'node_modules');
     const linkModules = join(workdir, root, 'node_modules');
     if (!existsSync(mainModules)) continue;
-    // A whole-dir link placed some other way already resolves into the main tree — merging
-    // into it would write through to the main checkout, so it is left alone and still
-    // reported: its real trees are the same moduleRoots the scan watches.
+    // A whole-dir link placed some other way already resolves into the main tree — never
+    // merge into it (its entries would write through). It is kept so the scan roots stay
+    // honest, and the verify pass below refuses the worktree over it.
     if (lexists(linkModules) && lstatSync(linkModules).isSymbolicLink()) {
       linked.push(root);
       continue;
     }
-    populateModules(mainModules, linkModules, {
-      workspaces,
-      wsDirs,
-      workdir,
-      allWorkspaces: root === '.',
-      seenContainers: new Set(),
-    });
+    populateModules(mainModules, linkModules, { ...ctx, allWorkspaces: root === '.' });
     linked.push(root);
   }
+  verifyLinkSet(workdir, linked, ctx);
+  lastLink = { stats: ctx.stats, line: statsLine(ctx.stats) };
   return linked;
 }
 
@@ -549,7 +775,39 @@ export function commitAll(workdir, message) {
   return currentHead(workdir);
 }
 
+/**
+ * Removes a worktree. Before ANY removal — git's or the rmSync fallback — the path must
+ * be a real directory strictly inside a hillclimb-* run root under the OS temp dir:
+ * never the main checkout, never a symlink, never anywhere else. `rm -rf` is one bad
+ * argument away from wiping the user's checkout, so the path check refuses (throws)
+ * rather than falling back to silence.
+ */
 export function removeWorktree(repoRoot, dir) {
+  const refuse = why => {
+    throw new Error(`refusing to remove worktree dir ${dir}: ${why}`);
+  };
+  let lst = null;
+  try {
+    lst = lstatSync(dir);
+  } catch {
+    // Already gone — nothing to remove, nothing to refuse.
+  }
+  if (lst) {
+    if (lst.isSymbolicLink()) refuse('path is a symlink');
+    const realDir = realpathSync(dir);
+    const rel = relative(realpathSync(tmpdir()), realDir);
+    const first = rel.split(sep)[0];
+    if (!first || rel.startsWith('..') || rel === first || !first.startsWith('hillclimb-')) {
+      refuse('not strictly inside a hillclimb-* run root');
+    }
+    let repoReal = null;
+    try {
+      repoReal = realpathSync(repoRoot);
+    } catch {
+      // repoRoot itself is missing — the equality check cannot apply.
+    }
+    if (repoReal && realDir === repoReal) refuse('path is the main checkout');
+  }
   try {
     git(['worktree', 'remove', '--force', dir], repoRoot);
   } catch {
@@ -656,7 +914,7 @@ const WRITE_SCAN_PRUNE = new Set(['.cache', '.vite']);
 const WRITE_SCAN_LIMIT = 50;
 
 /**
- * Paths under `roots` (the node_modules dirs the harness symlinks into worktrees)
+ * Paths under `roots` (the node_modules dirs the harness links into worktrees)
  * modified since the stamp file was written — evidence of write-through into the main
  * checkout's real node_modules, which is git-ignored and therefore invisible to
  * statusPorcelain. A bounded opendir walk: directories named .cache/.vite are pruned,
@@ -664,8 +922,10 @@ const WRITE_SCAN_LIMIT = 50;
  * node_modules/@scope/pkg are covered, and collection stops at WRITE_SCAN_LIMIT hits —
  * the first few are all a rejection reason needs. Both a link's own mtime and its
  * target's are checked, so rewriting a file through an untouched symlink still counts.
- * A full walk of this repo's node_modules (~24k files) takes ~2 s, far under the ~8 s
- * budget, so no tool-directory restriction is applied.
+ * A directory's OWN mtime is checked too: creating, deleting or renaming an entry bumps
+ * the directory — the only trace a delete or add leaves (a vanished file has no mtime to
+ * compare), in which case the directory itself is reported. A full walk of this repo's
+ * node_modules (~24k files) takes ~2 s, far under the ~8 s budget.
  */
 export function findWritesSince(roots, stampPath, { relativeTo = null } = {}) {
   const stamp = statSync(stampPath).mtimeMs;
@@ -685,6 +945,7 @@ export function findWritesSince(roots, stampPath, { relativeTo = null } = {}) {
     const key = `${dirStat.dev}:${dirStat.ino}`;
     if (seen.has(key)) return;
     seen.add(key);
+    if (dirStat.mtimeMs > stamp) push(dir); // an entry was added, removed or renamed
     let handle;
     try {
       handle = opendirSync(dir);

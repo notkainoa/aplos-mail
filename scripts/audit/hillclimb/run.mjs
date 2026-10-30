@@ -45,6 +45,7 @@ import {
   diffBetween,
   gitShow,
   indexFlagViolations,
+  lastLinkStats,
   linkNodeModules,
   lsTreePaths,
   mainCheckoutIntact,
@@ -128,6 +129,17 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
     child.on('close', drop);
     child.on('error', drop);
   };
+  // Link a worktree's node_modules and report the file strategy when it changes — the
+  // first call's answer (clone vs hardlink) normally stands for the whole run.
+  const linkModules = dir => {
+    const roots = linkNodeModules(repoRoot, dir);
+    const { line } = lastLinkStats();
+    if (line && state.lastModulesLine !== line) {
+      state.lastModulesLine = line;
+      console.log(`  ${line}`);
+    }
+    return roots.map(r => join(repoRoot, r, 'node_modules'));
+  };
   return {
     repoRoot,
     runId,
@@ -148,9 +160,7 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       state.branches.push(ctx.branch);
       // The real node_modules dirs these links write through to — the post-attempt
       // write-through scan walks exactly this set.
-      ctx.moduleRoots = linkNodeModules(repoRoot, ctx.dir).map(r =>
-        join(repoRoot, r, 'node_modules'),
-      );
+      ctx.moduleRoots = linkModules(ctx.dir);
     },
     // A clean detached worktree checked out at a commit — where the baseline and every
     // attempt are actually gated and scored, free of uncommitted leftovers, ignored files
@@ -159,12 +169,7 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       ctx.evalDir = join(root, `${ctx.id}-eval`);
       addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
       state.dirs.push(ctx.evalDir);
-      ctx.moduleRoots = [
-        ...new Set([
-          ...(ctx.moduleRoots ?? []),
-          ...linkNodeModules(repoRoot, ctx.evalDir).map(r => join(repoRoot, r, 'node_modules')),
-        ]),
-      ];
+      ctx.moduleRoots = [...new Set([...(ctx.moduleRoots ?? []), ...linkModules(ctx.evalDir)])];
       return ctx.evalDir;
     },
     async runAttemptAgent(ctx, briefText) {
