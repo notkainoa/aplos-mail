@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFaultInjector } from '@aplos/emulators';
+import { createFaultInjector, type GmailEmulator } from '@aplos/emulators';
 import type { RemoteDraftFact } from '@aplos/engine/ports';
 import { gmailLog, rig, type Rig } from './harness';
 import { mimeOf } from './draft-rig';
@@ -251,4 +251,244 @@ test('prov-gmail-drafts supersedes: another draft is never named, and our own sa
   assert.ok(!facts.some(f => f.remoteMessageId === edited.message.id), 'our own copy is not news');
   const theirs = facts.find(f => f.remoteMessageId === other.message.id)!;
   assert.deepEqual(theirs.supersedes, [two.messageId]);
+});
+
+// ---- the Message-ID of the draft ----
+
+test("prov-gmail-drafts body delivery: the fact names the draft's Message-ID as internetId, also when no body is delivered", async () => {
+  const r = await synced();
+  const plain = r.emu.mailbox.createDraftElsewhere(spec({ messageId: 'phone-1@example.test' }));
+  const withFile = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      messageId: 'phone-2@example.test',
+      attachments: [{ filename: 'a.txt', mimeType: 'text/plain', data: Buffer.from('a') }],
+    }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const facts = factsSince(r, from);
+  assert.equal(
+    facts.find(f => f.remoteDraftId === plain.draftId)?.internetId,
+    '<phone-1@example.test>',
+  );
+  const file = facts.find(f => f.remoteDraftId === withFile.draftId)!;
+  assert.equal(file.internetId, '<phone-2@example.test>');
+  assert.equal(file.text, undefined, 'no body with an attachment');
+});
+
+// ---- attachments hidden in containers ----
+
+const b64 = (text: string): string => Buffer.from(text).toString('base64url');
+const leaf = (mimeType: string, text: string, extra: Record<string, unknown> = {}) => ({
+  mimeType,
+  body: { size: text.length, data: b64(text) },
+  ...extra,
+});
+
+/** A fetch that swaps the payload of every `drafts.get format=full` reply for `payload`. */
+function payloadFetch(holder: { emu?: GmailEmulator }, payload: () => unknown): typeof fetch {
+  return async (input, init) => {
+    const response = await holder.emu!.fetch(input, init);
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const full = url.searchParams.get('format') === 'full';
+    if (!/\/drafts\/[^/]+$/.test(url.pathname) || !full || !response.ok) return response;
+    const json = JSON.parse(await response.text()) as { message: { payload: unknown } };
+    const headers = (json.message.payload as { headers?: unknown }).headers;
+    json.message.payload = { ...(payload() as object), headers };
+    return new Response(JSON.stringify(json), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+}
+
+const forwarded = {
+  mimeType: 'message/rfc822',
+  filename: 'fwd.eml',
+  body: { size: 0 },
+  parts: [
+    {
+      mimeType: 'multipart/alternative',
+      parts: [leaf('text/html', '<p>forwarded html</p>')],
+    },
+  ],
+};
+
+const hiddenAttachments: [string, unknown][] = [
+  [
+    'a message/rfc822 attachment whose children are text/html',
+    { mimeType: 'multipart/mixed', parts: [leaf('text/plain', 'my note'), forwarded] },
+  ],
+  [
+    'a message/rfc822 container without a filename',
+    {
+      mimeType: 'multipart/mixed',
+      parts: [leaf('text/plain', 'my note'), { ...forwarded, filename: '' }],
+    },
+  ],
+  [
+    'a multipart/mixed attachment container nested inside multipart/alternative',
+    {
+      mimeType: 'multipart/alternative',
+      parts: [
+        leaf('text/plain', 'my note'),
+        {
+          mimeType: 'multipart/mixed',
+          parts: [leaf('text/html', '<p>html</p>'), forwarded],
+        },
+      ],
+    },
+  ],
+  [
+    'a container with a filename',
+    {
+      mimeType: 'multipart/mixed',
+      parts: [{ mimeType: 'multipart/mixed', filename: 'x', parts: [leaf('text/plain', 'inner')] }],
+    },
+  ],
+  [
+    'an inline image',
+    {
+      mimeType: 'multipart/related',
+      parts: [
+        leaf('text/html', '<img src="cid:pic">'),
+        {
+          mimeType: 'image/png',
+          headers: [
+            { name: 'Content-Disposition', value: 'inline' },
+            { name: 'Content-ID', value: '<pic>' },
+          ],
+          body: { size: 3, attachmentId: 'att-1' },
+        },
+      ],
+    },
+  ],
+  [
+    'an application/pdf part with no filename',
+    {
+      mimeType: 'multipart/mixed',
+      parts: [
+        leaf('text/plain', 'note'),
+        { mimeType: 'application/pdf', body: { size: 3, data: b64('pdf') } },
+      ],
+    },
+  ],
+];
+
+for (const [name, payload] of hiddenAttachments) {
+  test(`prov-gmail-drafts body delivery: ${name} means no body is delivered`, async () => {
+    const holder: { emu?: GmailEmulator } = {};
+    const r = await rig({ threads: 60, adapter: { fetch: payloadFetch(holder, () => payload) } });
+    holder.emu = r.emu;
+    await r.drive({ until: windowDone(r), maxSteps: 300 });
+    await r.clock.advance(60_000);
+    const draft = r.emu.mailbox.createDraftElsewhere(spec());
+    const from = r.store.commits.length;
+    await historyPass(r);
+    const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+    assert.ok(fact, 'still reported');
+    assert.equal(fact.html, undefined);
+    assert.equal(fact.text, undefined);
+  });
+}
+
+test('prov-gmail-drafts body delivery: plain nested multipart without attachments is still delivered', async () => {
+  const holder: { emu?: GmailEmulator } = {};
+  const body = {
+    mimeType: 'multipart/mixed',
+    parts: [
+      {
+        mimeType: 'multipart/alternative',
+        parts: [leaf('text/plain', 'my note'), leaf('text/html', '<p>my note</p>')],
+      },
+    ],
+  };
+  const r = await rig({ threads: 60, adapter: { fetch: payloadFetch(holder, () => body) } });
+  holder.emu = r.emu;
+  await r.drive({ until: windowDone(r), maxSteps: 300 });
+  await r.clock.advance(60_000);
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.equal(fact.html, '<p>my note</p>');
+  assert.equal(fact.text, 'my note');
+});
+
+// ---- a failed read is retried, not forgotten ----
+
+const failReads = (faults: ReturnType<typeof createFaultInjector>, status: number) =>
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.get' },
+    { status, reason: status === 404 ? 'notFound' : 'backendError', message: 'Backend Error' },
+    { times: 200 },
+  );
+
+test('prov-gmail-drafts body delivery: a transient failure goes back to waiting and is read again on a later pass', async () => {
+  const faults = createFaultInjector();
+  const r = await syncedWith({ emulator: { faults } });
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  failReads(faults, 503);
+  const from = r.store.commits.length;
+  await historyPass(r);
+  assert.equal(factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)?.text, undefined);
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  faults.clear();
+  await r.clock.advance(60_000);
+  const next = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, next).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.equal(fact.text?.trim(), 'Phone text.', 'the third read succeeded');
+});
+
+test('prov-gmail-drafts body delivery: after three failed reads the draft is dropped with only the reason code logged', async () => {
+  const faults = createFaultInjector();
+  const r = await syncedWith({ emulator: { faults } });
+  const draft = r.emu.mailbox.createDraftElsewhere(spec({ text: 'PRIVATE-DROP-MARKER' }));
+  failReads(faults, 503);
+  for (let i = 0; i < 3; i++) {
+    await historyPass(r);
+    await r.clock.advance(60_000);
+  }
+  faults.clear();
+  const dropped = r.log.lines.filter(
+    l => l.event === 'sync.gmail.request_refused' && l.fields.attempt === 3,
+  );
+  assert.equal(dropped.length, 1);
+  assert.equal((dropped[0].fields.error as { reason?: string }).reason, 'backendError');
+  assert.ok(!JSON.stringify(r.log.lines).includes('PRIVATE-DROP-MARKER'));
+  const start = r.clock.now();
+  await historyPass(r);
+  assert.equal(fullReads(r, start).length, 0, 'not read again');
+  assert.equal(r.store.drafts.get(draft.draftId)?.text, undefined);
+});
+
+test('prov-gmail-drafts body delivery: a 404 drops the draft at once, no later read', async () => {
+  const faults = createFaultInjector();
+  const r = await syncedWith({ emulator: { faults } });
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  failReads(faults, 404);
+  await historyPass(r);
+  faults.clear();
+  await r.clock.advance(60_000);
+  const start = r.clock.now();
+  await historyPass(r);
+  assert.equal(fullReads(r, start).length, 0);
+  assert.ok(r.store.drafts.has(draft.draftId), 'it was reported');
+  assert.equal(r.store.drafts.get(draft.draftId)?.text, undefined);
+});
+
+// ---- the bound, per history step ----
+
+test('prov-gmail-drafts body delivery: with 8 foreign drafts one history step reads exactly 5, each once with format=full', async () => {
+  const r = await synced();
+  for (let i = 0; i < 8; i++) r.emu.mailbox.createDraftElsewhere(spec({ subject: `Phone ${i}` }));
+  const start = r.clock.now();
+  await r.drive({ trigger: 'manual', scopes: ['history'], maxSteps: 1 });
+  assert.equal(fullReads(r, start).length, 5);
+  const reads = r.fetches.filter(f => f.at >= start && /\/drafts\/[^/]+$/.test(f.path));
+  assert.equal(reads.length, 5);
+  assert.equal(new Set(reads.map(f => f.path)).size, 5, 'each draft once');
+  assert.ok(reads.every(f => f.query.get('format') === 'full'));
 });

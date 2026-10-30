@@ -13,7 +13,13 @@ import {
   type SyncState,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
-import { deliverBodies, pendingJson, PENDING_KEY, readPending } from './draft-body';
+import {
+  deliverBodies,
+  pendingJson,
+  PENDING_KEY,
+  readPending,
+  type PendingBodies,
+} from './draft-body';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
 import { isQuarantined, passWrites, readSchedule, settleFailures } from './failures';
 import {
@@ -545,7 +551,7 @@ function pageExtras(
   ctx: AdapterContext,
   drafts: RemoteDraftFact[],
   nextDraftMap: ReadonlyMap<string, string>,
-  pending: ReadonlyMap<string, string>,
+  pending: PendingBodies,
   inboxMoves: readonly [string, boolean][],
 ): Pick<StepResult, 'drafts' | 'memory'> {
   const memory: Record<string, string | null> = {};
@@ -647,6 +653,7 @@ export async function historyStep(
   const delivered = await deliverBodies(
     client,
     step.lane,
+    ctx.log,
     settled.drafts,
     readPending(ctx.memory),
     now,
