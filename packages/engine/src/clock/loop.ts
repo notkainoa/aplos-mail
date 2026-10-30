@@ -97,8 +97,9 @@ export function createTimerLoop({
   ): Promise<Awaited<T> | typeof TIMED_OUT> => {
     work.catch(() => {});
     const abort = new AbortController();
-    const timedOut = (): typeof TIMED_OUT => TIMED_OUT;
-    const timeout = clock.sleep(ms, abort.signal).then(timedOut, timedOut);
+    // A rejected sleep must reject the race (the caller treats that as a failed wait), not read as a timeout.
+    const timeout = clock.sleep(ms, abort.signal).then((): typeof TIMED_OUT => TIMED_OUT);
+    timeout.catch(() => {});
     try {
       return await Promise.race([work, timeout]);
     } finally {
@@ -124,9 +125,17 @@ export function createTimerLoop({
     const done = () => {
       if (unsettled.get(id) === work) unsettled.delete(id);
       const current = slots.get(id);
-      // Another slot took the id over while this call ran, or the loop gave up on it: either way nobody awaits it.
-      if (!current || (current === slot && !(gaveUp && rereadOnSettle))) return;
-      current.dirty = true;
+      if (!current) return;
+      // Another slot took the id over while this call ran: it was waiting for this settle.
+      if (current !== slot) {
+        current.dirty = true;
+        if (started) kick();
+        return;
+      }
+      // Nobody awaits a call the loop gave up on, and the loop skipped its slot while it was blocked: always wake the
+      // loop, but re-read the deadline only when that cannot spin (a failed `next` wait already scheduled its retry).
+      if (!gaveUp) return;
+      if (rereadOnSettle) current.dirty = true;
       if (started) kick();
     };
     unsettled.set(id, work);
@@ -362,7 +371,8 @@ export function createTimerLoop({
     },
     async stop() {
       started = false;
-      unsettled.clear();
+      // `unsettled` is kept: a hung call still holds its id if the loop is started again, and a settle after stop
+      // only removes its own entry (one small entry per hung id at most).
       armed?.timer.cancel();
       armed = undefined;
       if (!running) return;

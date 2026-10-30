@@ -221,7 +221,7 @@ test('dispose then register over a hung id: the new source waits for the old cal
   }
 });
 
-test('stop clears the unsettled-call guard, and a late settle after stop does nothing', async () => {
+test('stop keeps the unsettled-call guard, and a late settle after stop does nothing', async () => {
   const { clock, loop } = setup();
   const t0 = clock.now();
   const gate = hung();
@@ -239,6 +239,50 @@ test('stop clears the unsettled-call guard, and a late settle after stop does no
   await clock.flush();
   assert.equal(reads, before, 'a settle after stop does not read or kick');
   assert.equal(clock.pending(), 0);
+});
+
+test('after stop and start, an id whose old call is still hung does not run beside it', async () => {
+  const { clock, loop } = setup();
+  const t0 = clock.now();
+  const gate = hung();
+  let fires = 0;
+  loop.register({
+    id: 'sync:a',
+    next: async () => t0 + SEC,
+    fire: () => (fires++, gate.promise),
+  });
+  loop.start();
+  await clock.advance(FIRE_TIMEOUT_MS + 2 * SEC);
+  assert.equal(fires, 1);
+  await loop.stop();
+  loop.start();
+  await clock.advance(5 * SEC);
+  assert.equal(fires, 1, 'a restarted loop does not fire the id beside its hung call');
+  gate.resolve();
+  await clock.flush();
+  await clock.advance(5 * SEC);
+  await loop.stop();
+});
+
+test('a gave-up call that settles with its slot still current wakes the loop (no stall)', async () => {
+  const { clock, loop } = setup();
+  const t0 = clock.now();
+  const gate = hung();
+  let fires = 0;
+  let nextCalls = 0;
+  loop.register({
+    id: 'sync:a',
+    // The first fire hangs past its timeout; afterwards the source reports a later deadline.
+    next: async () => (nextCalls++ === 0 ? t0 + SEC : t0 + 10 * SEC),
+    fire: () => (fires++ === 0 ? gate.promise : Promise.resolve()),
+  });
+  loop.start();
+  await clock.advance(FIRE_TIMEOUT_MS + 2 * SEC);
+  gate.resolve();
+  await clock.flush();
+  await clock.advance(11 * SEC);
+  assert.ok(fires >= 2, `the source fired again after the hung call settled (fires=${fires})`);
+  await loop.stop();
 });
 
 test('a within() that throws does not leave the slot inflight forever', async () => {
@@ -423,5 +467,38 @@ test('a clock whose sleep always throws is logged as a wait failure and does not
   assert.ok(lags.length > 0);
   assert.ok(!lags.includes(FIRE_TIMEOUT_MS), 'a failed wait is not logged as the fire timeout');
   assert.ok(!lags.includes(NEXT_TIMEOUT_MS), 'a failed wait is not logged as the next timeout');
+  await loop.stop();
+});
+
+test('a clock whose sleep REJECTS is a failed wait, not a timeout, and does not spin', async () => {
+  const base = fakeClock();
+  const clock: FakeClock = {
+    ...base,
+    sleep: () => Promise.reject(new Error('sleep rejected')),
+  };
+  const records: LogRecord[] = [];
+  const loop = createTimerLoop({
+    clock,
+    log: createLogger({ sink: { write: r => records.push(r) }, salt: 's', clock, level: 'debug' }),
+  });
+  const t0 = clock.now();
+  let reads = 0;
+  let fires = 0;
+  loop.register({
+    id: 'jobs',
+    next: async () => (reads++, t0),
+    fire: async () => void fires++,
+  });
+  loop.start();
+  await clock.advance(SEC);
+  await loop.idle();
+  assert.ok(reads < 10, `next() read ${reads} times in one second`);
+  assert.ok(fires < 10, `fire() ran ${fires} times in one second`);
+  const lags = records
+    .filter(r => r.event === 'engine.watchdog')
+    .map(r => (r.data as { lagMs: number }).lagMs);
+  assert.ok(lags.length > 0, 'the failed wait is logged');
+  assert.ok(!lags.includes(FIRE_TIMEOUT_MS), 'a rejected sleep is not logged as the fire timeout');
+  assert.ok(!lags.includes(NEXT_TIMEOUT_MS), 'a rejected sleep is not logged as the next timeout');
   await loop.stop();
 });
