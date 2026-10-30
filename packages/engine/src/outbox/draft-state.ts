@@ -189,15 +189,12 @@ export function liveOf(q: Pick<StoreReader, 'get'>, draftId: string): LiveRow | 
   );
 }
 
-/**
- * The sentence for a draft whose text another device wrote and this one never received (edit, send). The contract's
- * `Draft` has no `incomplete` field, so such a draft also reports `sync: 'failed'` (see DECISIONS.md).
- */
+/** The sentence for a draft whose text another device wrote and this one never received (edit, send). */
 export const INCOMPLETE_SENTENCE =
   "This draft was written on another device and its text isn't available here yet. Open it there to send it, or write a new one.";
 
 function syncOf(row: DraftRow, fields: DraftFields, meta: DraftMeta): Draft['sync'] {
-  if (meta.problem || meta.incomplete) return 'failed';
+  if (meta.problem) return 'failed';
   if (row.origin === 'remote') return 'synced';
   if (meta.dueAt !== undefined || meta.uploading || meta.conflict) return 'pending';
   const same =
@@ -222,6 +219,7 @@ export function toDraft(row: DraftRow, submissionId?: string): Draft {
     out.conflict = { theirsRevision: meta.conflict.theirsRevision, at: meta.conflict.at };
     if (meta.conflict.device !== undefined) out.conflict.device = meta.conflict.device;
   }
+  if (meta.incomplete) out.incomplete = true;
   if (submissionId !== undefined) out.submissionId = submissionId;
   return out;
 }

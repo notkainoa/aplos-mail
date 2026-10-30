@@ -429,10 +429,11 @@ test("another device's draft shows in Drafts, never in a thread", () =>
     const d = read(w, id);
     assert.equal(d.origin, 'remote');
     assert.equal(d.subject, 'Written on the phone');
+    assert.equal(d.incomplete, true, 'its text has not arrived yet');
     assert.equal(
       d.sync,
-      'failed',
-      'its text has not arrived (the contract has no incomplete flag)',
+      'synced',
+      'it matches the provider; the incomplete flag says the text is missing',
     );
     const threads = w.first.store.read(q =>
       q.get<{ n: number }>('SELECT count(*) AS n FROM threads'),
