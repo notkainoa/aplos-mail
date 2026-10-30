@@ -63,6 +63,8 @@ export interface ChannelLog {
   offset?: ClockOffset;
   /** Called per write, ahead of everything above: its bracket, or undefined (the check failed). */
   nextOffset?: () => ClockOffset | undefined;
+  /** Probes of the last copy's receive time (`HostWorkflowChannel.probe`); each reads the bracket as a write does. */
+  probes: number;
 }
 
 export const channelLog = (): ChannelLog => ({
@@ -77,6 +79,7 @@ export const channelLog = (): ChannelLog => ({
   attempts: 0,
   states: [],
   clockOffsetMs: 0,
+  probes: 0,
 });
 
 /**
@@ -149,6 +152,11 @@ export function remoteChannel(
         log.compacting = false;
       }
       return log.trashes ?? 0;
+    },
+    async probe(ctx) {
+      log.probes++;
+      const clockOffset = offsetOf(log, ctx);
+      return clockOffset ? { clockOffset } : {};
     },
   };
 }

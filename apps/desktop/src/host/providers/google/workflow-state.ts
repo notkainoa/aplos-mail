@@ -54,7 +54,8 @@ import { channelKey, open, seal, type ChannelKey } from './workflow-seal';
  *
  * Clock offset (the lease's clock gate): each write brackets Gmail's receive time for its copy with this device's
  * clock just before the insert went out and just after it returned (`WorkflowTransport.sentWindow`, so pacing waits
- * and sealing are outside the bracket; without it, the time around the whole `put`), and reports both ends.
+ * and sealing are outside the bracket; without it, the time around the whole `put`), and reports both ends. `probe`
+ * checks the last copy put again (one 20-unit get, no new copy), for a gate whose checks kept failing.
  */
 
 export interface WorkflowEntry {
@@ -95,6 +96,8 @@ export interface WorkflowStateChannel {
   ingest(copies: readonly WorkflowCopy[], log: Logger): Promise<WorkflowIngest>;
   write(entries: readonly WorkflowEntry[], ctx: AdapterContext): Promise<WorkflowWritten>;
   compact(ctx: AdapterContext, options?: CompactOptions): Promise<number>;
+  /** The clock offset from the last copy this process put, measured again (no new copy); empty when none or failed. */
+  probe(ctx: AdapterContext): Promise<{ clockOffset?: WorkflowWritten['clockOffset'] }>;
   view(): WorkflowRecord[];
 }
 
@@ -198,6 +201,8 @@ class StateChannel implements WorkflowStateChannel {
   private readonly waiting = new Map<string, WorkflowCopy>();
   private high: Stamp = ZERO;
   private published?: Published;
+  /** The last copy put and the bracket around it, kept even when it did not verify (`probe`). */
+  private lastPut?: { remoteId: string; window: SentWindow };
   private readonly maxRecords: number;
 
   constructor(private readonly options: WorkflowStateOptions) {
@@ -279,8 +284,16 @@ class StateChannel implements WorkflowStateChannel {
       covered,
       verified: false,
     };
-    const clockOffset = await this.clockOffset(remoteId, { from: before, to: after }, ctx);
+    this.lastPut = { remoteId, window: { from: before, to: after } };
+    const clockOffset = await this.clockOffset(remoteId, this.lastPut.window, ctx);
     return { remoteId, records, ...(clockOffset ? { clockOffset } : {}) };
+  }
+
+  async probe(ctx: AdapterContext): Promise<{ clockOffset?: WorkflowWritten['clockOffset'] }> {
+    const last = this.lastPut;
+    if (!last) return {};
+    const clockOffset = await this.clockOffset(last.remoteId, last.window, ctx);
+    return clockOffset ? { clockOffset } : {};
   }
 
   /**

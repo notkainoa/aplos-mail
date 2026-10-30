@@ -6,8 +6,8 @@ import { channelLog, channelWorld, claimOf, pump, remote, roles } from './sync-l
 
 /**
  * The lease's follow-ups after #100 (ARCH 6.5): a device whose clock checks always measure nothing settles at the
- * blocked cadence and compacts its own copies (D1), and an owner's "Use this Mac" that lifted a block but could not
- * publish its pin re-arms the block (D2).
+ * blocked cadence and compacts its own copies, probing between writes so a recovered check ends the wait (D1), and an
+ * owner's "Use this Mac" that lifted a block but could not publish a measured pin re-arms the block (D2).
  */
 
 const at = (ms: number): ClockOffset => ({ lowMs: ms, highMs: ms });
@@ -87,6 +87,62 @@ test('"Use this Mac" whose pin write fails after the owner fixed the clock re-ar
     assert.equal(a.host.status(ACCOUNT)!.lease?.pinned, true);
     await pump(a, 2 * MINUTE);
     assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'primary');
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+test('a primary whose receive-time checks fail for 12 minutes is primary again one probe after they recover', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const a = channelWorld(d, rem, log, []);
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 3 * MINUTE);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'primary');
+    // Gmail's gets fail from the next renewal on, for that write and its 1, 2, 4 and 5-minute retries (12 minutes),
+    // while its inserts work; the fifth empty write starts the slow wait.
+    let failing = 5;
+    log.nextOffset = () => (failing-- > 0 ? undefined : at(0));
+    while (failing > 0) await pump(a, 10_000);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'secondary', 'demoted on a stale reading');
+    const [writes, probes] = [log.writes, log.probes];
+    await pump(a, 5 * MINUTE + 2 * MINUTE);
+    assert.equal(
+      a.host.status(ACCOUNT)!.lease?.role,
+      'primary',
+      'primary again, not 30 minutes on',
+    );
+    assert.ok(log.probes > probes, 'probed without a new copy');
+    // The measuring dead claim, then the candidacy and the holder claim it is decided on at once.
+    assert.ok(log.writes - writes <= 3, `${log.writes - writes} copies`);
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+test('"Use this Mac" whose pin write lands but measures nothing re-arms the block', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  log.clockOffsetMs = 12 * MINUTE;
+  const a = channelWorld(d, rem, log, []);
+  const seen = roles(a);
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 3 * MINUTE);
+    // The owner fixes the clock: the measuring write reads ok, the pin's write lands but its check fails.
+    const readings = [at(0), undefined];
+    log.clockOffsetMs = 0;
+    log.nextOffset = () => (readings.length ? readings.shift() : at(0));
+    await assert.rejects(a.host.claimLease(ACCOUNT));
+    assert.equal(a.host.status(ACCOUNT)!.lease?.pinned ?? false, false);
+    assert.equal(claimOf(rem, 'device-a')?.until, 0, 'back to the dead claim');
+    await pump(a, 3 * MINUTE);
+    assert.ok(!seen.includes('primary'), `roles: ${seen.join(',')}`);
   } finally {
     await a.kill();
     d.cleanup();

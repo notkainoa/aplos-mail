@@ -82,6 +82,8 @@ export interface HostWorkflowChannel {
     ctx: AdapterContext,
   ): Promise<{ clockOffset?: ClockOffset }>;
   compact(ctx: AdapterContext, options?: { ownOnly?: boolean }): Promise<number>;
+  /** The clock offset from the last copy written, checked again without a new copy (`LeaseChannel.probe`). */
+  probe?(ctx: AdapterContext): Promise<{ clockOffset?: ClockOffset }>;
 }
 
 /** How long a quit or disconnect waits for the dead-claim write before the actor stops anyway. */
@@ -798,7 +800,23 @@ export class ActorHost implements AccountActorHost {
           this.startCompaction(account, entry, async signal => channel.compact(ctx(signal), mode));
         return written;
       },
+      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx()) } : {}),
     };
+  }
+
+  /** Whether the receive-time check measures again (ok or off) on the last copy; it never moves the gate itself. */
+  private async probeClock(
+    account: AccountId,
+    channel: HostWorkflowChannel,
+    ctx: AdapterContext,
+  ): Promise<boolean> {
+    try {
+      const probed = await channel.probe!(ctx);
+      return clockReading(probed.clockOffset) !== 'unmeasurable';
+    } catch (error) {
+      this.logOnce(account, 'lease.probe', error);
+      return false;
+    }
   }
 
   /** The gate an owner's pin may use: a block lifted on one fresh ok reading, the gate before it kept to re-arm. */
@@ -823,10 +841,11 @@ export class ActorHost implements AccountActorHost {
 
   /** The clock gate's measurement from one write; a clock off or unmeasurable is logged once per account. */
   private checkClock(account: AccountId, entry: LeaseEntry, offset: ClockOffset | undefined): void {
-    // The pin's own write landed and measured: the lift stands or falls by that reading.
+    const measured = clockReading(offset);
+    // The pin's own write landed: a lift stands or falls by its reading, and is undone when it measured nothing.
+    if (entry.ownerLift && measured === 'unmeasurable') entry.gate = entry.ownerLift;
     entry.ownerLift = undefined;
     entry.gate = measureClock(entry.gate, offset, this.deps.clock.now());
-    const measured = clockReading(offset);
     if (measured !== 'ok') this.logReason(account, 'lease.clock', measured);
   }
 

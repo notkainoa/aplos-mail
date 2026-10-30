@@ -44,7 +44,10 @@ import { contractError } from '../runtime/errors';
  * measuring write that failed or measured nothing is retried after one round, backing off 1, 2, 4, then 5 minutes
  * (`LEASE_WRITE_RETRY_MS`); once that backoff has topped out, a measuring write that landed yet measured nothing again
  * is followed by the next only after `LEASE_GATED_RENEW_MS`, a blocked device's cadence (each one is a whole copy, and
- * a device whose checks always fail would otherwise write one every 5 minutes). Such a device, like a blocked one,
+ * a device whose checks always fail would otherwise write one every 5 minutes). Meanwhile it checks the last copy's
+ * receive time again every `LEASE_WRITE_RETRY_MS` without writing (`LeaseChannel.probe`, one 20-unit get); the first
+ * probe that measures ends the slow wait at once, so a check that failed for a while (Gmail's gets failing while its
+ * inserts work) costs a primary at most one probe interval after it recovers. Such a device, like a blocked one,
  * compacts its own superseded copies after each write. "Use this Mac" is refused unless the gate reads `ok` after one
  * fresh measuring write.
  *
@@ -120,6 +123,8 @@ export interface LeaseRecord {
 export interface LeaseChannel {
   read(): Promise<readonly LeaseRecord[]>;
   write(entries: { key: string; value: LeaseClaim }[]): Promise<unknown>;
+  /** The receive-time check on the last copy written, again (no new copy): true when it measured. Never throws. */
+  probe?(): Promise<boolean>;
 }
 
 export interface Claim extends LeaseClaim {
@@ -452,6 +457,9 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   let deadWhileOff = false;
   /** Measuring writes failed in a row: their retry backs off from one round to `LEASE_WRITE_RETRY_MS`. */
   let measureFails = 0;
+  /** The pending retry is the slow one (`LEASE_GATED_RENEW_MS`): `probe` may end it early, from `probeAt` on. */
+  let slow = false;
+  let probeAt = 0;
   let queue: Promise<unknown> = Promise.resolve();
 
   /** One round at a time: an owner's `claim` never interleaves with a timer `tick`. */
@@ -501,7 +509,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
    */
   const retryDelay = (landed: boolean): number => {
     if (!remeasure()) return LEASE_WRITE_RETRY_MS;
-    const slow = landed && measureFails >= LEASE_MEASURE_BACKOFF_STEPS;
+    slow = landed && measureFails >= LEASE_MEASURE_BACKOFF_STEPS;
     const delay = slow
       ? LEASE_GATED_RENEW_MS
       : Math.min(LEASE_ROUND_MS * 2 ** measureFails, LEASE_WRITE_RETRY_MS);
@@ -530,18 +538,30 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       published = claim;
       publishedAt = now;
       unsure = false;
+      slow = false;
       if (remeasure()) {
         retryAt = now + retryDelay(true);
       } else {
         retryAt = 0;
         measureFails = 0;
       }
+      probeAt = now + LEASE_WRITE_RETRY_MS;
       return true;
     } catch {
       unsure = true;
+      slow = false;
       retryAt = now + retryDelay(false);
       return false;
     }
+  };
+
+  /** During the slow wait, a probe every `LEASE_WRITE_RETRY_MS`; one that measures makes the retry due now. */
+  const probeSlowWait = async (now: number): Promise<void> => {
+    if (!slow || now >= retryAt || now < probeAt || !channel.probe) return;
+    probeAt = now + LEASE_WRITE_RETRY_MS;
+    if (!(await channel.probe())) return;
+    slow = false;
+    retryAt = now;
   };
 
   const read = async (): Promise<LeaseRecord[] | undefined> => {
@@ -625,6 +645,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     immediate = false;
     nextAt = now + LEASE_ROUND_MS;
     expire(now);
+    await probeSlowWait(now);
     const records = await read();
     if (!records) return { read: false };
     if (gated() || unproven()) return gatedRound(records, now, intent, measureDead(measure, now));

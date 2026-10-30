@@ -52,6 +52,7 @@ test('a lone Mac whose clock checks always fail writes about 50 copies an idle d
     assert.ok(label(), 'the channel was written');
     assert.ok(!roles.includes('primary'), 'never primary on an unproven clock');
     assert.ok(inserts() <= 52, `${inserts()} copies written in an idle day`);
+    assert.ok(inserts() >= 40, `${inserts()}: it keeps measuring`);
     assert.ok(most <= 3, `${most} copies under the label at most`);
   } finally {
     await settle(mail.clock, engine.kill());
@@ -143,4 +144,16 @@ test('own digests: bounded in records too, the newest kept; an equal stamp with 
   assert.ok(digestCovers(copy(5), copy(5)), 'the same records cover');
   assert.ok(!digestCovers(copy(5, 1), copy(5)), 'an equal stamp with another value does not');
   assert.ok(!digestCovers(copy(4), copy(5)), 'older stamps do not');
+});
+
+test("probe re-reads the last copy's receive time without writing a copy", async () => {
+  const r = await rig();
+  const a = device(r, 'device-a', { skewMs: 6 * HOUR });
+  assert.deepEqual(await a.channel.probe(a.ctx()), {}, 'nothing put yet');
+  await a.channel.write([{ key: 'lease:device-a', value: { v: 1 } }], a.ctx());
+  const since = a.governor.calls.length;
+  const probed = (await a.channel.probe(a.ctx())).clockOffset!;
+  assert.ok(probed.lowMs > 5 * HOUR, `measured ${probed.lowMs}`);
+  assert.deepEqual(a.methods(since), ['gmail.messages.get']);
+  assert.equal(a.units(since), 20);
 });
