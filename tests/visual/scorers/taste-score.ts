@@ -6,7 +6,7 @@ import { stripAnsi } from './common';
 // The pure part of the taste judge (taste.score.ts): rubric loading, prompt building, answer parsing,
 // the maths and the cache. The judge itself is injected, so tests need no network and no claude.
 
-export const PROMPT_VERSION = 'taste-2';
+export const PROMPT_VERSION = 'taste-3';
 export const DEFAULT_MODEL = 'claude-sonnet-5-5';
 
 /** Asks the model one question and returns its raw text answer. Throws when the call itself fails. */
@@ -213,11 +213,12 @@ export function stateScore(
   return 10 * mean(ids.map(id => criteria[id] ?? NEUTRAL));
 }
 
-/** The first run's findings, then new ones from later runs, dropping repeats. */
+/** The first run's findings, then new ones from later runs, dropping repeats; at most MAX_FINDINGS overall. */
 export function mergeFindings(answers: readonly Answer[]): string[] {
   const seen = new Set<string>();
   const merged: string[] = [];
   for (const finding of answers.flatMap(answer => answer.findings)) {
+    if (merged.length >= MAX_FINDINGS) break;
     const key = finding.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -268,7 +269,9 @@ export function readCache(dir: string, key: string): Answer | null {
   if (!existsSync(file)) return null;
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
-    return isAnswer(parsed) ? parsed : null;
+    return isAnswer(parsed)
+      ? { criteria: parsed.criteria, findings: cleanFindings(parsed.findings) }
+      : null;
   } catch {
     return null;
   }
