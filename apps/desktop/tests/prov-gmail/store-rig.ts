@@ -5,8 +5,7 @@
  * sweep, placement, rollup and replay code. The read views (`rows`, `states`, `memory`, `drafts`) are rebuilt from SQL
  * after each commit; `commits` and `swept` are the rig's own record of what was committed.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { removeScratchDir, scratchDir } from './scratch';
 import { join } from 'node:path';
 import type {
   AdapterAccount,
@@ -137,7 +136,7 @@ export class RigStore {
     private readonly account: AdapterAccount,
     now: () => number,
   ) {
-    this.dir = mkdtempSync(join(tmpdir(), 'aplos-gmail-rig-'));
+    this.dir = scratchDir('aplos-gmail-rig-');
     this.db = openStore(openSqlite(join(this.dir, 'mail.db')), {
       now,
       extensions: [rigExtension(this.ingested)],
@@ -165,7 +164,7 @@ export class RigStore {
 
   close(): void {
     this.db.close();
-    rmSync(this.dir, { recursive: true, force: true });
+    removeScratchDir(this.dir);
   }
 
   /** The store's seq: the generation a round starting now would carry (the actor's fence). */
