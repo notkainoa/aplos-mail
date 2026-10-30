@@ -583,6 +583,39 @@ test('body: take theirs gets the full body', () =>
     assert.equal(out.draft.html, '<p>Their whole body</p>');
   }));
 
+test('gap 3: a provider that ignores the expected id still sees the engine forget (not delete) a copy it adopted from a conflict', () =>
+  world(async w => {
+    w.remoteDrafts.state.ignoreExpected = true;
+    const { draft: d } = await retriedCreate(w, { result: 'conflictExisting' });
+    service(w).destroy(next(), d.id);
+    await w.settle();
+    await wait(w, 2 * SEC);
+    assert.deepEqual(
+      w.remoteDrafts.removeAttempts,
+      [],
+      'the rules that need no provider help still hold',
+    );
+    assert.equal(w.remoteDrafts.remote.size, 1);
+    assert.equal(count(w), 0);
+  }));
+
+test('gap 3: a provider that ignores the expected id deletes an edit history has not reported yet (the limit of an old provider)', () =>
+  world(async w => {
+    w.remoteDrafts.state.ignoreExpected = true;
+    const s = await synced(w);
+    w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    service(w).destroy(next(), s.draft.id);
+    await w.settle();
+    assert.deepEqual(
+      w.remoteDrafts.removeExpected,
+      [s.messageId],
+      'the engine still passed the id',
+    );
+    assert.deepEqual(w.remoteDrafts.removeGuarded, [], 'but this provider cannot refuse on it');
+    assert.equal(w.remoteDrafts.remote.has(s.remoteDraftId), false);
+    assert.equal(count(w), 0, 'the hidden row finished');
+  }));
+
 // ---------------------------------------------------------------- supersedes
 
 /** The fact of our own upload's copy under a new message id: same content, same Message-ID. */
@@ -751,4 +784,48 @@ test('supersedes: our Message-ID on a fact that does not replace our base moves 
     g.open();
     await wait(w, 1);
     assert.equal(read(w, s.draft.id).conflict, undefined);
+  }));
+
+test('supersedes: an upload explains ONE move of the base; a phone edit that keeps the Message-ID afterwards is not ours', () =>
+  world(async w => {
+    const s = await synced(w);
+    // The reply to our update is lost: `uploading` stays set and the retry waits.
+    w.remoteDrafts.script.push({ result: 'lost' });
+    edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const attempt = w.remoteDrafts.saves.at(-1)!;
+    assert.equal(attempt.baseRemoteMessageId, s.messageId);
+    // First hop: our update landed as C, under the attempt's Message-ID. That is the move the attempt explains.
+    fact(w, s.remoteDraftId, 'msg-c', {
+      internetId: attempt.internetId,
+      supersedes: [s.messageId],
+      subject: 'Second',
+      html: '<p>Lunch at noon?</p>',
+    });
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg-c', 'the first hop moved the base');
+    // Second hop: the phone edits C into D and keeps the Message-ID. The attempt has used its move.
+    fact(w, s.remoteDraftId, 'msg-d', {
+      internetId: attempt.internetId,
+      supersedes: ['msg-c'],
+      subject: 'Phone edit',
+      html: '<p>Phone body</p>',
+    });
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      'msg-c',
+      "the phone's edit did not move the base",
+    );
+    // The retry therefore goes out against C, not D: a provider holding D answers with a conflict, not an overwrite.
+    await wait(w, 5 * 60 * SEC);
+    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, 'msg-c');
+    assert.notEqual(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, 'msg-d');
+  }));
+
+test('body: an oversize text is dropped before it is escaped or wrapped, and the draft stays snippet-only', () =>
+  world(async w => {
+    fact(w, 'big', 'msg-big', { text: '&'.repeat(CAP + 1), internetId: '<big@phone.example>' });
+    assert.equal(syncOf(w, `${ACCOUNT}:big`).incomplete, true);
+    // A text at the limit that grows past it when escaped is also incomplete (the stored body is what counts).
+    fact(w, 'big2', 'msg-big2', { text: '&'.repeat(CAP), internetId: '<big2@phone.example>' });
+    assert.equal(syncOf(w, `${ACCOUNT}:big2`).incomplete, true);
   }));

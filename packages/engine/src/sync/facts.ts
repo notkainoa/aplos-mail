@@ -182,6 +182,9 @@ function placementWrite(
   };
 }
 
+/** The draft body limit of the engine (`REMOTE_BODY_MAX` in the outbox); a remote body over it is not delivered. */
+const REMOTE_BODY_LIMIT = 1_000_000;
+
 function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): StoreWrite {
   const write: StoreWrite = {
     kind: 'remoteDraft',
@@ -193,8 +196,9 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
   if (d.remoteThreadId !== undefined) write.remoteThreadId = d.remoteThreadId;
   if (d.internetId !== undefined) write.internetId = d.internetId;
   if (d.removed) write.removed = true;
-  if (d.html !== undefined) write.html = d.html;
-  if (d.text !== undefined) write.text = d.text;
+  // A body over the draft limit is never stored (the engine leaves such a draft snippet-only), so it is not carried.
+  if (d.html !== undefined && d.html.length <= REMOTE_BODY_LIMIT) write.html = d.html;
+  if (d.text !== undefined && d.text.length <= REMOTE_BODY_LIMIT) write.text = d.text;
   if (d.supersedes?.length) write.supersedes = d.supersedes;
   if (d.message) {
     const {

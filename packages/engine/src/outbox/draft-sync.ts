@@ -360,7 +360,7 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
     ctx,
     id,
     {
-      uploading: { internetId, revision: row.revision },
+      uploading: { internetId, revision: row.revision, base: row.remote_message_id },
       ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
     },
     { ifRevision: row.revision },

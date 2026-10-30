@@ -50,8 +50,12 @@ export interface DraftMeta {
   fingerprint?: string;
   /** When the next upload is due (5 s after the last change, at once on close, or a retry). Absent: nothing to upload. */
   dueAt?: number;
-  /** An upload of this revision under this per-revision Message-ID started and has no result yet. */
-  uploading?: { internetId: string; revision: number };
+  /**
+   * An upload of this revision under this per-revision Message-ID started and has no result yet. `base` is the remote
+   * message id the attempt was made against: the one base move the attempt may explain (a row written before this
+   * field has none, and so explains no move).
+   */
+  uploading?: { internetId: string; revision: number; base?: string | null };
   /** Message-IDs and remote message ids this device uploaded: their echo in history is not a remote edit. */
   wrote?: string[];
   problem?: { reasonCode: string; message: string; at: number };
