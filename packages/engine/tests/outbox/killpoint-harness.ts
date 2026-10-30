@@ -492,7 +492,8 @@ function runChild(point: KillStep, run: RunSpec, children: Set<ChildProcess>): P
     child.stdout.on('data', chunk => (stdout += String(chunk)));
     child.stderr.on('data', chunk => (stderr += String(chunk)));
     child.on('error', reject);
-    child.on('exit', (code, signal) => {
+    // 'close', not 'exit': 'exit' can fire before the last of stdout was read (an empty list under load).
+    child.on('close', (code, signal) => {
       children.delete(child);
       resolve({ code, signal, stdout, stderr });
     });
