@@ -430,3 +430,48 @@ test('a send paused before it left was not tried: Send now still re-dates it', (
     assert.notEqual(bytesOf(storedMime(w, s.id)), original);
     assert.equal(header2(storedMime(w, s.id), 'Message-ID'), s.internetId);
   }));
+
+test('a tried row that is then only paused keeps its attempt marker: Reschedule does not re-date it', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: true });
+    w.server.hideDeliveriesUntil(Number.MAX_SAFE_INTEGER);
+    const s = w.send(w.first, 'd1');
+    const original = bytesOf(storedMime(w, s.id));
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(MIN);
+    await w.settle();
+    assert.equal(w.get(s.id).problem?.reasonCode, 'send.uncertain');
+
+    await w.clock.advance(7 * MIN);
+    w.server.script.push({ result: 'paused', until: w.clock.now() + 20 * MIN });
+    w.act(w.first, { type: 'sendAnyway', submissionId: s.id });
+    await w.settle();
+    await w.clock.advance(1 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'queued', 'paused, not sent');
+    assert.equal(w.server.payloads.length, 1, 'the paused send did not leave');
+
+    w.act(w.first, { type: 'reschedule', submissionId: s.id, notBefore: w.clock.now() + 30 * MIN });
+    assert.equal(
+      bytesOf(storedMime(w, s.id)),
+      original,
+      'Reschedule did not re-date a row that was tried',
+    );
+    assert.equal(header2(storedMime(w, s.id), 'Message-ID'), s.internetId);
+  }));
+
+test('a paused send with no earlier attempt clears the marker: Reschedule still re-dates it', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'paused', until: T0 + 20 * SEC });
+    const s = w.send(w.first, 'd1');
+    const original = bytesOf(storedMime(w, s.id));
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'queued');
+    w.act(w.first, { type: 'reschedule', submissionId: s.id, notBefore: w.clock.now() + 30 * MIN });
+    assert.notEqual(bytesOf(storedMime(w, s.id)), original);
+    assert.equal(header2(storedMime(w, s.id), 'Message-ID'), s.internetId);
+  }));

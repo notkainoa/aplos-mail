@@ -276,7 +276,8 @@ function settlePaused(ctx: OutboxCtx, a: Attempt, error: PausedError) {
         from: ['sending'],
         to: a.waiting,
         ifAttemptAt: a.attemptAt,
-        set: { attemptAt: null, attempted: false },
+        // Back to the marker the row had before this attempt: an earlier attempt's bytes may be out there.
+        set: { attemptAt: a.row.attempt_at, attempted: extraOf(a.row).attempted === true },
       },
       { was: 'sending', why: 'paused' },
     ),
