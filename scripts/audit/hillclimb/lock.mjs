@@ -1,8 +1,9 @@
 // Exclusive "check slot" for gates and scorers. Gates and scorers run full suites that must
 // never overlap another suite on this machine (timings flake and eslint caches collide), so
-// every gate/scorer runs inside withCheckSlot. The lock is a directory created with fs.mkdir,
-// which is atomic on every filesystem we run on; a `pid` file and a random `token` file mark
-// the holder. Attempt agents do NOT hold the slot — only the scoring/gating phases do.
+// every gate/scorer runs inside withCheckSlot. The lock is a directory published atomically:
+// `pid` and a random `token` file are fully written under a staging name and rename(2)'d
+// into place, so a reader either sees no lock or a COMPLETE one — never a dir whose missing
+// files would read as a stale lock. Attempt agents do NOT hold the slot.
 import { randomBytes } from 'node:crypto';
 import {
   existsSync,
@@ -42,11 +43,29 @@ export function releaseHeldSlots() {
 // A lock dir is only ever removed when BOTH its pid file still names this process and its
 // token file still carries our random owner token: a peer that stole our (stale) dir and
 // made a fresh one matches neither, and a pid alone could be recycled onto a stranger.
+// The removal itself is also atomic: rename the verified dir aside, re-read it inside the
+// graveyard name (same discipline as takeStaleLock — the check is not atomic with the
+// rename), and only then delete. Deleting in place would expose a half-removed lock to
+// readers and could shred a lock swapped under us.
 function releaseIfOurs(dir, token) {
   try {
     const cur = readLockFiles(dir);
-    if (cur.pid === process.pid && cur.token === token) {
-      rmSync(dir, { recursive: true, force: true });
+    if (cur.pid !== process.pid || cur.token !== token) return;
+    const aside = `${dir}.rm-${process.pid}-${randomBytes(4).toString('hex')}`;
+    try {
+      renameSync(dir, aside);
+    } catch {
+      return; // already gone or moved by a taker
+    }
+    const moved = readLockFiles(aside);
+    if (moved.pid === process.pid && moved.token === token) {
+      rmSync(aside, { recursive: true, force: true });
+    } else {
+      try {
+        renameSync(aside, dir);
+      } catch {
+        // A fresh lock landed at `dir` already: leave the stray aside rather than clobber.
+      }
     }
   } catch {
     // Unreadable files — not ours to remove.
@@ -150,9 +169,11 @@ export function takeStaleLock(dir, expected = null) {
  * Runs `fn` holding the exclusive slot. Waits with `pollMs` polling, gives up after
  * `timeoutMs`, and takes over a lock whose holder pid is dead or that is older than
  * `staleMs` — by renaming it aside and re-verifying its identity, never by deleting in
- * place or trusting a check that predates the rename. On acquiring, a per-owner random
- * `token` file is written before `pid`, and release only happens while both still match,
- * so a stolen or recycled dir can never be removed from under its real owner.
+ * place or trusting a check that predates the rename. Acquiring writes `pid` and a
+ * per-owner random `token` under a staging dir and rename(2)s it over `dir`, so a lock
+ * is either absent or complete — rename onto an existing non-empty dir fails, which is
+ * exactly the contention signal the loop needs. Release only happens while both files
+ * still match, so a stolen or recycled dir can never be removed from under its owner.
  */
 export async function withCheckSlot(fn, options = {}) {
   const dir = options.dir ?? lockDir();
@@ -161,12 +182,22 @@ export async function withCheckSlot(fn, options = {}) {
   const staleMs = options.staleMs ?? defaultStaleMs;
   const now = options.now ?? Date.now;
   const deadline = now() + timeoutMs;
+  const token = `${process.pid}-${randomBytes(8).toString('hex')}`;
   for (;;) {
+    // Stage the complete lock under a scratch name, then publish with one rename. A
+    // reader can never observe the lock mid-write; a crashed stager only leaks a
+    // `<dir>.new-*` sibling, never blocks the slot itself.
+    const stage = `${dir}.new-${process.pid}-${randomBytes(4).toString('hex')}`;
     try {
-      mkdirSync(dir);
+      mkdirSync(stage);
+      writeFileSync(join(stage, 'token'), token);
+      writeFileSync(join(stage, 'pid'), String(process.pid));
+      renameSync(stage, dir); // fails EEXIST/ENOTEMPTY when `dir` is a live lock
       break;
     } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
+      rmSync(stage, { recursive: true, force: true });
+      // ENOTDIR: a stray FILE sits at the lock path — judge it like any stale dir.
+      if (!['EEXIST', 'ENOTEMPTY', 'ENOTDIR'].includes(error.code)) throw error;
       const verdict = staleness(dir, staleMs, now);
       if (verdict.stale) {
         takeStaleLock(dir, verdict.expected);
@@ -178,12 +209,7 @@ export async function withCheckSlot(fn, options = {}) {
       await sleep(pollMs);
     }
   }
-  const token = `${process.pid}-${randomBytes(8).toString('hex')}`;
   try {
-    // Token first: a dir carrying only a fresh token is still provably "someone's new
-    // lock" to a mid-flight stale-taker, even in the gap before pid lands.
-    writeFileSync(join(dir, 'token'), token);
-    writeFileSync(join(dir, 'pid'), String(process.pid));
     held.set(dir, token);
     return await fn();
   } finally {

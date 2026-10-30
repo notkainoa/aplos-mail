@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -139,6 +140,23 @@ describe('withCheckSlot', () => {
     assert.equal(await withCheckSlot(() => 'ok', { ...fast, dir: d }), 'ok');
   });
 
+  it('takes over a stray FILE at the lock path once it is stale', async () => {
+    const d = dir();
+    writeFileSync(d, 'not a dir');
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(d, old, old);
+    const ran = await withCheckSlot(() => 'cleared', { ...fast, dir: d, staleMs: 60_000 });
+    assert.equal(ran, 'cleared');
+    assert.equal(holderPid(d), null);
+  });
+
+  it('leaves no staging or graveyard siblings behind', async () => {
+    const d = dir();
+    await withCheckSlot(() => 'done', { ...fast, dir: d });
+    const leftovers = readdirSync(tmp).filter(name => name.startsWith(`${d.split('/').pop()}.`));
+    assert.deepEqual(leftovers, []);
+  });
+
   it('uses the conventional lock name under tmpdir', () => {
     assert.equal(lockDir('/x'), join('/x', 'aplos-check-slot.lock'));
   });
@@ -271,6 +289,65 @@ describe('stale-takeover TOCTOU (real processes)', () => {
       }
       assert.equal(depth, 0, `slot ${i} left unbalanced: ${kinds.join(', ')}`);
     }
+  });
+});
+
+describe('atomic publish (real processes)', () => {
+  it('a reader never observes a PERSISTENT lock dir without readable pid and token', async () => {
+    // Two children hammer the slot while a third watches. An incomplete listing that
+    // still stands after a 2 ms re-check is a real mid-publish or half-deleted lock —
+    // the stage+rename publish and rename-aside release can never produce one. A
+    // transiently empty listing of a just-renamed dir is an APFS enumeration artifact
+    // (proven: it resolves on the immediate next read), so instant observations are
+    // re-verified before they count.
+    const d = dir();
+    const violations = join(tmp, `partial-${counter}.log`);
+    const stop = join(tmp, `partial-${counter}.stop`);
+    const hammer = () => `
+      const { withCheckSlot } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (let i = 0; i < 60; i++) {
+        await withCheckSlot(async () => { await sleep(2); },
+          { dir: ${JSON.stringify(d)}, pollMs: 1, timeoutMs: 30000, staleMs: 60000 });
+        await sleep(Math.random() * 3);
+      }
+    `;
+    const watch = `
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const d = ${JSON.stringify(d)};
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const seen = new Set();
+      const list = () => {
+        try { return fs.readdirSync(d).sort().join(','); } catch { return null; }
+      };
+      for (let i = 0; i < 200000 && !fs.existsSync(${JSON.stringify(stop)}); i++) {
+        const names = list();
+        if (names === null || names === 'pid,token') continue;
+        const until = Date.now() + 2;
+        let last = names;
+        while (Date.now() < until) {
+          const again = list();
+          if (again === null || again === 'pid,token') { last = again; break; }
+          last = again;
+        }
+        if (last !== null && last !== 'pid,token') seen.add(JSON.stringify(last));
+      }
+      fs.writeFileSync(${JSON.stringify(violations)}, [...seen].join('\\n'));
+    `;
+    await Promise.all([
+      Promise.all([spawnScript(hammer()), spawnScript(hammer())]).finally(() =>
+        writeFileSync(stop, '1'),
+      ),
+      spawnScript(watch, 'watcher'),
+    ]);
+    assert.equal(
+      readFileSync(violations, 'utf8').trim(),
+      '',
+      'reader saw a persistently incomplete lock dir',
+    );
+    assert.equal(existsSync(d), false, 'slot released');
   });
 });
 
