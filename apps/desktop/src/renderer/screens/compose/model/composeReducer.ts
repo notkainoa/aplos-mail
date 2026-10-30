@@ -1,0 +1,224 @@
+/**
+ * The composer reducer (DESIGN 7.6): edits, autosave, Esc, discard, the dim suggestion and dictation here; the send
+ * half in `sendReducer.ts`. Pure: `(state, event) → {state, effects}`. Three promises it keeps, which the fuzz checks:
+ * a draft is never discarded without the confirmation, the text the engine confirmed is never thrown away, and one
+ * press makes at most one `Submission/set send`.
+ */
+import { failSave, finishSave, isDirty, noteEdit, retryNow, saveIsDue } from './autosave';
+import type { ComposeEvent, ComposeState, Step } from './composeState';
+import { fieldsFromDraft, isBlank, type ComposeFields } from './fields';
+import {
+  onAccepted,
+  onAction,
+  onRefused,
+  onSend,
+  onSubmission,
+  saveStep,
+  submitStep,
+} from './sendReducer';
+import { NO_SEND } from './sendState';
+
+type Event<T extends ComposeEvent['type']> = Extract<ComposeEvent, { type: T }>;
+
+const still = (state: ComposeState): Step => ({ state, effects: [] });
+
+function saveIfDue(state: ComposeState, now: number): Step {
+  if (state.discarding || !saveIsDue(state.save, now)) return still(state);
+  return saveStep(state);
+}
+
+function touches(patch: Partial<ComposeFields>, keys: readonly (keyof ComposeFields)[]): boolean {
+  return keys.some(key => patch[key] !== undefined);
+}
+
+function onEdit(state: ComposeState, event: Event<'edit'>): Step {
+  if (!state.open || state.discarding) return still(state);
+  const { patch } = event;
+  const next: ComposeState = {
+    ...state,
+    fields: { ...state.fields, ...patch },
+    save: noteEdit(state.save, event.now),
+    suggestion: patch.body !== undefined ? null : state.suggestion,
+    blocked: touches(patch, ['to', 'cc', 'bcc', 'body', 'subject']) ? null : state.blocked,
+  };
+  return saveIfDue(next, event.now);
+}
+
+function onSaved(state: ComposeState, event: Event<'saved'>): Step {
+  const next: ComposeState = { ...state, save: finishSave(state.save, event.seq, event.draft) };
+  if (state.discarding)
+    return { state: next, effects: [{ type: 'destroy', draftId: event.draft.id }] };
+  if (state.send.kind !== 'pending') return still(next);
+  return isDirty(next.save) ? saveStep(next) : submitStep(next);
+}
+
+function onSaveFailed(state: ComposeState, event: Event<'saveFailed'>): Step {
+  const next: ComposeState = { ...state, save: failSave(state.save, event.now) };
+  if (state.discarding) {
+    const id = next.save.draftId;
+    return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+  }
+  // The edits never reached the engine: the send cannot name them, so the composer comes back with "Couldn't save".
+  if (state.send.kind === 'pending')
+    return still({ ...next, send: NO_SEND, open: true, ended: null });
+  return still(next);
+}
+
+function adoptDraft(
+  state: ComposeState,
+  draft: NonNullable<Event<'observeDraft'>['draft']>,
+): ComposeState {
+  const save = state.save;
+  if (draft.revision === save.revision)
+    return { ...state, save: { ...save, rowRev: Math.max(save.rowRev ?? 0, draft.rev) } };
+  const quiet = !isDirty(save) && save.flightSeq === null && draft.revision > (save.revision ?? 0);
+  if (!quiet) return state;
+  // Another window saved a newer revision while this one had nothing unsaved: show it.
+  return {
+    ...state,
+    fields: fieldsFromDraft(draft),
+    save: { ...save, revision: draft.revision, rowRev: draft.rev },
+  };
+}
+
+function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
+  const draft = event.draft;
+  if (!draft || draft.id !== state.save.draftId) return still(state);
+  const next = adoptDraft(state, draft);
+  const untracked =
+    next.send.kind === 'none' || next.send.kind === 'pending' || next.send.kind === 'refused';
+  if (draft.submissionId && untracked && !next.discarding) {
+    // A send of this draft exists (this composer's answer is late, another composer sent it, or the app reloaded).
+    return still({
+      ...next,
+      open: false,
+      send: { kind: 'tracking', submissionId: draft.submissionId, row: null },
+    });
+  }
+  return still(next);
+}
+
+function onEscape(state: ComposeState): Step {
+  if (state.suggestion) return still({ ...state, suggestion: null });
+  if (state.confirm) return still({ ...state, confirm: null });
+  if (!state.open) return still(state);
+  // Closing now would drop text the engine never took: ask, the same as Discard (no prompt once saved).
+  if (state.save.failures > 0 && isDirty(state.save))
+    return still({ ...state, confirm: 'discard' });
+  const closed: ComposeState = { ...state, open: false, ended: 'closed' };
+  return isDirty(closed.save) && closed.save.flightSeq === null ? saveStep(closed) : still(closed);
+}
+
+function onAskDiscard(state: ComposeState): Step {
+  if (!state.open) return still(state);
+  const nothing =
+    state.save.draftId === null && state.save.flightSeq === null && isBlank(state.fields);
+  if (nothing) return still({ ...state, open: false, ended: 'closed' });
+  return still({ ...state, confirm: 'discard' });
+}
+
+function discardedStep(state: ComposeState): Step {
+  return { state, effects: [{ type: 'notify', notice: 'discarded' }] };
+}
+
+function onConfirmDiscard(state: ComposeState): Step {
+  if (state.confirm !== 'discard') return still(state);
+  const next: ComposeState = {
+    ...state,
+    confirm: null,
+    open: false,
+    ended: 'discarded',
+    discarding: true,
+    suggestion: null,
+  };
+  // A save in flight may be creating the draft: the destroy follows its answer (`onSaved`).
+  if (state.save.flightSeq !== null) return still(next);
+  const id = state.save.draftId;
+  return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+}
+
+function onDiscardFailed(state: ComposeState): Step {
+  const back: ComposeState = { ...state, discarding: false, ended: null, open: true };
+  return { state: back, effects: [{ type: 'notify', notice: 'discardFailed' }] };
+}
+
+function onSuggest(state: ComposeState, event: Event<'suggest'>): Step {
+  if (!state.open || state.fields.body.trim() !== '' || event.suggestion.text.trim() === '')
+    return still(state);
+  return still({ ...state, suggestion: event.suggestion });
+}
+
+function appendText(body: string, text: string): string {
+  if (body === '') return text;
+  return /\s$/.test(body) ? `${body}${text}` : `${body} ${text}`;
+}
+
+function onKeepSuggestion(state: ComposeState, event: Event<'keepSuggestion'>): Step {
+  if (!state.suggestion) return still(state);
+  const body = appendText(state.fields.body, state.suggestion.text);
+  return onEdit({ ...state, suggestion: null }, { type: 'edit', patch: { body }, now: event.now });
+}
+
+function onDictated(state: ComposeState, event: Event<'dictated'>): Step {
+  if (event.text.trim() === '') return still(state);
+  const body = appendText(state.fields.body, event.text.trim());
+  return onEdit(state, { type: 'edit', patch: { body }, now: event.now });
+}
+
+function onReopen(state: ComposeState): Step {
+  if (state.ended === 'discarded' || state.ended === 'sent') return still(state);
+  if (state.send.kind === 'pending' || state.send.kind === 'tracking') return still(state);
+  return still({ ...state, open: true, ended: null, send: NO_SEND });
+}
+
+/** One step of the composer. */
+export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
+  switch (event.type) {
+    case 'edit':
+      return onEdit(state, event);
+    case 'tick':
+      return saveIfDue(state, event.now);
+    case 'flush':
+      return saveIfDue(state, Number.POSITIVE_INFINITY);
+    case 'saved':
+      return onSaved(state, event);
+    case 'saveFailed':
+      return onSaveFailed(state, event);
+    case 'retrySave':
+      return saveIfDue({ ...state, save: retryNow(state.save, event.now) }, event.now);
+    case 'observeDraft':
+      return onDraft(state, event);
+    case 'observeSubmission':
+      return onSubmission(state, event);
+    case 'send':
+      return onSend(state, event);
+    case 'sendAccepted':
+      return onAccepted(state, event);
+    case 'sendRefused':
+      return onRefused(state, event);
+    case 'action':
+      return onAction(state, event);
+    case 'escape':
+      return onEscape(state);
+    case 'askDiscard':
+      return onAskDiscard(state);
+    case 'confirmDiscard':
+      return onConfirmDiscard(state);
+    case 'cancelDiscard':
+      return still({ ...state, confirm: null });
+    case 'discarded':
+      return discardedStep(state);
+    case 'discardFailed':
+      return onDiscardFailed(state);
+    case 'suggest':
+      return onSuggest(state, event);
+    case 'keepSuggestion':
+      return onKeepSuggestion(state, event);
+    case 'dismissSuggestion':
+      return still({ ...state, suggestion: null });
+    case 'dictated':
+      return onDictated(state, event);
+    case 'reopen':
+      return onReopen(state);
+  }
+}

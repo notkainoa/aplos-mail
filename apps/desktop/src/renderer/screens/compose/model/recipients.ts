@@ -1,0 +1,84 @@
+/**
+ * Recipients with plain rules (DESIGN 7.6 "Blocked send outlines the field and explains in one sentence"): what a typed
+ * entry becomes, whether an address is plausible, why a send is blocked, and the short phrase the undo tray names
+ * ("Sending to Jordan and Mina in 8 s"). No network lookups; the engine has the last word on `Submission/set`.
+ */
+import type { BlockedSend, Recipient } from '../../../ui/props';
+import type { ComposeFields } from './fields';
+
+/** The longest address the contract takes. */
+const MAX_ADDRESS = 320;
+
+/** One local part, one `@`, a dotted domain, no spaces or angle brackets. Deliberately plain, not RFC 5322. */
+const ADDRESS = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;".]{2,}$/;
+
+/** True for an address the composer will send to. */
+export function isValidAddress(address: string): boolean {
+  return address.length <= MAX_ADDRESS && ADDRESS.test(address);
+}
+
+/** "Jordan Lee <jordan@example.com>", "<jordan@example.com>" or a bare address, trimmed; null for empty text. */
+export function parseRecipient(text: string): Recipient | null {
+  const trimmed = text
+    .trim()
+    .replace(/[,;]+$/, '')
+    .trim();
+  if (trimmed === '') return null;
+  const named = /^(.*?)\s*<([^<>]+)>$/.exec(trimmed);
+  const address = (named ? named[2]! : trimmed).trim();
+  const name = named ? named[1]!.replace(/^"|"$/g, '').trim() : '';
+  const id = address.toLowerCase();
+  return name ? { id, name, address } : { id, address };
+}
+
+/** Adds typed text as one or more recipients (comma or semicolon separated), skipping ones already there. */
+export function addRecipients(current: readonly Recipient[], text: string): readonly Recipient[] {
+  const seen = new Set(current.map(r => r.id));
+  const added: Recipient[] = [];
+  for (const part of text.split(/[,;\n]/)) {
+    const recipient = parseRecipient(part);
+    if (!recipient || seen.has(recipient.id)) continue;
+    seen.add(recipient.id);
+    added.push(recipient);
+  }
+  return added.length === 0 ? current : [...current, ...added];
+}
+
+/** Ids of recipients whose address fails the plain rules; the field outlines them. */
+export function invalidIds(recipients: readonly Recipient[]): readonly string[] {
+  return recipients.filter(r => !isValidAddress(r.address)).map(r => r.id);
+}
+
+export const BLOCKED_COPY = {
+  noRecipient: 'Add at least one recipient.',
+  badAddress: (address: string) => `Check the address ${address}. It doesn’t look complete.`,
+} as const;
+
+/** Why this draft cannot be sent yet, as one sentence on one field; null when it can. */
+export function blockedSend(fields: ComposeFields): BlockedSend | null {
+  const all = [...fields.to, ...fields.cc, ...fields.bcc];
+  if (all.length === 0) return { field: 'to', message: BLOCKED_COPY.noRecipient };
+  const bad = all.find(r => !isValidAddress(r.address));
+  if (bad) return { field: 'to', message: BLOCKED_COPY.badAddress(bad.address) };
+  return null;
+}
+
+function firstName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.includes('@')) return trimmed;
+  return trimmed.split(/\s+/)[0] ?? trimmed;
+}
+
+/** The recipient phrase for the undo tray and the send-failed line: "Jordan", "Jordan and Mina", "Jordan and 2 others". */
+export function recipientPhrase(names: readonly string[]): string {
+  const firsts = names.map(firstName).filter(n => n !== '');
+  if (firsts.length === 0) return 'No recipient';
+  if (firsts.length === 1) return firsts[0]!;
+  if (firsts.length === 2) return `${firsts[0]} and ${firsts[1]}`;
+  return `${firsts[0]} and ${firsts.length - 1} others`;
+}
+
+/** The display names `Submission.toNames` would carry for these fields, for the tray shown before the engine answers. */
+export function namesOf(fields: ComposeFields): readonly string[] {
+  return [...fields.to, ...fields.cc].map(r => r.name?.trim() || r.address);
+}
