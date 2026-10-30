@@ -138,7 +138,7 @@ test('an item has a sender title, the subject as body and never more', () => {
   assert.equal(item.accountId, ACCOUNT);
   assert.equal(item.threadId, `${ACCOUNT}:th-m1`);
   assert.ok(item.body!.startsWith('Hello there x'));
-  assert.equal(item.body!.length, 1000);
+  assert.equal(item.body!.length, 200);
   assert.ok(!JSON.stringify(item).includes('SECRET'));
   assert.deepEqual(Object.keys(item).sort(), [
     'accountId',
