@@ -160,3 +160,28 @@ export const IMAGE_PROXY_LIMITS = {
 export interface ImageProxy {
   fetch(url: string, opts: { token: string; signal: AbortSignal }): Promise<ProxiedImage>;
 }
+
+/** What an unsubscribe attempt came to; the `Unsubscribe/run` handler maps each kind to a contract outcome. */
+export type UnsubscribeKind = 'done' | 'unsure' | 'failed' | 'open' | 'compose' | 'none';
+
+/**
+ * Plans and performs one List-Unsubscribe (RFC 2369 / RFC 8058) for `Unsubscribe/get` and `Unsubscribe/run`.
+ * Implemented by the host (`apps/desktop/src/host/providers/google/unsubscribe.ts`, Node networking; never in the
+ * neutral core) and injected as `HostPorts.unsubscribe`; the `Unsubscribe/*` handlers (`methods/unsubscribe.ts`) call
+ * it with the headers of the thread's newest inbound message that carries List-Unsubscribe.
+ * - `describe` is pure and offline: it reads the headers and names the way the sender offers (`url` for a link or
+ *   mailto), with no network and no side effect.
+ * - `run` performs the one-click POST, or plans the mailto or the link, in the host. It must honour `signal`, and it
+ *   never throws for an ordinary refusal: a sender that refuses or errors resolves `failed`, a sender whose answer does
+ *   not confirm the request resolves `unsure`. `open` carries the `url` to show for review; `compose` carries the
+ *   mailto `url` for the owner to review and send; `none` means no usable way. The SSRF rules (address ranges,
+ *   redirects, no cookies) are the host's, as for `ImageProxy`.
+ */
+export interface UnsubscribePort {
+  describe(headers: ListHeaders): { method: 'oneClick' | 'mailto' | 'link' | 'none'; url?: string };
+  run(request: {
+    from: string;
+    headers: ListHeaders;
+    signal: AbortSignal;
+  }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
+}

@@ -22,6 +22,7 @@ export type HostPorts = Partial<
     | 'html'
     | 'laneFor'
     | 'images'
+    | 'unsubscribe'
     | 'keys'
   >
 >;
@@ -92,6 +93,7 @@ const HOST_PORTS = [
   'html',
   'laneFor',
   'images',
+  'unsubscribe',
   'keys',
 ] as const satisfies readonly (keyof HostPorts)[];
 
