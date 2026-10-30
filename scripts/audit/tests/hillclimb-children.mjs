@@ -10,12 +10,15 @@ import { spawn } from 'node:child_process';
 
 export const hardExitMs = 120_000;
 
-export const HARD_EXIT_PRELUDE = `setTimeout(() => process.exit(97), ${hardExitMs}).unref();\n`;
+export const HARD_EXIT_CODE = 97;
+
+export const HARD_EXIT_PRELUDE = `setTimeout(() => process.exit(${HARD_EXIT_CODE}), ${hardExitMs}).unref();\n`;
 
 const tracked = new Set();
 
 /** Registers a spawned child so killTrackedChildren() can reap it; returns the child. */
 export function trackChild(child) {
+  installRunnerGuards();
   tracked.add(child);
   child.once('close', () => tracked.delete(child));
   return child;
@@ -33,6 +36,24 @@ export function killTrackedChildren() {
     }
   }
   tracked.clear();
+}
+
+// The test runner itself can be stopped (Ctrl-C, a CI timeout's SIGTERM) while children run: kill
+// them then too, or they outlive the runner and hold its pipes. Installed once, on first track.
+let guardsInstalled = false;
+function installRunnerGuards() {
+  if (guardsInstalled) return;
+  guardsInstalled = true;
+  process.once('exit', killTrackedChildren);
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    const handler = () => {
+      killTrackedChildren();
+      // Hand the signal back to the default behaviour so the runner still stops.
+      process.removeListener(signal, handler);
+      process.kill(process.pid, signal);
+    };
+    process.on(signal, handler);
+  }
 }
 
 /** How many children are still tracked (for the helper's own test). */
@@ -53,7 +74,15 @@ export function spawnNodeScript(script, name = 'child') {
     child.stderr.on('data', chunk => {
       stderr += chunk;
     });
-    child.on('close', code => (code === 0 ? resolve() : reject(new Error(`${name}: ${stderr}`))));
+    child.on('close', (code, signal) => {
+      if (code === 0) return resolve();
+      // 97 is the self-exit timer's code: say so, a bare stderr dump would read as a mystery.
+      const why =
+        code === HARD_EXIT_CODE
+          ? `hit its ${hardExitMs / 1000} s self-exit timer (exit ${HARD_EXIT_CODE}); it was stuck or too slow`
+          : `exited ${code ?? signal}`;
+      reject(new Error(`${name}: ${why}${stderr ? `: ${stderr}` : ''}`));
+    });
     child.on('error', reject);
   });
 }

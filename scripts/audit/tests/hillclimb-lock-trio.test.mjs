@@ -69,10 +69,15 @@ describe('stale-takeover TOCTOU (three real processes)', () => {
         };
         fs.writeFileSync(join(base, 'a-ready-' + r), '1');
         await wait(join(base, 'b-held-' + r));
+        // Record what takeStaleLock answered: against B's live lock it must return false.
+        let answer = 'threw';
         try {
-          takeStaleLock(d, expected, { pid: process.pid, token: 'a-' + process.pid });
+          answer = String(takeStaleLock(d, expected, { pid: process.pid, token: 'a-' + process.pid }));
         } catch {}
-        fs.writeFileSync(join(base, 'a-done-' + r), '1');
+        // temp + rename: the test reads the answer the moment the flag appears, so the flag
+        // must never exist half-written.
+        fs.writeFileSync(join(base, 'a-done-' + r + '.tmp'), answer);
+        fs.renameSync(join(base, 'a-done-' + r + '.tmp'), join(base, 'a-done-' + r));
       }
     `;
     // Child B: waits for the go flag, takes the stale lock through withCheckSlot, and
@@ -97,7 +102,8 @@ describe('stale-takeover TOCTOU (three real processes)', () => {
         await wait(join(base, 'b-go-' + r));
         await withCheckSlot(async () => {
           fs.appendFileSync(marker, 'enter-b\\n');
-          fs.writeFileSync(join(base, 'b-held-' + r), '1');
+          fs.writeFileSync(join(base, 'b-held-' + r + '.tmp'), String(process.pid));
+          fs.renameSync(join(base, 'b-held-' + r + '.tmp'), join(base, 'b-held-' + r));
           await wait(join(base, 'b-release-' + r));
           fs.appendFileSync(marker, 'exit-b\\n');
         }, { dir: d, pollMs: 2, timeoutMs: 60000, staleMs: 60000 });
@@ -193,6 +199,19 @@ describe('stale-takeover TOCTOU (three real processes)', () => {
         writeFileSync(cFire, '1');
         writeFileSync(flag(`b-go-${r}`), '1');
         await waitFor(flag(`a-done-${r}`), `a-done-${r}`);
+        // B still holds the slot here (it is released below): A's stale judgement must have been
+        // refused, and the lock files must still name B, not A or the planted stale owner.
+        assert.equal(
+          readFileSync(flag(`a-done-${r}`), 'utf8'),
+          'false',
+          `round ${r}: takeStaleLock must return false against a peer's live lock`,
+        );
+        const bPid = readFileSync(flag(`b-held-${r}`), 'utf8').trim();
+        assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), bPid, `round ${r}: pid names B`);
+        assert.ok(
+          readFileSync(join(d, 'token'), 'utf8').trim().startsWith(`${bPid}-`),
+          `round ${r}: token names B`,
+        );
         rmSync(cFire, { force: true });
         // Quiesce C: its in-flight iteration (rename into d, then rm d) must finish before
         // anything re-plants d, or its rm would delete the NEXT round's lock (test race, not
