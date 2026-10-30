@@ -111,3 +111,45 @@ test('closing the engine gives a hung send the grace, then leaves its marker for
     await w.cleanup();
   }
 });
+
+test('Draft/set, Draft/get, Draft/resolve and Draft/destroy run through the engine; a host without a draft port keeps the draft local', async () => {
+  const w = await engineWorld();
+  try {
+    const made = await w.call('Draft/set', { opId: 'dop-1', fields: fields() });
+    assert.equal(made.draft.revision, 1);
+    assert.equal(made.draft.sync, 'pending');
+    const saved = await w.call('Draft/set', {
+      opId: 'dop-2',
+      id: made.draft.id,
+      baseRevision: 1,
+      fields: fields({ subject: 'Changed' }),
+    });
+    assert.equal(saved.draft.revision, 2);
+    await assert.rejects(
+      w.call('Draft/set', {
+        opId: 'dop-3',
+        id: made.draft.id,
+        baseRevision: 1,
+        fields: fields({ subject: 'Stale' }),
+      }),
+      (e: unknown) => e instanceof ContractError && e.type === 'stateMismatch',
+    );
+    await assert.rejects(
+      w.call('Draft/resolve', { opId: 'dop-4', id: made.draft.id, choice: 'keepMine' }),
+      (e: unknown) => e instanceof ContractError && e.type === 'stateMismatch',
+    );
+    // No draft port was injected: the upload is refused as unavailable and asked again later, the draft stays.
+    await w.clock.advance(6 * SEC);
+    await w.clock.flush();
+    const got = await w.call('Draft/get', { ids: [made.draft.id, 'nope'] });
+    assert.equal(got.list[0].subject, 'Changed');
+    assert.deepEqual(got.notFound, ['nope']);
+    assert.equal(got.list[0].sync, 'pending');
+    await w.call('Draft/destroy', { opId: 'dop-5', id: made.draft.id });
+    assert.deepEqual((await w.call('Draft/get', { ids: [made.draft.id] })).notFound, [
+      made.draft.id,
+    ]);
+  } finally {
+    await w.cleanup();
+  }
+});

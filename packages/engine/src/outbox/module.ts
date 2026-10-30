@@ -138,7 +138,15 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     : undefined;
   if (draftsCtx) {
     unregister.push(deps.deadlines.register(draftsSource(draftsCtx)));
-    unregister.push(onDraftAnnounced(id => announceDraft(draftsCtx, id)));
+    unregister.push(
+      onDraftAnnounced(id => {
+        try {
+          announceDraft(draftsCtx, id);
+        } catch {
+          // A frame is best effort: the store may be closing, and the state frame carries the change anyway.
+        }
+      }),
+    );
   }
   const service: OutboxService = {
     get: ids => {
