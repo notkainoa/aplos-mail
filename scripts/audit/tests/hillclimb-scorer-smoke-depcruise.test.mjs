@@ -20,7 +20,12 @@ test('smoke: depcruise scores a fixture project end-to-end', { timeout: 60_000 }
     assert.equal(result.status, 0, result.stderr);
     const json = lastJson(result);
     assert.equal(json.score, -2);
-    assert.ok(json.details.every(line => / -> .* \(no-cycles\)$/.test(line)));
+    // The last detail line reports the measured run time; the rest are findings.
+    assert.match(json.details.at(-1), /^depcruise ran \d+\.\d s$/);
+    assert.ok(
+      json.details.slice(0, -1).every(line => / -> .* \(no-cycles\)$/.test(line)),
+      json.details.join(', '),
+    );
   } finally {
     removeFixture(dir);
   }

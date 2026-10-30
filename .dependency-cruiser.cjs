@@ -97,6 +97,16 @@ module.exports = {
   options: {
     // Type-only imports are checked too, like the ESLint rule.
     tsPreCompilationDeps: true,
+    // Only the repo's own sources are cruised as `from` modules; without this a scoped run
+    // still walks everything under the entry points and takes minutes.
+    includeOnly: {
+      path: '^(apps|packages|scripts|tools|tests)/',
+    },
+    // npm packages still appear as `to` edges so the forbidden rules can see them, but their
+    // own dependency trees are never followed — the difference between seconds and minutes.
+    doNotFollow: {
+      path: 'node_modules',
+    },
     // Node builtins and npm packages stay in the graph so the forbidden rules above can see them;
     // depcruise does not descend into them.
     exclude: {

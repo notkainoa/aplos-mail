@@ -3,9 +3,11 @@
 // (which mirrors the aplos/boundaries ESLint zones) and weights the violations whose `from` file is
 // inside --scope: errors 3, warnings 1, circular edges 2. score = -(total).
 // --scope also becomes the cruise entry arguments, so a target can score only its own paths; with no
-// scope the source roots `packages` and `apps` are cruised. details = `from -> to (rule)`.
-// Typical runtime: ~15-60 s depending on how much of the graph the scope pulls in.
-//   node scripts/audit/hillclimb/scorers/depcruise.mjs [--scope <glob>]... [--timeout-sec <n, default 120>]
+// scope the source roots `packages` and `apps` are cruised. details = `from -> to (rule)`, then a
+// trailing `depcruise ran X s` line. An empty scope fails hard: scoring nothing would print 0,
+// the penalty score's maximum.
+// Typical runtime: a few seconds with the doNotFollow/includeOnly options in .dependency-cruiser.cjs.
+//   node scripts/audit/hillclimb/scorers/depcruise.mjs [--scope <glob>]... [--timeout-sec <n, default 300>]
 import { join } from 'node:path';
 import {
   ScorerError,
@@ -13,6 +15,7 @@ import {
   inScope,
   parseArgs,
   repoRoot,
+  requireScopeMatch,
   runCli,
   runLogged,
 } from './util.mjs';
@@ -32,7 +35,7 @@ export const circularWeight = 2;
 export function parseArgsDepcruise(argv) {
   return parseArgs(argv, {
     values: { '--scope': 'scope' },
-    numbers: { '--timeout-sec': { key: 'timeoutSec', default: 120 } },
+    numbers: { '--timeout-sec': { key: 'timeoutSec', default: 300 } },
     strings: { '--cwd': { key: 'cwd', default: repoRoot } },
   });
 }
@@ -84,6 +87,9 @@ export function reportFromRun(run) {
 
 async function main(argv) {
   const options = parseArgsDepcruise(argv);
+  // Check the scope names real files before cruising: an empty match would report 0 findings,
+  // which is the best possible penalty score for work that never happened.
+  requireScopeMatch(options.scope, options.cwd);
   const args = options.scope.length > 0 ? options.scope : ['packages', 'apps'];
   const configFile = join(options.cwd, '.dependency-cruiser.cjs');
   const run = runLogged(
@@ -98,7 +104,11 @@ async function main(argv) {
   const { score, details } = scoreDepcruise(
     scoredViolations(report.summary?.violations ?? [], options.scope),
   );
-  emitScore(score, details);
+  // The run time always survives the 10-line details cap: nine findings at most, then timing.
+  emitScore(score, [
+    ...details.slice(0, 9),
+    `depcruise ran ${(run.elapsedMs / 1000).toFixed(1)} s`,
+  ]);
 }
 
 runCli(import.meta.url, main);
