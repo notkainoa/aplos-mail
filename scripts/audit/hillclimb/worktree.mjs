@@ -2,9 +2,12 @@
 // os.tmpdir() branched from the current best commit, with node_modules symlinked back to the
 // main checkout so attempts need no reinstall. The user's own checkout is never touched.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
+  opendirSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -12,7 +15,7 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 export const AUTHOR = { name: 'Kainoa Newton', email: 'k@kainoa.me' };
 
@@ -32,8 +35,23 @@ export function bestBranch(name, runId) {
   return `hillclimb/${name}/${runId}/best`;
 }
 
+// Every harness git call runs with hooks, fsmonitor, external diff drivers and ext::
+// transports disabled. An attempt agent could plant any of them in the shared .git
+// config (or .git/hooks) to turn the harness's OWN git invocations into code execution;
+// command-line -c settings outrank anything a worktree can write to shared config.
+const GIT_SAFETY = [
+  '-c',
+  'core.hooksPath=/dev/null',
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'diff.external=',
+  '-c',
+  'protocol.ext.allow=never',
+];
+
 export function git(args, cwd, options = {}) {
-  return execFileSync('git', args, {
+  return execFileSync('git', [...GIT_SAFETY, ...args], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
@@ -116,10 +134,30 @@ export function parseRawDiff(output) {
   return changes;
 }
 
-/** The committed diff base..HEAD of a worktree, modes included. */
-export function diffBetween(workdir, base) {
+/**
+ * The committed diff base..head of a worktree, modes included. `head` is the attempt's
+ * explicit sha — never an implicit HEAD, so the guarded commit is provably the commit
+ * the eval worktree is checked out at. `-a --no-ext-diff --no-textconv` (here and in
+ * every diff the harness parses) pins output to git's own text diff: an external diff
+ * driver or "Binary files differ" can no longer hide what the guard reads.
+ */
+export function diffBetween(workdir, base, head) {
   return parseRawDiff(
-    git(['diff', '--raw', '-M', '--find-copies-harder', '-z', `${base}`, 'HEAD'], workdir),
+    git(
+      [
+        'diff',
+        '--raw',
+        '-M',
+        '--find-copies-harder',
+        '-z',
+        '-a',
+        '--no-ext-diff',
+        '--no-textconv',
+        base,
+        head,
+      ],
+      workdir,
+    ),
   );
 }
 
@@ -157,27 +195,77 @@ export function gitShow(workdir, ref, path) {
  * flagged path rejects the attempt.
  */
 export function indexFlagViolations(workdir) {
-  const output = git(['ls-files', '-v'], workdir);
+  // -z so a path containing whitespace or quotes isn't mangled by C-style quoting.
+  const output = git(['ls-files', '-v', '-z'], workdir);
   const flagged = [];
-  for (const line of output.split('\n')) {
-    if (!line) continue;
-    const tag = line[0];
-    if (tag === 'S' || (tag >= 'a' && tag <= 'z')) flagged.push(line.slice(2));
+  for (const token of output.split('\0')) {
+    if (!token) continue;
+    const tag = token[0];
+    if (tag === 'S' || (tag >= 'a' && tag <= 'z')) flagged.push(token.slice(2));
   }
   return flagged;
 }
 
 /**
- * Lines added by base..HEAD as raw text (no '+' prefix), for the suppression-directive scan.
- * `-U0` keeps context out of the diff; '+++' file headers are not content.
+ * Lines added by base..head as raw text (no '+' prefix), for the suppression-directive
+ * scan. `-U0` keeps context out of the diff and hunks are tracked per file: everything
+ * before a file's first "@@" is metadata (so "+++ b/f" headers are skipped) while every
+ * '+' line inside a hunk is added content — including lines literally starting with "++"
+ * that a naive startsWith('+++') filter would silently drop.
  */
-export function addedLines(workdir, base) {
-  const output = git(['diff', '--no-color', '-U0', `${base}`, 'HEAD'], workdir);
+export function addedLines(workdir, base, head) {
+  const output = git(
+    ['diff', '--no-color', '-U0', '-a', '--no-ext-diff', '--no-textconv', base, head],
+    workdir,
+  );
   const added = [];
+  let inHunk = false;
   for (const line of output.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) added.push(line.slice(1));
+    if (line.startsWith('diff --git')) {
+      inHunk = false;
+    } else if (line.startsWith('@@')) {
+      inHunk = true;
+    } else if (inHunk && line.startsWith('+')) {
+      added.push(line.slice(1));
+    }
   }
   return added;
+}
+
+/**
+ * Paths base..head classifies as binary (numstat shows "-\t-"), where a text diff — and
+ * therefore the directive scan — would show nothing reviewable. Record form with -z is
+ * "<added>\t<deleted>\t<path>"; only the third field may itself contain tabs.
+ */
+export function binaryPaths(workdir, base, head) {
+  const output = git(['diff', '--numstat', '-z', '--no-ext-diff', base, head], workdir);
+  const paths = [];
+  for (const record of output.split('\0')) {
+    if (!record) continue;
+    const first = record.indexOf('\t');
+    const second = record.indexOf('\t', first + 1);
+    if (first === -1 || second === -1) continue;
+    if (record.slice(0, first) === '-' && record.slice(first + 1, second) === '-') {
+      paths.push(record.slice(second + 1));
+    }
+  }
+  return paths;
+}
+
+/** Every path in a commit's tree, NUL-safe. Used for the case/normalisation collision check. */
+export function lsTreePaths(workdir, sha) {
+  const output = git(['ls-tree', '-r', '-z', '--name-only', sha], workdir);
+  return output.split('\0').filter(Boolean);
+}
+
+/** Byte size of a blob at ref:path, or null when absent. */
+export function blobSize(workdir, ref, path) {
+  try {
+    const size = Number(git(['cat-file', '-s', `${ref}:${path}`], workdir).trim());
+    return Number.isFinite(size) ? size : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -265,40 +353,184 @@ export function relativeDir(repoRoot, dir) {
   return relative(repoRoot, dir);
 }
 
-// Attempt agents and gates run with the harness user's privileges — no sandbox — and every
-// eval worktree symlinks node_modules back into the main checkout, so the main checkout is
-// reachable from untrusted code. statusPorcelain deliberately excludes node_modules, which
-// means tampering there is invisible to it; the snapshot therefore records its mtime too.
-function modulesMtime(repoRoot) {
-  try {
-    return statSync(join(repoRoot, 'node_modules')).mtimeMs;
-  } catch {
-    return null;
-  }
+/**
+ * A hash of everything an attempt could poison to make LATER harness git calls misbehave:
+ * the shared git dir's config, hooks/ entry names + contents, info/ contents, the HEADs
+ * (the checkout's and this worktree's), the worktree's own config.worktree and every ref
+ * except the harness's own hillclimb/* branches (which legitimately move as attempts are
+ * committed and removed). Recomputing after the attempt must reproduce the same digest.
+ */
+export function snapshotGitDir(cwd) {
+  const hash = createHash('sha256');
+  const feed = (label, data) => {
+    hash.update(label);
+    hash.update('\0');
+    hash.update(data);
+    hash.update('\0');
+  };
+  const feedFile = (label, path) => {
+    try {
+      feed(label, readFileSync(path));
+    } catch {
+      // Absent files hash as nothing at all — their absence is part of the snapshot.
+    }
+  };
+  const feedTree = dir => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(dir, entry.name);
+      feed('entry', entry.name);
+      if (entry.isFile()) feedFile('file', path);
+      else if (entry.isDirectory()) feedTree(path);
+    }
+  };
+  const gitDir = resolve(cwd, git(['rev-parse', '--git-dir'], cwd).trim());
+  const commonDir = resolve(cwd, git(['rev-parse', '--git-common-dir'], cwd).trim());
+  feedFile('config', join(commonDir, 'config'));
+  feedTree(join(commonDir, 'hooks'));
+  feedTree(join(commonDir, 'info'));
+  feedFile('HEAD', join(commonDir, 'HEAD'));
+  feedFile('worktree-HEAD', join(gitDir, 'HEAD'));
+  feedFile('config.worktree', join(gitDir, 'config.worktree'));
+  const refs = git(['for-each-ref', '--format=%(refname) %(objectname)'], cwd)
+    .split('\n')
+    .filter(line => line && !line.startsWith('refs/heads/hillclimb/'))
+    .join('\n');
+  feed('refs', refs);
+  return hash.digest('hex');
 }
 
-/** Point-in-time state of the main checkout to compare against later. */
-export function mainSnapshot(repoRoot) {
-  return {
-    head: currentHead(repoRoot),
-    dirty: statusPorcelain(repoRoot).length,
-    modulesMtime: modulesMtime(repoRoot),
+// Linter and bundler caches inside node_modules may be legitimately rewritten by the
+// suite commands the worktrees run; they are the only directories the scan skips.
+const WRITE_SCAN_PRUNE = new Set(['.cache', '.vite']);
+const WRITE_SCAN_LIMIT = 50;
+
+/**
+ * Paths under `roots` (the node_modules dirs the harness symlinks into worktrees)
+ * modified since the stamp file was written — evidence of write-through into the main
+ * checkout's real node_modules, which is git-ignored and therefore invisible to
+ * statusPorcelain. A bounded opendir walk: directories named .cache/.vite are pruned,
+ * symlinked directories are followed once (inode dedup) so hoisted workspace links like
+ * node_modules/@scope/pkg are covered, and collection stops at WRITE_SCAN_LIMIT hits —
+ * the first few are all a rejection reason needs. Both a link's own mtime and its
+ * target's are checked, so rewriting a file through an untouched symlink still counts.
+ * A full walk of this repo's node_modules (~24k files) takes ~2 s, far under the ~8 s
+ * budget, so no tool-directory restriction is applied.
+ */
+export function findWritesSince(roots, stampPath, { relativeTo = null } = {}) {
+  const stamp = statSync(stampPath).mtimeMs;
+  const seen = new Set();
+  const hits = [];
+  const push = path => {
+    hits.push(relativeTo ? relative(relativeTo, path) : path);
   };
+  const walk = dir => {
+    if (hits.length >= WRITE_SCAN_LIMIT) return;
+    let dirStat;
+    try {
+      dirStat = statSync(dir); // follows links: dedup key is the real directory
+    } catch {
+      return;
+    }
+    const key = `${dirStat.dev}:${dirStat.ino}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    let handle;
+    try {
+      handle = opendirSync(dir);
+    } catch {
+      return;
+    }
+    try {
+      for (let ent = handle.readSync(); ent && hits.length < WRITE_SCAN_LIMIT;) {
+        const name = ent.name;
+        const path = join(dir, name);
+        ent = handle.readSync();
+        let lst;
+        try {
+          lst = lstatSync(path);
+        } catch {
+          continue; // vanished mid-scan
+        }
+        if (lst.isSymbolicLink()) {
+          let target;
+          try {
+            target = statSync(path);
+          } catch {
+            // Dangling link: the link itself still carries an mtime worth checking.
+          }
+          if (Math.max(lst.mtimeMs, target?.mtimeMs ?? 0) > stamp) {
+            push(path);
+          } else if (target?.isDirectory() && !WRITE_SCAN_PRUNE.has(name)) {
+            walk(path);
+          }
+        } else if (lst.isDirectory()) {
+          if (!WRITE_SCAN_PRUNE.has(name)) walk(path);
+        } else if (lst.mtimeMs > stamp) {
+          push(path);
+        }
+      }
+    } finally {
+      handle.closeSync();
+    }
+  };
+  for (const root of roots) walk(root);
+  return hits;
 }
 
 /**
- * Throws when the main checkout moved since `snapshot`: HEAD changed, tracked files were
- * touched, or node_modules was written through a worktree symlink.
+ * The post-attempt sandbox audit behind deps.verifyMainIntact. A breach anywhere throws:
+ * the attempt is rejected AND the run aborts. Checks, cheapest first — the main
+ * checkout's HEAD and status, then (when ctx carries them) the shared-git-dir snapshot
+ * taken before the agent started and the linked node_modules roots against the
+ * attempt's stamp file.
  */
-export function assertMainIntact(repoRoot, snapshot) {
-  if (currentHead(repoRoot) !== snapshot.head) {
-    throw new Error('main checkout HEAD moved during the run (sandbox breach)');
+export function mainCheckoutIntact(repoRoot, startCommit) {
+  // statusPorcelain deliberately excludes node_modules, so tampering there is invisible
+  // to it: a top-level write bumps the directory's own mtime, and the per-attempt stamp
+  // scan below catches writes inside nested packages.
+  let modulesMtime = null;
+  try {
+    modulesMtime = statSync(join(repoRoot, 'node_modules')).mtimeMs;
+  } catch {
+    // No node_modules yet — nothing to watch.
   }
-  const dirty = statusPorcelain(repoRoot);
-  if (dirty.length) {
-    throw new Error(`main checkout dirtied during the run (${dirty[0].path}): sandbox breach`);
-  }
-  if (modulesMtime(repoRoot) !== snapshot.modulesMtime) {
-    throw new Error('main checkout node_modules touched during the run (sandbox breach)');
-  }
+  return async ctx => {
+    if (currentHead(repoRoot) !== startCommit) {
+      throw new Error('main checkout HEAD moved during the run (sandbox breach)');
+    }
+    const dirty = statusPorcelain(repoRoot);
+    if (dirty.length) {
+      throw new Error(`main checkout dirtied during the run (${dirty[0].path}): sandbox breach`);
+    }
+    if (modulesMtime !== null) {
+      let now = null;
+      try {
+        now = statSync(join(repoRoot, 'node_modules')).mtimeMs;
+      } catch {
+        // Removed mid-run — the porcelain check or a later scan reports what matters.
+      }
+      if (now !== null && now !== modulesMtime) {
+        throw new Error('main checkout node_modules touched during the run (sandbox breach)');
+      }
+    }
+    if (ctx?.gitSnapshot && ctx?.dir && existsSync(ctx.dir)) {
+      if (snapshotGitDir(ctx.dir) !== ctx.gitSnapshot) {
+        throw new Error('shared git dir changed during the attempt (sandbox breach)');
+      }
+    }
+    if (ctx?.stampPath && ctx?.moduleRoots?.length) {
+      const hits = findWritesSince(ctx.moduleRoots, ctx.stampPath, { relativeTo: repoRoot });
+      if (hits.length) {
+        throw new Error(
+          `node_modules write-through: ${hits.slice(0, 5).join(', ')} (sandbox breach)`,
+        );
+      }
+    }
+  };
 }

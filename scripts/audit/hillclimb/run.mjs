@@ -23,9 +23,10 @@ import { runGate, runScorer } from './steps.mjs';
 import {
   addedLines,
   addWorktree,
-  assertMainIntact,
   attemptBranch,
   attemptDir,
+  binaryPaths,
+  blobSize,
   cleanupRun,
   commitAll,
   currentHead,
@@ -33,9 +34,11 @@ import {
   gitShow,
   indexFlagViolations,
   linkNodeModules,
-  mainSnapshot,
+  lsTreePaths,
+  mainCheckoutIntact,
   removeWorktree,
   runRoot,
+  snapshotGitDir,
   squashToBest,
   statusPorcelain,
 } from './worktree.mjs';
@@ -88,8 +91,6 @@ const newRunId = () =>
 function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
   const root = runRoot(runId);
   const startCommit = currentHead(repoRoot);
-  // Snapshot the user's checkout once — every verifyMainIntact compares against this.
-  const snapshot = mainSnapshot(repoRoot);
   const cleanupAll = () =>
     cleanupRun(repoRoot, {
       runId,
@@ -121,7 +122,11 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       addWorktree(repoRoot, { dir: ctx.dir, branch: ctx.branch, commit: ctx.commit });
       state.dirs.push(ctx.dir);
       state.branches.push(ctx.branch);
-      linkNodeModules(repoRoot, ctx.dir);
+      // The real node_modules dirs these links write through to — the post-attempt
+      // write-through scan walks exactly this set.
+      ctx.moduleRoots = linkNodeModules(repoRoot, ctx.dir).map(r =>
+        join(repoRoot, r, 'node_modules'),
+      );
     },
     // A clean detached worktree checked out at a commit — where the baseline and every
     // attempt are actually gated and scored, free of uncommitted leftovers, ignored files
@@ -130,7 +135,12 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       ctx.evalDir = join(root, `${ctx.id}-eval`);
       addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
       state.dirs.push(ctx.evalDir);
-      linkNodeModules(repoRoot, ctx.evalDir);
+      ctx.moduleRoots = [
+        ...new Set([
+          ...(ctx.moduleRoots ?? []),
+          ...linkNodeModules(repoRoot, ctx.evalDir).map(r => join(repoRoot, r, 'node_modules')),
+        ]),
+      ];
       return ctx.evalDir;
     },
     async runAttemptAgent(ctx, briefText) {
@@ -138,6 +148,12 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       // diff the guard analyses (and an agent could edit its own instructions mid-run).
       const briefFile = join(root, `${ctx.id}-brief.md`);
       writeFileSync(briefFile, briefText);
+      // The stamp + git-dir snapshot define "before the agent ran": afterwards the
+      // sandbox audit scans the linked node_modules roots for anything newer than the
+      // stamp and re-hashes the shared git dir for tampering.
+      ctx.stampPath = join(root, `${ctx.id}-stamp`);
+      writeFileSync(ctx.stampPath, '');
+      ctx.gitSnapshot = snapshotGitDir(ctx.dir);
       return runAgent(config.attempt, {
         briefFile,
         briefText: briefFor(config.attempt, briefFile),
@@ -150,16 +166,29 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
     async finalizeAttempt(ctx) {
       commitAll(ctx.dir, `hillclimb ${config.name} ${ctx.id}`);
       ctx.head = currentHead(ctx.dir);
-      const changes = diffBetween(ctx.dir, ctx.baseCommit);
-      const added = addedLines(ctx.dir, ctx.baseCommit);
+      // Everything the guard inspects is pinned to this attempt's explicit sha — the
+      // commit the eval worktree is checked out at — never to a movable HEAD.
+      const changes = diffBetween(ctx.dir, ctx.baseCommit, ctx.head);
+      const added = addedLines(ctx.dir, ctx.baseCommit, ctx.head);
+      const binary = binaryPaths(ctx.dir, ctx.baseCommit, ctx.head);
+      const treePaths = lsTreePaths(ctx.dir, ctx.head);
       const flagged = indexFlagViolations(ctx.dir);
       const leftover = statusPorcelain(ctx.dir).map(entry => entry.path);
-      return { head: ctx.head, changes, addedLines: added, flagged, leftover };
+      return {
+        head: ctx.head,
+        changes,
+        addedLines: added,
+        binaryPaths: binary,
+        treePaths,
+        flagged,
+        leftover,
+      };
     },
     readOld: (ctx, path) => gitShow(ctx.dir, ctx.baseCommit, path),
     // "New" contents always come from the attempt's COMMIT, never the working tree: whatever
     // an agent left dirty, ignored or index-flagged cannot impersonate committed state.
-    readNew: (ctx, path) => gitShow(ctx.dir, ctx.head ?? 'HEAD', path),
+    readNew: (ctx, path) => gitShow(ctx.dir, ctx.head, path),
+    fileSize: (ctx, path) => blobSize(ctx.dir, ctx.head, path),
     runGate: (gate, workdir, logPath) => runGate(gate, { workdir, logPath, onSpawn: track }),
     runScorer: (scorer, workdir, logPath) =>
       runScorer(scorer, { workdir, logPath, onSpawn: track }),
@@ -170,9 +199,7 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
     async removeEval(ctx) {
       if (ctx.evalDir) removeWorktree(repoRoot, ctx.evalDir);
     },
-    async verifyMainIntact() {
-      assertMainIntact(repoRoot, snapshot);
-    },
+    verifyMainIntact: mainCheckoutIntact(repoRoot, startCommit),
     async promote({ fromSha, toSha, message }) {
       return squashToBest(repoRoot, { name: config.name, runId, fromSha, toSha, message });
     },

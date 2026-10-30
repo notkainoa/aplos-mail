@@ -457,7 +457,7 @@ describe('checkDiff: real git integration', () => {
     writeFileSync(join(repo, 'eslint.config.mjs'), 'export default [];\n');
     git(['add', '-A']);
     git(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'work']);
-    const changes = diffBetween(repo, startSha);
+    const changes = diffBetween(repo, startSha, 'HEAD');
     const renamed = changes.find(change => change.status === 'R');
     assert.equal(renamed.oldPath, 'old.ts');
     assert.equal(renamed.path, 'src/renamed.ts');
@@ -483,8 +483,8 @@ describe('checkDiff: real git integration', () => {
     git2(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'work']);
     const result = checkDiff({
       ...base,
-      changes: diffBetween(dir, baseSha),
-      addedLines: addedLines(dir, baseSha),
+      changes: diffBetween(dir, baseSha, 'HEAD'),
+      addedLines: addedLines(dir, baseSha, 'HEAD'),
     });
     assert.equal(result.ok, false);
     assert.match(result.reasons.join(' '), /eslint-disable/);

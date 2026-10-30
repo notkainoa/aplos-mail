@@ -12,6 +12,8 @@ import {
   addWorktree,
   attemptBranch,
   attemptDir,
+  binaryPaths,
+  blobSize,
   cleanupRun,
   commitAll,
   currentHead,
@@ -19,8 +21,11 @@ import {
   gitShow,
   indexFlagViolations,
   linkNodeModules,
+  lsTreePaths,
+  mainCheckoutIntact,
   removeWorktree,
   runRoot,
+  snapshotGitDir,
   squashToBest,
   statusPorcelain,
 } from '../hillclimb/worktree.mjs';
@@ -88,25 +93,30 @@ export function setupE2E(tmp) {
         addWorktree(repo, { dir: ctx.dir, branch: ctx.branch, commit: ctx.commit });
         state.dirs.push(ctx.dir);
         state.branches.push(ctx.branch);
-        linkNodeModules(repo, ctx.dir);
+        ctx.moduleRoots = linkNodeModules(repo, ctx.dir).map(r => join(repo, r, 'node_modules'));
       },
       async prepareEval(ctx) {
         ctx.evalDir = join(root, `${ctx.id}-eval`);
         addWorktree(repo, { dir: ctx.evalDir, commit: ctx.head });
         state.dirs.push(ctx.evalDir);
-        linkNodeModules(repo, ctx.evalDir);
+        ctx.moduleRoots = [
+          ...new Set([
+            ...(ctx.moduleRoots ?? []),
+            ...linkNodeModules(repo, ctx.evalDir).map(r => join(repo, r, 'node_modules')),
+          ]),
+        ];
         return ctx.evalDir;
       },
       async removeEval(ctx) {
         if (ctx.evalDir) removeWorktree(repo, ctx.evalDir);
       },
-      async verifyMainIntact() {
-        if (currentHead(repo) !== startCommit) throw new Error('main HEAD moved');
-        if (statusPorcelain(repo).length) throw new Error('main checkout dirtied');
-      },
+      verifyMainIntact: mainCheckoutIntact(repo, startCommit),
       async runAttemptAgent(ctx, brief) {
         const briefFile = join(root, `${ctx.id}-brief.md`);
         writeFileSync(briefFile, brief);
+        ctx.stampPath = join(root, `${ctx.id}-stamp`);
+        writeFileSync(ctx.stampPath, '');
+        ctx.gitSnapshot = snapshotGitDir(ctx.dir);
         return runAgent(runConfig.attempt, {
           briefFile,
           workdir: ctx.dir,
@@ -117,14 +127,25 @@ export function setupE2E(tmp) {
       async finalizeAttempt(ctx) {
         commitAll(ctx.dir, `hillclimb ${ctx.id}`);
         ctx.head = currentHead(ctx.dir);
-        const changes = diffBetween(ctx.dir, ctx.baseCommit);
-        const added = addedLines(ctx.dir, ctx.baseCommit);
+        const changes = diffBetween(ctx.dir, ctx.baseCommit, ctx.head);
+        const added = addedLines(ctx.dir, ctx.baseCommit, ctx.head);
+        const binary = binaryPaths(ctx.dir, ctx.baseCommit, ctx.head);
+        const treePaths = lsTreePaths(ctx.dir, ctx.head);
         const flagged = indexFlagViolations(ctx.dir);
         const leftover = statusPorcelain(ctx.dir).map(entry => entry.path);
-        return { head: ctx.head, changes, addedLines: added, flagged, leftover };
+        return {
+          head: ctx.head,
+          changes,
+          addedLines: added,
+          binaryPaths: binary,
+          treePaths,
+          flagged,
+          leftover,
+        };
       },
       readOld: (ctx, path) => gitShow(ctx.dir, ctx.baseCommit, path),
-      readNew: (ctx, path) => gitShow(ctx.dir, ctx.head ?? 'HEAD', path),
+      readNew: (ctx, path) => gitShow(ctx.dir, ctx.head, path),
+      fileSize: (ctx, path) => blobSize(ctx.dir, ctx.head, path),
       runGate: (gate, workdir, logPath) => runGate(gate, { workdir, logPath }),
       runScorer: (scorer, workdir, logPath) => runScorer(scorer, { workdir, logPath }),
       async removeAttempt(ctx) {

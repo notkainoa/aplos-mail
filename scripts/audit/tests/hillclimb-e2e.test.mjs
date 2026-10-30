@@ -97,7 +97,7 @@ describe('harness git plumbing (real repos)', () => {
     assert.deepEqual(statusPorcelain(wt), [], 'symlink is not a leftover');
     assert.equal(gitShow(wt, 'HEAD', 'node_modules'), null, 'symlink not committed');
     assert.deepEqual(
-      diffBetween(wt, `${head}^`).map(c => c.path),
+      diffBetween(wt, `${head}^`, head).map(c => c.path),
       ['a.txt'],
     );
     removeWorktree(r, wt);
@@ -154,6 +154,6 @@ describe('harness git plumbing (real repos)', () => {
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'work'], {
       cwd: r,
     });
-    assert.deepEqual(addedLines(r, base), ['new line']);
+    assert.deepEqual(addedLines(r, base, 'HEAD'), ['new line']);
   });
 });
