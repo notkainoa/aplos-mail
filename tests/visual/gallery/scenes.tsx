@@ -44,6 +44,7 @@ import {
 } from './scenes.more';
 import { shellScenes } from './scenes.shell';
 import { homeScenes } from './scenes.home';
+import { readerScenes } from './scenes.reader';
 
 export const registry = createAppRegistry();
 
@@ -625,4 +626,6 @@ export const scenes: Record<string, () => ReactElement> = {
   ...shellScenes,
   // ui-home
   ...homeScenes,
+  // ui-reader
+  ...readerScenes,
 };

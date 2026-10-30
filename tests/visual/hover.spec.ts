@@ -80,11 +80,11 @@ async function hoverOne(
       const stage = document.querySelector('.stage')!;
       const name = (e: Element) =>
         `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ''}${typeof e.className === 'string' && e.className ? `.${e.className.trim().split(/\s+/)[0]}` : ''}`;
-      // A running transform animation (the spinner) changes a bounding box with no hover involved.
+      // A running transform animation (the spinner, the undo tray's drain) changes a bounding box with no hover involved.
       const spinning = new Set<Element>();
       for (const animation of document.getAnimations()) {
         const effect = animation.effect as KeyframeEffect | null;
-        if (!effect?.target || effect.getComputedTiming().iterations !== Infinity) continue;
+        if (!effect?.target || animation.playState !== 'running') continue;
         if (
           effect
             .getKeyframes()

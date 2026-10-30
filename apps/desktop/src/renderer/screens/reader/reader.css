@@ -48,3 +48,13 @@
 .aplos-reader__find {
   margin-bottom: var(--space-4);
 }
+
+/* HTML mail is a light sheet (DESIGN 7.5): on the dark pane it gets an inset, so its text does not touch the sheet's edge. */
+:root[data-theme='dark'] .aplos-reader {
+  --sheet-inset: var(--space-4);
+}
+
+/* An empty line in the reader starts at the column's edge, like everything else in it. */
+.aplos-reader .ui-empty-line {
+  padding-inline: 0;
+}

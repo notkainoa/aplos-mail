@@ -6,6 +6,7 @@ import { frameDocument, SRCDOC_SANDBOX, URL_SANDBOX } from './document';
 import { handleLinkClick } from './links';
 import { relayKey } from './keys';
 import { acceptReport, clampHeight, MAX_HEIGHT, parseBg } from './protocol';
+import { FRAME_PAPER } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
 
@@ -27,7 +28,17 @@ const HIDDEN: CSSProperties = {
   visibility: 'hidden',
   pointerEvents: 'none',
 };
-const FRAME: CSSProperties = { display: 'block', width: '100%', border: 0, colorScheme: 'light' };
+/** HTML mail sits on light paper in both themes (DESIGN 7.5); the email's own background, when it has one, paints over it. */
+const FRAME: CSSProperties = {
+  display: 'block',
+  boxSizing: 'content-box',
+  width: 'calc(100% - 2 * var(--sheet-inset, 0px))',
+  border: 0,
+  colorScheme: 'light',
+  background: FRAME_PAPER.paper,
+  // The screen sets `--sheet-inset` where the paper is a sheet on a dark pane, so the text does not touch its edge.
+  padding: 'var(--sheet-inset, 0px)',
+};
 
 function useLatest<T>(value: T) {
   const ref = useRef(value);

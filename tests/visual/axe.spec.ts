@@ -11,6 +11,9 @@ import { openState } from './support/gallery';
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 const BLOCKING = new Set(['serious', 'critical']);
+// A mail body is the sender's own document in a scriptless sandboxed frame: axe cannot reach into it (the run would wait
+// out its 60 s frame timeout), and its markup is not ours. The host chrome around the frame is still checked.
+const MAIL_FRAME = 'iframe.aplos-mailframe__frame';
 
 /** The first failing-check message of a node, which for color-contrast names both colours and the ratio. */
 function detail(node: { any: { message: string }[]; failureSummary?: string }): string {
@@ -22,7 +25,10 @@ test.describe('axe', () => {
     for (const theme of THEMES) {
       test(`${state.id} ${theme}`, async ({ page }, info) => {
         await openState(page, state, { theme });
-        const { violations } = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+        const { violations } = await new AxeBuilder({ page })
+          .withTags(TAGS)
+          .exclude(MAIL_FRAME)
+          .analyze();
         const known = axeKnownDefects[state.id] ?? {};
         const blocking = violations.filter(v => BLOCKING.has(v.impact ?? ''));
 

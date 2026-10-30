@@ -3,6 +3,8 @@
 // draws it, with original demo data. Screens add their states later by adding one entry here and one
 // scene there.
 
+import { readerStates } from './states.reader';
+
 export type Theme = 'light' | 'dark';
 
 export interface VisualState {
@@ -670,6 +672,8 @@ export const STATES: readonly VisualState[] = [
     mockup: 'empty.html (default)',
     filled: 0,
   },
+  // ui-reader
+  ...readerStates,
 ];
 
 export const THEMES: readonly Theme[] = ['light', 'dark'];
