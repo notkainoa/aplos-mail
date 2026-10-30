@@ -53,6 +53,8 @@ interface Slot {
    * again) until it settles, so a source never runs concurrently with itself; the settle marks it dirty and kicks.
    */
   inflight: boolean;
+  /** The real call behind `inflight`; a source registered over this id waits on it too. */
+  pending?: Promise<unknown>;
   /** Fire times in the last hour, oldest first from `head`: this source's own wake budget. */
   fires: number[];
   head: number;
@@ -103,6 +105,32 @@ export function createTimerLoop({
     }
   };
 
+  /**
+   * Waits for a call on `slot` (`inflight` until it is over). When the loop gives up on it, because it timed out or
+   * because the race itself threw, the call may still be running: the slot stays inflight until it really settles.
+   */
+  const waitFor = async <T>(slot: Slot, work: Promise<T>, ms: number) => {
+    slot.inflight = true;
+    slot.pending = work;
+    // The call's own rejection is its result, not a failure of the race: only the race helper throwing is abandoned.
+    const outcome = work.then(
+      value => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    let result: Awaited<typeof outcome> | typeof TIMED_OUT;
+    try {
+      result = await within(outcome, ms);
+    } catch {
+      result = TIMED_OUT;
+    }
+    if (result === TIMED_OUT) {
+      abandon(slot, work);
+      return TIMED_OUT;
+    }
+    if (!result.ok) throw result.error;
+    return result.value;
+  };
+
   /** The call the loop gave up on settled (either way): the slot is free again, and its deadline is re-read. */
   const abandon = (slot: Slot, work: Promise<unknown>) => {
     work.then(
@@ -110,8 +138,12 @@ export function createTimerLoop({
       () => settle(slot),
     );
   };
-  const settle = (slot: Slot) => {
+  const release = (slot: Slot) => {
     slot.inflight = false;
+    slot.pending = undefined;
+  };
+  const settle = (slot: Slot) => {
+    release(slot);
     if (slots.get(slot.source.id) !== slot) return;
     slot.dirty = true;
     if (started) kick();
@@ -155,14 +187,12 @@ export function createTimerLoop({
   /** Returns false when the source was unreadable (it is then already backed off). */
   const read = async (slot: Slot) => {
     slot.dirty = false;
-    slot.inflight = true;
     let abandoned = false;
     try {
       const work = (async () => slot.source.next())();
-      const next = await within(work, NEXT_TIMEOUT_MS);
+      const next = await waitFor(slot, work, NEXT_TIMEOUT_MS);
       if (next === TIMED_OUT) {
         abandoned = true;
-        abandon(slot, work);
         throw new Error('next timed out');
       }
       // A deadline the loop cannot order (NaN, ±Infinity, a non-number) fails `<= now` and `> now`
@@ -177,7 +207,7 @@ export function createTimerLoop({
       note('timer_drift', abandoned ? NEXT_TIMEOUT_MS : MIN_FIRE_GAP_MS);
       return false;
     } finally {
-      if (!abandoned) slot.inflight = false;
+      if (!abandoned) release(slot);
     }
   };
 
@@ -190,17 +220,15 @@ export function createTimerLoop({
     } catch {
       // Diagnostics only.
     }
-    slot.inflight = true;
     // A failing fire is the source's bug; the backoff below keeps it from spinning.
     const work = (async () => slot.source.fire(now))().catch(() => {});
-    if ((await within(work, FIRE_TIMEOUT_MS)) === TIMED_OUT) {
+    if ((await waitFor(slot, work, FIRE_TIMEOUT_MS)) === TIMED_OUT) {
       // Hung: serve the other sources. The slot stays out of play until the call really settles.
-      abandon(slot, work);
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
       note('timer_drift', FIRE_TIMEOUT_MS);
       return;
     }
-    slot.inflight = false;
+    release(slot);
     // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
     if (slots.get(slot.source.id) !== slot) return;
     // An unreadable source keeps the backoff `read` just gave it, however much time the fire took.
@@ -292,11 +320,18 @@ export function createTimerLoop({
   return {
     /**
      * Registering an id that is already registered replaces the first source. The replaced slot is orphaned: a fire
-     * already running is not read again, and the new source may fire while it still runs (callers that replace a
-     * source must make its fire safe to overlap).
+     * already running is not read again. The new slot inherits the unsettled call, so one id never runs twice at once;
+     * when that call settles the new slot is marked dirty and kicked.
      */
     register(source) {
-      slots.set(source.id, { source, dirty: true, inflight: false, fires: [], head: 0 });
+      const slot: Slot = { source, dirty: true, inflight: false, fires: [], head: 0 };
+      const old = slots.get(source.id);
+      if (old?.inflight && old.pending) {
+        slot.inflight = true;
+        slot.pending = old.pending;
+        abandon(slot, old.pending);
+      }
+      slots.set(source.id, slot);
       if (started) kick();
       return () => {
         if (slots.get(source.id)?.source !== source) return;

@@ -9,6 +9,7 @@ import {
   MAX_SYSTEM_WAIT_MS,
   NEXT_TIMEOUT_MS,
   systemClock,
+  type FakeClock,
 } from '../../src/clock/module';
 import type { TimerLoop } from '../../src/clock/module';
 import type { DeadlineSource } from '../../src/ports/time';
@@ -160,6 +161,67 @@ test('hung next: a source whose next() never answers does not stall the others',
   await clock.flush();
   await loop.idle();
   assert.equal(reads, 2, 'settling the hung read marks the slot dirty and reads it again');
+});
+
+test('register over a hung id: the new source waits for the old call to settle, then fires once', async () => {
+  for (const reRegisterAfterTimeout of [false, true]) {
+    const { clock, loop } = setup();
+    const t0 = clock.now();
+    const gate = hung();
+    loop.register({ id: 'sync:a', next: async () => t0 + SEC, fire: () => gate.promise });
+    loop.start();
+    await clock.advance(2 * SEC);
+    if (reRegisterAfterTimeout) await clock.advance(FIRE_TIMEOUT_MS);
+    let fires = 0;
+    loop.register({
+      id: 'sync:a',
+      next: async () => (fires > 0 ? undefined : t0 + SEC),
+      fire: async () => void fires++,
+    });
+    await clock.advance(FIRE_TIMEOUT_MS + 5 * SEC);
+    assert.equal(
+      fires,
+      0,
+      `replacement fired while the old call hung (late=${reRegisterAfterTimeout})`,
+    );
+    gate.resolve();
+    await clock.flush();
+    await clock.advance(5 * SEC);
+    assert.equal(fires, 1, 'fires once after the old call settled');
+  }
+});
+
+test('a within() that throws does not leave the slot inflight forever', async () => {
+  const base = fakeClock();
+  let failSleep = false;
+  const clock: FakeClock = {
+    ...base,
+    sleep(ms, signal) {
+      if (failSleep) {
+        failSleep = false;
+        throw new Error('sleep unavailable');
+      }
+      return base.sleep(ms, signal);
+    },
+  };
+  const loop = createTimerLoop({
+    clock,
+    log: createLogger({ sink: { write: () => {} }, salt: 's', clock }),
+  });
+  const t0 = clock.now();
+  let fires = 0;
+  loop.register({
+    id: 'jobs',
+    next: async () => (fires >= 2 ? undefined : t0 + SEC),
+    fire: async () => void fires++,
+  });
+  loop.start();
+  await clock.flush();
+  failSleep = true;
+  await clock.advance(10 * SEC);
+  await loop.idle();
+  assert.equal(fires, 2, 'the slot fires again after the failed race');
+  await loop.stop();
 });
 
 test('a dirty source is re-read, not fired on its stale deadline', async () => {
