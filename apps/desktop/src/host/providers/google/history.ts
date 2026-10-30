@@ -657,6 +657,7 @@ export async function historyStep(
     settled.drafts,
     readPending(ctx.memory),
     now,
+    ctx.account.address,
   );
   const { drafts } = delivered;
 

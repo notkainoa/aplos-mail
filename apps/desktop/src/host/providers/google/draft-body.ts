@@ -2,10 +2,13 @@ import type { ClassifiedError } from '@aplos/contract';
 import {
   ProviderError,
   type AdapterContext,
+  type AttachmentFacts,
+  type MessageFacts,
   type RemoteDraftFact,
   type SyncLane,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
+import { messageFacts } from './facts';
 import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
 
 /**
@@ -20,6 +23,14 @@ import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from
  * draft's Message-ID as the fact's `internetId` (the headers come with format=full, no extra request). A read that fails
  * for a transient reason is tried again on the next pass, `MAX_TRIES` reads in all, then dropped (the error is
  * logged as `sync.gmail.request_refused`, never content); a 404 or a message that is no longer a draft drops it at once. Content is never logged.
+ *
+ * `RemoteDraftFact.message` (the engine's proof that a fact is OUR echo, `draft-writes.ts` `hasFingerprint`): when the read
+ * shows a From header, the fact carries the draft's `MessageFacts` (`messageFacts`, partial: true): `from` (the address
+ * lower-cased, the engine compares it with the account's own), `to`, `cc`, `subject` (the fields its content hash uses)
+ * and `attachments`. A draft that holds an attachment of any kind (`holdsAttachment`, inline images too) lists it as a
+ * non-inline attachment, so the engine reads `hasAttachments` true and never takes it as complete. Without a From header,
+ * or without a thread id or a date to give, `message` stays unset and the engine has no proof (a conflict, the safe
+ * direction). The address is never logged.
  */
 
 export const BODY_FETCHES = 5;
@@ -64,6 +75,7 @@ interface FullDraft {
     id?: unknown;
     threadId?: unknown;
     labelIds?: unknown;
+    internalDate?: unknown;
     payload?: GmailPart;
   };
 }
@@ -78,6 +90,7 @@ interface DraftRead {
   messageId: string;
   threadId?: string;
   internetId?: string;
+  message?: MessageFacts;
   html?: string;
   text?: string;
 }
@@ -95,6 +108,48 @@ function holdsAttachment(part: GmailPart): boolean {
   if (/^(attachment|inline)\b/.test(disposition)) return true;
   if (!mime.startsWith('text/') && !mime.startsWith('multipart/')) return true;
   return part.parts?.some(holdsAttachment) ?? false;
+}
+
+/** The attachments the draft holds, each as non-inline: the engine cannot carry any of them (see `holdsAttachment`). */
+function attachmentsOf(payload: GmailPart): AttachmentFacts[] {
+  if (!holdsAttachment(payload)) return [];
+  const listed = walkPayload(payload)
+    .filter(leaf => leaf.kind === 'attachment')
+    .map(({ part }) => ({
+      part: part.body?.attachmentId ?? part.partId ?? '0',
+      ...(part.filename ? { name: part.filename } : {}),
+      ...(part.mimeType ? { mime: part.mimeType } : {}),
+      ...(part.body?.size !== undefined ? { size: part.body.size } : {}),
+      inline: false,
+    }));
+  return listed.length ? listed : [{ part: payload.partId ?? '0', inline: false }];
+}
+
+/** The draft's metadata for the engine, only when it names a sender, a thread and a date; the address is lower-cased. */
+function metadataOf(
+  message: NonNullable<FullDraft['message']>,
+  payload: GmailPart,
+  self: string,
+): MessageFacts | undefined {
+  if (typeof message.id !== 'string' || typeof message.threadId !== 'string') return undefined;
+  if (!headerOf(payload.headers, 'From')) return undefined;
+  const internalDate = typeof message.internalDate === 'string' ? message.internalDate : undefined;
+  const facts = messageFacts(
+    {
+      id: message.id,
+      threadId: message.threadId,
+      labelIds: (message.labelIds as string[]) ?? [],
+      ...(internalDate !== undefined ? { internalDate } : {}),
+      payload,
+    },
+    { self, partial: true },
+  );
+  if (!facts.from?.address || !facts.date) return undefined;
+  return {
+    ...facts,
+    from: { ...facts.from, address: facts.from.address.trim().toLowerCase() },
+    attachments: attachmentsOf(payload),
+  };
 }
 
 function bodyOf(payload: GmailPart): { html?: string; text?: string } | undefined {
@@ -118,12 +173,13 @@ async function readFull(
   client: GmailClient,
   lane: SyncLane,
   draftId: string,
+  self: string,
 ): Promise<DraftRead | undefined> {
   const reply = await client.call<FullDraft>({
     method: 'gmail.drafts.get',
     path: `/drafts/${encodeURIComponent(draftId)}`,
     format: 'full',
-    fields: 'message(id,threadId,labelIds,payload)',
+    fields: 'message(id,threadId,labelIds,internalDate,payload)',
     lane,
     item: draftId,
   });
@@ -134,9 +190,11 @@ async function readFull(
     return undefined;
   const body = message.payload ? bodyOf(message.payload) : undefined;
   const internetId = headerOf(message.payload?.headers, 'Message-ID')?.trim();
+  const facts = message.payload ? metadataOf(message, message.payload, self) : undefined;
   return {
     messageId: message.id,
     ...(internetId ? { internetId } : {}),
+    ...(facts ? { message: facts } : {}),
     ...(typeof message.threadId === 'string' ? { threadId: message.threadId } : {}),
     ...body,
   };
@@ -148,9 +206,14 @@ type Outcome = 'stop' | Retry | DraftRead | undefined;
  * One read. A pause or refusal is `stop` (nothing was tried); a transient failure is a `Retry` (5xx, network, timeout);
  * a 404, a message that is no longer a draft, or any other failure leaves the draft without a body for good.
  */
-async function tryRead(client: GmailClient, lane: SyncLane, draftId: string): Promise<Outcome> {
+async function tryRead(
+  client: GmailClient,
+  lane: SyncLane,
+  draftId: string,
+  self: string,
+): Promise<Outcome> {
   try {
-    return await readFull(client, lane, draftId);
+    return await readFull(client, lane, draftId, self);
   } catch (error) {
     if (isStop(error)) return 'stop';
     if (error instanceof ProviderError && error.error.status === 404) return undefined;
@@ -181,6 +244,7 @@ export async function deliverBodies(
   drafts: RemoteDraftFact[],
   pendingBefore: PendingBodies,
   now: number,
+  self: string,
 ): Promise<{ drafts: RemoteDraftFact[]; pending: Map<string, Waiter> }> {
   const reported = new Set(drafts.map(d => d.remoteDraftId));
   const fresh = drafts.filter(d => !d.removed);
@@ -208,7 +272,7 @@ export async function deliverBodies(
       continue;
     }
     reads++;
-    const read = await tryRead(client, lane, entry.draftId);
+    const read = await tryRead(client, lane, entry.draftId, self);
     if (read === 'stop') {
       stopped = true;
       keep(entry);
@@ -228,7 +292,7 @@ export async function deliverBodies(
 }
 
 /**
- * The fact with what the read said: the Message-ID and the body (when it may be delivered). A waiter from an earlier
+ * The fact with what the read said: the Message-ID, the metadata and the body (when it may be delivered). A waiter from an earlier
  * pass is reported again only when there is a body to add.
  */
 function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact | undefined {
@@ -237,7 +301,8 @@ function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact
     ...(read.text ? { text: read.text } : {}),
   };
   const internetId = read.internetId ? { internetId: read.internetId } : {};
-  if (entry.fact) return { ...entry.fact, ...internetId, ...body };
+  const message = read.message ? { message: read.message } : {};
+  if (entry.fact) return { ...entry.fact, ...internetId, ...message, ...body };
   if (!read.html && !read.text) return undefined;
   return {
     remoteDraftId: entry.draftId,
@@ -245,6 +310,7 @@ function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact
     ...(read.threadId ? { remoteThreadId: read.threadId } : {}),
     ...internetId,
     changedAt: now,
+    ...message,
     ...body,
   };
 }

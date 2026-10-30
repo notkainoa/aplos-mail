@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createFaultInjector, type GmailEmulator } from '@aplos/emulators';
 import type { RemoteDraftFact } from '@aplos/engine/ports';
 import { gmailLog, rig, type Rig } from './harness';
+import { messageWrite } from '../../../../packages/engine/src/sync/facts';
 import { mimeOf } from './draft-rig';
 
 const windowDone = (r: Rig) => () => r.store.states.get('window:inbox')?.phase === 'done';
@@ -491,4 +492,119 @@ test('prov-gmail-drafts body delivery: with 8 foreign drafts one history step re
   assert.equal(reads.length, 5);
   assert.equal(new Set(reads.map(f => f.path)).size, 5, 'each draft once');
   assert.ok(reads.every(f => f.query.get('format') === 'full'));
+});
+
+// ---- the fact's metadata: the engine's proof that a fact is our own echo needs `message.from` and `hasAttachments` ----
+
+/** A fetch that removes the From header from every `drafts.get format=full` reply. */
+function withoutFrom(holder: { emu?: GmailEmulator }): typeof fetch {
+  return async (input, init) => {
+    const response = await holder.emu!.fetch(input, init);
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const full = url.searchParams.get('format') === 'full';
+    if (!/\/drafts\/[^/]+$/.test(url.pathname) || !full || !response.ok) return response;
+    const json = JSON.parse(await response.text()) as {
+      message: { payload: { headers: { name: string }[] } };
+    };
+    const headers = json.message.payload.headers;
+    json.message.payload.headers = headers.filter(h => h.name.toLowerCase() !== 'from');
+    return new Response(JSON.stringify(json), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+}
+
+test('prov-gmail-drafts fact metadata: a delivered body carries message.from (lower-cased), recipients, subject and no attachments', async () => {
+  const r = await synced();
+  const draft = r.emu.mailbox.createDraftElsewhere(
+    spec({ from: r.account.address.toUpperCase(), cc: ['cc.person@mail.example.test'] }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.equal(fact.text?.trim(), 'Phone text.');
+  const message = fact.message!;
+  assert.equal(message.from?.address, r.account.address.toLowerCase());
+  assert.equal(message.remoteId, draft.messageId);
+  assert.equal(message.remoteThreadId, draft.threadId);
+  assert.deepEqual(
+    message.to.map(a => a.address),
+    ['maren.ashgrove@mail.example.test'],
+  );
+  assert.deepEqual(
+    message.cc.map(a => a.address),
+    ['cc.person@mail.example.test'],
+  );
+  assert.equal(message.subject, 'From the phone');
+  assert.equal(message.partial, true);
+  assert.ok(message.flags.draft);
+  // What the engine stores from it (`messageWrite`, the same conversion the actor applies to the fact).
+  assert.equal(messageWrite(r.account.id, r.account.address, message).hasAttachments, false);
+});
+
+test('prov-gmail-drafts fact metadata: a draft with a file or an inline image reports hasAttachments and delivers no body', async () => {
+  const r = await synced();
+  const file = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      attachments: [{ filename: 'plan.txt', mimeType: 'text/plain', data: Buffer.from('plan') }],
+    }),
+  );
+  const inline = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      html: '<img src="cid:pic">',
+      attachments: [
+        {
+          filename: 'pic.png',
+          mimeType: 'image/png',
+          data: Buffer.from('png'),
+          cid: 'pic',
+          inline: true,
+        },
+      ],
+    }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const facts = factsSince(r, from);
+  for (const draft of [file, inline]) {
+    const fact = facts.find(f => f.remoteDraftId === draft.draftId)!;
+    assert.equal(fact.html, undefined);
+    assert.equal(fact.text, undefined);
+    assert.equal(fact.message?.from?.address, r.account.address.toLowerCase());
+    assert.ok(fact.message!.attachments!.length > 0);
+    const stored = messageWrite(r.account.id, r.account.address, fact.message!);
+    assert.equal(stored.hasAttachments, true, 'the engine reads it as a draft with attachments');
+  }
+});
+
+test('prov-gmail-drafts fact metadata: no From header means no message, the body is still delivered', async () => {
+  const holder: { emu?: GmailEmulator } = {};
+  const r = await rig({ threads: 60, adapter: { fetch: withoutFrom(holder) } });
+  holder.emu = r.emu;
+  await r.drive({ until: windowDone(r), maxSteps: 300 });
+  await r.clock.advance(60_000);
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.equal(fact.text?.trim(), 'Phone text.');
+  assert.equal(fact.message, undefined);
+});
+
+test('prov-gmail-drafts fact metadata: a draft whose body was not read (a failed read) carries no message', async () => {
+  const faults = createFaultInjector();
+  const r = await syncedWith({ emulator: { faults } });
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.get' },
+    { status: 503, reason: 'backendError', message: 'Backend Error' },
+    { times: 20 },
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.ok(fact, 'still reported');
+  assert.equal(fact.message, undefined);
+  assert.equal(fact.text, undefined);
 });
