@@ -8,6 +8,7 @@ import type { Account, AccountId } from '../data';
 import type { MenuEntry, TagColor } from '../ui/props';
 import { statusCopy } from '../ui/status';
 import { AccountSwitcher, Menu } from '../ui/surfaces';
+import { useMenuActive } from './menu-active';
 import { accountColor, needsReconnect } from './status-map';
 import { setSheetOpener } from './index';
 
@@ -77,11 +78,16 @@ export function AccountMenu({
   const menuId = useId();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const { label, monogram } = scopeLabel(accounts, scope);
-  const close = () => setAnchor(null);
   // The menu item unmounts when the menu closes, so the switcher is the opener the sheet returns focus to.
   const reconnect = (account: Account) => {
     setSheetOpener(anchor);
     onReconnect(account);
+  };
+  const entries = accountEntries(accounts, reconnect);
+  const active = useMenuActive(entries);
+  const close = () => {
+    active.reset();
+    setAnchor(null);
   };
   const select = (id: string) => {
     close();
@@ -101,7 +107,9 @@ export function AccountMenu({
         open={anchor !== null}
         anchor={anchor}
         label="Accounts"
-        entries={accountEntries(accounts, reconnect)}
+        entries={entries}
+        activeId={active.activeId}
+        onActiveChange={active.onActiveChange}
         checkedId={scope ?? ALL_ID}
         onSelect={select}
         onClose={close}

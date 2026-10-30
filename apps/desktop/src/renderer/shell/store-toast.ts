@@ -30,6 +30,7 @@ type Patch = Partial<Omit<PushedToast, 'id'>>;
 const toastStore = createStore<readonly ToastData[]>([]);
 const live = new Map<string, PushedToast>();
 let runCommand: ((commandId: string) => unknown) | null = null;
+let undoOperation: ((opId: string) => boolean) | null = null;
 
 /** True for a toast that must never be silently replaced or evicted. */
 export function isUndoToast(toast: ToastData): boolean {
@@ -103,6 +104,11 @@ export function setToastCommandRunner(runner: ((commandId: string) => unknown) |
   runCommand = runner;
 }
 
+/** Wires the targeted undo: `undo(opId)` undoes that one operation and returns true when it was accepted. A toast's id is its operation's id. */
+export function setToastUndoRunner(runner: ((opId: string) => boolean) | null): void {
+  undoOperation = runner;
+}
+
 /** True when the registry's result says the command ran. */
 function commandRan(result: unknown): boolean {
   return (
@@ -112,11 +118,15 @@ function commandRan(result: unknown): boolean {
   );
 }
 
-/** Runs the chosen action. A command action closes the toast only when the registry says the command ran (a refused or failed Undo keeps it); an `onAction` callback closes it after it returns. */
+/** Runs the chosen action. An Undo action with no callback of its own undoes this toast's operation (never the newest change, which is Z's), and the toast closes only when that undo was accepted. A command action closes the toast only when the registry says the command ran (a refused or failed Undo keeps it); an `onAction` callback closes it after it returns. */
 export function runToastAction(id: string, actionId: string): void {
   const toast = live.get(id);
   if (!toast) return;
   const action = toast.actions?.find(a => a.id === actionId);
+  if (action?.commandId === UNDO_COMMAND && !toast.onAction && undoOperation) {
+    if (undoOperation(id)) dismissToastNow(id);
+    return;
+  }
   if (action?.commandId && runCommand) {
     if (commandRan(runCommand(action.commandId))) dismissToastNow(id);
     return;
@@ -132,6 +142,7 @@ export function runToastAction(id: string, actionId: string): void {
 export function resetToasts(): void {
   live.clear();
   runCommand = null;
+  undoOperation = null;
   publish();
 }
 

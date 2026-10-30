@@ -66,16 +66,30 @@ export function accountGone(
   return loaded && !accounts.some(a => a.id === accountId);
 }
 
-/** Starts the flow and follows its frames; returns the connect id once known. */
-function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
+/** True only once accounts have loaded and the sheet's account is among them: a reconnect is never requested for an account known to be missing, nor before the list is known. */
+export function canStartFlow(
+  loaded: boolean,
+  accounts: readonly { readonly id: string }[],
+  accountId: string,
+): boolean {
+  return loaded && !accountGone(loaded, accounts, accountId);
+}
+
+/** Starts the flow (once `startable`) and follows its frames; returns the connect id once known. */
+function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number, startable: boolean) {
   const [connectId, setConnectId] = useState('');
   const [refused, setRefused] = useState(false);
   const last = ownFrame(useFrames('connect', { connectId }).last, accountId);
-  const latest = useRef({ connectId, state: last?.state as string | undefined });
+  const latest = useRef({
+    connectId,
+    state: last?.state as string | undefined,
+    startable,
+  });
   useEffect(() => {
-    latest.current = { connectId, state: last?.state };
-  }, [connectId, last?.state]);
+    latest.current = { connectId, state: last?.state, startable };
+  }, [connectId, last?.state, startable]);
   useEffect(() => {
+    if (!startable) return undefined;
     let stale = false;
     let started = '';
     setConnectId('');
@@ -83,7 +97,7 @@ function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
     // The start waits a microtask: StrictMode runs an effect, cleans it up and runs it again at once, and only the
     // live run may open a flow (the first is stale by then and never starts one).
     void Promise.resolve().then(() => {
-      if (stale) return;
+      if (stale || !latest.current.startable) return;
       startFlow({ accountId, mode }).then(
         result => {
           started = result.connectId;
@@ -100,7 +114,7 @@ function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number) {
       if (started && !flowEnded(latest.current, started))
         void api.account.cancelConnect({ connectId: started }).catch(ignore);
     };
-  }, [accountId, mode, attempt]);
+  }, [accountId, mode, attempt, startable]);
   return { connectId, last, refused };
 }
 
@@ -115,7 +129,8 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
   const accounts = useAccounts();
   const loaded = useAccountsLoaded();
   const [attempt, setAttempt] = useState(0);
-  const { connectId, last, refused } = useReconnectFlow(args, attempt);
+  const startable = canStartFlow(loaded, accounts, args.accountId);
+  const { connectId, last, refused } = useReconnectFlow(args, attempt, startable);
   const address = accounts.find(a => a.id === args.accountId)?.address ?? '';
   const state = last?.state;
   const gone = accountGone(loaded, accounts, args.accountId);

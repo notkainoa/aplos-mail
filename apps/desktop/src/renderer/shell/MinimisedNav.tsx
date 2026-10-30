@@ -5,6 +5,7 @@
 import { useId, useRef, useState } from 'react';
 import { Button } from '../ui/buttons-keys';
 import { Menu } from '../ui/surfaces';
+import { useMenuActive } from './menu-active';
 import type { MenuEntry } from '../ui/props';
 import {
   FOOTER_PLACES,
@@ -49,7 +50,12 @@ export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) 
   const menuId = useId();
   const trigger = useRef<HTMLButtonElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const close = () => setAnchor(null);
+  const entries = minimisedEntries(counts);
+  const active = useMenuActive(entries);
+  const close = () => {
+    active.reset();
+    setAnchor(null);
+  };
   return (
     <div className="aplos-rail">
       <Button
@@ -67,7 +73,9 @@ export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) 
         open={anchor !== null}
         anchor={anchor}
         label="Places"
-        entries={minimisedEntries(counts)}
+        entries={entries}
+        activeId={active.activeId}
+        onActiveChange={active.onActiveChange}
         checkedId={screenPlace(screen) ?? undefined}
         onSelect={id => {
           close();
