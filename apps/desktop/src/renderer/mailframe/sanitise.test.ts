@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { Parser } from 'htmlparser2';
 import { CORPUS } from './corpus';
-import { sanitiseCss } from './css';
+import { MAX_STYLE_ATTRIBUTE, MAX_STYLE_BLOCK, sanitiseCss } from './css';
 import { MAX_BODY_CHARS, NOTICES, sanitiseBody } from './sanitise';
 import type { ImagePolicy } from './types';
 
@@ -124,6 +124,8 @@ describe('sanitiseBody: hostile corpus', () => {
       'javascript-links',
       'giant-table',
       'deep-nesting',
+      'redos-css',
+      'span-bomb',
     ]) {
       assert.ok(ids.includes(id), id);
     }
@@ -195,13 +197,31 @@ describe('sanitiseBody: behaviour', () => {
     assert.equal(result.bodyAttributes, ' bgcolor="#f4efe6" style="color:#333"');
   });
 
-  test('a table over 5,000 cells becomes text with a notice', () => {
+  test('a table over 5,000 cells becomes text with a notice kept out of the letter', () => {
     const result = sanitiseBody(CORPUS.find(i => i.id === 'giant-table')!.html, 'block');
     assert.equal(result.flattened, true);
-    assert.ok(
-      result.html.startsWith(`<p class="aplos-notice">${NOTICES.flattened.replace('’', '’')}</p>`),
+    assert.deepEqual(result.notices, [NOTICES.flattened]);
+    assert.doesNotMatch(result.html, /<table|<td|aplos-notice/);
+  });
+
+  test('colspan and rowspan are clamped to 1-100, not dropped', () => {
+    const result = sanitiseBody(
+      '<table><tr><td colspan="1000" rowspan="2">a</td><td colspan="-3" rowspan="0">b</td></tr></table>',
+      'block',
     );
-    assert.doesNotMatch(result.html, /<table|<td/);
+    assert.match(
+      result.html,
+      /<td colspan="100" rowspan="2">a<\/td><td colspan="1" rowspan="1">b<\/td>/,
+    );
+  });
+
+  test('spanned cells count colspan x rowspan toward the cell cap', () => {
+    const row = (cells: number, span: number) =>
+      `<table><tr>${`<td colspan="${span}">x</td>`.repeat(cells)}</tr></table>`;
+    assert.equal(sanitiseBody(row(60, 1_000), 'block').flattened, true, '60 x 100 = 6,000');
+    assert.equal(sanitiseBody(row(400, 10), 'block').flattened, false, '400 x 10 = 4,000');
+    const bomb = sanitiseBody(CORPUS.find(i => i.id === 'span-bomb')!.html, 'block');
+    assert.equal(bomb.flattened, true);
   });
 
   test('nesting over 200 levels becomes text; 200 levels stay layout', () => {
@@ -220,7 +240,8 @@ describe('sanitiseBody: behaviour', () => {
   test('bodies over the size cap are cut with a notice', () => {
     const result = sanitiseBody('<p>' + 'a'.repeat(MAX_BODY_CHARS + 10) + '</p>', 'block');
     assert.equal(result.truncated, true);
-    assert.ok(result.html.includes(NOTICES.truncated.replace('’', '’')));
+    assert.deepEqual(result.notices, [NOTICES.truncated]);
+    assert.doesNotMatch(result.html, /aplos-notice/);
     assert.ok(result.html.length < MAX_BODY_CHARS + 500);
   });
 
@@ -231,6 +252,55 @@ describe('sanitiseBody: behaviour', () => {
     );
     assert.doesNotMatch(result.html, /<script/);
     assert.equal((result.html.match(/<\/style>/g) ?? []).length, 1);
+  });
+
+  test('a pixel sized by its style attribute is removed when loading', () => {
+    const pixels = [
+      'style="width:1px;height:1px"',
+      'style="width:0;height:0"',
+      'style="WIDTH: 1EM; height : 1em"',
+      'style="width:1px!important;height:0px"',
+      'width="1" style="height:1px"',
+      'style="max-width:1px;max-height:1px"',
+    ];
+    for (const sizing of pixels) {
+      const result = sanitiseBody(`<img src="https://t.example/p.gif" ${sizing}>`, 'load');
+      assert.doesNotMatch(result.html, /t\.example/, sizing);
+      assert.equal(result.blocked, 1, sizing);
+    }
+    const banner = sanitiseBody(
+      '<img src="https://img.example/a.png" style="width:600px;height:1px">',
+      'load',
+    );
+    assert.match(banner.html, /img\.example/);
+  });
+
+  test('a style block over 200 KB is cut and its remainder dropped', () => {
+    const tail = 'b{background:url(https://t.example/late.gif)}';
+    const css = `p{color:red}${' '.repeat(MAX_STYLE_BLOCK)}${tail}`;
+    const result = sanitiseBody(`<style>${css}</style><p>x</p>`, 'load');
+    assert.match(result.html, /p\{color:red\}/);
+    assert.doesNotMatch(result.html, /t\.example|b\{/);
+  });
+
+  test('a style attribute over 8 KB is cut and its remainder dropped', () => {
+    const style = `color:red;${' '.repeat(MAX_STYLE_ATTRIBUTE)};background:url(https://t.example/x)`;
+    const result = sanitiseBody(`<p style="${style}">x</p>`, 'load');
+    assert.match(result.html, /style="color:red;/);
+    assert.doesNotMatch(result.html, /t\.example|background/);
+  });
+
+  test('!important on the body style cannot beat the host', () => {
+    const result = sanitiseBody('<body style="height:2px!important"><p>x</p></body>', 'block');
+    assert.doesNotMatch(result.bodyAttributes, /!|important/);
+  });
+
+  test('a 400 KB pathological style block sanitises in under 200 ms', () => {
+    const html = `<style>p{x:${'a'.repeat(400_000)}}</style><p style="x:url(${' '.repeat(8_000)}">x</p>`;
+    const start = performance.now();
+    sanitiseBody(html, 'load');
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
   });
 
   test('is deterministic', () => {
@@ -269,4 +339,67 @@ describe('sanitiseCss', () => {
     const css = 'td{color:#333;padding:4px;background:url("data:image/gif;base64,R0lGOD==")}';
     assert.equal(run(css).css, css);
   });
+
+  test('url() inside :hover, :active, :focus and [open] rules is dropped even when loading', () => {
+    const css = [
+      'a:hover{background:url(https://t.example/h.gif)}',
+      'p:focus-within{background:url(https://t.example/f.gif)}',
+      '@media screen{b:active{background:url("https://t.example/a.gif")}}',
+      'details[open] i{background:url(https://t.example/o.gif)}',
+      'a{&:hov\\65r{background:url(https://t.example/n.gif)}}',
+      'i{background:url(https://img.example/ok.png)}',
+    ].join('');
+    const out = run(css, 'load');
+    assert.doesNotMatch(out.css, /t\.example/);
+    assert.match(out.css, /url\("https:\/\/img\.example\/ok\.png"\)/);
+    assert.equal(out.blocked, 5);
+  });
+
+  test('a string or a function cannot end a :hover rule early', () => {
+    for (const css of [
+      'a:hover{content:"}";background:url(https://t.example/1)}',
+      "a:hover{content:'}';background:url(https://t.example/2)}",
+      'a:hover{x:f(});background:url(https://t.example/3)}',
+      'a:hover{x:[}];background:url(https://t.example/4)}',
+    ]) {
+      assert.doesNotMatch(run(css, 'load').css, /t\.example/, css);
+    }
+  });
+
+  test('!important and @layer are removed from email CSS', () => {
+    const out = run(
+      '@layer aplos{html{height:5px!important}}p{color:red ! important;margin:0!IMPORTANT}b{x:1!!importantimportant}',
+    );
+    assert.doesNotMatch(out.css, /!|@layer/i);
+    assert.match(out.css, /p\{color:red/);
+  });
+
+  test('erasing remote text cannot join the pieces around it into a url(', () => {
+    const out = run('a{background:url//x(/relative.png)}', 'load');
+    assert.doesNotMatch(out.css, /url\(/i);
+  });
+});
+
+describe('sanitiseCss: linear time on hostile input', () => {
+  const SIZE = 400_000;
+  const cases: [string, string][] = [
+    ['letters', 'a'.repeat(SIZE)],
+    ['a scheme run before //', `${'a'.repeat(SIZE)}://x`],
+    ['url( then spaces', `url(${' '.repeat(SIZE)}`],
+    ['url( repeated', 'url('.repeat(SIZE / 4)],
+    ['quoted url( unclosed', `url("https:${'a'.repeat(SIZE)}`],
+    ['unclosed comments', '/*x'.repeat(SIZE / 3)],
+    ['string functions unclosed', 'image('.repeat(SIZE / 6)],
+    ['bangs and spaces', `!${' '.repeat(SIZE)}`],
+    ['hover rules', 'a:hover{'.repeat(SIZE / 8)],
+    ['slashes', '//'.repeat(SIZE / 2)],
+  ];
+  for (const [name, css] of cases) {
+    test(`${name}: 400 KB in under 200 ms`, () => {
+      const start = performance.now();
+      sanitiseCss(css, 'load', { blocked: 0 });
+      const elapsed = performance.now() - start;
+      assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
+    });
+  }
 });

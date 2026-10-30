@@ -3,6 +3,7 @@
 import { createRoot } from 'react-dom/client';
 import { CORPUS } from '../corpus';
 import { MailFrameView } from '../MailFrameView';
+import { MAX_BODY_CHARS } from '../sanitise';
 import type { ImagePolicy, MailFrameKey, MailFrameReady } from '../types';
 
 interface Recorder {
@@ -18,8 +19,16 @@ declare global {
   }
 }
 
+/** Bodies too large for the corpus: `long-css` is cut at the size cap and carries CSS aimed at the host's notices. */
+const SPECIAL: Record<string, () => string> = {
+  'long-css': () =>
+    '<style>p,.aplos-notice,.aplos-mailframe__notice{display:none!important}</style>' +
+    `<div>${'long text '.repeat(MAX_BODY_CHARS / 10 + 10)}</div>`,
+};
+
 const [id = '', policy = 'block'] = location.hash.slice(1).split('/');
-const item = CORPUS.find(c => c.id === id);
+const special = SPECIAL[id];
+const item = special ? { id, html: special() } : CORPUS.find(c => c.id === id);
 const recorder: Recorder = { ready: [], keys: [], hostKeys: [], opened: [] };
 window.__mailframe = recorder;
 // Stands in for the preload bridge (typed elsewhere as Bridge); the spec checks it is never touched.

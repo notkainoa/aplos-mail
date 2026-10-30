@@ -13,10 +13,20 @@ export type TextSegment =
 
 const LINK = /\b(?:https?:\/\/|mailto:)[^\s<>"'`]+/gi;
 /** Punctuation that usually ends a sentence rather than a URL. */
-const TRAILING = /[.,;:!?)\]}>]+$/;
+const TRAILING = new Set('.,;:!?)]}>');
+/** A longer candidate (after trimming) stays text. */
+export const MAX_URL = 2_000;
+
+/** The candidate without its trailing punctuation: one scan back from the end, so linear on any input. */
+function trimTrailing(raw: string): string {
+  let end = raw.length;
+  while (end > 0 && TRAILING.has(raw[end - 1]!)) end--;
+  return raw.slice(0, end);
+}
 
 function linkAt(raw: string): { text: string; href: string } | null {
-  const text = raw.replace(TRAILING, '');
+  const text = trimTrailing(raw);
+  if (text.length > MAX_URL) return null;
   const href = safeExternalUrl(text);
   return href ? { text, href } : null;
 }

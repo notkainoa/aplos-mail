@@ -9,19 +9,19 @@
 // The frame's sandbox (no scripts) and the inner CSP stay as independent fences behind it.
 
 import { Parser } from 'htmlparser2';
-import { type AttributeContext, escapeHtml, keptAttributes } from './attributes';
-import { sanitiseCss } from './css';
+import { type AttributeContext, cellWeight, escapeHtml, keptAttributes } from './attributes';
+import { MAX_STYLE_BLOCK, sanitiseCss } from './css';
 import { flattenToText } from './flatten';
 import type { ImagePolicy } from './types';
 
 /** Input above this many characters is cut before parsing (contract bodies may reach 5,000,000). */
 export const MAX_BODY_CHARS = 2_000_000;
-/** More table cells than this and the body is shown as text. */
+/** More table cells than this (each counted as colspan x rowspan) and the body is shown as text. */
 export const MAX_TABLE_CELLS = 5_000;
 /** Deeper element nesting than this and the body is shown as text. */
 export const MAX_DEPTH = 200;
 
-/** Sentences shown inside the letter, above the body. */
+/** Sentences the host shows above the letter, outside the frame, where the email's CSS cannot hide or fake them. */
 export const NOTICES = {
   flattened: 'This email’s layout was too large to show, so here is its text.',
   truncated: 'This email is too long to show in full.',
@@ -31,6 +31,8 @@ export const NOTICES = {
 export interface SanitisedBody {
   /** The body markup: allowlisted elements and attributes only, escaped text, sanitised CSS. */
   html: string;
+  /** NOTICES sentences for the host to show outside the frame (never part of `html`). */
+  notices: string[];
   /** Attributes for the frame's `<body>` taken from the email's own `<body>` (bgcolor, style, …), already escaped. */
   bodyAttributes: string;
   /** Remote resources removed or blocked ("N trackers removed"). */
@@ -79,7 +81,7 @@ class Writer {
   open(name: string, attribs: Record<string, string>): void {
     this.depth++;
     this.maxDepth = Math.max(this.maxDepth, this.depth);
-    if (name === 'td' || name === 'th') this.cells++;
+    if (name === 'td' || name === 'th') this.cells += cellWeight(attribs);
     if (this.cells > MAX_TABLE_CELLS || this.maxDepth > MAX_DEPTH) this.overflow = true;
     if (this.dropDepth > 0 || DROP_WITH_CONTENT.has(name)) {
       this.dropDepth++;
@@ -115,7 +117,8 @@ class Writer {
   }
 
   private flushStyle(): void {
-    const css = sanitiseCss((this.style ?? []).join(''), this.cx.policy, this.cx);
+    const raw = (this.style ?? []).join('').slice(0, MAX_STYLE_BLOCK);
+    const css = sanitiseCss(raw, this.cx.policy, this.cx);
     this.style = null;
     if (css.trim()) this.out.push(`<style>${css}</style>`);
   }
@@ -149,10 +152,6 @@ function parse(html: string, cx: AttributeContext): Writer {
   return writer;
 }
 
-function notice(sentence: string): string {
-  return `<p class="aplos-notice">${escapeHtml(sentence)}</p>`;
-}
-
 function flatText(html: string): string {
   return `<div class="aplos-flat">${escapeHtml(flattenToText(html))}</div>`;
 }
@@ -168,12 +167,12 @@ export function sanitiseBody(html: string, policy: ImagePolicy): SanitisedBody {
   const writer = parse(input, cx);
   const flattened = writer.overflow;
   const notices = [
-    flattened ? notice(NOTICES.flattened) : '',
-    truncated ? notice(NOTICES.truncated) : '',
-  ].join('');
-  const body = flattened ? flatText(input) : writer.out.join('');
+    ...(flattened ? [NOTICES.flattened] : []),
+    ...(truncated ? [NOTICES.truncated] : []),
+  ];
   return {
-    html: notices + body,
+    html: flattened ? flatText(input) : writer.out.join(''),
+    notices,
     bodyAttributes: flattened ? '' : writer.bodyAttributes,
     blocked: cx.blocked,
     flattened,

@@ -78,7 +78,19 @@ function wireDocument(
   };
 }
 
-/** The stand-in path: a scriptless, same-origin `srcdoc` frame measured from the parent. */
+/** Host sentences above the letter (flattened, truncated): host DOM, so the email's CSS cannot hide or fake them. */
+function Notices({ notices }: { notices: string[] }) {
+  return notices.map(sentence => (
+    <p key={sentence} className="aplos-mailframe__notice">
+      {sentence}
+    </p>
+  ));
+}
+
+/**
+ * The stand-in path: a scriptless, same-origin `srcdoc` frame measured from the parent. The measured height is the
+ * frame's own; the notices above it are host chrome.
+ */
 export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc' }>>) {
   const { source, hidden } = props;
   const built = useMemo(
@@ -103,18 +115,21 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
   };
 
   return (
-    <iframe
-      ref={ref}
-      title="Email"
-      className="aplos-mailframe__frame"
-      sandbox={SRCDOC_SANDBOX}
-      referrerPolicy="no-referrer"
-      allow=""
-      tabIndex={-1}
-      srcDoc={built.srcdoc}
-      onLoad={onLoad}
-      style={{ ...FRAME, height, ...(hidden ? HIDDEN : null) }}
-    />
+    <div style={hidden ? HIDDEN : undefined}>
+      <Notices notices={built.notices} />
+      <iframe
+        ref={ref}
+        title="Email"
+        className="aplos-mailframe__frame"
+        sandbox={SRCDOC_SANDBOX}
+        referrerPolicy="no-referrer"
+        allow=""
+        tabIndex={-1}
+        srcDoc={built.srcdoc}
+        onLoad={onLoad}
+        style={{ ...FRAME, height }}
+      />
+    </div>
   );
 }
 

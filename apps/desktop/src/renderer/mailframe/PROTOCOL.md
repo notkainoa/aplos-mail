@@ -10,16 +10,23 @@ this before either side relies on it. Sources: plan 30 section 4.4, research
 | | `srcdoc` (stand-in engine, development only) | `aplos-mail://m/<token>` (final) |
 |---|---|---|
 | Sanitiser | `sanitise.ts` in the renderer, run on the stand-in's `MailFrame.srcdoc` | the engine's, served by main |
-| `sandbox` | `allow-same-origin` only | `allow-scripts allow-popups`, never `allow-same-origin` |
-| CSP | inner `<meta>`, first in `<head>`, plus the host page's inherited CSP | response header (host CSP is not inherited) |
+| Mounted | Vite dev builds only (`import.meta.env.DEV`); elsewhere a `srcdoc` answer shows "Couldn't load this email." | always |
+| `sandbox` | `allow-same-origin` only, never `allow-scripts` | `allow-scripts allow-popups`, never `allow-same-origin` |
+| CSP | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP | response header (host CSP is not inherited) |
 | Scripts in the frame | none | one hash-pinned reporter |
 | Height and paper tint | read by the host from `contentDocument` | reporter `size` messages, validated below |
 | Keys with focus inside | host listener on the frame document | main's `before-input-event` (fallback: reporter `key` messages) |
 | Links | host click listener cancels, opens outside | `setWindowOpenHandler` in main, `will-frame-navigate` cancels |
+| Notices (flattened, truncated) | host DOM above the frame | host DOM above the frame (needs the flags from the engine) |
 
 Both are mounted at the slot's final width, kept hidden until they report, and swapped in place (double buffer).
 
-## Why the srcdoc frame is same-origin
+## Why the srcdoc frame is same-origin (development only)
+
+`allow-same-origin` is allowed in development builds only. `useFrameSource` refuses a `srcdoc` answer unless
+`import.meta.env.DEV` is true and shows the body-failed state instead, so a packaged build can never mount a
+same-origin frame even if the stand-in engine answers with `srcdoc`. Tests pin that the `srcdoc` sandbox never contains
+`allow-scripts` and that no sandbox constant holds both tokens.
 
 The scriptless frame has to be measured, and with no script inside it the only way is for the parent to read the
 document. Research section 3 tried everything else and all of it failed: main-process `executeJavaScript` ("Script not
@@ -41,10 +48,22 @@ What that costs, and why it is acceptable here:
   that comment (REQUEST in the lane report).
 
 Measurement: `documentElement.getBoundingClientRect().height` once at `load`, then a parent-side `ResizeObserver` on
-the root element for late growth (images when loading is allowed). A final `<style>` forces
-`html, body { overflow:hidden; height:auto; min-height:0; max-height:none }` (all `!important`) so the root's box is the
-content height. Paper tint: the computed `background-color` of `body`, else `html`, through `parseBg`; transparent or
-unparsable means light paper.
+the root element for late growth (images when loading is allowed). The host's styles sit in `@layer aplos`, declared
+first in `<head>`; its measuring rules force `html, body { display:block; position:static; float:none; overflow:hidden;
+height:auto; min-height:0; max-height:none }`, all `!important`, so the root's box is the content height. The
+sanitiser strips every `!important` (and `!`) and every `@layer` from the email's CSS, inline styles included, so no
+email rule can beat them at any specificity. Find marks use a per-instance `data-find-<random>` attribute locked with
+`all:unset !important`, so the email can neither select nor restyle them. The flattened and truncated notices are host
+DOM above the frame, never inside it, so the email cannot hide or fake them. Paper tint: the computed
+`background-color` of `body`, else `html`, through `parseBg`; transparent or unparsable means light paper.
+
+Cost fences (the sanitiser runs synchronously on the renderer's main thread, also for a hidden prefetched slot): every
+CSS step is linear (indexOf scans, no backtracking patterns), a `<style>` block is cut at 200,000 characters and a
+`style` attribute at 8,000 (the remainder dropped), `colspan`/`rowspan`/`span` are clamped to 1-100 and each cell counts
+`colspan x rowspan` toward the 5,000-cell cap. Plain-text link detection trims punctuation in one backward scan and
+leaves candidates over 2,000 characters as text. With images loading, an https `url()` inside a `:hover`, `:active`,
+`:focus` or `[open]` rule is dropped (it would report the gesture), and so is an image sized 0-1 px or em by its
+`style` attribute.
 
 ## Messages from the reporter (`aplos-mail` source)
 
@@ -94,6 +113,23 @@ out-of-process frame is still unknown (live check on a Mac).
   blocked in the renderer (`csp`, `origin`) and none reached the network layer. Chromium still reports them as request
   attempts, and research section 1 saw a real DNS lookup for `dns-prefetch` despite CSP, so the sanitiser is what
   makes the count zero. With it: zero attempts for every corpus item.
+
+## Before `aplos-mail://` ships
+
+Requirements on the sealed path (main, the engine and the reporter), none of which the `srcdoc` stand-in meets:
+
+1. The frame's sandbox never contains `allow-same-origin` (and the host never adds it).
+2. CSP as a response header on every `aplos-mail://` response: `default-src 'none'`, `script-src` pinned to the
+   reporter's hash only, `img-src data:` (plus `https:` when loading), `style-src 'unsafe-inline'`,
+   `form-action 'none'`, `base-uri 'none'`.
+3. DNS prefetch off (`X-DNS-Prefetch-Control: off` header, and the `<meta>` in the document).
+4. Main denies every navigation of the frame away from `aplos-mail:` (`will-frame-navigate`, `will-navigate`,
+   `setWindowOpenHandler` opening outside only).
+5. The frame runs in a separate process from the renderer that holds the IPC bridge.
+6. Never both main's `before-input-event` relay and the reporter's `key` fallback in one build.
+7. The engine sanitiser carries the cost fences above (linear CSS, style caps, span clamp and weighted cell count),
+   strips `!important` and `@layer`, drops gesture-only `url()` and style-sized pixels, and reports the flattened and
+   truncated flags with the frame so the host shows the notices outside it (REQUEST to `eng-html`).
 
 ## Open for eng-html
 

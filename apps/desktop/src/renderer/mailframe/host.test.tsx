@@ -69,6 +69,26 @@ describe('textSegments and PlainText', () => {
     const html = renderToStaticMarkup(<PlainText text="Lunch at noon, lunch?" findQuery="lunch" />);
     assert.equal((html.match(/<mark>/g) ?? []).length, 2);
   });
+
+  test('200,000 dots after a URL take under 100 ms', () => {
+    for (const tail of ['', 'x', 'x ', ').']) {
+      const body = `See https://maple.example/${'.'.repeat(200_000)}${tail} ok`;
+      const start = performance.now();
+      textSegments(body);
+      const elapsed = performance.now() - start;
+      assert.ok(elapsed < 100, `tail ${JSON.stringify(tail)}: ${elapsed.toFixed(0)} ms`);
+    }
+  });
+
+  test('a URL candidate over 2,000 characters stays text', () => {
+    const long = `https://maple.example/${'a'.repeat(2_000)}`;
+    assert.deepEqual(
+      textSegments(`${long} end`).map(s => s.kind),
+      ['text'],
+    );
+    const trimmed = textSegments(`https://maple.example/a${'.'.repeat(5_000)}`);
+    assert.equal(trimmed[0]?.kind, 'link');
+  });
 });
 
 function keyEvent(over: Partial<RelayableKeyEvent> = {}) {
@@ -174,7 +194,7 @@ describe('handleLinkClick', () => {
 });
 
 describe('frame document', () => {
-  test('the inner CSP is the first thing in head and allows no network when blocked', () => {
+  test('DNS prefetch is off and the inner CSP comes first in head, allowing no network when blocked', () => {
     const { srcdoc } = frameDocument('<p>x</p>', 'block', undefined);
     assert.equal(
       frameCsp('block'),
@@ -182,18 +202,63 @@ describe('frame document', () => {
     );
     assert.ok(
       srcdoc.startsWith(
-        `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${frameCsp('block')}">`,
+        '<!doctype html><html><head><meta charset="utf-8">' +
+          '<meta http-equiv="x-dns-prefetch-control" content="off">' +
+          `<meta http-equiv="Content-Security-Policy" content="${frameCsp('block')}">`,
       ),
     );
     assert.match(frameCsp('load'), /img-src data: https:;/);
   });
 
-  test('sandboxes: srcdoc has no scripts, the sealed frame is never same-origin', () => {
-    assert.equal(SRCDOC_SANDBOX, 'allow-same-origin');
-    assert.doesNotMatch(
-      URL_SANDBOX,
-      /allow-same-origin|allow-forms|allow-top-navigation|allow-modals/,
+  test('sandboxes: srcdoc never allows scripts; allow-same-origin only on the srcdoc frame', () => {
+    const tokens = (sandbox: string) => sandbox.split(/\s+/).filter(Boolean);
+    for (const sandbox of [SRCDOC_SANDBOX, URL_SANDBOX]) {
+      assert.doesNotMatch(sandbox, /allow-forms|allow-top-navigation|allow-modals/);
+      const both = tokens(sandbox).filter(t => t === 'allow-scripts' || t === 'allow-same-origin');
+      assert.ok(both.length < 2, `never both: ${sandbox}`);
+    }
+    assert.deepEqual(tokens(SRCDOC_SANDBOX), ['allow-same-origin']);
+    assert.ok(!tokens(URL_SANDBOX).includes('allow-same-origin'));
+    const url: FrameSource = {
+      kind: 'url',
+      key: 'u',
+      url: 'aplos-mail://m/abc',
+      token: 'abc',
+      blocked: 0,
+    };
+    const html = renderToStaticMarkup(<MailFrameView source={url} onReady={noop} onKey={noop} />);
+    assert.doesNotMatch(html, /allow-same-origin/);
+  });
+
+  test('host styles sit in the aplos layer, declared first, with !important measuring rules', () => {
+    const { srcdoc } = frameDocument('<style>p{color:red}</style><p>x</p>', 'block', undefined);
+    const firstStyle = srcdoc.indexOf('<style>');
+    assert.ok(srcdoc.startsWith('<style>@layer aplos;@layer aplos{', firstStyle));
+    assert.ok(firstStyle < srcdoc.indexOf('</head>'));
+    assert.match(srcdoc, /html,body\{[^}]*height:auto!important[^}]*\}/);
+    assert.match(srcdoc, /overflow:hidden!important/);
+  });
+
+  test('find marks carry a per-instance attribute the email cannot predict', () => {
+    const one = frameDocument('<p>lunch</p>', 'block', 'lunch').srcdoc;
+    const two = frameDocument('<p>lunch</p>', 'block', 'lunch').srcdoc;
+    const attribute = (doc: string) =>
+      /<mark (data-find-[0-9a-f]{12})>lunch<\/mark>/.exec(doc)?.[1];
+    assert.ok(attribute(one), one);
+    assert.notEqual(attribute(one), attribute(two));
+    assert.ok(one.includes(`mark[${attribute(one)}]{all:unset!important;`));
+  });
+
+  test('notices render outside the frame, where email CSS cannot reach them', () => {
+    const giant = `<style>p{display:none}</style><table>${'<tr><td>x</td></tr>'.repeat(5_001)}</table>`;
+    const built = frameDocument(giant, 'block', undefined);
+    assert.ok(!built.srcdoc.includes('layout was too large'));
+    const source: FrameSource = { kind: 'srcdoc', key: 'g', html: giant, imagePolicy: 'block' };
+    const html = renderToStaticMarkup(
+      <MailFrameView source={source} onReady={noop} onKey={noop} />,
     );
+    const notice = html.indexOf('<p class="aplos-mailframe__notice">');
+    assert.ok(notice !== -1 && notice < html.indexOf('<iframe'), html.slice(0, 300));
   });
 
   test('the view mounts the pending srcdoc frame hidden, scriptless, with the CSP inside', () => {
@@ -225,15 +290,25 @@ describe('sourceOfFrame', () => {
       { url: 'aplos-mail://m/mf-1-abc', srcdoc: standIn, trackersRemoved: 0 },
       'block',
       undefined,
+      true,
     );
-    assert.equal(source.kind, 'srcdoc');
+    assert.equal(source?.kind, 'srcdoc');
     const { srcdoc } = frameDocument(
-      source.kind === 'srcdoc' ? source.html : '',
+      source?.kind === 'srcdoc' ? source.html : '',
       'block',
       undefined,
     );
-    assert.equal((srcdoc.match(/<meta http-equiv/g) ?? []).length, 1, 'only the host CSP meta');
+    const csp = srcdoc.match(/<meta http-equiv="Content-Security-Policy"/g) ?? [];
+    assert.equal(csp.length, 1, 'only the host CSP meta');
     assert.match(srcdoc, /<p>Hi Sam<\/p>/);
+  });
+
+  test('outside a Vite dev build a srcdoc answer is refused (the same-origin frame is dev only)', async () => {
+    const { isDevBuild, sourceOfFrame } = await import('./useFrameSource');
+    assert.equal(isDevBuild(), false, 'node has no import.meta.env');
+    const frame = { url: 'aplos-mail://m/mf-1-abc', srcdoc: '<p>x</p>', trackersRemoved: 0 };
+    assert.equal(sourceOfFrame('m1|block|', frame, 'block', undefined), null);
+    assert.equal(sourceOfFrame('m1|block|', frame, 'block', undefined, false), null);
   });
 
   test('a URL-only frame (the real engine) becomes a url source with its token', async () => {

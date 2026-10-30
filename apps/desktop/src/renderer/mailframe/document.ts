@@ -23,23 +23,39 @@ export function frameCsp(policy: ImagePolicy): string {
   return `default-src 'none'; img-src ${img}; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'`;
 }
 
-/** Reading defaults for the inside of the frame; the email's own styles come later and may override them. */
-function defaultCss(): string {
+/**
+ * Layout rules the host's measurement depends on. They are `!important` in the `aplos` layer and the sanitiser strips
+ * `!important` and `@layer` from the email, so no email rule (at any specificity, inline or not) can beat them.
+ */
+const MEASURE_CSS =
+  'html,body{display:block!important;position:static!important;float:none!important;overflow:hidden!important;' +
+  'height:auto!important;min-height:0!important;max-height:none!important}';
+
+/**
+ * The host's styles, all in the `aplos` cascade layer, declared before anything else. Normal rules are reading
+ * defaults the email's own (unlayered) styles override; the `!important` ones (measuring, find marks) cannot be beaten.
+ * `mark` is the per-instance find attribute, so the email cannot select the marks either.
+ */
+function hostCss(mark: string): string {
   const p = FRAME_PAPER;
   return [
+    '@layer aplos;@layer aplos{',
     `:root{color-scheme:light;--aplos-read-size:${p.fontSize};--aplos-read-leading:${p.lineHeight}}`,
     `body{margin:0;color:${p.ink};font-family:${p.fontFamily};font-size:var(--aplos-read-size);line-height:var(--aplos-read-leading);overflow-wrap:anywhere}`,
     `img,table{max-width:100%}`,
     `pre,.aplos-flat{white-space:pre-wrap}`,
     `a{color:${p.accent}}`,
-    `mark[data-find]{background:color-mix(in srgb,${p.accent} 18%,${p.canvas});color:inherit}`,
-    `.aplos-notice{color:${p.dim}}`,
+    `mark[${mark}]{all:unset!important;background:color-mix(in srgb,${p.accent} 18%,${p.canvas})!important;color:inherit!important}`,
+    MEASURE_CSS,
+    '}',
   ].join('');
 }
 
-/** Layout rules the host's measurement depends on. Last in the document, so they win over the email's styles. */
-const MEASURE_CSS =
-  'html,body{overflow:hidden!important;height:auto!important;min-height:0!important;max-height:none!important}';
+/** A fresh attribute name for this document's find marks (`data-find-` and 12 hex digits). */
+function markAttribute(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return `data-find-${Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')}`;
+}
 
 /** A built frame document plus the host-chrome facts that came with it. */
 export interface FrameDocument {
@@ -47,6 +63,8 @@ export interface FrameDocument {
   srcdoc: string;
   /** Remote resources removed ("N trackers removed"). */
   blocked: number;
+  /** Sentences the host shows above the frame (flattened, truncated). Never inside the frame. */
+  notices: string[];
 }
 
 /** Sanitise, highlight and wrap an HTML body into the scriptless frame's document. */
@@ -56,11 +74,13 @@ export function frameDocument(
   findQuery: string | undefined,
 ): FrameDocument {
   const body = sanitiseBody(html, policy);
+  const mark = markAttribute();
   const srcdoc =
     `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta http-equiv="x-dns-prefetch-control" content="off">` +
     `<meta http-equiv="Content-Security-Policy" content="${frameCsp(policy)}">` +
     `<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">` +
-    `<style>${defaultCss()}</style></head>` +
-    `<body${body.bodyAttributes}>${highlight(body.html, findQuery)}<style>${MEASURE_CSS}</style></body></html>`;
-  return { srcdoc, blocked: body.blocked };
+    `<style>${hostCss(mark)}</style></head>` +
+    `<body${body.bodyAttributes}>${highlight(body.html, findQuery, mark)}</body></html>`;
+  return { srcdoc, blocked: body.blocked, notices: body.notices };
 }

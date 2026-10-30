@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { CORPUS } from '../corpus';
 import { frameCsp, SRCDOC_SANDBOX } from '../document';
 import { LIGHT_PAPER } from '../protocol';
+import { NOTICES } from '../sanitise';
 
 const ORIGIN = 'http://mailframe.test';
 const HOST_PAGE = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="root" style="width:640px"></div><script src="/entry.js"></script></body></html>`;
@@ -145,7 +146,8 @@ test('the sandbox and inner CSP hold without the sanitiser: no script runs, noth
       return out;
     },
     {
-      items: CORPUS.map(({ id, html }) => ({ id, html })),
+      // Costly items (the span bomb) are fenced by the sanitiser's caps alone; unsanitised they only cost time.
+      items: CORPUS.filter(item => !item.costly).map(({ id, html }) => ({ id, html })),
       sandbox: SRCDOC_SANDBOX,
       csp: frameCsp('block'),
     },
@@ -211,4 +213,42 @@ test('onReady reports the trackers removed', async ({ page }) => {
   const ready = await page.evaluate(() => window.__mailframe.ready[0]!);
   expect(ready.blocked).toBeGreaterThanOrEqual(10);
   expect(ready.bg).toBe(LIGHT_PAPER);
+});
+
+test('email CSS cannot change the measured height of the letter', async ({ page }) => {
+  await openHost(page, 'css-override/block');
+  await page.waitForFunction(() => window.__mailframe.ready.length === 1);
+  const ready = await page.evaluate(() => window.__mailframe.ready[0]!);
+  // The body holds one 600 px block; :root, html, body and inline !important rules try to make it 2-7 px.
+  expect(ready.height).toBeGreaterThanOrEqual(600);
+  expect(ready.height).toBeLessThan(700);
+  const shown = await page.evaluate(() => {
+    const frame = document.querySelector('iframe')!;
+    const root = frame.contentDocument!.documentElement;
+    return {
+      frame: frame.getBoundingClientRect().height,
+      root: root.getBoundingClientRect().height,
+    };
+  });
+  expect(shown.frame).toBe(ready.height);
+  expect(Math.ceil(shown.root)).toBe(ready.height);
+});
+
+test("email CSS cannot hide the host's notice", async ({ page }) => {
+  await openHost(page, 'long-css/block');
+  await page.waitForFunction(() => window.__mailframe.ready.length === 1, undefined, {
+    timeout: 20_000,
+  });
+  const notice = await page.evaluate(sentence => {
+    const found = [...document.querySelectorAll('p')].find(p => p.textContent === sentence);
+    const frameText = document.querySelector('iframe')!.contentDocument!.body.textContent ?? '';
+    return {
+      height: found?.getBoundingClientRect().height ?? 0,
+      display: found ? getComputedStyle(found).display : 'missing',
+      inFrame: frameText.includes(sentence),
+    };
+  }, NOTICES.truncated);
+  expect(notice.display).not.toBe('none');
+  expect(notice.height).toBeGreaterThan(0);
+  expect(notice.inFrame).toBe(false);
 });

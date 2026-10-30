@@ -34,22 +34,29 @@ export function splitMatches(value: string, query: string): string[] {
   return parts;
 }
 
-function markRun(escaped: string, query: string): string {
+function markRun(escaped: string, query: string, attribute: string): string {
   const parts = splitMatches(decode(escaped), query);
   if (parts.length === 1) return escaped;
   return parts
     .map((part, i) =>
-      i % 2 === 1 ? `<mark data-find>${escapeHtml(part)}</mark>` : escapeHtml(part),
+      i % 2 === 1 ? `<mark ${attribute}>${escapeHtml(part)}</mark>` : escapeHtml(part),
     )
     .join('');
 }
 
-/** Wrap each match of `query` in the text of sanitised markup with `<mark data-find>`. */
-export function highlight(sanitised: string, query: string | undefined): string {
+/**
+ * Wrap each match of `query` in the text of sanitised markup with `<mark data-find>`. The frame passes its own
+ * per-instance `attribute` (a `data-` name the sanitiser never keeps), so the email cannot select the marks.
+ */
+export function highlight(
+  sanitised: string,
+  query: string | undefined,
+  attribute = 'data-find',
+): string {
   const q = (query ?? '').trim();
   if (!q || q.length > MAX_QUERY) return sanitised;
   return sanitised
     .split(TAG_OR_STYLE)
-    .map((piece, i) => (i % 2 === 1 ? piece : markRun(piece, q)))
+    .map((piece, i) => (i % 2 === 1 ? piece : markRun(piece, q, attribute)))
     .join('');
 }

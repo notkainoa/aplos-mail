@@ -1,6 +1,8 @@
 // The stand-in fetch: `useMessageBody` (renderer/data/bodies.ts, `MessageBody/get`) for the kind and plain text, then
 // `api.mail.frame` (`Mail/frame`) for HTML. The stand-in answers with `srcdoc`; the real engine with an
-// `aplos-mail://` URL only. Returns null until the letter for the current request is known.
+// `aplos-mail://` URL only. Returns null until the letter for the current request is known. The `srcdoc` frame is
+// same-origin with the renderer, so it is mounted in a Vite dev build only; elsewhere a `srcdoc` answer shows the
+// body-failed state (PROTOCOL.md "Why the srcdoc frame is same-origin").
 
 import { useEffect, useMemo, useState } from 'react';
 import { api, useMessageBody } from '../data';
@@ -21,14 +23,21 @@ interface FrameAnswer {
   failed: boolean;
 }
 
-/** Build the source for one `Mail/frame` answer. */
+/** True only in a Vite dev build (`npm run dev`). Packaged builds and Node (no `import.meta.env`) are not. */
+export function isDevBuild(): boolean {
+  return import.meta.env?.DEV === true;
+}
+
+/** Build the source for one `Mail/frame` answer; null for a `srcdoc` answer outside a dev build. */
 export function sourceOfFrame(
   request: string,
   frame: { url: string; srcdoc?: string; trackersRemoved: number },
   imagePolicy: ImagePolicy,
   findQuery: string | undefined,
-): FrameSource {
+  dev = isDevBuild(),
+): FrameSource | null {
   if (frame.srcdoc !== undefined) {
+    if (!dev) return null;
     const key = `${request}|${frame.url}`;
     return { kind: 'srcdoc', key, html: frame.srcdoc, imagePolicy, findQuery, url: frame.url };
   }
@@ -62,8 +71,8 @@ export function useFrameSource(
     api.mail.frame({ messageId, imagePolicy, findQuery: find }).then(
       frame => {
         const source = sourceOfFrame(request, frame, imagePolicy, find);
-        if (live) setAnswer({ request, source, failed: false });
-        else void api.mail.release({ url: frame.url }).catch(() => {});
+        if (live) setAnswer({ request, source, failed: source === null });
+        if (!live || source === null) void api.mail.release({ url: frame.url }).catch(() => {});
       },
       () => live && setAnswer({ request, source: null, failed: true }),
     );
