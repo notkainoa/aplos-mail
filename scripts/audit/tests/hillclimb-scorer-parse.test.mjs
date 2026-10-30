@@ -1,11 +1,24 @@
 // Pure-function tests for the hill-climb scorers (roadmap 5.1c): the parsing and scoring maths
 // run against inline fixtures of each tool's real output, so the heavy tools never run here.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, symlinkSync, readlinkSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  symlinkSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { c8Args, scoreFiles, summaryFiles, testCommand } from '../hillclimb/scorers/coverage.mjs';
+import {
+  c8Args,
+  rowsForScope,
+  scoreFiles,
+  summaryFiles,
+  testCommand,
+} from '../hillclimb/scorers/coverage.mjs';
 import {
   mutatePatterns,
   parseArgsMutation,
@@ -101,10 +114,33 @@ test('coverage scoreFiles: weighted line percent, worst file first', () => {
     { file: 'src/a.ts', covered: 9, total: 10, pct: 90 },
     { file: 'src/b.ts', covered: 1, total: 10, pct: 10 },
     { file: 'src/empty.ts', covered: 0, total: 0, pct: 100 },
+    { file: 'src/hidden.ts', covered: 0, total: 20, pct: 0, absent: true },
   ]);
-  assert.equal(score, 50);
-  assert.deepEqual(details, ['src/b.ts 10.0% (1/10)', 'src/a.ts 90.0% (9/10)']);
+  assert.equal(score, 25);
+  assert.deepEqual(details, [
+    'src/hidden.ts 0.0% (0/20), absent from c8 report',
+    'src/b.ts 10.0% (1/10)',
+    'src/a.ts 90.0% (9/10)',
+  ]);
   assert.equal(scoreFiles([]).score, 0);
+});
+
+test('coverage rowsForScope: the denominator is authoritative, absent files count 0%', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hillclimb-rows-'));
+  try {
+    writeFileSync(join(dir, 'hasreport.js'), 'export const a = 1;\nexport const b = 2;\n');
+    writeFileSync(join(dir, 'absent.js'), 'export const c = 3;\nexport const d = 4;\n');
+    const reportRows = [{ file: 'hasreport.js', covered: 2, total: 2, pct: 100 }];
+    const rows = rowsForScope(reportRows, ['absent.js', 'hasreport.js'], dir);
+    assert.deepEqual(rows, [
+      { file: 'absent.js', covered: 0, total: 2, pct: 0, absent: true },
+      { file: 'hasreport.js', covered: 2, total: 2, pct: 100 },
+    ]);
+    // No scope: the reported files are the rows, unchanged.
+    assert.deepEqual(rowsForScope(reportRows, null, dir), reportRows);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('coverage testCommand and c8Args shape', () => {
