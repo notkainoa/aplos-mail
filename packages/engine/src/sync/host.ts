@@ -34,6 +34,7 @@ import type { Governor } from './governor';
 import {
   clockReading,
   createLeaseController,
+  gateNow,
   gateReading,
   measureClock,
   needsMeasure,
@@ -739,9 +740,10 @@ export class ActorHost implements AccountActorHost {
       active: () => this.actors.has(account),
       // The claim this device's previous controller published is still live; a quit must retire it too.
       ...(initial ? { initial } : {}),
-      clockGate: () => gateReading(entry.gate, this.deps.clock.now()),
-      remeasure: () => needsMeasure(entry.gate, this.deps.clock.now()),
+      clockGate: () => gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
+      remeasure: () => needsMeasure(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
       ownerClock: () => this.ownerClock(entry),
+      stale: () => entry.stale === true,
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -774,7 +776,7 @@ export class ActorHost implements AccountActorHost {
     } catch (error) {
       this.logOnce(account, 'lease.intent', error);
       // Refused (the clock gate): the owner's queued pin is dropped, never applied hours later on its own.
-      if (error instanceof ContractError) return;
+      if (error instanceof ContractError && !entry.stale) return;
       if (!this.leaseIntent.has(account)) this.leaseIntent.set(account, intent);
     }
   }
@@ -834,11 +836,9 @@ export class ActorHost implements AccountActorHost {
   /** The gate an owner's pin may use: a block lifted on one fresh ok reading, the gate before it kept to re-arm. */
   private ownerClock(entry: LeaseEntry): ClockReading {
     const now = this.deps.clock.now();
-    const lifted = ownerGate(entry.gate, now);
-    if (lifted !== entry.gate) {
-      entry.ownerLift ??= entry.gate;
-      entry.gate = lifted;
-    }
+    const before = gateNow(entry, now);
+    entry.gate = ownerGate(before, now);
+    if (entry.gate !== before) entry.ownerLift ??= before;
     return gateReading(entry.gate, now);
   }
 
@@ -872,7 +872,7 @@ export class ActorHost implements AccountActorHost {
     entries: { value: LeaseClaim }[],
   ): { ownOnly: boolean } | undefined {
     if (entry.retiring) return undefined;
-    const reading = gateReading(entry.gate, this.deps.clock.now());
+    const reading = gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now());
     if (reading !== 'ok') return { ownOnly: true };
     if (!entries.some(e => e.value.holder)) return undefined;
     return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;

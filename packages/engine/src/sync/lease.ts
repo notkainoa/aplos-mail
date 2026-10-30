@@ -63,7 +63,9 @@ import { contractError } from '../runtime/errors';
  * A clock set back: every wait is kept with the clock reading it started at, and a reading earlier than that ends it at
  * once (`Wait`: the retry backoff and the probe interval; the dead claim's cadence and the cool-down after it go by
  * `publishedAt` the same way; `next()` makes a round due at once when its time is more than a round ahead). An ok
- * reading from "the future" is no reading (`gateReading`), so the next round measures again. A jump of hours costs
+ * reading from "the future" is no reading, and is forgotten the first time the clock is seen behind it
+ * (`forgetFuture`, by the host before every gate read), so it never comes back to life when the clock catches up with
+ * it, and the next round measures again. A jump of hours costs
  * one measuring write, never hours without renewals or probes. A jump forward simply makes them due.
  *
  * Cost per device and account: one gated channel read a round (`LEASE_ROUND_MS`; about 2 Gmail units when nothing
@@ -293,6 +295,32 @@ export interface ClockGate {
 
 export const unmeasuredGate = (): ClockGate => ({ okStreak: 0 });
 
+/**
+ * The gate once an ok reading from "the future" is forgotten: a clock set back (it now reads before the reading was
+ * taken) proves nothing about the clock it has now, and must not come back to life when that clock catches up with it.
+ * A block stays, with its count of ok readings started over.
+ */
+export function forgetFuture(gate: ClockGate, now: number): ClockGate {
+  if (gate.okAt === undefined || gate.okAt <= now) return gate;
+  return gate.blocked ? { blocked: gate.blocked, okStreak: 0 } : { okStreak: 0 };
+}
+
+/**
+ * `holder`'s gate with an ok reading from the future forgotten (also in the gate an owner's lift will restore). The
+ * host reads every gate through here, so the reading is gone before the clock catches up with it, whatever the checks
+ * did meanwhile.
+ */
+export function gateNow(
+  holder: { gate: ClockGate; ownerLift?: ClockGate },
+  now: number,
+): ClockGate {
+  const gate = forgetFuture(holder.gate, now);
+  if (gate === holder.gate) return gate;
+  if (holder.ownerLift) holder.ownerLift = forgetFuture(holder.ownerLift, now);
+  holder.gate = gate;
+  return gate;
+}
+
 /** The gate after one write's measurement at `now` (hysteresis: see the header). */
 export function measureClock(
   gate: ClockGate,
@@ -300,11 +328,12 @@ export function measureClock(
   now: number,
 ): ClockGate {
   const reading = clockReading(offset);
+  gate = forgetFuture(gate, now);
   if (reading === 'off') return { blocked: 'off', okStreak: 0 };
   // Nothing learned: a block stays a block, and an ok reading stays until it ages out.
   if (reading === 'unmeasurable') return { ...gate, remeasure: !gate.blocked };
   if (!gate.blocked) return { okStreak: 1, okAt: now };
-  const apart = gate.okAt === undefined || now < gate.okAt || now - gate.okAt >= LEASE_ROUND_MS;
+  const apart = gate.okAt === undefined || now - gate.okAt >= LEASE_ROUND_MS;
   if (!apart) return gate;
   const okStreak = gate.okStreak + 1;
   if (okStreak >= LEASE_CLOCK_OK_STREAK) return { okStreak, okAt: now };
@@ -344,6 +373,12 @@ function clockRefusal(reading: ClockReading): Error {
   return contractError({ type: 'unavailable', message });
 }
 
+/** The owner's "Use this Mac" interrupted by the account restarting (the sentence the UI shows). */
+function restartRefusal(): Error {
+  const message = 'The account restarted before this Mac could be set as the main Mac. Try again.';
+  return contractError({ type: 'unavailable', message });
+}
+
 export interface LeaseDeps {
   account: AccountId;
   device: DeviceId;
@@ -365,6 +400,8 @@ export interface LeaseDeps {
   remeasure?: () => boolean;
   /** The gate for an owner's pin (`ownerGate`): may lift a block on one fresh ok reading. Absent: `clockGate`. */
   ownerClock?: () => ClockReading;
+  /** A 'restart' replaced this controller: an owner's `claim` that finishes now is refused (its pin is not confirmed). */
+  stale?: () => boolean;
 }
 
 export interface LeaseController {
@@ -727,11 +764,14 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     if (stopped) return { pinned: false };
     await refuseUnlessMeasured();
     await change('pin');
+    // Replaced while the pin was being written: the new controller owns the claim now, and nothing here confirms it.
+    if (deps.stale?.()) throw restartRefusal();
     // Re-read: a pin made elsewhere at the same moment may already have won. If the pin's own write showed the clock
     // is off, this round drops the pin again and the owner hears why.
     const check = await round();
     const after = reading();
     if (blocks(after)) throw clockRefusal(after);
+    if (deps.stale?.()) throw restartRefusal();
     if (!check.read) return { pinned: !!pin };
     return { pinned: !!pin && check.decision?.winner?.device === device };
   };

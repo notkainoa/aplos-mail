@@ -368,7 +368,7 @@ class StateChannel implements WorkflowStateChannel {
     if (digest) return digestCovers(published.digest, digest);
     if (rereads.left <= 0) return false;
     rereads.left--;
-    const again = await this.reread(id, ctx);
+    const again = await this.tryReread(id, ctx);
     if (again === 'unread') return false;
     const covered = again !== undefined && digestCovers(published.digest, again);
     // Re-read once: one the new copy does not cover stays on the label for good (it leaves `forgotten` when trashed).
@@ -376,9 +376,21 @@ class StateChannel implements WorkflowStateChannel {
     return covered;
   }
 
+  /** `reread`, but a failed download skips this copy (it stays forgotten, tried again next call), never the batch. */
+  private async tryReread(
+    id: string,
+    ctx: AdapterContext,
+  ): Promise<CopyDigest | 'unread' | undefined> {
+    try {
+      return await this.reread(id, ctx);
+    } catch {
+      return 'unread';
+    }
+  }
+
   /**
    * A forgotten own copy downloaded and opened again, as its digest (never kept); undefined when it is gone or does not
-   * open as this device's, `unread` when the data key is unavailable. A failed download throws (kept for the next call).
+   * open as this device's, `unread` when the data key is unavailable. A failed download throws (`tryReread` keeps the copy for the next call).
    */
   private async reread(
     id: string,
