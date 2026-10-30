@@ -242,11 +242,11 @@ export const unsubscribe = area('unsubscribe', {
     input: z.object({ opId: OpId, threadId: Id }),
     output: z.object({
       /**
-       * - `done`: the sender confirmed.
+       * - `done`: the request was accepted (a one-click 2xx) or the unsubscribe email was queued.
        * - `openLink`: show `url` for the owner to review.
        * - `unavailable`: the sender offers no usable way.
        * - `unsure`: the request was sent but the sender's answer did not confirm it; say so, never claim success.
-       * - `failed`: the attempt was refused or errored; nothing changed.
+       * - `failed`: the sender refused or the request could not be made; the owner is not unsubscribed.
        * - `compose`: a mailto needs a message the owner must review and send; open the composer with `url`.
        */
       outcome: openEnum(['done', 'openLink', 'unavailable', 'unsure', 'failed', 'compose']),

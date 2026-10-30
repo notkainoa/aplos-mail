@@ -175,7 +175,8 @@ export type UnsubscribeKind = 'done' | 'unsure' | 'failed' | 'open' | 'compose' 
  *   never throws for an ordinary refusal: a sender that refuses or errors resolves `failed`, a sender whose answer does
  *   not confirm the request resolves `unsure`. `open` carries the `url` to show for review; `compose` carries the
  *   mailto `url` for the owner to review and send; `none` means no usable way. The SSRF rules (address ranges,
- *   redirects, no cookies) are the host's, as for `ImageProxy`.
+ *   redirects, no cookies) are the host's, as for `ImageProxy`. When `signal` aborts, `run` rejects with `signal.reason`
+ *   and stops any request in flight.
  */
 export interface UnsubscribePort {
   describe(headers: ListHeaders): { method: 'oneClick' | 'mailto' | 'link' | 'none'; url?: string };
