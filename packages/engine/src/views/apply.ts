@@ -2,6 +2,7 @@ import type { Receipt } from '@aplos/contract';
 import type { StoreReader, StoreWrite } from '../store';
 import { beforeOf, idOf, mailActions, planThread, type ActEnv, type ThreadFacts } from './act';
 import {
+  deadlinesChanged,
   opsChanged,
   opWrite,
   rowId,
@@ -109,6 +110,7 @@ export function commitBuilt(
     restore: built.restore,
     undoable: true,
   });
+  deadlinesChanged(deps, built.writes);
   opsChanged(
     deps,
     built.steps.map(s => s.accountId),

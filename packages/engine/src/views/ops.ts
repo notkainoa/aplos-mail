@@ -1,7 +1,8 @@
 import type { ErrorBody, Operation, Receipt, State } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { FrameBus } from '../runtime/frames';
-import type { AccountActorHost, Clock, OpChange, StorePort } from '../ports';
+import { isAbsent } from '../runtime/engine';
+import type { AccountActorHost, Clock, DeadlineRegistry, OpChange, StorePort } from '../ports';
 import type { OpEffect, OpWrite, SqlRow, StoreReader, StoreWrite, WorkflowFields } from '../store';
 import { opPayload } from '../sync/ops';
 
@@ -324,6 +325,8 @@ export interface CommandDeps {
   accounts(): AccountActorHost;
   journal: Journal;
   zone: string;
+  /** The timer loop's registry: told when a commit moves `reminder_at` or `later_until`. */
+  deadlines: DeadlineRegistry;
 }
 
 /**
@@ -354,6 +357,32 @@ export function opsChanged(deps: CommandDeps, accountIds: Iterable<string>): voi
       deps.accounts().opsChanged(id);
     } catch {
       // An actor that is not running yet (or a host with none) drains the queue when it starts.
+    }
+  }
+}
+
+/** Workflow columns whose change moves a deadline source's next time, by the source that reads them. */
+const DEADLINE_FIELDS: ReadonlyArray<
+  readonly [id: 'reminders' | 'later', fields: readonly string[]]
+> = [
+  ['reminders', ['reminderAt', 'reminderFiredAt']],
+  ['later', ['laterUntil', 'status']],
+];
+
+/**
+ * Tells the timer loop that a commit just moved a reminder or a Later date (`deadlines.changed`), so it fires at its
+ * time instead of at the sources' 60 s re-read. Call it after the commit landed, never inside it; a host without a
+ * timer loop (an absent `deadlines`) has nothing to tell, and a failing registry never fails the command.
+ */
+export function deadlinesChanged(deps: CommandDeps, writes: readonly StoreWrite[]): void {
+  if (isAbsent(deps.deadlines)) return;
+  const patches = writes.flatMap(w => (w.kind === 'workflow' ? [w.patch] : []));
+  for (const [id, fields] of DEADLINE_FIELDS) {
+    if (!patches.some(patch => fields.some(f => f in patch))) continue;
+    try {
+      deps.deadlines.changed(id);
+    } catch {
+      // The sources re-read every minute anyway.
     }
   }
 }
