@@ -28,6 +28,7 @@ import {
   parseData,
   readAnyRow,
   remembered,
+  earlierWith,
   readDraftRow,
   toDraft,
   type DraftMeta,
@@ -217,6 +218,7 @@ function uploadOf(
   fields: DraftFields,
   internetId: string,
   mime: Uint8Array,
+  earlier: string[],
 ): DraftUpload {
   const { meta } = parseData(row.data);
   const upload: DraftUpload = {
@@ -227,6 +229,7 @@ function uploadOf(
     mime,
   };
   if (row.remote_draft_id) upload.remoteDraftId = row.remote_draft_id;
+  else if (earlier.length) upload.supersedes = earlier.filter(id => id !== internetId);
   if (row.remote_message_id) upload.baseRemoteMessageId = row.remote_message_id;
   if (row.remote_change_key) upload.baseChangeKey = row.remote_change_key;
   const thread = fields.threadId?.startsWith(`${row.account_id}:`)
@@ -356,17 +359,20 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   // kept so history reporting the copy it made is recognised as ours (no phantom draft).
   const old =
     meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
+  // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
+  const earlier = row.remote_draft_id === null ? earlierWith(meta, ...old) : [];
   const marked = setMeta(
     ctx,
     id,
     {
-      uploading: { internetId, revision: row.revision },
+      uploading: { internetId, revision: row.revision, base: row.remote_message_id },
       ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
+      ...(old.length && earlier.length ? { earlier } : {}),
     },
     { ifRevision: row.revision },
   );
   if (!marked) return;
-  const upload = uploadOf(row, fields, internetId, copy.mime);
+  const upload = uploadOf(row, fields, internetId, copy.mime, earlier);
   let result: DraftSaveResult;
   try {
     result = await ctx.port.save(row.account_id, upload);
