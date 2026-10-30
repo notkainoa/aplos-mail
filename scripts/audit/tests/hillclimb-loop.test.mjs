@@ -58,7 +58,7 @@ function fakes(script = {}) {
     },
     async verifyMainIntact(ctx) {
       calls.intact++;
-      const breach = at(ctx.id).breach;
+      const breach = at(ctx?.id).breach;
       if (breach) throw new Error(breach);
     },
     async runAttemptAgent(ctx) {
@@ -72,12 +72,15 @@ function fakes(script = {}) {
         head: ctx.head,
         changes: b.changes ?? GOOD_CHANGE,
         addedLines: b.addedLines ?? [],
+        binaryPaths: b.binaryPaths ?? [],
+        treePaths: b.treePaths ?? [],
         flagged: b.flagged ?? [],
         leftover: b.leftover ?? [],
       };
     },
     readOld: () => null,
     readNew: () => null,
+    fileSize: (ctx, path) => at(ctx.id).sizes?.[path] ?? null,
     async runGate(_gate, dir) {
       calls.gateDirs.push(dir);
       if (basename(dir) === 'baseline') {
@@ -235,6 +238,36 @@ describe('runHillClimb', () => {
     );
     assert.equal(calls.promoted, null); // nothing is promoted after a breach
     assert.equal(calls.cleaned, true); // but cleanup still ran
+  });
+
+  it('runs the sandbox audit even when the agent bails early (timeout, exit)', async () => {
+    const { deps, calls } = fakes({
+      attempts: {
+        r1a1: { agentTimedOut: true, breach: 'node_modules write-through (x.js): sandbox breach' },
+        r1a2: { agentCode: 137 },
+      },
+    });
+    await assert.rejects(
+      runHillClimb({ ...config, roundLimit: 1 }, deps),
+      /aborting run.*write-through/,
+    );
+    assert.equal(calls.promoted, null);
+  });
+
+  it('audits the main checkout once more before promoting the best', async () => {
+    const { deps, calls } = fakes({ attempts: { r1a1: { score: 20 } } });
+    // A breach surfacing only after the attempts (e.g. a timed-out agent's delayed
+    // write) must still stop the promotion.
+    const inner = deps.verifyMainIntact;
+    deps.verifyMainIntact = async ctx => {
+      if (!ctx) throw new Error('main checkout dirtied (late write): sandbox breach');
+      return inner(ctx);
+    };
+    await assert.rejects(
+      runHillClimb({ ...config, roundLimit: 1 }, deps),
+      /late write.*sandbox breach/,
+    );
+    assert.equal(calls.promoted, null);
   });
 
   it('aborts with a clear error when the baseline gate fails', async () => {

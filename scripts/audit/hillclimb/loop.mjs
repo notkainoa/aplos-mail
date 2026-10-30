@@ -121,7 +121,12 @@ async function runAttempt(ctx, config, best, deps) {
       allowedPaths: config.allowedPaths,
       allowedTestPaths: config.allowedTestPaths,
       allowDirectives: config.allowDirectives ?? [],
+      allowBinary: config.allowBinary ?? [],
       addedLines: fin.addedLines ?? [],
+      binaryPaths: fin.binaryPaths ?? [],
+      treePaths: fin.treePaths ?? [],
+      fileSize: path => deps.fileSize?.(ctx, path),
+      maxAddedFileKB: config.maxAddedFileKB,
       configPath: deps.configPath ?? null,
       readOldFile: path => deps.readOld(ctx, path),
       readNewFile: path => deps.readNew(ctx, path),
@@ -158,6 +163,10 @@ async function runAttempt(ctx, config, best, deps) {
     rec.verdict = `rejected: ${trimReason(error.message)}`;
     return rec;
   } finally {
+    // The sandbox audit runs even when the attempt bailed early (timeout, non-zero exit,
+    // a thrown dep): a breaching agent's damage matters more than its exit status, and a
+    // failure here turns this attempt's verdict into rejected + aborts the run.
+    await intact();
     await deps.removeAttempt(ctx).catch(() => {});
   }
 }
@@ -202,8 +211,9 @@ function judgeRound(attempts, best, config) {
  * @param {object} config - validated target config
  * @param {object} deps - injected effects; see run.mjs for the real wiring:
  *   startCommit, configPath, prepareAttempt(ctx), prepareEval(ctx), runAttemptAgent(ctx, brief),
- *   finalizeAttempt(ctx) -> { head, changes, leftover, flagged, addedLines },
- *   readOld(ctx, path), readNew(ctx, path), removeAttempt(ctx), removeEval(ctx),
+ *   finalizeAttempt(ctx) -> { head, changes, leftover, flagged, addedLines, binaryPaths,
+ *   treePaths }, readOld(ctx, path), readNew(ctx, path), fileSize(ctx, path),
+ *   removeAttempt(ctx), removeEval(ctx),
  *   verifyMainIntact(ctx), cleanup(), promote({fromSha, toSha, message}) -> {branch, sha},
  *   withCheckSlot(fn), runGate, runScorer, logPath(stepId, step), repoRoot, print(line)
  */
@@ -272,6 +282,9 @@ export async function runHillClimb(config, deps) {
         config.scorers.map(scorer => scorer.name),
       );
     }
+    // One last audit before the kept commit is promoted: the last attempt's checks ran
+    // before judging, and only harness code ran since — verify nothing moved anyway.
+    await deps.verifyMainIntact?.();
     const promoted = await deps.promote({
       fromSha: startCommit,
       toSha: best.commit,
