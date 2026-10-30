@@ -22,6 +22,7 @@ export const FIRE_TIMEOUT_MS = 30_000;
 export const NEXT_TIMEOUT_MS = 5_000;
 const HOUR_MS = 3_600_000;
 const TIMED_OUT = Symbol('timed out');
+const WAIT_FAILED = Symbol('wait failed');
 
 /** The one engine timer loop (ARCH 7.5, F3 `DeadlineRegistry`). The engine runtime starts it and forwards host wakes. */
 export interface TimerLoop extends DeadlineRegistry {
@@ -48,11 +49,6 @@ interface Slot {
   /** Set when a fire left `next()` at or before its `now`: no earlier fire than this. */
   backoffUntil?: number;
   dirty: boolean;
-  /**
-   * A `fire` or `next` call the loop gave up waiting for has not settled yet. The slot is skipped (never read or fired
-   * again) until it settles, so a source never runs concurrently with itself; the settle marks it dirty and kicks.
-   */
-  inflight: boolean;
   /** Fire times in the last hour, oldest first from `head`: this source's own wake budget. */
   fires: number[];
   head: number;
@@ -69,6 +65,13 @@ export function createTimerLoop({
   maxWakesPerHour = MAX_WAKES_PER_HOUR,
 }: TimerLoopOptions): TimerLoop {
   const slots = new Map<DeadlineSourceId, Slot>();
+  /**
+   * The `fire` or `next` call of each id that has not settled yet. An id with an entry is never read or fired again, so
+   * one id never runs twice at once, however its slot was replaced or removed meanwhile. Cleared when the call settles
+   * (only if the entry is still that call) and on `stop`.
+   */
+  const unsettled = new Map<DeadlineSourceId, Promise<unknown>>();
+  const blocked = (slot: Slot) => unsettled.has(slot.source.id);
   const cap = Math.max(1, maxWakesPerHour);
   let armed: { at: number; timer: Timer } | undefined;
   let running: Promise<void> | undefined;
@@ -94,8 +97,9 @@ export function createTimerLoop({
   ): Promise<Awaited<T> | typeof TIMED_OUT> => {
     work.catch(() => {});
     const abort = new AbortController();
-    const timedOut = (): typeof TIMED_OUT => TIMED_OUT;
-    const timeout = clock.sleep(ms, abort.signal).then(timedOut, timedOut);
+    // A rejected sleep must reject the race (the caller treats that as a failed wait), not read as a timeout.
+    const timeout = clock.sleep(ms, abort.signal).then((): typeof TIMED_OUT => TIMED_OUT);
+    timeout.catch(() => {});
     try {
       return await Promise.race([work, timeout]);
     } finally {
@@ -103,18 +107,61 @@ export function createTimerLoop({
     }
   };
 
-  /** The call the loop gave up on settled (either way): the slot is free again, and its deadline is re-read. */
-  const abandon = (slot: Slot, work: Promise<unknown>) => {
-    work.then(
-      () => settle(slot),
-      () => settle(slot),
+  /**
+   * Waits for a call on `slot`. The call stays in `unsettled` until it really settles. When the loop gives up on it, because
+   * it timed out or because the race itself threw, the id stays blocked until then; the settle re-reads the id's
+   * current slot (a failed `next` wait excepted: its backoff already schedules the retry, and re-reading at once would
+   * spin on a clock that cannot sleep).
+   */
+  const waitFor = async <T>(
+    slot: Slot,
+    work: Promise<T>,
+    ms: number,
+    kind: 'fire' | 'next',
+  ): Promise<{ value: T } | typeof TIMED_OUT | typeof WAIT_FAILED> => {
+    const id = slot.source.id;
+    let gaveUp = false;
+    let rereadOnSettle = false;
+    const done = () => {
+      if (unsettled.get(id) === work) unsettled.delete(id);
+      const current = slots.get(id);
+      if (!current) return;
+      // Another slot took the id over while this call ran: it was waiting for this settle.
+      if (current !== slot) {
+        current.dirty = true;
+        if (started) kick();
+        return;
+      }
+      // Nobody awaits a call the loop gave up on, and the loop skipped its slot while it was blocked: always wake the
+      // loop, but re-read the deadline only when that cannot spin (a failed `next` wait already scheduled its retry).
+      if (!gaveUp) return;
+      if (rereadOnSettle) current.dirty = true;
+      if (started) kick();
+    };
+    unsettled.set(id, work);
+    work.then(done, done);
+    // The call's own rejection is its result, not a failure of the race: only the race helper throwing is abandoned.
+    const outcome = work.then(
+      value => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
     );
-  };
-  const settle = (slot: Slot) => {
-    slot.inflight = false;
-    if (slots.get(slot.source.id) !== slot) return;
-    slot.dirty = true;
-    if (started) kick();
+    let result: Awaited<typeof outcome> | typeof TIMED_OUT;
+    let failure: typeof TIMED_OUT | typeof WAIT_FAILED = TIMED_OUT;
+    try {
+      result = await within(outcome, ms);
+    } catch {
+      result = TIMED_OUT;
+      failure = WAIT_FAILED;
+    }
+    if (result === TIMED_OUT) {
+      gaveUp = true;
+      rereadOnSettle = failure === TIMED_OUT || kind === 'fire';
+      // Settled while the race was failing: `done` already ran and could not know the loop gave up.
+      if (unsettled.get(id) !== work) done();
+      return failure;
+    }
+    if (!result.ok) throw result.error;
+    return { value: result.value };
   };
 
   const due = (slot: Slot, now: number) => {
@@ -145,7 +192,7 @@ export function createTimerLoop({
   const earliest = (now: number, skip?: ReadonlySet<Slot>) => {
     let best: { slot: Slot; at: number } | undefined;
     for (const slot of slots.values()) {
-      if (skip?.has(slot) || slot.inflight) continue;
+      if (skip?.has(slot) || blocked(slot)) continue;
       const at = due(slot, now);
       if (at !== undefined && (!best || at < best.at)) best = { slot, at };
     }
@@ -155,16 +202,19 @@ export function createTimerLoop({
   /** Returns false when the source was unreadable (it is then already backed off). */
   const read = async (slot: Slot) => {
     slot.dirty = false;
-    slot.inflight = true;
-    let abandoned = false;
+    let lagMs = MIN_FIRE_GAP_MS;
     try {
       const work = (async () => slot.source.next())();
-      const next = await within(work, NEXT_TIMEOUT_MS);
-      if (next === TIMED_OUT) {
-        abandoned = true;
-        abandon(slot, work);
+      const waited = await waitFor(slot, work, NEXT_TIMEOUT_MS, 'next');
+      if (waited === TIMED_OUT) {
+        lagMs = NEXT_TIMEOUT_MS;
         throw new Error('next timed out');
       }
+      if (waited === WAIT_FAILED) {
+        lagMs = 0;
+        throw new Error('next wait failed');
+      }
+      const next = waited.value;
       // A deadline the loop cannot order (NaN, ±Infinity, a non-number) fails `<= now` and `> now`
       // alike, so it would fire every pass with no backoff: it is unreadable, like a throw.
       if (next !== undefined && !Number.isFinite(next)) throw new Error('non-finite deadline');
@@ -174,10 +224,8 @@ export function createTimerLoop({
       // An unreadable source retries like a stuck one, never silently drops its deadlines.
       slot.next = clock.now();
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
-      note('timer_drift', abandoned ? NEXT_TIMEOUT_MS : MIN_FIRE_GAP_MS);
+      note('timer_drift', lagMs);
       return false;
-    } finally {
-      if (!abandoned) slot.inflight = false;
     }
   };
 
@@ -190,17 +238,16 @@ export function createTimerLoop({
     } catch {
       // Diagnostics only.
     }
-    slot.inflight = true;
     // A failing fire is the source's bug; the backoff below keeps it from spinning.
     const work = (async () => slot.source.fire(now))().catch(() => {});
-    if ((await within(work, FIRE_TIMEOUT_MS)) === TIMED_OUT) {
-      // Hung: serve the other sources. The slot stays out of play until the call really settles.
-      abandon(slot, work);
+    const waited = await waitFor(slot, work, FIRE_TIMEOUT_MS, 'fire');
+    if (waited === TIMED_OUT || waited === WAIT_FAILED) {
+      // Hung (or the wait itself failed): serve the other sources. The id stays out of play until the call really
+      // settles, and the hold keeps a clock that cannot sleep from turning the settle into a microtask loop.
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
-      note('timer_drift', FIRE_TIMEOUT_MS);
+      note('timer_drift', waited === TIMED_OUT ? FIRE_TIMEOUT_MS : 0);
       return;
     }
-    slot.inflight = false;
     // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
     if (slots.get(slot.source.id) !== slot) return;
     // An unreadable source keeps the backoff `read` just gave it, however much time the fire took.
@@ -232,7 +279,7 @@ export function createTimerLoop({
   const pass = async () => {
     const fired = new Set<Slot>();
     for (;;) {
-      for (const slot of slots.values()) if (slot.dirty && !slot.inflight) await read(slot);
+      for (const slot of slots.values()) if (slot.dirty && !blocked(slot)) await read(slot);
       if (!started) return;
       const now = clock.now();
       const ready = earliest(now, fired);
@@ -292,11 +339,13 @@ export function createTimerLoop({
   return {
     /**
      * Registering an id that is already registered replaces the first source. The replaced slot is orphaned: a fire
-     * already running is not read again, and the new source may fire while it still runs (callers that replace a
-     * source must make its fire safe to overlap).
+     * already running is not read again. A call of this id that has not settled (even one whose slot was disposed or
+     * replaced) keeps blocking the id, so one id never runs twice at once; when it settles the current slot is marked
+     * dirty and kicked.
      */
     register(source) {
-      slots.set(source.id, { source, dirty: true, inflight: false, fires: [], head: 0 });
+      const slot: Slot = { source, dirty: true, fires: [], head: 0 };
+      slots.set(source.id, slot);
       if (started) kick();
       return () => {
         if (slots.get(source.id)?.source !== source) return;
@@ -322,6 +371,8 @@ export function createTimerLoop({
     },
     async stop() {
       started = false;
+      // `unsettled` is kept: a hung call still holds its id if the loop is started again, and a settle after stop
+      // only removes its own entry (one small entry per hung id at most).
       armed?.timer.cancel();
       armed = undefined;
       if (!running) return;
