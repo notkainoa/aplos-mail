@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RECENT_SENT } from '../../src/host/providers/google/send';
+import { RECENT_EXTRA_PAGES, RECENT_SENT } from '../../src/host/providers/google/send';
 import { ACCOUNT, classOf, sendWorld, submission, type SendWorld } from './send-rig';
 
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
@@ -117,17 +117,57 @@ test('findSent fallback: the copy, 8th newest among recent sends, is found', asy
   });
 });
 
-test('findSent fallback: 12 newer sends hide the copy, so it is thrown (sentListingPartial), never "absent"', async () => {
+test('findSent fallback: more newer sends than the pages cap reads hide the copy, so it is thrown (sentListingPartial), never "absent"', async () => {
   const world = await sendWorld();
   const at = world.clock.now();
+  const pages = (RECENT_EXTRA_PAGES + 1) * RECENT_SENT;
   addSent(world, 'x-12', at);
-  addNewer(world, 12, at);
+  addNewer(world, pages + 2, at);
   lagging(world);
   const error = await rejection(
     world.port.findSent(ACCOUNT, '<x-12@mail.example.test>', at - 60_000),
   );
   assert.equal(classOf(error)?.reason, 'sentListingPartial');
-  assert.equal(gets(world), RECENT_SENT);
+  assert.equal(gets(world), pages);
+});
+
+test('findSent fallback: 12 newer sends push the copy onto the second page, where it is found', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  const copy = addSent(world, 'x-12b', at);
+  addNewer(world, 12, at);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-12b@mail.example.test>', at - 60_000);
+  assert.deepEqual(result, {
+    kind: 'found',
+    remoteMessageId: copy.id,
+    remoteThreadId: copy.threadId,
+  });
+});
+
+test('findSent fallback: a full first page, then a page reaching an older candidate, is complete, so absent', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  addNewer(world, RECENT_SENT + 2, at);
+  addNewer(world, 3, at - 86_400_000);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-16@mail.example.test>', at - 60_000);
+  assert.equal(result.kind, 'absent');
+  assert.equal(gets(world), RECENT_SENT + 5);
+});
+
+test('findSent fallback: the copy dated a day before since, among the newest 10, is found (the date never discards a copy)', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  const copy = addSent(world, 'x-17', at - 86_400_000);
+  addNewer(world, 3, at);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-17@mail.example.test>', at);
+  assert.deepEqual(result, {
+    kind: 'found',
+    remoteMessageId: copy.id,
+    remoteThreadId: copy.threadId,
+  });
 });
 
 test('findSent fallback: a short listing, none of it this mail, is complete, so absent', async () => {

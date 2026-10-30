@@ -764,55 +764,76 @@ async function sentCopy(
   return undefined;
 }
 
-/** Newest SENT messages read when the search misses (one `messages.list`, then at most this many metadata gets). */
+/** Newest SENT messages read per page when the search misses (one `messages.list`, then that many metadata gets). */
 export const RECENT_SENT = 10;
+/** Pages of the SENT listing read in all: the first, then at most this many more while no older candidate shows. */
+export const RECENT_EXTRA_PAGES = 2;
 /** A recent candidate older than `since` by more than this is outside the window (Gmail's clock against this device's). */
 const RECENT_MARGIN_MS = 10 * 60_000;
 
 interface SentListing {
   ids: string[];
-  /** The listing filled its page or says more follow: the window may continue past what was read. */
+  /** The listing continues past this page: a next page exists, or the page is full. */
   more: boolean;
+  /** Where the next page starts; absent when Gmail named none (a full page without one cannot be followed). */
+  nextPageToken?: string;
 }
 
-/** The newest SENT message ids by label, not by search: the label index shows a send the search index may not yet. */
-async function newestSent(client: GmailClient): Promise<SentListing> {
+/** One page of the newest SENT message ids by label, not by search: the label index shows a send the search may not yet. */
+async function newestSent(client: GmailClient, pageToken?: string): Promise<SentListing> {
   const page = await client.call<{ messages?: { id?: unknown }[]; nextPageToken?: string }>({
     method: 'gmail.messages.list',
     path: '/messages',
-    query: { labelIds: ['SENT'], maxResults: RECENT_SENT, includeSpamTrash: 'true' },
+    query: {
+      labelIds: ['SENT'],
+      maxResults: RECENT_SENT,
+      includeSpamTrash: 'true',
+      ...(pageToken ? { pageToken } : {}),
+    },
     fields: 'messages(id),nextPageToken',
     lane: 'interactive',
   });
   const listed = (page.messages ?? []).slice(0, RECENT_SENT);
   const ids = listed.map(m => m.id).filter((id): id is string => typeof id === 'string');
-  return { ids, more: Boolean(page.nextPageToken) || listed.length >= RECENT_SENT };
+  const token =
+    typeof page.nextPageToken === 'string' && page.nextPageToken ? page.nextPageToken : undefined;
+  return { ids, more: Boolean(token) || listed.length >= RECENT_SENT, nextPageToken: token };
 }
 
 /**
  * The fallback when the search found nothing: the newest SENT messages, each re-checked like a search hit (SENT, no
  * DRAFT, this Message-ID). Every id listed is read, in any order, so neither the listing's order nor the device clock
- * decides a "found". It answers "absent" (undefined) only when the listing is provably complete for the window: some
- * candidate is older than `since` minus `RECENT_MARGIN_MS`, or the listing is short with no next page. A full page or
- * a next page without such a candidate may hide the copy, so it is thrown (`sentListingPartial`, retryable). Any other
- * failure in it, a vanished candidate too, is thrown, never read as "absent".
+ * decides a "found". The copy is matched by its labels and header on EVERY candidate; the date only decides whether the
+ * window has been reached (a candidate older than `since` minus `RECENT_MARGIN_MS`), so a copy that predates `since`
+ * (a device clock ahead of Gmail's, a sent draft keeping its old date) is still found, as the search path would find
+ * it. The one date limit on a match is the search's own (`AFTER_SLACK_MS` before `since`), so the two paths agree and
+ * the contract's "a copy from days before `since` is not returned" holds. While no older candidate has shown and a next
+ * page exists, up to `RECENT_EXTRA_PAGES` more pages are read. It answers "absent" (undefined) only when the listing
+ * is provably complete for the window: some candidate is older than the window, or a page is short with no next page.
+ * Past the pages cap, a listing that still reached no older candidate may hide the copy, so it is thrown
+ * (`sentListingPartial`, retryable). Any other failure in it, a vanished candidate too, is thrown, never "absent".
  */
 async function recentSentCopy(
   client: GmailClient,
   internetId: string,
   since: number,
 ): Promise<SentHit | undefined> {
-  const { ids, more } = await newestSent(client);
-  let reachedOlder = false;
-  for (const id of ids) {
-    const m = await candidate(client, id, true);
-    if (m === 'gone') throw incomplete('sentHitVanished');
-    if (Number(m.internalDate) < since - RECENT_MARGIN_MS) reachedOlder = true;
-    else if (isSentCopy(m, internetId))
-      return { id, ...(typeof m.threadId === 'string' ? { threadId: m.threadId } : {}) };
+  let pageToken: string | undefined;
+  for (let page = 0; page <= RECENT_EXTRA_PAGES; page++) {
+    const { ids, more, nextPageToken } = await newestSent(client, pageToken);
+    let reachedOlder = false;
+    for (const id of ids) {
+      const m = await candidate(client, id, true);
+      if (m === 'gone') throw incomplete('sentHitVanished');
+      if (isSentCopy(m, internetId) && !(Number(m.internalDate) < since - AFTER_SLACK_MS))
+        return { id, ...(typeof m.threadId === 'string' ? { threadId: m.threadId } : {}) };
+      if (Number(m.internalDate) < since - RECENT_MARGIN_MS) reachedOlder = true;
+    }
+    if (reachedOlder || !more) return undefined;
+    if (!nextPageToken) break;
+    pageToken = nextPageToken;
   }
-  if (more && !reachedOlder) throw incomplete('sentListingPartial');
-  return undefined;
+  throw incomplete('sentListingPartial');
 }
 
 /** `ProviderAdapter.findSent` for Gmail: `found` only for a SENT, non-DRAFT message with this exact Message-ID. */
