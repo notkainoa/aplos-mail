@@ -1,5 +1,6 @@
 import type { Submission } from '@aplos/contract';
 import type { CommitExtensionTx, SqlValue, StoreReader } from '../store';
+import { KP, killpoint } from './killpoints';
 
 /**
  * The outbox's writer for `submissions` (seam 2, registered by `extension.ts`): every state change goes through `store.commit` as a `submission`
@@ -114,6 +115,8 @@ export type SubmissionWrite =
        * could still find the message.
        */
       ifChecksDone?: true;
+      /** Why the caller moves it (`transition`'s `why`); the kill point `during-commit` reports it. Changes nothing. */
+      why?: string;
       set?: SubmissionPatch;
     };
 
@@ -364,6 +367,10 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
     const row = tx.get<{ draft_id: string }>('SELECT draft_id FROM submissions WHERE id = ?', w.id);
     if (row) tx.mark('Draft', row.draft_id, 'u');
   }
+  // Test builds only: die with the transaction open, so a restart proves an uncommitted move of any kind leaves nothing
+  // behind. (The guard defaults to ON when the constant is not defined; see `killpoints.ts` before bundling the engine.)
+  if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__)
+    killpoint(KP.DURING_COMMIT, `${w.from.join('+')}>${w.to}:${w.why ?? ''}`);
 }
 
 /** Applies one `submission` write inside the commit; `extension.ts` routes the lane's kinds here and to the drafts. */
