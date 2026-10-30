@@ -30,6 +30,7 @@
     "owners:check": "node scripts/audit/owners-check.mjs",
     "test:audit": "node --test \"scripts/audit/tests/*.test.mjs\"",
     "measure:budgets": "node scripts/audit/measure-budgets.mjs",
+    "hillclimb": "node scripts/audit/hillclimb/run.mjs",
     "release": "node scripts/release.mjs",
     "release:build": "npm run release:build -w @aplos/desktop",
     "update-feed": "npm run update-feed -w @aplos/desktop --",
