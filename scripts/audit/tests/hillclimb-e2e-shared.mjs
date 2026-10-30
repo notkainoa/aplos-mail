@@ -75,7 +75,7 @@ export function setupE2E(tmp) {
 
   // The same wiring run.mjs uses: agent worktree for the attempt, a fresh detached worktree
   // at the attempt's commit for gates/scorers, and a sandbox check on the main checkout.
-  function makeDeps({ runConfig, runId, logs }) {
+  function makeDeps({ runConfig, runId, logs, linkOpts }) {
     const root = runRoot(runId);
     const startCommit = currentHead(repo);
     const state = { dirs: [], branches: [] };
@@ -93,7 +93,9 @@ export function setupE2E(tmp) {
         addWorktree(repo, { dir: ctx.dir, branch: ctx.branch, commit: ctx.commit });
         state.dirs.push(ctx.dir);
         state.branches.push(ctx.branch);
-        ctx.moduleRoots = linkNodeModules(repo, ctx.dir).map(r => join(repo, r, 'node_modules'));
+        ctx.moduleRoots = linkNodeModules(repo, ctx.dir, linkOpts).map(r =>
+          join(repo, r, 'node_modules'),
+        );
       },
       async prepareEval(ctx) {
         ctx.evalDir = join(root, `${ctx.id}-eval`);
@@ -102,7 +104,7 @@ export function setupE2E(tmp) {
         ctx.moduleRoots = [
           ...new Set([
             ...(ctx.moduleRoots ?? []),
-            ...linkNodeModules(repo, ctx.evalDir).map(r => join(repo, r, 'node_modules')),
+            ...linkNodeModules(repo, ctx.evalDir, linkOpts).map(r => join(repo, r, 'node_modules')),
           ]),
         ];
         return ctx.evalDir;

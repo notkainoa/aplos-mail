@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { pathCollisions } from '../hillclimb/diffguard.mjs';
+import * as WT from '../hillclimb/worktree.mjs';
 import {
   addedLines,
   addWorktree,
@@ -430,7 +431,7 @@ describe('linkNodeModules hybrid layout', () => {
     writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
     writeFileSync(
       join(r.dir, 'package.json'),
-      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+      '{"name":"t","private":true,"workspaces":["packages/*"],"dependencies":{"third":"2.0.0"}}\n',
     );
     const ws = (dir, manifest, files = {}) => {
       mkdirSync(join(r.dir, 'packages', dir), { recursive: true });
@@ -440,9 +441,13 @@ describe('linkNodeModules hybrid layout', () => {
         writeFileSync(join(r.dir, 'packages', dir, name), text);
       }
     };
-    ws('x', '{"name":"@aplos/x","version":"1.0.0","main":"index.cjs"}\n', {
-      'index.cjs': 'module.exports = "v1";\n',
-    });
+    ws(
+      'x',
+      '{"name":"@aplos/x","version":"1.0.0","main":"index.cjs","dependencies":{"dep2":"1.0.0"}}\n',
+      {
+        'index.cjs': 'module.exports = "v1";\n',
+      },
+    );
     ws('y', '{"name":"@aplos/y","version":"1.0.0","dependencies":{"@aplos/x":"1.0.0"}}\n');
     ws('tool', '{"name":"@aplos/tool","version":"1.0.0","bin":{"aplos-tool":"bin/cli.js"}}\n', {
       'bin/cli.js': '#!/usr/bin/env node\n',
@@ -453,7 +458,10 @@ describe('linkNodeModules hybrid layout', () => {
 
     const mods = join(r.dir, 'node_modules');
     mkdirSync(join(mods, 'third', 'bin'), { recursive: true });
-    writeFileSync(join(mods, 'third', 'package.json'), '{"name":"third","version":"2.0.0"}\n');
+    writeFileSync(
+      join(mods, 'third', 'package.json'),
+      '{"name":"third","version":"2.0.0","dependencies":{"nesteddep":"3.0.0"}}\n',
+    );
     writeFileSync(join(mods, 'third', 'LICENSE'), 'fixture license\n');
     mkdirSync(join(mods, 'third', 'lib'));
     writeFileSync(join(mods, 'third', 'lib', 'index.js'), 'module.exports = 1;\n');
@@ -476,7 +484,7 @@ describe('linkNodeModules hybrid layout', () => {
     mkdirSync(join(xmods, '@aplos'), { recursive: true });
     symlinkSync(join('..', '..', '..', 'y'), join(xmods, '@aplos', 'y'), 'junction');
     mkdirSync(join(xmods, 'dep2'));
-    writeFileSync(join(xmods, 'dep2', 'package.json'), '{"name":"dep2"}\n');
+    writeFileSync(join(xmods, 'dep2', 'package.json'), '{"name":"dep2","version":"1.0.0"}\n');
   }
 
   it('builds real dirs down to each package with worktree-local workspace links', () => {
@@ -494,9 +502,13 @@ describe('linkNodeModules hybrid layout', () => {
     assert.ok(realDir(join(mods, 'third')));
     const thirdPj = lstatSync(join(mods, 'third', 'package.json'));
     assert.ok(thirdPj.isFile() && !thirdPj.isSymbolicLink());
+    // A clone has its own inode; only the hardlink fallback shares main's.
+    const cloned = WT.lastLinkStats().stats.cloned > 0;
     assert.equal(
-      statSync(join(mods, 'third', 'package.json')).ino,
-      statSync(join(r.dir, 'node_modules', 'third', 'package.json')).ino,
+      statSync(join(mods, 'third', 'package.json')).ino ===
+        statSync(join(r.dir, 'node_modules', 'third', 'package.json')).ino,
+      !cloned,
+      `clone=${cloned}: inode ${cloned ? 'must differ' : 'must be shared'}`,
     );
     assert.ok(realDir(join(mods, 'third', 'lib')));
     const dirents = readdirSync(join(mods, 'third'), { withFileTypes: true });
@@ -518,8 +530,8 @@ describe('linkNodeModules hybrid layout', () => {
     const hiddenLock = lstatSync(join(mods, '.package-lock.json'));
     assert.ok(hiddenLock.isFile() && !hiddenLock.isSymbolicLink());
     assert.equal(JSON.parse(readFileSync(join(mods, '.package-lock.json'))).lockfileVersion, 3);
-    // .bin must explode: one shim resolves into a workspace. The workspace-bound shim is
-    // recreated against the worktree; the third-party one links the main entry.
+    // .bin is a real dir of per-shim links: the workspace-bound shim resolves into the
+    // worktree's own workspace, the third-party one into the worktree's mirrored file.
     assert.ok(realDir(join(mods, '.bin')));
     assert.equal(
       realpathSync(join(mods, '.bin', 'aplos-tool')),
@@ -527,7 +539,7 @@ describe('linkNodeModules hybrid layout', () => {
     );
     assert.equal(
       realpathSync(join(mods, '.bin', 'tool')),
-      realpathSync(join(r.dir, 'node_modules', 'third', 'bin', 'tool')),
+      realpathSync(join(wt, 'node_modules', 'third', 'bin', 'tool')),
     );
     // The per-workspace node_modules is the same hybrid, links re-pointed inside.
     const xmods = join(wt, 'packages', 'x', 'node_modules');
@@ -550,7 +562,7 @@ describe('linkNodeModules hybrid layout', () => {
     removeWorktree(r.dir, wt);
   });
 
-  it('leaves .bin as one link when no shim is workspace-bound', () => {
+  it('always builds .bin as a real dir of per-shim links — deleting one cannot reach main', () => {
     const r = freshRepo();
     writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
     writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
@@ -563,12 +575,20 @@ describe('linkNodeModules hybrid layout', () => {
     const wt = join(tmp, 'wt-binlink');
     addWorktree(r.dir, { dir: wt, commit: r.head() });
     linkNodeModules(r.dir, wt);
-    assert.ok(lstatSync(join(wt, 'node_modules', '.bin')).isSymbolicLink());
-    // The shim still resolves to the main package's file.
+    // No workspace-bound shim — .bin is STILL a real dir: a whole-dir link into main
+    // would let `rm node_modules/.bin/tool` inside the attempt delete the main shim.
+    assert.ok(realDir(join(wt, 'node_modules', '.bin')));
+    // The shim is npm's relative form and resolves to the worktree's mirrored file.
+    assert.equal(
+      readlinkSync(join(wt, 'node_modules', '.bin', 'tool')),
+      join('..', 'third', 'bin', 'tool'),
+    );
     assert.equal(
       realpathSync(join(wt, 'node_modules', '.bin', 'tool')),
-      realpathSync(join(mods, 'third', 'bin', 'tool')),
+      realpathSync(join(wt, 'node_modules', 'third', 'bin', 'tool')),
     );
+    rmSync(join(wt, 'node_modules', '.bin', 'tool'));
+    assert.ok(existsSync(join(mods, '.bin', 'tool')), "main's .bin shim survived");
     removeWorktree(r.dir, wt);
   });
 
