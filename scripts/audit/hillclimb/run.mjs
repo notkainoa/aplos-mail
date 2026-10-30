@@ -23,6 +23,7 @@
 // checkout, and after every attempt verifies the main checkout's HEAD and status are
 // untouched; any change aborts the whole run.
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { constants as osConstants } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentEnv, briefFor, evalEnv, runAgent } from './agent.mjs';
@@ -270,7 +271,7 @@ async function main() {
       dirs: state.dirs,
       branches: state.branches,
     });
-    process.exit(signal === 'SIGINT' ? 130 : 143);
+    process.exit(128 + (osConstants.signals[signal] ?? 15));
   };
   process.on('SIGINT', () => onSignal('SIGINT'));
   process.on('SIGTERM', () => onSignal('SIGTERM'));

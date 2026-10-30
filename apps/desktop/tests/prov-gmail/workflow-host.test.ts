@@ -414,8 +414,10 @@ test('a lease write reports this device clock offset from Gmail receive time, fo
   const fine = device(r, 'device-b');
   const off = await slow.channel.write([{ key: 'lease:device-a', value: { v: 1 } }], slow.ctx());
   const ok = await fine.channel.write([{ key: 'lease:device-b', value: { v: 1 } }], fine.ctx());
-  assert.ok(Math.abs(off.clockOffsetMs! + 12 * MINUTE) < 5_000, `measured ${off.clockOffsetMs}`);
-  assert.ok(Math.abs(ok.clockOffsetMs!) < 5_000, `measured ${ok.clockOffsetMs}`);
+  for (const end of [off.clockOffset!.lowMs, off.clockOffset!.highMs])
+    assert.ok(Math.abs(end + 12 * MINUTE) < 5_000, `measured ${end}`);
+  for (const end of [ok.clockOffset!.lowMs, ok.clockOffset!.highMs])
+    assert.ok(Math.abs(end) < 5_000, `measured ${end}`);
   assert.ok(fine.methods().includes('gmail.messages.get'), 'one minimal get for the receive time');
 });
 

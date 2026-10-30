@@ -44,6 +44,8 @@ export interface DeviceOptions {
   reverseLists?: boolean;
   /** Rewrites the RFC 822 text of every `messages.insert` before Gmail stores it (a copy that lands damaged). */
   mangleInsert?: (raw: string) => string;
+  /** Holds every `messages.insert` this long (fake clock) before Gmail receives it: a slow upload. */
+  slowInsertMs?: number;
   /** Fails the response of the next `messages.insert` after Gmail applied it (an uncertain write). */
   dropNextInsert?: boolean;
   /** Answers this many raw message downloads with `status` instead of passing them on. */
@@ -127,6 +129,7 @@ function deviceFetch(r: Rig, options: DeviceOptions): typeof fetch {
     if (fault) return fault;
     const insert = url.pathname.endsWith('/messages/insert');
     const sent = insert && options.mangleInsert ? mangled(init, options.mangleInsert) : init;
+    if (insert && options.slowInsertMs) await r.clock.sleep(options.slowInsertMs);
     const response = await r.emu.fetch(input, sent);
     if (insert && options.dropNextInsert) {
       options.dropNextInsert = false;
