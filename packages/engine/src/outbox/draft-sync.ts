@@ -64,6 +64,8 @@ export interface DraftsDeps {
 interface RowlessRemoval {
   account: string;
   remoteDraftId: string;
+  /** The message id the copy was saved under: the provider deletes only a draft that still holds it. */
+  expectedMessageId?: string;
   at: number;
   attempts: number;
   busy: boolean;
@@ -275,7 +277,7 @@ function refused(ctx: DraftsCtx, row: UploadRow, error: unknown, attempt: string
 function raiseConflict(
   ctx: DraftsCtx,
   row: UploadRow,
-  internetId: string,
+  upload: DraftUpload,
   result: DraftSaveResult,
 ) {
   const write: DraftWrite = {
@@ -283,10 +285,16 @@ function raiseConflict(
     op: 'conflict',
     id: row.id,
     revision: row.revision,
-    internetId,
+    internetId: upload.internetId,
     gone: result.kind === 'gone',
     ...(result.kind === 'conflict' && result.remoteMessageId !== undefined
       ? { remoteMessageId: result.remoteMessageId }
+      : {}),
+    // Only the create path adopts the copy a conflict names; an update already knows its draft.
+    ...(result.kind === 'conflict' &&
+    result.remoteDraftId !== undefined &&
+    upload.remoteDraftId === undefined
+      ? { remoteDraftId: result.remoteDraftId }
       : {}),
     at: ctx.clock.now(),
   };
@@ -314,7 +322,8 @@ function recordSaved(
     at: ctx.clock.now(),
   };
   // The draft was discarded or sent while the upload ran: the copy it just made is nobody's, so it goes.
-  if (!tryCommit(ctx, write, upload.draftId)) queueRemoval(ctx, account, saved.remoteDraftId);
+  if (!tryCommit(ctx, write, upload.draftId))
+    queueRemoval(ctx, account, saved.remoteDraftId, saved.remoteMessageId);
 }
 
 async function syncDraft(ctx: DraftsCtx, id: string) {
@@ -364,17 +373,23 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   }
   if (result.kind === 'saved')
     return recordSaved(ctx, upload, result, row.account_id, copy.partial);
-  raiseConflict(ctx, row, internetId, result);
+  raiseConflict(ctx, row, upload, result);
 }
 
 // ---------------------------------------------------------------- remote copies
 
 /** Deletes the provider's copy of a draft that is gone here. */
-export function queueRemoval(ctx: DraftsCtx, account: string, remoteDraftId: string) {
+export function queueRemoval(
+  ctx: DraftsCtx,
+  account: string,
+  remoteDraftId: string,
+  expectedMessageId?: string,
+) {
   if (ctx.removals.has(remoteDraftId)) return;
   ctx.removals.set(remoteDraftId, {
     account,
     remoteDraftId,
+    ...(expectedMessageId !== undefined ? { expectedMessageId } : {}),
     at: ctx.clock.now(),
     attempts: 0,
     busy: false,
@@ -382,10 +397,17 @@ export function queueRemoval(ctx: DraftsCtx, account: string, remoteDraftId: str
   ctx.deadlines.changed('drafts');
 }
 
+/** `remove`, passing the expected message id only when one is known (otherwise the call is the old two-argument one). */
+function removeCopy(ctx: DraftsCtx, account: string, remoteDraftId: string, expected?: string) {
+  return expected === undefined
+    ? ctx.port.remove(account, remoteDraftId)
+    : ctx.port.remove(account, remoteDraftId, expected);
+}
+
 async function runRemoval(ctx: DraftsCtx, removal: RowlessRemoval) {
   removal.busy = true;
   try {
-    await ctx.port.remove(removal.account, removal.remoteDraftId);
+    await removeCopy(ctx, removal.account, removal.remoteDraftId, removal.expectedMessageId);
     ctx.removals.delete(removal.remoteDraftId);
   } catch (error) {
     removal.busy = false;
@@ -451,7 +473,14 @@ async function removeHidden(ctx: DraftsCtx, id: string) {
   // are one entity (JMAP) deleting it would delete the sent message.
   if (row.remote_draft_id !== null && !consumedBySend(ctx, id)) {
     try {
-      await ctx.port.remove(row.account_id, row.remote_draft_id);
+      // The copy this device last wrote or adopted: if the draft holds another message id (a phone edit, or a sent
+      // message) the provider leaves it alone and the hidden row still ends.
+      await removeCopy(
+        ctx,
+        row.account_id,
+        row.remote_draft_id,
+        row.remote_message_id ?? undefined,
+      );
     } catch (error) {
       return removalRefused(ctx, row, meta, error);
     }

@@ -1,0 +1,415 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { Draft, DraftFields } from '@aplos/contract';
+import { ACCOUNT, fields, gate, inWorld, SEC, type World } from './helpers';
+
+/**
+ * Draft port gaps 3 and 4, body delivery and `supersedes` (additive, optional within v:1): a removal carries the expected
+ * message id, a create-path conflict names the copy it found, a remote draft can arrive with its body, and a fact can say
+ * which message ids it replaces.
+ */
+
+const world = (fn: (w: World) => Promise<void> | void) => inWorld(fn, { drafts: true });
+
+let ops = 0;
+const next = () => `ports-op-${++ops}`;
+
+const service = (w: World) => w.first.outbox.drafts!;
+const create = (w: World, f: DraftFields = fields()) => service(w).set(next(), { fields: f }).draft;
+const edit = (w: World, d: Pick<Draft, 'id' | 'revision'>, f: DraftFields, close = false) =>
+  service(w).set(next(), { id: d.id, baseRevision: d.revision, fields: f, close }).draft;
+
+const read = (w: World, id: string): Draft => {
+  const found = service(w).get([id]);
+  assert.equal(found.notFound.length, 0, `draft ${id} exists`);
+  return found.list[0];
+};
+
+const wait = async (w: World, ms: number) => {
+  await w.clock.advance(ms);
+  await w.settle();
+};
+
+interface Row {
+  revision: number;
+  remote_draft_id: string | null;
+  remote_message_id: string | null;
+  remote_internet_id: string | null;
+  [k: string]: string | number | null;
+}
+
+const row = (w: World, id: string) =>
+  w.first.store.read(q => q.get<Row>('SELECT * FROM drafts WHERE id = ?', id));
+
+const count = (w: World) =>
+  w.first.store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM drafts'))!.n;
+
+interface Sync {
+  incomplete?: true;
+  wrote?: string[];
+  conflict?: { complete?: boolean; theirsMessageId?: string; theirs?: { html: string } };
+}
+
+const syncOf = (w: World, id: string): Sync => {
+  const data = w.first.store.read(q =>
+    q.get<{ data: string }>('SELECT data FROM drafts WHERE id = ?', id),
+  )!.data;
+  return (JSON.parse(data) as { _sync: Sync })._sync;
+};
+
+const THEIRS_ID = '<theirs@phone.example>';
+
+interface Fact {
+  subject?: string;
+  html?: string;
+  text?: string;
+  internetId?: string;
+  supersedes?: string[];
+  removed?: true;
+  /** An `html` on the message itself (the pre-existing way of delivering a body). */
+  messageHtml?: string;
+}
+
+/** What history reports when another device saves a draft. */
+function fact(w: World, remoteDraftId: string, messageId: string, f: Fact = {}) {
+  w.first.store.commit({
+    opId: `ports-fact-${++ops}`,
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'remoteDraft',
+        accountId: ACCOUNT,
+        remoteDraftId,
+        remoteMessageId: messageId,
+        changedAt: w.clock.now(),
+        ...(f.internetId !== undefined ? { internetId: f.internetId } : {}),
+        ...(f.removed ? { removed: true as const } : {}),
+        ...(f.html !== undefined ? { html: f.html } : {}),
+        ...(f.text !== undefined ? { text: f.text } : {}),
+        ...(f.supersedes ? { supersedes: f.supersedes } : {}),
+        message: {
+          remoteId: messageId,
+          remoteThreadId: 'phone-thread',
+          to: [{ address: 'jordan@mail.example' }],
+          cc: [],
+          subject: f.subject ?? 'From the phone',
+          snippet: 'only a snippet',
+          date: w.clock.now(),
+          internalDate: w.clock.now(),
+          flags: { seen: true, flagged: false, draft: true, fromMe: true },
+          ...(f.messageHtml !== undefined ? { html: f.messageHtml } : {}),
+        },
+      },
+    ],
+  });
+}
+
+async function synced(w: World, f: DraftFields = fields()) {
+  const d = create(w, f);
+  await wait(w, 5 * SEC);
+  const r = row(w, d.id)!;
+  assert.equal(r.revision, d.revision);
+  return {
+    draft: read(w, d.id),
+    remoteDraftId: r.remote_draft_id!,
+    messageId: r.remote_message_id!,
+    internetId: r.remote_internet_id!,
+  };
+}
+
+// ---------------------------------------------------------------- GAP 3: remove carries the expected message id
+
+test('gap 3: discarding a synced draft passes the message id it last wrote, and a match deletes', () =>
+  world(async w => {
+    const s = await synced(w);
+    service(w).destroy(next(), s.draft.id);
+    await w.settle();
+    assert.deepEqual(w.remoteDrafts.removeExpected, [s.messageId]);
+    assert.deepEqual(w.remoteDrafts.removes, [s.remoteDraftId]);
+    assert.equal(w.remoteDrafts.remote.size, 0);
+    assert.equal(count(w), 0, 'the hidden row finished');
+  }));
+
+test('gap 3: a copy the phone replaced since is not deleted, and the hidden row still finishes', () =>
+  world(async w => {
+    const s = await synced(w);
+    // The phone saved the draft; history has not reported it yet, so this device still holds the old message id.
+    const phoneId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    service(w).destroy(next(), s.draft.id);
+    await w.settle();
+    assert.equal(w.remoteDrafts.removeAttempts.length, 1, 'the provider was asked');
+    assert.deepEqual(w.remoteDrafts.removeGuarded, [s.remoteDraftId], 'and refused on the id');
+    assert.deepEqual(w.remoteDrafts.removes, [], 'nothing was deleted');
+    assert.equal(
+      w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId,
+      phoneId,
+      'the newer version is there',
+    );
+    assert.equal(count(w), 0, 'the discard is complete here');
+  }));
+
+test('gap 3: a removal for a copy with no known message id is the old call without one', () =>
+  world(async w => {
+    w.remoteDrafts.remote.set('rdX', { messageId: 'mX', internetId: '<x@x>', revision: 1 });
+    const d = w.draft('d-unknown', fields(), { remoteDraftId: 'rdX' });
+    service(w).destroy(next(), d.id);
+    await w.settle();
+    assert.deepEqual(w.remoteDrafts.removeExpected, [undefined]);
+    assert.deepEqual(w.remoteDrafts.removes, ['rdX']);
+    assert.equal(count(w), 0);
+  }));
+
+test('gap 3: a discard while the first upload runs removes the copy under the id that upload returned', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    service(w).destroy(next(), d.id);
+    g.open();
+    await wait(w, 2 * SEC);
+    assert.deepEqual(w.remoteDrafts.removeExpected, ['msg2']);
+    assert.deepEqual(w.remoteDrafts.removes, ['rd1']);
+    assert.equal(count(w), 0);
+  }));
+
+// ---------------------------------------------------------------- GAP 4: the create-path conflict names the copy
+
+test('gap 4: an earlier create that landed is adopted from the conflict: keep mine updates it, no second copy', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    const firstId = w.remoteDrafts.saves[0].internetId;
+    assert.equal(w.remoteDrafts.remote.size, 1, 'the first create landed');
+    w.remoteDrafts.script.push({ result: 'conflictExisting' });
+    edit(w, d, fields({ subject: 'Edited' }));
+    await wait(w, 6 * SEC);
+    const second = w.remoteDrafts.saves[1];
+    assert.equal(second.remoteDraftId, undefined, 'the second upload was a create');
+    // The conflict named the copy: the row holds it, and both Message-IDs and its message id are ours.
+    const held = row(w, d.id)!;
+    assert.equal(held.remote_draft_id, 'rd1');
+    assert.equal(held.remote_message_id, 'msg2');
+    const wrote = syncOf(w, d.id).wrote ?? [];
+    for (const id of [firstId, second.internetId, 'msg2'])
+      assert.ok(wrote.includes(id), `${id} is remembered as ours`);
+    assert.ok(read(w, d.id).conflict, 'the choice is asked');
+    service(w).resolve(next(), d.id, 'keepMine');
+    await wait(w, 40 * SEC);
+    const third = w.remoteDrafts.saves.at(-1)!;
+    assert.equal(third.remoteDraftId, 'rd1', 'keep mine replaced the copy');
+    assert.equal(third.baseRemoteMessageId, 'msg2');
+    assert.equal(w.remoteDrafts.remote.size, 1, 'no second Gmail draft');
+    assert.equal(read(w, d.id).conflict, undefined);
+    assert.equal(read(w, d.id).sync, 'synced');
+  }));
+
+test('gap 4: the adopted copy and its echo in history do not raise a phantom remote draft', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    const firstId = w.remoteDrafts.saves[0].internetId;
+    w.remoteDrafts.script.push({ result: 'conflictExisting' });
+    edit(w, d, fields({ subject: 'Edited' }));
+    await wait(w, 6 * SEC);
+    const revision = row(w, d.id)!.revision;
+    fact(w, 'rd1', 'msg2', { internetId: firstId, subject: 'echo' });
+    assert.equal(service(w).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');
+    assert.equal(count(w), 1);
+    assert.equal(row(w, d.id)!.revision, revision, 'and not a phone edit');
+    service(w).resolve(next(), d.id, 'keepMine');
+    await wait(w, 40 * SEC);
+    const last = w.remoteDrafts.saves.at(-1)!;
+    const messageId = w.remoteDrafts.remote.get('rd1')!.messageId;
+    fact(w, 'rd1', messageId, { internetId: last.internetId, subject: 'echo of keep mine' });
+    assert.equal(count(w), 1, 'still no phantom');
+    assert.equal(read(w, d.id).conflict, undefined);
+  }));
+
+test('gap 4: a conflict on an update names no copy to adopt: the stored ids stay', () =>
+  world(async w => {
+    const s = await synced(w);
+    w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    edit(w, s.draft, fields({ subject: 'Mine' }), true);
+    await wait(w, 1);
+    const held = row(w, s.draft.id)!;
+    assert.equal(held.remote_draft_id, s.remoteDraftId);
+    assert.equal(held.remote_message_id, s.messageId, 'the base is still what this device wrote');
+  }));
+
+// ---------------------------------------------------------------- body delivery
+
+test('body: a phone draft delivered with html is complete, editable in place and no fork', () =>
+  world(async w => {
+    fact(w, 'phone-1', 'pm-1', { html: '<p>The full text</p>' });
+    const id = `${ACCOUNT}:phone-1`;
+    const d = read(w, id);
+    assert.equal(d.html, '<p>The full text</p>');
+    assert.equal(syncOf(w, id).incomplete, undefined, 'complete');
+    const edited = edit(w, d, fields({ subject: 'Edited here', html: d.html }));
+    assert.equal(edited.id, id, 'edited in place');
+    assert.equal(count(w), 1, 'no fork');
+  }));
+
+test('body: without html a phone draft is snippet-only and an edit forks, as before', () =>
+  world(async w => {
+    fact(w, 'phone-1', 'pm-1');
+    const id = `${ACCOUNT}:phone-1`;
+    assert.equal(syncOf(w, id).incomplete, true);
+    const d = read(w, id);
+    const edited = edit(w, d, fields({ subject: 'Edited here' }));
+    assert.notEqual(edited.id, id, 'the edit is a draft of its own');
+    assert.equal(count(w), 2, 'forked');
+    assert.equal(syncOf(w, id).incomplete, true, 'and the phone draft is untouched');
+  }));
+
+test('body: text alone completes the draft too, escaped, and the top-level html wins over the message html', () =>
+  world(async w => {
+    fact(w, 'phone-1', 'pm-1', { text: 'a < b\n\nsecond' });
+    assert.equal(read(w, `${ACCOUNT}:phone-1`).html, '<p>a &lt; b</p><p>second</p>');
+    assert.equal(syncOf(w, `${ACCOUNT}:phone-1`).incomplete, undefined);
+    fact(w, 'phone-2', 'pm-2', { html: '<p>top</p>', messageHtml: '<p>message</p>' });
+    assert.equal(read(w, `${ACCOUNT}:phone-2`).html, '<p>top</p>');
+  }));
+
+test('body: the same snippet-only copy again with its body completes it', () =>
+  world(async w => {
+    fact(w, 'phone-1', 'pm-1');
+    const id = `${ACCOUNT}:phone-1`;
+    assert.equal(syncOf(w, id).incomplete, true);
+    fact(w, 'phone-1', 'pm-1', { html: '<p>Now whole</p>' });
+    assert.equal(syncOf(w, id).incomplete, undefined);
+    assert.equal(read(w, id).html, '<p>Now whole</p>');
+  }));
+
+test('body: a phone edit delivered with html makes take theirs and keep both work with the full body', () =>
+  world(async w => {
+    const s = await synced(w);
+    edit(w, s.draft, fields({ subject: 'Mine' }));
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, theirId, {
+      subject: 'Theirs',
+      html: '<p>Their whole body</p>',
+      internetId: THEIRS_ID,
+    });
+    assert.equal(syncOf(w, s.draft.id).conflict?.complete, true);
+    const both = service(w).resolve(next(), s.draft.id, 'keepBoth');
+    assert.equal(
+      read(w, both.copyId!).html,
+      '<p>Their whole body</p>',
+      'keep both: the copy has the body',
+    );
+  }));
+
+test('body: take theirs gets the full body', () =>
+  world(async w => {
+    const s = await synced(w);
+    edit(w, s.draft, fields({ subject: 'Mine' }));
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, theirId, {
+      subject: 'Theirs',
+      html: '<p>Their whole body</p>',
+      internetId: THEIRS_ID,
+    });
+    const out = service(w).resolve(next(), s.draft.id, 'takeTheirs');
+    assert.equal(out.draft.html, '<p>Their whole body</p>');
+  }));
+
+// ---------------------------------------------------------------- supersedes
+
+test('supersedes: a fact that replaces our message id under our own Message-ID is our echo and advances the base', () =>
+  world(async w => {
+    const s = await synced(w);
+    const revision = row(w, s.draft.id)!.revision;
+    fact(w, s.remoteDraftId, 'msg-new', {
+      internetId: s.internetId,
+      supersedes: [s.messageId],
+      html: '<p>Lunch at noon?</p>',
+    });
+    const held = row(w, s.draft.id)!;
+    assert.equal(held.remote_message_id, 'msg-new', 'the base moved');
+    assert.equal(held.revision, revision, 'no replacement of the draft');
+    assert.equal(read(w, s.draft.id).conflict, undefined, 'no conflict');
+    // The next upload is checked against the advanced base, so it is not a stale one.
+    edit(w, read(w, s.draft.id), fields({ subject: 'Later edit' }), true);
+    await wait(w, 1);
+    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, 'msg-new');
+  }));
+
+test('supersedes: an id this device only wrote earlier (in wrote) counts as the base too', () =>
+  world(async w => {
+    const s = await synced(w);
+    const second = edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const now = row(w, second.id)!;
+    assert.notEqual(now.remote_message_id, s.messageId, 'the copy has a newer message id');
+    fact(w, s.remoteDraftId, 'msg-newer', {
+      internetId: now.remote_internet_id!,
+      supersedes: [s.messageId],
+    });
+    assert.equal(row(w, second.id)!.remote_message_id, 'msg-newer');
+    assert.equal(read(w, second.id).conflict, undefined);
+  }));
+
+test('supersedes: a fact that replaces our base under a Message-ID we never wrote is a phone edit', () =>
+  world(async w => {
+    const s = await synced(w);
+    edit(w, s.draft, fields({ subject: 'Mine' }));
+    fact(w, s.remoteDraftId, 'msg-phone', {
+      subject: 'Theirs',
+      html: '<p>Phone body</p>',
+      internetId: THEIRS_ID,
+      supersedes: [s.messageId],
+    });
+    const c = syncOf(w, s.draft.id).conflict;
+    assert.equal(c?.theirsMessageId, 'msg-phone', 'the choice is asked');
+    assert.equal(c?.complete, true);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId, 'our base is not advanced');
+  }));
+
+test('supersedes: the same replacement with no Message-ID at all is a phone edit as well', () =>
+  world(async w => {
+    const s = await synced(w);
+    edit(w, s.draft, fields({ subject: 'Mine' }));
+    fact(w, s.remoteDraftId, 'msg-phone', { supersedes: [s.messageId] });
+    assert.equal(syncOf(w, s.draft.id).conflict?.theirsMessageId, 'msg-phone');
+  }));
+
+test('supersedes: a clean draft is replaced by a phone edit that supersedes its base', () =>
+  world(async w => {
+    const s = await synced(w);
+    fact(w, s.remoteDraftId, 'msg-phone', {
+      subject: 'Theirs',
+      html: '<p>Phone body</p>',
+      internetId: THEIRS_ID,
+      supersedes: [s.messageId],
+    });
+    const d = read(w, s.draft.id);
+    assert.equal(d.html, '<p>Phone body</p>');
+    assert.equal(d.conflict, undefined);
+  }));
+
+test('supersedes: an upload in flight whose echo arrives first keeps the later result', () =>
+  world(async w => {
+    const s = await synced(w);
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const uploading = w.remoteDrafts.saves.at(-1)!;
+    fact(w, s.remoteDraftId, 'msg-early', {
+      internetId: uploading.internetId,
+      supersedes: [s.messageId],
+    });
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg-early');
+    g.open();
+    await wait(w, 1);
+    assert.equal(read(w, s.draft.id).conflict, undefined);
+    assert.equal(read(w, s.draft.id).sync, 'synced');
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      w.remoteDrafts.remote.get(s.remoteDraftId)!.messageId,
+    );
+  }));

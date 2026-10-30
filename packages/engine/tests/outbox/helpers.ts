@@ -159,7 +159,8 @@ export type CountingSend = ReturnType<typeof countingSend>;
  * copy and then throws the same Error (a timeout whose request got through). `conflictBare` answers `conflict` with no id.
  */
 export interface DraftStep {
-  result?: 'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost' | 'conflictBare';
+  result?:
+    'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost' | 'conflictBare' | 'conflictExisting';
   /** The `ClassifiedError` class a `notSent` step throws (default `permanent`). */
   notSentClass?: string;
   until?: number;
@@ -169,7 +170,10 @@ export interface DraftStep {
 
 /**
  * The fake `DraftSyncPort`: a provider Drafts folder that applies the port's rules (a stale `baseRemoteMessageId` is a
- * `conflict`, a missing remote draft is `gone`). Every upload is recorded, so tests count them.
+ * `conflict`, a missing remote draft is `gone`). Every upload is recorded, so tests count them. `remove` honours
+ * `expectedMessageId`: a draft that holds another message id (a phone edit) is left alone and the call resolves.
+ * `conflictExisting` answers a CREATE with a `conflict` that names the one remote draft already there (an earlier create
+ * whose reply was lost did land), as `DraftSaveResult` documents.
  */
 export function fakeDrafts(server: CountingSend) {
   const remote = new Map<string, { messageId: string; internetId: string; revision: number }>();
@@ -177,6 +181,10 @@ export function fakeDrafts(server: CountingSend) {
   const removes: string[] = [];
   /** Every `remove` call, whether it worked or not. */
   const removeAttempts: string[] = [];
+  /** The `expectedMessageId` each `remove` call carried (`undefined`: none was passed). */
+  const removeExpected: (string | undefined)[] = [];
+  /** Calls the guard turned into a no-op: the draft held another message id. */
+  const removeGuarded: string[] = [];
   const script: DraftStep[] = [];
   /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
   const removeScript: DraftStep[] = [];
@@ -199,6 +207,15 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'lost') throw new Error('socket hang up');
       // A conflict that names no remote message id (an adapter that cannot read it).
       if (step.result === 'conflictBare') return { kind: 'conflict' };
+      if (step.result === 'conflictExisting' && !upload.remoteDraftId) {
+        const [existingId, existing] = [...remote.entries()][0] ?? [];
+        if (existingId && existing)
+          return {
+            kind: 'conflict',
+            remoteDraftId: existingId,
+            remoteMessageId: existing.messageId,
+          };
+      }
       const known = upload.remoteDraftId ? remote.get(upload.remoteDraftId) : undefined;
       if (upload.remoteDraftId && !known) return { kind: 'gone' };
       if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)
@@ -219,8 +236,9 @@ export function fakeDrafts(server: CountingSend) {
         revision: upload.revision,
       };
     },
-    async remove(account, remoteDraftId) {
+    async remove(account, remoteDraftId, expectedMessageId) {
       removeAttempts.push(remoteDraftId);
+      removeExpected.push(expectedMessageId);
       const step = removeScript.shift() ?? {};
       if (step.wait) await step.wait;
       if (step.result === 'paused')
@@ -228,6 +246,9 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
       if (step.result === 'lost' || step.result === 'landedLost') throw new Error('socket hang up');
+      const held = remote.get(remoteDraftId);
+      if (held && expectedMessageId !== undefined && held.messageId !== expectedMessageId)
+        return void removeGuarded.push(remoteDraftId);
       removes.push(remoteDraftId);
       remote.delete(remoteDraftId);
     },
@@ -240,6 +261,8 @@ export function fakeDrafts(server: CountingSend) {
     saves,
     removes,
     removeAttempts,
+    removeExpected,
+    removeGuarded,
     /** The owner edits the draft on a phone: its message id changes, as history will report. */
     phoneEdit(remoteDraftId: string) {
       const copy = remote.get(remoteDraftId)!;

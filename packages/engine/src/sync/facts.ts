@@ -193,6 +193,9 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
   if (d.remoteThreadId !== undefined) write.remoteThreadId = d.remoteThreadId;
   if (d.internetId !== undefined) write.internetId = d.internetId;
   if (d.removed) write.removed = true;
+  if (d.html !== undefined) write.html = d.html;
+  if (d.text !== undefined) write.text = d.text;
+  if (d.supersedes?.length) write.supersedes = d.supersedes;
   if (d.message) {
     const {
       kind: _kind,
