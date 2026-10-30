@@ -12,6 +12,8 @@ import {
   type EngineServices,
   type MethodContext,
 } from '../src/methods/index';
+import { openStore, type StorePort } from '../src/store';
+import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from './store/helpers';
 
 const dir = join(import.meta.dirname, '..', 'src', 'methods');
 const grantable: Scope[] = ['read', 'triage', 'draft', 'send', 'ai', 'admin'];
@@ -126,4 +128,152 @@ test('every engine method is refused to a caller that holds no scope', async () 
   const none = as({ kind: 'host', scopes: [] });
   for (const name of Object.keys(handlers))
     await assert.rejects(dispatch(name, {}, none), forbidden, name);
+});
+
+// ---------------------------------------------------------------- Unsubscribe (prov-gmail-write)
+
+type Executor = NonNullable<EngineServices['unsubscribe']>;
+type RunRequest = Parameters<Executor['run']>[0];
+
+/** A real store with one thread: an older inbound list message, a newer one, and the owner's own reply on top. */
+async function withUnsubStore(fn: (store: StorePort) => Promise<void>) {
+  const file = tempDb();
+  const store = openStore(file.open());
+  try {
+    store.commit({ opId: 'setup', origin: 'sync', writes: [accountWrite, ...folderWrites] });
+    const own = { seen: true, flagged: false, draft: false, fromMe: true };
+    store.commit({
+      opId: 'mail',
+      origin: 'sync',
+      writes: [
+        msg('m1', 't1', 0, { listUnsubscribe: { urls: ['https://old.example/u'] } }),
+        msg('m2', 't1', 5, {
+          listUnsubscribe: {
+            urls: ['mailto:leave@list.example', 'https://list.example/u'],
+            oneClick: true,
+          },
+        }),
+        msg('m3', 't1', 9, { flags: own, listUnsubscribe: { urls: ['https://mine.example/u'] } }),
+        msg('m4', 't2', 1),
+      ],
+    });
+    await fn(store);
+  } finally {
+    store.close();
+    file.cleanup();
+  }
+}
+
+function unsubCtx(store: StorePort, unsubscribe?: Executor): MethodContext {
+  const services = { store, ...(unsubscribe ? { unsubscribe } : {}) } as EngineServices;
+  return { ...ctx, services };
+}
+
+function fakeExecutor(
+  result: Awaited<ReturnType<Executor['run']>>,
+  seen: RunRequest[] = [],
+): Executor {
+  return {
+    describe: () => ({ method: 'oneClick' }),
+    run: async request => {
+      seen.push(request);
+      return result;
+    },
+  };
+}
+
+const T1 = `${ACCOUNT}:t1`;
+
+test('Unsubscribe/run hands the newest inbound list message and its receiving account to the executor', async () => {
+  await withUnsubStore(async store => {
+    const seen: RunRequest[] = [];
+    const out = await handlers['Unsubscribe/run'](
+      { opId: 'op-1', threadId: T1 },
+      unsubCtx(store, fakeExecutor({ kind: 'done', message: 'Unsubscribed.' }, seen)),
+    );
+    assert.deepEqual(out, { outcome: 'done', message: 'Unsubscribed.' });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].from, 'owner@mail.example');
+    assert.deepEqual(
+      seen[0].headers.listUnsubscribe,
+      '<mailto:leave@list.example>, <https://list.example/u>',
+    );
+    assert.equal(seen[0].headers.listUnsubscribePost, 'List-Unsubscribe=One-Click');
+  });
+});
+
+test('Unsubscribe/run maps every executor result to the contract outcome and drops an unsafe url', async () => {
+  await withUnsubStore(async store => {
+    const cases = [
+      [
+        { kind: 'open', message: 'm', url: 'https://list.example/u' },
+        { outcome: 'openLink', url: 'https://list.example/u' },
+      ],
+      [
+        { kind: 'compose', message: 'm', url: 'mailto:a@list.example' },
+        { outcome: 'compose', url: 'mailto:a@list.example' },
+      ],
+      [{ kind: 'unsure', message: 'm' }, { outcome: 'unsure' }],
+      [{ kind: 'failed', message: 'm' }, { outcome: 'failed' }],
+      [{ kind: 'none', message: 'm' }, { outcome: 'unavailable' }],
+      [
+        { kind: 'open', message: 'm', url: `https://list.example/${'a'.repeat(2_000)}` },
+        { outcome: 'openLink' },
+      ],
+      [{ kind: 'open', message: 'm', url: 'https://list.example/u\nx' }, { outcome: 'openLink' }],
+    ] as const;
+    for (const [result, expected] of cases) {
+      const out = await handlers['Unsubscribe/run'](
+        { opId: 'op-1', threadId: T1 },
+        unsubCtx(store, fakeExecutor(result)),
+      );
+      assert.deepEqual(out, { message: 'm', ...expected });
+    }
+  });
+});
+
+test('Unsubscribe/run: no list header is unavailable without calling the executor; a missing thread or executor is refused', async () => {
+  await withUnsubStore(async store => {
+    const seen: RunRequest[] = [];
+    const executor = fakeExecutor({ kind: 'done', message: 'x' }, seen);
+    const none = await handlers['Unsubscribe/run'](
+      { opId: 'op-1', threadId: `${ACCOUNT}:t2` },
+      unsubCtx(store, executor),
+    );
+    assert.equal(none.outcome, 'unavailable');
+    assert.equal(seen.length, 0);
+    await assert.rejects(
+      Promise.resolve().then(() =>
+        handlers['Unsubscribe/run'](
+          { opId: 'op-1', threadId: `${ACCOUNT}:nope` },
+          unsubCtx(store, executor),
+        ),
+      ),
+      (e: unknown) => e instanceof ContractError && e.type === 'notFound',
+    );
+    await assert.rejects(
+      Promise.resolve().then(() =>
+        handlers['Unsubscribe/run']({ opId: 'op-1', threadId: T1 }, unsubCtx(store)),
+      ),
+      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+    );
+  });
+});
+
+test('Unsubscribe/get reports the executor’s method for the thread, and none without a list header', async () => {
+  await withUnsubStore(async store => {
+    const executor: Executor = {
+      describe: h => ({
+        method: 'link',
+        url: /https:\/\/list\.example\/u/.test(h.listUnsubscribe ?? '')
+          ? 'https://list.example/u'
+          : 'x',
+      }),
+      run: () => Promise.reject(new Error('get never runs')),
+    };
+    const get = (threadId: string) =>
+      handlers['Unsubscribe/get']({ threadId }, unsubCtx(store, executor));
+    assert.deepEqual(await get(T1), { method: 'link', url: 'https://list.example/u' });
+    assert.deepEqual(await get(`${ACCOUNT}:t2`), { method: 'none' });
+  });
 });
