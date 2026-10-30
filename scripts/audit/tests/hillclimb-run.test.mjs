@@ -141,41 +141,133 @@ describe('run.mjs as a subprocess', () => {
       },
     );
 
-  it('SIGTERM mid-gate kills the process group, releases the slot, removes worktrees', async () => {
-    const marker = join(tmp, 'sigterm-gate-finished');
-    const { repo, scriptDir, git, slot } = seedRun('sigterm-gate', {
-      name: 'sig',
+  // Conventional exit codes are 128 + signal number: SIGINT 130, SIGTERM 143, SIGHUP 129.
+  for (const [signal, code, sleeper] of [
+    ['SIGTERM', 143, 47],
+    ['SIGINT', 130, 48],
+    ['SIGHUP', 129, 49],
+  ]) {
+    it(`${signal} mid-gate kills the process group, releases the slot, removes worktrees`, async () => {
+      const marker = join(tmp, `${signal.toLowerCase()}-gate-finished`);
+      const { repo, scriptDir, git, slot } = seedRun(`${signal.toLowerCase()}-gate`, {
+        name: 'sig',
+        allowedPaths: ['**'],
+        // The gate sleeps inside the check slot: the signal lands with the slot held
+        // and the gate's process group alive — exactly the state cleanup has to drain.
+        gates: [{ name: 'g', command: `sleep ${sleeper}; touch ${marker}`, timeoutSec: 60 }],
+        scorers: [
+          { name: 's', command: 'echo {"score":1,"details":[]}', weight: 1, timeoutSec: 10 },
+        ],
+        attempt: { agent: 'command', command: 'sleep 60', timeoutSec: 90, brief: 'x' },
+        attemptsPerRound: 1,
+        roundLimit: 1,
+        stopAfterNoGain: 1,
+        maxConcurrent: 1,
+      });
+      const child = spawnRun(repo, scriptDir, slot);
+      const slotDir = join(slot, 'aplos-check-slot.lock');
+      const runRootDir = join(slot, 'hillclimb-sig-t');
+      for (let i = 0; i < 300 && !existsSync(slotDir); i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.ok(existsSync(slotDir), `check-slot lock never appeared under ${signal}`);
+      child.kill(signal);
+      const [exit] = await new Promise(resolve => child.on('close', (...a) => resolve(a)));
+      assert.equal(exit, code, `${signal} exit code`);
+      assert.equal(existsSync(slotDir), false, 'check-slot lock left behind');
+      assert.equal(existsSync(runRootDir), false, 'run root left behind');
+      assert.throws(
+        () => execFileSync('pgrep', ['-f', `sleep ${sleeper}`]),
+        /Command failed|exit code 1/,
+        'gate process group survived the kill',
+      );
+      assert.equal(existsSync(marker), false, 'gate completed despite the kill');
+      const worktrees = git(['worktree', 'list', '--porcelain']);
+      assert.equal(worktrees.trim().split('\n\n').length, 1, `worktrees left behind: ${worktrees}`);
+      assert.equal(git(['for-each-ref', 'hillclimb/sig-t']).trim(), '', 'branches left');
+    });
+  }
+
+  it('realDeps drives attempt+eval worktrees, gates and scorers on a real repo', async () => {
+    const { scriptDir, git, slot } = seedRun('realdeps', {
+      name: 'deps-e2e',
       allowedPaths: ['**'],
-      // The gate sleeps inside the check slot: SIGTERM lands with the slot held and the
-      // gate's process group alive — exactly the state cleanup has to drain.
-      gates: [{ name: 'g', command: `sleep 47; touch ${marker}`, timeoutSec: 60 }],
-      scorers: [{ name: 's', command: 'echo {"score":1,"details":[]}', weight: 1, timeoutSec: 10 }],
-      attempt: { agent: 'command', command: 'sleep 60', timeoutSec: 90, brief: 'x' },
+      gates: [{ name: 'g', command: 'exit 0', timeoutSec: 10 }],
+      scorers: [{ name: 's', command: 'echo {"score":3,"details":[]}', weight: 1, timeoutSec: 10 }],
+      attempt: { agent: 'command', command: 'true', timeoutSec: 5, brief: 'x' },
       attemptsPerRound: 1,
       roundLimit: 1,
       stopAfterNoGain: 1,
       maxConcurrent: 1,
+      lockWaitMin: 1,
+      maxLogMB: 5,
     });
-    const child = spawnRun(repo, scriptDir, slot);
-    const slotDir = join(slot, 'aplos-check-slot.lock');
-    const runRootDir = join(slot, 'hillclimb-sig-t');
-    for (let i = 0; i < 300 && !existsSync(slotDir); i++) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    assert.ok(existsSync(slotDir), 'check-slot lock never appeared (gate never ran)');
-    child.kill('SIGTERM');
+    // No agent: the child drives realDeps by hand — prepare an attempt worktree,
+    // commit a change, gate+score it in an eval worktree through the check slot.
+    const script = `
+      const { realDeps } = await import(${JSON.stringify(join(scriptDir, 'run.mjs'))});
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const artifactsDir = join(${JSON.stringify(slot)}, 'artifacts');
+      fs.mkdirSync(artifactsDir, { recursive: true });
+      const state = { dirs: [], branches: [], procs: new Set() };
+      const deps = realDeps({
+        config: ${JSON.stringify({ name: 'deps-e2e', lockWaitMin: 1, maxLogMB: 5 })},
+        repoRelPath: 'config.json',
+        runId: 'deps-t',
+        artifactsDir,
+        state,
+      });
+      const out = { startCommit: deps.startCommit };
+      const ctx = { id: 'r1a1', round: 1, index: 1, commit: deps.startCommit, baseCommit: deps.startCommit };
+      await deps.prepareAttempt(ctx);
+      out.attemptDirExists = fs.existsSync(ctx.dir);
+      out.branch = ctx.branch;
+      fs.writeFileSync(join(ctx.dir, 'note.txt'), 'hello\\n');
+      const fin = await deps.finalizeAttempt(ctx);
+      out.head = fin.head;
+      out.added = fin.changes.filter(c => c.status === 'A').map(c => c.path);
+      const base = { id: 'baseline', head: deps.startCommit };
+      const evalDir = await deps.prepareEval(base);
+      const gate = await deps.withCheckSlot(() =>
+        deps.runGate({ name: 'g', command: 'exit 0', timeoutSec: 10 }, evalDir, join(artifactsDir, 'g.log')));
+      const scoreCmd = 'echo ' + JSON.stringify(JSON.stringify({ score: 3, details: [] }));
+      const score = await deps.withCheckSlot(() =>
+        deps.runScorer({ name: 's', command: scoreCmd, timeoutSec: 10 }, evalDir, join(artifactsDir, 's.log')));
+      out.gate = gate;
+      out.score = score;
+      out.mainIntact = await deps.verifyMainIntact().then(() => true, e => e.message);
+      await deps.removeAttempt(ctx);
+      await deps.removeEval(base);
+      await deps.cleanup();
+      console.log('RESULT ' + JSON.stringify(out));
+    `;
+    const child = spawn('node', ['--input-type=module', '-e', script], {
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: slot },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => (stdout += chunk));
+    child.stderr.on('data', chunk => (stderr += chunk));
     const [code] = await new Promise(resolve => child.on('close', (...a) => resolve(a)));
-    assert.equal(code, 143);
-    assert.equal(existsSync(slotDir), false, 'check-slot lock left behind');
-    assert.equal(existsSync(runRootDir), false, 'run root left behind');
-    assert.throws(
-      () => execFileSync('pgrep', ['-f', 'sleep 47']),
-      /Command failed|exit code 1/,
-      'gate process group survived the kill',
-    );
-    assert.equal(existsSync(marker), false, 'gate completed despite the kill');
+    assert.equal(code, 0, `realDeps child failed: ${stderr}`);
+    const line = stdout.trim().split('\n').at(-1);
+    assert.ok(line.startsWith('RESULT '), `no result line: ${stdout}`);
+    const out = JSON.parse(line.slice(7));
+    assert.equal(out.startCommit, git(['rev-parse', 'HEAD']).trim());
+    assert.equal(out.attemptDirExists, true);
+    assert.match(out.branch, /^hillclimb\/deps-e2e\/deps-t\//);
+    assert.notEqual(out.head, out.startCommit, 'attempt commit not created');
+    assert.deepEqual(out.added, ['note.txt']);
+    assert.deepEqual(out.gate, { ok: true });
+    assert.equal(out.score.ok, true);
+    assert.equal(out.score.score, 3);
+    assert.equal(out.mainIntact, true, 'main checkout changed');
     const worktrees = git(['worktree', 'list', '--porcelain']);
     assert.equal(worktrees.trim().split('\n\n').length, 1, `worktrees left behind: ${worktrees}`);
-    assert.equal(git(['for-each-ref', 'hillclimb/sig-t']).trim(), '', 'branches left');
+    assert.equal(git(['for-each-ref', 'hillclimb/deps-e2e']).trim(), '', 'branches left');
+    assert.equal(existsSync(join(slot, 'hillclimb-deps-t')), false, 'run root left behind');
+    assert.equal(existsSync(join(slot, 'aplos-check-slot.lock')), false, 'slot left');
   });
 });
