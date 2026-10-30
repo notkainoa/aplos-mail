@@ -11,6 +11,9 @@ export const TRACKED_TOKENS = 256;
 /** Fetches in flight at once, across every token: bounds buffered bytes to this times `maxBytes` (60 MB). */
 export const MAX_IN_FLIGHT = 6;
 
+/** How long one fetch may wait for in-flight slots in all, before it is refused as `timeout`. */
+export const WAIT_MS = 30_000;
+
 /** Body bytes one token may pull in total, redirect hops included (five full-size images). */
 export const PER_TOKEN_BYTES = 50_000_000;
 
@@ -18,7 +21,10 @@ export interface ProxyLimits {
   maxRedirects: number;
   maxBytes: number;
   maxPixels: number;
+  /** A fetch's own working time (lookups, connect, body, redirects); the clock stops while it waits for a slot. */
   timeoutMs: number;
+  /** Total time a fetch may spend waiting for in-flight slots, across its hops. */
+  waitMs: number;
   perToken: number;
   /** Body bytes per token across all its fetches. */
   perTokenBytes: number;
@@ -36,6 +42,7 @@ const CEILINGS: Omit<ProxyLimits, 'ports'> = {
   maxBytes: IMAGE_PROXY_LIMITS.maxBytes,
   maxPixels: IMAGE_PROXY_LIMITS.maxPixels,
   timeoutMs: IMAGE_PROXY_LIMITS.timeoutMs,
+  waitMs: WAIT_MS,
   perToken: IMAGE_PROXY_LIMITS.perToken,
   perTokenBytes: PER_TOKEN_BYTES,
   maxInFlight: MAX_IN_FLIGHT,
@@ -112,36 +119,80 @@ export function tokenBudget(
 export type Release = () => void;
 
 export interface Semaphore {
-  /** Resolves with a release function once a slot is free; rejects with the signal's reason if it aborts first. */
-  acquire(signal?: AbortSignal): Promise<Release>;
+  /**
+   * Resolves with a release function once a slot is free; rejects with the signal's reason if it aborts first. Waiters
+   * of one `group` (an image token) queue together; a freed slot goes to the waiting group holding the fewest slots,
+   * so a group with many waiters cannot keep another out.
+   */
+  acquire(signal?: AbortSignal, group?: string): Promise<Release>;
 }
 
 interface Waiter {
   grant(release: Release): void;
 }
 
-/** A counting semaphore: at most `max` holders, the rest queued first in, first out. Aborted waiters leave the queue. */
+/**
+ * A counting semaphore: at most `max` holders. Waiters queue per group, first in, first out inside a group; across
+ * groups a freed slot goes to the waiting group with the fewest holders (the one waiting longest on a tie). Aborted
+ * waiters leave their queue.
+ */
 export function createSemaphore(max: number): Semaphore {
   let active = 0;
-  const queue: Waiter[] = [];
+  const holding = new Map<string, number>();
+  // Insertion order is the tie-break: a group that was just served moves to the back.
+  const queues = new Map<string, Waiter[]>();
 
-  function releaseOnce(): Release {
+  function hold(group: string, by: number) {
+    const count = (holding.get(group) ?? 0) + by;
+    if (count > 0) holding.set(group, count);
+    else holding.delete(group);
+  }
+
+  function neediest(): string | undefined {
+    let best: string | undefined;
+    for (const group of queues.keys())
+      if (best === undefined || (holding.get(group) ?? 0) < (holding.get(best) ?? 0)) best = group;
+    return best;
+  }
+
+  function releaseOnce(group: string): Release {
     let done = false;
     return () => {
       if (done) return;
       done = true;
-      const next = queue.shift();
+      hold(group, -1);
+      const next = neediest();
       // The slot passes straight to the next waiter, so `active` only drops when nobody waits.
-      if (next) next.grant(releaseOnce());
-      else active -= 1;
+      if (next === undefined) active -= 1;
+      else dequeue(next).grant(releaseOnce(next));
     };
   }
 
-  function acquire(signal?: AbortSignal): Promise<Release> {
+  function dequeue(group: string): Waiter {
+    const queue = queues.get(group) as Waiter[];
+    const waiter = queue.shift() as Waiter;
+    queues.delete(group);
+    if (queue.length > 0) queues.set(group, queue);
+    hold(group, 1);
+    return waiter;
+  }
+
+  function leave(group: string, waiter: Waiter) {
+    const queue = queues.get(group);
+    const at = queue?.indexOf(waiter) ?? -1;
+    // Already granted or removed: splice(-1) would drop an unrelated waiter.
+    if (!queue || at === -1) return false;
+    queue.splice(at, 1);
+    if (queue.length === 0) queues.delete(group);
+    return true;
+  }
+
+  function acquire(signal?: AbortSignal, group = ''): Promise<Release> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     if (active < max) {
       active += 1;
-      return Promise.resolve(releaseOnce());
+      hold(group, 1);
+      return Promise.resolve(releaseOnce(group));
     }
     return new Promise((resolve, reject) => {
       const waiter: Waiter = {
@@ -151,11 +202,12 @@ export function createSemaphore(max: number): Semaphore {
         },
       };
       function onAbort() {
-        queue.splice(queue.indexOf(waiter), 1);
-        reject(signal?.reason);
+        if (leave(group, waiter)) reject(signal?.reason);
       }
       signal?.addEventListener('abort', onAbort, { once: true });
-      queue.push(waiter);
+      const queue = queues.get(group);
+      if (queue) queue.push(waiter);
+      else queues.set(group, [waiter]);
     });
   }
 

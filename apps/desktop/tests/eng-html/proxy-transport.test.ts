@@ -1,9 +1,9 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
 import https from 'node:https';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import tls from 'node:tls';
 import type { ImageRefusal, ProxiedImage } from '@aplos/engine/ports';
 import {
@@ -264,9 +264,27 @@ test('aborting mid-body rejects with an AbortError', async () => {
   }
 });
 
-test('TLS sends the original name as SNI to the checked address, and no SNI for an IP literal', async () => {
+/**
+ * Records the local port of every TLS client socket this process opens, so a server can tell its own test's
+ * connections from a stray one (a scanner or another process hitting the same ephemeral port on a busy machine).
+ */
+function trackingClientPorts(context: TestContext): Set<number> {
+  const ports = new Set<number>();
+  const original = tls.connect;
+  context.mock.method(tls, 'connect', (...args: Parameters<typeof tls.connect>) => {
+    const socket = original(...args);
+    socket.once('connect', () => ports.add(socket.localPort as number));
+    return socket;
+  });
+  return ports;
+}
+
+test('TLS sends the original name as SNI to the checked address, and no SNI for an IP literal', async t => {
+  const ours = trackingClientPorts(t);
   const names: string[] = [];
-  let handshakes = 0;
+  // Keyed by the client's port, so a repeated event for one socket or a stray connection cannot change a count.
+  const accepted = new Set<number>();
+  const failed = new Set<number>();
   // No certificate at all: the handshake fails after the client hello, which is all this test needs to see.
   const server = tls.createServer({
     SNICallback: (name, done) => {
@@ -274,17 +292,34 @@ test('TLS sends the original name as SNI to the checked address, and no SNI for 
       done(new Error('no certificate'));
     },
   });
-  server.on('tlsClientError', () => (handshakes += 1));
+  const ports = new WeakMap<object, number>();
+  server.on('connection', socket => {
+    ports.set(socket, socket.remotePort as number);
+    accepted.add(socket.remotePort as number);
+  });
+  server.on('tlsClientError', (_error, socket) => {
+    const port = ports.get((socket as unknown as { _parent: object })._parent);
+    if (port !== undefined) failed.add(port);
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
+  const mine = (all: Set<number>) => [...all].filter(p => ours.has(p));
   try {
+    // A stray client on the same port, as a busy machine produces: it must not change what is counted.
+    const stray = net.connect(port, '127.0.0.1');
+    stray.on('error', () => undefined);
+    stray.end('GET / HTTP/1.1\r\n\r\n');
+    await until(() => failed.size >= 1);
     const seen: PinnedTarget[] = [];
     const proxy = createImageProxy({ resolve, connect: toLocal(port, seen) });
     assert.deepEqual(await proxy.fetch('https://img.example/a.png', run()), refusedAs('http'));
     assert.deepEqual(await proxy.fetch(`https://${PUBLIC}/a.png`, run()), refusedAs('http'));
+    await until(() => mine(failed).length >= 2);
+    assert.equal(accepted.size, 3, 'the stray was accepted too, and is not counted as ours');
+    assert.equal(mine(accepted).length, 2, 'one connection per fetch, no retry');
+    assert.equal(mine(failed).length, 2);
     assert.deepEqual(names, ['img.example']);
-    assert.equal(handshakes, 2);
     assert.deepEqual(
       seen.map(target => [target.address, target.servername]),
       [
@@ -293,7 +328,7 @@ test('TLS sends the original name as SNI to the checked address, and no SNI for 
       ],
     );
   } finally {
-    server.close();
+    await new Promise(done => server.close(done));
   }
 });
 

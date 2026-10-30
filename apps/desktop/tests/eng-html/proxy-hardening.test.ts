@@ -201,6 +201,147 @@ test(
 );
 
 test(
+  'a waiter that is no longer queued ignores a late abort instead of removing someone else',
+  { timeout: 5000 },
+  async () => {
+    const slots = createSemaphore(1);
+    const holder = await slots.acquire();
+    // A signal that keeps its listener after a grant, as a hostile or buggy implementation could.
+    let lateAbort: () => void = () => undefined;
+    const stubborn = {
+      aborted: false,
+      reason: new Error('late'),
+      addEventListener: (_type: string, listener: () => void) => (lateAbort = listener),
+      removeEventListener: () => undefined,
+    } as unknown as AbortSignal;
+    const order: string[] = [];
+    const first = slots.acquire(stubborn).then(release => (order.push('first'), release));
+    const second = slots.acquire().then(release => (order.push('second'), release));
+    holder();
+    const releaseFirst = await first;
+    lateAbort();
+    releaseFirst();
+    (await second)();
+    assert.deepEqual(order, ['first', 'second'], 'the late abort did not drop the second waiter');
+  },
+);
+
+test(
+  'slots are shared between groups: a group with many waiters cannot starve another',
+  { timeout: 5000 },
+  async () => {
+    const slots = createSemaphore(6);
+    const held = await Promise.all(Array.from({ length: 6 }, () => slots.acquire(undefined, 'a')));
+    const grants: string[] = [];
+    const granted: (() => void)[] = [];
+    const queue = (group: string, count: number) => {
+      for (let i = 0; i < count; i += 1)
+        void slots.acquire(undefined, group).then(release => {
+          grants.push(group);
+          granted.push(release);
+        });
+    };
+    queue('a', 14);
+    queue('b', 6);
+    await tick();
+    assert.deepEqual(grants, []);
+    for (const release of held.slice(0, 6)) {
+      release();
+      await tick();
+    }
+    assert.deepEqual(grants, ['b', 'b', 'b', 'a', 'a', 'a'], 'b is served first, then they share');
+    while (grants.length < 20) {
+      granted.shift()?.();
+      await tick();
+    }
+    assert.equal(grants.filter(group => group === 'b').length, 6, 'everyone is served in the end');
+  },
+);
+
+test(
+  'one token with twenty slow fetches does not keep another token out of the six slots',
+  { timeout: 5000 },
+  async () => {
+    const connected: string[] = [];
+    const gates: (() => void)[] = [];
+    const connect: Connector = async target => {
+      connected.push(target.url.pathname);
+      await new Promise<void>(done => gates.push(done));
+      return reply(200, png(1, 1));
+    };
+    const proxy = createImageProxy({ resolve: dns(NAMES).resolve, connect });
+    const hostile = { token: 'a', signal: new AbortController().signal };
+    const kind = { token: 'b', signal: new AbortController().signal };
+    const all = Array.from({ length: 20 }, (_, i) =>
+      proxy.fetch(`https://img.example/a${i + 1}`, hostile),
+    );
+    all.push(proxy.fetch('https://img.example/b1', kind));
+    for (let i = 0; i < 5; i += 1) await tick();
+    assert.deepEqual(connected, ['/a1', '/a2', '/a3', '/a4', '/a5', '/a6']);
+    gates.shift()?.();
+    for (let i = 0; i < 5; i += 1) await tick();
+    assert.equal(connected[6], '/b1', "b's fetch is granted before a's 7th");
+    while (gates.length > 0 || connected.length < 21) {
+      gates.shift()?.();
+      await tick();
+    }
+    assert.ok((await Promise.all(all)).every(result => result.kind === 'image'));
+  },
+);
+
+test(
+  'the wait for a slot has its own bound; the fetch time limit starts when the slot is granted',
+  { timeout: 5000 },
+  async () => {
+    const releases: (() => void)[] = [];
+    const connect: Connector = (target, signal) =>
+      new Promise((resolve, reject) => {
+        if (target.url.pathname === '/holder') releases.push(() => resolve(reply(200, png(1, 1))));
+        else signal.addEventListener('abort', () => reject(signal.reason));
+      });
+    const proxy = createImageProxy({
+      resolve: dns(NAMES).resolve,
+      connect,
+      limits: { maxInFlight: 1, timeoutMs: 120, waitMs: 40 },
+    });
+    const holder = proxy.fetch('https://img.example/holder', run());
+    await tick();
+    const started = Date.now();
+    assert.deepEqual(
+      await proxy.fetch('https://img.example/impatient', run()),
+      refusedAs('timeout'),
+      'refused by the wait bound, long before its own 120 ms',
+    );
+    assert.ok(Date.now() - started < 110, 'the 40 ms wait bound applied, not the 120 ms limit');
+    releases[0]();
+    assert.equal((await holder).kind, 'image');
+  },
+);
+
+test(
+  'time spent queued does not count against the fetch time limit',
+  { timeout: 5000 },
+  async () => {
+    const releases: (() => void)[] = [];
+    const connect: Connector = () =>
+      new Promise(resolve => releases.push(() => resolve(reply(200, png(1, 1)))));
+    const proxy = createImageProxy({
+      resolve: dns(NAMES).resolve,
+      connect,
+      limits: { maxInFlight: 1, timeoutMs: 80, waitMs: 1000 },
+    });
+    const holder = proxy.fetch('https://img.example/holder', run());
+    const queued = proxy.fetch('https://img.example/queued', run());
+    await new Promise(done => setTimeout(done, 120));
+    releases[0]();
+    await holder;
+    await tick();
+    releases[1]();
+    assert.equal((await queued).kind, 'image', 'queued for longer than its limit, then served');
+  },
+);
+
+test(
   'no more than six fetches are in flight at once, and the rest still finish',
   { timeout: 5000 },
   async () => {

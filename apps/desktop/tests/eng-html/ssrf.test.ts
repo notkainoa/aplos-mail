@@ -8,7 +8,12 @@ import {
   type Connector,
   type UpstreamResponse,
 } from '../../src/host/proxy/fetch';
-import { pinTarget, type PinnedTarget, type Resolver } from '../../src/host/proxy/resolve';
+import {
+  parseTarget,
+  pinTarget,
+  type PinnedTarget,
+  type Resolver,
+} from '../../src/host/proxy/resolve';
 import {
   MAX_IN_FLIGHT,
   PER_TOKEN_BYTES,
@@ -207,6 +212,16 @@ const REFUSED_URLS: [string, ImageRefusal][] = [
   ['http://service.internal/', 'address'],
   ['http://router.home.arpa/', 'address'],
   ['http://home.arpa/', 'address'],
+  ['http://printer.local../', 'address'],
+  ['http://intranet../', 'address'],
+  ['http://a.internal.%2e/', 'address'],
+  ['http://x.home.arpa../', 'address'],
+  ['http://localhost../', 'address'],
+  ['http://tracker.localhost../', 'address'],
+  ['http://a..b.example/', 'address'],
+  ['http://.example.com/', 'address'],
+  ['http://img.example../', 'address'],
+  ['http://img.example.%2E/', 'address'],
   ['http://LOCAL/', 'address'],
   ['http://mixed.example/', 'address'],
   ['http://mixed6.example/', 'address'],
@@ -241,6 +256,46 @@ for (const [url, reason] of REFUSED_URLS)
     const result = await pinTarget(url, IMAGE_PROXY_LIMITS.ports, dns(NAMES).resolve);
     assert.deepEqual(result, { ok: false, reason });
   });
+
+test('one trailing root dot on an ordinary name is still accepted, and resolved without it', async () => {
+  const resolver = dns({ 'example.com.': [PUBLIC] });
+  const result = await pinTarget(
+    'https://example.com./',
+    IMAGE_PROXY_LIMITS.ports,
+    resolver.resolve,
+  );
+  assert.ok(result.ok);
+  assert.equal(result.target.servername, 'example.com');
+  assert.equal(result.target.hostHeader, 'example.com.');
+  assert.deepEqual(resolver.calls, ['example.com.']);
+});
+
+test('an https-only caller has http refused as scheme before anything is resolved', async () => {
+  const resolver = dns(NAMES);
+  const ports = IMAGE_PROXY_LIMITS.ports;
+  const cases = [
+    'http://img.example/',
+    'http://8.8.8.8/',
+    'http://img.example:443/',
+    'ftp://img.example/',
+  ];
+  for (const url of cases)
+    assert.deepEqual(await pinTarget(url, ports, resolver.resolve, undefined, ['https']), {
+      ok: false,
+      reason: 'scheme',
+    });
+  assert.deepEqual(resolver.calls, []);
+  assert.equal(parseTarget('http://img.example/', ports, ['https']), 'scheme');
+  const secure = await pinTarget('https://img.example/', ports, resolver.resolve, undefined, [
+    'https',
+  ]);
+  assert.ok(secure.ok);
+  assert.deepEqual(resolver.calls, ['img.example']);
+  for (const url of ['http://img.example/', 'https://img.example/'])
+    assert.ok((await pinTarget(url, ports, resolver.resolve)).ok, `${url} by default`);
+  assert.equal(parseTarget('https://img.example/', ports, ['http']), 'scheme');
+  assert.equal(parseTarget('https://img.example/', ports, []), 'scheme');
+});
 
 test('a URL is pinned to the checked address, with the original name kept for Host and SNI', async () => {
   const resolver = dns(NAMES);
