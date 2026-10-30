@@ -18,6 +18,7 @@ import { KP, killpoint } from './killpoints';
 import { applyStartRule, checkSent, lostSending, pullInChecks } from './start';
 import {
   extraOf,
+  hadAttempt,
   readSubmission,
   SubmissionConflict,
   type SubmissionProblem,
@@ -121,7 +122,12 @@ function problemOf(error: ClassifiedError, now: number): SubmissionProblem {
   return { reasonCode: 'net.offline', message: OFFLINE_COPY, at: now };
 }
 
-/** The payload: the pinned MIME, plus the remote draft only when its synced copy is provably this revision (FR-7). */
+/**
+ * The payload: the pinned MIME, plus the remote draft only when this is the FIRST attempt and its synced copy is
+ * provably this revision (FR-7). `row` is read before the `sending` marker, so `hadAttempt(row)` is true only for an
+ * earlier attempt (Send anyway, Retry, a requeue): that one may have consumed the remote draft (`drafts.send` moves it
+ * to Sent), so a later attempt never names it and sends the pinned MIME under the same Message-ID.
+ */
 function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): SubmissionPayload {
   const meta = extraOf(row);
   const payload: SubmissionPayload = {
@@ -131,6 +137,7 @@ function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): Submis
     envelope: meta.envelope,
   };
   if (meta.remoteThreadId) payload.remoteThreadId = meta.remoteThreadId;
+  if (hadAttempt(row)) return payload;
   const draft = ctx.store.read(q =>
     q.get<{
       remote_draft_id: string | null;
