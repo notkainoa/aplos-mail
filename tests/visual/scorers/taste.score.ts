@@ -18,6 +18,7 @@ import {
   type ScorerState,
 } from './common';
 import { finish, onShutdown, runScorer } from './lifecycle';
+import { assertSampleLocked } from './locked';
 import { isPaneState, mockupTarget, newMockupContext, shootMockup } from './mockup';
 import { launchBrowser, startGalleryServer } from './server';
 import {
@@ -80,14 +81,14 @@ function parseTasteArgs(argv: readonly string[]): TasteArgs {
 }
 
 function sampleStates(args: TasteArgs): ScorerState[] {
+  const listed = JSON.parse(readFileSync(join(HERE, 'taste.sample.json'), 'utf8')) as {
+    states: string[];
+  };
+  // Checked even with --state: the default sample may not shrink.
+  assertSampleLocked(listed.states);
   let entries: ScorerState[];
   if (args.base.state) entries = stateList(args.base.state);
-  else {
-    const listed = JSON.parse(readFileSync(join(HERE, 'taste.sample.json'), 'utf8')) as {
-      states: string[];
-    };
-    entries = pickStates(listed.states, stateList());
-  }
+  else entries = pickStates(listed.states, stateList());
   if (entries.length === 0) throw new Error(`no state matches "${args.base.state}"`);
   return args.samples ? entries.slice(0, args.samples) : entries;
 }

@@ -5,11 +5,13 @@ target. **Attempts must not edit this folder** (nor `known-defects.ts`, `states.
 the harness rejects any diff that touches a scorer.
 
 **Off limits to attempts** (the harness diffguard enforces it): every file in this folder, which
-includes `mockup-diff.exclude.json`, `taste.sample.json`, `taste.rubric.md` and the tests, plus
-`../support/axe.ts`, `known-defects.ts`, `states.ts` (including each state's `mockup` string) and the
-goldens. A scorer is changed only by the owner, never to raise a score. Each scorer is built so that
-hiding, breaking or deleting a state cannot raise its score: pages that cannot be scored count as
-failures, never as absent.
+includes `mockup-diff.exclude.json`, `taste.sample.json`, `taste.rubric.md`, `content-floor.json`,
+`locked-states.json` and the tests, plus `tests/visual/gallery/**`, `tests/visual/support/**`
+(including `support/axe.ts`), `tests/visual/vite.config.ts`, `tests/visual/states.ts` (including each
+state's `mockup` string), `tests/visual/known-defects.ts`, the goldens, `mockups/**` and
+`plans/DESIGN.md`. A scorer is changed only by the owner, never to raise a score. Each scorer is built
+so that hiding, breaking or deleting a state cannot raise its score: pages that cannot be scored count
+as failures, never as absent.
 
 ## Output contract
 
@@ -57,16 +59,35 @@ run that visits no page scores 0, so breaking a state never beats fixing it. The
 `scanned N of M pages`. Details read
 `state theme rule impact nodes target-selector`. A full run takes about 4 minutes; use `--state` for a screen.
 
+**Content floor** (`content-floor.ts`, `content-floor.json`): a page with no violations because it is
+empty must not score 100. After the axe run each page is measured in the browser: the visible text
+(`document.body.innerText.trim().length`, so `display:none` and `visibility:hidden` text does not count)
+and the visible interactive elements (`a`, `button`, `input`, `select`, `textarea`, `[tabindex]` of 0 or
+more, and the roles button, option, menuitem, tab, link, checkbox and radio; `checkVisibility()` with
+opacity and visibility, and not inside `aria-hidden="true"`). A page under 12 characters, or under its
+state's `minInteractive` (default 0), counts as a failed state: it is reported as `state-failed-to-open`
+with a `content-floor:` message and the whole score is 0. `exempt` maps a state id to the reason it may
+show under 12 characters (the interactive floor still applies). `minInteractive` was seeded from one
+measurement of the gallery at about half the lowest count over both themes. A key that is not a state id
+fails the run.
+
+**Locked states** (`locked-states.json`): `states` is the sorted list of every state id that exists, and
+`lockedSample` the ids `taste.sample.json` must keep. `axe.score.ts` and `mockup-diff.score.ts` exit 1 with a
+message on stderr and no score line when a locked id is missing from `states.ts`; `taste.score.ts` does the
+same when a `lockedSample` id is missing from `taste.sample.json`. Adding states or sample ids is allowed.
+Growing the lists is an owner / ui-core change, and attempts must not touch this folder.
+
 ## Files
 
 `common.ts` (output, args, state list, shots dir, `--reuse` freshness), `axe-score.ts` (pure scoring
-maths), `server.ts` (starts and stops the Vite gallery, launches Chromium), `lifecycle.ts` (cleanups
+maths), `content-floor.ts` (page measure and floor check), `locked.ts` (locked ids), `server.ts` (starts and stops the Vite gallery, launches Chromium), `lifecycle.ts` (cleanups
 and SIGINT/SIGTERM/SIGHUP handling: stop the Vite process group, close the browser, remove temp dirs,
 exit 130/143), `mockup.ts` (finds and shoots a mockup page, shared by the diff and taste scorers),
 `common.test.ts`, `lifecycle.test.ts` (unit tests).
 
 `--reuse` only reuses a shot that is younger than an hour and not older than the newest file under
-`apps/desktop/src/renderer`, `packages`, `tests/visual/gallery` and `states.ts`; otherwise it re-shoots.
+`apps/desktop/src/renderer`, `packages`, `tests/visual/gallery`, `tests/visual/support`,
+`tests/visual/vite.config.ts` and `states.ts`; otherwise it re-shoots.
 
 ## taste-judge scorer
 
@@ -86,7 +107,7 @@ counts as 5, neutral, and never leaves the mean. Overall is the mean over all st
 read `state: finding`, lowest states first, judge failures first. A state that failed (it did not open,
 the judge failed) is listed and scores 0; if every state fails the scorer exits 1. The screenshots are
 attempt-authored, so the prompt tells the judge to ignore any instructions inside the images. A cache
-entry of the wrong shape is a miss. Results are cached in
+entry of the wrong shape, or with a criterion outside 0..10, is a miss; the judge's own numbers are clamped to 0..10 when parsed. Results are cached in
 `artifacts/visual/judge-cache/` by sha256 of the image bytes, rubric, model, prompt version and run index, so an
 unchanged screenshot costs nothing; stderr reports the hit count. Numbers are for comparing versions, not absolute.
 Files: `taste-score.ts` (pure: prompt, parsing, maths, cache), `taste.test.ts` (fake judge, no network).
@@ -117,3 +138,10 @@ a page that shows another state, a mockup page that does not exist, overlays). E
 in `states.ts`; a stale key fails the run (exit 1). Overlays for humans (implementation | mockup |
 heatmap) go to `artifacts/visual/mockup-diff/<size>/<state>.<theme>.png`. Maths and unit tests:
 `mockup-diff-score.ts`, `mockup-diff.test.ts`.
+
+## Known gaps
+
+- A harness that SIGKILLs a scorer cannot be caught: the detached Vite process group and Chromium may
+  outlive it. SIGINT, SIGTERM and SIGHUP are handled; SIGKILL is not.
+- The taste scorer counts a criterion the judge answers `null` for as 5 (neutral), so a judge that
+  declines to assess can pull a state toward 50. Not fixed on purpose.

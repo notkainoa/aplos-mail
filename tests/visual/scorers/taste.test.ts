@@ -259,6 +259,9 @@ test('readCache treats a malformed entry as a miss', () => {
   const good = { criteria: { a: 5, b: null }, findings: ['x'] };
   writeCacheFile(cache, 'good', good);
   assert.deepEqual(readCache(cache, 'good'), good);
+  const edges = { criteria: { a: 0, b: 10 }, findings: [] };
+  writeCacheFile(cache, 'edges', edges);
+  assert.deepEqual(readCache(cache, 'edges'), edges);
   const bad: Record<string, unknown> = {
     notobject: 'text',
     nocriteria: { findings: [] },
@@ -267,6 +270,9 @@ test('readCache treats a malformed entry as a miss', () => {
     nofindings: { criteria: { a: 1 } },
     badfinding: { criteria: { a: 1 }, findings: [3] },
     arraycriteria: { criteria: [1], findings: [] },
+    toohigh: { criteria: { a: 11 }, findings: [] },
+    negative: { criteria: { a: -1 }, findings: [] },
+    huge: { criteria: { a: 1e9 }, findings: [] },
   };
   for (const [name, value] of Object.entries(bad)) {
     writeCacheFile(cache, name, value);

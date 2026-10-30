@@ -28,6 +28,7 @@ import {
   type StateScore,
 } from './mockup-diff-score';
 import { isPaneState, loadExcluded, mockupTarget, shootMockup, staleExcludes } from './mockup';
+import { assertStatesLocked } from './locked';
 import { launchBrowser, startGalleryServer } from './server';
 
 // Hill-climb scorer: how close is each implementation state to its mockup in layout and style?
@@ -260,6 +261,7 @@ async function runJobs(
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  assertStatesLocked(STATES.map(state => state.id));
   const entries = stateList(args.state);
   if (entries.length === 0) throw new Error(`no state id starts with "${args.state}"`);
   const excluded = loadExcluded();

@@ -226,13 +226,13 @@ export function cacheKey(input: CacheKeyInput): string {
   );
 }
 
-/** True when the value has the shape of an Answer: criteria of numbers or null, findings of strings. */
+/** True when the value has the shape of an Answer: criteria of numbers in 0..10 or null, findings of strings. */
 export function isAnswer(value: unknown): value is Answer {
   if (typeof value !== 'object' || value === null) return false;
   const { criteria, findings } = value as { criteria?: unknown; findings?: unknown };
   if (typeof criteria !== 'object' || criteria === null || Array.isArray(criteria)) return false;
   const numbers = Object.values(criteria).every(
-    entry => entry === null || (typeof entry === 'number' && Number.isFinite(entry)),
+    entry => entry === null || (typeof entry === 'number' && entry >= 0 && entry <= 10),
   );
   return numbers && Array.isArray(findings) && findings.every(line => typeof line === 'string');
 }

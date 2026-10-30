@@ -109,11 +109,13 @@ export function shotPath(size: string, stateId: string, theme: Theme): string {
   return join(shotsDir(size), `${stateId}.${theme}.png`);
 }
 
-/** What a shot is rendered from: the renderer, the gallery that mounts it, the shared packages. */
+/** What a shot is rendered from: the renderer, the gallery and its support code, the shared packages. */
 export const SOURCE_PATHS: readonly string[] = [
   join(repoRoot, 'apps', 'desktop', 'src', 'renderer'),
   join(repoRoot, 'packages'),
   join(repoRoot, 'tests', 'visual', 'gallery'),
+  join(repoRoot, 'tests', 'visual', 'support'),
+  join(repoRoot, 'tests', 'visual', 'vite.config.ts'),
   join(repoRoot, 'tests', 'visual', 'states.ts'),
 ];
 const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git']);
