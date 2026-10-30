@@ -71,6 +71,11 @@ export interface WorkflowWritten {
   remoteId: string;
   /** The records this write stamped. */
   records: WorkflowRecord[];
+  /**
+   * This device's clock minus Gmail's receive time for the copy (ms), for the lease's clock gate; absent when it
+   * could not be measured (the check failed), which the gate treats as untrusted.
+   */
+  clockOffsetMs?: number;
 }
 
 export interface WorkflowStateChannel {
@@ -81,9 +86,13 @@ export interface WorkflowStateChannel {
   view(): WorkflowRecord[];
 }
 
-/** The port's channel plus one download by id, for checking a written copy before compacting against it. */
+/**
+ * The port's channel plus one download by id, for checking a written copy before compacting against it, and the
+ * server's receive time for a copy, for the lease's clock gate.
+ */
 export interface WorkflowTransport extends WorkflowChannel {
   readBack(remoteId: string, ctx: AdapterContext): Promise<WorkflowCopy | undefined>;
+  receivedAt(remoteId: string, ctx: AdapterContext): Promise<number | undefined>;
 }
 
 export interface WorkflowStateOptions {
@@ -174,9 +183,11 @@ class StateChannel implements WorkflowStateChannel {
     if (!key) return { changed: [], skipped: 0, waiting: this.waiting.size };
     const before = new Map(this.view().map(r => [r.key, r]));
     let skipped = 0;
+    // A copy leaves `waiting` only once taken: a throw part way keeps the rest for the next call (the transport
+    // has already marked them seen, so no later round downloads them again).
     for (const [id, copy] of this.waiting) {
-      this.waiting.delete(id);
       if (!this.take(id, copy, key, log)) skipped++;
+      this.waiting.delete(id);
     }
     const changed = this.view().filter(r => before.get(r.key) !== r);
     return { changed, skipped, waiting: 0 };
@@ -217,7 +228,22 @@ class StateChannel implements WorkflowStateChannel {
       covered,
       verified: false,
     };
-    return { remoteId, records };
+    const clockOffsetMs = await this.clockOffset(remoteId, now, ctx);
+    return { remoteId, records, ...(clockOffsetMs !== undefined ? { clockOffsetMs } : {}) };
+  }
+
+  /** `writtenAt` minus Gmail's receive time for the copy just put; undefined when the check fails (never throws). */
+  private async clockOffset(
+    remoteId: string,
+    writtenAt: number,
+    ctx: AdapterContext,
+  ): Promise<number | undefined> {
+    try {
+      const received = await this.options.transport.receivedAt(remoteId, ctx);
+      return received === undefined ? undefined : writtenAt - received;
+    } catch {
+      return undefined;
+    }
   }
 
   async compact(ctx: AdapterContext): Promise<number> {
