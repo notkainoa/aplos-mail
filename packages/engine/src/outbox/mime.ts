@@ -145,24 +145,34 @@ export function encodedWords(text: string): string[] {
 
 // ---------------------------------------------------------------- headers
 
-/** CR, LF and NUL can never reach a header: they would end it and start another. */
+/**
+ * CR, LF and NUL can never reach a header: they would end it and start another. A run of them, spaces and tabs is one
+ * space, so a header never holds a long blank run (a folded line of only whitespace is not allowed).
+ */
 export function headerSafe(value: string): string {
-  return value.replace(/[\r\n\0]+/g, ' ');
+  return value.replace(/[\r\n\0 \t]+/g, ' ');
+}
+
+/** Whether `line[from, to)` has anything but spaces; stops at the first character that does. */
+function hasText(line: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) if (line[i] !== ' ') return true;
+  return false;
 }
 
 /** Folds `Name: value` at spaces into lines of at most 76 characters where it can; unfolding restores it exactly. */
 export function foldHeader(line: string): string {
   const parts: string[] = [];
-  let rest = line;
-  while (rest.length > LINE) {
-    let at = rest.lastIndexOf(' ', LINE);
-    if (at <= 0 || !rest.slice(0, at).trim() || rest.slice(0, at).endsWith(':'))
-      at = rest.indexOf(' ', LINE + 1);
-    if (at <= 0 || !rest.slice(at).trim()) break;
-    parts.push(rest.slice(0, at));
-    rest = rest.slice(at);
+  const end = line.trimEnd().length;
+  let start = 0;
+  while (line.length - start > LINE) {
+    let at = line.lastIndexOf(' ', start + LINE);
+    if (at <= start || line[at - 1] === ':' || !hasText(line, start, at))
+      at = line.indexOf(' ', start + LINE + 1);
+    if (at <= start || at >= end || !hasText(line, start, at)) break;
+    parts.push(line.slice(start, at));
+    start = at;
   }
-  parts.push(rest);
+  parts.push(line.slice(start));
   return parts.join(CRLF);
 }
 
@@ -259,10 +269,27 @@ function topHeaders(input: MimeInput): string[] {
   out.push(header('Message-ID', id));
   const replyTo = msgId(input.inReplyTo);
   if (replyTo) out.push(header('In-Reply-To', replyTo));
-  const refs = (input.references ?? []).map(msgId).filter((r): r is string => !!r);
+  const refs = keptReferences((input.references ?? []).map(msgId).filter((r): r is string => !!r));
   if (refs.length) out.push(header('References', refs.join(' ')));
   out.push('MIME-Version: 1.0');
-  return out;
+  return checkedBlock(out);
+}
+
+/** The root and the most recent ids, as RFC 5322 3.6.4 suggests and mail clients do for long chains. */
+const KEEP_RECENT_REFERENCES = 20;
+function keptReferences(refs: string[]): string[] {
+  return refs.length > KEEP_RECENT_REFERENCES + 1
+    ? [refs[0], ...refs.slice(-KEEP_RECENT_REFERENCES)]
+    : refs;
+}
+
+/** What the header block may take in all: more is not a message any server takes. */
+const MAX_HEADER_BLOCK = 10_000;
+function checkedBlock(headers: string[]): string[] {
+  const octets = headers.reduce((sum, h) => sum + h.length + CRLF.length, 0);
+  if (octets > MAX_HEADER_BLOCK)
+    throw new MimeError('The headers of this message are too long to send.');
+  return headers;
 }
 
 // ---------------------------------------------------------------- body
@@ -329,28 +356,35 @@ function afterElement(lower: string, name: string, from: number): number {
 export function htmlToText(html: string): string {
   const lower = asciiLower(html);
   let out = '';
+  // Whether the output is empty or ends in a line break. Kept here: reading the end of `out` flattens it every time.
+  let atLineStart = true;
+  const add = (text: string) => {
+    if (!text) return;
+    out += text;
+    atLineStart = text.charCodeAt(text.length - 1) === 10;
+  };
   let at = 0;
   while (at < html.length) {
     const open = html.indexOf('<', at);
     if (open < 0) break;
-    out += html.slice(at, open);
+    add(html.slice(at, open));
     if (!TAG_START.test(html[open + 1] ?? '')) {
       // A lone `<` ("a < b") is text, not a tag.
-      out += '<';
+      add('<');
       at = open + 1;
       continue;
     }
     const close = html.indexOf('>', open + 1);
     if (close < 0) {
-      out += html.slice(open);
+      add(html.slice(open));
       at = html.length;
       break;
     }
     const name = /^(script|style)\b/.exec(lower.slice(open + 1, open + 8))?.[1];
     at = name ? afterElement(lower, name, close) : close + 1;
-    if (!name) out += tagText(html.slice(open + 1, close), out === '' || out.endsWith('\n'));
+    if (!name) add(tagText(html.slice(open + 1, close), atLineStart));
   }
-  if (at < html.length) out += html.slice(at);
+  if (at < html.length) add(html.slice(at));
   return trimLineEnds(decodeEntities(normalizeBreaks(out)))
     .replace(/\n{3,}/g, '\n\n')
     .trim();

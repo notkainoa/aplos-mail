@@ -59,6 +59,7 @@ const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
 const REVISION_CHANGED = 'This message changed. Open it again before sending.';
 const STILL_CHECKING = 'We are still checking whether this was sent. Try again in a moment.';
+const STILL_CHECKING_CANCEL = 'We are still checking whether this message went out.';
 
 function wrongState(state: SubmissionState): never {
   const sentence: Partial<Record<SubmissionState, string>> = {
@@ -267,12 +268,12 @@ function prepareSend(
   };
 }
 
-function conflictSentence(error: SubmissionConflict) {
+function conflictSentence(error: SubmissionConflict, checking = STILL_CHECKING) {
   if (error.reason === 'draftMissing') return fail('notFound', 'This draft no longer exists.');
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
   if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
-  if (error.reason === 'checking') return fail('stateMismatch', STILL_CHECKING);
+  if (error.reason === 'checking') return fail('stateMismatch', checking);
   return error.current ? wrongState(error.current) : fail('notFound', NOT_IN_OUTBOX);
 }
 
@@ -320,14 +321,21 @@ function moveFor(action: RowAction, row: SubmissionRow, now: number) {
   }
 }
 
+/**
+ * Send anyway, and cancel of an `uncertain` row, wait for the owner to be asked: a check still pending could find the
+ * message, and cancelling would unlock the draft for a second Message-ID while the first one is out.
+ */
+const needsChecksDone = (action: RowAction, row: SubmissionRow) =>
+  action.type === 'sendAnyway' || (action.type === 'cancel' && row.state === 'uncertain');
+
 /** The refusals that depend on the row's problem, not only its state. */
 function checkProblem(action: RowAction, row: SubmissionRow) {
   const reason = problemOf(row)?.reasonCode;
-  // Send anyway is the one deliberate second delivery: only once the checks are over and the owner was asked.
-  if (action.type === 'sendAnyway') {
-    if (extraOf(row).checkAt !== undefined || reason !== 'send.uncertain')
-      fail('stateMismatch', STILL_CHECKING);
-  }
+  if (
+    needsChecksDone(action, row) &&
+    (extraOf(row).checkAt !== undefined || reason !== 'send.uncertain')
+  )
+    fail('stateMismatch', action.type === 'cancel' ? STILL_CHECKING_CANCEL : STILL_CHECKING);
   if (action.type === 'retry' && reason === 'send.noBytes') fail('stateMismatch', NO_BYTES_COPY);
 }
 
@@ -342,7 +350,7 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
   if (action.type === 'reschedule' && action.notBefore < now) fail('validation', PAST_TIME);
   const { to, set } = moveFor(action, row, now);
   // The same demand inside the commit: a check scheduled after the read above makes it lose.
-  const guard = action.type === 'sendAnyway' ? { ifChecksDone: true as const } : {};
+  const guard = needsChecksDone(action, row) ? { ifChecksDone: true as const } : {};
   let seq: number;
   try {
     seq = transition(
@@ -351,7 +359,8 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
       { was: row.state, why: action.type, origin: 'local', opId },
     ).seq;
   } catch (error) {
-    if (error instanceof SubmissionConflict) return conflictSentence(error);
+    if (error instanceof SubmissionConflict)
+      return conflictSentence(error, action.type === 'cancel' ? STILL_CHECKING_CANCEL : undefined);
     throw error;
   }
   ctx.deadlines.changed('outbox');

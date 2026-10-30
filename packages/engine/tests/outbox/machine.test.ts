@@ -393,6 +393,46 @@ test('cancel ends a failed, uncertain or suspended send and unlocks the draft', 
     w.send(w.first, 'd1');
   }));
 
+test('cancel is refused while the findSent checks are pending: the message that went out is found, never sent twice', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: true });
+    w.server.hideDeliveriesUntil(T0 + 10 * SEC + 30 * SEC);
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'uncertain', 'the first check found nothing yet');
+    const sentence = refused(
+      () => w.act(w.first, { type: 'cancel', submissionId: s.id }),
+      'stateMismatch',
+    );
+    assert.equal(sentence, 'We are still checking whether this message went out.');
+    refused(() => w.send(w.first, 'd1'), 'stateMismatch');
+    assert.equal(w.get(s.id).state, 'uncertain', 'the refusals changed nothing');
+    await w.clock.advance(60 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent', 'the pending check found it');
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('cancel of an uncertain send is allowed at the prompt, once the checks are over', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: false });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(60 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).problem?.reasonCode, 'send.uncertain', 'the prompt is showing');
+    assert.equal(
+      w.act(w.first, { type: 'cancel', submissionId: s.id }).submission.state,
+      'cancelled',
+    );
+    assert.equal(w.send(w.first, 'd1').state, 'queued');
+  }));
+
 test('two engines on one store firing at once deliver once', () =>
   inWorld(async w => {
     const second = w.open();

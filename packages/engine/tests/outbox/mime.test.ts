@@ -291,6 +291,46 @@ test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &
   assert.equal(htmlToText('a \t \nb\t\n\n\n\nc  '), 'a\nb\n\nc');
 });
 
+test('htmlToText stays linear on 400,000 characters of tags that each end or start a line', () => {
+  // `out.endsWith('\n')` per tag flattened the growing string every time: `<br>` took 6.9 s, `x<p>` 22.8 s.
+  const started = Date.now();
+  const breaks = htmlToText('<br>'.repeat(100_000));
+  const paragraphs = htmlToText('x<p>'.repeat(100_000));
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2_000, `took ${elapsed} ms`);
+  assert.equal(breaks, '');
+  assert.equal(paragraphs.split('\n').filter(Boolean).length, 100_000);
+  assert.equal(htmlToText('a<br>b<p>c</p>d<div>e'), 'a\nb\nc\n\nd\ne');
+});
+
+test('a subject of 100,000 spaces folds in linear time and never into a whitespace-only line', () => {
+  const started = Date.now();
+  const out = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).head;
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 300, `took ${elapsed} ms`);
+  for (const line of out.split('\r\n')) assert.ok(line.trim() !== '', 'no whitespace-only line');
+  const subject = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).headers;
+  assert.equal(named(subject, 'Subject')[0].value, 'Re: x', 'a run of spaces is one space');
+});
+
+test('References keep the first id and the last 20, and the header block has a ceiling', () => {
+  const refs = Array.from({ length: 5_000 }, (_, i) => `<ref${i}@mail.example>`);
+  const { headers, head } = parse(buildMime(input({ references: refs })));
+  const ids = named(headers, 'References')[0].value.split(' ');
+  assert.equal(ids.length, 21);
+  assert.equal(ids[0], '<ref0@mail.example>');
+  assert.equal(ids[20], '<ref4999@mail.example>');
+  assert.equal(ids[1], '<ref4980@mail.example>');
+  assert.ok(head.length < 3_000, `header block is ${head.length} octets`);
+});
+
+test('a header block past 10,000 octets is refused', () => {
+  assert.throws(
+    () => buildMime(input({ subject: 'é'.repeat(20_000) })),
+    (e: unknown) => e instanceof MimeError && /too long/.test(e.message),
+  );
+});
+
 test('a Message-ID with NUL, control or 8-bit bytes (from inbound mail) is dropped, never written', () => {
   const hostile = ['<a\0bé\u0085c@evil>', '<r\u0001@evil>', '<tab\t@evil>', '<del\u007f@evil>'];
   const out = buildMime(
@@ -316,8 +356,8 @@ test('no header line passes 998 octets: a 3,000-character attachment name and ot
   const bytes = new Uint8Array(10);
   const mime = buildMime(
     input({
-      from: { address: 'owner@mail.example', name: 'a,'.repeat(1_500) },
-      subject: 'S'.repeat(3_000),
+      from: { address: 'owner@mail.example', name: 'a,'.repeat(750) },
+      subject: 'S'.repeat(1_500),
       attachments: [
         { name: long, mime: 'application/pdf', bytes },
         { name: 'é'.repeat(1_500) + '.pdf', mime: 'application/pdf', bytes },
