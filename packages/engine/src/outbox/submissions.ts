@@ -1,7 +1,14 @@
 import type { DraftFields, Receipt, Submission, SubmissionAction } from '@aplos/contract';
 import type { StoreReader } from '../store';
 import { DEFAULT_UNDO_SEND_SECONDS, fail, hex, transition, type OutboxCtx } from './context';
-import { buildMime, MimeError, newMessageId, type MimeAttachment } from './mime';
+import {
+  buildEnvelope,
+  buildMime,
+  checkAddress,
+  MimeError,
+  newMessageId,
+  type MimeAttachment,
+} from './mime';
 import {
   liveSubmissionOf,
   readSubmission,
@@ -38,6 +45,8 @@ const ALLOWED: Record<RowAction['type'], readonly SubmissionState[]> = {
 
 const DRAFT_CHANGED = 'This draft changed in another window. Reopen it before sending.';
 const ON_ITS_WAY = 'This message is already on its way.';
+const ALREADY_SENT = 'This message was already sent. Change it to send another.';
+const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
 const REVISION_CHANGED = 'This message changed. Open it again before sending.';
 
@@ -77,7 +86,7 @@ function replayed(ctx: OutboxCtx, opId: string, action: SubmissionAction): SetRe
     action.type === 'send'
       ? ctx.store.read(q =>
           q.get<{ id: string }>(
-            "SELECT id FROM submissions WHERE json_extract(meta, '$.opId') = ?",
+            "SELECT id FROM submissions WHERE json_extract(error, '$.opId') = ?",
             opId,
           ),
         )?.id
@@ -168,17 +177,7 @@ function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
   });
 }
 
-function envelopeOf(from: string, fields: DraftFields) {
-  const seen = new Set<string>();
-  const rcpt: string[] = [];
-  for (const a of [...fields.to, ...fields.cc, ...fields.bcc]) {
-    const key = a.address.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rcpt.push(a.address);
-  }
-  return { from, rcpt };
-}
+const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
 
 function undoSeconds(ctx: OutboxCtx) {
   const value = ctx.settings?.().undoSendSeconds;
@@ -212,9 +211,12 @@ function prepareSend(
     address: draft.row.address,
     name: draft.row.display_name ?? undefined,
   };
-  const internetId = newMessageId(ctx.random);
   let mime: Uint8Array;
+  let envelope: SubmissionMeta['envelope'];
+  let internetId: string;
   try {
+    internetId = newMessageId(ctx.random, domainOf(checkAddress(from.address)));
+    envelope = buildEnvelope(from, fields);
     mime = buildMime({
       from,
       to: fields.to,
@@ -237,7 +239,7 @@ function prepareSend(
     subject: fields.subject,
     toNames: [...fields.to, ...fields.cc].slice(0, 20).map(a => a.name || a.address),
     ...thread,
-    envelope: envelopeOf(from.address, fields),
+    envelope,
     attachments: fields.attachments.length,
     opId,
   };
@@ -259,6 +261,7 @@ function conflictSentence(error: SubmissionConflict) {
   if (error.reason === 'draftMissing') return fail('notFound', 'This draft no longer exists.');
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
+  if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
   return error.current ? wrongState(error.current) : fail('notFound', NOT_IN_OUTBOX);
 }
 
@@ -312,7 +315,9 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
   if (!ALLOWED[action.type].includes(row.state)) wrongState(row.state);
   if ('revision' in action && action.revision !== undefined && action.revision !== row.revision)
     fail('stateMismatch', REVISION_CHANGED);
-  const { to, set } = moveFor(action, row, ctx.clock.now());
+  const now = ctx.clock.now();
+  if (action.type === 'reschedule' && action.notBefore < now) fail('validation', PAST_TIME);
+  const { to, set } = moveFor(action, row, now);
   let seq: number;
   try {
     seq = transition(

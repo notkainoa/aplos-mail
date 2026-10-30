@@ -12,7 +12,7 @@ import {
 import type { Admission } from '../../src/ports/base';
 import { NotSentError, PausedError } from '../../src/ports/base';
 import type { SendPort, SubmissionPayload } from '../../src/ports';
-import { openStore, type StorePort } from '../../src/store';
+import { openStore, type CommitInput, type StorePort } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
 
 export { ACCOUNT };
@@ -35,7 +35,13 @@ export interface Step {
 export function countingSend(clock: FakeClock) {
   const deliveries = new Map<string, number>();
   const payloads: SubmissionPayload[] = [];
-  const calls: { op: 'send' | 'findSent'; internetId: string; at: number }[] = [];
+  const calls: { op: 'send' | 'findSent'; internetId: string; at: number; since?: number }[] = [];
+  /** `findSent` reports a delivery only from this time on (a search index that lags). */
+  let visibleAt = 0;
+  /** `findSent` throws instead of answering (offline). */
+  let findFails = false;
+  /** `findSent` waits for this before answering (the process dies meanwhile). */
+  let findHold: Promise<void> | undefined;
   const script: Step[] = [];
   let admission: Admission = { ok: true };
   const deliver = (p: SubmissionPayload) => {
@@ -56,7 +62,8 @@ export function countingSend(clock: FakeClock) {
       if (step.wait) await step.wait;
       const result = step.result ?? 'ok';
       if (step.delivered ?? result === 'ok') deliver(payload);
-      if (result === 'ok') return { acceptedAt: clock.now(), remoteMessageId: `r-${payload.submissionId}` };
+      if (result === 'ok')
+        return { acceptedAt: clock.now(), remoteMessageId: `r-${payload.submissionId}` };
       if (result === 'notSent') throw new NotSentError(classified('transient'));
       if (result === 'paused')
         throw new PausedError(_account, 'gmail', 'throttle', 'rateLimitExceeded', step.until);
@@ -65,9 +72,11 @@ export function countingSend(clock: FakeClock) {
       if (result === 'hang') return new Promise(() => {});
       throw new Error('socket hang up');
     },
-    async findSent(_account, internetId) {
-      calls.push({ op: 'findSent', internetId, at: clock.now() });
-      return deliveries.has(internetId)
+    async findSent(_account, internetId, since) {
+      calls.push({ op: 'findSent', internetId, at: clock.now(), since });
+      if (findHold) await findHold;
+      if (findFails) throw new Error('offline');
+      return deliveries.has(internetId) && clock.now() >= visibleAt
         ? { kind: 'found', remoteMessageId: `found-${internetId}` }
         : { kind: 'absent', checkedAt: clock.now() };
     },
@@ -80,6 +89,15 @@ export function countingSend(clock: FakeClock) {
     calls,
     setAdmission: (a: Admission) => {
       admission = a;
+    },
+    hideDeliveriesUntil: (at: number) => {
+      visibleAt = at;
+    },
+    holdFindSent: (hold: Promise<void> | undefined) => {
+      findHold = hold;
+    },
+    failFindSent: (fails: boolean) => {
+      findFails = fails;
     },
     sends: () => calls.filter(c => c.op === 'send'),
     /** The highest delivery count of any one Message-ID: must never pass 1. */
@@ -141,12 +159,19 @@ export function outboxWorld(
 
   /** Compare-and-set losses across every instance: proof two writers really raced. */
   const conflicts: string[] = [];
+  /** One-shot commit failures: the first commit a predicate matches throws, then the predicate is dropped. */
+  const faults: ((input: CommitInput) => boolean)[] = [];
   /** Dead instances: their hung sends never settle, so `settle` stops waiting for them. */
   const killed = new Set<Instance>();
   const open = (start = true): Instance => {
     const store = openStore(file.open(), { extensions: [outboxExtension], now: () => clock.now() });
     const commit = store.commit.bind(store);
     store.commit = input => {
+      const fault = faults.findIndex(f => f(input));
+      if (fault >= 0) {
+        faults.splice(fault, 1);
+        throw new Error('disk I/O error');
+      }
       try {
         return commit(input);
       } catch (error) {
@@ -170,7 +195,7 @@ export function outboxWorld(
       outbox,
       kill() {
         loop.stop();
-        outbox.stop();
+        void outbox.close();
         killed.add(instance);
       },
     };
@@ -195,7 +220,12 @@ export function outboxWorld(
   const draft = (
     id: string,
     f: DraftFields = fields(),
-    extra: { revision?: number; remoteDraftId?: string; remoteMessageId?: string; syncedRevision?: number } = {},
+    extra: {
+      revision?: number;
+      remoteDraftId?: string;
+      remoteMessageId?: string;
+      syncedRevision?: number;
+    } = {},
   ) => {
     const db = file.open();
     db.prepare(
@@ -221,7 +251,11 @@ export function outboxWorld(
   const act = (instance: Instance, action: SubmissionAction, opId = `op-${++opSeq}`) =>
     instance.outbox.service.set(opId, action);
 
-  const send = (instance: Instance, draftId: string, extra: { notBefore?: number; revision?: number } = {}) =>
+  const send = (
+    instance: Instance,
+    draftId: string,
+    extra: { notBefore?: number; revision?: number } = {},
+  ) =>
     act(instance, {
       type: 'send',
       draftId,
@@ -242,13 +276,16 @@ export function outboxWorld(
     return row;
   };
 
-  /** Lets every instance's loop and running jobs settle without moving time. */
+  /**
+   * Lets every instance's loop and running jobs settle without moving time. A job hung on purpose (a send that never
+   * returns) must not block it, so the outbox's own idle is raced against one more turn of the event loop.
+   */
   const settle = async () => {
     for (let i = 0; i < 4; i++) {
       await clock.flush();
       const alive = instances.filter(x => !killed.has(x));
       await Promise.all(alive.map(x => x.loop.idle()));
-      await Promise.all(alive.map(x => x.outbox.idle()));
+      await Promise.race([Promise.all(alive.map(x => x.outbox.idle())), clock.flush()]);
     }
   };
 
@@ -266,7 +303,25 @@ export function outboxWorld(
     file.cleanup();
   };
 
-  return { file, clock, server, blobs, records, events, conflicts, first, open, draft, act, send, get, raw, settle, cleanup };
+  return {
+    file,
+    clock,
+    server,
+    blobs,
+    records,
+    events,
+    conflicts,
+    faults,
+    first,
+    open,
+    draft,
+    act,
+    send,
+    get,
+    raw,
+    settle,
+    cleanup,
+  };
 }
 
 export type World = ReturnType<typeof outboxWorld>;

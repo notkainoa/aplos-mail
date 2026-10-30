@@ -6,6 +6,11 @@ import type { CommitExtension, CommitExtensionTx, SqlValue, StoreReader } from '
  * write, applied here inside the commit transaction. Each transition is a compare-and-set on the row's current state
  * (`UPDATE ... WHERE id = ? AND state IN (...)`), so an undo racing the timer's `sending` commit, or two engines on one
  * store, can never both win: the loser's commit throws `SubmissionConflict` and rolls back whole.
+ *
+ * The lane has no columns of its own beyond the ones in 0001 and 0002, so the facts that have none (when it was queued,
+ * the store rev, the `findSent` check state, the display fields, the Submission/set opId) live as one JSON object in
+ * `submissions.error`, next to the problem. `error_until` stays the problem's `until`. A later migration can move these
+ * into columns; `parseExtra` is the only reader.
  */
 
 export type SubmissionState =
@@ -28,7 +33,7 @@ export interface SubmissionProblem {
   until?: number;
 }
 
-/** Fixed at `send` and kept in `submissions.meta`. */
+/** Fixed at `send` and kept in the row's JSON. */
 export interface SubmissionMeta {
   subject: string;
   toNames: string[];
@@ -40,6 +45,18 @@ export interface SubmissionMeta {
   attachments: number;
   /** The `Submission/set` opId that created it, so a replayed `send` answers with the same row. */
   opId?: string;
+}
+
+/** The JSON in `submissions.error` (see the file comment). */
+export interface RowExtra extends SubmissionMeta {
+  queuedAt: number;
+  /** The store seq of the row's last change (`Submission.rev`). */
+  rev: number;
+  /** `findSent` checks made for an `uncertain` row, and when the next is due (none: absent). */
+  checkCount: number;
+  checkAt?: number;
+  sentAt?: number;
+  problem?: Omit<SubmissionProblem, 'until'>;
 }
 
 export interface NewSubmission {
@@ -55,7 +72,7 @@ export interface NewSubmission {
   meta: SubmissionMeta;
 }
 
-/** Columns a transition may set; `null` clears. */
+/** Fields a transition may set; `null` clears. */
 export interface SubmissionPatch {
   notBefore?: number;
   attemptAt?: number | null;
@@ -90,11 +107,13 @@ declare module '../store/port' {
   }
 }
 
+export type ConflictReason = 'draftMissing' | 'draftRevision' | 'live' | 'alreadySent' | 'state';
+
 /** A compare-and-set lost: the row (or its draft) is not what the caller saw. Thrown inside the commit, so nothing lands. */
 export class SubmissionConflict extends Error {
   override readonly name = 'SubmissionConflict';
   constructor(
-    readonly reason: 'draftMissing' | 'draftRevision' | 'live' | 'state',
+    readonly reason: ConflictReason,
     readonly current?: SubmissionState,
   ) {
     super(`submission conflict: ${reason}`);
@@ -115,12 +134,6 @@ export interface SubmissionRow {
   remote_message_id: string | null;
   remote_thread_id: string | null;
   revision: number;
-  queued_at: number;
-  sent_at: number | null;
-  rev: number;
-  check_count: number;
-  check_at: number | null;
-  meta: string;
   [k: string]: SqlValue;
 }
 
@@ -137,53 +150,56 @@ export function liveSubmissionOf(q: StoreReader, draftId: string): SubmissionRow
   );
 }
 
-export function parseMeta(row: SubmissionRow): SubmissionMeta {
+const EMPTY_EXTRA: RowExtra = {
+  subject: '',
+  toNames: [],
+  envelope: { from: '', rcpt: [] },
+  attachments: 0,
+  queuedAt: 0,
+  rev: 0,
+  checkCount: 0,
+};
+
+/** The JSON of a row; a row without one (never written by this lane) reads as empty, never throws. */
+export function parseExtra(error: string | null): RowExtra {
+  if (!error) return { ...EMPTY_EXTRA };
   try {
-    const meta = JSON.parse(row.meta) as Partial<SubmissionMeta>;
-    return {
-      subject: meta.subject ?? '',
-      toNames: meta.toNames ?? [],
-      threadId: meta.threadId,
-      remoteThreadId: meta.remoteThreadId,
-      envelope: meta.envelope ?? { from: '', rcpt: [] },
-      attachments: meta.attachments ?? 0,
-      opId: meta.opId,
-    };
+    return { ...EMPTY_EXTRA, ...(JSON.parse(error) as Partial<RowExtra>) };
   } catch {
-    return { subject: '', toNames: [], envelope: { from: '', rcpt: [] }, attachments: 0 };
+    return { ...EMPTY_EXTRA };
   }
 }
 
-function parseProblem(row: SubmissionRow): SubmissionProblem | undefined {
-  if (!row.error) return undefined;
-  try {
-    const problem = JSON.parse(row.error) as SubmissionProblem;
-    return row.error_until === null ? problem : { ...problem, until: row.error_until };
-  } catch {
-    return undefined;
-  }
+export function extraOf(row: SubmissionRow): RowExtra {
+  return parseExtra(row.error);
+}
+
+export function problemOf(row: SubmissionRow): SubmissionProblem | undefined {
+  const { problem } = extraOf(row);
+  if (!problem) return undefined;
+  return row.error_until === null ? problem : { ...problem, until: row.error_until };
 }
 
 /** The contract `Submission` for a row. */
 export function toSubmission(row: SubmissionRow): Submission {
-  const meta = parseMeta(row);
+  const extra = extraOf(row);
   const out: Submission = {
     id: row.id,
-    rev: row.rev,
+    rev: extra.rev,
     draftId: row.draft_id,
     accountId: row.account_id,
     internetId: row.internet_id,
     revision: row.revision,
     state: row.state,
-    queuedAt: row.queued_at,
+    queuedAt: extra.queuedAt,
     notBefore: row.not_before,
-    toNames: meta.toNames,
-    subject: meta.subject,
+    toNames: extra.toNames,
+    subject: extra.subject,
   };
-  if (meta.threadId !== undefined) out.threadId = meta.threadId;
+  if (extra.threadId !== undefined) out.threadId = extra.threadId;
   if (row.attempt_at !== null) out.attemptAt = row.attempt_at;
-  if (row.sent_at !== null) out.sentAt = row.sent_at;
-  const problem = parseProblem(row);
+  if (extra.sentAt !== undefined) out.sentAt = extra.sentAt;
+  const problem = problemOf(row);
   if (problem) out.problem = problem;
   return out;
 }
@@ -200,9 +216,17 @@ function create(tx: CommitExtensionTx, row: NewSubmission) {
     row.draftId,
   );
   if (live) throw new SubmissionConflict('live', live.state);
+  // A revision that already went out is not sent again under a new Message-ID: the owner edits the draft first.
+  const done = tx.get(
+    "SELECT 1 FROM submissions WHERE draft_id = ? AND revision = ? AND state = 'sent' LIMIT 1",
+    row.draftId,
+    row.revision,
+  );
+  if (done) throw new SubmissionConflict('alreadySent', 'sent');
+  const extra: RowExtra = { ...row.meta, queuedAt: row.queuedAt, rev: tx.seq, checkCount: 0 };
   tx.run(
-    `INSERT INTO submissions(id, draft_id, account_id, internet_id, mime, not_before, state, revision, queued_at, rev, meta)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO submissions(id, draft_id, account_id, internet_id, mime, not_before, state, revision, error)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     row.id,
     row.draftId,
     row.accountId,
@@ -211,16 +235,29 @@ function create(tx: CommitExtensionTx, row: NewSubmission) {
     row.notBefore,
     row.state,
     row.revision,
-    row.queuedAt,
-    tx.seq,
-    JSON.stringify(row.meta),
+    JSON.stringify(extra),
   );
   tx.mark('Submission', row.id, 'u');
   tx.mark('Draft', row.draftId, 'u');
 }
 
-/** `SET` terms for a patch, in a fixed order. */
-function patchTerms(set: SubmissionPatch = {}): { sql: string[]; params: SqlValue[] } {
+/** The JSON after a patch: `null` clears a field, absent keeps it. */
+function patchedExtra(current: RowExtra, set: SubmissionPatch, seq: number): RowExtra {
+  const next: RowExtra = { ...current, rev: seq };
+  if (set.sentAt !== undefined) next.sentAt = set.sentAt;
+  if (set.checkCount !== undefined) next.checkCount = set.checkCount;
+  if (set.checkAt === null) delete next.checkAt;
+  else if (set.checkAt !== undefined) next.checkAt = set.checkAt;
+  if (set.problem === null) delete next.problem;
+  else if (set.problem !== undefined) {
+    const { until: _until, ...problem } = set.problem;
+    next.problem = problem;
+  }
+  return next;
+}
+
+/** `SET` terms for the plain columns of a patch, in a fixed order. */
+function columnTerms(set: SubmissionPatch): { sql: string[]; params: SqlValue[] } {
   const sql: string[] = [],
     params: SqlValue[] = [];
   const put = (column: string, value: SqlValue) => {
@@ -229,25 +266,24 @@ function patchTerms(set: SubmissionPatch = {}): { sql: string[]; params: SqlValu
   };
   if (set.notBefore !== undefined) put('not_before', set.notBefore);
   if (set.attemptAt !== undefined) put('attempt_at', set.attemptAt);
-  if (set.sentAt !== undefined) put('sent_at', set.sentAt);
   if (set.remoteMessageId !== undefined) put('remote_message_id', set.remoteMessageId);
   if (set.remoteThreadId !== undefined) put('remote_thread_id', set.remoteThreadId);
-  if (set.checkCount !== undefined) put('check_count', set.checkCount);
-  if (set.checkAt !== undefined) put('check_at', set.checkAt);
-  if (set.problem !== undefined) {
-    const { until, ...problem } = set.problem ?? { reasonCode: '' };
-    put('error', set.problem ? JSON.stringify(problem) : null);
-    put('error_until', set.problem && until !== undefined ? until : null);
-  }
+  if (set.problem !== undefined) put('error_until', set.problem?.until ?? null);
   if (set.dropMime) sql.push('mime = NULL');
   return { sql, params };
 }
 
 function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>) {
   if (!w.from.length) throw new SubmissionConflict('state');
-  const terms = patchTerms(w.set);
+  const set = w.set ?? {};
+  const current = tx.get<{ error: string | null }>(
+    'SELECT error FROM submissions WHERE id = ?',
+    w.id,
+  );
+  const terms = columnTerms(set);
   const where = [`id = ?`, `state IN (${w.from.map(() => '?').join(', ')})`];
-  const params: SqlValue[] = [w.to, tx.seq, ...terms.params, w.id, ...w.from];
+  const extra = JSON.stringify(patchedExtra(parseExtra(current?.error ?? null), set, tx.seq));
+  const params: SqlValue[] = [w.to, extra, ...terms.params, w.id, ...w.from];
   if (w.ifNotBefore !== undefined) {
     where.push('not_before = ?');
     params.push(w.ifNotBefore);
@@ -257,7 +293,7 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
     params.push(w.ifAttemptAt);
   }
   const { changes } = tx.run(
-    `UPDATE submissions SET ${['state = ?', 'rev = ?', ...terms.sql].join(', ')} WHERE ${where.join(' AND ')}`,
+    `UPDATE submissions SET ${['state = ?', 'error = ?', ...terms.sql].join(', ')} WHERE ${where.join(' AND ')}`,
     ...params,
   );
   if (changes !== 1) {

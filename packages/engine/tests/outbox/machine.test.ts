@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
 import { OVERDUE_GRACE_MS } from '@aplos/contract/rules';
 import { SubmissionConflict } from '../../src/outbox/module';
+import type { CommitInput } from '../../src/store';
 import { fields, gate, inWorld, MIN, SEC, T0 } from './helpers';
 
 /** Asserts a `Submission/set` refusal by contract error type, and returns its sentence. */
@@ -27,7 +28,7 @@ test('send queues with the undo window, pins the revision and its MIME, and goes
     assert.equal(s.revision, 1);
     assert.deepEqual(s.toNames, ['Jordan']);
     assert.equal(s.subject, 'Lunch');
-    assert.match(s.internetId, /^<[0-9a-f]{32}@aplos\.local>$/);
+    assert.match(s.internetId, /^<[0-9a-f]{32}@mail\.example>$/);
     assert.equal(receipt.undoable, true);
     assert.equal(receipt.undoUntil, s.notBefore);
     assert.equal(receipt.appliedState.dbEpoch, w.first.store.dbEpoch);
@@ -57,7 +58,11 @@ test('send queues with the undo window, pins the revision and its MIME, and goes
     await w.clock.advance(10 * MIN);
     await w.settle();
     assert.equal(w.server.sends().length, 1, 'never sent again');
-    assert.equal(w.events('engine.watchdog').length, 0, 'the outbox never leaves its deadline in the past');
+    assert.equal(
+      w.events('engine.watchdog').length,
+      0,
+      'the outbox never leaves its deadline in the past',
+    );
   }));
 
 test('the undo window follows the setting; send later is scheduled; a send replayed by opId changes nothing', () =>
@@ -98,7 +103,9 @@ test('send refuses a stale revision, a draft already sending, a missing draft an
     refused(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 3 }), 'stateMismatch');
     refused(() => w.act(w.first, { type: 'send', draftId: 'nope', revision: 1 }), 'notFound');
     refused(() => w.act(w.first, { type: 'send', draftId: 'empty', revision: 1 }), 'validation');
-    const count = w.first.store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'))!.n;
+    const count = w.first.store.read(q =>
+      q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
+    )!.n;
     assert.equal(count, 1);
   }));
 
@@ -189,7 +196,10 @@ test('NotSentError fails with Retry and is never retried on its own; retry sends
     await w.clock.advance(2 * 60 * MIN);
     await w.settle();
     assert.equal(w.server.sends().length, 1, 'no automatic retry');
-    refused(() => w.act(w.first, { type: 'retry', submissionId: s.id, revision: 9 }), 'stateMismatch');
+    refused(
+      () => w.act(w.first, { type: 'retry', submissionId: s.id, revision: 9 }),
+      'stateMismatch',
+    );
     const retried = w.act(w.first, { type: 'retry', submissionId: s.id, revision: 1 }).submission;
     assert.equal(retried.state, 'queued');
     assert.equal(retried.problem, undefined);
@@ -331,7 +341,10 @@ test('sendAnyway only after uncertain: two findSent checks, the prompt, then the
     u = w.get(s.id);
     assert.equal(w.server.calls.filter(c => c.op === 'findSent').length, 2, 'once more after 60 s');
     assert.equal(u.state, 'uncertain');
-    assert.equal(u.problem?.message, 'We could not confirm this was sent. Check Sent, or Send anyway.');
+    assert.equal(
+      u.problem?.message,
+      'We could not confirm this was sent. Check Sent, or Send anyway.',
+    );
     await w.clock.advance(60 * MIN);
     await w.settle();
     assert.equal(w.server.sends().length, 1, 'never replayed on its own');
@@ -373,7 +386,10 @@ test('cancel ends a failed, uncertain or suspended send and unlocks the draft', 
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(w.get(s.id).state, 'failed');
-    assert.equal(w.act(w.first, { type: 'cancel', submissionId: s.id }).submission.state, 'cancelled');
+    assert.equal(
+      w.act(w.first, { type: 'cancel', submissionId: s.id }).submission.state,
+      'cancelled',
+    );
     w.send(w.first, 'd1');
   }));
 
@@ -395,8 +411,17 @@ test('two engines on one store firing at once deliver once', () =>
 
 test('the pinned revision: the remote draft is named only when its synced copy is that revision', () =>
   inWorld(async w => {
-    w.draft('synced', fields(), { remoteDraftId: 'rd-1', remoteMessageId: 'rm-1', syncedRevision: 1 });
-    w.draft('stale', fields(), { revision: 2, remoteDraftId: 'rd-2', remoteMessageId: 'rm-2', syncedRevision: 1 });
+    w.draft('synced', fields(), {
+      remoteDraftId: 'rd-1',
+      remoteMessageId: 'rm-1',
+      syncedRevision: 1,
+    });
+    w.draft('stale', fields(), {
+      revision: 2,
+      remoteDraftId: 'rd-2',
+      remoteMessageId: 'rm-2',
+      syncedRevision: 1,
+    });
     w.draft('local');
     w.send(w.first, 'synced');
     w.send(w.first, 'stale', { revision: 2 });
@@ -409,7 +434,11 @@ test('the pinned revision: the remote draft is named only when its synced copy i
       w.server.payloads.find(p => w.raw(p.submissionId)!.draft_id === draft)!;
     assert.equal(by('synced').baseRemoteMessageId, 'rm-1');
     assert.equal(by('synced').remoteDraftId, 'rd-1');
-    assert.equal(by('stale').baseRemoteMessageId, undefined, 'a newer local revision sends the pinned MIME');
+    assert.equal(
+      by('stale').baseRemoteMessageId,
+      undefined,
+      'a newer local revision sends the pinned MIME',
+    );
     assert.equal(by('stale').remoteDraftId, 'rd-2');
     assert.equal(by('local').baseRemoteMessageId, undefined);
     assert.equal(by('local').remoteDraftId, undefined);
@@ -418,7 +447,11 @@ test('the pinned revision: the remote draft is named only when its synced copy i
 test('a microsoft account always sends the pinned MIME: no change key, so the id proves nothing', () =>
   inWorld(
     async w => {
-      w.draft('synced', fields(), { remoteDraftId: 'rd-1', remoteMessageId: 'rm-1', syncedRevision: 1 });
+      w.draft('synced', fields(), {
+        remoteDraftId: 'rd-1',
+        remoteMessageId: 'rm-1',
+        syncedRevision: 1,
+      });
       w.send(w.first, 'synced');
       await w.clock.advance(10 * SEC);
       await w.settle();
@@ -433,7 +466,11 @@ test('Outbox/pending counts waiting and uncertain sends and the next time', () =
     w.draft('d1');
     w.draft('d2');
     w.draft('d3');
-    assert.deepEqual(w.first.outbox.service.pending(), { scheduledSends: 0, reminders: 0, uncertain: 0 });
+    assert.deepEqual(w.first.outbox.service.pending(), {
+      scheduledSends: 0,
+      reminders: 0,
+      uncertain: 0,
+    });
     w.server.script.push({ result: 'lost' });
     w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
@@ -460,8 +497,13 @@ test('Submission/get answers unknown ids in notFound with the current state toke
     assert.deepEqual(out.notFound, ['nope']);
     assert.equal(out.state.seq, w.first.store.seq());
     const changes = w.first.store.changesSince(0);
-    assert.ok(changes.status === 'ok' && changes.changes.some(c => c.type === 'Submission' && c.id === s.id));
-    assert.ok(changes.status === 'ok' && changes.changes.some(c => c.type === 'Draft' && c.id === 'd1'));
+    assert.ok(
+      changes.status === 'ok' &&
+        changes.changes.some(c => c.type === 'Submission' && c.id === s.id),
+    );
+    assert.ok(
+      changes.status === 'ok' && changes.changes.some(c => c.type === 'Draft' && c.id === 'd1'),
+    );
   }));
 
 test('two engines that both read a row as queued cannot both commit sending: the second loses', () =>
@@ -491,4 +533,195 @@ test('two engines that both read a row as queued cannot both commit sending: the
       (e: unknown) => e instanceof SubmissionConflict && e.current === 'sending',
     );
     assert.deepEqual(w.conflicts, ['engine-b']);
+  }));
+
+const isSentMove = (to: string) => (input: CommitInput) =>
+  input.writes.some(x => x.kind === 'submission' && 'to' in x && x.to === to);
+
+test('findSent finds a message the search index only shows after the first check: sent, never sent twice', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: true });
+    w.server.hideDeliveriesUntil(T0 + 10 * SEC + 30 * SEC);
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'uncertain', 'the first check found nothing yet');
+    await w.clock.advance(60 * SEC);
+    await w.settle();
+    const sent = w.get(s.id);
+    assert.equal(sent.state, 'sent', 'the check after 60 s found it');
+    assert.equal(sent.problem, undefined);
+    assert.equal(w.raw(s.id)!.mime, null);
+    await w.clock.advance(60 * MIN);
+    await w.settle();
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('findSent that cannot run counts as a check; a relaunch asks again and settles what was delivered', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: true });
+    w.server.failFindSent(true);
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(60 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'uncertain');
+    assert.ok(w.get(s.id).problem?.message, 'the owner is asked, not left waiting');
+    w.server.failFindSent(false);
+    w.first.kill();
+    const next = w.open();
+    await w.settle();
+    assert.equal(w.get(s.id, next).state, 'sent', 'launch re-checks an unconfirmed send');
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a send that was delivered but whose sent commit failed becomes uncertain on the next fire and is found, not re-sent', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.faults.push(isSentMove('sent'));
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.server.deliveries.get(s.internetId), 1);
+    assert.equal(w.get(s.id).state, 'sending', 'the failed commit left the marker');
+    await w.clock.advance(1 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent', 'recovered without a restart: uncertain, then found');
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a second engine started during a send marks it uncertain but never sends it; the first still settles it sent', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    const g = gate();
+    w.server.script.push({ wait: g.wait });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    assert.equal(w.get(s.id).state, 'sending');
+    const second = w.open();
+    await w.settle();
+    assert.equal(
+      w.get(s.id, second).state,
+      'uncertain',
+      'the start rule cannot know the first is alive',
+    );
+    assert.equal(w.server.sends().length, 1, 'the second engine sent nothing');
+    g.open();
+    await w.settle();
+    await w.clock.advance(2 * MIN);
+    await w.settle();
+    assert.equal(w.get(s.id, second).state, 'sent');
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('the daily send limit from admission fails the send with its until; nothing is attempted or retried on its own', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    const until = T0 + 3 * 60 * MIN;
+    w.server.setAdmission({ ok: false, cls: 'send_limit', reason: 'dailyLimitExceeded', until });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    const failed = w.get(s.id);
+    assert.equal(failed.state, 'failed');
+    assert.equal(failed.problem?.until, until);
+    assert.equal(w.server.calls.length, 0, 'no send, no marker');
+    assert.equal(w.raw(s.id)!.attempt_at, null);
+    w.server.setAdmission({ ok: true });
+    await w.clock.advance(4 * 60 * MIN);
+    await w.settle();
+    assert.equal(w.server.calls.length, 0, 'never retried on its own');
+    w.act(w.first, { type: 'retry', submissionId: s.id });
+    await w.settle();
+    await w.clock.advance(1 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a send that hangs on one account does not stop the overdue rule for the next one', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.draft('d2');
+    w.server.script.push({ result: 'hang', delivered: false });
+    const first = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    const behind = w.send(w.first, 'd2');
+    await w.clock.advance(OVERDUE_GRACE_MS + 30 * SEC);
+    await w.settle();
+    assert.equal(w.get(first.id).state, 'sending');
+    assert.equal(
+      w.get(behind.id).state,
+      'suspended',
+      'it is asked about, not left silently waiting',
+    );
+    assert.equal(w.server.sends().length, 1);
+  }));
+
+test('a revision that was sent is not sent again under a new Message-ID; an edit makes a new send', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    assert.match(
+      refused(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }), 'stateMismatch'),
+      /already sent/,
+    );
+    w.draft('d1', fields({ subject: 'Lunch, second try' }), { revision: 2 });
+    const again = w.act(w.first, { type: 'send', draftId: 'd1', revision: 2 }).submission;
+    assert.notEqual(again.internetId, s.internetId);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a Bcc address that could smuggle a command is refused at send, with nothing queued', () =>
+  inWorld(w => {
+    w.draft('evil', fields({ bcc: [{ address: 'x@mail.example\r\nRCPT TO:<y@evil.example>' }] }));
+    w.draft('idn', fields({ bcc: [{ address: 'anna@münchen.example' }] }));
+    refused(() => w.act(w.first, { type: 'send', draftId: 'evil', revision: 1 }), 'validation');
+    const ok = w.send(w.first, 'idn');
+    assert.ok(ok.id);
+    const db = w.file.open();
+    const row = db.prepare('SELECT error FROM submissions WHERE id = ?').get(ok.id) as {
+      error: string;
+    };
+    db.close();
+    assert.deepEqual(JSON.parse(row.error).envelope.rcpt, [
+      'jordan@mail.example',
+      'anna@xn--mnchen-3ya.example',
+    ]);
+    const n = w.first.store.read(q =>
+      q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
+    )!.n;
+    assert.equal(n, 1);
+  }));
+
+test('reschedule refuses a time in the past; a waiting row without its bytes fails with a sentence instead of waiting', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.draft('d2');
+    const a = w.send(w.first, 'd1', { notBefore: T0 + 5 * MIN });
+    refused(
+      () => w.act(w.first, { type: 'reschedule', submissionId: a.id, notBefore: T0 - 1 }),
+      'validation',
+    );
+    const b = w.send(w.first, 'd2');
+    const db = w.file.open();
+    db.prepare('UPDATE submissions SET mime = NULL WHERE id = ?').run(b.id);
+    db.close();
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    const failed = w.get(b.id);
+    assert.equal(failed.state, 'failed');
+    assert.ok(failed.problem?.message);
+    assert.equal(w.server.calls.length, 0);
   }));

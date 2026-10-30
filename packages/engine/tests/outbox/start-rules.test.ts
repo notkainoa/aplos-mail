@@ -23,8 +23,17 @@ test('killed between the marker and send: on restart it is uncertain, checked fi
     const next = w.open();
     assert.equal(w.get(lost.id, next).state, 'uncertain', 'the start rule runs at start()');
     await w.settle();
-    const calls = w.server.calls.map(c => `${c.op}:${c.internetId === lost.internetId ? 'lost' : 'other'}`);
-    assert.deepEqual(calls, ['send:lost', 'findSent:lost', 'send:other'], 'findSent before any other send');
+    // The loop spaces two fires of one source by a second; the account's next send follows its findSent.
+    await w.clock.advance(1 * SEC);
+    await w.settle();
+    const calls = w.server.calls.map(
+      c => `${c.op}:${c.internetId === lost.internetId ? 'lost' : 'other'}`,
+    );
+    assert.deepEqual(
+      calls,
+      ['send:lost', 'findSent:lost', 'send:other'],
+      'findSent before any other send',
+    );
     assert.equal(w.get(other.id, next).state, 'sent');
     await w.clock.advance(60 * SEC);
     await w.settle();
@@ -33,8 +42,16 @@ test('killed between the marker and send: on restart it is uncertain, checked fi
     assert.equal(u.problem?.message, UNCERTAIN);
     await w.clock.advance(24 * 60 * MIN);
     await w.settle();
-    assert.equal(w.server.sends().filter(c => c.internetId === lost.internetId).length, 1, 'never re-sent');
-    assert.equal(w.server.deliveries.get(lost.internetId), undefined, 'and never silently lost: the owner is asked');
+    assert.equal(
+      w.server.sends().filter(c => c.internetId === lost.internetId).length,
+      1,
+      'never re-sent',
+    );
+    assert.equal(
+      w.server.deliveries.get(lost.internetId),
+      undefined,
+      'and never silently lost: the owner is asked',
+    );
 
     w.act(next, { type: 'sendAnyway', submissionId: lost.id });
     await w.settle();
@@ -129,4 +146,103 @@ test('a quit inside the undo window and a relaunch within the grace sends normal
     await w.settle();
     assert.equal(w.get(late.id, third).state, 'suspended');
     assert.equal(w.server.sends().length, 1);
+  }));
+
+test('killed during findSent itself: the row is still uncertain with its check due, so the next launch checks again', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    const never = gate();
+    w.server.script.push({ result: 'lost', delivered: true });
+    w.server.holdFindSent(never.wait);
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'uncertain');
+    assert.equal(
+      w.server.calls.filter(c => c.op === 'findSent').length,
+      1,
+      'the check started and hung',
+    );
+    w.first.kill();
+    w.server.holdFindSent(undefined);
+    const next = w.open();
+    await w.settle();
+    assert.equal(w.get(s.id, next).state, 'sent');
+    assert.equal(w.server.sends().length, 1);
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a wall clock set back before the marker does not push findSent past the message it looks for', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'hang', delivered: false });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    const marker = w.get(s.id).attemptAt!;
+    w.first.kill();
+    await w.clock.set(marker - 60 * MIN);
+    w.open();
+    await w.settle();
+    const check = w.server.calls.find(c => c.op === 'findSent')!;
+    assert.ok(check.since! <= marker - 60 * MIN, `since ${check.since} is not after now`);
+    assert.equal(w.server.sends().length, 1);
+  }));
+
+test('a launch with sending, uncertain, queued and overdue rows at once settles each by its own rule', () =>
+  inWorld(async w => {
+    for (const d of ['lost', 'unsure', 'soon', 'late']) w.draft(d);
+    w.server.script.push(
+      { result: 'lost', delivered: false },
+      { result: 'hang', delivered: false },
+    );
+    const unsure = w.send(w.first, 'unsure');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(60 * SEC);
+    await w.settle();
+    const lost = w.send(w.first, 'lost');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    const late = w.send(w.first, 'late', { notBefore: T0 + 20 * MIN });
+    const soon = w.send(w.first, 'soon', { notBefore: T0 + 30 * MIN });
+    w.first.kill();
+    await w.clock.set(soon.notBefore + 1 * MIN);
+    const next = w.open();
+    await w.settle();
+    await w.clock.advance(5 * SEC);
+    await w.settle();
+    assert.equal(w.get(lost.id, next).state, 'uncertain');
+    assert.equal(w.get(unsure.id, next).state, 'uncertain');
+    assert.equal(w.get(late.id, next).state, 'suspended');
+    assert.equal(w.get(soon.id, next).state, 'sent', 'inside the grace');
+    assert.equal(w.server.worst(), 1);
+    const order = w.server.calls.map(
+      c => c.op + ':' + (c.internetId === soon.internetId ? 'soon' : 'x'),
+    );
+    assert.ok(
+      order.indexOf('findSent:x') < order.indexOf('send:soon'),
+      'findSent before the account sends again',
+    );
+  }));
+
+test('a fire re-run while a send is in flight (loop wake, an abandoned fire, minutes later) never sends it again', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    const g = gate();
+    w.server.script.push({ wait: g.wait });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    assert.equal(w.get(s.id).state, 'sending');
+    for (let i = 0; i < 3; i++) {
+      w.first.loop.wake();
+      await w.clock.advance(2 * MIN);
+      await w.settle();
+    }
+    assert.equal(w.get(s.id).state, 'sending', 'in flight is neither suspended nor lost');
+    assert.equal(w.server.sends().length, 1);
+    g.open();
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    assert.equal(w.server.worst(), 1);
   }));

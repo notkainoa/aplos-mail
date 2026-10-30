@@ -29,12 +29,10 @@ export interface OutboxCtx extends OutboxDeps {
   random: (n: number) => Uint8Array;
   /** Accounts with a send or a `findSent` running here: one at a time per account. */
   busy: Map<string, Promise<void>>;
-  /** Submissions whose `send` this instance is awaiting: never treated as lost by the start rule. */
+  /** Submissions whose `send` this instance is awaiting: the only `sending` rows the start rule leaves alone. */
   inflight: Set<string>;
   /** Accounts whose send budget is closed, until when (undefined: until admission says otherwise). */
   paused: Map<string, number | undefined>;
-  /** True until the start rule ran once (at `start()`, or the first fire). */
-  startRulePending: boolean;
 }
 
 export const DEFAULT_UNDO_SEND_SECONDS = 10;

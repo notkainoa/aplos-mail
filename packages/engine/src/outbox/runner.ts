@@ -1,23 +1,25 @@
 import type { ClassifiedError } from '@aplos/contract';
 import { OVERDUE_GRACE_MS } from '@aplos/contract/rules';
-import { NotSentError, PausedError, ProviderError } from '../ports/base';
+import { NotSentError, PausedError, ProviderError, type Admission } from '../ports/base';
 import type { SendReceipt, SubmissionPayload } from '../ports/provider';
 import type { DeadlineSource } from '../ports/time';
 import { dueSubmissions, type DueSubmission, type StoreReader } from '../store';
 import { OVERDUE_COPY, PAUSE_POLL_MS, transition, type OutboxCtx } from './context';
-import { applyStartRule, checkSent } from './start';
+import { applyStartRule, checkSent, lostSending } from './start';
 import {
-  parseMeta,
+  extraOf,
   readSubmission,
   SubmissionConflict,
   type SubmissionProblem,
   type SubmissionRow,
+  type SubmissionState,
 } from './store';
 
 /**
- * The `outbox` deadline source and the sends it starts (ARCH 7.1-7.3). A fire suspends overdue rows, then gives each
- * account at most one job: a due `findSent` check first, else its earliest due send. Jobs run detached, so a slow
- * provider never holds the timer loop; when one ends it reports `changed('outbox')` and the loop fires again.
+ * The `outbox` deadline source and the sends it starts (ARCH 7.1-7.3). A fire recovers lost `sending` rows, suspends
+ * overdue rows, then gives each account at most one job: a due `findSent` check first, else its earliest due send.
+ * Jobs run detached, so a slow provider never holds the timer loop; when one ends it reports `changed('outbox')` and
+ * the loop fires again.
  */
 
 const isConflict = (error: unknown) => error instanceof SubmissionConflict;
@@ -35,7 +37,8 @@ function runJob(ctx: OutboxCtx, account: string, job: () => Promise<void>) {
   const done = Promise.resolve()
     .then(job)
     .catch(() => {
-      // A store failure mid-job leaves the row where the start rule or the next fire finds it.
+      // A store failure mid-job leaves the row where the next fire finds it; a `sending` row becomes `uncertain`.
+      // The log catalog has no generic error event, and the row's own state is what the owner sees.
     })
     .finally(() => {
       ctx.busy.delete(account);
@@ -46,11 +49,21 @@ function runJob(ctx: OutboxCtx, account: string, job: () => Promise<void>) {
 
 // ---------------------------------------------------------------- next()
 
-/** When a waiting row of `account` next needs the timer, given its pause (still under the overdue rule). */
+/** The end of the account's pause, or one poll from now when the refusal named no end. */
+function pauseEnd(ctx: OutboxCtx, account: string, now: number) {
+  const until = ctx.paused.get(account);
+  return until !== undefined && until > now ? until : now + PAUSE_POLL_MS;
+}
+
+/**
+ * When a waiting row of `account` next needs the timer. A paused account wakes at the end of its pause, but never
+ * later than the moment the row turns overdue; a busy one only needs the timer for the overdue rule.
+ */
 function waitingDeadline(ctx: OutboxCtx, account: string, notBefore: number, now: number) {
+  const suspendAt = notBefore + OVERDUE_GRACE_MS + 1;
+  if (ctx.busy.has(account)) return suspendAt;
   if (!ctx.paused.has(account)) return notBefore;
-  const until = ctx.paused.get(account) ?? now + PAUSE_POLL_MS;
-  return Math.min(Math.max(notBefore, until), notBefore + OVERDUE_GRACE_MS + 1);
+  return Math.min(Math.max(notBefore, pauseEnd(ctx, account, now)), suspendAt);
 }
 
 function earliest(ctx: OutboxCtx, q: StoreReader, now: number): number | undefined {
@@ -58,19 +71,22 @@ function earliest(ctx: OutboxCtx, q: StoreReader, now: number): number | undefin
   const take = (at: number) => {
     if (best === undefined || at < best) best = at;
   };
-  if (ctx.startRulePending && q.get("SELECT 1 FROM submissions WHERE state = 'sending' LIMIT 1"))
-    take(now);
-  const checks = q.all<{ account: string; at: number }>(
-    `SELECT account_id AS account, min(check_at) AS at FROM submissions
-     WHERE state = 'uncertain' AND check_at IS NOT NULL GROUP BY account_id`,
+  const open = q.all<{ id: string; account: string; state: SubmissionState; error: string | null }>(
+    `SELECT id, account_id AS account, state, error FROM submissions WHERE state IN ('sending', 'uncertain')`,
   );
-  for (const c of checks) if (!ctx.busy.has(c.account)) take(c.at);
+  for (const row of open) {
+    if (row.state === 'sending') {
+      if (!ctx.inflight.has(row.id)) take(now);
+      continue;
+    }
+    const checkAt = extraOf(row as unknown as SubmissionRow).checkAt;
+    if (checkAt !== undefined && !ctx.busy.has(row.account)) take(checkAt);
+  }
   const waiting = q.all<{ account: string; at: number }>(
     `SELECT account_id AS account, min(not_before) AS at FROM submissions
      WHERE state IN ('queued', 'scheduled') GROUP BY account_id`,
   );
-  for (const w of waiting)
-    if (!ctx.busy.has(w.account)) take(waitingDeadline(ctx, w.account, w.at, now));
+  for (const w of waiting) take(waitingDeadline(ctx, w.account, w.at, now));
   return best;
 }
 
@@ -98,7 +114,7 @@ function problemOf(error: ClassifiedError, now: number): SubmissionProblem {
 
 /** The payload: the pinned MIME, plus the remote draft only when its synced copy is provably this revision (FR-7). */
 function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): SubmissionPayload {
-  const meta = parseMeta(row);
+  const meta = extraOf(row);
   const payload: SubmissionPayload = {
     submissionId: row.id,
     internetId: row.internet_id,
@@ -120,9 +136,9 @@ function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): Submis
   );
   if (!draft?.remote_draft_id) return payload;
   payload.remoteDraftId = draft.remote_draft_id;
-  // DECISION (time-2): Graph (`microsoft`) keeps a message's id across edits and the store has no change-key column,
-  // so the id alone cannot prove the remote copy is the pinned revision. For those accounts the outbox never sets
-  // baseRemoteMessageId or baseChangeKey: they always send the pinned MIME. A later change-key column can lift this.
+  // DECISION (time-2): Graph (`microsoft`) keeps a message's id across edits and the store has no change-key column
+  // for the submission, so the id alone cannot prove the remote copy is the pinned revision. For those accounts the
+  // outbox never sets baseRemoteMessageId or baseChangeKey: they always send the pinned MIME.
   if (
     draft.provider !== 'microsoft' &&
     draft.synced_revision === row.revision &&
@@ -146,26 +162,29 @@ async function deliver(
   }
 }
 
-function settleSent(
-  ctx: OutboxCtx,
-  row: SubmissionRow,
-  attemptAt: number,
-  receipt: SendReceipt,
-  started: number,
-) {
-  const meta = parseMeta(row);
+/** What a settle needs besides the outcome: the waiting state the row left, and its attempt marker. */
+interface Attempt {
+  row: SubmissionRow;
+  waiting: SubmissionState;
+  attemptAt: number;
+  started: number;
+}
+
+function settleSent(ctx: OutboxCtx, a: Attempt, receipt: SendReceipt | undefined) {
+  const meta = extraOf(a.row);
+  const acceptedAt = receipt?.acceptedAt ?? ctx.clock.now();
   ignoreConflict(() =>
     transition(
       ctx,
       {
-        id: row.id,
+        id: a.row.id,
         from: ['sending', 'uncertain'],
         to: 'sent',
-        ifAttemptAt: attemptAt,
+        ifAttemptAt: a.attemptAt,
         set: {
-          sentAt: receipt.acceptedAt,
-          remoteMessageId: receipt.remoteMessageId ?? null,
-          remoteThreadId: receipt.remoteThreadId ?? meta.remoteThreadId ?? null,
+          sentAt: acceptedAt,
+          remoteMessageId: receipt?.remoteMessageId ?? null,
+          remoteThreadId: receipt?.remoteThreadId ?? meta.remoteThreadId ?? null,
           problem: null,
           checkAt: null,
           dropMime: true,
@@ -175,55 +194,44 @@ function settleSent(
     ),
   );
   ctx.log.event('send.sent', {
-    submission: row.id,
-    durationMs: Math.max(0, ctx.clock.now() - started),
+    submission: a.row.id,
+    durationMs: Math.max(0, ctx.clock.now() - a.started),
     recipients: meta.envelope.rcpt.length,
     attachments: meta.attachments,
-    bytes: row.mime?.length ?? 0,
+    bytes: a.row.mime?.length ?? 0,
   });
 }
 
-function settleFailed(
-  ctx: OutboxCtx,
-  row: SubmissionRow,
-  attemptAt: number,
-  error: ClassifiedError,
-) {
+function settleFailed(ctx: OutboxCtx, a: Attempt, error: ClassifiedError) {
   const now = ctx.clock.now();
   ignoreConflict(() =>
     transition(
       ctx,
       {
-        id: row.id,
+        id: a.row.id,
         from: ['sending', 'uncertain'],
         to: 'failed',
-        ifAttemptAt: attemptAt,
+        ifAttemptAt: a.attemptAt,
         set: { problem: problemOf(error, now), checkAt: null },
       },
       { was: 'sending', why: 'notSent' },
     ),
   );
-  ctx.log.event('send.failed', { submission: row.id, error });
+  ctx.log.event('send.failed', { submission: a.row.id, error });
 }
 
 /** Anything `send` threw that proves nothing: `uncertain`, then `findSent` at once (never replayed). */
-async function settleUncertain(
-  ctx: OutboxCtx,
-  row: SubmissionRow,
-  attemptAt: number,
-  error: unknown,
-  started: number,
-) {
+async function settleUncertain(ctx: OutboxCtx, a: Attempt, error: unknown) {
   const now = ctx.clock.now();
   let moved = true;
   try {
     transition(
       ctx,
       {
-        id: row.id,
+        id: a.row.id,
         from: ['sending'],
         to: 'uncertain',
-        ifAttemptAt: attemptAt,
+        ifAttemptAt: a.attemptAt,
         set: { checkCount: 0, checkAt: now },
       },
       { was: 'sending', why: 'uncertain' },
@@ -233,17 +241,17 @@ async function settleUncertain(
     moved = false;
   }
   ctx.log.event('send.uncertain', {
-    submission: row.id,
+    submission: a.row.id,
     method: 'send',
-    durationMs: Math.max(0, now - started),
+    durationMs: Math.max(0, now - a.started),
     ...(error instanceof ProviderError ? { error: error.error } : {}),
   });
-  if (moved) await checkSent(ctx, row.id);
+  if (moved) await checkSent(ctx, a.row.id);
 }
 
-function settlePaused(ctx: OutboxCtx, row: SubmissionRow, attemptAt: number, error: PausedError) {
+function settlePaused(ctx: OutboxCtx, a: Attempt, error: PausedError) {
   if (error.cls === 'send_limit')
-    return settleFailed(ctx, row, attemptAt, {
+    return settleFailed(ctx, a, {
       class: 'send_limit',
       provider: error.budget,
       method: 'send',
@@ -251,15 +259,15 @@ function settlePaused(ctx: OutboxCtx, row: SubmissionRow, attemptAt: number, err
       ...(error.until !== undefined ? { resumeAt: error.until } : {}),
     });
   // Provably not sent and only paused: waiting again on the same notBefore, retried at `until`, under the overdue rule.
-  ctx.paused.set(row.account_id, error.until);
+  ctx.paused.set(a.row.account_id, error.until);
   ignoreConflict(() =>
     transition(
       ctx,
       {
-        id: row.id,
+        id: a.row.id,
         from: ['sending'],
-        to: 'queued',
-        ifAttemptAt: attemptAt,
+        to: a.waiting,
+        ifAttemptAt: a.attemptAt,
         set: { attemptAt: null },
       },
       { was: 'sending', why: 'paused' },
@@ -267,29 +275,16 @@ function settlePaused(ctx: OutboxCtx, row: SubmissionRow, attemptAt: number, err
   );
 }
 
-async function settle(
-  ctx: OutboxCtx,
-  row: SubmissionRow,
-  attemptAt: number,
-  outcome: Outcome,
-  started: number,
-) {
-  if (outcome.ok) return settleSent(ctx, row, attemptAt, outcome.receipt, started);
+async function settle(ctx: OutboxCtx, a: Attempt, outcome: Outcome) {
+  if (outcome.ok) return settleSent(ctx, a, outcome.receipt);
   const { error } = outcome;
-  if (error instanceof NotSentError) return settleFailed(ctx, row, attemptAt, error.error);
-  if (error instanceof PausedError) return settlePaused(ctx, row, attemptAt, error);
-  return settleUncertain(ctx, row, attemptAt, error, started);
+  if (error instanceof NotSentError) return settleFailed(ctx, a, error.error);
+  if (error instanceof PausedError) return settlePaused(ctx, a, error);
+  return settleUncertain(ctx, a, error);
 }
 
-/**
- * One send: the `sending` marker (state and `attempt_at`) is committed, compare-and-set on the waiting row the timer
- * saw, before `SendPort.send` is called; a lost compare-and-set (undo, another engine) sends nothing.
- */
-async function sendOne(ctx: OutboxCtx, due: DueSubmission) {
-  const row = ctx.store.read(q => readSubmission(q, due.id));
-  if (!row || row.state !== due.state || row.not_before !== due.notBefore || !row.mime) return;
-  const attemptAt = ctx.clock.now();
-  if (attemptAt - row.not_before > OVERDUE_GRACE_MS) return suspend(ctx, due, attemptAt);
+/** The marker: false when the row moved first (an undo, another engine) and nothing may be sent. */
+function commitMarker(ctx: OutboxCtx, row: SubmissionRow, attemptAt: number): boolean {
   try {
     transition(
       ctx,
@@ -302,19 +297,56 @@ async function sendOne(ctx: OutboxCtx, due: DueSubmission) {
       },
       { was: row.state, why: 'due' },
     );
+    return true;
   } catch (error) {
-    if (isConflict(error)) return;
+    if (isConflict(error)) return false;
     throw error;
   }
+}
+
+/**
+ * One send: the `sending` marker (state and `attempt_at`) is committed, compare-and-set on the waiting row the timer
+ * saw, before `SendPort.send` is called; a lost compare-and-set (undo, another engine) sends nothing. Everything that
+ * can fail without the bytes leaving (the payload, the checks) happens before the marker.
+ */
+async function sendOne(ctx: OutboxCtx, due: DueSubmission) {
+  const row = ctx.store.read(q => readSubmission(q, due.id));
+  if (!row || row.state !== due.state || row.not_before !== due.notBefore) return;
+  const attemptAt = ctx.clock.now();
+  if (attemptAt - row.not_before > OVERDUE_GRACE_MS) return suspend(ctx, due, attemptAt);
+  if (!row.mime) return failWithoutBytes(ctx, due, attemptAt);
+  const payload = payloadOf(ctx, row, row.mime);
   ctx.inflight.add(row.id);
   try {
-    const payload = payloadOf(ctx, row, row.mime);
-    const started = ctx.clock.now();
-    const outcome = await deliver(ctx, row, payload);
-    await settle(ctx, { ...row, state: 'sending' }, attemptAt, outcome, started);
+    if (!commitMarker(ctx, row, attemptAt)) return;
+    const a: Attempt = { row, waiting: due.state, attemptAt, started: ctx.clock.now() };
+    await settle(ctx, a, await deliver(ctx, row, payload));
   } finally {
     ctx.inflight.delete(row.id);
   }
+}
+
+/** A waiting row with no kept bytes cannot be sent; it must say so instead of waiting forever. */
+function failWithoutBytes(ctx: OutboxCtx, due: DueSubmission, now: number) {
+  ignoreConflict(() =>
+    transition(
+      ctx,
+      {
+        id: due.id,
+        from: [due.state],
+        to: 'failed',
+        ifNotBefore: due.notBefore,
+        set: {
+          problem: {
+            reasonCode: 'send.noBytes',
+            message: 'This message could not be prepared. Open the draft and send it again.',
+            at: now,
+          },
+        },
+      },
+      { was: due.state, why: 'noBytes' },
+    ),
+  );
 }
 
 /** The overdue rule (ARCH 7.3, FR-2): a waiting row more than the grace late is suspended, never sent late. */
@@ -335,37 +367,78 @@ function suspend(ctx: OutboxCtx, due: DueSubmission, now: number) {
   });
 }
 
-/** May this account send now? Records a refusal so `next()` waits for its end. */
-function admitted(ctx: OutboxCtx, account: string, now: number) {
+/** The daily send limit is a failure with Retry, not a wait: it is never retried on its own (D7). */
+function failForSendLimit(
+  ctx: OutboxCtx,
+  due: DueSubmission,
+  refusal: Extract<Admission, { ok: false }>,
+  now: number,
+) {
+  const error: ClassifiedError = {
+    class: 'send_limit',
+    provider: 'gmail',
+    method: 'send',
+    reason: refusal.reason,
+    ...(refusal.until !== undefined ? { resumeAt: refusal.until } : {}),
+  };
+  ignoreConflict(() => {
+    transition(
+      ctx,
+      {
+        id: due.id,
+        from: [due.state],
+        to: 'failed',
+        ifNotBefore: due.notBefore,
+        set: { problem: problemOf(error, now) },
+      },
+      { was: due.state, why: 'sendLimit' },
+    );
+    ctx.log.event('send.failed', { submission: due.id, error });
+  });
+}
+
+/** May this account send now? Remembers a refusal so `next()` waits for its end. */
+function admission(ctx: OutboxCtx, account: string, now: number): Admission {
   const until = ctx.paused.get(account);
-  if (ctx.paused.has(account) && until !== undefined && until > now) return false;
-  const admission = ctx.send.admission(account);
-  if (admission.ok) {
-    ctx.paused.delete(account);
-    return true;
+  if (until !== undefined && until > now)
+    return { ok: false, cls: 'throttle', reason: 'paused', until };
+  const answer = ctx.send.admission(account);
+  // A send-limit refusal fails the row instead of waiting (D7), so there is no pause to remember.
+  if (answer.ok || answer.cls === 'send_limit') ctx.paused.delete(account);
+  else ctx.paused.set(account, answer.until);
+  return answer;
+}
+
+function startChecks(ctx: OutboxCtx, now: number) {
+  const checks = ctx.store.read(q =>
+    q.all<{ id: string; account: string; error: string | null }>(
+      "SELECT id, account_id AS account, error FROM submissions WHERE state = 'uncertain' ORDER BY id",
+    ),
+  );
+  const due = checks
+    .map(c => ({ ...c, at: extraOf(c as unknown as SubmissionRow).checkAt }))
+    .filter(c => c.at !== undefined && c.at <= now)
+    .sort((a, b) => a.at! - b.at! || (a.id < b.id ? -1 : 1));
+  for (const c of due)
+    if (!ctx.busy.has(c.account)) runJob(ctx, c.account, () => checkSent(ctx, c.id));
+}
+
+function startSends(ctx: OutboxCtx, due: DueSubmission[], now: number) {
+  for (const row of due) {
+    if (ctx.busy.has(row.accountId)) continue;
+    const answer = admission(ctx, row.accountId, now);
+    if (answer.ok) runJob(ctx, row.accountId, () => sendOne(ctx, row));
+    else if (answer.cls === 'send_limit') failForSendLimit(ctx, row, answer, now);
   }
-  ctx.paused.set(account, admission.until);
-  return false;
 }
 
 /** The deadline source's `fire`. */
 export async function fireOutbox(ctx: OutboxCtx, now: number): Promise<void> {
-  if (ctx.startRulePending) applyStartRule(ctx);
+  if (lostSending(ctx).length) applyStartRule(ctx);
   const { due, overdue } = ctx.store.read(q => dueSubmissions(q, now));
   for (const row of overdue) suspend(ctx, row, now);
-  const checks = ctx.store.read(q =>
-    q.all<{ id: string; account: string }>(
-      `SELECT id, account_id AS account FROM submissions
-       WHERE state = 'uncertain' AND check_at IS NOT NULL AND check_at <= ? ORDER BY check_at, id`,
-      now,
-    ),
-  );
-  for (const c of checks)
-    if (!ctx.busy.has(c.account)) runJob(ctx, c.account, () => checkSent(ctx, c.id));
-  for (const row of due) {
-    if (ctx.busy.has(row.accountId) || !admitted(ctx, row.accountId, now)) continue;
-    runJob(ctx, row.accountId, () => sendOne(ctx, row));
-  }
+  startChecks(ctx, now);
+  startSends(ctx, due, now);
 }
 
 export function outboxSource(ctx: OutboxCtx): DeadlineSource {

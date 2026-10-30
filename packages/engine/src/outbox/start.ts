@@ -1,45 +1,75 @@
 import type { FindSentResult } from '../ports/provider';
+import { MAX_CHECKS, RECHECK_MS, transition, UNCERTAIN_COPY, type OutboxCtx } from './context';
 import {
-  MAX_CHECKS,
-  RECHECK_MS,
-  transition,
-  UNCERTAIN_COPY,
-  type MoveWrite,
-  type OutboxCtx,
-} from './context';
-import { LIVE_STATES, readSubmission, SubmissionConflict, type SubmissionState } from './store';
+  extraOf,
+  LIVE_STATES,
+  readSubmission,
+  SubmissionConflict,
+  type SubmissionRow,
+  type SubmissionState,
+} from './store';
 
 /**
  * The start rule (frozen `SendPort` rule, ARCH 7.3): a `sending` row this instance is not awaiting is a send whose
- * outcome was lost (the app died after the marker). It becomes `uncertain` at once, with a `findSent` check due now,
- * which the timer runs before any other send of that account. It is never suspended, re-queued or re-sent.
+ * outcome was lost (the app died after the marker, or a settle commit failed). It becomes `uncertain` at once, with a
+ * `findSent` check due now, which runs before any other send of that account. It is never suspended, re-queued or
+ * re-sent. The runner applies it on every fire, not only at launch, so a host wake needs no separate signal.
  */
-export function applyStartRule(ctx: OutboxCtx): number {
-  const now = ctx.clock.now();
+export function lostSending(ctx: OutboxCtx): { id: string; attempt_at: number | null }[] {
   const rows = ctx.store.read(q =>
     q.all<{ id: string; attempt_at: number | null }>(
       "SELECT id, attempt_at FROM submissions WHERE state = 'sending' ORDER BY id",
     ),
   );
+  return rows.filter(row => !ctx.inflight.has(row.id));
+}
+
+export function applyStartRule(ctx: OutboxCtx): number {
+  const now = ctx.clock.now();
   let moved = 0;
-  for (const row of rows) {
-    if (ctx.inflight.has(row.id)) continue;
-    const move: MoveWrite = {
-      id: row.id,
-      from: ['sending'],
-      to: 'uncertain',
-      set: { checkCount: 0, checkAt: now },
-    };
-    if (row.attempt_at !== null) move.ifAttemptAt = row.attempt_at;
+  for (const row of lostSending(ctx)) {
     try {
-      transition(ctx, move, { was: 'sending', why: 'startRule' });
+      transition(
+        ctx,
+        {
+          id: row.id,
+          from: ['sending'],
+          to: 'uncertain',
+          // The attempt marker is the guard: a row that was re-marked by a newer attempt is not this one.
+          ...(row.attempt_at !== null ? { ifAttemptAt: row.attempt_at } : {}),
+          set: { checkCount: 0, checkAt: now },
+        },
+        { was: 'sending', why: 'startRule' },
+      );
       moved++;
     } catch (error) {
       if (!(error instanceof SubmissionConflict)) throw error;
     }
   }
-  ctx.startRulePending = false;
   return moved;
+}
+
+/**
+ * At launch, an `uncertain` row that already showed its prompt gets one more round of checks: the search index or the
+ * Sent sync may have caught up while Aplos was quit. Rows with a check already due are left alone.
+ */
+export function recheckUncertain(ctx: OutboxCtx): void {
+  const now = ctx.clock.now();
+  const rows = ctx.store.read(q =>
+    q.all<SubmissionRow>("SELECT * FROM submissions WHERE state = 'uncertain'"),
+  );
+  for (const row of rows) {
+    if (extraOf(row).checkAt !== undefined) continue;
+    try {
+      transition(
+        ctx,
+        { id: row.id, from: ['uncertain'], to: 'uncertain', set: { checkCount: 0, checkAt: now } },
+        { was: 'uncertain', why: 'startRule' },
+      );
+    } catch (error) {
+      if (!(error instanceof SubmissionConflict)) throw error;
+    }
+  }
 }
 
 /** Everything still holding the draft except `sending`, whose own attempt settles it. */
@@ -66,12 +96,10 @@ async function findSent(
 export async function checkSent(ctx: OutboxCtx, id: string): Promise<void> {
   const row = ctx.store.read(q => readSubmission(q, id));
   if (!row || row.state !== 'uncertain') return;
-  const result = await findSent(
-    ctx,
-    row.account_id,
-    row.internet_id,
-    row.attempt_at ?? row.queued_at,
-  );
+  const extra = extraOf(row);
+  // A wall clock set back after the marker must not push `since` past the message it is looking for.
+  const since = Math.min(row.attempt_at ?? extra.queuedAt, ctx.clock.now());
+  const result = await findSent(ctx, row.account_id, row.internet_id, since);
   const now = ctx.clock.now();
   const guard = row.attempt_at !== null ? { ifAttemptAt: row.attempt_at } : {};
   try {
@@ -95,7 +123,7 @@ export async function checkSent(ctx: OutboxCtx, id: string): Promise<void> {
         { was: current, why: 'findSent' },
       );
     } else {
-      const checks = row.check_count + 1;
+      const checks = extra.checkCount + 1;
       const last = checks >= MAX_CHECKS;
       transition(
         ctx,
