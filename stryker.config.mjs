@@ -11,6 +11,9 @@ const config = {
   // Every sampled mutant must run to keep the score deterministic; bail-on-cascade would skip
   // the rest once half the mutants died.
   disableBail: true,
+  // One sandbox at a time: the repo's DB and fixed-port tests flake when parallel sandboxes
+  // collide, and a flaky failure counts as a kill the tests never earned.
+  concurrency: 1,
   // The sandbox is a full copy of the checkout; prune the directories that are never inputs so
   // the copy stays small.
   ignorePatterns: [

@@ -9,7 +9,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { repoRoot } from '../hillclimb/scorers/util.mjs';
 
-export const scorers = join(dirname(fileURLToPath(import.meta.url)), '..', 'hillclimb', 'scorers');
+// HILLCLIMB_SCORERS_DIR points the spawned scorer CLIs at another copy of the scorers (for
+// example a checked-out earlier revision), so a test can be proven to fail on the old code.
+export const scorers =
+  process.env.HILLCLIMB_SCORERS_DIR ??
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'hillclimb', 'scorers');
 export const SLOW = process.env.HILLCLIMB_SLOW === '1';
 
 export const run = (scorer, args, options = {}) =>
