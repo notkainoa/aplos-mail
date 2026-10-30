@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripAnsi } from './common';
 
 // The pure part of the taste judge (taste.score.ts): rubric loading, prompt building, answer parsing,
 // the maths and the cache. The judge itself is injected, so tests need no network and no claude.
@@ -142,10 +143,34 @@ function toAnswer(parsed: unknown, ids: readonly string[]): Answer | null {
   const numeric = Object.values(criteria).filter(value => value !== null).length;
   if (numeric < Math.ceil(ids.length / 2)) return null;
   const found = (parsed as { findings?: unknown }).findings;
-  const findings = Array.isArray(found)
-    ? found.filter((line): line is string => typeof line === 'string' && line.trim() !== '')
-    : [];
-  return { criteria, findings: findings.map(line => line.trim()) };
+  return { criteria, findings: cleanFindings(found) };
+}
+
+export const MAX_FINDINGS = 8;
+export const MAX_FINDING_CHARS = 300;
+
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
+
+/**
+ * What the judge says is attacker-influenced (it reads on-screen text), so it is bounded before it
+ * reaches the score line: at most MAX_FINDINGS strings of at most MAX_FINDING_CHARS each, with ANSI
+ * sequences and control characters (newlines included) turned into single spaces.
+ */
+export function cleanFindings(found: unknown): string[] {
+  if (!Array.isArray(found)) return [];
+  const lines: string[] = [];
+  for (const item of found) {
+    if (lines.length >= MAX_FINDINGS) break;
+    if (typeof item !== 'string') continue;
+    const line = stripAnsi(item.slice(0, MAX_FINDING_CHARS * 4))
+      .replace(CONTROL, ' ')
+      .trim()
+      .slice(0, MAX_FINDING_CHARS)
+      .trim();
+    if (line !== '') lines.push(line);
+  }
+  return lines;
 }
 
 export function mean(values: readonly number[]): number {

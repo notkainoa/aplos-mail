@@ -3,11 +3,14 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { repoRoot } from '../support/paths';
 import { log } from './common';
+import { explicitPort, scorerEnv, VITE_NAMES } from './env';
 import { killGroup, onShutdown } from './lifecycle';
 
-// Starts the harness's Vite gallery on a free port, as playwright.config.ts does (same command,
-// blank AI keys), and stops it again. An explicit APLOS_VISUAL_PORT that already answers is reused;
-// the default port 4427 is not, because another worktree may be serving different code there.
+// Starts the harness's Vite gallery on a free port, as playwright.config.ts does (same command), and
+// stops it again. Vite and Chromium get an allow-listed environment only (env.ts), never process.env.
+// An explicit APLOS_VISUAL_PORT that already answers is reused, unless SCORER_ISOLATED is set (the
+// hill-climb harness): then the port is ignored and the scorer always starts its own server, because
+// whatever answers on 127.0.0.1 may be another worktree's code. The default port 4427 is never reused.
 
 export interface GalleryServer {
   origin: string;
@@ -47,7 +50,7 @@ async function waitUntilUp(url: string, child: ChildProcess, timeoutMs: number):
 }
 
 export async function startGalleryServer(): Promise<GalleryServer> {
-  const explicit = Number(process.env.APLOS_VISUAL_PORT) || 0;
+  const explicit = explicitPort(process.env);
   if (explicit && (await answers(`http://127.0.0.1:${explicit}${PAGE}`)))
     return { origin: `http://127.0.0.1:${explicit}`, stop: () => undefined };
 
@@ -59,13 +62,11 @@ export async function startGalleryServer(): Promise<GalleryServer> {
     // Its own process group, so npx and the vite under it stop together.
     detached: true,
     stdio: ['ignore', 'ignore', 'pipe'],
-    env: {
-      ...process.env,
-      GROQ_API_KEY: '',
-      OPENAI_API_KEY: '',
-      ANTHROPIC_API_KEY: '',
-      GEMINI_API_KEY: '',
-    },
+    env: scorerEnv(process.env, {
+      names: VITE_NAMES,
+      claude: false,
+      set: { APLOS_VISUAL_PORT: String(port) },
+    }),
   });
   child.stderr?.on('data', chunk => log(String(chunk).trimEnd()));
   const stop = (): void => {
@@ -95,6 +96,8 @@ export async function startGalleryServer(): Promise<GalleryServer> {
 export async function launchBrowser(): Promise<Browser> {
   const browser = await chromium.launch({
     headless: true,
+    // Chromium gets the same allow-list, not the scorer's whole environment.
+    env: scorerEnv(process.env, { claude: false }),
     handleSIGINT: false,
     handleSIGTERM: false,
     handleSIGHUP: false,

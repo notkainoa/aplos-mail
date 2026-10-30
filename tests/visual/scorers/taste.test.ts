@@ -8,6 +8,8 @@ import {
   NEUTRAL,
   PROMPT_VERSION,
   askJudge,
+  MAX_FINDINGS,
+  MAX_FINDING_CHARS,
   buildPrompt,
   cacheKey,
   checkCallBudget,
@@ -95,6 +97,29 @@ test('parseAnswer takes the last usable JSON object and clamps', () => {
   const answer = parseAnswer(text, IDS);
   assert.deepEqual(answer.criteria, { restraint: 10, hierarchy: 7.5, accent: 0, rhythm: null });
   assert.deepEqual(answer.findings, ['a']);
+});
+
+test('parseAnswer bounds an oversized or hostile answer', () => {
+  const criteria = Object.fromEntries(IDS.map(id => [id, 5]));
+  const hostile = [
+    'x'.repeat(5000),
+    '\u001b[31mred\u001b[0m and \u001b]0;title\u0007bell\u0000nul\u0085next\nline\r\ttab',
+    ...Array.from({ length: 40 }, (_, i) => `finding ${i}`),
+  ];
+  const { findings } = parseAnswer(JSON.stringify({ criteria, findings: hostile }), IDS);
+  assert.equal(findings.length, MAX_FINDINGS);
+  assert.equal(findings[0]?.length, MAX_FINDING_CHARS);
+  assert.equal(findings[1], 'red and bell nul next line tab');
+  assert.equal(findings[2], 'finding 0');
+  // eslint-disable-next-line no-control-regex
+  for (const line of findings) assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(line));
+});
+
+test('parseAnswer drops blank, non-string and control-only findings before counting', () => {
+  const criteria = Object.fromEntries(IDS.map(id => [id, 5]));
+  const findings = ['', '  ', '\u0007\u001b[2J', 5, null, { a: 1 }, 'real'];
+  assert.deepEqual(parseAnswer(JSON.stringify({ criteria, findings }), IDS).findings, ['real']);
+  assert.deepEqual(parseAnswer(JSON.stringify({ criteria, findings: 'oops' }), IDS).findings, []);
 });
 
 test('parseAnswer rejects prose, broken JSON and answers that score under half the criteria', () => {

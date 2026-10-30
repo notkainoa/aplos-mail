@@ -31,8 +31,18 @@ A scorer prints, as the **last line of stdout**, one JSON object and exits 0 eve
 ## Running
 
 Run from the repo root, headless, no keys. A scorer starts the gallery's Vite server itself on a free
-port and stops it at the end. An `APLOS_VISUAL_PORT` that is set and already answers is reused;
-the default port 4427 never is.
+port and stops it at the end. An `APLOS_VISUAL_PORT` that is set and already answers is reused,
+unless `SCORER_ISOLATED=1` is set (the hill-climb harness should set it): then the port is ignored and
+the scorer always starts its own server on a free port. The default port 4427 is never reused.
+
+**Safety**: screenshots are attempt-authored and the taste judge reads on-screen text, so nothing a
+scorer spawns inherits `process.env`. `env.ts` (`scorerEnv`) builds an allow-list: PATH, HOME, TMPDIR,
+LANG, LC_ALL, TERM, XDG_{CONFIG,DATA,CACHE}_HOME, USER, LOGNAME, SHELL, TASTE_MODEL, CLAUDE_* (judge only),
+and for Vite NODE_ENV and npm_config_cache; never a name ending `_API_KEY`, `_TOKEN` or `_SECRET`, never
+NODE_OPTIONS. Each judge call copies its PNGs into a fresh `aplos-taste-*` temp dir (removed afterwards),
+runs there with `--restricted --tools Read --allowedTools 'Read(//<dir>/**)'` and Bash, Edit, Write,
+NotebookEdit, WebFetch and WebSearch denied. The judge's findings are cut to 8 lines of 300 characters,
+without ANSI or control characters.
 
 ```
 npx tsx tests/visual/scorers/axe.score.ts                        # every state, both themes, 1440x900

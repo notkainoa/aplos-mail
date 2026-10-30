@@ -1,7 +1,5 @@
 import type { Browser } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { Theme } from '../states';
 import { openState } from '../support/gallery';
@@ -17,6 +15,8 @@ import {
   type ScorerArgs,
   type ScorerState,
 } from './common';
+import { createClaudeJudge, type ClaudeJudge } from './claude-judge';
+import { scorerEnv } from './env';
 import { finish, onShutdown, runScorer } from './lifecycle';
 import { assertSampleLocked } from './locked';
 import { isPaneState, mockupTarget, newMockupContext, shootMockup } from './mockup';
@@ -205,92 +205,6 @@ async function prepare(
   };
 }
 
-interface ClaudeJudge {
-  judge: Judge;
-  /** Kills any running call and removes the judge's scratch directory. Safe to call twice. */
-  dispose: () => void;
-}
-
-/**
- * Runs `claude -p` headless with only the Read tool and returns the model's text answer. At most
- * `hardCap` calls are ever made in this process (the budget check already refused bigger runs).
- */
-function claudeJudge(model: string, imageDirs: readonly string[], hardCap: number): ClaudeJudge {
-  const bin = process.env.CLAUDE_BIN || 'claude';
-  const cwd = mkdtempSync(join(tmpdir(), 'aplos-taste-'));
-  const running = new Set<ChildProcess>();
-  let made = 0;
-  const dispose = (): void => {
-    for (const child of running) child.kill('SIGKILL');
-    running.clear();
-    rmSync(cwd, { recursive: true, force: true });
-  };
-  const judge: Judge = prompt =>
-    new Promise((resolvePromise, reject) => {
-      if (made >= hardCap) {
-        reject(new Error(`judge call limit of ${hardCap} reached`));
-        return;
-      }
-      made += 1;
-      const flags = [
-        '-p',
-        '--model',
-        model,
-        '--output-format',
-        'json',
-        '--tools',
-        'Read',
-        '--allowedTools',
-        'Read',
-      ];
-      const extra = [
-        '--no-session-persistence',
-        '--disable-slash-commands',
-        '--max-budget-usd',
-        '2',
-      ];
-      const dirs = imageDirs.flatMap(dir => ['--add-dir', dir]);
-      // The prompt goes in on stdin: --allowedTools takes a list and would swallow a positional one.
-      const child = spawn(bin, [...flags, ...extra, ...dirs], {
-        cwd,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      running.add(child);
-      let out = '';
-      let err = '';
-      const timer = setTimeout(() => child.kill('SIGKILL'), JUDGE_TIMEOUT_MS);
-      child.stdout.on('data', chunk => (out += chunk));
-      child.stderr.on('data', chunk => (err += chunk));
-      child.on('error', error => reject(new Error(`cannot run ${bin}: ${error.message}`)));
-      child.on('close', code => {
-        clearTimeout(timer);
-        running.delete(child);
-        try {
-          resolvePromise(readClaudeResult(out, code, err));
-        } catch (error) {
-          reject(error);
-        }
-      });
-      child.stdin.end(prompt);
-    });
-  return { judge, dispose };
-}
-
-function readClaudeResult(out: string, code: number | null, err: string): string {
-  let parsed: { is_error?: boolean; result?: unknown; total_cost_usd?: number } | null = null;
-  try {
-    parsed = JSON.parse(out.trim().split('\n').pop() ?? '');
-  } catch {
-    parsed = null;
-  }
-  if (!parsed) throw new Error(`claude exit ${code}: ${(err || out).trim().slice(0, 300)}`);
-  if (typeof parsed.total_cost_usd === 'number')
-    log(`judge call cost $${parsed.total_cost_usd.toFixed(3)}`);
-  if (parsed.is_error || typeof parsed.result !== 'string')
-    throw new Error(`claude reported an error: ${String(parsed.result ?? err).slice(0, 300)}`);
-  return parsed.result;
-}
-
 async function mapLimit<T, R>(
   items: readonly T[],
   limit: number,
@@ -354,13 +268,18 @@ async function main(): Promise<void> {
       );
       for (const item of prepared)
         if (item.skipped) notes.push(`${item.entry.id}: no mockup reference (${item.skipped})`);
-      const dirs = [
-        ...new Set(
-          prepared.flatMap(item => item.images.map(image => resolve(dirname(image.path)))),
-        ),
+      const images = [
+        ...new Set(prepared.flatMap(item => item.images.map(image => resolve(image.path)))),
       ];
       // A retry may double the calls of a state; nothing else may exceed the cap.
-      judge = claudeJudge(model, dirs, args.maxCalls * 2);
+      judge = createClaudeJudge({
+        bin: process.env.CLAUDE_BIN || 'claude',
+        model,
+        images,
+        hardCap: args.maxCalls * 2,
+        env: scorerEnv(process.env),
+        timeoutMs: JUDGE_TIMEOUT_MS,
+      });
       onShutdown(judge.dispose);
       results = await judgeAll(prepared, {
         rubric,
