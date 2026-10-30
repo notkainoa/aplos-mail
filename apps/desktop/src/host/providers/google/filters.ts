@@ -6,7 +6,7 @@ import {
   type SenderRule,
 } from '@aplos/engine/ports';
 import { googleScopeManifest, grantedFeatures } from '../oauth/scopes';
-import { GmailClient, type GmailDeps, type GmailRequest } from './client';
+import { GmailClient, type GmailDeps } from './client';
 
 /**
  * The `sender_rules` mirror on Gmail `users.settings.filters` (plan 20 PV4 "Filters"), so a block or
@@ -52,12 +52,6 @@ const METHOD = {
   create: 'gmail.settings.filters.create',
   delete: 'gmail.settings.filters.delete',
 } as const;
-
-/**
- * `GmailRequest.httpMethod` names only GET and POST today (widening it is prov-gmail's `client.ts`); the
- * string is passed to fetch as-is, so this still sends a real HTTP DELETE.
- */
-const HTTP_DELETE = 'DELETE' as unknown as GmailRequest['httpMethod'];
 
 /** Gmail's Filter resource, as far as the mirror reads it. */
 interface GmailFilter {
@@ -228,7 +222,7 @@ async function deleteRemote(client: GmailClient, remoteId: string): Promise<void
     await client.call({
       method: METHOD.delete,
       path: `/settings/filters/${encodeURIComponent(remoteId)}`,
-      httpMethod: HTTP_DELETE,
+      httpMethod: 'DELETE',
       lane: LANE,
       kind: 'idempotentWrite',
       item: remoteId,
