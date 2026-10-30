@@ -151,3 +151,26 @@ test('unsubscribe stops live notifications and a list still in flight', async ()
   await settle();
   assert.deepEqual(seen, []);
 });
+
+test('a late reminder from the list carries the was-due text in the owner zone', async () => {
+  // 17:00 UTC on 29 Oct 2026 is 10:00 AM in Los Angeles; the reminder was due an hour before.
+  const s = fakeSession(() => ({ items: [listed(1)] }));
+  const { seen, notify } = collect();
+  announceMissedReminders(s.session, notify, { zone: 'America/Los_Angeles' });
+  await settle();
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0]!.body, 'Was due Thu, Oct 29, 9:00 AM');
+  assert.equal(seen[0]!.wasDueAt, NOW - 3_600_000);
+});
+
+test('the same reminder re-set to the same time and fired again (a new fire time) notifies again', async () => {
+  const s = fakeSession(() => ({ items: [listed(1)] }));
+  const { seen, notify } = collect();
+  announceMissedReminders(s.session, notify);
+  await settle();
+  assert.equal(seen.length, 1);
+  s.emit(hostFrame({ ...liveItem(1), at: NOW }));
+  assert.equal(seen.length, 1, 'the same fire seen live is not a duplicate');
+  s.emit(hostFrame({ ...liveItem(1), at: NOW + 3_600_000 }));
+  assert.equal(seen.length, 2, 'a later fire of the same id is a new notification');
+});

@@ -20,14 +20,28 @@ interface ListedReminder {
 /** The id the engine gives the live `reminder` event of this reminder (`clock/sources/notice.ts`), so the two dedupe. */
 const idOf = (r: ListedReminder) => `reminder:${r.threadId}:${r.at}`;
 
-function itemOf(r: ListedReminder): NotificationItem {
+/** "Was due Sun, Nov 1, 9:00 AM", like the engine's own late notice, in `zone` (default: this Mac's). */
+function wasDueText(at: number, zone?: string): string {
+  const when = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(zone ? { timeZone: zone } : {}),
+  }).format(at);
+  return `Was due ${when}`;
+}
+
+function itemOf(r: ListedReminder, zone?: string): NotificationItem {
+  const late = r.firedAt - r.at >= LATE_AFTER_MS;
   return {
     id: idOf(r),
     kind: 'reminder',
     threadId: r.threadId,
     title: r.title,
     at: r.firedAt,
-    ...(r.firedAt - r.at >= LATE_AFTER_MS ? { wasDueAt: r.at } : {}),
+    ...(late ? { wasDueAt: r.at, body: wasDueText(r.at, zone) } : {}),
   };
 }
 
@@ -52,18 +66,25 @@ function missedOf(output: unknown): ListedReminder[] {
  * (or twice live) notifies once. A failing list call is swallowed: the reminder stays listed for the next launch.
  * Returns the unsubscribe function; after it, nothing more is notified, including a list still in flight.
  *
+ * The host must notify for `reminder` events ONLY through this module (it forwards the live ones): a second live
+ * handler of its own would notify twice.
+ *
  * Not wired into `src/main` yet: main still runs the legacy engine. The new engine's host calls this once, right after
  * `engine.connect()`, with the host session and its notification function.
  */
 export function announceMissedReminders(
   session: ReminderSession,
   notify: (item: NotificationItem) => void,
+  options: { zone?: string } = {},
 ): () => void {
+  // A notification is the reminder's id plus its fire time (`item.at`): the owner re-setting the same time after a
+  // fire is a new fire with a new `at`, so it notifies again, while the same fire seen live and in the list does not.
   const announced = new Set<string>();
   let active = true;
   const announce = (item: NotificationItem) => {
-    if (!active || announced.has(item.id)) return;
-    announced.add(item.id);
+    const key = `${item.id}|${item.at}`;
+    if (!active || announced.has(key)) return;
+    announced.add(key);
     try {
       notify(item);
     } catch {
@@ -75,7 +96,8 @@ export function announceMissedReminders(
   });
   const list = async () => {
     try {
-      for (const r of missedOf(await session.call('Reminder/list', {}))) announce(itemOf(r));
+      for (const r of missedOf(await session.call('Reminder/list', {})))
+        announce(itemOf(r, options.zone));
     } catch {
       // Nothing safe to log here; the fired reminders stay in `Reminder/list` until acked.
     }
