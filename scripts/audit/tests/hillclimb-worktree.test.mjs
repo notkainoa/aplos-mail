@@ -402,6 +402,30 @@ describe('module tree snapshot + diff', () => {
     assert.deepEqual(findModuleChanges([missing], snap), [missing]);
   });
 
+  it('follows a symlinked .cache into its target — it cannot hide writes like a real one', () => {
+    const dir = join(tmp, `scan-linkcache${seq++}`);
+    const mods = join(dir, 'node_modules');
+    const shared = join(dir, 'shared-cache');
+    mkdirSync(join(mods, 'tool'), { recursive: true });
+    mkdirSync(join(mods, '.cache'), { recursive: true }); // a REAL cache dir: pruned
+    mkdirSync(join(shared, 'eslint'), { recursive: true });
+    symlinkSync(join('..', 'shared-cache'), join(mods, '.vite'), 'junction');
+    writeFileSync(join(mods, 'tool', 'run.js'), 'x\n');
+    writeFileSync(join(mods, '.cache', 'a'), 'a\n');
+    writeFileSync(join(shared, 'eslint', 'b'), 'b\n');
+    const snap = snapshotModuleTrees([mods]);
+    assert.deepEqual(findModuleChanges([mods], snap), []);
+
+    writeFileSync(join(shared, 'eslint', 'b'), 'hacked\n'); // through the linked .vite
+    writeFileSync(join(mods, '.cache', 'a'), 'a2\n'); // real cache: stays invisible
+    const hits = findModuleChanges([mods], snap, { relativeTo: dir });
+    assert.ok(
+      hits.some(p => p.startsWith(join('node_modules', '.vite'))),
+      `a linked cache dir hid its write: ${JSON.stringify(hits)}`,
+    );
+    assert.ok(!hits.some(p => p.includes('.cache')), JSON.stringify(hits));
+  });
+
   it('walks a realistic tree fast — report the measured snapshot+diff time', () => {
     const dir = join(tmp, `scan-perf${seq++}`);
     const mods = join(dir, 'node_modules');

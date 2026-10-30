@@ -9,7 +9,9 @@ import { lstatSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 // Linter and bundler caches inside node_modules may be legitimately rewritten by the
-// suite commands the worktrees run; they are the only directories the scan skips.
+// suite commands the worktrees run; they are the only directories the scan skips —
+// and only REAL ones: a symlink with that name is followed like any other linked dir,
+// because pruning it would hide writes the link carries somewhere else entirely.
 const WRITE_SCAN_PRUNE = new Set(['.cache', '.vite']);
 const WRITE_SCAN_LIMIT = 50;
 
@@ -91,7 +93,9 @@ function scanModuleTree(root, visit) {
           // Dangling link: the link itself still carries a recordable size/mtime.
         }
         visit.entry(path, entryName, lst, tst, ctx);
-        if (tst?.isDirectory() && !WRITE_SCAN_PRUNE.has(entryName)) walk(path, entryName, ctx);
+        // A symlinked dir is followed even under a pruned name: writes through it do
+        // not land in a cache inside this tree — they reach wherever the link points.
+        if (tst?.isDirectory()) walk(path, entryName, ctx);
       } else if (lst.isDirectory()) {
         if (!WRITE_SCAN_PRUNE.has(entryName)) walk(path, entryName, ctx);
       } else {
