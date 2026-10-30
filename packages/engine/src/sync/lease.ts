@@ -60,13 +60,24 @@ import { contractError } from '../runtime/errors';
  * A's reads work, but up to A's own give-up time (`until - LEASE_GIVE_UP_MS`, about 28 minutes after its last renewal)
  * when A's reads fail or its data key is locked, since A then keeps the role its last published claim gives.
  *
+ * A clock set back: every wait is kept with the clock reading it started at, and a reading earlier than that ends it at
+ * once (`Wait`: the retry backoff and the probe interval; the dead claim's cadence and the cool-down after it go by
+ * `publishedAt` the same way; `next()` makes a round due at once when its time is more than a round ahead). An ok
+ * reading from "the future" is no reading, and is forgotten the first time the clock is seen behind it
+ * (`forgetFuture`, by the host before every gate read), so it never comes back to life when the clock catches up with
+ * it, and the next round measures again. A jump of hours costs
+ * one measuring write, never hours without renewals or probes. A jump forward simply makes them due.
+ *
  * Cost per device and account: one gated channel read a round (`LEASE_ROUND_MS`; about 2 Gmail units when nothing
  * changed), and a claim rewrite every `LEASE_RENEW_MS` (or on a role or pin change). On Gmail a rewrite is one sealed
  * whole-view copy (`messages.insert`, 25 units) plus the receive-time check (`messages.get` minimal, 20); the primary
  * then compacts what the copy supersedes (one 60-unit read-back per written copy, 20 per copy trashed, at most 25 a
  * call). About 120 + 6 x 45 = 390 units an hour per idle device, plus the primary's compaction. A blocked device, and
  * one whose checks keep measuring nothing once its backoff tops out, writes twice an hour and compacts only its own
- * superseded copies, so its copies never pile up.
+ * superseded copies, so its copies never pile up: an own copy whose digest the Gmail channel no longer holds is trashed
+ * by id on a floor readers honour, and otherwise downloaded once more to match it, at most 3 per compaction (60 units
+ * each, once per such copy, `OWN_REREADS` in `workflow-state.ts`). One that still holds a record the new copy lacks
+ * stays on the label.
  */
 
 /** ARCH 6.5: a 30-minute TTL. */
@@ -284,6 +295,32 @@ export interface ClockGate {
 
 export const unmeasuredGate = (): ClockGate => ({ okStreak: 0 });
 
+/**
+ * The gate once an ok reading from "the future" is forgotten: a clock set back (it now reads before the reading was
+ * taken) proves nothing about the clock it has now, and must not come back to life when that clock catches up with it.
+ * A block stays, with its count of ok readings started over.
+ */
+export function forgetFuture(gate: ClockGate, now: number): ClockGate {
+  if (gate.okAt === undefined || gate.okAt <= now) return gate;
+  return gate.blocked ? { blocked: gate.blocked, okStreak: 0 } : { okStreak: 0 };
+}
+
+/**
+ * `holder`'s gate with an ok reading from the future forgotten (also in the gate an owner's lift will restore). The
+ * host reads every gate through here, so the reading is gone before the clock catches up with it, whatever the checks
+ * did meanwhile.
+ */
+export function gateNow(
+  holder: { gate: ClockGate; ownerLift?: ClockGate },
+  now: number,
+): ClockGate {
+  const gate = forgetFuture(holder.gate, now);
+  if (gate === holder.gate) return gate;
+  if (holder.ownerLift) holder.ownerLift = forgetFuture(holder.ownerLift, now);
+  holder.gate = gate;
+  return gate;
+}
+
 /** The gate after one write's measurement at `now` (hysteresis: see the header). */
 export function measureClock(
   gate: ClockGate,
@@ -291,11 +328,12 @@ export function measureClock(
   now: number,
 ): ClockGate {
   const reading = clockReading(offset);
+  gate = forgetFuture(gate, now);
   if (reading === 'off') return { blocked: 'off', okStreak: 0 };
   // Nothing learned: a block stays a block, and an ok reading stays until it ages out.
   if (reading === 'unmeasurable') return { ...gate, remeasure: !gate.blocked };
   if (!gate.blocked) return { okStreak: 1, okAt: now };
-  const apart = gate.okAt === undefined || now < gate.okAt || now - gate.okAt >= LEASE_ROUND_MS;
+  const apart = gate.okAt === undefined || now - gate.okAt >= LEASE_ROUND_MS;
   if (!apart) return gate;
   const okStreak = gate.okStreak + 1;
   if (okStreak >= LEASE_CLOCK_OK_STREAK) return { okStreak, okAt: now };
@@ -335,6 +373,12 @@ function clockRefusal(reading: ClockReading): Error {
   return contractError({ type: 'unavailable', message });
 }
 
+/** The owner's "Use this Mac" interrupted by the account restarting (the sentence the UI shows). */
+function restartRefusal(): Error {
+  const message = 'The account restarted before this Mac could be set as the main Mac. Try again.';
+  return contractError({ type: 'unavailable', message });
+}
+
 export interface LeaseDeps {
   account: AccountId;
   device: DeviceId;
@@ -356,6 +400,8 @@ export interface LeaseDeps {
   remeasure?: () => boolean;
   /** The gate for an owner's pin (`ownerGate`): may lift a block on one fresh ok reading. Absent: `clockGate`. */
   ownerClock?: () => ClockReading;
+  /** A 'restart' replaced this controller: an owner's `claim` that finishes now is refused (its pin is not confirmed). */
+  stale?: () => boolean;
 }
 
 export interface LeaseController {
@@ -379,6 +425,20 @@ export interface LeaseController {
 
 /** `undefined` until the first read tells whether a pinned claim of ours survived a restart. */
 type Pin = { at: number } | null | undefined;
+
+/**
+ * A wait on this device's clock, from `from` until `at`. A clock that jumped back before `from` ends it at once, as
+ * `deadDue` treats a claim published "in the future": a backwards jump never freezes a retry or a probe for the
+ * length of the jump.
+ */
+interface Wait {
+  from: number;
+  at: number;
+}
+
+const NO_WAIT: Wait = { from: 0, at: 0 };
+const waitFor = (now: number, ms: number): Wait => ({ from: now, at: now + ms });
+const waiting = (wait: Wait, now: number): boolean => now >= wait.from && now < wait.at;
 
 function claimFor(decision: LeaseDecision, pin: Pin, now: number): LeaseClaim {
   return {
@@ -452,14 +512,15 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
   let immediate = false;
   let stopped = false;
   let nextAt = 0;
-  let retryAt = 0;
+  /** The backoff after a failed or unmeasured write: no automatic write while it waits. */
+  let retry = NO_WAIT;
   /** The published dead claim was written under an `off` block (the cool-down after it applies; `coolingDown`). */
   let deadWhileOff = false;
   /** Measuring writes failed in a row: their retry backs off from one round to `LEASE_WRITE_RETRY_MS`. */
   let measureFails = 0;
-  /** The pending retry is the slow one (`LEASE_GATED_RENEW_MS`): `probe` may end it early, from `probeAt` on. */
+  /** The pending retry is the slow one (`LEASE_GATED_RENEW_MS`): `probe` may end it early, once `probeWait` ends. */
   let slow = false;
-  let probeAt = 0;
+  let probeWait = NO_WAIT;
   let queue: Promise<unknown> = Promise.resolve();
 
   /** One round at a time: an owner's `claim` never interleaves with a timer `tick`. */
@@ -540,28 +601,28 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       unsure = false;
       slow = false;
       if (remeasure()) {
-        retryAt = now + retryDelay(true);
+        retry = waitFor(now, retryDelay(true));
       } else {
-        retryAt = 0;
+        retry = NO_WAIT;
         measureFails = 0;
       }
-      probeAt = now + LEASE_WRITE_RETRY_MS;
+      probeWait = waitFor(now, LEASE_WRITE_RETRY_MS);
       return true;
     } catch {
       unsure = true;
       slow = false;
-      retryAt = now + retryDelay(false);
+      retry = waitFor(now, retryDelay(false));
       return false;
     }
   };
 
   /** During the slow wait, a probe every `LEASE_WRITE_RETRY_MS`; one that measures makes the retry due now. */
   const probeSlowWait = async (now: number): Promise<void> => {
-    if (!slow || now >= retryAt || now < probeAt || !channel.probe) return;
-    probeAt = now + LEASE_WRITE_RETRY_MS;
+    if (!slow || !waiting(retry, now) || waiting(probeWait, now) || !channel.probe) return;
+    probeWait = waitFor(now, LEASE_WRITE_RETRY_MS);
     if (!(await channel.probe())) return;
     slow = false;
-    retryAt = now;
+    retry = NO_WAIT;
   };
 
   const read = async (): Promise<LeaseRecord[] | undefined> => {
@@ -622,7 +683,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     const off = gated();
     let wrote: boolean | undefined;
     const due = measure || deadDue(claim, now);
-    if (due && (intent || measure || now >= retryAt)) {
+    if (due && (intent || measure || !waiting(retry, now))) {
       wrote = await write(claim, now);
       if (wrote) pinDirty = false;
       if (wrote) deadWhileOff = off;
@@ -633,10 +694,10 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
 
   /** An unproven clock measures again with its dead claim once the backoff allows. */
   const measureDead = (measure: boolean, now: number): boolean =>
-    measure || (unproven() && now >= retryAt);
+    measure || (unproven() && !waiting(retry, now));
 
   /** An automatic live write waits for the retry backoff and the cool-down after an `off` block. */
-  const held = (now: number): boolean => now < retryAt || coolingDown(now);
+  const held = (now: number): boolean => waiting(retry, now) || coolingDown(now);
 
   /** `measure`: write even when nothing is due, so the write measures the clock (the owner's "Use this Mac"). */
   const round = async (intent?: Intent, measure = false): Promise<RoundResult> => {
@@ -703,11 +764,14 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
     if (stopped) return { pinned: false };
     await refuseUnlessMeasured();
     await change('pin');
+    // Replaced while the pin was being written: the new controller owns the claim now, and nothing here confirms it.
+    if (deps.stale?.()) throw restartRefusal();
     // Re-read: a pin made elsewhere at the same moment may already have won. If the pin's own write showed the clock
     // is off, this round drops the pin again and the owner hears why.
     const check = await round();
     const after = reading();
     if (blocks(after)) throw clockRefusal(after);
+    if (deps.stale?.()) throw restartRefusal();
     if (!check.read) return { pinned: !!pin };
     return { pinned: !!pin && check.decision?.winner?.device === device };
   };
