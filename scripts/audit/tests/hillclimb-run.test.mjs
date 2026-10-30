@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -126,6 +127,32 @@ async function withCeiling(promise, ceilingMs, message, child) {
   }
 }
 
+/** The pids a gate wrote to `file` (its shell, then its sleep child); [] until both lines exist. */
+function gatePids(file) {
+  try {
+    const pids = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(Number);
+    return pids.length === 2 && pids.every(Number.isInteger) ? pids : [];
+  } catch {
+    return [];
+  }
+}
+
+/** True while `pid` is a live process; a zombie (killed but not yet reaped) counts as dead. */
+function pidRunning(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return !execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' })
+      .trim()
+      .startsWith('Z');
+  } catch {
+    return false;
+  }
+}
+
 describe('run.mjs as a subprocess', () => {
   const harnessSrc = dirname(fileURLToPath(new URL('../hillclimb/run.mjs', import.meta.url)));
   const tmp = mkdtempSync(join(tmpdir(), 'hillclimb-sub-'));
@@ -177,7 +204,10 @@ describe('run.mjs as a subprocess', () => {
   ]) {
     it(`${signal} mid-gate kills the process group, releases the slot, removes worktrees`, async () => {
       const marker = join(tmp, `${signal.toLowerCase()}-gate-finished`);
-      const started = join(tmp, `${signal.toLowerCase()}-gate-started`);
+      // The gate records its own pid and its sleep child's pid: the test checks those two pids,
+      // never a command-line pattern, so a concurrent run of this same test (another worktree's
+      // test:audit on the same machine) cannot be mistaken for a survivor.
+      const pids = join(tmp, `${signal.toLowerCase()}-gate-pids`);
       const { repo, scriptDir, git, slot } = seedRun(`${signal.toLowerCase()}-gate`, {
         name: 'sig',
         allowedPaths: ['**'],
@@ -186,7 +216,7 @@ describe('run.mjs as a subprocess', () => {
         gates: [
           {
             name: 'g',
-            command: `touch ${started}; sleep ${sleeper}; touch ${marker}`,
+            command: `echo $$ > ${pids}; sleep ${sleeper} & echo $! >> ${pids}; wait; touch ${marker}`,
             timeoutSec: 60,
           },
         ],
@@ -211,7 +241,12 @@ describe('run.mjs as a subprocess', () => {
       );
       // The lock exists before the gate process does: signal only once the gate really runs, so
       // the test exercises the group kill and not the (separate) spawn-in-flight window.
-      await waitFor(() => existsSync(started), 60_000, `gate never started under ${signal}`);
+      await waitFor(
+        () => gatePids(pids).length === 2,
+        60_000,
+        `gate never started under ${signal}`,
+      );
+      const gate = gatePids(pids);
       const closed = new Promise(resolve => child.on('close', (...a) => resolve(a)));
       child.kill(signal);
       const [exit] = await withCeiling(
@@ -223,19 +258,12 @@ describe('run.mjs as a subprocess', () => {
       assert.equal(exit, code, `${signal} exit code`);
       assert.equal(existsSync(slotDir), false, 'check-slot lock left behind');
       assert.equal(existsSync(runRootDir), false, 'run root left behind');
-      // SIGKILL is delivered at once but the process can linger in the table for a moment on a
-      // loaded machine: poll for it to vanish instead of asserting at the first instant.
+      // The kill is a group SIGKILL, delivered at once; on a loaded machine the processes can
+      // linger briefly in the table (or as zombies when nothing reaps them), so poll.
       await waitFor(
-        () => {
-          try {
-            execFileSync('pgrep', ['-f', `sleep ${sleeper}`]);
-            return false;
-          } catch {
-            return true;
-          }
-        },
-        15_000,
-        'gate process group survived the kill',
+        () => gate.every(pid => !pidRunning(pid)),
+        30_000,
+        `gate process group survived the kill (pids ${gate.join(', ')})`,
       );
       assert.equal(existsSync(marker), false, 'gate completed despite the kill');
       const worktrees = git(['worktree', 'list', '--porcelain']);
