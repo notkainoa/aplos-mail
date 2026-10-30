@@ -56,6 +56,8 @@ export interface RowExtra extends SubmissionMeta {
   checkCount: number;
   checkAt?: number;
   sentAt?: number;
+  /** The `sending` marker was committed at least once: the bytes may have left, so they are never changed again. */
+  attempted?: true;
   problem?: Omit<SubmissionProblem, 'until'>;
 }
 
@@ -76,6 +78,8 @@ export interface NewSubmission {
 export interface SubmissionPatch {
   notBefore?: number;
   attemptAt?: number | null;
+  /** `true` with the `sending` marker; `false` only when the send provably did not leave (paused). */
+  attempted?: boolean;
   sentAt?: number;
   remoteMessageId?: string | null;
   remoteThreadId?: string | null;
@@ -183,6 +187,11 @@ export function extraOf(row: SubmissionRow): RowExtra {
   return parseExtra(row.error);
 }
 
+/** Has a send of these bytes been started? Then they may be out there and must not change. */
+export function hadAttempt(row: SubmissionRow): boolean {
+  return row.attempt_at !== null || extraOf(row).attempted === true;
+}
+
 export function problemOf(row: SubmissionRow): SubmissionProblem | undefined {
   const { problem } = extraOf(row);
   if (!problem) return undefined;
@@ -254,6 +263,8 @@ function create(tx: CommitExtensionTx, row: NewSubmission) {
 function patchedExtra(current: RowExtra, set: SubmissionPatch, seq: number): RowExtra {
   const next: RowExtra = { ...current, rev: seq };
   if (set.sentAt !== undefined) next.sentAt = set.sentAt;
+  if (set.attempted === true) next.attempted = true;
+  else if (set.attempted === false) delete next.attempted;
   if (set.checkCount !== undefined) next.checkCount = set.checkCount;
   if (set.checkAt === null) delete next.checkAt;
   else if (set.checkAt !== undefined) next.checkAt = set.checkAt;

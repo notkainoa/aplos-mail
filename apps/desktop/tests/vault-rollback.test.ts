@@ -437,7 +437,11 @@ test(
         const reloaded = await open(dir);
         return reloaded.get('a')?.v === 1 && reloaded.get('b')?.v === 3;
       }, 'the late rename is repaired with the committed entries');
-      assert.deepEqual(await temporaries(dir), []);
+      // The abandoned write removes its temp file after the repair, so wait for it instead of asserting at once.
+      await eventually(
+        async () => (await temporaries(dir)).length === 0,
+        'the late rename leaves no temp file behind',
+      );
       await vault.set('c', { v: 5 });
       assert.deepEqual((await open(dir)).get('c'), { v: 5 });
     });
