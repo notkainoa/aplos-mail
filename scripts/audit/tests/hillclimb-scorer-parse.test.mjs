@@ -220,11 +220,31 @@ test('mutation scoreMutation: killed+timeout over valid; survivors listed first'
   const { score, details } = scoreMutation(mutants);
   assert.equal(score, 50); // 2 of 4 valid mutants killed
   assert.deepEqual(details, [
+    'ignored: 1',
     'src/a.ts:2 EqualityOperator (survived)',
     'src/a.ts:4 ConditionalExpression (nocoverage)',
     'src/a.ts:5 Broken (compileerror)',
   ]);
   assert.equal(scoreMutation([]).score, 0);
+});
+
+test('mutation scoreMutation: timeouts count as kills only up to 10% of valid mutants', () => {
+  // 4 valid mutants: the cap is 1, so 3 timeouts only count as a single kill.
+  const mutants = [
+    mutant('src/a.ts', 0, 0, 'Mut', 'Timeout'),
+    mutant('src/a.ts', 1, 0, 'Mut', 'Timeout'),
+    mutant('src/a.ts', 2, 0, 'Mut', 'Timeout'),
+    mutant('src/a.ts', 3, 0, 'Mut', 'Survived'),
+  ];
+  const { score, details } = scoreMutation(mutants);
+  assert.equal(score, 25);
+  assert.ok(details.some(line => /past the 10% cap/.test(line)));
+  // 20 valid mutants: the cap is 2, so 3 timeouts count as 2 kills.
+  const twenty = [
+    ...Array.from({ length: 3 }, (_, i) => mutant('src/a.ts', i, 0, 'Mut', 'Timeout')),
+    ...Array.from({ length: 17 }, (_, i) => mutant('src/a.ts', i + 3, 0, 'Mut', 'Killed')),
+  ];
+  assert.equal(scoreMutation(twenty).score, (19 / 20) * 100);
 });
 
 test('mutation reportMutants flattens the report files map', () => {
@@ -256,17 +276,18 @@ test('mutation parseArgs requires --scope and --tests', () => {
 test('mutation renderRunConfig layers mutate ranges, command and report on the base config', () => {
   const config = renderRunConfig({
     mutate: ['src/a.ts:1:0-1:2'],
-    tests: ['tests/a.test.ts'],
     runner: 'node',
     reportFile: '/tmp/report.json',
   });
   assert.match(config, /mutate: \[\s*"src\/a\.ts:1:0-1:2"\s*\]/);
+  // The command names no file: test paths travel in a JSON file via the env var instead.
   assert.match(
     config,
-    /commandRunner: \{ command: ".*stryker-run\.mjs --runner node tests\/a\.test\.ts" \}/,
+    /commandRunner: \{ command: "'[^']*' '[^']*stryker-run\.mjs' --runner node" \}/,
   );
+  assert.doesNotMatch(config, /\.test\.ts/);
   assert.match(config, /jsonReporter: \{ fileName: "\/tmp\/report\.json" \}/);
-  assert.match(config, /import base from "..\/..\/..\/stryker\.config\.mjs"/);
+  assert.match(config, /import base from "file:\/\/.*stryker\.config\.mjs"/);
 });
 
 // --- knip -----------------------------------------------------------------

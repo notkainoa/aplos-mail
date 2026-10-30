@@ -12,28 +12,33 @@
 // Typical runtime: tens of seconds to a few minutes depending on scope and test count.
 //   node scripts/audit/hillclimb/scorers/mutation.mjs --scope <glob> --tests <glob>
 //     [--max-mutants <n>] [--timeout-sec <n>] [--runner node|electron-node]
-import { readFileSync, writeFileSync } from 'node:fs';
+//
+// Tamper guards: a scoped file containing a Stryker-disable comment or a Stryker active-mutant
+// global fails the run outright, and the test file list reaches the runner only through a
+// JSON file (the command string itself stays free of file names — see renderRunConfig).
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { TESTS_FILE_ENV } from './stryker-run.mjs';
 import {
   ScorerError,
-  artifactsDir,
   emitScore,
   expandGlobs,
+  makeRunDir,
   parseArgs,
   readJsonFile,
+  refuseTampering,
   repoRoot,
   runCli,
   runLogged,
+  scopeFiles,
 } from './util.mjs';
 
 const strykerBin = join(repoRoot, 'node_modules', '@stryker-mutator', 'core', 'bin', 'stryker.js');
-const reportFile = join(artifactsDir, 'mutation-report.json');
-const runConfigFile = join(artifactsDir, '.stryker-last-run.config.mjs');
 // Per-test-run cap inside Stryker; --timeout-sec bounds the whole run instead.
 const perRunTimeoutMs = 30_000;
 const MUTABLE = /\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/;
 
-const KILLED = new Set(['Killed', 'Timeout']);
 const VALID = new Set(['Killed', 'Timeout', 'Survived', 'NoCoverage']);
 const SURVIVED = new Set(['Survived', 'NoCoverage']);
 
@@ -137,19 +142,27 @@ const touches = (a, b) =>
 const formatRange = (file, range) =>
   `${file}:${range.start.line + 1}:${range.start.column}-${range.end.line + 1}:${range.end.column}`;
 
-/** The per-run config file layering sampled mutate ranges and the test command on the base. */
-export function renderRunConfig({ mutate, tests, runner, reportFile }) {
-  // The wrapper is addressed absolutely: it runs with the sandbox as cwd, which may hold a
-  // fixture tree (not this repo's) where scripts/audit/... does not exist.
+/** Single-quote a string so the shell the command runner uses cannot reinterpret it. */
+const shellQuote = value => `'${String(value).replaceAll("'", `'\\''`)}'`;
+
+/**
+ * The per-run config file layering sampled mutate ranges, the test command and the report
+ * path on the base config. The command carries no file names: Stryker's command runner
+ * executes it through a shell, so a test path containing a space, `$` or `;` would break the
+ * command or inject into it. The test list travels in a JSON file whose path the wrapper
+ * reads from the TESTS_FILE_ENV variable, set on the Stryker process and inherited by the
+ * command runner. The wrapper is addressed absolutely (single-quoted): it runs with the
+ * sandbox as cwd, which may hold a fixture tree where scripts/audit/... does not exist.
+ */
+export function renderRunConfig({ mutate, runner, reportFile }) {
   const command = [
-    process.execPath,
-    join(repoRoot, 'scripts', 'audit', 'hillclimb', 'scorers', 'stryker-run.mjs'),
+    shellQuote(process.execPath),
+    shellQuote(join(repoRoot, 'scripts', 'audit', 'hillclimb', 'scorers', 'stryker-run.mjs')),
     '--runner',
     runner,
-    ...tests,
   ].join(' ');
   return [
-    `import base from ${JSON.stringify('../../../stryker.config.mjs')};`,
+    `import base from ${JSON.stringify(pathToFileURL(join(repoRoot, 'stryker.config.mjs')).href)};`,
     'export default {',
     '  ...base,',
     `  mutate: ${JSON.stringify(mutate, null, 2)},`,
@@ -170,10 +183,18 @@ export function reportMutants(report) {
   return mutants;
 }
 
-/** score = killed+timeout over valid mutants (errors and ignored mutants are not valid). */
+/**
+ * score = killed over valid mutants as a percent (errors and ignored mutants are not valid;
+ * ignored ones are reported in details). A Timeout counts as a kill only up to 10% of the
+ * valid mutants: a timeout means the test run hung or died, and a slow or flaky suite would
+ * otherwise mint free 'kills' without the tests ever rejecting the mutant.
+ */
 export function scoreMutation(mutants) {
   const valid = mutants.filter(mutant => VALID.has(mutant.status));
-  const killed = valid.filter(mutant => KILLED.has(mutant.status)).length;
+  const killed = valid.filter(mutant => mutant.status === 'Killed').length;
+  const timeouts = valid.filter(mutant => mutant.status === 'Timeout').length;
+  const timeoutCredit = Math.min(timeouts, Math.ceil(valid.length / 10));
+  const ignored = mutants.filter(mutant => mutant.status === 'Ignored').length;
   // Report lines are 0-based (Stryker positions); +1 in the detail so it reads like an editor line.
   const survivors = mutants
     .filter(mutant => SURVIVED.has(mutant.status))
@@ -185,15 +206,21 @@ export function scoreMutation(mutants) {
   const errored = mutants.filter(
     mutant => !VALID.has(mutant.status) && mutant.status !== 'Ignored',
   );
-  const details = [
+  const details = [`ignored: ${ignored}`];
+  if (timeouts > timeoutCredit)
+    details.push(
+      `${timeouts - timeoutCredit} timeout mutants past the 10% cap not counted as kills`,
+    );
+  details.push(
     ...survivors,
     ...errored.map(
       mutant =>
         `${mutant.fileName}:${(mutant.location?.start?.line ?? -1) + 1} ${mutant.mutatorName} (${mutant.status.toLowerCase()})`,
     ),
-  ];
+  );
   return {
-    score: valid.length === 0 ? 0 : Math.round((killed / valid.length) * 10_000) / 100,
+    score:
+      valid.length === 0 ? 0 : Math.round(((killed + timeoutCredit) / valid.length) * 10_000) / 100,
     details,
   };
 }
@@ -201,32 +228,50 @@ export function scoreMutation(mutants) {
 async function main(argv) {
   const options = parseArgsMutation(argv);
   const cwd = options.cwd;
-  const scopeFiles = expandGlobs(options.scope, cwd).filter(file => MUTABLE.test(file));
-  if (scopeFiles.length === 0)
+  // The shared exclude set applies here too: a scope that only names tests or build output
+  // has nothing mutable in it and fails instead of mutating test code.
+  const mutateFiles = scopeFiles(options.scope, cwd).filter(file => MUTABLE.test(file));
+  if (mutateFiles.length === 0)
     throw new ScorerError(`--scope matched no source files: ${options.scope.join(', ')}`);
+  refuseTampering(mutateFiles, 'mutation', cwd);
   const tests = expandGlobs(options.tests, cwd);
   if (tests.length === 0)
     throw new ScorerError(`--tests matched no files: ${options.tests.join(', ')}`);
-  const mutants = await enumerateMutants(scopeFiles, cwd);
+  const mutants = await enumerateMutants(mutateFiles, cwd);
   if (mutants.length === 0)
     throw new ScorerError('--scope produced no mutants (nothing mutable in the matched files)');
   const mutate = mutatePatterns(
     sampleMutants(mutants, Math.max(1, Math.floor(options.maxMutants))),
   );
-  writeFileSync(
-    runConfigFile,
-    renderRunConfig({ mutate, tests, runner: options.runner, reportFile }),
-  );
-  const run = runLogged('mutation', [process.execPath, strykerBin, 'run', runConfigFile], {
-    cwd,
-    timeoutMs: options.timeoutSec * 1000,
-  });
-  if (run.error?.code === 'ETIMEDOUT')
-    throw new ScorerError(`stryker run exceeded --timeout-sec ${options.timeoutSec}`);
-  if (run.error) throw new ScorerError(`stryker failed to start: ${run.error.message}`);
-  const report = readJsonFile(reportFile, 'stryker mutation report');
-  const { score, details } = scoreMutation(reportMutants(report));
-  emitScore(score, details);
+  // Report, test list and run config all live in a fresh per-run dir: a fixed report path
+  // would let a Stryker run that died early fall back to a stale report.
+  const runDir = makeRunDir('mutation');
+  try {
+    const reportFile = join(runDir, 'mutation-report.json');
+    const testsFile = join(runDir, 'stryker-tests.json');
+    writeFileSync(testsFile, JSON.stringify(tests));
+    writeFileSync(
+      join(runDir, 'stryker.config.mjs'),
+      renderRunConfig({ mutate, runner: options.runner, reportFile }),
+    );
+    const run = runLogged(
+      'mutation',
+      [process.execPath, strykerBin, 'run', join(runDir, 'stryker.config.mjs')],
+      {
+        cwd,
+        timeoutMs: options.timeoutSec * 1000,
+        env: { [TESTS_FILE_ENV]: testsFile },
+      },
+    );
+    if (run.error?.code === 'ETIMEDOUT')
+      throw new ScorerError(`stryker run exceeded --timeout-sec ${options.timeoutSec}`);
+    if (run.error) throw new ScorerError(`stryker failed to start: ${run.error.message}`);
+    const report = readJsonFile(reportFile, 'stryker mutation report');
+    const { score, details } = scoreMutation(reportMutants(report));
+    emitScore(score, details);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
 }
 
 runCli(import.meta.url, main);
