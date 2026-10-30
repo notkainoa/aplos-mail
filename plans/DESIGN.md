@@ -1013,6 +1013,24 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 
 > **What this means:** Every phrase that echoed Avec is replaced, and the app uses plain wording instead of an assistant's voice.
 
+**Shell and screens wording (owner OK'd 2026-10-29 with the ui-shell and ui-home approval; the strings are already in the code, see `shell/states.tsx`, `shell/failure-copy.ts`, `shell/SheetHost.tsx` and `screens/**`).**
+
+| Where | Wording |
+|---|---|
+| List could not load | "Couldn’t load this list." with "Try again" |
+| A save or move failed | "Couldn’t save that. Nothing changed." / "Couldn’t move it." |
+| Engine unreachable | "Aplos can’t reach its mail engine." / "Couldn’t restart. Your mail is safe on this Mac." |
+| Diagnostics | "Diagnostics copied" / "Diagnostics exported" / "Couldn’t get the diagnostics." |
+| Reconnect sheet failures | "That was a different account…", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect…" |
+| Confirms | "Delete this email forever?" (button "Delete forever"); "Discard this draft?" (button "Discard") |
+| Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home" |
+| Spam quick action | "Not spam" (this replaces "Restore" for Spam) |
+| Fallbacks | "No sender", "No recipient", "No subject", "No mail here yet." |
+| Later row action | "Change date" |
+| Places not built yet | "<Place> isn’t in this build yet." (temporary; remove once every place exists) |
+
+A wording change to any of these is a visible change: re-show the owner.
+
 ---
 
 ## 11. Accessibility
