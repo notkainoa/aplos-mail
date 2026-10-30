@@ -21,7 +21,10 @@
 //
 // Cheap mitigations in place of a sandbox: the run refuses to start on a dirty main
 // checkout, and after every attempt verifies the main checkout's HEAD and status are
-// untouched; any change aborts the whole run.
+// untouched; any change aborts the whole run. Run this from a dedicated clone with
+// its own .git (git clone --reference <your checkout> <url> /tmp/hc-clone), not a
+// linked worktree: other worktrees change the shared git dir and would read as a
+// sandbox breach.
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { constants as osConstants } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -35,6 +38,7 @@ import { runGate, runScorer } from './steps.mjs';
 import {
   addedLines,
   addWorktree,
+  assertDedicatedClone,
   attemptBranch,
   attemptDir,
   binaryPaths,
@@ -251,6 +255,10 @@ async function main() {
   config.attempt.brief = resolveBrief(config.attempt.brief, repoRoot);
   if (options.rounds) config.roundLimit = options.rounds;
   if (options.attempts) config.attemptsPerRound = options.attempts;
+  // The shared-git-dir snapshot is only meaningful when that dir is private to this
+  // checkout: a sibling worktree's ordinary push/pull writes it mid-run and reads as
+  // a breach. A linked worktree is refused outright — there is no override.
+  assertDedicatedClone(repoRoot);
   // No sandbox: refuse to start on a dirty main checkout so the baseline can't be poisoned
   // and later sandbox checks have a clean reference point.
   if (statusPorcelain(repoRoot).length) {

@@ -963,56 +963,92 @@ export function relativeDir(repoRoot, dir) {
 }
 
 /**
- * A hash of the small slice of shared git state an attempt could poison to make LATER
- * harness git calls misbehave: the common dir's config, hooks/ and info/ contents, this
- * worktree's own HEAD and config.worktree, and exactly the long-lived refs
- * refs/heads/main + refs/heads/revamp. Every other ref is deliberately excluded: sibling
- * worktrees (other harness threads) legitimately commit during a run, and hashing their
- * refs would read ordinary progress as a breach. The main checkout's own HEAD is already
- * covered by the explicit currentHead check in mainCheckoutIntact.
+ * Per-component hashes of the small slice of shared git state an attempt could poison
+ * to make LATER harness git calls misbehave: the common dir's config, hooks/ and info/
+ * contents, this worktree's own HEAD and config.worktree, and exactly the long-lived
+ * refs refs/heads/main + refs/heads/revamp. Every other ref is deliberately excluded:
+ * sibling worktrees (other harness threads) legitimately commit during a run, and
+ * hashing their refs would read ordinary progress as a breach. The main checkout's own
+ * HEAD is already covered by the explicit currentHead check in mainCheckoutIntact.
+ * Components hash separately so the breach message can NAME what moved — a sibling
+ * worktree's push or pull is indistinguishable from tampering until you see which part
+ * changed, which is exactly why the run requires a dedicated clone (assertDedicatedClone).
  */
 export function snapshotGitDir(cwd) {
-  const hash = createHash('sha256');
-  const feed = (label, data) => {
-    hash.update(label);
-    hash.update('\0');
-    hash.update(data);
-    hash.update('\0');
-  };
-  const feedFile = (label, path) => {
-    try {
-      feed(label, readFileSync(path));
-    } catch {
-      // Absent files hash as nothing at all — their absence is part of the snapshot.
-    }
-  };
-  const feedTree = dir => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      const path = join(dir, entry.name);
-      feed('entry', entry.name);
-      if (entry.isFile()) feedFile('file', path);
-      else if (entry.isDirectory()) feedTree(path);
-    }
+  const parts = {};
+  const into = (name, fill) => {
+    const hash = createHash('sha256');
+    const feed = (label, data) => {
+      hash.update(label);
+      hash.update('\0');
+      hash.update(data);
+      hash.update('\0');
+    };
+    const feedFile = (label, path) => {
+      try {
+        feed(label, readFileSync(path));
+      } catch {
+        // Absent files hash as nothing at all — their absence is part of the snapshot.
+      }
+    };
+    const feedTree = dir => {
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        const path = join(dir, entry.name);
+        feed('entry', entry.name);
+        if (entry.isFile()) feedFile('file', path);
+        else if (entry.isDirectory()) feedTree(path);
+      }
+    };
+    fill({ feed, feedFile, feedTree });
+    parts[name] = hash.digest('hex');
   };
   const gitDir = resolve(cwd, git(['rev-parse', '--git-dir'], cwd).trim());
   const commonDir = resolve(cwd, git(['rev-parse', '--git-common-dir'], cwd).trim());
-  feedFile('config', join(commonDir, 'config'));
-  feedTree(join(commonDir, 'hooks'));
-  feedTree(join(commonDir, 'info'));
-  feedFile('worktree-HEAD', join(gitDir, 'HEAD'));
-  feedFile('config.worktree', join(gitDir, 'config.worktree'));
+  into('config', h => h.feedFile('config', join(commonDir, 'config')));
+  into('hooks', h => h.feedTree(join(commonDir, 'hooks')));
+  into('info', h => h.feedTree(join(commonDir, 'info')));
+  into('worktree-HEAD', h => h.feedFile('worktree-HEAD', join(gitDir, 'HEAD')));
+  into('config.worktree', h => h.feedFile('config.worktree', join(gitDir, 'config.worktree')));
   const refs = git(
     ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads/main', 'refs/heads/revamp'],
     cwd,
   ).trim();
-  feed('refs', refs);
-  return hash.digest('hex');
+  into('refs', h => h.feed('refs', refs));
+  return parts;
+}
+
+/** The differing component names between two snapshotGitDir snapshots, sorted. */
+export function gitDirChanges(before, after) {
+  return Object.keys(before)
+    .filter(name => before[name] !== after[name])
+    .sort();
+}
+
+/**
+ * The shared-git-dir snapshot is only meaningful when that dir is PRIVATE to the
+ * checkout the run watches: run from a linked worktree and a sibling worktree's
+ * ordinary push, pull or worktree-add writes the shared common dir mid-run (config,
+ * refs/heads/main, info/) — indistinguishable from an attempt's tampering, and a real
+ * run has already aborted on it. The harness therefore requires a dedicated clone:
+ * `rev-parse --git-dir` equals `--git-common-dir` and both live at <root>/.git.
+ * Anything else — a linked worktree, a submodule, a bare layout — is refused.
+ */
+export function assertDedicatedClone(cwd) {
+  const gitDir = resolve(cwd, git(['rev-parse', '--git-dir'], cwd).trim());
+  const commonDir = resolve(cwd, git(['rev-parse', '--git-common-dir'], cwd).trim());
+  if (gitDir !== resolve(cwd, '.git') || commonDir !== gitDir) {
+    throw new Error(
+      'run this from a dedicated clone with its own .git ' +
+        '(git clone --reference <your checkout> <url> /tmp/hc-clone), not a linked worktree: ' +
+        'other worktrees change the shared git dir and would read as a sandbox breach',
+    );
+  }
 }
 
 // The node_modules baseline/diff pair lives in modulescan.mjs; re-exported here so the
@@ -1056,8 +1092,11 @@ export function mainCheckoutIntact(repoRoot, startCommit) {
       }
     }
     if (ctx?.gitSnapshot && ctx?.dir && existsSync(ctx.dir)) {
-      if (snapshotGitDir(ctx.dir) !== ctx.gitSnapshot) {
-        throw new Error('shared git dir changed during the attempt (sandbox breach)');
+      const changed = gitDirChanges(ctx.gitSnapshot, snapshotGitDir(ctx.dir));
+      if (changed.length) {
+        throw new Error(
+          `shared git dir changed during the attempt: ${changed.join(', ')} (sandbox breach)`,
+        );
       }
     }
     if (ctx?.moduleSnapshot && ctx?.moduleRoots?.length) {

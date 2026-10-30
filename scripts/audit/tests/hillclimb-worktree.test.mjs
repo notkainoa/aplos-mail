@@ -30,12 +30,14 @@ import * as WT from '../hillclimb/worktree.mjs';
 import {
   addedLines,
   addWorktree,
+  assertDedicatedClone,
   binaryPaths,
   blobSize,
   commitAll,
   currentHead,
   diffBetween,
   findModuleChanges,
+  gitDirChanges,
   indexFlagViolations,
   linkNodeModules,
   lsTreePaths,
@@ -244,47 +246,49 @@ describe('snapshotGitDir', () => {
   it('detects config, hook, info, ref and HEAD tampering; ignores hillclimb refs', () => {
     const r = freshRepo();
     const s0 = snapshotGitDir(r.dir);
-    assert.equal(snapshotGitDir(r.dir), s0, 'stable when untouched');
+    const changed = () => gitDirChanges(s0, snapshotGitDir(r.dir));
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'stable when untouched');
+    assert.deepEqual(changed(), [], 'no component differs');
 
     r.g(['config', 'core.fsmonitor', 'true']);
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'config change');
+    assert.deepEqual(changed(), ['config'], 'config change named');
     r.g(['config', '--unset', 'core.fsmonitor']);
-    assert.equal(snapshotGitDir(r.dir), s0, 'restored config');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'restored config');
 
     writeFileSync(join(r.dir, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nexit 1\n');
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'added hook');
+    assert.deepEqual(changed(), ['hooks'], 'added hook named');
     rmSync(join(r.dir, '.git', 'hooks', 'pre-commit'));
 
     writeFileSync(join(r.dir, '.git', 'info', 'attributes'), '* text=auto\n');
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'added info/attributes');
+    assert.deepEqual(changed(), ['info'], 'added info/attributes named');
     rmSync(join(r.dir, '.git', 'info', 'attributes'));
 
     // Only main + revamp are hashed: a sibling thread committing to its own branch
     // mid-attempt is normal progress, not a breach — the snapshot must not move.
     r.g(['update-ref', 'refs/heads/evil', 'HEAD']);
-    assert.equal(snapshotGitDir(r.dir), s0, 'unrelated refs are outside the snapshot');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'unrelated refs are outside the snapshot');
     r.g(['update-ref', '-d', 'refs/heads/evil']);
 
     r.g(['update-ref', 'refs/heads/revamp', 'HEAD']);
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'revamp appeared');
+    assert.deepEqual(changed(), ['refs'], 'revamp appearing named under refs');
     r.g(['update-ref', '-d', 'refs/heads/revamp']);
-    assert.equal(snapshotGitDir(r.dir), s0, 'revamp restored');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'revamp restored');
 
     const mainTip = r.g(['rev-parse', 'refs/heads/main']).trim();
     r.g(['commit', '--allow-empty', '-qm', 'moved']);
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'main moved');
+    assert.deepEqual(changed(), ['refs'], 'main moved named under refs');
     r.g(['update-ref', 'refs/heads/main', mainTip]);
-    assert.equal(snapshotGitDir(r.dir), s0, 'main restored');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'main restored');
 
     // The harness's own branches move constantly and must not trip the check.
     r.g(['update-ref', 'refs/heads/hillclimb/demo/r1/a1', 'HEAD']);
-    assert.equal(snapshotGitDir(r.dir), s0, 'hillclimb refs are exempt');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'hillclimb refs are exempt');
 
     const branch = r.g(['symbolic-ref', 'HEAD']).trim();
     r.g(['symbolic-ref', 'HEAD', 'refs/heads/hillclimb/demo/r1/a1']);
-    assert.notEqual(snapshotGitDir(r.dir), s0, 'HEAD repointed');
+    assert.deepEqual(changed(), ['worktree-HEAD'], 'HEAD repoint named');
     r.g(['symbolic-ref', 'HEAD', branch]);
-    assert.equal(snapshotGitDir(r.dir), s0, 'HEAD restored');
+    assert.deepEqual(snapshotGitDir(r.dir), s0, 'HEAD restored');
     r.g(['update-ref', '-d', 'refs/heads/hillclimb/demo/r1/a1']);
   });
 });
@@ -542,6 +546,32 @@ describe('mainCheckoutIntact (main-checkout drift)', () => {
     // And a root simply removed mid-run is a hit, not a fresh baseline either.
     rmSync(xmods, { recursive: true, force: true });
     await assert.rejects(intact(ctx), /node_modules write-through/);
+  });
+});
+
+describe('dedicated-clone preflight (assertDedicatedClone)', () => {
+  it('accepts a normal clone and refuses a linked worktree', () => {
+    const r = freshRepo();
+    assert.doesNotThrow(() => assertDedicatedClone(r.dir));
+    const linked = join(tmp, `linked${seq++}`);
+    r.g(['worktree', 'add', '--detach', linked, r.head()]);
+    try {
+      assert.throws(
+        () => assertDedicatedClone(linked),
+        /dedicated clone with its own \.git.*not a linked worktree.*sandbox breach/,
+      );
+    } finally {
+      r.g(['worktree', 'remove', '--force', linked]);
+    }
+  });
+
+  it('names which shared-git-dir component changed in the breach message', async () => {
+    const r = freshRepo();
+    const intact = mainCheckoutIntact(r.dir, r.head());
+    const ctx = { dir: r.dir, gitSnapshot: snapshotGitDir(r.dir) };
+    await intact(ctx); // clean passes
+    r.g(['config', 'core.fsmonitor', 'true']);
+    await assert.rejects(intact(ctx), /shared git dir changed during the attempt: config/);
   });
 });
 
