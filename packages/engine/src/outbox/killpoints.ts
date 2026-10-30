@@ -17,6 +17,12 @@ import type { SendPort } from '../ports/engine';
  * the define (tests under tsx, a dev build) the `typeof` guard makes them live, and without an installed hook they do
  * nothing. The hook is installed only by test code (`tests/outbox/killpoint-child.ts`), which also reads the
  * environment variable that picks the point; no source file under `src/` knows that variable's name.
+ *
+ * THE GUARD DEFAULTS TO ON. `typeof __APLOS_TEST_MODE__ === 'undefined'` is true in any build that does not define the
+ * constant, so an unbundled run (tsx, a test) and ANY NEW BUNDLE OF THE ENGINE (a second esbuild/Vite config, another
+ * process entry) keep every kill point live and their names in the output, unless that bundle defines
+ * `__APLOS_TEST_MODE__` false for a release build the way `build-main.mjs` does. A new bundle must define it;
+ * `release-grep.test.ts` proves a bundle without the define keeps the names and checks the one define we ship.
  * `tests/outbox/release-grep.test.ts` builds the engine the way the release does and greps for every name.
  */
 declare global {
@@ -35,7 +41,10 @@ export const KP = {
   AFTER_ACCEPT: 'after-accept',
   /** A `findSent` request is in flight. */
   DURING_FIND_SENT: 'during-find-sent',
-  /** Inside the `sent` commit's transaction: the row is updated, the transaction is not committed. */
+  /**
+   * Inside the transaction of ANY state move (marker, sent, uncertain, failed, cancelled, Send anyway, the start rule...):
+   * the row is updated, the transaction is not committed. The hook's second argument names the move (`from>to:why`).
+   */
   DURING_COMMIT: 'during-commit',
 } as const;
 
@@ -44,7 +53,8 @@ export type KillPoint = (typeof KP)[keyof typeof KP];
 /** Every kill point, in send order. */
 export const KILL_POINTS: readonly KillPoint[] = /* @__PURE__ */ Object.values(KP);
 
-type KillHook = (name: KillPoint) => void;
+/** `detail` is set by `during-commit` only: the move being committed, `from>to:why` (`sending>uncertain:startRule`). */
+type KillHook = (name: KillPoint, detail?: string) => void;
 let hook: KillHook | undefined;
 
 /** Test code only: what happens at a kill point (a child process kills itself). `undefined` removes it. */
@@ -53,8 +63,8 @@ export function installKillHook(next: KillHook | undefined): void {
 }
 
 /** Does nothing unless a test installed a hook. */
-export function killpoint(name: KillPoint): void {
-  hook?.(name);
+export function killpoint(name: KillPoint, detail?: string): void {
+  hook?.(name, detail);
 }
 
 /**
