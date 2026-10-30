@@ -39,9 +39,13 @@ function Gallery(): ReactElement {
     <KeyHintsProvider value={{ showKeys: 'tooltips' }}>
       <CommandKeysProvider describe={(id, stack) => registry.describeKeys(id, stack)}>
         <div className="stage" data-frame={frame} data-state={state.id}>
-          <div className={frame === 'pane' ? 'stage__pane' : 'stage__box'}>
+          {frame === 'shell' ? (
             <Scene />
-          </div>
+          ) : (
+            <div className={frame === 'pane' ? 'stage__pane' : 'stage__box'}>
+              <Scene />
+            </div>
+          )}
         </div>
       </CommandKeysProvider>
     </KeyHintsProvider>

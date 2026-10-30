@@ -134,7 +134,7 @@ function Actions({
         ) : null}
         <RowButton
           label="Add key"
-          aria={`Add a key for ${name}`}
+          aria={`Add key for ${name}`}
           onClick={() => onAction('addKey')}
         />
       </>
@@ -152,14 +152,14 @@ function Actions({
       {replace && source.kind === 'keychain' ? (
         <RowButton
           label="Replace key"
-          aria={`Replace the key for ${name}`}
+          aria={`Replace key for ${name}`}
           onClick={() => onAction('replaceKey')}
         />
       ) : null}
       {source.kind === 'local' ? null : (
         <RowButton
           label="Remove"
-          aria={`Remove the key for ${name}`}
+          aria={`Remove key for ${name}`}
           disabled={Boolean(reason)}
           reason={reason}
           onClick={() => onAction('remove')}

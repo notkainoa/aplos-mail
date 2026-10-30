@@ -454,6 +454,7 @@ export const CONTRACT_HOOK_NEEDS = {
     'host event parked {reasonCode, message, canRetry, at}; desktop event engine {state, reasonCode?, message?, canRetry?, at} from main when the engine cannot answer (F9-34)',
   useAccounts:
     'Account/get; Account.health {status, reasonCode?, reconnectBy?, lastSyncAt?}, demo, baselineDoneAt, pendingChanges, colorTag (F9-35)',
+  useAccountsLoaded: 'as useAccounts; true once Account/get has answered',
   useStatus: 'as useAccounts; copy from health.reasonCode, never provider text (F9-35, F9-38)',
   useCounts:
     'Counts/get {all, accounts, folders}; CountsBlock.handledToday; state frames for type Counts; hiding from baselineDoneAt (F9-36)',

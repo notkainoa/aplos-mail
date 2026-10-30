@@ -42,6 +42,7 @@ import {
   SettingsScene,
   StatusScene,
 } from './scenes.more';
+import { shellScenes } from './scenes.shell';
 
 export const registry = createAppRegistry();
 
@@ -131,7 +132,7 @@ function HomeFocus(): ReactElement {
             label="Back from Later"
             variant="sub"
             count={1}
-            action={{ label: 'Clear from Home', onSelect: noop }}
+            action={{ label: 'Clear from Home', commandId: 'home.clearFromHome', onSelect: noop }}
           />
           <ListRow
             {...row({
@@ -619,4 +620,6 @@ export const scenes: Record<string, () => ReactElement> = {
   'onboarding-step': OnboardingScene,
   'onboarding-choice-group': ChoiceGroupScene,
   'progress-first-sync': FirstSyncScene,
+  // ui-shell
+  ...shellScenes,
 };

@@ -1,10 +1,11 @@
 /**
- * The new app (F9 boot proof; `ui-shell` grows it into the shell from day 4).
+ * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
- * For now it proves the boot path and nothing more: one Pane holding Home's section labels and counts and the Low
- * importance band, read from a `home` window on the engine it is given, through the F2 typed client and the
- * contract's types. It talks to the client directly only because the data hooks are still stubs; U2 replaces this
- * with `useHome()` and the shell.
+ * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
+ * (Later and the lists are `ui-home`'s, Settings and Calendar `ui-screens`'). The boot proof reads Home's section
+ * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
+ * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
+ * `useHome()` yet.
  *
  * Boot-proof debt for U2 (all of it goes away with `useHome`): the band's "and N more" needs the `lowSenders`
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
@@ -15,7 +16,13 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
-import { Pane } from './ui/surfaces';
+import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus, api } from './data';
+import { statusCopy } from './ui/status';
+import { navigate, useHomeShellProps, type HomeShellProps, type Screen } from './shell';
+import { Shell } from './shell/Shell';
+import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
+import { FirstSyncLine, NoAccountsLine } from './shell/states';
+import { toSyncStatus } from './shell/status-map';
 
 /** The typed client the app reads from (the stand-in's today; the real engine's after the switch). */
 export type AppClient = StandIn['client'];
@@ -167,10 +174,18 @@ export interface HomeContentProps {
   readonly home: HomeState;
 }
 
+/**
+ * The sentence for a failed Home read. It is ours, picked from the error's type: the engine's own message (it can carry
+ * provider or mail text) never reaches the screen: an unreachable engine says so, anything else is the list failing to load.
+ */
+export function failedText(error: Pick<ErrorBody, 'type'>): string {
+  return error.type === 'unavailable' ? ENGINE_UNREACHABLE_COPY : LIST_FAILED_COPY;
+}
+
 /** The Pane's contents for one `HomeState`: nothing while opening, the error sentence, inbox zero, or the lines. */
 export function HomeContent({ home }: HomeContentProps) {
   if (home.status === 'opening') return null;
-  if (home.status === 'failed') return <EmptyLine text={home.error.message} />;
+  if (home.status === 'failed') return <EmptyLine text={failedText(home.error)} />;
   const lines = homeLines(home.window);
   if (lines.every(line => line.count === 0))
     return <EmptyLine size="display" text={handledLine(home.handledToday)} />;
@@ -202,12 +217,52 @@ export function HomeContent({ home }: HomeContentProps) {
   );
 }
 
+/** States where Home must not claim inbox zero: an account is still on its first mail, importing or paused (DESIGN 7.14). */
+const SETTLING_STATES: readonly string[] = ['backfilling', 'paused'];
+
+/** True once "no accounts" is a fact: the list has loaded and the engine is not still connecting. */
+export function noAccountsKnown(accountsLoaded: boolean, connection: string): boolean {
+  return accountsLoaded && connection !== 'connecting';
+}
+
+/** The `home` screen: the boot-proof Home, or the first-sync and no-accounts lines where inbox zero would be a lie. */
+export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellProps>) {
+  const home = useHomeWindow(client);
+  const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
+  const connection = useConnection();
+  const counts = useCounts(accountId);
+  const status = useStatus(accountId);
+  if (accounts.length === 0) {
+    // Nothing (the neutral state) until it is a fact there are no accounts: not while they load or the engine connects.
+    if (!noAccountsKnown(accountsLoaded, connection.state)) return null;
+    return (
+      <NoAccountsLine
+        onAddAccount={() => navigate('settings')}
+        onTryDemo={() => void api.demo.load({}).catch(() => undefined)}
+      />
+    );
+  }
+  const empty = home.status === 'live' && homeLines(home.window).every(line => line.count === 0);
+  const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
+  if (empty && settling) {
+    const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;
+    return <FirstSyncLine reason={reason} />;
+  }
+  return <HomeContent home={home} />;
+}
+
+/** Home in the screen slot, given the account scope and the openers by the shell (`ui-home` spreads the same props into its Home). */
+function HomeRoute({ client }: AppProps) {
+  return <HomeScreen client={client} {...useHomeShellProps()} />;
+}
+
+/** The screen slot: Home's boot proof for `home`, nothing (so the placeholder) for the rest. */
+export function renderScreen(client: AppClient, screen: Screen) {
+  return screen === 'home' ? <HomeRoute client={client} /> : undefined;
+}
+
 /** The new renderer's root. */
 export function App({ client }: AppProps) {
-  const home = useHomeWindow(client);
-  return (
-    <Pane kind="main" label="Home">
-      <HomeContent home={home} />
-    </Pane>
-  );
+  return <Shell renderScreen={screen => renderScreen(client, screen)} />;
 }
