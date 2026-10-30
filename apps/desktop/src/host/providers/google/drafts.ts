@@ -5,6 +5,7 @@ import {
   type DraftUpload,
 } from '@aplos/engine/ports';
 import { GmailClient, type GmailDeps } from './client';
+import { sameDraftBytes } from './draft-compare';
 import { checkDraftMime } from './draft-mime';
 import { uploadDraft, type DraftResource } from './draft-upload';
 
@@ -27,9 +28,16 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * sent or trashed a moment ago may not be listed yet, and until it is the lookup answers absent and the draft is created
  * again (the same limit as a hard delete). A create that comes back uncertain re-checks once the same way.
  * A hit in (a) or (b) is not trusted by its header: the draft is read with `drafts.get` format=raw and its decoded bytes
- * are compared with `draft.mime` (line endings normalised, otherwise byte for byte). Equal: `saved` with its CURRENT
+ * are compared with `draft.mime` (`draft-compare.ts`: line endings normalised and the multipart boundaries blanked,
+ * because the engine rebuilds the MIME on every attempt with fresh random boundaries; otherwise byte for byte). Equal: `saved` with its CURRENT
  * message id. Different (the owner edited the copy on another device and Gmail kept our Message-ID): `{kind:'conflict'}`
- * with its message id and nothing is written, so the retry never adopts a phone edit as its base. A raw read that fails,
+ * with its message id and nothing is written, so the retry never adopts a phone edit as its base. PORT GAP 4: that
+ * conflict carries no `remoteDraftId` (`DraftSaveResult` conflict has only `remoteMessageId`), and on the create path the
+ * engine records no Message-ID in `wrote` for it, so the next upload is a create under a NEW Message-ID: a second Gmail
+ * draft, and history later reports the first as another device's draft (take theirs and keep both then have nothing to
+ * open: noTheirs). Needed: an additive `remoteDraftId?` on the conflict result (through eng-contract) that the engine
+ * stores, or the Message-ID added to `wrote`. TODO(live): none can be tried before the port moves; provider draft sync
+ * stays OFF until it does. A raw read that fails,
  * a draft that vanished or stopped being a draft between the two reads: thrown (transient), never `saved`. A message id
  * that changed between the reads is a conflict. TODO(live): Gmail may rewrite headers or line wrapping of an uploaded
  * draft; then the bytes differ for our own copy, and the retry yields a conflict about our own text (safe, "keep mine"
@@ -82,9 +90,10 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  *     phone edit made after the last history poll is destroyed when the owner discards or Aplos sends the pinned MIME.
  *     Needed: `deleteDraft(remoteDraftId, expectedRemoteMessageId, ctx)` (additive, through eng-contract), refusing
  *     (keeping the copy) on a mismatch.
- * RULE: a create-lookup hit whose bytes differ from `draft.mime` is a conflict, never `saved` (the comparison is exact, so
- * a harmless rewrite by Gmail also shows as a conflict: known limit, tested). Provider draft sync stays OFF (no Gmail draft removal, `deleteDrafts` false) until PORT GAP 3 is closed, and
- * must not be switched on for real accounts until PORT GAP 2 (`supersedes`, so orphans are removed) is closed too.
+ * RULE: a create-lookup hit whose bytes differ from `draft.mime` is a conflict, never `saved` (the comparison is exact apart
+ * from line endings and boundaries, so a harmless rewrite by Gmail also shows as a conflict: known limit, tested). Provider draft sync stays OFF (no Gmail draft removal, `deleteDrafts` false) until PORT GAP 3 is closed, and
+ * must not be switched on for real accounts until PORT GAP 2 (`supersedes`, so orphans are removed) and PORT GAP 4 (a
+ * create-path conflict names no draft) are closed too.
  * The upload session URI must be https on `googleapis.com` or a subdomain (deliberate: the bytes and the token go there).
  * Search lags the index: lookup (b) above reads the newest drafts without `q` to cover it. A duplicate that still gets
  * made is NOT cleaned up by the engine yet (`adoptCopy` returns early when the row already has a remote draft id, and
@@ -286,12 +295,6 @@ interface RawDraft {
   message?: { id?: unknown; labelIds?: unknown; raw?: unknown };
 }
 
-/** Line endings only: CRLF, CR and LF are one. Everything else is compared byte for byte. */
-const normalised = (bytes: Uint8Array): string =>
-  Buffer.from(bytes)
-    .toString('latin1')
-    .replace(/\r\n?|\n/g, '\n');
-
 /** The draft's current message as `drafts.get` format=raw says it; anything unclear is thrown, never guessed. */
 async function readRaw(
   client: GmailClient,
@@ -333,7 +336,7 @@ async function verifiedHit(
   const current = await readRaw(client, found.draftId);
   if (current.messageId !== found.messageId)
     return { kind: 'conflict', messageId: current.messageId };
-  if (normalised(current.raw) !== normalised(draft.mime))
+  if (!sameDraftBytes(current.raw, draft.mime))
     return { kind: 'conflict', messageId: current.messageId };
   return { kind: 'draft', copy: found };
 }
