@@ -1,0 +1,50 @@
+/* The reader screen (DESIGN 4.3, 7.5): one left-aligned column of --reader-w with no card and nothing beside it.
+   Imported once by screens.css. Tokens only; the components own their own looks (ui/reader/reader.css). */
+
+.aplos-reader {
+  position: relative;
+  box-sizing: border-box;
+  width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  padding: var(--space-7) 0 var(--space-10);
+}
+
+/* A letter laying itself out off paper: out of flow and invisible, but measured. Never display:none, which would
+   give the frame no width to measure at. */
+.aplos-reader__letter[data-paper='false'] {
+  position: absolute;
+  inset: var(--space-7) 0 auto 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The 12 px loading line sits over the top margin, so it appears without moving the letter. */
+.aplos-reader > .ui-loading-line {
+  position: absolute;
+  top: var(--space-3);
+  left: 0;
+  margin: 0;
+}
+
+.aplos-reader__thread {
+  margin-top: var(--space-9);
+}
+
+.aplos-reader__subject {
+  margin: 0 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  font-variant-numeric: var(--num-small);
+}
+
+.aplos-reader__trackers {
+  margin: var(--space-2) 0 0;
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+}
+
+.aplos-reader__find {
+  margin-bottom: var(--space-4);
+}

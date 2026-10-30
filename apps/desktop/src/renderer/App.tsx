@@ -30,6 +30,7 @@ import { HomeScreen as HomeRoute } from './screens/home';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
+import { ReaderScreen } from './screens/reader';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
@@ -294,13 +295,7 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
 }
 
 /** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = [
-  'thread',
-  'one by one',
-  'Search',
-  'Help',
-  'New message',
-];
+const PLACEHOLDER_LABELS: readonly string[] = ['one by one', 'Search', 'Help', 'New message'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -308,8 +303,14 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s; nothing (so the placeholder) for the rest. */
+/** The place the reader was opened from (the last screen shown before `{ label: 'thread' }`), for Esc. The shell keeps no history. */
+let readerOrigin: Screen = 'home';
+
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
+  if (typeof screen !== 'string' && screen.label === 'thread')
+    return <ReaderScreen backTo={readerOrigin} />;
+  readerOrigin = screen;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />
