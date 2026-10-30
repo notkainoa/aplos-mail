@@ -163,13 +163,67 @@ describe('withCheckSlot', () => {
 });
 
 describe('takeStaleLock', () => {
-  it('lets exactly one contender move the stale dir aside', () => {
+  it('takes the stale lock in place — the dir is never removed', () => {
     const d = dir();
     mkdirSync(d);
     writeFileSync(join(d, 'pid'), '4194304');
+    writeFileSync(join(d, 'token'), 'dead-t0');
     assert.equal(takeStaleLock(d), true);
-    assert.equal(existsSync(d), false, 'stale dir moved aside and removed');
-    assert.equal(takeStaleLock(d), false, 'second taker loses the rename race');
+    // Same dir, still with a complete pid+token pair — now this process's.
+    assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), String(process.pid));
+    assert.ok(readFileSync(join(d, 'token'), 'utf8').trim().length > 0);
+    assert.equal(takeStaleLock(d), false, 'the live replacement is not stale');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('backs off when the judged identity changed (a peer took over first)', () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), '4194304');
+    writeFileSync(join(d, 'token'), 'dead-t0');
+    const expected = { pid: 4194304, token: 'dead-t0' };
+    // A peer's live lock now wears a different token: our stale snapshot must not touch it.
+    writeFileSync(join(d, 'token'), 'peer-t1');
+    writeFileSync(join(d, 'pid'), String(process.pid));
+    assert.equal(takeStaleLock(d, expected), false);
+    assert.equal(readFileSync(join(d, 'token'), 'utf8').trim(), 'peer-t1');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('never takes a live pid even when the token still matches the snapshot', () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), String(process.pid));
+    writeFileSync(join(d, 'token'), 'live-t0');
+    assert.equal(takeStaleLock(d, { pid: process.pid, token: 'live-t0' }), false);
+    assert.equal(readFileSync(join(d, 'token'), 'utf8').trim(), 'live-t0');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('backs off a live claim and clears a dead claimant', () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), '4194304');
+    writeFileSync(join(d, 'token'), 'dead-t0');
+    // A live claimant holds the marker: nobody else may touch the dir.
+    writeFileSync(join(d, 'claim'), String(process.pid));
+    assert.equal(takeStaleLock(d), false);
+    assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), '4194304', 'dir untouched');
+    // A claimant that died mid-takeover leaves a claim naming its dead pid; the next
+    // contender clears it and completes the takeover.
+    writeFileSync(join(d, 'claim'), '4194304');
+    assert.equal(takeStaleLock(d), true);
+    assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), String(process.pid));
+    assert.equal(existsSync(join(d, 'claim')), false, 'won claim removed');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('clears a stray FILE at the lock path and publishes over it', () => {
+    const d = dir();
+    writeFileSync(d, 'not a dir');
+    assert.equal(takeStaleLock(d), true);
+    assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), String(process.pid));
+    rmSync(d, { recursive: true, force: true });
   });
 });
 
@@ -213,11 +267,15 @@ describe('stale-takeover TOCTOU (real processes)', () => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       const expected = ${JSON.stringify(expected)};
       for (let i = 0; i < 500 && !fs.existsSync(${JSON.stringify(go)}); i++) await sleep(10);
-      const won = takeStaleLock(d, expected);
+      const won = takeStaleLock(d, expected, { pid: process.pid, token: 'racer' });
       if (won) {
-        fs.mkdirSync(d);
-        fs.writeFileSync(join(d, 'token'), 'racer');
-        fs.writeFileSync(join(d, 'pid'), String(process.pid));
+        // Old semantics cleared the dir for us to rebuild; new semantics already swapped
+        // our identity in place — either way a win means we hold the slot.
+        if (!fs.existsSync(d)) {
+          fs.mkdirSync(d);
+          fs.writeFileSync(join(d, 'token'), 'racer');
+          fs.writeFileSync(join(d, 'pid'), String(process.pid));
+        }
         fs.appendFileSync(marker, 'enter racer\\n');
         await sleep(40);
         fs.appendFileSync(marker, 'exit racer\\n');
@@ -289,6 +347,159 @@ describe('stale-takeover TOCTOU (real processes)', () => {
       }
       assert.equal(depth, 0, `slot ${i} left unbalanced: ${kinds.join(', ')}`);
     }
+  });
+
+  it('three processes: a stale judgement cannot strand a peer live lock', async () => {
+    // The 6e3f2fe hole this pins down: A snapshots the stale dir, B legitimately takes
+    // over and sits inside its critical section, then A fires takeStaleLock — old code
+    // renames B's LIVE lock aside, and while it is gone C publishes a fresh lock; A's
+    // rename-back then fails EEXIST and B's live lock is destroyed while C also holds
+    // (two holders at once). Every round re-plants a stale lock and re-runs the
+    // interleaving; `enter c` inside `enter b`..`exit b` is the overlap. Under the fix
+    // A's re-read sees B's token and backs off — the dir is never moved aside, so C
+    // never finds the slot path empty.
+    const base = join(tmp, `trio-${counter}`);
+    mkdirSync(base);
+    const d = join(base, 'slot.lock');
+    const marker = join(base, 'marker.log');
+    const roundF = join(base, 'round');
+    const stopF = join(base, 'stop');
+    const cFire = join(base, 'c-fire');
+    const flag = name => join(base, name);
+    const rounds = 30;
+    // Child A: snapshot the stale identity, wait until B holds the slot, then fire
+    // takeStaleLock with the stale snapshot — the dangerous call this test isolates.
+    const aScript = `
+      const { takeStaleLock } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const base = ${JSON.stringify(base)}, d = join(base, 'slot.lock');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const wait = async f => {
+        for (let i = 0; i < 30000 && !fs.existsSync(f); i++) await sleep(2);
+        if (!fs.existsSync(f)) throw new Error('a: timeout ' + f);
+      };
+      let seen = 0;
+      while (!fs.existsSync(${JSON.stringify(stopF)})) {
+        let r = 0;
+        try { r = Number(fs.readFileSync(join(base, 'round'), 'utf8').trim()); } catch {}
+        if (r <= seen) { await sleep(2); continue; }
+        seen = r;
+        const expected = {
+          pid: Number(fs.readFileSync(join(d, 'pid'), 'utf8').trim()) || null,
+          token: fs.readFileSync(join(d, 'token'), 'utf8').trim() || null,
+          mtimeMs: fs.statSync(d).mtimeMs,
+        };
+        fs.writeFileSync(join(base, 'a-ready-' + r), '1');
+        await wait(join(base, 'b-held-' + r));
+        try {
+          takeStaleLock(d, expected, { pid: process.pid, token: 'a-' + process.pid });
+        } catch {}
+        fs.writeFileSync(join(base, 'a-done-' + r), '1');
+      }
+    `;
+    // Child B: waits for the go flag, takes the stale lock through withCheckSlot, and
+    // holds it inside the critical section until released — enter-b/exit-b bracket it.
+    const bScript = `
+      const { withCheckSlot } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const base = ${JSON.stringify(base)}, d = join(base, 'slot.lock');
+      const marker = join(base, 'marker.log');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const wait = async f => {
+        for (let i = 0; i < 30000 && !fs.existsSync(f); i++) await sleep(2);
+        if (!fs.existsSync(f)) throw new Error('b: timeout ' + f);
+      };
+      let seen = 0;
+      while (!fs.existsSync(${JSON.stringify(stopF)})) {
+        let r = 0;
+        try { r = Number(fs.readFileSync(join(base, 'round'), 'utf8').trim()); } catch {}
+        if (r <= seen) { await sleep(2); continue; }
+        seen = r;
+        await wait(join(base, 'b-go-' + r));
+        await withCheckSlot(async () => {
+          fs.appendFileSync(marker, 'enter-b\\n');
+          fs.writeFileSync(join(base, 'b-held-' + r), '1');
+          await wait(join(base, 'b-release-' + r));
+          fs.appendFileSync(marker, 'exit-b\\n');
+        }, { dir: d, pollMs: 2, timeoutMs: 60000, staleMs: 60000 });
+        fs.writeFileSync(join(base, 'b-out-' + r), '1');
+      }
+    `;
+    // Child C: while c-fire exists, hammer the real publish protocol (stage + rename).
+    // It can only land while the slot path is absent — which under the broken design
+    // is exactly the rename-aside gap around a live lock.
+    const cScript = `
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const base = ${JSON.stringify(base)}, d = join(base, 'slot.lock');
+      const marker = join(base, 'marker.log');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      let n = 0;
+      while (!fs.existsSync(${JSON.stringify(stopF)})) {
+        if (!fs.existsSync(${JSON.stringify(cFire)})) { await sleep(1); continue; }
+        const stage = d + '.c-' + process.pid + '-' + n++;
+        try {
+          fs.mkdirSync(stage);
+          fs.writeFileSync(join(stage, 'token'), 'c-' + process.pid);
+          fs.writeFileSync(join(stage, 'pid'), String(process.pid));
+          fs.renameSync(stage, d);
+          fs.appendFileSync(marker, 'enter-c\\n');
+          fs.appendFileSync(marker, 'exit-c\\n');
+          fs.rmSync(d, { recursive: true, force: true });
+        } catch {
+          try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+        }
+      }
+    `;
+    writeFileSync(roundF, '0');
+    const children = Promise.all([
+      spawnScript(aScript, 'a'),
+      spawnScript(bScript, 'b'),
+      spawnScript(cScript, 'c'),
+    ]);
+    const waitFor = async (f, label) => {
+      for (let i = 0; i < 1200 && !existsSync(f); i++) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      assert.ok(existsSync(f), `timeout waiting for ${label}`);
+    };
+    try {
+      for (let r = 1; r <= rounds; r++) {
+        // Re-plant a stale lock while C is gated off (no c-fire yet), so the only
+        // absent-slot moments inside the window are the ones under test.
+        rmSync(d, { recursive: true, force: true });
+        mkdirSync(d);
+        writeFileSync(join(d, 'token'), `stale-${r}`);
+        writeFileSync(join(d, 'pid'), '4194304'); // dead pid -> stale
+        writeFileSync(roundF, String(r));
+        await waitFor(flag(`a-ready-${r}`), `a-ready-${r}`);
+        writeFileSync(cFire, '1');
+        writeFileSync(flag(`b-go-${r}`), '1');
+        await waitFor(flag(`a-done-${r}`), `a-done-${r}`);
+        rmSync(cFire, { force: true });
+        writeFileSync(flag(`b-release-${r}`), '1');
+        await waitFor(flag(`b-out-${r}`), `b-out-${r}`);
+      }
+    } finally {
+      writeFileSync(stopF, '1');
+      await children;
+    }
+    const events = existsSync(marker) ? readFileSync(marker, 'utf8').trim().split('\n') : [];
+    let depth = 0;
+    const overlap = [];
+    for (const event of events) {
+      if (event.startsWith('enter')) {
+        depth++;
+        if (depth > 1) overlap.push(event);
+      } else if (event.startsWith('exit')) {
+        depth--;
+      }
+    }
+    const heldB = events.filter(e => e === 'enter-b').length;
+    assert.equal(heldB, rounds, `B held every round: ${events.length} events`);
+    assert.deepEqual(overlap, [], `two holders at once: ${events.join(' | ')}`);
   });
 });
 
