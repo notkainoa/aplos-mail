@@ -264,25 +264,44 @@ test('htmlToText: a lone < is text, an unclosed script drops the rest, and ASCII
   assert.equal(htmlToText('İİİ<script>x</script>after<SCRIPT>y</SCRIPT>end'), 'İİİafterend');
 });
 
-/**
- * How much slower `run` gets when its input grows 4x: about 4 for linear code, about 16 for quadratic. Compares the
- * best of three runs at each size, so a busy machine slows both sides alike instead of tripping a fixed time bound.
- */
-function growth(run: (size: number) => void, size: number): number {
-  const best = (n: number) => {
-    let fastest = Infinity;
-    for (let i = 0; i < 3; i++) {
-      const started = performance.now();
-      run(n);
-      fastest = Math.min(fastest, performance.now() - started);
-    }
-    return Math.max(fastest, 1);
-  };
-  return best(size * 4) / best(size);
-}
+const median = (values: number[]) =>
+  [...values].sort((x, y) => x - y)[Math.floor(values.length / 2)]!;
 
-/** Between linear (4) and quadratic (16); the old quadratic code measured 14 or more here. */
-const LINEAR_GROWTH_LIMIT = 9;
+const timeOf = (run: (size: number) => void, size: number) => {
+  const started = performance.now();
+  run(size);
+  return performance.now() - started;
+};
+
+/** Small runs must take about this long before their ratio means anything (GC and other suites' CPU dominate below). */
+const MEASURABLE_MS = 30;
+const MAX_SIZE = 1_000_000;
+/** Midway between linear (4) and quadratic (16) on a log scale. */
+const LINEAR_GROWTH_LIMIT = 11;
+
+/**
+ * Asserts `run` is not quadratic. Calibrates the size by doubling until one run takes at least 30 ms, warms up, then
+ * compares the median of five runs at that size with the median of five at 4x the size, run one after the other: about
+ * 4 for linear code, about 16 for quadratic. A run that stays fast even at the largest size is linear enough on its own:
+ * it only has to finish the 4x input quickly.
+ */
+function assertNotQuadratic(label: string, run: (size: number) => void, start: number): void {
+  run(start); // warm-up: compile, allocate
+  let size = start;
+  while (timeOf(run, size) < MEASURABLE_MS && size < MAX_SIZE) size *= 2;
+  const sample = (n: number) => median(Array.from({ length: 5 }, () => timeOf(run, n)));
+  const small = sample(size);
+  const large = sample(size * 4);
+  if (small < MEASURABLE_MS) {
+    assert.ok(large < 2_000, `${label}: the 4x input took ${large.toFixed(0)} ms`);
+    return;
+  }
+  const ratio = large / small;
+  assert.ok(
+    ratio < LINEAR_GROWTH_LIMIT,
+    `${label}: 4x the input took ${ratio.toFixed(1)}x the time (${small.toFixed(0)} ms to ${large.toFixed(0)} ms)`,
+  );
+}
 
 test('htmlToText is linear on hostile input (no regex backtracking over a megabyte)', () => {
   const shapes: Array<(n: number) => string> = [
@@ -291,16 +310,14 @@ test('htmlToText is linear on hostile input (no regex backtracking over a megaby
     n => '<a '.repeat(n / 3) + '>',
     n => '&#'.repeat(n / 2),
   ];
-  for (const shape of shapes) {
-    const ratio = growth(n => void htmlToText(shape(n)), 250_000);
-    assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the input took ${ratio.toFixed(1)}x the time`);
-  }
+  shapes.forEach((shape, i) =>
+    assertNotQuadratic(`hostile shape ${i}`, n => void htmlToText(shape(n)), 50_000),
+  );
 });
 
 test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &nbsp; between text', () => {
   // The old per-line `/[ \t]+$/` was quadratic: 50,000 spaces took 28 s, so these would take minutes.
-  const ratio = growth(n => void htmlToText('a' + ' '.repeat(n) + 'b'), 12_000);
-  assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the spaces took ${ratio.toFixed(1)}x the time`);
+  assertNotQuadratic('spaces', n => void htmlToText('a' + ' '.repeat(n) + 'b'), 4_000);
   const spaces = htmlToText('a' + ' '.repeat(100_000) + 'b');
   const mixed = htmlToText('a' + ' \t'.repeat(60_000) + 'b');
   const nbsp = htmlToText('a' + '&nbsp;'.repeat(60_000) + 'b');
@@ -314,13 +331,8 @@ test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &
 
 test('htmlToText stays linear on tags that each end or start a line', () => {
   // `out.endsWith('\n')` per tag flattened the growing string every time: `<br>` took 6.9 s, `x<p>` 22.8 s at 100k tags.
-  for (const unit of ['<br>', 'x<p>']) {
-    const ratio = growth(n => void htmlToText(unit.repeat(n)), 25_000);
-    assert.ok(
-      ratio < LINEAR_GROWTH_LIMIT,
-      `${unit}: 4x the tags took ${ratio.toFixed(1)}x the time`,
-    );
-  }
+  for (const unit of ['<br>', 'x<p>'])
+    assertNotQuadratic(unit, n => void htmlToText(unit.repeat(n)), 10_000);
   const breaks = htmlToText('<br>'.repeat(100_000));
   const paragraphs = htmlToText('x<p>'.repeat(100_000));
   assert.equal(breaks, '');
@@ -329,11 +341,11 @@ test('htmlToText stays linear on tags that each end or start a line', () => {
 });
 
 test('a subject of 100,000 spaces folds in linear time and never into a whitespace-only line', () => {
-  const ratio = growth(
+  assertNotQuadratic(
+    'subject fold',
     n => void buildMime(input({ subject: 'Re:' + ' '.repeat(n) + 'x' })),
-    25_000,
+    10_000,
   );
-  assert.ok(ratio < LINEAR_GROWTH_LIMIT, `4x the spaces took ${ratio.toFixed(1)}x the time`);
   const out = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).head;
   for (const line of out.split('\r\n')) assert.ok(line.trim() !== '', 'no whitespace-only line');
   const subject = parse(buildMime(input({ subject: 'Re:' + ' '.repeat(100_000) + 'x' }))).headers;
