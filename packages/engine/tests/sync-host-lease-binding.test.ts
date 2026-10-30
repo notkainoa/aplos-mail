@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
-import { clockReading, LEASE_CLOCK_MAX_MS, LEASE_CLOCK_SPAN_MS } from '../src/sync/lease';
+import { clockReading, LEASE_CLOCK_MAX_MS } from '../src/sync/lease';
 import { ACCOUNT, MINUTE, disk, settle } from './sync-actor-helpers';
 import { channelLog, channelWorld, claimOf, pump, remote, roles } from './sync-lease-rig';
 
@@ -40,12 +40,21 @@ async function settleWithin<T>(w: World, promise: Promise<T>, ms: number): Promi
   return tracked;
 }
 
-test('clockReading: ok only when the whole bracket is within the limit and the bracket is tight', () => {
+test('clockReading: ok when the whole bracket is within the limit, off when it is wholly beyond, else nothing', () => {
   const max = LEASE_CLOCK_MAX_MS;
   assert.equal(clockReading({ lowMs: -1_000, highMs: 1_000 }), 'ok');
-  assert.equal(clockReading({ lowMs: max - 10_000, highMs: max + 10_000 }), 'off', 'one end out');
-  assert.equal(clockReading({ lowMs: -max - 1, highMs: -max + 5_000 }), 'off');
-  assert.equal(clockReading({ lowMs: 0, highMs: LEASE_CLOCK_SPAN_MS + 1 }), 'unmeasurable');
+  assert.equal(
+    clockReading({ lowMs: -4 * 60_000, highMs: 0 }),
+    'ok',
+    'a slow insert on a right clock',
+  );
+  assert.equal(clockReading({ lowMs: max + 1, highMs: max + 90_000 }), 'off', 'wholly beyond');
+  assert.equal(clockReading({ lowMs: -max - 90_000, highMs: -max - 1 }), 'off');
+  assert.equal(
+    clockReading({ lowMs: max - 10_000, highMs: max + 10_000 }),
+    'unmeasurable',
+    'across',
+  );
   assert.equal(clockReading({ lowMs: 10, highMs: 0 }), 'unmeasurable', 'a bracket upside down');
   assert.equal(clockReading(undefined), 'unmeasurable');
 });

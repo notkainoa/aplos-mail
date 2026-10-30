@@ -7,12 +7,11 @@ import assert from 'node:assert/strict';
 import type { GovernedRequest } from '@aplos/engine/ports';
 import { APP_LABEL } from '../../src/host/providers/google/workflow';
 import { rig, type Rig } from './harness';
-import { appLabel, device, type Device } from './workflow-rig';
+import { appLabel, device, plant, sealedCopy, type Device } from './workflow-rig';
 import { ACCOUNT, Mac, MINUTE, boot, mailWorld, settle } from './gov-stack-rig';
 
-/** The lease's clock gate limit (`LEASE_CLOCK_MAX_MS`) and widest bracket (`LEASE_CLOCK_SPAN_MS`). */
+/** The lease's clock gate limit (`LEASE_CLOCK_MAX_MS`). */
 const CLOCK_MAX_MS = 5 * MINUTE;
-const CLOCK_SPAN_MS = MINUTE;
 
 /** Every `messages.insert` waits `ms` in the governor before it goes out (pacing a busy lane). */
 function paceInserts(d: Device, r: Rig, ms: number): void {
@@ -36,7 +35,7 @@ test('the offset is bracketed by the insert: a pacing wait cannot hide a clock 6
   );
   const offset = written.clockOffset!;
   assert.ok(offset.lowMs > CLOCK_MAX_MS, `low end ${offset.lowMs}: the gate sees the clock is off`);
-  assert.ok(offset.highMs - offset.lowMs <= CLOCK_SPAN_MS, 'a tight bracket');
+  assert.ok(offset.highMs - offset.lowMs <= MINUTE, 'a tight bracket');
 });
 
 test('the same pacing wait on a right clock still reads within the limit', async () => {
@@ -52,7 +51,7 @@ test('the same pacing wait on a right clock still reads within the limit', async
     assert.ok(Math.abs(end) <= 5_000, `measured ${end}`);
 });
 
-test('a slow upload widens the bracket past what the gate trusts (unmeasurable, not ok)', async () => {
+test('a slow upload widens the bracket, yet a right clock still reads wholly within the limit', async () => {
   const r = await rig();
   const slow = device(r, 'device-a', { slowInsertMs: 2 * MINUTE });
   const written = await slow.channel.write(
@@ -61,9 +60,10 @@ test('a slow upload widens the bracket past what the gate trusts (unmeasurable, 
   );
   const offset = written.clockOffset!;
   assert.ok(
-    offset.highMs - offset.lowMs > CLOCK_SPAN_MS,
+    offset.highMs - offset.lowMs >= 2 * MINUTE,
     `bracket ${offset.lowMs}..${offset.highMs}`,
   );
+  assert.ok(offset.lowMs >= -CLOCK_MAX_MS && offset.highMs <= CLOCK_MAX_MS, 'the gate reads ok');
 });
 
 test("an own-only compaction trashes this device's superseded copies, never another device's", async () => {
@@ -107,6 +107,42 @@ test('a Mac 3 days fast compacts its own copies (verified by their sealed payloa
   assert.deepEqual(live(r), [third]);
   assert.ok(![first, second].some(id => live(r).includes(id)));
   assert.equal(await fast.channel.compact(fast.ctx()), 0, 'still no full compaction against it');
+});
+
+test('a Mac 30 days fast never trashes an own copy holding a settled record its new copy left out', async () => {
+  const r = await rig();
+  const day = 24 * 60 * MINUTE;
+  // A copy this device wrote before its clock ran fast: Done on a thread, 170 days ago (true time).
+  const old = sealedCopy(r, {
+    v: 2,
+    device: 'device-a',
+    writtenAt: r.clock.now() - 170 * day,
+    floor: 0,
+    records: [
+      {
+        key: 'thread:t-old',
+        stamp: { at: r.clock.now() - 170 * day, gen: 0, device: 'device-a' },
+        value: { status: 'done' },
+      },
+    ],
+  });
+  const kept = plant(r, old.raw);
+  const fast = device(r, 'device-a', { skewMs: 30 * day });
+  await fast.round();
+  const lease = (v: number) => [{ key: 'lease:device-a', value: { v } }];
+  const first = (await fast.channel.write(lease(1), fast.ctx())).remoteId;
+  // Its floor (180 days before a clock 30 days fast) leaves the Done record out of the new copies.
+  const second = (await fast.channel.write(lease(2), fast.ctx())).remoteId;
+  assert.equal(await fast.channel.compact(fast.ctx(), { ownOnly: true }), 1);
+  assert.deepEqual(live(r).sort(), [kept, second].sort(), 'the copy holding Done stays');
+  assert.ok(!live(r).includes(first));
+  const reader = device(r, 'device-c');
+  await reader.round();
+  assert.deepEqual(
+    reader.channel.view().find(x => x.key === 'thread:t-old')?.value,
+    { status: 'done' },
+    'a new device still reads Done',
+  );
 });
 
 for (const [what, skewMs] of [

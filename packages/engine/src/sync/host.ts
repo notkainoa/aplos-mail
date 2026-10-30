@@ -36,6 +36,8 @@ import {
   createLeaseController,
   gateReading,
   measureClock,
+  needsMeasure,
+  ownerGate,
   unmeasuredGate,
   type ClockGate,
   type ClockOffset,
@@ -718,6 +720,12 @@ export class ActorHost implements AccountActorHost {
       // The claim this device's previous controller published is still live; a quit must retire it too.
       ...(initial ? { initial } : {}),
       clockGate: () => gateReading(entry.gate, this.deps.clock.now()),
+      remeasure: () => needsMeasure(entry.gate, this.deps.clock.now()),
+      ownerClock: () => {
+        const now = this.deps.clock.now();
+        entry.gate = ownerGate(entry.gate, now);
+        return gateReading(entry.gate, now);
+      },
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -805,7 +813,7 @@ export class ActorHost implements AccountActorHost {
   ): { ownOnly: boolean } | undefined {
     if (entry.retiring) return undefined;
     const reading = gateReading(entry.gate, this.deps.clock.now());
-    if (reading === 'off' || reading === 'unmeasurable') return { ownOnly: true };
+    if (reading === 'off') return { ownOnly: true };
     if (reading !== 'ok' || !entries.some(e => e.value.holder)) return undefined;
     return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;
   }

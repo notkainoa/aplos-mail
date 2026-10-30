@@ -4,6 +4,7 @@ import {
   gateReading,
   LEASE_CLOCK_FRESH_MS,
   measureClock,
+  needsMeasure,
   unmeasuredGate,
   type ClockOffset,
 } from '../src/sync/lease';
@@ -29,7 +30,10 @@ test('measureClock: a block lifts after two ok readings a round apart; an ok rea
   gate = measureClock(gate, OK, 2 * MINUTE);
   assert.equal(gateReading(gate, 2 * MINUTE), 'ok');
   assert.equal(gateReading(gate, 2 * MINUTE + LEASE_CLOCK_FRESH_MS), 'unmeasured', 'stale');
-  assert.equal(gateReading(measureClock(gate, undefined, 3 * MINUTE), 3 * MINUTE), 'unmeasurable');
+  const failed = measureClock(gate, undefined, 3 * MINUTE);
+  assert.equal(gateReading(failed, 3 * MINUTE), 'ok', 'a failed check keeps the last ok reading');
+  assert.ok(needsMeasure(failed, 3 * MINUTE), 'and asks for another measurement');
+  assert.equal(gateReading(measureClock(failed, OFF, 4 * MINUTE), 4 * MINUTE), 'off');
 });
 
 test('a relaunched holder whose measuring write fails stays secondary and retries after one round', async () => {
@@ -75,6 +79,93 @@ test('a reading flapping around the limit, with failed checks, keeps the writes 
     const writes = log.writes;
     await pump(a, 60 * MINUTE);
     assert.ok(log.writes - writes <= 6, `${log.writes - writes} writes in an idle hour`);
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+/** The roles reported from the first `primary` on. */
+const fromPrimary = (seen: string[]) => seen.slice(Math.max(0, seen.indexOf('primary')));
+
+test('one failed clock check does not demote a primary: the next round measures again', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  let failNext = false;
+  log.nextOffset = () => {
+    const failed = failNext;
+    failNext = false;
+    return failed ? undefined : at(0);
+  };
+  const a = channelWorld(d, rem, log, []);
+  const seen = roles(a);
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 3 * MINUTE);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'primary');
+    failNext = true;
+    const writes = log.writes;
+    await pump(a, 25 * MINUTE);
+    assert.deepEqual(fromPrimary(seen), ['primary'], `roles: ${seen.join(',')}`);
+    assert.ok(log.writes - writes <= 4, `${log.writes - writes} writes`);
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+test('a slow insert on a right clock (a wide bracket wholly within the limit) leaves a primary primary', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  log.offset = { lowMs: -2 * MINUTE, highMs: 0 };
+  const a = channelWorld(d, rem, log, []);
+  const seen = roles(a);
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 60 * MINUTE);
+    assert.deepEqual(fromPrimary(seen), ['primary'], `roles: ${seen.join(',')}`);
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+test('checks that keep failing leave the device secondary and back the measuring writes off', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  log.nextOffset = () => undefined;
+  const a = channelWorld(d, rem, log, []);
+  const seen = roles(a);
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 60 * MINUTE);
+    assert.ok(!seen.includes('primary'));
+    assert.ok(log.writes <= 15, `${log.writes} writes in an hour`);
+  } finally {
+    await a.kill();
+    d.cleanup();
+  }
+});
+
+test('"Use this Mac" right after the owner fixes the clock succeeds on one fresh ok reading', async () => {
+  const d = disk();
+  const rem = remote();
+  const log = channelLog();
+  const a = channelWorld(d, rem, log, [], { skewMs: -12 * MINUTE });
+  log.serverNow = () => a.clock.now();
+  try {
+    await a.host.start(ACCOUNT);
+    await pump(a, 3 * MINUTE);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.pinned ?? false, false);
+    // The owner fixes the clock (the device now agrees with the server) and asks at once.
+    log.serverNow = () => a.now();
+    await a.host.claimLease(ACCOUNT);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.pinned, true);
+    await pump(a, 2 * MINUTE);
+    assert.equal(a.host.status(ACCOUNT)!.lease?.role, 'primary');
   } finally {
     await a.kill();
     d.cleanup();
