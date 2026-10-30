@@ -767,3 +767,31 @@ test('reschedule refuses a time in the past; a waiting row without its bytes fai
     assert.ok(failed.problem?.message);
     assert.equal(w.server.calls.length, 0);
   }));
+
+test('drafts.send times out without delivering: the unsent draft with the same id is not a match, so the row ends at the prompt, never sent', () =>
+  inWorld(async w => {
+    const id = '<unsent-draft@mail.example>';
+    w.draft('d1', fields(), {
+      remoteDraftId: 'rd-1',
+      remoteMessageId: 'rm-1',
+      remoteInternetId: id,
+      syncedRevision: 1,
+    });
+    assert.ok(w.server.drafts.has(id), 'the fake holds the unsent draft under the same Message-ID');
+    w.server.script.push({ result: 'lost', delivered: false });
+    const s = w.send(w.first, 'd1');
+    assert.equal(s.internetId, id);
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(MIN);
+    await w.settle();
+    assert.equal(w.server.payloads.length, 0, 'nothing left');
+    assert.equal(w.server.sent.size, 0, 'Sent is empty');
+    assert.ok(w.server.drafts.has(id), 'the draft is still only a draft');
+    const checks = w.server.calls.filter(c => c.op === 'findSent');
+    assert.equal(checks.length, 2, 'both checks ran and found nothing');
+    const row = w.get(s.id);
+    assert.equal(row.state, 'uncertain');
+    assert.equal(row.problem?.reasonCode, 'send.uncertain', 'the owner is asked');
+    assert.notEqual(row.state, 'sent');
+  }));
