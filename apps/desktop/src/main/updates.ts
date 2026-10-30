@@ -1,10 +1,10 @@
-import type { UpdateInfo, UpdateStatus } from '@aplos/contract/legacy/types';
+import type { UpdateInfo, UpdateStatus } from './contract-types';
 
 /** The part of electron-updater's AppUpdater this app uses; tests pass a fake. */
 export interface Updater {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
-  on(event: string, listener: (...args: any[]) => void): unknown;
+  on<T = unknown>(event: string, listener: (info: T) => void): unknown;
   checkForUpdates(): Promise<unknown>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
 }

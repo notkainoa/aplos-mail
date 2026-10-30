@@ -253,6 +253,36 @@ function ruleDay(
   const n = Number(byDay[1] ?? 1);
   return n < 0 ? matches[matches.length + n] : matches[n - 1];
 }
+/** All onset instants of one STANDARD/DAYLIGHT observance: DTSTART plus its yearly RRULE and RDATE recurrences. */
+function observanceOnsets(obs: IcalComponent, start: number, year: number): number[] {
+  const onsets = [start];
+  const rrule = prop(obs, 'RRULE');
+  if (rrule) {
+    const rule = Object.fromEntries(
+      rrule.value
+        .split(';')
+        .map(part => part.split('=') as [string, string])
+        .map(([k, v]) => [k.toUpperCase(), v ?? '']),
+    );
+    const until = rule.UNTIL ? parseWall(rule.UNTIL) : undefined,
+      s = new Date(start);
+    if (rule.FREQ === 'YEARLY')
+      for (const y of [year - 1, year, year + 1]) {
+        const month = rule.BYMONTH ? Number(rule.BYMONTH.split(',')[0]) - 1 : s.getUTCMonth(),
+          d = ruleDay(y, month, rule, s.getUTCDate());
+        if (d !== undefined)
+          onsets.push(Date.UTC(y, month, d, s.getUTCHours(), s.getUTCMinutes(), s.getUTCSeconds()));
+      }
+    if (until !== undefined) onsets.splice(0, onsets.length, ...onsets.filter(t => t <= until));
+  }
+  for (const r of obs.props.filter(p => p.name === 'RDATE'))
+    for (const v of r.value.split(',')) {
+      const t = parseWall(v);
+      if (t !== undefined) onsets.push(t);
+    }
+  return onsets;
+}
+
 /**
  * UTC offset at the instant `ms` from a VTIMEZONE's STANDARD/DAYLIGHT observances (yearly BYMONTH/BYDAY rules and RDATEs).
  * Observance onsets are local times in the offset in force before the change (TZOFFSETFROM).
@@ -267,34 +297,7 @@ function vtimezoneOffset(vtz: IcalComponent, ms: number): number | undefined {
       from = parseOffset(prop(obs, 'TZOFFSETFROM')?.value) ?? to;
     if (start === undefined || to === undefined || from === undefined) continue;
     if (!earliest || start - from < earliest.at) earliest = { at: start - from, offset: from };
-    const onsets = [start];
-    const rrule = prop(obs, 'RRULE');
-    if (rrule) {
-      const rule = Object.fromEntries(
-        rrule.value
-          .split(';')
-          .map(part => part.split('=') as [string, string])
-          .map(([k, v]) => [k.toUpperCase(), v ?? '']),
-      );
-      const until = rule.UNTIL ? parseWall(rule.UNTIL) : undefined,
-        s = new Date(start);
-      if (rule.FREQ === 'YEARLY')
-        for (const y of [year - 1, year, year + 1]) {
-          const month = rule.BYMONTH ? Number(rule.BYMONTH.split(',')[0]) - 1 : s.getUTCMonth(),
-            d = ruleDay(y, month, rule, s.getUTCDate());
-          if (d !== undefined)
-            onsets.push(
-              Date.UTC(y, month, d, s.getUTCHours(), s.getUTCMinutes(), s.getUTCSeconds()),
-            );
-        }
-      if (until !== undefined) onsets.splice(0, onsets.length, ...onsets.filter(t => t <= until));
-    }
-    for (const r of obs.props.filter(p => p.name === 'RDATE'))
-      for (const v of r.value.split(',')) {
-        const t = parseWall(v);
-        if (t !== undefined) onsets.push(t);
-      }
-    for (const onset of onsets) {
+    for (const onset of observanceOnsets(obs, start, year)) {
       const at = onset - from;
       if (onset >= start && at <= ms && (!best || at > best.at)) best = { at, offset: to };
     }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Account, Thread } from '@aplos/contract/legacy/types';
-import type { MailProvider, ProviderMemory } from '@aplos/engine/legacy/provider';
+import type { Account, Thread } from './contract-types';
+import type { AppDataRecord, MailProvider, ProviderMemory } from './contract-types';
 import {
   applyLog,
   compactLog,
@@ -31,6 +31,27 @@ const EDITS = 'workflow.edits',
 const LEGACY_KNOWN = 'workflow.known',
   LEGACY_EDITED = 'workflow.edited';
 const MAX_EDITS = 20_000;
+
+/** Opens every stored copy; damaged copies are flagged for replacement, oversize ones block the seed. */
+function mergeLogs(records: AppDataRecord[], code: string) {
+  const logs: WorkflowLog[] = [],
+    merged: string[] = [],
+    damaged: string[] = [];
+  let unreadable = false;
+  for (const record of records) {
+    try {
+      logs.push(openWorkflow(record.data, code));
+      merged.push(record.id);
+    } catch (error) {
+      // Damaged copies are replaced; a different code or a newer format belongs to another device and stops the round; a copy too large to read is left alone.
+      if (!(error instanceof WorkflowCryptoError)) throw error;
+      if (error.reason === 'damaged') damaged.push(record.id);
+      else if (error.reason === 'size') unreadable = true;
+      else throw error;
+    }
+  }
+  return { logs, merged, damaged, unreadable };
+}
 
 interface Edits {
   gen: number;
@@ -177,22 +198,8 @@ export async function createWorkflowSync(options: WorkflowSyncOptions) {
             pending.push(workflowEdit(t, now, -1));
       }
       const records = await provider.readAppData(account);
-      const logs: WorkflowLog[] = [],
-        merged: string[] = [],
-        damaged: string[] = [];
-      let unreadable = false;
-      for (const record of records) {
-        try {
-          logs.push(openWorkflow(record.data, code));
-          merged.push(record.id);
-        } catch (error) {
-          // Damaged copies are replaced; a different code or a newer format belongs to another device and stops the round; a copy too large to read is left alone.
-          if (!(error instanceof WorkflowCryptoError)) throw error;
-          if (error.reason === 'damaged') damaged.push(record.id);
-          else if (error.reason === 'size') unreadable = true;
-          else throw error;
-        }
-      }
+      // Damaged copies are replaced; a different code or a newer format belongs to another device and stops the round; a copy too large to read is left alone.
+      const { logs, merged, damaged, unreadable } = mergeLogs(records, code);
       const mine = (list: Thread[]) => list.filter(t => t.accountId === account.id);
       const built = publishLog({
         remotes: logs,

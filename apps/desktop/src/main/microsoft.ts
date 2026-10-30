@@ -1,14 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import nodemailer from 'nodemailer';
-import type {
-  Account,
-  Attachment,
-  CalendarEvent,
-  Draft,
-  Message,
-  Thread,
-} from '@aplos/contract/legacy/types';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from './contract-types';
 import {
   ProviderError,
   calendarColor,
@@ -280,7 +273,7 @@ function createIndex() {
       index.clear();
       if (!text) return;
       try {
-        for (const [id, v] of Object.entries(JSON.parse(text) as Record<string, any[]>))
+        for (const [id, v] of Object.entries(JSON.parse(text) as Record<string, unknown[]>))
           if (Array.isArray(v) && typeof v[0] === 'string')
             index.set(id, {
               c: v[0],
@@ -1070,8 +1063,8 @@ export async function createMicrosoft(options: MicrosoftOptions): Promise<Micros
     conversationId: string | undefined,
     thread?: Thread,
   ): Promise<{ inReplyTo?: string; references?: string }> {
-    let last = thread?.messages.filter(m => m.internetId).at(-1),
-      graphId = last?.id,
+    const last = thread?.messages.filter(m => m.internetId).at(-1);
+    let graphId = last?.id,
       inReplyTo = last?.internetId,
       references = last?.references;
     try {

@@ -13,8 +13,8 @@ import {
 import { createOllama } from './ollama';
 import { createClaude } from './anthropic';
 import { createAiKeys, type AiKeys } from './ai-keys';
-import type { ChatProvider } from '@aplos/engine/legacy/ports';
-import type { AskProviderId, AskServerId } from '@aplos/contract/legacy/ask';
+import type { ChatProvider } from './contract-types';
+import type { AskProviderId, AskServerId } from './contract-types';
 import { createGoogle, type GoogleAdapter } from './google';
 import { symbolRenderer } from './symbols';
 import { createStagedMemory } from './memory-stage';
@@ -22,7 +22,7 @@ import type {
   MailProvider,
   ProviderEnvironment,
   ProviderKind,
-} from '@aplos/engine/legacy/provider';
+} from './contract-types';
 import { createMicrosoft } from './microsoft';
 import { createImap } from './imap';
 import { createJmap } from './jmap';

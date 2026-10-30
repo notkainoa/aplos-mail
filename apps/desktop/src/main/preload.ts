@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Bridge, Listener } from '@aplos/contract/legacy/types';
+import type { Bridge, Listener } from './contract-types';
 import { legacyMethods } from '@aplos/contract/allowlists';
 
 const allowed = new Set<string>(legacyMethods);

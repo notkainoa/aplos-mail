@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { ProviderMemory } from '@aplos/engine/legacy/provider';
-import type { MemoryWrite } from '@aplos/engine/legacy/store';
-import type { MemoryStage } from '@aplos/engine/legacy/ports';
-export type { MemoryStage } from '@aplos/engine/legacy/ports';
+import type { ProviderMemory } from './contract-types';
+import type { MemoryWrite } from './contract-types';
+import type { MemoryStage } from './contract-types';
+export type { MemoryStage } from './contract-types';
 
 /**
  * Provider memory whose writes during a sync are saved together with the mail they describe.

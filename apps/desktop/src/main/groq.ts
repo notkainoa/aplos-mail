@@ -1,4 +1,4 @@
-import type { CalendarEvent, Draft, Thread } from '@aplos/contract/legacy/types';
+import type { CalendarEvent, Draft, Thread } from './contract-types';
 import {
   checkKey,
   providerRequest,

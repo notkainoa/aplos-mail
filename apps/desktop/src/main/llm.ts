@@ -1,4 +1,4 @@
-import type { Chat, ChatRequest, ChatTurn } from '@aplos/engine/legacy/agent';
+import type { Chat, ChatRequest, ChatTurn } from './contract-types';
 
 /**
  * OpenAI-compatible chat transports (Groq, OpenAI, Gemini, OpenRouter, OpenCode Go, local servers). Keys come from the encrypted
@@ -58,6 +58,11 @@ export async function providerRequest(
     );
   }
   if (response.ok) return response;
+  return statusError(name, response);
+}
+
+/** Every non-OK provider answer becomes an owner-readable error; the 429 hint distinguishes minute from quota limits. */
+async function statusError(name: string, response: Response): Promise<never> {
   if (response.status === 401 || response.status === 403) throw new Error(rejected(name));
   if (response.status === 413)
     throw new Error(
@@ -150,7 +155,7 @@ export function redact(text: string, key?: string): string {
   let out = key ? text.split(key).join('••••') : text;
   out = out
     .replace(/\b(sk|gsk|sk-ant|sk-or|AIza)[A-Za-z0-9_\-*.]{6,}/g, '••••')
-    .replace(/[A-Za-z0-9_\-]{32,}/g, '••••');
+    .replace(/[A-Za-z0-9_-]{32,}/g, '••••');
   return out;
 }
 
@@ -254,6 +259,64 @@ export function streamChat(
   };
 }
 
+/** One streamed tool-call fragment; `index` is the call slot providers address fragments through. */
+interface StreamToolCall {
+  index?: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+}
+
+/** One OpenAI-style SSE `data:` payload — every field optional because providers stream partial objects. */
+interface StreamChunk {
+  error?: { code?: string };
+  x_groq?: {
+    error?: { code?: string };
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  choices?: {
+    delta?: {
+      content?: string;
+      tool_calls?: StreamToolCall[];
+    };
+    finish_reason?: string;
+  }[];
+}
+
+/** A mid-stream provider error makes the whole answer fail; the code is forwarded so callers can retry tool calls. */
+function chunkProblem(chunk: StreamChunk) {
+  const error = chunk.error ?? chunk.x_groq?.error;
+  if (error)
+    throw Object.assign(
+      new Error('The AI provider stopped while answering.'),
+      typeof error === 'object' && error?.code === 'tool_use_failed'
+        ? { code: 'tool_use_failed' }
+        : {},
+    );
+}
+
+/** Usage counters sit under `x_groq` on Groq and `usage` on the OpenAI-style providers. */
+function chunkUsage(chunk: StreamChunk) {
+  const counted = chunk.x_groq?.usage ?? chunk.usage;
+  return counted && typeof counted.prompt_tokens === 'number'
+    ? { prompt: counted.prompt_tokens, completion: Number(counted.completion_tokens) || 0 }
+    : undefined;
+}
+
+/** Tool calls arrive fragmented across deltas; `index` is the slot the whole call reassembles under. */
+function collectToolCalls(
+  parts: StreamToolCall[],
+  calls: { id?: string; name: string; arguments: string }[],
+) {
+  for (const part of parts) {
+    const index = Number.isInteger(part?.index) ? (part?.index as number) : calls.length;
+    const call = (calls[index] ??= { name: '', arguments: '' });
+    if (typeof part.id === 'string') call.id = part.id;
+    if (typeof part.function?.name === 'string') call.name += part.function.name;
+    if (typeof part.function?.arguments === 'string') call.arguments += part.function.arguments;
+  }
+}
+
 /**
  * Reads an OpenAI-style SSE completion: text deltas go to `onText`; tool calls are assembled by index
  * whether they arrive whole or in fragments. `finish_reason` is not required (Groq sometimes omits it).
@@ -274,23 +337,14 @@ export async function readChatStream(
     if (!raw.startsWith('data:')) return;
     const data = raw.slice(5).trim();
     if (!data || data === '[DONE]') return;
-    let chunk: Record<string, any>;
+    let chunk: StreamChunk;
     try {
       chunk = JSON.parse(data);
     } catch {
       return;
     }
-    const error = chunk.error ?? chunk.x_groq?.error;
-    if (error)
-      throw Object.assign(
-        new Error('The AI provider stopped while answering.'),
-        typeof error === 'object' && error?.code === 'tool_use_failed'
-          ? { code: 'tool_use_failed' }
-          : {},
-      );
-    const counted = chunk.x_groq?.usage ?? chunk.usage;
-    if (counted && typeof counted.prompt_tokens === 'number')
-      usage = { prompt: counted.prompt_tokens, completion: Number(counted.completion_tokens) || 0 };
+    chunkProblem(chunk);
+    usage = chunkUsage(chunk) ?? usage;
     const choice = chunk.choices?.[0];
     if (!choice) return;
     const delta = choice.delta ?? {};
@@ -298,13 +352,7 @@ export async function readChatStream(
       content += delta.content;
       onText?.(delta.content);
     }
-    for (const part of Array.isArray(delta.tool_calls) ? delta.tool_calls : []) {
-      const index = Number.isInteger(part?.index) ? part.index : calls.length;
-      const call = (calls[index] ??= { name: '', arguments: '' });
-      if (typeof part.id === 'string') call.id = part.id;
-      if (typeof part.function?.name === 'string') call.name += part.function.name;
-      if (typeof part.function?.arguments === 'string') call.arguments += part.function.arguments;
-    }
+    collectToolCalls(Array.isArray(delta.tool_calls) ? delta.tool_calls : [], calls);
     if (typeof choice.finish_reason === 'string') finishReason = choice.finish_reason;
   };
   let stop: (() => void) | undefined;

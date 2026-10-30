@@ -1,14 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import nodemailer, { type SendMailOptions } from 'nodemailer';
 import { simpleParser, type AddressObject, type ParsedMail } from 'mailparser';
-import type {
-  Account,
-  Attachment,
-  CalendarEvent,
-  Draft,
-  Message,
-  Thread,
-} from '@aplos/contract/legacy/types';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from './contract-types';
 import {
   ProviderError,
   type AppDataRecord,
@@ -253,6 +246,17 @@ function addresses(value: AddressObject | AddressObject[] | undefined): string[]
     .flatMap(a => (a.group ? a.group : [a]))
     .map(a => a.address ?? '')
     .filter(Boolean);
+}
+/** One MIME attachment for nodemailer; a draft attachment whose bytes were never downloaded cannot send. */
+function mailAttachment(a: Attachment) {
+  if (!a.data)
+    throw new Error(`Attachment "${a.name}" has not been downloaded. Reattach it before sending.`);
+  return {
+    filename: a.name,
+    content: Buffer.from(a.data, 'base64'),
+    contentType: a.type,
+    cid: a.contentId,
+  };
 }
 function htmlText(html: string) {
   return html
@@ -835,7 +839,8 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
         if (key) idx.touch(key);
       } else add(idx, m);
     }
-    if (knownUids.length) {
+    // Flag changes and expunges on messages the index already knows. CONDSTORE fetches only what moved.
+    const refreshKnown = async () => {
       const set = uidSet(knownUids);
       let changed: ImapFetched[], present: Set<number>;
       if (
@@ -871,7 +876,8 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
       }
       for (const uid of knownUids)
         if (!present.has(uid)) idx.drop(role, box.uidValidity, uid, known[uid]);
-    }
+    };
+    if (knownUids.length) await refreshKnown();
     return {
       cursor: {
         v: box.uidValidity,
@@ -1090,35 +1096,41 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
       const id = imapAccountId(email, server.imap.host),
         login = logins({ id, email, server }, secret);
       const session = client(login.imap);
-      try {
-        await session.connect();
-        await session.list();
-      } catch (error) {
-        void session.logout().catch(() => {});
-        throw imapFailure(error, preset, server.imap.host);
-      }
-      const sender = smtp(login.smtp);
-      try {
-        await sender.verify();
-      } catch (error) {
-        void session.logout().catch(() => {});
-        throw smtpFailure(error, preset, server.smtp.host);
-      } finally {
-        sender.close();
-      }
-      let calendarConnected = false;
-      if (server.caldav && options.calendar) {
+      // Probe IMAP then SMTP; a failed probe logs the session out before the error goes back.
+      const verifyServers = async () => {
+        try {
+          await session.connect();
+          await session.list();
+        } catch (error) {
+          void session.logout().catch(() => {});
+          throw imapFailure(error, preset, server.imap!.host);
+        }
+        const sender = smtp(login.smtp);
+        try {
+          await sender.verify();
+        } catch (error) {
+          void session.logout().catch(() => {});
+          throw smtpFailure(error, preset, server.smtp!.host);
+        } finally {
+          sender.close();
+        }
+      };
+      await verifyServers();
+      const verifyCalendar = async () => {
+        if (!server.caldav || !options.calendar) return false;
         try {
           await options.calendar.verify({
             url: server.caldav,
             username: server.username || email,
             password: secret,
           });
-          calendarConnected = true;
+          return true;
         } catch {
           /* Mail works without calendar access. */
+          return false;
         }
-      }
+      };
+      const calendarConnected = await verifyCalendar();
       try {
         await vault.set(id, secret);
       } catch (error) {
@@ -1333,18 +1345,7 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
         text: htmlText(draft.html),
         inReplyTo,
         references,
-        attachments: draft.attachments.map(a => {
-          if (!a.data)
-            throw new Error(
-              `Attachment "${a.name}" has not been downloaded. Reattach it before sending.`,
-            );
-          return {
-            filename: a.name,
-            content: Buffer.from(a.data, 'base64'),
-            contentType: a.type,
-            cid: a.contentId,
-          };
-        }),
+        attachments: draft.attachments.map(mailAttachment),
       };
       const preset = presetOf(account),
         sender = smtp(logins(account).smtp);
@@ -1374,8 +1375,8 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
         return key;
       });
       // iCloud does not file mail sent over SMTP in Sent Messages; other hosts may, so give them a moment first.
-      const delay = options.sentCopyDelayMs ?? (preset === 'icloud' ? 0 : 4000);
-      try {
+      const fileSentCopy = async () => {
+        const delay = options.sentCopyDelayMs ?? (preset === 'icloud' ? 0 : 4000);
         if (delay) await sleep(delay);
         await run(account, async (session, entry) => {
           const sent = (await roles(entry, session)).sent;
@@ -1383,6 +1384,9 @@ export async function createImap(options: ImapOptions): Promise<ImapAdapter> {
           if ((await withId(session, sent, id, true)).length) return;
           await session.append(sent, await compose(mail), ['\\Seen'], mail.date as Date);
         });
+      };
+      try {
+        await fileSentCopy();
       } catch {
         /* The message was delivered; a missing Sent copy must not turn that into a failure. */
       }

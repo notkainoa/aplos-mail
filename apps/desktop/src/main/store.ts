@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AppState } from '@aplos/contract/legacy/types';
-import type { SqlDatabase, SqlValue } from '@aplos/engine/legacy/sql';
+import type { AppState } from './contract-types';
+import type { SqlDatabase, SqlValue } from './contract-types';
 import {
   createMailStore,
   type MailStore,

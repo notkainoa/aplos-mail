@@ -12,7 +12,7 @@ import { connectEngine, type EngineInit } from './engine-rpc';
 import { createCipher, loadDataKey, migrateCredentials } from './keyring';
 import { applyChanges, type StateChanges } from '@aplos/contract/legacy/live';
 import { draftMutationId } from './desktop-policy';
-import type { AppState, Listener } from '@aplos/contract/legacy/types';
+import type { AppState, Listener } from './contract-types';
 import { assertCaller, external } from './security';
 import { claims, emit, applyAppearance } from './windows';
 import { nativeMethods, notify, invokeNative } from './native-methods';

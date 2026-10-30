@@ -1,7 +1,7 @@
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import { join } from 'node:path';
 import { DraftOwnership } from './desktop-policy';
-import type { AppState, Listener } from '@aplos/contract/legacy/types';
+import type { AppState, Listener } from './contract-types';
 import { rendererFile, devURL, trustedURL, external } from './security';
 import { pendingLinks } from './protocol';
 import { latestState } from './engine-host';

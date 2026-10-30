@@ -1,4 +1,5 @@
 import { app, dialog } from 'electron';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { UpdateController, disabledReason, teamIdentifier, type Updater } from './updates';
@@ -44,7 +45,9 @@ function createUpdates() {
     emit: info => emit({ type: 'update', payload: info }),
     updater: () => {
       // Loaded only when updates can run, so development and unsigned builds never start electron-updater.
-      const { autoUpdater } = require('electron-updater') as typeof import('electron-updater');
+      const { autoUpdater } = createRequire(__filename)(
+        'electron-updater',
+      ) as typeof import('electron-updater');
       autoUpdater.logger = {
         info: (m: unknown) => log(`updater: ${String(m)}`),
         warn: (m: unknown) => log(`updater warning: ${String(m)}`),

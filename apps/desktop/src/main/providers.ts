@@ -1,5 +1,5 @@
-import type { ChatProvider } from '@aplos/engine/legacy/ports';
-import type { AskModelInfo, AskProviderId } from '@aplos/contract/legacy/ask';
+import type { ChatProvider } from './contract-types';
+import type { AskModelInfo, AskProviderId } from './contract-types';
 import { askProvider, voiceProviders } from '@aplos/contract/legacy/ask';
 import {
   checkKey,

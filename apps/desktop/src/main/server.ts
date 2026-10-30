@@ -6,7 +6,7 @@ import { loadDevEnv } from './env';
 import { createServer as createViteServer } from 'vite';
 import { createService } from './service';
 import { appVersion } from '../shared/version';
-import type { Listener } from '@aplos/contract/legacy/types';
+import type { Listener } from './contract-types';
 import { legacyDesktopMethods, legacyEngineMethods } from '@aplos/contract/allowlists';
 
 export const serviceMethods = new Set<string>(legacyEngineMethods);

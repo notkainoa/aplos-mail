@@ -1,4 +1,4 @@
-import type { Listener } from '@aplos/contract/legacy/types';
+import type { Listener } from './contract-types';
 
 /** One side of a message channel: Electron's utility process port, or a worker_threads port in tests. */
 export interface Port {

@@ -1,4 +1,4 @@
-import type { AiKeyInfo, AiKeyStore } from '@aplos/engine/legacy/ports';
+import type { AiKeyInfo, AiKeyStore } from './contract-types';
 import { askProvider, askProviders, type AskProviderId } from '@aplos/contract/legacy/ask';
 import { createVault, type Vault } from './vault';
 
@@ -28,7 +28,8 @@ function provider(id: unknown): AskProviderId {
 export function cleanKey(value: unknown): string {
   const key = typeof value === 'string' ? value.trim().replace(/^Bearer\s+/i, '') : '';
   if (!key) throw new Error('Paste a key first.');
-  if (key.length < 8 || key.length > 512 || /[\s\x00-\x1f\x7f]/.test(key))
+  const badChar = (ch: string) => ch <= '\x1f' || ch === '\x7f' || /\s/.test(ch);
+  if (key.length < 8 || key.length > 512 || [...key].some(badChar))
     throw new Error('That doesn’t look like an API key. Copy the whole key and paste it again.');
   return key;
 }

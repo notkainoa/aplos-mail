@@ -1,6 +1,6 @@
-import type { ChatMessage, ChatRequest, ChatTurn } from '@aplos/engine/legacy/agent';
-import type { ChatProvider } from '@aplos/engine/legacy/ports';
-import type { AskModelInfo } from '@aplos/contract/legacy/ask';
+import type { ChatMessage, ChatRequest, ChatTurn } from './contract-types';
+import type { ChatProvider } from './contract-types';
+import type { AskModelInfo } from './contract-types';
 import { readKey, type ApiKey } from './llm';
 
 /**
@@ -13,6 +13,17 @@ export interface OllamaOptions {
   apiKey?: ApiKey;
   fetch?: typeof fetch;
   contextTokens?: number;
+}
+/** One Ollama chat-stream line — all fields optional, `/api/chat` streams partial objects. */
+interface OllamaChunk {
+  error?: unknown;
+  done?: boolean;
+  prompt_eval_count?: number;
+  eval_count?: number;
+  message?: {
+    content?: string;
+    tool_calls?: { function?: { name?: string; arguments?: unknown } }[];
+  };
 }
 type Wire = {
   role: string;
@@ -152,7 +163,7 @@ export function createOllama(baseUrl: string, options: OllamaOptions = {}): Chat
       const calls: ChatTurn['toolCalls'] = [];
       const line = (raw: string) => {
         if (!raw.trim()) return;
-        let chunk: Record<string, any>;
+        let chunk: OllamaChunk;
         try {
           chunk = JSON.parse(raw);
         } catch {

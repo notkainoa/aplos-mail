@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Account, Attachment, Draft, Message, Thread } from '@aplos/contract/legacy/types';
+import type { Account, Attachment, Draft, Message, Thread } from './contract-types';
 import {
   ProviderError,
   type AppDataRecord,
@@ -169,6 +169,41 @@ async function each<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]>
   return result;
 }
 
+/** Every non-OK JMAP HTTP answer becomes a JmapError; the RFC 7807 problem `type` names limit and capability failures. */
+async function httpError(response: Response): Promise<never> {
+  const status = response.status;
+  if (status === 401 || status === 403)
+    throw new JmapError(
+      'The mail server rejected the API token. Create a token with Email and Email submission access and reconnect this account.',
+      status,
+    );
+  if (status === 429)
+    throw new JmapError('The mail server rate limit was reached. Please retry shortly.', status);
+  if (status === 404) throw new JmapError('The mail server could not find this item.', status);
+  if (status >= 500)
+    throw new JmapError(`The mail server failed (${status}). Please retry.`, status, true);
+  let problem: Json = {};
+  try {
+    problem = (await response.json()) as Json;
+  } catch {
+    /* Problem details are optional. */
+  }
+  const type =
+    typeof problem.type === 'string'
+      ? problem.type.replace('urn:ietf:params:jmap:error:', '')
+      : undefined;
+  throw new JmapError(
+    type === 'limit'
+      ? 'This request is larger than the mail server allows.'
+      : type === 'unknownCapability'
+        ? 'This server does not support JMAP mail.'
+        : `The mail server refused the request (${status}).`,
+    status,
+    false,
+    type,
+  );
+}
+
 /** Map a JMAP method error or SetError to a ProviderError the engine understands. */
 export function jmapError(error: Json | undefined): JmapError {
   const type = String(error?.type ?? 'serverFail'),
@@ -256,7 +291,7 @@ export function jmapError(error: Json | undefined): JmapError {
   }
 }
 /** Response arguments for a call ID; a method error becomes a JmapError. */
-function pick(responses: any[], id: string, name?: string): Json {
+function pick(responses: Json[], id: string, name?: string): Json {
   const found = responses.find(
     r => Array.isArray(r) && r[2] === id && (!name || r[0] === name || r[0] === 'error'),
   );
@@ -361,37 +396,7 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
       await response.body?.cancel().catch(() => undefined);
     }
     if (response.ok) return response;
-    const status = response.status;
-    if (status === 401 || status === 403)
-      throw new JmapError(
-        'The mail server rejected the API token. Create a token with Email and Email submission access and reconnect this account.',
-        status,
-      );
-    if (status === 429)
-      throw new JmapError('The mail server rate limit was reached. Please retry shortly.', status);
-    if (status === 404) throw new JmapError('The mail server could not find this item.', status);
-    if (status >= 500)
-      throw new JmapError(`The mail server failed (${status}). Please retry.`, status, true);
-    let problem: Json = {};
-    try {
-      problem = (await response.json()) as Json;
-    } catch {
-      /* Problem details are optional. */
-    }
-    const type =
-      typeof problem.type === 'string'
-        ? problem.type.replace('urn:ietf:params:jmap:error:', '')
-        : undefined;
-    throw new JmapError(
-      type === 'limit'
-        ? 'This request is larger than the mail server allows.'
-        : type === 'unknownCapability'
-          ? 'This server does not support JMAP mail.'
-          : `The mail server refused the request (${status}).`,
-      status,
-      false,
-      type,
-    );
+    return httpError(response);
   }
   async function json(response: Response): Promise<Json> {
     try {
@@ -459,7 +464,7 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
     sessions.set(accountId, fresh);
     return fresh;
   }
-  async function invoke(value: Credential, current: Session, calls: Call[]): Promise<any[]> {
+  async function invoke(value: Credential, current: Session, calls: Call[]): Promise<Json[]> {
     const body = {
       using: [CORE, MAIL, SUBMISSION],
       methodCalls: calls.map(([name, args, id]) => [
@@ -807,47 +812,55 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
     cursor: Cursor,
     context: SyncContext,
   ): Promise<SyncResult | undefined> {
-    const updatedEmails = new Set<string>(),
-      destroyedEmails = new Set<string>(),
-      changedThreads = new Set<string>(),
-      goneThreads = new Set<string>();
-    let email = cursor.email,
-      thread = cursor.thread,
-      moreEmail = true,
-      moreThread = true,
-      pages = 0,
-      boxes: Mailboxes | undefined;
-    try {
-      while (moreEmail || moreThread) {
-        if (pages++ >= MAX_CHANGE_PAGES) return undefined;
-        const calls: Call[] = [];
-        if (!boxes) calls.push(['Mailbox/get', { properties: MAILBOX }, 'm']);
-        if (moreEmail)
-          calls.push(['Email/changes', { sinceState: email, maxChanges: MAX_CHANGES }, 'e']);
-        if (moreThread)
-          calls.push(['Thread/changes', { sinceState: thread, maxChanges: MAX_CHANGES }, 't']);
-        const r = await api(account, calls);
-        if (!boxes) boxes = mailboxes(pick(r, 'm').list ?? []);
-        if (moreEmail) {
-          const page = pick(r, 'e');
-          for (const id of page.updated ?? []) updatedEmails.add(id);
-          for (const id of page.destroyed ?? []) destroyedEmails.add(id);
-          email = String(page.newState);
-          moreEmail = page.hasMoreChanges === true;
+    // Pages Email/changes + Thread/changes until both report done; a state too old answers undefined so the caller resyncs.
+    const pageChanges = async () => {
+      const updatedEmails = new Set<string>(),
+        destroyedEmails = new Set<string>(),
+        changedThreads = new Set<string>(),
+        goneThreads = new Set<string>();
+      let email = cursor.email,
+        thread = cursor.thread,
+        moreEmail = true,
+        moreThread = true,
+        pages = 0,
+        boxes: Mailboxes | undefined;
+      try {
+        while (moreEmail || moreThread) {
+          if (pages++ >= MAX_CHANGE_PAGES) return undefined;
+          const calls: Call[] = [];
+          if (!boxes) calls.push(['Mailbox/get', { properties: MAILBOX }, 'm']);
+          if (moreEmail)
+            calls.push(['Email/changes', { sinceState: email, maxChanges: MAX_CHANGES }, 'e']);
+          if (moreThread)
+            calls.push(['Thread/changes', { sinceState: thread, maxChanges: MAX_CHANGES }, 't']);
+          const r = await api(account, calls);
+          if (!boxes) boxes = mailboxes(pick(r, 'm').list ?? []);
+          if (moreEmail) {
+            const page = pick(r, 'e');
+            for (const id of page.updated ?? []) updatedEmails.add(id);
+            for (const id of page.destroyed ?? []) destroyedEmails.add(id);
+            email = String(page.newState);
+            moreEmail = page.hasMoreChanges === true;
+          }
+          if (moreThread) {
+            const page = pick(r, 't');
+            for (const id of [...(page.created ?? []), ...(page.updated ?? [])])
+              changedThreads.add(id);
+            for (const id of page.destroyed ?? []) goneThreads.add(id);
+            thread = String(page.newState);
+            moreThread = page.hasMoreChanges === true;
+          }
         }
-        if (moreThread) {
-          const page = pick(r, 't');
-          for (const id of [...(page.created ?? []), ...(page.updated ?? [])])
-            changedThreads.add(id);
-          for (const id of page.destroyed ?? []) goneThreads.add(id);
-          thread = String(page.newState);
-          moreThread = page.hasMoreChanges === true;
-        }
+      } catch (error) {
+        if (error instanceof JmapError && error.type === 'cannotCalculateChanges') return undefined;
+        throw error;
       }
-    } catch (error) {
-      if (error instanceof JmapError && error.type === 'cannotCalculateChanges') return undefined;
-      throw error;
-    }
+      return { updatedEmails, destroyedEmails, changedThreads, goneThreads, email, thread, boxes };
+    };
+    const paged = await pageChanges();
+    if (!paged) return undefined;
+    const { updatedEmails, destroyedEmails, changedThreads, goneThreads, email, thread } = paged,
+      boxes = paged.boxes;
     const local = (id: string) => `${account.id}:${id}`,
       removed = new Set<string>(),
       flags: ThreadFlags[] = [],
@@ -856,23 +869,28 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
       changedThreads.delete(id);
       if (context.has(local(id))) removed.add(local(id));
     }
-    const relabeled = [...updatedEmails].filter(id => !destroyedEmails.has(id));
-    const rows = new Map<string, Json>(),
-      missing = new Set<string>();
-    for (const ids of chunks(relabeled, (await session(account.id)).maxGet)) {
-      const r = await api(account, [
-        ['Email/get', { ids, properties: ['threadId'] }, 'e'],
-        [
-          'Thread/get',
-          { '#ids': { resultOf: 'e', name: 'Email/get', path: '/list/*/threadId' } },
-          't',
-        ],
-      ]);
-      pick(r, 'e');
-      const t = pick(r, 't');
-      for (const row of t.list ?? []) rows.set(row.id, row);
-      for (const id of t.notFound ?? []) missing.add(id);
-    }
+    // The threads of every updated email, fetched through its threadId in maxGet-sized batches.
+    const relabeledThreads = async () => {
+      const relabeled = [...updatedEmails].filter(id => !destroyedEmails.has(id));
+      const rows = new Map<string, Json>(),
+        missing = new Set<string>();
+      for (const ids of chunks(relabeled, (await session(account.id)).maxGet)) {
+        const r = await api(account, [
+          ['Email/get', { ids, properties: ['threadId'] }, 'e'],
+          [
+            'Thread/get',
+            { '#ids': { resultOf: 'e', name: 'Email/get', path: '/list/*/threadId' } },
+            't',
+          ],
+        ]);
+        pick(r, 'e');
+        const t = pick(r, 't');
+        for (const row of t.list ?? []) rows.set(row.id, row);
+        for (const id of t.notFound ?? []) missing.add(id);
+      }
+      return { rows, missing };
+    };
+    const { rows, missing } = await relabeledThreads();
     for (const id of missing) if (!rows.has(id) && context.has(local(id))) removed.add(local(id));
     const known = [...rows.values()].filter(row => {
       if (changedThreads.has(row.id) || goneThreads.has(row.id)) return false;
@@ -1146,22 +1164,27 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
       if (parsed.protocol !== 'https:') throw new Error('The JMAP session URL must use https.');
       const value: Credential = { token, sessionUrl: parsed.toString() };
       const current = await loadSession(value);
-      const list = (
-        pick(await invoke(value, current, [['Identity/get', {}, 'i']]), 'i').list ?? []
-      ).filter((i: Json) => typeof i.id === 'string' && typeof i.email === 'string');
-      const isEmail = (v: string) => /^[^\s@<>*]+@[^\s@<>]+\.[^\s@<>]+$/.test(v);
-      const primary =
-        identityFor(list, current.username) ??
-        list.find((i: Json) => i.mayDelete === false && isEmail(i.email)) ??
-        list.find((i: Json) => isEmail(i.email));
-      const email = isEmail(current.username)
-        ? current.username
-        : (primary?.email ?? connect.email?.trim());
-      if (!email || !isEmail(email))
-        throw new JmapError(
-          'The mail server did not report an email address for this account.',
-          400,
-        );
+      // The account address: the session's own username when it looks like one, else the default identity's.
+      const resolveEmail = async () => {
+        const list = (
+          pick(await invoke(value, current, [['Identity/get', {}, 'i']]), 'i').list ?? []
+        ).filter((i: Json) => typeof i.id === 'string' && typeof i.email === 'string');
+        const isEmail = (v: string) => /^[^\s@<>*]+@[^\s@<>]+\.[^\s@<>]+$/.test(v);
+        const primary =
+          identityFor(list, current.username) ??
+          list.find((i: Json) => i.mayDelete === false && isEmail(i.email)) ??
+          list.find((i: Json) => isEmail(i.email));
+        const email = isEmail(current.username)
+          ? current.username
+          : (primary?.email ?? connect.email?.trim());
+        if (!email || !isEmail(email))
+          throw new JmapError(
+            'The mail server did not report an email address for this account.',
+            400,
+          );
+        return { list, primary, email };
+      };
+      const { list, primary, email } = await resolveEmail();
       const id = `jmap-${current.accountId}`,
         name =
           connect.name?.trim() ||
@@ -1207,21 +1230,25 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
         ['Mailbox/get', { properties: MAILBOX }, 'm'],
         ['Thread/get', { ids: [thread.remoteId] }, 't'],
       ]);
-      const boxes = mailboxes(pick(r, 'm').list ?? []),
-        rows = pick(r, 't').list ?? [];
-      if (!rows.length) throw new JmapError('The mail server could not find this item.', 404);
-      const emails = (
-        await getEmails(
-          account,
-          rows.flatMap((row: Json) => row.emailIds ?? []),
-          { properties: LIGHT },
+      const fetchRows = async () => {
+        const boxes = mailboxes(pick(r, 'm').list ?? []),
+          rows = pick(r, 't').list ?? [];
+        if (!rows.length) throw new JmapError('The mail server could not find this item.', 404);
+        const emails = (
+          await getEmails(
+            account,
+            rows.flatMap((row: Json) => row.emailIds ?? []),
+            { properties: LIGHT },
+          )
         )
-      )
-        .filter(visible)
-        .sort((a: Json, b: Json) =>
-          String(a.receivedAt ?? '').localeCompare(String(b.receivedAt ?? '')),
-        );
-      if (!emails.length) throw new JmapError('The mail server could not find this item.', 404);
+          .filter(visible)
+          .sort((a: Json, b: Json) =>
+            String(a.receivedAt ?? '').localeCompare(String(b.receivedAt ?? '')),
+          );
+        if (!emails.length) throw new JmapError('The mail server could not find this item.', 404);
+        return { boxes, emails };
+      };
+      const { boxes, emails } = await fetchRows();
       const update: Record<string, Json> = {},
         set = (id: string, key: string, value: unknown) => {
           (update[id] ??= {})[key] = value;
@@ -1235,8 +1262,10 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
         set(latest.id, 'keywords/$flagged', true);
       if (patch.bookmarked === false)
         for (const e of emails) if (e.keywords?.$flagged) set(e.id, 'keywords/$flagged', null);
-      if (patch.status) {
-        const target = patch.status,
+      // A status change refiles every email of the thread: trash/spam replace the mailbox set,
+      // the rest move between inbox/archive while restore just peels the thread out of trash/junk.
+      const applyStatus = async () => {
+        const target = patch.status!,
           restore = thread.status === 'trash' || thread.status === 'spam';
         const toInbox =
           target === 'new'
@@ -1253,7 +1282,8 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
         const inbox = toInbox ? await role('inbox', 'Inbox') : boxes.role('inbox'),
           sent = boxes.role('sent');
         let archive = boxes.role('archive');
-        for (const e of emails) {
+        // The mailbox set one email ends with under the requested status.
+        const refile = async (e: Json) => {
           const before: Record<string, boolean> = Object.fromEntries(
             Object.entries(e.mailboxIds ?? {}).filter(([, v]) => v === true),
           ) as Record<string, boolean>;
@@ -1281,12 +1311,17 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
               else next[(archive ??= await role('archive', 'Archive'))] = true;
             }
           }
+          return { before, next };
+        };
+        for (const e of emails) {
+          const { before, next } = await refile(e);
           const same =
             Object.keys(next).length === Object.keys(before).length &&
             Object.keys(next).every(k => before[k]);
           if (!same) set(e.id, 'mailboxIds', next);
         }
-      }
+      };
+      if (patch.status) await applyStatus();
       if (!Object.keys(update).length) return;
       const result = pick(await api(account, [['Email/set', { update }, 'u']]), 'u');
       for (const error of Object.values(result.notUpdated ?? {}) as Json[])
@@ -1337,23 +1372,28 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
       const drafts = await ensureMailbox(account, boxes, 'drafts', 'Drafts'),
         sentBox = await ensureMailbox(account, boxes, 'sent', 'Sent');
       const alias = account.sendAs?.find(a => a.email.toLowerCase() === fromEmail.toLowerCase());
-      const attachments = [];
-      for (const a of draft.attachments) {
-        const blobId = a.data
-          ? await upload(account, Buffer.from(a.data, 'base64'), a.type)
-          : a.remoteId;
-        if (!blobId)
-          throw new Error(
-            `Attachment "${a.name}" has not been downloaded. Reattach it before sending.`,
-          );
-        attachments.push({
-          blobId,
-          type: a.type || 'application/octet-stream',
-          name: a.name,
-          disposition: a.contentId ? 'inline' : 'attachment',
-          ...(a.contentId ? { cid: a.contentId } : {}),
-        });
-      }
+      // Attachments already uploaded carry their blob id; the rest upload now.
+      const uploadAttachments = async () => {
+        const attachments = [];
+        for (const a of draft.attachments) {
+          const blobId = a.data
+            ? await upload(account, Buffer.from(a.data, 'base64'), a.type)
+            : a.remoteId;
+          if (!blobId)
+            throw new Error(
+              `Attachment "${a.name}" has not been downloaded. Reattach it before sending.`,
+            );
+          attachments.push({
+            blobId,
+            type: a.type || 'application/octet-stream',
+            name: a.name,
+            disposition: a.contentId ? 'inline' : 'attachment',
+            ...(a.contentId ? { cid: a.contentId } : {}),
+          });
+        }
+        return attachments;
+      };
+      const attachments = await uploadAttachments();
       const email = {
         mailboxIds: { [drafts]: true },
         keywords: { $draft: true, $seen: true },
@@ -1382,48 +1422,51 @@ export async function createJmap(options: JmapOptions): Promise<JmapAdapter> {
           email,
         })),
       };
-      const result = await api(account, [
-        // Drafts left by an earlier attempt that never reached submission are replaced, so a retry cannot leave duplicates.
-        [
-          'Email/set',
-          {
-            create: { draft: email },
-            ...(prior.leftovers.length ? { destroy: prior.leftovers.map(e => e.id) } : {}),
-          },
-          'draft',
-        ],
-        [
-          'EmailSubmission/set',
-          {
-            create: { send: { identityId: identity.id, emailId: '#draft', envelope } },
-            onSuccessUpdateEmail: { '#send': filed(drafts, sentBox) },
-          },
-          'send',
-        ],
-      ]);
-      const created = pick(result, 'draft', 'Email/set');
-      if (!created.created?.draft) throw jmapError(created.notCreated?.draft);
-      const id = String(created.created.draft.id),
-        discard = () =>
-          api(account, [['Email/set', { destroy: [id] }, 'x']]).catch(() => undefined);
-      let submission: Json;
-      try {
-        submission = pick(result, 'send', 'EmailSubmission/set');
-      } catch (error) {
-        if (error instanceof JmapError && !error.uncertain) await discard();
-        throw error;
-      }
-      if (!submission.created?.send) {
-        await discard();
-        throw jmapError(submission.notCreated?.send);
-      }
-      // The move to Sent is a separate implicit Email/set; when it fails the message has still gone out.
-      const moved = result.find(
-        x => Array.isArray(x) && x[0] === 'Email/set' && x[2] === 'send',
-      )?.[1];
-      if (!moved || moved.notUpdated?.[id] || !(id in (moved.updated ?? {})))
-        await fileSent(account, id, boxes).catch(() => undefined);
-      return { id, threadId: String(created.created.draft.threadId) };
+      // Drafts left by an earlier attempt that never reached submission are replaced, so a retry cannot leave duplicates.
+      const submit = async () => {
+        const result = await api(account, [
+          [
+            'Email/set',
+            {
+              create: { draft: email },
+              ...(prior.leftovers.length ? { destroy: prior.leftovers.map(e => e.id) } : {}),
+            },
+            'draft',
+          ],
+          [
+            'EmailSubmission/set',
+            {
+              create: { send: { identityId: identity.id, emailId: '#draft', envelope } },
+              onSuccessUpdateEmail: { '#send': filed(drafts, sentBox) },
+            },
+            'send',
+          ],
+        ]);
+        const created = pick(result, 'draft', 'Email/set');
+        if (!created.created?.draft) throw jmapError(created.notCreated?.draft);
+        const id = String(created.created.draft.id),
+          discard = () =>
+            api(account, [['Email/set', { destroy: [id] }, 'x']]).catch(() => undefined);
+        let submission: Json;
+        try {
+          submission = pick(result, 'send', 'EmailSubmission/set');
+        } catch (error) {
+          if (error instanceof JmapError && !error.uncertain) await discard();
+          throw error;
+        }
+        if (!submission.created?.send) {
+          await discard();
+          throw jmapError(submission.notCreated?.send);
+        }
+        // The move to Sent is a separate implicit Email/set; when it fails the message has still gone out.
+        const moved = result.find(
+          x => Array.isArray(x) && x[0] === 'Email/set' && x[2] === 'send',
+        )?.[1];
+        if (!moved || moved.notUpdated?.[id] || !(id in (moved.updated ?? {})))
+          await fileSent(account, id, boxes).catch(() => undefined);
+        return { id, threadId: String(created.created.draft.threadId) };
+      };
+      return submit();
     },
     async findSent(account: Account, messageId: string) {
       const { sent } = await copies(account, bare(messageId));

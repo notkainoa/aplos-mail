@@ -4,14 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nodemailer from 'nodemailer';
 import { simpleParser } from 'mailparser';
-import type {
-  Account,
-  Attachment,
-  CalendarEvent,
-  Draft,
-  Message,
-  Thread,
-} from '@aplos/contract/legacy/types';
+import type { Account, Attachment, CalendarEvent, Draft, Message, Thread } from './contract-types';
 import {
   ProviderError,
   calendarColor,
@@ -41,41 +34,52 @@ export interface GoogleOptions {
   /** The client inlined at release build time; defaults to `bundledOAuth.google`. */
   bundled?: OAuthClient;
 }
-interface Token {
-  access_token: string;
-  refresh_token?: string;
-  expiresAt: number;
-}
-interface GmailPart {
-  partId?: string;
-  mimeType?: string;
-  filename?: string;
-  headers?: { name: string; value: string }[];
-  body?: { data?: string; size?: number; attachmentId?: string };
-  parts?: GmailPart[];
-}
-interface GmailMessage {
-  id: string;
-  internalDate?: string;
-  labelIds?: string[];
-  snippet?: string;
-  payload?: GmailPart;
-}
-interface GmailThread {
-  id: string;
-  messages?: GmailMessage[];
-}
-type Json = Record<string, any>;
+import {
+  APP_FILE,
+  APP_HEADER,
+  APP_LABEL,
+  APP_QUERY,
+  CAPABILITIES,
+  calendar,
+  enc,
+  flatten,
+  gmail,
+  header,
+  htmlText,
+  isBodyPart,
+  labelStatus,
+  normalizeGmailThread,
+  sendAttachment,
+  SEARCH_THREADS,
+  MAX_HISTORY_PAGES,
+  MAX_APP_DATA,
+  type GmailPart,
+  type GmailThread,
+  type Token,
+} from './google-model';
+
+export { labelStatus, normalizeGmailThread } from './google-model';
+export type {
+  Account,
+  AppDataRecord,
+  Attachment,
+  CalendarEvent,
+  ConnectRequest,
+  Draft,
+  MailProvider,
+  Message,
+  OAuthClient,
+  ProviderCapabilities,
+  RemoteThread,
+  SyncContext,
+  SyncResult,
+  Thread,
+  ThreadFlags,
+};
+export { ProviderError, calendarColor };
+export type Json = Record<string, any>;
 /** `uncertain` means the request may have reached Google even though no answer came back. */
 export class GoogleError extends ProviderError {}
-const CAPABILITIES: ProviderCapabilities = {
-  labels: true,
-  importance: true,
-  aliases: true,
-  signatures: true,
-  calendar: true,
-  serverSearch: true,
-};
 export type GoogleAdapter = MailProvider &
   Required<
     Pick<
@@ -91,148 +95,6 @@ export type GoogleAdapter = MailProvider &
   >;
 /** Threads fetched on a first sync, newest first. Older mail is reached through search. */
 export const INITIAL_THREADS = 500;
-const SEARCH_THREADS = 100;
-/** History pages to follow before a fresh window is cheaper than replaying changes. */
-const MAX_HISTORY_PAGES = 20;
-/** App data is one message under a hidden user label, marked by a header so sync can recognise it without the label ID. */
-/** Named so it cannot be a label the user made; Gmail search spells spaces as hyphens. */
-const APP_LABEL = 'Aplos Mail Data',
-  APP_QUERY = '-label:aplos-mail-data',
-  APP_HEADER = 'X-Aplos-Data',
-  APP_FILE = 'aplos-data.txt';
-const MAX_APP_DATA = 3_000_000;
-export function labelStatus(labels: string[]): ThreadFlags['status'] {
-  return labels.includes('TRASH')
-    ? 'trash'
-    : labels.includes('SPAM')
-      ? 'spam'
-      : labels.includes('INBOX')
-        ? 'new'
-        : 'done';
-}
-const gmail = 'https://gmail.googleapis.com/gmail/v1/users/me';
-const calendar = 'https://www.googleapis.com/calendar/v3';
-const enc = encodeURIComponent;
-const header = (part: GmailPart | undefined, name: string) =>
-  part?.headers?.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? '';
-function address(value: string) {
-  const match = value.match(/^(.*?)\s*<([^<>]+)>\s*$/);
-  return match
-    ? { email: match[2], name: match[1].replace(/^"|"$/g, '').trim() }
-    : { email: value.trim(), name: value.split('@')[0] };
-}
-function addresses(value: string) {
-  return value
-    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-    .map(v => address(v).email)
-    .filter(Boolean);
-}
-function flatten(part: GmailPart | undefined): GmailPart[] {
-  return part ? [part, ...(part.parts ?? []).flatMap(flatten)] : [];
-}
-function isBodyPart(part: GmailPart) {
-  return (
-    !part.filename &&
-    !header(part, 'content-id') &&
-    !/^attachment(?:;|$)/i.test(header(part, 'content-disposition')) &&
-    ['text/plain', 'text/html'].includes(part.mimeType ?? '')
-  );
-}
-function decode(part: GmailPart) {
-  if (!part.body?.data) return '';
-  const bytes = Buffer.from(part.body.data, 'base64url');
-  const charset =
-    header(part, 'content-type').match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1] ?? 'utf-8';
-  try {
-    return new TextDecoder(charset).decode(bytes);
-  } catch {
-    return bytes.toString('utf8');
-  }
-}
-function htmlText(html: string) {
-  return html
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-/** Normalize public Gmail payloads into our independent mailbox model. HTML is sanitized at display. */
-export function normalizeGmailThread(raw: GmailThread, account: Account): Thread {
-  const items = raw.messages ?? [];
-  const messages: Message[] = items
-    .map(m => {
-      const parts = flatten(m.payload),
-        from = address(header(m.payload, 'from'));
-      const html = parts
-        .filter(p => p.mimeType === 'text/html' && isBodyPart(p))
-        .map(decode)
-        .join('\n');
-      const text =
-        parts
-          .filter(p => p.mimeType === 'text/plain' && isBodyPart(p))
-          .map(decode)
-          .join('\n') ||
-        htmlText(html) ||
-        m.snippet ||
-        '';
-      const date = new Date(
-        Number(m.internalDate) || Date.parse(header(m.payload, 'date')) || Date.now(),
-      ).toISOString();
-      const internetId = header(m.payload, 'message-id') || undefined,
-        references = header(m.payload, 'references') || undefined;
-      return {
-        id: m.id,
-        ...(internetId ? { internetId } : {}),
-        ...(references ? { references } : {}),
-        from: from.email,
-        fromName: from.name,
-        to: addresses(header(m.payload, 'to')),
-        cc: addresses(header(m.payload, 'cc')),
-        date,
-        text,
-        html: html || undefined,
-        sent: m.labelIds?.includes('SENT') ?? false,
-        attachments: parts
-          .filter(
-            p => !isBodyPart(p) && (p.filename || p.body?.attachmentId || header(p, 'content-id')),
-          )
-          .map((p, i) => ({
-            id: `${m.id}:${p.partId ?? i}`,
-            name: p.filename || 'attachment',
-            type: p.mimeType || 'application/octet-stream',
-            size: p.body?.size ?? 0,
-            data: p.body?.data
-              ? Buffer.from(p.body.data, 'base64url').toString('base64')
-              : undefined,
-            remoteId: p.body?.attachmentId,
-            messageId: m.id,
-            contentId: header(p, 'content-id').replace(/^<|>$/g, '') || undefined,
-          })),
-      };
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const labels = [...new Set(items.flatMap(m => m.labelIds ?? []))];
-  return {
-    id: `${account.id}:${raw.id}`,
-    remoteId: raw.id,
-    accountId: account.id,
-    subject: header(items[0]?.payload, 'subject') || '(No subject)',
-    summary: htmlText(items.at(-1)?.snippet ?? '') || messages.at(-1)?.text.slice(0, 200) || '',
-    messages,
-    date: messages.at(-1)?.date ?? new Date().toISOString(),
-    unread: labels.includes('UNREAD'),
-    status: labelStatus(labels),
-    importance: labels.includes('IMPORTANT') ? 'important' : 'low',
-    bookmarked: labels.includes('STARRED'),
-    replyStatus: 'none',
-    labels,
-  };
-}
 
 const googleUnavailable = releaseBuild
   ? 'Google sign-in isn’t available in this build.'
@@ -936,26 +798,28 @@ export async function createGoogle(options: GoogleOptions): Promise<GoogleAdapte
         throw new Error(
           'This sending address is not authorized for this account. Sync the account and choose an available address.',
         );
-      let gmailId: string | undefined,
-        inReplyTo: string | undefined,
-        references: string | undefined;
-      if (draft.threadId && draft.mode !== 'new' && draft.mode !== 'forward') {
-        gmailId =
+      const threading = async () => {
+        if (!draft.threadId || draft.mode === 'new' || draft.mode === 'forward') return {};
+        const gmailId =
           thread?.remoteId ??
           (draft.threadId.startsWith(`${account.id}:`)
             ? draft.threadId.slice(account.id.length + 1)
             : undefined);
-        if (gmailId) {
-          const raw = await api(
-            account,
-            `${gmail}/threads/${enc(gmailId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
-          );
-          const payload = raw.messages?.at(-1)?.payload as GmailPart | undefined;
-          inReplyTo = header(payload, 'message-id') || undefined;
-          references =
-            [header(payload, 'references'), inReplyTo].filter(Boolean).join(' ') || undefined;
-        }
-      }
+        if (!gmailId) return { gmailId };
+        const raw = await api(
+          account,
+          `${gmail}/threads/${enc(gmailId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
+        );
+        const payload = raw.messages?.at(-1)?.payload as GmailPart | undefined;
+        const inReplyTo = header(payload, 'message-id') || undefined;
+        return {
+          gmailId,
+          inReplyTo,
+          references:
+            [header(payload, 'references'), inReplyTo].filter(Boolean).join(' ') || undefined,
+        };
+      };
+      const { gmailId, inReplyTo, references } = await threading();
       const transport = nodemailer.createTransport({
         streamTransport: true,
         buffer: true,
@@ -972,18 +836,7 @@ export async function createGoogle(options: GoogleOptions): Promise<GoogleAdapte
         text: htmlText(draft.html),
         inReplyTo,
         references,
-        attachments: draft.attachments.map(a => {
-          if (!a.data)
-            throw new Error(
-              `Attachment "${a.name}" has not been downloaded. Reattach it before sending.`,
-            );
-          return {
-            filename: a.name,
-            content: Buffer.from(a.data, 'base64'),
-            contentType: a.type,
-            cid: a.contentId,
-          };
-        }),
+        attachments: draft.attachments.map(sendAttachment),
         disableFileAccess: true,
         disableUrlAccess: true,
       });

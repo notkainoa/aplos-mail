@@ -7,7 +7,7 @@ import {
   type CalendarCredentials,
   type CalendarInfo,
 } from '@aplos/engine/legacy/provider';
-import type { Account, CalendarEvent } from '@aplos/contract/legacy/types';
+import type { Account, CalendarEvent } from './contract-types';
 import {
   applyFields,
   createCalendar,
@@ -43,13 +43,13 @@ const list = (value: unknown): Json[] =>
   value === undefined || value === null || value === ''
     ? []
     : Array.isArray(value)
-      ? value
-      : [value];
+      ? (value as Json[])
+      : [value as Json];
 const textOf = (value: unknown): string =>
   typeof value === 'string'
     ? value.trim()
     : value && typeof value === 'object' && typeof (value as Json)['#text'] === 'string'
-      ? (value as Json)['#text'].trim()
+      ? ((value as Json)['#text'] as string).trim()
       : '';
 const isObject = (value: unknown): value is Json => Boolean(value) && typeof value === 'object';
 const parent = (href: string) => href.replace(/[^/]*$/, '');
@@ -153,7 +153,7 @@ export function createCalDav(
     } catch {
       throw new CalDavError('The calendar server sent a response Aplos could not read.');
     }
-    return list(doc?.multistatus?.response).flatMap((r: Json) => {
+    return list((doc?.multistatus as Json)?.response).flatMap((r: Json) => {
       const href = textOf(list(r?.href)[0]);
       if (!href) return [];
       const props = Object.assign(
@@ -188,7 +188,7 @@ export function createCalDav(
   ): Promise<string | undefined> {
     try {
       const { responses, base } = await propfind(credentials, url, '0', element);
-      const href = responses.map(r => textOf(list(r.props[name]?.href)[0])).find(Boolean);
+      const href = responses.map(r => textOf(list((r.props[name] as Json)?.href)[0])).find(Boolean);
       return href ? new URL(href, base).toString() : undefined;
     } catch (error) {
       if (error instanceof CalDavError && [403, 404, 405].includes(error.status ?? 0)) return;
@@ -257,8 +257,8 @@ export function createCalDav(
     return found.responses
       .filter(r => isObject(r.props.resourcetype) && 'calendar' in r.props.resourcetype)
       .map(r => {
-        const components = list(r.props['supported-calendar-component-set']?.comp).map((c: Json) =>
-          String(c?.['@_name'] ?? '').toUpperCase(),
+        const components = list((r.props['supported-calendar-component-set'] as Json)?.comp).map(
+          (c: Json) => String(c?.['@_name'] ?? '').toUpperCase(),
         );
         const privileges = r.props['current-user-privilege-set'];
         const writable =
