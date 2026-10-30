@@ -30,10 +30,17 @@ const missing = flag => {
  * Sums suppressions in a parsed { file: { rule: { count } } } object, counting only file keys
  * matching one of `scopes` (all when empty). Returns { score, details } with the ten worst
  * rules first as "<rule>: <total> in <n> files". Every count must be an integer >= 0 — a
- * negative or fractional count is tampering, so it throws rather than scoring.
+ * negative or fractional count is tampering, so it throws rather than scoring. A run that
+ * names scopes but matches no suppression entry throws too: a perfect 0 would silently
+ * reward a scope that drifted away from the file names it was written for.
  */
 export function scoreSuppressions(data, scopes = []) {
   const inScope = file => scopes.length === 0 || scopes.some(glob => matchGlob(file, glob));
+  if (scopes.length && !Object.keys(data).some(inScope)) {
+    throw new Error(
+      `no suppressions entry matches --scope ${scopes.map(s => `"${s}"`).join(', ')}`,
+    );
+  }
   let total = 0;
   const byRule = new Map();
   for (const [file, rules] of Object.entries(data)) {

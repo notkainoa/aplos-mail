@@ -89,6 +89,25 @@ describe('scorer CLI', () => {
     assert.equal(JSON.parse(out.stdout.trim().split('\n').at(-1)).score, -10);
   });
 
+  it('exits non-zero with one stderr line when a scope matches no entries', () => {
+    const out = run(['--file', fixturePath, '--scope', 'apps/web/**']);
+    assert.notEqual(out.status, 0);
+    assert.equal(out.stdout.trim(), '');
+    assert.equal(out.stderr.trim().split('\n').length, 1);
+    assert.match(out.stderr, /no suppressions entry matches/);
+  });
+
+  it('exits non-zero when a scoped run sees an empty suppressions file', () => {
+    writeFileSync(join(tmp, 'empty.json'), '{}');
+    const out = run(['--file', join(tmp, 'empty.json'), '--scope', 'apps/**']);
+    assert.notEqual(out.status, 0);
+    assert.match(out.stderr, /no suppressions entry matches/);
+    // But the same empty file with no scope is an honest zero.
+    const unscoped = run(['--file', join(tmp, 'empty.json')]);
+    assert.equal(unscoped.status, 0);
+    assert.deepEqual(JSON.parse(unscoped.stdout.trim().split('\n').at(-1)).score, 0);
+  });
+
   it('exits non-zero on a missing file (attempt invalid)', () => {
     const out = run(['--file', join(tmp, 'absent.json')]);
     assert.notEqual(out.status, 0);
