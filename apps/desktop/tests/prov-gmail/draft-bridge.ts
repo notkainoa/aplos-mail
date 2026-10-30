@@ -69,6 +69,8 @@ export class DraftBridge {
   readonly requests: RequestRecord[] = [];
   /** Rewrites the JSON of a `drafts.get` reply (a draft that is still addressable but no longer a draft). */
   rewriteDraftGet?: (json: Record<string, unknown>) => Record<string, unknown>;
+  /** Runs after an upload is parsed and before it reaches the emulator (a draft deleted mid-write). */
+  beforeDelivery?: () => void;
   /** Answers every resumable session request with this Location instead of the bridge's own. */
   sessionLocation?: string;
   private emu?: GmailEmulator;
@@ -147,6 +149,7 @@ export class DraftBridge {
 
   private deliver(upload: UploadRecord, headers: Headers): Promise<Response> {
     this.uploads.push(upload);
+    this.beforeDelivery?.();
     const message: Record<string, unknown> = { raw: upload.raw.toString('base64url') };
     const thread = (upload.metadata.message as { threadId?: unknown } | undefined)?.threadId;
     if (typeof thread === 'string') message.threadId = thread;

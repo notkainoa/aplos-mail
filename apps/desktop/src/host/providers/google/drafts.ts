@@ -18,9 +18,14 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * uncertain create (a timeout after the request left, a crash before the engine recorded the answer) finds the copy
  * the first try made instead of creating a second. A create that comes back uncertain re-checks once the same way.
  * saveDraft, replace: `drafts.get` first (metadata, with the Message-ID header). A draft that is gone (404), or is no
- * longer a draft (no DRAFT label, or SENT), is `{kind:'gone'}` and is never recreated or written. A message id other than
- * `baseRemoteMessageId` is `{kind:'conflict'}` and nothing is written, unless the copy carries this upload's own
- * Message-ID (an earlier update of this very revision whose answer was lost): then it is the answer, not a conflict.
+ * longer a draft (no DRAFT label, or SENT or TRASH), is `{kind:'gone'}` and is never recreated or written; a reply
+ * without `labelIds` is an invalid response, not "not a draft". A message id other than `baseRemoteMessageId` is
+ * `{kind:'conflict'}` and nothing is written, always, even when the copy's Message-ID header is ours. So an update
+ * whose answer was lost (or a new revision after it) yields a conflict about our own text: safe by design, and "keep
+ * mine" recovers it. TODO(live): verify whether Gmail rewrites the Message-ID when another client edits a draft; only
+ * then could a lost ack be recognised without risk of adopting a foreign edit. A 404 on the update itself is re-read
+ * with `drafts.get` and is `gone` only if that also 404s or the draft is no longer one; a draft that still exists
+ * makes it a transient, uncertain error.
  * Otherwise `drafts.update` replaces the copy and the new message id is returned: it is the precondition of the next
  * save and of `sendsRemoteDraft`. Gmail has no etag, so an edit made between the `get` and the `update` (milliseconds)
  * still wins the race; the next save sees the new id and raises the conflict.
@@ -47,12 +52,14 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  *     copy first, so an uncertain create followed by an edit can leave two remote copies (a duplicate, not a loss).
  *     Needed: `DraftUpload.supersedes?: string[]` (earlier `internetId`s) that the create looks up and, when found,
  *     replaces instead of creating.
+ * The upload session URI must be https on `googleapis.com` or a subdomain (deliberate: the bytes and the token go there).
  * Search lags the index: a copy created a moment ago can be missing from the `q` search; the lookup then misses it and
  * an immediate retry creates a second copy (the duplicate is found and cleaned up by the engine's `wrote` handling).
  */
 
 const DRAFT = 'DRAFT';
 const SENT = 'SENT';
+const TRASH = 'TRASH';
 /** Hits verified per Message-ID search: a Message-ID is unique, so more than one is already unusual. */
 const CANDIDATES = 10;
 /** Message-ID characters that are plain words to Gmail search: no quote, brace, parenthesis, bar or space. */
@@ -88,14 +95,16 @@ const incomplete = (method: string, reason: string): ProviderError =>
 function copyOf(draft: DraftGet): RemoteCopy | undefined {
   const message = draft.message;
   if (typeof draft.id !== 'string' || typeof message?.id !== 'string') return undefined;
-  const labels = Array.isArray(message.labelIds) ? message.labelIds : [];
+  // Asked for with a `fields` mask: a reply without labels cannot say whether this is a draft, so it says nothing.
+  if (!Array.isArray(message.labelIds)) return undefined;
+  const labels = message.labelIds;
   const header = message.payload?.headers?.find(
     h => typeof h.name === 'string' && h.name.toLowerCase() === 'message-id',
   );
   return {
     draftId: draft.id,
     messageId: message.id,
-    isDraft: labels.includes(DRAFT) && !labels.includes(SENT),
+    isDraft: labels.includes(DRAFT) && !labels.includes(SENT) && !labels.includes(TRASH),
     ...(typeof message.threadId === 'string' ? { threadId: message.threadId } : {}),
     ...(typeof header?.value === 'string' ? { internetId: header.value.trim() } : {}),
   };
@@ -221,10 +230,33 @@ async function createCopy(
 function precondition(draft: DraftUpload, current: RemoteCopy): DraftSaveResult | undefined {
   const base = draft.baseRemoteMessageId;
   if (base === undefined || current.messageId === base) return undefined;
-  // An earlier update of this very revision whose answer was lost: the copy is ours, not an edit made elsewhere.
-  if (current.internetId && bareId(current.internetId) === bareId(draft.internetId))
-    return saved(current, draft.revision);
+  // Any other message id is a conflict, even when its Message-ID header is ours: a header is not proof of who wrote
+  // the bytes. TODO(live): verify on real Gmail whether it rewrites the Message-ID when another client edits a draft;
+  // only if it never keeps ours could a lost update ack be recognised safely.
   return { kind: 'conflict', remoteMessageId: current.messageId };
+}
+
+/**
+ * A 404 on the update: gone only when the draft is really gone or no longer a draft. A draft that still exists means the
+ * 404 was something else (a stale session, an upstream hiccup): throw it as uncertain, never `gone` (the engine would
+ * forget a copy that is still there, and a later save could create a second).
+ */
+async function confirmGone(
+  client: GmailClient,
+  draftId: string,
+  failure: unknown,
+): Promise<DraftSaveResult> {
+  const again = await readCopy(client, draftId);
+  if (!again?.isDraft) return { kind: 'gone' };
+  const cause = failure instanceof ProviderError ? failure.error : undefined;
+  throw new ProviderError({
+    class: 'transient',
+    provider: 'gmail',
+    method: 'gmail.drafts.update',
+    reason: 'updateNotFoundButDraftExists',
+    ...(cause?.status !== undefined ? { status: cause.status } : {}),
+    uncertain: true,
+  });
 }
 
 async function replaceCopy(
@@ -247,8 +279,7 @@ async function replaceCopy(
     });
     return saved(fromResource(updated), draft.revision);
   } catch (error) {
-    // Deleted or sent between the read and the write: still gone, and still not recreated.
-    if (is404(error)) return { kind: 'gone' };
+    if (is404(error)) return confirmGone(client, remoteDraftId, error);
     throw error;
   }
 }

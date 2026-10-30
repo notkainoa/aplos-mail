@@ -199,7 +199,7 @@ test('prov-gmail-drafts a stale base is a conflict and the remote text is untouc
   assert.equal(s.bridge.uploads.length, 1, 'only the first create ever uploaded');
 });
 
-test('prov-gmail-drafts an update whose answer was lost is recognised by its Message-ID, not a conflict', async () => {
+test('prov-gmail-drafts an update whose answer was lost is a conflict about our own text, never adopted (safe by design)', async () => {
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
@@ -210,10 +210,36 @@ test('prov-gmail-drafts an update whose answer was lost is recognised by its Mes
   faults.dropAfterNext({ apiMethod: 'gmail.users.drafts.update' });
   await assert.rejects(s.r.adapter.saveDraft(next, s.r.ctx()), ProviderError);
   assert.match(s.remoteDrafts()[0].text, /v2/, 'the write did land');
-  // The engine still holds the old base and asks again.
-  const again = saved(await s.r.adapter.saveDraft(next, s.r.ctx()));
-  assert.equal(again.remoteMessageId, s.remoteDrafts()[0].messageId);
-  assert.equal(s.bridge.uploads.length, 2, 'the retry wrote nothing');
+  const landed = s.remoteDrafts()[0].messageId;
+  // The engine still holds the old base and asks again: a changed id is a conflict, with the id it found.
+  assert.deepEqual(await s.r.adapter.saveDraft(next, s.r.ctx()), {
+    kind: 'conflict',
+    remoteMessageId: landed,
+  });
+  // The same after a new revision: a conflict, and nothing is written over the copy.
+  const newer = s.upload(
+    { body: 'v3' },
+    { remoteDraftId: first.remoteDraftId, baseRemoteMessageId: first.remoteMessageId },
+  );
+  assert.equal((await s.r.adapter.saveDraft(newer, s.r.ctx())).kind, 'conflict');
+  assert.equal(s.bridge.uploads.length, 2, 'no upload after the lost ack');
+  assert.match(s.remoteDrafts()[0].text, /v2/);
+});
+
+test('prov-gmail-drafts a phone edit that keeps our Message-ID header is still a conflict and is not overwritten', async () => {
+  const s = await setup();
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
+  const next = s.upload(
+    { body: 'v2' },
+    { remoteDraftId: first.remoteDraftId, baseRemoteMessageId: first.remoteMessageId },
+  );
+  // The other client edits the text and keeps the very Message-ID this upload will carry.
+  const { mime } = mimeOf(s.r.account.address, { id: next.internetId, body: 'Phone text.' });
+  s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);
+  const result = await s.r.adapter.saveDraft(next, s.r.ctx());
+  assert.equal(result.kind, 'conflict');
+  assert.match(s.remoteDrafts()[0].text, /Phone text\./);
+  assert.equal(s.bridge.uploads.length, 1);
 });
 
 // ---- gone ----
@@ -285,7 +311,20 @@ test('prov-gmail-drafts a copy that is addressable but no longer a draft (SENT, 
   assert.equal(s.bridge.uploads.length, 1);
 });
 
-test('prov-gmail-drafts a draft deleted between the read and the write is gone (404 on update), not recreated', async () => {
+test('prov-gmail-drafts a draft deleted between the read and the write is gone (confirmed by a re-read), not recreated', async () => {
+  const s = await setup();
+  const made = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
+  s.bridge.beforeDelivery = () => s.r.emu.mailbox.deleteDraft(made.remoteDraftId);
+  const result = await s.r.adapter.saveDraft(
+    s.upload({}, { remoteDraftId: made.remoteDraftId, baseRemoteMessageId: made.remoteMessageId }),
+    s.r.ctx(),
+  );
+  assert.deepEqual(result, { kind: 'gone' });
+  assert.equal(s.bridge.uploads.filter(u => u.draftId === undefined).length, 1, 'no second create');
+  assert.equal(s.remoteDrafts().length, 0);
+});
+
+test('prov-gmail-drafts a 404 on update while the draft still exists is uncertain, never gone', async () => {
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const made = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
@@ -293,12 +332,49 @@ test('prov-gmail-drafts a draft deleted between the read and the write is gone (
     { apiMethod: 'gmail.users.drafts.update' },
     { status: 404, reason: 'notFound', message: 'Requested entity was not found.' },
   );
-  const result = await s.r.adapter.saveDraft(
-    s.upload({}, { remoteDraftId: made.remoteDraftId, baseRemoteMessageId: made.remoteMessageId }),
-    s.r.ctx(),
-  );
-  assert.deepEqual(result, { kind: 'gone' });
-  assert.equal(s.bridge.uploads.filter(u => u.draftId === undefined).length, 1, 'no second create');
+  const error = await s.r.adapter
+    .saveDraft(
+      s.upload(
+        {},
+        { remoteDraftId: made.remoteDraftId, baseRemoteMessageId: made.remoteMessageId },
+      ),
+      s.r.ctx(),
+    )
+    .catch((e: unknown) => e);
+  assert.ok(error instanceof ProviderError, 'thrown, not a result');
+  assert.equal(error.error.class, 'transient');
+  assert.equal(error.error.uncertain, true);
+  assert.equal(s.remoteDrafts().length, 1, 'the copy is still there');
+});
+
+test('prov-gmail-drafts a trashed draft is gone; a reply without labelIds is invalid, not "not a draft"', async () => {
+  const s = await setup();
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'v1' }), s.r.ctx()));
+  const again = () =>
+    s.upload(
+      {},
+      { remoteDraftId: first.remoteDraftId, baseRemoteMessageId: first.remoteMessageId },
+    );
+  const relabel = (labelIds?: string[]) => (json: Record<string, unknown>) => {
+    const { labelIds: _dropped, ...rest } = json.message as Record<string, unknown>;
+    return { ...json, message: { ...rest, ...(labelIds ? { labelIds } : {}) } };
+  };
+  s.bridge.rewriteDraftGet = relabel(['DRAFT', 'TRASH']);
+  assert.deepEqual(await s.r.adapter.saveDraft(again(), s.r.ctx()), { kind: 'gone' });
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0, 'a trashed draft is not deleted either');
+
+  s.bridge.rewriteDraftGet = relabel();
+  const save = await s.r.adapter.saveDraft(again(), s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(save instanceof ProviderError);
+  assert.equal(save.error.reason, 'invalidResponse');
+  const del = await s.r.adapter
+    .deleteDraft(first.remoteDraftId, s.r.ctx())
+    .catch((e: unknown) => e);
+  assert.ok(del instanceof ProviderError);
+  assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0);
+  assert.equal(s.bridge.uploads.length, 1);
+  assert.equal(s.remoteDrafts().length, 1);
 });
 
 // ---- uncertain create ----
@@ -437,6 +513,25 @@ test('prov-gmail-drafts an oversize draft is refused as permanent with no reques
   assert.equal(error.error.reason, 'messageTooLarge');
   assert.equal(s.bridge.requests.length, 0);
   assert.equal(s.r.governor.calls.length, 0);
+});
+
+test('prov-gmail-drafts the 35 MB limit: accepted at exactly the limit, refused one byte over with no request', async () => {
+  const s = await setup();
+  const limit = 35 * 1024 * 1024;
+  const base = s.upload({ body: '' });
+  const pad = (bytes: number) => Buffer.concat([Buffer.from(base.mime), Buffer.alloc(bytes, 0x61)]);
+  const atLimit = pad(limit - base.mime.length);
+  assert.equal(atLimit.length, limit);
+  const over = await s.r.adapter
+    .saveDraft({ ...base, mime: pad(limit - base.mime.length + 1) }, s.r.ctx())
+    .catch((e: unknown) => e);
+  assert.ok(over instanceof ProviderError);
+  assert.equal(over.error.reason, 'messageTooLarge');
+  assert.equal(s.bridge.requests.length, 0);
+  assert.equal(s.r.governor.calls.length, 0);
+  saved(await s.r.adapter.saveDraft({ ...base, mime: atLimit }, s.r.ctx()));
+  assert.equal(s.bridge.uploads.at(-1)!.uploadType, 'resumable');
+  assert.equal(s.bridge.uploads.at(-1)!.raw.length, limit);
 });
 
 // ---- the upload path ----
