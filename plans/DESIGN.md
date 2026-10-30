@@ -1018,10 +1018,11 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 | Where | Wording |
 |---|---|
 | List could not load | "Couldn’t load this list." with "Try again" |
-| A save or move failed | "Couldn’t save that. Nothing changed." / "Couldn’t move it." |
+| A write was refused | "Couldn’t " + the action: "mark it done", "move to Later", "move to Trash", "move it"; also "Couldn’t save that. Nothing changed." and "Couldn’t move it." |
+| Delete or discard refused | "Couldn’t delete that. It is still here." / "Couldn’t discard the draft. It is still saved." |
 | Engine unreachable | "Aplos can’t reach its mail engine." / "Couldn’t restart. Your mail is safe on this Mac." |
-| Diagnostics | "Diagnostics copied" / "Diagnostics exported" / "Couldn’t get the diagnostics." |
-| Reconnect sheet failures | "That was a different account…", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect…" |
+| Diagnostics | "Diagnostics copied" / "Diagnostics copied. They hold no mail." / "Diagnostics exported" / "Couldn’t get the diagnostics." |
+| Reconnect sheet failures | "That was a different account. Sign in with the same one.", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
 | Confirms | "Delete this email forever?" (button "Delete forever"); "Discard this draft?" (button "Discard") |
 | Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home" |
 | Spam quick action | "Not spam" (this replaces "Restore" for Spam) |
