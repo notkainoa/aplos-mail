@@ -2,7 +2,8 @@
  * A neutral RFC 5322 / MIME writer for the outbox (time-2): TextEncoder and Uint8Array only, its own base64 and
  * quoted-printable, CRLF line ends and lines of at most 76 characters in every body part. Header injection is
  * impossible: every header value has CR and LF stripped, and an address containing them (or anything else outside a
- * plain `local@domain`) is refused. Bcc never appears in the headers; it is only in the SMTP envelope.
+ * plain `local@domain`) is refused, in the headers and in the SMTP envelope alike. Bcc never appears in the headers;
+ * it is only in the envelope. Non-ASCII text is RFC 2047 or RFC 2231 encoded; a non-ASCII domain is sent as punycode.
  */
 
 export interface MimeAddress {
@@ -49,9 +50,12 @@ function hex(bytes: Uint8Array) {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** A fresh Message-ID: 128 random bits, `<hex@aplos.local>`. */
-export function newMessageId(randomBytes: (n: number) => Uint8Array = defaultRandom): string {
-  return `<${hex(randomBytes(16))}@aplos.local>`;
+/** A fresh Message-ID: 128 random bits at the sender's domain (or `aplos.local`), `<hex@domain>`. */
+export function newMessageId(
+  randomBytes: (n: number) => Uint8Array = defaultRandom,
+  domain = 'aplos.local',
+): string {
+  return `<${hex(randomBytes(16))}@${domain}>`;
 }
 
 // ---------------------------------------------------------------- encodings
@@ -132,7 +136,7 @@ export function encodedWords(text: string): string[] {
   };
   for (const ch of text) {
     const bytes = encoder.encode(ch);
-    if (chunk.length + bytes.length > 45) flush();
+    if (chunk.length + bytes.length > 36) flush();
     chunk.push(...bytes);
   }
   flush();
@@ -162,13 +166,32 @@ export function foldHeader(line: string): string {
   return parts.join(CRLF);
 }
 
-const ADDRESS = /^[^\s<>()[\]\\,;:"@\0-\x1f\x7f]+@[^\s<>()[\]\\,;:"@\0-\x1f\x7f]+$/;
+/** RFC 5322 `atext` and dots: a quoted local part is refused, as are brackets, quotes, spaces and a second `@`. */
+const LOCAL_PART = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+const DOMAIN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
 
-/** Refuses anything but a plain `local@domain`: no CR/LF, spaces, brackets, quotes or a second `@`. */
+/** A domain as it goes on the wire: ASCII as is, anything else as punycode (the URL parser's IDNA step). */
+function wireDomain(domain: string): string {
+  if (isPlainAscii(domain)) return domain;
+  try {
+    return new URL(`http://${domain}`).hostname;
+  } catch {
+    return domain;
+  }
+}
+
+/**
+ * Refuses anything but a plain `local@domain` and returns the address as it must be written, in the headers and in
+ * the SMTP envelope alike: an ASCII local part (no SMTPUTF8) and a domain that is ASCII or becomes punycode.
+ */
 export function checkAddress(address: string): string {
-  if (!ADDRESS.test(address) || address.length > 320)
+  const at = address.lastIndexOf('@');
+  const local = address.slice(0, at);
+  const domain = at < 0 ? '' : wireDomain(address.slice(at + 1));
+  const ok = at >= 1 && address.length <= 320 && LOCAL_PART.test(local) && DOMAIN.test(domain);
+  if (!ok)
     throw new MimeError(`"${headerSafe(address).slice(0, 100)}" is not a valid email address.`);
-  return address;
+  return `${local}@${domain}`;
 }
 
 function displayName(name: string): string {
@@ -248,30 +271,73 @@ function decodeEntities(text: string): string {
   });
 }
 
-/** Drops `<script>` and `<style>` elements with their content, scanning with indexOf (no backtracking). */
-function dropElements(html: string, tag: string): string {
-  const lower = html.toLowerCase();
-  let out = '';
-  let from = 0;
-  for (;;) {
-    const start = lower.indexOf(`<${tag}`, from);
-    if (start < 0) break;
-    const close = lower.indexOf(`</${tag}`, start);
-    const end = close < 0 ? html.length : lower.indexOf('>', close) + 1 || html.length;
-    out += html.slice(from, start);
-    from = end;
-  }
-  return out + html.slice(from);
+/** Lower-cases ASCII only, so an index in the result is an index in the input (`toLowerCase` can change a length). */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]/g, c => String.fromCharCode(c.charCodeAt(0) + 32));
 }
 
-/** The text/plain rendering of the draft's HTML: block ends become line breaks, tags go, entities decode. */
+/** Block elements whose end leaves a blank line, and those that only end the line. */
+const PARAGRAPHS = new Set(['p', 'blockquote', 'pre', 'table', 'ul', 'ol']);
+const LINES = new Set(['div', 'li', 'tr']);
+const HEADING = /^h[1-6]$/;
+const TAG = /^(\/?)([a-z][a-z0-9]*)/;
+const TAG_START = /[A-Za-z/!?]/;
+
+/**
+ * What one tag adds to the text. A block that opens starts a new line unless one just started, `<li>` also writes its
+ * bullet, `<br>` ends the line, and a paragraph or heading that closes leaves a blank line.
+ */
+function tagText(inner: string, atLineStart: boolean): string {
+  const m = TAG.exec(asciiLower(inner.trimStart()));
+  if (!m) return '';
+  const [, closing, name] = m;
+  if (name === 'br') return '\n';
+  const paragraph = PARAGRAPHS.has(name) || HEADING.test(name);
+  if (closing) return paragraph ? '\n\n' : LINES.has(name) ? '\n' : '';
+  const lineBreak = atLineStart ? '' : '\n';
+  if (name === 'li') return `${lineBreak}- `;
+  return paragraph || LINES.has(name) ? lineBreak : '';
+}
+
+/** Where the text continues after a `<script>` or `<style>` element that starts at `from`: past its end tag. */
+function afterElement(lower: string, name: string, from: number): number {
+  const close = lower.indexOf(`</${name}`, from);
+  if (close < 0) return lower.length;
+  const end = lower.indexOf('>', close);
+  return end < 0 ? lower.length : end + 1;
+}
+
+/**
+ * The text/plain rendering of the draft's HTML: block ends become line breaks, tags go, scripts and styles are
+ * dropped with their content, entities decode. One left-to-right pass over indexOf, so no input can make it slow
+ * (a million `<` without a `>` is linear, where a `<[^>]*>` regex is quadratic).
+ */
 export function htmlToText(html: string): string {
-  const body = dropElements(dropElements(html, 'script'), 'style')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<li[\s>][^>]*>|<li>/gi, '\n- ')
-    .replace(/<\/(p|div|li|tr|h[1-6]|blockquote|pre|table|ul|ol)\s*>/gi, '\n')
-    .replace(/<[^>]*>/g, '');
-  return decodeEntities(normalizeBreaks(body))
+  const lower = asciiLower(html);
+  let out = '';
+  let at = 0;
+  while (at < html.length) {
+    const open = html.indexOf('<', at);
+    if (open < 0) break;
+    out += html.slice(at, open);
+    if (!TAG_START.test(html[open + 1] ?? '')) {
+      // A lone `<` ("a < b") is text, not a tag.
+      out += '<';
+      at = open + 1;
+      continue;
+    }
+    const close = html.indexOf('>', open + 1);
+    if (close < 0) {
+      out += html.slice(open);
+      at = html.length;
+      break;
+    }
+    const name = /^(script|style)\b/.exec(lower.slice(open + 1, open + 8))?.[1];
+    at = name ? afterElement(lower, name, close) : close + 1;
+    if (!name) out += tagText(html.slice(open + 1, close), out === '' || out.endsWith('\n'));
+  }
+  if (at < html.length) out += html.slice(at);
+  return decodeEntities(normalizeBreaks(out))
     .split('\n')
     .map(line => line.replace(/[ \t]+$/, ''))
     .join('\n')
@@ -328,19 +394,56 @@ function attachmentPart(a: MimeAttachment): string {
   return [...lines, '', base64Body(a.bytes)].join(CRLF);
 }
 
+const cidOf = (a: MimeAttachment) => a.contentId?.replace(/[^A-Za-z0-9._@$-]/g, '');
+const isRelated = (a: MimeAttachment) => a.inline === true && !!cidOf(a);
+
+/** The HTML part; with inline images it is multipart/related so `cid:` references resolve. */
+function htmlBody(
+  html: string,
+  inline: readonly MimeAttachment[],
+  random: (n: number) => Uint8Array,
+) {
+  const part = textPart('html', html);
+  if (!inline.length) return part;
+  return multipart('related', boundary(random), [part, ...inline.map(attachmentPart)]);
+}
+
 /**
- * The submission's exact bytes: headers, then multipart/alternative (text/plain from the HTML, and the HTML), wrapped
- * in multipart/mixed when there are attachments. Throws `MimeError` for an address it cannot write safely.
+ * The submission's exact bytes: headers, then multipart/alternative (text/plain from the HTML, and the HTML with its
+ * inline images), wrapped in multipart/mixed when there are other attachments. Throws `MimeError` for an address it
+ * cannot write safely.
  */
 export function buildMime(input: MimeInput): Uint8Array {
   const random = input.randomBytes ?? defaultRandom;
+  const attachments = input.attachments ?? [];
+  const inline = attachments.filter(isRelated);
   const alternative = multipart('alternative', boundary(random), [
     textPart('plain', htmlToText(input.html)),
-    textPart('html', input.html),
+    htmlBody(input.html, inline, random),
   ]);
-  const attachments = input.attachments ?? [];
-  const body = attachments.length
-    ? multipart('mixed', boundary(random), [alternative, ...attachments.map(attachmentPart)])
+  const regular = attachments.filter(a => !isRelated(a));
+  const body = regular.length
+    ? multipart('mixed', boundary(random), [alternative, ...regular.map(attachmentPart)])
     : alternative;
   return encoder.encode(topHeaders(input).join(CRLF) + CRLF + body);
+}
+
+/**
+ * The SMTP envelope: the sender and every To, Cc and Bcc recipient once, each checked and written exactly like the
+ * headers. A Bcc address is never in the MIME, so this is where it is validated too.
+ */
+export function buildEnvelope(
+  from: MimeAddress,
+  fields: { to: readonly MimeAddress[]; cc: readonly MimeAddress[]; bcc: readonly MimeAddress[] },
+): { from: string; rcpt: string[] } {
+  const seen = new Set<string>();
+  const rcpt: string[] = [];
+  for (const a of [...fields.to, ...fields.cc, ...fields.bcc]) {
+    const address = checkAddress(a.address);
+    const key = address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rcpt.push(address);
+  }
+  return { from: checkAddress(from.address), rcpt };
 }
