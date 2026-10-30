@@ -9,13 +9,19 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { pathCollisions } from '../hillclimb/diffguard.mjs';
 import {
@@ -354,14 +360,18 @@ describe('linkNodeModules + worktrees', () => {
     writeFileSync(join(r.dir, 'node_modules', 'dep.txt'), 'x');
   };
 
-  it('links the root node_modules and hides it from status', () => {
+  it('builds a real node_modules dir of links and hides it from status', () => {
     const r = freshRepo();
     ignoreModules(r);
     const wt = join(tmp, 'wt-link');
     addWorktree(r.dir, { dir: wt, commit: r.head() });
     const linked = linkNodeModules(r.dir, wt);
     assert.deepEqual(linked, ['.']);
-    assert.ok(lstatSync(join(wt, 'node_modules')).isSymbolicLink());
+    const modules = lstatSync(join(wt, 'node_modules'));
+    assert.ok(modules.isDirectory() && !modules.isSymbolicLink());
+    // The main checkout's file entry is a hardlink inside the real dir.
+    const dep = lstatSync(join(wt, 'node_modules', 'dep.txt'));
+    assert.ok(dep.isFile() && !dep.isSymbolicLink());
     assert.equal(statusPorcelain(wt).length, 0);
     removeWorktree(r.dir, wt);
   });
@@ -404,6 +414,183 @@ describe('linkNodeModules + worktrees', () => {
     const wt = join(tmp, 'wt-clean');
     addWorktree(r.dir, { dir: wt, commit: r.head() });
     assert.equal(commitAll(wt, 'nothing'), null);
+    removeWorktree(r.dir, wt);
+  });
+});
+
+// The hybrid layout: a real node_modules container of real package dirs whose contents
+// link back to the main checkout, while every workspace name links INSIDE the worktree —
+// the shape npm itself installs, and the only one npm ls accepts without "extraneous".
+describe('linkNodeModules hybrid layout', () => {
+  const realDir = path => lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink();
+
+  // A fixture monorepo: workspaces @aplos/{x,y,tool,ghost}, a third-party package with a
+  // bin shim and a nested node_modules dep, a workspace bin shim, and the hidden lockfile.
+  function seedMonorepo(r) {
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(
+      join(r.dir, 'package.json'),
+      '{"name":"t","private":true,"workspaces":["packages/*"]}\n',
+    );
+    const ws = (dir, manifest, files = {}) => {
+      mkdirSync(join(r.dir, 'packages', dir), { recursive: true });
+      writeFileSync(join(r.dir, 'packages', dir, 'package.json'), manifest);
+      for (const [name, text] of Object.entries(files)) {
+        mkdirSync(join(r.dir, 'packages', dir, dirname(name)), { recursive: true });
+        writeFileSync(join(r.dir, 'packages', dir, name), text);
+      }
+    };
+    ws('x', '{"name":"@aplos/x","version":"1.0.0","main":"index.cjs"}\n', {
+      'index.cjs': 'module.exports = "v1";\n',
+    });
+    ws('y', '{"name":"@aplos/y","version":"1.0.0","dependencies":{"@aplos/x":"1.0.0"}}\n');
+    ws('tool', '{"name":"@aplos/tool","version":"1.0.0","bin":{"aplos-tool":"bin/cli.js"}}\n', {
+      'bin/cli.js': '#!/usr/bin/env node\n',
+    });
+    // ghost is a workspace npm would link but the main tree deliberately lacks.
+    ws('ghost', '{"name":"@aplos/ghost","version":"1.0.0"}\n');
+    r.commit('monorepo fixture');
+
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(join(mods, 'third', 'bin'), { recursive: true });
+    writeFileSync(join(mods, 'third', 'package.json'), '{"name":"third","version":"2.0.0"}\n');
+    writeFileSync(join(mods, 'third', 'LICENSE'), 'fixture license\n');
+    mkdirSync(join(mods, 'third', 'lib'));
+    writeFileSync(join(mods, 'third', 'lib', 'index.js'), 'module.exports = 1;\n');
+    writeFileSync(join(mods, 'third', 'bin', 'tool'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    mkdirSync(join(mods, 'third', 'node_modules', 'nesteddep'), { recursive: true });
+    writeFileSync(
+      join(mods, 'third', 'node_modules', 'nesteddep', 'package.json'),
+      '{"name":"nesteddep","version":"3.0.0"}\n',
+    );
+    mkdirSync(join(mods, '@aplos'));
+    for (const name of ['x', 'y', 'tool']) {
+      symlinkSync(join('..', '..', 'packages', name), join(mods, '@aplos', name), 'junction');
+    }
+    writeFileSync(join(mods, '.package-lock.json'), '{"lockfileVersion":3}\n');
+    mkdirSync(join(mods, '.bin'));
+    symlinkSync(join('..', 'third', 'bin', 'tool'), join(mods, '.bin', 'tool'));
+    symlinkSync(join('..', '@aplos', 'tool', 'bin', 'cli.js'), join(mods, '.bin', 'aplos-tool'));
+    // A per-workspace node_modules in main — the worktree must get the same hybrid.
+    const xmods = join(r.dir, 'packages', 'x', 'node_modules');
+    mkdirSync(join(xmods, '@aplos'), { recursive: true });
+    symlinkSync(join('..', '..', '..', 'y'), join(xmods, '@aplos', 'y'), 'junction');
+    mkdirSync(join(xmods, 'dep2'));
+    writeFileSync(join(xmods, 'dep2', 'package.json'), '{"name":"dep2"}\n');
+  }
+
+  it('builds real dirs down to each package with worktree-local workspace links', () => {
+    const r = freshRepo();
+    seedMonorepo(r);
+    const wt = join(tmp, 'wt-hybrid');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    const linked = linkNodeModules(r.dir, wt).sort();
+    assert.deepEqual(linked, ['.', 'packages/x']);
+
+    const mods = join(wt, 'node_modules');
+    // The container and every package ancestry are real dirs; contents are hardlinks, so
+    // dirent-based readers (isFile/isDirectory filters) see the same tree npm installed.
+    assert.ok(realDir(mods));
+    assert.ok(realDir(join(mods, 'third')));
+    const thirdPj = lstatSync(join(mods, 'third', 'package.json'));
+    assert.ok(thirdPj.isFile() && !thirdPj.isSymbolicLink());
+    assert.equal(
+      statSync(join(mods, 'third', 'package.json')).ino,
+      statSync(join(r.dir, 'node_modules', 'third', 'package.json')).ino,
+    );
+    assert.ok(realDir(join(mods, 'third', 'lib')));
+    const dirents = readdirSync(join(mods, 'third'), { withFileTypes: true });
+    assert.ok(dirents.find(e => e.name === 'LICENSE').isFile());
+    assert.ok(dirents.find(e => e.name === 'lib').isDirectory());
+    assert.equal(readFileSync(join(mods, 'third', 'LICENSE'), 'utf8'), 'fixture license\n');
+    assert.ok(realDir(join(mods, 'third', 'node_modules')));
+    assert.ok(realDir(join(mods, 'third', 'node_modules', 'nesteddep')));
+    // Scope dirs are real too; a workspace link inside them points INTO the worktree.
+    assert.ok(realDir(join(mods, '@aplos')));
+    assert.equal(readlinkSync(join(mods, '@aplos', 'x')), join('..', '..', 'packages', 'x'));
+    assert.equal(realpathSync(join(mods, '@aplos', 'x')), realpathSync(join(wt, 'packages', 'x')));
+    // A workspace missing from the main tree is still linked, like npm would do.
+    assert.equal(
+      realpathSync(join(mods, '@aplos', 'ghost')),
+      realpathSync(join(wt, 'packages', 'ghost')),
+    );
+    // The hidden lockfile comes along as a hardlinked file.
+    const hiddenLock = lstatSync(join(mods, '.package-lock.json'));
+    assert.ok(hiddenLock.isFile() && !hiddenLock.isSymbolicLink());
+    assert.equal(JSON.parse(readFileSync(join(mods, '.package-lock.json'))).lockfileVersion, 3);
+    // .bin must explode: one shim resolves into a workspace. The workspace-bound shim is
+    // recreated against the worktree; the third-party one links the main entry.
+    assert.ok(realDir(join(mods, '.bin')));
+    assert.equal(
+      realpathSync(join(mods, '.bin', 'aplos-tool')),
+      realpathSync(join(wt, 'packages', 'tool', 'bin', 'cli.js')),
+    );
+    assert.equal(
+      realpathSync(join(mods, '.bin', 'tool')),
+      realpathSync(join(r.dir, 'node_modules', 'third', 'bin', 'tool')),
+    );
+    // The per-workspace node_modules is the same hybrid, links re-pointed inside.
+    const xmods = join(wt, 'packages', 'x', 'node_modules');
+    assert.ok(realDir(xmods));
+    assert.ok(realDir(join(xmods, 'dep2')));
+    assert.equal(realpathSync(join(xmods, '@aplos', 'y')), realpathSync(join(wt, 'packages', 'y')));
+    assert.deepEqual(statusPorcelain(wt), []);
+    removeWorktree(r.dir, wt);
+  });
+
+  it('is idempotent — a second pass adds nothing and changes nothing', () => {
+    const r = freshRepo();
+    seedMonorepo(r);
+    const wt = join(tmp, 'wt-hybrid-2');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    linkNodeModules(r.dir, wt);
+    const before = readlinkSync(join(wt, 'node_modules', '@aplos', 'x'));
+    assert.deepEqual(linkNodeModules(r.dir, wt).sort(), ['.', 'packages/x']);
+    assert.equal(readlinkSync(join(wt, 'node_modules', '@aplos', 'x')), before);
+    removeWorktree(r.dir, wt);
+  });
+
+  it('leaves .bin as one link when no shim is workspace-bound', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('no workspaces');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(join(mods, 'third', 'bin'), { recursive: true });
+    writeFileSync(join(mods, 'third', 'bin', 'tool'), '#!/bin/sh\n', { mode: 0o755 });
+    mkdirSync(join(mods, '.bin'));
+    symlinkSync(join('..', 'third', 'bin', 'tool'), join(mods, '.bin', 'tool'));
+    const wt = join(tmp, 'wt-binlink');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    linkNodeModules(r.dir, wt);
+    assert.ok(lstatSync(join(wt, 'node_modules', '.bin')).isSymbolicLink());
+    // The shim still resolves to the main package's file.
+    assert.equal(
+      realpathSync(join(wt, 'node_modules', '.bin', 'tool')),
+      realpathSync(join(mods, 'third', 'bin', 'tool')),
+    );
+    removeWorktree(r.dir, wt);
+  });
+
+  // The defect this layout fixes: with the old whole-dir node_modules symlink, the
+  // worktree's @aplos links pointed back into the MAIN checkout, so a change to a
+  // workspace package was invisible to gates running in the worktree.
+  it('sees a worktree-side workspace change through require.resolve', () => {
+    const r = freshRepo();
+    seedMonorepo(r);
+    const wt = join(tmp, 'wt-isolation');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    linkNodeModules(r.dir, wt);
+    writeFileSync(join(wt, 'packages', 'x', 'index.cjs'), 'module.exports = "v2";\n');
+    const requireFromY = createRequire(join(wt, 'packages', 'y', 'index.cjs'));
+    const resolved = requireFromY.resolve('@aplos/x');
+    assert.equal(resolved, realpathSync(join(wt, 'packages', 'x', 'index.cjs')));
+    assert.equal(requireFromY('@aplos/x'), 'v2');
+    // The main checkout's copy is untouched and would have shadowed v2 under the old link.
+    assert.equal(
+      readFileSync(join(r.dir, 'packages', 'x', 'index.cjs'), 'utf8'),
+      'module.exports = "v1";\n',
+    );
     removeWorktree(r.dir, wt);
   });
 });
