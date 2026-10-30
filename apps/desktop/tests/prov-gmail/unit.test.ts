@@ -673,5 +673,6 @@ test('prov-gmail parts owned by other lanes are typed not-in-this-lane stubs', a
   assert.equal(adapter.workflow, undefined);
   assert.equal(adapter.calendar, undefined);
   assert.equal(adapter.rules, undefined);
-  assert.equal(adapter.saveDraft, undefined);
+  assert.equal(typeof adapter.saveDraft, 'function', 'drafts are built (drafts.test.ts)');
+  assert.equal(typeof adapter.deleteDraft, 'function');
 });

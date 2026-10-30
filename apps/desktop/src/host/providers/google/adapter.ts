@@ -8,6 +8,8 @@ import type {
   ConnectContext,
   ConnectRequest,
   ConnectResult,
+  DraftSaveResult,
+  DraftUpload,
   FindSentResult,
   OpenedThread,
   OpOutcome,
@@ -29,6 +31,7 @@ import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
+import { deleteDraftCopy, saveDraftCopy } from './drafts';
 import { RETRY_SCOPE } from './failures';
 import { historyStep } from './history';
 import { applyOp, coalesceOps } from './ops';
@@ -42,7 +45,8 @@ import type { WorkflowTransport } from './workflow-state';
  * The google `ProviderFactory` and its per-account `ProviderAdapter` (plan 20 section 3.2): the read path of
  * `prov-gmail`. Parts that belong to other lanes are explicit stubs that throw `NotInThisLaneError`, never silent
  * no-ops: connect when the host passes none (prov-gov's `oauth/host-connect.ts`), send and findSent (prov-gmail-write),
- * drafts, filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
+ * filters, the workflow channel and calendar (left undefined; prov-gmail-write, prov-gmail workflow, prov-cal).
+ * `saveDraft` and `deleteDraft` are prov-gmail-write's drafts API (drafts.ts).
  */
 
 export class NotInThisLaneError extends NotImplementedError {
@@ -256,6 +260,14 @@ export class GmailAdapter implements ProviderAdapter {
 
   findSent(_internetId: string, _since: number, _ctx: AdapterContext): Promise<FindSentResult> {
     return Promise.reject(new NotInThisLaneError('findSent', 'prov-gmail-write'));
+  }
+
+  saveDraft(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult> {
+    return saveDraftCopy(this.rt.deps, draft, this.paced(ctx));
+  }
+
+  deleteDraft(remoteDraftId: string, ctx: AdapterContext): Promise<void> {
+    return deleteDraftCopy(this.rt.deps, remoteDraftId, this.paced(ctx));
   }
 
   /** Aborts every request this adapter has in flight or queued (D23); later calls fail at once. */
