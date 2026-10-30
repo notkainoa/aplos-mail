@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { mkdir, copyFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { syntaxOptions } from './build-options.mjs';
 import { checkReleaseOAuth, oauthDefines } from './oauth-defines.mjs';
 if (process.env.APLOS_RELEASE_BUILD === '1') {
   try {
@@ -36,6 +37,7 @@ await build({
   plugins: [thirdPartyExternal],
   sourcemap: false,
   define,
+  ...syntaxOptions(process.env),
 });
 await build({
   entryPoints: ['src/main/engine-process.ts'],
@@ -47,6 +49,7 @@ await build({
   plugins: [thirdPartyExternal],
   sourcemap: false,
   define,
+  ...syntaxOptions(process.env),
 });
 await build({
   entryPoints: ['src/main/preload.ts'],
@@ -57,6 +60,7 @@ await build({
   target: 'node22',
   external: ['electron'],
   sourcemap: false,
+  ...syntaxOptions(process.env),
 });
 await copyFile('assets/icon.png', 'dist/main/icon.png');
 
