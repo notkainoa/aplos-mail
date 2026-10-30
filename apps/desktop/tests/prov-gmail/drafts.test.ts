@@ -284,7 +284,7 @@ test('prov-gmail-drafts a trashed draft is gone; a reply without labelIds is inv
   };
   s.bridge.rewriteDraftGet = relabel(['DRAFT', 'TRASH']);
   assert.deepEqual(await s.r.adapter.saveDraft(again(), s.r.ctx()), { kind: 'gone' });
-  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
   assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0, 'a trashed draft is not deleted either');
 
   s.bridge.rewriteDraftGet = relabel();
@@ -292,7 +292,7 @@ test('prov-gmail-drafts a trashed draft is gone; a reply without labelIds is inv
   assert.ok(save instanceof ProviderError);
   assert.equal(save.error.reason, 'invalidResponse');
   const del = await s.r.adapter
-    .deleteDraft(first.remoteDraftId, s.r.ctx())
+    .deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId)
     .catch((e: unknown) => e);
   assert.ok(del instanceof ProviderError);
   assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0);
@@ -365,11 +365,11 @@ test('prov-gmail-drafts a create that Gmail refused is not uncertain, and a 5xx 
 test('prov-gmail-drafts deleteDraft removes the copy; a missing draft is success with no delete request', async () => {
   const s = await setup();
   const first = saved(await s.r.adapter.saveDraft(s.upload(), s.r.ctx()));
-  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
   assert.equal(s.remoteDrafts().length, 0);
   assert.equal(s.r.emu.mailbox.getMessage(first.remoteMessageId), undefined);
   const deletes = s.bridge.count('DELETE', /\/drafts\//);
-  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
   assert.equal(s.bridge.count('DELETE', /\/drafts\//), deletes, 'the second call only looked');
 });
 
@@ -377,7 +377,7 @@ test('prov-gmail-drafts deleteDraft of a draft that was sent does nothing', asyn
   const s = await setup();
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Out.' }), s.r.ctx()));
   const sentMessage = s.r.emu.mailbox.sendDraft(first.remoteDraftId);
-  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
   assert.ok(s.r.emu.mailbox.getMessage(sentMessage.id), 'the sent message survives');
   assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0);
 
@@ -387,7 +387,7 @@ test('prov-gmail-drafts deleteDraft of a draft that was sent does nothing', asyn
     const message = json.message as Record<string, unknown>;
     return { ...json, message: { ...message, labelIds: ['SENT'] } };
   };
-  await s.r.adapter.deleteDraft(other.remoteDraftId, s.r.ctx());
+  await s.r.adapter.deleteDraft(other.remoteDraftId, s.r.ctx(), other.remoteMessageId);
   assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0, 'no DELETE for a non-draft');
   assert.equal(s.remoteDrafts().length, 1);
 });
@@ -542,7 +542,7 @@ test('prov-gmail-drafts 429 pauses (throttle, zero requests while paused); 5xx o
     .catch(e => e);
   assert.ok(paused instanceof PausedError);
   assert.equal(s.r.emu.log.length, logged, 'no request while paused');
-  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx()).then(
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId).then(
     () => assert.fail('a paused delete must not go out'),
     (e: unknown) => assert.ok(e instanceof PausedError),
   );
@@ -568,10 +568,10 @@ test('prov-gmail-drafts a create refused with 429 stops: the engine learns of th
   assert.equal(s.remoteDrafts().length, 0);
 });
 
-// ---- removal is off by default (PORT GAP 3) ----
+// ---- PORT GAP 3 (closed by #153): removal is guarded by the expected message id ----
 
-test('prov-gmail-drafts deleteDraft is off by default: a phone edit after the last poll survives the discard', async () => {
-  const s = await setup({ adapter: { deleteDrafts: false } });
+test('prov-gmail-drafts deleteDraft without an expected message id never deletes and sends no request', async () => {
+  const s = await setup();
   const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
   const { mime } = mimeOf(s.r.account.address, { body: 'Phone edit, newer than the last poll.' });
   s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);
@@ -580,6 +580,50 @@ test('prov-gmail-drafts deleteDraft is off by default: a phone edit after the la
   assert.equal(s.bridge.requests.length, requests, 'resolved without a request');
   assert.equal(s.remoteDrafts().length, 1);
   assert.match(s.remoteDrafts()[0].text, /Phone edit/);
+});
+
+test('prov-gmail-drafts deleteDraft with a stale expected message id keeps the phone edit', async () => {
+  const s = await setup();
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
+  const { mime } = mimeOf(s.r.account.address, { body: 'Phone edit, newer than the last poll.' });
+  const phone = s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);
+  assert.notEqual(phone.message.id, first.remoteMessageId);
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
+  assert.equal(s.bridge.count('DELETE', /\/drafts\//), 0, 'no DELETE went out');
+  assert.equal(s.remoteDrafts().length, 1);
+  assert.match(s.remoteDrafts()[0].text, /Phone edit/);
+  // Naming the phone's version (the engine adopted it) deletes it.
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), phone.message.id);
+  assert.equal(s.remoteDrafts().length, 0);
+});
+
+test('prov-gmail-drafts deleteDraft with a matching id deletes; a 404 on the delete is success', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
+  // The draft vanishes between the get and the delete (deleted on another device): the DELETE answers 404.
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.delete' },
+    { status: 404, reason: 'notFound', message: 'Requested entity was not found.' },
+  );
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
+  assert.equal(s.bridge.count('DELETE', /\/drafts\//), 1, 'the delete went out');
+  const again = await s.r.adapter.deleteDraft(
+    first.remoteDraftId,
+    s.r.ctx(),
+    first.remoteMessageId,
+  );
+  assert.equal(again, undefined);
+  assert.equal(s.remoteDrafts().length, 0, 'the second call deleted it for real');
+});
+
+test('prov-gmail-drafts deleteDrafts: false turns even a guarded removal off', async () => {
+  const s = await setup({ adapter: { deleteDrafts: false } });
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
+  const requests = s.bridge.requests.length;
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx(), first.remoteMessageId);
+  assert.equal(s.bridge.requests.length, requests);
+  assert.equal(s.remoteDrafts().length, 1);
 });
 
 // ---- the create lookup: search lag, sent or deleted elsewhere ----

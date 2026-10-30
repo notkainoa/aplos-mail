@@ -108,9 +108,9 @@ export interface GoogleProviderOptions {
   /** Default false: sends never use `drafts.send` until the live gate proves it (`SendOptions.useDraftsSend` in send.ts). */
   useDraftsSend?: boolean;
   /**
-   * Default false: `deleteDraft` resolves without deleting anything (PORT GAP 3 in drafts.ts: `DraftSyncPort.remove`
-   * carries no expected message id, so a delete would destroy a phone edit made after the last history poll). Keep it
-   * off until the port carries the expected message id; saving and replacing drafts is unaffected.
+   * Default true: `deleteDraft` removes a draft only when the caller names the message id it holds
+   * (`expectedMessageId`, PORT GAP 3 closed by #153) and the draft still holds it; without one it never deletes. False
+   * turns every removal off (the call resolves without a request); saving and replacing drafts is unaffected.
    */
   deleteDrafts?: boolean;
 }
@@ -174,7 +174,7 @@ export class GmailAdapter implements ProviderAdapter {
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
     this.useDraftsSend = options.useDraftsSend === true;
-    this.deleteDrafts = options.deleteDrafts === true;
+    this.deleteDrafts = options.deleteDrafts !== false;
     const rules = gmailRules(deps);
     this.rules = {
       list: ctx => rules.list(this.paced(ctx)),
@@ -294,10 +294,14 @@ export class GmailAdapter implements ProviderAdapter {
     return saveDraftCopy(this.rt.deps, draft, this.paced(ctx));
   }
 
-  deleteDraft(remoteDraftId: string, ctx: AdapterContext): Promise<void> {
-    // Removal is off by default (PORT GAP 3): resolving leaves the copy in place, which the engine reads as removed.
-    if (!this.deleteDrafts) return Promise.resolve();
-    return deleteDraftCopy(this.rt.deps, remoteDraftId, this.paced(ctx));
+  deleteDraft(
+    remoteDraftId: string,
+    ctx: AdapterContext,
+    expectedMessageId?: string,
+  ): Promise<void> {
+    // Switched off, or no proof of which copy the caller holds: resolving leaves the copy in place (read as removed).
+    if (!this.deleteDrafts || expectedMessageId === undefined) return Promise.resolve();
+    return deleteDraftCopy(this.rt.deps, remoteDraftId, this.paced(ctx), expectedMessageId);
   }
 
   /** Aborts every request this adapter has in flight or queued (D23); later calls fail at once. */

@@ -13,6 +13,7 @@ import {
   type SyncState,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
+import { deliverBodies, pendingJson, PENDING_KEY, readPending } from './draft-body';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
 import { isQuarantined, passWrites, readSchedule, settleFailures } from './failures';
 import {
@@ -393,6 +394,19 @@ function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>
   );
 }
 
+/**
+ * The message ids this adapter reported or saw for `draftId` earlier that are not `messageId`: Gmail gives a draft a new
+ * message id on every update, so these are the versions the fact replaces. Only ids this adapter itself recorded for the
+ * same draft id (`DRAFTS_KEY`) are named; nothing is guessed from the page's deleted messages.
+ */
+function previousMessages(
+  draftMap: ReadonlyMap<string, string>,
+  draftId: string,
+  messageId: string,
+): string[] {
+  return [...draftMap].filter(([id, d]) => d === draftId && id !== messageId).map(([id]) => id);
+}
+
 /** The drafts facts and the next message id -> draft id map, given the drafts Gmail has now (`current`). */
 async function settleDrafts(
   ctx: AdapterContext,
@@ -429,11 +443,13 @@ async function settleDrafts(
     if (!draftId || !live(m)) continue;
     nextDraftMap.set(m.id, draftId);
     if (own.has(m.id)) continue;
+    const supersedes = previousMessages(draftMap, draftId, m.id);
     drafts.push({
       remoteDraftId: draftId,
       remoteMessageId: m.id,
       remoteThreadId: m.threadId,
       changedAt: now,
+      ...(supersedes.length ? { supersedes } : {}),
     });
   }
   return { drafts, nextDraftMap };
@@ -529,11 +545,14 @@ function pageExtras(
   ctx: AdapterContext,
   drafts: RemoteDraftFact[],
   nextDraftMap: ReadonlyMap<string, string>,
+  pending: ReadonlyMap<string, string>,
   inboxMoves: readonly [string, boolean][],
 ): Pick<StepResult, 'drafts' | 'memory'> {
   const memory: Record<string, string | null> = {};
   const draftsJson = nextDraftMap.size ? JSON.stringify(Object.fromEntries(nextDraftMap)) : null;
   if (draftsJson !== (ctx.memory.get(DRAFTS_KEY) ?? null)) memory[DRAFTS_KEY] = draftsJson;
+  const waiting = pendingJson(pending);
+  if (waiting !== (ctx.memory.get(PENDING_KEY) ?? null)) memory[PENDING_KEY] = waiting;
   const regained = regainedList(ctx.memory, inboxMoves);
   if (regained !== undefined) memory[REGAINED_KEY] = regained;
   return {
@@ -621,9 +640,18 @@ export async function historyStep(
     if (isStop(error)) return untouched(state, client.spent);
     throw error;
   }
-  const { drafts, nextDraftMap } = current
+  const settled = current
     ? await settleDrafts(ctx, changes, draftMap, current, now)
     : { drafts: [], nextDraftMap: draftMap };
+  const { nextDraftMap } = settled;
+  const delivered = await deliverBodies(
+    client,
+    step.lane,
+    settled.drafts,
+    readPending(ctx.memory),
+    now,
+  );
+  const { drafts } = delivered;
 
   const candidates = await fetchCandidates(ctx, changes, current);
   // Without labelIds, Inbox membership of mail in an unknown thread comes from one Inbox list page (5 units): new mail
@@ -647,7 +675,7 @@ export async function historyStep(
   const removals: Removal[] = [...changes.deleted]
     .filter(id => !draftMessages.has(id))
     .map(remoteId => ({ remoteId }));
-  const extras = pageExtras(ctx, drafts, nextDraftMap, changes.inboxMoves);
+  const extras = pageExtras(ctx, drafts, nextDraftMap, delivered.pending, changes.inboxMoves);
 
   if (passFetches > CHANGE_CAP) {
     // Keep the free part of this page (deltas, removals, drafts); the resync fetches what the Inbox now holds.
