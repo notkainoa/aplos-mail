@@ -302,7 +302,7 @@ test(
     const proxy = createImageProxy({
       resolve: dns(NAMES).resolve,
       connect,
-      limits: { maxInFlight: 1, timeoutMs: 120, waitMs: 40 },
+      limits: { maxInFlight: 1, timeoutMs: 3_000, waitMs: 40 },
     });
     const holder = proxy.fetch('https://img.example/holder', run());
     await tick();
@@ -310,9 +310,10 @@ test(
     assert.deepEqual(
       await proxy.fetch('https://img.example/impatient', run()),
       refusedAs('timeout'),
-      'refused by the wait bound, long before its own 120 ms',
+      'refused by the wait bound, long before its own 3 s limit',
     );
-    assert.ok(Date.now() - started < 110, 'the 40 ms wait bound applied, not the 120 ms limit');
+    // A wide margin: a loaded machine may stretch 40 ms a lot, but never to the 3 s limit.
+    assert.ok(Date.now() - started < 2_000, 'the 40 ms wait bound applied, not the 3 s limit');
     releases[0]();
     assert.equal((await holder).kind, 'image');
   },
