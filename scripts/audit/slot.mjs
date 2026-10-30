@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sweepStaleScratch } from './scratch-sweep.mjs';
 
 // Owners from plans/00-roadmap.md section 2 and the plan that defines each slot.
 export const slotOwners = {
@@ -25,7 +26,24 @@ export function hasScript(root, name) {
   return Boolean(pkg.scripts && Object.hasOwn(pkg.scripts, name));
 }
 
-export function runSlot(name, root, summaryFile = process.env.GITHUB_STEP_SUMMARY) {
+// Before a slot runs a real suite it sweeps stale aplos-* scratch dirs out of tmpdir, so a lane
+// that left them behind cannot fill tmpfs for the next one. At most one line of output, a sweep
+// failure never fails the slot, APLOS_SCRATCH_SWEEP=0 disables it, and CI runners (ephemeral,
+// so nothing can go stale) skip it via GITHUB_ACTIONS.
+function runScratchSweep({ sweep = sweepStaleScratch, env = process.env } = {}) {
+  if (env.APLOS_SCRATCH_SWEEP === '0' || env.GITHUB_ACTIONS) return;
+  try {
+    const { removed, bytesFreedApprox } = sweep();
+    if (removed.length > 0) {
+      const mb = (bytesFreedApprox / (1024 * 1024)).toFixed(1);
+      console.log(`scratch-sweep: removed ${removed.length} stale item(s), freed ~${mb} MB`);
+    }
+  } catch (error) {
+    console.error(`scratch-sweep failed (ignored): ${error.message}`);
+  }
+}
+
+export function runSlot(name, root, summaryFile = process.env.GITHUB_STEP_SUMMARY, options = {}) {
   if (!Object.hasOwn(slotOwners, name)) {
     console.error(`unknown slot "${name}"; known slots: ${Object.keys(slotOwners).join(', ')}`);
     return 2;
@@ -36,6 +54,7 @@ export function runSlot(name, root, summaryFile = process.env.GITHUB_STEP_SUMMAR
     if (summaryFile) appendFileSync(summaryFile, `- ${line}\n`);
     return 0;
   }
+  runScratchSweep(options);
   const result = spawnSync('npm', ['run', name], { cwd: root, stdio: 'inherit' });
   if (result.error) {
     console.error(`slot ${name}: could not start npm: ${result.error.message}`);
