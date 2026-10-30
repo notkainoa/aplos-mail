@@ -98,7 +98,7 @@ export function createReminders({ store, clock, frames, zone }: ReminderDeps): R
 
   const source: DeadlineSource = {
     id: 'reminders',
-    // The recheck is the loop's only way to learn of a reminder set while it sleeps (nothing calls `changed` yet).
+    // The views lane calls `changed` after a reminder is set; the recheck is the fallback for a write that bypasses it.
     next: async () => Math.min(store.read(nextAt) ?? Infinity, clock.now() + RECHECK_MS),
     async fire(now) {
       const due = store.read(q => q.all<SqlRow>(DUE, now, MAX_REMINDERS_PER_FIRE));

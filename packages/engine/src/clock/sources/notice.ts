@@ -4,7 +4,11 @@ import { dueText } from '../zone';
 
 /** A deadline that fires this much after its time (or later) is "late": the Mac slept or the app was closed. */
 export const LATE_AFTER_MS = 120_000;
-/** The deadline sources re-read their table this often, because no commit tells the timer loop a deadline moved yet. */
+/**
+ * The deadline sources re-read their table at least this often. `Thread/act` and `Operation/undo` tell the loop
+ * (`deadlines.changed`) after they move `reminder_at` or `later_until`, so this is the fallback only: a write that
+ * bypasses the views lane (a sync of another device's workflow log, a host's direct commit) is found within a minute.
+ */
 export const RECHECK_MS = 60_000;
 
 /** A thread whose deadline came due, as the sources read it. */
