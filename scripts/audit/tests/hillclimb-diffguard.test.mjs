@@ -395,6 +395,35 @@ describe('checkDiff: normalised matching', () => {
       assert.equal(result.ok, false, path);
     }
   });
+
+  it('rejects the extended scorer/mutator/test-harness config names', () => {
+    for (const path of [
+      '.dependency-cruiser.js',
+      'apps/desktop/.dependency-cruiser.cjs',
+      '.c8rc',
+      '.c8rc.json',
+      '.nycrc',
+      '.nycrc.yml',
+      '.mocharc.yml',
+      'knip.json',
+      'knip.ts',
+      'stryker.config.mjs',
+      '.stryker.conf.js',
+      'setup.ts',
+      'setupTests.js',
+      'src/setup-helper.mjs',
+      'jest.setup.js',
+      'vitest.setup.ts',
+      '.swcrc',
+      'babel.config.js',
+      '.babelrc',
+      '.babelrc.json',
+      'vite.config.ts',
+    ]) {
+      const result = checkDiff({ ...loose, changes: [M(path)] });
+      assert.equal(result.ok, false, path);
+    }
+  });
 });
 
 describe('checkDiff: suppression directives in added lines', () => {
@@ -487,6 +516,95 @@ describe('checkDiff: more suppression directives', () => {
   it('honours allowDirectives for the new names', () => {
     const result = scan(['/* v8 ignore next */'], { allowDirectives: ['v8-ignore'] });
     assert.equal(result.ok, true);
+  });
+});
+
+describe('checkDiff: block-comment directives over joined added text', () => {
+  const changes = [M('src/a.ts')];
+  const scan = (added, extra = {}) => checkDiff({ ...base, changes, addedLines: added, ...extra });
+
+  it('rejects multi-line /* eslint ... */ blocks whose keyword sits on a later line', () => {
+    for (const lines of [
+      ['/*', 'eslint no-console: "off"', '*/'],
+      ['/*', ' * eslint no-console: "off"', ' */'],
+      ['/* eslint', '   "no-console": "off" */'],
+      ['let x = 1; /*', '', 'eslint "no-console": "off" */'],
+    ]) {
+      const result = scan(lines);
+      assert.equal(result.ok, false, JSON.stringify(lines));
+      assert.match(result.reasons.join(' '), /"eslint-inline-config"/, JSON.stringify(lines));
+    }
+  });
+
+  it('rejects quoted rule keys a per-line pattern cannot see', () => {
+    for (const line of [
+      '/* eslint "no-console": "off" */',
+      '/* eslint "@typescript-eslint/no-explicit-any": 0 */',
+      "/* eslint 'no-alert': 'warn' */",
+    ]) {
+      const result = scan([line]);
+      assert.equal(result.ok, false, line);
+      assert.match(result.reasons.join(' '), /"eslint-inline-config"/);
+    }
+  });
+
+  it('rejects /* global(s) */ and /* exported */ as eslint-global', () => {
+    for (const lines of [
+      ['/* global foo */'],
+      ['/* globals readFile, writeFile */'],
+      ['/* exported myFn */'],
+      ['/*', 'global foo', '*/'],
+      ['/*', ' * exported myFn', ' */'],
+    ]) {
+      const result = scan(lines);
+      assert.equal(result.ok, false, JSON.stringify(lines));
+      assert.match(result.reasons.join(' '), /"eslint-global"/, JSON.stringify(lines));
+    }
+  });
+
+  it('rejects a multi-line eslint-env block as eslint-env', () => {
+    const result = scan(['/*', 'eslint-env browser, node', '*/']);
+    assert.equal(result.ok, false);
+    assert.match(result.reasons.join(' '), /"eslint-env"/);
+  });
+
+  it('classifies a block eslint-disable under the eslint-disable name', () => {
+    const blocked = scan(['/*', 'eslint-disable-next-line no-console', '*/']);
+    assert.equal(blocked.ok, false);
+    assert.match(blocked.reasons.join(' '), /"eslint-disable"/);
+    // So permitting eslint-disable also covers its block-comment form.
+    const allowed = scan(['/* eslint-disable-next-line no-console */'], {
+      allowDirectives: ['eslint-disable'],
+    });
+    assert.equal(allowed.ok, true);
+  });
+
+  it('keeps allowDirectives working for the block forms, per name', () => {
+    assert.equal(scan(['/* global x */'], { allowDirectives: ['eslint-global'] }).ok, true);
+    // Allowing globals does not open inline config.
+    assert.equal(
+      scan(['/* eslint "no-console": "off" */'], { allowDirectives: ['eslint-global'] }).ok,
+      false,
+    );
+    assert.equal(
+      scan(['/*', 'eslint no-console: "off"', '*/'], {
+        allowDirectives: ['eslint-inline-config'],
+      }).ok,
+      true,
+    );
+    assert.equal(
+      scan(['/*', 'eslint-env node', '*/'], { allowDirectives: ['eslint-env'] }).ok,
+      true,
+    );
+    // And permitting inline config still leaves globals rejected.
+    assert.equal(scan(['/* global x */'], { allowDirectives: ['eslint-inline-config'] }).ok, false);
+  });
+
+  it('does not flag comments whose first token merely contains a keyword', () => {
+    assert.equal(
+      scan(['/* globalized cache */', '/* exports a helper */', '/* eslintish */']).ok,
+      true,
+    );
   });
 });
 

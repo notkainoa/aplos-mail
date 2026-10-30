@@ -160,6 +160,23 @@ const FORBIDDEN_NAME_GLOBS = [
   '.eslintignore',
   '.prettierignore',
   '.stylelintignore',
+  '.dependency-cruiser.*',
+  '.c8rc*',
+  '.nycrc*',
+  '.mocharc*',
+  'knip.json',
+  'knip.*',
+  'stryker.config.*',
+  '.stryker*',
+  'setup*.ts',
+  'setup*.js',
+  'setup*.mjs',
+  'jest.setup.*',
+  'vitest.setup.*',
+  '.swcrc',
+  'babel.config.*',
+  '.babelrc*',
+  'vite.config.*',
 ];
 const SUPPRESSION_NAMES = new Set(['eslint-suppressions.json', 'stylelint-suppressions.json']);
 // Shared wording for the attempt brief; the rule itself lives in isShrinkOnly below.
@@ -188,9 +205,13 @@ export const SUPPRESSION_DIRECTIVES = {
   'prettier-ignore': /prettier-ignore/i,
   // The eslint-disable patterns above miss inline config comments that turn individual
   // rules off without the word "disable": /* eslint no-console: "off" */ and
-  // /* eslint-env browser */ (which changes which globals lint allows).
+  // /* eslint-env browser */ (which changes which globals lint allows). The per-line
+  // forms below stay as a first line of defence; BLOCK_COMMENT_DIRECTIVE additionally
+  // scans the joined added text so multi-line blocks, quoted keys and the
+  // global/globals/exported family cannot slip between lines.
   'eslint-inline-config': /\/\*\s*eslint\s+[\w@/-]+\s*:/i,
   'eslint-env': /\/\*\s*eslint-env/i,
+  'eslint-global': /\/\*\s*(globals?|exported)\b/i,
   'biome-ignore': /biome-ignore/i,
   'tslint-disable': /tslint\s*:\s*disable/i,
   nosonar: /nosonar/i,
@@ -390,6 +411,21 @@ export function checkDiff(options) {
   return reasons.length ? { ok: false, reasons } : { ok: true };
 }
 
+// Any block comment whose first token is eslint/eslint-env/eslint-disable, global(s) or
+// exported — matching across newlines and a leading run of whitespace and stars, so
+// "/*\n * eslint no-console: \"off\"\n */" and "/* eslint \"rule\": \"off\" */" are caught
+// even though no single line carries both the opener and the keyword. eslint-env and
+// eslint-disable must precede plain eslint in the alternation or they classify wrong.
+const BLOCK_COMMENT_DIRECTIVE =
+  /\/\*[\s*]*(eslint-env|eslint-disable|eslint|globals?|exported)\b/gi;
+
+const blockDirectiveName = token => {
+  if (/^globals?$|^exported$/i.test(token)) return 'eslint-global';
+  if (/^eslint-env$/i.test(token)) return 'eslint-env';
+  if (/^eslint-disable$/i.test(token)) return 'eslint-disable';
+  return 'eslint-inline-config';
+};
+
 function directiveReasons(addedLines, allowDirectives) {
   const permitted = new Set(allowDirectives);
   const reasons = [];
@@ -401,6 +437,16 @@ function directiveReasons(addedLines, allowDirectives) {
         `added line contains suppression directive "${name}": ${hit.trim().slice(0, 80)}`,
       );
     }
+  }
+  // The same scan over the JOINED added text: a block comment's opener and keyword may
+  // sit on different added lines (or files), which no per-line pattern can see.
+  const reported = new Set();
+  for (const match of addedLines.join('\n').matchAll(BLOCK_COMMENT_DIRECTIVE)) {
+    const name = blockDirectiveName(match[1]);
+    if (permitted.has(name) || reported.has(name)) continue;
+    reported.add(name);
+    const excerpt = match[0].replace(/\s+/g, ' ').trim().slice(0, 80);
+    reasons.push(`added text contains suppression directive "${name}": ${excerpt}`);
   }
   return reasons;
 }
