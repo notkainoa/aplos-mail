@@ -89,12 +89,14 @@ export type StatusAction = 'reconnect' | 'retry' | 'copyDiagnostics' | 'viewDeta
  * needsReauth, needsPermission, error, paused, offline, backfilling, syncing, starting, ok), and `account` with it.
  */
 export interface StatusSlotProps {
-  /** The state to show; the component writes DESIGN §7.1's copy. */
+  /** The state to show; the component writes DESIGN §7.1's copy. A healthy `ok` with `lastSyncedAt` shows nothing and puts "Synced 2 min ago" in the element's `title` (hover only). */
   status: SyncStatus;
   /** The account the state is about. Named in the copy only when `multipleAccounts`; always the "<address> sync" label of the importing track. */
   account?: SyncAccount;
   /** Two or more accounts are connected, so the copy names the account. */
   multipleAccounts?: boolean;
+  /** The current time, compared with `reconnectBy` and `lastSyncedAt`. Default: the real clock; the harness and tests pass a fixed one. */
+  now?: IsoDateTime;
   /** The offered action was chosen, with the account it is for (Reconnect opens ReconnectSheet for that address). */
   onAction: (action: StatusAction, account?: SyncAccount) => void;
 }

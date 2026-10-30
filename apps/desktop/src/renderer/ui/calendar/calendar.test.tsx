@@ -242,7 +242,7 @@ test('PlanOutline: the label "From mail" and a name that says it is not added ye
   );
   assert.match(out, /class="ui-plan-outline"/);
   assert.match(out, /From mail/);
-  assert.match(out, /found in mail, not added yet/);
+  assert.match(out, /from mail, [^"]*, not added yet/);
   assert.match(out, /data-kind="plan"/);
   assertCleanCopy(out);
 });
