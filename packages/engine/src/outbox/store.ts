@@ -1,8 +1,8 @@
 import type { Submission } from '@aplos/contract';
-import type { CommitExtension, CommitExtensionTx, SqlValue, StoreReader } from '../store';
+import type { CommitExtensionTx, SqlValue, StoreReader } from '../store';
 
 /**
- * The outbox's writer for `submissions` (seam 2): every state change goes through `store.commit` as a `submission`
+ * The outbox's writer for `submissions` (seam 2, registered by `extension.ts`): every state change goes through `store.commit` as a `submission`
  * write, applied here inside the commit transaction. Each transition is a compare-and-set on the row's current state
  * (`UPDATE ... WHERE id = ? AND state IN (...)`), so an undo racing the timer's `sending` commit, or two engines on one
  * store, can never both win: the loser's commit throws `SubmissionConflict` and rolls back whole.
@@ -58,6 +58,8 @@ export interface RowExtra extends SubmissionMeta {
   sentAt?: number;
   /** The `sending` marker was committed at least once: the bytes may have left, so they are never changed again. */
   attempted?: true;
+  /** The send used the remote draft (`SendReceipt.draftConsumed`): it is gone, so nothing is left to delete. */
+  draftConsumed?: true;
   problem?: Omit<SubmissionProblem, 'until'>;
 }
 
@@ -86,6 +88,8 @@ export interface SubmissionPatch {
   problem?: SubmissionProblem | null;
   checkCount?: number;
   checkAt?: number | null;
+  /** The provider reported the remote draft consumed by the send. */
+  draftConsumed?: true;
   /** Drops the pinned MIME: only once `sent` is committed. */
   dropMime?: true;
   /** The same message re-dated by a reschedule or Send now (same Message-ID); the move's state guard keeps it off a `sending` row. */
@@ -120,7 +124,14 @@ declare module '../store/port' {
 }
 
 export type ConflictReason =
-  'draftMissing' | 'draftRevision' | 'live' | 'alreadySent' | 'checking' | 'state';
+  | 'draftMissing'
+  | 'draftRevision'
+  | 'live'
+  | 'alreadySent'
+  | 'checking'
+  | 'state'
+  | 'unresolved'
+  | 'bodyPending';
 
 /** A compare-and-set lost: the row (or its draft) is not what the caller saw. Thrown inside the commit, so nothing lands. */
 export class SubmissionConflict extends Error {
@@ -222,13 +233,29 @@ export function toSubmission(row: SubmissionRow): Submission {
   return out;
 }
 
+interface DraftGate {
+  revision: number;
+  removing: number | null;
+  conflicted: number;
+  incomplete: number | null;
+  [k: string]: SqlValue;
+}
+
 function create(tx: CommitExtensionTx, row: NewSubmission) {
-  const draft = tx.get<{ revision: number }>(
-    'SELECT revision FROM drafts WHERE id = ?',
+  const draft = tx.get<DraftGate>(
+    `SELECT revision,
+            json_extract(data, '$._sync.removing') AS removing,
+            json_extract(data, '$._sync.conflict') IS NOT NULL AS conflicted,
+            json_extract(data, '$._sync.incomplete') AS incomplete
+     FROM drafts WHERE id = ?`,
     row.draftId,
   );
-  if (!draft) throw new SubmissionConflict('draftMissing');
+  // A discarded draft waiting for its copy to go does not exist; one with a version from another device waiting for the
+  // owner's choice is not sent (the send would delete the copy holding that version); one without its text is not either.
+  if (!draft || draft.removing) throw new SubmissionConflict('draftMissing');
   if (draft.revision !== row.revision) throw new SubmissionConflict('draftRevision');
+  if (draft.conflicted) throw new SubmissionConflict('unresolved');
+  if (draft.incomplete) throw new SubmissionConflict('bodyPending');
   const live = tx.get<{ state: SubmissionState }>(
     `SELECT state FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}) LIMIT 1`,
     row.draftId,
@@ -265,6 +292,7 @@ function patchedExtra(current: RowExtra, set: SubmissionPatch, seq: number): Row
   if (set.sentAt !== undefined) next.sentAt = set.sentAt;
   if (set.attempted === true) next.attempted = true;
   else if (set.attempted === false) delete next.attempted;
+  if (set.draftConsumed) next.draftConsumed = true;
   if (set.checkCount !== undefined) next.checkCount = set.checkCount;
   if (set.checkAt === null) delete next.checkAt;
   else if (set.checkAt !== undefined) next.checkAt = set.checkAt;
@@ -338,17 +366,10 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
   }
 }
 
-function apply(write: { kind: string }, tx: CommitExtensionTx) {
+/** Applies one `submission` write inside the commit; `extension.ts` routes the lane's kinds here and to the drafts. */
+export function applySubmission(write: { kind: string }, tx: CommitExtensionTx) {
   const w = write as SubmissionWrite;
   if (w.op === 'create') return create(tx, w.row);
   if (w.op === 'move') return move(tx, w);
   throw new Error(`Unknown submission write ${String((w as { op?: unknown }).op)}`);
 }
-
-/** Pass to `openStore({ extensions })`. Stateless, so one value serves every store. */
-export const outboxExtension: CommitExtension = {
-  lane: 'eng-time',
-  kinds: ['submission'],
-  changeTypes: ['Submission', 'Draft'],
-  apply,
-};

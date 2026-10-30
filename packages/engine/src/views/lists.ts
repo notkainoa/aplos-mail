@@ -199,8 +199,12 @@ const inLive = `(${LIVE_SUBMISSION.map(s => `'${s}'`).join(', ')})`;
 
 const identity = (_q: StoreReader, id: string) => id;
 
+/** A discarded or sent draft keeps its row, hidden, until its remote copy is deleted (`_sync.removing`, eng-time); unreadable data is not hidden. */
+const NOT_REMOVING = `CASE WHEN json_valid(d.data) THEN json_extract(d.data, '$._sync.removing') END IS NULL`;
+
 export function draftsPlan(spec: Extract<ViewSpec, { kind: 'drafts' }>): ViewPlan {
   const preds: Pred[] = [
+    [NOT_REMOVING],
     [`NOT EXISTS (SELECT 1 FROM submissions s WHERE s.draft_id = d.id AND s.state IN ${inLive})`],
     ...(spec.accountId === undefined ? [] : [['d.account_id = ?', spec.accountId] as Pred]),
   ];

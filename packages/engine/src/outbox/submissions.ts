@@ -10,6 +10,7 @@ import {
   UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
+import { INCOMPLETE_SENTENCE, parseData } from './draft-state';
 import {
   buildEnvelope,
   buildMime,
@@ -59,6 +60,8 @@ const ALLOWED: Record<RowAction['type'], readonly SubmissionState[]> = {
 
 const DRAFT_CHANGED = 'This draft changed in another window. Reopen it before sending.';
 const ON_ITS_WAY = 'This message is already on its way.';
+const UNRESOLVED =
+  'This draft has a version from another device waiting for your choice. Choose one before sending.';
 const ALREADY_SENT = 'This message was already sent. Change it to send another.';
 const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
@@ -131,12 +134,13 @@ function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
             a.address, a.display_name, a.provider
-     FROM drafts d JOIN accounts a ON a.id = d.account_id WHERE d.id = ?`,
+     FROM drafts d JOIN accounts a ON a.id = d.account_id
+     WHERE d.id = ? AND json_extract(d.data, '$._sync.removing') IS NULL`,
     id,
   );
 }
 
-function parseFields(row: DraftRow): DraftFields {
+export function parseFields(row: { data: string }): DraftFields {
   try {
     return JSON.parse(row.data) as DraftFields;
   } catch {
@@ -150,7 +154,11 @@ function remotePart(accountId: string, contractId: string | undefined) {
   return contractId?.startsWith(prefix) ? contractId.slice(prefix.length) : undefined;
 }
 
-function threadOf(q: StoreReader, draft: DraftRow, fields: DraftFields) {
+export function threadOf(
+  q: StoreReader,
+  draft: Pick<DraftRow, 'account_id' | 'thread_id'>,
+  fields: DraftFields,
+) {
   const remote =
     draft.thread_id !== null
       ? q.get<{ remote_id: string }>('SELECT remote_id FROM threads WHERE id = ?', draft.thread_id)
@@ -162,7 +170,11 @@ function threadOf(q: StoreReader, draft: DraftRow, fields: DraftFields) {
 }
 
 /** In-Reply-To and References from the replied message's stored headers; omitted when the store lacks them. */
-function replyHeaders(q: StoreReader, draft: DraftRow, fields: DraftFields) {
+export function replyHeaders(
+  q: StoreReader,
+  draft: Pick<DraftRow, 'account_id'>,
+  fields: DraftFields,
+) {
   if (fields.mode !== 'reply' && fields.mode !== 'replyAll') return {};
   const remoteId = remotePart(draft.account_id, fields.replyToMessageId);
   if (remoteId === undefined) return {};
@@ -185,7 +197,10 @@ function replyHeaders(q: StoreReader, draft: DraftRow, fields: DraftFields) {
   return { inReplyTo: msg.internet_id, references };
 }
 
-function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
+export function attachmentsOf(
+  ctx: Pick<OutboxCtx, 'blobs'>,
+  fields: DraftFields,
+): MimeAttachment[] {
   return fields.attachments.map(a => {
     const bytes = a.blobId !== undefined ? ctx.blobs?.get(a.blobId) : undefined;
     if (!bytes)
@@ -197,7 +212,7 @@ function attachmentsOf(ctx: OutboxCtx, fields: DraftFields): MimeAttachment[] {
   });
 }
 
-const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
+export const domainOf = (address: string) => address.slice(address.lastIndexOf('@') + 1);
 
 const WRONG_SENDER =
   "Send from this account's own address. Sending as another address is not supported yet.";
@@ -207,7 +222,10 @@ const WRONG_SENDER =
  * (compose.ts), but the engine stores none yet (`account-read.ts` lists the account address as the only identity), so
  * any other `from` is refused; its display name is kept.
  */
-function senderOf(draft: DraftRow, fields: DraftFields): { address: string; name?: string } {
+export function senderOf(
+  draft: Pick<DraftRow, 'address' | 'display_name'>,
+  fields: DraftFields,
+): { address: string; name?: string } {
   const own = { address: draft.address, name: draft.display_name ?? undefined };
   if (!fields.from) return own;
   if (fields.from.address.trim().toLowerCase() !== draft.address.trim().toLowerCase())
@@ -223,10 +241,19 @@ function senderOf(draft: DraftRow, fields: DraftFields): { address: string; name
  *   remote draft, so revision R+1 could share R's id after R went uncertain, was cancelled or actually left);
  * - any other provider skips an id that an earlier submission of ANOTHER revision of this draft already used.
  */
-function messageIdOf(ctx: OutboxCtx, q: StoreReader, draft: DraftRow, sender: string): string {
+function messageIdOf(
+  ctx: OutboxCtx,
+  q: StoreReader,
+  draft: DraftRow,
+  fields: DraftFields,
+  sender: string,
+): string {
   const remote = draft.remote_internet_id;
+  // A draft copy never holds Bcc (see `draftMime`), so a draft with Bcc recipients never leaves as its copy: its id is
+  // not shared with the copy, `payloadOf` then sends the pinned MIME, and the Bcc goes in the envelope.
   if (
     remote &&
+    !fields.bcc.length &&
     draft.provider !== 'microsoft' &&
     draft.synced_revision === draft.revision &&
     isMessageId(remote) &&
@@ -270,6 +297,9 @@ function prepareSend(
   });
   if (draft.row.revision !== action.revision) fail('stateMismatch', DRAFT_CHANGED);
   if (live) fail('stateMismatch', ON_ITS_WAY);
+  const sync = parseData(draft.row.data).meta;
+  if (sync.conflict) fail('stateMismatch', UNRESOLVED);
+  if (sync.incomplete) fail('unavailable', INCOMPLETE_SENTENCE);
   const { fields } = draft;
   if (!fields.to.length && !fields.cc.length && !fields.bcc.length)
     fail('validation', 'Add at least one recipient.', { path: ['action', 'draftId'] });
@@ -282,7 +312,7 @@ function prepareSend(
   let envelope: SubmissionMeta['envelope'];
   let internetId: string;
   try {
-    internetId = ctx.store.read(q => messageIdOf(ctx, q, draft.row, from.address));
+    internetId = ctx.store.read(q => messageIdOf(ctx, q, draft.row, fields, from.address));
     envelope = buildEnvelope(from, fields);
     mime = buildMime({
       from,
@@ -325,6 +355,8 @@ function prepareSend(
 function conflictSentence(error: SubmissionConflict, checking = STILL_CHECKING) {
   if (error.reason === 'draftMissing') return fail('notFound', 'This draft no longer exists.');
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
+  if (error.reason === 'unresolved') return fail('stateMismatch', UNRESOLVED);
+  if (error.reason === 'bodyPending') return fail('unavailable', INCOMPLETE_SENTENCE);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
   if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
   if (error.reason === 'checking') return fail('stateMismatch', checking);

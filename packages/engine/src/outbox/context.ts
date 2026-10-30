@@ -1,8 +1,9 @@
 import type { ErrorBody } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Logger } from '../diag/log';
-import type { SendPort } from '../ports/engine';
+import type { DraftSyncPort, SendPort } from '../ports/engine';
 import type { Clock, DeadlineRegistry } from '../ports/time';
+import type { EngineFrame } from '../runtime/frames';
 import type { CommitOrigin, CommitResult, StorePort } from '../store';
 import type { SubmissionState, SubmissionWrite } from './store';
 
@@ -22,6 +23,10 @@ export interface OutboxDeps {
   settings?: () => { undoSendSeconds?: number };
   /** Randomness for ids, Message-IDs and boundaries; Web Crypto by default. */
   randomBytes?: (n: number) => Uint8Array;
+  /** Remote draft copies. Without it the module has no local drafts (the send machine alone). */
+  drafts?: DraftSyncPort;
+  /** Where `Draft/changed` goes. */
+  frames?: { emit(frame: EngineFrame): void };
 }
 
 /** What this outbox instance holds in memory; everything else is in the store. */

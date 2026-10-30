@@ -12,7 +12,9 @@ import {
 } from '../../src/outbox/module';
 import type { Admission } from '../../src/ports/base';
 import { NotSentError, PausedError } from '../../src/ports/base';
-import type { SendPort, SubmissionPayload } from '../../src/ports';
+import type { DraftSyncPort, SendPort, SubmissionPayload } from '../../src/ports';
+import type { DraftSaveResult, DraftUpload } from '../../src/ports/provider';
+import type { EngineFrame } from '../../src/runtime/frames';
 import { openStore, type CommitInput, type StorePort } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
 
@@ -44,6 +46,8 @@ export function countingSend(clock: FakeClock) {
   /** The server's Drafts folder: Message-ID -> remote draft id. A draft copy is not a sent message, same id or not. */
   const drafts = new Map<string, string>();
   const payloads: SubmissionPayload[] = [];
+  /** Remote drafts a `drafts.send` consumed: the provider's Drafts folder no longer has them. */
+  const consumed: string[] = [];
   const calls: { op: 'send' | 'findSent'; internetId: string; at: number; since?: number }[] = [];
   /** `findSent` reports a delivery only from this time on (a search index that lags). */
   let visibleAt = 0;
@@ -59,7 +63,10 @@ export function countingSend(clock: FakeClock) {
     deliveries.set(p.internetId, (deliveries.get(p.internetId) ?? 0) + 1);
     sent.set(p.internetId, clock.now());
     // `drafts.send` consumes the draft it sends; a plain `messages.send` leaves any draft copy where it was.
-    if (p.remoteDraftId) drafts.delete(p.internetId);
+    if (p.remoteDraftId) {
+      drafts.delete(p.internetId);
+      consumed.push(p.remoteDraftId);
+    }
     payloads.push(p);
   };
   const classified = (cls: string) => ({
@@ -81,7 +88,12 @@ export function countingSend(clock: FakeClock) {
       const result = step.result ?? 'ok';
       if (step.delivered ?? result === 'ok') deliver(payload);
       if (result === 'ok')
-        return { acceptedAt: clock.now(), remoteMessageId: `r-${payload.submissionId}` };
+        return {
+          acceptedAt: clock.now(),
+          remoteMessageId: `r-${payload.submissionId}`,
+          // `drafts.send` consumes the draft it sends; the receipt says so.
+          ...(payload.remoteDraftId ? { draftConsumed: true } : {}),
+        };
       if (result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'transient'));
       if (result === 'paused')
@@ -109,6 +121,7 @@ export function countingSend(clock: FakeClock) {
     sent,
     drafts,
     payloads,
+    consumed,
     calls,
     setAdmission: (a: Admission) => {
       admission = a;
@@ -140,6 +153,104 @@ export function countingSend(clock: FakeClock) {
 }
 
 export type CountingSend = ReturnType<typeof countingSend>;
+
+/**
+ * What one `save` call does (default `ok`). `lost` throws a plain Error before anything is written; `landedLost` writes the
+ * copy and then throws the same Error (a timeout whose request got through). `conflictBare` answers `conflict` with no id.
+ */
+export interface DraftStep {
+  result?: 'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost' | 'conflictBare';
+  /** The `ClassifiedError` class a `notSent` step throws (default `permanent`). */
+  notSentClass?: string;
+  until?: number;
+  /** Awaited before anything else happens. */
+  wait?: Promise<void>;
+}
+
+/**
+ * The fake `DraftSyncPort`: a provider Drafts folder that applies the port's rules (a stale `baseRemoteMessageId` is a
+ * `conflict`, a missing remote draft is `gone`). Every upload is recorded, so tests count them.
+ */
+export function fakeDrafts(server: CountingSend) {
+  const remote = new Map<string, { messageId: string; internetId: string; revision: number }>();
+  const saves: DraftUpload[] = [];
+  const removes: string[] = [];
+  /** Every `remove` call, whether it worked or not. */
+  const removeAttempts: string[] = [];
+  const script: DraftStep[] = [];
+  /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
+  const removeScript: DraftStep[] = [];
+  let counter = 0;
+  const classified = (cls: string) => ({
+    class: cls,
+    provider: 'gmail',
+    method: 'gmail.drafts.update',
+    reason: cls,
+  });
+  const port: DraftSyncPort = {
+    async save(account, upload): Promise<DraftSaveResult> {
+      saves.push(upload);
+      const step = script.shift() ?? {};
+      if (step.wait) await step.wait;
+      if (step.result === 'paused')
+        throw new PausedError(account, 'gmail', 'throttle', 'rateLimitExceeded', step.until);
+      if (step.result === 'notSent')
+        throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
+      if (step.result === 'lost') throw new Error('socket hang up');
+      // A conflict that names no remote message id (an adapter that cannot read it).
+      if (step.result === 'conflictBare') return { kind: 'conflict' };
+      const known = upload.remoteDraftId ? remote.get(upload.remoteDraftId) : undefined;
+      if (upload.remoteDraftId && !known) return { kind: 'gone' };
+      if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)
+        return { kind: 'conflict', remoteMessageId: known.messageId };
+      const remoteDraftId = upload.remoteDraftId ?? `rd${++counter}`;
+      const messageId = `msg${++counter}`;
+      remote.set(remoteDraftId, {
+        messageId,
+        internetId: upload.internetId,
+        revision: upload.revision,
+      });
+      server.uploadDraft(upload.internetId, remoteDraftId);
+      if (step.result === 'landedLost') throw new Error('socket hang up');
+      return {
+        kind: 'saved',
+        remoteDraftId,
+        remoteMessageId: messageId,
+        revision: upload.revision,
+      };
+    },
+    async remove(account, remoteDraftId) {
+      removeAttempts.push(remoteDraftId);
+      const step = removeScript.shift() ?? {};
+      if (step.wait) await step.wait;
+      if (step.result === 'paused')
+        throw new PausedError(account, 'gmail', 'throttle', 'rateLimitExceeded', step.until);
+      if (step.result === 'notSent')
+        throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
+      if (step.result === 'lost' || step.result === 'landedLost') throw new Error('socket hang up');
+      removes.push(remoteDraftId);
+      remote.delete(remoteDraftId);
+    },
+  };
+  return {
+    port,
+    script,
+    removeScript,
+    remote,
+    saves,
+    removes,
+    removeAttempts,
+    /** The owner edits the draft on a phone: its message id changes, as history will report. */
+    phoneEdit(remoteDraftId: string) {
+      const copy = remote.get(remoteDraftId)!;
+      const messageId = `msg${++counter}`;
+      remote.set(remoteDraftId, { ...copy, messageId });
+      return messageId;
+    },
+  };
+}
+
+export type FakeDrafts = ReturnType<typeof fakeDrafts>;
 
 /** A gate a test opens by hand. */
 export function gate() {
@@ -175,7 +286,12 @@ export function fields(extra: Partial<DraftFields> = {}): DraftFields {
 
 /** One `mail.db`, any number of engine instances on it, one fake clock and one counting server. */
 export function outboxWorld(
-  options: { settings?: () => { undoSendSeconds?: number }; provider?: string } = {},
+  options: {
+    settings?: () => { undoSendSeconds?: number };
+    provider?: string;
+    /** Wire a `DraftSyncPort` fake (and its frames): the module then has local drafts. */
+    drafts?: boolean;
+  } = {},
 ) {
   const file = tempDb();
   const clock = fakeClock(T0);
@@ -199,6 +315,9 @@ export function outboxWorld(
     return exactNow() + drift;
   };
   const server = countingSend(clock);
+  const remoteDrafts = fakeDrafts(server);
+  /** Every `Draft/changed` frame the modules sent. */
+  const frames: EngineFrame[] = [];
   const blobs = new Map<string, Uint8Array>();
   const instances: Instance[] = [];
   let opSeq = 0;
@@ -234,6 +353,9 @@ export function outboxWorld(
       log,
       blobs: { get: id => blobs.get(id) },
       settings: options.settings,
+      ...(options.drafts
+        ? { drafts: remoteDrafts.port, frames: { emit: f => frames.push(f) } }
+        : {}),
     });
     const instance: Instance = {
       store,
@@ -357,6 +479,8 @@ export function outboxWorld(
     file,
     clock,
     server,
+    remoteDrafts,
+    frames,
     skew,
     blobs,
     records,

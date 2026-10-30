@@ -2,14 +2,31 @@ import type { State, Submission, SubmissionAction } from '@aplos/contract';
 import type { EngineServices, LaneModule } from '../runtime/services';
 import type { CommitExtension } from '../store/port';
 import { STOP_GRACE_MS } from '../clock/loop';
+import type { DeadlineRegistry } from '../ports/time';
 import type { OutboxCtx, OutboxDeps } from './context';
+import { sentChanged, touchDue } from './draft-due';
+import { onDraftAnnounced } from './draft-state';
+import {
+  announceDraft,
+  closeDraft,
+  createDraftsCtx,
+  draftsSource,
+  settledDrafts,
+  wakeDrafts,
+  type DraftsCtx,
+} from './draft-sync';
+import { createDraftService, type DraftService } from './drafts';
+import { outboxExtension } from './extension';
 import { outboxSource } from './runner';
 import { applyStartRule, recheckUncertain } from './start';
-import { outboxExtension } from './store';
 import { getSubmissions, setSubmission, type SetResult } from './submissions';
 
 export type { BlobSource, OutboxDeps } from './context';
-export { outboxExtension, SubmissionConflict, type SubmissionWrite } from './store';
+export type { DraftService } from './drafts';
+export { outboxExtension } from './extension';
+export { SubmissionConflict, type SubmissionWrite } from './store';
+export { DraftConflict } from './draft-state';
+export type { DraftWrite } from './draft-writes';
 
 /** `Outbox/pending`: what will not happen while Aplos is quit, for the quit warning. */
 export interface OutboxPending {
@@ -30,6 +47,8 @@ declare module '../runtime/services' {
   interface EngineServices {
     /** The send state machine (time-2): `Submission/get|set` and `Outbox/pending`. */
     outbox: OutboxService;
+    /** The local drafts (time-3): `Draft/get|set|destroy|resolve`. */
+    draftBox: DraftService;
   }
 }
 
@@ -43,8 +62,12 @@ export interface OutboxModule {
   wake(): void;
   /** Unregisters the deadline source and lets a send already running settle, for at most `STOP_GRACE_MS`. */
   close(): Promise<void>;
-  /** Resolves once no send or `findSent` of this instance is running (tests and quit). */
+  /** Resolves once no send, `findSent` or draft upload of this instance is running (tests and quit). */
   idle(): Promise<void>;
+  /** The local drafts; present when the host gave a `DraftSyncPort`. */
+  drafts?: DraftService;
+  /** The editor closed: upload that draft now instead of after the idle wait. */
+  closeDraft(id: string): void;
 }
 
 function pendingOf(ctx: OutboxCtx): OutboxPending {
@@ -70,8 +93,22 @@ function pendingOf(ctx: OutboxCtx): OutboxPending {
   });
 }
 
-async function settled(ctx: OutboxCtx) {
+async function settled(ctx: OutboxCtx, drafts?: DraftsCtx) {
   while (ctx.busy.size) await Promise.all([...ctx.busy.values()]);
+  if (drafts) await settledDrafts(drafts);
+}
+
+/** A send that ends moves the drafts' deadlines too (a sent draft is cleaned up, a cancelled one syncs again). */
+function alsoDrafts(deadlines: DeadlineRegistry, sendChanged: () => void): DeadlineRegistry {
+  return {
+    register: source => deadlines.register(source),
+    changed(id) {
+      deadlines.changed(id);
+      if (id !== 'outbox') return;
+      sendChanged();
+      deadlines.changed('drafts');
+    },
+  };
 }
 
 /**
@@ -80,14 +117,47 @@ async function settled(ctx: OutboxCtx) {
  * `wake()` on the host's wake.
  */
 export function createOutboxModule(deps: OutboxDeps): OutboxModule {
+  const random = deps.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
+  const hooks: { draftsCtx?: DraftsCtx } = {};
   const ctx: OutboxCtx = {
     ...deps,
-    random: deps.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n))),
+    deadlines: deps.drafts
+      ? alsoDrafts(deps.deadlines, () => hooks.draftsCtx && sentChanged(hooks.draftsCtx))
+      : deps.deadlines,
+    random,
     busy: new Map(),
     inflight: new Set(),
     paused: new Map(),
   };
-  const unregister = deps.deadlines.register(outboxSource(ctx));
+  const unregister = [deps.deadlines.register(outboxSource(ctx))];
+  const draftsCtx = deps.drafts
+    ? createDraftsCtx({
+        store: deps.store,
+        clock: deps.clock,
+        deadlines: ctx.deadlines,
+        log: deps.log,
+        random,
+        blobs: deps.blobs,
+        port: deps.drafts,
+        frames: deps.frames,
+      })
+    : undefined;
+  hooks.draftsCtx = draftsCtx;
+  if (draftsCtx) {
+    unregister.push(deps.deadlines.register(draftsSource(draftsCtx)));
+    unregister.push(
+      onDraftAnnounced(id => {
+        try {
+          // A fact from the provider changed this draft behind the source's back: look at its row again.
+          touchDue(draftsCtx, id);
+          draftsCtx.deadlines.changed('drafts');
+          announceDraft(draftsCtx, id);
+        } catch {
+          // A frame is best effort: the store may be closing, and the state frame carries the change anyway.
+        }
+      }),
+    );
+  }
   const service: OutboxService = {
     get: ids => {
       const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
@@ -99,6 +169,7 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
   return {
     service,
     extension: outboxExtension,
+    ...(draftsCtx ? { drafts: createDraftService(draftsCtx, service) } : {}),
     start() {
       applyStartRule(ctx);
       recheckUncertain(ctx);
@@ -107,23 +178,27 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     wake() {
       ctx.paused.clear();
       applyStartRule(ctx);
+      if (draftsCtx) wakeDrafts(draftsCtx);
       ctx.deadlines.changed('outbox');
     },
     async close() {
-      unregister();
+      for (const off of unregister) off();
       const abort = new AbortController();
       const grace = ctx.clock.sleep(STOP_GRACE_MS, abort.signal).catch(() => {});
-      await Promise.race([settled(ctx), grace]);
+      await Promise.race([settled(ctx, draftsCtx), grace]);
       abort.abort();
     },
-    idle: () => settled(ctx),
+    idle: () => settled(ctx, draftsCtx),
+    closeDraft(id) {
+      if (draftsCtx) closeDraft(draftsCtx, id);
+    },
   };
 }
 
 /**
  * Seam 1: lane `eng-time`'s outbox module, imported by the composition root (`src/index.ts`) from this fixed path.
  * It registers the `outbox` deadline source with the timer loop the clock module provides and serves the `submission`
- * and `outbox` areas. Drafts (time-3) and notifications (time-5) join this module later.
+ * and `outbox` areas, and (time-3) the local drafts and their `drafts` deadline source. Notifications (time-5) join later.
  */
 export const lane = 'eng-time';
 
@@ -139,9 +214,11 @@ export function createModule(services: EngineServices): LaneModule {
     deadlines: services.deadlines,
     log: services.log,
     randomBytes: services.randomBytes,
+    drafts: services.drafts,
+    frames: services.frames,
   });
   return {
-    services: { outbox: outbox.service },
+    services: { outbox: outbox.service, draftBox: outbox.drafts! },
     start: () => outbox.start(),
     stop: () => outbox.close(),
   };

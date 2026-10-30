@@ -196,6 +196,7 @@ function settleSent(ctx: OutboxCtx, a: Attempt, receipt: SendReceipt | undefined
           problem: null,
           checkAt: null,
           dropMime: true,
+          ...(receipt?.draftConsumed ? { draftConsumed: true as const } : {}),
         },
       },
       { was: 'sending', why: 'sent' },

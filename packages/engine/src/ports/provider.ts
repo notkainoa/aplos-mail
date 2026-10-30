@@ -684,9 +684,17 @@ export interface ProviderAdapter {
    * adapter picks each request's kind: an in-place update by id (Gmail `drafts.update`, Graph PATCH) is
    * `idempotentWrite`; a create, and an update that is a create plus destroy (IMAP `APPEND` then delete, JMAP
    * `Email/set`), is `write` and never re-sent, and an uncertain create is recognised by `DraftUpload.internetId`.
+   * A target that is no longer a draft (sent from another device: no `$draft` keyword, not in Drafts, a sent message on
+   * a provider where the draft and the sent message are one entity) is `gone`: it is never replaced, and a JMAP
+   * replace (create then destroy) must not destroy it, or it would delete sent mail. `DraftUpload.mime` never carries
+   * Bcc: the engine keeps Bcc out of draft copies, so an adapter that sends a copy itself sends it without Bcc.
    */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
-  /** Idempotent: an absent draft is success. */
+  /**
+   * Idempotent: an absent draft is success. It must also do nothing when the target is no longer a draft (no `$draft`
+   * keyword, not in Drafts): a send that used the remote draft (`SendReceipt.draftConsumed`) can leave the same entity
+   * as the sent message (JMAP keeps the `Email` id), and deleting it would delete the sent mail.
+   */
   deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
   /**
    * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
