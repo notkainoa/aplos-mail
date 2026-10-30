@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -29,6 +30,19 @@ let counter = 0;
 const dir = () => join(tmp, `lock-${counter++}.lock`);
 const fast = { pollMs: 10, timeoutMs: 5000, staleMs: 60_000 };
 const lockPath = fileURLToPath(new URL('../hillclimb/lock.mjs', import.meta.url));
+
+const spawnScript = (script, name = 'child') =>
+  new Promise((resolve, reject) => {
+    const child = spawn('node', ['--input-type=module', '-e', script], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+    });
+    child.on('close', code => (code === 0 ? resolve() : reject(new Error(`${name}: ${stderr}`))));
+    child.on('error', reject);
+  });
 
 describe('withCheckSlot', () => {
   it('serializes two concurrent holders', async () => {
@@ -138,6 +152,125 @@ describe('takeStaleLock', () => {
     assert.equal(takeStaleLock(d), true);
     assert.equal(existsSync(d), false, 'stale dir moved aside and removed');
     assert.equal(takeStaleLock(d), false, 'second taker loses the rename race');
+  });
+});
+
+describe('stale-takeover TOCTOU (real processes)', () => {
+  it('a judgement made on the stale dir cannot steal the live lock a peer just won', async () => {
+    // Deterministic interleaving: `racer` snapshots the stale dir's identity exactly as
+    // the staleness check would, waits until `taker` has legitimately taken the slot over
+    // and sits inside its critical section, then calls takeStaleLock — the check->rename
+    // gap widened by hand. Under the fix the moved-aside dir proves to be a different,
+    // live lock and is put back; unfixed it is discarded and both hold the slot.
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'token'), 'stale-t0');
+    writeFileSync(join(d, 'pid'), '4194304'); // dead pid -> stale for both children
+    // The identity snapshot the staleness check captured on the stale dir, taken before
+    // any child starts so it cannot already describe the winner's live lock.
+    const expected = {
+      pid: 4194304,
+      token: 'stale-t0',
+      mtimeMs: statSync(d).mtimeMs,
+    };
+    const marker = join(tmp, `race-a-${counter}.log`);
+    const go = join(tmp, `race-a-${counter}.go`);
+    const takerScript = `
+      const { withCheckSlot } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      await withCheckSlot(async () => {
+        fs.appendFileSync(${JSON.stringify(marker)}, 'enter taker\\n');
+        fs.writeFileSync(${JSON.stringify(go)}, 'go');
+        await sleep(500);
+        fs.appendFileSync(${JSON.stringify(marker)}, 'exit taker\\n');
+      }, { dir: ${JSON.stringify(d)}, pollMs: 5, timeoutMs: 15000, staleMs: 60000 });
+    `;
+    const racerScript = `
+      const { takeStaleLock } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const d = ${JSON.stringify(d)};
+      const marker = ${JSON.stringify(marker)};
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const expected = ${JSON.stringify(expected)};
+      for (let i = 0; i < 500 && !fs.existsSync(${JSON.stringify(go)}); i++) await sleep(10);
+      const won = takeStaleLock(d, expected);
+      if (won) {
+        fs.mkdirSync(d);
+        fs.writeFileSync(join(d, 'token'), 'racer');
+        fs.writeFileSync(join(d, 'pid'), String(process.pid));
+        fs.appendFileSync(marker, 'enter racer\\n');
+        await sleep(40);
+        fs.appendFileSync(marker, 'exit racer\\n');
+      } else {
+        fs.appendFileSync(marker, 'racer lost\\n');
+      }
+    `;
+    await Promise.all([spawnScript(takerScript, 'taker'), spawnScript(racerScript, 'racer')]);
+    const events = readFileSync(marker, 'utf8').trim().split('\n');
+    let depth = 0;
+    for (const event of events) {
+      if (event.startsWith('enter')) {
+        depth++;
+        assert.ok(depth <= 1, `two holders at once: ${events.join(' | ')}`);
+      } else if (event.startsWith('exit')) {
+        depth--;
+      }
+    }
+    assert.ok(events.includes('racer lost'), JSON.stringify(events));
+    assert.ok(!events.includes('enter racer'), JSON.stringify(events));
+    assert.equal(existsSync(d), false, 'taker released the slot');
+  });
+
+  it('two contending processes never overlap across 20 stale takeovers', async () => {
+    const marker = join(tmp, `race-b-${counter}.log`);
+    const base = join(tmp, `races-${counter}`);
+    mkdirSync(base);
+    // Each child walks 20 slot dirs, replanting a stale (dead-pid) lock when none exists,
+    // then entering the real withCheckSlot path. A takeover race lets both hold at once;
+    // the marker file then shows two 'enter's without an 'exit' between them.
+    const script = name => `
+      const { withCheckSlot } = await import(${JSON.stringify(lockPath)});
+      const fs = await import('node:fs');
+      const { join } = await import('node:path');
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (let i = 0; i < 20; i++) {
+        const d = join(${JSON.stringify(base)}, 'slot-' + i + '.lock');
+        try {
+          fs.mkdirSync(d);
+          fs.writeFileSync(join(d, 'token'), 'stale-' + i);
+          fs.writeFileSync(join(d, 'pid'), '4194304');
+        } catch {}
+        await sleep(Math.random() * 10);
+        await withCheckSlot(async () => {
+          fs.appendFileSync(${JSON.stringify(marker)}, i + ' enter ${name}\\n');
+          await sleep(15);
+          fs.appendFileSync(${JSON.stringify(marker)}, i + ' exit ${name}\\n');
+        }, { dir: d, pollMs: 2, timeoutMs: 30000, staleMs: 60000 });
+      }
+    `;
+    await Promise.all([spawnScript(script('a'), 'a'), spawnScript(script('b'), 'b')]);
+    const bySlot = new Map();
+    for (const line of readFileSync(marker, 'utf8').trim().split('\n')) {
+      const [i, kind] = line.split(' ');
+      const list = bySlot.get(i) ?? [];
+      list.push(kind);
+      bySlot.set(i, list);
+    }
+    assert.equal(bySlot.size, 20);
+    for (const [i, kinds] of bySlot) {
+      let depth = 0;
+      for (const kind of kinds) {
+        if (kind === 'enter') {
+          depth++;
+          assert.equal(depth, 1, `slot ${i} overlapped: ${kinds.join(', ')}`);
+        } else {
+          depth--;
+        }
+      }
+      assert.equal(depth, 0, `slot ${i} left unbalanced: ${kinds.join(', ')}`);
+    }
   });
 });
 
