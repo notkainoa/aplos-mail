@@ -18,12 +18,17 @@ import { ACCOUNT, Mac, HOUR, boot, mailWorld, settle } from './gov-stack-rig';
 
 const DAY = 24 * HOUR;
 
-/** Gmail answers every receive-time check (a minimal get) with 404: the clock gate never measures anything. */
-function failClockChecks(mac: Mac): void {
+/**
+ * Gmail answers every receive-time check (a minimal get) with 404 while `failing()` holds: the clock gate measures
+ * nothing then.
+ */
+function failClockChecks(mac: Mac, failing: () => boolean = () => true): void {
   const inner = mac.fetch;
   (mac as { fetch: typeof fetch }).fetch = (input, init) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
-    if (/\/messages\/[^/]+$/.test(url.pathname) && url.searchParams.get('format') === 'minimal')
+    const check =
+      /\/messages\/[^/]+$/.test(url.pathname) && url.searchParams.get('format') === 'minimal';
+    if (check && failing())
       return Promise.resolve(new Response('{"error":{"code":404}}', { status: 404 }));
     return inner(input, init);
   };
@@ -60,6 +65,28 @@ test('a lone Mac whose clock checks always fail writes about 50 copies an idle d
   }
 });
 
+test('a lone Mac 3 hours fast with failing checks is primary within minutes of NTP setting its clock back', async () => {
+  const mail = mailWorld(4);
+  const a = new Mac(mail, 'mac-a');
+  let [skew, failing] = [3 * HOUR, true];
+  failClockChecks(a, () => failing);
+  const engine = await boot(a, undefined, { workflow: true, leaseTickMs: 5_000, skew: () => skew });
+  const role = () => engine.host.status(ACCOUNT)?.lease?.role;
+  try {
+    await engine.host.start(ACCOUNT);
+    // Into the slow 30-minute wait (the 1, 2, 4 and 5-minute backoff done).
+    await mail.clock.advance(HOUR);
+    assert.equal(role(), 'secondary');
+    // The clock is set right (3 hours back) and the checks work again: it measures at its next round, not 3 hours on.
+    [skew, failing] = [0, false];
+    await mail.clock.advance(5 * 60_000);
+    assert.equal(role(), 'primary');
+  } finally {
+    await settle(mail.clock, engine.kill());
+    a.cleanup();
+  }
+});
+
 const live = (r: Rig) =>
   r.emu.mailbox.select({ labelIds: [appLabel(r)], q: '', includeSpamTrash: false }).map(m => m.id);
 
@@ -72,7 +99,7 @@ const lease = (at: number, v: number): WorkflowRecord => ({
   value: { v, pad: 'x'.repeat(2_000) },
 });
 
-test('300 own copies: digests only, at most 256 remembered, and the matching rule still keeps a Done copy', async () => {
+test('300 own copies: digests only, at most 256 remembered, forgotten ones re-read 3 a call, a Done copy kept', async () => {
   const r = await rig();
   const now = r.clock.now();
   // 300 copies this device wrote earlier (each with a 2 KB value); the newest also holds Done from 170 days ago.
@@ -105,26 +132,60 @@ test('300 own copies: digests only, at most 256 remembered, and the matching rul
   assert.ok(own.entries <= 257, `${own.entries} records remembered`);
   const digest = own.get(keeper)!;
   assert.ok(digest && !JSON.stringify([...digest]).includes('xxxx'), 'no record values kept');
-  await fast.channel.write([{ key: 'lease:device-a', value: { v: 1000 } }], fast.ctx());
-  let trashed = 0;
-  for (let n = await fast.channel.compact(fast.ctx(), { ownOnly: true }); n;) {
-    trashed += n;
-    n = await fast.channel.compact(fast.ctx(), { ownOnly: true });
-  }
-  assert.equal(
-    trashed,
-    254,
-    'every remembered copy the new one covers, never the one holding Done',
+  const written = await fast.channel.write(
+    [{ key: 'lease:device-a', value: { v: 1000 } }],
+    fast.ctx(),
   );
-  assert.ok(live(r).includes(keeper), 'the copy holding Done stays');
-  // Left: the 44 copies past the cap, the one the new copy's own digest pushed out, the Done copy and the new one.
-  assert.equal(live(r).length, 300 - 254 + 1, 'copies no digest remembers are never trashed');
+  let trashed = 0;
+  const compact = async () => {
+    const since = fast.governor.calls.length;
+    const n = await fast.channel.compact(fast.ctx(), { ownOnly: true });
+    // One read-back of the new copy on the first call, then at most 3 forgotten copies downloaded again per call.
+    const gets = fast.methods(since).filter(m => m === 'gmail.messages.get').length;
+    assert.ok(gets <= (trashed ? 3 : 4), `${gets} downloads in one compaction`);
+    return n;
+  };
+  for (let n = await compact(); n; n = await compact()) trashed += n;
+  // The 254 remembered copies the new one covers, then the 45 forgotten ones (44 past the cap, one pushed out by the
+  // new copy's digest), each downloaded once more: never the one holding Done.
+  assert.equal(trashed, 254 + 45, 'every copy the new one covers, never the one holding Done');
+  assert.deepEqual(
+    live(r).sort(),
+    [keeper, written.remoteId].sort(),
+    'the copy holding Done stays',
+  );
   assert.ok(own.size <= 2, `${own.size} copies remembered after compacting`);
+  assert.equal(await compact(), 0, 'nothing left to download again');
   const reader = device(r, 'device-c');
   await reader.round();
   assert.deepEqual(reader.channel.view().find(x => x.key === 'thread:t-old')?.value, {
     status: 'done',
   });
+});
+
+test('own copies forgotten under the record bound, on a right clock: trashed by id, with no download again', async () => {
+  const r = await rig();
+  const now = r.clock.now();
+  const records = (i: number): WorkflowRecord[] =>
+    ['lease:device-a', 'thread:t-1', 'thread:t-2'].map((key, gen) => ({
+      key,
+      stamp: { at: now - 100 + i, gen, device: 'device-a' },
+      value: { i },
+    }));
+  for (let i = 0; i < 10; i++) {
+    const payload = { v: 2 as const, device: 'device-a', writtenAt: now - 100 + i, floor: 0 };
+    plant(r, sealedCopy(r, { ...payload, records: records(i) }).raw);
+  }
+  // Two full views' worth of records (2 x 3): the newest two copies keep a digest, the other eight their id only.
+  const a = device(r, 'device-a', { maxRecords: 3 });
+  await a.round();
+  assert.equal((ownOf(a.channel) as OwnDigests).size, 2);
+  const written = await a.channel.write([{ key: 'lease:device-a', value: { v: 1 } }], a.ctx());
+  const since = a.governor.calls.length;
+  assert.equal(await a.channel.compact(a.ctx(), { ownOnly: true }), 10);
+  const gets = a.methods(since).filter(m => m === 'gmail.messages.get').length;
+  assert.equal(gets, 1, 'only the read-back of the new copy');
+  assert.deepEqual(live(r), [written.remoteId]);
 });
 
 test('own digests: bounded in records too, the newest kept; an equal stamp with another value never covers', () => {

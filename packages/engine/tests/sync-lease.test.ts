@@ -571,6 +571,24 @@ test('a clock that jumps back rewrites its claim instead of waiting out a far-fu
   assert.equal(role(b), 'primary');
 });
 
+test('a clock that jumps back 3 hours during a write backoff retries at once, not 3 hours later', async () => {
+  const w = new World();
+  const a = w.device('mac-a');
+  await w.run(5 * MINUTE);
+  assert.equal(role(a), 'primary');
+  // The renewal fails (a 5-minute backoff from then), and the clock is set back 3 hours meanwhile.
+  a.failWrites = true;
+  await w.run(LEASE_RENEW_MS);
+  const tries = a.tries;
+  assert.ok(tries > 0);
+  a.failWrites = false;
+  a.skew = -3 * HOUR;
+  // The claim it published reads as absurdly far ahead now: only a new write makes it primary again.
+  await w.run(3 * LEASE_ROUND_MS);
+  assert.ok(a.tries > tries, 'retried after the jump');
+  assert.equal(role(a), 'primary', 'not frozen for the length of the jump');
+});
+
 test('claim() and tick() at the same moment run one after the other', async () => {
   const w = new World();
   const a = w.device('mac-a');

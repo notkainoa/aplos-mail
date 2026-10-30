@@ -40,8 +40,8 @@ export function digestCovers(newer: CopyDigest, older: CopyDigest): boolean {
 
 /**
  * Own copies' digests, bounded twice: at most `maxCopies` copies and `maxEntries` records over all of them (the
- * oldest remembered copy goes first; the newest is always kept). A copy no longer remembered is simply never trashed by
- * an own-only compaction.
+ * oldest remembered copy goes first; the newest is always kept). `remember` returns the copies it forgot, so the
+ * channel can keep their ids (`workflow-state.ts` re-reads a few of them per own-only compaction).
  */
 export class OwnDigests {
   private readonly copies = new Map<string, CopyDigest>();
@@ -73,12 +73,18 @@ export class OwnDigests {
     this.copies.delete(id);
   }
 
-  /** Remembers `id` as the newest copy, evicting the oldest past either bound. */
-  remember(id: string, digest: CopyDigest): void {
+  /** Remembers `id` as the newest copy, evicting the oldest past either bound; returns the ids evicted. */
+  remember(id: string, digest: CopyDigest): string[] {
     this.delete(id);
     this.copies.set(id, digest);
     this.total += digest.size;
-    while (this.copies.size > 1 && this.overBound()) this.delete(this.oldest());
+    const evicted: string[] = [];
+    while (this.copies.size > 1 && this.overBound()) {
+      const oldest = this.oldest();
+      this.delete(oldest);
+      evicted.push(oldest);
+    }
+    return evicted;
   }
 
   private overBound(): boolean {

@@ -171,6 +171,12 @@ interface LeaseEntry {
   compacting?: AbortController;
   /** Quit or disconnect has begun: no new compaction starts. */
   retiring?: boolean;
+  /**
+   * Dropped by a 'restart': a round or owner's claim still in flight finishes against a channel that refuses it, and
+   * its reports are ignored, so only the restarted actor's controller (with the gate as it stood before any lift)
+   * reads, writes or sets the role.
+   */
+  stale?: boolean;
 }
 
 /**
@@ -395,6 +401,7 @@ export class ActorHost implements AccountActorHost {
         // controller may demote `leases` once the actor is gone.
         const seed = this.leases.get(account);
         if (seed) this.leaseSeed.set(account, seed);
+        lease.stale = true;
         this.keepClock(account, lease);
       } else {
         await this.retireLease(account, lease);
@@ -726,7 +733,8 @@ export class ActorHost implements AccountActorHost {
       device: this.deps.deviceId,
       clock: this.deps.clock,
       channel: this.leaseChannel(account, entry, channel),
-      report: (acc, lease) => this.applyLease(acc, lease),
+      // A controller a 'restart' replaced sets no role.
+      report: (acc, lease) => entry.stale || this.applyLease(acc, lease),
       // While the actor is down (a 'restart' gap) the device acts as secondary: a tick demotes, never renews.
       active: () => this.actors.has(account),
       // The claim this device's previous controller published is still live; a quit must retire it too.
@@ -778,6 +786,8 @@ export class ActorHost implements AccountActorHost {
     channel: HostWorkflowChannel,
   ): LeaseChannel {
     const ctx = (signal?: AbortSignal): AdapterContext => {
+      // A controller a 'restart' replaced reaches no network, not even on the restarted actor's context.
+      if (entry.stale) throw new Error('The lease controller was replaced by a restart');
       const base = this.actors.get(account)?.actor.context() ?? this.noActor(account);
       return signal ? { ...base, signal: AbortSignal.any([base.signal, signal]) } : base;
     };
@@ -786,6 +796,8 @@ export class ActorHost implements AccountActorHost {
         const read = await this.logFailure(account, 'lease.read', () =>
           channel.read(entry.state, ctx()),
         );
+        // Replaced while reading: the cursor and the merge are the new controller's to commit.
+        if (entry.stale) return read.records;
         this.adoptWorkflowState(account, entry, read.nextState);
         this.merged(account, read.changed, read.records);
         return read.records;
@@ -800,7 +812,7 @@ export class ActorHost implements AccountActorHost {
           this.startCompaction(account, entry, async signal => channel.compact(ctx(signal), mode));
         return written;
       },
-      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx()) } : {}),
+      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx) } : {}),
     };
   }
 
@@ -808,10 +820,10 @@ export class ActorHost implements AccountActorHost {
   private async probeClock(
     account: AccountId,
     channel: HostWorkflowChannel,
-    ctx: AdapterContext,
+    ctx: () => AdapterContext,
   ): Promise<boolean> {
     try {
-      const probed = await channel.probe!(ctx);
+      const probed = await channel.probe!(ctx());
       return clockReading(probed.clockOffset) !== 'unmeasurable';
     } catch (error) {
       this.logOnce(account, 'lease.probe', error);
