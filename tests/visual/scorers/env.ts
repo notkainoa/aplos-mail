@@ -18,8 +18,13 @@ const NAMED = new Set([
   'TASTE_MODEL',
 ]);
 
-/** The logged-in claude CLI finds its own config dir and settings through CLAUDE_* variables. */
-const PREFIX = 'CLAUDE_';
+/**
+ * The only CLAUDE_* variable the logged-in `claude -p` can need. Checked on this machine with
+ * `env -i PATH HOME claude -p ...`: login works from HOME alone (default config dir ~/.claude), with or
+ * without CLAUDE_CONFIG_DIR, which matters only when the owner keeps the config elsewhere. Nothing
+ * else is passed (no CLAUDE_CODE_* session, token or settings variables).
+ */
+const CLAUDE_NAMES = new Set(['CLAUDE_CONFIG_DIR']);
 
 /** Never passed, whatever else matches (so CLAUDE_CODE_OAUTH_TOKEN stays out too). */
 const SECRET = /(_API_KEY|_TOKEN|_SECRET)$/i;
@@ -27,7 +32,7 @@ const SECRET = /(_API_KEY|_TOKEN|_SECRET)$/i;
 export interface ScorerEnvOptions {
   /** Extra variable names to copy from the source, still subject to the secret-suffix rule. */
   names?: readonly string[];
-  /** Pass CLAUDE_* variables (default true). Only the claude judge needs them; Vite and Chromium do not. */
+  /** Pass CLAUDE_CONFIG_DIR (default true). Only the claude judge needs it; Vite and Chromium do not. */
   claude?: boolean;
   /** Values the scorer sets itself; they win over the source. */
   set?: Readonly<Record<string, string>>;
@@ -35,7 +40,7 @@ export interface ScorerEnvOptions {
 
 function allowed(name: string, extra: ReadonlySet<string>, claude: boolean): boolean {
   if (SECRET.test(name)) return false;
-  return NAMED.has(name) || extra.has(name) || (claude && name.startsWith(PREFIX));
+  return NAMED.has(name) || extra.has(name) || (claude && CLAUDE_NAMES.has(name));
 }
 
 /** A fresh environment holding only allow-listed variables of `source`, plus `options.set`. */

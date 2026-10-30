@@ -14,6 +14,12 @@ export type SpawnFn = (command: string, args: string[], options: SpawnOptions) =
 
 const DENIED_TOOLS = 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch';
 const MAX_OUTPUT_BYTES = 2_000_000;
+const KILL_GRACE_MS = 2_000;
+
+/** Signals a whole process group (`-pid`); the child is spawned detached so it leads its own group. */
+export type KillGroupFn = (pid: number, signal: NodeJS.Signals) => void;
+
+const killProcessGroup: KillGroupFn = (pid, signal) => process.kill(-pid, signal);
 
 /** The argv for one call, scoped to `dir` (an absolute, symlink-free path). `//` is a filesystem-root path rule. */
 export function claudeArgs(model: string, dir: string): string[] {
@@ -64,6 +70,10 @@ export interface ClaudeJudgeOptions {
   env: Record<string, string>;
   timeoutMs: number;
   spawnFn?: SpawnFn;
+  /** Test seam for process.kill(-pid, signal). */
+  killGroup?: KillGroupFn;
+  /** How long a timed-out call may take to exit after SIGTERM before its group is SIGKILLed. */
+  graceMs?: number;
   tmpRoot?: string;
 }
 
@@ -82,6 +92,47 @@ interface Run {
   timeoutMs: number;
   spawnFn: SpawnFn;
   running: Set<ChildProcess>;
+  reaper: Reaper;
+}
+
+/** Stops claude children and every helper they spawned: SIGTERM first, then SIGKILL to the group after a grace. */
+interface Reaper {
+  /** Sends `signal` to the child's whole group (or to the child alone when it has no pid). ESRCH is ignored. */
+  signal: (child: ChildProcess, signal: NodeJS.Signals) => void;
+  /** SIGTERM now, SIGKILL after the grace period. */
+  terminate: (child: ChildProcess) => void;
+  /** SIGKILL every child still waiting out its grace period. */
+  flush: () => void;
+}
+
+function createReaper(killGroup: KillGroupFn, graceMs: number): Reaper {
+  const waiting = new Map<NodeJS.Timeout, () => void>();
+  const signal = (child: ChildProcess, name: NodeJS.Signals): void => {
+    try {
+      if (child.pid === undefined) child.kill(name);
+      else killGroup(child.pid, name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  };
+  const terminate = (child: ChildProcess): void => {
+    signal(child, 'SIGTERM');
+    const finish = (): void => signal(child, 'SIGKILL');
+    const timer = setTimeout(() => {
+      waiting.delete(timer);
+      finish();
+    }, graceMs);
+    timer.unref();
+    waiting.set(timer, finish);
+  };
+  const flush = (): void => {
+    for (const [timer, finish] of waiting) {
+      clearTimeout(timer);
+      finish();
+    }
+    waiting.clear();
+  };
+  return { signal, terminate, flush };
 }
 
 /** One claude process. The promise settles exactly once, on whichever of close, error or timeout comes first. */
@@ -93,6 +144,7 @@ function runClaude(run: Run): Promise<string> {
         cwd: run.cwd,
         env: run.env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
       });
     } catch (error) {
       reject(new Error(`cannot run ${run.bin}: ${messageOf(error)}`));
@@ -102,12 +154,13 @@ function runClaude(run: Run): Promise<string> {
     let out = '';
     let err = '';
     let settled = false;
-    const settle = (finish: () => void): void => {
+    const settle = (finish: () => void, exited = false): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       run.running.delete(child);
-      child.kill('SIGKILL');
+      if (exited) run.reaper.signal(child, 'SIGKILL');
+      else run.reaper.terminate(child);
       finish();
     };
     const fail = (what: string) => (error: unknown) =>
@@ -138,7 +191,7 @@ function runClaude(run: Run): Promise<string> {
         } catch (error) {
           reject(error);
         }
-      }),
+      }, true),
     );
     try {
       child.stdin?.end(run.prompt);
@@ -171,12 +224,17 @@ export function readClaudeResult(out: string, code: number | null, err: string):
 export function createClaudeJudge(options: ClaudeJudgeOptions): ClaudeJudge {
   const running = new Set<ChildProcess>();
   const dirs = new Set<string>();
+  const reaper = createReaper(
+    options.killGroup ?? killProcessGroup,
+    options.graceMs ?? KILL_GRACE_MS,
+  );
   let made = 0;
   let disposed = false;
   const dispose = (): void => {
     disposed = true;
-    for (const child of running) child.kill('SIGKILL');
+    for (const child of running) reaper.signal(child, 'SIGKILL');
     running.clear();
+    reaper.flush();
     for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
     dirs.clear();
   };
@@ -196,6 +254,7 @@ export function createClaudeJudge(options: ClaudeJudgeOptions): ClaudeJudge {
         timeoutMs: options.timeoutMs,
         spawnFn: options.spawnFn ?? spawn,
         running,
+        reaper,
       });
     } finally {
       dirs.delete(dir);
