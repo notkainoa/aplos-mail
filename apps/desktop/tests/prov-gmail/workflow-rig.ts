@@ -48,8 +48,8 @@ export interface DeviceOptions {
   slowInsertMs?: number;
   /** Fails the response of the next `messages.insert` after Gmail applied it (an uncertain write). */
   dropNextInsert?: boolean;
-  /** Answers this many raw message downloads with `status` instead of passing them on. */
-  failGets?: { status: number; times: number };
+  /** Answers this many raw message downloads with `status` instead of passing them on, after `skip` that pass. */
+  failGets?: { status: number; times: number; skip?: number };
   /** Answers the next `history.list` / `messages.insert` with 404 without passing it on. */
   history404?: boolean;
   insert404?: boolean;
@@ -105,6 +105,10 @@ function injected(url: URL, options: DeviceOptions): Response | undefined {
     return errorReply(404);
   }
   const raw = /\/messages\/[^/]+$/.test(url.pathname) && url.searchParams.get('format') === 'raw';
+  if (raw && options.failGets?.skip) {
+    options.failGets.skip--;
+    return undefined;
+  }
   if (raw && options.failGets && options.failGets.times > 0) {
     options.failGets.times--;
     return errorReply(options.failGets.status);
