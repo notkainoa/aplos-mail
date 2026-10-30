@@ -10,7 +10,7 @@ const ACCOUNT = 'acct' as AccountId;
 const URLS = '<https://list.example/u>, <mailto:leave@list.example>';
 const EXACT = 'List-Unsubscribe=One-Click';
 
-function facts(post: string | undefined): MessageFacts {
+function facts(post: string | undefined, header: string = URLS): MessageFacts {
   return {
     remoteId: 'm1',
     remoteThreadId: 't1',
@@ -21,12 +21,12 @@ function facts(post: string | undefined): MessageFacts {
     flags: { seen: false, flagged: false, draft: false, fromMe: false },
     placements: [],
     partial: false,
-    list: { listUnsubscribe: URLS, ...(post === undefined ? {} : { listUnsubscribePost: post }) },
+    list: { listUnsubscribe: header, ...(post === undefined ? {} : { listUnsubscribePost: post }) },
   };
 }
 
-function stored(post: string | undefined) {
-  return messageWrite(ACCOUNT, 'me@mail.example', facts(post)).listUnsubscribe;
+function stored(post: string | undefined, header: string = URLS) {
+  return messageWrite(ACCOUNT, 'me@mail.example', facts(post, header)).listUnsubscribe;
 }
 
 const URL_LIST = ['https://list.example/u', 'mailto:leave@list.example'];
@@ -67,4 +67,30 @@ test('what the store reads back is one-click only for the exact value, and the P
     back(EXACT).listUnsubscribe,
     '<https://list.example/u>, <mailto:leave@list.example>',
   );
+});
+
+test('a hostile List-Unsubscribe header cannot stall the engine: a 1 MB run of "<" is ignored in well under a second', () => {
+  const started = performance.now();
+  for (const header of ['<'.repeat(1_000_000), `<https://a.example/u>${'<'.repeat(1_000_000)}`])
+    assert.equal(stored(EXACT, header), undefined);
+  assert.equal(stored(EXACT, `<${'<'.repeat(8_000)}`), undefined);
+  assert.ok(performance.now() - started < 500, `took ${performance.now() - started} ms`);
+});
+
+test('a header over 8,192 characters is ignored whole, one at the limit is read', () => {
+  const pad = (n: number) => `<https://a.example/${'x'.repeat(n)}>`;
+  const atLimit = pad(8_192 - '<https://a.example/>'.length);
+  assert.equal(atLimit.length, 8_192);
+  assert.deepEqual(stored(undefined, atLimit)?.urls.length, 1);
+  assert.equal(stored(undefined, `${atLimit} `), undefined);
+  assert.equal(stored(undefined, `${URLS}${' '.repeat(9_000)}`), undefined);
+});
+
+test('an entry containing "<" never reaches the store, and what is stored rebuilds a header the executor reads the same way', () => {
+  const header = '<https://x.example/<https://list.example/u>, <>, <<>';
+  const write = stored(undefined, header);
+  assert.deepEqual(write, { urls: ['https://list.example/u'] });
+  assert.ok(write?.urls.every(url => !url.includes('<') && !url.includes('>')));
+  assert.equal(listHeaders(0, JSON.stringify(write)).listUnsubscribe, '<https://list.example/u>');
+  assert.ok(stored(undefined, '<a<b<c>')?.urls.every(url => !url.includes('<')));
 });

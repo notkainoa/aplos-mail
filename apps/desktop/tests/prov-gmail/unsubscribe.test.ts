@@ -16,7 +16,6 @@ import {
   oneClickTransport,
   planUnsubscribe,
   UNSUBSCRIBE_LIMITS,
-  type MailSender,
   type OneClickResponse,
   type OneClickTransport,
   type UnsubscribeDeps,
@@ -121,6 +120,17 @@ test('listUris ignores a huge header whole, quickly, and keeps at most eight ent
   assert.equal(listUris(many).length, 8);
 });
 
+test('an entry containing "<" is skipped on the way to the plan, and the engine stores the same header as the survivors only', () => {
+  // `packages/engine/tests/sync-unsubscribe-facts.test.ts` pins the store side: this raw header is stored as the one
+  // clean entry, and rebuilt as exactly this text.
+  const raw = '<https://x.example/<https://list.example/u>, <>, <<>';
+  assert.deepEqual(listUris(raw), []);
+  const stored = '<https://list.example/u>';
+  assert.deepEqual(listUris(stored), ['https://list.example/u']);
+  assert.equal(planUnsubscribe(headers(raw)).kind, 'none');
+  assert.equal(planUnsubscribe(headers(stored)).kind, 'oneClick');
+});
+
 test('one-click needs List-Unsubscribe-Post to be exactly the RFC 8058 value', () => {
   assert.equal(oneClickOffered('List-Unsubscribe=One-Click'), true);
   assert.equal(oneClickOffered('  List-Unsubscribe=One-Click '), true);
@@ -131,6 +141,10 @@ test('one-click needs List-Unsubscribe-Post to be exactly the RFC 8058 value', (
     'List-Unsubscribe=One-Click; extra=1',
     'x List-Unsubscribe=One-Click',
     'List-Unsubscribe=One-Click\r\nBcc: a@b.example',
+    'List-Unsubscribe=One-Click, List-Unsubscribe=One-Click',
+    'List-Unsubscribe=One-Click\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click',
+    'List-Unsubscribe=\r\n One-Click',
+    'List-Unsubscribe=One-Click\r\n List-Unsubscribe=One-Click',
   ])
     assert.equal(oneClickOffered(post), false, String(post));
 });
@@ -174,6 +188,9 @@ test('checkHttpsUrl refuses every non-https, credentialed, odd-port, fragment or
     ['https://a.localhost/u', 'host'],
     ['https://intranet/u', 'host'],
     ['https://localhost./u', 'host'],
+    ['https://foo.localhost./u', 'host'],
+    ['https://foo.local./u', 'host'],
+    ['https://foo.internal./u', 'host'],
     ['https://LOCALHOST/u', 'host'],
     ['https://printer.local/u', 'host'],
     ['https://nas.internal/u', 'host'],
@@ -605,6 +622,10 @@ test('checkMailto refuses header injection, extra fields, more than one address 
     'mailto:leave@list.example%0D%0ABcc:v@else.example',
     'mailto:leave@list.example?cc=v@else.example',
     'mailto:leave@list.example?bcc=v@else.example',
+    'mailto:leave@list.example?BCC=v@else.example',
+    'mailto:leave@list.example?%62cc=v@else.example',
+    'mailto:leave@list.example?%42Cc=v@else.example',
+    'mailto:leave@list.example?subject=a&%63c=v@else.example',
     'mailto:leave@list.example?to=v@else.example',
     'mailto:leave@list.example?in-reply-to=%3Cx@y%3E',
     'mailto:leave@list.example?X-Header=1',
@@ -675,33 +696,29 @@ test('mailto without a send seam asks the composer, with a mailto rebuilt from t
   assert.deepEqual([s.lookups, s.targets], [[], []]);
 });
 
-test('mailto with the send seam sends once from the receiving account, and reports a failed send', async () => {
-  const sent: Parameters<MailSender>[0][] = [];
-  const sendMail: MailSender = async mail => {
-    sent.push(mail);
-  };
-  const result = await run(spy(), headers('<mailto:leave@list.example?subject=Stop>', null), {
-    sendMail,
-  });
-  assert.equal(result.kind, 'done');
-  assert.deepEqual(sent, [
-    { to: 'leave@list.example', subject: 'Stop', body: '', from: 'me@mail.example' },
-  ]);
-  const failing: MailSender = async () => {
-    throw new Error('outbox closed');
-  };
-  const failed = await run(spy(), headers('<mailto:leave@list.example>'), { sendMail: failing });
-  assert.equal(failed.kind, 'failed');
-});
-
-test('one-click wins over mailto; the mail sender is not called then', async () => {
+test('a mailto is never sent from the executor: even an injected sendMail is ignored and the answer is compose', async () => {
   let calls = 0;
-  const sendMail: MailSender = async () => {
+  const sendMail = async () => {
     calls += 1;
   };
-  const result = await run(spy(), headers(`<mailto:leave@list.example>, <${LIST}>`), { sendMail });
-  assert.equal(result.kind, 'done');
+  const extra = { sendMail } as UnsubscribeDeps;
+  for (const list of [
+    '<mailto:leave@list.example?subject=Stop>',
+    `<mailto:a@list.example>, <${LIST}>`,
+  ]) {
+    const s = spy();
+    const result = await run(s, headers(list, null), extra);
+    assert.equal(result.kind, 'compose', list);
+    assert.deepEqual([s.lookups, s.targets], [[], []]);
+  }
   assert.equal(calls, 0);
+});
+
+test('one-click wins over mailto: the POST goes out and nothing is composed', async () => {
+  const s = spy();
+  const result = await run(s, headers(`<mailto:leave@list.example>, <${LIST}>`));
+  assert.equal(result.kind, 'done');
+  assert.equal(s.targets.length, 1);
 });
 
 // ---------------------------------------------------------------- open the page

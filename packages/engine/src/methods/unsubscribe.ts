@@ -58,6 +58,69 @@ const OUTCOME: Record<UnsubscribeKind, Output<'Unsubscribe/run'>['outcome']> = {
 
 const MAX_URL = 2_000;
 
+type RunOutput = Output<'Unsubscribe/run'>;
+
+/**
+ * Receipts for `Unsubscribe/run`, keyed by `opId` and thread: a retried call (same `opId`) gets the first call's outcome
+ * and never reaches the executor, so it cannot POST twice. The promise is stored at once, so a concurrent retry joins
+ * the call in flight. Bounded by count and age; a call that rejects (cancelled) leaves no receipt. In memory only.
+ */
+export interface Receipts {
+  once(
+    opId: string | undefined,
+    threadId: string,
+    make: () => Promise<RunOutput>,
+  ): Promise<RunOutput>;
+}
+
+interface Receipt {
+  at: number;
+  result: Promise<RunOutput>;
+}
+
+export const RECEIPT_LIMITS = Object.freeze({ maxEntries: 200, ttlMs: 10 * 60_000 });
+
+export function createReceipts(
+  now: () => number = Date.now,
+  limits: { maxEntries: number; ttlMs: number } = RECEIPT_LIMITS,
+): Receipts {
+  const entries = new Map<string, Receipt>();
+  // Insertion order is age order, so expiry and eviction only look at the front.
+  function trim(): void {
+    for (const [key, receipt] of entries) {
+      if (entries.size <= limits.maxEntries && now() - receipt.at <= limits.ttlMs) return;
+      entries.delete(key);
+    }
+  }
+  return {
+    once(opId, threadId, make) {
+      if (!opId) return make();
+      const key = JSON.stringify([opId, threadId]);
+      trim();
+      const known = entries.get(key);
+      if (known) return known.result;
+      const receipt: Receipt = { at: now(), result: make() };
+      entries.set(key, receipt);
+      trim();
+      receipt.result.catch(() => {
+        if (entries.get(key) === receipt) entries.delete(key);
+      });
+      return receipt.result;
+    },
+  };
+}
+
+/** One receipt book per executor, so nothing leaks between hosts or tests. */
+const books = new WeakMap<UnsubscribeExecutor, Receipts>();
+
+function receiptsOf(executor: UnsubscribeExecutor): Receipts {
+  const known = books.get(executor);
+  if (known) return known;
+  const made = createReceipts();
+  books.set(executor, made);
+  return made;
+}
+
 function readTarget(q: StoreReader, threadId: string): Target | undefined {
   const rowid = threadRowId(q, threadId);
   if (rowid === undefined) throw new ContractError({ type: 'notFound', message: GONE });
@@ -85,6 +148,19 @@ function shown(url: string | undefined): { url: string } | Record<string, never>
   return typeof url === 'string' && url.length <= MAX_URL && !/[\r\n]/.test(url) ? { url } : {};
 }
 
+async function perform(
+  executor: UnsubscribeExecutor,
+  found: Target,
+  ctx: MethodContext,
+): Promise<RunOutput> {
+  const result = await executor.run({ ...found, signal: ctx.signal });
+  return {
+    outcome: OUTCOME[result.kind] ?? 'failed',
+    message: result.message,
+    ...shown(result.url),
+  };
+}
+
 export const handlers: AreaHandlers<'unsubscribe'> = {
   'Unsubscribe/get': (args, ctx) => {
     const found = target(ctx, args.threadId);
@@ -97,11 +173,7 @@ export const handlers: AreaHandlers<'unsubscribe'> = {
   'Unsubscribe/run': async (args, ctx) => {
     const found = target(ctx, args.threadId);
     if (!found) return { outcome: 'unavailable', message: NO_WAY };
-    const result = await executorOf(ctx).run({ ...found, signal: ctx.signal });
-    return {
-      outcome: OUTCOME[result.kind] ?? 'failed',
-      message: result.message,
-      ...shown(result.url),
-    };
+    const executor = executorOf(ctx);
+    return receiptsOf(executor).once(args.opId, args.threadId, () => perform(executor, found, ctx));
   },
 };

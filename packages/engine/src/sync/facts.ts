@@ -48,11 +48,17 @@ function oneClickPost(post: string | undefined): boolean {
   return post !== undefined && post.trim() === ONE_CLICK_POST;
 }
 
+/** A longer header is ignored whole (same limit as the host executor); the sender controls this text. */
+const MAX_UNSUBSCRIBE_HEADER = 8_192;
+
+/** One `<uri>`; no `<` inside, so a run of `<` cannot make the scan quadratic and an entry with `<` is skipped, as the executor does. */
+const URI_ENTRY = /<([^<>]*)>/g;
+
 /** `List-Unsubscribe: <https://...>, <mailto:...>` and RFC 8058 one-click. */
 function unsubscribe(facts: MessageFacts): MessageWrite['listUnsubscribe'] {
   const header = facts.list.listUnsubscribe;
-  if (!header) return undefined;
-  const urls = [...header.matchAll(/<([^>]+)>/g)].map(m => m[1].trim()).filter(Boolean);
+  if (!header || header.length > MAX_UNSUBSCRIBE_HEADER) return undefined;
+  const urls = [...header.matchAll(URI_ENTRY)].map(m => m[1].trim()).filter(Boolean);
   if (!urls.length) return undefined;
   return oneClickPost(facts.list.listUnsubscribePost) ? { urls, oneClick: true } : { urls };
 }

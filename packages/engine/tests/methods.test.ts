@@ -12,6 +12,7 @@ import {
   type EngineServices,
   type MethodContext,
 } from '../src/methods/index';
+import { createReceipts } from '../src/methods/unsubscribe';
 import { openStore, type StorePort } from '../src/store';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from './store/helpers';
 
@@ -290,4 +291,90 @@ test('Unsubscribe/get reports the executor’s method for the thread, and none w
     assert.deepEqual(await get(T1), { method: 'link', url: 'https://list.example/u' });
     assert.deepEqual(await get(`${ACCOUNT}:t2`), { method: 'none' });
   });
+});
+
+/** An executor whose `run` counts calls and answers when released, so a retry can arrive while the first is in flight. */
+function countingExecutor() {
+  const state = { runs: 0, release: () => {} };
+  const gate = new Promise<void>(resolve => (state.release = resolve));
+  const executor: Executor = {
+    describe: () => ({ method: 'oneClick' }),
+    run: async () => {
+      state.runs += 1;
+      await gate;
+      return { kind: 'done', message: `Unsubscribed #${state.runs}.` };
+    },
+  };
+  return { executor, state };
+}
+
+test('Unsubscribe/run: a retry with the same opId gets the stored outcome and never reaches the executor again', async () => {
+  await withUnsubStore(async store => {
+    const { executor, state } = countingExecutor();
+    state.release();
+    const call = (opId: string, threadId = T1) =>
+      handlers['Unsubscribe/run']({ opId, threadId }, unsubCtx(store, executor));
+    const first = await call('op-a');
+    assert.deepEqual(await call('op-a'), first);
+    assert.deepEqual(await call('op-a'), first);
+    assert.equal(state.runs, 1);
+    await call('op-b');
+    assert.equal(state.runs, 2);
+  });
+});
+
+test('Unsubscribe/run: a concurrent retry joins the call in flight instead of POSTing again', async () => {
+  await withUnsubStore(async store => {
+    const { executor, state } = countingExecutor();
+    const ctx = unsubCtx(store, executor);
+    const a = handlers['Unsubscribe/run']({ opId: 'op-a', threadId: T1 }, ctx);
+    const b = handlers['Unsubscribe/run']({ opId: 'op-a', threadId: T1 }, ctx);
+    state.release();
+    assert.deepEqual(await b, await a);
+    assert.equal(state.runs, 1);
+  });
+});
+
+test('Unsubscribe/run: a call that is cancelled leaves no receipt, so the owner can try again', async () => {
+  await withUnsubStore(async store => {
+    let runs = 0;
+    const executor: Executor = {
+      describe: () => ({ method: 'oneClick' }),
+      run: async () => {
+        runs += 1;
+        if (runs === 1) throw new Error('cancelled');
+        return { kind: 'done', message: 'ok' };
+      },
+    };
+    const call = async () =>
+      handlers['Unsubscribe/run']({ opId: 'op-a', threadId: T1 }, unsubCtx(store, executor));
+    await assert.rejects(call(), /cancelled/);
+    assert.equal((await call()).outcome, 'done');
+    assert.equal(runs, 2);
+  });
+});
+
+test('receipts expire after the TTL and the oldest is evicted past the bound; no opId never dedupes', async () => {
+  let clock = 0;
+  const receipts = createReceipts(() => clock, { maxEntries: 3, ttlMs: 1_000 });
+  let made = 0;
+  const make = async () => ({ outcome: 'done' as const, message: String(++made) });
+  const once = (opId: string | undefined) => receipts.once(opId, T1, make);
+  await once('a');
+  await once('a');
+  assert.equal(made, 1);
+  clock = 1_001;
+  await once('a');
+  assert.equal(made, 2);
+  await once('b');
+  await once('c');
+  await once('d');
+  assert.equal(made, 5);
+  await once('a');
+  assert.equal(made, 6);
+  await once('d');
+  assert.equal(made, 6);
+  await once(undefined);
+  await once(undefined);
+  assert.equal(made, 8);
 });

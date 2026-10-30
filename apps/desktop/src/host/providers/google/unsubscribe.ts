@@ -10,18 +10,21 @@ import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from '../
  * List-Unsubscribe-Post headers, and an executor. RFC 8058 one-click is a single POST under the image proxy's address
  * rules (ARCH 10): https on 443 only, the name resolved once with every answer checked, the socket pinned to that
  * address with the name as Host and SNI, no redirect followed, fixed headers, capped body, 10 s. Else a `mailto:` is
- * validated and sent through an injected sender (the outbox), or handed to the composer. Else an https page to open.
- * The headers come from the sender, so every value here is hostile until checked.
+ * validated and handed to the composer as a prepared draft the owner reads and sends (nothing is ever sent from here:
+ * the recipient, subject and body all come from the sender). Else an https page to open. The headers come from the
+ * sender, so every value here is hostile until checked.
  *
  * TODO(contract): RFC 8058 section 4 says a receiver should POST only when the message has a valid DKIM signature that
  * covers List-Unsubscribe and List-Unsubscribe-Post. The engine stores no authentication result, so this executor cannot
  * check it. The missing piece is an `authenticated` fact on the message (derived from Authentication-Results or the
  * provider's own verdict) carried in `ListHeaders`. Exposure until then: a spoofed message can make the app POST to an
  * attacker's URL on the owner's explicit click, which leaks their IP address and confirms the address is read. The POST
- * carries no cookie or credential and nothing from the mail beyond the URL itself.
+ * carries no cookie or credential and nothing from the mail beyond the URL itself. The target is the newest inbound
+ * message of the thread that carries List-Unsubscribe (`methods/unsubscribe.ts`), so a spoofed message dropped into a
+ * real newsletter thread swaps the URL the owner's click goes to; the same authenticated fact must gate that choice.
  *
- * Known limit: a mailto goes out from the receiving account's primary address, not from the alias the list wrote to,
- * so a list that matches the subscriber by the alias address may not recognise the request.
+ * Known limit: the composer sends a mailto from the receiving account's primary address, not from the alias the list
+ * wrote to, so a list that matches the subscriber by the alias address may not recognise the request.
  */
 
 export const UNSUBSCRIBE_LIMITS = Object.freeze({
@@ -347,8 +350,6 @@ const SENTENCES = {
   unreachable: 'Aplos could not reach the list’s server. Try again later.',
   noAnswer: 'The list’s server did not answer in time, so Aplos cannot tell whether it worked.',
   lost: 'The connection to the list’s server broke, so Aplos cannot tell whether it worked.',
-  mailSent: (to: string) => `An unsubscribe email to ${to} is on its way from your account.`,
-  mailFailed: 'Aplos could not send the unsubscribe email. Try again later.',
   compose: (to: string) => `Send the prepared email to ${to} to unsubscribe.`,
 } as const;
 
@@ -361,23 +362,15 @@ function statusResult(status: number, page: string): UnsubscribeResult {
 
 // ---------------------------------------------------------------- the executor
 
-/** Sends the unsubscribe email from `from` through the outbox; resolves once it is queued. Never called by tests for real. */
-export type MailSender = (
-  mail: UnsubscribeMail & { from: string },
-  signal: AbortSignal,
-) => Promise<void>;
-
 export interface UnsubscribeDeps {
   resolve?: Resolver;
   transport?: OneClickTransport;
-  /** The outbox seam. Without it a mailto becomes `compose`: the UI opens the prepared email in the composer. */
-  sendMail?: MailSender;
   /** Tests only: a shorter deadline. Never above `UNSUBSCRIBE_LIMITS.timeoutMs`. */
   timeoutMs?: number;
 }
 
 export interface UnsubscribeRequest {
-  /** The address of the account the message arrived at: the only sender an unsubscribe email may come from. */
+  /** The address of the account the message arrived at; the composer's sender. Nothing here sends mail. */
   from: string;
   headers: ListHeaders;
   signal: AbortSignal;
@@ -449,20 +442,9 @@ async function oneClick(
   }
 }
 
-async function mailto(
-  plan: Extract<UnsubscribePlan, { kind: 'mailto' }>,
-  request: UnsubscribeRequest,
-  sendMail: MailSender | undefined,
-): Promise<UnsubscribeResult> {
-  if (!sendMail)
-    return { kind: 'compose', message: SENTENCES.compose(plan.mail.to), url: plan.url };
-  try {
-    await sendMail({ ...plan.mail, from: request.from }, request.signal);
-    return { kind: 'done', message: SENTENCES.mailSent(plan.mail.to) };
-  } catch {
-    if (request.signal.aborted) throw request.signal.reason;
-    return { kind: 'failed', message: SENTENCES.mailFailed };
-  }
+/** A mailto never sends: the owner reads the prepared email (checked fields only) in the composer and sends it. */
+function mailto(plan: Extract<UnsubscribePlan, { kind: 'mailto' }>): UnsubscribeResult {
+  return { kind: 'compose', message: SENTENCES.compose(plan.mail.to), url: plan.url };
 }
 
 function describePlan(plan: UnsubscribePlan): ReturnType<UnsubscribeExecutor['describe']> {
@@ -484,7 +466,7 @@ export function createUnsubscribeExecutor(deps: UnsubscribeDeps = {}): Unsubscri
       const plan = planUnsubscribe(request.headers);
       if (plan.kind === 'none') return { kind: 'none', message: SENTENCES.none };
       if (plan.kind === 'open') return { kind: 'open', message: SENTENCES.open, url: plan.url };
-      if (plan.kind === 'mailto') return mailto(plan, request, deps.sendMail);
+      if (plan.kind === 'mailto') return mailto(plan);
       return oneClick({ url: plan.url, resolve, transport, signal: request.signal }, timeoutMs);
     },
   };
