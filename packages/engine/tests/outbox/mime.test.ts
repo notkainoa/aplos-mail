@@ -276,6 +276,74 @@ test('htmlToText is linear on hostile input (no regex backtracking over a megaby
   assert.ok(Date.now() - started < 3_000, `took ${Date.now() - started} ms`);
 });
 
+test('htmlToText trims line ends in linear time: long runs of spaces, tabs and &nbsp; between text', () => {
+  // The old per-line `/[ \t]+$/` was quadratic: 50,000 spaces took 28 s, so these would take minutes.
+  const started = Date.now();
+  const spaces = htmlToText('a' + ' '.repeat(100_000) + 'b');
+  const mixed = htmlToText('a' + ' \t'.repeat(60_000) + 'b');
+  const nbsp = htmlToText('a' + '&nbsp;'.repeat(60_000) + 'b');
+  const tail = htmlToText('x' + ' '.repeat(200_000) + '\ny');
+  assert.ok(Date.now() - started < 5_000, `took ${Date.now() - started} ms`);
+  assert.equal(spaces.length, 100_002, 'inner spaces are kept');
+  assert.equal(mixed.length, 120_002);
+  assert.equal(nbsp.length, 60_002);
+  assert.equal(tail, 'x\ny', 'trailing spaces and tabs go');
+  assert.equal(htmlToText('a \t \nb\t\n\n\n\nc  '), 'a\nb\n\nc');
+});
+
+test('a Message-ID with NUL, control or 8-bit bytes (from inbound mail) is dropped, never written', () => {
+  const hostile = ['<a\0bé\u0085c@evil>', '<r\u0001@evil>', '<tab\t@evil>', '<del\u007f@evil>'];
+  const out = buildMime(
+    input({
+      inReplyTo: hostile[0],
+      references: [...hostile, '<ok@mail.example>'],
+    }),
+  );
+  const { headers, head } = parse(out);
+  assert.equal(named(headers, 'In-Reply-To').length, 0);
+  assert.equal(named(headers, 'References')[0].value, '<ok@mail.example>');
+  // The whole header block is printable ASCII (and CRLF): nothing from the hostile ids got through.
+  assert.match(head, /^[\x20-\x7e\r\n]*$/);
+  const only = parse(buildMime(input({ inReplyTo: hostile[1], references: [hostile[0]] })));
+  assert.equal(named(only.headers, 'In-Reply-To').length, 0);
+  assert.equal(named(only.headers, 'References').length, 0);
+  assert.throws(() => buildMime(input({ messageId: '<a\0b@mail.example>' })), MimeError);
+  assert.throws(() => buildMime(input({ messageId: '<café@mail.example>' })), MimeError);
+});
+
+test('no header line passes 998 octets: a 3,000-character attachment name and other long unbroken values', () => {
+  const long = 'x'.repeat(3_000) + '.pdf';
+  const bytes = new Uint8Array(10);
+  const mime = buildMime(
+    input({
+      from: { address: 'owner@mail.example', name: 'a,'.repeat(1_500) },
+      subject: 'S'.repeat(3_000),
+      attachments: [
+        { name: long, mime: 'application/pdf', bytes },
+        { name: 'é'.repeat(1_500) + '.pdf', mime: 'application/pdf', bytes },
+        { name: 'cid.png', mime: 'image/png', bytes, inline: true, contentId: 'c'.repeat(3_000) },
+      ],
+    }),
+  );
+  const text = decoder.decode(mime);
+  const lines = text.split('\r\n');
+  assert.ok(Math.max(...lines.map(l => l.length)) <= 998, 'no line over 998');
+  // The name is not lost: RFC 2231 continuations unfold back to it.
+  const section = (param: string) =>
+    [...text.matchAll(new RegExp(`(?<![a-z])${param}\\*(\\d+)="([^"]*)"`, 'g'))]
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .map(m => m[2])
+      .join('');
+  assert.equal(section('filename'), long);
+  assert.equal(section('name'), long);
+  const encoded = [...text.matchAll(/filename\*(\d+)\*=(?:UTF-8'')?([^;\r\n]*)/g)]
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map(m => m[2])
+    .join('');
+  assert.equal(decodeURIComponent(encoded), 'é'.repeat(1_500) + '.pdf');
+  assert.ok(!text.includes('Content-ID: <ccc'), 'an over-long Content-ID is not written');
+});
+
 test('attachments: base64 lines of 76, names encoded safely, mixed wrapper; inline images in related', () => {
   const bytes = Uint8Array.from({ length: 5_000 }, (_, i) => i % 256);
   const evilName = 'rep"ort\r\nX-Evil: 1 ünï.pdf';

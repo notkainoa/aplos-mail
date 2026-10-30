@@ -24,8 +24,8 @@ export function lostSending(ctx: OutboxCtx): { id: string; attempt_at: number | 
   return rows.filter(row => !ctx.inflight.has(row.id));
 }
 
-export function applyStartRule(ctx: OutboxCtx): number {
-  const now = ctx.clock.now();
+/** `now` is the fire's own, so a check due "now" is due in the same pass (a second clock read could be later). */
+export function applyStartRule(ctx: OutboxCtx, now = ctx.clock.now()): number {
   let moved = 0;
   for (const row of lostSending(ctx)) {
     try {

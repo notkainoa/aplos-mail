@@ -4,7 +4,7 @@ import { NotSentError, PausedError, ProviderError, type Admission } from '../por
 import type { SendReceipt, SubmissionPayload } from '../ports/provider';
 import type { DeadlineSource } from '../ports/time';
 import { dueSubmissions, type DueSubmission, type StoreReader } from '../store';
-import { OVERDUE_COPY, PAUSE_POLL_MS, transition, type OutboxCtx } from './context';
+import { NO_BYTES_COPY, OVERDUE_COPY, PAUSE_POLL_MS, transition, type OutboxCtx } from './context';
 import { applyStartRule, checkSent, lostSending } from './start';
 import {
   extraOf,
@@ -339,7 +339,7 @@ function failWithoutBytes(ctx: OutboxCtx, due: DueSubmission, now: number) {
         set: {
           problem: {
             reasonCode: 'send.noBytes',
-            message: 'This message could not be prepared. Open the draft and send it again.',
+            message: NO_BYTES_COPY,
             at: now,
           },
         },
@@ -434,7 +434,7 @@ function startSends(ctx: OutboxCtx, due: DueSubmission[], now: number) {
 
 /** The deadline source's `fire`. */
 export async function fireOutbox(ctx: OutboxCtx, now: number): Promise<void> {
-  if (lostSending(ctx).length) applyStartRule(ctx);
+  if (lostSending(ctx).length) applyStartRule(ctx, now);
   const { due, overdue } = ctx.store.read(q => dueSubmissions(q, now));
   for (const row of overdue) suspend(ctx, row, now);
   startChecks(ctx, now);

@@ -98,6 +98,12 @@ export type SubmissionWrite =
       /** Extra guards the caller read before deciding (a stale timer or attempt loses). */
       ifNotBefore?: number;
       ifAttemptAt?: number;
+      /**
+       * The `findSent` checks are over and the owner was asked: no check is due or running (`checkAt` absent) and the
+       * problem is `send.uncertain`. `sendAnyway` demands it inside the commit, so it cannot pass over a check that
+       * could still find the message.
+       */
+      ifChecksDone?: true;
       set?: SubmissionPatch;
     };
 
@@ -107,7 +113,8 @@ declare module '../store/port' {
   }
 }
 
-export type ConflictReason = 'draftMissing' | 'draftRevision' | 'live' | 'alreadySent' | 'state';
+export type ConflictReason =
+  'draftMissing' | 'draftRevision' | 'live' | 'alreadySent' | 'checking' | 'state';
 
 /** A compare-and-set lost: the row (or its draft) is not what the caller saw. Thrown inside the commit, so nothing lands. */
 export class SubmissionConflict extends Error {
@@ -292,6 +299,11 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
     where.push('attempt_at = ?');
     params.push(w.ifAttemptAt);
   }
+  if (w.ifChecksDone)
+    where.push(
+      "json_extract(error, '$.checkAt') IS NULL",
+      "json_extract(error, '$.problem.reasonCode') = 'send.uncertain'",
+    );
   const { changes } = tx.run(
     `UPDATE submissions SET ${['state = ?', 'error = ?', ...terms.sql].join(', ')} WHERE ${where.join(' AND ')}`,
     ...params,
@@ -301,7 +313,8 @@ function move(tx: CommitExtensionTx, w: Extract<SubmissionWrite, { op: 'move' }>
       'SELECT state FROM submissions WHERE id = ?',
       w.id,
     );
-    throw new SubmissionConflict('state', now?.state);
+    const checking = w.ifChecksDone && now?.state === 'uncertain';
+    throw new SubmissionConflict(checking ? 'checking' : 'state', now?.state);
   }
   tx.mark('Submission', w.id, 'u');
   if (w.to === 'sent' || w.to === 'cancelled') {

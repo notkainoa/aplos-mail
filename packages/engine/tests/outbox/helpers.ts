@@ -29,6 +29,8 @@ export interface Step {
   until?: number;
   /** Awaited before anything else happens. */
   wait?: Promise<void>;
+  /** Called with the payload the moment `send` starts, before anything else (a test reads the store here). */
+  observe?: (payload: SubmissionPayload) => void;
 }
 
 /** The counting fake `SendPort` (plan 10 E6): every delivery per Message-ID is counted, across engine instances. */
@@ -44,6 +46,8 @@ export function countingSend(clock: FakeClock) {
   let findHold: Promise<void> | undefined;
   const script: Step[] = [];
   let admission: Admission = { ok: true };
+  /** Runs inside every `admission()` call: a test makes the caller slow by moving the clock here. */
+  let onAdmission: (() => void) | undefined;
   const deliver = (p: SubmissionPayload) => {
     deliveries.set(p.internetId, (deliveries.get(p.internetId) ?? 0) + 1);
     payloads.push(p);
@@ -55,10 +59,14 @@ export function countingSend(clock: FakeClock) {
     reason: cls,
   });
   const port: SendPort = {
-    admission: () => admission,
+    admission: () => {
+      onAdmission?.();
+      return admission;
+    },
     async send(_account, payload) {
       calls.push({ op: 'send', internetId: payload.internetId, at: clock.now() });
       const step = script.shift() ?? {};
+      step.observe?.(payload);
       if (step.wait) await step.wait;
       const result = step.result ?? 'ok';
       if (step.delivered ?? result === 'ok') deliver(payload);
@@ -89,6 +97,9 @@ export function countingSend(clock: FakeClock) {
     calls,
     setAdmission: (a: Admission) => {
       admission = a;
+    },
+    onAdmission: (fn: (() => void) | undefined) => {
+      onAdmission = fn;
     },
     hideDeliveriesUntil: (at: number) => {
       visibleAt = at;
@@ -152,6 +163,18 @@ export function outboxWorld(
     clock,
     level: 'debug',
   });
+  /**
+   * A real clock moves between two reads. `perCall` makes every `now()` return a little later than the one before;
+   * `jump` adds once (a slow call). Both are zero unless a test sets them.
+   */
+  const skew = { perCall: 0, jump: 0 };
+  const exactNow = clock.now.bind(clock);
+  let drift = 0;
+  clock.now = () => {
+    drift += skew.perCall + skew.jump;
+    skew.jump = 0;
+    return exactNow() + drift;
+  };
   const server = countingSend(clock);
   const blobs = new Map<string, Uint8Array>();
   const instances: Instance[] = [];
@@ -307,6 +330,7 @@ export function outboxWorld(
     file,
     clock,
     server,
+    skew,
     blobs,
     records,
     events,

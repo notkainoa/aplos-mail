@@ -1,6 +1,13 @@
 import type { DraftFields, Receipt, Submission, SubmissionAction } from '@aplos/contract';
 import type { StoreReader } from '../store';
-import { DEFAULT_UNDO_SEND_SECONDS, fail, hex, transition, type OutboxCtx } from './context';
+import {
+  DEFAULT_UNDO_SEND_SECONDS,
+  fail,
+  hex,
+  NO_BYTES_COPY,
+  transition,
+  type OutboxCtx,
+} from './context';
 import {
   buildEnvelope,
   buildMime,
@@ -10,7 +17,9 @@ import {
   type MimeAttachment,
 } from './mime';
 import {
+  extraOf,
   liveSubmissionOf,
+  problemOf,
   readSubmission,
   SubmissionConflict,
   toSubmission,
@@ -49,6 +58,7 @@ const ALREADY_SENT = 'This message was already sent. Change it to send another.'
 const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
 const REVISION_CHANGED = 'This message changed. Open it again before sending.';
+const STILL_CHECKING = 'We are still checking whether this was sent. Try again in a moment.';
 
 function wrongState(state: SubmissionState): never {
   const sentence: Partial<Record<SubmissionState, string>> = {
@@ -262,6 +272,7 @@ function conflictSentence(error: SubmissionConflict) {
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
   if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
+  if (error.reason === 'checking') return fail('stateMismatch', STILL_CHECKING);
   return error.current ? wrongState(error.current) : fail('notFound', NOT_IN_OUTBOX);
 }
 
@@ -309,20 +320,34 @@ function moveFor(action: RowAction, row: SubmissionRow, now: number) {
   }
 }
 
+/** The refusals that depend on the row's problem, not only its state. */
+function checkProblem(action: RowAction, row: SubmissionRow) {
+  const reason = problemOf(row)?.reasonCode;
+  // Send anyway is the one deliberate second delivery: only once the checks are over and the owner was asked.
+  if (action.type === 'sendAnyway') {
+    if (extraOf(row).checkAt !== undefined || reason !== 'send.uncertain')
+      fail('stateMismatch', STILL_CHECKING);
+  }
+  if (action.type === 'retry' && reason === 'send.noBytes') fail('stateMismatch', NO_BYTES_COPY);
+}
+
 function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
   const row = ctx.store.read(q => readSubmission(q, action.submissionId));
   if (!row) return fail('notFound', NOT_IN_OUTBOX);
   if (!ALLOWED[action.type].includes(row.state)) wrongState(row.state);
+  checkProblem(action, row);
   if ('revision' in action && action.revision !== undefined && action.revision !== row.revision)
     fail('stateMismatch', REVISION_CHANGED);
   const now = ctx.clock.now();
   if (action.type === 'reschedule' && action.notBefore < now) fail('validation', PAST_TIME);
   const { to, set } = moveFor(action, row, now);
+  // The same demand inside the commit: a check scheduled after the read above makes it lose.
+  const guard = action.type === 'sendAnyway' ? { ifChecksDone: true as const } : {};
   let seq: number;
   try {
     seq = transition(
       ctx,
-      { id: row.id, from: [row.state], to, set },
+      { id: row.id, from: [row.state], to, ...guard, set },
       { was: row.state, why: action.type, origin: 'local', opId },
     ).seq;
   } catch (error) {

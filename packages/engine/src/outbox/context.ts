@@ -43,6 +43,9 @@ export const MAX_CHECKS = 2;
 export const PAUSE_POLL_MS = 30_000;
 
 export const UNCERTAIN_COPY = 'We could not confirm this was sent. Check Sent, or Send anyway.';
+/** A failed row with no kept bytes: only Cancel clears it (Retry would fail again), then the draft can be sent. */
+export const NO_BYTES_COPY =
+  'This message could not be prepared. Cancel it, then open the draft and send it again.';
 export const OVERDUE_COPY =
   'This was due while your Mac was off. Send it now, or choose a new time.';
 

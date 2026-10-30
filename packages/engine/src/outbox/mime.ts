@@ -166,6 +166,17 @@ export function foldHeader(line: string): string {
   return parts.join(CRLF);
 }
 
+/** RFC 5322 limit on a line, CRLF excluded. */
+const MAX_LINE = 998;
+
+/** `foldHeader`, refusing what it could not fold: a header line past 998 octets is not mail any server accepts. */
+function foldedHeader(line: string): string {
+  const folded = foldHeader(line);
+  if (folded.split(CRLF).some(l => l.length > MAX_LINE))
+    throw new MimeError('A header of this message is too long to send.');
+  return folded;
+}
+
 /** RFC 5322 `atext` and dots: a quoted local part is refused, as are brackets, quotes, spaces and a second `@`. */
 const LOCAL_PART = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
 const DOMAIN = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/;
@@ -194,10 +205,13 @@ export function checkAddress(address: string): string {
   return `${local}@${domain}`;
 }
 
+/** A word the header folder cannot break (it only breaks at spaces): such a value is encoded instead. */
+const hasLongWord = (s: string) => s.split(' ').some(w => w.length > LINE - 12);
+
 function displayName(name: string): string {
   const clean = headerSafe(name).trim();
   if (!clean) return '';
-  if (!isPlainAscii(clean)) return encodedWords(clean).join(' ');
+  if (!isPlainAscii(clean) || hasLongWord(clean)) return encodedWords(clean).join(' ');
   if (/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~ -]+$/.test(clean) && !/^ | $/.test(clean)) return clean;
   return `"${clean.replace(/[\\"]/g, m => `\\${m}`)}"`;
 }
@@ -210,11 +224,11 @@ export function formatAddress(a: MimeAddress): string {
 
 function unstructured(value: string): string {
   const clean = headerSafe(value);
-  const long = clean.split(' ').some(w => w.length > LINE - 12);
-  return isPlainAscii(clean) && !long ? clean : encodedWords(clean).join(' ');
+  return isPlainAscii(clean) && !hasLongWord(clean) ? clean : encodedWords(clean).join(' ');
 }
 
-const MSG_ID = /^<[^<>\s"\\]{1,900}>$/;
+/** Printable ASCII (`!` to `~`) except `<`, `>`, `"` and `\`: no control, NUL, space or 8-bit byte can get in. */
+const MSG_ID = /^<[\x21\x23-\x3b\x3d\x3f-\x5b\x5d-\x7e]{1,900}>$/;
 /** A Message-ID from the store (another mail's): kept only when it is a well-formed `<...>`. */
 function msgId(value: string | undefined): string | undefined {
   return value !== undefined && MSG_ID.test(value) ? value : undefined;
@@ -232,7 +246,7 @@ export function rfc5322Date(ms: number): string {
 }
 
 function header(name: string, value: string): string {
-  return foldHeader(`${name}: ${value}`);
+  return foldedHeader(`${name}: ${value}`);
 }
 
 function topHeaders(input: MimeInput): string[] {
@@ -337,12 +351,21 @@ export function htmlToText(html: string): string {
     if (!name) out += tagText(html.slice(open + 1, close), out === '' || out.endsWith('\n'));
   }
   if (at < html.length) out += html.slice(at);
-  return decodeEntities(normalizeBreaks(out))
-    .split('\n')
-    .map(line => line.replace(/[ \t]+$/, ''))
-    .join('\n')
+  return trimLineEnds(decodeEntities(normalizeBreaks(out)))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/** Drops the spaces and tabs at the end of every line, right to left: a `/[ \t]+$/` per line is quadratic. */
+function trimLineEnds(text: string): string {
+  return text
+    .split('\n')
+    .map(line => {
+      let end = line.length;
+      while (end > 0 && (line.charCodeAt(end - 1) === 32 || line.charCodeAt(end - 1) === 9)) end--;
+      return end === line.length ? line : line.slice(0, end);
+    })
+    .join('\n');
 }
 
 function boundary(random: (n: number) => Uint8Array) {
@@ -361,31 +384,79 @@ function textPart(type: 'plain' | 'html', text: string): string {
 
 function multipart(type: string, b: string, parts: string[]): string {
   const body = parts.map(p => `--${b}${CRLF}${p}`).join(CRLF);
-  const head = foldHeader(`Content-Type: multipart/${type}; boundary="${b}"`);
+  const head = foldedHeader(`Content-Type: multipart/${type}; boundary="${b}"`);
   return `${head}${CRLF}${CRLF}${body}${CRLF}--${b}--${CRLF}`;
 }
 
 const MIME_TYPE = /^[a-z0-9!#$&^_.+-]{1,100}\/[a-z0-9!#$&^_.+-]{1,100}$/i;
 
-/** `name="..."` for ASCII, plus RFC 2231 `name*=UTF-8''...` when the name is not. */
+/** A parameter value longer than this goes in RFC 2231 sections, so the folder can break between them. */
+const PARAM_SHORT = 60;
+/** Characters of one RFC 2231 section. */
+const SECTION = 50;
+
+/** One percent-encoded token per character, never splitting a UTF-8 sequence or a `%XX`. */
+function percentTokens(text: string): string[] {
+  return Array.from(text, ch =>
+    Array.from(encoder.encode(ch), b =>
+      /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
+        ? String.fromCharCode(b)
+        : `%${HEX[b >> 4]}${HEX[b & 15]}`,
+    ).join(''),
+  );
+}
+
+/** Groups tokens into runs of at most `SECTION` characters (a token is never split). */
+function sections(tokens: string[]): string[] {
+  const out: string[] = [];
+  let run = '';
+  for (const token of tokens) {
+    if (run && run.length + token.length > SECTION) {
+      out.push(run);
+      run = '';
+    }
+    run += token;
+  }
+  if (run) out.push(run);
+  return out;
+}
+
+/**
+ * `name="..."` for short ASCII, plus RFC 2231 `name*=UTF-8''...` when the name is not ASCII. A long name is written as
+ * numbered sections (`name*0="..."; name*1="..."`, or `name*0*=UTF-8''...` percent-encoded) joined by `; `, so every
+ * header line can fold and none passes 998 octets.
+ */
 function fileParam(param: string, name: string): string {
   const clean = headerSafe(name).replace(/["\\]/g, '_').trim() || 'attachment';
-  if (isPlainAscii(clean)) return `${param}="${clean}"`;
-  const pct = Array.from(encoder.encode(clean), b =>
-    /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
-      ? String.fromCharCode(b)
-      : `%${HEX[b >> 4]}${HEX[b & 15]}`,
-  ).join('');
+  const ascii = isPlainAscii(clean);
+  if (ascii && clean.length <= PARAM_SHORT) return `${param}="${clean}"`;
+  const tokens = percentTokens(clean);
   const fallback = clean.replace(/[^\x20-\x7e]/g, '_');
-  return `${param}="${fallback}"; ${param}*=UTF-8''${pct}`;
+  if (!ascii && tokens.join('').length <= PARAM_SHORT * 1.5)
+    return `${param}="${fallback}"; ${param}*=UTF-8''${tokens.join('')}`;
+  if (ascii) {
+    const parts = clean.match(new RegExp(`.{1,${SECTION}}`, 'gs')) ?? [];
+    return parts.map((part, i) => `${param}*${i}="${part}"`).join('; ');
+  }
+  const parts = sections(tokens).map((part, i) =>
+    i === 0 ? `${param}*0*=UTF-8''${part}` : `${param}*${i}*=${part}`,
+  );
+  return [`${param}="${fallback.slice(0, 40)}"`, ...parts].join('; ');
 }
+
+/** A Content-ID is a short token; an absurdly long one is not written, and the part is an ordinary attachment. */
+const MAX_CID = 255;
+const cidOf = (a: MimeAttachment) => {
+  const cid = a.contentId?.replace(/[^A-Za-z0-9._@$-]/g, '');
+  return cid && cid.length <= MAX_CID ? cid : undefined;
+};
 
 function attachmentPart(a: MimeAttachment): string {
   const type = MIME_TYPE.test(a.mime) ? a.mime.toLowerCase() : 'application/octet-stream';
-  const cid = a.contentId?.replace(/[^A-Za-z0-9._@$-]/g, '');
+  const cid = cidOf(a);
   const lines = [
-    foldHeader(`Content-Type: ${type}; ${fileParam('name', a.name)}`),
-    foldHeader(
+    foldedHeader(`Content-Type: ${type}; ${fileParam('name', a.name)}`),
+    foldedHeader(
       `Content-Disposition: ${a.inline ? 'inline' : 'attachment'}; ${fileParam('filename', a.name)}`,
     ),
     'Content-Transfer-Encoding: base64',
@@ -394,7 +465,6 @@ function attachmentPart(a: MimeAttachment): string {
   return [...lines, '', base64Body(a.bytes)].join(CRLF);
 }
 
-const cidOf = (a: MimeAttachment) => a.contentId?.replace(/[^A-Za-z0-9._@$-]/g, '');
 const isRelated = (a: MimeAttachment) => a.inline === true && !!cidOf(a);
 
 /** The HTML part; with inline images it is multipart/related so `cid:` references resolve. */
