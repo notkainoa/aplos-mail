@@ -6,6 +6,7 @@ import { build, type Plugin } from 'esbuild';
 import { UNCERTAIN_COPY } from '../../src/outbox/context';
 import { KILL_POINTS } from '../../src/outbox/killpoints';
 import { KILL_ENV } from './killpoint-harness';
+import { syntaxOptions } from '../../../../apps/desktop/scripts/build-options.mjs';
 
 /**
  * The release bundle must not contain the kill points (time-6). The strings that identify them are the point names
@@ -57,7 +58,22 @@ type Mode = 'release' | 'test' | 'none';
 /** Every bundle built here and the define it got (`undefined`: none), so a test can assert it. */
 const built: { entry: string; mode: Mode; define: string | undefined }[] = [];
 
-async function bundle(entry: string, mode: Mode, minify: boolean): Promise<string> {
+/**
+ * How the bundle is shaped. `plain`: no minification (a dev build keeps the folded dead text of a call site).
+ * `release`: exactly what a release build adds, `syntaxOptions` of `build-options.mjs` (the file build-main.mjs spreads
+ * into its build()): syntax minification folds the dead branches away and drops what only they used. `full`: whole
+ * minification, the strictest.
+ */
+type Shape = 'plain' | 'release' | 'full';
+
+const shapeOptions = (shape: Shape): Record<string, unknown> =>
+  shape === 'plain'
+    ? {}
+    : shape === 'full'
+      ? { minify: true }
+      : (syntaxOptions({ APLOS_RELEASE_BUILD: '1' }) as Record<string, unknown>);
+
+async function bundle(entry: string, mode: Mode, shape: Shape): Promise<string> {
   const define = mode === 'none' ? undefined : buildMainDefine(mode === 'release');
   built.push({ entry, mode, define });
   const result = await build({
@@ -69,7 +85,7 @@ async function bundle(entry: string, mode: Mode, minify: boolean): Promise<strin
     target: 'node22',
     plugins: [thirdPartyExternal],
     logLevel: 'silent',
-    minify,
+    ...shapeOptions(shape),
     ...(define !== undefined ? { define: { __APLOS_TEST_MODE__: define } } : {}),
   });
   return result.outputFiles[0].text;
@@ -82,7 +98,9 @@ const secrets = [...KILL_POINTS, KILL_ENV];
  * only survive if a declaration or a call site did). An unminified bundle keeps the dead text of a folded call site
  * (`if (false) killpoint(KP.X)`, `false ? killableSend(...)`), so there only their declarations must be gone.
  */
-const CANARIES = ['killableSend', 'installKillHook', 'killpoint'];
+// The last is the text of the `from>to:why` argument built at the `during-commit` call sites: computed outside the guard
+// it would survive in a release bundle.
+const CANARIES = ['killableSend', 'installKillHook', 'killpoint', '.join("+")'];
 const DECLARATIONS = [
   'function killableSend',
   'function installKillHook',
@@ -105,7 +123,7 @@ function present(code: string): string[] {
  * What is wrong with a release bundle, given the same entry built as a test build (empty: nothing). The test build is the
  * positive control: it must hold every name, or the grep proves nothing.
  */
-function problems(testBuild: string, release: string, minify: boolean): string[] {
+function problems(testBuild: string, release: string, shape: Shape): string[] {
   const out: string[] = [];
   const missing = KILL_POINTS.filter(p => !testBuild.includes(p));
   if (missing.length) out.push(`positive control: the test build lacks ${missing.join(', ')}`);
@@ -113,8 +131,11 @@ function problems(testBuild: string, release: string, minify: boolean): string[]
   const leaked = present(release);
   if (leaked.length)
     out.push(`kill-point names or the environment variable in the release: ${leaked.join(', ')}`);
-  if (minify) out.push(...CANARIES.filter(c => release.includes(c)).map(c => `identifier ${c}`));
-  else out.push(...declared(release).map(d => `declaration ${d}`));
+  // What a release build ships (syntax minification) and any stricter shape: not a trace, canaries and declarations too.
+  if (shape !== 'plain') {
+    out.push(...CANARIES.filter(c => release.includes(c)).map(c => `identifier ${c}`));
+    out.push(...declared(release).map(d => `declaration ${d}`));
+  } else out.push(...declared(release).map(d => `declaration ${d}`));
   return out;
 }
 
@@ -125,10 +146,10 @@ function problems(testBuild: string, release: string, minify: boolean): string[]
  */
 const holdsOutbox = (code: string) => code.includes(UNCERTAIN_COPY);
 
-for (const minify of [false, true]) {
-  test(`the engine (src/index.ts) bundled for release reaches the outbox and has no kill point (minify ${minify})`, async () => {
-    const testBuild = await bundle(ENGINE, 'test', minify);
-    const release = await bundle(ENGINE, 'release', minify);
+for (const shape of ['plain', 'release', 'full'] as const) {
+  test(`the engine (src/index.ts) bundled for release reaches the outbox and has no kill point (${shape})`, async () => {
+    const testBuild = await bundle(ENGINE, 'test', shape);
+    const release = await bundle(ENGINE, 'release', shape);
     // Not a skip: if the composition root stops reaching the outbox, this fails and the grep below would be vacuous.
     assert.ok(holdsOutbox(release), 'src/index.ts no longer reaches the outbox');
     assert.deepEqual(
@@ -136,14 +157,14 @@ for (const minify of [false, true]) {
       [],
       'the engine entry reaches the outbox, so its test build holds every kill-point name',
     );
-    assert.deepEqual(problems(testBuild, release, minify), []);
+    assert.deepEqual(problems(testBuild, release, shape), []);
   });
 
-  test(`the desktop app's engine process bundled for release has no kill point once it holds the outbox (minify ${minify})`, async t => {
+  test(`the desktop app's engine process bundled for release has no kill point once it holds the outbox (${shape})`, async t => {
     // TODO(plat / engine-process): turns on when apps/desktop/src/main/engine-process.ts bundles the new engine
     // (recorded in DECISIONS.md under "eng-time time-6 follow-ups"). Until then it holds no outbox and this skips.
-    const release = await bundle(ENGINE_PROCESS, 'release', minify);
-    const testBuild = await bundle(ENGINE_PROCESS, 'test', minify);
+    const release = await bundle(ENGINE_PROCESS, 'release', shape);
+    const testBuild = await bundle(ENGINE_PROCESS, 'test', shape);
     if (!holdsOutbox(release) && !KILL_POINTS.some(p => testBuild.includes(p)))
       return t.skip('the engine process does not contain the outbox yet');
     // It holds the outbox (or some of the names): everything must hold, no skipping.
@@ -151,7 +172,7 @@ for (const minify of [false, true]) {
       holdsOutbox(release),
       'kill-point names without the outbox: the entry is half bundled',
     );
-    assert.deepEqual(problems(testBuild, release, minify), []);
+    assert.deepEqual(problems(testBuild, release, shape), []);
   });
 }
 
@@ -160,16 +181,16 @@ test('the verdict fails, not skips, for a bundle that holds the outbox but not t
   const pad = 'x'.repeat(120_000);
   const stripped = `${pad} ${UNCERTAIN_COPY}`;
   const leaking = `${pad} ${UNCERTAIN_COPY} ${names} ${KILL_ENV}`;
-  assert.deepEqual(problems(`${stripped} ${names}`, stripped, true), []);
-  assert.notDeepEqual(problems(`${leaking}`, leaking, true), []);
-  assert.notDeepEqual(problems(`${leaking}`, leaking, false), []);
+  assert.deepEqual(problems(`${stripped} ${names}`, stripped, 'release'), []);
+  assert.notDeepEqual(problems(`${leaking}`, leaking, 'release'), []);
+  assert.notDeepEqual(problems(`${leaking}`, leaking, 'plain'), []);
   assert.ok(holdsOutbox(leaking), 'holding the outbox is what turns the engine-process case on');
   // A test build that lacks the names makes the control fail rather than pass vacuously.
-  assert.notDeepEqual(problems(stripped, stripped, true), []);
+  assert.notDeepEqual(problems(stripped, stripped, 'release'), []);
 });
 
 test('a bundle built without the define keeps every kill point: a NEW bundle of the engine must define it', async () => {
-  const code = await bundle(ENGINE, 'none', false);
+  const code = await bundle(ENGINE, 'none', 'plain');
   assert.deepEqual(
     KILL_POINTS.filter(p => !code.includes(p)),
     [],
@@ -178,7 +199,7 @@ test('a bundle built without the define keeps every kill point: a NEW bundle of 
 });
 
 test('positive control for the identifier greps: the test child has the declarations and the canaries', async () => {
-  const unminified = await bundle(CHILD, 'test', false);
+  const unminified = await bundle(CHILD, 'test', 'plain');
   assert.ok(declared(unminified).length >= 3, 'the declaration greps can see declarations');
   assert.deepEqual(
     CANARIES.filter(c => !unminified.includes(c)),
@@ -206,7 +227,7 @@ test('every release bundle was built with __APLOS_TEST_MODE__ false, the way bui
 });
 
 test('the test child holds the environment variable and every name (positive control for the grep)', async () => {
-  const child = await bundle(CHILD, 'test', false);
+  const child = await bundle(CHILD, 'test', 'plain');
   assert.deepEqual(
     secrets.filter(s => !child.includes(s)),
     [],

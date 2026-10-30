@@ -1,10 +1,16 @@
-# Integrator handoff (written 2026-10-30 ~08:10 local; replaces the 2026-10-28 one)
+# Integrator handoff (rewritten 2026-10-30 ~14:00 local; replaces the 08:10 one)
 
 The old threads are `mcp:6116799a-5bed-4b61-a845-873061513d92` (snoozed, never wake it) and this one (past 400k average context: a fresh thread continues). Routing is roadmap 5.1a: Sonnet default, Opus only for contract, security (send guard, auth/tokens, vault, hardening), store commit path and sync correctness, SWE-2 for volume.
 
 ## State of revamp
 
-`contract-v1` tagged at 9544e97 and FROZEN. About 97 PRs merged. Merged since the last handoff: the whole UI stack F2 (shell, #97) and F3 (Home, #98) after the owner's APPROVED (STATUS 18:30 Oct 29), the send state machine (#105/#107), the draft engine (#119/#120/#121), the timer loop (#89/#106/#113/#117), the lease and Gmail workflow channel (#73/#75/#90/#100), Google sign-in (#69/#72/#78/#81/#86/#91/#92), the vault (#95/#111), the live-run guard (#38/#67), hill-climb tooling (#99/#104/#108/#109/#110/#112/#115). Open: #122 (ui-foundation UI scorers; REQUEST to ui-core: env allow-list for the claude and Vite children, scope Read, cap findings) and #123 (plat-ci per-worktree node_modules; REQUEST: real `.bin` dir, fail-closed link-set check, removeWorktree containment; SWE-2 is fixing).
+`contract-v1` tagged at 9544e97 and FROZEN. About 110 PRs merged. Merged since the 08:10 handoff: #124/#131/#137 (eng-time kill-point harness and release-grep), #122/#130 (UI scorers), #125/#126 (release syntax minify, SCORER_ISOLATED), #127 (lease D1-D3), #128 (Gmail filters), #129 (Gmail send + findSent), #132/#135 (vault temp name, load-proof tests), #134 (image proxy and SSRF classifier; I opened it from eng-html's parked branch and decided providers reuse it rather than copy). All five Opus-area PRs (send, lease, vault, SSRF, store hook) had an Opus review.
+
+Open PRs, all waiting on their authors (my REQUESTs are in plans/STATUS.md, 2026-10-30 12:50):
+- #123 (plat-ci, hill-climb per-worktree node_modules, head bbba37ef): FIX D1 (HIGH fail-open: audit-time re-snapshot adopts a swapped node_modules root, modulescan.mjs ~L131 / worktree.mjs ~L1042), D2 (dangling symlink refuses the worktree), D4 (ACCEPTED-RISK omissions). Re-run check-multi, then a short Sonnet re-check of the fix diff, then merge.
+- #136 (prov-gmail-write, Gmail drafts API, my merge-of-revamp head d522eb2b): Opus FIX: deleteDraft has no version check (deletes a phone's newer edit), duplicate copies stay, uncertain create can resurrect a sent or deleted draft. Needs an additive port change via eng-contract (expected message id on remove). Re-check with Opus.
+- #133 (prov-gmail-write, kill-point plug-in for the Gmail adapter, bb610628): Sonnet MERGE, but the check is red because the branch predates #131 (during-commit rows need their move in onMove). Waits for providers to merge revamp.
+Not yet asked of me: providers' unsubscribe PR (reuses the #134 classifier; the executor must require https itself and refuse redirects); eng-contract UnsubscribePort seam (additive, Opus contract review).
 
 ## How I check a PR
 
@@ -22,7 +28,9 @@ Two check worktrees: `rv-integrator-check` (scripts `check-pr.sh <pr> <lane> <sh
 
 ## Next actions
 
-1. Wait for new heads of #122 and #123, run the check, a short Sonnet re-check of the fix diff, merge.
-2. Live runs: none requested yet; follow `plans/LIVE-RUNS.md` (tier R first, only after reconnectBy is more than a day away; weekly reconnect Mon 2026-11-02).
-3. Keep the owner's 08:00 digest (`scheduled-task:1c252312-eb43-405b-a4da-15163f3e17cb`); features waiting on the owner: none.
-4. Owner decisions on record: bundled Desktop OAuth client secret allowed (DECISIONS.md #59); Demo/* window-only.
+1. Re-check #123, #133, #136 on their new heads when HANDOFF-READY lines appear (use SWE-2 only for mechanical review fixes, Sonnet for reviews, Opus for send/draft/store/vault/SSRF/contract areas).
+2. eng-contract UnsubscribePort + HostPorts.unsubscribe: Opus contract review, then merge.
+3. Live runs: none requested; follow `plans/LIVE-RUNS.md` (tier R first, only when reconnectBy is more than a day away; weekly reconnect Mon 2026-11-02).
+4. Owner's 08:00 digest (`scheduled-task:1c252312-eb43-405b-a4da-15163f3e17cb`); features waiting on the owner: none.
+5. Owner decisions on record: bundled Desktop OAuth client secret allowed (DECISIONS.md #59); Demo/* window-only.
+6. Routing reminder (roadmap 5.1a): this thread delegated nothing to Devin SWE-2; a fresh thread should use `delegate_task` (providerInstanceId acpRegistry_devin, model swe-2-high) for well-specified non-UI code and review fixes.
