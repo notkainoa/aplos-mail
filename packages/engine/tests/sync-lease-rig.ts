@@ -238,7 +238,12 @@ export function channelWorld(
   rem: Remote,
   log: ChannelLog,
   rounds: string[],
-  options: { deviceId?: string; clock?: ReturnType<typeof world>['clock']; skewMs?: number } = {},
+  options: {
+    deviceId?: string;
+    clock?: ReturnType<typeof world>['clock'];
+    skewMs?: number;
+    skew?: () => number;
+  } = {},
 ) {
   const w = world(
     d,
