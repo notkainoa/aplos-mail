@@ -143,7 +143,7 @@ export class UploadBridge {
   /** Runs after an upload is parsed and before it reaches the emulator (a phone edit landing mid-send). */
   beforeDelivery?: (upload: UploadRecord) => void | Promise<void>;
   /** The next upload request fails like this instead of reaching the emulator. */
-  failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt';
+  failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt' | 'portal';
   /** Rewrites a `messages.list` search (to prove the metadata check stands even if the search let a draft through). */
   rewriteQuery?: (q: string) => string;
   private readonly sessions = new Map<string, Session>();
@@ -163,6 +163,13 @@ export class UploadBridge {
     const fault = this.failNext;
     if (fault === undefined || fault === 'dropInitiate' || fault === 'corrupt') return undefined;
     this.failNext = undefined;
+    if (fault === 'portal')
+      return Promise.resolve(
+        new Response('<html><body>Sign in to the Wi-Fi</body></html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+      );
     if (fault === 'refused')
       return Promise.reject(
         Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }),
@@ -275,10 +282,23 @@ export interface SendWorld {
   sentMessages(): { id: string; threadId: string; messageId: string; raw: Buffer }[];
 }
 
-export async function sendWorld(options: { sendLimitPerDay?: number } = {}): Promise<SendWorld> {
+export interface SendWorldOptions {
+  sendLimitPerDay?: number;
+  /** The adapter's `useDraftsSend` (default off, as in production until the live gate). */
+  useDraftsSend?: boolean;
+  /** The adapter's own `GmailPacer` in front of the governor (default off: the governor paces). */
+  pace?: boolean;
+}
+
+export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWorld> {
   const clock = new FakeClock();
   const faults = createFaultInjector();
-  const emu = createGmailEmulator({ clock, retryAfter: 'none', faults, ...options });
+  const emu = createGmailEmulator({
+    clock,
+    retryAfter: 'none',
+    faults,
+    ...(options.sendLimitPerDay !== undefined ? { sendLimitPerDay: options.sendLimitPerDay } : {}),
+  });
   emu.oauth.addClient(CLIENT_ID);
   const session = await emu.oauth.signIn({ clientId: CLIENT_ID, scopes: SCOPES, fetch: emu.fetch });
   const tokens = new Tokens(emu, clock, session.refreshToken!, {
@@ -312,7 +332,11 @@ export async function sendWorld(options: { sendLimitPerDay?: number } = {}): Pro
     },
   };
   const bridge = new UploadBridge(emu);
-  const adapter = new GmailAdapter(account, { fetch: bridge.fetch, pace: false });
+  const adapter = new GmailAdapter(account, {
+    fetch: bridge.fetch,
+    pace: options.pace ?? false,
+    useDraftsSend: options.useDraftsSend ?? false,
+  });
   const ctx = (signal = new AbortController().signal): AdapterContext => ({
     account,
     governor: governor.bind(ACCOUNT),
@@ -410,8 +434,8 @@ export const headerEndOf = (mime: Buffer): number => mime.indexOf('\r\n\r\n');
 const bare = (id: string) => id.replace(/^<|>$/g, '');
 
 /** `sendPortContract`'s harness over the real adapter: Sent copies and drafts written into the emulator's mailbox. */
-export async function contractHarness(): Promise<SendPortHarness> {
-  const world = await sendWorld();
+export async function contractHarness(options: SendWorldOptions = {}): Promise<SendPortHarness> {
+  const world = await sendWorld(options);
   return {
     port: world.port,
     account: ACCOUNT,

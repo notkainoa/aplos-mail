@@ -97,6 +97,8 @@ export interface GoogleProviderOptions {
    * `workflow-host.ts` for the host-side wiring.
    */
   workflow?: GoogleWorkflowOptions;
+  /** Default false: sends never use `drafts.send` until the live gate proves it (`SendOptions.useDraftsSend` in send.ts). */
+  useDraftsSend?: boolean;
 }
 
 /**
@@ -134,6 +136,7 @@ export class GmailAdapter implements ProviderAdapter {
   /** The paced workflow transport behind `workflow` and `workflowTransport()`, when the channel is wired on. */
   private readonly transport?: WorkflowTransport;
   private readonly workflowRoundMs: number;
+  private readonly useDraftsSend: boolean;
   readonly workflow?: WorkflowChannel;
 
   constructor(
@@ -153,6 +156,7 @@ export class GmailAdapter implements ProviderAdapter {
       rounds: new Map(),
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
+    this.useDraftsSend = options.useDraftsSend === true;
     this.workflowRoundMs = options.workflow?.roundMs ?? WORKFLOW_ROUND_MS;
     if (options.workflow) {
       const transport = new GmailWorkflowTransport(deps, account.address, options.workflow.limits);
@@ -250,9 +254,11 @@ export class GmailAdapter implements ProviderAdapter {
     return applyOp(this.rt.deps, op, this.paced(ctx));
   }
 
-  /** prov-gmail-write's transport (`send.ts`): the pinned bytes, `drafts.send` only under `sendsRemoteDraft`. */
+  /** prov-gmail-write's transport (`send.ts`): the pinned bytes; `drafts.send` only when enabled and `sendsRemoteDraft`. */
   send(submission: SubmissionPayload, ctx: AdapterContext): Promise<SendReceipt> {
-    return sendSubmission(this.rt.deps, submission, this.paced(ctx));
+    return sendSubmission(this.rt.deps, submission, this.paced(ctx), {
+      useDraftsSend: this.useDraftsSend,
+    });
   }
 
   /** Searches Sent only (`in:sent`, never a DRAFT), so an unsent draft with the same Message-ID is never found. */

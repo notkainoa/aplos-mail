@@ -38,6 +38,9 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 
 const since = (world: SendWorld) => world.clock.now() - 5 * 60_000;
 
+/** The `drafts.send` route, off by default until the live gate (TODO(live) in send.ts). */
+const DRAFTS_ON = { useDraftsSend: true };
+
 // ---------------------------------------------------------------- pinned bytes
 
 test('send: the pinned MIME leaves byte for byte, with its thread and a receipt for the Sent copy', async () => {
@@ -94,7 +97,7 @@ test('send: a long Bcc list is folded at commas, every line within 76 characters
 // ---------------------------------------------------------------- drafts.send
 
 test('send: drafts.send for a draft that is provably the pinned revision, carrying the pinned bytes', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   const receipt = await world.adapter.send(
@@ -111,7 +114,7 @@ test('send: drafts.send for a draft that is provably the pinned revision, carryi
 });
 
 test('send: a draft edited on another device is left in place and the pinned bytes go as a new message', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   const phone = submission(world, { subject: 'Edited on the phone' });
@@ -132,7 +135,7 @@ test('send: a draft edited on another device is left in place and the pinned byt
 });
 
 test('send: no precondition, no drafts.send (and no drafts.get either)', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   await world.adapter.send({ ...pinned.payload, remoteDraftId: draft.id }, world.ctx());
@@ -142,7 +145,7 @@ test('send: no precondition, no drafts.send (and no drafts.get either)', async (
 });
 
 test('send: a phone edit landing between the draft read and drafts.send still sends the pinned bytes', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   const phone = submission(world, { subject: 'Edited mid-send' });
@@ -160,22 +163,71 @@ test('send: a phone edit landing between the draft read and drafts.send still se
   );
 });
 
-test('send: a remote draft that is gone and not in Sent: the pinned bytes are sent once', async () => {
+test('send: a remote draft that is gone and not (yet) in Sent is uncertain: nothing is sent, findSent decides', async () => {
+  const world = await sendWorld(DRAFTS_ON);
+  const pinned = submission(world);
+  const draft = world.emu.mailbox.createDraft(pinned.mime);
+  // A phone may just have sent it (the Sent search lags), or deleted it: a pinned send here could be a second copy.
+  world.emu.mailbox.deleteDraft(draft.id);
+  const error = await rejection(
+    world.adapter.send(
+      { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id },
+      world.ctx(),
+    ),
+  );
+  assert.ok(isUncertain(error), `got ${String(error)}`);
+  assert.equal(classOf(error)?.reason, 'draftGone');
+  assert.equal(world.sendRequests(), 0);
+  assert.equal(world.bridge.uploads.length, 0);
+});
+
+test('send: with drafts.send off (the default), even a provably pinned draft goes as the pinned MIME, unread', async () => {
   const world = await sendWorld();
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
-  world.emu.mailbox.deleteDraft(draft.id);
   const receipt = await world.adapter.send(
     { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id },
     world.ctx(),
   );
-  assert.equal(world.sendRequests(), 1);
   assert.equal(world.bridge.uploads[0].endpoint, 'messages');
-  assert.equal(receipt.remoteMessageId, world.sentMessages()[0].id);
+  assert.equal(world.emu.log.filter(e => e.apiMethod === 'gmail.users.drafts.get').length, 0);
+  assert.equal(receipt.draftConsumed, undefined, 'the engine removes the remote draft itself');
+  assert.equal(world.emu.mailbox.listDrafts().length, 1);
+  assert.ok(world.sentMessages()[0].raw.equals(pinned.mime));
+});
+
+test('send: with drafts.send off, a gone remote draft is not read either: the pinned MIME is sent once', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
+  const draft = world.emu.mailbox.createDraft(pinned.mime);
+  world.emu.mailbox.deleteDraft(draft.id);
+  await world.adapter.send(
+    { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id },
+    world.ctx(),
+  );
+  assert.equal(world.sendRequests(), 1);
+});
+
+test('send: a 4xx from drafts.send (flag on) proves nothing left: NotSentError', async () => {
+  const world = await sendWorld(DRAFTS_ON);
+  const pinned = submission(world);
+  const draft = world.emu.mailbox.createDraft(pinned.mime);
+  world.faults.failNext(
+    { apiMethod: 'gmail.users.drafts.send' },
+    { status: 400, reason: 'invalidArgument' },
+  );
+  const error = await rejection(
+    world.adapter.send(
+      { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id },
+      world.ctx(),
+    ),
+  );
+  assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+  assert.equal(world.sentMessages().length, 0);
 });
 
 test('send: a remote draft already used up (its mail is in Sent) is never sent again and never "failed"', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   // An earlier attempt (or another device) sent it: the draft id now 404s.
@@ -190,7 +242,7 @@ test('send: a remote draft already used up (its mail is in Sent) is never sent a
 });
 
 test('send: a drafts.send 404 (the draft vanished between the read and the send) is uncertain, not failed', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   world.bridge.beforeDelivery = () => {
@@ -238,6 +290,8 @@ for (const [name, spec, cls] of [
   ['permission', { status: 403, reason: 'insufficientPermissions' }, 'permission'],
   ['a 400', { status: 400, reason: 'invalidArgument', message: 'Invalid To header' }, 'permanent'],
   ['a 413', { status: 413, reason: 'uploadTooLarge' }, 'permanent'],
+  ['a 404 on messages.send', { status: 404, reason: 'notFound' }, 'permanent'],
+  ['a plain 429', { status: 429, reason: 'rateLimitExceeded' }, 'throttle'],
 ] as const) {
   test(`send: ${name} refusal proves nothing left: NotSentError ${cls}, sent once, never retried`, async () => {
     const world = await sendWorld();
@@ -245,6 +299,19 @@ for (const [name, spec, cls] of [
     const error = await rejection(world.adapter.send(submission(world).payload, world.ctx()));
     assert.ok(error instanceof NotSentError, `got ${String(error)}`);
     assert.equal(error.error.class, cls);
+    assert.equal(world.sendRequests(), 1);
+  });
+}
+
+for (const status of [408, 409, 499]) {
+  test(`send: a ${status} is not a known refusal: uncertain, never retried`, async () => {
+    const world = await sendWorld();
+    world.faults.failNext(
+      { apiMethod: 'gmail.users.messages.send' },
+      { status, reason: `status_${status}` },
+    );
+    const error = await rejection(world.adapter.send(submission(world).payload, world.ctx()));
+    assert.ok(isUncertain(error), `got ${String(error)}`);
     assert.equal(world.sendRequests(), 1);
   });
 }
@@ -280,12 +347,25 @@ test('send: a refused connection proves nothing left: NotSentError', async () =>
   assert.equal(world.sendRequests(), 0);
 });
 
-test('send: a 200 whose body does not parse is accepted mail, never uncertain', async () => {
+test('send: a 200 from a proxy or captive portal (no Message id) is uncertain, never sent', async () => {
   const world = await sendWorld();
+  const pinned = submission(world);
+  world.bridge.failNext = 'portal';
+  const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+  assert.ok(isUncertain(error), `got ${String(error)}`);
+  assert.equal(world.sentMessages().length, 0);
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'absent');
+});
+
+test('send: a 200 whose body does not parse is uncertain; findSent then finds the accepted copy', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
   world.bridge.failNext = 'corrupt';
-  const receipt = await world.adapter.send(submission(world).payload, world.ctx());
-  assert.equal(receipt.remoteMessageId, undefined);
-  assert.equal(world.sentMessages().length, 1);
+  const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+  assert.ok(isUncertain(error), `got ${String(error)}`);
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'found');
 });
 
 // ---------------------------------------------------------------- kill points: no duplicate
@@ -330,7 +410,7 @@ test('send killed after acceptance (Gmail applied it, the reply was lost): uncer
 });
 
 test('drafts.send killed after acceptance: findSent finds the sent message; nothing is left in Drafts', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld(DRAFTS_ON);
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   world.faults.dropAfterNext({ apiMethod: 'gmail.users.drafts.send' });
@@ -373,6 +453,22 @@ test('send: a resumable session that fails to open proves nothing left, even on 
   const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
   assert.ok(error instanceof NotSentError, `got ${String(error)}`);
   assert.equal(world.sendRequests(), 0);
+});
+
+test('send: a 4xx on the resumable PUT proves nothing left: NotSentError', async () => {
+  const world = await sendWorld();
+  const big = new Uint8Array(RESUMABLE_ABOVE_BYTES).fill(0x43);
+  const pinned = submission(world, {
+    attachments: [{ name: 'scan.bin', mime: 'application/octet-stream', bytes: big }],
+  });
+  world.faults.failNext(
+    { apiMethod: 'gmail.users.messages.send' },
+    { status: 400, reason: 'invalidArgument' },
+  );
+  const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+  assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+  assert.equal(world.bridge.uploads[0].uploadType, 'resumable');
+  assert.equal(world.sentMessages().length, 0);
 });
 
 test('send: mail over 35 MB is refused before anything leaves', async () => {
@@ -509,11 +605,11 @@ test('send: real outbox MIME with folding, encoded words, a reply and attachment
 
 // ---------------------------------------------------------------- findSent
 
-test('findSent: Sent only, never Drafts, bounded one day before since', () => {
+test('findSent: Sent only, never Drafts, bounded three days before since', () => {
   const at = Date.UTC(2026, 9, 28, 0, 30, 0);
   assert.equal(
     sentQuery('<abc.123@mail.example>', at),
-    'rfc822msgid:abc.123@mail.example in:sent -in:drafts after:2026/10/27',
+    'rfc822msgid:abc.123@mail.example in:sent -in:drafts after:2026/10/25',
   );
   assert.throws(() => sentQuery('<a b@x>', at), ProviderError);
   assert.throws(() => sentQuery('<a{b}@x>', at), ProviderError);
@@ -543,6 +639,19 @@ test('findSent: a hit that vanished before its labels were read is thrown, never
     { status: 404, reason: 'notFound' },
   );
   await assert.rejects(world.port.findSent(ACCOUNT, '<x-2@mail.example.test>', since(world)));
+});
+
+test('findSent: a Sent copy whose internalDate predates since (a sent draft keeps its date) is found', async () => {
+  const world = await sendWorld();
+  const m = world.emu.mailbox.addMessage({
+    from: world.address,
+    to: ['friend@example.test'],
+    messageId: 'x-4@mail.example.test',
+    labelIds: ['SENT'],
+    internalDate: world.clock.now() - 2 * 86_400_000,
+  });
+  const result = await world.port.findSent(ACCOUNT, '<x-4@mail.example.test>', since(world));
+  assert.deepEqual(result, { kind: 'found', remoteMessageId: m.id, remoteThreadId: m.threadId });
 });
 
 test('findSent: a trashed Sent copy still counts as sent', async () => {

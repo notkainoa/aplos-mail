@@ -21,12 +21,14 @@ import { gmailCost } from './costs';
  * What leaves is always the submission's pinned bytes (`SubmissionPayload.mime`), checked here and never rewritten. The
  * one header this file adds is `Bcc`, for envelope recipients the MIME does not name: Gmail's API has no envelope and
  * reads the recipients from the headers (it removes `Bcc` from the copies it delivers), and the engine never writes Bcc
- * into a sent message. `drafts.send` is used only when `sendsRemoteDraft` holds for the copy just read, and even then it
- * carries the pinned bytes as its media, so a phone edit landing between the read and the send cannot leave instead.
- * Both endpoints upload `message/rfc822` (multipart, resumable above 5 MB: D20) as ONE governed `send` request, never
- * re-sent here. A failure is `NotSentError` (or the governor's `PausedError`) only with proof that nothing left: the
- * sending request was never written, the connection was refused, or Gmail answered 4xx. Anything else after the request
- * was written is thrown as uncertain, and the outbox settles it through `findSent`, which searches Sent only.
+ * into a sent message. By default every send goes through `messages.send`; the `drafts.send` route is off until the
+ * live gate proves it (`SendOptions.useDraftsSend`, TODO(live)). When on, it is used only when `sendsRemoteDraft` holds
+ * for the copy just read, and it carries the pinned bytes as its media, so a phone edit landing between the read and
+ * the send cannot leave instead. Both endpoints upload `message/rfc822` (multipart, resumable above 5 MB: D20) as ONE
+ * governed `send` request, never re-sent here. A failure is `NotSentError` (or the governor's `PausedError`) only with
+ * proof that nothing left: the sending request was never written, the connection was refused, or Gmail answered one of
+ * the known refusals (`REFUSALS`). Anything else after the request was written, a 2xx that is not Gmail's Message
+ * included, is thrown as uncertain, and the outbox settles it through `findSent`, which searches Sent only.
  */
 
 const UPLOAD_API = 'https://gmail.googleapis.com/upload/gmail/v1/users/me';
@@ -36,8 +38,8 @@ export const RESUMABLE_ABOVE_BYTES = 5 * 1024 * 1024;
 export const MAX_SEND_BYTES = 35 * 1024 * 1024;
 /** A send that has not answered by then is abandoned as uncertain, so it cannot hold the account's one slot forever. */
 export const sendTimeoutMs = (bytes: number): number => 60_000 + Math.ceil(bytes / 50_000) * 1_000;
-/** `after:` takes a calendar date that Gmail reads in its own zone; one day of slack never hides a newer message. */
-const DAY = 86_400_000;
+/** `after:` slack before `since`: Gmail reads the date in its own zone, and a sent draft keeps the draft's date. */
+const AFTER_SLACK_MS = 3 * 86_400_000;
 /** Hits verified per search: a Message-ID is unique, so more than one is already unusual. */
 const SENT_CANDIDATES = 10;
 
@@ -308,14 +310,17 @@ interface SendState {
 
 const isOk = (status: number) => status >= 200 && status < 300;
 
+/** The statuses that are Gmail refusing the request before it did anything. Every other status is uncertain. */
+const REFUSALS: ReadonlySet<number> = new Set([400, 401, 403, 413, 429]);
+
 /**
- * A 4xx is Gmail refusing the request, so nothing left; 408 is a timeout. A `drafts.send` 404 is the exception: the
- * draft vanished between the read and the send (sent or deleted on another device), so the mail may well be out
- * under this Message-ID, and only `findSent` can tell.
+ * Only a known refusal proves nothing left: 408, 409, 499 and anything unlisted are uncertain. 404 proves it on the
+ * message route only; a `drafts.send` 404 means the draft vanished between the read and the send (sent or deleted on
+ * another device), so the mail may well be out under this Message-ID, and only `findSent` can tell.
  */
 function provesRefusal(status: number, route: SendRoute): boolean {
-  if (status < 400 || status >= 500 || status === 408) return false;
-  return !(route.kind === 'draft' && status === 404);
+  if (status === 404) return route.kind === 'message';
+  return REFUSALS.has(status);
 }
 
 /** The session URI Gmail hands back must be Google's, over HTTPS: the bytes and the token go there next. */
@@ -466,16 +471,22 @@ class Upload {
     return error;
   }
 
-  /** The sending request's answer: any 2xx is accepted mail, even with a body that does not parse. */
+  /**
+   * The sending request's answer. A 2xx is accepted mail only when it is Gmail's Message (a string `id`): a proxy or a
+   * captive portal can answer 200 with a page of its own, so a 2xx without one is uncertain and `findSent` settles it.
+   */
   private settle(reply: Exchange): unknown {
     if (isOk(reply.status)) {
+      const message = parseOrNothing(reply.text) as { id?: unknown } | undefined;
+      if (typeof message?.id !== 'string')
+        throw new ProviderError(record(this.route.method, 'transient', 'invalidResponse', true));
       this.ctx.log.event('sync.gmail.request', {
         method: this.route.method,
         status: reply.status,
         units: gmailCost(this.route.method, undefined, this.deps.costs),
         durationMs: this.ctx.clock.now() - this.started,
       });
-      return parseOrNothing(reply.text);
+      return message;
     }
     if (provesRefusal(reply.status, this.route)) this.state.written = false;
     throw this.refused(reply);
@@ -564,25 +575,44 @@ async function remoteDraft(
   }
 }
 
+export interface SendOptions {
+  /**
+   * Default false: every send is the pinned MIME through `messages.send`, and the engine removes the remote draft itself
+   * after `sent` (no `draftConsumed`). True turns on the `drafts.send` route below.
+   *
+   * TODO(live): switch on only after the live gate proves, on real Gmail, that (1) `drafts.send` with uploaded
+   * `message/rfc822` media sends exactly those bytes, not the stored draft; (2) Gmail keeps the client's Message-ID on
+   * `drafts.send` and `messages.send` (`rfc822msgid:` finds the sent copy under `internetId`); (3) Gmail strips the
+   * `Bcc:` header from delivered copies. The emulator does not model the upload protocol (the test rig bridges it).
+   */
+  useDraftsSend?: boolean;
+}
+
+/** The draft is gone and Sent has no copy: it may have just been sent elsewhere, so nothing is sent and `findSent` decides. */
+const DRAFT_GONE = 'draftGone';
+
 /**
- * `drafts.send` only for a draft that is provably the pinned revision. A draft edited elsewhere stays in place and the
- * pinned bytes go as a new message. A draft that is gone may have been sent already (by another device, or by an
- * earlier attempt of this row): when Sent holds this Message-ID the mail is out and nothing is sent again.
+ * With `useDraftsSend` only: `drafts.send` for a draft that is provably the pinned revision. A draft edited elsewhere
+ * stays in place and the pinned bytes go as a new message. A draft that is gone may have been sent already (by another
+ * device, or by an earlier attempt of this row): when Sent holds this Message-ID the mail is out and nothing is sent
+ * again; when it does not (yet: the search index lags), the outcome is uncertain rather than a second copy.
  */
 async function chooseRoute(
   deps: GmailDeps,
   payload: SubmissionPayload,
   ctx: AdapterContext,
-): Promise<SendRoute | SendReceipt> {
+  options: SendOptions,
+): Promise<SendRoute | SendReceipt | typeof DRAFT_GONE> {
   const plain = messageRoute(payload);
   const draftId = payload.remoteDraftId;
+  if (!options.useDraftsSend) return plain;
   if (draftId === undefined || payload.baseRemoteMessageId === undefined) return plain;
   const client = new GmailClient(deps, ctx);
   const current = await remoteDraft(client, draftId);
   if (sendsRemoteDraft(payload, current)) return draftRoute(payload, draftId);
   if (current) return plain;
   const out = await sentCopy(client, payload.internetId);
-  if (!out) return plain;
+  if (!out) return DRAFT_GONE;
   return {
     remoteMessageId: out.id,
     ...(out.threadId ? { remoteThreadId: out.threadId } : {}),
@@ -595,11 +625,14 @@ export async function sendSubmission(
   deps: GmailDeps,
   payload: SubmissionPayload,
   ctx: AdapterContext,
+  options: SendOptions = {},
 ): Promise<SendReceipt> {
   const raw = pinnedMime(payload, ctx.account.address);
-  const route = await chooseRoute(deps, payload, ctx).catch((error: unknown) => {
+  const route = await chooseRoute(deps, payload, ctx, options).catch((error: unknown) => {
     throw notSent(error, 'gmail.drafts.get');
   });
+  if (route === DRAFT_GONE)
+    throw new ProviderError(record('gmail.drafts.get', 'transient', DRAFT_GONE, true));
   if (!('method' in route)) return route;
   return transmit(deps, route, raw, ctx);
 }
@@ -617,13 +650,18 @@ function searchDate(ms: number): string {
   return `${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
 }
 
-/** Sent only, never a draft, bounded by `after:` one day before `since` (Gmail reads the date in its own zone). */
+/**
+ * Sent only, never a draft, bounded by `after:` a generous `AFTER_SLACK_MS` before `since`: Gmail reads the date in its
+ * own zone, and a sent draft's internalDate can predate the send. The bound only trims the search; the Message-ID and
+ * the labels decide.
+ */
 export function sentQuery(internetId: string, since?: number): string {
   const bare = SEARCHABLE_ID.exec(internetId)?.[1];
   if (!bare)
     throw new ProviderError(record('gmail.messages.list', 'permanent', 'unsearchableMessageId'));
-  const bounded = since !== undefined && Number.isFinite(since) && since > DAY;
-  return `rfc822msgid:${bare} in:sent -in:drafts${bounded ? ` after:${searchDate(since - DAY)}` : ''}`;
+  const bounded = since !== undefined && Number.isFinite(since) && since > AFTER_SLACK_MS;
+  const after = bounded ? ` after:${searchDate(since - AFTER_SLACK_MS)}` : '';
+  return `rfc822msgid:${bare} in:sent -in:drafts${after}`;
 }
 
 interface SentHit {
@@ -635,21 +673,17 @@ interface Candidate {
   id?: unknown;
   threadId?: unknown;
   labelIds?: unknown;
-  internalDate?: unknown;
   payload?: { headers?: { name?: unknown; value?: unknown }[] };
 }
 
 /** Whether the message's own labels and header say it is this mail, sent: SENT, never DRAFT, the same Message-ID. */
-function isSentCopy(m: Candidate, internetId: string, since?: number): boolean {
+function isSentCopy(m: Candidate, internetId: string): boolean {
   const labels = Array.isArray(m.labelIds) ? m.labelIds : [];
   if (!labels.includes('SENT') || labels.includes('DRAFT')) return false;
   const header = m.payload?.headers?.find(
     h => typeof h.name === 'string' && h.name.toLowerCase() === 'message-id',
   );
-  if (typeof header?.value !== 'string' || bareId(header.value) !== bareId(internetId))
-    return false;
-  const at = Number(m.internalDate);
-  return since === undefined || !Number.isFinite(at) || at >= since - DAY;
+  return typeof header?.value === 'string' && bareId(header.value) === bareId(internetId);
 }
 
 /** One hit's metadata (20 units), or 'gone' when it disappeared between the search and the read. */
@@ -660,7 +694,7 @@ async function candidate(client: GmailClient, id: string): Promise<Candidate | '
       path: `/messages/${encodeURIComponent(id)}`,
       format: 'metadata',
       query: { metadataHeaders: ['Message-ID'] },
-      fields: 'id,threadId,labelIds,internalDate,payload/headers',
+      fields: 'id,threadId,labelIds,payload/headers',
       lane: 'interactive',
       item: id,
     });
@@ -699,7 +733,7 @@ async function sentCopy(
     if (typeof hit.id !== 'string') continue;
     const m = await candidate(client, hit.id);
     if (m === 'gone') vanished = true;
-    else if (isSentCopy(m, internetId, since))
+    else if (isSentCopy(m, internetId))
       return { id: hit.id, ...(typeof m.threadId === 'string' ? { threadId: m.threadId } : {}) };
   }
   if (vanished) throw incomplete('sentHitVanished');

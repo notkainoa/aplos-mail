@@ -7,7 +7,10 @@ import test from 'node:test';
 import { sendPortContract } from '../../../../packages/engine/tests/ports/send-port-contract';
 import { ACCOUNT, contractHarness, sendWorld, submission } from './send-rig';
 
-sendPortContract('gmail adapter on the Gmail emulator', contractHarness);
+sendPortContract('gmail adapter on the Gmail emulator', () => contractHarness());
+sendPortContract('gmail adapter on the Gmail emulator, paced by its GmailPacer', () =>
+  contractHarness({ pace: true }),
+);
 
 const AT = Date.UTC(2026, 9, 28, 9, 0, 0);
 const ID = '<contract-shared-1@mail.example>';
@@ -52,7 +55,7 @@ test('gmail: the draft-only check holds even when the search itself lets the dra
 });
 
 test('gmail: after an unsent drafts.send (reply lost before Gmail saw it), the draft carrying the id is not found', async () => {
-  const world = await sendWorld();
+  const world = await sendWorld({ useDraftsSend: true });
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   world.faults.dropNext({ apiMethod: 'gmail.users.drafts.send' });
