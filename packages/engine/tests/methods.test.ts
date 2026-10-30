@@ -14,6 +14,7 @@ import {
 } from '../src/methods/index';
 import { createReceipts } from '../src/methods/unsubscribe';
 import { openStore, type StorePort } from '../src/store';
+import { testEngine } from './runtime.helpers';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from './store/helpers';
 
 const dir = join(import.meta.dirname, '..', 'src', 'methods');
@@ -133,7 +134,7 @@ test('every engine method is refused to a caller that holds no scope', async () 
 
 // ---------------------------------------------------------------- Unsubscribe (prov-gmail-write)
 
-type Executor = NonNullable<EngineServices['unsubscribe']>;
+type Executor = EngineServices['unsubscribe'];
 type RunRequest = Parameters<Executor['run']>[0];
 
 /** A real store with one thread: an older inbound list message, a newer one, and the owner's own reply on top. */
@@ -165,9 +166,18 @@ async function withUnsubStore(fn: (store: StorePort) => Promise<void>) {
   }
 }
 
-function unsubCtx(store: StorePort, unsubscribe?: Executor): MethodContext {
-  const services = { store, ...(unsubscribe ? { unsubscribe } : {}) } as EngineServices;
-  return { ...ctx, services };
+function unsubCtx(store: StorePort, unsubscribe: Executor): MethodContext {
+  return { ...ctx, services: { store, unsubscribe } as EngineServices };
+}
+
+/** The stand-in `createEngine` gives a method when the host left the port out (truthy, every member rejects). */
+async function withAbsentPort(fn: (absent: Executor) => Promise<void>) {
+  const t = await testEngine();
+  try {
+    await fn(t.engine.services.unsubscribe);
+  } finally {
+    await t.cleanup();
+  }
 }
 
 function fakeExecutor(
@@ -252,26 +262,62 @@ test('Unsubscribe/run: no list header is unavailable without calling the executo
       ),
       (e: unknown) => e instanceof ContractError && e.type === 'notFound',
     );
-    await assert.rejects(
-      Promise.resolve().then(() =>
-        handlers['Unsubscribe/run']({ opId: 'op-1', threadId: T1 }, unsubCtx(store)),
-      ),
-      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
-    );
+    await withAbsentPort(async absent => {
+      await assert.rejects(
+        Promise.resolve().then(() =>
+          handlers['Unsubscribe/run']({ opId: 'op-1', threadId: T1 }, unsubCtx(store, absent)),
+        ),
+        (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+      );
+    });
   });
 });
 
 test('Unsubscribe/get without a host executor degrades to none; Unsubscribe/run stays unavailable', async () => {
   await withUnsubStore(async store => {
-    assert.deepEqual(await handlers['Unsubscribe/get']({ threadId: T1 }, unsubCtx(store)), {
-      method: 'none',
+    await withAbsentPort(async absent => {
+      const ctx = unsubCtx(store, absent);
+      assert.deepEqual(await handlers['Unsubscribe/get']({ threadId: T1 }, ctx), {
+        method: 'none',
+      });
+      await assert.rejects(
+        Promise.resolve().then(() =>
+          handlers['Unsubscribe/run']({ opId: 'op-1', threadId: T1 }, ctx),
+        ),
+        (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+      );
     });
-    await assert.rejects(
-      Promise.resolve().then(() =>
-        handlers['Unsubscribe/run']({ opId: 'op-1', threadId: T1 }, unsubCtx(store)),
-      ),
-      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
-    );
+  });
+});
+
+test('Unsubscribe/run passes the opId to the port, and omits it when the call has none', async () => {
+  await withUnsubStore(async store => {
+    const seen: RunRequest[] = [];
+    const ctx = unsubCtx(store, fakeExecutor({ kind: 'done', message: 'm' }, seen));
+    await handlers['Unsubscribe/run']({ opId: 'op-seen', threadId: T1 }, ctx);
+    assert.equal(seen[0].opId, 'op-seen');
+    await handlers['Unsubscribe/run']({ threadId: T1 } as never, ctx);
+    assert.equal('opId' in seen[1], false);
+  });
+});
+
+test('Unsubscribe/run passes each outcome name and message through unchanged', async () => {
+  await withUnsubStore(async store => {
+    const kinds = [
+      ['done', 'done'],
+      ['open', 'openLink'],
+      ['compose', 'compose'],
+      ['unsure', 'unsure'],
+      ['failed', 'failed'],
+    ] as const;
+    for (const [kind, outcome] of kinds) {
+      const message = `The ${kind} sentence, exactly.`;
+      const out = await handlers['Unsubscribe/run'](
+        { opId: `op-${kind}`, threadId: T1 },
+        unsubCtx(store, fakeExecutor({ kind, message })),
+      );
+      assert.deepEqual(out, { outcome, message });
+    }
   });
 });
 

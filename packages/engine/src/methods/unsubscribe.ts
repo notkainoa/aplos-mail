@@ -1,6 +1,7 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Output } from '@aplos/contract';
-import type { ListHeaders } from '../ports';
+import type { ListHeaders, UnsubscribeKind, UnsubscribePort } from '../ports';
+import { isAbsent } from '../runtime/engine';
 import { FLAG } from '../store/commit';
 import { listHeaders } from '../store/ingest';
 import type { StoreReader } from '../store/port';
@@ -13,29 +14,6 @@ import type { AreaHandlers, MethodContext } from './types';
  * (`apps/desktop/src/host/providers/google/unsubscribe.ts`) plans and performs the one-click POST, the mailto or the
  * page link, because it needs Node networking. Nothing here opens a page or sends mail.
  */
-
-/** What the host executor reports. `none`: the message offers no usable way. */
-export type UnsubscribeKind = 'done' | 'unsure' | 'failed' | 'open' | 'compose' | 'none';
-
-/**
- * The host executor, structurally. MISSING PORT: this belongs in `ports/` and in `HostPorts` (eng-contract) as
- * `unsubscribe`, so the host can inject it like `images`. Until then it is an optional service a lane module may set.
- */
-export interface UnsubscribeExecutor {
-  describe(headers: ListHeaders): { method: 'oneClick' | 'mailto' | 'link' | 'none'; url?: string };
-  run(request: {
-    from: string;
-    headers: ListHeaders;
-    signal: AbortSignal;
-  }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
-}
-
-declare module '../runtime/services' {
-  interface EngineServices {
-    /** The List-Unsubscribe executor; absent until the host can inject it (see `UnsubscribeExecutor`). */
-    unsubscribe?: UnsubscribeExecutor;
-  }
-}
 
 interface Target {
   from: string;
@@ -63,7 +41,12 @@ type RunOutput = Output<'Unsubscribe/run'>;
 /**
  * Receipts for `Unsubscribe/run`, keyed by `opId` and thread: a retried call (same `opId`) gets the first call's outcome
  * and never reaches the executor, so it cannot POST twice. The promise is stored at once, so a concurrent retry joins
- * the call in flight. Bounded by count and age; a call that rejects (cancelled) leaves no receipt. In memory only.
+ * the call in flight. Bounded by count and age; a call that rejects (cancelled) leaves no receipt.
+ *
+ * The receipt is process-local: it is lost on restart and not shared between processes. `common.ts` promises that a
+ * replayed `opId` never applies twice; for this method that holds only within this process (and the port also gets the
+ * `opId`, so a host that keeps its own record can dedupe too) until a store receipt exists. That store receipt is a
+ * known gap, not written here.
  */
 export interface Receipts {
   once(
@@ -111,9 +94,9 @@ export function createReceipts(
 }
 
 /** One receipt book per executor, so nothing leaks between hosts or tests. */
-const books = new WeakMap<UnsubscribeExecutor, Receipts>();
+const books = new WeakMap<UnsubscribePort, Receipts>();
 
-function receiptsOf(executor: UnsubscribeExecutor): Receipts {
+function receiptsOf(executor: UnsubscribePort): Receipts {
   const known = books.get(executor);
   if (known) return known;
   const made = createReceipts();
@@ -138,9 +121,9 @@ function target(ctx: MethodContext, threadId: string): Target | undefined {
   return ctx.services.store.read(q => readTarget(q, threadId));
 }
 
-function executorOf(ctx: MethodContext): UnsubscribeExecutor {
+function executorOf(ctx: MethodContext): UnsubscribePort {
   const executor = ctx.services.unsubscribe;
-  if (!executor) throw new ContractError({ type: 'unavailable', message: NOT_YET });
+  if (isAbsent(executor)) throw new ContractError({ type: 'unavailable', message: NOT_YET });
   return executor;
 }
 
@@ -149,11 +132,12 @@ function shown(url: string | undefined): { url: string } | Record<string, never>
 }
 
 async function perform(
-  executor: UnsubscribeExecutor,
+  executor: UnsubscribePort,
   found: Target,
+  opId: string | undefined,
   ctx: MethodContext,
 ): Promise<RunOutput> {
-  const result = await executor.run({ ...found, signal: ctx.signal });
+  const result = await executor.run({ ...found, ...(opId ? { opId } : {}), signal: ctx.signal });
   return {
     outcome: OUTCOME[result.kind] ?? 'failed',
     message: result.message,
@@ -166,7 +150,7 @@ export const handlers: AreaHandlers<'unsubscribe'> = {
     const found = target(ctx, args.threadId);
     if (!found) return { method: 'none' };
     // Without the executor nothing can be done with the headers, so the thread reads as not unsubscribable.
-    if (!ctx.services.unsubscribe) return { method: 'none' };
+    if (isAbsent(ctx.services.unsubscribe)) return { method: 'none' };
     const described = ctx.services.unsubscribe.describe(found.headers);
     return { method: described.method, ...shown(described.url) };
   },
@@ -174,6 +158,8 @@ export const handlers: AreaHandlers<'unsubscribe'> = {
     const found = target(ctx, args.threadId);
     if (!found) return { outcome: 'unavailable', message: NO_WAY };
     const executor = executorOf(ctx);
-    return receiptsOf(executor).once(args.opId, args.threadId, () => perform(executor, found, ctx));
+    return receiptsOf(executor).once(args.opId, args.threadId, () =>
+      perform(executor, found, args.opId, ctx),
+    );
   },
 };

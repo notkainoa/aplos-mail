@@ -1,6 +1,6 @@
 import type http from 'node:http';
 import https from 'node:https';
-import type { ListHeaders } from '@aplos/engine/ports';
+import type { ListHeaders, UnsubscribePort } from '@aplos/engine/ports';
 import { ipv4Number } from '../../proxy/classify';
 import { requestOptions } from '../../proxy/fetch';
 import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from '../../proxy/resolve';
@@ -369,20 +369,10 @@ export interface UnsubscribeDeps {
   timeoutMs?: number;
 }
 
-export interface UnsubscribeRequest {
-  /** The address of the account the message arrived at; the composer's sender. Nothing here sends mail. */
-  from: string;
-  headers: ListHeaders;
-  signal: AbortSignal;
-}
+export type UnsubscribeRequest = Parameters<UnsubscribePort['run']>[0];
 
-export interface UnsubscribeExecutor {
-  describe(headers: ListHeaders): {
-    method: 'oneClick' | 'mailto' | 'link' | 'none';
-    url?: string;
-  };
-  run(request: UnsubscribeRequest): Promise<UnsubscribeResult>;
-}
+/** The engine's `UnsubscribePort`; `request.opId` (when sent) is accepted and never logged or put on the wire. */
+export type UnsubscribeExecutor = UnsubscribePort;
 
 function deadlineOf(timeoutMs: number | undefined): number {
   const ceiling = UNSUBSCRIBE_LIMITS.timeoutMs;

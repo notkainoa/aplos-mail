@@ -183,6 +183,8 @@ export interface UnsubscribePort {
   run(request: {
     from: string;
     headers: ListHeaders;
+    /** The caller's `opId` for this attempt, when it sent one; the same value on a retry. Not a secret. */
+    opId?: string;
     signal: AbortSignal;
   }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
 }
