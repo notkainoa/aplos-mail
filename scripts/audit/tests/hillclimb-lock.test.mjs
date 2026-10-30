@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -83,23 +84,129 @@ describe('withCheckSlot', () => {
     assert.equal(holderPid(d), null); // released after fn
   });
 
-  it('takes over a lock with no pid file older than staleMs', async () => {
-    const d = dir();
-    mkdirSync(d);
+  it('a pid-less lock dir is only taken once it is older than staleMs', async () => {
+    // A FRESH empty dir is not stale: rename(2) onto an empty dir would silently
+    // replace it, so acquisition must see it as an existing lock and wait.
+    const fresh = dir();
+    mkdirSync(fresh);
+    await assert.rejects(
+      withCheckSlot(() => 'never', { ...fast, dir: fresh, timeoutMs: 120 }),
+      /still held/,
+    );
+    assert.equal(existsSync(fresh), true, 'a fresh empty lock dir must not be stolen');
+    rmSync(fresh, { recursive: true, force: true });
+
+    // Same for a fresh pid-less dir that happens to carry a file.
+    const freshFiles = dir();
+    mkdirSync(freshFiles);
+    writeFileSync(join(freshFiles, 'token'), 'half-written-t0');
+    await assert.rejects(
+      withCheckSlot(() => 'never', { ...fast, dir: freshFiles, timeoutMs: 120 }),
+      /still held/,
+    );
+    rmSync(freshFiles, { recursive: true, force: true });
+
+    // Aged past staleMs, an empty dir is taken over in place.
+    const aged = dir();
+    mkdirSync(aged);
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    utimesSync(d, old, old);
-    const ran = await withCheckSlot(() => 'stale gone', { ...fast, dir: d, staleMs: 60_000 });
+    utimesSync(aged, old, old);
+    const ran = await withCheckSlot(() => 'stale gone', {
+      ...fast,
+      dir: aged,
+      staleMs: 60_000,
+    });
     assert.equal(ran, 'stale gone');
   });
 
-  it('times out waiting for a live holder', async () => {
+  it('times out waiting for a live holder held by this very process', async () => {
+    const d = dir();
+    await withCheckSlot(
+      async () => {
+        // The outer call's pid+token are on disk and its token is in `held`: our own
+        // live lock must read as ALIVE, not as a recyclable self-pid.
+        await assert.rejects(
+          withCheckSlot(() => 'never', { ...fast, dir: d, timeoutMs: 60 }),
+          /still held/,
+        );
+      },
+      { ...fast, dir: d },
+    );
+  });
+
+  it('times out waiting for a live holder in another process', async () => {
     const d = dir();
     mkdirSync(d);
-    writeFileSync(join(d, 'pid'), String(process.pid)); // ourselves = alive
+    const child = spawn('node', ['-e', 'setTimeout(() => {}, 30000)']);
+    try {
+      writeFileSync(join(d, 'pid'), String(child.pid)); // a live foreign pid
+      await assert.rejects(
+        withCheckSlot(() => 'never', { ...fast, dir: d, timeoutMs: 60 }),
+        /still held/,
+      );
+    } finally {
+      child.kill('SIGKILL');
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('takes over a lock whose dead holder pid was recycled onto this process', async () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'token'), 'dead-owner-t0');
+    // The recorded pid is a live process — ours — but no token of this dir is in
+    // `held`, so the holder is dead and the pid is a recycled one: stale, not live.
+    writeFileSync(join(d, 'pid'), String(process.pid));
+    const ran = await withCheckSlot(() => 'took over', {
+      ...fast,
+      dir: d,
+      timeoutMs: 300,
+    });
+    assert.equal(ran, 'took over');
+    assert.equal(holderPid(d), null); // released after fn
+  });
+
+  it('treats a lock with an unreadable pid file as alive (fail closed)', async () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'token'), 't0');
+    const pidPath = join(d, 'pid');
+    writeFileSync(pidPath, '4194304');
+    chmodSync(pidPath, 0o000); // EACCES on read — not "no pid file"
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(d, old, old); // even ancient, an unreadable pid must never be stolen
+    const warnings = [];
+    const origWrite = process.stderr.write;
+    process.stderr.write = function (chunk, ...rest) {
+      warnings.push(String(chunk));
+      return origWrite.call(process.stderr, chunk, ...rest);
+    };
+    try {
+      await assert.rejects(
+        withCheckSlot(() => 'never', { ...fast, dir: d, timeoutMs: 120 }),
+        /still held/,
+      );
+      assert.equal(takeStaleLock(d), false, 'an unreadable pid is never judged stale');
+      const lines = warnings.filter(w => w.includes('check slot'));
+      assert.equal(lines.length, 1, `expected one warning line, got ${JSON.stringify(warnings)}`);
+      assert.match(lines[0], /EACCES/);
+    } finally {
+      process.stderr.write = origWrite;
+      chmodSync(pidPath, 0o644);
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('does not sleep a full poll interval past the deadline', async () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), '1'); // live foreign holder (launchd)
+    const start = Date.now();
     await assert.rejects(
-      withCheckSlot(() => 'never', { ...fast, dir: d, timeoutMs: 60 }),
+      withCheckSlot(() => 'never', { ...fast, dir: d, timeoutMs: 100, pollMs: 5000 }),
       /still held/,
     );
+    assert.ok(Date.now() - start < 3000, `slept past the deadline: ${Date.now() - start}ms`);
     rmSync(d, { recursive: true, force: true });
   });
 
@@ -190,12 +297,24 @@ describe('takeStaleLock', () => {
     rmSync(d, { recursive: true, force: true });
   });
 
-  it('never takes a live pid even when the token still matches the snapshot', () => {
+  it('takes over when our pid was recycled but the token is not held by this process', () => {
     const d = dir();
     mkdirSync(d);
     writeFileSync(join(d, 'pid'), String(process.pid));
+    writeFileSync(join(d, 'token'), 'dead-owner-t0');
+    // pidAlive says "alive" — but no held token of ours matches: the holder is dead
+    // and the pid was recycled onto this process, so the lock is stale.
+    assert.equal(takeStaleLock(d, { pid: process.pid, token: 'dead-owner-t0' }), true);
+    assert.notEqual(readFileSync(join(d, 'token'), 'utf8').trim(), 'dead-owner-t0');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('never takes a live foreign pid even when the token still matches the snapshot', () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), '1'); // launchd: alive, not signalable (EPERM)
     writeFileSync(join(d, 'token'), 'live-t0');
-    assert.equal(takeStaleLock(d, { pid: process.pid, token: 'live-t0' }), false);
+    assert.equal(takeStaleLock(d, { pid: 1, token: 'live-t0' }), false);
     assert.equal(readFileSync(join(d, 'token'), 'utf8').trim(), 'live-t0');
     rmSync(d, { recursive: true, force: true });
   });
@@ -206,12 +325,27 @@ describe('takeStaleLock', () => {
     writeFileSync(join(d, 'pid'), '4194304');
     writeFileSync(join(d, 'token'), 'dead-t0');
     // A live claimant holds the marker: nobody else may touch the dir.
-    writeFileSync(join(d, 'claim'), String(process.pid));
+    writeFileSync(join(d, 'claim'), '1'); // launchd: live, not signalable
     assert.equal(takeStaleLock(d), false);
     assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), '4194304', 'dir untouched');
     // A claimant that died mid-takeover leaves a claim naming its dead pid; the next
     // contender clears it and completes the takeover.
     writeFileSync(join(d, 'claim'), '4194304');
+    assert.equal(takeStaleLock(d), true);
+    assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), String(process.pid));
+    assert.equal(existsSync(join(d, 'claim')), false, 'won claim removed');
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('clears a claim left under our recycled pid — we never wrote it, so it is dead', () => {
+    const d = dir();
+    mkdirSync(d);
+    writeFileSync(join(d, 'pid'), '4194304');
+    writeFileSync(join(d, 'token'), 'dead-t0');
+    // A claim naming our own pid can only be a dead claimant's marker under a
+    // recycled pid: this process reads a claim only after its own O_EXCL create
+    // failed, so no live claim of ours can ever be sitting there to read.
+    writeFileSync(join(d, 'claim'), String(process.pid));
     assert.equal(takeStaleLock(d), true);
     assert.equal(readFileSync(join(d, 'pid'), 'utf8').trim(), String(process.pid));
     assert.equal(existsSync(join(d, 'claim')), false, 'won claim removed');
@@ -506,11 +640,11 @@ describe('stale-takeover TOCTOU (real processes)', () => {
 describe('atomic publish (real processes)', () => {
   it('a reader never observes a PERSISTENT lock dir without readable pid and token', async () => {
     // Two children hammer the slot while a third watches. An incomplete listing that
-    // still stands after a 2 ms re-check is a real mid-publish or half-deleted lock —
+    // keeps re-reading unchanged for 5 ms is a real mid-publish or half-deleted lock —
     // the stage+rename publish and rename-aside release can never produce one. A
-    // transiently empty listing of a just-renamed dir is an APFS enumeration artifact
-    // (proven: it resolves on the immediate next read), so instant observations are
-    // re-verified before they count.
+    // transiently empty or partial listing of a just-renamed dir is an APFS
+    // enumeration artifact (it settles on the next read), so observations must stay
+    // stable across a sustained window before they count.
     const d = dir();
     const violations = join(tmp, `partial-${counter}.log`);
     const stop = join(tmp, `partial-${counter}.stop`);
@@ -536,14 +670,18 @@ describe('atomic publish (real processes)', () => {
       for (let i = 0; i < 200000 && !fs.existsSync(${JSON.stringify(stop)}); i++) {
         const names = list();
         if (names === null || names === 'pid,token') continue;
-        const until = Date.now() + 2;
-        let last = names;
-        while (Date.now() < until) {
+        // An anomalous listing only counts if the SAME listing keeps re-reading for
+        // 5 ms: APFS transiently reports partial/empty enumerations right around a
+        // rename and settles on the next read, while a real mid-publish or
+        // half-deleted lock dir persists unchanged.
+        let stable = true;
+        const start = Date.now();
+        while (stable && Date.now() - start < 5) {
+          await sleep(1);
           const again = list();
-          if (again === null || again === 'pid,token') { last = again; break; }
-          last = again;
+          stable = again === names;
         }
-        if (last !== null && last !== 'pid,token') seen.add(JSON.stringify(last));
+        if (stable) seen.add(JSON.stringify(names));
       }
       fs.writeFileSync(${JSON.stringify(violations)}, [...seen].join('\\n'));
     `;
@@ -602,6 +740,110 @@ describe('two concurrent takers (real processes)', () => {
     const starts = events.map(e => e.startsWith('start'));
     assert.deepEqual(starts, [true, false, true, false], `interleaved: ${events}`);
     assert.equal(existsSync(d), false, 'last holder released the slot');
+  });
+});
+
+describe('stray-file handoff race (real processes)', () => {
+  it('a live lock dir swapped over the stray file is never carried aside and deleted', async () => {
+    // The child flips the slot path between a stray FILE and its own live lock dir
+    // (the real stage+rename publish protocol), while this process hammers
+    // takeStaleLock. On the old code the stray-file branch stats the path and then
+    // blindly renames whatever it finds aside and deletes it — if the child's live
+    // lock dir landed in between, it is destroyed while held, and the child's
+    // post-hold verify fails. The fix re-lstats the exact path before the rename
+    // (and verifies the moved-aside object after), so a live lock dir can never be
+    // carried away.
+    const d = dir();
+    const base = join(tmp, `stray-race-${counter}`);
+    mkdirSync(base);
+    const violationF = join(base, 'violation');
+    const doneF = join(base, 'done');
+    const flips = 800;
+    const childScript = `
+      const fs = await import('node:fs');
+      const d = ${JSON.stringify(d)};
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (let i = 0; i < ${flips}; i++) {
+        try { fs.writeFileSync(d, 'stray-' + i); } catch { await sleep(1); continue; }
+        await sleep(1); // leave the file phase open for the hammer to catch
+        try { fs.rmSync(d, { force: true }); } catch {}
+        const stage = d + '.mine-' + i;
+        try {
+          fs.mkdirSync(stage);
+          fs.writeFileSync(stage + '/token', 'live-' + i);
+          fs.writeFileSync(stage + '/pid', String(process.pid));
+          fs.renameSync(stage, d);
+        } catch {
+          try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+          continue; // a peer's lock occupies the path — this round simply lost
+        }
+        await sleep(2); // held: the lock must survive its whole hold
+        // Re-verify for a few ms: during the fixed code's rename-aside->restore window
+        // the path is transiently absent for microseconds — only a lock that stays
+        // missing or wrong was genuinely carried away and destroyed.
+        const verify = () => {
+          try {
+            return (
+              fs.readFileSync(d + '/pid', 'utf8').trim() === String(process.pid) &&
+              fs.readFileSync(d + '/token', 'utf8').trim() === 'live-' + i
+            );
+          } catch {
+            return false;
+          }
+        };
+        let ok = verify();
+        for (let t = 0; t < 20 && !ok; t++) {
+          await sleep(1);
+          ok = verify();
+        }
+        if (!ok) {
+          try { fs.writeFileSync(${JSON.stringify(violationF)}, 'iteration ' + i); } catch {}
+          process.exit(1);
+        }
+        try { fs.rmSync(d, { recursive: true, force: true }); } catch {}
+      }
+      fs.writeFileSync(${JSON.stringify(doneF)}, '1');
+    `;
+    const child = spawn('node', ['--input-type=module', '-e', childScript], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+    });
+    const childDone = new Promise(resolve => child.on('close', resolve));
+    try {
+      const cap = Date.now() + 30000;
+      while (!existsSync(doneF) && !existsSync(violationF) && Date.now() < cap) {
+        for (let i = 0; i < 200; i++) {
+          if (takeStaleLock(d, null, { pid: process.pid, token: 'hammer' })) {
+            releaseHeldSlots();
+            // Only remove a dir that is still OUR won lock — a child's fresh live
+            // lock could have landed in the release->rm gap.
+            try {
+              const ours =
+                readFileSync(join(d, 'pid'), 'utf8').trim() === String(process.pid) &&
+                readFileSync(join(d, 'token'), 'utf8').trim() === 'hammer';
+              if (ours) rmSync(d, { recursive: true, force: true });
+            } catch {
+              // Already gone.
+            }
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    } finally {
+      child.kill('SIGKILL');
+      await childDone;
+    }
+    assert.equal(
+      existsSync(violationF),
+      false,
+      `a live lock dir was carried aside and deleted: ${
+        existsSync(violationF) ? readFileSync(violationF, 'utf8') : ''
+      }`,
+    );
+    assert.equal(existsSync(doneF), true, `child never finished flipping: ${stderr}`);
   });
 });
 
