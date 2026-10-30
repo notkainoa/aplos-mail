@@ -257,8 +257,9 @@ function linkBinDir(mainBin, linkBin, ctx) {
  * when cloning is unsupported does the entry become a hardlink — one inode shared with
  * the main copy, which a write-through then mutates: that mode is tripwire-only (the
  * write scan reports content writes after the fact; chmod/chown/utimes it cannot see).
- * A plain symlink is the last resort for a failed hardlink — everything still resolves,
- * only dirent fidelity degrades.
+ * A failed hardlink THROWS — the harness refuses the worktree — because the previous
+ * last resort, a plain symlink into the main checkout, resolved reads AND writes back
+ * into the shared tree.
  */
 const CLONE_UNSUPPORTED = new Set(['ENOTSUP', 'EXDEV', 'EOPNOTSUPP', 'EINVAL', 'ENOSYS']);
 // Strict clone first (Linux ioctl), then the best-effort form — macOS's copyfile(3)
@@ -289,11 +290,12 @@ const linkFile = (mainPath, linkPath, ctx) => {
     if (exhausted) ctx.stats.cloneBroken = true;
   }
   try {
-    linkSync(mainPath, linkPath);
+    ctx.link(mainPath, linkPath);
     ctx.stats.hardlinked++;
-  } catch {
-    symlinkSync(mainPath, linkPath);
-    ctx.stats.symlinked++;
+  } catch (error) {
+    throw new Error(
+      `cannot link ${mainPath} into the worktree (hardlink failed: ${error.message}) — refusing a symlink into the main checkout`,
+    );
   }
 };
 
@@ -616,7 +618,11 @@ function verifyLinkSet(workdir, linked, ctx) {
  * come from lastLinkStats(). Idempotent: existing entries are left alone, only missing
  * ones are added.
  */
-export function linkNodeModules(repoRoot, workdir, { copyFile = copyFileSync } = {}) {
+export function linkNodeModules(
+  repoRoot,
+  workdir,
+  { copyFile = copyFileSync, link = linkSync } = {},
+) {
   const workspaces = workspaceMap(workdir);
   // The shim-binding check compares against a .bin shim's realpath — a MAIN-side path —
   // so workspace dirs are resolved under repoRoot. A workspace that exists only in the
@@ -637,6 +643,7 @@ export function linkNodeModules(repoRoot, workdir, { copyFile = copyFileSync } =
     workdir,
     repoReal: realOrSelf(repoRoot),
     copyFile,
+    link,
     wsLinks: [],
     activeDirs: new Set(),
     stats: { files: 0, cloned: 0, hardlinked: 0, symlinked: 0, cloneFailures: 0 },

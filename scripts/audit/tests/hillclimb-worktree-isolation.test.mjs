@@ -439,6 +439,37 @@ describe('file linking strategy (clone-first)', () => {
     removeWorktree(r.dir, wt);
   });
 
+  it('throws instead of symlinking into main when the clone AND hardlink both fail', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('seed');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(mods, { recursive: true });
+    writeFileSync(join(mods, 'dep.txt'), 'x\n');
+    const wt = join(tmp, 'wt-nolink');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    const copyFile = () => {
+      const error = new Error('no clone support');
+      error.code = 'ENOTSUP';
+      throw error;
+    };
+    // The injected hardlink failure (EXDEV across filesystems, EPERM on protected
+    // sources): the old code quietly dropped a symlink into the main checkout here —
+    // a write path straight back into the shared tree. Now the worktree is refused.
+    const link = () => {
+      const error = new Error('simulated link failure');
+      error.code = 'EXDEV';
+      throw error;
+    };
+    assert.throws(
+      () => linkNodeModules(r.dir, wt, { copyFile, link }),
+      /hardlink failed.*refusing a symlink/,
+    );
+    assert.throws(() => lstatSync(join(wt, 'node_modules', 'dep.txt')), /ENOENT/);
+    removeWorktree(r.dir, wt);
+  });
+
   it('stops retrying the clone after a run of non-"unsupported" failures', () => {
     const r = freshRepo();
     writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
