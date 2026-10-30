@@ -143,9 +143,12 @@ export function countingSend(clock: FakeClock) {
 
 export type CountingSend = ReturnType<typeof countingSend>;
 
-/** What one `save` call does (default `ok`). `lost` throws a plain Error (a timeout: the copy may exist). */
+/**
+ * What one `save` call does (default `ok`). `lost` throws a plain Error before anything is written; `landedLost` writes the
+ * copy and then throws the same Error (a timeout whose request got through).
+ */
 export interface DraftStep {
-  result?: 'ok' | 'paused' | 'notSent' | 'lost';
+  result?: 'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost';
   /** The `ClassifiedError` class a `notSent` step throws (default `permanent`). */
   notSentClass?: string;
   until?: number;
@@ -161,7 +164,11 @@ export function fakeDrafts(server: CountingSend) {
   const remote = new Map<string, { messageId: string; internetId: string; revision: number }>();
   const saves: DraftUpload[] = [];
   const removes: string[] = [];
+  /** Every `remove` call, whether it worked or not. */
+  const removeAttempts: string[] = [];
   const script: DraftStep[] = [];
+  /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
+  const removeScript: DraftStep[] = [];
   let counter = 0;
   const classified = (cls: string) => ({
     class: cls,
@@ -191,6 +198,7 @@ export function fakeDrafts(server: CountingSend) {
         revision: upload.revision,
       });
       server.uploadDraft(upload.internetId, remoteDraftId);
+      if (step.result === 'landedLost') throw new Error('socket hang up');
       return {
         kind: 'saved',
         remoteDraftId,
@@ -198,7 +206,15 @@ export function fakeDrafts(server: CountingSend) {
         revision: upload.revision,
       };
     },
-    async remove(_account, remoteDraftId) {
+    async remove(account, remoteDraftId) {
+      removeAttempts.push(remoteDraftId);
+      const step = removeScript.shift() ?? {};
+      if (step.wait) await step.wait;
+      if (step.result === 'paused')
+        throw new PausedError(account, 'gmail', 'throttle', 'rateLimitExceeded', step.until);
+      if (step.result === 'notSent')
+        throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
+      if (step.result === 'lost' || step.result === 'landedLost') throw new Error('socket hang up');
       removes.push(remoteDraftId);
       remote.delete(remoteDraftId);
     },
@@ -206,9 +222,11 @@ export function fakeDrafts(server: CountingSend) {
   return {
     port,
     script,
+    removeScript,
     remote,
     saves,
     removes,
+    removeAttempts,
     /** The owner edits the draft on a phone: its message id changes, as history will report. */
     phoneEdit(remoteDraftId: string) {
       const copy = remote.get(remoteDraftId)!;

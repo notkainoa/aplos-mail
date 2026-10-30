@@ -131,7 +131,8 @@ function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
             a.address, a.display_name, a.provider
-     FROM drafts d JOIN accounts a ON a.id = d.account_id WHERE d.id = ?`,
+     FROM drafts d JOIN accounts a ON a.id = d.account_id
+     WHERE d.id = ? AND json_extract(d.data, '$._sync.removing') IS NULL`,
     id,
   );
 }

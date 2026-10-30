@@ -9,15 +9,27 @@ import type { EngineFrame } from '../runtime/frames';
 import type { CommitInput, StorePort, StoreWrite } from '../store';
 import type { BlobSource } from './context';
 import {
+  createDueIndex,
+  refreshDue,
+  scanDue,
+  sentDrafts,
+  touchDue,
+  withoutLiveSend,
+  type DueIndex,
+} from './draft-due';
+import {
+  DRAFT_REMOVE_MAX_MS,
+  DRAFT_REMOVE_PERMANENT_MS,
   DRAFT_RETRY_MS,
   DraftConflict,
   fingerprintOf,
   liveOf,
-  LIVE_SQL,
   needsUpload,
   parseData,
+  readAnyRow,
   readDraftRow,
   toDraft,
+  type DraftMeta,
   type DraftRow,
   type MetaPatch,
 } from './draft-state';
@@ -31,7 +43,9 @@ import { buildMime, checkAddress, MimeError, newMessageId, type MimeAddress } fr
  * content fingerprint is the synced one. A `PausedError` moves the due time to the pause's end and never drops the
  * draft; a refusal that will not change leaves the draft local with a problem; an upload the provider reports as
  * changed elsewhere raises the conflict state (`Draft/resolve`). Every fact lives in the draft row, so a restart
- * resumes whatever was pending. The same source removes a draft's remote copy after it was discarded or sent.
+ * resumes whatever was pending. The same source removes a draft's remote copy after it was discarded or sent: the row
+ * stays, hidden, until the provider confirms the removal, so a crash or a refusal never leaves a copy that would come
+ * back as another device's draft.
  */
 
 export interface DraftsDeps {
@@ -46,7 +60,7 @@ export interface DraftsDeps {
   frames?: { emit(frame: EngineFrame): void };
 }
 
-interface Removal {
+interface RowlessRemoval {
   account: string;
   remoteDraftId: string;
   at: number;
@@ -57,8 +71,13 @@ interface Removal {
 export interface DraftsCtx extends DraftsDeps {
   /** Drafts with an upload running here: one at a time per draft. */
   inflight: Set<string>;
-  /** Remote copies to delete, by remote draft id (a crash between the local delete and this leaves the copy). */
-  removals: Map<string, Removal>;
+  /**
+   * Remote copies to delete that no row waits for (an upload that finished after its draft was gone entirely), by remote
+   * draft id. A discarded or sent draft's copy is deleted from its own hidden row instead, which survives a restart.
+   */
+  removals: Map<string, RowlessRemoval>;
+  /** The deadline source's view of the table (see `draft-due.ts`). */
+  index: DueIndex;
   jobs: Set<Promise<void>>;
   /** The newest announcement sent per draft, so a frame goes out once. */
   announced: Map<string, number>;
@@ -69,12 +88,13 @@ export function createDraftsCtx(deps: DraftsDeps): DraftsCtx {
     ...deps,
     inflight: new Set(),
     removals: new Map(),
+    index: createDueIndex(),
     jobs: new Set(),
     announced: new Map(),
   };
 }
 
-/** A remote copy that is not deleted after this many refusals is left (and logged); the local draft is gone either way. */
+/** A copy without a row that is not deleted after this many refusals is left (and logged). */
 const MAX_REMOVE_ATTEMPTS = 3;
 /** Refusals that will not change by asking again. */
 const PERMANENT = new Set(['permanent', 'permission', 'config', 'anti_abuse']);
@@ -100,6 +120,8 @@ function tryCommit(ctx: DraftsCtx, write: StoreWrite, tag: string): boolean {
   } catch (error) {
     if (error instanceof DraftConflict) return false;
     throw error;
+  } finally {
+    if (write.kind === 'draft' || write.kind === 'draftDelete') touchDue(ctx, write.id);
   }
 }
 
@@ -201,19 +223,30 @@ function problemFor(ctx: DraftsCtx, row: UploadRow, message: string) {
   );
 }
 
-function retryAt(ctx: DraftsCtx, row: UploadRow, at: number) {
-  setMeta(ctx, row.id, { dueAt: at }, { ifRevision: row.revision });
+/** Asks again at `at`. A reply that may hide a write (`uncertain`) of a revision that has since changed re-uploads the current one. */
+function retryAt(ctx: DraftsCtx, row: UploadRow, at: number, uncertain: boolean) {
+  const write: DraftWrite = {
+    kind: 'draft',
+    op: 'retry',
+    id: row.id,
+    revision: row.revision,
+    at,
+    uncertain,
+  };
+  tryCommit(ctx, write, row.id);
 }
 
 /** What a refused upload does: wait for the pause, try again later, or give up with a problem. Never drops the draft. */
 function refused(ctx: DraftsCtx, row: UploadRow, error: unknown) {
   const now = ctx.clock.now();
-  if (error instanceof PausedError) return retryAt(ctx, row, error.until ?? now + DRAFT_RETRY_MS);
+  if (error instanceof PausedError)
+    return retryAt(ctx, row, error.until ?? now + DRAFT_RETRY_MS, false);
   const classified: ClassifiedError | undefined =
     error instanceof NotSentError || error instanceof ProviderError ? error.error : undefined;
   if (classified) ctx.log.event('draft.sync_failed', { draft: row.id, error: classified });
   if (classified && PERMANENT.has(classified.class)) return problemFor(ctx, row, PROBLEM_COPY);
-  retryAt(ctx, row, now + DRAFT_RETRY_MS);
+  // A refusal says nothing was written; anything else (a timeout, a 5xx) may have been.
+  retryAt(ctx, row, now + DRAFT_RETRY_MS, !(error instanceof NotSentError));
 }
 
 function raiseConflict(ctx: DraftsCtx, row: UploadRow, result: DraftSaveResult) {
@@ -259,7 +292,12 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   const row = readUploadRow(ctx, id);
   if (!row) return;
   const { fields, meta } = parseData(row.data);
-  if (meta.conflict) return;
+  if (meta.removing) return;
+  // A draft waiting for a choice uploads nothing, and no longer counts as due.
+  if (meta.conflict) {
+    if (meta.dueAt === undefined) return;
+    return void setMeta(ctx, id, { dueAt: null }, { ifRevision: row.revision });
+  }
   if (!needsUpload(fields, meta, row.remote_draft_id !== null))
     return void setMeta(ctx, id, { dueAt: null }, { ifRevision: row.revision });
   // One Message-ID per revision, kept across retries of that revision (an uncertain create is recognised by it).
@@ -307,7 +345,7 @@ export function queueRemoval(ctx: DraftsCtx, account: string, remoteDraftId: str
   ctx.deadlines.changed('drafts');
 }
 
-async function runRemoval(ctx: DraftsCtx, removal: Removal) {
+async function runRemoval(ctx: DraftsCtx, removal: RowlessRemoval) {
   removal.busy = true;
   try {
     await ctx.port.remove(removal.account, removal.remoteDraftId);
@@ -328,29 +366,46 @@ async function runRemoval(ctx: DraftsCtx, removal: Removal) {
   }
 }
 
-interface SentRow {
-  id: string;
-  account_id: string;
-  remote_draft_id: string | null;
-  [k: string]: string | null;
-}
-
-/** A draft whose current revision went out is done: it leaves Drafts, and its remote copy is deleted. */
-function sentDrafts(ctx: DraftsCtx): SentRow[] {
-  return ctx.store.read(q =>
-    q.all<SentRow>(
-      `SELECT d.id, d.account_id, d.remote_draft_id FROM drafts d
-       WHERE EXISTS (SELECT 1 FROM submissions s WHERE s.draft_id = d.id AND s.state = 'sent' AND s.revision = d.revision)
-         AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.draft_id = d.id AND s.state IN (${LIVE_SQL}))`,
-    ),
-  );
-}
-
+/** A draft whose current revision went out is done: it leaves Drafts, and its remote copy is deleted (from the hidden row). */
 function cleanUpSent(ctx: DraftsCtx) {
-  for (const draft of sentDrafts(ctx)) {
-    if (!tryCommit(ctx, { kind: 'draftDelete', id: draft.id }, draft.id)) continue;
-    if (draft.remote_draft_id) queueRemoval(ctx, draft.account_id, draft.remote_draft_id);
+  for (const draft of sentDrafts(ctx, true))
+    tryCommit(ctx, { kind: 'draftDelete', id: draft.id, at: ctx.clock.now() }, draft.id);
+  ctx.index.sent = undefined;
+}
+
+// ---------------------------------------------------------------- hidden rows
+
+/** The provider refused to delete the copy of a hidden row: ask again later, however many times it takes. */
+function removalRefused(ctx: DraftsCtx, row: DraftRow, meta: DraftMeta, error: unknown) {
+  const now = ctx.clock.now();
+  if (error instanceof PausedError)
+    return void setMeta(ctx, row.id, { removeAt: error.until ?? now + DRAFT_RETRY_MS });
+  const tries = (meta.removeTries ?? 0) + 1;
+  const classified: ClassifiedError | undefined =
+    error instanceof NotSentError || error instanceof ProviderError ? error.error : undefined;
+  if (classified) ctx.log.event('draft.sync_failed', { draft: row.id, error: classified });
+  const wait =
+    classified && PERMANENT.has(classified.class)
+      ? DRAFT_REMOVE_PERMANENT_MS
+      : Math.min(DRAFT_RETRY_MS * 2 ** (tries - 1), DRAFT_REMOVE_MAX_MS);
+  setMeta(ctx, row.id, { removeTries: tries, removeAt: now + wait });
+}
+
+/** Deletes the provider's copy of a discarded or sent draft, then the hidden row. */
+async function removeHidden(ctx: DraftsCtx, id: string) {
+  const row = ctx.store.read(q => readAnyRow(q, id));
+  if (!row) return;
+  const { meta } = parseData(row.data);
+  if (!meta.removing) return;
+  if (row.remote_draft_id !== null) {
+    try {
+      await ctx.port.remove(row.account_id, row.remote_draft_id);
+    } catch (error) {
+      return removalRefused(ctx, row, meta, error);
+    }
   }
+  // No copy known and none reported within the grace period: there is nothing to wait for.
+  tryCommit(ctx, { kind: 'draftDelete', id, at: ctx.clock.now(), final: true }, id);
 }
 
 // ---------------------------------------------------------------- the source
@@ -358,19 +413,25 @@ function cleanUpSent(ctx: DraftsCtx) {
 interface Due {
   id: string;
   due: number;
-  [k: string]: string | number;
 }
 
 /** Drafts with an upload due; a draft with a live send is locked and syncs again once the send ends. */
 function dueDrafts(ctx: DraftsCtx): Due[] {
-  return ctx.store.read(q =>
-    q.all<Due>(
-      `SELECT t.id AS id, t.due AS due FROM
-         (SELECT id, json_extract(data, '$._sync.dueAt') AS due FROM drafts) t
-       WHERE t.due IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.draft_id = t.id AND s.state IN (${LIVE_SQL}))`,
-    ),
+  const running = [...ctx.index.uploads]
+    .filter(([id]) => !ctx.inflight.has(id))
+    .map(([id, due]) => ({ id, due }));
+  const free = withoutLiveSend(
+    ctx,
+    running.map(d => d.id),
   );
+  return running.filter(d => free.has(d.id));
+}
+
+/** Hidden rows whose copy is due to be deleted. */
+function dueRemovals(ctx: DraftsCtx): Due[] {
+  return [...ctx.index.removals]
+    .filter(([id]) => !ctx.inflight.has(id) && !ctx.inflight.has(`removing:${id}`))
+    .map(([id, r]) => ({ id, due: r.at }));
 }
 
 function start(ctx: DraftsCtx, key: string, job: () => Promise<void>) {
@@ -383,6 +444,7 @@ function start(ctx: DraftsCtx, key: string, job: () => Promise<void>) {
     .finally(() => {
       ctx.inflight.delete(key);
       ctx.jobs.delete(done);
+      if (!key.startsWith('remove:')) touchDue(ctx, key.replace(/^removing:/, ''));
       ctx.deadlines.changed('drafts');
     });
   ctx.jobs.add(done);
@@ -390,9 +452,8 @@ function start(ctx: DraftsCtx, key: string, job: () => Promise<void>) {
 
 function nextDeadline(ctx: DraftsCtx): number | undefined {
   const now = ctx.clock.now();
-  const times = dueDrafts(ctx)
-    .filter(d => !ctx.inflight.has(d.id))
-    .map(d => d.due);
+  refreshDue(ctx);
+  const times = [...dueDrafts(ctx), ...dueRemovals(ctx)].map(d => d.due);
   if (sentDrafts(ctx).length) times.push(now);
   for (const r of ctx.removals.values()) if (!r.busy) times.push(r.at);
   return times.length ? Math.min(...times) : undefined;
@@ -400,8 +461,11 @@ function nextDeadline(ctx: DraftsCtx): number | undefined {
 
 function fireDrafts(ctx: DraftsCtx, now: number) {
   cleanUpSent(ctx);
-  for (const d of dueDrafts(ctx))
-    if (d.due <= now && !ctx.inflight.has(d.id)) start(ctx, d.id, () => syncDraft(ctx, d.id));
+  // A fire is rare next to a save, so it looks at the whole table: nothing it misses stays missed.
+  scanDue(ctx);
+  for (const d of dueDrafts(ctx)) if (d.due <= now) start(ctx, d.id, () => syncDraft(ctx, d.id));
+  for (const d of dueRemovals(ctx))
+    if (d.due <= now) start(ctx, `removing:${d.id}`, () => removeHidden(ctx, d.id));
   for (const r of [...ctx.removals.values()]) {
     const key = `remove:${r.remoteDraftId}`;
     if (r.at <= now && !r.busy && !ctx.inflight.has(key)) start(ctx, key, () => runRemoval(ctx, r));
@@ -428,12 +492,10 @@ export function closeDraft(ctx: DraftsCtx, id: string) {
 /** The Mac woke or the network returned: problems and waits end, so every pending draft asks again. */
 export function wakeDrafts(ctx: DraftsCtx) {
   const now = ctx.clock.now();
-  const pending = ctx.store.read(q =>
-    q.all<{ id: string; due: number | null; [k: string]: string | number | null }>(
-      `SELECT id, json_extract(data, '$._sync.dueAt') AS due FROM drafts`,
-    ),
-  );
-  for (const d of pending) if (d.due !== null && d.due > now) setMeta(ctx, d.id, { dueAt: now });
+  scanDue(ctx);
+  for (const [id, due] of [...ctx.index.uploads]) if (due > now) setMeta(ctx, id, { dueAt: now });
+  for (const [id, r] of [...ctx.index.removals])
+    if (!r.waiting && r.at > now) setMeta(ctx, id, { removeAt: now, removeTries: null });
   for (const r of ctx.removals.values()) r.at = Math.min(r.at, now);
   ctx.deadlines.changed('drafts');
 }

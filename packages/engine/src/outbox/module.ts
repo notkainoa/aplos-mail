@@ -4,6 +4,7 @@ import type { CommitExtension } from '../store/port';
 import { STOP_GRACE_MS } from '../clock/loop';
 import type { DeadlineRegistry } from '../ports/time';
 import type { OutboxCtx, OutboxDeps } from './context';
+import { sentChanged, touchDue } from './draft-due';
 import { onDraftAnnounced } from './draft-state';
 import {
   announceDraft,
@@ -98,12 +99,14 @@ async function settled(ctx: OutboxCtx, drafts?: DraftsCtx) {
 }
 
 /** A send that ends moves the drafts' deadlines too (a sent draft is cleaned up, a cancelled one syncs again). */
-function alsoDrafts(deadlines: DeadlineRegistry): DeadlineRegistry {
+function alsoDrafts(deadlines: DeadlineRegistry, sendChanged: () => void): DeadlineRegistry {
   return {
     register: source => deadlines.register(source),
     changed(id) {
       deadlines.changed(id);
-      if (id === 'outbox') deadlines.changed('drafts');
+      if (id !== 'outbox') return;
+      sendChanged();
+      deadlines.changed('drafts');
     },
   };
 }
@@ -115,9 +118,12 @@ function alsoDrafts(deadlines: DeadlineRegistry): DeadlineRegistry {
  */
 export function createOutboxModule(deps: OutboxDeps): OutboxModule {
   const random = deps.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
+  const hooks: { draftsCtx?: DraftsCtx } = {};
   const ctx: OutboxCtx = {
     ...deps,
-    deadlines: deps.drafts ? alsoDrafts(deps.deadlines) : deps.deadlines,
+    deadlines: deps.drafts
+      ? alsoDrafts(deps.deadlines, () => hooks.draftsCtx && sentChanged(hooks.draftsCtx))
+      : deps.deadlines,
     random,
     busy: new Map(),
     inflight: new Set(),
@@ -136,11 +142,15 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
         frames: deps.frames,
       })
     : undefined;
+  hooks.draftsCtx = draftsCtx;
   if (draftsCtx) {
     unregister.push(deps.deadlines.register(draftsSource(draftsCtx)));
     unregister.push(
       onDraftAnnounced(id => {
         try {
+          // A fact from the provider changed this draft behind the source's back: look at its row again.
+          touchDue(draftsCtx, id);
+          draftsCtx.deadlines.changed('drafts');
           announceDraft(draftsCtx, id);
         } catch {
           // A frame is best effort: the store may be closing, and the state frame carries the change anyway.

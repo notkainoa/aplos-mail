@@ -14,6 +14,12 @@ import { LIVE_STATES, type SubmissionState } from './store';
 export const DRAFT_IDLE_MS = 5_000;
 /** A failed or unreachable upload asks again after this, unless the pause named its end. */
 export const DRAFT_RETRY_MS = 30_000;
+/** A discarded draft whose first upload has no result yet keeps its row this long, waiting for the copy to be reported. */
+export const DRAFT_REMOVE_GRACE_MS = 600_000;
+/** The removal of a remote copy is asked again after this at most (the backoff doubles from `DRAFT_RETRY_MS`). */
+export const DRAFT_REMOVE_MAX_MS = 3_600_000;
+/** A removal the provider refuses for good is asked again this much later. */
+export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
 /** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
 const WROTE_KEEP = 20;
 
@@ -25,8 +31,12 @@ export interface DraftConflictState {
   gone?: true;
   /** The remote message id to overwrite once the owner keeps their version. */
   theirsMessageId?: string;
+  /** Their copy's Message-ID, when history reported it: "take theirs" makes it this draft's, never our old one. */
+  theirsInternetId?: string;
   /** The other version, when history has delivered it. */
   theirs?: DraftFields;
+  /** `theirs` carries their body. Without it (a snippet only) "take theirs" and "keep both" are refused. */
+  complete?: boolean;
 }
 
 export interface DraftMeta {
@@ -48,6 +58,16 @@ export interface DraftMeta {
   theirsSeen?: number;
   /** The seq of the last change the owner's other windows should hear about (`Draft/changed`). */
   announce?: number;
+  /**
+   * The owner discarded this draft (or it was sent) and its remote copy is still to be deleted. The row stays, hidden from
+   * every read, so the removal survives a restart and a late fact for the copy is not taken for another device's draft.
+   * It goes once the provider confirms the removal.
+   */
+  removing?: true;
+  /** When the removal is next tried (a draft whose first upload has no result yet waits for it). */
+  removeAt?: number;
+  /** Refusals so far, for the backoff. */
+  removeTries?: number;
 }
 
 /** The meta keys a `meta` write may set; `null` clears. */
@@ -187,7 +207,14 @@ export function toDraft(row: DraftRow, submissionId?: string): Draft {
   return out;
 }
 
+/** The row of an existing draft; a draft waiting for its copy to be deleted does not exist for any reader. */
 export function readDraftRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | undefined {
+  const row = q.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
+  return row && !parseData(row.data).meta.removing ? row : undefined;
+}
+
+/** Every row, including one waiting for its copy to be deleted (the removal itself reads these). */
+export function readAnyRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | undefined {
   return q.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
 }
 
@@ -248,7 +275,7 @@ export function announce(draftId: string) {
 export class DraftConflict extends Error {
   override readonly name = 'DraftConflict';
   constructor(
-    readonly reason: 'exists' | 'missing' | 'stale' | 'live' | 'noTheirs',
+    readonly reason: 'exists' | 'missing' | 'stale' | 'live' | 'noTheirs' | 'incomplete',
     readonly live?: SubmissionState,
   ) {
     super(`draft conflict: ${reason}`);

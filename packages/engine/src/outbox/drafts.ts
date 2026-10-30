@@ -2,7 +2,8 @@ import type { Draft, DraftFields, Receipt, State, SubmissionAction } from '@aplo
 import { ContractError } from '@aplos/contract/contract-error';
 import { sha256Hex } from '../diag/sha256';
 import type { StoreWrite } from '../store';
-import { queueRemoval, type DraftsCtx } from './draft-sync';
+import { touchDue } from './draft-due';
+import type { DraftsCtx } from './draft-sync';
 import {
   DraftConflict,
   fingerprintOf,
@@ -51,6 +52,7 @@ const SENDING = 'This message is sending now.';
 const UNCONFIRMED =
   'We are checking whether this message was sent. Wait for that before discarding it.';
 const NO_CHOICE = 'This draft has no other version to choose.';
+const CANNOT_READ = "Their version can't be read here. Keep yours, or open it on the other device.";
 const NOT_ARRIVED = 'The other version has not arrived yet. Try again in a moment.';
 
 function fail(type: string, message: string): never {
@@ -97,6 +99,8 @@ function conflictError(error: DraftConflict): never {
       );
     case 'noTheirs':
       return fail('unavailable', NOT_ARRIVED);
+    case 'incomplete':
+      return fail('unavailable', CANNOT_READ);
     default:
       return fail('stateMismatch', CHANGED);
   }
@@ -136,6 +140,7 @@ function setDraft(ctx: DraftsCtx, opId: string, input: DraftSetInput) {
     at: ctx.clock.now(),
     ...(input.close ? { close: true as const } : {}),
   });
+  touchDue(ctx, id);
   ctx.deadlines.changed('drafts');
   return answerSet(ctx, opId, id);
 }
@@ -166,8 +171,10 @@ function destroyDraft(ctx: DraftsCtx, canceller: SendCanceller, opId: string, id
   const row: DraftRow | undefined = ctx.store.read(q => readDraftRow(q, id));
   if (!row) return fail('notFound', GONE);
   cancelSend(ctx, canceller, opId, id);
-  commit(ctx, opId, { kind: 'draftDelete', id });
-  if (row.remote_draft_id) queueRemoval(ctx, row.account_id, row.remote_draft_id);
+  // The row stays, hidden, while a remote copy exists: the provider's removal runs from it (and survives a restart).
+  commit(ctx, opId, { kind: 'draftDelete', id, at: ctx.clock.now() });
+  touchDue(ctx, id);
+  ctx.deadlines.changed('drafts');
   ctx.announced.delete(id);
   return receiptOf(ctx, opId);
 }
@@ -181,6 +188,8 @@ function resolveDraft(ctx: DraftsCtx, opId: string, id: string, choice: DraftCho
   if (!before.conflict) fail('stateMismatch', NO_CHOICE);
   const copyId = idFor(opId, 'copy');
   commit(ctx, opId, { kind: 'draft', op: 'resolve', id, choice, at: ctx.clock.now(), copyId });
+  touchDue(ctx, id);
+  touchDue(ctx, copyId);
   ctx.deadlines.changed('drafts');
   return answerResolve(ctx, opId, id, before, copyId);
 }
