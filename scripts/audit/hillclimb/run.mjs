@@ -52,6 +52,7 @@ import {
   removeWorktree,
   runRoot,
   snapshotGitDir,
+  snapshotModuleTrees,
   squashToBest,
   statusPorcelain,
 } from './worktree.mjs';
@@ -170,6 +171,9 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
       state.dirs.push(ctx.evalDir);
       ctx.moduleRoots = [...new Set([...(ctx.moduleRoots ?? []), ...linkModules(ctx.evalDir)])];
+      // Newly watched roots are baselined NOW — before the eval worktree's gates and
+      // scorers run — so a write-through into them is evidence like any other.
+      if (ctx.moduleSnapshot) snapshotModuleTrees(ctx.moduleRoots, ctx.moduleSnapshot);
       return ctx.evalDir;
     },
     async runAttemptAgent(ctx, briefText) {
@@ -177,11 +181,10 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       // diff the guard analyses (and an agent could edit its own instructions mid-run).
       const briefFile = join(root, `${ctx.id}-brief.md`);
       writeFileSync(briefFile, briefText);
-      // The stamp + git-dir snapshot define "before the agent ran": afterwards the
-      // sandbox audit scans the linked node_modules roots for anything newer than the
-      // stamp and re-hashes the shared git dir for tampering.
-      ctx.stampPath = join(root, `${ctx.id}-stamp`);
-      writeFileSync(ctx.stampPath, '');
+      // The module-tree + git-dir snapshots define "before the agent ran": afterwards
+      // the sandbox audit re-walks the linked node_modules roots for ANY difference —
+      // a restored mtime no longer hides a write — and re-hashes the shared git dir.
+      ctx.moduleSnapshot = snapshotModuleTrees(ctx.moduleRoots ?? []);
       ctx.gitSnapshot = snapshotGitDir(ctx.dir);
       return runAgent(config.attempt, {
         briefFile,

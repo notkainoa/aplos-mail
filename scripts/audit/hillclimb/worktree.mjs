@@ -12,7 +12,6 @@ import {
   linkSync,
   lstatSync,
   mkdirSync,
-  opendirSync,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -23,6 +22,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { findModuleChanges, snapshotModuleTrees } from './modulescan.mjs';
 
 export const AUTHOR = { name: 'Kainoa Newton', email: 'k@kainoa.me' };
 
@@ -934,98 +934,21 @@ export function snapshotGitDir(cwd) {
   return hash.digest('hex');
 }
 
-// Linter and bundler caches inside node_modules may be legitimately rewritten by the
-// suite commands the worktrees run; they are the only directories the scan skips.
-const WRITE_SCAN_PRUNE = new Set(['.cache', '.vite']);
-const WRITE_SCAN_LIMIT = 50;
-
-/**
- * Paths under `roots` (the node_modules dirs the harness links into worktrees)
- * modified since the stamp file was written — evidence of write-through into the main
- * checkout's real node_modules, which is git-ignored and therefore invisible to
- * statusPorcelain. A bounded opendir walk: directories named .cache/.vite are pruned,
- * symlinked directories are followed once (inode dedup) so hoisted workspace links like
- * node_modules/@scope/pkg are covered, and collection stops at WRITE_SCAN_LIMIT hits —
- * the first few are all a rejection reason needs. Both a link's own mtime and its
- * target's are checked, so rewriting a file through an untouched symlink still counts.
- * A directory's OWN mtime is checked too: creating, deleting or renaming an entry bumps
- * the directory — the only trace a delete or add leaves (a vanished file has no mtime to
- * compare), in which case the directory itself is reported. A full walk of this repo's
- * node_modules (~24k files) takes ~2 s, far under the ~8 s budget.
- */
-export function findWritesSince(roots, stampPath, { relativeTo = null } = {}) {
-  const stamp = statSync(stampPath).mtimeMs;
-  const seen = new Set();
-  const hits = [];
-  const push = path => {
-    hits.push(relativeTo ? relative(relativeTo, path) : path);
-  };
-  const walk = dir => {
-    if (hits.length >= WRITE_SCAN_LIMIT) return;
-    let dirStat;
-    try {
-      dirStat = statSync(dir); // follows links: dedup key is the real directory
-    } catch {
-      return;
-    }
-    const key = `${dirStat.dev}:${dirStat.ino}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    if (dirStat.mtimeMs > stamp) push(dir); // an entry was added, removed or renamed
-    let handle;
-    try {
-      handle = opendirSync(dir);
-    } catch {
-      return;
-    }
-    try {
-      for (let ent = handle.readSync(); ent && hits.length < WRITE_SCAN_LIMIT;) {
-        const name = ent.name;
-        const path = join(dir, name);
-        ent = handle.readSync();
-        let lst;
-        try {
-          lst = lstatSync(path);
-        } catch {
-          continue; // vanished mid-scan
-        }
-        if (lst.isSymbolicLink()) {
-          let target;
-          try {
-            target = statSync(path);
-          } catch {
-            // Dangling link: the link itself still carries an mtime worth checking.
-          }
-          if (Math.max(lst.mtimeMs, target?.mtimeMs ?? 0) > stamp) {
-            push(path);
-          } else if (target?.isDirectory() && !WRITE_SCAN_PRUNE.has(name)) {
-            walk(path);
-          }
-        } else if (lst.isDirectory()) {
-          if (!WRITE_SCAN_PRUNE.has(name)) walk(path);
-        } else if (lst.mtimeMs > stamp) {
-          push(path);
-        }
-      }
-    } finally {
-      handle.closeSync();
-    }
-  };
-  for (const root of roots) walk(root);
-  return hits;
-}
+// The node_modules baseline/diff pair lives in modulescan.mjs; re-exported here so the
+// harness's worktree-facing API stays in one place.
+export { findModuleChanges, snapshotModuleTrees };
 
 /**
  * The post-attempt sandbox audit behind deps.verifyMainIntact. A breach anywhere throws:
  * the attempt is rejected AND the run aborts. Checks, cheapest first — the main
  * checkout's HEAD and status, then (when ctx carries them) the shared-git-dir snapshot
- * taken before the agent started and the linked node_modules roots against the
- * attempt's stamp file.
+ * taken before the agent started and the linked node_modules roots diffed against the
+ * pre-agent baseline snapshot.
  */
 export function mainCheckoutIntact(repoRoot, startCommit) {
   // statusPorcelain deliberately excludes node_modules, so tampering there is invisible
-  // to it: a top-level write bumps the directory's own mtime, and the per-attempt stamp
-  // scan below catches writes inside nested packages.
+  // to it: a top-level write bumps the directory's own mtime, and the per-attempt
+  // baseline diff below catches writes inside nested packages.
   let modulesMtime = null;
   try {
     modulesMtime = statSync(join(repoRoot, 'node_modules')).mtimeMs;
@@ -1056,8 +979,13 @@ export function mainCheckoutIntact(repoRoot, startCommit) {
         throw new Error('shared git dir changed during the attempt (sandbox breach)');
       }
     }
-    if (ctx?.stampPath && ctx?.moduleRoots?.length) {
-      const hits = findWritesSince(ctx.moduleRoots, ctx.stampPath, { relativeTo: repoRoot });
+    if (ctx?.moduleSnapshot && ctx?.moduleRoots?.length) {
+      // Roots linked after the baseline was taken (the eval worktree's) are already
+      // baselined at link time; extending here too keeps any other late addition watched.
+      snapshotModuleTrees(ctx.moduleRoots, ctx.moduleSnapshot);
+      const hits = findModuleChanges(ctx.moduleRoots, ctx.moduleSnapshot, {
+        relativeTo: repoRoot,
+      });
       if (hits.length) {
         throw new Error(
           `node_modules write-through: ${hits.slice(0, 5).join(', ')} (sandbox breach)`,

@@ -26,6 +26,7 @@ import {
   removeWorktree,
   runRoot,
   snapshotGitDir,
+  snapshotModuleTrees,
   squashToBest,
   statusPorcelain,
 } from '../hillclimb/worktree.mjs';
@@ -107,6 +108,8 @@ export function setupE2E(tmp) {
             ...linkNodeModules(repo, ctx.evalDir, linkOpts).map(r => join(repo, r, 'node_modules')),
           ]),
         ];
+        // Baseline newly watched roots at link time, before eval gates/scorers run.
+        if (ctx.moduleSnapshot) snapshotModuleTrees(ctx.moduleRoots, ctx.moduleSnapshot);
         return ctx.evalDir;
       },
       async removeEval(ctx) {
@@ -116,8 +119,7 @@ export function setupE2E(tmp) {
       async runAttemptAgent(ctx, brief) {
         const briefFile = join(root, `${ctx.id}-brief.md`);
         writeFileSync(briefFile, brief);
-        ctx.stampPath = join(root, `${ctx.id}-stamp`);
-        writeFileSync(ctx.stampPath, '');
+        ctx.moduleSnapshot = snapshotModuleTrees(ctx.moduleRoots ?? []);
         ctx.gitSnapshot = snapshotGitDir(ctx.dir);
         return runAgent(runConfig.attempt, {
           briefFile,

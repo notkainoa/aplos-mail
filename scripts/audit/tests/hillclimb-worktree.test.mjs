@@ -13,6 +13,7 @@ import {
   readlinkSync,
   realpathSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -23,6 +24,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { pathCollisions } from '../hillclimb/diffguard.mjs';
 import * as WT from '../hillclimb/worktree.mjs';
 import {
@@ -33,13 +35,14 @@ import {
   commitAll,
   currentHead,
   diffBetween,
-  findWritesSince,
+  findModuleChanges,
   indexFlagViolations,
   linkNodeModules,
   lsTreePaths,
   mainCheckoutIntact,
   removeWorktree,
   snapshotGitDir,
+  snapshotModuleTrees,
   statusPorcelain,
 } from '../hillclimb/worktree.mjs';
 
@@ -286,8 +289,13 @@ describe('snapshotGitDir', () => {
   });
 });
 
-describe('findWritesSince', () => {
-  it('reports files newer than the stamp, prunes caches, follows symlinked dirs once', () => {
+describe('module tree snapshot + diff', () => {
+  // utimesSync takes float seconds — dividing the lstat ms values preserves the
+  // nanosecond precision a millisecond-truncating Date would lose.
+  const restoreTimes = (path, before) =>
+    utimesSync(path, before.atimeMs / 1000, before.mtimeMs / 1000);
+
+  it('reports writes, prunes caches, follows symlinked dirs once', () => {
     const dir = join(tmp, `scan${seq++}`);
     const mods = join(dir, 'node_modules');
     mkdirSync(join(mods, 'tool'), { recursive: true });
@@ -299,15 +307,14 @@ describe('findWritesSince', () => {
     writeFileSync(join(mods, 'tool', 'run.js'), 'old\n');
     writeFileSync(join(mods, '.cache', 'eslint'), 'cache\n');
     writeFileSync(join(pkg, 'lib', 'x.js'), 'x\n');
-    const stamp = join(dir, 'stamp');
-    writeFileSync(stamp, '');
-    assert.deepEqual(findWritesSince([mods], stamp), []);
+    const snap = snapshotModuleTrees([mods]);
+    assert.deepEqual(findModuleChanges([mods], snap), []);
 
     writeFileSync(join(mods, 'tool', 'run.js'), 'hacked\n'); // direct write-through
     writeFileSync(join(mods, '.cache', 'eslint'), 'cache2\n'); // pruned, must not count
     writeFileSync(join(pkg, 'lib', 'x.js'), 'hacked\n'); // through the symlinked dir
     symlinkSync(join('tool', 'run.js'), join(mods, 'alias.js')); // a fresh link
-    const hits = findWritesSince([mods], stamp, { relativeTo: dir });
+    const hits = findModuleChanges([mods], snap, { relativeTo: dir });
     assert.ok(hits.includes(join('node_modules', 'tool', 'run.js')), JSON.stringify(hits));
     assert.ok(hits.includes(join('node_modules', 'alias.js')), JSON.stringify(hits));
     assert.ok(
@@ -317,6 +324,119 @@ describe('findWritesSince', () => {
     assert.ok(!hits.some(p => p.includes('.cache')), JSON.stringify(hits));
     // Older files are never reported.
     assert.ok(!hits.some(p => p.includes('f.txt')), JSON.stringify(hits));
+  });
+
+  // The evasion a pure mtime scan misses: every mutation below restores the
+  // timestamps it bumps, so only a content/name baseline still sees it.
+  it('catches adds, removes, renames and resizes with all mtimes restored', () => {
+    const dir = join(tmp, `scan-restore${seq++}`);
+    const mods = join(dir, 'node_modules');
+    mkdirSync(join(mods, 'pkg', 'lib'), { recursive: true });
+    writeFileSync(join(mods, 'pkg', 'index.js'), 'old\n');
+    writeFileSync(join(mods, 'pkg', 'lib', 'gone.js'), 'x\n');
+    writeFileSync(join(mods, 'pkg', 'lib', 'victim.js'), 'v\n');
+    const snap = snapshotModuleTrees([mods]);
+
+    // Added file; backdate the new file itself AND restore the directory mtime.
+    let stat = lstatSync(join(mods, 'pkg'));
+    writeFileSync(join(mods, 'pkg', 'planted.js'), 'x\n');
+    restoreTimes(join(mods, 'pkg', 'planted.js'), lstatSync(join(mods, 'pkg', 'index.js')));
+    restoreTimes(join(mods, 'pkg'), stat);
+    // Removed file; restore the directory mtime the delete bumped.
+    stat = lstatSync(join(mods, 'pkg', 'lib'));
+    rmSync(join(mods, 'pkg', 'lib', 'gone.js'));
+    restoreTimes(join(mods, 'pkg', 'lib'), stat);
+    // Renamed file; restore the directory mtime the rename bumped.
+    stat = lstatSync(join(mods, 'pkg', 'lib'));
+    renameSync(join(mods, 'pkg', 'lib', 'victim.js'), join(mods, 'pkg', 'lib', 'renamed.js'));
+    restoreTimes(join(mods, 'pkg', 'lib'), stat);
+    // Size change; restore the FILE mtime the write bumped.
+    stat = lstatSync(join(mods, 'pkg', 'index.js'));
+    writeFileSync(join(mods, 'pkg', 'index.js'), 'rewritten and much longer\n');
+    restoreTimes(join(mods, 'pkg', 'index.js'), stat);
+
+    const hits = findModuleChanges([mods], snap, { relativeTo: dir });
+    assert.ok(hits.includes(join('node_modules', 'pkg')), JSON.stringify(hits));
+    assert.ok(hits.includes(join('node_modules', 'pkg', 'lib')), JSON.stringify(hits));
+    assert.ok(hits.includes(join('node_modules', 'pkg', 'index.js')), JSON.stringify(hits));
+    assert.ok(
+      hits.includes(join('node_modules', 'pkg', 'lib', 'renamed.js')),
+      JSON.stringify(hits),
+    );
+    assert.ok(!hits.some(p => p.endsWith('gone.js')), JSON.stringify(hits));
+  });
+
+  it('stays quiet on reads and on writes that never leave the worktree', () => {
+    const r = freshRepo();
+    writeFileSync(join(r.dir, '.gitignore'), 'node_modules\n');
+    writeFileSync(join(r.dir, 'package.json'), '{"name":"t","private":true}\n');
+    r.commit('seed');
+    const mods = join(r.dir, 'node_modules');
+    mkdirSync(join(mods, 'pkg'), { recursive: true });
+    writeFileSync(join(mods, 'pkg', 'index.js'), 'x\n');
+    const wt = join(tmp, 'wt-snap-quiet');
+    addWorktree(r.dir, { dir: wt, commit: r.head() });
+    linkNodeModules(r.dir, wt);
+    const snap = snapshotModuleTrees([mods]);
+
+    // A pure read of the main tree…
+    assert.equal(readFileSync(join(mods, 'pkg', 'index.js'), 'utf8'), 'x\n');
+    // …and writes confined to the worktree's own node_modules: a new file there
+    // shares nothing with the main copy, whatever the link mode is.
+    mkdirSync(join(wt, 'node_modules', 'agent-made'), { recursive: true });
+    writeFileSync(join(wt, 'node_modules', 'agent-made', 'out.js'), 'y\n');
+    assert.deepEqual(findModuleChanges([mods], snap), []);
+    removeWorktree(r.dir, wt);
+  });
+
+  it('rejects a watched root that cannot be walked (fail-closed)', () => {
+    const dir = join(tmp, `scan-badroot${seq++}`);
+    mkdirSync(dir, { recursive: true });
+    const missing = join(dir, 'node_modules');
+    assert.throws(() => snapshotModuleTrees([missing]), /cannot snapshot/);
+    // A root that vanishes AFTER the baseline is itself a difference.
+    mkdirSync(missing);
+    writeFileSync(join(missing, 'f.js'), 'x\n');
+    const snap = snapshotModuleTrees([missing]);
+    rmSync(missing, { recursive: true, force: true });
+    assert.deepEqual(findModuleChanges([missing], snap), [missing]);
+  });
+
+  it('walks a realistic tree fast — report the measured snapshot+diff time', () => {
+    const dir = join(tmp, `scan-perf${seq++}`);
+    const mods = join(dir, 'node_modules');
+    // ~4k entries: a small fraction of a real install, enough to extrapolate.
+    for (let d = 0; d < 80; d++) {
+      mkdirSync(join(mods, `pkg${d}`, 'lib'), { recursive: true });
+      for (let f = 0; f < 50; f++) {
+        writeFileSync(join(mods, `pkg${d}`, 'lib', `f${f}.js`), 'x\n');
+      }
+    }
+    let t0 = performance.now();
+    const snap = snapshotModuleTrees([mods]);
+    const snapMs = performance.now() - t0;
+    t0 = performance.now();
+    assert.deepEqual(findModuleChanges([mods], snap), []);
+    const diffMs = performance.now() - t0;
+    console.log(
+      `  module snapshot: ${snapMs.toFixed(0)}ms baseline + ${diffMs.toFixed(0)}ms diff for ~4k entries`,
+    );
+    assert.ok(snapMs < 5_000 && diffMs < 5_000, `walk too slow: ${snapMs}ms/${diffMs}ms`);
+
+    // The real fixture: this checkout's own node_modules (~36k entries) when present.
+    const repoRoot = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
+    const realMods = join(repoRoot, 'node_modules');
+    if (existsSync(realMods)) {
+      t0 = performance.now();
+      const real = snapshotModuleTrees([realMods]);
+      const realMs = performance.now() - t0;
+      t0 = performance.now();
+      assert.deepEqual(findModuleChanges([realMods], real), []);
+      const realDiffMs = performance.now() - t0;
+      console.log(
+        `  module snapshot: ${realMs.toFixed(0)}ms baseline + ${realDiffMs.toFixed(0)}ms diff for the real node_modules`,
+      );
+    }
   });
 });
 

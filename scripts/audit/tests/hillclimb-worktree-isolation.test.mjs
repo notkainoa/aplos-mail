@@ -26,9 +26,10 @@ import { after, describe, it } from 'node:test';
 import * as WT from '../hillclimb/worktree.mjs';
 import {
   addWorktree,
-  findWritesSince,
+  findModuleChanges,
   linkNodeModules,
   removeWorktree,
+  snapshotModuleTrees,
 } from '../hillclimb/worktree.mjs';
 
 const tmp = mkdtempSync(join(tmpdir(), 'hillclimb-iso-'));
@@ -56,8 +57,8 @@ function freshRepo() {
 }
 
 // The write scan must see what file mtimes cannot say: a delete or add only bumps the
-// OWNING directory's mtime, so each scanned directory's own stamp comparison reports it.
-describe('findWritesSince detects deletes and additions', () => {
+// OWNING directory, so each scanned directory's name-hash comparison reports it.
+describe('module tree diff detects deletes and additions', () => {
   it('reports the directory a shim or package file vanished from (and one planted in)', () => {
     const dir = join(tmp, `scan-del${seq++}`);
     const mods = join(dir, 'node_modules');
@@ -65,14 +66,13 @@ describe('findWritesSince detects deletes and additions', () => {
     mkdirSync(join(mods, 'third', 'lib'), { recursive: true });
     writeFileSync(join(mods, '.bin', 'tool'), 'x');
     writeFileSync(join(mods, 'third', 'lib', 'index.js'), 'x');
-    const stamp = join(dir, 'stamp');
-    writeFileSync(stamp, '');
-    assert.deepEqual(findWritesSince([mods], stamp), []);
+    const snap = snapshotModuleTrees([mods]);
+    assert.deepEqual(findModuleChanges([mods], snap), []);
 
     rmSync(join(mods, '.bin', 'tool')); // a deleted .bin shim
     rmSync(join(mods, 'third', 'lib', 'index.js')); // a deleted package file
     writeFileSync(join(mods, 'third', 'planted.js'), 'x'); // an added file
-    const hits = findWritesSince([mods], stamp, { relativeTo: dir });
+    const hits = findModuleChanges([mods], snap, { relativeTo: dir });
     assert.ok(hits.includes(join('node_modules', '.bin')), JSON.stringify(hits));
     assert.ok(hits.includes(join('node_modules', 'third', 'lib')), JSON.stringify(hits));
     assert.ok(hits.includes(join('node_modules', 'third')), JSON.stringify(hits));
