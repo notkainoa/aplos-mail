@@ -41,8 +41,12 @@ import { contractError } from '../runtime/errors';
  * reading younger than `LEASE_CLOCK_FRESH_MS` (`gateReading`); with none (`unmeasured`: a fresh process, or checks
  * that kept failing) it is secondary, and once a measuring write has failed or measured nothing it publishes the dead
  * claim, so a live candidacy of its can never win the lower-id rule and leave the account without a primary. A
- * measuring write that failed or measured nothing is retried after one round, backing off to `LEASE_WRITE_RETRY_MS`. "Use this Mac" is refused unless the gate reads `ok` after one fresh
- * measuring write.
+ * measuring write that failed or measured nothing is retried after one round, backing off 1, 2, 4, then 5 minutes
+ * (`LEASE_WRITE_RETRY_MS`); once that backoff has topped out, a measuring write that landed yet measured nothing again
+ * is followed by the next only after `LEASE_GATED_RENEW_MS`, a blocked device's cadence (each one is a whole copy, and
+ * a device whose checks always fail would otherwise write one every 5 minutes). Such a device, like a blocked one,
+ * compacts its own superseded copies after each write. "Use this Mac" is refused unless the gate reads `ok` after one
+ * fresh measuring write.
  *
  * A pin is published by the very write that measures the clock, so a clock that went off since its last reading shows
  * only after that write; the next round (at once) replaces the claim with the dead one, without the pin. That one
@@ -57,8 +61,9 @@ import { contractError } from '../runtime/errors';
  * changed), and a claim rewrite every `LEASE_RENEW_MS` (or on a role or pin change). On Gmail a rewrite is one sealed
  * whole-view copy (`messages.insert`, 25 units) plus the receive-time check (`messages.get` minimal, 20); the primary
  * then compacts what the copy supersedes (one 60-unit read-back per written copy, 20 per copy trashed, at most 25 a
- * call). About 120 + 6 x 45 = 390 units an hour per idle device, plus the primary's compaction. A blocked device
- * writes twice an hour and compacts only its own superseded copies, so its copies never pile up.
+ * call). About 120 + 6 x 45 = 390 units an hour per idle device, plus the primary's compaction. A blocked device, and
+ * one whose checks keep measuring nothing once its backoff tops out, writes twice an hour and compacts only its own
+ * superseded copies, so its copies never pile up.
  */
 
 /** ARCH 6.5: a 30-minute TTL. */
@@ -87,6 +92,8 @@ export const LEASE_CLOCK_FRESH_MS = LEASE_RENEW_MS + LEASE_GIVE_UP_MS;
 export const LEASE_CLOCK_OK_STREAK = 2;
 /** After a failed write, the next try waits this long (four tries fit in the slack before the claim expires). */
 export const LEASE_WRITE_RETRY_MS = 5 * 60_000;
+/** Measuring writes on the 1, 2, 4, 5-minute backoff before one that lands but measures nothing waits the slow cadence. */
+export const LEASE_MEASURE_BACKOFF_STEPS = 4;
 export const LEASE_PREFIX = 'lease:';
 
 const DEVICE_RE = /^[\w.-]{1,128}$/;
@@ -488,11 +495,16 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
 
   /**
    * A measuring write that failed or measured nothing is retried after one round, doubling up to
-   * `LEASE_WRITE_RETRY_MS`; any other failed write after that.
+   * `LEASE_WRITE_RETRY_MS`; any other failed write after that. Once the backoff has topped out, a measuring write that
+   * landed (a whole copy) and measured nothing again waits `LEASE_GATED_RENEW_MS`; a failed one keeps the 5 minutes,
+   * so a device back online measures soon.
    */
-  const retryDelay = (): number => {
+  const retryDelay = (landed: boolean): number => {
     if (!remeasure()) return LEASE_WRITE_RETRY_MS;
-    const delay = Math.min(LEASE_ROUND_MS * 2 ** measureFails, LEASE_WRITE_RETRY_MS);
+    const slow = landed && measureFails >= LEASE_MEASURE_BACKOFF_STEPS;
+    const delay = slow
+      ? LEASE_GATED_RENEW_MS
+      : Math.min(LEASE_ROUND_MS * 2 ** measureFails, LEASE_WRITE_RETRY_MS);
     measureFails++;
     return delay;
   };
@@ -519,7 +531,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       publishedAt = now;
       unsure = false;
       if (remeasure()) {
-        retryAt = now + retryDelay();
+        retryAt = now + retryDelay(true);
       } else {
         retryAt = 0;
         measureFails = 0;
@@ -527,7 +539,7 @@ export function createLeaseController(deps: LeaseDeps): LeaseController {
       return true;
     } catch {
       unsure = true;
-      retryAt = now + retryDelay();
+      retryAt = now + retryDelay(false);
       return false;
     }
   };

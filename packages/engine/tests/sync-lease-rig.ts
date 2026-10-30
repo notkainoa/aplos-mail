@@ -190,15 +190,19 @@ export function baselineDone(w: ReturnType<typeof world>): void {
 }
 
 /**
- * The timer loop's stand-in: moves the shared clock a second at a time and fires each world's `lease:` source when
- * its `next()` is due by that world's own clock.
+ * The timer loop's stand-in: moves the shared clock `stepMs` (a second) at a time and fires each world's `lease:`
+ * source when its `next()` is due by that world's own clock.
  */
-export async function pump(w: ReturnType<typeof world> | ReturnType<typeof world>[], ms: number) {
+export async function pump(
+  w: ReturnType<typeof world> | ReturnType<typeof world>[],
+  ms: number,
+  stepMs = 1_000,
+) {
   const worlds = Array.isArray(w) ? w : [w];
   const clock = worlds[0].clock;
   const end = clock.now() + ms;
   while (clock.now() < end) {
-    await clock.advance(1_000);
+    await clock.advance(stepMs);
     await settle(2);
     for (const v of worlds) {
       const source = v.deadlines.sources.get(`lease:${ACCOUNT}`);
