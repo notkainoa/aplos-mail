@@ -502,3 +502,37 @@ test('a clock whose sleep REJECTS is a failed wait, not a timeout, and does not 
   assert.ok(!lags.includes(NEXT_TIMEOUT_MS), 'a rejected sleep is not logged as the next timeout');
   await loop.stop();
 });
+
+test('stall: sleep throws once while next() is hung; when next() settles the source still fires', async () => {
+  const base = fakeClock();
+  let sleeps = 0;
+  const clock: FakeClock = {
+    ...base,
+    sleep(ms, signal) {
+      if (sleeps++ === 0) throw new Error('sleep unavailable once');
+      return base.sleep(ms, signal);
+    },
+  };
+  const loop = createTimerLoop({
+    clock,
+    log: createLogger({ sink: { write: () => undefined }, salt: 's', clock, level: 'debug' }),
+  });
+  const t0 = clock.now();
+  const gate = hung<number>();
+  let reads = 0;
+  let fires = 0;
+  loop.register({
+    id: 'jobs',
+    // The first read hangs (the wait around it fails at once); every later read says "due now".
+    next: () => (reads++ === 0 ? gate.promise : Promise.resolve(t0)),
+    fire: async () => void fires++,
+  });
+  loop.start();
+  await clock.advance(SEC);
+  assert.equal(fires, 0, 'nothing fires while the first next() is still hung');
+  gate.resolve(t0);
+  await clock.flush();
+  await clock.advance(5 * SEC);
+  assert.ok(fires >= 1, `the source fired after the hung next() settled (fires=${fires})`);
+  await loop.stop();
+});
