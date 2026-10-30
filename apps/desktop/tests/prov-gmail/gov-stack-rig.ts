@@ -1,6 +1,5 @@
 /** The prov-gov attack rig on the real stack: the emulated world, the engine on a Mac, the clock driver and store/log readers (see gov-stack-attack.test.ts). */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { removeScratchDir, scratchDir } from './scratch';
 import { join } from 'node:path';
 import {
   ProviderError,
@@ -167,7 +166,7 @@ interface Sent {
 }
 
 export class Mac {
-  readonly dir = mkdtempSync(join(tmpdir(), 'aplos-attack-'));
+  readonly dir = scratchDir('aplos-attack-');
   readonly path = join(this.dir, 'mail.db');
   readonly log: RequestLogEntry[] = [];
   readonly sent: Sent[] = [];
@@ -193,7 +192,7 @@ export class Mac {
     this.vault = new Vault(this.fetch, mail.clock);
   }
   cleanup(): void {
-    rmSync(this.dir, { recursive: true, force: true });
+    removeScratchDir(this.dir);
   }
 }
 

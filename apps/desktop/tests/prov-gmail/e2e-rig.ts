@@ -1,6 +1,5 @@
 /** The prov-gmail end-to-end rig: the emulated world, the engine on a Mac, the clock driver and store/log readers (see e2e.test.ts). */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { removeScratchDir, scratchDir } from './scratch';
 import { join } from 'node:path';
 import {
   ProviderError,
@@ -178,7 +177,7 @@ interface Sent {
  * part of a batch) synchronously on arrival, so the entries appended during one `fetch` call are that device's.
  */
 export class Mac {
-  readonly dir = mkdtempSync(join(tmpdir(), 'aplos-e2e-'));
+  readonly dir = scratchDir('aplos-e2e-');
   readonly path = join(this.dir, 'mail.db');
   readonly log: RequestLogEntry[] = [];
   readonly sent: Sent[] = [];
@@ -206,7 +205,7 @@ export class Mac {
   }
 
   cleanup(): void {
-    rmSync(this.dir, { recursive: true, force: true });
+    removeScratchDir(this.dir);
   }
 }
 
