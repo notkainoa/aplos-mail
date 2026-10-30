@@ -1,11 +1,12 @@
-import { chromium, type Browser } from '@playwright/test';
+import type { Browser } from '@playwright/test';
 import { axeKnownDefects } from '../known-defects';
 import type { Theme } from '../states';
-import { runAxe } from '../support/axe';
+import { runAxe, type AxeViolation } from '../support/axe';
 import { openState } from '../support/gallery';
-import { axeDetails, axeScore, type AxeFinding } from './axe-score';
+import { axeDetails, axeScore, axeSummaryLine, openFailure, type AxeFinding } from './axe-score';
 import { log, parseArgs, parseSize, printScore, stateList, type ScorerState } from './common';
-import { startGalleryServer } from './server';
+import { finish, runScorer } from './lifecycle';
+import { launchBrowser, startGalleryServer } from './server';
 
 // Hill-climb scorer: axe-core on every state (or those matching --state), in both themes (or
 // --theme). Usage: npx tsx tests/visual/scorers/axe.score.ts [--size 1440x900] [--state prefix]
@@ -36,14 +37,14 @@ async function scoreJob(
   });
   try {
     const page = await context.newPage();
+    let violations: AxeViolation[];
     try {
       await openState(page, entry.state, { theme });
+      violations = await runAxe(page);
     } catch (error) {
-      const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
-      return [openFailure(entry.id, theme, message ?? 'failed to open')];
+      return [openFailure(entry.id, theme, firstLine(error))];
     }
     const known = axeKnownDefects[entry.id] ?? {};
-    const violations = await runAxe(page);
     return violations.map(violation => ({
       state: entry.id,
       theme,
@@ -58,16 +59,9 @@ async function scoreJob(
   }
 }
 
-function openFailure(state: string, theme: string, message: string): AxeFinding {
-  return {
-    state,
-    theme,
-    rule: 'state-failed-to-open',
-    impact: 'critical',
-    nodes: 1,
-    target: message,
-    known: false,
-  };
+function firstLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split('\n')[0] || 'failed to open';
 }
 
 async function runJobs(
@@ -79,8 +73,14 @@ async function runJobs(
   const findings: AxeFinding[][] = jobs.map(() => []);
   let next = 0;
   const worker = async (): Promise<void> => {
-    for (let index = next++; index < jobs.length; index = next++)
-      findings[index] = await scoreJob(browser, origin, size, jobs[index] as Job);
+    for (let index = next++; index < jobs.length; index = next++) {
+      const job = jobs[index] as Job;
+      try {
+        findings[index] = await scoreJob(browser, origin, size, job);
+      } catch (error) {
+        findings[index] = [openFailure(job.entry.id, job.theme, firstLine(error))];
+      }
+    }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
   return findings.flat();
@@ -93,21 +93,24 @@ async function main(): Promise<void> {
   const jobs = entries.flatMap(entry => args.themes.map(theme => ({ entry, theme })));
 
   const server = await startGalleryServer();
-  const browser = await chromium.launch({ headless: true });
   try {
-    const started = Date.now();
-    const findings = await runJobs(browser, server.origin, args.size, jobs);
-    log(`axe: ${jobs.length} pages, ${findings.length} findings, ${Date.now() - started} ms`);
-    printScore(axeScore(findings), axeDetails(findings));
+    const browser = await launchBrowser();
+    try {
+      const started = Date.now();
+      const findings = await runJobs(browser, server.origin, args.size, jobs);
+      log(`axe: ${jobs.length} pages, ${findings.length} findings, ${Date.now() - started} ms`);
+      printScore(axeScore(findings, jobs.length), [
+        axeSummaryLine(jobs.length, findings),
+        ...axeDetails(findings),
+      ]);
+    } finally {
+      await browser.close();
+    }
   } finally {
-    await browser.close();
     server.stop();
   }
   // The server's stderr pipe would keep Node alive a moment longer.
-  process.exit(0);
+  await finish(0);
 }
 
-main().catch(error => {
-  log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-  process.exit(1);
-});
+runScorer(main);

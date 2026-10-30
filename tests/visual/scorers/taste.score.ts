@@ -1,11 +1,11 @@
-import { chromium, type Browser } from '@playwright/test';
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import type { Browser } from '@playwright/test';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { Theme } from '../states';
 import { openState } from '../support/gallery';
-import { repoRoot, visualDir } from '../support/paths';
+import { visualDir } from '../support/paths';
 import {
   isFresh,
   log,
@@ -17,15 +17,18 @@ import {
   type ScorerArgs,
   type ScorerState,
 } from './common';
-import { startGalleryServer } from './server';
+import { finish, onShutdown, runScorer } from './lifecycle';
+import { isPaneState, mockupTarget, newMockupContext, shootMockup } from './mockup';
+import { launchBrowser, startGalleryServer } from './server';
 import {
+  DEFAULT_MAX_CALLS,
   DEFAULT_MODEL,
+  checkCallBudget,
   criterionIds,
-  dataStatesOf,
+  failedJudgement,
   judgeState,
   loadRubric,
-  mockupStateQuery,
-  parseMockupRef,
+  pickStates,
   summarise,
   type Judge,
   type JudgeImage,
@@ -34,9 +37,11 @@ import {
 
 // Hill-climb scorer: Claude Sonnet judges screenshots against a condensed rubric of plans/DESIGN.md
 // (taste.rubric.md) and the matching mockup. Usage: npx tsx tests/visual/scorers/taste.score.ts
-// [--size 1440x900] [--state prefix] [--theme light|dark|both] [--reuse] [--samples N] [--runs K].
+// [--size 1440x900] [--state prefix] [--theme light|dark|both] [--reuse] [--samples N] [--runs K]
+// [--max-calls N].
 // --state overrides the default list in taste.sample.json; --samples N keeps the first N states;
 // --runs K asks K times per state (a different cache entry each) and takes the median per criterion.
+// --max-calls N (default 12) is the run-wide cap: the run is refused when states x runs exceeds it.
 // One judge call per state per run covers both themes. Needs a logged-in `claude` (env CLAUDE_BIN).
 
 const HERE = import.meta.dirname;
@@ -49,24 +54,29 @@ interface TasteArgs {
   base: ScorerArgs;
   samples: number;
   runs: number;
+  maxCalls: number;
 }
 
 function parseTasteArgs(argv: readonly string[]): TasteArgs {
   const rest: string[] = [];
   let samples = 0;
   let runs = 1;
+  let maxCalls = DEFAULT_MAX_CALLS;
   for (let i = 0; i < argv.length; i += 1) {
     const [flag, inline] = (argv[i] ?? '').split('=', 2);
     const value = (): number => Number(inline ?? argv[++i]);
     if (flag === '--samples') samples = value();
     else if (flag === '--runs') runs = value();
+    else if (flag === '--max-calls') maxCalls = value();
     else rest.push(argv[i] as string);
   }
   if (!Number.isInteger(samples) || samples < 0)
     throw new Error('--samples must be a whole number');
   if (!Number.isInteger(runs) || runs < 1)
     throw new Error('--runs must be a whole number of 1 or more');
-  return { base: parseArgs(rest), samples, runs };
+  if (!Number.isInteger(maxCalls) || maxCalls < 1)
+    throw new Error('--max-calls must be a whole number of 1 or more');
+  return { base: parseArgs(rest), samples, runs, maxCalls };
 }
 
 function sampleStates(args: TasteArgs): ScorerState[] {
@@ -76,8 +86,7 @@ function sampleStates(args: TasteArgs): ScorerState[] {
     const listed = JSON.parse(readFileSync(join(HERE, 'taste.sample.json'), 'utf8')) as {
       states: string[];
     };
-    const all = stateList();
-    entries = listed.states.flatMap(id => all.find(entry => entry.id === id) ?? []);
+    entries = pickStates(listed.states, stateList());
   }
   if (entries.length === 0) throw new Error(`no state matches "${args.base.state}"`);
   return args.samples ? entries.slice(0, args.samples) : entries;
@@ -111,36 +120,26 @@ async function shoot(
   }
 }
 
-/** The mockup page for a state, shot like mockups/shoot.cjs does; null with the reason when skipped. */
+/** The mockup page for a state, shot like mockup-diff does; null with the reason when skipped. */
 async function shootReference(
   browser: Browser,
   size: string,
   entry: ScorerState,
   theme: Theme,
 ): Promise<{ path: string } | { skip: string }> {
-  const ref = parseMockupRef(entry.mockup);
-  if (!ref) return { skip: `mockup "${entry.mockup}" has no file and state` };
-  const page = join(repoRoot, 'mockups', ref.file);
-  if (!existsSync(page)) return { skip: `${ref.file} does not exist` };
-  const query = mockupStateQuery(ref.state, dataStatesOf(readFileSync(page, 'utf8')));
-  if (query === null) return { skip: `${ref.file} has no state "${ref.state}"` };
+  const target = mockupTarget(entry, theme);
+  if (typeof target === 'string') return { skip: target };
   const file = join(
     REFERENCE_DIR,
     size,
-    `${ref.file.replace('.html', '')}-${query || 'default'}.${theme}.png`,
+    `${target.file.replace('.html', '')}-${target.state || 'default'}.${theme}.png`,
   );
-  const context = await browser.newContext({
-    viewport: parseSize(size),
-    deviceScaleFactor: 1,
-    colorScheme: theme,
-  });
+  const context = await newMockupContext(browser, size, theme);
   try {
     const tab = await context.newPage();
-    await tab.goto(`file://${page}?shot=1&theme=${theme}${query ? `&state=${query}` : ''}`);
-    await tab.evaluate(() => document.fonts.ready);
-    await tab.waitForTimeout(700);
+    const { png } = await shootMockup(tab, target.url, isPaneState(entry));
     mkdirSync(dirname(file), { recursive: true });
-    await tab.screenshot({ path: file });
+    writeFileSync(file, png);
     return { path: file };
   } finally {
     await context.close();
@@ -152,6 +151,23 @@ interface Prepared {
   images: JudgeImage[];
   referenceNote?: string;
   skipped?: string;
+  /** Set when the state could not be shot at all; it is then scored 0. */
+  failed?: string;
+}
+
+/** `prepare`, but an exception while shooting one state becomes a failed state, not a dead scorer. */
+async function prepareSafely(
+  browser: Browser,
+  origin: string,
+  args: TasteArgs,
+  entry: ScorerState,
+): Promise<Prepared> {
+  try {
+    return await prepare(browser, origin, args, entry);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { entry, images: [], failed: `state-failed-to-shoot ${message.split('\n')[0]}` };
+  }
 }
 
 async function prepare(
@@ -188,13 +204,33 @@ async function prepare(
   };
 }
 
-/** Runs `claude -p` headless with only the Read tool and returns the model's text answer. */
-function claudeJudge(model: string, imageDirs: readonly string[]): Judge {
+interface ClaudeJudge {
+  judge: Judge;
+  /** Kills any running call and removes the judge's scratch directory. Safe to call twice. */
+  dispose: () => void;
+}
+
+/**
+ * Runs `claude -p` headless with only the Read tool and returns the model's text answer. At most
+ * `hardCap` calls are ever made in this process (the budget check already refused bigger runs).
+ */
+function claudeJudge(model: string, imageDirs: readonly string[], hardCap: number): ClaudeJudge {
   const bin = process.env.CLAUDE_BIN || 'claude';
   const cwd = mkdtempSync(join(tmpdir(), 'aplos-taste-'));
-  process.once('exit', () => rmSync(cwd, { recursive: true, force: true }));
-  return prompt =>
+  const running = new Set<ChildProcess>();
+  let made = 0;
+  const dispose = (): void => {
+    for (const child of running) child.kill('SIGKILL');
+    running.clear();
+    rmSync(cwd, { recursive: true, force: true });
+  };
+  const judge: Judge = prompt =>
     new Promise((resolvePromise, reject) => {
+      if (made >= hardCap) {
+        reject(new Error(`judge call limit of ${hardCap} reached`));
+        return;
+      }
+      made += 1;
       const flags = [
         '-p',
         '--model',
@@ -218,6 +254,7 @@ function claudeJudge(model: string, imageDirs: readonly string[]): Judge {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      running.add(child);
       let out = '';
       let err = '';
       const timer = setTimeout(() => child.kill('SIGKILL'), JUDGE_TIMEOUT_MS);
@@ -226,6 +263,7 @@ function claudeJudge(model: string, imageDirs: readonly string[]): Judge {
       child.on('error', error => reject(new Error(`cannot run ${bin}: ${error.message}`)));
       child.on('close', code => {
         clearTimeout(timer);
+        running.delete(child);
         try {
           resolvePromise(readClaudeResult(out, code, err));
         } catch (error) {
@@ -234,6 +272,7 @@ function claudeJudge(model: string, imageDirs: readonly string[]): Judge {
       });
       child.stdin.end(prompt);
     });
+  return { judge, dispose };
 }
 
 function readClaudeResult(out: string, code: number | null, err: string): string {
@@ -266,45 +305,75 @@ async function mapLimit<T, R>(
   return results;
 }
 
+/** Judges the prepared states; one that could not be shot is a failed judgement, scored 0. */
+async function judgeAll(
+  prepared: readonly Prepared[],
+  context: {
+    rubric: string;
+    criteria: string[];
+    model: string;
+    runs: number;
+    judge: Judge;
+  },
+): Promise<StateJudgement[]> {
+  return mapLimit(prepared, CONCURRENCY, item =>
+    item.failed
+      ? Promise.resolve(failedJudgement(item.entry.id, item.failed))
+      : judgeState({
+          ...context,
+          stateId: item.entry.id,
+          title: item.entry.title,
+          images: item.images,
+          referenceNote: item.referenceNote,
+          cacheDir: CACHE_DIR,
+        }),
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseTasteArgs(process.argv.slice(2));
   const entries = sampleStates(args);
+  checkCallBudget(entries.length, args.runs, args.maxCalls);
   const rubric = loadRubric(join(HERE, 'taste.rubric.md'));
   const criteria = criterionIds(rubric);
   const model = process.env.TASTE_MODEL || DEFAULT_MODEL;
-  log(`taste: ${entries.length} states, ${args.runs} run(s) each, model ${model}`);
+  log(
+    `taste: ${entries.length} states, ${args.runs} run(s) each, model ${model}, max ${args.maxCalls} calls`,
+  );
 
-  const server = await startGalleryServer();
-  const browser = await chromium.launch({ headless: true });
   let results: StateJudgement[];
   const notes: string[] = [];
+  const server = await startGalleryServer();
+  let judge: ClaudeJudge | undefined;
   try {
-    const prepared = await mapLimit(entries, CONCURRENCY, entry =>
-      prepare(browser, server.origin, args, entry),
-    );
-    for (const item of prepared)
-      if (item.skipped) notes.push(`${item.entry.id}: no mockup reference (${item.skipped})`);
-    const dirs = [
-      ...new Set(prepared.flatMap(item => item.images.map(image => resolve(dirname(image.path))))),
-    ];
-    const judge = claudeJudge(model, dirs);
-    results = await mapLimit(prepared, CONCURRENCY, item =>
-      judgeState({
-        stateId: item.entry.id,
-        title: item.entry.title,
+    const browser = await launchBrowser();
+    try {
+      const prepared = await mapLimit(entries, CONCURRENCY, entry =>
+        prepareSafely(browser, server.origin, args, entry),
+      );
+      for (const item of prepared)
+        if (item.skipped) notes.push(`${item.entry.id}: no mockup reference (${item.skipped})`);
+      const dirs = [
+        ...new Set(
+          prepared.flatMap(item => item.images.map(image => resolve(dirname(image.path)))),
+        ),
+      ];
+      // A retry may double the calls of a state; nothing else may exceed the cap.
+      judge = claudeJudge(model, dirs, args.maxCalls * 2);
+      onShutdown(judge.dispose);
+      results = await judgeAll(prepared, {
         rubric,
         criteria,
         model,
-        images: item.images,
-        referenceNote: item.referenceNote,
         runs: args.runs,
-        judge,
-        cacheDir: CACHE_DIR,
-      }),
-    );
+        judge: judge.judge,
+      });
+    } finally {
+      await browser.close();
+    }
   } finally {
-    await browser.close();
     server.stop();
+    judge?.dispose();
   }
 
   const calls = results.reduce((sum, result) => sum + result.calls, 0);
@@ -317,13 +386,10 @@ async function main(): Promise<void> {
   const summary = summarise(results, notes);
   if (summary.failures === results.length) {
     log(`taste: every state failed, nothing to score. ${summary.details[0] ?? ''}`);
-    process.exit(1);
+    await finish(1);
   }
   printScore(summary.score, summary.details);
-  process.exit(0);
+  await finish(0);
 }
 
-main().catch(error => {
-  log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-  process.exit(1);
-});
+runScorer(main);

@@ -4,6 +4,13 @@ Commands the hill-climb harness (`npm run hillclimb`, plans/00-roadmap.md 5.1c) 
 target. **Attempts must not edit this folder** (nor `known-defects.ts`, `states.ts` or the goldens):
 the harness rejects any diff that touches a scorer.
 
+**Off limits to attempts** (the harness diffguard enforces it): every file in this folder, which
+includes `mockup-diff.exclude.json`, `taste.sample.json`, `taste.rubric.md` and the tests, plus
+`../support/axe.ts`, `known-defects.ts`, `states.ts` (including each state's `mockup` string) and the
+goldens. A scorer is changed only by the owner, never to raise a score. Each scorer is built so that
+hiding, breaking or deleting a state cannot raise its score: pages that cannot be scored count as
+failures, never as absent.
+
 ## Output contract
 
 A scorer prints, as the **last line of stdout**, one JSON object and exits 0 even when the score is low:
@@ -44,28 +51,42 @@ axe does not shoot, so ignores it).
 
 **axe**: each violation costs `impact weight x min(nodes, 3)` with critical 8, serious 5, moderate 2,
 minor 1. Entries in `axeKnownDefects` count half and are labelled `known:<impact>`. The total is divided
-by 300 (20 serious violations of 3+ nodes), so a clean run is 100 and 20 serious ones is 0. A state that
-fails to open counts as one critical finding (`state-failed-to-open`). Details read
+by 300 (20 serious violations of 3+ nodes), so a clean run is 100 and 20 serious ones is 0. A page that fails to
+open or to scan (`state-failed-to-open`, including an axe run that throws) makes the whole score 0, and a
+run that visits no page scores 0, so breaking a state never beats fixing it. The first detail line reads
+`scanned N of M pages`. Details read
 `state theme rule impact nodes target-selector`. A full run takes about 4 minutes; use `--state` for a screen.
 
 ## Files
 
-`common.ts` (output, args, state list, shots dir), `axe-score.ts` (pure scoring maths), `server.ts`
-(starts and stops the Vite gallery), `common.test.ts` (unit tests).
+`common.ts` (output, args, state list, shots dir, `--reuse` freshness), `axe-score.ts` (pure scoring
+maths), `server.ts` (starts and stops the Vite gallery, launches Chromium), `lifecycle.ts` (cleanups
+and SIGINT/SIGTERM/SIGHUP handling: stop the Vite process group, close the browser, remove temp dirs,
+exit 130/143), `mockup.ts` (finds and shoots a mockup page, shared by the diff and taste scorers),
+`common.test.ts`, `lifecycle.test.ts` (unit tests).
+
+`--reuse` only reuses a shot that is younger than an hour and not older than the newest file under
+`apps/desktop/src/renderer`, `packages`, `tests/visual/gallery` and `states.ts`; otherwise it re-shoots.
 
 ## taste-judge scorer
 
 `taste.score.ts` has Claude Sonnet judge screenshots against `taste.rubric.md` (a 55-line distillation of
 DESIGN sections 3, 4 and 9 and the aplos-design skill) and the matching mockup, rendered like
-`mockups/shoot.cjs` (`?shot=1&theme=...&state=...`; a reference is skipped, and noted in details, when
-the mockup has no such state). Needs a logged-in `claude` (`CLAUDE_BIN` overrides the binary, `TASTE_MODEL`
+`mockups/shoot.cjs` (`?shot=1&theme=...&state=...`) by the same code as the visual-diff scorer (frozen
+clock, reduced motion, state bar hidden; a reference is skipped, and noted in details, when the mockup
+has no such state). Needs a logged-in `claude` (`CLAUDE_BIN` overrides the binary, `TASTE_MODEL`
 the model). Extra arguments: `--samples N` keeps the first N states, `--runs K` asks K times per state and
-takes the median per criterion. Default states are listed in `taste.sample.json` (8); `--state` replaces them.
+takes the median per criterion, `--max-calls N` (default 12) is a run-wide cap: the run is refused (exit 1)
+when states x runs exceeds it. Default states are listed in `taste.sample.json` (8); `--state` replaces
+them. A sample id that is not in `states.ts` is an error, not skipped.
 
 One call per state and run covers both themes (4 images with the reference). Score per state is 10 x the mean
-of the criteria the judge scored (it may answer `null` for one that cannot be assessed); overall is the mean
-over states. Details read `state: finding`, lowest states first, judge failures first. A failed state is listed
-and left out of the mean; if every state fails the scorer exits 1. Results are cached in
+over the FIXED criterion set of the rubric; a criterion the judge answers `null` for (cannot be assessed)
+counts as 5, neutral, and never leaves the mean. Overall is the mean over all states asked for. Details
+read `state: finding`, lowest states first, judge failures first. A state that failed (it did not open,
+the judge failed) is listed and scores 0; if every state fails the scorer exits 1. The screenshots are
+attempt-authored, so the prompt tells the judge to ignore any instructions inside the images. A cache
+entry of the wrong shape is a miss. Results are cached in
 `artifacts/visual/judge-cache/` by sha256 of the image bytes, rubric, model, prompt version and run index, so an
 unchanged screenshot costs nothing; stderr reports the hit count. Numbers are for comparing versions, not absolute.
 Files: `taste-score.ts` (pure: prompt, parsing, maths, cache), `taste.test.ts` (fake judge, no network).
@@ -82,7 +103,9 @@ the demo data differs:
 `score = 100 x (0.6 x colourSimilarity + 0.4 x structure)`. `colourSimilarity = max(0, 1 - meanDeltaE / 40)`,
 the mean CIEDE2000 between the per-cell mean colours on an 8 px grid. `structure` is the mean Pearson
 correlation of the column and row sums of luminance gradient magnitude (the ink profile). Overall is the
-mean over compared states and themes. Details read `state theme score% worst x,y,w,h` (worst first; the
+mean over every state and theme asked for except those in the exclude file: a state whose mockup
+cannot be resolved, or that fails to open or render, scores 0 and is flagged (`mockup-unresolved`).
+The first detail line reads `compared N of M (excluded E)` (pages are state x theme). Details read `state theme score% worst x,y,w,h` (worst first; the
 rectangle is the 4 x 4 cell block with the largest mean ΔE, in pixels of the compared region).
 
 ```
@@ -90,7 +113,7 @@ npx tsx tests/visual/scorers/mockup-diff.score.ts [--size 1440x900] [--state pre
 ```
 
 `mockup-diff.exclude.json` maps a state id to the reason its mockup is not comparable (several states share
-a page that shows another state, a mockup page that does not exist, overlays). States whose mockup label is
-not one of the page's states are also skipped and logged. Overlays for humans (implementation | mockup |
+a page that shows another state, a mockup page that does not exist, overlays). Every key must be a state
+in `states.ts`; a stale key fails the run (exit 1). Overlays for humans (implementation | mockup |
 heatmap) go to `artifacts/visual/mockup-diff/<size>/<state>.<theme>.png`. Maths and unit tests:
 `mockup-diff-score.ts`, `mockup-diff.test.ts`.

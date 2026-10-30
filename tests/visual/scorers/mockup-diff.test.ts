@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { STATES } from '../states';
+import { stateList } from './common';
 import {
   CELL,
   colourSimilarity,
@@ -9,13 +11,16 @@ import {
   detailLines,
   downsample,
   implRegion,
+  mockupReport,
   overallScore,
   parseMockup,
   resolveMockupState,
   rgbToLab,
+  unresolvedScore,
   worstBlock,
   type Rgba,
 } from './mockup-diff-score';
+import { loadExcluded, mockupTarget, staleExcludes } from './mockup';
 
 const W = 320;
 const H = 200;
@@ -157,4 +162,51 @@ test('implRegion: shell is the window, pane is inset by the shell padding, windo
   assert.deepEqual(implRegion('shell', viewport), { x: 0, y: 0, width: 1440, height: 900 });
   assert.deepEqual(implRegion('pane', viewport), { x: 8, y: 8, width: 1424, height: 884 });
   assert.deepEqual(implRegion('window', viewport), { x: 400, y: 150, width: 640, height: 600 });
+});
+
+const at = (state: string, score: number) => ({ state, theme: 'light', score, worst: null });
+
+test('the exclude file only names states that exist in states.ts', () => {
+  const excluded = loadExcluded();
+  assert.ok(Object.keys(excluded).length > 0);
+  assert.deepEqual(
+    staleExcludes(
+      excluded,
+      STATES.map(state => state.id),
+    ),
+    [],
+  );
+  assert.deepEqual(staleExcludes({ gone: 'x', 'home-full': 'y' }, ['home-full']), ['gone']);
+});
+
+test('every state that is not excluded resolves to a mockup page', () => {
+  const excluded = loadExcluded();
+  const unresolved = stateList()
+    .filter(entry => !(entry.id in excluded))
+    .flatMap(entry => {
+      const target = mockupTarget(entry, 'light');
+      return typeof target === 'string' ? [`${entry.id}: ${target}`] : [];
+    });
+  assert.deepEqual(unresolved, []);
+});
+
+test('unresolved pages count as 0 and are flagged, so shrinking the set never raises the mean', () => {
+  const resolved = [at('a', 90), at('b', 80)];
+  const full = mockupReport(resolved, 2, 0);
+  assert.equal(full.score, 85);
+  assert.equal(full.details[0], 'compared 2 of 2 (excluded 0)');
+
+  // A third page whose mockup string was edited away: it scores 0 instead of leaving the mean.
+  const edited = mockupReport([...resolved, unresolvedScore('c', 'light', 'no mockup page')], 3, 0);
+  assert.equal(edited.score, (90 + 80 + 0) / 3);
+  assert.ok(edited.score < full.score);
+  assert.equal(edited.details[0], 'compared 2 of 3 (excluded 0)');
+  assert.match(edited.details[1] ?? '', /^c light 0\.0% mockup-unresolved no mockup page$/);
+
+  // A page that produced no outcome at all is still in the denominator.
+  assert.equal(mockupReport(resolved, 3, 0).score, 170 / 3);
+  // Only listed exclusions leave the mean, and they are announced.
+  const excluded = mockupReport(resolved, 5, 3);
+  assert.equal(excluded.score, 85);
+  assert.equal(excluded.details[0], 'compared 2 of 5 (excluded 3)');
 });

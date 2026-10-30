@@ -1,7 +1,7 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { STATES, THEMES, type Theme, type VisualState } from '../states';
-import { visualDir } from '../support/paths';
+import { repoRoot, visualDir } from '../support/paths';
 
 // Shared by every scorer in this folder. A scorer prints, as its last stdout line, one JSON object
 // `{"score": 0..100, "details": [...]}` and exits 0 even when the score is low (see README.md).
@@ -28,8 +28,16 @@ export function scoreLine(score: number, details: readonly string[]): string {
   return JSON.stringify({ score: clampScore(score), details: clean });
 }
 
+let shuttingDown = false;
+
+/** Set by the signal handlers: from then on no score line is printed (the run was cut short). */
+export function markShuttingDown(): void {
+  shuttingDown = true;
+}
+
 /** Prints the score line. Call it last and write nothing else to stdout afterwards. */
 export function printScore(score: number, details: readonly string[]): void {
+  if (shuttingDown) return;
   process.stdout.write(`${scoreLine(score, details)}\n`);
 }
 
@@ -101,7 +109,53 @@ export function shotPath(size: string, stateId: string, theme: Theme): string {
   return join(shotsDir(size), `${stateId}.${theme}.png`);
 }
 
-/** True when the shot exists and is newer than `maxAgeMs` (default 1 hour). */
-export function isFresh(path: string, maxAgeMs = 3_600_000): boolean {
-  return existsSync(path) && Date.now() - statSync(path).mtimeMs < maxAgeMs;
+/** What a shot is rendered from: the renderer, the gallery that mounts it, the shared packages. */
+export const SOURCE_PATHS: readonly string[] = [
+  join(repoRoot, 'apps', 'desktop', 'src', 'renderer'),
+  join(repoRoot, 'packages'),
+  join(repoRoot, 'tests', 'visual', 'gallery'),
+  join(repoRoot, 'tests', 'visual', 'states.ts'),
+];
+const SKIPPED_DIRS = new Set(['node_modules', 'dist', '.git']);
+
+/** The newest mtime (ms) of any file under the paths; 0 when none exist. */
+export function newestMtime(paths: readonly string[]): number {
+  let newest = 0;
+  const visit = (path: string): void => {
+    let info;
+    try {
+      info = statSync(path);
+    } catch {
+      return;
+    }
+    if (!info.isDirectory()) {
+      newest = Math.max(newest, info.mtimeMs);
+      return;
+    }
+    for (const name of readdirSync(path)) if (!SKIPPED_DIRS.has(name)) visit(join(path, name));
+  };
+  paths.forEach(visit);
+  return newest;
+}
+
+let sourceMtimeMs: number | undefined;
+
+/** The newest source mtime, computed once per process. */
+export function newestSourceMtime(): number {
+  sourceMtimeMs ??= newestMtime(SOURCE_PATHS);
+  return sourceMtimeMs;
+}
+
+/**
+ * True when the shot exists, is younger than `maxAgeMs` (default 1 hour) and is not older than the
+ * newest source file it is rendered from, so `--reuse` can never score a screenshot of stale code.
+ */
+export function isFresh(
+  path: string,
+  maxAgeMs = 3_600_000,
+  newestSourceMs = newestSourceMtime(),
+): boolean {
+  if (!existsSync(path)) return false;
+  const modified = statSync(path).mtimeMs;
+  return Date.now() - modified < maxAgeMs && modified >= newestSourceMs;
 }
