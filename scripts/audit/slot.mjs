@@ -26,20 +26,25 @@ export function hasScript(root, name) {
   return Boolean(pkg.scripts && Object.hasOwn(pkg.scripts, name));
 }
 
-// Before a slot runs a real suite it sweeps stale aplos-* scratch dirs out of tmpdir, so a lane
-// that left them behind cannot fill tmpfs for the next one. At most one line of output, a sweep
-// failure never fails the slot, APLOS_SCRATCH_SWEEP=0 disables it, and CI runners (ephemeral,
-// so nothing can go stale) skip it via GITHUB_ACTIONS.
+// Before a slot runs a real suite it reports stale aplos-scratch dirs in tmpdir, so a lane that
+// left them behind is noticed before tmpfs fills for the next one. It NEVER deletes — the sweep
+// runs in report mode (delete stays false) and a human runs scratch:sweep -- --delete. At most
+// one line of output and only when the count is non-zero, a report failure never fails the
+// slot, APLOS_SCRATCH_SWEEP=0 disables it, and CI runners (ephemeral, so nothing can go stale)
+// skip it via GITHUB_ACTIONS.
 function runScratchSweep({ sweep = sweepStaleScratch, env = process.env } = {}) {
   if (env.APLOS_SCRATCH_SWEEP === '0' || env.GITHUB_ACTIONS) return;
   try {
-    const { removed, bytesFreedApprox } = sweep();
+    const { removed, bytesFreedApprox } = sweep({ delete: false });
     if (removed.length > 0) {
       const mb = (bytesFreedApprox / (1024 * 1024)).toFixed(1);
-      console.log(`scratch-sweep: removed ${removed.length} stale item(s), freed ~${mb} MB`);
+      console.log(
+        `scratch: ${removed.length} stale scratch dir(s) (~${mb} MB); ` +
+          'run npm run scratch:sweep -- --delete',
+      );
     }
   } catch (error) {
-    console.error(`scratch-sweep failed (ignored): ${error.message}`);
+    console.error(`scratch-sweep report failed (ignored): ${error.message}`);
   }
 }
 
