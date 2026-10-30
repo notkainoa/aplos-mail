@@ -2,37 +2,78 @@
 // loop with timeout. The brief always travels through a file or stdin, never through shell
 // interpolation, so a brief containing quotes or `$()` cannot become shell syntax.
 //
-// Environment filtering exists because agents are untrusted code: they must NOT inherit
-// credentials. A deny-list can never keep up with every name a secret might hide behind
-// (AWS_SESSION_TOKEN, SSH_AUTH_SOCK, DATABASE_URL, FOO_PAT, ...), so the filter is an
-// ALLOW-list of boring runtime variables — anything not listed is dropped. Agents that need
-// auth (claude, devin) use their own login from disk, not our env.
+// Environment filtering exists because agents and the attempt-modified code gates/scorers
+// run are untrusted: they must NOT inherit credentials. A deny-list can never keep up with
+// every name a secret might hide behind (AWS_SESSION_TOKEN, SSH_AUTH_SOCK, DATABASE_URL,
+// FOO_PAT, NODE_AUTH_TOKEN, npm_config_//registry/:_authToken, ...), so the filter is an
+// ALLOW-list of named boring runtime variables — anything not listed is dropped. Gates and
+// scorers get the bare evalEnv; only agents additionally get the variables the devin/claude
+// CLIs need to find their own login on disk (never any *_API_KEY or *_TOKEN).
 import { spawn } from 'node:child_process';
 import { createWriteStream, readFileSync } from 'node:fs';
 
-const ENV_ALLOW_EXACT = new Set([
+// Named variables every spawned process may see. NODE_OPTIONS is handled separately: its
+// value gets vetted for injection flags before it is let through.
+const RUNTIME_ENV_NAMES = [
   'PATH',
   'HOME',
   'USER',
   'LOGNAME',
   'SHELL',
   'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'LC_MESSAGES',
   'TERM',
   'TMPDIR',
   'TZ',
   'CI',
-]);
-const ENV_ALLOW_PREFIX = ['LC_', 'NODE_', 'npm_config_', 'NPM_CONFIG_', 'DEVIN_', 'XDG_'];
+  'NODE_ENV',
+  'npm_config_cache',
+  'npm_config_loglevel',
+  'npm_config_progress',
+  'npm_config_update_notifier',
+  'XDG_CACHE_HOME',
+  'XDG_DATA_HOME',
+];
+// Agents only — where the CLIs keep their login. Never forwarded to gates or scorers.
+const AGENT_ONLY_ENV_NAMES = [
+  'XDG_CONFIG_HOME',
+  'DEVIN_CONFIG_DIR',
+  'DEVIN_HOME',
+  'CLAUDE_CONFIG_DIR',
+];
+const SECRET_NAME = /_(API_KEY|TOKEN)$/;
+// NODE_OPTIONS with any of these turns a plain `node` call into code injection. `-r`
+// takes a joined value too (`-r./evil`), so the short flag is banned by prefix.
+const NODE_OPTIONS_BANNED = /^(--(require|import|loader|experimental-loader)(=|$)|-r)/;
 
-export function filteredEnv(env = process.env) {
+const nodeOptionsSafe = value =>
+  typeof value === 'string' && !value.split(/\s+/).some(token => NODE_OPTIONS_BANNED.test(token));
+
+function pickEnv(env, extraNames) {
   const out = {};
-  for (const [name, value] of Object.entries(env)) {
-    if (ENV_ALLOW_EXACT.has(name) || ENV_ALLOW_PREFIX.some(prefix => name.startsWith(prefix))) {
-      out[name] = value;
-    }
+  for (const name of [...RUNTIME_ENV_NAMES, ...extraNames]) {
+    if (name in env && !SECRET_NAME.test(name)) out[name] = env[name];
+  }
+  if ('NODE_OPTIONS' in env && nodeOptionsSafe(env.NODE_OPTIONS)) {
+    out.NODE_OPTIONS = env.NODE_OPTIONS;
   }
   return out;
 }
+
+/** Environment for gates and scorers running attempt-modified code: runtime names only. */
+export function evalEnv(env = process.env) {
+  return pickEnv(env, []);
+}
+
+/** Environment for attempt agents: evalEnv plus the CLI login-discovery variables. */
+export function agentEnv(env = process.env) {
+  return pickEnv(env, AGENT_ONLY_ENV_NAMES);
+}
+
+// Backwards-compatible name for the agent-side filter (agents, never gates/scorers).
+export const filteredEnv = agentEnv;
 
 /**
  * Builds { command, args, stdinText } for an attempt. `stdinText` is fed to the child's
@@ -184,7 +225,7 @@ export async function runAgent(
     {
       ...invocation,
       cwd: workdir,
-      env: env ?? filteredEnv(),
+      env: env ?? agentEnv(),
       timeoutMs: attempt.timeoutSec * 1000,
       logPath,
       onSpawn,

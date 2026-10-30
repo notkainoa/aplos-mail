@@ -3,6 +3,7 @@
 // main checkout so attempts need no reinstall. The user's own checkout is never touched.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { evalEnv } from './agent.mjs';
 import {
   existsSync,
   lstatSync,
@@ -50,13 +51,32 @@ const GIT_SAFETY = [
   'protocol.ext.allow=never',
 ];
 
+// Every harness git call also runs on a dedicated environment: the eval allow-list (never
+// a credential), global and system config files pointed at nothing (an agent-writable
+// ~/.gitconfig or XDG git config could inject a filter.*.clean, core.fsmonitor or
+// diff.external into the harness's OWN git add/diff), no GIT_CONFIG_* pairs, no terminal
+// prompts, and the harness committer identity pinned for the commits it makes.
+const gitEnv = () => ({
+  ...evalEnv(),
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_COUNT: '0',
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_AUTHOR_NAME: AUTHOR.name,
+  GIT_AUTHOR_EMAIL: AUTHOR.email,
+  GIT_COMMITTER_NAME: AUTHOR.name,
+  GIT_COMMITTER_EMAIL: AUTHOR.email,
+});
+
 export function git(args, cwd, options = {}) {
+  const { env, ...rest } = options;
   return execFileSync('git', [...GIT_SAFETY, ...args], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
-    ...options,
+    env: env ?? gitEnv(),
+    ...rest,
   });
 }
 
@@ -321,15 +341,8 @@ export function deleteBranch(repoRoot, branch) {
  */
 export function squashToBest(repoRoot, { name, runId, fromSha, toSha, message }) {
   const tree = git(['rev-parse', `${toSha}^{tree}`], repoRoot).trim();
-  const sha = git(['commit-tree', tree, '-p', fromSha, '-m', message], repoRoot, {
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: AUTHOR.name,
-      GIT_AUTHOR_EMAIL: AUTHOR.email,
-      GIT_COMMITTER_NAME: AUTHOR.name,
-      GIT_COMMITTER_EMAIL: AUTHOR.email,
-    },
-  }).trim();
+  // commit-tree needs an identity: gitEnv already pins GIT_AUTHOR_*/GIT_COMMITTER_*.
+  const sha = git(['commit-tree', tree, '-p', fromSha, '-m', message], repoRoot).trim();
   const branch = bestBranch(name, runId);
   git(['branch', '-f', branch, sha], repoRoot);
   return { branch, sha };

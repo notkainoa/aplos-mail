@@ -2,9 +2,10 @@
 // goes to per-step log files and is never printed raw. A scorer's contract: its LAST
 // non-empty stdout line is JSON {"score": <finite number, higher is better>, "details": []}.
 // A gate must exit 0. Any deviation (non-zero exit, timeout, missing/invalid JSON, non-finite
-// score) makes the attempt invalid with the reason reported. Gates and scorers run the same
-// allow-listed environment as agents — suite commands must never see credentials either.
-import { filteredEnv, runLogged } from './agent.mjs';
+// score) makes the attempt invalid with the reason reported. Gates and scorers run the
+// tightest environment — evalEnv, the runtime allow-list without even the agent CLIs'
+// login-discovery variables — because they execute code the attempt agent modified.
+import { evalEnv, runLogged } from './agent.mjs';
 
 const lastNonEmpty = text =>
   text
@@ -53,7 +54,7 @@ export async function runGate(gate, { workdir, logPath, env, spawnFn, onSpawn })
       command: 'sh',
       args: ['-c', gate.command],
       cwd: workdir,
-      env: env ?? filteredEnv(),
+      env: env ?? evalEnv(),
       timeoutMs: gate.timeoutSec * 1000,
       logPath,
       onSpawn,
@@ -74,7 +75,7 @@ export async function runScorer(scorer, { workdir, logPath, env, spawnFn, onSpaw
       command: 'sh',
       args: ['-c', scorer.command],
       cwd: workdir,
-      env: env ?? filteredEnv(),
+      env: env ?? evalEnv(),
       timeoutMs: scorer.timeoutSec * 1000,
       logPath,
       onSpawn,

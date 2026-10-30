@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { briefFor, filteredEnv, runAgent } from './agent.mjs';
+import { agentEnv, briefFor, evalEnv, runAgent } from './agent.mjs';
 import { evaluateScorers, runHillClimb } from './loop.mjs';
 import { loadConfig, resolveBrief } from './config.mjs';
 import { releaseHeldSlots, withCheckSlot } from './lock.mjs';
@@ -81,6 +81,18 @@ const positiveInt = (flag, value) => {
 
 const newRunId = () =>
   `${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${process.pid.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/**
+ * Scrubs the harness's own environment at startup: every variable not on the eval or agent
+ * allow-lists is deleted so a credential sitting in process.env can never leak into a gate,
+ * scorer, agent or git child through an inherited name nobody forwarded on purpose.
+ */
+export function scrubProcessEnv(env = process.env) {
+  const keep = new Set([...Object.keys(agentEnv(env)), ...Object.keys(evalEnv(env))]);
+  for (const name of Object.keys(env)) {
+    if (!keep.has(name)) delete env[name];
+  }
+}
 
 /**
  * The real deps for runHillClimb: git worktrees under the run's tmpdir, gate/scorer commands
@@ -158,7 +170,7 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
         briefFile,
         briefText: briefFor(config.attempt, briefFile),
         workdir: ctx.dir,
-        env: filteredEnv(),
+        env: agentEnv(),
         logPath: join(artifactsDir, `${ctx.id}-agent.log`),
         onSpawn: track,
       });
@@ -211,6 +223,9 @@ function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  // Everything the harness itself needs was already read (argv); drop every env variable
+  // that is not allow-listed before any child could inherit it.
+  scrubProcessEnv();
   const { config, repoRelPath } = loadConfig(options.config, repoRoot);
   config.attempt.brief = resolveBrief(config.attempt.brief, repoRoot);
   if (options.rounds) config.roundLimit = options.rounds;

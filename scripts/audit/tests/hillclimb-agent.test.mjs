@@ -5,7 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { after, describe, it } from 'node:test';
-import { buildAgentInvocation, filteredEnv, runLogged } from '../hillclimb/agent.mjs';
+import {
+  agentEnv,
+  buildAgentInvocation,
+  evalEnv,
+  filteredEnv,
+  runAgent,
+  runLogged,
+} from '../hillclimb/agent.mjs';
 import { runGate, runScorer } from '../hillclimb/steps.mjs';
 
 // The log lives directly under tmpdir: runLogged closes its write stream asynchronously,
@@ -70,7 +77,7 @@ describe('buildAgentInvocation', () => {
   });
 });
 
-describe('filteredEnv allow-list', () => {
+describe('agentEnv/evalEnv allow-lists', () => {
   const env = {
     PATH: '/usr/bin',
     HOME: '/home/u',
@@ -80,80 +87,143 @@ describe('filteredEnv allow-list', () => {
     LANG: 'en_US.UTF-8',
     LC_ALL: 'en_US.UTF-8',
     LC_CTYPE: 'UTF-8',
+    LC_MESSAGES: 'en_US.UTF-8',
     TERM: 'xterm-256color',
     TMPDIR: '/tmp',
     TZ: 'UTC',
     CI: 'true',
+    NODE_ENV: 'test',
     NODE_OPTIONS: '--max-old-space-size=4096',
-    NODE_PATH: '/x',
-    npm_config_registry: 'https://registry',
-    NPM_CONFIG_CACHE: '/c',
-    DEVIN_API_KEY: 'dk-allowed',
+    npm_config_cache: '/c',
+    npm_config_loglevel: 'warn',
+    npm_config_progress: 'false',
+    npm_config_update_notifier: 'false',
+    XDG_CACHE_HOME: '/xc',
+    XDG_DATA_HOME: '/xd',
+    // Agents only — the CLIs' login-discovery names.
     XDG_CONFIG_HOME: '/cfg',
-    // Everything below must be dropped: anything not allow-listed is a leak risk.
+    DEVIN_CONFIG_DIR: '/dc',
+    DEVIN_HOME: '/dh',
+    CLAUDE_CONFIG_DIR: '/cc',
+    // Everything below must be dropped in BOTH: prefix-shaped secrets and injection
+    // vectors are exactly what the named-only list exists to stop.
+    NODE_PATH: '/x',
+    NODE_AUTH_TOKEN: 'nt',
+    npm_config_registry: 'https://registry',
+    'npm_config_//registry.npmjs.org/:_authToken': 'tok',
+    NPM_CONFIG_CACHE: '/C',
+    LC_TIME: 'en_US.UTF-8',
+    DEVIN_API_KEY: 'dk',
+    ANTHROPIC_API_KEY: 'sk-ant',
+    OPENAI_API_KEY: 'sk-x',
+    GROQ_API_KEY: 'gsk_x',
     AWS_ACCESS_KEY_ID: 'AKIA',
     AWS_SECRET_ACCESS_KEY: 'x',
+    AWS_SESSION_TOKEN: 't',
     SSH_AUTH_SOCK: '/sock',
     DATABASE_URL: 'postgres://x',
     GITHUB_TOKEN: 'ghp_x',
     FOO_PAT: 'x',
     MY_PASS: 'x',
     EDITOR: 'vim',
-    ANTHROPIC_API_KEY: 'sk-ant',
-    OPENAI_API_KEY: 'sk-x',
-    GROQ_API_KEY: 'gsk_x',
     DOCKER_HOST: 'tcp://x',
     BASH_ENV: '/evil',
     ENV: '/evil',
     PS1: 'x',
   };
-  const out = filteredEnv(env);
+  const COMMON = [
+    'PATH',
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'SHELL',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'LC_MESSAGES',
+    'TERM',
+    'TMPDIR',
+    'TZ',
+    'CI',
+    'NODE_ENV',
+    'NODE_OPTIONS',
+    'npm_config_cache',
+    'npm_config_loglevel',
+    'npm_config_progress',
+    'npm_config_update_notifier',
+    'XDG_CACHE_HOME',
+    'XDG_DATA_HOME',
+  ];
+  const AGENT_ONLY = ['XDG_CONFIG_HOME', 'DEVIN_CONFIG_DIR', 'DEVIN_HOME', 'CLAUDE_CONFIG_DIR'];
+  const agent = agentEnv(env);
+  const evald = evalEnv(env);
 
-  it('keeps only the allow-listed names', () => {
-    const expected = [
-      'PATH',
-      'HOME',
-      'USER',
-      'LOGNAME',
-      'SHELL',
-      'LANG',
-      'LC_ALL',
-      'LC_CTYPE',
-      'TERM',
-      'TMPDIR',
-      'TZ',
-      'CI',
-      'NODE_OPTIONS',
-      'NODE_PATH',
-      'npm_config_registry',
-      'NPM_CONFIG_CACHE',
-      'DEVIN_API_KEY',
-      'XDG_CONFIG_HOME',
-    ];
-    for (const name of expected) assert.equal(out[name], env[name], `${name} must survive`);
-    assert.deepEqual(Object.keys(out).sort(), expected.sort());
+  it('agentEnv keeps the common names plus the CLI login-discovery names', () => {
+    const expected = [...COMMON, ...AGENT_ONLY];
+    for (const name of expected) assert.equal(agent[name], env[name], `${name} must survive`);
+    assert.deepEqual(Object.keys(agent).sort(), expected.sort());
   });
 
-  it('drops everything else, secrets or not', () => {
+  it('evalEnv keeps the common names and nothing agent-only', () => {
+    assert.deepEqual(Object.keys(evald).sort(), COMMON.sort());
+    for (const name of AGENT_ONLY) assert.ok(!(name in evald), `${name} must be dropped`);
+  });
+
+  it('drops prefix-shaped secrets and injection vectors in both', () => {
     for (const name of [
+      'NODE_PATH',
+      'NODE_AUTH_TOKEN',
+      'npm_config_registry',
+      'npm_config_//registry.npmjs.org/:_authToken',
+      'NPM_CONFIG_CACHE',
+      'LC_TIME',
+      'DEVIN_API_KEY',
+      'ANTHROPIC_API_KEY',
+      'OPENAI_API_KEY',
+      'GROQ_API_KEY',
       'AWS_ACCESS_KEY_ID',
       'AWS_SECRET_ACCESS_KEY',
+      'AWS_SESSION_TOKEN',
       'SSH_AUTH_SOCK',
       'DATABASE_URL',
       'GITHUB_TOKEN',
       'FOO_PAT',
       'MY_PASS',
       'EDITOR',
-      'ANTHROPIC_API_KEY',
-      'OPENAI_API_KEY',
-      'GROQ_API_KEY',
       'DOCKER_HOST',
       'BASH_ENV',
       'ENV',
       'PS1',
     ]) {
-      assert.ok(!(name in out), `${name} must be dropped`);
+      assert.ok(!(name in agent), `agentEnv must drop ${name}`);
+      assert.ok(!(name in evald), `evalEnv must drop ${name}`);
     }
+  });
+
+  it('drops NODE_OPTIONS carrying injection flags, keeps benign options', () => {
+    for (const bad of [
+      '--require /x',
+      '-r /x',
+      '-r./x',
+      '-rx',
+      '--require=/x',
+      '--import=x',
+      '--loader /x',
+      '--experimental-loader /x',
+      '--max-old-space-size=4096 -r ./preload.js',
+    ]) {
+      for (const filter of [agentEnv, evalEnv]) {
+        assert.ok(!('NODE_OPTIONS' in filter({ NODE_OPTIONS: bad })), bad);
+      }
+    }
+    assert.equal(
+      agentEnv({ NODE_OPTIONS: '--max-old-space-size=4096' }).NODE_OPTIONS,
+      '--max-old-space-size=4096',
+    );
+  });
+
+  it('keeps filteredEnv as the agent-side alias', () => {
+    assert.equal(filteredEnv, agentEnv);
   });
 });
 
@@ -231,10 +301,14 @@ describe('runLogged', () => {
 });
 
 describe('gate/scorer environment and scorer stdout contract', () => {
-  it('runs gates with the allow-listed env, not process.env', async () => {
-    const prevSock = process.env.SSH_AUTH_SOCK;
+  it('runs gates with the eval env: runtime names only, no agent-only names', async () => {
+    const prev = {};
+    for (const name of ['SSH_AUTH_SOCK', 'HILLCLIMB_TEST_LEAK', 'DEVIN_CONFIG_DIR']) {
+      prev[name] = process.env[name];
+    }
     process.env.HILLCLIMB_TEST_LEAK = 'must-not-see';
     process.env.SSH_AUTH_SOCK = '/sock-for-test';
+    process.env.DEVIN_CONFIG_DIR = '/dc-for-test';
     let seen;
     const child = fakeChild();
     const spawnFn = (cmd, args, opts) => {
@@ -250,11 +324,46 @@ describe('gate/scorer environment and scorer stdout contract', () => {
       await promise;
       assert.ok(!('HILLCLIMB_TEST_LEAK' in seen));
       assert.ok(!('SSH_AUTH_SOCK' in seen));
+      assert.ok(!('DEVIN_CONFIG_DIR' in seen), 'gates must not see agent login dirs');
       assert.equal(seen.PATH, process.env.PATH);
     } finally {
-      delete process.env.HILLCLIMB_TEST_LEAK;
-      if (prevSock === undefined) delete process.env.SSH_AUTH_SOCK;
-      else process.env.SSH_AUTH_SOCK = prevSock;
+      for (const [name, value] of Object.entries(prev)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  it('runs agents with the agent env: CLI login names survive, secrets never do', async () => {
+    const prev = {};
+    for (const name of ['DEVIN_CONFIG_DIR', 'DEVIN_API_KEY', 'NODE_AUTH_TOKEN']) {
+      prev[name] = process.env[name];
+    }
+    process.env.DEVIN_CONFIG_DIR = '/dc-for-test';
+    process.env.DEVIN_API_KEY = 'dk-secret';
+    process.env.NODE_AUTH_TOKEN = 'nt-secret';
+    let seen;
+    const child = fakeChild();
+    const spawnFn = (cmd, args, opts) => {
+      seen = opts.env;
+      return child;
+    };
+    try {
+      const promise = runAgent(
+        { agent: 'command', command: 'true', timeoutSec: 5 },
+        { workdir: '/w', logPath, spawnFn },
+      );
+      child.emit('close', 0, null);
+      await promise;
+      assert.equal(seen.DEVIN_CONFIG_DIR, '/dc-for-test');
+      assert.ok(!('DEVIN_API_KEY' in seen));
+      assert.ok(!('NODE_AUTH_TOKEN' in seen));
+      assert.equal(seen.PATH, process.env.PATH);
+    } finally {
+      for (const [name, value] of Object.entries(prev)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 

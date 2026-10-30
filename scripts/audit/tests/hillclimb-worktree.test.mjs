@@ -187,6 +187,29 @@ describe('blobSize', () => {
   });
 });
 
+describe('harness git environment', () => {
+  it('never runs a filter.*.clean trap defined in the user-global gitconfig', () => {
+    const r = freshRepo();
+    const home = mkdtempSync(join(tmpdir(), 'hillclimb-home-'));
+    const marker = join(home, 'filter-fired');
+    const trap = join(home, 'trap.sh');
+    writeFileSync(trap, `#!/bin/sh\ncat\ntouch "${marker}"\n`, { mode: 0o755 });
+    writeFileSync(join(home, '.gitconfig'), `[filter "x"]\n\tclean = ${trap}\n`);
+    // Route .txt files through the trap; only the global config defines the filter.
+    writeFileSync(join(r.dir, '.gitattributes'), '*.txt filter=x\n');
+    writeFileSync(join(r.dir, 'routed.txt'), 'payload\n');
+    const prev = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      commitAll(r.dir, 'attempt'); // git add -A under the harness's dedicated env
+    } finally {
+      process.env.HOME = prev;
+    }
+    assert.equal(existsSync(marker), false, 'global filter.clean command ran');
+    rmSync(home, { recursive: true, force: true });
+  });
+});
+
 describe('harness git safety flags', () => {
   it('never runs repo-configured diff.external or core.fsmonitor commands', () => {
     const r = freshRepo();
