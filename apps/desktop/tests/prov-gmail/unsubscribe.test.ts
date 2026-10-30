@@ -5,6 +5,7 @@ import http from 'node:http';
 import type https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import type { ListHeaders } from '@aplos/engine/ports';
+import { messageFacts } from '../../src/host/providers/google/facts';
 import { pinTarget, type PinnedTarget, type Resolver } from '../../src/host/proxy/resolve';
 import {
   checkHttpsUrl,
@@ -594,6 +595,50 @@ test('a cancelled call rejects and sends nothing', async () => {
     /cancelled/,
   );
   assert.deepEqual([s.lookups, s.targets], [[], []]);
+});
+
+test('a cancel after the POST went out answers unsure instead of rejecting, so the engine keeps its receipt', async () => {
+  const s = spy();
+  const controller = new AbortController();
+  let sent!: () => void;
+  const posted = new Promise<void>(resolve => (sent = resolve));
+  const transport: OneClickTransport = (target, signal) => {
+    s.targets.push(target);
+    sent();
+    return new Promise((_resolve, reject) =>
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+    );
+  };
+  const result = executor(s, { transport }).run({
+    from: 'me@mail.example',
+    headers: headers(`<${LIST}>`),
+    signal: controller.signal,
+  });
+  await posted;
+  controller.abort(new Error('cancelled'));
+  assert.equal((await result).kind, 'unsure');
+  assert.equal(s.targets.length, 1);
+});
+
+test('List-Unsubscribe-Post given as two separate headers turns one-click off, even if both are the exact value', () => {
+  const message = (...posts: string[]) => ({
+    id: 'g1',
+    threadId: 't1',
+    internalDate: '1',
+    payload: {
+      headers: [
+        { name: 'List-Unsubscribe', value: `<${LIST}>` },
+        ...posts.map(value => ({ name: 'List-Unsubscribe-Post', value })),
+      ],
+    },
+  });
+  const post = (...posts: string[]) =>
+    messageFacts(message(...posts), { self: 'me@mail.example', partial: true }).list;
+  assert.equal(post(POST).listUnsubscribePost, POST);
+  assert.equal(post(POST, POST).listUnsubscribePost, undefined);
+  assert.equal(post('x=y', POST).listUnsubscribePost, undefined);
+  assert.equal(post(POST, 'x=y').listUnsubscribePost, undefined);
+  assert.equal(planUnsubscribe(post(POST, POST)).kind, 'open');
 });
 
 // ---------------------------------------------------------------- mailto

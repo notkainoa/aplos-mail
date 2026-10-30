@@ -423,7 +423,9 @@ async function oneClick(
   try {
     return await postOnce({ ...run, deadline: controller.signal }, sent);
   } catch {
-    if (run.signal.aborted) throw run.signal.reason;
+    // Before the request went out nothing was sent, so a cancel is a plain rejection. After it, the POST may have
+    // landed: answer unsure (never reject), so the engine keeps a receipt and a replay cannot send a second one.
+    if (run.signal.aborted && !sent.value) throw run.signal.reason;
     if (!sent.value) return { kind: 'failed', message: SENTENCES.unreachable };
     const message = controller.signal.aborted ? SENTENCES.noAnswer : SENTENCES.lost;
     return { kind: 'unsure', message, url: run.url.href };

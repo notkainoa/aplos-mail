@@ -38,10 +38,22 @@ const MAX_URL = 2_000;
 
 type RunOutput = Output<'Unsubscribe/run'>;
 
+/** What a receipt keeps: the outcome and the sentence, nothing the sender wrote (no url). */
+export type Stored = Pick<RunOutput, 'outcome' | 'message'>;
+
+/**
+ * A run is bounded by this, on its own signal and not the caller's, so the connection closing mid-run cannot abort a
+ * POST that is already out. Longer than the executor's own 10 s deadline, so that deadline answers first; this only
+ * backstops an executor that never settles.
+ */
+export const RUN_CAP_MS = 15_000;
+
 /**
  * Receipts for `Unsubscribe/run`, keyed by `opId` and thread: a retried call (same `opId`) gets the first call's outcome
  * and never reaches the executor, so it cannot POST twice. The promise is stored at once, so a concurrent retry joins
- * the call in flight. Bounded by count and age; a call that rejects (cancelled) leaves no receipt.
+ * the call in flight. Bounded by count and age. The run does not depend on the caller: when the caller goes away the
+ * run still settles into its receipt, and a replay then gets that outcome. Only a run that itself rejects (the executor
+ * refused to start, or hit the cap) leaves no receipt.
  *
  * The receipt is process-local: it is lost on restart and not shared between processes. `common.ts` promises that a
  * replayed `opId` never applies twice; for this method that holds only within this process (and the port also gets the
@@ -49,16 +61,12 @@ type RunOutput = Output<'Unsubscribe/run'>;
  * known gap, not written here.
  */
 export interface Receipts {
-  once(
-    opId: string | undefined,
-    threadId: string,
-    make: () => Promise<RunOutput>,
-  ): Promise<RunOutput>;
+  once(opId: string | undefined, threadId: string, make: () => Promise<Stored>): Promise<Stored>;
 }
 
 interface Receipt {
   at: number;
-  result: Promise<RunOutput>;
+  result: Promise<Stored>;
 }
 
 export const RECEIPT_LIMITS = Object.freeze({ maxEntries: 200, ttlMs: 10 * 60_000 });
@@ -131,18 +139,42 @@ function shown(url: string | undefined): { url: string } | Record<string, never>
   return typeof url === 'string' && url.length <= MAX_URL && !/[\r\n]/.test(url) ? { url } : {};
 }
 
+/** Runs the executor on a signal of its own, ended by the cap and never by the caller. */
 async function perform(
   executor: UnsubscribePort,
   found: Target,
   opId: string | undefined,
-  ctx: MethodContext,
-): Promise<RunOutput> {
-  const result = await executor.run({ ...found, ...(opId ? { opId } : {}), signal: ctx.signal });
-  return {
-    outcome: OUTCOME[result.kind] ?? 'failed',
-    message: result.message,
-    ...shown(result.url),
-  };
+  signal: AbortSignal,
+): Promise<Stored> {
+  const result = await executor.run({ ...found, ...(opId ? { opId } : {}), signal });
+  return { outcome: OUTCOME[result.kind] ?? 'failed', message: result.message };
+}
+
+async function capped(run: (signal: AbortSignal) => Promise<Stored>): Promise<Stored> {
+  const own = new AbortController();
+  const timer = setTimeout(() => own.abort(new Error('unsubscribe timed out')), RUN_CAP_MS);
+  try {
+    return await run(own.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Stops waiting when the caller goes away; the run itself carries on. */
+function waitFor<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+/** The link comes from the headers, not from a receipt: only an `openLink` or `compose` outcome shows one. */
+function present(stored: Stored, executor: UnsubscribePort, found: Target): RunOutput {
+  const linked = stored.outcome === 'openLink' || stored.outcome === 'compose';
+  const url = linked ? executor.describe(found.headers).url : undefined;
+  return { ...stored, ...shown(url) };
 }
 
 export const handlers: AreaHandlers<'unsubscribe'> = {
@@ -158,8 +190,12 @@ export const handlers: AreaHandlers<'unsubscribe'> = {
     const found = target(ctx, args.threadId);
     if (!found) return { outcome: 'unavailable', message: NO_WAY };
     const executor = executorOf(ctx);
-    return receiptsOf(executor).once(args.opId, args.threadId, () =>
-      perform(executor, found, args.opId, ctx),
+    ctx.signal.throwIfAborted();
+    const make = () => capped(signal => perform(executor, found, args.opId, signal));
+    const stored = await waitFor(
+      receiptsOf(executor).once(args.opId, args.threadId, make),
+      ctx.signal,
     );
+    return present(stored, executor, found);
   },
 };

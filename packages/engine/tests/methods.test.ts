@@ -157,6 +157,9 @@ async function withUnsubStore(fn: (store: StorePort) => Promise<void>) {
         }),
         msg('m3', 't1', 9, { flags: own, listUnsubscribe: { urls: ['https://mine.example/u'] } }),
         msg('m4', 't2', 1),
+        msg('m5', 't3', 3, {
+          listUnsubscribe: { urls: ['https://other.example/u'], oneClick: true },
+        }),
       ],
     });
     await fn(store);
@@ -183,9 +186,10 @@ async function withAbsentPort(fn: (absent: Executor) => Promise<void>) {
 function fakeExecutor(
   result: Awaited<ReturnType<Executor['run']>>,
   seen: RunRequest[] = [],
+  described: ReturnType<Executor['describe']> = { method: 'oneClick' },
 ): Executor {
   return {
-    describe: () => ({ method: 'oneClick' }),
+    describe: () => described,
     run: async request => {
       seen.push(request);
       return result;
@@ -213,32 +217,63 @@ test('Unsubscribe/run hands the newest inbound list message and its receiving ac
   });
 });
 
-test('Unsubscribe/run maps every executor result to the contract outcome and drops an unsafe url', async () => {
+test('Unsubscribe/run maps every executor result to the contract outcome; a link comes from the headers and an unsafe one is dropped', async () => {
   await withUnsubStore(async store => {
+    const link = (method: 'link' | 'mailto', url?: string) => ({ method, ...(url ? { url } : {}) });
     const cases = [
       [
-        { kind: 'open', message: 'm', url: 'https://list.example/u' },
+        { kind: 'open', message: 'm' },
+        link('link', 'https://list.example/u'),
         { outcome: 'openLink', url: 'https://list.example/u' },
       ],
       [
-        { kind: 'compose', message: 'm', url: 'mailto:a@list.example' },
+        { kind: 'compose', message: 'm' },
+        link('mailto', 'mailto:a@list.example'),
         { outcome: 'compose', url: 'mailto:a@list.example' },
       ],
-      [{ kind: 'unsure', message: 'm' }, { outcome: 'unsure' }],
-      [{ kind: 'failed', message: 'm' }, { outcome: 'failed' }],
-      [{ kind: 'none', message: 'm' }, { outcome: 'unavailable' }],
       [
-        { kind: 'open', message: 'm', url: `https://list.example/${'a'.repeat(2_000)}` },
+        { kind: 'unsure', message: 'm' },
+        link('link', 'https://list.example/u'),
+        { outcome: 'unsure' },
+      ],
+      [
+        { kind: 'failed', message: 'm' },
+        link('link', 'https://list.example/u'),
+        { outcome: 'failed' },
+      ],
+      [{ kind: 'none', message: 'm' }, link('link'), { outcome: 'unavailable' }],
+      [
+        { kind: 'open', message: 'm' },
+        link('link', `https://list.example/${'a'.repeat(2_000)}`),
         { outcome: 'openLink' },
       ],
-      [{ kind: 'open', message: 'm', url: 'https://list.example/u\nx' }, { outcome: 'openLink' }],
+      [
+        { kind: 'open', message: 'm' },
+        link('link', 'https://list.example/u\nx'),
+        { outcome: 'openLink' },
+      ],
     ] as const;
-    for (const [result, expected] of cases) {
+    for (const [result, described, expected] of cases) {
       const out = await handlers['Unsubscribe/run'](
         { opId: 'op-1', threadId: T1 },
-        unsubCtx(store, fakeExecutor(result)),
+        unsubCtx(store, fakeExecutor(result, [], described)),
       );
       assert.deepEqual(out, { message: 'm', ...expected });
+    }
+  });
+});
+
+test('Unsubscribe/run keeps no url from the executor result: the answer is the same on the first call and on a replay', async () => {
+  await withUnsubStore(async store => {
+    const secret = 'https://sender.example/u?token=secret';
+    const shown = { method: 'link', url: 'https://list.example/u' } as const;
+    for (const kind of ['open', 'compose', 'unsure', 'failed'] as const) {
+      const ctx = unsubCtx(store, fakeExecutor({ kind, message: 'm', url: secret }, [], shown));
+      const first = await handlers['Unsubscribe/run']({ opId: `op-${kind}`, threadId: T1 }, ctx);
+      const replay = await handlers['Unsubscribe/run']({ opId: `op-${kind}`, threadId: T1 }, ctx);
+      assert.deepEqual(replay, first);
+      assert.ok(!JSON.stringify([first, replay]).includes('secret'), kind);
+      assert.equal('url' in first, kind === 'open' || kind === 'compose', kind);
     }
   });
 });
@@ -381,22 +416,152 @@ test('Unsubscribe/run: a concurrent retry joins the call in flight instead of PO
   });
 });
 
-test('Unsubscribe/run: a call that is cancelled leaves no receipt, so the owner can try again', async () => {
+/**
+ * An executor shaped like the real one: `send` is the one POST. It waits at `beforeSend` (the lookup), POSTs, then waits
+ * at `afterSend` (the response). An abort of the signal it was given rejects it, as the old host did after a send.
+ */
+function postingExecutor() {
+  const state = { posts: 0, signals: [] as AbortSignal[] };
+  let openBefore = () => {};
+  let openAfter = () => {};
+  const beforeSend = new Promise<void>(resolve => (openBefore = resolve));
+  const afterSend = new Promise<void>(resolve => (openAfter = resolve));
+  const abortion = (signal: AbortSignal) =>
+    new Promise<never>((_resolve, reject) =>
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+    );
+  const executor: Executor = {
+    describe: () => ({ method: 'oneClick' }),
+    run: async request => {
+      state.signals.push(request.signal);
+      await Promise.race([beforeSend, abortion(request.signal)]);
+      state.posts += 1;
+      await Promise.race([afterSend, abortion(request.signal)]);
+      return { kind: 'done', message: 'Unsubscribed.' };
+    },
+  };
+  return { executor, state, openBefore, openAfter };
+}
+
+async function untilPosted(state: { posts: number }) {
+  for (let i = 0; i < 50 && state.posts === 0; i += 1) await new Promise(r => setImmediate(r));
+}
+
+test('Unsubscribe/run: the connection closing after the POST went out rejects the caller, and a replay gets the stored outcome with no second POST', async () => {
+  await withUnsubStore(async store => {
+    const { executor, state, openBefore, openAfter } = postingExecutor();
+    const closing = new AbortController();
+    const first = Promise.resolve(
+      handlers['Unsubscribe/run'](
+        { opId: 'op-a', threadId: T1 },
+        { ...unsubCtx(store, executor), signal: closing.signal },
+      ),
+    );
+    openBefore();
+    await untilPosted(state);
+    assert.equal(state.posts, 1);
+    closing.abort(new Error('connection closed'));
+    await assert.rejects(first, /connection closed/);
+    assert.equal(state.signals[0].aborted, false, 'the executor never sees the caller’s signal');
+    // Replay while the first POST is still waiting for its answer: it joins, it does not send again.
+    const joined = handlers['Unsubscribe/run'](
+      { opId: 'op-a', threadId: T1 },
+      unsubCtx(store, executor),
+    );
+    openAfter();
+    assert.deepEqual(await joined, { outcome: 'done', message: 'Unsubscribed.' });
+    // And after the run has settled.
+    const later = await handlers['Unsubscribe/run'](
+      { opId: 'op-a', threadId: T1 },
+      unsubCtx(store, executor),
+    );
+    assert.deepEqual(later, { outcome: 'done', message: 'Unsubscribed.' });
+    assert.equal(state.posts, 1);
+  });
+});
+
+test('Unsubscribe/run: the connection closing before the POST rejects the caller, and a replay still sends exactly one POST in all', async () => {
+  await withUnsubStore(async store => {
+    const { executor, state, openBefore, openAfter } = postingExecutor();
+    const closing = new AbortController();
+    const first = Promise.resolve(
+      handlers['Unsubscribe/run'](
+        { opId: 'op-a', threadId: T1 },
+        { ...unsubCtx(store, executor), signal: closing.signal },
+      ),
+    );
+    closing.abort(new Error('connection closed'));
+    await assert.rejects(first, /connection closed/);
+    assert.equal(state.posts, 0);
+    const replay = handlers['Unsubscribe/run'](
+      { opId: 'op-a', threadId: T1 },
+      unsubCtx(store, executor),
+    );
+    openBefore();
+    openAfter();
+    assert.equal((await replay).outcome, 'done');
+    assert.equal(state.posts, 1);
+  });
+});
+
+test('Unsubscribe/run: a signal already aborted starts nothing', async () => {
+  await withUnsubStore(async store => {
+    const { executor, state } = postingExecutor();
+    const closed = AbortSignal.abort(new Error('connection closed'));
+    await assert.rejects(
+      Promise.resolve().then(() =>
+        handlers['Unsubscribe/run'](
+          { opId: 'op-a', threadId: T1 },
+          { ...unsubCtx(store, executor), signal: closed },
+        ),
+      ),
+      /connection closed/,
+    );
+    assert.deepEqual([state.posts, state.signals.length], [0, 0]);
+  });
+});
+
+test('Unsubscribe/run: a run that rejects leaves no receipt, so the owner can try again', async () => {
   await withUnsubStore(async store => {
     let runs = 0;
     const executor: Executor = {
       describe: () => ({ method: 'oneClick' }),
       run: async () => {
         runs += 1;
-        if (runs === 1) throw new Error('cancelled');
+        if (runs === 1) throw new Error('refused to start');
         return { kind: 'done', message: 'ok' };
       },
     };
     const call = async () =>
       handlers['Unsubscribe/run']({ opId: 'op-a', threadId: T1 }, unsubCtx(store, executor));
-    await assert.rejects(call(), /cancelled/);
+    await assert.rejects(call(), /refused to start/);
     assert.equal((await call()).outcome, 'done');
     assert.equal(runs, 2);
+  });
+});
+
+test('Unsubscribe/run: the same opId on another thread is its own call, with its own POST and its own outcome', async () => {
+  await withUnsubStore(async store => {
+    const posted: string[] = [];
+    const executor: Executor = {
+      describe: () => ({ method: 'oneClick' }),
+      run: async request => {
+        posted.push(request.headers.listUnsubscribe ?? '');
+        return { kind: 'done', message: `Unsubscribed from ${request.headers.listUnsubscribe}.` };
+      },
+    };
+    const ctx = unsubCtx(store, executor);
+    const one = await handlers['Unsubscribe/run']({ opId: 'op-x', threadId: T1 }, ctx);
+    const other = await handlers['Unsubscribe/run'](
+      { opId: 'op-x', threadId: `${ACCOUNT}:t3` },
+      ctx,
+    );
+    assert.equal(posted.length, 2);
+    assert.notDeepEqual(one, other);
+    assert.match(one.message, /list\.example/);
+    assert.match(other.message, /other\.example/);
+    assert.deepEqual(await handlers['Unsubscribe/run']({ opId: 'op-x', threadId: T1 }, ctx), one);
+    assert.equal(posted.length, 2);
   });
 });
 
