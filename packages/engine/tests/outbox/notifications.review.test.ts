@@ -388,10 +388,21 @@ function claimedOne(from: { address: string; name?: string }, subject: string) {
   return item!;
 }
 
-test('bidi, zero-width, BOM and soft-hyphen characters are stripped from the subject', () => {
-  const subject = '‮Report‬ ⁦for⁩ ‍you​﻿ to­day‏';
+test('bidi, zero-width space, BOM and soft-hyphen characters are stripped from the subject', () => {
+  const subject = '‮Report‬ ⁦for⁩ you​﻿ to­day‏';
   const item = claimedOne({ address: 'a@mail.example', name: 'Ann' }, subject);
   assert.equal(item.body, 'Report for you today');
+});
+
+test('ZWNJ, ZWJ and the Arabic number signs survive, they are part of the text', () => {
+  const subject = 'می\u200Cخواهم \u0600١٢٣ क्\u200Dष \u{1F468}\u200D\u{1F469}';
+  const item = claimedOne({ address: 'a@mail.example', name: 'Ann' }, subject);
+  assert.equal(item.body, subject);
+  const tags = claimedOne(
+    { address: 'a@mail.example', name: 'Ann' },
+    'a\u{E0041}\u{E007F}b\u2060\u2066c',
+  );
+  assert.equal(tags.body, 'abc');
 });
 
 test('the sender name is cleaned the same way', () => {
