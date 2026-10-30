@@ -21,7 +21,10 @@
 //
 // Cheap mitigations in place of a sandbox: the run refuses to start on a dirty main
 // checkout, and after every attempt verifies the main checkout's HEAD and status are
-// untouched; any change aborts the whole run.
+// untouched; any change aborts the whole run. Run this from a dedicated clone with
+// its own .git (git clone --reference <your checkout> <url> /tmp/hc-clone), not a
+// linked worktree: other worktrees change the shared git dir and would read as a
+// sandbox breach.
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { constants as osConstants } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -35,6 +38,7 @@ import { runGate, runScorer } from './steps.mjs';
 import {
   addedLines,
   addWorktree,
+  assertDedicatedClone,
   attemptBranch,
   attemptDir,
   binaryPaths,
@@ -45,12 +49,14 @@ import {
   diffBetween,
   gitShow,
   indexFlagViolations,
+  lastLinkStats,
   linkNodeModules,
   lsTreePaths,
   mainCheckoutIntact,
   removeWorktree,
   runRoot,
   snapshotGitDir,
+  snapshotModuleTrees,
   squashToBest,
   statusPorcelain,
 } from './worktree.mjs';
@@ -128,6 +134,17 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
     child.on('close', drop);
     child.on('error', drop);
   };
+  // Link a worktree's node_modules and report the file strategy when it changes — the
+  // first call's answer (clone vs hardlink) normally stands for the whole run.
+  const linkModules = dir => {
+    const roots = linkNodeModules(repoRoot, dir);
+    const { line } = lastLinkStats();
+    if (line && state.lastModulesLine !== line) {
+      state.lastModulesLine = line;
+      console.log(`  ${line}`);
+    }
+    return roots.map(r => join(repoRoot, r, 'node_modules'));
+  };
   return {
     repoRoot,
     runId,
@@ -148,9 +165,7 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       state.branches.push(ctx.branch);
       // The real node_modules dirs these links write through to — the post-attempt
       // write-through scan walks exactly this set.
-      ctx.moduleRoots = linkNodeModules(repoRoot, ctx.dir).map(r =>
-        join(repoRoot, r, 'node_modules'),
-      );
+      ctx.moduleRoots = linkModules(ctx.dir);
     },
     // A clean detached worktree checked out at a commit — where the baseline and every
     // attempt are actually gated and scored, free of uncommitted leftovers, ignored files
@@ -159,12 +174,13 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       ctx.evalDir = join(root, `${ctx.id}-eval`);
       addWorktree(repoRoot, { dir: ctx.evalDir, commit: ctx.head });
       state.dirs.push(ctx.evalDir);
-      ctx.moduleRoots = [
-        ...new Set([
-          ...(ctx.moduleRoots ?? []),
-          ...linkNodeModules(repoRoot, ctx.evalDir).map(r => join(repoRoot, r, 'node_modules')),
-        ]),
-      ];
+      const evalRoots = linkModules(ctx.evalDir);
+      ctx.moduleRoots = [...new Set([...(ctx.moduleRoots ?? []), ...evalRoots])];
+      // Newly watched roots are baselined NOW — before the eval worktree's gates and
+      // scorers run — so a write-through into them is evidence like any other. ONLY the new
+      // eval roots: the roots watched since before the agent ran must never be passed again
+      // (a post-run baseline is exactly how a swapped root would be adopted).
+      if (ctx.moduleSnapshot) snapshotModuleTrees(evalRoots, ctx.moduleSnapshot);
       return ctx.evalDir;
     },
     async runAttemptAgent(ctx, briefText) {
@@ -172,11 +188,10 @@ export function realDeps({ config, repoRelPath, runId, artifactsDir, state }) {
       // diff the guard analyses (and an agent could edit its own instructions mid-run).
       const briefFile = join(root, `${ctx.id}-brief.md`);
       writeFileSync(briefFile, briefText);
-      // The stamp + git-dir snapshot define "before the agent ran": afterwards the
-      // sandbox audit scans the linked node_modules roots for anything newer than the
-      // stamp and re-hashes the shared git dir for tampering.
-      ctx.stampPath = join(root, `${ctx.id}-stamp`);
-      writeFileSync(ctx.stampPath, '');
+      // The module-tree + git-dir snapshots define "before the agent ran": afterwards
+      // the sandbox audit re-walks the linked node_modules roots for ANY difference —
+      // a restored mtime no longer hides a write — and re-hashes the shared git dir.
+      ctx.moduleSnapshot = snapshotModuleTrees(ctx.moduleRoots ?? []);
       ctx.gitSnapshot = snapshotGitDir(ctx.dir);
       return runAgent(config.attempt, {
         briefFile,
@@ -243,6 +258,10 @@ async function main() {
   config.attempt.brief = resolveBrief(config.attempt.brief, repoRoot);
   if (options.rounds) config.roundLimit = options.rounds;
   if (options.attempts) config.attemptsPerRound = options.attempts;
+  // The shared-git-dir snapshot is only meaningful when that dir is private to this
+  // checkout: a sibling worktree's ordinary push/pull writes it mid-run and reads as
+  // a breach. A linked worktree is refused outright — there is no override.
+  assertDedicatedClone(repoRoot);
   // No sandbox: refuse to start on a dirty main checkout so the baseline can't be poisoned
   // and later sandbox checks have a clean reference point.
   if (statusPorcelain(repoRoot).length) {
