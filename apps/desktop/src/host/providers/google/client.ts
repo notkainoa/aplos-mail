@@ -50,7 +50,7 @@ export interface GmailRequest {
   /** The remote item, so a one-item 404 is classified `permanent` with it. */
   item?: string;
   /** Default GET. Writes (`modify`, `trash`) are POSTs. */
-  httpMethod?: 'GET' | 'POST';
+  httpMethod?: 'GET' | 'POST' | 'DELETE';
   /** JSON request body of a POST. */
   body?: unknown;
   /** Called with this device's clock as each try goes out, after any wait for the governor (the clock gate's bracket). */
