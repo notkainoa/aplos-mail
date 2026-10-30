@@ -290,11 +290,13 @@ function raiseConflict(
     ...(result.kind === 'conflict' && result.remoteMessageId !== undefined
       ? { remoteMessageId: result.remoteMessageId }
       : {}),
-    // Only the create path adopts the copy a conflict names; an update already knows its draft.
-    ...(result.kind === 'conflict' &&
-    result.remoteDraftId !== undefined &&
-    upload.remoteDraftId === undefined
+    // The writer adopts the copy a conflict names only on a create (the row has no remote draft) and only when the
+    // provider proved the copy carries this upload's Message-ID.
+    ...(result.kind === 'conflict' && result.remoteDraftId !== undefined
       ? { remoteDraftId: result.remoteDraftId }
+      : {}),
+    ...(result.kind === 'conflict' && result.remoteInternetId !== undefined
+      ? { remoteInternetId: result.remoteInternetId }
       : {}),
     at: ctx.clock.now(),
   };

@@ -574,12 +574,20 @@ export type DraftSaveResult =
    *
    * On the CREATE path (the upload carried no `remoteDraftId`) a conflict means the provider found an existing copy
    * carrying this upload's Message-ID (an earlier create whose reply was lost did land) whose bytes differ. Name it:
-   * `remoteDraftId` (and `remoteMessageId`) of that copy. The engine stores them on the draft row, so keep mine replaces
-   * that copy instead of creating a second draft under a new Message-ID, and records the upload's Message-ID and the
-   * copy's message id as its own, so history reporting that copy is not taken for another device's edit. Optional: an
-   * adapter that cannot name the copy leaves it out (today's behaviour). Ignored on the update path.
+   * `remoteDraftId` (and `remoteMessageId`) of that copy, and `remoteInternetId`, the Message-ID the copy carries. The
+   * engine adopts the copy only when `remoteInternetId` equals `DraftUpload.internetId`: it then stores the ids on the
+   * draft row, so keep mine replaces that copy instead of creating a second draft, and remembers the upload's Message-ID
+   * as its own. It never adopts a copy it cannot prove is its own, and the copy's bytes differ, so it never deletes it:
+   * it is another device's version until the owner chooses (a discard forgets it). Optional: an adapter that cannot name
+   * or prove the copy leaves the fields out (the ordinary conflict, nothing adopted). Ignored on the update path.
    */
-  | { kind: 'conflict'; remoteMessageId?: string; remoteDraftId?: string };
+  | {
+      kind: 'conflict';
+      remoteMessageId?: string;
+      remoteDraftId?: string;
+      /** The Message-ID header of the copy named by `remoteDraftId`, as the provider read it. */
+      remoteInternetId?: string;
+    };
 
 export interface SubmissionPayload {
   submissionId: string;

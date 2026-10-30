@@ -160,20 +160,34 @@ export type CountingSend = ReturnType<typeof countingSend>;
  */
 export interface DraftStep {
   result?:
-    'ok' | 'paused' | 'notSent' | 'lost' | 'landedLost' | 'conflictBare' | 'conflictExisting';
+    | 'ok'
+    | 'paused'
+    | 'notSent'
+    | 'lost'
+    | 'landedLost'
+    | 'conflictBare'
+    | 'conflictExisting'
+    | 'conflictForeign'
+    | 'conflictUnproven'
+    | 'conflictRename';
   /** The `ClassifiedError` class a `notSent` step throws (default `permanent`). */
   notSentClass?: string;
   until?: number;
   /** Awaited before anything else happens. */
   wait?: Promise<void>;
+  /** A `conflict*` step leaves the copy's message id out (an adapter that cannot read it). */
+  omitMessageId?: true;
 }
 
 /**
  * The fake `DraftSyncPort`: a provider Drafts folder that applies the port's rules (a stale `baseRemoteMessageId` is a
  * `conflict`, a missing remote draft is `gone`). Every upload is recorded, so tests count them. `remove` honours
  * `expectedMessageId`: a draft that holds another message id (a phone edit) is left alone and the call resolves.
- * `conflictExisting` answers a CREATE with a `conflict` that names the one remote draft already there (an earlier create
- * whose reply was lost did land), as `DraftSaveResult` documents.
+ * `conflictExisting` answers a CREATE with a `conflict` that names the remote draft already carrying this upload's
+ * Message-ID (an earlier create whose reply was lost did land) and says so (`remoteInternetId`), as `DraftSaveResult`
+ * documents. `conflictForeign` names the first remote draft whatever its Message-ID (another message, not ours);
+ * `conflictUnproven` names the copy without saying which Message-ID it carries; `conflictRename` answers any upload
+ * (create or update) naming a draft that claims our Message-ID, to prove the engine adopts only on a create.
  */
 export function fakeDrafts(server: CountingSend) {
   const remote = new Map<string, { messageId: string; internetId: string; revision: number }>();
@@ -195,6 +209,32 @@ export function fakeDrafts(server: CountingSend) {
     method: 'gmail.drafts.update',
     reason: cls,
   });
+  const named = (
+    [remoteDraftId, copy]: [string, { messageId: string; internetId: string }],
+    proves: boolean,
+    step: DraftStep,
+  ): DraftSaveResult => ({
+    kind: 'conflict',
+    remoteDraftId,
+    ...(step.omitMessageId ? {} : { remoteMessageId: copy.messageId }),
+    ...(proves ? { remoteInternetId: copy.internetId } : {}),
+  });
+  /** The `conflict*` steps: what the provider answers, or undefined when the step does not apply to this upload. */
+  const scriptedConflict = (step: DraftStep, upload: DraftUpload): DraftSaveResult | undefined => {
+    const mine = [...remote.entries()].find(([, r]) => r.internetId === upload.internetId);
+    const create = !upload.remoteDraftId;
+    if (step.result === 'conflictExisting' && create && mine) return named(mine, true, step);
+    if (step.result === 'conflictUnproven' && create && mine) return named(mine, false, step);
+    const first = [...remote.entries()][0];
+    if (step.result === 'conflictForeign' && create && first) return named(first, true, step);
+    if (step.result !== 'conflictRename') return undefined;
+    return {
+      kind: 'conflict',
+      remoteDraftId: 'rd-other',
+      remoteMessageId: 'msg-other',
+      remoteInternetId: upload.internetId,
+    };
+  };
   const port: DraftSyncPort = {
     async save(account, upload): Promise<DraftSaveResult> {
       saves.push(upload);
@@ -207,15 +247,8 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'lost') throw new Error('socket hang up');
       // A conflict that names no remote message id (an adapter that cannot read it).
       if (step.result === 'conflictBare') return { kind: 'conflict' };
-      if (step.result === 'conflictExisting' && !upload.remoteDraftId) {
-        const [existingId, existing] = [...remote.entries()][0] ?? [];
-        if (existingId && existing)
-          return {
-            kind: 'conflict',
-            remoteDraftId: existingId,
-            remoteMessageId: existing.messageId,
-          };
-      }
+      const conflict = scriptedConflict(step, upload);
+      if (conflict) return conflict;
       const known = upload.remoteDraftId ? remote.get(upload.remoteDraftId) : undefined;
       if (upload.remoteDraftId && !known) return { kind: 'gone' };
       if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)

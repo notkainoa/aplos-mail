@@ -20,6 +20,8 @@ export const DRAFT_REMOVE_GRACE_MS = 600_000;
 export const DRAFT_REMOVE_MAX_MS = 3_600_000;
 /** A removal the provider refuses for good is asked again this much later. */
 export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
+/** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
+export const REMOTE_BODY_MAX = 1_000_000;
 /** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
 const WROTE_KEEP = 20;
 
@@ -235,7 +237,11 @@ export function readAnyRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | 
   return q.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
 }
 
-/** Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. */
+/**
+ * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is
+ * complete when the body came and the copy has no attachments: attachments are not delivered, so an edit in place would
+ * upload `attachments: []` over the other device's draft.
+ */
 export function theirsFields(
   accountId: string,
   message: {
@@ -245,6 +251,7 @@ export function theirsFields(
     subject?: string;
     snippet?: string;
     html?: string;
+    hasAttachments?: boolean;
   } = {},
   base?: DraftFields,
 ): { fields: DraftFields; complete: boolean } {
@@ -263,7 +270,7 @@ export function theirsFields(
   if (base?.threadId !== undefined) fields.threadId = base.threadId;
   if (base?.replyToMessageId !== undefined) fields.replyToMessageId = base.replyToMessageId;
   if (base?.from !== undefined) fields.from = base.from;
-  return { fields, complete: message.html !== undefined };
+  return { fields, complete: message.html !== undefined && message.hasAttachments !== true };
 }
 
 /**
