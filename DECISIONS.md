@@ -564,3 +564,7 @@ Supersedes the earlier bullets above where they differ. The classifier and pinni
 ## 2026-10-30 — eng-html: follow-ups from the #134 merge note
 
 - the concurrency cap and the extra classifier cases are in the proxy-hardening PR; `X-Content-Type-Options: nosniff` on the serve image route cannot be set yet because `Mail/serve` is still a stub (methods/mail.ts), so the requirement is written into the `ImageProxy` port doc (Content-Type from the sniffed mime only, nosniff, no header copied from the remote response) and must be a test when the route is written (html-4/html-5).
+
+## 2026-10-30 — eng-contract: `Notification/claim` is at-least-once (wording)
+
+- **Docs only, no schema change.** The `Notification/claim` summary (`api/admin.ts`) and the `NotificationItem` comment (`schemas/session.ts`) said a claimed item is "never handed out twice" / "claimed once, never duplicated by a crash". The engine's outbox (time-5, #147) leases a claim for about a minute and offers the item again if it is not acked, with the same stable `id`, so delivery is at-least-once and a repost replaces the banner. Both comments now say that; the host must treat it that way.
