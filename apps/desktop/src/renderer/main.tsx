@@ -25,6 +25,7 @@ async function boot(): Promise<void> {
     import('@aplos/contract/client'),
     import('./ui/styles.css'),
     import('./shell/shell.css'),
+    import('./screens/screens.css'),
   ]);
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario: 'demo' });
