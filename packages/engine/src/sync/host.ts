@@ -34,6 +34,7 @@ import type { Governor } from './governor';
 import {
   clockReading,
   createLeaseController,
+  gateNow,
   gateReading,
   measureClock,
   needsMeasure,
@@ -171,6 +172,12 @@ interface LeaseEntry {
   compacting?: AbortController;
   /** Quit or disconnect has begun: no new compaction starts. */
   retiring?: boolean;
+  /**
+   * Dropped by a 'restart': a round or owner's claim still in flight finishes against a channel that refuses it, and
+   * its reports are ignored, so only the restarted actor's controller (with the gate as it stood before any lift)
+   * reads, writes or sets the role.
+   */
+  stale?: boolean;
 }
 
 /**
@@ -395,6 +402,7 @@ export class ActorHost implements AccountActorHost {
         // controller may demote `leases` once the actor is gone.
         const seed = this.leases.get(account);
         if (seed) this.leaseSeed.set(account, seed);
+        lease.stale = true;
         this.keepClock(account, lease);
       } else {
         await this.retireLease(account, lease);
@@ -726,14 +734,16 @@ export class ActorHost implements AccountActorHost {
       device: this.deps.deviceId,
       clock: this.deps.clock,
       channel: this.leaseChannel(account, entry, channel),
-      report: (acc, lease) => this.applyLease(acc, lease),
+      // A controller a 'restart' replaced sets no role.
+      report: (acc, lease) => entry.stale || this.applyLease(acc, lease),
       // While the actor is down (a 'restart' gap) the device acts as secondary: a tick demotes, never renews.
       active: () => this.actors.has(account),
       // The claim this device's previous controller published is still live; a quit must retire it too.
       ...(initial ? { initial } : {}),
-      clockGate: () => gateReading(entry.gate, this.deps.clock.now()),
-      remeasure: () => needsMeasure(entry.gate, this.deps.clock.now()),
+      clockGate: () => gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
+      remeasure: () => needsMeasure(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
       ownerClock: () => this.ownerClock(entry),
+      stale: () => entry.stale === true,
     });
     entry.unregister = this.deps.deadlines.register({
       id: `lease:${account}`,
@@ -766,7 +776,7 @@ export class ActorHost implements AccountActorHost {
     } catch (error) {
       this.logOnce(account, 'lease.intent', error);
       // Refused (the clock gate): the owner's queued pin is dropped, never applied hours later on its own.
-      if (error instanceof ContractError) return;
+      if (error instanceof ContractError && !entry.stale) return;
       if (!this.leaseIntent.has(account)) this.leaseIntent.set(account, intent);
     }
   }
@@ -778,6 +788,8 @@ export class ActorHost implements AccountActorHost {
     channel: HostWorkflowChannel,
   ): LeaseChannel {
     const ctx = (signal?: AbortSignal): AdapterContext => {
+      // A controller a 'restart' replaced reaches no network, not even on the restarted actor's context.
+      if (entry.stale) throw new Error('The lease controller was replaced by a restart');
       const base = this.actors.get(account)?.actor.context() ?? this.noActor(account);
       return signal ? { ...base, signal: AbortSignal.any([base.signal, signal]) } : base;
     };
@@ -786,6 +798,8 @@ export class ActorHost implements AccountActorHost {
         const read = await this.logFailure(account, 'lease.read', () =>
           channel.read(entry.state, ctx()),
         );
+        // Replaced while reading: the cursor and the merge are the new controller's to commit.
+        if (entry.stale) return read.records;
         this.adoptWorkflowState(account, entry, read.nextState);
         this.merged(account, read.changed, read.records);
         return read.records;
@@ -800,7 +814,7 @@ export class ActorHost implements AccountActorHost {
           this.startCompaction(account, entry, async signal => channel.compact(ctx(signal), mode));
         return written;
       },
-      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx()) } : {}),
+      ...(channel.probe ? { probe: () => this.probeClock(account, channel, ctx) } : {}),
     };
   }
 
@@ -808,10 +822,10 @@ export class ActorHost implements AccountActorHost {
   private async probeClock(
     account: AccountId,
     channel: HostWorkflowChannel,
-    ctx: AdapterContext,
+    ctx: () => AdapterContext,
   ): Promise<boolean> {
     try {
-      const probed = await channel.probe!(ctx);
+      const probed = await channel.probe!(ctx());
       return clockReading(probed.clockOffset) !== 'unmeasurable';
     } catch (error) {
       this.logOnce(account, 'lease.probe', error);
@@ -822,11 +836,9 @@ export class ActorHost implements AccountActorHost {
   /** The gate an owner's pin may use: a block lifted on one fresh ok reading, the gate before it kept to re-arm. */
   private ownerClock(entry: LeaseEntry): ClockReading {
     const now = this.deps.clock.now();
-    const lifted = ownerGate(entry.gate, now);
-    if (lifted !== entry.gate) {
-      entry.ownerLift ??= entry.gate;
-      entry.gate = lifted;
-    }
+    const before = gateNow(entry, now);
+    entry.gate = ownerGate(before, now);
+    if (entry.gate !== before) entry.ownerLift ??= before;
     return gateReading(entry.gate, now);
   }
 
@@ -860,7 +872,7 @@ export class ActorHost implements AccountActorHost {
     entries: { value: LeaseClaim }[],
   ): { ownOnly: boolean } | undefined {
     if (entry.retiring) return undefined;
-    const reading = gateReading(entry.gate, this.deps.clock.now());
+    const reading = gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now());
     if (reading !== 'ok') return { ownOnly: true };
     if (!entries.some(e => e.value.holder)) return undefined;
     return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;

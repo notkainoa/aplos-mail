@@ -101,6 +101,97 @@ test('a synced draft with no stored remote Message-ID is sent as the pinned MIME
     assert.equal(w.server.payloads[0].baseRemoteMessageId, undefined);
   }));
 
+// ---------------------------------------------------------------- (1b) the remote draft after an attempt
+
+const syncedDraft = (w: World) =>
+  w.draft('d1', fields(), {
+    remoteDraftId: 'rd-1',
+    remoteMessageId: 'rm-1',
+    remoteInternetId: REMOTE_ID,
+    syncedRevision: 1,
+  });
+
+const noRemoteDraft = (p: { remoteDraftId?: string; baseRemoteMessageId?: string }) => {
+  assert.equal(p.remoteDraftId, undefined, 'the remote draft is not named again');
+  assert.equal(p.baseRemoteMessageId, undefined, 'nor its base message');
+};
+
+test('the first attempt of a synced draft names the remote draft', () =>
+  inWorld(async w => {
+    syncedDraft(w);
+    w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.server.payloads[0].remoteDraftId, 'rd-1');
+    assert.equal(w.server.payloads[0].baseRemoteMessageId, 'rm-1');
+  }));
+
+test('Send anyway after uncertain sends the pinned MIME without the remote draft, under the same Message-ID', () =>
+  inWorld(async w => {
+    syncedDraft(w);
+    w.server.script.push({ result: 'lost', delivered: false });
+    const s = w.send(w.first, 'd1');
+    const mime = storedMime(w, s.id);
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    await w.clock.advance(MIN);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'uncertain');
+    w.act(w.first, { type: 'sendAnyway', submissionId: s.id, revision: 1 });
+    await w.settle();
+    await w.clock.advance(SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    const [, second] = w.server.calls.filter(c => c.op === 'send');
+    assert.equal(second.internetId, REMOTE_ID);
+    const payload = w.server.payloads[0];
+    noRemoteDraft(payload);
+    assert.equal(payload.internetId, REMOTE_ID);
+    assert.deepEqual(payload.mime, mime, 'the same bytes');
+    assert.deepEqual(w.server.consumed, [], 'no remote draft was consumed');
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('Retry after a failed attempt sends the pinned MIME without the remote draft', () =>
+  inWorld(async w => {
+    syncedDraft(w);
+    w.server.script.push({ result: 'notSent' });
+    const s = w.send(w.first, 'd1');
+    const mime = storedMime(w, s.id);
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'failed');
+    w.act(w.first, { type: 'retry', submissionId: s.id, revision: 1 });
+    await w.settle();
+    await w.clock.advance(SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    assert.equal(w.server.calls.filter(c => c.op === 'send').length, 2);
+    const payload = w.server.payloads[0];
+    noRemoteDraft(payload);
+    assert.equal(payload.internetId, REMOTE_ID);
+    assert.deepEqual(payload.mime, mime, 'the same bytes');
+    assert.equal(w.server.worst(), 1);
+  }));
+
+test('a send paused before it left is still a first attempt: the retry names the remote draft', () =>
+  inWorld(async w => {
+    syncedDraft(w);
+    w.server.script.push({ result: 'paused', until: w.clock.now() + 20 * SEC });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'queued', 'paused, waiting again');
+    await w.clock.advance(20 * SEC);
+    await w.settle();
+    assert.equal(w.get(s.id).state, 'sent');
+    assert.equal(w.server.calls.filter(c => c.op === 'send').length, 2);
+    assert.equal(w.server.payloads[0].remoteDraftId, 'rd-1');
+    assert.equal(w.server.payloads[0].baseRemoteMessageId, 'rm-1');
+    assert.equal(w.server.payloads[0].internetId, REMOTE_ID);
+    assert.equal(w.server.worst(), 1);
+  }));
+
 // ---------------------------------------------------------------- (2) the sender
 
 test('a From that is not the account address is refused with a sentence; the account address in any case is accepted', () =>
