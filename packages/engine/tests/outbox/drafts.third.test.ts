@@ -228,17 +228,12 @@ test('2: a conflict that lands between the send check and its commit stops the s
 
 // ---------------------------------------------------------------- 1: a draft whose text never arrived
 
-test('1: a draft written on another device without its text is not edited or sent until the text arrives', () =>
+test('1: a draft written on another device without its text is not sent until the text arrives (N1: an edit forks)', () =>
   world(async w => {
     phone(w, 'phone-1', 'pm-1', { subject: 'Written on the phone' });
     const id = `${ACCOUNT}:phone-1`;
     const d = read(w, id);
     assert.equal(syncOf(w, id).incomplete, true);
-    const edited = fields({ subject: 'Edited on the Mac' });
-    refused(
-      () => service(w).set(next(), { id, baseRevision: d.revision, fields: edited }),
-      'unavailable',
-    );
     refused(() => w.send(w.first, id, { revision: d.revision }), 'unavailable');
     await wait(w, 30 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 0, 'nothing of the snippet was uploaded');

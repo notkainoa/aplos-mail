@@ -429,7 +429,11 @@ test("another device's draft shows in Drafts, never in a thread", () =>
     const d = read(w, id);
     assert.equal(d.origin, 'remote');
     assert.equal(d.subject, 'Written on the phone');
-    assert.equal(d.sync, 'synced');
+    assert.equal(
+      d.sync,
+      'failed',
+      'its text has not arrived (the contract has no incomplete flag)',
+    );
     const threads = w.first.store.read(q =>
       q.get<{ n: number }>('SELECT count(*) AS n FROM threads'),
     );
@@ -441,8 +445,7 @@ test("another device's draft shows in Drafts, never in a thread", () =>
     assert.equal((await changedFrames(w)).length, 1);
     await wait(w, 30 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 0, 'never uploaded back');
-    // Its text has not arrived (a snippet only): editing it would upload the snippet over the phone's draft.
-    assert.throws(() => edit(w, d, { ...fields(), subject: 'Edited here' }), /not arrived/);
+    // Its text has not arrived (a snippet only): an edit of it forks (drafts.fourth.test.ts), never uploads the snippet.
     phone(w, 'phone-draft-1', 'pm-1', {
       subject: 'Written on the phone',
       html: '<p>Full text</p>',

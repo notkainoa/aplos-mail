@@ -10,7 +10,7 @@ import {
   UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
-import { parseData } from './draft-state';
+import { INCOMPLETE_SENTENCE, parseData } from './draft-state';
 import {
   buildEnvelope,
   buildMime,
@@ -62,8 +62,6 @@ const DRAFT_CHANGED = 'This draft changed in another window. Reopen it before se
 const ON_ITS_WAY = 'This message is already on its way.';
 const UNRESOLVED =
   'This draft has a version from another device waiting for your choice. Choose one before sending.';
-const TEXT_PENDING =
-  'The text of this draft has not arrived from your other device yet. Try again in a moment.';
 const ALREADY_SENT = 'This message was already sent. Change it to send another.';
 const PAST_TIME = 'Pick a time in the future.';
 const NOT_IN_OUTBOX = 'This message is no longer in the outbox.';
@@ -301,7 +299,7 @@ function prepareSend(
   if (live) fail('stateMismatch', ON_ITS_WAY);
   const sync = parseData(draft.row.data).meta;
   if (sync.conflict) fail('stateMismatch', UNRESOLVED);
-  if (sync.incomplete) fail('unavailable', TEXT_PENDING);
+  if (sync.incomplete) fail('unavailable', INCOMPLETE_SENTENCE);
   const { fields } = draft;
   if (!fields.to.length && !fields.cc.length && !fields.bcc.length)
     fail('validation', 'Add at least one recipient.', { path: ['action', 'draftId'] });
@@ -358,7 +356,7 @@ function conflictSentence(error: SubmissionConflict, checking = STILL_CHECKING) 
   if (error.reason === 'draftMissing') return fail('notFound', 'This draft no longer exists.');
   if (error.reason === 'draftRevision') return fail('stateMismatch', DRAFT_CHANGED);
   if (error.reason === 'unresolved') return fail('stateMismatch', UNRESOLVED);
-  if (error.reason === 'bodyPending') return fail('unavailable', TEXT_PENDING);
+  if (error.reason === 'bodyPending') return fail('unavailable', INCOMPLETE_SENTENCE);
   if (error.reason === 'live') return fail('stateMismatch', ON_ITS_WAY);
   if (error.reason === 'alreadySent') return fail('stateMismatch', ALREADY_SENT);
   if (error.reason === 'checking') return fail('stateMismatch', checking);

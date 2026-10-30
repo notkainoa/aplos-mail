@@ -7,7 +7,9 @@ import type { DraftsCtx } from './draft-sync';
 import {
   DraftConflict,
   fingerprintOf,
+  INCOMPLETE_SENTENCE,
   liveOf,
+  parseData,
   readDraftRow,
   toDraft,
   type DraftRow,
@@ -57,8 +59,6 @@ const UNCONFIRMED =
   'We are checking whether this message was sent. Wait for that before discarding it.';
 const NO_CHOICE = 'This draft has no other version to choose.';
 const CANNOT_READ = "Their version can't be read here. Keep yours, or open it on the other device.";
-const TEXT_PENDING =
-  'The text of this draft has not arrived from your other device yet. Try again in a moment.';
 const NOT_ARRIVED = 'The other version has not arrived yet. Try again in a moment.';
 
 function fail(type: string, message: string): never {
@@ -108,7 +108,7 @@ function conflictError(error: DraftConflict): never {
     case 'incomplete':
       return fail('unavailable', CANNOT_READ);
     case 'bodyPending':
-      return fail('unavailable', TEXT_PENDING);
+      return fail('unavailable', INCOMPLETE_SENTENCE);
     default:
       return fail('stateMismatch', CHANGED);
   }
@@ -129,18 +129,32 @@ function requireAccount(ctx: DraftsCtx, accountId: string) {
   if (!known) fail('notFound', 'This account is not connected.');
 }
 
+/**
+ * An edit of a draft whose text never arrived (another device's snippet) becomes a new draft of its own: the id it is
+ * saved under, which the client switches to. The other device's draft is not touched.
+ */
+function forkIdFor(ctx: DraftsCtx, opId: string, current: DraftRow | undefined) {
+  if (!current || !parseData(current.data).meta.incomplete) return undefined;
+  return idFor(opId, 'fork');
+}
+
 function setDraft(ctx: DraftsCtx, opId: string, input: DraftSetInput) {
   const id = input.id ?? idFor(opId, 'create');
-  if (replayed(ctx, opId)) return answerSet(ctx, opId, id);
+  if (replayed(ctx, opId)) {
+    const fork = idFor(opId, 'fork');
+    return answerSet(ctx, opId, readOne(ctx, fork) ? fork : id);
+  }
   const { fields } = input;
   requireAccount(ctx, fields.accountId);
   const current = ctx.store.read(q => readDraftRow(q, id));
   if (current && current.account_id !== fields.accountId)
     fail('validation', 'A draft cannot move to another account.');
+  const forkId = input.baseRevision !== undefined ? forkIdFor(ctx, opId, current) : undefined;
   commit(ctx, opId, {
     kind: 'draft',
     op: 'save',
     id,
+    ...(forkId !== undefined ? { forkId } : {}),
     accountId: fields.accountId,
     ...(input.baseRevision !== undefined ? { baseRevision: input.baseRevision } : {}),
     fields,
@@ -148,9 +162,10 @@ function setDraft(ctx: DraftsCtx, opId: string, input: DraftSetInput) {
     at: ctx.clock.now(),
     ...(input.close ? { close: true as const } : {}),
   });
-  touchDue(ctx, id);
+  const saved = forkId ?? id;
+  touchDue(ctx, saved);
   ctx.deadlines.changed('drafts');
-  return answerSet(ctx, opId, id);
+  return answerSet(ctx, opId, saved);
 }
 
 function answerSet(ctx: DraftsCtx, opId: string, id: string) {

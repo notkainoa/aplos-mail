@@ -65,6 +65,12 @@ export interface DraftMeta {
    */
   incomplete?: true;
   /**
+   * Another device changed the copy while a send of this draft was live or had gone out, and nothing could be asked then
+   * (the send owns the copy). Once the draft has been sent, a copy marked so holds somebody else's version and is not
+   * deleted with the draft.
+   */
+  changedElsewhere?: true;
+  /**
    * The owner discarded this draft (or it was sent) and its remote copy is still to be deleted. The row stays, hidden from
    * every read, so the removal survives a restart and a late fact for the copy is not taken for another device's draft.
    * It goes once the provider confirms the removal.
@@ -183,8 +189,15 @@ export function liveOf(q: Pick<StoreReader, 'get'>, draftId: string): LiveRow | 
   );
 }
 
+/**
+ * The sentence for a draft whose text another device wrote and this one never received (edit, send). The contract's
+ * `Draft` has no `incomplete` field, so such a draft also reports `sync: 'failed'` (see DECISIONS.md).
+ */
+export const INCOMPLETE_SENTENCE =
+  "This draft was written on another device and its text isn't available here yet. Open it there to send it, or write a new one.";
+
 function syncOf(row: DraftRow, fields: DraftFields, meta: DraftMeta): Draft['sync'] {
-  if (meta.problem) return 'failed';
+  if (meta.problem || meta.incomplete) return 'failed';
   if (row.origin === 'remote') return 'synced';
   if (meta.dueAt !== undefined || meta.uploading || meta.conflict) return 'pending';
   const same =
