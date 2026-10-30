@@ -822,12 +822,20 @@ test(
   async () => {
     await withDir(async dir => {
       const hang = gate();
-      const seen = { temporary: '', hang: false };
+      const seen = { temporary: '', hang: false, unlinked: 0 };
       const fs = realFs({
         writeFileSynced: async (path, data, mode) => {
           await syncedWrite(path, data, mode);
           seen.temporary = path;
           if (seen.hang) await hang.opened;
+        },
+        // Counts the vault's own removals of the temporary file once each has settled.
+        unlink: async path => {
+          try {
+            await nodeFs.unlink(path);
+          } finally {
+            if (path === seen.temporary) seen.unlinked += 1;
+          }
         },
       });
       const options = { dataDir: dir, ...crypto, fs, writeTimeoutMs: HUNG_MS };
@@ -841,8 +849,12 @@ test(
       assert.ok(await leftoverIsRemoved(), 'a saved write released its name at once');
       seen.hang = true;
       await assert.rejects(vault.set('a', { v: 7 }), unsaved);
+      assert.equal(seen.unlinked, 1, 'the timeout removed the file');
+      assert.equal(await leftoverIsRemoved(), false, 'the abandoned write still holds its name');
       hang.release();
-      await eventually(async () => !(await exists(seen.temporary)), 'the late write is removed');
+      // The straggler removes its file again, then releases the name; wait for both before the next leftover.
+      await eventually(async () => seen.unlinked === 2, 'the late write is removed');
+      await new Promise(resolve => setImmediate(resolve));
       assert.ok(await leftoverIsRemoved(), 'the late write released its name on settle');
     });
   },
