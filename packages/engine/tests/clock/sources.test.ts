@@ -541,8 +541,10 @@ test('the due and next queries use the indexes built for them', () => {
         )
         .map(r => r.detail)
         .join(' | ');
+    // Both partial indexes now exist on reminder_at (0004 added `reminders_wf`); the pending reads name `timers_wf`.
     assert.match(plan(REMINDER_QUERIES.due), /timers_wf/);
     assert.match(plan(REMINDER_QUERIES.next), /timers_wf/);
+    assert.doesNotMatch(plan(REMINDER_QUERIES.due), /SCAN w(?! USING)|TEMP B-TREE/);
     assert.match(plan(LATER_QUERIES.due), /wf_later/);
     assert.match(plan(LATER_QUERIES.next), /wf_later/);
   } finally {

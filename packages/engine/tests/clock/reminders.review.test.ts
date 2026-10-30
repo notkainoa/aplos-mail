@@ -82,7 +82,7 @@ test('Later: a due return still moves the stored watermark and is announced once
   }
 });
 
-test('Reminder/list queries: upcoming uses timers_wf, both are capped, the fired scan is the documented gap', () => {
+test('Reminder/list queries: upcoming uses timers_wf, fired uses reminders_wf, both are capped and never scan or sort', () => {
   const w = world('2026-10-28T16:00:00Z');
   try {
     const plan = (sql: string) =>
@@ -95,13 +95,15 @@ test('Reminder/list queries: upcoming uses timers_wf, both are capped, the fired
         )
         .map(r => r.detail)
         .join(' | ');
+    const unindexedScan = /SCAN w(?! USING)|TEMP B-TREE/;
     assert.match(plan(REMINDER_QUERIES.upcoming), /timers_wf/);
-    assert.doesNotMatch(plan(REMINDER_QUERIES.upcoming), /SCAN/);
+    assert.doesNotMatch(plan(REMINDER_QUERIES.upcoming), unindexedScan);
     assert.match(REMINDER_QUERIES.upcoming, /LIMIT \?/);
     assert.match(REMINDER_QUERIES.fired, /LIMIT \?/);
     assert.equal(MAX_LISTED, 200);
-    // No index covers fired reminders yet (REQUEST to eng-store in DECISIONS.md): the scan is bounded by LIMIT only.
-    assert.match(plan(REMINDER_QUERIES.fired), /SCAN w/);
+    // Migration 0004's `reminders_wf` covers the fired ones: ordered by the index, so no scan of the table and no sort.
+    assert.match(plan(REMINDER_QUERIES.fired), /reminders_wf/);
+    assert.doesNotMatch(plan(REMINDER_QUERIES.fired), unindexedScan);
   } finally {
     w.done();
   }

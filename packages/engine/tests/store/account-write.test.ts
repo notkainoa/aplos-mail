@@ -531,7 +531,7 @@ test('migration 0003 applies on top of a 0002 database with data, keeps it, and 
     old.close();
     for (let pass = 0; pass < 2; pass++) {
       const store = openStore(file.open());
-      assert.equal(store.schemaVersion, 3);
+      assert.equal(store.schemaVersion, MIGRATIONS.length);
       assert.deepEqual(row(store), {
         color_tag: null,
         notifications: 1,
@@ -542,6 +542,45 @@ test('migration 0003 applies on top of a 0002 database with data, keeps it, and 
         store.read(q => q.get<{ c: number }>('SELECT count(*) AS c FROM messages')?.c),
         1,
       );
+      store.close();
+    }
+  } finally {
+    file.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------- migration 0004
+
+test('migration 0004 adds the reminder index on top of a 0003 database, keeps its data, and the planner uses it', () => {
+  const file = tempDb();
+  try {
+    const old = openStore(file.open(), { migrations: MIGRATIONS.slice(0, 3) });
+    old.commit({
+      opId: 'a',
+      origin: 'sync',
+      writes: [accountWrite, msg('m1', 't1', 0)],
+    });
+    assert.equal(old.schemaVersion, 3);
+    old.close();
+    for (let pass = 0; pass < 2; pass++) {
+      const store = openStore(file.open());
+      assert.equal(store.schemaVersion, 4);
+      assert.equal(
+        store.read(q => q.get<{ c: number }>('SELECT count(*) AS c FROM messages')?.c),
+        1,
+      );
+      const plan = store.read(q =>
+        q
+          .all<{ detail: string }>(
+            `EXPLAIN QUERY PLAN SELECT thread_id FROM thread_workflow WHERE reminder_at IS NOT NULL
+             ORDER BY reminder_at DESC LIMIT 200`,
+          )
+          .map(r => r.detail)
+          .join(' | '),
+      );
+      assert.match(plan, /reminders_wf/, plan);
+      assert.doesNotMatch(plan, /SCAN thread_workflow\b(?! USING)/, plan);
+      assert.doesNotMatch(plan, /TEMP B-TREE/, plan);
       store.close();
     }
   } finally {
