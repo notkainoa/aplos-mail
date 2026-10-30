@@ -28,7 +28,9 @@ import { gmailCost } from './costs';
  * governed `send` request, never re-sent here. A failure is `NotSentError` (or the governor's `PausedError`) only with
  * proof that nothing left: the sending request was never written, the connection was refused, or Gmail answered one of
  * the known refusals (`REFUSALS`). Anything else after the request was written, a 2xx that is not Gmail's Message
- * included, is thrown as uncertain, and the outbox settles it through `findSent`, which searches Sent only.
+ * included, is thrown as uncertain, and the outbox settles it through `findSent`, which searches Sent only (then reads
+ * the newest few SENT messages by label, for a send the search index has not caught up with). No upload request
+ * follows a redirect, and a refusal is logged without Gmail's own text.
  */
 
 const UPLOAD_API = 'https://gmail.googleapis.com/upload/gmail/v1/users/me';
@@ -431,6 +433,10 @@ class Upload {
     try {
       const response = await this.deps.fetch(url, {
         ...init,
+        // Never followed: a 307/308 would re-send the pinned bytes (and, same-origin, the token) to wherever it
+        // points. A 3xx is answered like any other unknown status: before the sending request it proves nothing
+        // left; after it, the outcome is uncertain and `findSent` settles it.
+        redirect: 'manual',
         signal: AbortSignal.any([this.io.signal, timer.signal]),
       });
       return { status: response.status, headers: response.headers, text: await response.text() };
@@ -467,7 +473,7 @@ class Upload {
       body: reply.text,
       headers: reply.headers,
     });
-    this.ctx.log.event('sync.gmail.request_refused', { error: error.error });
+    this.ctx.log.event('sync.gmail.request_refused', { error: withoutProviderText(error.error) });
     return error;
   }
 
@@ -491,6 +497,16 @@ class Upload {
     if (provesRefusal(reply.status, this.route)) this.state.written = false;
     throw this.refused(reply);
   }
+}
+
+/**
+ * A send refusal as it is logged: Gmail's own text is left out, because for `messages.send` and `drafts.send` it can
+ * quote the message itself (an address from a header Gmail rejected). The class, reason and status say enough.
+ */
+function withoutProviderText(error: ClassifiedError): ClassifiedError {
+  const logged = { ...error };
+  delete logged.providerMessage;
+  return logged;
 }
 
 function parseOrNothing(text: string): unknown {
@@ -673,6 +689,8 @@ interface Candidate {
   id?: unknown;
   threadId?: unknown;
   labelIds?: unknown;
+  /** Epoch milliseconds as a decimal string; asked for by the recent-SENT fallback only. */
+  internalDate?: unknown;
   payload?: { headers?: { name?: unknown; value?: unknown }[] };
 }
 
@@ -687,14 +705,18 @@ function isSentCopy(m: Candidate, internetId: string): boolean {
 }
 
 /** One hit's metadata (20 units), or 'gone' when it disappeared between the search and the read. */
-async function candidate(client: GmailClient, id: string): Promise<Candidate | 'gone'> {
+async function candidate(
+  client: GmailClient,
+  id: string,
+  withDate = false,
+): Promise<Candidate | 'gone'> {
   try {
     return await client.call<Candidate>({
       method: 'gmail.messages.get',
       path: `/messages/${encodeURIComponent(id)}`,
       format: 'metadata',
       query: { metadataHeaders: ['Message-ID'] },
-      fields: 'id,threadId,labelIds,payload/headers',
+      fields: `id,threadId,labelIds,${withDate ? 'internalDate,' : ''}payload/headers`,
       lane: 'interactive',
       item: id,
     });
@@ -741,6 +763,44 @@ async function sentCopy(
   return undefined;
 }
 
+/** Newest SENT messages read when the search misses (one `messages.list`, then at most this many metadata gets). */
+export const RECENT_SENT = 5;
+/** A recent candidate older than `since` by more than this is not read (Gmail's clock against this device's). */
+const RECENT_MARGIN_MS = 10 * 60_000;
+
+/** The newest SENT message ids by label, not by search: the label index shows a send the search index may not yet. */
+async function newestSent(client: GmailClient): Promise<string[]> {
+  const page = await client.call<{ messages?: { id?: unknown }[] }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: { labelIds: ['SENT'], maxResults: RECENT_SENT, includeSpamTrash: 'true' },
+    fields: 'messages(id)',
+    lane: 'interactive',
+  });
+  const ids = (page.messages ?? []).map(m => m.id);
+  return ids.filter((id): id is string => typeof id === 'string').slice(0, RECENT_SENT);
+}
+
+/**
+ * The fallback when the search found nothing: the newest SENT messages, newest first, each re-checked like a search
+ * hit (SENT, no DRAFT, this Message-ID), stopping at the first one older than `since - RECENT_MARGIN_MS`. It can only
+ * turn "absent" into "found"; any failure in it is thrown (a vanished candidate too), never read as "absent".
+ */
+async function recentSentCopy(
+  client: GmailClient,
+  internetId: string,
+  since: number,
+): Promise<SentHit | undefined> {
+  for (const id of await newestSent(client)) {
+    const m = await candidate(client, id, true);
+    if (m === 'gone') throw incomplete('sentHitVanished');
+    if (Number(m.internalDate) < since - RECENT_MARGIN_MS) return undefined;
+    if (isSentCopy(m, internetId))
+      return { id, ...(typeof m.threadId === 'string' ? { threadId: m.threadId } : {}) };
+  }
+  return undefined;
+}
+
 /** `ProviderAdapter.findSent` for Gmail: `found` only for a SENT, non-DRAFT message with this exact Message-ID. */
 export async function findSentCopy(
   deps: GmailDeps,
@@ -749,7 +809,10 @@ export async function findSentCopy(
   ctx: AdapterContext,
 ): Promise<FindSentResult> {
   const checkedAt = ctx.clock.now();
-  const hit = await sentCopy(new GmailClient(deps, ctx), internetId, since);
+  const client = new GmailClient(deps, ctx);
+  const hit =
+    (await sentCopy(client, internetId, since)) ??
+    (await recentSentCopy(client, internetId, since));
   if (!hit) return { kind: 'absent', checkedAt };
   return {
     kind: 'found',

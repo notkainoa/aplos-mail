@@ -16,9 +16,11 @@ import {
   ACCOUNT,
   classOf,
   headerEndOf,
+  redirectingGmail,
   sendWorld,
   submission,
   withMime,
+  type RedirectAt,
   type SendWorld,
 } from './send-rig';
 
@@ -339,6 +341,56 @@ test('send: a timeout after the request left is uncertain (the slot is released)
   assert.equal(world.sentMessages().length, 1);
 });
 
+test('send: accepted by Gmail, then the answer timed out: uncertain, never re-sent, findSent finds that copy', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
+  world.bridge.failNext = 'acceptThenHang';
+  const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+  assert.ok(isUncertain(error), `got ${String(error)}`);
+  assert.equal(classOf(error)?.reason, 'timeout');
+  assert.equal(world.sendRequests(), 1, 'never re-sent');
+  const [sent] = world.sentMessages();
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.deepEqual(result, {
+    kind: 'found',
+    remoteMessageId: sent.id,
+    remoteThreadId: sent.threadId,
+  });
+});
+
+test('send: a 401 is refreshed once and re-sent once (it proved nothing left); one copy goes', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
+  world.faults.failNext(
+    { apiMethod: 'gmail.users.messages.send' },
+    { status: 401, reason: 'authError' },
+  );
+  const tokenCalls = () => world.emu.log.filter(e => e.service !== 'gmail').length;
+  const before = tokenCalls();
+  const receipt = await world.adapter.send(pinned.payload, world.ctx());
+  assert.equal(tokenCalls(), before + 1, 'one forced refresh');
+  assert.equal(world.sendRequests(), 2, 'the refused request, then the one re-send');
+  const sent = world.sentMessages();
+  assert.equal(sent.length, 1);
+  assert.equal(receipt.remoteMessageId, sent[0].id);
+  assert.equal(world.bridge.uploads.length, 2);
+  assert.ok(world.bridge.uploads.every(u => u.raw.equals(pinned.mime)));
+});
+
+test('send: a second 401 after the refresh is NotSentError auth, with no third request', async () => {
+  const world = await sendWorld();
+  world.faults.failNext(
+    { apiMethod: 'gmail.users.messages.send' },
+    { status: 401, reason: 'authError' },
+    { times: 2 },
+  );
+  const error = await rejection(world.adapter.send(submission(world).payload, world.ctx()));
+  assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+  assert.equal(error.error.class, 'auth');
+  assert.equal(world.sendRequests(), 2);
+  assert.equal(world.sentMessages().length, 0);
+});
+
 test('send: a refused connection proves nothing left: NotSentError', async () => {
   const world = await sendWorld();
   world.bridge.failNext = 'refused';
@@ -367,6 +419,83 @@ test('send: a 200 whose body does not parse is uncertain; findSent then finds th
   const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
   assert.equal(result.kind, 'found');
 });
+
+// ---------------------------------------------------------------- redirects and logs
+
+const BIG = () => new Uint8Array(RESUMABLE_ABOVE_BYTES).fill(0x44);
+
+for (const [name, big, at] of [
+  ['the multipart POST', false, 'send'],
+  ['the resumable PUT', true, 'send'],
+] as const) {
+  for (const status of [307, 308] as const) {
+    test(`send: a ${status} on ${name} is never followed: uncertain, and the redirect target receives nothing`, async () => {
+      const world = await sendWorld();
+      // Real sockets: time moves only when the test says so, so the send timeout cannot fire first.
+      world.clock.auto(false);
+      const gmail = await redirectingGmail(status, at satisfies RedirectAt);
+      world.bridge.uploadVia = gmail.fetch;
+      try {
+        const attachments = big
+          ? [{ name: 'scan.bin', mime: 'application/octet-stream', bytes: BIG() }]
+          : [];
+        const pinned = submission(world, { attachments });
+        const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+        assert.ok(isUncertain(error), `got ${String(error)}`);
+        assert.equal(classOf(error)?.status, status);
+        assert.deepEqual(gmail.received, [], 'not one byte went to the redirect target');
+      } finally {
+        await gmail.close();
+      }
+    });
+  }
+}
+
+test('send: a 307 on the resumable session open proves nothing left, and is not followed either', async () => {
+  const world = await sendWorld();
+  world.clock.auto(false);
+  const gmail = await redirectingGmail(307, 'initiate');
+  world.bridge.uploadVia = gmail.fetch;
+  try {
+    const attachments = [{ name: 'scan.bin', mime: 'application/octet-stream', bytes: BIG() }];
+    const pinned = submission(world, { attachments });
+    const error = await rejection(world.adapter.send(pinned.payload, world.ctx()));
+    assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+    assert.deepEqual(gmail.received, []);
+  } finally {
+    await gmail.close();
+  }
+});
+
+const SECRET = 'Invalid To header: secret-recipient@example.test';
+
+for (const [name, apiMethod, options] of [
+  ['messages.send', 'gmail.users.messages.send', {}],
+  ['drafts.send', 'gmail.users.drafts.send', DRAFTS_ON],
+] as const) {
+  test(`send: a ${name} refusal is logged without Gmail's own text (it can quote the message)`, async () => {
+    const world = await sendWorld(options);
+    const pinned = submission(world);
+    const draft = world.emu.mailbox.createDraft(pinned.mime);
+    const payload =
+      apiMethod === 'gmail.users.drafts.send'
+        ? { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id }
+        : pinned.payload;
+    world.faults.failNext(
+      { apiMethod },
+      { status: 400, reason: 'invalidArgument', message: SECRET },
+    );
+    const error = await rejection(world.adapter.send(payload, world.ctx()));
+    assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+    const refused = world.events.filter(e => e.name === 'sync.gmail.request_refused');
+    assert.equal(refused.length, 1);
+    const logged = (refused[0].fields as { error: Record<string, unknown> }).error;
+    assert.equal(logged.status, 400);
+    assert.equal(logged.method, `gmail.${name}`);
+    assert.equal('providerMessage' in logged, false);
+    assert.doesNotMatch(JSON.stringify(world.events), /secret-recipient|Invalid To header/);
+  });
+}
 
 // ---------------------------------------------------------------- kill points: no duplicate
 
