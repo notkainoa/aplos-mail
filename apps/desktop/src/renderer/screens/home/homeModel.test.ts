@@ -384,6 +384,39 @@ test('pageRequest asks for the window around the cursor only when a view is long
   );
 });
 
+/** Walks a cursor down the whole view, answering each page request the way the engine does (a window of `LIST_WINDOW`). */
+function walkWindow(total: number): { reached: number; asked: number } {
+  let position = 0;
+  let asked = 0;
+  let reached = 0;
+  for (let index = 0; index < total; index++) {
+    for (let guard = 0; guard < 5; guard++) {
+      const loaded = Math.min(LIST_WINDOW, total - position);
+      const range = pageRequest({ position, loaded, total, at: index - position });
+      if (!range) break;
+      asked++;
+      position = range.start;
+    }
+    if (index >= position && index < position + Math.min(LIST_WINDOW, total - position)) reached++;
+  }
+  return { reached, asked };
+}
+
+test('the Low importance sheet pages: every one of 230 and of 1000 threads is reached by stepping the cursor', () => {
+  const small = walkWindow(230);
+  assert.equal(
+    small.reached,
+    230,
+    'all 230 threads were inside the window when the cursor was on them',
+  );
+  assert.ok(small.asked > 0, 'a second window was requested past the first 200');
+  const large = walkWindow(1000);
+  assert.equal(large.reached, 1000);
+  assert.ok(large.asked >= 4 && large.asked < 100, 'a few pages, not one request per row');
+  const fits = walkWindow(LIST_WINDOW);
+  assert.deepEqual(fits, { reached: LIST_WINDOW, asked: 0 }, 'one window never asks');
+});
+
 test('a row with no sender name and no subject still reads something', () => {
   const blank = { ...row({ id: 'b' }), subject: '', fromName: '', participants: [] } as ThreadRow;
   assert.equal(senderOf(blank), 'No sender');

@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import {
   useAccounts,
+  useAccountsLoaded,
+  useConnection,
   useCounts,
   useHold,
   useHome,
@@ -22,7 +24,7 @@ import { CommitChip, CommitEdge } from '../../ui/list';
 import { statusCopy } from '../../ui/status';
 import { ListFailed } from '../lists/ListStates';
 import { Reopenable } from '../lists/Reopenable';
-import { HomeEmpty } from './HomeStates';
+import { accountsAreKnown, HomeEmpty } from './HomeStates';
 import {
   activeDomId,
   HomeList,
@@ -131,6 +133,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const hold = useHold('home');
   const home = useHome({ accountId, holdIds: hold.heldIds });
   const accounts = useAccounts();
+  const known = accountsAreKnown(useAccountsLoaded(), useConnection().state);
   const counts = useCounts(accountId);
   const status = useStatus(accountId);
   const undoTop = useUndoTop();
@@ -230,6 +233,8 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     clearFromHome: () => actions.clearFromHome(),
   };
 
+  // Until the engine has answered, an empty account list means "not loaded yet", not "no accounts": stay neutral.
+  if (accounts.length === 0 && !known) return null;
   if (accounts.length === 0 || empty) {
     const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
     const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;

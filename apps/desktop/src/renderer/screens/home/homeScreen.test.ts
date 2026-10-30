@@ -22,6 +22,7 @@ import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
 import { HomeScreen } from './HomeScreen';
+import { accountsAreKnown } from './HomeStates';
 import { offerLives } from './useHomeActions';
 import { pickerAnchor } from './useHomeDatePicker';
 
@@ -174,6 +175,29 @@ test('an empty mailbox shows the handled line, never a list', async () => {
     );
   } finally {
     world.connection.close();
+  }
+});
+
+test('before accounts have loaded Home is neutral; once loaded with none it offers Add an account', async () => {
+  const engine = createFixtureEngine({ scenario: 'empty', clock: defaultNow });
+  const scheduler = createManualScheduler();
+  const connection = connectDataLayer({
+    session: engine.connect(),
+    scheduler,
+    timers: createManualTimers(defaultNow),
+  });
+  try {
+    // Nothing has answered yet: an empty account list is "not loaded", never the prompt.
+    assert.equal(text(renderToStaticMarkup(createElement(HomeScreen))), '');
+    assert.equal(accountsAreKnown(false, 'ready'), false);
+    assert.equal(accountsAreKnown(true, 'connecting'), false);
+    assert.equal(accountsAreKnown(true, 'ready'), true);
+    connection.layer.session.want('accounts');
+    await settle(() => scheduler.flush());
+    const html = text(renderToStaticMarkup(createElement(HomeScreen)));
+    assert.match(html, /Add an account/);
+  } finally {
+    connection.close();
   }
 });
 

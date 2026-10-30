@@ -1,7 +1,8 @@
 /**
  * The Low importance sheet (DESIGN 7.2) on its data: the `lowBySender` view, one group per sender. Mounted only while
- * the sheet is open, so the window is watched only then. The first → arms and the second marks every thread done in
- * one operation (a selector over the section, at the state the owner saw), with one Undo toast.
+ * the sheet is open, so the window is watched only then; with more threads than one window it follows the cursor. The
+ * first → arms and the second marks every thread done in one operation (a selector over the section, at the state the
+ * owner saw), with one Undo toast.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useHold, useView, type HoldController } from '../../data';
@@ -13,6 +14,7 @@ import { neighbourKeys, stepKey } from '../lists/listModel';
 import { useIdCursor } from '../lists/useIdCursor';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf } from './homeRows';
+import { useFollowWindow } from './useFollowHomeCursor';
 
 const BINDING_ID = 'home-low-list';
 /** The hold scope of the sheet's list, apart from Home's own. */
@@ -83,6 +85,8 @@ export function LowSheetHost(props: LowSheetHostProps) {
   const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
   const cursorId = useSheetCursor(view.ids, hold);
+  // More low-importance threads than one window: the window follows the cursor, so every thread can be reached.
+  useFollowWindow(view, cursorId ?? null, hold.isHeld);
   const rowProps = (row: ThreadRow): ListRowProps =>
     listRowProps(row, {
       domId: lowDomId(row.id),

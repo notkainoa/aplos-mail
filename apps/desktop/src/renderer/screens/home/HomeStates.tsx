@@ -13,6 +13,14 @@ export function handledLine(handledToday: number): string {
   return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}.`;
 }
 
+/**
+ * Whether an empty account list can be believed: `Account/get` has answered and the engine is not (re)connecting.
+ * Before that, "no accounts" is only "not loaded yet" and Home shows nothing rather than the Add an account prompt.
+ */
+export function accountsAreKnown(accountsLoaded: boolean, connection: string): boolean {
+  return accountsLoaded && connection !== 'connecting';
+}
+
 /** Props for `HomeEmpty`. */
 export interface HomeEmptyProps {
   readonly accountCount: number;
