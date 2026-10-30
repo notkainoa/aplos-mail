@@ -21,7 +21,7 @@ export const RULES = [
   'Make small, safe improvements. Keep behaviour identical; this is refactoring, not a rewrite.',
   'Stay strictly inside the allowed paths; the harness rejects the whole attempt if you touch anything forbidden.',
   'Do NOT run the full gate suites yourself — the harness runs them under its own check lock; run only small, targeted checks on the files you touch.',
-  "You run with the harness user's privileges — there is no sandbox. Stay inside your worktree; never touch other checkouts, the main repo or its node_modules.",
+  "You run with the harness user's privileges — there is no sandbox: your permissions (dangerous mode / bypassPermissions under the real HOME) can reach other worktrees, ~/.gitconfig and the credential helper. Stay inside your worktree; never touch other checkouts, the main repo or its node_modules.",
   'Commit nothing — the harness reviews and commits your changes itself.',
 ];
 

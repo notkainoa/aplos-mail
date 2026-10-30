@@ -7,10 +7,21 @@
 // prints its name. Never pushes, never opens a PR. --dry-run validates the config, scores the
 // baseline and prints the plan without starting any agent.
 //
-// THERE IS NO SANDBOX. Attempt agents and gate/scorer commands run with this user's
-// privileges — trusted agents and configs only. Cheap mitigations in place of a sandbox:
-// the run refuses to start on a dirty main checkout, and after every attempt verifies the
-// main checkout's HEAD and status are untouched; any change aborts the whole run.
+// THERE IS NO SANDBOX — the accepted risk, verbatim from ACCEPTED-RISK.md:
+//
+//   "Attempt agents and gate/scorer commands run with the operator's full privileges,
+//   and nothing stops an agent writing outside its worktree. swe-2 runs with
+//   --permission-mode dangerous and claude with --permission-mode bypassPermissions,
+//   both under the real HOME: an attempt process can reach other worktrees and the main
+//   checkout, ~/.gitconfig and the rest of global tooling config, and the credential
+//   helper along with whatever logins the CLIs keep in HOME. The protections in this
+//   directory are tripwires that detect and reject tampering; they are not walls that
+//   prevent it. For anything heavier than a smoke run, use the dedicated Linux machine
+//   or wrap the run in sandbox-exec. A full run is the default; --dry-run is opt-in."
+//
+// Cheap mitigations in place of a sandbox: the run refuses to start on a dirty main
+// checkout, and after every attempt verifies the main checkout's HEAD and status are
+// untouched; any change aborts the whole run.
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
