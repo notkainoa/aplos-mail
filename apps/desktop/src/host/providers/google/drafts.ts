@@ -13,10 +13,16 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * the truth; this keeps one remote copy of it, and the rules are about never losing or overwriting text and never
  * touching a message that has been sent.
  *
- * saveDraft, create (`remoteDraftId` absent): the copy is first looked up by its per-revision Message-ID
- * (`drafts.list` with `rfc822msgid:<id> in:drafts`, each hit verified by its own Message-ID header), so a retry after an
- * uncertain create (a timeout after the request left, a crash before the engine recorded the answer) finds the copy
- * the first try made instead of creating a second. A create that comes back uncertain re-checks once the same way.
+ * saveDraft, create (`remoteDraftId` absent): the copy is first looked up by its per-revision Message-ID, so a retry
+ * after an uncertain create (a timeout after the request left, a crash before the engine recorded the answer) finds
+ * the copy the first try made instead of creating a second. Three lookups, cheapest first, every hit verified by its own
+ * Message-ID header: (a) `drafts.list` with `rfc822msgid:<id> in:drafts`; (b) because that search lags the index, the
+ * newest `CANDIDATES` drafts listed without `q` (a plain list is not search-backed); (c) `messages.list` for the
+ * Message-ID across all mail including Spam and Trash: a SENT or TRASH message that holds it means the copy this create
+ * made was sent or deleted from another device before history saw it, so the answer is `{kind:'gone'}` and it is not
+ * created again (a DRAFT-only hit that (a) and (b) missed is index lag: thrown as transient, never created over). A
+ * draft hard-deleted (not trashed) from another device leaves nothing to find; that case cannot be caught and the retry
+ * creates the copy again. A create that comes back uncertain re-checks once the same way.
  * saveDraft, replace: `drafts.get` first (metadata, with the Message-ID header). A draft that is gone (404), or is no
  * longer a draft (no DRAFT label, or SENT or TRASH), is `{kind:'gone'}` and is never recreated or written; a reply
  * without `labelIds` is an invalid response, not "not a draft". A message id other than `baseRemoteMessageId` is
@@ -28,9 +34,13 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * makes it a transient, uncertain error.
  * Otherwise `drafts.update` replaces the copy and the new message id is returned: it is the precondition of the next
  * save and of `sendsRemoteDraft`. Gmail has no etag, so an edit made between the `get` and the `update` (milliseconds)
- * still wins the race; the next save sees the new id and raises the conflict.
- * deleteDraft: idempotent. `drafts.get` first; absent is success; a message that is no longer a draft (sent) is left
- * alone; otherwise `drafts.delete`.
+ * still wins the race; the next save sees the new id and raises the conflict. The update is an `idempotentWrite` the
+ * governor may re-send after a transient failure: a lost reply followed by a re-send can therefore overwrite a phone
+ * edit made in those few seconds (the re-send does not repeat the `get`). With no `baseRemoteMessageId` the replace is
+ * unconditional; the engine sets that only for "keep mine".
+ * deleteDraft: OFF unless `GoogleProviderOptions.deleteDrafts` is true (see PORT GAP 3); the adapter then resolves
+ * without a request. When on: idempotent; `drafts.get` first; absent is success; a message that is no longer a draft
+ * (sent, trashed) is left alone; otherwise `drafts.delete`.
  *
  * Bytes: `DraftUpload.mime` goes up as it is, after `checkDraftMime` (size cap, header allow-list, no Bcc, Message-ID
  * is the per-revision one). Threading: `remoteThreadId` becomes the upload's `threadId`; In-Reply-To and References
@@ -52,9 +62,17 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  *     copy first, so an uncertain create followed by an edit can leave two remote copies (a duplicate, not a loss).
  *     Needed: `DraftUpload.supersedes?: string[]` (earlier `internetId`s) that the create looks up and, when found,
  *     replaces instead of creating.
+ *   - PORT GAP 3: `DraftSyncPort.remove(account, remoteDraftId)` / `ProviderAdapter.deleteDraft(remoteDraftId, ctx)`
+ *     carry no expected message id, so a delete reads the draft's current message id and removes whatever is there: a
+ *     phone edit made after the last history poll is destroyed when the owner discards or Aplos sends the pinned MIME.
+ *     Needed: `deleteDraft(remoteDraftId, expectedRemoteMessageId, ctx)` (additive, through eng-contract), refusing
+ *     (keeping the copy) on a mismatch.
+ * RULE: provider draft sync stays OFF (no Gmail draft removal, `deleteDrafts` false) until PORT GAP 3 is closed, and
+ * must not be switched on for real accounts until PORT GAP 2 (`supersedes`, so orphans are removed) is closed too.
  * The upload session URI must be https on `googleapis.com` or a subdomain (deliberate: the bytes and the token go there).
- * Search lags the index: a copy created a moment ago can be missing from the `q` search; the lookup then misses it and
- * an immediate retry creates a second copy (the duplicate is found and cleaned up by the engine's `wrote` handling).
+ * Search lags the index: lookup (b) above reads the newest drafts without `q` to cover it. A duplicate that still gets
+ * made is NOT cleaned up by the engine yet (`adoptCopy` returns early when the row already has a remote draft id, and
+ * DECISIONS says the orphan is not deleted): a duplicate remote draft stays until the owner removes it.
  */
 
 const DRAFT = 'DRAFT';
@@ -133,7 +151,7 @@ async function readCopy(client: GmailClient, draftId: string): Promise<RemoteCop
   return copy;
 }
 
-function searchQuery(internetId: string): string {
+function bareSearchId(internetId: string): string {
   const bare = SEARCHABLE_ID.exec(internetId)?.[1];
   if (!bare) {
     throw new ProviderError({
@@ -143,34 +161,130 @@ function searchQuery(internetId: string): string {
       reason: 'unsearchableMessageId',
     });
   }
-  return `rfc822msgid:${bare} in:drafts`;
+  return bare;
 }
 
-/**
- * The draft that already holds `internetId`, or undefined when Gmail has none. An answer that is not complete (more
- * hits than one page, a hit that vanished before it could be checked) is thrown, never reported as absent.
- */
-async function findByInternetId(
+const searchQuery = (internetId: string): string =>
+  `rfc822msgid:${bareSearchId(internetId)} in:drafts`;
+
+/** Ids of the drafts a `drafts.list` page names (with `q` when given) and whether more pages exist. */
+async function listDraftIds(
   client: GmailClient,
-  internetId: string,
-): Promise<RemoteCopy | undefined> {
+  q?: string,
+): Promise<{ ids: string[]; more: boolean }> {
   const page = await client.call<{ drafts?: { id?: unknown }[]; nextPageToken?: string }>({
     method: 'gmail.drafts.list',
     path: '/drafts',
-    query: { q: searchQuery(internetId), maxResults: CANDIDATES },
+    query: { ...(q ? { q } : {}), maxResults: CANDIDATES },
     fields: 'drafts(id),nextPageToken',
     lane: 'opFlush',
   });
+  const ids = (page.drafts ?? [])
+    .map(d => d.id)
+    .filter((id): id is string => typeof id === 'string');
+  return { ids, more: Boolean(page.nextPageToken) };
+}
+
+/** The first of `ids` that is a draft holding `internetId`; a hit that vanished before it could be read is reported. */
+async function verifyDrafts(
+  client: GmailClient,
+  ids: string[],
+  internetId: string,
+): Promise<{ found?: RemoteCopy; vanished: boolean }> {
   let vanished = false;
-  for (const hit of page.drafts ?? []) {
-    if (typeof hit.id !== 'string') continue;
-    const copy = await readCopy(client, hit.id);
+  for (const id of ids) {
+    const copy = await readCopy(client, id);
     if (!copy) vanished = true;
     else if (copy.isDraft && copy.internetId && bareId(copy.internetId) === bareId(internetId))
-      return copy;
+      return { found: copy, vanished };
   }
-  if (vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
-  if (page.nextPageToken) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
+  return { vanished };
+}
+
+interface MessageHit {
+  labelIds?: unknown;
+  payload?: { headers?: { name?: unknown; value?: unknown }[] };
+}
+
+/** What a message holding `internetId` anywhere in the mailbox (Spam and Trash included) says about our copy. */
+async function allMailVerdict(
+  client: GmailClient,
+  internetId: string,
+): Promise<'gone' | 'indexLag' | 'absent'> {
+  const page = await client.call<{ messages?: { id?: unknown }[]; nextPageToken?: string }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: {
+      q: `rfc822msgid:${bareSearchId(internetId)}`,
+      maxResults: CANDIDATES,
+      includeSpamTrash: 'true',
+    },
+    fields: 'messages(id),nextPageToken',
+    lane: 'opFlush',
+  });
+  let verdict: 'gone' | 'indexLag' | 'absent' = 'absent';
+  for (const hit of page.messages ?? []) {
+    if (typeof hit.id !== 'string') continue;
+    const labels = await holdingLabels(client, hit.id, internetId);
+    if (labels?.includes(SENT) || labels?.includes(TRASH)) return 'gone';
+    if (labels?.includes(DRAFT)) verdict = 'indexLag';
+  }
+  if (page.nextPageToken) throw incomplete('gmail.messages.list', 'draftSearchPartial');
+  return verdict;
+}
+
+/** The labels of message `id` when its Message-ID header is `internetId`; undefined for another message or a vanished one. */
+async function holdingLabels(
+  client: GmailClient,
+  id: string,
+  internetId: string,
+): Promise<string[] | undefined> {
+  let message: MessageHit;
+  try {
+    message = await client.call<MessageHit>({
+      method: 'gmail.messages.get',
+      path: `/messages/${encodeURIComponent(id)}`,
+      format: 'metadata',
+      query: { metadataHeaders: ['Message-ID'] },
+      fields: 'labelIds,payload/headers',
+      lane: 'opFlush',
+      item: id,
+    });
+  } catch (error) {
+    if (is404(error)) return undefined;
+    throw error;
+  }
+  const header = message.payload?.headers?.find(
+    h => typeof h.name === 'string' && h.name.toLowerCase() === 'message-id',
+  );
+  if (typeof header?.value !== 'string' || bareId(header.value) !== bareId(internetId))
+    return undefined;
+  return Array.isArray(message.labelIds) ? (message.labelIds as string[]) : [];
+}
+
+/** What the lookups before a create found: our copy, proof that it was sent or deleted elsewhere, or nothing. */
+type Lookup = { kind: 'draft'; copy: RemoteCopy } | { kind: 'gone' } | undefined;
+
+/**
+ * Where a create's copy may already be (see the header): (a) the search, (b) the newest drafts without `q`, (c) all
+ * mail. An answer that is not complete (more hits than one page of the search, a hit that vanished before it could be
+ * checked) is thrown, never reported as absent.
+ */
+async function findByInternetId(client: GmailClient, internetId: string): Promise<Lookup> {
+  const searched = await listDraftIds(client, searchQuery(internetId));
+  const first = await verifyDrafts(client, searched.ids, internetId);
+  if (first.found) return { kind: 'draft', copy: first.found };
+  if (first.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
+  if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
+  // The search lags the index: the newest drafts, read without it, cover a copy made a moment ago.
+  const newest = await listDraftIds(client);
+  const fresh = newest.ids.filter(id => !searched.ids.includes(id));
+  const second = await verifyDrafts(client, fresh, internetId);
+  if (second.found) return { kind: 'draft', copy: second.found };
+  if (second.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
+  const verdict = await allMailVerdict(client, internetId);
+  if (verdict === 'gone') return { kind: 'gone' };
+  if (verdict === 'indexLag') throw incomplete('gmail.drafts.list', 'draftIndexLag');
   return undefined;
 }
 
@@ -188,6 +302,11 @@ const fromResource = (resource: DraftResource): { draftId: string; messageId: st
   messageId: resource.message.id,
 });
 
+/** A lookup's answer as the save result: the copy it found, or `gone` (sent or deleted from another device). */
+function answered(found: NonNullable<Lookup>, draft: DraftUpload): DraftSaveResult {
+  return found.kind === 'gone' ? { kind: 'gone' } : saved(found.copy, draft.revision);
+}
+
 /** After an uncertain create: one more look by Message-ID. A lookup that fails too leaves the original error standing. */
 async function recheck(
   client: GmailClient,
@@ -195,13 +314,13 @@ async function recheck(
   failure: ProviderError,
 ): Promise<DraftSaveResult> {
   if (!failure.error.uncertain) throw failure;
-  let found: RemoteCopy | undefined;
+  let found: Lookup;
   try {
     found = await findByInternetId(client, draft.internetId);
   } catch {
     throw failure;
   }
-  if (found) return saved(found, draft.revision);
+  if (found) return answered(found, draft);
   throw failure;
 }
 
@@ -212,7 +331,7 @@ async function createCopy(
   client: GmailClient,
 ): Promise<DraftSaveResult> {
   const existing = await findByInternetId(client, draft.internetId);
-  if (existing) return saved(existing, draft.revision);
+  if (existing) return answered(existing, draft);
   try {
     const created = await uploadDraft(deps, ctx, {
       method: 'gmail.drafts.create',

@@ -107,6 +107,12 @@ export interface GoogleProviderOptions {
   workflow?: GoogleWorkflowOptions;
   /** Default false: sends never use `drafts.send` until the live gate proves it (`SendOptions.useDraftsSend` in send.ts). */
   useDraftsSend?: boolean;
+  /**
+   * Default false: `deleteDraft` resolves without deleting anything (PORT GAP 3 in drafts.ts: `DraftSyncPort.remove`
+   * carries no expected message id, so a delete would destroy a phone edit made after the last history poll). Keep it
+   * off until the port carries the expected message id; saving and replacing drafts is unaffected.
+   */
+  deleteDrafts?: boolean;
 }
 
 /**
@@ -145,6 +151,7 @@ export class GmailAdapter implements ProviderAdapter {
   private readonly transport?: WorkflowTransport;
   private readonly workflowRoundMs: number;
   private readonly useDraftsSend: boolean;
+  private readonly deleteDrafts: boolean;
   readonly workflow?: WorkflowChannel;
   /** The sender-rules mirror (prov-gmail-write): the account's granted scopes decide what it answers. */
   readonly rules: RulesAdapter;
@@ -167,6 +174,7 @@ export class GmailAdapter implements ProviderAdapter {
     };
     if (options.pace !== false) this.pacer = new GmailPacer();
     this.useDraftsSend = options.useDraftsSend === true;
+    this.deleteDrafts = options.deleteDrafts === true;
     const rules = gmailRules(deps);
     this.rules = {
       list: ctx => rules.list(this.paced(ctx)),
@@ -287,6 +295,8 @@ export class GmailAdapter implements ProviderAdapter {
   }
 
   deleteDraft(remoteDraftId: string, ctx: AdapterContext): Promise<void> {
+    // Removal is off by default (PORT GAP 3): resolving leaves the copy in place, which the engine reads as removed.
+    if (!this.deleteDrafts) return Promise.resolve();
     return deleteDraftCopy(this.rt.deps, remoteDraftId, this.paced(ctx));
   }
 

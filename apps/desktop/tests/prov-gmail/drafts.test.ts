@@ -52,7 +52,10 @@ interface Setup {
 
 async function setup(options: Parameters<typeof rig>[0] = {}): Promise<Setup> {
   const bridge = new DraftBridge();
-  const r = await rig({ ...options, adapter: { ...options.adapter, fetch: bridge.fetch } });
+  const r = await rig({
+    ...options,
+    adapter: { deleteDrafts: true, ...options.adapter, fetch: bridge.fetch },
+  });
   bridge.attach(r.emu);
   let revision = 0;
   return {
@@ -388,7 +391,7 @@ test('prov-gmail-drafts an uncertain create is recognised by its Message-ID and 
   faults.dropAfterNext({ apiMethod: 'gmail.users.drafts.create' });
   // The reply is lost AND the immediate re-check fails too: the engine gets an uncertain error.
   faults.failNext(
-    { apiMethod: 'gmail.users.drafts.list', after: 1 },
+    { apiMethod: 'gmail.users.drafts.list', after: 2 },
     { status: 503, reason: 'backendError', message: 'Backend Error' },
   );
   let thrown: unknown;
@@ -643,4 +646,76 @@ test('prov-gmail-drafts a create refused with 429 stops: the engine learns of th
   assert.equal(error.error.class, 'throttle');
   assert.notEqual(error.error.uncertain, true);
   assert.equal(s.remoteDrafts().length, 0);
+});
+
+// ---- removal is off by default (PORT GAP 3) ----
+
+test('prov-gmail-drafts deleteDraft is off by default: a phone edit after the last poll survives the discard', async () => {
+  const s = await setup({ adapter: { deleteDrafts: false } });
+  const first = saved(await s.r.adapter.saveDraft(s.upload({ body: 'Mine.' }), s.r.ctx()));
+  const { mime } = mimeOf(s.r.account.address, { body: 'Phone edit, newer than the last poll.' });
+  s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);
+  const requests = s.bridge.requests.length;
+  await s.r.adapter.deleteDraft(first.remoteDraftId, s.r.ctx());
+  assert.equal(s.bridge.requests.length, requests, 'resolved without a request');
+  assert.equal(s.remoteDrafts().length, 1);
+  assert.match(s.remoteDrafts()[0].text, /Phone edit/);
+});
+
+// ---- the create lookup: search lag, sent or deleted elsewhere ----
+
+test('prov-gmail-drafts search lag: a copy the q search cannot see yet is found in the newest drafts, not duplicated', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  s.bridge.blindSearch = true;
+  const upload = s.upload({ body: 'Lagging.' });
+  faults.dropAfterNext({ apiMethod: 'gmail.users.drafts.create' });
+  const first = saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  const again = saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(s.remoteDrafts().length, 1, 'one copy');
+  assert.equal(first.remoteDraftId, again.remoteDraftId);
+  assert.equal(s.bridge.uploads.length, 1);
+});
+
+async function uncertainCreate(s: Setup, faults: ReturnType<typeof createFaultInjector>) {
+  const upload = s.upload({ body: 'Landed.' });
+  faults.dropAfterNext({ apiMethod: 'gmail.users.drafts.create' });
+  // The immediate re-check fails too, so the engine only knows the create was uncertain.
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.list', after: 2 },
+    { status: 503, reason: 'backendError', message: 'Backend Error' },
+  );
+  const error = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(error instanceof ProviderError && error.error.uncertain === true);
+  assert.equal(s.remoteDrafts().length, 1, 'the create landed');
+  return upload;
+}
+
+test('prov-gmail-drafts a created draft sent from the phone before the retry is gone, not created again', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const upload = await uncertainCreate(s, faults);
+  const sentMessage = s.r.emu.mailbox.sendDraft(s.remoteDrafts()[0].id);
+  assert.deepEqual(await s.r.adapter.saveDraft(upload, s.r.ctx()), { kind: 'gone' });
+  assert.equal(s.remoteDrafts().length, 0, 'no draft came back');
+  assert.equal(s.bridge.uploads.length, 1, 'nothing was created again');
+  assert.ok(s.r.emu.mailbox.getMessage(sentMessage.id)!.labelIds.includes('SENT'));
+});
+
+test('prov-gmail-drafts a created draft trashed from the phone before the retry is gone, not created again', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const upload = await uncertainCreate(s, faults);
+  s.r.emu.mailbox.trashMessage(s.remoteDrafts()[0].messageId);
+  assert.deepEqual(await s.r.adapter.saveDraft(upload, s.r.ctx()), { kind: 'gone' });
+  assert.equal(s.bridge.uploads.length, 1);
+});
+
+test('prov-gmail-drafts known limit: a created draft hard-deleted elsewhere leaves nothing to find and is created again', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const upload = await uncertainCreate(s, faults);
+  s.r.emu.mailbox.deleteDraft(s.remoteDrafts()[0].id);
+  saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(s.bridge.uploads.length, 2);
 });

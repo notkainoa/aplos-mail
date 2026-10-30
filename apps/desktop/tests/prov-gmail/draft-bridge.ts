@@ -69,6 +69,8 @@ export class DraftBridge {
   readonly requests: RequestRecord[] = [];
   /** Rewrites the JSON of a `drafts.get` reply (a draft that is still addressable but no longer a draft). */
   rewriteDraftGet?: (json: Record<string, unknown>) => Record<string, unknown>;
+  /** Makes `drafts.list?q=` answer with no drafts (the search index lags behind a draft just created). */
+  blindSearch = false;
   /** Runs after an upload is parsed and before it reaches the emulator (a draft deleted mid-write). */
   beforeDelivery?: () => void;
   /** Answers every resumable session request with this Location instead of the bridge's own. */
@@ -94,6 +96,11 @@ export class DraftBridge {
       query: url.searchParams,
     });
     if (url.href.startsWith(UPLOAD)) return this.upload(url, init ?? {});
+    if (this.blindSearch && /\/drafts$/.test(url.pathname) && url.searchParams.has('q'))
+      return new Response('{"resultSizeEstimate":0}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     const reply = await this.emu!.fetch(url.href, init);
     if (!this.rewriteDraftGet || (init?.method ?? 'GET') !== 'GET') return reply;
     if (!/\/drafts\/[^/]+$/.test(url.pathname) || !reply.ok) return reply;
