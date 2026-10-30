@@ -1,14 +1,7 @@
 // Pure-function tests for the hill-climb scorers (roadmap 5.1c): the parsing and scoring maths
 // run against inline fixtures of each tool's real output, so the heavy tools never run here.
 import assert from 'node:assert/strict';
-import {
-  mkdtempSync,
-  mkdirSync,
-  symlinkSync,
-  readlinkSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, symlinkSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -39,7 +32,18 @@ import {
   scoredViolations,
 } from '../hillclimb/scorers/depcruise.mjs';
 import { fixWorkspaceLinks, runnerArgs } from '../hillclimb/scorers/stryker-run.mjs';
-import { ScorerError, emitScore, inScope, parseArgs } from '../hillclimb/scorers/util.mjs';
+import {
+  ScorerError,
+  TAMPER_PATTERNS,
+  emitScore,
+  findTampering,
+  inScope,
+  isExcluded,
+  makeRunDir,
+  parseArgs,
+  requireScopeMatch,
+  scopeFiles,
+} from '../hillclimb/scorers/util.mjs';
 
 test('util parseArgs: repeatable values, numbers, strings and errors', () => {
   const options = parseArgs(['--scope', 'a/**', '--scope', 'b/**', '--timeout-sec', '5'], {
@@ -440,6 +444,91 @@ test('stryker-run runnerArgs: node and electron-node runners', () => {
   const electron = runnerArgs('electron-node', ['a.test.ts']);
   assert.match(electron[0], /scripts[\\/]audit[\\/]electron-node\.mjs$/);
 });
+
+// --- denominator and tamper helpers ------------------------------------------------
+
+test('util isExcluded and scopeFiles: the fixed exclude set is applied once', () => {
+  assert.equal(isExcluded('packages/engine/tests/x.test.ts'), true);
+  assert.equal(isExcluded('packages/engine/src/x.test.ts'), true);
+  assert.equal(isExcluded('packages/engine/src/x.d.ts'), true);
+  assert.equal(isExcluded('apps/web/dist/out.js'), true);
+  assert.equal(isExcluded('packages/engine/src/x.ts'), false);
+  const dir = makeExcludedFixture();
+  try {
+    assert.deepEqual(scopeFiles(['hillclimb-excludes/**'], dir), [
+      'hillclimb-excludes/src/kept.ts',
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('util requireScopeMatch: an unmatched scope throws a ScorerError', () => {
+  const dir = makeExcludedFixture();
+  try {
+    assert.deepEqual(requireScopeMatch(['hillclimb-excludes/**'], dir), [
+      'hillclimb-excludes/src/kept.ts',
+      'hillclimb-excludes/tests/x.test.ts',
+    ]);
+    assert.throws(
+      () => requireScopeMatch(['hillclimb-excludes/nope/**'], dir),
+      /--scope matched no repo files/,
+    );
+    assert.deepEqual(requireScopeMatch([], dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('util findTampering names file:line for every directive spelling', () => {
+  const cases = [
+    ['coverage', '/* v8 ignore next */\nexport const a = 1;\n', 'f.js:1'],
+    ['coverage', 'export const a = 1; /* C8 IGNORE next */\n', 'f.js:1'],
+    ['coverage', '// istanbul ignore file\nexport const a = 1;\n', 'f.js:1'],
+    ['coverage', '/* node:coverage disable */\nexport const a = 1;\n', 'f.js:1'],
+    ['mutation', '// Stryker disable\nexport const a = 1;\n', 'f.js:1'],
+    ['mutation', 'export const a = globalThis.__stryker__;\n', 'f.js:1'],
+    ['mutation', 'export const a = globalThis.STRYKER_ACTIVE_MUTANT;\n', 'f.js:1'],
+    ['knip', '/** @public */\nexport const a = 1;\n', 'f.js:1'],
+    ['knip', '/** @internal */\nexport const a = 1;\n', 'f.js:1'],
+    ['knip', '/** @lintignore */\nexport const a = 1;\n', 'f.js:1'],
+    ['knip', '/** @knipignore */\nexport const a = 1;\n', 'f.js:1'],
+  ];
+  const dir = mkdtempSync(join(tmpdir(), 'hillclimb-tamper-'));
+  try {
+    for (const [kind, text, expected] of cases) {
+      writeFileSync(join(dir, 'f.js'), text);
+      assert.deepEqual(findTampering(['f.js'], TAMPER_PATTERNS[kind], dir), [expected], kind);
+    }
+    writeFileSync(join(dir, 'f.js'), 'export const a = 1;\n');
+    for (const kind of Object.keys(TAMPER_PATTERNS))
+      assert.deepEqual(findTampering(['f.js'], TAMPER_PATTERNS[kind], dir), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('util makeRunDir: fresh directories under artifacts/hillclimb/scorers', () => {
+  const a = makeRunDir('check');
+  const b = makeRunDir('check');
+  assert.notEqual(a, b);
+  assert.match(a, /artifacts[\\/]hillclimb[\\/]scorers[\\/]check-/);
+  rmSync(a, { recursive: true, force: true });
+  rmSync(b, { recursive: true, force: true });
+});
+
+// A fixture tree exercising the exclude set: a source file and a test file.
+function makeExcludedFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'hillclimb-excludes-'));
+  mkdirSync(join(dir, 'hillclimb-excludes', 'src'), { recursive: true });
+  mkdirSync(join(dir, 'hillclimb-excludes', 'tests'), { recursive: true });
+  writeFileSync(join(dir, 'hillclimb-excludes', 'src', 'kept.ts'), 'export const a = 1;\n');
+  writeFileSync(
+    join(dir, 'hillclimb-excludes', 'tests', 'x.test.ts'),
+    "import { test } from 'node:test';\ntest('x', () => {});\n",
+  );
+  return dir;
+}
 
 // --- knip manifests ---------------------------------------------------------------
 
