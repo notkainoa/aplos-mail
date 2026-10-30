@@ -16,8 +16,13 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { UNCERTAIN_COPY } from '../../src/outbox/context';
 import { KILL_POINTS } from '../../src/outbox/killpoints';
-import { assertSendInvariant, runKillScenario, type KillStep } from './killpoint-harness';
-import { readCalls, startGmailServer } from './killpoint-gmail-port';
+import {
+  assertSendInvariant,
+  runKillScenario,
+  type KillStep,
+  type MoveName,
+} from './killpoint-harness';
+import { readCalls, startGmailServer, type GmailServer } from './killpoint-gmail-port';
 
 type Find = 'finds' | 'lags' | 'throws';
 const FINDS: readonly Find[] = ['finds', 'lags', 'throws'];
@@ -28,6 +33,8 @@ const HOUR = 60 * MIN;
 
 interface Row {
   killAt: KillStep | KillStep[];
+  /** The move each `during-commit` step dies in (as in `killpoint.test.ts`). */
+  onMove?: MoveName | readonly MoveName[];
   /** Does the server get the bytes when a life calls `send`? `false`: the connection resets before it saw them. */
   deliver: boolean;
   find: Find;
@@ -73,7 +80,15 @@ function rows(): Row[] {
     out.push({ killAt: 'after-bytes', deliver: false, find, ...LOST, sendCalls: 1 });
     out.push({ killAt: 'after-bytes', deliver: true, find, ...REACHED[find], sendCalls: 1 });
     out.push({ killAt: 'after-accept', deliver: true, find, ...REACHED[find], sendCalls: 1 });
-    out.push({ killAt: 'during-commit', deliver: true, find, ...REACHED[find], sendCalls: 1 });
+    // The `sent` commit dies inside its transaction: the restart finds the row `sending` and derives the rest again.
+    out.push({
+      killAt: 'during-commit',
+      onMove: 'sent',
+      deliver: true,
+      find,
+      ...REACHED[find],
+      sendCalls: 1,
+    });
     out.push({
       killAt: ['after-marker', 'during-find-sent'],
       deliver: true,
@@ -120,6 +135,7 @@ function rows(): Row[] {
   });
   out.push({
     killAt: ['after-bytes', 'during-commit'],
+    onMove: 'sent',
     deliver: true,
     find: 'finds',
     state: 'sent',
@@ -277,6 +293,7 @@ async function runRow(row: Row): Promise<Run> {
     let internetId = '';
     const result = await runKillScenario({
       killAt: row.killAt,
+      ...(row.onMove ? { onMove: row.onMove } : {}),
       port: {
         module: join(import.meta.dirname, 'killpoint-gmail-port.ts'),
         config: { ...server.config, logPath },
@@ -287,6 +304,12 @@ async function runRow(row: Row): Promise<Run> {
         return server.deliveries(id);
       },
     });
+    // A bridge or emulator exception is not an injected fault: a row that passed through one passed for the wrong reason.
+    assert.deepEqual(
+      server.errors,
+      [],
+      'the server answered an exception that was not an injected drop',
+    );
     const calls = readCalls(logPath).filter(c => !internetId || c.internetId === internetId);
     return {
       result,
@@ -304,7 +327,7 @@ const report: string[] = [];
 
 describe(
   'kill-point matrix on the Gmail adapter over the Gmail emulator',
-  { concurrency: 3 },
+  { concurrency: 2 },
   () => {
     after(() => console.log(`\nkill-point matrix (gmail)\n${report.sort().join('\n')}`));
     for (const row of rows())
@@ -333,5 +356,39 @@ describe('the Gmail matrix covers the engine matrix', () => {
       [...KILL_POINTS].filter(p => !used.has(p)),
       [],
     );
+  });
+});
+
+describe('the Gmail test server tells an injected drop from a bug', () => {
+  const profile = (server: GmailServer) =>
+    fetch(`${server.config.baseUrl}/gmail/v1/users/me/profile`, {
+      headers: {
+        authorization: `Bearer ${server.config.accessToken}`,
+        'x-kp-origin': 'https://gmail.googleapis.com',
+        'x-kp-now': String(Date.UTC(2026, 9, 28, 9, 0, 10)),
+      },
+    });
+
+  it('an exception that is not an injected drop answers 500 and is recorded', async () => {
+    const server = await startGmailServer();
+    try {
+      server.breakNext(new Error('bridge exploded'));
+      const reply = await profile(server);
+      assert.equal(reply.status, 500);
+      assert.deepEqual(server.errors, ['Error: bridge exploded']);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('an injected drop resets the connection and records nothing', async () => {
+    const server = await startGmailServer();
+    try {
+      server.faults.dropNext({ apiMethod: 'gmail.users.getProfile' });
+      await assert.rejects(profile(server), TypeError);
+      assert.deepEqual(server.errors, []);
+    } finally {
+      await server.close();
+    }
   });
 });

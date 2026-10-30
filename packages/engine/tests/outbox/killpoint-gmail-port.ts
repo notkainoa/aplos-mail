@@ -208,6 +208,10 @@ export interface GmailServer {
   config: Omit<GmailPortConfig, 'logPath'>;
   /** The emulator's own count of SENT messages carrying this Message-ID. */
   deliveries(internetId: string): number;
+  /** Every exception the bridge or emulator threw that was NOT an injected drop (answered 500). A clean row has none. */
+  errors: string[];
+  /** The next request the server handles throws this instead of reaching the emulator (to prove it is surfaced). */
+  breakNext(error: Error): void;
   close(): Promise<void>;
 }
 
@@ -231,9 +235,13 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
   const session = await emu.oauth.signIn({ clientId: CLIENT_ID, scopes: SCOPES, fetch: emu.fetch });
   const bridge = new UploadBridge(emu);
   if (options.draftTwin) plantDraftTwin(bridge, emu);
-  const sendAt = { value: Number.POSITIVE_INFINITY };
+  const state: ServerState = {
+    sendAt: Number.POSITIVE_INFINITY,
+    errors: [],
+    lagMs: options.lagMs,
+  };
   const server = createServer((req, res) => {
-    void answer(bridge, req, res, options.lagMs, sendAt);
+    void answer(bridge, req, res, state);
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
@@ -251,8 +259,20 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
         .listMessages()
         .filter(m => m.labelIds.includes('SENT') && m.messageId.toLowerCase() === bare(internetId))
         .length,
+    errors: state.errors,
+    breakNext: error => {
+      state.breakNext = error;
+    },
     close: () => stop(server),
   };
+}
+
+interface ServerState {
+  /** Engine time of the first send request (the search lag counts from it). */
+  sendAt: number;
+  lagMs: number | undefined;
+  errors: string[];
+  breakNext?: Error;
 }
 
 function plantDraftTwin(bridge: UploadBridge, emu: GmailEmulator) {
@@ -283,13 +303,11 @@ const isSendRequest = (path: string, method: string, search: URLSearchParams): b
   /\/messages\/send$/.test(path) &&
   !(method === 'POST' && search.get('uploadType') === 'resumable');
 
-async function answer(
-  bridge: UploadBridge,
-  req: Req,
-  res: Res,
-  lagMs: number | undefined,
-  sendAt: { value: number },
-) {
+/** The emulator's `drop` and `dropAfter` faults throw exactly this (`gmail/emulator.ts`): fetch's own network failure. */
+const isInjectedDrop = (error: unknown): boolean =>
+  error instanceof TypeError && error.message === 'fetch failed';
+
+async function answer(bridge: UploadBridge, req: Req, res: Res, state: ServerState) {
   try {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -297,9 +315,14 @@ async function answer(
     const now = Number(req.headers[NOW_HEADER]);
     const url = new URL(req.url ?? '/', origin);
     const method = req.method ?? 'GET';
-    if (isSendRequest(url.pathname, method, url.searchParams) && sendAt.value > now)
-      sendAt.value = now;
-    const hidden = lagMs !== undefined && now < sendAt.value + lagMs;
+    if (isSendRequest(url.pathname, method, url.searchParams) && state.sendAt > now)
+      state.sendAt = now;
+    const hidden = state.lagMs !== undefined && now < state.sendAt + state.lagMs;
+    if (state.breakNext) {
+      const error = state.breakNext;
+      state.breakNext = undefined;
+      throw error;
+    }
     const reply = await bridge.fetch(url.href, {
       method,
       headers: forwarded(req.headers),
@@ -308,10 +331,24 @@ async function answer(
     const body = Buffer.from(await reply.arrayBuffer());
     res.writeHead(reply.status, forwardedBack(reply.headers));
     res.end(hidden && isSearch(url) ? withoutHits(body) : body);
-  } catch {
-    // The emulator's `drop` faults throw: the connection resets with no reply.
-    req.socket.destroy();
+  } catch (error) {
+    fail(req, res, error, state);
   }
+}
+
+/** An injected drop resets the connection with no reply; anything else is a bug: answer 500 and record it. */
+function fail(req: Req, res: Res, error: unknown, state: ServerState) {
+  if (isInjectedDrop(error)) {
+    req.socket.destroy();
+    return;
+  }
+  state.errors.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+  if (res.headersSent) {
+    req.socket.destroy();
+    return;
+  }
+  res.writeHead(500, { 'content-type': 'text/plain' });
+  res.end('test server error');
 }
 
 const isSearch = (url: URL) => /\/messages$/.test(url.pathname) && url.searchParams.has('q');
