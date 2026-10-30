@@ -8187,6 +8187,9 @@
               }
             ]
           },
+          "incomplete": {
+            "type": "boolean"
+          },
           "conflict": {
             "type": "object",
             "properties": {

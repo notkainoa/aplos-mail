@@ -54,6 +54,12 @@ export const Draft = z.object({
   updatedAt: EpochMs,
   origin: openEnum(['local', 'remote']),
   sync: openEnum(['localOnly', 'pending', 'synced', 'failed']),
+  /**
+   * True for a draft written on another device whose text this device cannot read yet (providers deliver a snippet,
+   * not the body). Sending it is refused, and an edit is saved as a new local draft (the reply carries the new id)
+   * instead of overwriting the other device's draft. Absent means the full text is here.
+   */
+  incomplete: z.optional(z.boolean()),
   /** Set when another device changed the draft: "keep mine, take theirs, or keep both" (`Draft/resolve`). */
   conflict: z.optional(
     z.object({ theirsRevision: Count, at: EpochMs, device: z.optional(line(200)) }),
