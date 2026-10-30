@@ -29,8 +29,9 @@ import { gmailCost } from './costs';
  * proof that nothing left: the sending request was never written, the connection was refused, or Gmail answered one of
  * the known refusals (`REFUSALS`). Anything else after the request was written, a 2xx that is not Gmail's Message
  * included, is thrown as uncertain, and the outbox settles it through `findSent`, which searches Sent only (then reads
- * the newest few SENT messages by label, for a send the search index has not caught up with). No upload request
- * follows a redirect, and a refusal is logged without Gmail's own text.
+ * the newest SENT messages by label, for a send the search index has not caught up with). No upload request
+ * follows a redirect (`redirect: 'manual'`; if `deps.fetch` is ever wired to Electron's `net.fetch`, re-verify it honours
+ * that), and a refusal is logged without Gmail's own text.
  */
 
 const UPLOAD_API = 'https://gmail.googleapis.com/upload/gmail/v1/users/me';
@@ -764,40 +765,53 @@ async function sentCopy(
 }
 
 /** Newest SENT messages read when the search misses (one `messages.list`, then at most this many metadata gets). */
-export const RECENT_SENT = 5;
-/** A recent candidate older than `since` by more than this is not read (Gmail's clock against this device's). */
+export const RECENT_SENT = 10;
+/** A recent candidate older than `since` by more than this is outside the window (Gmail's clock against this device's). */
 const RECENT_MARGIN_MS = 10 * 60_000;
 
+interface SentListing {
+  ids: string[];
+  /** The listing filled its page or says more follow: the window may continue past what was read. */
+  more: boolean;
+}
+
 /** The newest SENT message ids by label, not by search: the label index shows a send the search index may not yet. */
-async function newestSent(client: GmailClient): Promise<string[]> {
-  const page = await client.call<{ messages?: { id?: unknown }[] }>({
+async function newestSent(client: GmailClient): Promise<SentListing> {
+  const page = await client.call<{ messages?: { id?: unknown }[]; nextPageToken?: string }>({
     method: 'gmail.messages.list',
     path: '/messages',
     query: { labelIds: ['SENT'], maxResults: RECENT_SENT, includeSpamTrash: 'true' },
-    fields: 'messages(id)',
+    fields: 'messages(id),nextPageToken',
     lane: 'interactive',
   });
-  const ids = (page.messages ?? []).map(m => m.id);
-  return ids.filter((id): id is string => typeof id === 'string').slice(0, RECENT_SENT);
+  const listed = (page.messages ?? []).slice(0, RECENT_SENT);
+  const ids = listed.map(m => m.id).filter((id): id is string => typeof id === 'string');
+  return { ids, more: Boolean(page.nextPageToken) || listed.length >= RECENT_SENT };
 }
 
 /**
- * The fallback when the search found nothing: the newest SENT messages, newest first, each re-checked like a search
- * hit (SENT, no DRAFT, this Message-ID), stopping at the first one older than `since - RECENT_MARGIN_MS`. It can only
- * turn "absent" into "found"; any failure in it is thrown (a vanished candidate too), never read as "absent".
+ * The fallback when the search found nothing: the newest SENT messages, each re-checked like a search hit (SENT, no
+ * DRAFT, this Message-ID). Every id listed is read, in any order, so neither the listing's order nor the device clock
+ * decides a "found". It answers "absent" (undefined) only when the listing is provably complete for the window: some
+ * candidate is older than `since` minus `RECENT_MARGIN_MS`, or the listing is short with no next page. A full page or
+ * a next page without such a candidate may hide the copy, so it is thrown (`sentListingPartial`, retryable). Any other
+ * failure in it, a vanished candidate too, is thrown, never read as "absent".
  */
 async function recentSentCopy(
   client: GmailClient,
   internetId: string,
   since: number,
 ): Promise<SentHit | undefined> {
-  for (const id of await newestSent(client)) {
+  const { ids, more } = await newestSent(client);
+  let reachedOlder = false;
+  for (const id of ids) {
     const m = await candidate(client, id, true);
     if (m === 'gone') throw incomplete('sentHitVanished');
-    if (Number(m.internalDate) < since - RECENT_MARGIN_MS) return undefined;
-    if (isSentCopy(m, internetId))
+    if (Number(m.internalDate) < since - RECENT_MARGIN_MS) reachedOlder = true;
+    else if (isSentCopy(m, internetId))
       return { id, ...(typeof m.threadId === 'string' ? { threadId: m.threadId } : {}) };
   }
+  if (more && !reachedOlder) throw incomplete('sentListingPartial');
   return undefined;
 }
 

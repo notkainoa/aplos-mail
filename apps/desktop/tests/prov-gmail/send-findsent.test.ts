@@ -1,7 +1,7 @@
 /**
  * `findSent` on the Gmail emulator past the plain search: a second page, a miss then a hit, and the recent-SENT
- * fallback for a just-sent message the search index has not caught up with (found, never a DRAFT, bounded, and
- * thrown rather than "absent" when the fallback itself fails).
+ * fallback for a just-sent message the search index has not caught up with (found, never a DRAFT, "absent" only for a
+ * listing that is provably complete, and thrown when the listing is partial or the fallback itself fails).
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -85,34 +85,81 @@ test('findSent fallback: a DRAFT carrying the Message-ID, even labelled SENT, is
   assert.equal(result.kind, 'absent');
 });
 
-test('findSent fallback: bounded to the newest few SENT, and stops at the first one older than since', async () => {
-  const world = await sendWorld();
-  const old = world.clock.now() - 86_400_000;
-  world.emu.mailbox.addMessage({
+function addSent(world: SendWorld, messageId: string, internalDate?: number) {
+  return world.emu.mailbox.addMessage({
     from: world.address,
     to: ['friend@example.test'],
-    messageId: 'x-8@mail.example.test',
+    messageId: `${messageId}@mail.example.test`,
     labelIds: ['SENT'],
-    internalDate: old,
+    ...(internalDate === undefined ? {} : { internalDate }),
   });
-  for (let i = 0; i < RECENT_SENT + 2; i++)
-    world.emu.mailbox.addMessage({
-      from: world.address,
-      to: ['friend@example.test'],
-      messageId: `newer-${i}@mail.example.test`,
-      labelIds: ['SENT'],
-      internalDate: old + 1_000 * (i + 1),
-    });
+}
+
+/** `count` newer sends after the copy's own, each a second apart inside the window. */
+function addNewer(world: SendWorld, count: number, from: number): void {
+  for (let i = 0; i < count; i++) addSent(world, `newer-${i}`, from + 1_000 * (i + 1));
+}
+
+const gets = (world: SendWorld) =>
+  world.emu.log.filter(e => e.apiMethod === 'gmail.users.messages.get').length;
+
+test('findSent fallback: the copy, 8th newest among recent sends, is found', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  const copy = addSent(world, 'x-8', at);
+  addNewer(world, 7, at);
   lagging(world);
-  const gets = () => world.emu.log.filter(e => e.apiMethod === 'gmail.users.messages.get').length;
-  // Since now: the newest SENT are a day old, so the first one read ends the fallback.
-  const recent = await world.port.findSent(ACCOUNT, '<x-8@mail.example.test>', world.clock.now());
-  assert.equal(recent.kind, 'absent');
-  assert.equal(gets(), 1);
-  // Since a day back: all are recent enough, but only the newest RECENT_SENT are read, and the copy is not among them.
-  const wide = await world.port.findSent(ACCOUNT, '<x-8@mail.example.test>', old - 60_000);
-  assert.equal(wide.kind, 'absent');
-  assert.equal(gets(), 1 + RECENT_SENT);
+  const result = await world.port.findSent(ACCOUNT, '<x-8@mail.example.test>', at - 60_000);
+  assert.deepEqual(result, {
+    kind: 'found',
+    remoteMessageId: copy.id,
+    remoteThreadId: copy.threadId,
+  });
+});
+
+test('findSent fallback: 12 newer sends hide the copy, so it is thrown (sentListingPartial), never "absent"', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  addSent(world, 'x-12', at);
+  addNewer(world, 12, at);
+  lagging(world);
+  const error = await rejection(
+    world.port.findSent(ACCOUNT, '<x-12@mail.example.test>', at - 60_000),
+  );
+  assert.equal(classOf(error)?.reason, 'sentListingPartial');
+  assert.equal(gets(world), RECENT_SENT);
+});
+
+test('findSent fallback: a short listing, none of it this mail, is complete, so absent', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  addNewer(world, 3, at);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-13@mail.example.test>', at - 60_000);
+  assert.equal(result.kind, 'absent');
+  assert.equal(gets(world), 3);
+});
+
+test('findSent fallback: a full listing that reaches a candidate older than the window is complete, so absent', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  addNewer(world, RECENT_SENT - 1, at);
+  addSent(world, 'old-copy', at - 86_400_000);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-14@mail.example.test>', at - 60_000);
+  assert.equal(result.kind, 'absent');
+  assert.equal(gets(world), RECENT_SENT);
+});
+
+test('findSent fallback: the first older candidate does not end the read (no reliance on order or the clock)', async () => {
+  const world = await sendWorld();
+  const at = world.clock.now();
+  addNewer(world, 2, at);
+  addNewer(world, 12, at - 86_400_000);
+  lagging(world);
+  const result = await world.port.findSent(ACCOUNT, '<x-15@mail.example.test>', at - 60_000);
+  assert.equal(result.kind, 'absent');
+  assert.equal(gets(world), RECENT_SENT);
 });
 
 test('findSent fallback: a listing that fails is thrown, never "absent"', async () => {
