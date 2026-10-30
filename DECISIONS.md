@@ -578,6 +578,10 @@ Supersedes the earlier bullets above where they differ. The classifier and pinni
 
 - the concurrency cap and the extra classifier cases are in the proxy-hardening PR; `X-Content-Type-Options: nosniff` on the serve image route cannot be set yet because `Mail/serve` is still a stub (methods/mail.ts), so the requirement is written into the `ImageProxy` port doc (Content-Type from the sniffed mime only, nosniff, no header copied from the remote response) and must be a test when the route is written (html-4/html-5).
 
+## 2026-10-30 — eng-contract: `Notification/claim` is at-least-once (wording)
+
+- **Docs only, no schema change.** The `Notification/claim` summary (`api/admin.ts`) and the `NotificationItem` comment (`schemas/session.ts`) said a claimed item is "never handed out twice" / "claimed once, never duplicated by a crash". The engine's outbox (time-5, #147) leases a claim for about a minute and offers the item again if it is not acked, with the same stable `id`, so delivery is at-least-once and a repost replaces the banner. Both comments now say that; the host must treat it that way.
+
 ## 2026-10-30 — eng-time time-5: review fixes on the notification outbox
 
 - **Delivery is at least once, with a stable id.** The claim lease hands a row to one claim at a time, but a host that posted and died before its ack gets the same item again once the lease ends. The id (`mail:<account>:<message>`) is the same each time, so the repost replaces the banner instead of stacking. Tests record every post of a simulated host and check: each qualifying message is posted at least once, always under its own id, never inside a live lease and never after its ack. **Contract wording to fix (not edited here):** `Notification/claim` in `packages/contract/src/api/admin.ts` says "a claimed item is never handed out twice", and the `NotificationItem` comment in `schemas/session.ts` says "claimed once, never duplicated by a crash"; both should say "at least once, stable id".
