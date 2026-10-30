@@ -39,6 +39,12 @@ export interface FakeConfig {
   answerLost?: boolean;
   /** `send` refuses with a `NotSentError` of this class (provably not sent) and delivers nothing. */
   refuse?: string;
+  /**
+   * What the k-th `send` call for one Message-ID does (counted in the server's record, so across engine lives), whatever
+   * `deliver` and `answerLost` say; later calls follow them. `drop`: lost on the wire, nothing delivered. `lose`: delivered,
+   * the answer lost. `ok`: delivered and answered.
+   */
+  script?: ('drop' | 'lose' | 'ok')[];
 }
 
 export interface PortEnv {
@@ -88,7 +94,11 @@ export function createSendPort(env: PortEnv): SendPort {
     admission: () => ({ ok: true }),
     async send(_account, payload) {
       const at = clock.now();
+      const nth = readLog(logPath).filter(
+        l => l.op === 'send' && l.internetId === payload.internetId,
+      ).length;
       record(logPath, { op: 'send', internetId: payload.internetId, at });
+      const how = config.script?.[nth] ?? (!deliver ? 'drop' : answerLost ? 'lose' : 'ok');
       if (refuse)
         throw new NotSentError({
           class: refuse,
@@ -96,9 +106,9 @@ export function createSendPort(env: PortEnv): SendPort {
           method: 'send',
           reason: refuse,
         });
-      if (!deliver) throw new Error('socket hang up');
+      if (how === 'drop') throw new Error('socket hang up');
       record(logPath, { op: 'deliver', internetId: payload.internetId, at, serverAt: at + offset });
-      if (answerLost) throw new Error('connection reset');
+      if (how === 'lose') throw new Error('connection reset');
       return { acceptedAt: at, remoteMessageId: `r-${payload.submissionId}` };
     },
     async findSent(_account, internetId, since) {
