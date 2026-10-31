@@ -1,5 +1,5 @@
 import { TokenType, type CSSToken } from '@csstools/css-tokenizer';
-import { ID_PREFIX } from './ids';
+import { ID_PREFIX, moveOwnNames } from './ids';
 
 // Aplos's own elements carry a class that starts with `aplos-` (quote wrappers, find marks, the
 // blocked-image placeholder, the clipped note), and a mail's class of that name is moved to
@@ -20,7 +20,6 @@ import { ID_PREFIX } from './ids';
 // is cosmetic (no load, no script).
 
 const OPERATOR_STARTS = new Set(['~', '|', '^', '$', '*']);
-const WHOLE_NAME = /(^|[\t\n\f\r ])(aplos-)/gi;
 const NAME_OR_STEM = /(^|[\t\n\f\r ])(aplos)(?=-|$)/gi;
 const STEM_OPERATORS = new Set(['^', '*', '|']);
 
@@ -68,8 +67,8 @@ function readName(tokens: CSSToken[], open: number): { name: string; at: number 
 
 /** `value` with every `aplos-` name (or stem, for `^=`, `*=`, `|=`) moved to `m-aplos…`. */
 export function scopeClassSelectorValue(op: string, value: string): string {
-  const pattern = STEM_OPERATORS.has(op) ? NAME_OR_STEM : WHOLE_NAME;
-  return value.replace(pattern, `$1${ID_PREFIX}$2`);
+  if (!STEM_OPERATORS.has(op)) return moveOwnNames(value);
+  return value.replace(NAME_OR_STEM, `$1${ID_PREFIX}$2`);
 }
 
 /**
