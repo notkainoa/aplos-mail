@@ -294,6 +294,25 @@ describe('loaded corpus', () => {
     assert.deepEqual(missing, [], 'classes with no entry');
   });
 
+  it('only labels a handwritten message with a class its source shows', () => {
+    const evidence: Record<string, RegExp> = {
+      'css-import': /@import/i,
+      'css-url': /url\(/i,
+      'ping-attr': /\bping\s*=/i,
+      'iframe-nested': /<(?:iframe|frame)\b/i,
+      'form-autosubmit': /<form\b/i,
+      'svg-script': /<script|\bon\w+\s*=/i,
+    };
+    const mislabelled = readManifest().flatMap(entry => {
+      if (!entry.html) return [];
+      const source = readFileSync(join(corpusDir, entry.html), 'utf8');
+      return entry.classes
+        .filter(name => evidence[name] && !evidence[name].test(source))
+        .map(name => `${entry.id}: ${name}`);
+    });
+    assert.deepEqual(mislabelled, [], 'a class label the message source does not support');
+  });
+
   it('covers every class the plan lists', () => {
     const known = new Set<string>(ATTACK_CLASSES);
     for (const name of REQUIRED_CLASSES)

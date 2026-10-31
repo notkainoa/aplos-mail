@@ -93,7 +93,7 @@
   {
     "id": "009-handlers-focus-and-autofocus",
     "title": "Handlers that fire without a click",
-    "classes": ["event-handler", "form-autosubmit"],
+    "classes": ["event-handler"],
     "html": "messages/009-handlers-focus-and-autofocus.html",
     "expect": {
       "mustKeepText": ["Poll results are in"]
@@ -102,7 +102,7 @@
   {
     "id": "010-handlers-animation-and-popover",
     "title": "Handlers triggered by CSS animation, transitions and popovers",
-    "classes": ["event-handler", "css-url"],
+    "classes": ["event-handler"],
     "html": "messages/010-handlers-animation-and-popover.html",
     "expect": {
       "mustKeepText": ["Garage sale this weekend"]
@@ -237,7 +237,7 @@
   {
     "id": "025-link-stylesheet-icon-manifest",
     "title": "Linked stylesheets, icons and manifests",
-    "classes": ["link-prefetch", "css-import"],
+    "classes": ["link-prefetch"],
     "html": "messages/025-link-stylesheet-icon-manifest.html",
     "expect": {
       "mustKeepText": ["Welcome to the allotment society newsletter"]
@@ -282,7 +282,7 @@
   {
     "id": "030-css-url-comments-and-whitespace",
     "title": "CSS comments and whitespace splitting url() and at-rules",
-    "classes": ["css-url", "css-import", "mxss"],
+    "classes": ["css-url", "mxss"],
     "html": "messages/030-css-url-comments-and-whitespace.html",
     "expect": {
       "mustKeepText": ["Recycling calendar"]
@@ -435,7 +435,7 @@
   {
     "id": "047-form-buttons-and-formaction",
     "title": "Buttons and inputs that override where a form goes",
-    "classes": ["form-autosubmit", "ping-attr"],
+    "classes": ["form-autosubmit"],
     "html": "messages/047-form-buttons-and-formaction.html",
     "expect": {
       "mustKeepText": ["Reply to confirm your seat"]
@@ -692,7 +692,7 @@
   {
     "id": "074-ssrf-image-ports-and-credentials",
     "title": "Images with unusual ports, credentials and host spellings",
-    "classes": ["ssrf-image", "remote-image", "open-redirect-image"],
+    "classes": ["ssrf-image", "remote-image"],
     "html": "messages/074-ssrf-image-ports-and-credentials.html",
     "expect": {
       "mustKeepText": ["Mirror list for the photo archive"]
@@ -813,7 +813,7 @@
   {
     "id": "087-popup-links-and-targets",
     "title": "Links that try to leave the frame",
-    "classes": ["popup-navigation", "ping-attr"],
+    "classes": ["popup-navigation"],
     "html": "messages/087-popup-links-and-targets.html",
     "expect": {
       "mustKeepText": ["Open the link to see the offer"]
@@ -1049,7 +1049,7 @@
   {
     "id": "108-benign-responsive-dark-mode",
     "title": "Responsive and dark mode style rules",
-    "classes": ["benign-newsletter", "css-url"],
+    "classes": ["benign-newsletter"],
     "html": "messages/108-benign-responsive-dark-mode.html",
     "expect": {
       "remoteImages": 0,
@@ -1199,13 +1199,7 @@
   {
     "id": "124-amp-email-and-custom-elements",
     "title": "Interactive email markup and unknown elements that carry addresses",
-    "classes": [
-      "script-inline",
-      "iframe-nested",
-      "tracking-pixel",
-      "form-autosubmit",
-      "remote-image"
-    ],
+    "classes": ["script-inline", "tracking-pixel", "remote-image"],
     "html": "messages/124-amp-email-and-custom-elements.html",
     "expect": {
       "mustKeepText": ["Interactive newsletter"]
@@ -1248,6 +1242,24 @@
     "html": "messages/128-unicode-case-folding.html",
     "expect": {
       "mustKeepText": ["Case folding message"]
+    }
+  },
+  {
+    "id": "129-open-redirect-image-parameter-names",
+    "title": "Images behind a link redirector with other parameter names",
+    "classes": ["open-redirect-image", "remote-image"],
+    "html": "messages/129-open-redirect-image-parameter-names.html",
+    "expect": {
+      "mustKeepText": ["Newsletter images served through a link-tracking redirector"]
+    }
+  },
+  {
+    "id": "130-ping-attribute-links-and-areas",
+    "title": "Links that report clicks through the ping attribute",
+    "classes": ["ping-attr"],
+    "html": "messages/130-ping-attribute-links-and-areas.html",
+    "expect": {
+      "mustKeepText": ["Click-tracking through the ping attribute"]
     }
   }
 ]
