@@ -28,6 +28,31 @@ export function ignoreUnsyncable(error: unknown): undefined {
   throw error;
 }
 
+/** A folder opened for flushing. */
+export interface FolderHandle {
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}
+
+const openFolder = (path: string): Promise<FolderHandle> => open(path, 'r');
+
+/**
+ * Flush a folder so a rename in it survives a power cut. Only the four unsupported codes are ignored, on the open and
+ * on the flush; the handle is always closed. `openFolderAt` is the seam a test uses to make the flush fail.
+ */
+export async function syncFolder(
+  openFolderAt: (path: string) => Promise<FolderHandle>,
+  path: string,
+): Promise<void> {
+  const handle = await openFolderAt(path).catch(ignoreUnsyncable);
+  if (!handle) return;
+  try {
+    await handle.sync().catch(ignoreUnsyncable);
+  } finally {
+    await handle.close();
+  }
+}
+
 export const nodeDurableFs: DurableFs = {
   async open(path, mode) {
     // `wx`: a fresh file, never one that is already there (or a link planted in its place).
@@ -39,15 +64,7 @@ export const nodeDurableFs: DurableFs = {
     };
   },
   rename,
-  async syncDir(path) {
-    const handle = await open(path, 'r').catch(ignoreUnsyncable);
-    if (!handle) return;
-    try {
-      await handle.sync().catch(ignoreUnsyncable);
-    } finally {
-      await handle.close();
-    }
-  },
+  syncDir: path => syncFolder(openFolder, path),
   async remove(path) {
     await unlink(path).catch(() => {});
   },
