@@ -137,7 +137,7 @@ export function withParent(tx: CommitExtensionTx, fields: DraftFields, w: Remote
 }
 
 /** Is a send of this draft live, or has one gone out? */
-export function hasSend(tx: CommitExtensionTx, draftId: string) {
+export function hasSend(tx: Pick<CommitExtensionTx, 'get'>, draftId: string) {
   return (
     tx.get(
       `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,

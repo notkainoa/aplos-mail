@@ -787,15 +787,16 @@ function relink(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, fields: D
 
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
-  const { fields: stored, meta } = parseData(row.data);
+  const { fields: stored, meta: kept } = parseData(row.data);
   // A draft held by a send (queued, running, or gone out at this revision) does not change: its revision is what the
   // send is checked against, and the send names the copy it was queued against. A newer version of the copy is
   // remembered like any change made meanwhile (the copy is then another device's and is never deleted from here), and
-  // is taken when the provider reports it again once the send is over.
+  // is applied when the send ends without going out (`releaseHeld`).
   if (sendPins(tx, row))
     return w.remoteMessageId === row.remote_message_id
       ? undefined
-      : markChangedElsewhere(tx, row, stored, meta, w);
+      : markChangedElsewhere(tx, row, stored, kept, w);
+  const meta = dropHeld(tx, row, stored, kept);
   const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
@@ -916,14 +917,31 @@ function markChangedElsewhere(
   w: RemoteDraftWrite,
 ) {
   const held = meta.changedElsewhere;
-  if (typeof held === 'object' && held.remoteMessageId === w.remoteMessageId) return;
+  if (typeof held === 'object') {
+    // A held removal stays: the copy is gone, and a later report of it (an older one arriving late) must not bring it back.
+    if (held.removed) return;
+    // The same version again changes nothing, but a removal reports the last known id and is always news.
+    if (held.remoteMessageId === w.remoteMessageId && !w.removed) return;
+  }
   // The newest report is kept: a send that ends without going out applies it (`releaseHeld`), so it is not lost.
   const data = packData(fields, { ...meta, changedElsewhere: w });
   tx.run('UPDATE drafts SET data = ? WHERE id = ?', data, row.id);
 }
 
+/**
+ * A report is applied while nothing holds the draft: whatever was held is older news now and must never be replayed
+ * over it. The copy stays marked (`true`: a discard forgets it instead of deleting it), only the stored report goes.
+ */
+function dropHeld(tx: CommitExtensionTx, row: DraftRow, fields: DraftFields, meta: DraftMeta) {
+  if (typeof meta.changedElsewhere !== 'object') return meta;
+  const next: DraftMeta = { ...meta, changedElsewhere: true };
+  tx.run('UPDATE drafts SET data = ? WHERE id = ?', packData(fields, next), row.id);
+  return next;
+}
+
 function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
-  const { fields, meta } = parseData(row.data);
+  const { fields, meta: stored } = parseData(row.data);
+  const meta = hasSend(tx, row.id) ? stored : dropHeld(tx, row, fields, stored);
   // First: our own upload's Message-ID makes `isEcho` true too, but only this moves the base to the new message id.
   if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(tx, w, row, meta, fields))
     return advanceBase(tx, row, meta, w);

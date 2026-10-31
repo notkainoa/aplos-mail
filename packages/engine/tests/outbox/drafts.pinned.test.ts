@@ -6,6 +6,7 @@ import type { DraftRow } from '../../src/outbox/draft-state';
 import { ContractError } from '@aplos/contract/contract-error';
 import { ACCOUNT, fields, SEC, type World } from './helpers';
 import {
+  count,
   create,
   edit,
   fact,
@@ -63,8 +64,8 @@ function report(w: World, messageId: string, subject: string) {
 }
 
 /** The message id of the newer copy the draft holds, `true` for a hold from before the report was kept, else nothing. */
-const held = (w: World) => {
-  const kept = (syncOf(w, D) as { changedElsewhere?: true | { remoteMessageId: string } })
+const held = (w: World, id = D) => {
+  const kept = (syncOf(w, id) as { changedElsewhere?: true | { remoteMessageId: string } })
     .changedElsewhere;
   return typeof kept === 'object' ? kept.remoteMessageId : kept;
 };
@@ -217,3 +218,137 @@ test("a local draft's phone edit held under a queued send is asked about once th
     );
     assert.equal(read(w, s.draft.id).subject, 'Mine', 'and nothing of ours was replaced');
   }));
+
+// ---------------------------------------------------------------- the Opus review of the held copy
+
+const refusedWith = (fn: () => unknown, type: string) => {
+  try {
+    fn();
+  } catch (error) {
+    assert.ok(error instanceof ContractError);
+    assert.equal(error.type, type);
+    return;
+  }
+  assert.fail(`expected ${type}`);
+};
+
+test('a copy the phone edited and then sent or deleted under our queued send is gone when the send is undone: nothing is resurrected or mailed again', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, theirId, { subject: 'Theirs', html: '<p>Their body</p>' });
+    // The removal reports the last known id (Gmail does): the same id as the held edit.
+    fact(w, s.remoteDraftId, theirId, { removed: true });
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    assert.equal(service(w).get([s.draft.id]).notFound.length, 1, 'the removal was applied');
+    refusedWith(() => w.send(w.first, s.draft.id, { revision: s.draft.revision }), 'notFound');
+    await wait(w, 60 * SEC);
+    assert.equal(w.server.payloads.length, 0, 'nothing was mailed');
+    assert.equal(count(w), 0, 'and no draft names the vanished copy');
+  }));
+
+test('a held removal is not overwritten by a late report of the version it replaced', () =>
+  world(async w => {
+    const s = await synced(w);
+    w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, theirId, { removed: true });
+    // An older report of the copy arrives late, under another message id.
+    fact(w, s.remoteDraftId, 'msg-late', { subject: 'Late', html: '<p>Late</p>' });
+    const kept = (syncOf(w, s.draft.id) as { changedElsewhere?: { removed?: true } })
+      .changedElsewhere;
+    assert.equal(kept?.removed, true, 'the removal is still the one held');
+  }));
+
+test('a held report that a later report overtook is never replayed over it (the clean draft)', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const a = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, a, { subject: 'Phone A', html: '<p>A</p>' });
+    // The release after the undo fails once: A stays held.
+    w.faults.push((input: CommitInput) => input.opId.startsWith('held:'));
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    assert.equal(read(w, s.draft.id).subject, 'Lunch');
+    const b = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, b, { subject: 'Phone B', html: '<p>B</p>' });
+    const now = read(w, s.draft.id);
+    assert.equal(now.subject, 'Phone B', 'the clean draft took B');
+    w.send(w.first, s.draft.id, { revision: now.revision });
+    assert.equal(read(w, s.draft.id).subject, 'Phone B', 'and the send check did not replay A');
+    assert.equal(read(w, s.draft.id).revision, now.revision);
+  }));
+
+test('a held report that a later report overtook is never replayed over it (a conflict)', () =>
+  world(async w => {
+    const s = await synced(w, fields({ bcc: [{ address: 'hidden@mail.example' }] }));
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const a = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, a, { subject: 'Phone A', html: '<p>A</p>' });
+    w.faults.push((input: CommitInput) => input.opId.startsWith('held:'));
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    const b = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, b, { subject: 'Phone B', html: '<p>B</p>' });
+    const other = () =>
+      (syncOf(w, s.draft.id) as { conflict?: { theirsMessageId?: string } }).conflict
+        ?.theirsMessageId;
+    assert.equal(other(), b, 'the conflict names B');
+    refusedWith(
+      () => w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision }),
+      'stateMismatch',
+    );
+    assert.equal(other(), b, 'and the send check did not switch it to A');
+  }));
+
+test('a held version is not applied by a send check while the draft is still pinned by a send', () =>
+  world(async w => {
+    report(w, 'pm-1', 'Version one');
+    const first = read(w, D);
+    w.send(w.first, D, { revision: first.revision });
+    report(w, 'pm-2', 'Version two');
+    const seq = w.first.store.seq();
+    refusedWith(() => w.send(w.first, D, { revision: first.revision }), 'stateMismatch');
+    assert.equal(w.first.store.seq(), seq, 'the refused check committed nothing (no release)');
+    assert.equal(read(w, D).subject, 'Version one', 'still the version the send was queued on');
+    assert.equal(held(w), 'pm-2', 'and still held');
+  }));
+
+for (const [name, extra] of [
+  ['a copy the row no longer names', { remoteDraftId: 'rd-other' }],
+  ['another account', { accountId: 'someone-else' }],
+] as const)
+  test(`a held report of ${name} is not replayed: no stray draft, the copy stays marked`, () =>
+    world(async w => {
+      const s = await synced(w);
+      const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+      const stray = {
+        kind: 'remoteDraft',
+        accountId: ACCOUNT,
+        remoteDraftId: s.remoteDraftId,
+        remoteMessageId: 'msg-x',
+        changedAt: w.clock.now(),
+        html: '<p>x</p>',
+        message: {
+          remoteId: 'msg-x',
+          remoteThreadId: 't-x',
+          subject: 'Stray',
+          flags: { seen: true, flagged: false, draft: true, fromMe: true },
+          date: 1,
+          internalDate: 1,
+        },
+        ...extra,
+      };
+      w.first.store.commit({
+        opId: `craft-${++reports}`,
+        origin: 'system',
+        writes: [
+          { kind: 'draft', op: 'meta', id: s.draft.id, patch: { changedElsewhere: stray } },
+        ] as never,
+      });
+      const before = count(w);
+      w.act(w.first, { type: 'undo', submissionId: sub.id });
+      assert.equal(count(w), before, 'no stray draft was inserted');
+      assert.equal(held(w, s.draft.id), true);
+      assert.equal(read(w, s.draft.id).subject, 'Lunch');
+    }));

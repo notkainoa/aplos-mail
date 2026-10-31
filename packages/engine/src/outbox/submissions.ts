@@ -11,7 +11,7 @@ import {
   type OutboxCtx,
 } from './context';
 import { DraftConflict, INCOMPLETE_SENTENCE, parseData } from './draft-state';
-import { sendPins } from './draft-proof';
+import { hasSend, sendPins } from './draft-proof';
 import {
   buildEnvelope,
   buildMime,
@@ -127,6 +127,8 @@ interface DraftRow {
   display_name: string | null;
   remote_internet_id: string | null;
   synced_revision: number | null;
+  origin: string;
+  remote_draft_id: string | null;
   provider: string;
   [k: string]: string | number | null;
 }
@@ -134,7 +136,7 @@ interface DraftRow {
 function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
-            a.address, a.display_name, a.provider
+            d.origin, d.remote_draft_id, a.address, a.display_name, a.provider
      FROM drafts d JOIN accounts a ON a.id = d.account_id
      WHERE d.id = ? AND json_extract(d.data, '$._sync.removing') IS NULL`,
     id,
@@ -285,18 +287,29 @@ function undoSeconds(ctx: OutboxCtx) {
  * seen. The flag is cleared in the same commit (the report puts it back if a send pins the draft again meanwhile).
  */
 export function releaseHeld(ctx: OutboxCtx, draftId: string) {
-  const held = ctx.store.read(q => {
+  const found = ctx.store.read(q => {
     const d = readDraft(q, draftId);
     const copy = d && parseData(d.data).meta.changedElsewhere;
-    return d && typeof copy === 'object' && !sendPins(q, d) ? copy : undefined;
+    // The same test the report meets when it is applied: a remote draft is held by `sendPins`, a local one by any send.
+    const pinned = d && (d.origin === 'remote' ? sendPins(q, d) : hasSend(q, d.id));
+    return d && typeof copy === 'object' && !pinned ? { d, copy } : undefined;
   });
-  if (!held) return;
-  const clear = { kind: 'draft', op: 'meta', id: draftId, patch: { changedElsewhere: null } };
+  if (!found) return;
+  const { d, copy } = found;
+  // Only a report of this very draft is replayed: another account's, or one of a copy this row no longer names (its id
+  // changed, or it was forgotten), would insert a stale draft of its own. Those are kept as plain `true`.
+  const ours = copy.accountId === d.account_id && d.remote_draft_id === copy.remoteDraftId;
+  const clear = {
+    kind: 'draft',
+    op: 'meta',
+    id: draftId,
+    patch: { changedElsewhere: ours ? null : true },
+  };
   try {
     ctx.store.commit({
-      opId: `held:${draftId}:${held.remoteMessageId}:${ctx.clock.now()}`,
+      opId: `held:${draftId}:${copy.remoteMessageId}:${ctx.clock.now()}`,
       origin: 'system',
-      writes: [clear, held] as never,
+      writes: (ours ? [clear, { ...copy, kind: 'remoteDraft' }] : [clear]) as never,
     });
   } catch (error) {
     if (!(error instanceof DraftConflict)) throw error;
