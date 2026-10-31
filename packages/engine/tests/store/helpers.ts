@@ -95,3 +95,36 @@ export function msg(
     ...extra,
   };
 }
+
+/**
+ * One inbound message as the raw rows a schema-0001 `mail.db` already holds, for migration tests: today's commit code
+ * names columns an older schema lacks, so data "from before" a migration cannot be written through `store.commit`.
+ */
+export function oldMessage(
+  db: ReturnType<typeof openSqlite>,
+  remoteId: string,
+  remoteThreadId: string,
+  listUnsub: string | null = null,
+): void {
+  const thread = db
+    .prepare(
+      `INSERT INTO threads(account_id, remote_id, last_date, msg_count, unread_count, flagged, has_attach, rev)
+       VALUES(?, ?, ?, 1, 1, 0, 0, 1) RETURNING id`,
+    )
+    .get(ACCOUNT, remoteThreadId, T0)!.id;
+  db.prepare(
+    `INSERT INTO thread_workflow(thread_id, account_id, sync_key, status, last_date) VALUES(?, ?, ?, 'new', ?)`,
+  ).run(thread, ACCOUNT, remoteThreadId, T0);
+  db.prepare(
+    `INSERT INTO messages(id, account_id, thread_id, remote_id, from_addr, date, internal_date, list_unsub,
+     first_seen_seq, rev) VALUES(?, ?, ?, ?, 'list@news.example', ?, ?, ?, 1, 1)`,
+  ).run(
+    Math.floor(T0 / 1000) * 4096 + Number(thread),
+    ACCOUNT,
+    thread,
+    remoteId,
+    T0,
+    T0,
+    listUnsub,
+  );
+}

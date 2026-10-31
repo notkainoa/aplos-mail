@@ -91,7 +91,14 @@ function messageFields(
     flags,
     hdr,
     w.listUnsubscribe ? JSON.stringify(w.listUnsubscribe) : null,
+    w.listUnsubscribe ? listAuth(w.listAuthenticated) : null,
   ];
+}
+
+/** `messages.list_auth`, kept only beside `list_unsub`: strict booleans only, anything else is unknown (NULL). */
+function listAuth(value: unknown): number | null {
+  if (value === true) return 1;
+  return value === false ? 0 : null;
 }
 
 // ------------------------------------------------------------ messages
@@ -163,7 +170,7 @@ export function message(run: CommitRun, w: MessageWrite) {
       .q(
         `UPDATE messages SET thread_id = ?, internet_id = ?, in_reply_to = ?, refs = ?, from_addr = ?, from_name = ?,
       to_json = ?, cc_json = ?, bcc_json = ?, reply_to = ?, subject = ?, snippet = ?, date = ?, internal_date = ?, size = ?,
-      flags = ?, hdr = ?, list_unsub = ?, origin = CASE WHEN ? = 'search' THEN origin ELSE ? END, rev = ?, local_seq = ?
+      flags = ?, hdr = ?, list_unsub = ?, list_auth = ?, origin = CASE WHEN ? = 'search' THEN origin ELSE ? END, rev = ?, local_seq = ?
       WHERE id = ?`,
       )
       .run(...fields, origin, origin, run.seq, localSeq, id);
@@ -175,7 +182,7 @@ export function message(run: CommitRun, w: MessageWrite) {
     run
       .q(
         `INSERT INTO messages(thread_id, internet_id, in_reply_to, refs, from_addr, from_name, to_json, cc_json, bcc_json,
-      reply_to, subject, snippet, date, internal_date, size, flags, hdr, list_unsub, id, account_id, remote_id, origin,
+      reply_to, subject, snippet, date, internal_date, size, flags, hdr, list_unsub, list_auth, id, account_id, remote_id, origin,
       first_seen_seq, rev, local_seq) VALUES(${fields.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(...fields, id, w.accountId, w.remoteId, origin, run.seq, run.seq, localSeq);

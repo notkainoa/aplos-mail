@@ -172,7 +172,10 @@ export type UnsubscribeKind = 'done' | 'unsure' | 'failed' | 'open' | 'compose' 
  * Plans and performs one List-Unsubscribe (RFC 2369 / RFC 8058) for `Unsubscribe/get` and `Unsubscribe/run`.
  * Implemented by the host (`apps/desktop/src/host/providers/google/unsubscribe.ts`, Node networking; never in the
  * neutral core) and injected as `HostPorts.unsubscribe`; the `Unsubscribe/*` handlers (`methods/unsubscribe.ts`) call
- * it with the headers of the thread's newest inbound message that carries List-Unsubscribe.
+ * it with the headers of the thread's newest authenticated inbound message that carries List-Unsubscribe, else the
+ * newest such message (`ListHeaders.authenticated`). For a message that is not authenticated the engine passes the
+ * headers without `listUnsubscribePost`, so only the owner-visible ways (the mailto the owner reviews, the page the
+ * owner opens) remain; an executor must still plan one-click only when `headers.authenticated === true`.
  * - `describe` is pure and offline: it reads the headers and names the way the sender offers (`url` for a link or
  *   mailto), with no network and no side effect.
  * - `run` performs the one-click POST, or plans the mailto or the link, in the host. It must honour `signal`, and it
