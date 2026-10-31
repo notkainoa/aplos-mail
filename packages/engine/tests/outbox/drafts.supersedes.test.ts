@@ -7,8 +7,10 @@ import {
   CAP,
   edit,
   fact,
+  next,
   read,
   row,
+  service,
   syncOf,
   synced,
   THEIRS_ID,
@@ -426,6 +428,52 @@ test('take-theirs path: a draft with a sign-off source is not replaced silently 
     const d = read(w, s.draft.id);
     assert.equal(d.signatureSource, 'account');
     assert.ok(d.conflict);
+  }));
+
+test('take-theirs path: a draft with my attachment is not replaced silently (the phone may have removed it)', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, { attachments: WITH_FILE });
+    const d = read(w, s.draft.id);
+    assert.equal(d.attachments.length, 1, 'my attachment is untouched');
+    assert.ok(d.conflict, 'the owner is asked');
+  }));
+
+test('take-theirs path: a phone edit that changes the sender is a conflict, and the copy shows its sender', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, {}, { from: { address: 'alias@mail.example' } });
+    const d = read(w, s.draft.id);
+    assert.ok(d.conflict, 'the sender change is not merged silently');
+    assert.equal(d.from, undefined, 'our From is untouched');
+    const theirs = syncOf(w, s.draft.id).conflict?.theirs as
+      { from?: { address: string } } | undefined;
+    assert.equal(theirs?.from?.address, 'alias@mail.example', 'their copy shows its sender');
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('take-theirs path: a phone edit from the account address is still replaced silently (control)', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, {}, { from: { address: 'OWNER@mail.example' } });
+    const d = read(w, s.draft.id);
+    assert.equal(d.html, '<p>Phone wrote this</p>');
+    assert.equal(d.conflict, undefined);
+  }));
+
+test('take-theirs path: keep mine on a Bcc conflict keeps the Bcc and settles on the phone copy as the base', () =>
+  world(async w => {
+    const bcc = [{ address: 'quiet@mail.example' }];
+    const s = await phoneEditsTextOf(w, { bcc });
+    assert.ok(read(w, s.draft.id).conflict);
+    service(w).resolve(next(), s.draft.id, 'keepMine');
+    const d = read(w, s.draft.id);
+    assert.deepEqual(d.bcc, bcc, 'the Bcc stays');
+    assert.equal(d.conflict, undefined);
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      'msg-phone',
+      'the base is the phone copy now',
+    );
+    await wait(w, 5 * SEC);
+    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, 'msg-phone');
   }));
 
 test('take-theirs path: a clean draft with nothing only we hold is still replaced silently (control)', () =>

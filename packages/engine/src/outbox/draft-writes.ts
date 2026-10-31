@@ -15,6 +15,7 @@ import {
   parseData,
   patched,
   remembered,
+  sameAddress,
   theirsFields,
   type DraftMeta,
   type DraftRow,
@@ -731,10 +732,7 @@ function supersedesOwn(
   const wrote = meta.wrote ?? [];
   const replaces = w.supersedes.some(id => id === row.remote_message_id || wrote.includes(id));
   if (!replaces) return false;
-  const own = tx.get<{ address: string }>(
-    'SELECT address FROM accounts WHERE id = ?',
-    row.account_id,
-  )?.address;
+  const own = accountAddress(tx, row.account_id);
   if (own === undefined) return false;
   return (
     explainedByAttempt(w, row, meta, fields, own) || holdsOurContent(w, row, meta, fields, own)
@@ -917,18 +915,27 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     meta.fingerprint !== undefined &&
     (meta.cur ?? fingerprintOf(fields)) === meta.fingerprint;
   if (w.removed) return clean ? deleteRow(tx, row) : raise(tx, row, meta, fields, w, undefined);
-  const theirs = theirsFields(row.account_id, messageOf(w), fields);
+  const own = accountAddress(tx, row.account_id);
+  const theirs = theirsFields(row.account_id, messageOf(w), fields, own);
   // Without the body (metadata only) nothing is replaced silently: the owner chooses. Nor when the copy cannot hold
-  // something this draft has (the copy carries no Bcc by design, and no sign-off source): a silent replace would drop it,
-  // and the copy's own Bcc is not merged in either (a phone that removed one it added would be hidden).
-  if (clean && theirs.complete && !holdsOnlyHere(fields))
+  // something this draft has (no Bcc by design, no sign-off source, and attachments the phone may have removed): a
+  // silent replace would drop or resurrect it, and the copy's own Bcc is not merged in either (a phone that removed one
+  // it added would be hidden). Nor when the copy was sent from another address: the sender is send-relevant.
+  if (clean && theirs.complete && !holdsOnlyHere(fields) && !changesSender(theirs.fields, own))
     return replaceWithTheirs(tx, row, meta, theirs.fields, w);
   raise(tx, row, meta, fields, w, theirs);
 }
 
 /** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
 const holdsOnlyHere = (fields: DraftFields) =>
-  fields.bcc.length > 0 || fields.signatureSource !== undefined;
+  fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
+
+/** Does the copy name a sender other than the account's own address? */
+const changesSender = (theirs: DraftFields, own: string | undefined) =>
+  theirs.from !== undefined && own !== undefined && !sameAddress(theirs.from.address, own);
+
+const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
+  tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
 
 /** A `remoteDraft` fact from the provider actor (D9). */
 export function applyRemoteDraft(write: { kind: string }, tx: CommitExtensionTx) {

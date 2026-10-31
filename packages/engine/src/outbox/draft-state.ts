@@ -256,8 +256,11 @@ export function theirsFields(
     snippet?: string;
     html?: string;
     hasAttachments?: boolean;
+    from?: Address;
   } = {},
   base?: DraftFields,
+  /** The account's own address: a copy sent from another address carries that sender, else the draft's `from` is kept. */
+  own?: string,
 ): { fields: DraftFields; complete: boolean } {
   const escaped = (message.snippet ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const fields: DraftFields = {
@@ -273,7 +276,9 @@ export function theirsFields(
   };
   if (base?.threadId !== undefined) fields.threadId = base.threadId;
   if (base?.replyToMessageId !== undefined) fields.replyToMessageId = base.replyToMessageId;
-  if (base?.from !== undefined) fields.from = base.from;
+  if (message.from !== undefined && own !== undefined && !sameAddress(message.from.address, own))
+    fields.from = message.from;
+  else if (base?.from !== undefined) fields.from = base.from;
   return { fields, complete: message.html !== undefined && message.hasAttachments !== true };
 }
 
@@ -310,6 +315,10 @@ export type ShownField = {
     ? K
     : never;
 }[keyof typeof DRAFT_CONTENT_FIELDS];
+
+/** The same mailbox, ignoring case and surrounding space. */
+export const sameAddress = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
  * Did these fields keep something from this device's draft that the other copy does not hold? `theirsFields` carries the
