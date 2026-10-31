@@ -31,6 +31,19 @@ export interface ListHeaders {
   listId?: string;
   precedence?: string;
   autoSubmitted?: string;
+  /**
+   * RFC 8058 section 4's precondition for one-click. `true` only when the provider verified a signature on this message
+   * that covers both List-Unsubscribe and List-Unsubscribe-Post and aligns with the From domain: a passing DKIM
+   * signature whose `h=` lists both headers and whose `d=` aligns with the From domain as DMARC defines it (RFC 7489
+   * section 3.1.1: the same domain, or relaxed, the same organizational domain), or an equivalent
+   * verdict (a passing ARC chain whose first seal vouches for such a DKIM result, or the provider's own verdict that
+   * says exactly that). `false` means the provider checked and it did not hold. Absent means unknown. Absent, `false`
+   * and any value that is not the boolean `true` (a string `'true'`, `1`) are all treated as not authenticated: the
+   * engine then never offers or performs the one-click POST for this message and never prefers it as a thread's
+   * unsubscribe target (`methods/unsubscribe.ts`). It is stored with the message (`messages.list_auth`), so the
+   * value a later write omits goes back to unknown.
+   */
+  authenticated?: boolean;
 }
 
 export interface MessageFlags {

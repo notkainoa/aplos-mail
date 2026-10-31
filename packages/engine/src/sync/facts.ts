@@ -94,6 +94,9 @@ export function messageWrite(
   if (facts.attachments) write.hasAttachments = facts.attachments.some(a => !a.inline);
   const unsub = unsubscribe(facts);
   if (unsub) write.listUnsubscribe = unsub;
+  // The verdict is about List-Unsubscribe, so it is kept only with one, and only as a real boolean (absent is unknown).
+  const verdict: unknown = facts.list.authenticated;
+  if (unsub && typeof verdict === 'boolean') write.listAuthenticated = verdict;
   // A complete folder set replaces the stored one; a per-folder step adds placements instead (F3 `placementsComplete`).
   if (facts.placementsComplete !== false) {
     write.folders = facts.placements.map(p =>

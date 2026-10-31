@@ -8,11 +8,32 @@ import {
   type StorePort,
   type StoreWrite,
 } from '../../src/store';
-import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb, withStore } from './helpers';
+import {
+  ACCOUNT,
+  T0,
+  accountWrite,
+  folderWrites,
+  msg,
+  oldMessage,
+  tempDb,
+  withStore,
+} from './helpers';
 import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { replay, snapshot } from './replay-helpers';
 
 const OTHER = 'acct-2';
+/** Writes raw rows into a closed older-schema `mail.db`, on a handle of its own. */
+const seedOld = (
+  file: ReturnType<typeof tempDb>,
+  fn: (db: ReturnType<typeof openSqlite>) => void,
+) => {
+  const db = file.open();
+  try {
+    fn(db);
+  } finally {
+    db.close();
+  }
+};
 const invalid = (e: unknown) => e instanceof StoreError && e.code === 'invalid';
 const row = (store: StorePort, id = ACCOUNT) =>
   store.read(q => {
@@ -525,10 +546,11 @@ test('migration 0003 applies on top of a 0002 database with data, keeps it, and 
     old.commit({
       opId: 'a',
       origin: 'sync',
-      writes: [{ ...accountWrite, displayName: 'Mine' }, msg('m1', 't1', 0)],
+      writes: [{ ...accountWrite, displayName: 'Mine' }],
     });
     assert.equal(old.schemaVersion, 2);
     old.close();
+    seedOld(file, db => oldMessage(db, 'm1', 't1'));
     for (let pass = 0; pass < 2; pass++) {
       const store = openStore(file.open());
       assert.equal(store.schemaVersion, MIGRATIONS.length);
@@ -555,16 +577,13 @@ test('migration 0004 adds the reminder index on top of a 0003 database, keeps it
   const file = tempDb();
   try {
     const old = openStore(file.open(), { migrations: MIGRATIONS.slice(0, 3) });
-    old.commit({
-      opId: 'a',
-      origin: 'sync',
-      writes: [accountWrite, msg('m1', 't1', 0)],
-    });
+    old.commit({ opId: 'a', origin: 'sync', writes: [accountWrite] });
     assert.equal(old.schemaVersion, 3);
     old.close();
+    seedOld(file, db => oldMessage(db, 'm1', 't1'));
     for (let pass = 0; pass < 2; pass++) {
       const store = openStore(file.open());
-      assert.equal(store.schemaVersion, 4);
+      assert.equal(store.schemaVersion, MIGRATIONS.length);
       assert.equal(
         store.read(q => q.get<{ c: number }>('SELECT count(*) AS c FROM messages')?.c),
         1,

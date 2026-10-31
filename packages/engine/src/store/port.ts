@@ -285,6 +285,12 @@ export interface MessageWrite {
   hasAttachments?: boolean;
   hdr?: HeaderBits;
   listUnsubscribe?: { urls: string[]; oneClick?: boolean };
+  /**
+   * `ListHeaders.authenticated`, stored as `messages.list_auth` (1, 0, NULL). Only the boolean `true` or `false` is
+   * kept, and only with `listUnsubscribe`; anything else (absent, `'true'`, `1`, no `listUnsubscribe`) is stored as
+   * NULL, unknown. Replaced on every message write, like `list_unsub`.
+   */
+  listAuthenticated?: boolean;
   folders?: FolderRef[];
   /**
    * Generation of the sync round that listed this message (`SyncState.generation`); stamped on its placements for the
