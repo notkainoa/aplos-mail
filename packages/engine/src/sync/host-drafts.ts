@@ -1,7 +1,11 @@
 import { ProviderError } from '../ports/base';
 import type { AccountId, BudgetId } from '../ports/base';
-import type { DraftSaveResult, DraftUpload } from '../ports/engine';
-import type { AdapterContext, ProviderAdapter } from '../ports/provider';
+import type {
+  AdapterContext,
+  DraftSaveResult,
+  DraftUpload,
+  ProviderAdapter,
+} from '../ports/provider';
 
 /**
  * What a remote-draft call needs from a started account: its adapter, its mail budget (for errors only) and the
