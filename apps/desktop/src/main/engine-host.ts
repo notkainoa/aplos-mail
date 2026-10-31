@@ -9,7 +9,7 @@ import {
 } from 'electron';
 import { join } from 'node:path';
 import { connectEngine, type EngineInit } from './engine-rpc';
-import { createCipher, loadDataKey, migrateCredentials } from './keyring';
+import { KeyringError, createCipher, loadDataKey, migrateCredentials } from './keyring';
 import { applyChanges, type StateChanges } from '@aplos/contract/legacy/live';
 import { draftMutationId } from './desktop-policy';
 import type { AppState, Listener } from '@aplos/contract/legacy/types';
@@ -70,8 +70,12 @@ async function engineInit(dataDir: string): Promise<EngineInit> {
   try {
     init.key = await loadDataKey(dataDir, keychain);
   } catch (error) {
+    // Only the keyring's own plain messages reach the window; a raw file error names the data folder and key file.
+    console.error('Aplos Mail: the credential key could not be loaded:', error);
     init.keyError =
-      error instanceof Error ? error.message : 'macOS secure credential storage is unavailable.';
+      error instanceof KeyringError
+        ? error.message
+        : 'macOS secure credential storage is unavailable.';
     return init;
   }
   // A credential file that fails to migrate only affects its own accounts, so the key is still handed over.
