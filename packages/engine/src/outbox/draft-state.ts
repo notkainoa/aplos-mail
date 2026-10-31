@@ -145,9 +145,9 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
 }
 
 /** Keeps the newest ids only. */
-/** The unanswered creates' Message-IDs to offer as `supersedes` (the newest few, each once). */
+/** The unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own Message-ID, so each appears once). */
 export function earlierWith(meta: DraftMeta, ...ids: string[]): string[] {
-  return [...new Set([...(meta.earlier ?? []), ...ids])].slice(-EARLIER_KEEP);
+  return [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP);
 }
 
 export function remembered(meta: DraftMeta, ...ids: string[]): string[] {

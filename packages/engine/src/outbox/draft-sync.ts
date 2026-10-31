@@ -233,7 +233,7 @@ function uploadOf(
     mime,
   };
   if (row.remote_draft_id) upload.remoteDraftId = row.remote_draft_id;
-  else if (earlier.length) upload.supersedes = earlier.filter(id => id !== internetId);
+  else if (earlier.length) upload.supersedes = earlier;
   if (row.remote_message_id) upload.baseRemoteMessageId = row.remote_message_id;
   if (row.remote_change_key) upload.baseChangeKey = row.remote_change_key;
   const thread = fields.threadId?.startsWith(`${row.account_id}:`)
