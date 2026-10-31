@@ -160,6 +160,30 @@ describe('elements and attributes', () => {
     assert.match(body.document, /<body class="m-aplos-find x">/);
   });
 
+  it('keeps selectors of every spelling from reaching Aplos wrappers (aplos- classes)', () => {
+    const selectors = [
+      './**/aplos-quote',
+      '[class^=aplos-]',
+      '[class~="aplos-quote"]',
+      '[class*=aplos-]',
+      '[class|=aplos]',
+      ':is(.aplos-quote, ;)',
+      ':where(.aplos-quote, })',
+      '#aplos-quote',
+    ];
+    const result = html(
+      `<style>${selectors.map(s => `${s}{display:none}`).join('\n')}</style>` +
+        '<div>Reply</div><div class="gmail_quote"><blockquote class="gmail_quote">Old body</blockquote></div>',
+    );
+    const style = /<body><style>([^]*?)<\/style>/.exec(result.document)?.[1] ?? '';
+    assert.doesNotMatch(style, /(^|[^-\w])aplos/, 'no selector names an unmoved aplos- class');
+    assert.match(style, /\.\/\*\*\/m-aplos-quote\{/);
+    assert.match(style, /\[class\^=m-aplos-\]\{/);
+    assert.match(style, /\[class\|=m-aplos\]\{/);
+    assert.match(style, /#m-aplos-quote\{/);
+    assert.match(bodyOf(result), /<details class="aplos-quote">/, 'the wrapper is still ours');
+  });
+
   it('keeps attributes only from the allowlist and never with a namespace prefix', () => {
     const result = html(
       '<div class="a" title="t" data-x="1" tabindex=0 contenteditable draggable=true popover accesskey=k is="x-y" slot=s part=p style="color:red" xmlns:xlink="x" xlink:href="https://x.example">t</div>',
