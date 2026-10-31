@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFaultInjector } from '@aplos/emulators';
 import { ProviderError, type DraftUpload } from '@aplos/engine/ports';
-import { mimeOf, saved, setup, uncertainCreate, type Setup } from './draft-rig';
+import { apiCalls, mimeOf, saved, setup, uncertainCreate, type Setup } from './draft-rig';
 
 /** The next revision of the draft `first` belongs to, as the engine offers it after an unanswered create. */
 const edited = (s: Setup, first: DraftUpload, body: string, over: Partial<DraftUpload> = {}) =>
@@ -174,4 +174,38 @@ test('prov-gmail-drafts supersedes: its own Message-ID in the list is ignored, n
   const upload = s.upload({ body: 'Own.' });
   saved(await s.r.adapter.saveDraft({ ...upload, supersedes: [upload.internetId] }, s.r.ctx()));
   assert.equal(s.remoteDrafts().length, 1);
+});
+
+// ---- one create reads each draft once ----
+
+const metadataReads = (s: Setup, since: number) =>
+  apiCalls(s, since).filter(c => c.method === 'gmail.drafts.get' && c.cost !== 60);
+
+test('prov-gmail-drafts supersedes: a lookup that finds nothing reads each of ten drafts once, not twice', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  for (let i = 0; i < 10; i++) {
+    s.r.emu.mailbox.createDraft(mimeOf(s.r.account.address, { body: `Foreign ${i}.` }).mime);
+  }
+  const ghost = s.upload({ body: 'Never uploaded.' });
+  const before = apiCalls(s).length;
+  saved(await s.r.adapter.saveDraft(edited(s, ghost, 'Edited.'), s.r.ctx()));
+  const reads = metadataReads(s, before);
+  const units = reads.reduce((sum, c) => sum + c.cost, 0);
+  assert.equal(reads.length, 10, 'each draft read once for both lookups');
+  assert.equal(units, 10 * reads[0].cost, 'the budget units of ten reads');
+  assert.equal(s.remoteDrafts().length, 11, 'a plain create next to the ten');
+});
+
+test('prov-gmail-drafts supersedes: a draft the create lookup already read, carrying a superseded Message-ID, is still replaced', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const first = await uncertainCreate(s, faults);
+  const draftId = s.remoteDrafts()[0].id;
+  s.bridge.blindSearch = true;
+  const before = apiCalls(s).length;
+  const result = saved(await s.r.adapter.saveDraft(edited(s, first, 'Edited.'), s.r.ctx()));
+  assert.equal(metadataReads(s, before).length, 1, 'read once, then matched against supersedes');
+  assert.equal(result.remoteDraftId, draftId, 'the earlier copy was replaced');
+  assert.equal(s.remoteDrafts().length, 1, 'one draft total');
 });
