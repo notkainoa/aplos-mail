@@ -113,34 +113,93 @@ function receiptsOf(executor: UnsubscribePort): Receipts {
   return made;
 }
 
-type TargetRow = { hdr: number; list_unsub: string; list_auth: number | null; address: string };
+type TargetRow = {
+  hdr: number;
+  list_unsub: string;
+  list_auth: number | null;
+  address: string;
+  from_addr: string | null;
+};
 
 /**
  * RFC 8058 section 4: one-click only for an authenticated message. Any other one keeps only the owner-visible ways (the
  * mailto the owner reviews and sends, the page the owner opens), so its List-Unsubscribe-Post never reaches the port.
  */
-function gated(headers: ListHeaders): ListHeaders {
-  if (headers.authenticated === true) return headers;
+function gated(headers: ListHeaders, mixed: boolean): ListHeaders {
+  if (headers.authenticated === true && !mixed) return headers;
   const { listUnsubscribePost: _post, ...rest } = headers;
   return rest;
 }
 
 /**
+ * How many of the thread's newest inbound messages (with List-Unsubscribe or not, authenticated or not) are compared
+ * for their From domains, besides the target itself. 100 is Gmail's cap on messages in a thread.
+ */
+export const DOMAIN_WINDOW = 100;
+
+/**
+ * The exact, lower-cased domain of a stored From address: the text after its last `@`, trimmed. There is no public-suffix
+ * list here, so `news.example.com` and `mail.example.com` are different domains (the safe side: a legitimate sender that
+ * mails from two subdomains gets the owner-visible ways, never a wrong one-click). `undefined` when the address is
+ * missing, has no `@`, or has an empty domain or one with a character outside printable ASCII (whitespace, controls and
+ * anything non-ASCII, which also keeps lower-casing from folding look-alikes such as the Kelvin sign into ASCII), angle
+ * brackets, commas or another `@`.
+ */
+export function fromDomain(address: string | null): string | undefined {
+  const at = address === null ? -1 : address.lastIndexOf('@');
+  if (address === null || at < 0) return undefined;
+  // Checked before lower-casing, which would fold the Kelvin sign (U+212A) into an ASCII k.
+  const domain = address.slice(at + 1).trim();
+  return domain === '' || /[^\x21-\x7e]|[<>,@]/.test(domain) ? undefined : domain.toLowerCase();
+}
+
+/**
+ * True when the target's own From (`own`) and the From of the thread's newest `DOMAIN_WINDOW` inbound, non-draft
+ * messages (with List-Unsubscribe or without, authenticated or not) do not all come from one From domain. A message
+ * whose domain is unknown counts as a domain of its own, so it always answers true. "Authenticated" only means aligned
+ * with that message's own From, so an attacker who signs their own domain and replies into a real thread could
+ * otherwise become the newest authenticated message and the one-click target. The target is chosen authenticated-first,
+ * so it can be older than every row in the window; that is why its own From is compared too. Unauthenticated messages
+ * and messages without List-Unsubscribe are compared as well (an attacker's lone signed header in a personal
+ * conversation, or a real sender whose messages are not authenticated). Trade: one-click needs the target to carry
+ * List-Unsubscribe-Post, and a thread only loses it when some other inbound message in the window has a different
+ * From domain than the target (a spoofed reply, or a second correspondent beside a bulk sender): that thread shows the
+ * page link, the safe side. Only stored fields are read. Limit: an attacker who adds more than `DOMAIN_WINDOW` newer
+ * messages pushes the real sender out of the window; the effect is then what it was before this check (the POST reveals
+ * the owner's IP address and that the mail is read).
+ */
+function mixedDomains(q: StoreReader, rowid: number, own: string | null): boolean {
+  const rows = q.all<{ from_addr: string | null }>(
+    `SELECT from_addr FROM messages
+     WHERE thread_id = ? AND (flags & ?) = 0
+     ORDER BY internal_date DESC, id DESC LIMIT ?`,
+    rowid,
+    FLAG.draft | FLAG.fromMe,
+    DOMAIN_WINDOW,
+  );
+  const domains = [own, ...rows.map(r => r.from_addr)].map(fromDomain);
+  return domains.some(d => d === undefined) || new Set(domains).size > 1;
+}
+
+/**
  * The thread's newest authenticated inbound message with List-Unsubscribe, else its newest one with it: a spoofed
- * newer message cannot replace an authenticated target, and a fallback is gated to the owner-visible ways.
+ * newer message cannot replace an authenticated target, and a fallback is gated to the owner-visible ways. An
+ * authenticated target is gated the same way when the target and the thread's recent inbound messages come from more
+ * than one From domain (`mixedDomains`).
  */
 function readTarget(q: StoreReader, threadId: string): Target | undefined {
   const rowid = threadRowId(q, threadId);
   if (rowid === undefined) throw new ContractError({ type: 'notFound', message: GONE });
   const m = q.get<TargetRow>(
-    `SELECT m.hdr, m.list_unsub, m.list_auth, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
+    `SELECT m.hdr, m.list_unsub, m.list_auth, m.from_addr, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
      WHERE m.thread_id = ? AND (m.flags & ?) = 0 AND m.list_unsub IS NOT NULL
      ORDER BY m.list_auth IS 1 DESC, m.internal_date DESC, m.id DESC LIMIT 1`,
     rowid,
     FLAG.draft | FLAG.fromMe,
   );
   if (!m) return undefined;
-  return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth)) };
+  const mixed = m.list_auth === 1 && mixedDomains(q, rowid, m.from_addr);
+  return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth), mixed) };
 }
 
 function target(ctx: MethodContext, threadId: string): Target | undefined {
