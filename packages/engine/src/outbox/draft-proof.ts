@@ -4,6 +4,7 @@ import { bodyOf, completes, messageOf } from './draft-body';
 import {
   fingerprintOf,
   keepsMine,
+  packData,
   LIVE_SQL,
   parseData,
   theirsFields,
@@ -188,4 +189,39 @@ export function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId:
     !parseData(copy.data).meta.removing &&
     !hasSend(tx, copy.id)
   );
+}
+
+export function markChangedElsewhere(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  fields: DraftFields,
+  meta: DraftMeta,
+  w: RemoteDraftWrite,
+) {
+  const held = meta.changedElsewhere;
+  if (typeof held === 'object') {
+    // A held removal stays: the copy is gone, and a later report of it (an older one arriving late) must not bring it back.
+    if (held.removed) return;
+    // The same version again changes nothing, but a removal reports the last known id and is always news.
+    if (held.remoteMessageId === w.remoteMessageId && !w.removed) return;
+  }
+  // The newest report is kept: a send that ends without going out applies it (`releaseHeld`), so it is not lost.
+  const data = packData(fields, { ...meta, changedElsewhere: w });
+  tx.run('UPDATE drafts SET data = ? WHERE id = ?', data, row.id);
+}
+
+/**
+ * A report is applied while nothing holds the draft: whatever was held is older news now and must never be replayed
+ * over it. The copy stays marked (`true`: a discard forgets it instead of deleting it), only the stored report goes.
+ */
+export function dropHeld(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  fields: DraftFields,
+  meta: DraftMeta,
+) {
+  if (typeof meta.changedElsewhere !== 'object') return meta;
+  const next: DraftMeta = { ...meta, changedElsewhere: true };
+  tx.run('UPDATE drafts SET data = ? WHERE id = ?', packData(fields, next), row.id);
+  return next;
 }

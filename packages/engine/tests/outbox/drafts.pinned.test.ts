@@ -322,7 +322,7 @@ for (const [name, extra] of [
     world(async w => {
       const s = await synced(w);
       const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
-      const stray = {
+      const base = {
         kind: 'remoteDraft',
         accountId: ACCOUNT,
         remoteDraftId: s.remoteDraftId,
@@ -337,8 +337,8 @@ for (const [name, extra] of [
           date: 1,
           internalDate: 1,
         },
-        ...extra,
       };
+      const stray = Object.assign({}, base, extra);
       w.first.store.commit({
         opId: `craft-${++reports}`,
         origin: 'system',
