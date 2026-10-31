@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createFaultInjector, type GmailEmulator } from '@aplos/emulators';
 import type { RemoteDraftFact } from '@aplos/engine/ports';
 import { gmailLog, rig, type Rig } from './harness';
+import { messageWrite } from '../../../../packages/engine/src/sync/facts';
 import { mimeOf } from './draft-rig';
 
 const windowDone = (r: Rig) => () => r.store.states.get('window:inbox')?.phase === 'done';
@@ -52,6 +53,10 @@ test('prov-gmail-drafts body delivery: html and text of a foreign draft are deli
   const from = r.store.commits.length;
   await historyPass(r);
   const facts = factsSince(r, from);
+  assert.ok(
+    facts.filter(f => f.html !== undefined || f.text !== undefined).every(f => f.message),
+    'a body never goes without the message',
+  );
   const withBoth = facts.find(f => f.remoteDraftId === both.draftId)!;
   assert.equal(withBoth.html, '<p>Phone <b>html</b>.</p>');
   assert.equal(withBoth.text?.trim(), 'Phone text.');
@@ -293,8 +298,9 @@ function payloadFetch(holder: { emu?: GmailEmulator }, payload: () => unknown): 
     const full = url.searchParams.get('format') === 'full';
     if (!/\/drafts\/[^/]+$/.test(url.pathname) || !full || !response.ok) return response;
     const json = JSON.parse(await response.text()) as { message: { payload: unknown } };
-    const headers = (json.message.payload as { headers?: unknown }).headers;
-    json.message.payload = { ...(payload() as object), headers };
+    const original = (json.message.payload as { headers?: unknown[] }).headers ?? [];
+    const own = (payload() as { headers?: unknown[] }).headers ?? [];
+    json.message.payload = { ...(payload() as object), headers: [...own, ...original] };
     return new Response(JSON.stringify(json), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -491,4 +497,241 @@ test('prov-gmail-drafts body delivery: with 8 foreign drafts one history step re
   assert.equal(reads.length, 5);
   assert.equal(new Set(reads.map(f => f.path)).size, 5, 'each draft once');
   assert.ok(reads.every(f => f.query.get('format') === 'full'));
+});
+
+// ---- the fact's metadata: the engine's proof that a fact is our own echo needs `message.from` and `hasAttachments` ----
+
+/** A fetch that removes the From header from every `drafts.get format=full` reply. */
+function withoutFrom(holder: { emu?: GmailEmulator }): typeof fetch {
+  return async (input, init) => {
+    const response = await holder.emu!.fetch(input, init);
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    const full = url.searchParams.get('format') === 'full';
+    if (!/\/drafts\/[^/]+$/.test(url.pathname) || !full || !response.ok) return response;
+    const json = JSON.parse(await response.text()) as {
+      message: { payload: { headers: { name: string }[] } };
+    };
+    const headers = json.message.payload.headers;
+    json.message.payload.headers = headers.filter(h => h.name.toLowerCase() !== 'from');
+    return new Response(JSON.stringify(json), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+}
+
+test('prov-gmail-drafts fact metadata: a delivered body carries message.from (lower-cased), recipients, subject and no attachments', async () => {
+  const r = await synced();
+  const draft = r.emu.mailbox.createDraftElsewhere(
+    spec({ from: r.account.address.toUpperCase(), cc: ['cc.person@mail.example.test'] }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.equal(fact.text?.trim(), 'Phone text.');
+  const message = fact.message!;
+  assert.equal(message.from?.address, r.account.address.toLowerCase());
+  assert.equal(message.remoteId, draft.messageId);
+  assert.equal(message.remoteThreadId, draft.threadId);
+  assert.deepEqual(
+    message.to.map(a => a.address),
+    ['maren.ashgrove@mail.example.test'],
+  );
+  assert.deepEqual(
+    message.cc.map(a => a.address),
+    ['cc.person@mail.example.test'],
+  );
+  assert.equal(message.subject, 'From the phone');
+  assert.equal(message.partial, true);
+  assert.ok(message.flags.draft);
+  // What the engine stores from it (`messageWrite`, the same conversion the actor applies to the fact).
+  assert.equal(messageWrite(r.account.id, r.account.address, message).hasAttachments, false);
+});
+
+test('prov-gmail-drafts fact metadata: a draft with a file or an inline image reports hasAttachments and delivers no body', async () => {
+  const r = await synced();
+  const file = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      attachments: [{ filename: 'plan.txt', mimeType: 'text/plain', data: Buffer.from('plan') }],
+    }),
+  );
+  const inline = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      html: '<img src="cid:pic">',
+      attachments: [
+        {
+          filename: 'pic.png',
+          mimeType: 'image/png',
+          data: Buffer.from('png'),
+          cid: 'pic',
+          inline: true,
+        },
+      ],
+    }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const facts = factsSince(r, from);
+  for (const draft of [file, inline]) {
+    const fact = facts.find(f => f.remoteDraftId === draft.draftId)!;
+    assert.equal(fact.html, undefined);
+    assert.equal(fact.text, undefined);
+    assert.equal(fact.message?.from?.address, r.account.address.toLowerCase());
+    assert.ok(fact.message!.attachments!.length > 0);
+    const stored = messageWrite(r.account.id, r.account.address, fact.message!);
+    assert.equal(stored.hasAttachments, true, 'the engine reads it as a draft with attachments');
+  }
+});
+
+test('prov-gmail-drafts fact metadata: no From header means no message AND no body (never html/text without the recipients and subject)', async () => {
+  const holder: { emu?: GmailEmulator } = {};
+  const r = await rig({ threads: 60, adapter: { fetch: withoutFrom(holder) } });
+  holder.emu = r.emu;
+  await r.drive({ until: windowDone(r), maxSteps: 300 });
+  await r.clock.advance(60_000);
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.ok(fact, 'still reported');
+  assert.equal(fact.text, undefined);
+  assert.equal(fact.html, undefined);
+  assert.equal(fact.message, undefined);
+});
+
+test('prov-gmail-drafts fact metadata: a draft whose body was not read (a failed read) carries no message', async () => {
+  const faults = createFaultInjector();
+  const r = await syncedWith({ emulator: { faults } });
+  const draft = r.emu.mailbox.createDraftElsewhere(spec());
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.get' },
+    { status: 503, reason: 'backendError', message: 'Backend Error' },
+    { times: 20 },
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId)!;
+  assert.ok(fact, 'still reported');
+  assert.equal(fact.message, undefined);
+  assert.equal(fact.text, undefined);
+});
+
+test('prov-gmail-drafts fact metadata: bcc is [] when the draft has no Bcc header and lists the Bcc header (lower-cased) when it has one', async () => {
+  const r = await synced();
+  const plain = r.emu.mailbox.createDraftElsewhere(spec());
+  const hidden = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      headers: { Bcc: 'Quiet Person <Quiet.Person@Mail.Example.test>, other@mail.example.test' },
+    }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const facts = factsSince(r, from);
+  assert.deepEqual(facts.find(f => f.remoteDraftId === plain.draftId)!.message!.bcc, []);
+  const bcc = facts.find(f => f.remoteDraftId === hidden.draftId)!.message!.bcc;
+  assert.deepEqual(bcc, [
+    { address: 'quiet.person@mail.example.test', name: 'Quiet Person' },
+    { address: 'other@mail.example.test' },
+  ]);
+});
+
+// ---- the charset of a part ----
+
+const withCharset = (charset: string, bytes: Buffer) => ({
+  mimeType: 'text/plain',
+  headers: [{ name: 'Content-Type', value: `text/plain; charset=${charset}` }],
+  body: { size: bytes.length, data: bytes.toString('base64url') },
+});
+
+async function payloadRig(payload: unknown): Promise<{ r: Rig; draftId: string }> {
+  const holder: { emu?: GmailEmulator } = {};
+  const r = await rig({ threads: 60, adapter: { fetch: payloadFetch(holder, () => payload) } });
+  holder.emu = r.emu;
+  await r.drive({ until: windowDone(r), maxSteps: 300 });
+  await r.clock.advance(60_000);
+  return { r, draftId: r.emu.mailbox.createDraftElsewhere(spec()).draftId };
+}
+
+const deliveredText = async (payload: unknown): Promise<string | undefined> => {
+  const { r, draftId } = await payloadRig(payload);
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const fact = factsSince(r, from).find(f => f.remoteDraftId === draftId)!;
+  assert.ok(fact, 'still reported');
+  return fact.text;
+};
+
+test('prov-gmail-drafts body decoding: a part in a known non-UTF-8 charset is decoded in it', async () => {
+  const text = await deliveredText(withCharset('iso-8859-1', Buffer.from('caf\xe9', 'latin1')));
+  assert.equal(text, 'caf\u00e9');
+});
+
+test('prov-gmail-drafts body decoding: an unknown charset label gives no body, not a UTF-8 guess', async () => {
+  assert.equal(
+    await deliveredText(withCharset('x-no-such-charset', Buffer.from('hello'))),
+    undefined,
+  );
+});
+
+test('prov-gmail-drafts body decoding: bytes that are not valid in the charset give no body, not replacement characters', async () => {
+  assert.equal(
+    await deliveredText(withCharset('utf-8', Buffer.from([0x68, 0xff, 0xfe, 0x69]))),
+    undefined,
+  );
+  assert.equal(
+    await deliveredText({ mimeType: 'text/plain', body: { size: 2, data: b64('ok') } }),
+    'ok',
+  );
+});
+
+test('prov-gmail-drafts body decoding: a part that cannot fit the cap is skipped before it is decoded', async () => {
+  const decoded: number[] = [];
+  const Real = globalThis.TextDecoder;
+  globalThis.TextDecoder = class extends Real {
+    override decode(input?: AllowSharedBufferSource, options?: TextDecodeOptions): string {
+      decoded.push((input as Uint8Array | undefined)?.byteLength ?? 0);
+      return super.decode(input, options);
+    }
+  } as typeof TextDecoder;
+  try {
+    const big = Buffer.alloc(4_000_100, 0x61);
+    assert.equal(await deliveredText(withCharset('utf-8', big)), undefined);
+    // Declared size over the limit: skipped without a decode, whatever the data says.
+    const declared = { mimeType: 'text/plain', body: { size: 5_000_000, data: b64('short') } };
+    assert.equal(await deliveredText(declared), undefined);
+  } finally {
+    globalThis.TextDecoder = Real;
+  }
+  assert.ok(
+    decoded.every(n => n < 4_000_000),
+    `decoded sizes ${decoded.join(',')}`,
+  );
+  assert.ok(!decoded.includes(5), 'the part with the oversized declared size was not decoded');
+});
+
+// ---- the read bound is per pass, not per page ----
+
+test('prov-gmail-drafts body delivery: the 5-read bound holds across the pages of one pass', async () => {
+  const r = await syncedWith({ threads: 600 });
+  for (let i = 0; i < 8; i++) r.emu.mailbox.createDraftElsewhere(spec({ subject: `Phone ${i}` }));
+  // About 1,300 label records: several history pages of 500 after the drafts.
+  const ids = [...r.store.rows.keys()];
+  r.emu.mailbox.relabel({ messageIds: ids }, ['STARRED'], []);
+  r.emu.mailbox.relabel({ messageIds: ids }, [], ['STARRED']);
+  r.emu.mailbox.relabel({ messageIds: ids.slice(0, 400) }, ['STARRED'], []);
+  const start = r.clock.now();
+  const from = r.store.commits.length;
+  let steps = 0;
+  for (; steps < 50; steps++) {
+    await r.drive({ trigger: 'manual', scopes: ['history'], maxSteps: 1 });
+    if (!/^pass:/.test(r.store.states.get('history')?.phase ?? '')) break;
+  }
+  assert.ok(steps >= 2, `the pass had ${steps + 1} pages`);
+  assert.equal(fullReads(r, start).length, 5, 'five reads in the whole pass');
+  assert.equal(factsSince(r, from).filter(f => f.text !== undefined).length, 5);
+  // The next pass takes the rest.
+  await r.clock.advance(60_000);
+  const next = r.clock.now();
+  await historyPass(r);
+  assert.equal(fullReads(r, next).length, 3);
 });

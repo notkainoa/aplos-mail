@@ -16,7 +16,9 @@ import { GmailClient, isStop } from './client';
 import {
   deliverBodies,
   pendingJson,
+  BODY_FETCHES,
   PENDING_KEY,
+  READS_KEY,
   readPending,
   type PendingBodies,
 } from './draft-body';
@@ -272,6 +274,16 @@ function headWrites(
   if (atHead(next)) return memory.has(HEAD_AT_KEY) ? { [HEAD_AT_KEY]: null } : {};
   if (memory.has(HEAD_AT_KEY) || !atHead(state) || !state.updatedAt) return {};
   return { [HEAD_AT_KEY]: String(state.updatedAt) };
+}
+
+/** The `READS_KEY` write after a page: the pass's body reads so far while it goes on, cleared once it reaches the head. */
+function readsWrite(
+  next: SyncState,
+  memory: ReadonlyMap<string, string>,
+  total: number,
+): Record<string, string | null> {
+  if (atHead(next)) return memory.has(READS_KEY) ? { [READS_KEY]: null } : {};
+  return String(total) === memory.get(READS_KEY) ? {} : { [READS_KEY]: String(total) };
 }
 
 /**
@@ -599,6 +611,33 @@ function nextHistoryState(
   };
 }
 
+/**
+ * Bodies for the foreign drafts of this page (`draft-body.ts`). The bound is per pass (all its pages), not per page: the
+ * pages of a pass that is not at its head count together, and a page of a pass that used its reads makes none.
+ */
+async function bodiesFor(
+  client: GmailClient,
+  step: PlannedStep,
+  state: SyncState,
+  ctx: AdapterContext,
+  drafts: RemoteDraftFact[],
+  now: number,
+) {
+  const priorReads = atHead(state) ? 0 : Number(ctx.memory.get(READS_KEY)) || 0;
+  const budget = Math.max(0, BODY_FETCHES - priorReads);
+  const delivered = await deliverBodies(
+    client,
+    step.lane,
+    ctx.log,
+    drafts,
+    readPending(ctx.memory),
+    now,
+    ctx.account.address,
+    budget,
+  );
+  return { ...delivered, priorReads };
+}
+
 export async function historyStep(
   rt: SyncRuntime,
   step: PlannedStep,
@@ -650,14 +689,7 @@ export async function historyStep(
     ? await settleDrafts(ctx, changes, draftMap, current, now)
     : { drafts: [], nextDraftMap: draftMap };
   const { nextDraftMap } = settled;
-  const delivered = await deliverBodies(
-    client,
-    step.lane,
-    ctx.log,
-    settled.drafts,
-    readPending(ctx.memory),
-    now,
-  );
+  const delivered = await bodiesFor(client, step, state, ctx, settled.drafts, now);
   const { drafts } = delivered;
 
   const candidates = await fetchCandidates(ctx, changes, current);
@@ -710,6 +742,7 @@ export async function historyStep(
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
   const next = nextHistoryState(state, page, records, fetched, passFetches, now);
   Object.assign(memory, headWrites(state, next, ctx.memory));
+  Object.assign(memory, readsWrite(next, ctx.memory, delivered.priorReads + delivered.reads));
   return {
     ...pageDeltas(changes, upserted),
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),

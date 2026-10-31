@@ -79,12 +79,13 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * engine's conflict candidate (`drafts.remote_message_id` differs). The ports cannot deliver more, and "take theirs" /
  * "keep both" need more:
  *   - Body delivery (history.ts, `RemoteDraftFact.html`/`text`): for a foreign draft the history pass reads the draft with
- *     `drafts.get` format=full (60 units, at most `BODY_FETCHES` = 5 per pass, the rest on the next pass) and delivers
+ *     `drafts.get` format=full (60 units, at most `BODY_FETCHES` = 5 per history pass across its pages, the rest on the next pass) and delivers
  *     the decoded text/html parts when it has no attachment (any part, leaf or container, with a filename, an
  *     attachment or inline disposition, or a type that is not text/* or multipart/*, such as message/rfc822; inline
  *     images count), the body sits in the message (not by attachment id), is not empty and not over 1,000,000
  *     characters; otherwise it is reported without a body (snippet only). The same read sets the fact's `internetId`
- *     from the draft's Message-ID header. A transient read failure is retried on later passes (3 reads in all), then
+ *     from the draft's Message-ID header and `message` (from, to, cc, bcc, subject, snippet, attachments); html/text are never
+ *     delivered without `message`, nor from an unknown or invalid charset. A transient read failure is retried on later passes (3 reads in all), then
  *     dropped; a 404 or a non-draft drops it at once. Attachments are NOT delivered (PORT GAP 1 remainder): such a
  *     draft stays incomplete in the engine. Content is never logged.
  *   - `supersedes` (history.ts): the previous message ids of the same draft id, from this adapter's own message-to-draft
@@ -92,7 +93,7 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  *   - PORT GAP 2 (OPEN, eng-contract): `DraftUpload` carries only this revision's Message-ID. The engine keeps the
  *     Message-IDs of earlier, unanswered creates (`meta.wrote`), but a create of revision N+1 cannot tell the adapter to
  *     look for revision N's copy first, so an uncertain create followed by an edit can leave two remote copies (a
- *     duplicate, not a loss). Needed: `DraftUpload.supersedes?: string[]` (earlier `internetId`s) that the create looks
+ *     duplicate, not a loss). Needed: a list of earlier `internetId`s on `DraftUpload` (an eng-contract change) that the create looks
  *     up and, when found, replaces instead of creating.
  * RULE: a create-lookup hit whose bytes differ from `draft.mime` is a conflict, never `saved` (the comparison is exact apart
  * from line endings and boundaries, so a harmless rewrite by Gmail also shows as a conflict: known limit, tested). A

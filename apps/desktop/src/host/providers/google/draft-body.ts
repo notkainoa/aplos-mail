@@ -2,17 +2,21 @@ import type { ClassifiedError } from '@aplos/contract';
 import {
   ProviderError,
   type AdapterContext,
+  type Address,
+  type AttachmentFacts,
+  type MessageFacts,
   type RemoteDraftFact,
   type SyncLane,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
-import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
+import { messageFacts, parseAddresses } from './facts';
+import { fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
 
 /**
  * Bodies for the drafts another device made (`RemoteDraftFact.html` / `text`, eng-contract #153). History reports such a
  * draft by ids alone; this reads it once with `drafts.get` format=full (60 units) so the engine can edit it, take it or
- * keep both. Bounded: at most `BODY_FETCHES` reads per history pass, the rest wait in `provider_memory`
- * (`PENDING_KEY`) and go first on the next pass. A body is delivered only when it is safe for the engine to treat the
+ * keep both. Bounded: at most `BODY_FETCHES` reads per history PASS (all its pages together: the pages
+ * count in `READS_KEY`), the rest wait in `provider_memory` (`PENDING_KEY`) and go first on the next pass. A body is delivered only when it is safe for the engine to treat the
  * draft as complete: no attachment of any kind (any part, leaf or container, with a filename, an attachment or inline
  * disposition, or a type that is not text/* or multipart/*, such as message/rfc822; inline images too, the engine cannot
  * carry them), the text inside the message itself (not stored by attachment id, which would need more requests), not
@@ -20,9 +24,21 @@ import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from
  * draft's Message-ID as the fact's `internetId` (the headers come with format=full, no extra request). A read that fails
  * for a transient reason is tried again on the next pass, `MAX_TRIES` reads in all, then dropped (the error is
  * logged as `sync.gmail.request_refused`, never content); a 404 or a message that is no longer a draft drops it at once. Content is never logged.
+ *
+ * `RemoteDraftFact.message` (the engine's proof that a fact is OUR echo, `draft-writes.ts` `hasFingerprint`): when the read
+ * shows a From header, the fact carries the draft's `MessageFacts` (`messageFacts`, partial: true): `from` (the address
+ * lower-cased, the engine compares it with the account's own), `to`, `cc`, `bcc` (every Bcc header of the read, addresses
+ * lower-cased, `[]` when there is none: the engine's closed-world proof, `showsEveryField`, needs it shown), `subject`, `snippet` (the fields its content hash uses)
+ * and `attachments`. A draft that holds an attachment of any kind (`holdsAttachment`, inline images too) lists it as a
+ * non-inline attachment, so the engine reads `hasAttachments` true and never takes it as complete. Without a From header,
+ * or without a thread id or a date to give, `message` stays unset AND NO BODY IS DELIVERED: html/text without the
+ * message would make the engine take the draft as complete with no recipients and no subject (it would wipe a phone
+ * draft's). The address is never logged.
  */
 
 export const BODY_FETCHES = 5;
+/** provider_memory: body reads made so far by the history pass in progress (its earlier pages), cleared at the head. */
+export const READS_KEY = 'drafts.bodyReads';
 /** The engine's local save limit, in characters; a larger body is not delivered. */
 export const BODY_CAP = 1_000_000;
 /** More waiting drafts than this are left without a body (the oldest first). */
@@ -64,6 +80,8 @@ interface FullDraft {
     id?: unknown;
     threadId?: unknown;
     labelIds?: unknown;
+    internalDate?: unknown;
+    snippet?: unknown;
     payload?: GmailPart;
   };
 }
@@ -78,6 +96,7 @@ interface DraftRead {
   messageId: string;
   threadId?: string;
   internetId?: string;
+  message?: MessageFacts;
   html?: string;
   text?: string;
 }
@@ -97,6 +116,81 @@ function holdsAttachment(part: GmailPart): boolean {
   return part.parts?.some(holdsAttachment) ?? false;
 }
 
+/** The attachments the draft holds, each as non-inline: the engine cannot carry any of them (see `holdsAttachment`). */
+function attachmentsOf(payload: GmailPart): AttachmentFacts[] {
+  if (!holdsAttachment(payload)) return [];
+  const listed = walkPayload(payload)
+    .filter(leaf => leaf.kind === 'attachment')
+    .map(({ part }) => ({
+      part: part.body?.attachmentId ?? part.partId ?? '0',
+      ...(part.filename ? { name: part.filename } : {}),
+      ...(part.mimeType ? { mime: part.mimeType } : {}),
+      ...(part.body?.size !== undefined ? { size: part.body.size } : {}),
+      inline: false,
+    }));
+  return listed.length ? listed : [{ part: payload.partId ?? '0', inline: false }];
+}
+
+/**
+ * The Bcc addresses of the stored draft, lower-cased. `drafts.get` format=full returns every header of the draft, Bcc
+ * included, so an absent header in this read is an empty Bcc (the engine counts a Bcc it was not shown as unknown).
+ */
+function bccOf(payload: GmailPart): Address[] {
+  const headers = payload.headers?.filter(h => h.name.toLowerCase() === 'bcc') ?? [];
+  return headers
+    .flatMap(h => parseAddresses(h.value))
+    .map(a => ({ ...a, address: a.address.trim().toLowerCase() }));
+}
+
+/** The draft's metadata for the engine, only when it names a sender, a thread and a date; the address is lower-cased. */
+function metadataOf(
+  message: NonNullable<FullDraft['message']>,
+  payload: GmailPart,
+  self: string,
+): MessageFacts | undefined {
+  if (typeof message.id !== 'string' || typeof message.threadId !== 'string') return undefined;
+  if (!headerOf(payload.headers, 'From')) return undefined;
+  const internalDate = typeof message.internalDate === 'string' ? message.internalDate : undefined;
+  const snippet = typeof message.snippet === 'string' ? message.snippet : undefined;
+  const facts = messageFacts(
+    {
+      id: message.id,
+      threadId: message.threadId,
+      labelIds: (message.labelIds as string[]) ?? [],
+      ...(internalDate !== undefined ? { internalDate } : {}),
+      ...(snippet !== undefined ? { snippet } : {}),
+      payload,
+    },
+    { self, partial: true },
+  );
+  if (!facts.from?.address || !facts.date) return undefined;
+  return {
+    ...facts,
+    from: { ...facts.from, address: facts.from.address.trim().toLowerCase() },
+    bcc: bccOf(payload),
+    attachments: attachmentsOf(payload),
+  };
+}
+
+/**
+ * Decodes a part in its declared charset (UTF-8 when none), strictly: an unknown label or bytes that are not valid in the
+ * charset give undefined, never a guess (a wrong decode would be stored as the draft's text). The engine's cap is in
+ * characters and a character is at most 4 bytes, so a part of more than `4 * BODY_CAP` bytes (its declared `size`, or
+ * the length of its base64 data) cannot fit and is skipped before it is decoded.
+ */
+function decodePart(part: GmailPart, data: string): string | undefined {
+  const size = part.body?.size;
+  if (size !== undefined && size > 4 * BODY_CAP) return undefined;
+  if (data.length > Math.ceil((4 * BODY_CAP * 4) / 3) + 4) return undefined;
+  const contentType = headerOf(part.headers, 'Content-Type');
+  const charset = /charset="?([^";\s]+)"?/i.exec(contentType ?? '')?.[1] ?? 'utf-8';
+  try {
+    return new TextDecoder(charset, { fatal: true }).decode(fromBase64Url(data));
+  } catch {
+    return undefined;
+  }
+}
+
 function bodyOf(payload: GmailPart): { html?: string; text?: string } | undefined {
   if (holdsAttachment(payload)) return undefined;
   const leaves = walkPayload(payload);
@@ -104,8 +198,8 @@ function bodyOf(payload: GmailPart): { html?: string; text?: string } | undefine
   const out: { html?: string; text?: string } = {};
   for (const leaf of leaves) {
     if (leaf.data === undefined) return undefined;
-    const text = decodeText(fromBase64Url(leaf.data), headerOf(leaf.part.headers, 'Content-Type'));
-    if (text.length > BODY_CAP) return undefined;
+    const text = decodePart(leaf.part, leaf.data);
+    if (text === undefined || text.length > BODY_CAP) return undefined;
     if (!text.trim()) continue;
     if (leaf.kind === 'html') out.html = text;
     else out.text = text;
@@ -118,12 +212,13 @@ async function readFull(
   client: GmailClient,
   lane: SyncLane,
   draftId: string,
+  self: string,
 ): Promise<DraftRead | undefined> {
   const reply = await client.call<FullDraft>({
     method: 'gmail.drafts.get',
     path: `/drafts/${encodeURIComponent(draftId)}`,
     format: 'full',
-    fields: 'message(id,threadId,labelIds,payload)',
+    fields: 'message(id,threadId,labelIds,internalDate,snippet,payload)',
     lane,
     item: draftId,
   });
@@ -132,11 +227,14 @@ async function readFull(
   const labels = message.labelIds;
   if (!labels.includes('DRAFT') || labels.includes('SENT') || labels.includes('TRASH'))
     return undefined;
-  const body = message.payload ? bodyOf(message.payload) : undefined;
   const internetId = headerOf(message.payload?.headers, 'Message-ID')?.trim();
+  const facts = message.payload ? metadataOf(message, message.payload, self) : undefined;
+  // A body without the draft's sender, recipients and subject would make the engine take it as complete and drop them.
+  const body = facts && message.payload ? bodyOf(message.payload) : undefined;
   return {
     messageId: message.id,
     ...(internetId ? { internetId } : {}),
+    ...(facts ? { message: facts } : {}),
     ...(typeof message.threadId === 'string' ? { threadId: message.threadId } : {}),
     ...body,
   };
@@ -148,9 +246,14 @@ type Outcome = 'stop' | Retry | DraftRead | undefined;
  * One read. A pause or refusal is `stop` (nothing was tried); a transient failure is a `Retry` (5xx, network, timeout);
  * a 404, a message that is no longer a draft, or any other failure leaves the draft without a body for good.
  */
-async function tryRead(client: GmailClient, lane: SyncLane, draftId: string): Promise<Outcome> {
+async function tryRead(
+  client: GmailClient,
+  lane: SyncLane,
+  draftId: string,
+  self: string,
+): Promise<Outcome> {
   try {
-    return await readFull(client, lane, draftId);
+    return await readFull(client, lane, draftId, self);
   } catch (error) {
     if (isStop(error)) return 'stop';
     if (error instanceof ProviderError && error.error.status === 404) return undefined;
@@ -171,8 +274,9 @@ interface Waiting {
 type DraftLog = Pick<AdapterContext['log'], 'event'>;
 
 /**
- * Adds bodies to this pass's foreign draft facts and to the ones that waited from earlier passes (a fact for a draft
- * already reported is sent again with its body). Returns the facts and the new waiting list.
+ * Adds bodies to this step's foreign draft facts and to the ones that waited from earlier steps (a fact for a draft
+ * already reported is sent again with its body). At most `budget` reads (`BODY_FETCHES` less what the pass's earlier pages
+ * used). Returns the facts, the new waiting list and the reads made.
  */
 export async function deliverBodies(
   client: GmailClient,
@@ -181,7 +285,9 @@ export async function deliverBodies(
   drafts: RemoteDraftFact[],
   pendingBefore: PendingBodies,
   now: number,
-): Promise<{ drafts: RemoteDraftFact[]; pending: Map<string, Waiter> }> {
+  self: string,
+  budget: number,
+): Promise<{ drafts: RemoteDraftFact[]; pending: Map<string, Waiter>; reads: number }> {
   const reported = new Set(drafts.map(d => d.remoteDraftId));
   const fresh = drafts.filter(d => !d.removed);
   // An earlier waiter is dropped when this pass says something newer about its draft (removed, or a new message).
@@ -203,12 +309,12 @@ export async function deliverBodies(
   let reads = 0;
   let stopped = false;
   for (const entry of waiting) {
-    if (stopped || reads >= BODY_FETCHES) {
+    if (stopped || reads >= budget) {
       keep(entry);
       continue;
     }
     reads++;
-    const read = await tryRead(client, lane, entry.draftId);
+    const read = await tryRead(client, lane, entry.draftId, self);
     if (read === 'stop') {
       stopped = true;
       keep(entry);
@@ -224,11 +330,11 @@ export async function deliverBodies(
   const known = new Set(drafts.map(d => d.remoteMessageId));
   const earlier = [...updated.values()].filter(f => !known.has(f.remoteMessageId));
   const out = drafts.map(d => updated.get(d.remoteMessageId) ?? d);
-  return { drafts: [...out, ...earlier], pending: kept };
+  return { drafts: [...out, ...earlier], pending: kept, reads };
 }
 
 /**
- * The fact with what the read said: the Message-ID and the body (when it may be delivered). A waiter from an earlier
+ * The fact with what the read said: the Message-ID, the metadata and the body (when it may be delivered). A waiter from an earlier
  * pass is reported again only when there is a body to add.
  */
 function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact | undefined {
@@ -237,7 +343,8 @@ function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact
     ...(read.text ? { text: read.text } : {}),
   };
   const internetId = read.internetId ? { internetId: read.internetId } : {};
-  if (entry.fact) return { ...entry.fact, ...internetId, ...body };
+  const message = read.message ? { message: read.message } : {};
+  if (entry.fact) return { ...entry.fact, ...internetId, ...message, ...body };
   if (!read.html && !read.text) return undefined;
   return {
     remoteDraftId: entry.draftId,
@@ -245,6 +352,7 @@ function withRead(entry: Waiting, read: DraftRead, now: number): RemoteDraftFact
     ...(read.threadId ? { remoteThreadId: read.threadId } : {}),
     ...internetId,
     changedAt: now,
+    ...message,
     ...body,
   };
 }
