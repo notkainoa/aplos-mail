@@ -7,6 +7,8 @@
  * byte for byte.
  */
 
+import { createHash } from 'node:crypto';
+
 const LINE_ENDINGS = /\r\n?|\n/g;
 
 export function sameDraftBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -83,4 +85,45 @@ export function rawMessageId(bytes: Uint8Array): string | undefined {
     if (match) return match[1].trim() || undefined;
   }
   return undefined;
+}
+
+/** SHA-256 of the canonical form (`canonicalMime`): equal for the same upload under fresh boundaries. */
+export function draftHash(bytes: Uint8Array): string {
+  return createHash('sha256').update(canonicalMime(bytes), 'latin1').digest('hex');
+}
+
+const bare = (id: string): string => id.trim().replace(/^<|>$/g, '').toLowerCase();
+/** Uploads remembered per draft. */
+const PER_DRAFT = 5;
+/** Drafts remembered; the least recently written is forgotten first. */
+const DRAFTS = 100;
+
+/**
+ * What this adapter itself uploaded (or is about to upload) for a draft, in process memory: the Message-ID and the
+ * canonical hash of each attempt, the last `PER_DRAFT` per draft. It is how a create that is offered earlier Message-IDs
+ * (`DraftUpload.supersedes`) can prove that a copy it finds holds exactly the bytes we wrote and nobody edited since.
+ * `saveDraft` has no way to write `provider_memory`, so this is lost on a restart; with nothing remembered, no copy is
+ * ever provably ours and the create answers `conflict` and writes nothing (safe, never a replace).
+ */
+export class DraftAttempts {
+  private readonly byDraft = new Map<string, { internetId: string; hash: string }[]>();
+
+  /** Remember an attempt. Call it BEFORE the request that may write these bytes goes out. */
+  record(draftId: string, internetId: string, bytes: Uint8Array): void {
+    const entry = { internetId: bare(internetId), hash: draftHash(bytes) };
+    const known = (this.byDraft.get(draftId) ?? []).filter(
+      e => e.internetId !== entry.internetId || e.hash !== entry.hash,
+    );
+    this.byDraft.delete(draftId);
+    this.byDraft.set(draftId, [...known, entry].slice(-PER_DRAFT));
+    for (const oldest of [...this.byDraft.keys()].slice(0, Math.max(0, this.byDraft.size - DRAFTS)))
+      this.byDraft.delete(oldest);
+  }
+
+  /** Whether `bytes` canonicalise to an attempt recorded for `draftId` under exactly this Message-ID. */
+  wrote(draftId: string, internetId: string, bytes: Uint8Array): boolean {
+    const hash = draftHash(bytes);
+    const id = bare(internetId);
+    return (this.byDraft.get(draftId) ?? []).some(e => e.internetId === id && e.hash === hash);
+  }
 }
