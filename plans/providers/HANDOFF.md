@@ -31,3 +31,11 @@ Open / to open (check `gh pr list --state open` first):
 - Subagent worktrees lack node_modules/devDeps (see above). A lane commit touching another lane's file needs `Lane-Approved: <lane>` on every commit touching it (owners:check ignores merge commits).
 - When a stacked PR's base is squash-merged, rebuild the branch from `origin/revamp` and re-apply only your files (cherry-pick or `git show branch:path`), merging produces conflicts in DECISIONS.md/adapter.ts/unit.test.ts (keep both sides; check for leftover `<<<<<<<` before a background check, which otherwise fails on prettier).
 - Do not run two full checks at once; the machine load causes the engine flakes above.
+
+## Update 2026-11-02 (end of second Linux session): where the work stands
+
+- **Merged since the last update:** #127-#129, #132-#133, #135-#141, #151 (and eng-contract's #153, #157, #159 which my adapter work depended on).
+- **#156 (single Gmail adapter PR for drafts: deleteDraft with expectedMessageId, create-path conflict, body + `message` delivery with strict charset/size/duplicate-header/Reply-To/U+FFFD rules, per-pass fetch bound)**: base revamp, READY at f2d94c1, with the Integrator for the final merge. Worktree `rv-prov-dp`, branch `rv/prov-gmail-write/draft-ports`.
+- **#158 (stack branch `rv/prov-gmail-write/draft-supersedes`, worktree `rv-prov-ds`)**: to be CLOSED as superseded once #156 merges. The only part not in #156 is the Gmail create lookup honouring `DraftUpload.supersedes` (PORT GAP 2): commit **4aef940** (`drafts.ts`, `draft-compare.ts`, `tests/prov-gmail/drafts-supersedes.test.ts`, DECISIONS). The Integrator will ask for it as a NEW small PR on revamp after #156: branch from revamp, cherry-pick 4aef940, merge latest revamp, re-run the tests (#157 is already on revamp), full check, open the PR, READY line. Recorded-hash decision: in-memory record, conflict after a restart (eng-contract agreed). Data-loss-sensitive: Opus review by the Integrator.
+- Open elsewhere: eng-host composition root; Mac live probes; Microsoft adapter for `sendPortContract`; `keyring.ts` fsync (platform).
+- Known load flake outside my lane: eng-html `inline: hostile bodies of 1000000 characters are scanned in linear time` (~250 ms bound).
