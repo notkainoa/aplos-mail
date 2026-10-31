@@ -37,17 +37,23 @@ export function isOwnClass(name: string): boolean {
   return name.slice(0, 6).toLowerCase() === 'aplos-';
 }
 
+const OWN_NAME = /(^|[\t\n\f\r ])(aplos-)/gi;
+
+/**
+ * `value` with every `aplos-` name (at its start or after whitespace) moved to `m-aplos-`, and
+ * nothing else changed: whitespace stays as written. Markup class lists and `[class=…]` selector
+ * values both go through this, so `=`, `^=` and `$=` compare exactly what they compared before.
+ */
+export function moveOwnNames(value: string): string {
+  return value.replace(OWN_NAME, `$1${ID_PREFIX}$2`);
+}
+
 /**
  * A mail's `class` value with any `aplos-` name moved to `m-aplos-`, so neither its markup nor its
  * CSS can pose as, or hide, what Aplos adds. Case-insensitive, as quirks-mode class matching is.
  */
 export function scopeClassList(value: string): string {
-  if (!value.toLowerCase().includes('aplos-')) return value;
-  return value
-    .split(/[\t\n\f\r ]+/)
-    .filter(Boolean)
-    .map(name => (isOwnClass(name) ? ID_PREFIX + name : name))
-    .join(' ');
+  return moveOwnNames(value);
 }
 
 /** `#x` to `#m-x`; a bare `#` stays (it scrolls to the top). */
