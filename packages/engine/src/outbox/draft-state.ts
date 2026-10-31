@@ -267,10 +267,11 @@ const isComplete = (message: { html?: string; hasAttachments?: boolean }) =>
   message.html !== undefined && message.hasAttachments !== true && !hasInlineRef(message.html);
 
 /**
- * Does this body point at an inline part (`cid:`)? The copy's inline images are not delivered, so a draft built from it
+ * Does this body point at an inline part (`cid:` as an attribute value or in `url()`; the text "cid:" in prose or in a link's query does not count)? The copy's inline images are not delivered, so a draft built from it
  * would show broken references and a replace would drop this device's own inline image: such a copy is not complete.
  */
-export const hasInlineRef = (html: string) => /(?:^|[^a-z0-9])cid:/i.test(html);
+export const hasInlineRef = (html: string) =>
+  /(?:\b(?:src|href|background)\s*=\s*["']?|url\(\s*["']?)\s*cid:/i.test(html);
 
 /**
  * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is

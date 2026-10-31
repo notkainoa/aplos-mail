@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { hasInlineRef } from '../../src/outbox/draft-state';
 import { ACCOUNT } from './helpers';
 import { fact, read, row, syncOf, synced, world } from './drafts.ports.kit';
 
@@ -49,3 +50,29 @@ test('inline: a phone draft with an inline reference is stored incomplete', () =
     fact(w, 'rd-inline', 'pm-1', { html: CID, internetId: '<i1@phone.example>' });
     assert.equal(syncOf(w, `${ACCOUNT}:rd-inline`).incomplete, true);
   }));
+
+test('inline: the text "CID:" in prose or a link is not an inline reference (the other device\'s edit is still taken)', () =>
+  world(async w => {
+    const s = await synced(w);
+    fact(w, s.remoteDraftId, 'msg-phone', {
+      subject: 'Lunch',
+      html: '<p>Customer CID: 4471, see <a href="https://x.example/?cid:1">the file</a></p>',
+      to: [{ address: 'jordan@mail.example', name: 'Jordan' }],
+      internetId: '<phone@phone.example>',
+    });
+    assert.equal(read(w, s.draft.id).conflict, undefined, 'replaced silently, like any other edit');
+    assert.match(read(w, s.draft.id).html, /Customer CID: 4471/);
+  }));
+
+test('inline: the three reference positions are recognised (src, background, url())', () => {
+  for (const html of [
+    '<img src="cid:a">',
+    "<img src='cid:a'>",
+    '<table background=cid:a>',
+    '<div style="background:url(cid:a)">',
+    '<IMG SRC = "CID:a">',
+  ])
+    assert.equal(hasInlineRef(html), true, html);
+  for (const html of ['<p>cid: 5</p>', '<a href="https://x/?cid:1">x</a>', '<p>Antacid: ok</p>'])
+    assert.equal(hasInlineRef(html), false, html);
+});
