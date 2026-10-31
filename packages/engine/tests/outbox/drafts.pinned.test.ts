@@ -4,7 +4,7 @@ import type { CommitInput } from '../../src/store';
 import { hasSend, sendPins } from '../../src/outbox/draft-proof';
 import type { DraftRow } from '../../src/outbox/draft-state';
 import { ACCOUNT, fields, SEC, type World } from './helpers';
-import { create, edit, read, row, service, syncOf, wait, world } from './drafts.ports.kit';
+import { create, edit, next, read, row, service, syncOf, wait, world } from './drafts.ports.kit';
 
 /**
  * A draft held by a send does not change. A phone copy reported in a NEWER version while a send of the draft is queued
@@ -112,4 +112,24 @@ test('a send of an OLDER revision does not hold a draft that has moved on, a que
     assert.deepEqual(pins(), { pins: true, any: true }, 'sent at the current revision');
     edit(w, read(w, d.id), fields({ subject: 'Edited after the send' }));
     assert.deepEqual(pins(), { pins: false, any: true }, 'sent at an older revision');
+  }));
+
+test('a newer phone version taken after the send was undone clears the memory: a discard then deletes the copy, guarded on its id', () =>
+  world(async w => {
+    report(w, 'pm-1', 'Version one');
+    const sub = w.send(w.first, D, { revision: read(w, D).revision });
+    report(w, 'pm-2', 'Version two');
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    report(w, 'pm-2', 'Version two');
+    assert.equal(read(w, D).subject, 'Version two');
+    assert.equal((syncOf(w, D) as { changedElsewhere?: true }).changedElsewhere, undefined);
+    service(w).destroy(next(), D);
+    await wait(w, 60 * SEC);
+    assert.deepEqual(
+      w.remoteDrafts.removeAttempts,
+      ['rd-reply'],
+      'the copy is removed, not forgotten',
+    );
+    assert.deepEqual(w.remoteDrafts.removeExpected, ['pm-2'], 'guarded on the version it holds');
+    assert.equal(row(w, D), undefined, 'and the hidden row ends');
   }));

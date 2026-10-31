@@ -827,6 +827,8 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
       cur: fp,
       fingerprint: fp,
       incomplete: complete ? null : true,
+      // The row now names the version that was reported: a discard deletes the copy again, guarded on this id.
+      changedElsewhere: null,
       announce: tx.seq,
     }),
   );
