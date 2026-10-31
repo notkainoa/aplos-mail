@@ -1,0 +1,12 @@
+<p>Poll results are in: the lake path won.</p>
+<input autofocus onfocus="fetch('{{CANARY}}/{{ID}}/input-onfocus')">
+<select autofocus onfocus="fetch('{{CANARY}}/{{ID}}/select-onfocus')"><option>a</option></select>
+<textarea autofocus onfocus="fetch('{{CANARY}}/{{ID}}/textarea-onfocus')"></textarea>
+<button autofocus onfocus="fetch('{{CANARY}}/{{ID}}/button-onfocus')">go</button>
+<a href="#x" id="x" tabindex="0" autofocus onfocus="fetch('{{CANARY}}/{{ID}}/a-onfocus')">anchor</a>
+<div contenteditable autofocus onfocus="fetch('{{CANARY}}/{{ID}}/ce-onfocus')">editable</div>
+<div tabindex="1" autofocus onfocusin="fetch('{{CANARY}}/{{ID}}/onfocusin')" onblur="fetch('{{CANARY}}/{{ID}}/onblur')">focusable</div>
+<details open ontoggle="fetch('{{CANARY}}/{{ID}}/details-ontoggle')"><summary>More</summary>text</details>
+<marquee onstart="fetch('{{CANARY}}/{{ID}}/marquee-onstart')" onfinish="fetch('{{CANARY}}/{{ID}}/marquee-onfinish')">news</marquee>
+<iframe onload="fetch('{{CANARY}}/{{ID}}/iframe-onload')" src="about:blank"></iframe>
+<input type="text" onfocus="fetch('{{CANARY}}/{{ID}}/plain-onfocus')" autofocus onselect="fetch('{{CANARY}}/{{ID}}/onselect')" value="select me">

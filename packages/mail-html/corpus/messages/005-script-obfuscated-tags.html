@@ -1,0 +1,18 @@
+<p>Notes from the garden club.</p>
+<SCRIPT>fetch('{{CANARY}}/{{ID}}/upper')</SCRIPT>
+<ScRiPt>fetch('{{CANARY}}/{{ID}}/mixed')</sCrIpT>
+<scr<script>ipt>fetch('{{CANARY}}/{{ID}}/nested')</scr</script>ipt>
+<script/x>fetch('{{CANARY}}/{{ID}}/slash')</script>
+<script
+>fetch('{{CANARY}}/{{ID}}/newline')</script
+>
+<script >fetch('{{CANARY}}/{{ID}}/space')</script >
+<script x=">" >fetch('{{CANARY}}/{{ID}}/gt-in-attr')</script>
+<script><!--
+fetch('{{CANARY}}/{{ID}}/html-comment');
+//--></script>
+<script>/*</script><script>*/fetch('{{CANARY}}/{{ID}}/comment-split')</script>
+<script type="text/javascript" language="javascript">fetch('{{CANARY}}/{{ID}}/language')</script>
+<script language="vbscript">MsgBox "x"</script>
+<script>&#102;etch('{{CANARY}}/{{ID}}/entity-in-script')</script>
+<scr&#x69;pt>fetch('{{CANARY}}/{{ID}}/entity-in-tag-name')</scr&#x69;pt>

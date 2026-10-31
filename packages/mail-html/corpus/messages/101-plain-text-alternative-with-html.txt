@@ -1,0 +1,2 @@
+The plain part says goodbye. Both parts carry the greeting.
+{{CANARY}}/{{ID}}/multipart-text-link

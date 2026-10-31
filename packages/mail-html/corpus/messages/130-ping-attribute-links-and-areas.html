@@ -1,0 +1,7 @@
+<p>Click-tracking through the ping attribute.</p>
+<a href="#top" ping="{{CANARY}}/{{ID}}/ping-a">A link that pings on click</a>
+<a href="#top" ping="{{CANARY}}/{{ID}}/ping-one {{CANARY}}/{{ID}}/ping-two">A link with two ping targets</a>
+<map name="m"><area shape="rect" coords="0,0,50,50" href="#top" ping="{{CANARY}}/{{ID}}/ping-area" alt="area"></map>
+<img usemap="#m" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="50" height="50" alt="mapped">
+<a href="#top" PING="{{CANARY}}/{{ID}}/ping-upper">Upper-case attribute name</a>
+<svg><a href="#top" ping="{{CANARY}}/{{ID}}/ping-svg"><text x="0" y="10">svg link</text></a></svg>

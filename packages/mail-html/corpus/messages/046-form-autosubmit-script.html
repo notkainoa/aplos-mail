@@ -1,0 +1,13 @@
+<p>Complete your registration for the autumn workshop series.</p>
+<form id="auto" action="{{CANARY}}/{{ID}}/form-post" method="post">
+  <input type="hidden" name="email" value="reader@shop.example">
+  <input type="hidden" name="token" value="not-a-real-token">
+  <noscript><input type="submit" value="Continue"></noscript>
+</form>
+<script>document.getElementById('auto').submit();</script>
+<form action="{{CANARY}}/{{ID}}/form-get" method="get"><input name="q" value="x"><input type="submit"></form>
+<form action="{{CANARY}}/{{ID}}/form-multipart" method="post" enctype="multipart/form-data"><input type="file" name="f"></form>
+<form action="{{CANARY}}/{{ID}}/form-text-plain" method="post" enctype="text/plain"><input name="a" value="b"></form>
+<form method="dialog"><button>close</button></form>
+<form action="//{{CANARY_HOST}}/protocol-relative-form" method="post"></form>
+<body onload="document.forms[0].submit()">

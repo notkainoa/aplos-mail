@@ -1,0 +1,13 @@
+<p>Please confirm your shop account details.</p>
+<p><a href="http://{{CANARY_HOST}}/cyrillic">shоp.example</a> (the second letter o is Cyrillic)</p>
+<p><a href="http://{{CANARY_HOST}}/greek">shοp.example</a> (Greek omicron)</p>
+<p><a href="http://{{CANARY_HOST}}/fullwidth">ｓｈｏｐ．ｅｘａｍｐｌｅ</a> (fullwidth letters)</p>
+<p><a href="http://b%C3%BCcher.{{CANARY_HOST}}/idn-percent">bücher.example</a></p>
+<p><a href="http://xn--{{CANARY_HOST}}/punycode">xn--shp-example</a></p>
+<p><a href="http://shоp.{{CANARY_HOST}}/cyrillic-in-href">link with a Cyrillic host</a></p>
+<p><a href="http://shop.example@{{CANARY_HOST}}/userinfo">http://shop.example/</a> (userinfo trick)</p>
+<p><a href="http://{{CANARY_HOST}}/dot-lookalike">shop․example</a> (one dot leader)</p>
+<p><a href="http://{{CANARY_HOST}}/slash-lookalike">shop.example∕login</a> (division slash)</p>
+<p><a href="http://{{CANARY_HOST}}/combining">shoṕ.example</a></p>
+<p><a href="http://{{CANARY_HOST}}/ideographic-stop">shop。example</a></p>
+<p><img src="http://shоp.{{CANARY_HOST}}/homoglyph-image.png" width="40" height="40" alt="homoglyph host image"></p>

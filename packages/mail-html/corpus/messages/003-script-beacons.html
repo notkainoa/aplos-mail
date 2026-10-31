@@ -1,0 +1,14 @@
+<p>Monthly allotment report</p>
+<p>Water usage was lower than last month across all plots.</p>
+<script>
+  fetch('{{CANARY}}/{{ID}}/fetch');
+  var x = new XMLHttpRequest(); x.open('GET', '{{CANARY}}/{{ID}}/xhr'); x.send();
+  navigator.sendBeacon('{{CANARY}}/{{ID}}/sendbeacon', 'ping');
+  new Image().src = '{{CANARY}}/{{ID}}/image-ctor';
+  new WebSocket('ws://{{CANARY_HOST}}/socket');
+  new EventSource('{{CANARY}}/{{ID}}/eventsource');
+  document.write('<img src="{{CANARY}}/{{ID}}/document-write">');
+  var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '{{CANARY}}/{{ID}}/dyn-link.css'; document.head.appendChild(l);
+  setTimeout(function () { fetch('{{CANARY}}/{{ID}}/timer'); }, 50);
+  import('{{CANARY}}/{{ID}}/dynamic-import.js');
+</script>
