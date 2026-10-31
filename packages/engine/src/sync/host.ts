@@ -15,6 +15,9 @@ import {
   type BudgetId,
   type ConnectRequest,
   type ConnectResult,
+  type DraftSaveResult,
+  type DraftSyncPort,
+  type DraftUpload,
   type GovernorPort,
   type KnownLookup,
   type OpenedThread,
@@ -38,16 +41,15 @@ import {
   gateReading,
   measureClock,
   needsMeasure,
-  ownerGate,
   unmeasuredGate,
   type ClockGate,
   type ClockOffset,
-  type ClockReading,
   type LeaseChannel,
-  type LeaseClaim,
   type LeaseController,
   type LeaseRecord,
 } from './lease';
+import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
+import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
 import { nextOpRetry, readFence } from './ops';
@@ -185,7 +187,7 @@ interface LeaseEntry {
  * It persists every governor snapshot to `governor_state` as `onChange` reports it (so the state is written before the
  * refusal reaches the caller) and restores it before an account's first request.
  */
-export class ActorHost implements AccountActorHost {
+export class ActorHost implements AccountActorHost, DraftSyncPort {
   private readonly actors = new Map<AccountId, Entry>();
   /** Lease input per account, kept across restarts of its actor. */
   private readonly leases = new Map<AccountId, NonNullable<AccountRuntime['lease']>>();
@@ -585,7 +587,7 @@ export class ActorHost implements AccountActorHost {
     try {
       await entry.controller.claim();
     } finally {
-      this.settleOwnerLift(entry);
+      settleOwnerLift(entry);
     }
   }
 
@@ -695,6 +697,23 @@ export class ActorHost implements AccountActorHost {
     return entry.adapter.fetchAttachment(ref, entry.actor.context());
   }
 
+  // ---------------------------------------------------------------- DraftSyncPort
+
+  /** Remote draft copies, routed to the named account's adapter (`host-drafts.ts`); nothing else addresses a draft. */
+  save(account: AccountId, draft: DraftUpload): Promise<DraftSaveResult> {
+    return saveRemoteDraft(account, this.draftTarget(account), draft);
+  }
+
+  remove(account: AccountId, remoteDraftId: string, expectedMessageId?: string): Promise<void> {
+    return removeRemoteDraft(account, this.draftTarget(account), remoteDraftId, expectedMessageId);
+  }
+
+  private draftTarget(account: AccountId): DraftTarget | undefined {
+    const entry = this.actors.get(account);
+    if (!entry) return undefined;
+    return { adapter: entry.adapter, budget: entry.budget, context: () => entry.actor.context() };
+  }
+
   // ---------------------------------------------------------------- helpers
 
   private entry(account: AccountId): Entry {
@@ -742,7 +761,7 @@ export class ActorHost implements AccountActorHost {
       ...(initial ? { initial } : {}),
       clockGate: () => gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
       remeasure: () => needsMeasure(gateNow(entry, this.deps.clock.now()), this.deps.clock.now()),
-      ownerClock: () => this.ownerClock(entry),
+      ownerClock: () => ownerClock(entry, this.deps.clock.now()),
       stale: () => entry.stale === true,
     });
     entry.unregister = this.deps.deadlines.register({
@@ -809,7 +828,12 @@ export class ActorHost implements AccountActorHost {
           channel.write(entries, ctx()),
         );
         this.checkClock(account, entry, written?.clockOffset);
-        const mode = this.compactMode(entry, entries);
+        const mode = compactMode(
+          entry,
+          entry.controller.current().role,
+          entries,
+          this.deps.clock.now(),
+        );
         if (mode)
           this.startCompaction(account, entry, async signal => channel.compact(ctx(signal), mode));
         return written;
@@ -833,24 +857,6 @@ export class ActorHost implements AccountActorHost {
     }
   }
 
-  /** The gate an owner's pin may use: a block lifted on one fresh ok reading, the gate before it kept to re-arm. */
-  private ownerClock(entry: LeaseEntry): ClockReading {
-    const now = this.deps.clock.now();
-    const before = gateNow(entry, now);
-    entry.gate = ownerGate(before, now);
-    if (entry.gate !== before) entry.ownerLift ??= before;
-    return gateReading(entry.gate, now);
-  }
-
-  /**
-   * After an owner's claim: a lift that no write has measured since (the pin's read or write failed, or it was never
-   * sent) is undone, so the block's two-reading rule still guards the automatic claims that follow.
-   */
-  private settleOwnerLift(entry: LeaseEntry): void {
-    if (entry.ownerLift) entry.gate = entry.ownerLift;
-    entry.ownerLift = undefined;
-  }
-
   /** The clock gate's measurement from one write; a clock off or unmeasurable is logged once per account. */
   private checkClock(account: AccountId, entry: LeaseEntry, offset: ClockOffset | undefined): void {
     const measured = clockReading(offset);
@@ -859,23 +865,6 @@ export class ActorHost implements AccountActorHost {
     entry.ownerLift = undefined;
     entry.gate = measureClock(entry.gate, offset, this.deps.clock.now());
     if (measured !== 'ok') this.logReason(account, 'lease.clock', measured);
-  }
-
-  /**
-   * Who compacts after a write: the primary, everything its renewal supersedes; a device the clock gate blocks, or
-   * whose clock no write has proven (`unmeasured`: its checks keep failing), only its own copies its claim supersedes
-   * (nobody else trashes them, and it never trashes another device's copy). A healthy secondary leaves it to the
-   * primary; a quit's dead claim never compacts.
-   */
-  private compactMode(
-    entry: LeaseEntry,
-    entries: { value: LeaseClaim }[],
-  ): { ownOnly: boolean } | undefined {
-    if (entry.retiring) return undefined;
-    const reading = gateReading(gateNow(entry, this.deps.clock.now()), this.deps.clock.now());
-    if (reading !== 'ok') return { ownOnly: true };
-    if (!entries.some(e => e.value.holder)) return undefined;
-    return entry.controller.current().role === 'primary' ? { ownOnly: false } : undefined;
   }
 
   /**
