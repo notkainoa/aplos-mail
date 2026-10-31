@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -132,3 +132,23 @@ test('migrating a credential file leaves no temporary copy and keeps the entries
     >;
     assert.equal(cipher.decrypt(Buffer.from(entries.acct, 'base64')), 'secret');
   }));
+
+test(
+  'a key file that cannot be checked is not taken for a missing one',
+  {
+    skip: process.platform === 'win32' || process.getuid?.() === 0,
+  },
+  () =>
+    withDir(async dir => {
+      const dataDir = join(dir, 'data');
+      await loadDataKey(dataDir, keychain);
+      const before = await readFile(join(dataDir, 'engine-key.bin'));
+      await chmod(dataDir, 0o000);
+      try {
+        await assert.rejects(loadDataKey(dataDir, keychain), /EACCES/);
+      } finally {
+        await chmod(dataDir, 0o700);
+      }
+      assert.deepEqual(await readFile(join(dataDir, 'engine-key.bin')), before);
+    }),
+);

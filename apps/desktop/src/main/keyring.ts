@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { removeStaleTemporaries, writeFileDurably } from './durable-file';
 
@@ -50,6 +49,17 @@ export function createCipher(key: Uint8Array): Cipher {
   };
 }
 
+/** Only a missing file means there is no key; any other error must not lead to a second key replacing it. */
+async function keyFileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 /**
  * The data key, created on first use. An existing key file is never replaced, even when it cannot be
  * read right now (a locked keychain), because replacing it would make every saved credential unreadable.
@@ -59,7 +69,7 @@ export async function loadDataKey(dataDir: string, keychain: Keychain): Promise<
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const path = join(dataDir, KEY_FILE);
   await removeStaleTemporaries(path);
-  if (existsSync(path)) {
+  if (await keyFileExists(path)) {
     let key: Buffer;
     try {
       key = Buffer.from(keychain.decrypt(await readFile(path)), 'base64');
