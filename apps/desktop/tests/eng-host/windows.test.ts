@@ -90,9 +90,10 @@ function harness(options: { testMode?: boolean } = {}) {
   return { controller: createOnboarding(deps), log, mailWindow: () => mail, seedMail };
 }
 
-test('startup: first run opens onboarding, a login launch with no account stays windowless, else mail', () => {
+test('startup: first run opens onboarding, a login launch stays windowless, else mail', () => {
   assert.equal(startupWindow(fresh, { atLogin: false }), 'onboarding');
   assert.equal(startupWindow(fresh, { atLogin: true }), 'none');
+  assert.equal(startupWindow(withAccount, { atLogin: true }), 'none');
   assert.equal(startupWindow(withAccount, { atLogin: false }), 'mail');
   assert.equal(
     startupWindow({ hasAccounts: false, setup: { skippedAt: 5 } }, { atLogin: false }),
