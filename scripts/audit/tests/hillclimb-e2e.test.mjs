@@ -90,7 +90,7 @@ describe('harness git plumbing (real repos)', () => {
     const wt = join(tmp, 'wt-mods-wt');
     addWorktree(r, { dir: wt, branch: 'wt-mods-b', commit: currentHead(r) });
     mkdirSync(join(r, 'node_modules'), { recursive: true });
-    linkNodeModules(r, wt); // creates wt/node_modules -> r/node_modules (a symlink)
+    linkNodeModules(r, wt); // populates a real wt/node_modules of links into r's
     writeFileSync(join(wt, 'a.txt'), 'change\n');
     const head = commitAll(wt, 'attempt');
     assert.ok(head, 'a commit was created');

@@ -213,10 +213,18 @@ export {
  * the "keep mine, take theirs, or keep both" state. `PausedError` reschedules through the `drafts` deadline. The
  * scheduler passes the last synced copy as `DraftUpload.baseRemoteMessageId`; a `conflict` result (the copy changed
  * elsewhere since) raises the same choice, and nothing is overwritten.
+ *
+ * `remove` deletes the provider's copy. The engine passes `expectedMessageId`, the remote message id of the copy it last
+ * wrote or adopted (`drafts.remote_message_id`), whenever it knows one, and omits it when it does not. The provider
+ * deletes ONLY IF the draft still holds that message id; if it holds another (the draft was edited or replaced on
+ * another device since, or it became a sent message) it does nothing and resolves, so a discard here never destroys a
+ * newer version made elsewhere or a sent mail. A draft that is already gone is success. Without `expectedMessageId`
+ * (the engine knows none) the delete is unguarded, as before. Optional and additive: an adapter that ignores the
+ * parameter keeps working, only without the guard.
  */
 export interface DraftSyncPort {
   save(account: AccountId, draft: DraftUpload): Promise<DraftSaveResult>;
-  remove(account: AccountId, remoteDraftId: string): Promise<void>;
+  remove(account: AccountId, remoteDraftId: string, expectedMessageId?: string): Promise<void>;
 }
 
 /**

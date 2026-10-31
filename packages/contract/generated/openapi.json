@@ -13987,7 +13987,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["done", "openLink", "unavailable"]
+                "enum": ["done", "openLink", "unavailable", "unsure", "failed", "compose"]
               },
               {
                 "type": "string"

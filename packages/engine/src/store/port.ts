@@ -683,6 +683,19 @@ export interface RemoteDraftWrite {
   removed?: boolean;
   /** Metadata so a phone draft can show in Drafts; the body is fetched lazily. */
   message?: Omit<MessageWrite, 'kind' | 'accountId'>;
+  /**
+   * The draft's body as the provider delivered it (`RemoteDraftFact.html`/`text`). Preferred over `message.html`: when
+   * present the draft is complete (editable in place, usable by take theirs and keep both). `html` wins over `text`.
+   * Absent: snippet-only, as before.
+   */
+  html?: string;
+  text?: string;
+  /**
+   * Remote message ids this fact replaces (`RemoteDraftFact.supersedes`). When they include the id the draft row holds
+   * (or one it wrote) and `internetId` is its own upload's, the fact is the echo of that upload and advances the row's
+   * message id; when `internetId` is not its own, it is another device's edit of our base.
+   */
+  supersedes?: string[];
 }
 
 /**

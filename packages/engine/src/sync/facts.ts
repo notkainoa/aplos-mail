@@ -40,14 +40,27 @@ function headerBits(facts: MessageFacts, self: string): HeaderBits {
   return bits;
 }
 
+/** RFC 8058 section 3.1: the whole `List-Unsubscribe-Post` value is exactly this, case-sensitive; surrounding space is not part of it. */
+const ONE_CLICK_POST = 'List-Unsubscribe=One-Click';
+
+/** One-click only for the exact value: extra text, another case or several values never count. */
+function oneClickPost(post: string | undefined): boolean {
+  return post !== undefined && post.trim() === ONE_CLICK_POST;
+}
+
+/** A longer header is ignored whole (same limit as the host executor); the sender controls this text. */
+const MAX_UNSUBSCRIBE_HEADER = 8_192;
+
+/** One `<uri>`; no `<` inside, so a run of `<` cannot make the scan quadratic and an entry with `<` is skipped, as the executor does. */
+const URI_ENTRY = /<([^<>]*)>/g;
+
 /** `List-Unsubscribe: <https://...>, <mailto:...>` and RFC 8058 one-click. */
 function unsubscribe(facts: MessageFacts): MessageWrite['listUnsubscribe'] {
   const header = facts.list.listUnsubscribe;
-  if (!header) return undefined;
-  const urls = [...header.matchAll(/<([^>]+)>/g)].map(m => m[1].trim()).filter(Boolean);
+  if (!header || header.length > MAX_UNSUBSCRIBE_HEADER) return undefined;
+  const urls = [...header.matchAll(URI_ENTRY)].map(m => m[1].trim()).filter(Boolean);
   if (!urls.length) return undefined;
-  const oneClick = /List-Unsubscribe=One-Click/i.test(facts.list.listUnsubscribePost ?? '');
-  return oneClick ? { urls, oneClick } : { urls };
+  return oneClickPost(facts.list.listUnsubscribePost) ? { urls, oneClick: true } : { urls };
 }
 
 /** One message's metadata. `seenGen` only for list rounds; history, open and search leave the stamp alone. */
@@ -73,6 +86,7 @@ export function messageWrite(
   if (facts.inReplyTo !== undefined) write.inReplyTo = facts.inReplyTo;
   if (facts.references !== undefined) write.refs = facts.references;
   if (facts.from !== undefined) write.from = facts.from;
+  if (facts.bcc !== undefined) write.bcc = facts.bcc;
   if (facts.replyTo !== undefined) write.replyTo = facts.replyTo;
   if (facts.subject !== undefined) write.subject = facts.subject;
   if (facts.snippet !== undefined) write.snippet = facts.snippet;
@@ -169,6 +183,9 @@ function placementWrite(
   };
 }
 
+/** The draft body limit of the engine (`REMOTE_BODY_MAX` in the outbox); a remote body over it is not delivered. */
+const REMOTE_BODY_LIMIT = 1_000_000;
+
 function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): StoreWrite {
   const write: StoreWrite = {
     kind: 'remoteDraft',
@@ -180,6 +197,11 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
   if (d.remoteThreadId !== undefined) write.remoteThreadId = d.remoteThreadId;
   if (d.internetId !== undefined) write.internetId = d.internetId;
   if (d.removed) write.removed = true;
+  // A body over the draft limit is never stored, but the engine must still see that one was offered (it then leaves the
+  // draft snippet-only instead of falling back to another source), so it is cut one character past the limit.
+  if (d.html !== undefined) write.html = d.html.slice(0, REMOTE_BODY_LIMIT + 1);
+  if (d.text !== undefined) write.text = d.text.slice(0, REMOTE_BODY_LIMIT + 1);
+  if (d.supersedes?.length) write.supersedes = d.supersedes;
   if (d.message) {
     const {
       kind: _kind,

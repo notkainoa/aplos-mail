@@ -1,40 +1,36 @@
-# Integrator handoff (paused 2026-10-28 20:05 UTC)
+# Integrator handoff (rewritten 2026-10-30 ~14:00 local; replaces the 08:10 one)
 
-Old thread: `mcp:6116799a-5bed-4b61-a845-873061513d92` (71 runs, snoozed). Read-only. The new thread works event-driven (roadmap 5.1a): no sweeps, Sonnet by default, Opus only for contract/security merge judgement.
+The old threads are `mcp:6116799a-5bed-4b61-a845-873061513d92` (snoozed, never wake it) and this one (past 400k average context: a fresh thread continues). Routing is roadmap 5.1a: Sonnet default, Opus only for contract, security (send guard, auth/tokens, vault, hardening), store commit path and sync correctness, SWE-2 for volume.
 
-## Lane state
+## State of revamp
 
-| Worktree | Branch | HEAD | State |
-|---|---|---|---|
-| `rv-thread-integrator` | `rv/thread/integrator` | merged with `origin/revamp` e6b97cf | clean; this file is its only new content |
-| `rv-integrator-freeze` | `integrator/f9-merge` (local only) | aed3782 | clean. Same SHA as #44's head `rv/ui-foundation/f9`; the merge of revamp into #44 (STATUS.md conflict, revamp's file taken). Disposable |
-| `rv-integrator-check` | `rv/plat-release/integrator-check-40` (local only) | d9c6d67 | clean. #40 head 0dd8be1 merged with revamp for a check; result not recorded. Disposable, redo the check from the PR |
+`contract-v1` tagged at 9544e97 and FROZEN. About 110 PRs merged. Merged since the 08:10 handoff: #124/#131/#137 (eng-time kill-point harness and release-grep), #122/#130 (UI scorers), #125/#126 (release syntax minify, SCORER_ISOLATED), #127 (lease D1-D3), #128 (Gmail filters), #129 (Gmail send + findSent), #132/#135 (vault temp name, load-proof tests), #134 (image proxy and SSRF classifier; I opened it from eng-html's parked branch and decided providers reuse it rather than copy). All five Opus-area PRs (send, lease, vault, SSRF, store hook) had an Opus review.
 
-No uncommitted work in any of the three, so no `wip-pause-1028` branch was needed.
+Open PRs, all waiting on their authors (my REQUESTs are in plans/STATUS.md, 2026-10-30 12:50):
+- #123 (plat-ci, hill-climb per-worktree node_modules, head bbba37ef): FIX D1 (HIGH fail-open: audit-time re-snapshot adopts a swapped node_modules root, modulescan.mjs ~L131 / worktree.mjs ~L1042), D2 (dangling symlink refuses the worktree), D4 (ACCEPTED-RISK omissions). Re-run check-multi, then a short Sonnet re-check of the fix diff, then merge.
+- #136 (prov-gmail-write, Gmail drafts API, my merge-of-revamp head d522eb2b): Opus FIX: deleteDraft has no version check (deletes a phone's newer edit), duplicate copies stay, uncertain create can resurrect a sent or deleted draft. Needs an additive port change via eng-contract (expected message id on remove). Re-check with Opus.
+- #133 (prov-gmail-write, kill-point plug-in for the Gmail adapter, bb610628): Sonnet MERGE, but the check is red because the branch predates #131 (during-commit rows need their move in onMove). Waits for providers to merge revamp.
+Not yet asked of me: providers' unsubscribe PR (reuses the #134 classifier; the executor must require https itself and refuse redirects); eng-contract UnsubscribePort seam (additive, Opus contract review).
 
-## Open PRs into `revamp` (all MERGEABLE; no CI check results posted yet)
+## How I check a PR
 
-| PR | Head | What it is | Blocker |
-|---|---|---|---|
-| #44 | aed3782 | ui-core F9 freeze artifacts + contract swap + ui-shell base (last freeze item) | integrator check was queued, never finished. On green: merge, tag `contract-v1`, post FROZEN (none posted yet) |
-| #43 | 40735c4 | eng-host quit-race fix | not checked |
-| #45 | 1029150 | plat-ci `test:engine` under Electron Node, SQLite floor check | not checked |
-| #46 | 3e77eed | eng-contract runtime seam (contract-1); lane PRs after it carry squashed Phase 0 commits, so squash | not checked |
-| #47 | 37df8f5 | eng-ai Home lanes | not checked; free-model code needs a Claude review |
-| #40 | 0dd8be1 | plat-release Q2 hardening | security area: Opus final review; platform has review fixes pending |
-| #38 | f302415 | prov-emu live-run guard (send-to-self) | security area: Opus review; RESUME says needs its review fixes |
+Two check worktrees: `rv-integrator-check` (scripts `check-pr.sh <pr> <lane> <sha> <approved>` and `check-multi.sh <pr> <lane> <sha> <acting-lanes> <approved-lanes>`) and `rv-integrator-check2` (`check-pr2.sh`, `check-multi2.sh`), all in `~/.cache/aplos-integrator/`. Each writes `/tmp/aplos-integrator/pr<N>.txt` (merge/install/check/owners/build exit codes) and `pr<N>-check.log`. Use `check-multi*` when a PR needs cross-lane approvals (it runs each step separately; `npm run check` stops at the first failing step, so a failing owners step hides typecheck and tests). Start background jobs with plain `nohup ... &` (macOS has NO `setsid`; I lost hours to that), one chain at a time per worktree, and wait with a bash `until grep -q "^build=" ...` loop. A stacked PR conflicts after its base is squash-merged: ask the lane to merge revamp, or resolve DECISIONS.md/OWNERS-only conflicts yourself in a scratch worktree with an ABSOLUTE path and a Python marker-stripper (never `sed -e`; I once pushed conflict markers). Squash merge: `gh pr merge N --squash --subject ... --body ...`, verify `gh pr view N --json state`, then append MERGED to `plans/STATUS.md` (pull first, push `HEAD:revamp`). Settle this thread with `t3_thread_organize settle` when parked; unsettle when working.
 
-## Next 5 actions, in order
+## Known flakes (load-sensitive, all reported)
 
-1. Run the integrator check on #44 at head (merge with revamp, `npm run check`, owners check, conformance on the stand-in engine). If red, STATUS REQUEST to ui-core. If green: squash-merge, tag `contract-v1` on the merge commit, append FROZEN to `plans/STATUS.md` straight on `revamp`.
-2. Merge #43, #45, #46, #47 one at a time in that order (critical lane #46 may go first), each: owners check, `npm run check`, a Sonnet review for non-Claude code, evidence on the PR, squash. Re-merge revamp into the next one after each merge.
-3. #40: Opus review of the hardening diff, then merge after platform's fixes. #38: only after its guard fixes and an Opus review of the send and live-run guard.
-4. Re-enable the 08:00 daily digest (max 10 plain sentences, plus one `plans/tools/token-report.py` line). Use `sh plans/tools/watch.sh`, not polling.
-5. Check STATUS for MERGED entries without earlier READY-FOR-OWNER and APPROVED; revert and tell the thread if missing. Feature 14 (website) is owner-approved: web lane merges its own PR, then you verify.
+`htmlToText` linear tests (fixed by #118), vault-rollback hung-rename (fixed by #111), hill-climb SIGTERM/lock tests (fixed by #109/#112), calendar-recurrence bounds (#102). The Mac's load can reach 100+ from other projects; a check can take an hour.
 
-## Gotchas
+## BINDING items still open on other lanes (listed in my MERGED lines)
 
-- Never merge to main. Never merge PR #21. Never force-push.
-- Contract, `ports.ts`, migrations, `methods/index.ts` PRs from outside eng-contract/eng-store are refused.
-- Platform REQUEST: eng-host test mode should quit on SIGTERM within seconds (open, with eng-host).
-- Lane card: `plans/lanes/integrator-merge.md` (PR from `rv/lanes/integrator-cards`).
+- Providers: run `sendPortContract` on the real Gmail (`in:sent`, never DRAFT) and Microsoft (`sentitems`) adapters and the emulator fake; `payloadOf` sends pinned bytes without `remoteDraftId` once a row has had an attempt; lease D1 (unproven device writes a copy every 5 min and never compacts), D2, D3; vault load-read timeout and the never-settling temp name in the `writing` set (low); revoke only with a store-backed `knownSubject`; composition root for `createGoogleHostConnect` (eng-host).
+- Engine/eng-time: provider draft sync must not be switched on until a remote draft's body is delivered; client must switch to the returned id after a fork; `Engine.wake()` host hook.
+- Platform: hill-climb follow-ups; lock/ref items are closed.
+
+## Next actions
+
+1. Re-check #123, #133, #136 on their new heads when HANDOFF-READY lines appear (use SWE-2 only for mechanical review fixes, Sonnet for reviews, Opus for send/draft/store/vault/SSRF/contract areas).
+2. eng-contract UnsubscribePort + HostPorts.unsubscribe: Opus contract review, then merge.
+3. Live runs: none requested; follow `plans/LIVE-RUNS.md` (tier R first, only when reconnectBy is more than a day away; weekly reconnect Mon 2026-11-02).
+4. Owner's 08:00 digest (`scheduled-task:1c252312-eb43-405b-a4da-15163f3e17cb`); features waiting on the owner: none.
+5. Owner decisions on record: bundled Desktop OAuth client secret allowed (DECISIONS.md #59); Demo/* window-only.
+6. Routing reminder (roadmap 5.1a): this thread delegated nothing to Devin SWE-2; a fresh thread should use `delegate_task` (providerInstanceId acpRegistry_devin, model swe-2-high) for well-specified non-UI code and review fixes.

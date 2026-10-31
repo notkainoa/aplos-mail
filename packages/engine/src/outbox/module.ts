@@ -17,12 +17,15 @@ import {
 } from './draft-sync';
 import { createDraftService, type DraftService } from './drafts';
 import { outboxExtension } from './extension';
+import { killableSend } from './killpoints';
+import { createNotifications, type NotificationModule } from './notifications';
 import { outboxSource } from './runner';
-import { applyStartRule, recheckUncertain } from './start';
+import { applyStartRule, pullInChecks, recheckUncertain } from './start';
 import { getSubmissions, setSubmission, type SetResult } from './submissions';
 
 export type { BlobSource, OutboxDeps } from './context';
 export type { DraftService } from './drafts';
+export type { NotificationService } from './notifications';
 export { outboxExtension } from './extension';
 export { SubmissionConflict, type SubmissionWrite } from './store';
 export { DraftConflict } from './draft-state';
@@ -64,6 +67,8 @@ export interface OutboxModule {
   close(): Promise<void>;
   /** Resolves once no send, `findSent` or draft upload of this instance is running (tests and quit). */
   idle(): Promise<void>;
+  /** The notification outbox (time-5): `Notification/claim|ack` and the Dock badge. */
+  notifications: NotificationModule['service'];
   /** The local drafts; present when the host gave a `DraftSyncPort`. */
   drafts?: DraftService;
   /** The editor closed: upload that draft now instead of after the idle wait. */
@@ -119,8 +124,14 @@ function alsoDrafts(deadlines: DeadlineRegistry, sendChanged: () => void): Deadl
 export function createOutboxModule(deps: OutboxDeps): OutboxModule {
   const random = deps.randomBytes ?? (n => globalThis.crypto.getRandomValues(new Uint8Array(n)));
   const hooks: { draftsCtx?: DraftsCtx } = {};
+  // Test builds only: the kill points inside the provider call wrap the port (see killpoints.ts).
+  const send =
+    typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__
+      ? killableSend(deps.send)
+      : deps.send;
   const ctx: OutboxCtx = {
     ...deps,
+    send,
     deadlines: deps.drafts
       ? alsoDrafts(deps.deadlines, () => hooks.draftsCtx && sentChanged(hooks.draftsCtx))
       : deps.deadlines,
@@ -158,6 +169,14 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       }),
     );
   }
+  const notes = createNotifications({
+    store: deps.store,
+    clock: deps.clock,
+    deadlines: deps.deadlines,
+    log: deps.log,
+    randomBytes: random,
+    frames: deps.frames,
+  });
   const service: OutboxService = {
     get: ids => {
       const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
@@ -169,20 +188,25 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
   return {
     service,
     extension: outboxExtension,
+    notifications: notes.service,
     ...(draftsCtx ? { drafts: createDraftService(draftsCtx, service) } : {}),
     start() {
       applyStartRule(ctx);
       recheckUncertain(ctx);
       ctx.deadlines.changed('outbox');
+      notes.start();
     },
     wake() {
       ctx.paused.clear();
       applyStartRule(ctx);
+      pullInChecks(ctx);
       if (draftsCtx) wakeDrafts(draftsCtx);
       ctx.deadlines.changed('outbox');
+      notes.service.refreshBadge();
     },
     async close() {
       for (const off of unregister) off();
+      notes.stop();
       const abort = new AbortController();
       const grace = ctx.clock.sleep(STOP_GRACE_MS, abort.signal).catch(() => {});
       await Promise.race([settled(ctx, draftsCtx), grace]);
@@ -198,7 +222,7 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
 /**
  * Seam 1: lane `eng-time`'s outbox module, imported by the composition root (`src/index.ts`) from this fixed path.
  * It registers the `outbox` deadline source with the timer loop the clock module provides and serves the `submission`
- * and `outbox` areas, and (time-3) the local drafts and their `drafts` deadline source. Notifications (time-5) join later.
+ * and `outbox` areas, and (time-3) the local drafts and their `drafts` deadline source. The notification outbox (time-5) fills `notifications` through the extension's ingest hook and serves `Notification/claim|ack`.
  */
 export const lane = 'eng-time';
 
@@ -218,7 +242,11 @@ export function createModule(services: EngineServices): LaneModule {
     frames: services.frames,
   });
   return {
-    services: { outbox: outbox.service, draftBox: outbox.drafts! },
+    services: {
+      outbox: outbox.service,
+      draftBox: outbox.drafts!,
+      notifications: outbox.notifications,
+    },
     start: () => outbox.start(),
     stop: () => outbox.close(),
   };
