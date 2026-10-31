@@ -66,6 +66,11 @@ export interface MessageFacts {
   from?: Address;
   to: Address[];
   cc: Address[];
+  /**
+   * Only when the provider can show a draft's Bcc (a sent or received message carries none). The engine takes a remote
+   * draft copy as its own upload only when it can compare Bcc too: absent here means "cannot show", never "empty".
+   */
+  bcc?: Address[];
   replyTo?: Address[];
   subject?: string;
   /** Entity-decoded (D22). */

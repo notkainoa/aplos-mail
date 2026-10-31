@@ -86,6 +86,7 @@ export function messageWrite(
   if (facts.inReplyTo !== undefined) write.inReplyTo = facts.inReplyTo;
   if (facts.references !== undefined) write.refs = facts.references;
   if (facts.from !== undefined) write.from = facts.from;
+  if (facts.bcc !== undefined) write.bcc = facts.bcc;
   if (facts.replyTo !== undefined) write.replyTo = facts.replyTo;
   if (facts.subject !== undefined) write.subject = facts.subject;
   if (facts.snippet !== undefined) write.snippet = facts.snippet;
@@ -182,6 +183,9 @@ function placementWrite(
   };
 }
 
+/** The draft body limit of the engine (`REMOTE_BODY_MAX` in the outbox); a remote body over it is not delivered. */
+const REMOTE_BODY_LIMIT = 1_000_000;
+
 function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): StoreWrite {
   const write: StoreWrite = {
     kind: 'remoteDraft',
@@ -193,8 +197,10 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
   if (d.remoteThreadId !== undefined) write.remoteThreadId = d.remoteThreadId;
   if (d.internetId !== undefined) write.internetId = d.internetId;
   if (d.removed) write.removed = true;
-  if (d.html !== undefined) write.html = d.html;
-  if (d.text !== undefined) write.text = d.text;
+  // A body over the draft limit is never stored, but the engine must still see that one was offered (it then leaves the
+  // draft snippet-only instead of falling back to another source), so it is cut one character past the limit.
+  if (d.html !== undefined) write.html = d.html.slice(0, REMOTE_BODY_LIMIT + 1);
+  if (d.text !== undefined) write.text = d.text.slice(0, REMOTE_BODY_LIMIT + 1);
   if (d.supersedes?.length) write.supersedes = d.supersedes;
   if (d.message) {
     const {
