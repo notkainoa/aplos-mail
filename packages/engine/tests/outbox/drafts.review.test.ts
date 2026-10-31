@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Draft, DraftFields } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { ACCOUNT, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
+import { ACCOUNT, copyWrite, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
 
 /**
  * Time-3 review fixes: what a resolved conflict leaves in the row, the removal of a discarded draft's copy, the upload
@@ -369,14 +369,12 @@ test('a discarded draft with a lost first upload takes the copy that history rep
       opId: `review-echo-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
+        copyWrite({
           remoteDraftId: 'rd1',
           remoteMessageId: 'msg2',
-          internetId,
+          internetId: internetId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(service(w).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');
@@ -823,14 +821,12 @@ test('a first create that timed out, then an edit: the old Message-ID still name
       opId: `review-late-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
-          remoteDraftId,
+        copyWrite({
+          remoteDraftId: remoteDraftId,
           remoteMessageId: copy.messageId,
           internetId: firstId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(
@@ -870,14 +866,12 @@ test('a discard while the first upload runs, then a restart: history reports the
       opId: `review-restart-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
+        copyWrite({
           remoteDraftId: 'rd1',
           remoteMessageId: 'msg2',
-          internetId,
+          internetId: internetId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(service(w, second).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');

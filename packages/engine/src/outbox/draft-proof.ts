@@ -1,0 +1,104 @@
+import type { DraftFields } from '@aplos/contract';
+import type { CommitExtensionTx, RemoteDraftWrite } from '../store';
+import { bodyOf, completes, messageOf } from './draft-body';
+import {
+  fingerprintOf,
+  keepsMine,
+  theirsFields,
+  type DraftMeta,
+  type DraftRow,
+  type ShownField,
+} from './draft-state';
+
+/**
+ * Proof that a remote draft copy is this device's own upload (seam 2, the closed-world rule in `DRAFT_CONTENT_FIELDS`):
+ * its Message-ID is not enough, so its content has to match the fingerprint of an upload this engine made. Split out of
+ * `draft-writes.ts` (the line limit); nothing here writes.
+ */
+
+/** Is this copy the one this row's upload under `w.internetId` made: same content, and it shows every field? */
+export function provenOurs(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  meta: DraftMeta,
+  fields: DraftFields,
+  w: RemoteDraftWrite,
+) {
+  const id = w.internetId ?? '';
+  const print = meta.uploading?.internetId === id ? meta.uploading.fingerprint : meta.prints?.[id];
+  const own = accountAddress(tx, row.account_id);
+  return own !== undefined && hasFingerprint(w, row, fields, print, own);
+}
+
+/**
+ * Is this fact the copy this device uploaded, judged by its content? The body (and the fields it carries) must hash to
+ * the fingerprint of what the provider holds. A provider keeps a draft's Message-ID across edits, so the Message-ID alone
+ * does not tell a phone edit from our own copy. No body, attachments or a body over the limit: no proof.
+ */
+export function holdsOurContent(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  base: DraftFields,
+  own: string,
+) {
+  return hasFingerprint(w, row, base, meta.fingerprint, own);
+}
+
+/**
+ * Closed world (see `DRAFT_CONTENT_FIELDS`): can this copy show everything the fingerprint covers? Each `shown` field
+ * must be on the copy (a Bcc the provider cannot show is not an empty Bcc), the sender must be the account's own
+ * address, and each `notShown` field must be empty here and not reported by the copy (attachments).
+ */
+function showsEveryField(w: RemoteDraftWrite, base: DraftFields, own: string) {
+  const m = w.message;
+  if (!m) return false;
+  const shown: Record<ShownField, boolean> = {
+    from: m.from !== undefined && m.from.address.trim().toLowerCase() === own.trim().toLowerCase(),
+    to: m.to !== undefined,
+    cc: m.cc !== undefined,
+    bcc: m.bcc !== undefined,
+    subject: m.subject !== undefined,
+    html: bodyOf(w) !== undefined,
+  };
+  const emptyHere = !keepsMine(base) && m.hasAttachments !== true;
+  return Object.values(shown).every(Boolean) && emptyHere;
+}
+
+/**
+ * Does the fact's delivered content hash to `fingerprint`? Only a copy that shows every field (`showsEveryField`) can
+ * prove it: the comparison fills in the rest from the local draft, so anything else could differ from ours without the
+ * hash noticing. No fingerprint, or no body: no proof; no proof is a conflict, the safe direction. */
+function hasFingerprint(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  base: DraftFields,
+  fingerprint: string | undefined,
+  own: string,
+) {
+  if (fingerprint === undefined || !completes(w)) return false;
+  if (!showsEveryField(w, base, own)) return false;
+  const theirs = theirsFields(row.account_id, messageOf(w), base);
+  return fingerprintOf(theirs.fields) === fingerprint;
+}
+
+/**
+ * The running (or unanswered) upload's echo: the same Message-ID and content that hashes to what the upload sends. The
+ * Message-ID alone proves nothing (a phone edit can keep it, and a retry of the same revision reuses it), so there is
+ * no "one move per attempt" rule to get wrong: a fact whose content differs, or that delivers no body, is never
+ * explained by the upload and goes the ordinary way (a conflict is the safe direction).
+ */
+export function explainedByAttempt(
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  base: DraftFields,
+  own: string,
+) {
+  const attempt = meta.uploading;
+  if (!attempt || attempt.internetId !== w.internetId) return false;
+  return hasFingerprint(w, row, base, attempt.fingerprint, own);
+}
+
+export const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
+  tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
