@@ -1,0 +1,38 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.transitions {
+  transition: all var(--dur-hover) var(--ease-std); /* @expect */
+  transition: width var(--dur-slide) var(--ease-out); /* @expect */
+  transition: opacity var(--dur-hover) var(--ease-std), height var(--dur-close) var(--ease-out); /* @expect */
+  transition-property: padding-left, opacity; /* @expect */
+  transition: margin var(--dur-close) var(--ease-out); /* @expect */
+  transition: top var(--dur-close) var(--ease-out), left var(--dur-close) var(--ease-out); /* @expect */
+  transition: inset-inline-start var(--dur-close) var(--ease-out); /* @expect */
+  transition: flex-basis var(--dur-close) var(--ease-out); /* @expect */
+  transition: grid-template-columns var(--dur-dock-in) var(--ease-out); /* @expect */
+  transition: font-size var(--dur-hover) var(--ease-std); /* @expect */
+  transition: font-weight var(--dur-hover) var(--ease-std); /* @expect */
+  transition: letter-spacing var(--dur-hover) var(--ease-std); /* @expect */
+  transition: line-height var(--dur-hover) var(--ease-std); /* @expect */
+  transition: border-width var(--dur-hover) var(--ease-std); /* @expect */
+  transition: gap var(--dur-close) var(--ease-out); /* @expect */
+  transition: max-height var(--dur-close) var(--ease-out); /* @expect */
+  transition: min-width var(--dur-close) var(--ease-out); /* @expect */
+  transition: bottom var(--dur-close) var(--ease-out); /* @expect */
+  transition: right var(--dur-close) var(--ease-out); /* @expect */
+}
+
+@keyframes grow {
+  from {
+    width: 0; /* @expect */
+    opacity: 0;
+  }
+  to {
+    width: var(--sidebar-w); /* @expect */
+    height: var(--row); /* @expect */
+    padding: var(--space-2); /* @expect */
+    margin-left: var(--space-2); /* @expect */
+    font-size: var(--icon); /* @expect */
+    top: 0; /* @expect */
+    opacity: 1;
+  }
+}

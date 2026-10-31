@@ -1,0 +1,15 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.ghost {
+  will-change: transform; /* @expect */
+}
+
+.list {
+  will-change: transform, opacity; /* @expect */
+  -webkit-will-change: opacity; /* @expect */
+}
+
+@media (hover: hover) {
+  .row:hover {
+    will-change: background-color; /* @expect */
+  }
+}

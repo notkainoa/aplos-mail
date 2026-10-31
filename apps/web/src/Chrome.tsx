@@ -1,11 +1,5 @@
 import icon from '../../desktop/assets/icon-64.png';
 import { Rise } from './Live';
-import { releasesUrl, repoUrl } from './site';
-
-// The red and blue border of the airmail envelope in the app icon. It opens the page and closes it, like an envelope.
-export function Airmail() {
-  return <div className="airmail" aria-hidden="true" />;
-}
 
 export function Header({ home }: { home: string }) {
   return (
@@ -20,7 +14,7 @@ export function Header({ home }: { home: string }) {
         <a href={`${home}#ai`}>AI</a>
         <a href={`${home}privacy/`}>Privacy</a>
       </nav>
-      <a className="button button-small" href={releasesUrl}>
+      <a className="button button-small" href={`${home}download/`}>
         Download
       </a>
     </header>
@@ -35,13 +29,11 @@ export function Footer({ home }: { home: string }) {
           <Rise text="Aplos Mail" by="letter" step={35} />
         </a>
         <nav aria-label="Footer">
-          <a href={releasesUrl}>Download</a>
+          <a href={`${home}download/`}>Download</a>
           <a href={`${home}privacy/`}>Privacy</a>
-          <a href={repoUrl}>GitHub</a>
         </nav>
-        <p>Independent software for Mac. Windows and Linux are planned.</p>
+        <p data-claim="mac-only">Independent software for Mac.</p>
       </div>
-      <Airmail />
     </footer>
   );
 }

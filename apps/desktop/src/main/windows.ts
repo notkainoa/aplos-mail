@@ -15,6 +15,7 @@ import {
   type WindowChoice,
   type WindowPort,
 } from '../host/lifecycle';
+import { releaseBuild } from './oauth-config';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -94,6 +95,7 @@ const webPreferences = () => ({
   sandbox: true,
   webSecurity: true,
   spellcheck: true,
+  devTools: !releaseBuild,
   // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
   // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
   backgroundThrottling: !isTest,

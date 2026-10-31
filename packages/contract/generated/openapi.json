@@ -1430,7 +1430,7 @@
     "/call/Draft/set": {
       "post": {
         "operationId": "Draft_set",
-        "summary": "Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` \"This draft changed in another window. Reopen it before editing.\" Refused while a send of it is live (`Draft.submissionId`).",
+        "summary": "Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` \"This draft changed in another window. Reopen it before editing.\" Refused while a send of it is live (`Draft.submissionId`). When `id` names an `incomplete` draft (written on another device, text not readable here) the reply's `draft.id` is a NEW local draft: use that id and its `revision` for later saves.",
         "tags": ["draft"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "draft",
@@ -2920,6 +2920,7 @@
         "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -2961,6 +2962,8 @@
         "tags": ["demo"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
+        "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -3003,6 +3006,7 @@
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
+        "x-aplos-ui-only": true,
         "requestBody": {
           "required": true,
           "content": {
@@ -8182,6 +8186,9 @@
                 "type": "string"
               }
             ]
+          },
+          "incomplete": {
+            "type": "boolean"
           },
           "conflict": {
             "type": "object",
@@ -13980,7 +13987,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["done", "openLink", "unavailable"]
+                "enum": ["done", "openLink", "unavailable", "unsure", "failed", "compose"]
               },
               {
                 "type": "string"

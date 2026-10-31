@@ -26,7 +26,7 @@ export const draft = area('draft', {
   },
   'Draft/set': {
     summary:
-      'Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` "This draft changed in another window. Reopen it before editing." Refused while a send of it is live (`Draft.submissionId`).',
+      'Create (no `id`) or save a draft, compare-and-set on `baseRevision`: `stateMismatch` "This draft changed in another window. Reopen it before editing." Refused while a send of it is live (`Draft.submissionId`). When `id` names an `incomplete` draft (written on another device, text not readable here) the reply\'s `draft.id` is a NEW local draft: use that id and its `revision` for later saves.',
     kind: 'command',
     scope: 'draft',
     input: z.object({

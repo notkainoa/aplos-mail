@@ -29,13 +29,13 @@ test('startup opens exactly one hidden window and test hooks are exposed', async
 test('window.open is denied: no second window, an https link is dropped, mailto stays inside Aplos', async () => {
   const aplos = await launchAplos();
   try {
-    const window = await aplos.app.firstWindow();
-    await expect(window.locator('.app-shell')).toBeAttached();
-    await window.evaluate(() => {
+    const page = await aplos.app.firstWindow();
+    await expect(page.locator('.app-shell')).toBeAttached();
+    await page.evaluate(() => {
       window.open('https://docs.example/page');
       window.open('mailto:someone@docs.example');
     });
-    await window.waitForTimeout(500);
+    await page.waitForTimeout(500);
     expect(
       await aplos.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
     ).toBe(1);
