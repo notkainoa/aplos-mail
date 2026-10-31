@@ -392,7 +392,7 @@ test('6: taking their version keeps my attachments, so the copy is not marked as
     assert.equal(r.synced_revision, null, 'their copy has no attachments');
   }));
 
-test('6: a silent replace by their version keeps my attachments, so the copy is not marked as this revision', () =>
+test('6: a phone edit of a draft with my attachments is a conflict, never a silent replace that puts them back', () =>
   world(async w => {
     const s = await synced(w, fields({ attachments: [attachment(w)] }));
     phone(w, s.remoteDraftId, 'pm-2', {
@@ -401,8 +401,9 @@ test('6: a silent replace by their version keeps my attachments, so the copy is 
       internetId: THEIRS_ID,
     });
     const r = row(w, s.draft.id)!;
-    assert.equal(r.revision, s.draft.revision + 1, 'replaced');
-    assert.equal(r.synced_revision, null);
+    assert.equal(r.revision, s.draft.revision, 'not replaced');
+    assert.equal(r.remote_message_id, s.messageId, 'the base did not move');
+    assert.ok(read(w, s.draft.id).conflict, 'the owner chooses');
   }));
 
 // ---------------------------------------------------------------- 7: Bcc stays out of draft copies
