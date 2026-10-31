@@ -72,3 +72,15 @@ function blankedBody(body: string, boundary: string, depth: number): string {
   flush();
   return out.join('\n');
 }
+
+/** The Message-ID header of raw MIME bytes (unfolded, trimmed), or undefined when the header block has none. */
+export function rawMessageId(bytes: Uint8Array): string | undefined {
+  const text = Buffer.from(bytes).toString('latin1').replace(LINE_ENDINGS, '\n');
+  const split = text.indexOf('\n\n');
+  const head = (split < 0 ? text : text.slice(0, split)).replace(/\n[ \t]+/g, ' ');
+  for (const line of head.split('\n')) {
+    const match = /^message-id:\s*(.*)$/i.exec(line);
+    if (match) return match[1].trim() || undefined;
+  }
+  return undefined;
+}
