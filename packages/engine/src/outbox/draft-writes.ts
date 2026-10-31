@@ -14,8 +14,8 @@ import {
   packData,
   parseData,
   patched,
+  abandoned,
   remembered,
-  earlierWith,
   sameAddress,
   theirsFields,
   type DraftMeta,
@@ -400,8 +400,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
     patched(meta, {
       fingerprint: null,
       uploading: null,
-      wrote: remembered(meta, ...old),
-      ...(row.remote_draft_id === null && old.length ? { earlier: earlierWith(meta, ...old) } : {}),
+      ...abandoned(meta, row.remote_draft_id, ...old),
       dueAt: meta.dueAt ?? w.at,
     }),
   );

@@ -144,9 +144,17 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
   return next as unknown as DraftMeta;
 }
 
-/** The unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own, so each appears once). */
-export function earlierWith(meta: DraftMeta, ...ids: string[]): string[] {
-  return [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP);
+/**
+ * Message-IDs of attempts given up on (replaced by a newer revision, or refused): remembered as ours so history
+ * reporting their copy is recognised, and, while the draft has no remote copy, offered as `supersedes` by the next create.
+ */
+export function abandoned(meta: DraftMeta, remoteDraftId: string | null, ...ids: string[]) {
+  if (!ids.length) return {};
+  const wrote = remembered(meta, ...ids);
+  // `earlier`: the unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own).
+  return remoteDraftId === null
+    ? { wrote, earlier: [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP) }
+    : { wrote };
 }
 
 /** Keeps the newest ids only. */
