@@ -1,14 +1,18 @@
-import test from 'node:test';
+import test, { mock, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Frame, NotificationItem } from '@aplos/contract';
+import type { LogRecord } from '@aplos/contract/log/events';
 import { FakeClock as EmulatorClock, createGmailEmulator } from '@aplos/emulators';
+import { hashAddress } from '@aplos/engine/diag/redact';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
+import { connectSessionsOf } from '@aplos/engine/sync/connect-sessions';
 import { fakeClock } from '../../../../packages/engine/src/clock/fake';
 import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
+import type { WakeClock } from '../../src/host/power';
 import { openSqlite } from '../../src/host/sqlite';
 import { DraftBridge } from '../prov-gmail/draft-bridge';
 import { fakeBrowser, getStatus, memoryVault } from '../prov-gov/flow-rig';
@@ -18,8 +22,10 @@ const CLIENT_ID = 'eng-host-compose.apps.example.test';
 const CLIENT_SECRET = 'GOCSPX-compose-never-shown';
 
 /** The emulated Gmail, the engine's clock, and every host port the composition takes, as fakes. */
-function world(threads = 3) {
+function world(t: TestContext, threads = 3) {
   const dir = mkdtempSync(join(tmpdir(), 'aplos-compose-'));
+  // After the test, pass or fail, so a failing test leaves no folder behind.
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   // The emulator waits out its latency on its own auto clock; the engine's clock moves only when a test moves it.
   const emu = createGmailEmulator({ clock: new EmulatorClock({ start: T0 }), retryAfter: 'none' });
   emu.oauth.addClient(CLIENT_ID, CLIENT_SECRET);
@@ -68,7 +74,6 @@ function world(threads = 3) {
     vault,
     emuBrowser: browser,
     options,
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 
@@ -107,7 +112,6 @@ async function withHost(
     await fn(host);
   } finally {
     await host.close();
-    w.cleanup();
   }
 }
 
@@ -126,8 +130,8 @@ async function connectOwner(w: World, host: Awaited<ReturnType<typeof composeEng
   return { session, accountId };
 }
 
-test('start: the engine answers a read method, and the account list is empty on a new data folder', async () => {
-  const w = world();
+test('start: the engine answers a read method, and the account list is empty on a new data folder', async t => {
+  const w = world(t);
   await withHost(w, async host => {
     const session = host.engine.connect();
     const out = (await session.call('Account/get', {})) as { list: unknown[] };
@@ -137,8 +141,8 @@ test('start: the engine answers a read method, and the account list is empty on 
   });
 });
 
-test('sign-in through the composed Google connect creates the account and starts its actor', async () => {
-  const w = world();
+test('sign-in through the composed Google connect creates the account and starts its actor', async t => {
+  const w = world(t);
   await withHost(w, async host => {
     const { session, accountId } = await connectOwner(w, host);
     const list = (await session.call('Account/get', {})) as {
@@ -150,8 +154,8 @@ test('sign-in through the composed Google connect creates the account and starts
   });
 });
 
-test('a draft saved through the engine reaches Gmail via the actor host; discarding it removes it with the expected message id', async () => {
-  const w = world();
+test('a draft saved through the engine reaches Gmail via the actor host; discarding it removes it with the expected message id', async t => {
+  const w = world(t);
   await withHost(w, async host => {
     const { session, accountId } = await connectOwner(w, host);
     await pump(w, () => host.accounts.status(accountId)?.status.state === 'ok', 'a first sync');
@@ -187,8 +191,8 @@ test('a draft saved through the engine reaches Gmail via the actor host; discard
   });
 });
 
-test('mail that arrives after the first sync is posted through the notification loop', async () => {
-  const w = world();
+test('mail that arrives after the first sync is posted through the notification loop', async t => {
+  const w = world(t);
   await withHost(w, async host => {
     const { accountId } = await connectOwner(w, host);
     await pump(w, () => host.accounts.status(accountId)?.status.state === 'ok', 'a first sync');
@@ -207,8 +211,8 @@ test('mail that arrives after the first sync is posted through the notification 
   });
 });
 
-test("an actor's sync commit reaches a window as a state frame (the actors commit through the engine's store)", async () => {
-  const w = world();
+test("an actor's sync commit reaches a window as a state frame (the actors commit through the engine's store)", async t => {
+  const w = world(t);
   await withHost(w, async host => {
     const { session, accountId } = await connectOwner(w, host);
     await pump(w, () => accountBaselineDone(host, accountId), 'the baseline');
@@ -237,8 +241,8 @@ function accountBaselineDone(host: Awaited<ReturnType<typeof composeEngineHost>>
   );
 }
 
-test('a power resume wakes the engine once, and no longer after close', async () => {
-  const w = world();
+test('a power resume wakes the engine once, and no longer after close', async t => {
+  const w = world(t);
   await withHost(w, async host => {
     let wakes = 0;
     const wake = host.engine.wake.bind(host.engine);
@@ -254,8 +258,8 @@ test('a power resume wakes the engine once, and no longer after close', async ()
   });
 });
 
-test('close stops the engine, then the actors, then the database, the log and the lock, once', async () => {
-  const w = world();
+test('close stops the engine, then the actors, then the database, the log and the lock, once', async t => {
+  const w = world(t);
   const host = await composeEngineHost({
     ...w.options,
     lock: () => () => void w.events.push('lock.release'),
@@ -283,11 +287,10 @@ test('close stops the engine, then the actors, then the database, the log and th
     'lock.release',
   ]);
   assert.throws(() => host.engine.connect(), /not running|unavailable/i);
-  w.cleanup();
 });
 
-test('a second composition on the same data folder is refused by the lock, before it opens anything', async () => {
-  const w = world();
+test('a second composition on the same data folder is refused by the lock, before it opens anything', async t => {
+  const w = world(t);
   let held = false;
   const lock: ComposeOptions['lock'] = () => {
     if (held) throw new Error('already running');
@@ -304,11 +307,10 @@ test('a second composition on the same data folder is refused by the lock, befor
   assert.equal(held, false);
   const again = await composeEngineHost({ ...w.options, lock });
   await again.close();
-  w.cleanup();
 });
 
-test('a composition that fails while starting stops what it started', async () => {
-  const w = world();
+test('a composition that fails while starting stops what it started', async t => {
+  const w = world(t);
   let released = 0;
   const broken: SqlDatabase = {
     exec: () => undefined,
@@ -327,11 +329,10 @@ test('a composition that fails while starting stops what it started', async () =
   );
   assert.equal(released, 1);
   assert.deepEqual(w.events, ['db.close', 'log.close']);
-  w.cleanup();
 });
 
-test('close ends a sign-in that is still waiting: no listener, a late callback is refused, nothing is stored', async () => {
-  const w = world();
+test('close ends a sign-in that is still waiting: no listener, a late callback is refused, nothing is stored', async t => {
+  const w = world(t);
   const consents: URL[] = [];
   const host = await composeEngineHost({
     ...w.options,
@@ -348,11 +349,10 @@ test('close ends a sign-in that is still waiting: no listener, a late callback i
   await w.clock.advance(1_000);
   assert.equal(w.vault.writes, 0);
   assert.equal(w.vault.entries.size, 0, 'no refresh token without an account row');
-  w.cleanup();
 });
 
-test('a banner that rejects is logged, not an unhandled rejection', async () => {
-  const w = world();
+test('a banner that rejects is logged, not an unhandled rejection', async t => {
+  const w = world(t);
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => void unhandled.push(reason);
   process.on('unhandledRejection', onUnhandled);
@@ -382,12 +382,11 @@ test('a banner that rejects is logged, not an unhandled rejection', async () => 
   } finally {
     process.off('unhandledRejection', onUnhandled);
     await host.close();
-    w.cleanup();
   }
 });
 
-test('restarting with a draft already due uploads it: the stored account is started before the loop runs', async () => {
-  const w = world();
+test('restarting with a draft already due uploads it: the stored account is started before the loop runs', async t => {
+  const w = world(t);
   const first = await composeEngineHost(w.options);
   const { session, accountId } = await connectOwner(w, first);
   await pump(w, () => accountBaselineDone(first, accountId), 'the baseline');
@@ -414,12 +413,11 @@ test('restarting with a draft already due uploads it: the stored account is star
     await pump(w, () => hasDrafts(w) === 1, 'the draft to reach Gmail');
   } finally {
     await second.close();
-    w.cleanup();
   }
 });
 
-test('with a data key the workflow channel and lease are built, and close leaves nothing running', async () => {
-  const w = world();
+test('with a data key the workflow channel and lease are built, and close leaves nothing running', async t => {
+  const w = world(t);
   const key = new Uint8Array(32).fill(7);
   const keys = { dataKey: () => Promise.resolve(key) } as unknown as NonNullable<
     ComposeOptions['keys']
@@ -430,5 +428,148 @@ test('with a data key the workflow channel and lease are built, and close leaves
   await pump(w, () => host.accounts.status(accountId)?.lease !== undefined, 'the lease round');
   await host.close();
   assert.equal(w.clock.pending(), 0, 'no timer is left armed');
-  w.cleanup();
+});
+
+/** The database file as a second connection would change it, with no host running. */
+function editAccounts(w: World, sql: string): void {
+  const db = openSqlite(join(w.dir, 'mail.db'));
+  try {
+    db.exec(sql);
+  } finally {
+    db.close();
+  }
+}
+
+test('a stored account that cannot start is logged by salted id and class only, listed, and retried on a resume', async t => {
+  const w = world(t);
+  const first = await composeEngineHost(w.options);
+  const { accountId } = await connectOwner(w, first);
+  await first.close();
+  // A provider the host has no factory for: `ActorHost.start` throws a plain Error whose message names it.
+  editAccounts(w, "UPDATE accounts SET provider = 'imap'");
+  const records: LogRecord[] = [];
+  let db: SqlDatabase | undefined;
+  const host = await composeEngineHost({
+    ...w.options,
+    logSink: { write: record => void records.push(record) },
+    openDatabase: path => (db = recording(openSqlite(path), w.events)),
+  });
+  try {
+    const salt = (
+      db!.prepare("SELECT value FROM meta WHERE key = 'install_salt'").get() as { value: string }
+    ).value;
+    assert.deepEqual(host.startFailures(), [
+      { accountId: hashAddress(salt, accountId), errorClass: 'Error' },
+    ]);
+    assert.equal(host.accounts.status(accountId), undefined, 'the actor stayed stopped');
+    const lines = records.filter(r => r.event === 'rpc.failed');
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].account, hashAddress(salt, accountId));
+    assert.deepEqual(lines[0].data, { method: 'Host/startAccount', reason: 'Error' });
+    const text = JSON.stringify(records);
+    for (const secret of [w.address, accountId, 'no provider', 'imap'])
+      assert.ok(!text.includes(secret), `the log does not hold ${secret}`);
+    // The provider is back (a fixed install); the next wake starts the account and clears the list.
+    db!.exec("UPDATE accounts SET provider = 'google'");
+    w.power.emit('resume');
+    await pump(w, () => host.startFailures().length === 0, 'the retry to clear the list');
+    assert.ok(host.accounts.status(accountId), 'the account is started now');
+  } finally {
+    await host.close();
+  }
+});
+
+test('an account that starts normally leaves startFailures empty', async t => {
+  const w = world(t);
+  await withHost(w, async host => {
+    await connectOwner(w, host);
+    assert.deepEqual(host.startFailures(), []);
+  });
+});
+
+/** A wake clock whose ticks and wall time the test moves. */
+function manualWakeClock() {
+  let time = 1_000_000;
+  let tick: (() => void) | undefined;
+  const clock: WakeClock = {
+    now: () => time,
+    every: run => {
+      tick = run;
+      return 1;
+    },
+    cancel: () => void (tick = undefined),
+  };
+  return {
+    clock,
+    /** The Mac slept for `ms` and the first tick after waking ran. */
+    sleep: (ms: number) => {
+      time += ms;
+      tick?.();
+    },
+    armed: () => tick !== undefined,
+  };
+}
+
+function countWakes(host: Awaited<ReturnType<typeof composeEngineHost>>) {
+  const count = { wakes: 0 };
+  const wake = host.engine.wake.bind(host.engine);
+  host.engine.wake = () => {
+    count.wakes++;
+    return wake();
+  };
+  return count;
+}
+
+test('a 31 s wall-clock jump is exactly one wake through the composition, and a resume right after adds none', async t => {
+  const w = world(t);
+  const wall = manualWakeClock();
+  await withHost(
+    w,
+    async host => {
+      const count = countWakes(host);
+      wall.sleep(29_000);
+      assert.equal(count.wakes, 0, 'a gap under 30 s is not a wake');
+      wall.sleep(31_000);
+      assert.equal(count.wakes, 1);
+      w.power.emit('resume');
+      assert.equal(count.wakes, 1, 'the resume that follows is the same wake');
+      assert.ok(wall.armed());
+    },
+    { wakeClock: wall.clock },
+  );
+  assert.equal(wall.armed(), false, 'close cancels the tick');
+});
+
+test('without a wake clock the real one runs: a 1 s interval, cancelled on close', async t => {
+  const w = world(t);
+  const setTick = mock.method(globalThis, 'setInterval');
+  const clearTick = mock.method(globalThis, 'clearInterval');
+  t.after(() => mock.restoreAll());
+  const host = await composeEngineHost(w.options);
+  const mine = setTick.mock.calls.filter(call => call.arguments[1] === 1000);
+  assert.equal(mine.length, 1);
+  await host.close();
+  const handle = setTick.mock.calls.find(call => call.arguments[1] === 1000)!.result;
+  assert.ok(clearTick.mock.calls.some(call => call.arguments[0] === handle));
+});
+
+test("compose reaches the engine's own connect sessions: close disposes the map the engine runtime uses", async t => {
+  const w = world(t);
+  const consents: URL[] = [];
+  const host = await composeEngineHost({
+    ...w.options,
+    openExternal: url => void consents.push(new URL(url)),
+  });
+  const session = host.engine.connect();
+  await session.call('Account/connect', { provider: 'google', loginHint: w.address });
+  await pump(w, () => consents.length === 1, 'the browser to open');
+  // Imported through the package, as compose does: the same module instance holds the sign-in the engine started.
+  const before = connectSessionsOf(host.engine.services);
+  assert.equal(connectSessionsOf(host.engine.services), before);
+  await host.close();
+  assert.notEqual(
+    connectSessionsOf(host.engine.services),
+    before,
+    'compose disposed the map the engine used (a second copy of the module would find nothing)',
+  );
 });

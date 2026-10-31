@@ -10,6 +10,12 @@
     "./store": "./src/store/index.ts",
     "./store/*": "./src/store/*.ts",
     "./diag/*": "./src/diag/*.ts",
+    "./clock/loop": "./src/clock/loop.ts",
+    "./sync/account-read": "./src/sync/account-read.ts",
+    "./sync/connect-sessions": "./src/sync/connect-sessions.ts",
+    "./sync/governor": "./src/sync/governor.ts",
+    "./sync/host": "./src/sync/host.ts",
+    "./sync/lookup": "./src/sync/lookup.ts",
     "./ports": "./src/ports.ts",
     "./legacy/*": "./src/legacy/*.ts"
   },
