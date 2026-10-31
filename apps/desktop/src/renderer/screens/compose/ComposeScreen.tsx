@@ -36,7 +36,12 @@ export interface ComposeScreenProps {
   /** The page has gone (Esc, discarded, sent): the shell goes back. */
   readonly onClose?: () => void;
   readonly dictationSource?: DictationSource | null;
+  /** The card option on trial: 'a' one card, 'b' a card with a quiet address band. Absent: 'off', the bare page. */
+  readonly cardStyle?: ComposeCardStyle;
 }
+
+/** How the compose page is grouped: 'off' is DESIGN 7.6's bare page; 'a' and 'b' are two card options on trial. */
+export type ComposeCardStyle = 'off' | 'a' | 'b';
 
 function useInitialCompose(props: ComposeScreenProps): ComposeState | null {
   const draft = useRow('Draft', props.draftId);
@@ -152,14 +157,16 @@ export function ComposePageView({
   useMenuCommands(view.open, controls.setMenuAnchor, shared.editorRef);
   return (
     <>
-      <Composer
-        {...shared}
-        subject={state.fields.subject}
-        onSubjectChange={subject =>
-          session.dispatch({ type: 'edit', patch: { subject }, now: getNow() })
-        }
-        onFormat={anchor => controls.setMenuAnchor(anchor)}
-      />
+      <div className="aplos-compose" data-cards={props.cardStyle ?? 'off'}>
+        <Composer
+          {...shared}
+          subject={state.fields.subject}
+          onSubjectChange={subject =>
+            session.dispatch({ type: 'edit', patch: { subject }, now: getNow() })
+          }
+          onFormat={anchor => controls.setMenuAnchor(anchor)}
+        />
+      </div>
       <ComposeMenu
         anchor={controls.menuAnchor}
         presets={presets}

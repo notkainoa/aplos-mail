@@ -140,7 +140,6 @@
 .ui-compose-btn:focus-visible,
 .ui-suggestion__act:focus-visible,
 .ui-recipient-field__remove:focus-visible,
-.ui-composer__subject:focus-visible,
 .ui-recipient-field__input:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
@@ -541,19 +540,30 @@
 .ui-composer__to .ui-recipient-field__label {
   min-width: var(--space-8);
 }
+/* The subject is a calm single line, not a heading (owner review 2026-10-31): `title` size at 500, no box. Focus shows
+   as the 2 px accent underline the search field uses (DESIGN 11.2), drawn as a shadow, so nothing moves. The To row's
+   input on this page shows its focus the same way, so the page never opens on a boxed field. */
 .ui-composer__subject {
+  box-sizing: border-box;
   display: block;
   width: 100%;
-  margin-top: var(--space-6);
-  padding: 0;
+  margin-top: var(--space-5);
+  padding: var(--space-2) 0;
   border: 0;
   background: none;
   color: var(--ink);
-  font: var(--type-heading);
-  letter-spacing: var(--track-heading);
+  font: var(--type-title);
+  font-weight: 500;
+  letter-spacing: var(--track-title);
+  outline: 0;
 }
 .ui-composer__subject::placeholder {
   color: var(--dim);
+}
+.ui-composer__subject:focus-visible,
+.ui-composer__to .ui-recipient-field__input:focus-visible {
+  outline: 0;
+  box-shadow: 0 var(--focus-width) 0 var(--accent);
 }
 .ui-composer__polish {
   display: flex;

@@ -237,19 +237,22 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       ) : null}
       {head}
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
-        <h2 className="aplos-reader__subject">{subjectLine(row, data.messages.length)}</h2>
-        <EarlierMessages
-          count={earlier.length}
-          participants={participantsOf(earlier, me)}
-          expanded={ui.expanded}
-          messages={earlier.map(m => collapsedOf(m, me))}
-          cursorId={ui.cursor ?? undefined}
-          commandId="reader.expand"
-          onToggle={() => dispatch({ type: 'toggleExpanded' })}
-          onOpenMessage={id => dispatch({ type: 'openMessage', id })}
-        />
-        {earlier.filter(m => ui.opened.includes(m.id)).map(m => message(m, ui.cursor === m.id))}
-        {message(latest, ui.cursor === null || ui.cursor === latest.id)}
+        {/* The messages without the reply: a layout hook for the card options (reader.css `data-cards`). */}
+        <div className="aplos-reader__messages">
+          <h2 className="aplos-reader__subject">{subjectLine(row, data.messages.length)}</h2>
+          <EarlierMessages
+            count={earlier.length}
+            participants={participantsOf(earlier, me)}
+            expanded={ui.expanded}
+            messages={earlier.map(m => collapsedOf(m, me))}
+            cursorId={ui.cursor ?? undefined}
+            commandId="reader.expand"
+            onToggle={() => dispatch({ type: 'toggleExpanded' })}
+            onOpenMessage={id => dispatch({ type: 'openMessage', id })}
+          />
+          {earlier.filter(m => ui.opened.includes(m.id)).map(m => message(m, ui.cursor === m.id))}
+          {message(latest, ui.cursor === null || ui.cursor === latest.id)}
+        </div>
         <ReplyArea
           threadId={props.threadId}
           messageId={latest.id}

@@ -53,7 +53,73 @@
 }
 
 /* The compose page fills the pane, so its hairline and Send sit at the pane's bottom (DESIGN 7.6; mockups/compose.html)
-   however short the text, and a long text scrolls inside the page above them. */
-.aplos-screen:has(> .ui-composer) {
+   however short the text, and a long text scrolls inside the page above them. `.aplos-compose` is the page's root; it
+   carries the card option on trial (`data-cards`), and draws nothing itself. */
+.aplos-screen:has(> .aplos-compose),
+.aplos-compose {
   height: 100%;
+}
+
+/* ---------- Card options on trial (data-cards='a' | 'b'; 'off' is DESIGN 7.6 as written) ----------
+   Both put To, Cc, Subject and the text in one card on the page; the footer stays pinned under its hairline. The card
+   is --paper with --elev-pane (--raised and the sheen in dark), radius-lg, never --elev-card: that stays the inline reply's, the
+   thing in hand. The page keeps its 640 px width, so the card is the column. */
+.aplos-compose:not([data-cards='off']) .ui-composer__page {
+  box-sizing: border-box;
+  margin-block: var(--space-7) var(--space-8);
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-pane);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__page > * {
+  margin-inline: var(--space-6);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__to {
+  padding-top: var(--space-3);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject {
+  width: calc(100% - 2 * var(--space-6));
+  margin-top: 0;
+  padding-block: var(--space-3);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__editor {
+  min-height: calc(var(--space-10) * 4);
+  margin-block: var(--space-6);
+}
+
+/* A, one card: the fields read top to bottom like a letter, with a hairline under To and under Subject. */
+.aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
+.aplos-compose[data-cards='a'] .ui-composer__subject:not(:focus-visible) {
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject {
+  margin-top: var(--space-1);
+}
+
+/* B, a sectioned card: To, Cc and Subject sit in a quiet --raised band across the top, the text below on --paper. */
+.aplos-compose[data-cards='b'] .ui-composer__to,
+.aplos-compose[data-cards='b'] .ui-composer__subject {
+  box-sizing: border-box;
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: var(--space-6);
+  background: var(--raised);
+}
+.aplos-compose[data-cards='b'] .ui-composer__to {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.aplos-compose[data-cards='b'] .ui-composer__subject {
+  padding-bottom: var(--space-4);
+}
+.aplos-compose[data-cards='b'] .ui-composer__subject:not(:focus-visible) {
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+
+:root[data-theme='dark'] .aplos-compose:not([data-cards='off']) .ui-composer__page {
+  background: var(--raised);
+}
+:root[data-theme='dark'] .aplos-compose[data-cards='b'] .ui-composer__to,
+:root[data-theme='dark'] .aplos-compose[data-cards='b'] .ui-composer__subject {
+  background: var(--paper);
 }

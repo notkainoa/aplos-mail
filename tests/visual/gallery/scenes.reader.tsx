@@ -28,6 +28,15 @@ import { BodyEditor } from '../../../apps/desktop/src/renderer/screens/compose/v
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
 import { Column, noop } from './scenes.shared';
+import {
+  ALEX,
+  DEMO,
+  NEW_MESSAGE,
+  REPLY_DRAFT,
+  type DemoKey,
+  type DemoMessage,
+  type DemoThread,
+} from './readerDemo';
 
 type Fixture = FixtureEngine['fixture'];
 type Pass = (method: string, args: unknown) => Promise<unknown>;
@@ -277,6 +286,7 @@ type Step =
     }
   | { readonly click: string; readonly text?: string }
   | { readonly type: string; readonly into: string }
+  | { readonly press: string; readonly on: string }
   | { readonly wait: number }
   | { readonly run: (world: World) => Promise<void> };
 
@@ -286,6 +296,8 @@ interface ReaderScene {
   readonly steady?: boolean;
   /** The thread the reader opens on; absent: the compose page opens. */
   readonly thread?: string;
+  /** The ids J and K walk, as a list screen would hand them over. */
+  readonly list?: readonly string[];
   readonly seed?: (fx: Fixture) => void;
   readonly bodies?: Readonly<Record<string, BodyPatch>>;
   /** What the screen has when it is ready; the scene waits for it before the steps. */
@@ -356,6 +368,9 @@ async function runStep(step: Step, world: World): Promise<void> {
     clickMatching(step.click, step.text);
   } else if ('type' in step) {
     setValue(step.into, step.type);
+  } else if ('press' in step) {
+    const init = { key: step.press, bubbles: true };
+    document.querySelector(step.on)?.dispatchEvent(new KeyboardEvent('keydown', init));
   } else if ('wait' in step) {
     await new Promise(resolve => setTimeout(resolve, step.wait));
   } else {
@@ -386,7 +401,8 @@ function useScene(scene: ReaderScene): AppClient {
 function sceneOf(scene: ReaderScene): () => ReactElement {
   return function ReaderStateScene(): ReactElement {
     const client = useScene(scene);
-    if (scene.thread) openThread(scene.thread, { from: 'home' });
+    if (scene.thread)
+      openThread(scene.thread, { from: 'home', ...(scene.list ? { listIds: scene.list } : {}) });
     else openCompose();
     return (
       <>
@@ -517,6 +533,191 @@ function DictatingScene(): ReactElement {
     </Column>
   );
 }
+
+/* ------------------------------ the fuller demo threads (readerDemo.ts) ------------------------------ */
+
+const richThreadId = (def: DemoThread) => `${WORK}:rich-${def.key}`;
+const richMessageId = (def: DemoThread, index: number) => `${richThreadId(def)}.m${index + 1}`;
+
+/** The words of an HTML body, for the stand-in's plain copy (snippets, search). */
+function wordsOfHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&[a-z]+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A snippet the way a list shows it: no quoted lines, one line of words. */
+function snippetOf(message: DemoMessage): string {
+  const plain = message.text ?? wordsOfHtml(message.html ?? '');
+  const own = plain
+    .split('\n')
+    .filter(line => !line.startsWith('>'))
+    .join(' ');
+  return own.replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+function personOf(person: Person) {
+  return { name: person.name, address: person.address };
+}
+
+interface RichOptions {
+  /** Draw the thread with no AI summary at all. */
+  readonly noSummary?: boolean;
+  /** Attachment ids whose download has failed. */
+  readonly failedFiles?: readonly string[];
+}
+
+function attachmentsOf(def: DemoThread, message: DemoMessage, failed: readonly string[]) {
+  return (message.files ?? []).map(file => ({
+    id: file.id,
+    name: file.name,
+    mime: file.mime,
+    size: file.size,
+    inline: false,
+    state: failed.includes(file.id) ? ('failed' as const) : ('present' as const),
+  }));
+}
+
+/** One demo thread into the stand-in's store: its messages (oldest first), their bodies and files, and the thread row. */
+function seedRichThread(fx: Fixture, def: DemoThread, options: RichOptions = {}): void {
+  const base = fx.store.get('Thread', DESIGN);
+  const template = fx.store.get('Message', `${DESIGN}.m1`);
+  if (!base || !template) return;
+  const failed = options.failedFiles ?? [];
+  const bytes = new TextEncoder().encode('Original demo file.\n') as Uint8Array<ArrayBuffer>;
+  const labels = [`${WORK}:INBOX`, `${WORK}:IMPORTANT`];
+  def.messages.forEach((message, index) => {
+    const id = richMessageId(def, index);
+    const plain = message.text ?? wordsOfHtml(message.html ?? '');
+    fx.bodies[id] = plain;
+    for (const file of message.files ?? [])
+      fx.files[`${id}/${file.id}`] = { bytes, mime: file.mime, name: file.name };
+    fx.write({ kind: 'Fixture/control' }, tx => {
+      tx.put('Message', {
+        ...template,
+        id,
+        threadId: richThreadId(def),
+        rev: 0,
+        from: personOf(message.from),
+        to: message.to.map(personOf),
+        cc: (message.cc ?? []).map(personOf),
+        subject: def.subject,
+        snippet: snippetOf(message),
+        date: Date.parse(message.at),
+        seen: true,
+        fromMe: message.from.address === ALEX.address,
+        labels,
+        attachments: attachmentsOf(def, message, failed),
+        bodyKind: message.text !== undefined ? 'text' : 'html',
+      });
+    });
+  });
+  const last = def.messages[def.messages.length - 1]!;
+  const people = new Map<string, Person>();
+  for (const message of def.messages)
+    for (const person of [message.from, ...message.to, ...(message.cc ?? [])])
+      people.set(person.address, person);
+  const summary = options.noSummary ? { state: 'none' as const } : def.summary;
+  fx.write({ kind: 'Fixture/control' }, tx => {
+    tx.put('Thread', {
+      ...base,
+      id: richThreadId(def),
+      rev: 0,
+      subject: def.subject,
+      snippet: snippetOf(last),
+      fromName: last.from.name,
+      participants: [...people.values()].slice(0, 6).map(p => ({
+        ...personOf(p),
+        ...(p.address === ALEX.address ? { me: true } : {}),
+      })),
+      lastDate: Date.parse(last.at),
+      lastInboundDate: Date.parse(last.at),
+      messageCount: def.messages.length,
+      unreadCount: 0,
+      unread: false,
+      hasAttachments: def.messages.some(m => (m.files ?? []).length > 0),
+      labels,
+      workflow: { status: 'new', bookmarked: false, hiddenFromHome: false, replyStatus: 'none' },
+      rank: { lane: def.lane, importance: 'important', source: 'ai', dueBand: 3 },
+      summary: {
+        ...summary,
+        ...(summary.state === 'ready' ? { provider: 'groq', model: 'openai/gpt-oss-120b' } : {}),
+      },
+      unsubscribe: def.unsubscribe === true,
+    });
+  });
+}
+
+/** What the gate says about each message of a demo thread: the text or HTML it was written in. */
+function richBodies(def: DemoThread, stalled: boolean): Record<string, BodyPatch> {
+  const patches: Record<string, BodyPatch> = {};
+  def.messages.forEach((message, index) => {
+    const body: BodyPatch =
+      message.text !== undefined
+        ? { text: message.text }
+        : { html: message.html ?? '', remoteImages: message.remoteImages === true };
+    patches[richMessageId(def, index)] = stalled ? { ...body, stall: true } : body;
+  });
+  return patches;
+}
+
+interface RichScene extends Omit<ReaderScene, 'thread' | 'seed' | 'bodies' | 'list'>, RichOptions {
+  /** The demo thread the reader opens on. */
+  readonly open?: DemoKey;
+  /** Further demo threads in the store (J walks from `open` to the next of `walk`). */
+  readonly also?: readonly DemoKey[];
+  readonly walk?: readonly DemoKey[];
+  /** The demo thread whose bodies never arrive. */
+  readonly stalled?: DemoKey;
+}
+
+function richScene(options: RichScene): () => ReactElement {
+  const { open, also = [], walk, stalled, noSummary, failedFiles, ...scene } = options;
+  const keys: readonly DemoKey[] = open ? [open, ...also] : also;
+  const patches = keys.reduce<Record<string, BodyPatch>>(
+    (all, key) => ({ ...all, ...richBodies(DEMO[key], key === stalled) }),
+    {},
+  );
+  return sceneOf({
+    ...scene,
+    ...(open ? { thread: richThreadId(DEMO[open]) } : {}),
+    ...(walk ? { list: walk.map(key => richThreadId(DEMO[key])) } : {}),
+    seed: fx => {
+      for (const key of keys) seedRichThread(fx, DEMO[key], { noSummary, failedFiles });
+    },
+    bodies: patches,
+  });
+}
+
+/** Scrolls the pane the open letter sits in to its end, where the Reply stub is. */
+const SCROLL_TO_END: Step = {
+  run: async () => {
+    const letter = document.querySelector('.aplos-reader__letter[data-paper="true"]');
+    for (let el = letter?.parentElement; el; el = el.parentElement) {
+      if (el.scrollHeight <= el.clientHeight + 1) continue;
+      if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY)) continue;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+  },
+};
+
+const REPLY_TO_PROJECT: readonly Step[] = [
+  { key: 'r' },
+  { wait: 300 },
+  { type: REPLY_DRAFT, into: '.ui-inline-reply textarea' },
+  { wait: 300 },
+];
+
+const NEW_MESSAGE_STEPS: readonly Step[] = [
+  { type: NEW_MESSAGE.to, into: '.ui-recipient-field__input' },
+  { press: 'Enter', on: '.ui-recipient-field__input' },
+  { type: NEW_MESSAGE.subject, into: '.ui-composer__subject' },
+  { type: NEW_MESSAGE.body, into: '.ui-composer textarea' },
+  { wait: 1_500 },
+];
 
 export const readerScenes: Record<string, () => ReactElement> = {
   'reader-full': sceneOf({
@@ -653,4 +854,25 @@ export const readerScenes: Record<string, () => ReactElement> = {
     thread: DESIGN,
     steps: [...SEND_REPLY, forceSubmission('suspended')],
   }),
+  'reader-rich-project': richScene({ open: 'project' }),
+  'reader-rich-project-expanded': richScene({ open: 'project', steps: [{ key: 'o' }] }),
+  'reader-rich-attachments': richScene({ open: 'files' }),
+  'reader-rich-attachment-failed': richScene({ open: 'files', failedFiles: ['att-photos'] }),
+  'reader-rich-invite': richScene({ open: 'invite' }),
+  'reader-rich-oneliner': richScene({ open: 'oneliner' }),
+  'reader-rich-receipt': richScene({ open: 'receipt' }),
+  'reader-rich-newsletter': richScene({ open: 'newsletter' }),
+  'reader-rich-newsletter-bottom': richScene({ open: 'newsletter', steps: [SCROLL_TO_END] }),
+  'reader-rich-no-attachments': richScene({ open: 'oneliner', steps: [{ key: 'o' }] }),
+  'reader-rich-loading': richScene({
+    open: 'oneliner',
+    also: ['project'],
+    walk: ['oneliner', 'project'],
+    stalled: 'project',
+    steps: [{ key: 'j' }, LET_TWO_SECONDS_PASS, { wait: 1_900 }],
+  }),
+  'reader-rich-no-summary': richScene({ open: 'project', noSummary: true }),
+  'compose-rich-reply-draft': richScene({ open: 'project', steps: REPLY_TO_PROJECT }),
+  'compose-rich-new': richScene({ ready: '.ui-composer', steps: NEW_MESSAGE_STEPS }),
+  'compose-rich-empty': richScene({ ready: '.ui-composer' }),
 };

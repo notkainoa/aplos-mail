@@ -55,6 +55,9 @@ import { useHomeOrder, useReaderList } from './useReaderList';
 export const LOADING_COPY = 'Loading this email…';
 export const NO_THREAD_COPY = 'No email is open.';
 
+/** How the letter is grouped: 'off' is DESIGN 7.5's one column with no card; 'a' and 'b' are two card options on trial. */
+export type ReaderCardStyle = 'off' | 'a' | 'b';
+
 /** Props for `ReaderScreen`. */
 export interface ReaderScreenProps {
   /** The list the reader was opened from, in order, for J and K. Absent: the ids `openThread` recorded, else Home's order. */
@@ -63,6 +66,8 @@ export interface ReaderScreenProps {
   readonly backTo?: Screen;
   /** Any suggestion that is neither a reply nor Done ("View invoice", "Add to calendar"); a later slice's. */
   readonly onSuggested?: (threadId: string, action: SuggestedAction) => void;
+  /** The card option on trial: 'a' letter cards, 'b' sectioned cards. Absent: 'off', the column with no card. */
+  readonly cardStyle?: ReaderCardStyle;
 }
 
 /** What the actions read when a key arrives. */
@@ -255,7 +260,13 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   // A stable order, so a letter that stays mounted is never moved in the DOM (moving a frame reloads it).
   const letters = [...new Set([shown, open].filter((id): id is string => id !== null))].sort();
   return (
-    <div className="aplos-reader" data-keyctx="reader" tabIndex={-1} ref={root}>
+    <div
+      className="aplos-reader"
+      data-keyctx="reader"
+      data-cards={props.cardStyle ?? 'off'}
+      tabIndex={-1}
+      ref={root}
+    >
       {buffer.loadingLine ? <LoadingLine label={loadingLabel(wantedRow) ?? LOADING_COPY} /> : null}
       {letters.map(id => (
         <ReaderLetter
