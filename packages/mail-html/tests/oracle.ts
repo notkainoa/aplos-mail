@@ -78,7 +78,10 @@ function checkElement(element: Element, options: OracleOptions, problems: string
   if (isCharset(element)) return;
   if (element.namespaceURI !== HTML_NS) problems.push(`foreign element <${name}>`);
   if (!ALLOWED_ELEMENTS.has(name)) problems.push(`element <${name}>`);
-  if (name === 'style') checkCss(textOf(element), options, problems);
+  // The reading stylesheet Aplos puts in <head> names its own classes; the mail's style is in <body>.
+  const ours =
+    element.parentNode && 'tagName' in element.parentNode && element.parentNode.tagName === 'head';
+  if (name === 'style') checkCss(textOf(element), options, problems, !ours);
   for (const child of element.childNodes) {
     if ('value' in child && child.value.includes('\u001b'))
       problems.push(`ESC in the text of <${name}>`);
@@ -107,7 +110,7 @@ function checkAttribute(
   if (name === 'href' && element === 'a') return checkHref(value, problems);
   if (name === 'src' && element === 'img') return checkImage(value, true, options, problems);
   if (name === 'background') return checkImage(value, false, options, problems);
-  if (name === 'style') return checkCss(value, options, problems);
+  if (name === 'style') return checkCss(value, options, problems, true);
   if (name === 'target' && value === '_blank') return;
   if (name === 'rel' && value === 'noopener noreferrer') return;
   problems.push(`attribute ${name}="${value.slice(0, 60)}" on <${element}>`);
@@ -187,7 +190,12 @@ function textOf(element: Element): string {
   return element.childNodes.map(child => ('value' in child ? child.value : '')).join('');
 }
 
-function checkCss(css: string, options: OracleOptions, problems: string[]): void {
+function checkCss(
+  css: string,
+  options: OracleOptions,
+  problems: string[],
+  fromMail: boolean,
+): void {
   const tokens = tokenize({ css }, { onParseError: () => undefined });
   const imageSets: number[] = [];
   let depth = 0;
@@ -195,6 +203,7 @@ function checkCss(css: string, options: OracleOptions, problems: string[]): void
     const token = tokens[index];
     depth = trackDepth(token, depth, imageSets);
     checkCssToken(token, tokens, index, imageSets.length > 0, options, problems);
+    if (fromMail) problems.push(...ownClassSelectors(token, tokens, index));
   }
 }
 
@@ -240,4 +249,33 @@ function checkCssToken(
   if (inImageSet) checkImage(token[4].value, false, options, problems);
   else if (URL_LIKE.test(token[4].value.replace(/[\t\n\r]/g, '')))
     problems.push(`css string ${token[4].value.slice(0, 60)}`);
+}
+
+/**
+ * Aplos's own elements have classes that start `aplos-`; the sanitizer moves a mail's to
+ * `m-aplos-`, so any selector left naming one could hide what Aplos adds. A class selector is a dot
+ * and a name with only comments between (the browser drops them); an attribute selector is read as
+ * the text of its brackets, escapes decoded, so no operator, quote or flag spelling hides it.
+ */
+function ownClassSelectors(token: CSSToken, tokens: CSSToken[], index: number): string[] {
+  if (token[0] === TokenType.Ident && /^aplos-/i.test(token[4].value)) {
+    let before = index - 1;
+    while (tokens[before]?.[0] === TokenType.Comment) before--;
+    const dot = tokens[before];
+    if (dot?.[0] === TokenType.Delim && dot[4].value === '.') return [`css .${token[4].value}`];
+  }
+  if (token[0] !== TokenType.OpenSquare) return [];
+  let text = '';
+  for (let at = index + 1; at < tokens.length && at < index + 64; at++) {
+    const inner = tokens[at];
+    if (inner[0] === TokenType.CloseSquare) break;
+    const spelled =
+      inner[0] === TokenType.Ident || inner[0] === TokenType.String || inner[0] === TokenType.Delim;
+    text += spelled ? inner[4].value : ' ';
+  }
+  const named = /^\s*(?:[^|=\s]*\|)?class\b/i.test(text);
+  const whole = /(?:^|[^-\w])aplos-/i.test(text);
+  const stem = /[\^*|]\s*=\s*aplos(?=\s|$)/i.test(text);
+  const names = named && (whole || stem);
+  return names ? [`css [${text.trim()}]`] : [];
 }

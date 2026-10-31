@@ -16,7 +16,7 @@ function clean(
   const images = new ImageBook({ cids, policy });
   const out = sanitizeCss(css, images);
   const problems = unsafeParts(
-    `<style>${out}</style><p style="${out.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">x</p>`,
+    `<body><style>${out}</style><p style="${out.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">x</p>`,
     {
       imagesBlocked: policy === 'block',
       remoteImages: images.remote.length,
@@ -156,6 +156,146 @@ describe('ending the style element early', () => {
 
   it('turns NUL into U+FFFD', () => {
     assert.equal(clean('a{b:c\u0000d}').css.includes('\u0000'), false);
+  });
+});
+
+describe('aplos- class names, in every selector position', () => {
+  // `clean` also runs the oracle, which fails on any selector still naming an `aplos-` class.
+  const hidden = (selector: string): string => clean(`${selector}{display:none}`).css;
+
+  it('moves a class selector to m-aplos- through comments, escapes, lists and nesting', () => {
+    const cases: [string, string][] = [
+      ['.aplos-quote', '.m-aplos-quote'],
+      ['details.APLOS-Quote', 'details.m-APLOS-Quote'],
+      ['./**/aplos-quote', './**/m-aplos-quote'],
+      ['./**//**/aplos-quote', './**//**/m-aplos-quote'],
+      ['.\\61plos-quote', '.m-aplos-quote'],
+      [':is(.aplos-quote, a)', ':is(.m-aplos-quote, a)'],
+      [':where(.aplos-quote, b)', ':where(.m-aplos-quote, b)'],
+      [':not(.aplos-quote)', ':not(.m-aplos-quote)'],
+      [':has(> .aplos-find)', ':has(> .m-aplos-find)'],
+      ['a:is(.x .aplos-find, .y)', 'a:is(.x .m-aplos-find, .y)'],
+    ];
+    for (const [selector, want] of cases) assert.equal(hidden(selector), `${want}{display:none}`);
+  });
+
+  it('moves it inside malformed argument lists, where no { follows', () => {
+    const cases: [string, string][] = [
+      [':is(.aplos-quote, ;)', ':is(.m-aplos-quote, ;)'],
+      [':where(.aplos-quote, })', ':where(.m-aplos-quote, })'],
+      [':is(.aplos-quote', ':is(.m-aplos-quote'],
+      ['.a{:is(.aplos-quote, ;)}', '.a{:is(.m-aplos-quote, ;)}'],
+    ];
+    for (const [css, want] of cases) assert.equal(clean(css).css, want, css);
+  });
+
+  it('leaves what is not a class selector alone', () => {
+    const css = 'a{animation-name:aplos-fade;content:".aplos-x"}. aplos-x{b:c}.aplosx{d:e}';
+    assert.equal(sanitizeCss(css, new ImageBook({ cids: [], policy: 'block' })), css);
+  });
+
+  it('moves the value of a [class] selector, whatever the operator, quoting, flag or spelling', () => {
+    const cases: [string, string][] = [
+      ['[class=aplos-quote]', '[class=m-aplos-quote]'],
+      ['[class="aplos-quote"]', '[class="m-aplos-quote"]'],
+      ["[class='APLOS-quote' i]", '[class="m-APLOS-quote" i]'],
+      ['[CLASS ~= "aplos-quote"]', '[CLASS ~= "m-aplos-quote"]'],
+      ['[class~="aplos-quote"]', '[class~="m-aplos-quote"]'],
+      ['[class^=aplos-]', '[class^=m-aplos-]'],
+      ['[class^="aplos-q" s]', '[class^="m-aplos-q" s]'],
+      ['[class^=aplos]', '[class^=m-aplos]'],
+      ['[class$=aplos-quote]', '[class$=m-aplos-quote]'],
+      ['[class*=aplos-]', '[class*=m-aplos-]'],
+      ['[class*=aplos]', '[class*=m-aplos]'],
+      ['[class|=aplos]', '[class|=m-aplos]'],
+      ['[class|="aplos-find"]', '[class|="m-aplos-find"]'],
+      ['[class*="x aplos-find"]', '[class*="x m-aplos-find"]'],
+      ['[ class /**/ ^ /**/ = /**/ aplos- ]', '[ class /**/ ^ /**/ = /**/ m-aplos- ]'],
+      ['[class^/**/=aplos-]', '[class^/**/=m-aplos-]'],
+      ['[*|class^=aplos-]', '[*|class^=m-aplos-]'],
+      ['[|class|=aplos]', '[|class|=m-aplos]'],
+      ['[cl\\61ss=\\61plos-quote]', '[cl\\61ss=m-aplos-quote]'],
+      ['div:is([class^=aplos-], p)', 'div:is([class^=m-aplos-], p)'],
+      ['[class^=aplos-', '[class^=m-aplos-'],
+    ];
+    for (const [selector, want] of cases) assert.equal(hidden(selector), `${want}{display:none}`);
+  });
+
+  it('moves every name in a value that holds several, and keeps its whitespace as written', () => {
+    const cases: [string, string][] = [
+      ['[class="foo aplos-x"]', '[class="foo m-aplos-x"]'],
+      ['[class~="foo aplos-x"]', '[class~="foo m-aplos-x"]'],
+      ['[class$="foo aplos-x"]', '[class$="foo m-aplos-x"]'],
+      ['[class^="foo aplos-x"]', '[class^="foo m-aplos-x"]'],
+      ['[class|="foo aplos-x"]', '[class|="foo m-aplos-x"]'],
+      ['[class="foo  aplos-x\\9 bar\\a aplos-y"]', '[class="foo  m-aplos-x\\9 bar\\a m-aplos-y"]'],
+      ['[class="  foo   aplos-x "]', '[class="  foo   m-aplos-x "]'],
+      ['[class="xaplos-x aplos-y"]', '[class="xaplos-x m-aplos-y"]'],
+    ];
+    for (const [selector, want] of cases) assert.equal(hidden(selector), `${want}{display:none}`);
+    // Unquoted, `foo aplos-x` is not one value: the browser drops the whole rule (the value would
+    // be `foo`), so it is written as it came. (Not through `clean`: the oracle reads the brackets.)
+    const css = '[class=foo aplos-x]{display:none}';
+    assert.equal(sanitizeCss(css, new ImageBook({ cids: [], policy: 'block' })), css);
+  });
+
+  it('judges a rewritten [class] value like any other string: no address gets through it', () => {
+    // A string that looks like an address is emptied, whatever the rewrite made of it.
+    assert.equal(
+      clean('a{--x:[class="https://evil.example/p.png aplos-q"]}').css,
+      'a{--x:[class=""]}',
+    );
+    assert.equal(clean('a{--x:[class="aplos-q:x"]}').css, 'a{--x:[class=""]}');
+    // Inside an image function it is an image URL: classified, never written as it came.
+    const inside = clean(
+      'a{b:image-set([class="aplos-q https://evil.example/p.png"] 1x, [class="https://evil.example/q.png aplos-q"] 2x)}',
+      'allow',
+    );
+    assert.equal(inside.css, 'a{b:image-set([class= none ] 1x, [class=url("img/0")] 2x)}');
+    assert.doesNotMatch(inside.css, /evil|aplos/);
+    assert.equal(inside.images.remote.length, 1);
+    // The address after the aplos- name is no URL in a plain string, as before the rewrite.
+    assert.equal(
+      clean('a{--x:[class="aplos-q https://evil.example/p.png"]}').css,
+      'a{--x:[class="m-aplos-q https://evil.example/p.png"]}',
+    );
+  });
+
+  it('keeps attribute selectors that cannot name an Aplos class', () => {
+    for (const selector of [
+      '[class^=m-aplos-]',
+      '[class*="x-aplos-"]',
+      '[class=aplosx]',
+      '[class~=aplos]',
+      '[class$=aplos]',
+      '[class^=ap]',
+      '[class]',
+      '[title^=aplos-]',
+      '[data-class=aplos-quote]',
+      '[id^=aplos-]',
+    ]) {
+      assert.equal(hidden(selector), `${selector}{display:none}`, selector);
+    }
+  });
+
+  it('cannot reach Aplos through ids: mail ids all become m-<id>, and Aplos writes none', () => {
+    assert.equal(hidden('#aplos-quote'), '#m-aplos-quote{display:none}');
+    assert.equal(hidden('#m-aplos-quote'), '#m-aplos-quote{display:none}');
+  });
+
+  it('is idempotent on selectors it moved', () => {
+    for (const css of ['[class^=aplos-]{a:b}', './**/aplos-x{a:b}', ':is(.aplos-x, ;)']) {
+      const once = clean(css).css;
+      assert.equal(clean(once).css, once, css);
+    }
+  });
+
+  it('reads a long run of [ in linear time', () => {
+    const book = new ImageBook({ cids: [], policy: 'block' });
+    const shapes = ['[class'.repeat(100_000), '[a '.repeat(100_000), `[${'a '.repeat(100_000)}`];
+    const start = performance.now();
+    for (const css of shapes) sanitizeCss(css, book);
+    assert.ok(performance.now() - start < 1500, `${performance.now() - start} ms`);
   });
 });
 
