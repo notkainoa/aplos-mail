@@ -6,7 +6,7 @@ import {
   type DraftSaveResult,
   type DraftUpload,
 } from '../src/ports';
-import { ProviderError } from '../src/ports/base';
+import { NotSentError, ProviderError } from '../src/ports/base';
 import { ACCOUNT, ADDRESS, FakeAdapter, disk, world, type World } from './sync-actor-helpers';
 
 /**
@@ -41,7 +41,7 @@ class DraftAdapter extends FakeAdapter {
   }
 
   async deleteDraft(id: string, ctx: AdapterContext, expected?: string): Promise<void> {
-    this.seen.push({ ctx, what: `delete:${id}:${expected ?? '-'}` });
+    this.seen.push({ ctx, what: `delete:${id}:${expected ?? '-'}:${arguments.length}` });
     return this.governedDraft(ctx, 'idempotentWrite', () => undefined);
   }
 
@@ -93,6 +93,11 @@ function rig(adapters: Record<string, FakeAdapter>) {
     },
   };
 }
+
+const isNotStarted = (error: unknown) =>
+  error instanceof NotSentError &&
+  error.error.class === 'transient' &&
+  error.error.reason === 'accountNotStarted';
 
 const isPermanent = (reason: string) => (error: unknown) =>
   error instanceof ProviderError &&
@@ -165,7 +170,7 @@ test('remove forwards the remote id and expectedMessageId, and omits it when abs
     await w.host.remove(ACCOUNT, 'r-2');
     assert.deepEqual(
       a.seen.map(s => s.what),
-      ['delete:r-1:m-1', 'delete:r-2:-'],
+      ['delete:r-1:m-1:3', 'delete:r-2:-:2'],
     );
     assert.equal(b.seen.length, 0);
     assert.equal(a.seen[0]!.ctx.account.id, ACCOUNT);
@@ -174,17 +179,17 @@ test('remove forwards the remote id and expectedMessageId, and omits it when abs
   }
 });
 
-test('an account that is not started is a permanent refusal and reaches no adapter', async () => {
+test('an account that is not started is a transient refusal that wrote nothing and reaches no adapter', async () => {
   const a = new DraftAdapter();
   const b = new DraftAdapter();
   const { w, done } = rig({ [ACCOUNT]: a, [OTHER]: b });
   try {
     await w.host.start(ACCOUNT);
-    await assert.rejects(w.host.save(OTHER, upload()), isPermanent('accountNotStarted'));
-    await assert.rejects(w.host.remove(OTHER, 'r-1', 'm-1'), isPermanent('accountNotStarted'));
-    await assert.rejects(w.host.save('acct-unknown', upload()), isPermanent('accountNotStarted'));
+    await assert.rejects(w.host.save(OTHER, upload()), isNotStarted);
+    await assert.rejects(w.host.remove(OTHER, 'r-1', 'm-1'), isNotStarted);
+    await assert.rejects(w.host.save('acct-unknown', upload()), isNotStarted);
     await w.host.stop(ACCOUNT, 'restart');
-    await assert.rejects(w.host.save(ACCOUNT, upload()), isPermanent('accountNotStarted'));
+    await assert.rejects(w.host.save(ACCOUNT, upload()), isNotStarted);
     assert.equal(a.seen.length + b.seen.length, 0);
   } finally {
     await done();

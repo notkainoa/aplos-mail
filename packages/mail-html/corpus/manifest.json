@@ -904,6 +904,7 @@
     "title": "Prose built to test the search highlighter",
     "classes": ["find-text"],
     "html": "messages/096-find-repeated-and-split-words.html",
+    "findQuery": "invoice",
     "expect": {
       "marksMin": 8,
       "mustKeepText": ["The invoice was sent twice"]
@@ -914,6 +915,7 @@
     "title": "Search terms with accents, case folding and unusual characters",
     "classes": ["find-text", "unicode-bidi"],
     "html": "messages/097-find-unicode-and-case.html",
+    "findQuery": "café",
     "expect": {
       "marksMin": 4,
       "mustKeepText": ["Café menu for the week"]
@@ -1100,6 +1102,7 @@
     "title": "Right to left prose that is legitimate, next to control characters that are not",
     "classes": ["unicode-bidi", "benign-newsletter", "find-text"],
     "html": "messages/113-bidi-controls-and-rtl-prose.html",
+    "findQuery": "paragraph",
     "expect": {
       "marksMin": 1,
       "mustKeepText": ["שלום עולם", "مرحبا بالعالم", "Plain English line"]
@@ -1260,6 +1263,37 @@
     "html": "messages/130-ping-attribute-links-and-areas.html",
     "expect": {
       "mustKeepText": ["Click-tracking through the ping attribute"]
+    }
+  },
+  {
+    "id": "131-iso-2022-jp-shift-sequences",
+    "title": "Escape characters that switch a sniffed page into a two-byte Japanese charset",
+    "classes": ["malformed-encoding", "mxss", "event-handler"],
+    "html": "messages/131-iso-2022-jp-shift-sequences.html",
+    "expect": {
+      "mustKeepText": ["Shift sequences for a sniffed Japanese charset", "the closing line stays visible"],
+      "notes": "Found by the html-3 bypass review. If the frame were ever read as ISO-2022-JP (no charset declared, the browser guesses), ESC $ B makes the following bytes two-byte characters and can swallow a closing quote, so the next attribute value would be read as attributes (onerror). The sanitizer turns ESC into U+FFFD everywhere and the document declares UTF-8 within its first 1,024 bytes."
+    }
+  },
+  {
+    "id": "132-css-late-values-in-image-functions",
+    "title": "Image functions whose address comes from a variable, an attribute or the environment",
+    "classes": ["css-image-set", "css-url", "relative-url"],
+    "html": "messages/132-css-late-values-in-image-functions.html",
+    "expect": {
+      "remoteImages": 1,
+      "mustKeepText": ["Stylesheet values that are filled in later", "list image from a variable"],
+      "notes": "Found by the html-3 bypass review. var(), env() and attr() are filled in after the sanitizer has read the stylesheet, so inside image-set(), image() and src() they could put a string the sanitizer never classified in URL position (a relative img/<n> or cid/<n> on the frame's own origin, or a remote address). They are replaced inside image functions; address-like strings are emptied everywhere, and url() in a custom property is rewritten like any other (the one remote image left: img/0 through the proxy when images are on)."
+    }
+  },
+  {
+    "id": "133-noframes-self-rebuilding-fallback",
+    "title": "A frameset fallback whose tags rebuild themselves each time one is removed",
+    "classes": ["resource-exhaustion", "mxss"],
+    "html": "messages/133-noframes-self-rebuilding-fallback.html",
+    "expect": {
+      "mustKeepText": ["A frameset fallback that rebuilds itself"],
+      "notes": "Found by the Opus review of html-3. The sanitizer re-parses <noframes> text as markup; once it also removed nested <noframes> tags in one pass, <nofr<noframes>ames> became <noframes> again, and each level re-read everything below it with fresh limits (quadratic). Fallbacks are now re-parsed only at the top level, one inside re-parsed text is dropped, and all re-parses share one element budget. The bigger shape is timed in tests/perf.test.ts."
     }
   }
 ]
