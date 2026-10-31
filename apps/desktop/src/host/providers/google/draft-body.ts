@@ -191,6 +191,33 @@ function decodePart(part: GmailPart, data: string): string | undefined {
   }
 }
 
+/** The headers the engine's copy is built from; `messageFacts` reads only the first of each. */
+const SINGLE_HEADERS = ['from', 'to', 'cc', 'subject'];
+
+const countOf = (payload: GmailPart, name: string): number =>
+  payload.headers?.filter(h => h.name.toLowerCase() === name).length ?? 0;
+
+const hasBadDecode = (facts: MessageFacts): boolean =>
+  [
+    facts.subject,
+    ...[facts.from, ...facts.to, ...facts.cc, ...(facts.bcc ?? [])].map(
+      a => `${a?.name ?? ''}${a?.address ?? ''}`,
+    ),
+  ].some(text => text?.includes('\uFFFD'));
+
+/**
+ * Whether the draft's headers say more than the fact can show, so a body next to them would make the engine install a
+ * "complete" copy that silently lost something: a second From, To, Cc or Subject header (a raw API or IMAP-appended draft
+ * can have them; `messageFacts` reads the first), a Reply-To (the engine's copy keeps only the local draft's reply
+ * target, it has no Reply-To of its own), or a subject or name that did not decode (U+FFFD from an unknown charset or
+ * bad bytes in an encoded word). The message is still reported (snippet only, incomplete).
+ */
+function ambiguousHeaders(payload: GmailPart, facts: MessageFacts): boolean {
+  if (SINGLE_HEADERS.some(name => countOf(payload, name) > 1)) return true;
+  if (countOf(payload, 'reply-to') > 0) return true;
+  return hasBadDecode(facts);
+}
+
 function bodyOf(payload: GmailPart): { html?: string; text?: string } | undefined {
   if (holdsAttachment(payload)) return undefined;
   const leaves = walkPayload(payload);
@@ -230,7 +257,8 @@ async function readFull(
   const internetId = headerOf(message.payload?.headers, 'Message-ID')?.trim();
   const facts = message.payload ? metadataOf(message, message.payload, self) : undefined;
   // A body without the draft's sender, recipients and subject would make the engine take it as complete and drop them.
-  const body = facts && message.payload ? bodyOf(message.payload) : undefined;
+  const clear = facts && message.payload && !ambiguousHeaders(message.payload, facts);
+  const body = clear && message.payload ? bodyOf(message.payload) : undefined;
   return {
     messageId: message.id,
     ...(internetId ? { internetId } : {}),

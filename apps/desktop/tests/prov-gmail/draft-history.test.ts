@@ -735,3 +735,52 @@ test('prov-gmail-drafts body delivery: the 5-read bound holds across the pages o
   await historyPass(r);
   assert.equal(fullReads(r, next).length, 3);
 });
+
+// ---- headers that the fact cannot show whole: no body next to them ----
+
+const plainBody = (headers: { name: string; value: string }[]) => ({
+  mimeType: 'text/plain',
+  headers,
+  body: { size: 4, data: b64('body') },
+});
+
+const ambiguous: [string, { name: string; value: string }[]][] = [
+  ['a second To header', [{ name: 'To', value: 'second@mail.example.test' }]],
+  [
+    'a second Cc header',
+    [
+      { name: 'Cc', value: 'one@mail.example.test' },
+      { name: 'Cc', value: 'two@mail.example.test' },
+    ],
+  ],
+  ['a second From header', [{ name: 'From', value: 'other@mail.example.test' }]],
+  ['a second Subject header', [{ name: 'Subject', value: 'Another subject' }]],
+  ['a Reply-To header', [{ name: 'Reply-To', value: 'elsewhere@mail.example.test' }]],
+  ['a subject that did not decode (U+FFFD)', [{ name: 'Subject', value: '=?utf-8?B?/w==?=' }]],
+  [
+    'a display name that did not decode (U+FFFD)',
+    [{ name: 'To', value: '=?utf-8?B?/w==?= <x@mail.example.test>' }],
+  ],
+];
+
+for (const [name, headers] of ambiguous) {
+  test(`prov-gmail-drafts body delivery: ${name} means no body, the message is still reported`, async () => {
+    const { r, draftId } = await payloadRig(plainBody(headers));
+    const from = r.store.commits.length;
+    await historyPass(r);
+    const fact = factsSince(r, from).find(f => f.remoteDraftId === draftId)!;
+    assert.ok(fact, 'reported');
+    assert.equal(fact.text, undefined);
+    assert.equal(fact.html, undefined);
+    assert.ok(fact.message, 'metadata still shown');
+  });
+}
+
+test('prov-gmail-drafts body delivery: single From, To, Cc and Subject headers (and In-Reply-To) still deliver the body', async () => {
+  const { r, draftId } = await payloadRig(
+    plainBody([{ name: 'In-Reply-To', value: '<parent@mail.example.test>' }]),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  assert.equal(factsSince(r, from).find(f => f.remoteDraftId === draftId)!.text, 'body');
+});
