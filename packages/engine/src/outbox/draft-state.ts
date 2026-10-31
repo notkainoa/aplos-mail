@@ -267,11 +267,29 @@ const isComplete = (message: { html?: string; hasAttachments?: boolean }) =>
   message.html !== undefined && message.hasAttachments !== true && !hasInlineRef(message.html);
 
 /**
- * Does this body point at an inline part (`cid:` as an attribute value or in `url()`; the text "cid:" in prose or in a link's query does not count)? The copy's inline images are not delivered, so a draft built from it
+ * Does this body point at an inline part (`cid:` as a `src`, `srcset`, `href`, `background` or `data` value or in `url()`, after decoding character references, or Outlook's `[cid:` placeholder in text; the words "CID: 4471" or a link's `?cid:1` do not count)? The copy's inline images are not delivered, so a draft built from it
  * would show broken references and a replace would drop this device's own inline image: such a copy is not complete.
  */
-export const hasInlineRef = (html: string) =>
-  /(?:\b(?:src|href|background)\s*=\s*["']?|url\(\s*["']?)\s*cid:/i.test(html);
+export const hasInlineRef = (html: string) => {
+  const text = decodeEntities(html);
+  return (
+    /(?:\b(?:src|href|background|data)\s*=\s*|url\(\s*)["']?\s*cid:/i.test(text) ||
+    /\bsrcset\s*=\s*["'][^"']*\bcid:/i.test(text) ||
+    /\[cid:/i.test(text)
+  );
+};
+
+const NAMED_CHARS: Record<string, string> = { quot: '"', apos: "'", amp: '&', lt: '<', gt: '>' };
+
+/** One pass of character-reference decoding, as a browser does for attribute values (`&quot;`, `&#39;`, `&#x63;`). */
+function decodeEntities(html: string) {
+  return html.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (whole, name: string) => {
+    if (name[0] !== '#') return NAMED_CHARS[name.toLowerCase()] ?? whole;
+    const code =
+      name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
+}
 
 /**
  * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is
