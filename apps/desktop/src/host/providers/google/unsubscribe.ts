@@ -14,14 +14,12 @@ import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from '../
  * the recipient, subject and body all come from the sender). Else an https page to open. The headers come from the
  * sender, so every value here is hostile until checked.
  *
- * TODO(contract): RFC 8058 section 4 says a receiver should POST only when the message has a valid DKIM signature that
- * covers List-Unsubscribe and List-Unsubscribe-Post. The engine stores no authentication result, so this executor cannot
- * check it. The missing piece is an `authenticated` fact on the message (derived from Authentication-Results or the
- * provider's own verdict) carried in `ListHeaders`. Exposure until then: a spoofed message can make the app POST to an
- * attacker's URL on the owner's explicit click, which leaks their IP address and confirms the address is read. The POST
- * carries no cookie or credential and nothing from the mail beyond the URL itself. The target is the newest inbound
- * message of the thread that carries List-Unsubscribe (`methods/unsubscribe.ts`), so a spoofed message dropped into a
- * real newsletter thread swaps the URL the owner's click goes to; the same authenticated fact must gate that choice.
+ * TODO(providers): RFC 8058 section 4 says a receiver should POST only when the message has a valid DKIM signature that
+ * covers List-Unsubscribe and List-Unsubscribe-Post. The contract now carries that fact as `ListHeaders.authenticated`
+ * (stored as `messages.list_auth`); the engine prefers an authenticated message as the thread's target and strips
+ * List-Unsubscribe-Post from any other one (`methods/unsubscribe.ts`), so until `facts.ts` derives the value from
+ * Authentication-Results or Gmail's verdict no one-click POST happens (DECISIONS 2026-10-31). Left here: plan one-click
+ * only when `headers.authenticated === true`, as defence in depth.
  *
  * Known limit: the composer sends a mailto from the receiving account's primary address, not from the alias the list
  * wrote to, so a list that matches the subscriber by the alias address may not recognise the request.

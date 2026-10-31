@@ -124,6 +124,7 @@ interface LaneRow {
   hdr: number;
   parts: number;
   list_unsub: string | null;
+  list_auth: number | null;
   [k: string]: string | number | null;
 }
 
@@ -135,7 +136,8 @@ export function laneInput(
 ): LaneInput | undefined {
   const m = run
     .q(
-      `SELECT id, from_addr, from_name, to_json, cc_json, subject, snippet, date, internet_id, flags, hdr, parts, list_unsub
+      `SELECT id, from_addr, from_name, to_json, cc_json, subject, snippet, date, internet_id, flags, hdr, parts, list_unsub,
+      list_auth
       FROM messages WHERE thread_id = ? AND (flags & ${FLAG.draft | FLAG.fromMe}) = 0
       ORDER BY internal_date DESC, id DESC LIMIT 1`,
     )
@@ -182,7 +184,7 @@ function laneMessage(run: CommitRun, m: LaneRow): LaneMessage {
     subject: m.subject ?? undefined,
     date: m.date,
     internetId: m.internet_id ?? undefined,
-    list: listHeaders(m.hdr, m.list_unsub),
+    list: listHeaders(m.hdr, m.list_unsub, m.list_auth),
     snippet: m.snippet ?? undefined,
     flags: {
       seen: (m.flags & FLAG.seen) !== 0,
@@ -195,8 +197,12 @@ function laneMessage(run: CommitRun, m: LaneRow): LaneMessage {
   };
 }
 
-/** `ListHeaders` rebuilt from the stored bits (see `STORED_HEADER`). */
-export function listHeaders(hdr: number, listUnsub: string | null): ListHeaders {
+/** `ListHeaders` rebuilt from the stored bits (see `STORED_HEADER`); `listAuth` is `messages.list_auth`. */
+export function listHeaders(
+  hdr: number,
+  listUnsub: string | null,
+  listAuth: number | null = null,
+): ListHeaders {
   const unsub = listUnsub
     ? (JSON.parse(listUnsub) as { urls?: string[]; oneClick?: boolean })
     : undefined;
@@ -207,6 +213,7 @@ export function listHeaders(hdr: number, listUnsub: string | null): ListHeaders 
     listId: hdr & HDR.list ? STORED_HEADER.listId : undefined,
     precedence: hdr & HDR.bulk ? STORED_HEADER.precedence : undefined,
     autoSubmitted: hdr & HDR.autoSubmitted ? STORED_HEADER.autoSubmitted : undefined,
+    ...(listAuth === 1 || listAuth === 0 ? { authenticated: listAuth === 1 } : {}),
   };
 }
 

@@ -94,3 +94,16 @@ test('an entry containing "<" never reaches the store, and what is stored rebuil
   assert.equal(listHeaders(0, JSON.stringify(write)).listUnsubscribe, '<https://list.example/u>');
   assert.ok(stored(undefined, '<a<b<c>')?.urls.every(url => !url.includes('<')));
 });
+
+test('ListHeaders.authenticated reaches the store write only as a real boolean, and only with List-Unsubscribe', () => {
+  const verdict = (authenticated: unknown, header: string = URLS) => {
+    const f = facts(EXACT, header);
+    f.list = { ...f.list, authenticated: authenticated as boolean };
+    return messageWrite(ACCOUNT, 'me@mail.example', f).listAuthenticated;
+  };
+  assert.equal(verdict(true), true);
+  assert.equal(verdict(false), false);
+  for (const hostile of [undefined, 'true', 1, 'yes', {}, null])
+    assert.equal(verdict(hostile), undefined, JSON.stringify(hostile));
+  assert.equal(verdict(true, 'no uri here'), undefined, 'no stored List-Unsubscribe, no verdict');
+});

@@ -10,7 +10,8 @@ import type { AreaHandlers, MethodContext } from './types';
 
 /**
  * The `unsubscribe` area, owned by lane `prov-gmail-write` (plan 20 PV4, Decision 5). The engine finds the thread's
- * newest inbound message that carries List-Unsubscribe and the account it arrived at; the host executor
+ * newest authenticated inbound message that carries List-Unsubscribe (else its newest such message, without one-click)
+ * and the account it arrived at; the host executor
  * (`apps/desktop/src/host/providers/google/unsubscribe.ts`) plans and performs the one-click POST, the mailto or the
  * page link, because it needs Node networking. Nothing here opens a page or sends mail.
  */
@@ -112,17 +113,34 @@ function receiptsOf(executor: UnsubscribePort): Receipts {
   return made;
 }
 
+type TargetRow = { hdr: number; list_unsub: string; list_auth: number | null; address: string };
+
+/**
+ * RFC 8058 section 4: one-click only for an authenticated message. Any other one keeps only the owner-visible ways (the
+ * mailto the owner reviews and sends, the page the owner opens), so its List-Unsubscribe-Post never reaches the port.
+ */
+function gated(headers: ListHeaders): ListHeaders {
+  if (headers.authenticated === true) return headers;
+  const { listUnsubscribePost: _post, ...rest } = headers;
+  return rest;
+}
+
+/**
+ * The thread's newest authenticated inbound message with List-Unsubscribe, else its newest one with it: a spoofed
+ * newer message cannot replace an authenticated target, and a fallback is gated to the owner-visible ways.
+ */
 function readTarget(q: StoreReader, threadId: string): Target | undefined {
   const rowid = threadRowId(q, threadId);
   if (rowid === undefined) throw new ContractError({ type: 'notFound', message: GONE });
-  const m = q.get<{ account_id: string; hdr: number; list_unsub: string; address: string }>(
-    `SELECT m.account_id, m.hdr, m.list_unsub, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
+  const m = q.get<TargetRow>(
+    `SELECT m.hdr, m.list_unsub, m.list_auth, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
      WHERE m.thread_id = ? AND (m.flags & ?) = 0 AND m.list_unsub IS NOT NULL
-     ORDER BY m.internal_date DESC, m.id DESC LIMIT 1`,
+     ORDER BY m.list_auth IS 1 DESC, m.internal_date DESC, m.id DESC LIMIT 1`,
     rowid,
     FLAG.draft | FLAG.fromMe,
   );
-  return m ? { from: m.address, headers: listHeaders(m.hdr, m.list_unsub) } : undefined;
+  if (!m) return undefined;
+  return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth)) };
 }
 
 function target(ctx: MethodContext, threadId: string): Target | undefined {
