@@ -27,8 +27,7 @@ import {
   needsUpload,
   parseData,
   readAnyRow,
-  remembered,
-  earlierWith,
+  abandoned,
   readDraftRow,
   toDraft,
   type DraftMeta,
@@ -246,10 +245,17 @@ function uploadOf(
 /** `attempt` is the upload this answers: once a choice or a newer attempt replaced it, its answer is dropped. */
 function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: string) {
   const at = ctx.clock.now();
+  const { meta } = parseData(row.data);
+  // A refused create may still have landed, and so may the attempt `row` still names: their Message-IDs are kept like any
+  // given-up attempt's.
+  const ids = [meta.uploading?.internetId, attempt].filter(
+    (id, at, all): id is string => id !== undefined && all.indexOf(id) === at,
+  );
+  const kept = abandoned(meta, row.remote_draft_id, ...ids);
   setMeta(
     ctx,
     row.id,
-    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null },
+    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null, ...kept },
     { ifRevision: row.revision, ...(attempt !== undefined ? { ifUploading: attempt } : {}) },
   );
 }
@@ -364,7 +370,8 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   const old =
     meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
   // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
-  const earlier = row.remote_draft_id === null ? earlierWith(meta, ...old) : [];
+  const given = abandoned(meta, row.remote_draft_id, ...old);
+  const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
   const marked = setMeta(
     ctx,
     id,
@@ -374,8 +381,7 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
         revision: row.revision,
         fingerprint: uploadFingerprint(meta, fields),
       },
-      ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
-      ...(old.length && earlier.length ? { earlier } : {}),
+      ...given,
     },
     { ifRevision: row.revision },
   );

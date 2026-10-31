@@ -716,3 +716,18 @@ test('earlier: an edit made while the first create was still running, whose repl
     assert.notEqual(second.internetId, first.internetId);
     assert.deepEqual(second.supersedes, [first.internetId]);
   }));
+
+test('earlier: a create the provider refused for good may still have landed, so the next create offers its id', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'notSent' });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const first = w.remoteDrafts.saves.at(-1)!;
+    assert.equal(read(w, d.id).sync, 'failed', 'refused for good');
+    const kept = syncOf(w, d.id) as { earlier?: string[]; wrote?: string[] };
+    assert.deepEqual(kept.earlier, [first.internetId]);
+    assert.ok(kept.wrote?.includes(first.internetId), 'and remembered as ours');
+    edit(w, read(w, d.id), fields({ subject: 'Second' }), true);
+    await wait(w, 5 * SEC);
+    assert.deepEqual(w.remoteDrafts.saves.at(-1)!.supersedes, [first.internetId]);
+  }));
