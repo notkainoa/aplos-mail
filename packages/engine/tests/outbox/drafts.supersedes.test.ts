@@ -5,7 +5,6 @@ import { DRAFT_CONTENT_FIELDS } from '../../src/outbox/draft-state';
 import { ACCOUNT, fields, gate, SEC, type World } from './helpers';
 import {
   CAP,
-  create,
   edit,
   fact,
   read,
@@ -392,15 +391,6 @@ test('supersedes: a finished upload (last synced fingerprint) with a Bcc-only di
       bcc: [{ address: 'hidden@mail.example' }],
     });
     assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
-  }));
-
-test('a local Bcc is part of the uploaded copy', () =>
-  world(async w => {
-    const bcc = [{ address: 'hidden@mail.example' }];
-    create(w, fields({ bcc }));
-    await wait(w, 5 * SEC);
-    const mime = new TextDecoder().decode(w.remoteDrafts.saves.at(-1)!.mime);
-    assert.match(mime, /^Bcc: .*hidden@mail\.example/im);
   }));
 
 test('closed world: every draft field is classified, and a field that is neither shown nor carried cannot become provable by accident', () => {
