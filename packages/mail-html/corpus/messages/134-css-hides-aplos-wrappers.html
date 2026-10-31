@@ -1,0 +1,14 @@
+<style>
+  details.aplos-quote, ./**/aplos-quote, details.APLOS-quote { display: none }
+  [class^=aplos-], [class*=aplos-], [class|=aplos], [class$="aplos-quote"] { display: none }
+  [class~="aplos-quote"], [class=aplos-quote i], [CLASS='aplos-clipped'] { display: none }
+  :is(.aplos-quote, ;) { display: none }
+  :where(.aplos-quote, }) { display: none }
+  :not(.keep) .aplos-find, :has(> .aplos-blocked) { display: none }
+  #aplos-quote, [id^=aplos-] { display: none }
+</style>
+<p>A mail whose stylesheet tries to hide what Aplos adds.</p>
+<div class="gmail_quote"><blockquote class="gmail_quote" style="margin:0 0 0 1ex">
+<p>Earlier text that Aplos folds into a quote, and that this stylesheet wants to hide so the message looks complete.</p>
+</blockquote></div>
+<p class="aplos-clipped">A paragraph that poses as Aplos's own note.</p>

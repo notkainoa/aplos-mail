@@ -1271,7 +1271,10 @@
     "classes": ["malformed-encoding", "mxss", "event-handler"],
     "html": "messages/131-iso-2022-jp-shift-sequences.html",
     "expect": {
-      "mustKeepText": ["Shift sequences for a sniffed Japanese charset", "the closing line stays visible"],
+      "mustKeepText": [
+        "Shift sequences for a sniffed Japanese charset",
+        "the closing line stays visible"
+      ],
       "notes": "Found by the html-3 bypass review. If the frame were ever read as ISO-2022-JP (no charset declared, the browser guesses), ESC $ B makes the following bytes two-byte characters and can swallow a closing quote, so the next attribute value would be read as attributes (onerror). The sanitizer turns ESC into U+FFFD everywhere and the document declares UTF-8 within its first 1,024 bytes."
     }
   },
@@ -1294,6 +1297,20 @@
     "expect": {
       "mustKeepText": ["A frameset fallback that rebuilds itself"],
       "notes": "Found by the Opus review of html-3. The sanitizer re-parses <noframes> text as markup; once it also removed nested <noframes> tags in one pass, <nofr<noframes>ames> became <noframes> again, and each level re-read everything below it with fresh limits (quadratic). Fallbacks are now re-parsed only at the top level, one inside re-parsed text is dropped, and all re-parses share one element budget. The bigger shape is timed in tests/perf.test.ts."
+    }
+  },
+  {
+    "id": "134-css-hides-aplos-wrappers",
+    "title": "A stylesheet that tries to hide the quote wrapper and the clipped note Aplos adds",
+    "classes": ["css-layout-abuse", "quoted-history"],
+    "html": "messages/134-css-hides-aplos-wrappers.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": [
+        "A mail whose stylesheet tries to hide what Aplos adds",
+        "Earlier text that Aplos folds into a quote"
+      ],
+      "notes": "From the Integrator's round-2 review of html-3. Aplos's own wrappers carry classes that start aplos-, and a mail class of that name is moved to m-aplos-. The selectors here reached the wrappers by a dot, a comment and a name, by [class] attribute selectors with every operator, quoting and flag, and inside :is(), :where(), :not() and :has() (also malformed ones); each now names m-aplos- instead. The oracle in tests/oracle.ts fails any sanitized corpus message whose CSS still names an aplos- class. Tag and position selectors (details, p:last-child) can still hide a wrapper: cosmetic, recorded in DECISIONS."
     }
   }
 ]

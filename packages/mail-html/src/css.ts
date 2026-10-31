@@ -1,4 +1,5 @@
 import { tokenize, TokenType, type CSSToken } from '@csstools/css-tokenizer';
+import { classValueRewrites } from './class-selectors';
 import { replaceControls } from './escape';
 import { ID_PREFIX, isOwnClass, scopeId } from './ids';
 import type { ImageBook } from './images';
@@ -11,7 +12,8 @@ import { urlCleanup } from './url';
 // (it could reach a fetch through `src(var(--x))`); `attr()` goes (an attribute value must never
 // become a URL), and so do `var()` and `env()` inside an image function; at-rules other than the layout ones are removed with their blocks; comments become
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
-// follow the id rewrite (ids.ts). Inside `<style>` only `</` can end the element, so it never
+// follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
+// position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
 // appears in the output.
 
 const KEPT_AT_RULES = new Set([
@@ -125,6 +127,7 @@ class CssWriter {
   private readonly out: string[] = [];
   private readonly open: { kind: Opener; image: boolean }[] = [];
   private readonly structure: Uint8Array;
+  private readonly classValues: Map<number, string>;
   private imageDepth = 0;
   private at = 0;
 
@@ -133,6 +136,7 @@ class CssWriter {
     private readonly images: ImageBook,
   ) {
     this.structure = structureAfter(tokens);
+    this.classValues = classValueRewrites(tokens);
   }
 
   write(): string {
@@ -199,6 +203,8 @@ class CssWriter {
   }
 
   private string(value: string, raw: string): string {
+    const attribute = this.classValues.get(this.at);
+    if (attribute !== undefined) return cssString(attribute);
     if (this.imageDepth > 0) return this.url(value);
     return looksFetchable(value) ? '""' : raw.replaceAll('</', '<\\/');
   }
@@ -209,14 +215,25 @@ class CssWriter {
     return `#${cssIdent(scopeId(token[4].value))}`;
   }
 
-  /** `.aplos-x` in a selector names Aplos's own elements; the mail's class moved to `m-aplos-x`. */
+  /**
+   * `.aplos-x` names Aplos's own elements; the mail's class moved to `m-aplos-x`. Whatever the
+   * position (a selector list, `:is(`, a malformed rule): the browser drops comments, so a dot, a
+   * comment and a name are still a class. Also the value of a `[class=…]` selector (class-selectors.ts).
+   */
   private ident(token: CSSToken): string {
-    const previous = this.tokens[this.at - 1];
-    const isClass = previous?.[0] === TokenType.Delim && previous[4].value === '.';
-    const selector = this.structure[this.at] === Structure.OpenCurly;
-    if (token[0] !== TokenType.Ident || !isClass || !selector || !isOwnClass(token[4].value))
+    const attribute = this.classValues.get(this.at);
+    if (attribute !== undefined) return cssIdent(attribute);
+    if (token[0] !== TokenType.Ident || !isOwnClass(token[4].value) || !this.afterDot()) {
       return token[1];
+    }
     return cssIdent(ID_PREFIX + token[4].value);
+  }
+
+  private afterDot(): boolean {
+    let before = this.at - 1;
+    while (before >= 0 && this.tokens[before][0] === TokenType.Comment) before--;
+    const previous = this.tokens[before];
+    return previous?.[0] === TokenType.Delim && previous[4].value === '.';
   }
 
   private func(name: string, raw: string): void {
