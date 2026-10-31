@@ -103,4 +103,8 @@ test('the main lifecycle module starts the crash reporter only through startCras
   assert.match(source, /startCrashReporting\(app, crashReporter,/);
   assert.doesNotMatch(source, /crashReporter\.start\(/);
   assert.doesNotMatch(source, /app\.setName\(/);
+  // The single-instance lock is the first thing that reads the app name; the name must already be set.
+  assert.ok(
+    source.indexOf('startCrashReporting(app') < source.indexOf('requestSingleInstanceLock()'),
+  );
 });

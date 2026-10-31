@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import {
   acquireLock,
   LockHeldError,
+  createNodeLockFs,
   nodeLockFs,
   lockPath,
   parseLock,
   type LockFs,
   type LockPorts,
 } from '../../src/host/lock';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { linkSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProcessState } from '../../src/host/lifecycle';
@@ -210,6 +211,28 @@ test('the real file system: create is all-or-nothing, refuses an existing lock a
     );
     assert.equal(readFileSync(path, 'utf8'), text);
     assert.deepEqual(readdirSync(root), ['aplos.lock']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a write that fails half way (a full disk) leaves no temp file and no lock', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aplos-lock-test-'));
+  try {
+    const path = join(root, 'aplos.lock');
+    const failing = createNodeLockFs({
+      write(file, data) {
+        writeFileSync(file, data.slice(0, 3));
+        throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      },
+      link: (from, to) => linkSync(from, to),
+      remove: file => rmSync(file, { force: true }),
+    });
+    assert.throws(
+      () => failing.create(path, 'whole lock text'),
+      (error: unknown) => (error as { code?: string }).code === 'ENOSPC',
+    );
+    assert.deepEqual(readdirSync(root), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

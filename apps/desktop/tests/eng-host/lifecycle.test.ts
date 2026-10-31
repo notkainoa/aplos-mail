@@ -126,3 +126,29 @@ test('the quit gate asks once at a time, and a confirm that rejects or throws st
     assert.equal(quits, 2, 'a failing confirm is a yes, and does not stick the gate');
   }
 });
+
+test('a quit that throws when it begins is not an unhandled rejection and the gate asks again', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    let asked = 0;
+    const gate = createQuitGate(
+      async () => {
+        asked++;
+        return true;
+      },
+      () => {
+        throw new Error('window close failed');
+      },
+    );
+    gate.request();
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    gate.request();
+    assert.equal(asked, 2);
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});

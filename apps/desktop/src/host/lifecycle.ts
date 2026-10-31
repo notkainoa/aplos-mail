@@ -363,7 +363,7 @@ export function drain(
 /**
  * One quit question at a time. `request` asks `confirm` (the pending-work warning) and, if the answer is yes, calls
  * `begin`. A second request while the question is open is ignored. A `confirm` that throws or rejects counts as yes and
- * never leaves the gate stuck, because a quit that cannot be asked about must still be possible.
+ * never leaves the gate stuck, and neither does a `begin` that throws, because a quit that cannot be asked about must still be possible.
  */
 export function createQuitGate(confirm: () => Promise<boolean>, begin: () => void) {
   let asking = false;
@@ -377,7 +377,12 @@ export function createQuitGate(confirm: () => Promise<boolean>, begin: () => voi
         .catch(() => true)
         .then(go => {
           asking = false;
-          if (go) begin();
+          // A `begin` that throws must not become an unhandled rejection; the gate is already open again.
+          try {
+            if (go) begin();
+          } catch {
+            // Nothing safe to report from here; the next quit request asks again.
+          }
         });
     },
   };

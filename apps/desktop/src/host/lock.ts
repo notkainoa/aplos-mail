@@ -156,16 +156,29 @@ export function processAlive(pid: number): boolean {
   }
 }
 
-export const nodeLockFs: LockFs = {
+/** The three file operations `create` makes, so a test can make the write fail the way a full disk does. */
+export interface CreateIo {
+  write(path: string, data: string): void;
+  link(from: string, to: string): void;
+  remove(path: string): void;
+}
+const nodeCreateIo: CreateIo = {
+  write: (path, data) => writeFileSync(path, data, { flag: 'wx', mode: 0o600 }),
+  link: (from, to) => linkSync(from, to),
+  remove: path => rmSync(path, { force: true }),
+};
+
+export const createNodeLockFs = (io: CreateIo = nodeCreateIo): LockFs => ({
   mkdirp: dir => void mkdirSync(dir, { recursive: true, mode: 0o700 }),
   create(path, data) {
     // Written whole to a private name, then linked into place: a launch that finds the lock never reads half of it.
     const temp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
-    writeFileSync(temp, data, { flag: 'wx', mode: 0o600 });
+    // The write is inside the try: a write that fails half way (a full disk) must not leave its temp file behind.
     try {
-      linkSync(temp, path);
+      io.write(temp, data);
+      io.link(temp, path);
     } finally {
-      rmSync(temp, { force: true });
+      io.remove(temp);
     }
   },
   read(path) {
@@ -177,7 +190,9 @@ export const nodeLockFs: LockFs = {
   },
   rename: (from, to) => renameSync(from, to),
   remove: path => rmSync(path, { force: true }),
-};
+});
+
+export const nodeLockFs: LockFs = createNodeLockFs();
 
 export const nodeLockPorts = (): LockPorts => ({
   fs: nodeLockFs,
