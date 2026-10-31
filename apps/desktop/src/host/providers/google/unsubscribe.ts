@@ -14,12 +14,10 @@ import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from '../
  * the recipient, subject and body all come from the sender). Else an https page to open. The headers come from the
  * sender, so every value here is hostile until checked.
  *
- * TODO(providers): RFC 8058 section 4 says a receiver should POST only when the message has a valid DKIM signature that
- * covers List-Unsubscribe and List-Unsubscribe-Post. The contract now carries that fact as `ListHeaders.authenticated`
- * (stored as `messages.list_auth`); the engine prefers an authenticated message as the thread's target and strips
- * List-Unsubscribe-Post from any other one (`methods/unsubscribe.ts`), so until `facts.ts` derives the value from
- * Authentication-Results or Gmail's verdict no one-click POST happens (DECISIONS 2026-10-31). Left here: plan one-click
- * only when `headers.authenticated === true`, as defence in depth.
+ * RFC 8058 section 4: a POST only for a message whose DKIM signature covers List-Unsubscribe and List-Unsubscribe-Post
+ * and aligns with From. `facts.ts` derives that as `ListHeaders.authenticated` (`list-auth.ts`) and the engine strips
+ * List-Unsubscribe-Post from any other message (`methods/unsubscribe.ts`); the plan also requires the strict boolean
+ * `true`, as defence in depth.
  *
  * Known limit: the composer sends a mailto from the receiving account's primary address, not from the alias the list
  * wrote to, so a list that matches the subscriber by the alias address may not recognise the request.
@@ -251,13 +249,17 @@ function firstMailto(uris: readonly string[]): UnsubscribeMail | undefined {
   return undefined;
 }
 
-/** Decision 5's order: one-click (both headers), else mailto, else an https page to open, else nothing. Pure. */
+/**
+ * Decision 5's order: one-click (both headers on an authenticated message), else mailto, else an https page to open,
+ * else nothing. Pure.
+ */
 export function planUnsubscribe(
-  headers: Pick<ListHeaders, 'listUnsubscribe' | 'listUnsubscribePost'>,
+  headers: Pick<ListHeaders, 'listUnsubscribe' | 'listUnsubscribePost' | 'authenticated'>,
 ): UnsubscribePlan {
   const uris = listUris(headers.listUnsubscribe);
   const page = firstHttps(uris);
-  if (page && oneClickOffered(headers.listUnsubscribePost)) return { kind: 'oneClick', url: page };
+  const oneClick = headers.authenticated === true && oneClickOffered(headers.listUnsubscribePost);
+  if (page && oneClick) return { kind: 'oneClick', url: page };
   const mail = firstMailto(uris);
   if (mail) return { kind: 'mailto', mail, url: mailtoUrl(mail) };
   if (page) return { kind: 'open', url: page.href };

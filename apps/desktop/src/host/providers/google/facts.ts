@@ -5,6 +5,7 @@ import type {
   MessageFacts,
   MessageFlags,
 } from '@aplos/engine/ports';
+import { listAuthenticated } from './list-auth';
 import { headerOf, type GmailHeader, type GmailPart } from './mime';
 
 /**
@@ -32,7 +33,9 @@ export interface GmailLabel {
 
 /**
  * ARCH 5.1's nine headers, plus List-Unsubscribe-Post (one-click unsubscribe), List-Id, and Reply-To, In-Reply-To and
- * References, which `MessageFacts` carries for threading. Same price either way: metadata costs per call, not per header.
+ * References, which `MessageFacts` carries for threading, and Authentication-Results and DKIM-Signature, from which
+ * `list-auth.ts` derives `list.authenticated` (RFC 8058 section 4). Same price either way: metadata costs per call, not
+ * per header.
  */
 export const METADATA_HEADERS = [
   'From',
@@ -49,6 +52,8 @@ export const METADATA_HEADERS = [
   'Reply-To',
   'In-Reply-To',
   'References',
+  'Authentication-Results',
+  'DKIM-Signature',
 ] as const;
 
 /** Labels that are flags, not places. */
@@ -226,7 +231,8 @@ export function messageFacts(message: GmailMessage, options: FactsOptions): Mess
   const headers: GmailHeader[] = message.payload?.headers ?? [];
   const get = (name: string) => headerOf(headers, name);
   const labels = message.labelIds ?? [];
-  const from = parseAddresses(get('From'))[0];
+  const fromList = parseAddresses(get('From'));
+  const from = fromList[0];
   const internalDate = Number(message.internalDate ?? 0);
   const dateHeader = get('Date');
   const parsedDate = dateHeader ? Date.parse(dateHeader) : NaN;
@@ -235,12 +241,17 @@ export function messageFacts(message: GmailMessage, options: FactsOptions): Mess
   const inReplyTo = messageIds(get('In-Reply-To'))[0];
   const references = messageIds(get('References'));
   const replyTo = parseAddresses(get('Reply-To'));
+  const listUnsubscribe = get('List-Unsubscribe');
+  // The verdict is about List-Unsubscribe, so it is sent only with one; absent means unknown.
+  const authenticated =
+    listUnsubscribe === undefined ? undefined : listAuthenticated(headers, fromList);
   const list = {
-    ...optional('listUnsubscribe', get('List-Unsubscribe')),
+    ...optional('listUnsubscribe', listUnsubscribe),
     ...optional('listUnsubscribePost', once(headers, 'List-Unsubscribe-Post')),
     ...optional('listId', get('List-Id')),
     ...optional('precedence', get('Precedence')),
     ...optional('autoSubmitted', get('Auto-Submitted')),
+    ...(authenticated === undefined ? {} : { authenticated }),
   };
   return {
     remoteId: message.id,
