@@ -105,7 +105,7 @@ export function fact(w: World, remoteDraftId: string, messageId: string, f: Fact
           internalDate: w.clock.now(),
           flags: { seen: true, flagged: false, draft: true, fromMe: true },
           ...(f.messageHtml !== undefined ? { html: f.messageHtml } : {}),
-          ...(f.hasAttachments !== undefined ? { hasAttachments: f.hasAttachments } : {}),
+          hasAttachments: f.hasAttachments ?? false,
         },
       },
     ],

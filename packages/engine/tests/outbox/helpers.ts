@@ -635,6 +635,7 @@ export function copyWrite(f: {
       bcc: c.bcc,
       subject: c.subject,
       snippet: 'copy',
+      hasAttachments: false,
       date: f.changedAt,
       internalDate: f.changedAt,
       flags: { seen: true, flagged: false, draft: true, fromMe: true },

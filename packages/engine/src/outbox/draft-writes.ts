@@ -23,7 +23,13 @@ import {
   type MetaPatch,
 } from './draft-state';
 import { completes, messageOf } from './draft-body';
-import { accountAddress, explainedByAttempt, holdsOurContent, provenOurs } from './draft-proof';
+import {
+  accountAddress,
+  explainedByAttempt,
+  holdsOurContent,
+  provenOurs,
+  repliedTo,
+} from './draft-proof';
 
 /**
  * The drafts' writers for the eng-time extension (seam 2): every change to a draft goes through `store.commit` as one of
@@ -291,7 +297,8 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // ours). Only the very same untouched version is the same copy; anything else (a newer version, a draft the owner
   // edited, one with a send queued) keeps its row, and this row is NOT bound to it: the upload is done with, nothing is
   // lost, and the next upload makes its own copy.
-  const holders = row.remote_draft_id === null ? holdersOf(tx, row, w.remoteDraftId) : [];
+  const holders =
+    row.remote_draft_id === w.remoteDraftId ? [] : holdersOf(tx, row, w.remoteDraftId);
   if (!holders.every(h => sameCopy(tx, h, w.remoteMessageId))) {
     if (meta.removing) return deleteHidden(tx, row.id);
     // Not into `earlier`: the next create must not point back at the copy the other row holds (an adapter would replace it).
@@ -659,6 +666,10 @@ function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
   );
   const thread = remoteThreadId(w);
   if (thread !== undefined) fields.threadId = thread;
+  // A reply written elsewhere: its In-Reply-To names the message it answers, so an edit re-uploaded from here stays in
+  // the thread (the reply headers are rebuilt from `replyToMessageId`).
+  const target = repliedTo(tx, w);
+  if (target !== undefined) Object.assign(fields, { mode: 'reply', replyToMessageId: target });
   const fp = fingerprintOf(fields);
   const meta: DraftMeta = { rev: tx.seq, cur: fp, fingerprint: fp, announce: tx.seq };
   if (!complete) meta.incomplete = true;
@@ -700,7 +711,13 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   // A Message-ID alone proves nothing (a provider keeps it across edits, so a phone-edited copy carries it too): the copy
   // must also have the content of an upload this engine made under it. Otherwise it is shown as a remote draft, a
   // visible duplicate the owner can discard, and is never replaced or deleted from here.
-  if (!provenOurs(tx, row, meta, fields, w)) return insertRemote(tx, w);
+  if (!provenOurs(tx, row, meta, fields, w)) {
+    // Shown as a remote draft: the next create must not offer its id as `supersedes`.
+    const rest = (meta.earlier ?? []).filter(id => id !== w.internetId);
+    if (rest.length !== (meta.earlier ?? []).length)
+      writeRow(tx, row.id, {}, fields, patched(meta, { earlier: rest.length ? rest : null }));
+    return insertRemote(tx, w);
+  }
   writeRow(
     tx,
     row.id,
