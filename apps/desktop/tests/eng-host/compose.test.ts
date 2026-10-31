@@ -11,8 +11,7 @@ import { fakeClock } from '../../../../packages/engine/src/clock/fake';
 import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
 import { openSqlite } from '../../src/host/sqlite';
 import { DraftBridge } from '../prov-gmail/draft-bridge';
-import { fakeBrowser } from '../prov-gov/flow-rig';
-import { memoryVault } from '../prov-gov/flow-rig';
+import { fakeBrowser, getStatus, memoryVault } from '../prov-gov/flow-rig';
 
 const T0 = Date.UTC(2026, 9, 27, 16, 0, 0);
 const CLIENT_ID = 'eng-host-compose.apps.example.test';
@@ -32,6 +31,7 @@ function world(threads = 3) {
   const events: string[] = [];
   const posted: NotificationItem[] = [];
   const address = emu.users()[0].email;
+  const vault = memoryVault();
   const browser = fakeBrowser(consent => {
     const redirect = new URL(emu.oauth.authorize(consent));
     return [Object.fromEntries(redirect.searchParams)];
@@ -43,7 +43,8 @@ function world(threads = 3) {
     logSink: { write: () => undefined, close: () => void events.push('log.close') },
     deviceId: 'mac-compose',
     power,
-    vault: memoryVault(),
+    vault,
+    env: () => ({ focused: false, windowVisible: true, onBattery: false }),
     openExternal: browser.openExternal,
     googleClient: () => ({
       env: { APLOS_GOOGLE_CLIENT_ID: CLIENT_ID, APLOS_GOOGLE_CLIENT_SECRET: CLIENT_SECRET },
@@ -64,6 +65,8 @@ function world(threads = 3) {
     events,
     posted,
     address,
+    vault,
+    emuBrowser: browser,
     options,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
@@ -324,5 +327,108 @@ test('a composition that fails while starting stops what it started', async () =
   );
   assert.equal(released, 1);
   assert.deepEqual(w.events, ['db.close', 'log.close']);
+  w.cleanup();
+});
+
+test('close ends a sign-in that is still waiting: no listener, a late callback is refused, nothing is stored', async () => {
+  const w = world();
+  const consents: URL[] = [];
+  const host = await composeEngineHost({
+    ...w.options,
+    openExternal: url => void consents.push(new URL(url)),
+  });
+  const session = host.engine.connect();
+  await session.call('Account/connect', { provider: 'google', loginHint: w.address });
+  await pump(w, () => consents.length === 1, 'the browser to open');
+  const answer = new URL(w.emu.oauth.authorize(consents[0]));
+  const callback = new URL(consents[0].searchParams.get('redirect_uri')!);
+  for (const [key, value] of answer.searchParams) callback.searchParams.set(key, value);
+  await host.close();
+  assert.equal(await getStatus(callback), 0, 'the loopback listener is gone');
+  await w.clock.advance(1_000);
+  assert.equal(w.vault.writes, 0);
+  assert.equal(w.vault.entries.size, 0, 'no refresh token without an account row');
+  w.cleanup();
+});
+
+test('a banner that rejects is logged, not an unhandled rejection', async () => {
+  const w = world();
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => void unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  const records: string[] = [];
+  const calls: string[] = [];
+  const host = await composeEngineHost({
+    ...w.options,
+    logSink: { write: record => void records.push(record.event) },
+    postNotification: item => {
+      calls.push(item.id);
+      return Promise.reject(new Error('banner failed: secret text'));
+    },
+  });
+  try {
+    host.engine.services.frames.emit({
+      frame: 'host',
+      event: {
+        type: 'reminder',
+        item: { id: 'reminder:t1:1', kind: 'reminder', threadId: 't1', title: 'Call', at: T0 },
+      },
+    });
+    await w.clock.advance(100);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(calls, ['reminder:t1:1']);
+    assert.deepEqual(unhandled, []);
+    assert.ok(records.includes('rpc.failed'));
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    await host.close();
+    w.cleanup();
+  }
+});
+
+test('restarting with a draft already due uploads it: the stored account is started before the loop runs', async () => {
+  const w = world();
+  const first = await composeEngineHost(w.options);
+  const { session, accountId } = await connectOwner(w, first);
+  await pump(w, () => accountBaselineDone(first, accountId), 'the baseline');
+  await session.call('Draft/set', {
+    opId: 'restart-draft-1',
+    fields: {
+      accountId,
+      mode: 'new',
+      to: [{ address: 'friend@example.test' }],
+      cc: [],
+      bcc: [],
+      subject: 'After a restart',
+      html: '<p>Saved before the host quit.</p>',
+      attachments: [],
+      signature: false,
+    },
+  });
+  await first.close();
+  assert.equal(hasDrafts(w), 0, 'closed before the upload was due');
+  await w.clock.advance(60_000);
+  const second = await composeEngineHost(w.options);
+  try {
+    assert.ok(second.accounts.status(accountId), 'the stored account was started');
+    await pump(w, () => hasDrafts(w) === 1, 'the draft to reach Gmail');
+  } finally {
+    await second.close();
+    w.cleanup();
+  }
+});
+
+test('with a data key the workflow channel and lease are built, and close leaves nothing running', async () => {
+  const w = world();
+  const key = new Uint8Array(32).fill(7);
+  const keys = { dataKey: () => Promise.resolve(key) } as unknown as NonNullable<
+    ComposeOptions['keys']
+  >;
+  const host = await composeEngineHost({ ...w.options, keys });
+  const { accountId } = await connectOwner(w, host);
+  await pump(w, () => accountBaselineDone(host, accountId), 'the baseline');
+  await pump(w, () => host.accounts.status(accountId)?.lease !== undefined, 'the lease round');
+  await host.close();
+  assert.equal(w.clock.pending(), 0, 'no timer is left armed');
   w.cleanup();
 });

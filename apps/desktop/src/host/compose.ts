@@ -21,6 +21,7 @@ import { openStore } from '@aplos/engine/store';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { createTimerLoop, type TimerLoop } from '../../../../packages/engine/src/clock/loop';
 import { accountIds } from '../../../../packages/engine/src/sync/account-read';
+import { disposeConnectSessions } from '../../../../packages/engine/src/sync/connect-sessions';
 import { Governor } from '../../../../packages/engine/src/sync/governor';
 import { ActorHost, type ActorHostOptions } from '../../../../packages/engine/src/sync/host';
 import { storeLookup } from '../../../../packages/engine/src/sync/lookup';
@@ -79,7 +80,7 @@ export interface ComposeOptions {
   googleClient: () => GoogleClientInputs;
   /** The banner: the notification loop posts claimed items through it, and so do missed reminders. */
   postNotification: PostNotification;
-  /** Focus, window and battery as the Mac sees them, read at every planning step. Default: unfocused, visible, on mains. */
+  /** Focus, window and battery as the Mac sees them, read at every planning step. Default: no window, unfocused, on mains. */
   env?: () => HostEnv;
   /**
    * The engine's data key. With it the Gmail workflow channel (the lease and the state shared between devices) is on,
@@ -109,7 +110,8 @@ const hostCaller: HostCaller = Object.freeze({
   scopes: Object.freeze(['host', 'read'] as const),
 });
 
-const defaultEnv: HostEnv = { focused: false, windowVisible: true, onBattery: false };
+/** With no word from the window layer the Mac counts as idle: no window, no focus, on mains. */
+const defaultEnv: HostEnv = { focused: false, windowVisible: false, onBattery: false };
 
 /**
  * A store whose commits can be re-pointed. The actors are built before the engine, because the engine takes them as
@@ -278,10 +280,14 @@ function engineOptions(
 function feedHost(options: ComposeOptions, engine: Engine, log: Logger, steps: Undo[]): void {
   const session = engine.connect(hostCaller);
   steps.push(() => session.close());
-  const note = (item: NotificationItem) => void options.postNotification(item);
-  steps.push(announceMissedReminders(session, note));
   const failed = () =>
     log.event('rpc.failed', { method: 'Host/notifications', reason: 'loopFailed' });
+  // A rejected banner must not become an unhandled rejection in the main process; the log line carries no error text.
+  const note = (item: NotificationItem) =>
+    void Promise.resolve()
+      .then(() => options.postNotification(item))
+      .catch(failed);
+  steps.push(announceMissedReminders(session, note));
   steps.push(runNotificationLoop(session, options.postNotification, { log: failed }));
   steps.push(watchPowerResume(options.power, engine));
 }
@@ -301,6 +307,8 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   steps.push(() => loop.stop());
   const engine = await createEngine(engineOptions(options, raw, log, accounts, loop));
   steps.push(() => engine.close());
+  // Runs just before the engine closes: the engine has no lane module that does it (connect-sessions.ts says it must).
+  steps.push(() => disposeConnectSessions(engine.services));
   late.use(engine.services.store);
   loop.start();
   feedHost(options, engine, log, steps);
