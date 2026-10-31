@@ -26,6 +26,7 @@ import {
   accountAddress,
   explainedByAttempt,
   hasSend,
+  sendPins,
   holdersOf,
   holdsOurContent,
   provenOurs,
@@ -787,9 +788,15 @@ function relink(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, fields: D
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
   const { fields: stored, meta } = parseData(row.data);
-  // While a send of this draft is queued or done its revision must not move (the draft leaves Drafts only if the sent
-  // revision is the current one), so a late-found parent is not added then.
-  const base = hasSend(tx, row.id) ? stored : withParent(tx, stored, w);
+  // A draft held by a send (queued, running, or gone out at this revision) does not change: its revision is what the
+  // send is checked against, and the send names the copy it was queued against. A newer version of the copy is
+  // remembered like any change made meanwhile (the copy is then another device's and is never deleted from here), and
+  // is taken when the provider reports it again once the send is over.
+  if (sendPins(tx, row))
+    return w.remoteMessageId === row.remote_message_id
+      ? undefined
+      : markChangedElsewhere(tx, row, stored, meta);
+  const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
   // message it answers (which may have synced after the draft did: then only the reply target is added, never a body
@@ -820,6 +827,8 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
       cur: fp,
       fingerprint: fp,
       incomplete: complete ? null : true,
+      // The row now names the version that was reported: a discard deletes the copy again, guarded on this id.
+      changedElsewhere: null,
       announce: tx.seq,
     }),
   );
