@@ -139,10 +139,12 @@ test('inline: hostile bodies of 30000 characters are scanned in linear time', ()
 
 // The 1 MB size is judged by its ratio to a 50,000-character run of the same shape in the same test, not by a wall
 // clock: linear is about 20x (measured 137-202 ms for 1 MB alone, which a loaded machine pushed over a fixed line),
-// quadratic is 400x. The 50k run goes first and fails fast if it is already slow.
+// quadratic is 400x. The limit is 200 because the `&#32;` shape grows a little faster than linear (82-128x measured on a
+// loaded machine, Integrator review of #171); a real regression is caught by the 30,000-character test above and by the
+// 5 s ceiling below (quadratic at 1 MB is over 20 s). The 50k run goes first and fails fast if it is already slow.
 const SMALL = 50_000;
 const LARGE = 1_000_000;
-const LINEAR_RATIO_LIMIT = 80;
+const LINEAR_RATIO_LIMIT = 200;
 
 test(`inline: hostile bodies of ${LARGE} characters are scanned in linear time`, () => {
   const small = hostileBodies(SMALL);
