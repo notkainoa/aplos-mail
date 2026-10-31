@@ -145,7 +145,7 @@ jobs:
       - run: npm ci --ignore-scripts
       # Runs under system Node. The engine suite also runs under Electron's Node in the
       # engine job — the same double coverage the old combined job had.
-      - run: npm test -w @aplos/engine -w @aplos/contract -w @aplos/contract-fixture -w @aplos/emulators
+      - run: npm test -w @aplos/engine -w @aplos/contract -w @aplos/contract-fixture -w @aplos/emulators -w @aplos/mail-html
 
   e2e-browser:
     name: Browser E2E (headless, loopback only)

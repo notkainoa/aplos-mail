@@ -117,17 +117,51 @@ const hostileBodies = (size: number) => [
   'url('.repeat(size / 4),
 ];
 
+/** The best of `rounds` timed scans of `html`, in ms. */
+function scanTime(html: string, rounds: number): number {
+  let best = Infinity;
+  for (let round = 0; round < rounds; round++) {
+    const start = performance.now();
+    assert.equal(hasInlineRef(html), false);
+    best = Math.min(best, performance.now() - start);
+  }
+  return best;
+}
+
 // A regression is quadratic, so the small size fails fast (30k spaces took 2 s with the old pattern, 100k took 22 s)
 // instead of hanging the run on the 1 MB size.
-for (const size of [30_000, 1_000_000])
-  test(`inline: hostile bodies of ${size} characters are scanned in linear time`, () => {
-    for (const html of hostileBodies(size)) {
-      const start = performance.now();
-      assert.equal(hasInlineRef(html), false);
-      const took = performance.now() - start;
-      assert.ok(took < 200, `${took.toFixed(0)} ms for ${html.slice(0, 24)}...`);
-    }
+test('inline: hostile bodies of 30000 characters are scanned in linear time', () => {
+  for (const html of hostileBodies(30_000)) {
+    const took = scanTime(html, 1);
+    assert.ok(took < 500, `${took.toFixed(0)} ms for ${html.slice(0, 24)}...`);
+  }
+});
+
+// The 1 MB size is judged by its ratio to a 50,000-character run of the same shape in the same test, not by a wall
+// clock: linear is about 20x (measured 137-202 ms for 1 MB alone, which a loaded machine pushed over a fixed line),
+// quadratic is 400x. The limit is 200 because the `&#32;` shape grows a little faster than linear (82-128x measured on a
+// loaded machine, Integrator review of #171); a real regression is caught by the 30,000-character test above and by the
+// 5 s ceiling below (quadratic at 1 MB is over 20 s). The 50k run goes first and fails fast if it is already slow.
+const SMALL = 50_000;
+const LARGE = 1_000_000;
+const LINEAR_RATIO_LIMIT = 200;
+
+test(`inline: hostile bodies of ${LARGE} characters are scanned in linear time`, () => {
+  const small = hostileBodies(SMALL);
+  const large = hostileBodies(LARGE);
+  small.forEach((html, index) => {
+    const name = html.slice(0, 24);
+    assert.ok(scanTime(html, 1) < 250, `${SMALL} characters already slow for ${name}...`);
+    const smallMs = Math.max(scanTime(html, 5), 0.1);
+    const largeMs = scanTime(large[index], 2);
+    const ratio = largeMs / smallMs;
+    assert.ok(
+      ratio < LINEAR_RATIO_LIMIT,
+      `${ratio.toFixed(0)}x for ${LARGE / SMALL}x the input (${name}...)`,
+    );
+    assert.ok(largeMs < 5_000, `${largeMs.toFixed(0)} ms for ${name}...`);
   });
+});
 
 test('inline: a numeric reference outside the range does not throw', () => {
   assert.equal(hasInlineRef('<p>&#99999999999;&#0;&#xZZ;</p>'), false);
