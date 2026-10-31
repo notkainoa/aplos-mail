@@ -608,3 +608,22 @@ test('prov-gmail-drafts fact metadata: a draft whose body was not read (a failed
   assert.equal(fact.message, undefined);
   assert.equal(fact.text, undefined);
 });
+
+test('prov-gmail-drafts fact metadata: bcc is [] when the draft has no Bcc header and lists the Bcc header (lower-cased) when it has one', async () => {
+  const r = await synced();
+  const plain = r.emu.mailbox.createDraftElsewhere(spec());
+  const hidden = r.emu.mailbox.createDraftElsewhere(
+    spec({
+      headers: { Bcc: 'Quiet Person <Quiet.Person@Mail.Example.test>, other@mail.example.test' },
+    }),
+  );
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const facts = factsSince(r, from);
+  assert.deepEqual(facts.find(f => f.remoteDraftId === plain.draftId)!.message!.bcc, []);
+  const bcc = facts.find(f => f.remoteDraftId === hidden.draftId)!.message!.bcc;
+  assert.deepEqual(bcc, [
+    { address: 'quiet.person@mail.example.test', name: 'Quiet Person' },
+    { address: 'other@mail.example.test' },
+  ]);
+});

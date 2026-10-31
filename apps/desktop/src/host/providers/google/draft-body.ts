@@ -2,13 +2,14 @@ import type { ClassifiedError } from '@aplos/contract';
 import {
   ProviderError,
   type AdapterContext,
+  type Address,
   type AttachmentFacts,
   type MessageFacts,
   type RemoteDraftFact,
   type SyncLane,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
-import { messageFacts } from './facts';
+import { messageFacts, parseAddresses } from './facts';
 import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
 
 /**
@@ -26,7 +27,8 @@ import { decodeText, fromBase64Url, headerOf, walkPayload, type GmailPart } from
  *
  * `RemoteDraftFact.message` (the engine's proof that a fact is OUR echo, `draft-writes.ts` `hasFingerprint`): when the read
  * shows a From header, the fact carries the draft's `MessageFacts` (`messageFacts`, partial: true): `from` (the address
- * lower-cased, the engine compares it with the account's own), `to`, `cc`, `subject` (the fields its content hash uses)
+ * lower-cased, the engine compares it with the account's own), `to`, `cc`, `bcc` (every Bcc header of the read, addresses
+ * lower-cased, `[]` when there is none: the engine's closed-world proof, `showsEveryField`, needs it shown), `subject` (the fields its content hash uses)
  * and `attachments`. A draft that holds an attachment of any kind (`holdsAttachment`, inline images too) lists it as a
  * non-inline attachment, so the engine reads `hasAttachments` true and never takes it as complete. Without a From header,
  * or without a thread id or a date to give, `message` stays unset and the engine has no proof (a conflict, the safe
@@ -125,6 +127,17 @@ function attachmentsOf(payload: GmailPart): AttachmentFacts[] {
   return listed.length ? listed : [{ part: payload.partId ?? '0', inline: false }];
 }
 
+/**
+ * The Bcc addresses of the stored draft, lower-cased. `drafts.get` format=full returns every header of the draft, Bcc
+ * included, so an absent header in this read is an empty Bcc (the engine counts a Bcc it was not shown as unknown).
+ */
+function bccOf(payload: GmailPart): Address[] {
+  const headers = payload.headers?.filter(h => h.name.toLowerCase() === 'bcc') ?? [];
+  return headers
+    .flatMap(h => parseAddresses(h.value))
+    .map(a => ({ ...a, address: a.address.trim().toLowerCase() }));
+}
+
 /** The draft's metadata for the engine, only when it names a sender, a thread and a date; the address is lower-cased. */
 function metadataOf(
   message: NonNullable<FullDraft['message']>,
@@ -148,6 +161,7 @@ function metadataOf(
   return {
     ...facts,
     from: { ...facts.from, address: facts.from.address.trim().toLowerCase() },
+    bcc: bccOf(payload),
     attachments: attachmentsOf(payload),
   };
 }

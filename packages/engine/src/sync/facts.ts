@@ -86,6 +86,7 @@ export function messageWrite(
   if (facts.inReplyTo !== undefined) write.inReplyTo = facts.inReplyTo;
   if (facts.references !== undefined) write.refs = facts.references;
   if (facts.from !== undefined) write.from = facts.from;
+  if (facts.bcc !== undefined) write.bcc = facts.bcc;
   if (facts.replyTo !== undefined) write.replyTo = facts.replyTo;
   if (facts.subject !== undefined) write.subject = facts.subject;
   if (facts.snippet !== undefined) write.snippet = facts.snippet;
