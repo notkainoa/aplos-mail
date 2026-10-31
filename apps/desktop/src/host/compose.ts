@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs, type MethodName, type NotificationItem } from '@aplos/contract';
+import { logCodePattern } from '@aplos/contract/log/events';
 import {
   createEngine,
   laneExtensions,
@@ -9,25 +10,27 @@ import {
   type HostPorts,
 } from '@aplos/engine';
 import { createLogger, type LogSink } from '@aplos/engine/diag/log';
-import type {
-  Clock,
-  KeyProvider,
-  Logger,
-  PlanEnv,
-  ProviderFactory,
-  StorePort,
+import { hashAddress } from '@aplos/engine/diag/redact';
+import {
+  ProviderError,
+  type Clock,
+  type KeyProvider,
+  type Logger,
+  type PlanEnv,
+  type ProviderFactory,
+  type StorePort,
 } from '@aplos/engine/ports';
 import { openStore } from '@aplos/engine/store';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
-import { createTimerLoop, type TimerLoop } from '../../../../packages/engine/src/clock/loop';
-import { accountIds } from '../../../../packages/engine/src/sync/account-read';
-import { disposeConnectSessions } from '../../../../packages/engine/src/sync/connect-sessions';
-import { Governor } from '../../../../packages/engine/src/sync/governor';
-import { ActorHost, type ActorHostOptions } from '../../../../packages/engine/src/sync/host';
-import { storeLookup } from '../../../../packages/engine/src/sync/lookup';
+import { createTimerLoop, type TimerLoop } from '@aplos/engine/clock/loop';
+import { accountIds } from '@aplos/engine/sync/account-read';
+import { disposeConnectSessions } from '@aplos/engine/sync/connect-sessions';
+import { Governor } from '@aplos/engine/sync/governor';
+import { ActorHost, type ActorHostOptions } from '@aplos/engine/sync/host';
+import { storeLookup } from '@aplos/engine/sync/lookup';
 import { createLogSink, logDir } from './logsink';
 import { runNotificationLoop, type PostNotification } from './notifications';
-import { watchPowerResume, type PowerSource } from './power';
+import { watchPowerResume, type PowerSource, type WakeClock } from './power';
 import { createGoogleProvider } from './providers/google/adapter';
 import { googleWorkflowChannel, googleWorkflowMerged } from './providers/google/workflow-host';
 import { resolveGoogleClient, type GoogleClientInputs } from './providers/oauth/client';
@@ -72,6 +75,11 @@ export interface ComposeOptions {
   deviceId: string;
   /** Electron's `powerMonitor`, or anything that emits `resume` and `unlock-screen`. */
   power: PowerSource;
+  /**
+   * The clock and repeating timer behind the wake fallback (a 31 s wall-clock jump is a wake; wakes within 5 s are one).
+   * Default: the real one (`Date.now` and `setInterval`). Tests pass a fake; the root never defaults to one.
+   */
+  wakeClock?: WakeClock;
   /** The keychain-backed vault of Google token bundles (`main/vault.ts` fits). */
   vault: CredentialVault<GoogleTokenBundle>;
   /** Opens the consent URL in the owner's browser. */
@@ -97,6 +105,11 @@ export interface ComposedHost {
   engine: Engine;
   /** The account actors, which are also the engine's draft sync port. */
   accounts: ActorHost;
+  /**
+   * Stored accounts whose actor is not running (no provider factory, a budget that could not be read, ...), as of the
+   * last attempt: salted id and error class only. One retry runs on each power resume. A UI or menu reads this.
+   */
+  startFailures(): readonly StartFailure[];
   /** Stops everything in the reverse order it started. Runs once; a later call returns the first one's promise. */
   close(): Promise<void>;
 }
@@ -111,6 +124,17 @@ const hostCaller: HostCaller = Object.freeze({
 });
 
 /** With no word from the window layer the Mac counts as idle: no window, no focus, on mains. */
+/** The real wall clock and `setInterval`; unref'd so a forgotten host never keeps the process alive. */
+const realWakeClock: WakeClock = {
+  now: () => Date.now(),
+  every: (run, ms) => {
+    const timer = setInterval(run, ms);
+    timer.unref();
+    return timer;
+  },
+  cancel: handle => clearInterval(handle as NodeJS.Timeout),
+};
+
 const defaultEnv: HostEnv = { focused: false, windowVisible: false, onBattery: false };
 
 /**
@@ -193,15 +217,82 @@ function workflowOptions(
   };
 }
 
-/** Starts the actor of every account the store holds. One that fails to start is logged and left stopped. */
-async function startAccounts(host: ActorHost, store: StorePort, log: Logger): Promise<void> {
-  for (const id of accountIds(store)) {
+/** The part of the account actors this module drives: `ActorHost.start`, which is a no-op for a started account. */
+export interface AccountStarter {
+  start(id: string): Promise<void>;
+}
+
+/** One stored account whose actor is not running. Both fields are safe to show: no address, no message text. */
+export interface StartFailure {
+  /** The account id, salted like every id and address the host logger writes; not the raw id and never the address. */
+  readonly accountId: string;
+  /** The error's class (a provider error's class, else the error's name), never its message. */
+  readonly errorClass: string;
+}
+
+export interface AccountStarts {
+  /** Starts every stored account not yet running; one that fails is logged and listed in `failures`. */
+  startAll(): Promise<void>;
+  /** Tries the failed accounts once more (the Mac woke); no-op after `stop`. */
+  retryFailed(): Promise<void>;
+  /** The accounts that are stored but not running, as of the last attempt. A copy. */
+  failures(): readonly StartFailure[];
+  /** Ends retries and waits for one in flight, so the actors can be disposed after it. */
+  stop(): Promise<void>;
+}
+
+/** A class name that is safe in a log line, or `unknown`. */
+export function errorClassOf(error: unknown): string {
+  const raw =
+    error instanceof ProviderError ? error.error.class : error instanceof Error ? error.name : '';
+  return logCodePattern.test(raw) ? raw : 'unknown';
+}
+
+export function createAccountStarts(options: {
+  host: AccountStarter;
+  store: StorePort;
+  log: Logger;
+  salt: string;
+}): AccountStarts {
+  const { host, store, log, salt } = options;
+  const failed = new Map<string, string>();
+  let stopped = false;
+  let running: Promise<void> | undefined;
+
+  async function attempt(id: string): Promise<void> {
     try {
       await host.start(id);
-    } catch {
-      log.event('rpc.failed', { method: 'Host/startAccount', reason: 'startFailed' });
+      failed.delete(id);
+    } catch (error) {
+      const errorClass = errorClassOf(error);
+      failed.set(id, errorClass);
+      log
+        .with({ account: hashAddress(salt, id) })
+        .event('rpc.failed', { method: 'Host/startAccount', reason: errorClass });
     }
   }
+
+  async function attemptAll(ids: Iterable<string>): Promise<void> {
+    for (const id of [...ids]) {
+      if (stopped) return;
+      await attempt(id);
+    }
+  }
+
+  // One attempt at a time: a resume during a slow retry joins it instead of starting a second.
+  const serial = (run: () => Promise<void>) =>
+    (running ??= run().finally(() => (running = undefined)));
+
+  return {
+    startAll: () => attemptAll(accountIds(store)),
+    retryFailed: () => serial(() => attemptAll(failed.keys())),
+    failures: () =>
+      [...failed].map(([id, errorClass]) => ({ accountId: hashAddress(salt, id), errorClass })),
+    stop: async () => {
+      stopped = true;
+      await running;
+    },
+  };
 }
 
 function openDatabaseFile(options: ComposeOptions): StorePort {
@@ -277,7 +368,13 @@ function engineOptions(
 }
 
 /** The pieces that need a running engine: the notification claim loop, missed reminders, and power resume. */
-function feedHost(options: ComposeOptions, engine: Engine, log: Logger, steps: Undo[]): void {
+function feedHost(
+  options: ComposeOptions,
+  engine: Engine,
+  log: Logger,
+  starts: AccountStarts,
+  steps: Undo[],
+): void {
   const session = engine.connect(hostCaller);
   steps.push(() => session.close());
   const failed = () =>
@@ -289,7 +386,14 @@ function feedHost(options: ComposeOptions, engine: Engine, log: Logger, steps: U
       .catch(failed);
   steps.push(announceMissedReminders(session, note));
   steps.push(runNotificationLoop(session, options.postNotification, { log: failed }));
-  steps.push(watchPowerResume(options.power, engine));
+  // A wake also gives a failed account start one more try; the wake itself is deduped by `watchPowerResume`.
+  const wakeable = {
+    wake: () => {
+      void starts.retryFailed();
+      return engine.wake();
+    },
+  };
+  steps.push(watchPowerResume(options.power, wakeable, options.wakeClock ?? realWakeClock));
 }
 
 async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHost> {
@@ -297,13 +401,17 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   const sink = openSink(options, steps);
   const raw = openDatabaseFile(options);
   steps.push(() => raw.close());
-  const log = createLogger({ sink, salt: installSalt(raw), clock: options.clock });
+  const salt = installSalt(raw);
+  const log = createLogger({ sink, salt, clock: options.clock });
   const late = lateStore(raw);
   const loop = createTimerLoop({ clock: options.clock, log });
   const accounts = buildActors(options, late.port, log, loop);
   steps.push(() => accounts.dispose());
+  const starts = createAccountStarts({ host: accounts, store: late.port, log, salt });
+  // Runs just before the actors are disposed: no retry may start an actor on a disposed host.
+  steps.push(() => starts.stop());
   // Before the engine exists, so the first draft upload and the first sync find their actors.
-  await startAccounts(accounts, late.port, log);
+  await starts.startAll();
   steps.push(() => loop.stop());
   const engine = await createEngine(engineOptions(options, raw, log, accounts, loop));
   steps.push(() => engine.close());
@@ -311,9 +419,14 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   steps.push(() => disposeConnectSessions(engine.services));
   late.use(engine.services.store);
   loop.start();
-  feedHost(options, engine, log, steps);
+  feedHost(options, engine, log, starts, steps);
   let closing: Promise<void> | undefined;
-  return { engine, accounts, close: () => (closing ??= unwind(steps)) };
+  return {
+    engine,
+    accounts,
+    startFailures: starts.failures,
+    close: () => (closing ??= unwind(steps)),
+  };
 }
 
 /**
