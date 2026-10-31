@@ -562,10 +562,15 @@ export interface DraftUpload {
   /**
    * Only on a create (no `remoteDraftId`): the Message-IDs of this draft's earlier creates that were never answered (a
    * newer revision replaced the attempt, and the reply may have been lost after the copy landed). Before creating, look
-   * for a draft carrying one of them; when one is found, REPLACE it with this upload (the result names its
-   * `remoteDraftId`) instead of creating a second remote draft. Optional and additive: an adapter that ignores it keeps
-   * today's behaviour (a duplicate remote draft can remain until the owner removes it, never a loss). Never delete a
-   * found copy that differs from what this upload would write unless the lookup proves its Message-ID is one of these.
+   * for a draft carrying one of them. REPLACE it with this upload (the result names its `remoteDraftId`) ONLY when all
+   * three hold: it is still a draft, its Message-ID is listed here, AND its canonical bytes equal an upload this adapter
+   * recorded under that Message-ID. A listed Message-ID alone proves nothing: a provider may keep a draft's Message-ID
+   * across edits, so a copy another device edited carries it too. Otherwise answer `conflict` naming `remoteDraftId`,
+   * `remoteMessageId` and `remoteInternetId` of the copy, write nothing and never delete it. An adapter that cannot
+   * record or compare uploads (for example after a restart) simply answers `conflict`: nothing is lost, the owner
+   * chooses. Optional and additive: an adapter that ignores the field keeps today's behaviour (a duplicate remote draft
+   * can remain until the owner removes it, never a loss). The engine stops offering the ids once the create is answered
+   * in any way, including `conflict` and `gone`.
    */
   supersedes?: string[];
   /** Graph's `changeKey` of the last synced copy, sent as the precondition where the message id does not change on edit. */
@@ -587,7 +592,8 @@ export type DraftSaveResult =
    * keep both".
    *
    * On the CREATE path (the upload carried no `remoteDraftId`) a conflict means the provider found an existing copy
-   * carrying this upload's Message-ID (an earlier create whose reply was lost did land) whose bytes differ. Name it:
+   * carrying this upload's Message-ID (an earlier create whose reply was lost did land) whose bytes differ, or, for an upload
+   * that lists `supersedes`, a copy under one of those Message-IDs that the adapter cannot prove is its own. Name it:
    * `remoteDraftId` (and `remoteMessageId`) of that copy, and `remoteInternetId`, the Message-ID the copy carries. The
    * engine adopts the copy only when `remoteInternetId` equals `DraftUpload.internetId`: it then stores the ids on the
    * draft row, so keep mine replaces that copy instead of creating a second draft, and remembers the upload's Message-ID

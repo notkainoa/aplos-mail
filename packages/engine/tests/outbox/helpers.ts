@@ -166,6 +166,7 @@ export interface DraftStep {
     | 'lost'
     | 'landedLost'
     | 'conflictBare'
+    | 'gone'
     | 'conflictExisting'
     | 'conflictForeign'
     | 'conflictUnproven'
@@ -246,6 +247,8 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
       if (step.result === 'lost') throw new Error('socket hang up');
+      // The copy is gone (deleted or sent elsewhere), whatever the upload was.
+      if (step.result === 'gone') return { kind: 'gone' };
       // A conflict that names no remote message id (an adapter that cannot read it).
       if (step.result === 'conflictBare') return { kind: 'conflict' };
       const conflict = scriptedConflict(step, upload);
