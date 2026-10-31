@@ -24,7 +24,12 @@ interface Seen {
 class DraftAdapter extends FakeAdapter {
   readonly seen: Seen[] = [];
   bodyRuns = 0;
-  result: DraftSaveResult = { kind: 'saved', remoteDraftId: 'r-1', remoteMessageId: 'm-1' };
+  result: DraftSaveResult = {
+    kind: 'saved',
+    remoteDraftId: 'r-1',
+    remoteMessageId: 'm-1',
+    revision: 1,
+  };
 
   constructor() {
     super(() => [], {});
@@ -103,7 +108,12 @@ test('save routes to the named account adapter with its actor context and return
     await w.host.start(ACCOUNT);
     await w.host.start(OTHER);
     const saved = await w.host.save(OTHER, upload());
-    assert.deepEqual(saved, { kind: 'saved', remoteDraftId: 'r-1', remoteMessageId: 'm-1' });
+    assert.deepEqual(saved, {
+      kind: 'saved',
+      remoteDraftId: 'r-1',
+      remoteMessageId: 'm-1',
+      revision: 1,
+    });
     assert.equal(a.seen.length, 0, 'the other account was never asked');
     assert.deepEqual(
       b.seen.map(s => s.what),
