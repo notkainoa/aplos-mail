@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { laneFor } from '../../src/ai/lanes';
-import { LANE_CASES, SPOOF_CASES, build } from '../../src/ai/lanes.table';
+import { LANE_CASES, SPOOF_CASES, build } from './lanes.table';
 
 for (const c of [...LANE_CASES, ...SPOOF_CASES]) {
   test(`laneFor: ${c.name}`, () => {

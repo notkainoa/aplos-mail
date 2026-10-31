@@ -853,7 +853,18 @@ function raise(
     row.id,
     w.removed ? FORGET_REMOTE : {},
     fields,
-    patched(meta, { conflict, theirsSeen: seen, dueAt: null, uploading: null, announce: tx.seq }),
+    patched(meta, {
+      conflict,
+      theirsSeen: seen,
+      dueAt: null,
+      uploading: null,
+      ...abandoned(
+        meta,
+        row.remote_draft_id,
+        ...(meta.uploading ? [meta.uploading.internetId] : []),
+      ),
+      announce: tx.seq,
+    }),
   );
   announce(row.id);
 }

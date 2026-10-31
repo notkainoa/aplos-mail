@@ -245,13 +245,16 @@ function uploadOf(
 /** `attempt` is the upload this answers: once a choice or a newer attempt replaced it, its answer is dropped. */
 function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: string) {
   const at = ctx.clock.now();
-  const { meta } = parseData(row.data);
-  // A refused create may still have landed, and so may the attempt `row` still names: their Message-IDs are kept like any
-  // given-up attempt's.
+  // Worked out from the row as it is now: `row` was read before the upload, and a fact may have adopted the copy since
+  // (then it has a remote draft and is not offered `supersedes`), or settled other ids.
+  const now = readUploadRow(ctx, row.id) ?? row;
+  const { meta } = parseData(now.data);
+  // A refused create may still have landed, and so may the attempt the row still names: their Message-IDs are kept like
+  // any given-up attempt's.
   const ids = [meta.uploading?.internetId, attempt].filter(
     (id, at, all): id is string => id !== undefined && all.indexOf(id) === at,
   );
-  const kept = abandoned(meta, row.remote_draft_id, ...ids);
+  const kept = abandoned(meta, now.remote_draft_id, ...ids);
   setMeta(
     ctx,
     row.id,

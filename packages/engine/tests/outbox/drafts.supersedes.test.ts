@@ -731,3 +731,40 @@ test('earlier: a create the provider refused for good may still have landed, so 
     await wait(w, 5 * SEC);
     assert.deepEqual(w.remoteDrafts.saves.at(-1)!.supersedes, [first.internetId]);
   }));
+
+test('earlier: a refusal that arrives after a fact adopted the copy keeps the adopted draft, with no stale supersedes', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait, result: 'notSent' });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const first = w.remoteDrafts.saves.at(-1)!;
+    // While the create runs, history reports its copy under the create's Message-ID: the draft adopts it.
+    fact(w, 'rd-landed', 'm-landed', { internetId: first.internetId });
+    assert.equal(row(w, d.id)!.remote_draft_id, 'rd-landed');
+    g.open();
+    await wait(w, 1);
+    const kept = syncOf(w, d.id) as { earlier?: string[]; wrote?: string[] };
+    assert.equal(kept.earlier, undefined, 'it has a remote draft, so nothing is offered');
+    assert.ok(kept.wrote?.includes(first.internetId) && kept.wrote?.includes('m-landed'));
+  }));
+
+test('a conflict raised while an upload runs remembers the attempt`s Message-ID as ours', () =>
+  world(async w => {
+    const s = await synced(w);
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const attempt = w.remoteDrafts.saves.at(-1)!;
+    // The phone edits while our update runs: the fact conflicts with the local change.
+    fact(w, s.remoteDraftId, 'msg-phone', {
+      subject: 'Phone',
+      html: '<p>Phone</p>',
+      internetId: '<phone@phone.example>',
+    });
+    const kept = syncOf(w, s.draft.id) as { wrote?: string[] };
+    assert.ok(kept.wrote?.includes(attempt.internetId), 'the attempt`s id is remembered');
+    g.open();
+    await wait(w, 1);
+  }));

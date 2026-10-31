@@ -73,10 +73,6 @@ export function invertStep(step: Step): Step[] {
   }
 }
 
-/** What undoes a whole list of steps: each one's inverse, last step first. */
-export const invertSteps = (steps: readonly Step[]): Step[] =>
-  [...steps].reverse().flatMap(invertStep);
-
 function flagsOf(change: OpChange): FlagChange {
   const out: FlagChange = {};
   if (change.kind !== 'flags') return out;
