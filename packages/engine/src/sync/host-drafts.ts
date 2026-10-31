@@ -1,4 +1,4 @@
-import { ProviderError } from '../ports/base';
+import { NotSentError, ProviderError } from '../ports/base';
 import type { AccountId, BudgetId } from '../ports/base';
 import type {
   AdapterContext,
@@ -27,6 +27,20 @@ function refused(method: string, reason: string, provider: string): ProviderErro
 }
 
 /**
+ * An account that is not started right now: the draft calls arrive before `start` or in the moment a restart
+ * stops the account, so this is a `transient` refusal that provably wrote nothing (`NotSentError`). The engine
+ * tries again after its retry delay instead of parking the draft in a problem state.
+ */
+function notStarted(method: string): NotSentError {
+  return new NotSentError({
+    class: 'transient',
+    provider: 'engine',
+    method,
+    reason: 'accountNotStarted',
+  });
+}
+
+/**
  * The account's context, checked against the account the caller named. The host keys its entries by account, so a
  * mismatch is a bug; it throws rather than let one account's draft reach another account's mailbox.
  */
@@ -43,7 +57,7 @@ export async function saveRemoteDraft(
   draft: DraftUpload,
 ): Promise<DraftSaveResult> {
   const method = 'drafts.save';
-  if (!target) throw refused(method, 'accountNotStarted', 'engine');
+  if (!target) throw notStarted(method);
   const { adapter } = target;
   if (!adapter.saveDraft) throw refused(method, 'draftsUnsupported', target.budget);
   return adapter.saveDraft(draft, contextFor(account, target, method));
@@ -57,7 +71,7 @@ export async function removeRemoteDraft(
   expectedMessageId?: string,
 ): Promise<void> {
   const method = 'drafts.remove';
-  if (!target) throw refused(method, 'accountNotStarted', 'engine');
+  if (!target) throw notStarted(method);
   const { adapter } = target;
   if (!adapter.deleteDraft) throw refused(method, 'draftsUnsupported', target.budget);
   const ctx = contextFor(account, target, method);
