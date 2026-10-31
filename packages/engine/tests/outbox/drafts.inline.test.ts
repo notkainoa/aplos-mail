@@ -79,6 +79,9 @@ const REFERENCES: [string, string][] = [
   ['srcset, first candidate', '<img srcset="cid:a 1x">'],
   ['srcset, later candidate', '<img srcset="b.png 1x, cid:a 2x">'],
   ['object data', '<object data="cid:a"></object>'],
+  ['xlink:href', '<use xlink:href="cid:a"/>'],
+  ['spaces and a quote before the scheme', '<img src = "  cid:a">'],
+  ['url() with spaces and newlines inside', '<div style="background:url( \n cid:a )">'],
   ["Outlook's text placeholder", '<p>[cid:image001.png@01D9.1]</p>'],
 ];
 
@@ -98,6 +101,33 @@ test('inline: prose, links and look-alikes are not inline references', () => {
   ])
     assert.equal(hasInlineRef(html), false, html);
 });
+
+/** Hostile bodies of `size` characters; the shapes that made an earlier pattern quadratic come first. */
+const hostileBodies = (size: number) => [
+  `<img src=${' '.repeat(size)}`,
+  `<div style="background:url(${' '.repeat(size)}`,
+  `<img src=${' '.repeat(size / 2)}"${' '.repeat(size / 2)}`,
+  `<img src=${'"'.repeat(size)}`,
+  `<a xlink:href=${"='".repeat(size / 2)}`,
+  `<img srcset="${'a '.repeat(size / 2)}`,
+  `<img src=${'&#32;'.repeat(size / 5)}`,
+  '&'.repeat(size),
+  `&${'a'.repeat(size)}`,
+  'src='.repeat(size / 4),
+  'url('.repeat(size / 4),
+];
+
+// A regression is quadratic, so the small size fails fast (30k spaces took 2 s with the old pattern, 100k took 22 s)
+// instead of hanging the run on the 1 MB size.
+for (const size of [30_000, 1_000_000])
+  test(`inline: hostile bodies of ${size} characters are scanned in linear time`, () => {
+    for (const html of hostileBodies(size)) {
+      const start = performance.now();
+      assert.equal(hasInlineRef(html), false);
+      const took = performance.now() - start;
+      assert.ok(took < 200, `${took.toFixed(0)} ms for ${html.slice(0, 24)}...`);
+    }
+  });
 
 test('inline: a numeric reference outside the range does not throw', () => {
   assert.equal(hasInlineRef('<p>&#99999999999;&#0;&#xZZ;</p>'), false);

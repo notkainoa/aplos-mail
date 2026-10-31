@@ -273,7 +273,9 @@ const isComplete = (message: { html?: string; hasAttachments?: boolean }) =>
 export const hasInlineRef = (html: string) => {
   const text = decodeEntities(html);
   return (
-    /(?:\b(?:src|href|background|data)\s*=\s*|url\(\s*)["']?\s*cid:/i.test(text) ||
+    // One `\s*` before the optional quote and one after it, never two around it: a run of spaces would backtrack
+    // quadratically on hostile mail (10k spaces 0.2 s, 100k 22 s).
+    /(?:\b(?:src|href|background|data)\s*=|url\()\s*(?:["']\s*)?cid:/i.test(text) ||
     /\bsrcset\s*=\s*["'][^"']*\bcid:/i.test(text) ||
     /\[cid:/i.test(text)
   );
