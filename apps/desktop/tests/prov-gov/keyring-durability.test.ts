@@ -6,12 +6,18 @@ import { join } from 'node:path';
 import {
   ignoreUnsyncable,
   nodeDurableFs,
+  syncFolder,
   removeStaleTemporaries,
   writeFileDurably,
   type DurableFs,
   type DurableHandle,
 } from '../../src/main/durable-file';
-import { createCipher, loadDataKey, migrateCredentials } from '../../src/main/keyring';
+import {
+  KeyringError,
+  createCipher,
+  loadDataKey,
+  migrateCredentials,
+} from '../../src/main/keyring';
 
 const keychain = {
   available: () => true,
@@ -210,3 +216,84 @@ test('a key file that cannot be checked is not taken for a missing one', () =>
     assert.equal(writes, 0);
     assert.deepEqual(await readFile(join(dataDir, 'engine-key.bin')), before);
   }));
+
+test('the key file is written with mode 0600', () =>
+  withDir(async dir => {
+    await loadDataKey(dir, keychain);
+    if (process.platform !== 'win32')
+      assert.equal((await stat(join(dir, 'engine-key.bin'))).mode & 0o777, 0o600);
+  }));
+
+test('a failed key write is a plain message with no path, and the original is the cause', () =>
+  withDir(async dir => {
+    const fs: DurableFs = {
+      ...nodeDurableFs,
+      rename: async (from, to) => {
+        throw Object.assign(new Error(`ENOSPC: no space left, rename '${from}' -> '${to}'`), {
+          code: 'ENOSPC',
+        });
+      },
+    };
+    await assert.rejects(loadDataKey(dir, keychain, fs), (error: Error) => {
+      assert.ok(error instanceof KeyringError);
+      assert.ok(!error.message.includes(dir), 'no path in the message');
+      assert.ok(!error.message.includes('.tmp'), 'no temporary name in the message');
+      assert.match(String((error.cause as Error).message), /ENOSPC/);
+      return true;
+    });
+    assert.deepEqual(await readdir(dir), []);
+  }));
+
+test('a data folder that cannot be created is a plain message with no path', () =>
+  withDir(async dir => {
+    const blocker = join(dir, 'file');
+    await writeFile(blocker, 'x');
+    await assert.rejects(loadDataKey(join(blocker, 'data'), keychain), (error: Error) => {
+      assert.ok(error instanceof KeyringError);
+      assert.ok(!error.message.includes(dir), 'no path in the message');
+      assert.ok(error.cause instanceof Error);
+      return true;
+    });
+  }));
+
+test('a keychain that is not available is a keyring message', async () => {
+  await assert.rejects(
+    loadDataKey('/nonexistent', { ...keychain, available: () => false }),
+    KeyringError,
+  );
+});
+
+function folder(
+  log: string[],
+  failWith?: string,
+): (path: string) => Promise<{
+  sync(): Promise<void>;
+  close(): Promise<void>;
+}> {
+  return async () => ({
+    sync: async () => {
+      log.push('sync');
+      if (failWith) throw Object.assign(new Error(failWith), { code: failWith });
+    },
+    close: async () => {
+      log.push('close');
+    },
+  });
+}
+
+test('a folder flush that fails with an error other than the four unsupported is thrown and the handle closed', async () => {
+  const log: string[] = [];
+  await assert.rejects(syncFolder(folder(log, 'EIO'), '/x'), { code: 'EIO' });
+  assert.deepEqual(log, ['sync', 'close']);
+});
+
+test('a folder flush that is unsupported is ignored and the handle closed', async () => {
+  for (const code of ['EISDIR', 'EINVAL', 'EPERM', 'ENOTSUP']) {
+    const log: string[] = [];
+    await syncFolder(folder(log, code), '/x');
+    assert.deepEqual(log, ['sync', 'close']);
+  }
+  await syncFolder(async () => {
+    throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+  }, '/x');
+});
