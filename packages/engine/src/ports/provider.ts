@@ -37,7 +37,10 @@ export interface ListHeaders {
    * signature whose `h=` lists both headers and whose `d=` aligns with the From domain as DMARC defines it (RFC 7489
    * section 3.1.1: the same domain, or relaxed, the same organizational domain), or an equivalent
    * verdict (a passing ARC chain whose first seal vouches for such a DKIM result, or the provider's own verdict that
-   * says exactly that). `false` means the provider checked and it did not hold. Absent means unknown. Absent, `false`
+   * says exactly that). `true` is allowed ONLY when the From header holds exactly one mailbox and that mailbox's domain
+   * is the domain the alignment was computed on: the engine compares From domains from the stored first From address
+   * (`methods/unsubscribe.ts`), which must be the very address the verdict covers. A provider that cannot guarantee this
+   * (several From mailboxes, an unparseable From) must leave it absent. `false` means the provider checked and it did not hold. Absent means unknown. Absent, `false`
    * and any value that is not the boolean `true` (a string `'true'`, `1`) are all treated as not authenticated: the
    * engine then never offers or performs the one-click POST for this message and never prefers it as a thread's
    * unsubscribe target (`methods/unsubscribe.ts`). It is stored with the message (`messages.list_auth`), so the
