@@ -160,6 +160,30 @@ describe('elements and attributes', () => {
     assert.match(body.document, /<body class="m-aplos-find x">/);
   });
 
+  it('moves aplos- names in markup and selectors alike, so =, ^= and $= still match', () => {
+    const value = ' foo  aplos-x\tbar \n aplos-y ';
+    const result = html(
+      `<style>[class=" foo  aplos-x\\9 bar \\a  aplos-y "]{a:b}[class^=" foo  aplos-x"]{c:d}[class$="aplos-y "]{e:f}</style>` +
+        `<p class=" foo  aplos-x&#9;bar &#10; aplos-y ">t</p>`,
+    );
+    const moved = ' foo  m-aplos-x\tbar \n m-aplos-y ';
+    assert.equal(/<p class="([^"]*)">/.exec(bodyOf(result))?.[1], moved, 'markup keeps its spaces');
+    const selectors = [...result.document.matchAll(/\[class(.?)="((?:[^"\\]|\\.)*)"\]/g)];
+    const decoded = selectors.map(([, op, text]) => [
+      op,
+      text.replace(/\\9 /g, '\t').replace(/\\a /g, '\n'),
+    ]);
+    assert.deepEqual(
+      decoded.map(([op]) => op),
+      ['', '^', '$'],
+    );
+    const [equal, prefix, suffix] = decoded.map(([, text]) => text);
+    assert.equal(equal, moved, '= compares the same string the element has');
+    assert.ok(moved.startsWith(prefix), '^= still matches the start');
+    assert.ok(moved.endsWith(suffix), '$= still matches the end');
+    assert.equal(value.replaceAll('aplos-', 'm-aplos-'), moved);
+  });
+
   it('keeps selectors of every spelling from reaching Aplos wrappers (aplos- classes)', () => {
     const selectors = [
       './**/aplos-quote',
