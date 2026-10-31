@@ -904,6 +904,7 @@
     "title": "Prose built to test the search highlighter",
     "classes": ["find-text"],
     "html": "messages/096-find-repeated-and-split-words.html",
+    "findQuery": "invoice",
     "expect": {
       "marksMin": 8,
       "mustKeepText": ["The invoice was sent twice"]
@@ -914,6 +915,7 @@
     "title": "Search terms with accents, case folding and unusual characters",
     "classes": ["find-text", "unicode-bidi"],
     "html": "messages/097-find-unicode-and-case.html",
+    "findQuery": "café",
     "expect": {
       "marksMin": 4,
       "mustKeepText": ["Café menu for the week"]
@@ -1100,6 +1102,7 @@
     "title": "Right to left prose that is legitimate, next to control characters that are not",
     "classes": ["unicode-bidi", "benign-newsletter", "find-text"],
     "html": "messages/113-bidi-controls-and-rtl-prose.html",
+    "findQuery": "paragraph",
     "expect": {
       "marksMin": 1,
       "mustKeepText": ["שלום עולם", "مرحبا بالعالم", "Plain English line"]
