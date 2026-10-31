@@ -1,19 +1,26 @@
 /**
  * New message as a page in the pane, non-modal (DESIGN 7.6): a To row, the subject as a `heading`-size field, the text
- * in `read`, and the footer with Send (⌘↩), the draft line, attach and format. C or the palette opens it fresh; Drafts
- * and the inline reply's Pop out open it on a draft. Esc closes it and keeps the draft. On Send the page closes and,
- * with no thread showing the message, the undo tray goes to the shell's toast stack (`useUndoSendNotice`).
+ * in `read`, and the footer pinned to the bottom of the pane with Send (⌘↩), the draft line, attach and format. C or the
+ * palette opens it fresh; Drafts and the inline reply's Pop out open it on a draft. Esc closes it and keeps the draft.
+ * On Send the composer closes at once; the page itself goes once the engine has answered (Z until then undoes this
+ * send, never an older triage action), and the send's every phase goes to the shell's toast stack: the undo tray,
+ * "Scheduled for …", "Saved here · will sync", or "Couldn’t send to Jordan. Your draft is saved." with Try again and
+ * Edit. A save that fails meanwhile brings the composer back with "Couldn’t save · Retry"; nothing closes silently.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { getNow, useAccounts, useRow } from '../../data';
+import { getNow, useAccounts, useRow, type Account, type Draft, type Message } from '../../data';
 import { useAccountScope, useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Composer } from '../../ui/compose';
+import { headerMenu, headerMoreButton } from './composeHeader';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
 import { replySeed } from './model/replySeed';
-import { schedulePresets } from './model/schedule';
+import { undoSendCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
+import { withKeptText } from './runtime/recovery';
+import type { ComposeSession } from './runtime/session';
 import { useComposerControls } from './runtime/useComposerControls';
-import { handOffIfLive, useComposeSession, type ComposeBinding } from './runtime/useComposeSession';
+import { useComposeSession, type ComposeBinding } from './runtime/useComposeSession';
+import { useSchedulePresets } from './runtime/useSchedulePresets';
 import { ComposeMenu, DiscardConfirm } from './views/ComposeOverlays';
 import { useSharedComposerProps } from './views/composerParts';
 
@@ -38,35 +45,86 @@ function useInitialCompose(props: ComposeScreenProps): ComposeState | null {
   const scope = useAccountScope();
   const decided = useRef<ComposeState | null>(null);
   if (decided.current) return decided.current;
-  if (props.draftId) {
-    decided.current = draft ? composeFromDraft(draft) : null;
-  } else if (props.replyTo) {
-    const me = new Set(accounts.map(a => a.address.toLowerCase()));
-    const seed = message ? replySeed(message, me, props.replyTo.replyAll ?? false) : null;
-    decided.current = seed ? freshCompose(seed.context, seed.fields) : null;
-  } else {
-    const accountId = scope ?? accounts[0]?.id;
-    decided.current = accountId ? freshCompose({ accountId, mode: 'new' }) : null;
-  }
+  const start = startingState(props, { draft, message, accounts, scope });
+  // Text a closed composer could not save yet is taken over, never shown stale.
+  decided.current = start ? withKeptText(start) : null;
   return decided.current;
 }
 
-/** Calls `onClose` once the page has nothing left to show; a send it made goes to the toast stack's one notice. */
+function startingState(
+  props: ComposeScreenProps,
+  known: {
+    readonly draft: Draft | undefined;
+    readonly message: Message | undefined;
+    readonly accounts: readonly Account[];
+    readonly scope: string | null | undefined;
+  },
+): ComposeState | null {
+  if (props.draftId) return known.draft ? composeFromDraft(known.draft) : null;
+  if (props.replyTo) {
+    const me = new Set(known.accounts.map(a => a.address.toLowerCase()));
+    const replyAll = props.replyTo.replyAll ?? false;
+    const seed = known.message ? replySeed(known.message, me, replyAll) : null;
+    return seed ? freshCompose(seed.context, seed.fields) : null;
+  }
+  const accountId = known.scope ?? known.accounts[0]?.id;
+  return accountId ? freshCompose({ accountId, mode: 'new' }) : null;
+}
+
+const NO_COMMANDS: CommandHandlerTable = {};
+
+/** The page has nothing left to show: the composer is closed, nothing is being confirmed, no send awaits its answer. */
+export function pageDone(state: ComposeState): boolean {
+  return !state.open && state.confirm === null && state.send.kind !== 'pending';
+}
+
+/** Z between Send and the engine's answer: this send's Undo (it shadows the shell's Z). */
+export function pendingUndoTable(
+  state: ComposeState,
+  session: Pick<ComposeSession, 'dispatch'>,
+): CommandHandlerTable {
+  if (state.send.kind !== 'pending') return NO_COMMANDS;
+  return undoSendCommands(() => session.dispatch({ type: 'action', action: 'undo' }));
+}
+
+/**
+ * Calls `onClose` once the page has nothing left to show. While a pressed send waits for the engine's answer the page
+ * stays (empty), so the answer is never lost: accepted, refused or a failed save all have somewhere to go. Closing hands
+ * the send to the toast stack (`closeSession`).
+ */
 function useCloseWhenDone(binding: ComposeBinding | null, onClose: (() => void) | undefined) {
-  const done = binding !== null && !binding.view.open && !binding.view.confirming;
-  const send = binding?.state.send;
-  const tracked = send?.kind === 'tracking' ? send.submissionId : null;
+  const done = binding !== null && pageDone(binding.state);
   useEffect(() => {
     if (done) onClose?.();
   }, [done, onClose]);
-  const latest = useRef(binding);
-  useEffect(() => {
-    latest.current = binding;
-  });
-  useEffect(() => {
-    const state = latest.current?.state;
-    if (done && tracked && state) handOffIfLive(state);
-  }, [done, tracked]);
+}
+
+/** Between Send and the engine's answer, Z undoes this send (it is sent the moment the submission exists). */
+function usePendingUndo(binding: ComposeBinding | null) {
+  const session = binding?.session;
+  const pending = binding?.state.send.kind === 'pending';
+  const table = useMemo(
+    () => (pending && session ? pendingUndoTable(session.getState(), session) : NO_COMMANDS),
+    [pending, session],
+  );
+  useRegisterCommands(table);
+}
+
+/** ⋯ in the pane header (`compose.more`) opens the menu under that button; ⌘/ (`compose.format`) under the text. */
+function useMenuCommands(
+  open: boolean,
+  setMenuAnchor: (anchor: HTMLElement | null) => void,
+  editor: { readonly current: HTMLTextAreaElement | null },
+) {
+  useEffect(() => headerMenu.subscribe(anchor => setMenuAnchor(anchor)), [setMenuAnchor]);
+  const table = useMemo<CommandHandlerTable>(
+    () => ({
+      'compose.format': { run: () => setMenuAnchor(editor.current) },
+      'compose.more': { run: () => setMenuAnchor(headerMoreButton() ?? editor.current) },
+    }),
+    [setMenuAnchor, editor],
+  );
+  useRegisterCommands(open ? table : NO_COMMANDS);
 }
 
 export function ComposePageView({
@@ -82,14 +140,8 @@ export function ComposePageView({
     focusTo: binding.state.fields.to.length === 0,
   });
   const { session, state, view } = binding;
-  const presets = useMemo(() => schedulePresets(getNow()), []);
-  const { setMenuAnchor } = controls;
-  const editor = shared.editorRef;
-  const formatTable = useMemo<CommandHandlerTable>(
-    () => ({ 'compose.format': { run: () => setMenuAnchor(editor.current) } }),
-    [setMenuAnchor, editor],
-  );
-  useRegisterCommands(view.open ? formatTable : {});
+  const presets = useSchedulePresets(controls.menuAnchor !== null);
+  useMenuCommands(view.open, controls.setMenuAnchor, shared.editorRef);
   return (
     <>
       <Composer
@@ -98,14 +150,14 @@ export function ComposePageView({
         onSubjectChange={subject =>
           session.dispatch({ type: 'edit', patch: { subject }, now: getNow() })
         }
-        onFormat={anchor => setMenuAnchor(anchor)}
+        onFormat={anchor => controls.setMenuAnchor(anchor)}
       />
       <ComposeMenu
         anchor={controls.menuAnchor}
         presets={presets}
         onSchedule={notBefore => controls.send(false, notBefore)}
         onDiscard={() => session.dispatch({ type: 'askDiscard' })}
-        onClose={() => setMenuAnchor(null)}
+        onClose={() => controls.setMenuAnchor(null)}
       />
       {view.confirming ? (
         <DiscardConfirm
@@ -122,6 +174,7 @@ export function ComposeScreen(props: ComposeScreenProps) {
   const initial = useInitialCompose(props);
   const binding = useComposeSession(initial);
   useCloseWhenDone(binding, props.onClose);
+  usePendingUndo(binding);
   if (!binding || !binding.view.open) return null;
   return <ComposePageView binding={binding} props={props} />;
 }

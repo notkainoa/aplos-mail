@@ -152,10 +152,19 @@ export function subjectLine(row: ThreadRow, count: number): string {
   return `${subjectOf(row)} · ${count} ${noun}`;
 }
 
-/** "3 trackers removed"; null when none were. */
-export function trackersLine(blocked: number): string | null {
-  if (blocked <= 0) return null;
-  return `${blocked} ${blocked === 1 ? 'tracker' : 'trackers'} removed`;
+/**
+ * "3 trackers removed"; null when none were, or when the frame did not say (`undefined`). It counts tracking pixels
+ * only: a remote image that the "Images blocked" button holds back is not a tracker.
+ */
+export function trackersLine(trackers: number | undefined): string | null {
+  if (trackers === undefined || trackers <= 0) return null;
+  return `${trackers} ${trackers === 1 ? 'tracker' : 'trackers'} removed`;
+}
+
+/** What the loading line says it is waiting for: "Loading Maple Library…" (DESIGN 5 rule 10), the subject else the sender. */
+export function loadingLabel(row: ThreadRow | undefined): string | null {
+  const name = row?.subject.trim() || row?.fromName?.trim();
+  return name ? `Loading ${name}…` : null;
 }
 
 /** What a download of one attachment is doing in this reading. */
@@ -177,12 +186,19 @@ export function attachmentChips(
 ): readonly AttachmentChip[] {
   return message.attachments
     .filter(meta => !meta.inline)
-    .map(meta => ({
-      kind: 'attachment',
-      name: meta.name,
-      sizeBytes: meta.size,
-      state: stateOf(meta, local.get(`${message.id}:${meta.id}`)),
-      onOpen: () => open(meta.id),
-      onRetry: () => open(meta.id),
-    }));
+    .map(meta => {
+      const state = stateOf(meta, local.get(`${message.id}:${meta.id}`));
+      // A chip that is already downloading ignores Open and Retry: a second fetch would only race the first.
+      const start = () => {
+        if (state !== 'downloading') open(meta.id);
+      };
+      return {
+        kind: 'attachment',
+        name: meta.name,
+        sizeBytes: meta.size,
+        state,
+        onOpen: start,
+        onRetry: start,
+      };
+    });
 }

@@ -45,6 +45,21 @@
   font-variant-numeric: var(--num-small);
 }
 
+/* The host's own sentence above a letter it could not show in full (too long, layout flattened): quiet, like the
+   trackers line, and set off from the body by one step. */
+.aplos-mailframe__notice {
+  margin: 0 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+}
+
+/* The reader's root takes focus when the element that held it leaves (find closes, the letter changes): it is a
+   container, not a control, so it shows no ring. */
+.aplos-reader:focus-visible {
+  outline: none;
+}
+
 .aplos-reader__find {
   margin-bottom: var(--space-4);
 }

@@ -15,6 +15,7 @@ import {
   replyName,
   toLabel,
   trackersLine,
+  loadingLabel,
 } from './readerRows';
 
 const ME = new Set(['alex@home.example']);
@@ -84,8 +85,20 @@ test('earlier messages: first names once each in thread order, one-liners with t
 
 test('trackers: nothing when none, singular and plural otherwise', () => {
   assert.equal(trackersLine(0), null);
+  assert.equal(trackersLine(undefined), null, 'a frame that cannot tell says nothing');
   assert.equal(trackersLine(1), '1 tracker removed');
   assert.equal(trackersLine(3), '3 trackers removed');
+});
+
+test('loading line: names the subject, else the sender, else nothing (the caller says "this email")', () => {
+  const row = (subject: string, fromName: string) => ({ subject, fromName }) as never;
+  assert.equal(
+    loadingLabel(row('October illustrations', 'Drew Bell')),
+    'Loading October illustrations…',
+  );
+  assert.equal(loadingLabel(row('  ', 'Drew Bell')), 'Loading Drew Bell…');
+  assert.equal(loadingLabel(row('', '')), null);
+  assert.equal(loadingLabel(undefined), null);
 });
 
 test('attachments: file chips only, failed from the engine or from this reading', () => {
@@ -131,4 +144,30 @@ test('attachments: file chips only, failed from the engine or from this reading'
   );
   chips[1]!.onRetry?.();
   assert.deepEqual(opened, ['a3']);
+});
+
+test('attachments: Open and Retry on a chip that is already downloading start nothing', () => {
+  const m = message({
+    id: 'm',
+    attachments: [
+      {
+        id: 'a1',
+        name: 'a.pdf',
+        mime: 'application/pdf',
+        size: 9,
+        inline: false,
+        state: 'present',
+      },
+    ],
+  });
+  const started: string[] = [];
+  const chips = attachmentChips(m, new Map([['m:a1', 'downloading' as const]]), id =>
+    started.push(id),
+  );
+  chips[0]!.onOpen?.();
+  chips[0]!.onRetry?.();
+  assert.equal(started.length, 0, 'a second fetch would only race the first');
+  const idle = attachmentChips(m, new Map(), id => started.push(id));
+  idle[0]!.onOpen?.();
+  assert.deepEqual(started, ['a1']);
 });

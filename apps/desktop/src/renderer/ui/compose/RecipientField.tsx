@@ -9,8 +9,16 @@ const INPUT_LABEL = {
   Bcc: 'Add Bcc recipients',
 } as const;
 
+/** The name a chip shows. A name that contains "@" never stands in for the address (it could pose as another one). */
 function shownName(person: Recipient): string {
-  return person.name?.trim() || person.address;
+  const name = person.name?.trim();
+  return name && !name.includes('@') ? name : person.address;
+}
+
+/** The chip's title and accessible name: the shown name with the real address, "Jordan Lee <jordan@example.com>". */
+function chipLabel(person: Recipient): string {
+  const name = shownName(person);
+  return name === person.address ? person.address : `${name} <${person.address}>`;
 }
 
 /**
@@ -75,7 +83,9 @@ export function RecipientField(props: RecipientFieldProps) {
               key={person.id}
               className="ui-recipient-field__chip"
               data-invalid={invalid ? 'true' : undefined}
-              title={person.address}
+              role="group"
+              aria-label={chipLabel(person)}
+              title={chipLabel(person)}
             >
               <span className="ui-recipient-field__name" dir="auto">
                 {shownName(person)}
@@ -144,7 +154,7 @@ export function RecipientField(props: RecipientFieldProps) {
             <span className="ui-recipient-field__option-name" dir="auto">
               {shownName(person)}
             </span>
-            {person.name?.trim() ? (
+            {shownName(person) !== person.address ? (
               <span className="ui-recipient-field__option-address">{person.address}</span>
             ) : null}
           </li>

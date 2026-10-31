@@ -20,6 +20,8 @@ export interface MailFrameViewProps {
   source: FrameSource | null;
   /** Find query for plain text (HTML sources carry their own). */
   findQuery?: string;
+  /** The loading line's words; default `LOADING_LABEL`. */
+  label?: string;
   /** Set when the body or frame failed: "Couldn't load this email." with Try again. */
   failed?: { retry: () => void } | null;
   onReady: (ready: MailFrameReady) => void;
@@ -88,6 +90,7 @@ function slot(source: FrameSource, props: Omit<SlotProps<FrameSource>, 'source'>
 export function MailFrameView({
   source,
   findQuery,
+  label,
   failed,
   onReady,
   onKey,
@@ -121,7 +124,7 @@ export function MailFrameView({
       {failed ? (
         <ErrorLine kind="bodyFailed" placement="column" onAction={() => failed.retry()} />
       ) : null}
-      {!failed && slow ? <LoadingLine label={LOADING_LABEL} /> : null}
+      {!failed && slow ? <LoadingLine label={label ?? LOADING_LABEL} /> : null}
       {!failed && shown ? slot(shown, { ...common, hidden: false }) : null}
       {!failed && pending ? slot(pending, { ...common, hidden: true }) : null}
     </div>

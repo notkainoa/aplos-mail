@@ -7,14 +7,64 @@ import type { CursorDirection } from './model/threadCursor';
 import { moveCursor, positionOf, settleCursor } from './model/threadCursor';
 import type { LetterState } from './model/letterBuffer';
 
-/** The thread J or K opens, or null when the cursor is at an end (it never wraps) or the list is empty. */
+/**
+ * The thread J or K opens, or null when the cursor is at an end (it never wraps) or the list is empty. A thread that is
+ * not in the list (opened from somewhere else) starts the walk at an end: J opens the first row, K the last.
+ */
 export function stepThread(
   ids: readonly string[],
   current: string | null,
   direction: CursorDirection,
 ): string | null {
+  if (ids.length === 0) return null;
+  if (current === null || !ids.includes(current)) {
+    return (direction === 'next' ? ids[0] : ids[ids.length - 1]) ?? null;
+  }
   const next = moveCursor({ ids, current }, direction).current;
   return next !== null && next !== current ? next : null;
+}
+
+/** What the reader remembers of the list while a thread is open: the ids it last saw the open thread in. */
+export interface ListMemory {
+  readonly ids: readonly string[];
+  readonly open: string | null;
+}
+
+/** Nothing seen yet. */
+export const NO_MEMORY: ListMemory = { ids: [], open: null };
+
+/**
+ * The list J, K and Done walk, and what to remember for the next call. While the open thread is in `ids` it is just
+ * `ids`. When it has left (another device, a reclassification, a Done a moment ago) it is put back where it was, next to
+ * the row that now fills its place, so the neighbour is chosen rather than the top row. A thread that was never in the
+ * list gets no such place.
+ */
+export function walkList(
+  memory: ListMemory,
+  ids: readonly string[],
+  open: string | null,
+): { readonly walk: readonly string[]; readonly memory: ListMemory } {
+  if (open === null || ids.includes(open)) return { walk: ids, memory: { ids, open } };
+  if (memory.open !== open) return { walk: ids, memory: { ids, open } };
+  const was = memory.ids.indexOf(open);
+  if (was < 0) return { walk: ids, memory };
+  return { walk: restoreAt(memory.ids, was, ids), memory };
+}
+
+/** `ids` with `open` (which sat at `was` in `before`) put back just before its nearest surviving successor, else after its predecessor. */
+function restoreAt(
+  before: readonly string[],
+  was: number,
+  ids: readonly string[],
+): readonly string[] {
+  const open = before[was] ?? '';
+  const below = before.slice(was + 1).find(id => ids.includes(id));
+  if (below !== undefined) return ids.flatMap(id => (id === below ? [open, id] : [id]));
+  const above = before
+    .slice(0, was)
+    .reverse()
+    .find(id => ids.includes(id));
+  return ids.flatMap(id => (id === above ? [id, open] : [id]));
 }
 
 /** The thread to show once `current` has left the list (Done, Later, Trash); null when nothing is left. */

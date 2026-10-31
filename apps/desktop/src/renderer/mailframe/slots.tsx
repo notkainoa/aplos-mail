@@ -122,7 +122,12 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
     cleanup.current = wireDocument(doc, onKey, setHeight);
     const measured = measureDocument(doc);
     setHeight(measured);
-    onMeasured.current(source, { height: measured, bg: readBg(doc), blocked: built.blocked });
+    onMeasured.current(source, {
+      height: measured,
+      bg: readBg(doc),
+      blocked: built.blocked,
+      trackers: built.trackers,
+    });
   };
 
   return (
@@ -167,7 +172,12 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       setHeight(report.height);
       if (reported) return;
       reported = true;
-      onMeasured.current(source, { height: report.height, bg: report.bg, blocked: source.blocked });
+      onMeasured.current(source, {
+        height: report.height,
+        bg: report.bg,
+        blocked: source.blocked,
+        trackers: source.blocked,
+      });
     };
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);
@@ -195,7 +205,7 @@ export function TextSlot(props: SlotProps<Extract<FrameSource, { kind: 'text' }>
   const onMeasured = useLatest(props.onMeasured);
   useLayoutEffect(() => {
     const height = clampHeight(ref.current?.getBoundingClientRect().height ?? 1) ?? 1;
-    onMeasured.current(source, { height, bg: 'transparent', blocked: 0 });
+    onMeasured.current(source, { height, bg: 'transparent', blocked: 0, trackers: 0 });
   }, [source, onMeasured]);
   return (
     <div ref={ref} style={hidden ? HIDDEN : undefined}>

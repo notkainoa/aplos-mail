@@ -1,17 +1,22 @@
 /**
  * React's view of one composer session: it creates the session once its starting state is known, feeds it the engine's
- * `Draft` and `Submission` rows (`useRow`), flushes unsaved edits when the composer unmounts, and derives the view on
- * the data layer's clock. After the first Send the tray comes from the `Submission` row, never from local state.
+ * `Draft` and `Submission` rows (`useRow`), flushes unsaved edits when the window hides or the composer unmounts, and
+ * derives the view on the data layer's clock. After the first Send the tray comes from the `Submission` row, never from
+ * local state. A composer that goes away hands its send to the toast stack whatever its phase (a refusal included), and
+ * text the engine never confirmed stays in memory until it is saved (`recovery.ts`).
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { api, getNow, useNow, useRow, useSettings, useStatus } from '../../../data';
 import { navigate, pushToast } from '../../../shell';
 import type { ComposeState } from '../model/composeState';
 import { composeView, type ComposeView } from '../model/composeView';
+import type { ComposeNotice } from '../model/composeState';
 import { scheduledLabel } from '../model/schedule';
-import { isLiveSubmission } from '../model/sendState';
+import { isLiveSubmission, SEND_COPY } from '../model/sendState';
 import { dataComposeApi } from './composeApi';
+import { keepUntilSaved, releaseKeptFor } from './recovery';
 import { releaseSend } from './sendHandoff';
+import { pushRefusedSend } from './sendNotices';
 import { createComposeSession, type ComposeSession } from './session';
 
 /** "Undo send" defaults to 8 s (DESIGN 7.6) until the settings arrive. */
@@ -22,11 +27,16 @@ export const DISCARD_COPY = {
   discardFailed: 'Couldn’t discard the draft. It is still saved.',
 } as const;
 
-function notify(notice: 'discarded' | 'discardFailed'): void {
+const NOTICE_COPY: Record<ComposeNotice, string> = {
+  ...DISCARD_COPY,
+  alreadySent: SEND_COPY.alreadySent,
+};
+
+function notify(notice: ComposeNotice): void {
   pushToast({
     id: `compose-${notice}-${getNow()}`,
     kind: 'info',
-    message: DISCARD_COPY[notice],
+    message: NOTICE_COPY[notice],
     undoable: false,
   });
 }
@@ -54,26 +64,74 @@ function useSessionFor(initial: ComposeState | null): ComposeSession | null {
   useEffect(() => {
     if (!initial) return;
     const created = newSession(initial);
+    releaseKeptFor(initial);
     setSession(created);
+    const stopFlushing = flushOnHide(created);
     return () => {
-      // Closing keeps the text: whatever is unsaved goes to the engine before the session lets go, and a send still
-      // on its way goes to the toast stack (one notice per send).
-      created.dispatch({ type: 'flush' });
-      void created.settled().then(() => {
-        handOffIfLive(created.getState());
-        created.dispose();
-      });
+      stopFlushing();
+      closeSession(created);
     };
   }, [initial]);
   return session;
 }
 
-/** Gives a live send to the toast stack (a no-op when a mounted composer still claims it). */
+/**
+ * Closing keeps the text: whatever is unsaved goes to the engine before the session lets go, a send still on its way
+ * (or refused meanwhile) goes to the toast stack (one notice per send), and text the engine never took stays kept.
+ */
+export function closeSession(session: ComposeSession): void {
+  session.dispatch({ type: 'flush' });
+  void session.settled().then(() => {
+    handOffIfLive(session.getState());
+    keepUntilSaved(session);
+  });
+}
+
+/** The window is hiding or closing: save now, without waiting for the quiet spell. Returns the unbinding. */
+export function flushOnHide(
+  session: Pick<ComposeSession, 'dispatch'>,
+  win: Pick<Window, 'addEventListener' | 'removeEventListener'> | undefined = globalThis.window,
+  doc:
+    | Pick<Document, 'addEventListener' | 'removeEventListener' | 'visibilityState'>
+    | undefined = globalThis.document,
+): () => void {
+  if (!win || !doc) return () => undefined;
+  const flush = () => session.dispatch({ type: 'flush' });
+  const onVisibility = () => {
+    if (doc.visibilityState === 'hidden') flush();
+  };
+  win.addEventListener('pagehide', flush);
+  win.addEventListener('beforeunload', flush);
+  doc.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    win.removeEventListener('pagehide', flush);
+    win.removeEventListener('beforeunload', flush);
+    doc.removeEventListener('visibilitychange', onVisibility);
+  };
+}
+
+/**
+ * Gives a send to the toast stack once no composer shows it: a live submission (a no-op while a mounted composer still
+ * claims it), or a refusal that came back after the composer closed ("Couldn’t send to Jordan. Your draft is saved.").
+ */
 export function handOffIfLive(state: ComposeState): void {
   const send = state.send;
+  if (send.kind === 'refused' && !state.open) return handOffRefusal(state);
   if (send.kind !== 'tracking') return;
   if (send.row && !isLiveSubmission(send.row)) return;
   releaseSend(send.submissionId, true);
+}
+
+function handOffRefusal(state: ComposeState): void {
+  const { send, save } = state;
+  if (send.kind !== 'refused' || save.draftId === null || save.revision === null) return;
+  pushRefusedSend({
+    draftId: save.draftId,
+    revision: save.revision,
+    names: send.names,
+    ...(send.notBefore !== undefined ? { notBefore: send.notBefore } : {}),
+    ...(send.alsoDone ? { alsoDone: true } : {}),
+  });
 }
 
 const NO_STATE = (): null => null;
@@ -89,7 +147,7 @@ function useRowFeed(session: ComposeSession | null, state: ComposeState | null):
     send?.kind === 'tracking' ? send.submissionId : undefined,
   );
   useEffect(() => {
-    if (session && draft) session.dispatch({ type: 'observeDraft', draft });
+    if (session && draft) session.dispatch({ type: 'observeDraft', draft, now: getNow() });
   }, [session, draft]);
   useEffect(() => {
     if (session && submission) session.dispatch({ type: 'observeSubmission', submission });

@@ -161,7 +161,7 @@ export type UndoTrayState =
       totalSeconds: number;
     }
   | {
-      /** "We could not confirm this was sent. Check Sent, or Send anyway." */
+      /** "Couldn’t confirm this was sent. Check Sent, or Send anyway." */
       kind: 'uncertain';
     }
   | {

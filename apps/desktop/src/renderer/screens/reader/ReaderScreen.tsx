@@ -5,7 +5,7 @@
  * registry's. R, ⇧R, hold R, a Reply suggestion and the Reply stub open the inline reply under the thread (the composer's
  * `InlineReplyHost`, mounted by `ReaderLetter`); Pop out opens the compose page.
  */
-import { useCallback, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { api, useRow, type ThreadRow } from '../../data';
 import {
   closeThread,
@@ -28,8 +28,10 @@ import { EmptyLine } from '../../ui/list';
 import { LoadingLine } from '../../ui/reader';
 import type { SuggestedAction } from '../../ui/props';
 import { senderOf, subjectOf } from '../home/homeRows';
+import { loadingLabel } from './readerRows';
 import { crumbPosition, stepThread } from './readerModel';
 import { readerHeader } from './readerHeader';
+import { settleFocus } from './readerFocus';
 import { createReaderActions, type ReaderActions, type ReaderDeps } from './readerActions';
 import { commandsForReader, relayToShell } from './readerCommands';
 import {
@@ -44,6 +46,7 @@ import { ReaderLetter, type LetterControls, type PopOut } from './ReaderLetter';
 import { useLetterBuffer, useLetterController, usePrefetchAround } from './useLetterBuffer';
 import { useReaderList } from './useReaderList';
 
+/** The loading line's words when the thread has no subject or sender to name yet (DESIGN 5 rule 10 names what it loads). */
 export const LOADING_COPY = 'Loading this email…';
 export const NO_THREAD_COPY = 'No email is open.';
 
@@ -66,6 +69,24 @@ interface Live {
   readonly row: ThreadRow | undefined;
   /** Opens the inline reply under the letter on paper. */
   readonly openReply: (request: ReplyRequest) => void;
+  /** Closes find on the letter on paper when it is open; false when it was not. */
+  readonly closeFind: () => boolean;
+}
+
+/** A thread this reading sent away (Done, Later, Trash) or got back (Undo). */
+interface GoneChange {
+  readonly id: string;
+  readonly gone: boolean;
+}
+
+const NOBODY: ReadonlySet<string> = new Set();
+
+function goneReducer(state: ReadonlySet<string>, { id, gone }: GoneChange): ReadonlySet<string> {
+  if (state.has(id) === gone) return state;
+  const next = new Set(state);
+  if (gone) next.add(id);
+  else next.delete(id);
+  return next;
 }
 
 function useLive<T>(value: T) {
@@ -74,8 +95,18 @@ function useLive<T>(value: T) {
   return ref;
 }
 
-function useReaderActions(live: { readonly current: Live }): ReaderActions {
+function useReaderActions(
+  live: { readonly current: Live },
+  markGone: (change: GoneChange) => void,
+): ReaderActions {
   const { registry } = useShellRegistry();
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   return useMemo(() => {
     const deps: ReaderDeps = {
       shown: () => live.current.shown,
@@ -83,6 +114,10 @@ function useReaderActions(live: { readonly current: Live }): ReaderActions {
       ids: () => live.current.ids,
       rowOf: id => (live.current.row?.id === id ? live.current.row : undefined),
       go: openThread,
+      markGone: (id, gone) => markGone({ id, gone }),
+      reopen: id => {
+        if (open.current) openThread(id);
+      },
       leave: () => {
         closeThread();
         const { backTo } = live.current.props;
@@ -95,11 +130,12 @@ function useReaderActions(live: { readonly current: Live }): ReaderActions {
         const entry = registry.get(commandId);
         return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
       },
+      closeFind: () => live.current.closeFind(),
       reply: (_id, request) => live.current.openReply(request ?? PLAIN_REPLY),
       suggested: (id, action) => live.current.props.onSuggested?.(id, action),
     };
     return createReaderActions(deps);
-  }, [live, registry]);
+  }, [live, registry, markGone]);
 }
 
 /** The palette's context line names the letter on paper: "Drew Bell · October illustrations". */
@@ -112,19 +148,20 @@ function useReaderTarget(row: ThreadRow | undefined): void {
 /** The pane header (DESIGN 7.1): back with Esc, "Home  1 of 16", K and J, ⋯. The shell draws it. */
 function useReaderHeader(input: {
   readonly ids: readonly string[];
+  readonly walk: readonly string[];
   readonly at: string;
   readonly row: ThreadRow | undefined;
   readonly from: Screen | null;
   readonly back: () => void;
 }): void {
-  const { ids, at, row, from, back } = input;
+  const { ids, walk, at, row, from, back } = input;
   const header = readerHeader({
     origin: screenLabel(from ?? 'home'),
     position: crumbPosition(ids, at),
     subject: row ? subjectOf(row) : '',
     summaryScrolledAway: false,
-    hasPrevious: stepThread(ids, at, 'previous') !== null,
-    hasNext: stepThread(ids, at, 'next') !== null,
+    hasPrevious: stepThread(walk, at, 'previous') !== null,
+    hasNext: stepThread(walk, at, 'next') !== null,
     back,
   });
   usePaneHeader({ ...header, askScope: 'thisEmail' });
@@ -157,11 +194,13 @@ function ignore(_event: UiEvent): void {
 function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
   const { open } = props;
   const context = useOpenThreadContext();
-  const ids = useReaderList(props.listIds ?? context.listIds ?? undefined);
+  const [gone, markGone] = useReducer(goneReducer, NOBODY);
+  const list = useReaderList(props.listIds ?? context.listIds ?? undefined, open, gone);
   const controller = useLetterController();
   const buffer = useLetterBuffer(controller, open);
   const shown = buffer.letter;
   const row = useRow('Thread', shown ?? undefined);
+  const wantedRow = useRow('Thread', open);
   const [ui, send] = useReducer(reduceFor, freshUi(null));
   const dispatchShown = useCallback(
     (event: UiEvent) => {
@@ -173,14 +212,28 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
     (request: ReplyRequest) => dispatchShown({ type: 'openReply', request }),
     [dispatchShown],
   );
-  const live = useLive<Live>({ props, shown, wanted: open, ids, row, openReply });
-  const actions = useReaderActions(live);
+  const closeFind = useCallback(() => {
+    if (shown === null || uiFor(ui, shown).find === null) return false;
+    send({ threadId: shown, event: { type: 'closeFind' } });
+    return true;
+  }, [shown, ui]);
+  const live = useLive<Live>({
+    props,
+    shown,
+    wanted: open,
+    ids: list.walk,
+    row,
+    openReply,
+    closeFind,
+  });
+  const actions = useReaderActions(live, markGone);
   useRegisterCommands(useMemo(() => commandsForReader(actions), [actions]));
   useShellKeyLayer({ contexts: ['reader'] });
   useReaderTarget(row);
-  usePrefetchAround(ids, open);
+  usePrefetchAround(list.walk, open);
   useReaderHeader({
-    ids,
+    ids: list.ids,
+    walk: list.walk,
     at: shown ?? open,
     row,
     from: props.backTo ?? context.from,
@@ -188,11 +241,17 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
   });
 
   const controls = useMemo(() => controlsOf(actions), [actions]);
+  const root = useRef<HTMLDivElement>(null);
+  const findOpen = shown !== null && uiFor(ui, shown).find !== null;
+  // The element that held focus may be gone (find closed, the letter changed): the reader's root takes it.
+  useEffect(() => {
+    settleFocus(root.current);
+  }, [shown, findOpen]);
   // A stable order, so a letter that stays mounted is never moved in the DOM (moving a frame reloads it).
   const letters = [...new Set([shown, open].filter((id): id is string => id !== null))].sort();
   return (
-    <div className="aplos-reader" data-keyctx="reader">
-      {buffer.loadingLine ? <LoadingLine label={LOADING_COPY} /> : null}
+    <div className="aplos-reader" data-keyctx="reader" tabIndex={-1} ref={root}>
+      {buffer.loadingLine ? <LoadingLine label={loadingLabel(wantedRow) ?? LOADING_COPY} /> : null}
       {letters.map(id => (
         <ReaderLetter
           key={id}

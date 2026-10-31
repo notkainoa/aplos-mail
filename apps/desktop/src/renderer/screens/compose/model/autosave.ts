@@ -1,8 +1,9 @@
 /**
  * Autosave as pure functions of time (DESIGN 7.6 Draft state; ARCH 7.4 compare-and-set). Every edit bumps `editSeq`;
  * a save carries the seq it wrote, and the draft is clean once `savedSeq` reaches `editSeq`. The first keystroke creates
- * the draft at once; after that a save is due after a quiet spell, or at most `maxWaitMs` after the first unsaved edit while typing goes on; one save is in flight at a time; a
- * failed save retries on a backoff and shows "Couldn't save · Retry".
+ * the draft at once; after that a save is due after a quiet spell, or at most `maxWaitMs` after the first unsaved edit
+ * while typing goes on; one save is in flight at a time; a failed save retries on a backoff and shows "Couldn’t save ·
+ * Retry". A save the engine refused as stale waits for the newer row (`waitingForRemote`) instead of retrying blind.
  */
 import type { DraftStateKind } from '../../../ui/props';
 
@@ -10,7 +11,7 @@ export const AUTOSAVE = {
   /** Save after this long without an edit. */
   quietMs: 700,
   /** Never let an edit go unsaved longer than this while typing continues. */
-  maxWaitMs: 4_000,
+  maxWaitMs: 2_000,
   /** Retry delays after consecutive failures; the last repeats. */
   retryMs: [2_000, 5_000, 15_000, 30_000],
 } as const;
@@ -34,6 +35,8 @@ export interface SaveClock {
   /** Consecutive failures; 0 after a success. */
   readonly failures: number;
   readonly lastFailAt: number | null;
+  /** The engine refused the save's base revision: no blind retry until the newer row is seen (or Retry). */
+  readonly waitingForRemote: boolean;
 }
 
 export const FRESH_SAVE: SaveClock = {
@@ -47,6 +50,7 @@ export const FRESH_SAVE: SaveClock = {
   firstDirtyAt: null,
   failures: 0,
   lastFailAt: null,
+  waitingForRemote: false,
 };
 
 /** True while an edit has not been confirmed by the engine. */
@@ -71,7 +75,7 @@ function retryDelay(failures: number): number {
 
 /** When the next save should start, or null when none is needed (clean, or one is in flight). */
 export function saveDueAt(save: SaveClock): number | null {
-  if (save.flightSeq !== null || !isDirty(save)) return null;
+  if (save.flightSeq !== null || save.waitingForRemote || !isDirty(save)) return null;
   if (save.failures > 0 && save.lastFailAt !== null)
     return save.lastFailAt + retryDelay(save.failures);
   // The first keystroke creates the draft at once, so even a reload a moment later finds it.
@@ -119,12 +123,21 @@ export function failSave(save: SaveClock, now: number): SaveClock {
 
 /** Retry now ("Couldn't save · Retry"): the backoff is skipped. */
 export function retryNow(save: SaveClock, now: number): SaveClock {
-  return { ...save, failures: 0, lastFailAt: null, lastEditAt: now - AUTOSAVE.quietMs };
+  return {
+    ...save,
+    failures: 0,
+    lastFailAt: null,
+    waitingForRemote: false,
+    lastEditAt: now - AUTOSAVE.quietMs,
+  };
 }
 
-/** The one draft line: "Couldn't save" after a failure, "Saving…" while edits are unconfirmed, else "Draft saved". */
+/**
+ * The one draft line: "Couldn’t save" after a failure, "Saving…" while edits are unconfirmed, "Draft saved" once the
+ * engine holds a draft, and nothing for an untouched new message (no draft exists, so nothing was saved).
+ */
 export function draftStateOf(save: SaveClock): DraftStateKind {
   if (save.failures > 0 && save.flightSeq === null) return 'failed';
   if (isDirty(save) || save.flightSeq !== null) return 'saving';
-  return 'saved';
+  return save.draftId === null ? 'none' : 'saved';
 }

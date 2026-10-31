@@ -38,7 +38,7 @@ export function useDictation(
       }),
     [source],
   );
-  useEffect(() => () => controller.cancel(), [controller]);
+  useEffect(() => () => controller.dispose(), [controller]);
   const phase = useSyncExternalStore(
     controller.subscribe,
     controller.getPhase,

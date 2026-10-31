@@ -14,6 +14,7 @@ import {
 import type { Anchor } from '../../../ui/props';
 import { UNDO_ACTION } from '../../undoOperation';
 import type { HoldKey } from '../model/dictationModel';
+import { ccRowsShown } from '../model/composeView';
 import { isLiveSubmission, type SendAction } from '../model/sendState';
 import { composeCommands, undoSendCommands } from './composeCommands';
 import { claimSend, releaseSend } from './sendHandoff';
@@ -84,9 +85,8 @@ export function useComposerControls(
   options: ComposerControlOptions = {},
 ): ComposerControls {
   const { session, view, undoSeconds } = binding;
-  const [showCc, setShowCc] = useState(
-    () => binding.state.fields.cc.length + binding.state.fields.bcc.length > 0,
-  );
+  const [askedCc, setShowCc] = useState(() => ccRowsShown(false, binding.state.fields));
+  const showCc = ccRowsShown(askedCc, binding.state.fields);
   const [menuAnchor, setMenuAnchor] = useState<Anchor>(null);
   const onText = useCallback(
     (text: string) => session.dispatch({ type: 'dictated', text, now: getNow() }),
@@ -107,7 +107,7 @@ export function useComposerControls(
     [session, undoSeconds],
   );
   const onSendAction = useCallback(
-    (action: SendAction) => session.dispatch({ type: 'action', action }),
+    (action: SendAction) => session.dispatch({ type: 'action', action, now: getNow() }),
     [session],
   );
   const startDictation = useCallback((holdKey: HoldKey) => controller.start(holdKey), [controller]);
@@ -127,12 +127,12 @@ export function useComposerControls(
           session.dispatch({ type: 'askDiscard' });
           session.dispatch({ type: 'confirmDiscard' });
         },
-        toggleCc: () => setShowCc(shown => !shown),
+        toggleCc: () => setShowCc(!showCc),
         popOut: options.popOut,
         dictateStart: () => controller.start('Space'),
         dictateRelease: keep => void controller.release(keep),
       }),
-    [send, session, controller, options.popOut],
+    [send, session, controller, options.popOut, showCc],
   );
   useRegisterCommands(view.open ? handlers : NONE);
   useShellKeyLayer({

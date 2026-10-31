@@ -14,13 +14,14 @@ import { InlineReply } from '../../ui/compose';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
 import { replyDraftFor } from './model/reopen';
 import { replySeed } from './model/replySeed';
-import { schedulePresets } from './model/schedule';
 import { dictateReplyCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
+import { withKeptText } from './runtime/recovery';
 import { loadSuggestion, type SuggestionRequest } from './runtime/suggestion';
 import { useComposerControls } from './runtime/useComposerControls';
 import type { ComposeSession } from './runtime/session';
 import { useComposeSession, type ComposeBinding } from './runtime/useComposeSession';
+import { useSchedulePresets } from './runtime/useSchedulePresets';
 import { ComposeMenu, DiscardConfirm } from './views/ComposeOverlays';
 import { SendStatus, useReducedMotion } from './views/SendStatus';
 import { useSharedComposerProps } from './views/composerParts';
@@ -67,9 +68,9 @@ function useInitialReply(props: InlineReplyHostProps): ComposeState | null {
   if (decided.current || !ready) return decided.current;
   if (candidate && !draft) return null;
   const me = new Set(accounts.map(a => a.address.toLowerCase()));
-  decided.current = draft
-    ? composeFromDraft(draft)
-    : freshFrom(message, me, props.replyAll ?? false);
+  const start = draft ? composeFromDraft(draft) : freshFrom(message, me, props.replyAll ?? false);
+  // Text a closed reply could not save yet is taken over, never shown stale.
+  decided.current = withKeptText(start);
   return decided.current;
 }
 
@@ -172,7 +173,7 @@ export function InlineReplyView({
   );
   // Only an open card listens: holding R over a sent message's tray must not start a recording nobody can keep.
   useRegisterCommands(view.open ? dictateTable : NO_COMMANDS);
-  const presets = useMemo(() => schedulePresets(getNow()), []);
+  const presets = useSchedulePresets(controls.menuAnchor !== null);
   const sentId = `sent-${state.save.draftId ?? 'reply'}`;
   return (
     <>

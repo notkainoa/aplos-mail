@@ -19,6 +19,8 @@ export interface ReaderMessageProps {
   /** Remote images were loaded for this message in this reading. */
   readonly imagesLoaded: boolean;
   readonly findQuery?: string;
+  /** The frame's loading line: "Loading <subject>…". */
+  readonly loadingLabel?: string;
   /** The frame is laid out and measured. */
   readonly onFrame: (messageId: string, ready: MailFrameReady) => void;
   readonly onLoadImages: (messageId: string) => void;
@@ -37,24 +39,25 @@ function useDownloads(message: Message) {
 export function ReaderMessage(props: ReaderMessageProps) {
   const { message, me, imagesLoaded, onFrame } = props;
   const body = useMessageBody(message.id);
-  const [blocked, setBlocked] = useState(0);
+  const [trackers, setTrackers] = useState<number | undefined>(undefined);
   const chips = useDownloads(message);
   const policy = imagesLoaded ? 'load' : 'block';
   const hasImages = body.body?.hasRemoteImages === true;
-  const trackers = trackersLine(blocked);
+  const trackersNote = trackersLine(trackers);
   const frame = (
     <>
       <MailFrame
         messageId={message.id}
         imagePolicy={policy}
         findQuery={props.findQuery}
+        label={props.loadingLabel}
         onReady={ready => {
-          setBlocked(ready.blocked);
+          setTrackers(ready.trackers);
           onFrame(message.id, ready);
         }}
         onKey={props.onKey}
       />
-      {trackers ? <p className="aplos-reader__trackers">{trackers}</p> : null}
+      {trackersNote ? <p className="aplos-reader__trackers">{trackersNote}</p> : null}
     </>
   );
   return (

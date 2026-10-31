@@ -88,14 +88,16 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
   assert.equal(text(html(<DraftState state="saving" />)), 'Saving…');
   assert.equal(text(html(<DraftState state="saved" />)), 'Draft saved');
   const failed = html(<DraftState state="failed" onRetry={noop} />);
-  assert.equal(text(failed), "Couldn't save·Retry");
+  assert.equal(text(failed), 'Couldn’t save·Retry', 'the typographic apostrophe (voice rule)');
   assert.match(failed, /role="status"/);
   assert.match(failed, /data-state="failed"/);
   assert.match(failed, /<button[^>]*>.*Retry/);
   // Without a retry handler there is no dangling separator.
   const bare = html(<DraftState state="failed" />);
   assert.doesNotMatch(bare, /<button/);
-  assert.equal(text(bare), "Couldn't save");
+  assert.equal(text(bare), 'Couldn’t save');
+  // An untouched new message has no draft yet: no line at all, never "Draft saved".
+  assert.equal(html(<DraftState state="none" />), '');
   // Worst case at a 300 px pane: the text gives way (own span), the dot and Retry come after it and never shrink.
   assert.ok(failed.indexOf('ui-draft-state__text') < failed.indexOf('ui-draft-state__dot'));
   assert.ok(failed.indexOf('ui-draft-state__dot') < failed.indexOf('Retry'));
@@ -218,7 +220,7 @@ test('InlineReply: dictation, blocked send, conflict, follow-up hint and a faile
   assert.match(text(nudge), /Aplos drafted this follow-up from your last email\./);
 
   const failed = html(reply({ draftState: 'failed' }));
-  assert.match(text(failed), /Couldn't save·Retry/);
+  assert.match(text(failed), /Couldn’t save·Retry/);
 });
 
 function composer(over: Partial<Parameters<typeof Composer>[0]> = {}) {
@@ -312,7 +314,7 @@ test('Composer survives a 300-character subject, CJK, Arabic and emoji', () => {
 });
 
 test('Composer: failed save and a draft conflict', () => {
-  assert.match(text(html(composer({ draftState: 'failed' }))), /Couldn't save·Retry/);
+  assert.match(text(html(composer({ draftState: 'failed' }))), /Couldn’t save·Retry/);
   assert.match(text(html(composer({ draftState: 'saving' }))), /Saving…/);
   assert.match(
     text(html(composer({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }))),

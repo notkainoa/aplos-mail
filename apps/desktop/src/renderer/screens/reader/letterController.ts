@@ -54,8 +54,11 @@ function sameSnapshot(a: LetterSnapshot, b: LetterSnapshot): boolean {
 }
 
 /**
- * Drops every held letter that is neither on paper nor asked for. Only a `want` does it: a child reports ready before
- * its parent has asked for it (effects run child first), and that early report must survive until the ask arrives.
+ * Drops every held letter that is neither on paper nor asked for. A letter is mounted only while it is one of those two,
+ * so a held one that is neither is unmounted and would come back as a fresh mount with no body. Two events do it: a
+ * `want`, and a `ready` that put a new letter on paper (the one it replaced just unmounted). Any other `ready` must not:
+ * a child reports ready before its parent has asked for it (effects run child first), and that early report has to
+ * survive until the ask arrives.
  */
 function evictStale(state: LetterState): LetterState {
   return staleReady(state).reduce((s, id) => reduce(s, { type: 'evict', id }), state);
@@ -87,8 +90,10 @@ export function createLetterController(timers: Timers): LetterController {
   const apply = (event: LetterEvent) => {
     const next = reduce(state, event);
     if (next === state) return;
+    const paperChanged = next.shown !== state.shown;
     state = next;
-    if (event.type === 'want') state = evictStale(state);
+    if (event.type === 'want' || (event.type === 'ready' && paperChanged))
+      state = evictStale(state);
     armLine();
     publish();
   };

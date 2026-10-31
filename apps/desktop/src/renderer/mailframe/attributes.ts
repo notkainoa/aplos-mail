@@ -93,6 +93,8 @@ export function escapeHtml(value: string): string {
 /** The sanitiser's shared state for one body. */
 export interface AttributeContext extends BlockedCount {
   policy: ImagePolicy;
+  /** Tracking pixels among the removed resources (a remote image sized 0 or 1, or hidden): the "N trackers removed" count. */
+  trackers: number;
 }
 
 const TINY = /^[01](?:\.0*)?(?:px|em)?$/i;
@@ -139,12 +141,16 @@ function imageSource(
   const raw = name === 'img' ? attribs.src : attribs.background;
   if (raw === undefined) return null;
   const decision = decideImage(raw, cx.policy);
-  if (decision.keep && name === 'img' && isPixel(attribs, css)) {
+  const pixel = name === 'img' && isPixel(attribs, css);
+  if (decision.keep && pixel) {
     cx.blocked++;
+    cx.trackers++;
     return null;
   }
   if (decision.keep) return decision.src;
-  if (decision.remote) cx.blocked++;
+  if (!decision.remote) return null;
+  cx.blocked++;
+  if (pixel) cx.trackers++;
   return null;
 }
 

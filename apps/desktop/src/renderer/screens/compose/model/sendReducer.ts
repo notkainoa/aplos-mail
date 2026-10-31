@@ -44,10 +44,16 @@ export function submitStep(state: ComposeState): Step {
   return { state, effects: [effect] };
 }
 
+/** A send-at that is not in the future sends now (with the undo window): a stale preset never schedules the past. */
+export function futureOnly(notBefore: number | undefined, now: number): number | undefined {
+  return notBefore !== undefined && notBefore > now ? notBefore : undefined;
+}
+
 /** Return or ⌘↩: validate, close the composer at once, then save what is unsaved and send. */
 export function onSend(state: ComposeState, event: Event<'send'>): Step {
   if (state.send.kind === 'pending' || state.send.kind === 'tracking' || state.discarding)
     return still(state);
+  const notBefore = futureOnly(event.notBefore, event.now);
   const blocked = blockedSend(state.fields);
   if (blocked) return still({ ...state, blocked, open: true });
   const pending: ComposeState = {
@@ -64,7 +70,7 @@ export function onSend(state: ComposeState, event: Event<'send'>): Step {
       alsoDone: event.alsoDone ?? false,
       undoAsked: false,
       sendNowAsked: false,
-      ...(event.notBefore !== undefined ? { notBefore: event.notBefore } : {}),
+      ...(notBefore !== undefined ? { notBefore } : {}),
     },
   };
   if (pending.save.flightSeq !== null) return still(pending);
@@ -121,12 +127,19 @@ export function onRefused(state: ComposeState, event: Event<'sendRefused'>): Ste
   if (refusal.type === 'conflict') return still(state);
   if (refusal.type === 'validation' || refusal.type === 'stateMismatch')
     return still({ ...state, send: NO_SEND, open: true, blocked: blockedFrom(refusal) });
-  const names = state.send.names;
+  const { names, notBefore, alsoDone } = state.send;
   const reasonCode = refusal.reasonCode ?? refusal.type;
   const until = refusal.resumeAt;
   return still({
     ...state,
-    send: { kind: 'refused', names, reasonCode, ...(until !== undefined ? { until } : {}) },
+    send: {
+      kind: 'refused',
+      names,
+      reasonCode,
+      ...(alsoDone ? { alsoDone } : {}),
+      ...(until !== undefined ? { until } : {}),
+      ...(notBefore !== undefined ? { notBefore } : {}),
+    },
   });
 }
 
@@ -199,21 +212,25 @@ function pendingAction(state: ComposeState, action: SendAction): Step {
   return still(state);
 }
 
-function refusedAction(state: ComposeState, action: SendAction): Step {
+/** Try again sends what the refused press asked for: the same send-at (unless it has passed) and the same Done. */
+function refusedAction(state: ComposeState, event: Event<'action'>): Step {
   if (state.send.kind !== 'refused') return still(state);
-  if (action === 'edit') return still({ ...state, send: NO_SEND, open: true, ended: null });
-  if (action !== 'retry') return still(state);
-  const names = state.send.names;
+  if (event.action === 'edit') return still({ ...state, send: NO_SEND, open: true, ended: null });
+  if (event.action !== 'retry') return still(state);
+  const { names, alsoDone } = state.send;
+  const now = event.now ?? 0;
+  const notBefore = futureOnly(state.send.notBefore, now);
   const pending: ComposeState = {
     ...state,
     send: {
       kind: 'pending',
-      pressedAt: 0,
+      pressedAt: now,
       undoSeconds: 0,
       names,
-      alsoDone: false,
+      alsoDone: alsoDone ?? false,
       undoAsked: false,
       sendNowAsked: false,
+      ...(notBefore !== undefined ? { notBefore } : {}),
     },
   };
   return submitStep(pending);
@@ -225,7 +242,7 @@ export function onAction(state: ComposeState, event: Event<'action'>): Step {
     case 'pending':
       return pendingAction(state, event.action);
     case 'refused':
-      return refusedAction(state, event.action);
+      return refusedAction(state, event);
     case 'tracking':
       return state.send.row ? rowAction(state, event, state.send.row) : still(state);
     default:

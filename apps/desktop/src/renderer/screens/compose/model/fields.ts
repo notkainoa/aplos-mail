@@ -78,10 +78,11 @@ export function recipientOf(address: Address): Recipient {
     : { id, address: address.address };
 }
 
-/** A recipient chip as a contract address. */
+/** A recipient chip as a contract address. A name that contains "@" is dropped, so the draft names the real address. */
 export function addressOf(recipient: Recipient): Address {
   const name = recipient.name?.trim();
-  return name ? { address: recipient.address, name } : { address: recipient.address };
+  const safe = name && !name.includes('@') ? name : undefined;
+  return safe ? { address: recipient.address, name: safe } : { address: recipient.address };
 }
 
 /** The composer's fields from a draft row (a reopened draft, or a draft after a reload). */

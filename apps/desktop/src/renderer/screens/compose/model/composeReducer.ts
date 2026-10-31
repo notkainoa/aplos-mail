@@ -16,6 +16,7 @@ import {
   saveStep,
   submitStep,
 } from './sendReducer';
+import { onPreserved, onRefusedSave, onRemoteRow } from './saveConflict';
 import { NO_SEND } from './sendState';
 
 type Event<T extends ComposeEvent['type']> = Extract<ComposeEvent, { type: T }>;
@@ -58,6 +59,13 @@ function onSaveFailed(state: ComposeState, event: Event<'saveFailed'>): Step {
     const id = next.save.draftId;
     return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
   }
+  // Gone, stale or locked: a retry on the same base would fail for ever, so the text moves on (saveConflict.ts).
+  if (event.cause && state.save.draftId !== null)
+    return onRefusedSave(
+      { ...state, save: { ...state.save, flightSeq: null } },
+      event.cause,
+      event.now,
+    );
   // The edits never reached the engine: the send cannot name them, so the composer comes back with "Couldn't save".
   if (state.send.kind === 'pending')
     return still({ ...next, send: NO_SEND, open: true, ended: null });
@@ -81,20 +89,32 @@ function adoptDraft(
   };
 }
 
+/** Undo pressed before the engine answered: it follows the submission as soon as its id is known. */
+function trackFoundSend(state: ComposeState, submissionId: string): Step {
+  const undo = state.send.kind === 'pending' && state.send.undoAsked;
+  const next: ComposeState = {
+    ...state,
+    open: false,
+    send: { kind: 'tracking', submissionId, row: null },
+  };
+  if (!undo) return still(next);
+  return { state: next, effects: [{ type: 'submission', action: { type: 'undo', submissionId } }] };
+}
+
 function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
   const draft = event.draft;
   if (!draft || draft.id !== state.save.draftId) return still(state);
-  const next = adoptDraft(state, draft);
+  const next: ComposeState = { ...adoptDraft(state, draft), remote: draft };
+  if (next.discarding) return still(next);
+  const resolved = onRemoteRow(next, draft, event.now ?? 0);
+  if (resolved) return resolved;
   const untracked =
     next.send.kind === 'none' || next.send.kind === 'pending' || next.send.kind === 'refused';
-  if (draft.submissionId && untracked && !next.discarding) {
-    // A send of this draft exists (this composer's answer is late, another composer sent it, or the app reloaded).
-    return still({
-      ...next,
-      open: false,
-      send: { kind: 'tracking', submissionId: draft.submissionId, row: null },
-    });
-  }
+  // Unsaved text is never closed away under another window's send (this composer's own send names saved text only):
+  // its save fails and moves it to a new draft.
+  const unsaved = isDirty(next.save);
+  // A send of this draft exists (this composer's answer is late, another composer sent it, or the app reloaded).
+  if (draft.submissionId && untracked && !unsaved) return trackFoundSend(next, draft.submissionId);
   return still(next);
 }
 
@@ -171,8 +191,38 @@ function onReopen(state: ComposeState): Step {
   return still({ ...state, open: true, ended: null, send: NO_SEND });
 }
 
-/** One step of the composer. */
-export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
+type SaveEvent = Extract<
+  ComposeEvent,
+  {
+    type:
+      | 'edit'
+      | 'tick'
+      | 'flush'
+      | 'saved'
+      | 'saveFailed'
+      | 'preserved'
+      | 'retrySave'
+      | 'observeDraft';
+  }
+>;
+
+const SAVE_EVENTS: ReadonlySet<ComposeEvent['type']> = new Set([
+  'edit',
+  'tick',
+  'flush',
+  'saved',
+  'saveFailed',
+  'preserved',
+  'retrySave',
+  'observeDraft',
+]);
+
+function isSaveEvent(event: ComposeEvent): event is SaveEvent {
+  return SAVE_EVENTS.has(event.type);
+}
+
+/** The text and its autosave: edits, the timer, the engine's answers and rows. */
+function saveReducer(state: ComposeState, event: SaveEvent): Step {
   switch (event.type) {
     case 'edit':
       return onEdit(state, event);
@@ -184,10 +234,21 @@ export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
       return onSaved(state, event);
     case 'saveFailed':
       return onSaveFailed(state, event);
+    case 'preserved':
+      return state.discarding ? still(state) : onPreserved(state, event.ok, event.now);
     case 'retrySave':
       return saveIfDue({ ...state, save: retryNow(state.save, event.now) }, event.now);
     case 'observeDraft':
       return onDraft(state, event);
+  }
+}
+
+/** One step of the composer. */
+export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
+  if (isSaveEvent(event)) return saveReducer(state, event);
+  switch (event.type) {
+    case 'undoLost':
+      return { state, effects: [{ type: 'notify', notice: 'alreadySent' }] };
     case 'observeSubmission':
       return onSubmission(state, event);
     case 'send':

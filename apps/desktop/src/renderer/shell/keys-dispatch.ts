@@ -1,16 +1,22 @@
 /**
  * The shell's one key listener, split into pure parts. A keydown is resolved against the current context stack and the
  * command runs; the registry owns every binding. A key typed in a field, composing text, or already handled by another
- * listener is left alone (the resolver decides, from the focus kind, which bindings own a field).
+ * listener is left alone (the resolver decides, from the focus kind, which bindings own a field). With a `ShellHold`,
+ * the listener also follows the hold protocol on `Resolution`: armed repeats are swallowed, a held key upgrades to its
+ * hold command at the threshold, and every hold ends with `registry.release` (keyup, another key, Esc, blur or hide).
  */
 import { useEffect, useRef } from 'react';
 import {
   DEFAULT_KEY_PREFS,
   buildStack,
+  createHoldTracker,
   focusKindOf,
   type CommandContext,
+  type CommandId,
   type ConditionState,
   type ContextName,
+  type HoldRelease,
+  type HoldTracker,
   type KeyPrefs,
   type Registry,
   type TargetSummary,
@@ -78,8 +84,119 @@ export function shellKeyContext(state: ShellKeyState, focusTarget: unknown): Com
   };
 }
 
-/** Resolves and runs one keydown. Returns true when a command ran, so the caller can stop the browser's default. */
-export function dispatchShellKey(
+/** The registry calls a hold needs: the tap and the hold command run, and every hold ends with a release. */
+export type HoldRegistry = Pick<Registry, 'resolve' | 'run' | 'release'>;
+
+/** What the listener needs to follow holds: the tracker, a clock, a timer, the latest state and the typed-key undo. */
+export interface ShellHold {
+  readonly tracker: HoldTracker;
+  /** Milliseconds; the same clock for keydown, keyup and the tick. */
+  now(): number;
+  /** Calls `callback` after `ms`; returns the cancel. */
+  schedule(ms: number, callback: () => void): () => void;
+  /** The state at the tick: a tap (R) has changed it by then (the reply is open, so the stack holds `compose`). */
+  readState(): ShellKeyState;
+  /** Deletes the one character a phase 'hold' keydown typed into the focused field. */
+  removeTyped(): void;
+}
+
+interface PendingTick {
+  readonly cancel: () => void;
+  /** The conditions at a typing keydown (hold Space in an empty body): the typed character is about to go again. */
+  readonly typedConditions: ConditionState | null;
+}
+
+const pendingTicks = new WeakMap<ShellHold, PendingTick>();
+
+/** Modifiers pressed or released mid-hold leave it armed: holds are tracked by physical key. */
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta']);
+
+function activeElement(): unknown {
+  return typeof document === 'undefined' ? null : document.activeElement;
+}
+
+function clearTick(hold: ShellHold): PendingTick | undefined {
+  const pending = pendingTicks.get(hold);
+  pending?.cancel();
+  pendingTicks.delete(hold);
+  return pending;
+}
+
+/** Hands an ended hold to its command's `release` handler; a disarmed tracker has no tick left to wait for. */
+function finishHold(
+  registry: HoldRegistry,
+  context: CommandContext,
+  hold: ShellHold,
+  release: HoldRelease | null,
+): void {
+  if (!hold.tracker.armed) clearTick(hold);
+  if (release) registry.release(release, context);
+}
+
+/** The context the hold command runs in: the current state, with the typing keydown's conditions restored. */
+function upgradeContext(hold: ShellHold, typedConditions: ConditionState | null): CommandContext {
+  const context = shellKeyContext(hold.readState(), activeElement());
+  if (!typedConditions) return context;
+  return { ...context, conditions: { ...context.conditions, ...typedConditions } };
+}
+
+function tickHold(registry: HoldRegistry, hold: ShellHold): void {
+  const pending = clearTick(hold);
+  const typedConditions = pending?.typedConditions ?? null;
+  const upgrade = hold.tracker.tick(hold.now());
+  if (!upgrade) {
+    scheduleTick(registry, hold, typedConditions);
+    return;
+  }
+  if (upgrade.removeTyped) hold.removeTyped();
+  registry.run(upgrade.commandId, upgradeContext(hold, typedConditions));
+}
+
+function scheduleTick(
+  registry: HoldRegistry,
+  hold: ShellHold,
+  typedConditions: ConditionState | null,
+): void {
+  clearTick(hold);
+  const deadline = hold.tracker.deadline;
+  if (deadline === null) return;
+  const wait = Math.max(0, deadline - hold.now());
+  const cancel = hold.schedule(wait, () => tickHold(registry, hold));
+  pendingTicks.set(hold, { cancel, typedConditions });
+}
+
+function armHold(
+  registry: HoldRegistry,
+  context: CommandContext,
+  event: KeyboardEvent,
+  hold: ShellHold,
+  holdCommandId: CommandId,
+  typed: boolean,
+): void {
+  const previous = hold.tracker.down(event, holdCommandId, hold.now(), { typed });
+  finishHold(registry, context, hold, previous);
+  scheduleTick(registry, hold, typed ? context.conditions : null);
+}
+
+/**
+ * Another keydown ends an armed hold: Esc cancels it, a modifier leaves it, anything else interrupts it. Returns true
+ * when the key is spent: Esc during a running hold command only cancels it (the reply stays open, the words go).
+ */
+function endArmedHold(
+  registry: HoldRegistry,
+  context: CommandContext,
+  event: KeyboardEvent,
+  hold: ShellHold,
+): boolean {
+  if (!hold.tracker.armed || MODIFIER_KEYS.has(event.key)) return false;
+  const escape = event.key === 'Escape';
+  const at = hold.now();
+  const release = escape ? hold.tracker.cancel(at) : hold.tracker.interrupt(at);
+  finishHold(registry, context, hold, release);
+  return escape && release?.upgraded === true;
+}
+
+function dispatchTap(
   registry: Pick<Registry, 'resolve' | 'run'>,
   state: ShellKeyState,
   event: KeyboardEvent,
@@ -91,21 +208,152 @@ export function dispatchShellKey(
   return registry.run(resolution.commandId, context).status === 'ran';
 }
 
-/** Listens on the window for the shell's lifetime; reads the latest state through a ref, so the listener binds once. Inert without a DOM. */
-export function useShellKeys(
+function dispatchWithHold(
+  registry: HoldRegistry,
+  state: ShellKeyState,
+  event: KeyboardEvent,
+  hold: ShellHold,
+): boolean {
+  if (hold.tracker.swallows(event)) return true;
+  const context = shellKeyContext(state, event.target);
+  if (endArmedHold(registry, context, event, hold)) return true;
+  if (event.defaultPrevented || event.isComposing) return false;
+  const resolution = registry.resolve(event, context);
+  if (!resolution) return false;
+  if (resolution.phase === 'hold') {
+    armHold(registry, context, event, hold, resolution.commandId, context.focus === 'text');
+    return false;
+  }
+  const ran = registry.run(resolution.commandId, context).status === 'ran';
+  if (ran && resolution.holdCommandId)
+    armHold(registry, context, event, hold, resolution.holdCommandId, false);
+  return ran;
+}
+
+/**
+ * Resolves and runs one keydown. Returns true when a command ran (or an armed key's repeat was swallowed), so the
+ * caller can stop the browser's default. Without `hold`, only taps run and nothing is armed.
+ */
+export function dispatchShellKey(
   registry: Pick<Registry, 'resolve' | 'run'>,
-  readState: () => ShellKeyState,
+  state: ShellKeyState,
+  event: KeyboardEvent,
+): boolean;
+export function dispatchShellKey(
+  registry: HoldRegistry,
+  state: ShellKeyState,
+  event: KeyboardEvent,
+  hold: ShellHold,
+): boolean;
+export function dispatchShellKey(
+  registry: Pick<Registry, 'resolve' | 'run'> | HoldRegistry,
+  state: ShellKeyState,
+  event: KeyboardEvent,
+  hold?: ShellHold,
+): boolean {
+  if (!hold) return dispatchTap(registry, state, event);
+  return dispatchWithHold(registry as HoldRegistry, state, event, hold);
+}
+
+/** The keyup: when it is the armed key, the hold ends ('up') and its command hears the release. */
+export function releaseShellKey(
+  registry: HoldRegistry,
+  state: ShellKeyState,
+  event: KeyboardEvent,
+  hold: ShellHold,
 ): void {
+  const release = hold.tracker.up(event, hold.now());
+  finishHold(registry, shellKeyContext(state, event.target), hold, release);
+}
+
+/** Blur or the window hiding: an armed hold ends ('cancel') and what it heard is dropped. */
+export function cancelShellHold(
+  registry: HoldRegistry,
+  state: ShellKeyState,
+  hold: ShellHold,
+): void {
+  const release = hold.tracker.cancel(hold.now());
+  finishHold(registry, shellKeyContext(state, activeElement()), hold, release);
+}
+
+/** Deletes the character before the caret in the focused field, as Backspace would, so a controlled field hears it. */
+export function removeTypedCharacter(): void {
+  if (typeof document === 'undefined') return;
+  document.execCommand('delete');
+}
+
+function thresholdOf(state: ShellKeyState): number {
+  return state.prefs?.holdThresholdMs ?? DEFAULT_KEY_PREFS.holdThresholdMs;
+}
+
+function domHold(thresholdMs: number, readState: () => ShellKeyState): ShellHold {
+  return {
+    tracker: createHoldTracker(thresholdMs),
+    now: () => performance.now(),
+    schedule(ms, callback) {
+      const id = window.setTimeout(callback, ms);
+      return () => window.clearTimeout(id);
+    },
+    readState,
+    removeTyped: removeTypedCharacter,
+  };
+}
+
+/** The DOM hold, rebuilt when the threshold setting changes while nothing is armed. */
+function holdSource(readState: () => ShellKeyState): () => ShellHold {
+  let threshold = thresholdOf(readState());
+  let hold = domHold(threshold, readState);
+  return () => {
+    const wanted = thresholdOf(readState());
+    if (wanted === threshold || hold.tracker.armed) return hold;
+    threshold = wanted;
+    hold = domHold(wanted, readState);
+    return hold;
+  };
+}
+
+/** Binds keydown, keyup, blur and hide on the window; returns the unbind. Repeats are swallowed in the capture phase. */
+function listenShellKeys(registry: HoldRegistry, readState: () => ShellKeyState): () => void {
+  const holds = holdSource(readState);
+  const onRepeat = (event: KeyboardEvent) => {
+    if (!holds().tracker.swallows(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (dispatchShellKey(registry, readState(), event, holds())) event.preventDefault();
+  };
+  const onKeyUp = (event: KeyboardEvent) => releaseShellKey(registry, readState(), event, holds());
+  const onBlur = () => cancelShellHold(registry, readState(), holds());
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') onBlur();
+  };
+  window.addEventListener('keydown', onRepeat, true);
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp, true);
+  window.addEventListener('blur', onBlur);
+  document.addEventListener('visibilitychange', onVisibility);
+  return () => {
+    window.removeEventListener('keydown', onRepeat, true);
+    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keyup', onKeyUp, true);
+    window.removeEventListener('blur', onBlur);
+    document.removeEventListener('visibilitychange', onVisibility);
+    onBlur();
+  };
+}
+
+/**
+ * Listens on the window for the shell's lifetime; reads the latest state through a ref, so the listener binds once.
+ * One hold tracker follows held keys (threshold from the key prefs). Inert without a DOM.
+ */
+export function useShellKeys(registry: HoldRegistry, readState: () => ShellKeyState): void {
   const latest = useRef(readState);
   useEffect(() => {
     latest.current = readState;
   });
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (dispatchShellKey(registry, latest.current(), event)) event.preventDefault();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return listenShellKeys(registry, () => latest.current());
   }, [registry]);
 }

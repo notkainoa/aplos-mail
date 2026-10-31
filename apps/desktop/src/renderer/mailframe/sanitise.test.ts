@@ -147,6 +147,19 @@ describe('sanitiseBody: behaviour', () => {
     assert.match(result.html, /src="https:\/\/img\.example\/a\.png"/);
     assert.doesNotMatch(result.html, /b\.png|p\.gif/);
     assert.equal(result.blocked, 2);
+    assert.equal(
+      result.trackers,
+      1,
+      'only the pixel is a tracker; the http image is merely refused',
+    );
+  });
+
+  test('with images blocked, every remote image is blocked but only pixels count as trackers', () => {
+    const html =
+      '<img src="https://img.example/a.png" width="600"><img src="https://img.example/b.png"><img src="https://t.example/p.gif" width="1" height="1"><img src="https://t.example/q.gif" style="display:none">';
+    const result = sanitiseBody(html, 'block');
+    assert.equal(result.blocked, 4);
+    assert.equal(result.trackers, 2);
   });
 
   test('keeps raster data images and drops SVG data images', () => {

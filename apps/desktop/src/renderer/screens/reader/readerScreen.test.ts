@@ -17,7 +17,7 @@ import { api, setClock, undoStack, type ThreadRow } from '../../data';
 import { pushToast } from '../../shell';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { setOpenThread } from '../../shell/store-thread';
-import { getToasts, resetToasts } from '../../shell/store-toast';
+import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import { createLetterController } from './letterController';
 import { createReaderActions, type ReaderDeps } from './readerActions';
 import { commandsForReader } from './readerCommands';
@@ -84,23 +84,33 @@ function depsOver(world: World, start: string, readyOnGo = true) {
   const state = {
     open: start,
     left: 0,
+    gone: new Set<string>(),
+    findOpen: false,
     replies: [] as string[],
     requests: [] as Array<ReplyRequest | undefined>,
     suggested: [] as string[],
   };
   controller.want(start);
   controller.ready(start);
+  const go = (id: string) => {
+    state.open = id;
+    controller.want(id);
+    if (readyOnGo) controller.ready(id);
+  };
   const deps: ReaderDeps = {
     shown: () => controller.snapshot().letter,
     wanted: () => state.open,
     ids: () => world.home.snapshot().ids,
     rowOf: id => world.home.snapshot().rows.get(id) as ThreadRow | undefined,
-    go: id => {
-      state.open = id;
-      controller.want(id);
-      if (readyOnGo) controller.ready(id);
-    },
+    go,
+    reopen: go,
+    markGone: (id, gone) => void (gone ? state.gone.add(id) : state.gone.delete(id)),
     leave: () => void state.left++,
+    closeFind: () => {
+      const was = state.findOpen;
+      state.findOpen = false;
+      return was;
+    },
     act: args => api.thread.act(args),
     push: pushToast,
     dismiss: () => undefined,
@@ -222,6 +232,11 @@ test('the screen: no thread open is one plain line; an open thread mounts its le
     setOpenThread(id);
     const html = renderToStaticMarkup(createElement(ReaderScreen));
     assert.match(html, /class="aplos-reader" data-keyctx="reader"/);
+    assert.match(
+      html,
+      /class="aplos-reader"[^>]*tabindex="-1"/,
+      'a root that can take focus when an element leaves',
+    );
     assert.match(html, /data-paper="false"/, 'nothing is on paper before the first letter reports');
     assert.doesNotMatch(html, /ui-loading-line/, 'and no loading line before 1.5 s');
     setOpenThread(null);
@@ -479,6 +494,107 @@ test('an open reply replaces the stub and demotes the filled suggestion; closed,
     assert.equal(ui.reply, null);
     assert.equal(ui.replyOpen, false);
     assert.match(render(ui), /ui-reply-stub/, 'Esc closed it: the stub shows again');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('E, J, E before the next letter lands does not run Done on the thread that already left', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const { deps, state, controller } = depsOver(world, ids[0]!, false);
+    const actions = createReaderActions(deps);
+    actions.done();
+    actions.step('next');
+    actions.done();
+    assert.equal(
+      getToasts().filter(t => t.kind === 'done').length,
+      1,
+      'the shown letter is still the one that left: nothing happens, nothing is cleared',
+    );
+    assert.ok(state.gone.has(ids[0]!));
+    controller.ready(state.open);
+    actions.done();
+    assert.equal(
+      getToasts().filter(t => t.kind === 'done').length,
+      2,
+      'the next letter takes E once it lands',
+    );
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Undo of a Done brings the reader back to the thread and lets J and K see it again', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const first = ids[0]!;
+    const { deps, state } = depsOver(world, first);
+    const actions = createReaderActions(deps);
+    actions.done();
+    assert.notEqual(state.open, first);
+    assert.ok(state.gone.has(first));
+    const toast = getToasts().find(t => t.kind === 'done');
+    assert.ok(toast, 'a Done toast');
+    runToastAction(toast.id, 'undo');
+    assert.equal(state.open, first, 'the reader shows the thread that was brought back');
+    assert.ok(!state.gone.has(first));
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Esc closes find first, wherever focus is, and only then leaves the reader', async () => {
+  const world = await boot();
+  try {
+    const { deps, state } = depsOver(world, world.doIds()[0]!);
+    const actions = createReaderActions(deps);
+    state.findOpen = true;
+    actions.back();
+    assert.equal(state.left, 0, 'find closed, the reader stayed');
+    assert.equal(state.findOpen, false);
+    actions.back();
+    assert.equal(state.left, 1, 'the second Esc leaves');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('find is a bar above the thread that carries its query, only on the letter on paper', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    await world.threadWindow(id);
+    const render = (paper: boolean, find: string | null) =>
+      renderToStaticMarkup(
+        createElement(ReaderLetter, {
+          threadId: id,
+          paper,
+          ui: { ...freshUi(id), find },
+          dispatch: () => undefined,
+          controls: NO_CONTROLS,
+          onReady: () => undefined,
+        }),
+      );
+    const open = render(true, 'invoice');
+    assert.match(open, /aplos-reader__find/);
+    assert.match(open, /value="invoice"/);
+    assert.ok(
+      open.indexOf('aplos-reader__find') < open.indexOf('ui-reader-head__from'),
+      'above the letter',
+    );
+    assert.doesNotMatch(render(true, null), /aplos-reader__find/);
+    assert.doesNotMatch(
+      render(false, 'invoice'),
+      /aplos-reader__find/,
+      'an off-paper letter has no bar',
+    );
   } finally {
     world.connection.close();
   }

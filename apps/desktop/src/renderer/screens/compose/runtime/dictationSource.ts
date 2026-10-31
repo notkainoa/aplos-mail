@@ -87,47 +87,90 @@ function watchLevel(stream: MediaStream, onLevel: (level: number) => void): () =
   };
 }
 
-/** The browser source: `getUserMedia` plus `MediaRecorder`. Call only where `canRecord()` is true. */
-export function mediaRecorderSource(): DictationSource {
+/** The browser pieces `mediaRecorderSource` uses; tests pass fakes, the app takes the globals. */
+export interface MediaRecorderDeps {
+  readonly getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+  readonly MediaRecorder?: typeof MediaRecorder;
+  readonly watchLevel?: (stream: MediaStream, onLevel: (level: number) => void) => () => void;
+}
+
+function stopTracks(stream: MediaStream): void {
+  stream.getTracks().forEach(track => track.stop());
+}
+
+/**
+ * The browser source: `getUserMedia` plus `MediaRecorder`. Call only where `canRecord()` is true. A `cancel()` or
+ * `stop()` while the permission prompt is still open bumps `generation`; when the stream finally arrives for an older
+ * generation every track is stopped at once and nothing records, so the microphone never stays on.
+ */
+export function mediaRecorderSource(deps: MediaRecorderDeps = {}): DictationSource {
   let recorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;
   let stopLevel: (() => void) | null = null;
-  const chunks: Blob[] = [];
+  let generation = 0;
+  let chunks: Blob[] = [];
+  const getUserMedia =
+    deps.getUserMedia ?? (constraints => navigator.mediaDevices.getUserMedia(constraints));
+  const watch = deps.watchLevel ?? watchLevel;
   const release = () => {
     stopLevel?.();
     stopLevel = null;
-    stream?.getTracks().forEach(track => track.stop());
+    if (stream) stopTracks(stream);
     stream = null;
+  };
+  const begin = (opened: MediaStream, onLevel: (level: number) => void) => {
+    const Recorder = deps.MediaRecorder ?? MediaRecorder;
+    stream = opened;
+    chunks = [];
+    const created = new Recorder(opened);
+    created.ondataavailable = event => chunks.push(event.data);
+    recorder = created;
+    created.start();
+    stopLevel = watch(opened, onLevel);
+  };
+  const finish = async (current: MediaRecorder): Promise<Recording | null> => {
+    const blob = new Blob(chunks, { type: current.mimeType });
+    chunks = [];
+    if (blob.size === 0) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: current.mimeType };
   };
   return {
     async start(onLevel) {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      chunks.length = 0;
-      recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = event => chunks.push(event.data);
-      recorder.start();
-      stopLevel = watchLevel(stream, onLevel);
+      const mine = ++generation;
+      const opened = await getUserMedia({ audio: true });
+      if (mine !== generation) {
+        stopTracks(opened);
+        return;
+      }
+      try {
+        begin(opened, onLevel);
+      } catch (error) {
+        recorder = null;
+        release();
+        stopTracks(opened);
+        throw error;
+      }
     },
     stop() {
+      const stopped = ++generation;
       const current = recorder;
       recorder = null;
       if (!current) return Promise.resolve(null);
       return new Promise(resolve => {
         current.onstop = async () => {
           release();
-          const blob = new Blob(chunks, { type: current.mimeType });
-          resolve(
-            blob.size > 0
-              ? { bytes: new Uint8Array(await blob.arrayBuffer()), mime: current.mimeType }
-              : null,
-          );
+          resolve(stopped === generation ? await finish(current) : null);
+          chunks = [];
         };
         current.stop();
       });
     },
     cancel() {
+      generation++;
+      if (recorder) recorder.ondataavailable = null;
       recorder?.stop();
       recorder = null;
+      chunks = [];
       release();
     },
   };

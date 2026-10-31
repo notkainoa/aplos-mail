@@ -78,7 +78,16 @@ export function recipientPhrase(names: readonly string[]): string {
   return `${firsts[0]} and ${firsts.length - 1} others`;
 }
 
+/**
+ * What names a recipient: their display name, or the address when there is no name or the name contains "@" (a name
+ * like "boss@company.com" on another address would pass for that address).
+ */
+export function safeDisplayName(recipient: Recipient): string {
+  const name = recipient.name?.trim();
+  return name && !name.includes('@') ? name : recipient.address;
+}
+
 /** The display names `Submission.toNames` would carry for these fields, for the tray shown before the engine answers. */
 export function namesOf(fields: ComposeFields): readonly string[] {
-  return [...fields.to, ...fields.cc].map(r => r.name?.trim() || r.address);
+  return [...fields.to, ...fields.cc].map(safeDisplayName);
 }

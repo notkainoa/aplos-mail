@@ -64,9 +64,20 @@ export function settle(state: HandoffState, id: string): HandoffState {
   return { ...state, handedOff: state.handedOff.filter(other => other !== id) };
 }
 
-/** The one the toast stack shows: the newest handed-off send. */
+/** The newest handed-off send (its tray is the toast stack's UndoTray). */
 export function shownByToast(state: HandoffState): string | null {
   return state.handedOff[state.handedOff.length - 1] ?? null;
+}
+
+/** How many handed-off sends the toast stack follows at once (the stack's three; DESIGN 7.13). */
+export const WATCHED_SENDS = 3;
+
+/**
+ * The handed-off sends the toast stack follows, oldest first, newest last: a second send never silently replaces the
+ * first one's Undo (DESIGN 7.13), it stacks.
+ */
+export function watchedByToast(state: HandoffState): readonly string[] {
+  return state.handedOff.slice(-WATCHED_SENDS);
 }
 
 /** The app's one hand-off store. */

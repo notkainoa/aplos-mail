@@ -23,6 +23,8 @@ export interface DictationDeps {
   /** The words heard, to add to the body. */
   readonly onText: (text: string) => void;
   readonly now: () => number;
+  /** Schedules `callback` after `ms` and returns what cancels it; the global `setTimeout` by default. */
+  readonly setTimeout?: (callback: () => void, ms: number) => () => void;
 }
 
 export interface DictationController {
@@ -33,9 +35,19 @@ export interface DictationController {
   release(keep: boolean): Promise<void>;
   /** Esc. */
   cancel(): void;
+  /** The composer is going away: always cancels the source (even while it waits on the microphone prompt). */
+  dispose(): void;
 }
 
 const LEVEL_EVERY_MS = 100;
+
+/** A recording stops by itself, and is kept, this long after it starts. */
+export const MAX_DICTATION_MS = 120_000;
+
+function globalTimer(callback: () => void, ms: number): () => void {
+  const id = setTimeout(callback, ms);
+  return () => clearTimeout(id);
+}
 
 /** Transcription through the engine: upload the audio, then `Ai/transcribe`. */
 export function engineTranscribe(api: Pick<DataApi, 'blob' | 'ai'>): Transcribe {
@@ -54,6 +66,13 @@ export function createDictation(deps: DictationDeps): DictationController {
   let phase: DictationPhase = IDLE;
   let lastLevelAt = Number.NEGATIVE_INFINITY;
   const listeners = new Set<() => void>();
+  const schedule = deps.setTimeout ?? globalTimer;
+  let clearCap: (() => void) | null = null;
+
+  const stopCap = () => {
+    clearCap?.();
+    clearCap = null;
+  };
 
   const step = (event: DictationEvent) => {
     const next = dictationReducer(phase, event);
@@ -70,15 +89,38 @@ export function createDictation(deps: DictationDeps): DictationController {
   };
 
   async function keep(source: DictationSource): Promise<void> {
+    let recording: Recording | null = null;
     try {
-      const recording = await source.stop();
+      recording = await source.stop();
       const text = recording ? await deps.transcribe(recording) : '';
       if (text.trim()) deps.onText(text);
     } catch {
       // No voice provider, or it failed: absence is quiet on the mail surface (DESIGN 9 rule 7).
     } finally {
+      recording = null;
       step({ type: 'done' });
     }
+  }
+
+  async function release(keepIt: boolean): Promise<void> {
+    const source = deps.source;
+    if (!source || phase.kind !== 'listening') return;
+    stopCap();
+    step({ type: 'release', keep: keepIt });
+    if (keepIt) return keep(source);
+    source.cancel();
+  }
+
+  function cancel(): void {
+    if (phase.kind !== 'listening') return;
+    stopCap();
+    deps.source?.cancel();
+    step({ type: 'cancel' });
+  }
+
+  function failed(): void {
+    stopCap();
+    step({ type: 'cancel' });
   }
 
   return {
@@ -91,17 +133,13 @@ export function createDictation(deps: DictationDeps): DictationController {
       const source = deps.source;
       if (!source || phase.kind !== 'idle') return;
       step({ type: 'start', holdKey });
-      source.start(onLevel).catch(() => step({ type: 'cancel' }));
+      clearCap = schedule(() => void release(true), MAX_DICTATION_MS);
+      source.start(onLevel).catch(failed);
     },
-    async release(keepIt) {
-      const source = deps.source;
-      if (!source || phase.kind !== 'listening') return;
-      step({ type: 'release', keep: keepIt });
-      if (keepIt) return keep(source);
-      source.cancel();
-    },
-    cancel() {
-      if (phase.kind !== 'listening') return;
+    release,
+    cancel,
+    dispose() {
+      stopCap();
       deps.source?.cancel();
       step({ type: 'cancel' });
     },

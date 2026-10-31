@@ -13,8 +13,13 @@ export interface MailFrameReady {
    * unparsable colour falls back to the light paper token. Plain text follows the theme and reports `transparent`.
    */
   bg: string;
-  /** Remote resources removed or blocked in this letter: the "N trackers removed" count. Additive to `{height, bg}`. */
+  /** Remote resources removed or blocked in this letter: every remote image the policy refused, tracking pixels included. Additive to `{height, bg}`. */
   blocked: number;
+  /**
+   * Tracking pixels among them: the "N trackers removed" count (a refused remote image is not a tracker). Additive;
+   * absent from a host that cannot tell, in which case the reader says nothing about trackers.
+   */
+  trackers?: number;
 }
 
 /** One unmodified key pressed while focus is inside the letter (no Ctrl or Cmd, not composing). */
@@ -31,6 +36,8 @@ export interface MailFrameKey {
 export interface MailFrameProps {
   /** The message whose body to show. Changing it double-buffers: the previous letter stays until the new one reports. */
   messageId: string;
+  /** The loading line's words once the letter has been awaited 1.5 s ("Loading <subject or sender>…"). Default: "Loading this email…". */
+  label?: string;
   /** Remote images policy for this render; changing it re-renders through the same buffer. */
   imagePolicy: ImagePolicy;
   /** Find-in-message query; matches are wrapped in `<mark>`. Empty or undefined shows no marks. */

@@ -92,7 +92,45 @@ test('subscribers hear about a change, once', () => {
   assert.equal(heard, base + 1, 'the line turned on');
 });
 
-test('fuzz: 500 J and K moves with 0 to 2.5 s of body latency never leave the paper empty', () => {
+test('probe: A on paper, J, B lands, K never shows A while A is unmounted and unloaded', () => {
+  const { controller } = world();
+  controller.want('a');
+  controller.ready('a');
+  controller.want('b');
+  controller.ready('b');
+  assert.equal(controller.snapshot().letter, 'b');
+  assert.deepEqual(
+    controller.snapshot().held,
+    ['b'],
+    'a is unmounted now, so it is no longer held',
+  );
+  controller.want('a');
+  assert.equal(
+    controller.snapshot().letter,
+    'b',
+    'K keeps b on paper until a reports from a fresh mount',
+  );
+  controller.ready('a');
+  assert.equal(controller.snapshot().letter, 'a');
+});
+
+test('a landing drops every held letter that is neither on paper nor asked for', () => {
+  const { controller } = world();
+  controller.want('a');
+  controller.ready('a');
+  controller.ready('b');
+  controller.want('c');
+  assert.equal(controller.snapshot().letter, 'a');
+  controller.ready('c');
+  assert.deepEqual(controller.snapshot().held, ['c']);
+});
+
+/**
+ * 500 J and K moves with 0 to 2.5 s of body latency. A letter is mounted only while it is on paper or asked for and
+ * loses its body when it unmounts, so the model keeps the set of loaded bodies and asserts that the letter on paper is
+ * always one of them: never empty, never a fresh mount with no body.
+ */
+test('fuzz: 500 J and K moves never leave the paper empty or on a letter with no loaded body', () => {
   const { controller, timers } = world();
   let seed = 7;
   const random = () => {
@@ -103,19 +141,34 @@ test('fuzz: 500 J and K moves with 0 to 2.5 s of body latency never leave the pa
   controller.want(ids[0]!);
   controller.ready(ids[0]!);
   let at = 0;
+  let asked = ids[0]!;
+  const loaded = new Set<string>([ids[0]!]);
   const pending: { id: string; due: number }[] = [];
+  const mounted = () => new Set([controller.snapshot().letter, asked]);
+  const unmountStale = () => {
+    const keep = mounted();
+    for (const id of [...loaded]) if (!keep.has(id)) loaded.delete(id);
+  };
   let sawLine = false;
   for (let move = 0; move < 500; move++) {
     at = Math.max(0, Math.min(ids.length - 1, at + (random() < 0.6 ? 1 : -1)));
     const id = ids[at]!;
+    asked = id;
     controller.want(id);
+    unmountStale();
     pending.push({ id, due: timers.now() + Math.floor(random() * 2500) });
     timers.advance(Math.floor(random() * (random() < 0.7 ? 300 : 2000)));
-    for (const entry of pending.filter(p => p.due <= timers.now())) controller.ready(entry.id);
+    for (const entry of pending.filter(p => p.due <= timers.now())) {
+      if (!mounted().has(entry.id)) continue;
+      loaded.add(entry.id);
+      controller.ready(entry.id);
+      unmountStale();
+    }
     for (let i = pending.length - 1; i >= 0; i--)
       if (pending[i]!.due <= timers.now()) pending.splice(i, 1);
     const snap = controller.snapshot();
     assert.notEqual(snap.letter, null, `move ${move}: the paper is never empty`);
+    assert.ok(loaded.has(snap.letter!), `move ${move}: ${snap.letter} on paper has a loaded body`);
     if (snap.loadingLine) sawLine = true;
     if (snap.loadingLine)
       assert.notEqual(snap.letter, id, 'the line means the asked-for letter is not on paper');

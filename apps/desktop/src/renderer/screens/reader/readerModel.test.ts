@@ -6,7 +6,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EMPTY_BUFFER, reduce } from './model/letterBuffer';
-import { afterRemoval, crumbPosition, staleReady, stepMessage, stepThread } from './readerModel';
+import {
+  NO_MEMORY,
+  afterRemoval,
+  crumbPosition,
+  staleReady,
+  stepMessage,
+  stepThread,
+  walkList,
+} from './readerModel';
+import { focusDecision, placeOf } from './readerFocus';
 import { readerHeader } from './readerHeader';
 import { freshUi, reduceFor, reduceUi, uiFor, walkableIds } from './readerUi';
 
@@ -23,6 +32,39 @@ test('J and K step through the list and stop at the ends', () => {
 test('a thread that is not in the list goes to the first row on J, and stays put on K', () => {
   assert.equal(stepThread(IDS, 'zzz', 'next'), 'a');
   assert.equal(stepThread(IDS, null, 'next'), 'a');
+});
+
+test('a thread that is not in the list starts the walk at an end: J the first row, K the last', () => {
+  assert.equal(stepThread(IDS, 'zzz', 'previous'), 'd');
+  assert.equal(stepThread(IDS, null, 'previous'), 'd');
+  assert.equal(stepThread([], 'zzz', 'previous'), null);
+});
+
+test('a thread that left the list keeps its place, so J and Done choose its neighbour, not the top row', () => {
+  const seen = walkList(NO_MEMORY, IDS, 'c');
+  assert.deepEqual(seen.walk, IDS);
+  // another device handled c: the list no longer has it
+  const gone = walkList(seen.memory, ['a', 'b', 'd'], 'c');
+  assert.deepEqual(gone.walk, IDS, 'c is put back where it was');
+  assert.equal(stepThread(gone.walk, 'c', 'next'), 'd');
+  assert.equal(stepThread(gone.walk, 'c', 'previous'), 'b');
+  assert.equal(afterRemoval(gone.walk, 'c'), 'd');
+  // the last row left: the row above is the neighbour
+  const last = walkList(walkList(NO_MEMORY, IDS, 'd').memory, ['a', 'b', 'c'], 'd');
+  assert.equal(stepThread(last.walk, 'd', 'previous'), 'c');
+  assert.equal(afterRemoval(last.walk, 'd'), 'c');
+  // the whole list went: nothing to step to, so the reader goes back
+  const none = walkList(seen.memory, [], 'c');
+  assert.equal(afterRemoval(none.walk, 'c'), null);
+  assert.equal(stepThread(none.walk, 'c', 'next'), null);
+});
+
+test('a thread opened from elsewhere gets no remembered place, and a new open thread starts a new memory', () => {
+  const outside = walkList(NO_MEMORY, IDS, 'zzz');
+  assert.deepEqual(outside.walk, IDS);
+  assert.equal(stepThread(outside.walk, 'zzz', 'next'), 'a');
+  const moved = walkList(walkList(NO_MEMORY, IDS, 'c').memory, ['a', 'b', 'd'], 'b');
+  assert.deepEqual(moved.walk, ['a', 'b', 'd']);
 });
 
 test('five J presses in a row land five threads down, one per press', () => {
@@ -110,4 +152,62 @@ test('the pane header: back with Esc, "1 of 16", J/K disabled at the ends, at mo
   assert.equal(header.tools?.length, 3);
   assert.equal(header.tools?.[0]?.disabled, true);
   assert.equal(header.tools?.[1]?.disabled, false);
+});
+
+test('focus: the reader root takes focus only when it was dropped or sat on a letter that left the paper', () => {
+  assert.equal(focusDecision('dropped'), 'root');
+  assert.equal(focusDecision('offPaper'), 'root');
+  assert.equal(focusDecision('paper'), 'keep');
+  assert.equal(focusDecision('reader'), 'keep');
+  assert.equal(
+    focusDecision('elsewhere'),
+    'keep',
+    'the reader never pulls focus back from the sidebar or a dialog',
+  );
+});
+
+test('focus: where the focused element is, against a reader root', () => {
+  const element = (parent: unknown = null, paper?: boolean) => {
+    const self = {
+      parent,
+      paper,
+      contains: (other: unknown) => {
+        for (let at = other as typeof self | null; at; at = at.parent as typeof self | null) {
+          if (at === self) return true;
+        }
+        return false;
+      },
+      closest: (_selector: string) => {
+        for (let at = self as typeof self | null; at; at = at.parent as typeof self | null) {
+          if (at.paper !== undefined) return at;
+        }
+        return null;
+      },
+      getAttribute: (_name: string) => (self.paper ? 'true' : 'false'),
+    };
+    return self as unknown as Element;
+  };
+  const body = element();
+  const root = element();
+  const paperLetter = element(root, true);
+  const offLetter = element(root, false);
+  const place = (active: Element | null) => placeOf({ active, body, root });
+  assert.equal(place(null), 'dropped');
+  assert.equal(place(body), 'dropped');
+  assert.equal(place(element(paperLetter)), 'paper');
+  assert.equal(place(element(offLetter)), 'offPaper');
+  assert.equal(place(root), 'reader');
+  assert.equal(place(element(root)), 'reader');
+  assert.equal(place(element()), 'elsewhere');
+});
+
+test('find: every ⌘F counts, so a second one refocuses the field; closing it keeps the query out', () => {
+  let ui = reduceUi(freshUi('t'), { type: 'openFind' });
+  assert.equal(ui.find, '');
+  assert.equal(ui.findFocus, 1);
+  ui = reduceUi(ui, { type: 'setFind', query: 'invoice' });
+  ui = reduceUi(ui, { type: 'openFind' });
+  assert.equal(ui.find, 'invoice', 'the query stays');
+  assert.equal(ui.findFocus, 2, 'and the field is asked to take focus again');
+  assert.equal(reduceUi(ui, { type: 'closeFind' }).find, null);
 });

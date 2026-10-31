@@ -2,15 +2,18 @@
  * The send fuzz (lane card criterion 5; plan 30 U6 "a fuzzer interleaves send, undo and fixture-engine restart"): 200
  * seeded sequences of 40 steps each interleave typing, waiting, send, double Return, a second composer pressing Send on
  * the same draft, Undo, Send now, the tray's other verbs, scripted send outcomes, the Mac sleeping, Esc, discard (asked,
- * confirmed or cancelled), send later, and a stand-in restart that drops the renderer's state without a flush. After
- * every step it checks, against the engine's own rows:
+ * confirmed or cancelled), send later, and a stand-in restart that drops the renderer's state without a flush. Two
+ * racing ops act BEFORE the engine answers: `race` presses and then, in the same tick, presses again, undoes, sends
+ * now, closes or has a second composer press; `restartPending` presses and restarts the stand-in while the send is
+ * still pending. After every step it checks, against the engine's own rows:
  *
  * - never two submissions for one send (at most one live per draft, at most one sent, at most one new row per press);
  * - never a duplicate or missing tray (one composer shows at most one tray; a held send always shows it, after a reload
  *   too) and the drain matches the undo window (`undoSendSeconds`, varied per sequence);
  * - never a lost draft (the last text the engine confirmed is in the draft row, or the draft was sent, or discarded
  *   after the confirmation);
- * - Esc never discards (every `Draft/destroy` follows a confirmed "Discard this draft?").
+ * - Esc never discards (every `Draft/destroy` follows a confirmed "Discard this draft?");
+ * - an Undo pressed before the engine answered, with no press after it, always undoes: the draft has no held send.
  *
  * Run: `cd apps/desktop && npx tsx --test src/renderer/screens/compose/sendFuzz.test.ts`.
  */
@@ -57,10 +60,20 @@ const OPS = [
   ['discardConfirm', 1],
   ['discardCancel', 1],
   ['restart', 2],
+  ['race', 4],
+  ['restartPending', 2],
 ] as const;
 
 type Op = (typeof OPS)[number][0];
-const PRESSES: ReadonlySet<Op> = new Set(['send', 'double', 'twin', 'sendLater', 'trayAction']);
+const PRESSES: ReadonlySet<Op> = new Set([
+  'send',
+  'double',
+  'twin',
+  'sendLater',
+  'trayAction',
+  'race',
+  'restartPending',
+]);
 const TOTAL_WEIGHT = OPS.reduce((sum, [, weight]) => sum + weight, 0);
 const ALPHABET = 'abc xyz\n&<>';
 const ME = { id: 'jordan@example.com', name: 'Jordan Lee', address: 'jordan@example.com' };
@@ -82,6 +95,8 @@ interface World {
   readonly discarded: Set<string>;
   readonly drafts: Set<string>;
   confirms: number;
+  /** Second composers that pressed Send in the last op (each may make one submission of its own). */
+  twins: number;
   readonly log: string[];
 }
 
@@ -149,6 +164,65 @@ function trayAction(world: World) {
   world.session.dispatch({ type: 'action', action, notBefore });
 }
 
+const RACERS = ['press', 'undo', 'undo', 'sendNow', 'escape', 'twin'] as const;
+
+/** One verb in the same tick as the press, before any answer. Returns true when it was an Undo of a pending send. */
+function racer(world: World, verb: (typeof RACERS)[number], twins: ComposeSession[]): boolean {
+  const pending = world.session.getState().send.kind === 'pending';
+  if (verb === 'press') press(world);
+  if (verb === 'undo') world.session.dispatch({ type: 'action', action: 'undo' });
+  if (verb === 'sendNow') world.session.dispatch({ type: 'action', action: 'sendNow' });
+  if (verb === 'escape') world.session.dispatch({ type: 'escape' });
+  if (verb === 'twin') twins.push(twinOf(world));
+  return verb === 'undo' && pending;
+}
+
+/** A second composer on the same draft pressing Send at once. */
+function twinOf(world: World): ComposeSession {
+  const id = world.session.getState().save.draftId;
+  const draft = id ? world.kit.draft(id) : undefined;
+  const twin = openSession(world.kit, draft ? composeFromDraft(draft) : freshReply(world.kit));
+  twin.dispatch({ type: 'send', now: world.kit.timers.now(), undoSeconds: world.undoSeconds });
+  return twin;
+}
+
+/** Press, then up to three verbs before the engine answers; an Undo of the pending send must win. */
+async function race(world: World) {
+  press(world);
+  let undone = false;
+  const twins: ComposeSession[] = [];
+  const burst = 1 + Math.floor(world.random() * 3);
+  for (let i = 0; i < burst; i++) {
+    const verb = pick(world.random, RACERS);
+    const undid = racer(world, verb, twins);
+    // A press of this composer while its send is pending changes nothing, so the Undo still stands; a second
+    // composer's press is a send of its own.
+    if (verb === 'twin') undone = false;
+    if (undid) undone = true;
+  }
+  const draftId = world.session.getState().save.draftId;
+  for (let i = 0; i < 2; i++) {
+    await world.kit.settle();
+    world.kit.observe(world.session);
+  }
+  await world.kit.settle();
+  for (const twin of twins) twin.dispose();
+  world.twins = twins.length;
+  if (!undone || !draftId) return;
+  count('race undo before the answer');
+  const held = world.kit
+    .submissions(draftId)
+    .filter(s => s.state === 'queued' || s.state === 'scheduled');
+  assert.equal(held.length, 0, 'an Undo pressed before the answer was lost');
+}
+
+/** Press, then the stand-in restarts while the send is still pending (the call in flight or not yet made). */
+async function restartPending(world: World) {
+  press(world);
+  if (world.random() < 0.5) await Promise.resolve();
+  await restart(world);
+}
+
 async function restart(world: World) {
   const send = world.session.getState().send;
   if (send.kind !== 'none') count(`restart during ${send.kind}`);
@@ -206,6 +280,10 @@ async function apply(world: World, op: Op): Promise<void> {
       return session.dispatch({ type: 'cancelDiscard' });
     case 'restart':
       return restart(world);
+    case 'race':
+      return race(world);
+    case 'restartPending':
+      return restartPending(world);
   }
 }
 
@@ -230,7 +308,8 @@ function checkSubmissions(world: World, op: Op, before: number): void {
     assert.ok(rows.filter(r => r.state === 'sent').length <= 1, `two sent copies of ${id}`);
   }
   const made = submissionCount(world) - before;
-  assert.ok(made <= (PRESSES.has(op) ? 1 : 0), `${op} made ${made} submissions`);
+  const allowed = (PRESSES.has(op) ? 1 : 0) + world.twins;
+  assert.ok(made <= allowed, `${op} made ${made} submissions`);
 }
 
 function checkTray(world: World): void {
@@ -267,6 +346,7 @@ function checkDrafts(world: World): void {
 async function step(world: World, index: number): Promise<void> {
   const op = pickOp(world.random);
   world.log.push(`${index}:${op}`);
+  world.twins = 0;
   const before = submissionCount(world);
   const draftBefore = world.session.getState().save.draftId;
   const existedBefore = draftBefore ? world.kit.draft(draftBefore) !== undefined : false;
@@ -296,6 +376,7 @@ async function runSequence(seed: number): Promise<void> {
     discarded: new Set(),
     drafts: new Set(),
     confirms: 0,
+    twins: 0,
     log: [],
   };
   try {
@@ -319,6 +400,8 @@ const MUST_REACH = [
   'phase scheduled',
   'phase idle',
   'restart during tracking',
+  'restart during pending',
+  'race undo before the answer',
 ] as const;
 
 test(`send fuzz: ${SEQUENCES} sequences x ${STEPS} steps keep one send, one tray, every draft, and ask before discarding`, async () => {

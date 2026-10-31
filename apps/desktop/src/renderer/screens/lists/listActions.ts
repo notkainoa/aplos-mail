@@ -42,8 +42,8 @@ export interface ListDeps {
   dismiss(id: string): void;
   /** The hold gate: a key starts or extends it around `ids`. */
   hold: { extend(ids?: readonly string[]): void };
-  /** The caller's `onOpen`. */
-  open(id: string, kind: OpenKind): void;
+  /** The caller's `onOpen`; `listIds` are the threads the list shows, in order, so the reader's J and K walk them. */
+  open(id: string, kind: OpenKind, listIds?: readonly string[]): void;
   confirmation(): Confirmation | null;
   setConfirmation(next: Confirmation | null): void;
   /** The confirmed toast text of a command, read from the registry. */
@@ -81,6 +81,14 @@ function targetAt(deps: ListDeps, key?: string): Target | null {
   const at = key ?? snapshot.key;
   const row = at === null ? undefined : snapshot.rowOf(at);
   return row ? { row } : null;
+}
+
+/** The ids of the threads the list draws, in order (a draft or submission row is not a thread the reader steps to). */
+function threadIdsOf(snapshot: ListSnapshot): readonly string[] {
+  return snapshot.ids.filter(id => {
+    const row = snapshot.rowOf(id);
+    return row === undefined || isThread(row);
+  });
 }
 
 function threadAt(deps: ListDeps, key?: string): ThreadRow | null {
@@ -208,7 +216,7 @@ export function createListActions(deps: ListDeps): ListActions {
     },
     open: key => {
       const target = targetAt(deps, key);
-      if (target) deps.open(target.row.id, openKindOf(target.row));
+      if (target) deps.open(target.row.id, openKindOf(target.row), threadIdsOf(deps.snapshot()));
     },
     done,
     later,

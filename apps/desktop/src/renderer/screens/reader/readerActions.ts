@@ -26,8 +26,17 @@ export interface ReaderDeps {
   rowOf(id: string): ThreadRow | undefined;
   /** Opens a thread in the reader (the shell's `openThread`). */
   go(id: string): void;
+  /**
+   * A thread was sent away (Done, Later, Trash) or came back (Undo). A list the screen was opened with is a snapshot, so
+   * the screen uses this to keep J and K off threads this reading has already handled.
+   */
+  markGone(id: string, gone: boolean): void;
+  /** Undo of Done, Later or Trash: brings the reader back to the thread, but only while the reader is still open. */
+  reopen(id: string): void;
   /** Esc, or no thread left: close the reader and show the screen it was opened from. */
   leave(): void;
+  /** Closes find on the letter on paper when it is open; true when it was (Esc then has done its job). */
+  closeFind(): boolean;
   act: DataApi['thread']['act'];
   push(toast: PushedToast): string;
   dismiss(id: string): void;
@@ -62,11 +71,18 @@ const NUDGE: ReplyRequest = { ...PLAIN_REPLY, suggest: { kind: 'followUp' } };
 type Toasted = Omit<PushedToast, 'id' | 'undoable' | 'actions' | 'onAction'>;
 
 export function createReaderActions(deps: ReaderDeps): ReaderActions {
-  /** Threads this reading has already sent away: the letter on paper may outlive its thread by a moment. */
+  /**
+   * Threads this reading has already sent away: the letter on paper may outlive its thread by a moment (Done, J, then
+   * Done again before the next letter lands). An entry stays until another letter is on paper, so a second E (or L, #,
+   * B, Space, R) on a thread that already left does nothing instead of running Done on it twice. While the next letter
+   * is still loading these keys are therefore ignored on purpose: nothing is queued and no state is cleared, the
+   * toast for the first one is already up, and the next letter takes the keys the moment it lands.
+   */
   const left = new Set<string>();
 
   function current(): ThreadRow | undefined {
     const id = deps.shown();
+    for (const gone of left) if (gone !== id) left.delete(gone);
     return id === null || left.has(id) ? undefined : deps.rowOf(id);
   }
 
@@ -84,13 +100,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     });
   }
 
-  function actOn(row: ThreadRow, action: ThreadAction, toast: Toasted): string {
+  function actOn(row: ThreadRow, action: ThreadAction, toast: Toasted, after?: () => void): string {
     const { opId, receipt } = deps.act({ ids: [row.id], action });
     deps.push({
       id: opId,
       undoable: true,
       actions: [UNDO_ACTION],
-      onAction: undoHandler(opId),
+      onAction: undoHandler(opId, after),
       ...toast,
     });
     failOnReject(opId, action, receipt);
@@ -101,7 +117,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
   function leaveList(row: ThreadRow, action: ThreadAction, toast: Toasted): void {
     const next = afterRemoval(deps.ids(), row.id);
     left.add(row.id);
-    actOn(row, action, toast);
+    deps.markGone(row.id, true);
+    // Undo puts the row back in its list, and the reader goes back to it.
+    actOn(row, action, toast, () => {
+      left.delete(row.id);
+      deps.markGone(row.id, false);
+      deps.reopen(row.id);
+    });
     if (next === null) deps.leave();
     else deps.go(next);
   }
@@ -148,7 +170,6 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
 
   return {
     step: direction => {
-      left.clear();
       const next = stepThread(deps.ids(), deps.wanted(), direction);
       if (next !== null) deps.go(next);
     },
@@ -168,6 +189,8 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     reply: () => replyWith(PLAIN_REPLY),
     replyAll: () => replyWith({ ...PLAIN_REPLY, replyAll: true }),
     dictate: () => replyWith({ ...PLAIN_REPLY, dictate: true }),
-    back: () => deps.leave(),
+    back: () => {
+      if (!deps.closeFind()) deps.leave();
+    },
   };
 }

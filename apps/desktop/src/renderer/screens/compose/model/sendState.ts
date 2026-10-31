@@ -15,7 +15,7 @@
  * | sent        | (nothing: the message is in its thread)                         | none                    |
  * | failed      | "Couldn't send to Jordan. Your draft is saved." (ErrorLine)     | Try again · Edit        |
  * | deferred    | "Couldn't send until 2:14 PM. Your draft is saved." (tray)      | none                    |
- * | uncertain   | "We could not confirm this was sent." (tray)                    | Check Sent · Send anyway|
+ * | uncertain   | "Couldn’t confirm this was sent." (tray)                        | Check Sent · Send anyway|
  * | suspended   | "Missed its time while your Mac was off." (tray)                | Send now · Reschedule   |
  * | cancelled   | (the composer reopens on the draft)                             | Send                    |
  */
@@ -52,6 +52,9 @@ export type SendIntent =
       readonly names: readonly string[];
       readonly reasonCode: string;
       readonly until?: number;
+      /** What the refused press asked for, so Try again sends the same thing (a send later stays a send later). */
+      readonly notBefore?: number;
+      readonly alsoDone?: boolean;
     };
 
 export const NO_SEND: SendIntent = { kind: 'none' };
@@ -185,6 +188,10 @@ const QUIET: SendView = { tray: null, failure: null, notice: null, actions: [] }
 export const SEND_COPY = {
   offline: 'Saved here · will sync',
   scheduled: (when: string) => `Scheduled for ${when}`,
+  /** The send-failed line's words (ErrorLine `sendFailed`), for the toast when no thread shows the send. */
+  failed: (recipient: string) => `Couldn’t send to ${recipient}. Your draft is saved.`,
+  /** An Undo that lost the race with the send. */
+  alreadySent: 'Already sent.',
 } as const;
 
 /** The view of a phase. `formatTime` names a scheduled send's time ("Tue 9:00 AM"). */

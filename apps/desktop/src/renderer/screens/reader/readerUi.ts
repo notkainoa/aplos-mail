@@ -32,6 +32,8 @@ export interface ReaderUi {
   readonly imagesLoaded: readonly string[];
   /** The find bar: closed (null) or open with its query. */
   readonly find: string | null;
+  /** Counts every ⌘F, so a second one refocuses the field even though find is already open. */
+  readonly findFocus: number;
   /** The inline reply under the thread, or null while only the stub shows. */
   readonly reply: ReplyRequest | null;
   /** The reply card is open (a sent reply's tray is not): the filled suggestion belongs to the card while it is. */
@@ -47,6 +49,7 @@ export function freshUi(threadId: string | null): ReaderUi {
     cursor: null,
     imagesLoaded: [],
     find: null,
+    findFocus: 0,
     reply: null,
     replyOpen: false,
   };
@@ -81,7 +84,7 @@ export function reduceUi(state: ReaderUi, event: UiEvent): ReaderUi {
     case 'loadImages':
       return { ...state, imagesLoaded: withId(state.imagesLoaded, event.id) };
     case 'openFind':
-      return { ...state, find: state.find ?? '' };
+      return { ...state, find: state.find ?? '', findFocus: state.findFocus + 1 };
     case 'setFind':
       return { ...state, find: event.query };
     case 'closeFind':

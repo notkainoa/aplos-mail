@@ -1,11 +1,42 @@
 /**
  * The pane header the compose page asks for (DESIGN 7.6 New message): close (×, Esc), the crumb "New message", then ⋯
- * (send from, schedule, discard). Ask and the calendar button are the shell's. The shell draws the header; this is only
- * the description (REQUEST: the shell takes it the same way as the reader's).
+ * (send from, schedule, discard) on its own command, `compose.more`, anchored to the header button (⌘/ stays the format
+ * menu). Ask and the calendar button are the shell's. The shell draws the header; this is only the description. A
+ * press of ⋯ reaches the mounted page through `headerMenu`, so the page opens its menu under the button.
  */
 import type { PaneHeaderProps } from '../../ui/props';
 
 export const COMPOSE_CRUMB = 'New message';
+
+/** The header ⋯'s command and label. */
+export const COMPOSE_MORE = { commandId: 'compose.more', label: 'More' } as const;
+
+type MenuListener = (anchor: HTMLElement | null) => void;
+
+const listeners = new Set<MenuListener>();
+
+/** The header's ⋯ was pressed (or `compose.more` ran): the mounted page opens its menu at `anchor`. */
+export const headerMenu = {
+  open(anchor: HTMLElement | null): void {
+    for (const listener of [...listeners]) listener(anchor);
+  },
+  subscribe(listener: MenuListener): () => void {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+};
+
+/** The header's ⋯ button, for `compose.more` run from the palette (no element of its own). */
+export function headerMoreButton(
+  scope: Pick<Document, 'querySelector'> | undefined = globalThis.document,
+) {
+  return (
+    scope?.querySelector<HTMLElement>(`.ui-pane__tools [aria-label="${COMPOSE_MORE.label}"]`) ??
+    null
+  );
+}
 
 export function composeHeader(input: {
   readonly close: () => void;
@@ -21,7 +52,15 @@ export function composeHeader(input: {
     },
     crumb: { label: COMPOSE_CRUMB },
     tools: [
-      { commandId: 'compose.format', icon: 'more', label: 'More', detail: 'send later, discard' },
+      {
+        commandId: COMPOSE_MORE.commandId,
+        icon: 'more',
+        label: COMPOSE_MORE.label,
+        detail: 'send later, discard',
+      },
     ],
+    onTool: (commandId, anchor) => {
+      if (commandId === COMPOSE_MORE.commandId) headerMenu.open(anchor);
+    },
   };
 }

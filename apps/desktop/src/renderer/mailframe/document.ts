@@ -61,8 +61,10 @@ function markAttribute(): string {
 export interface FrameDocument {
   /** The full `srcdoc` string. */
   srcdoc: string;
-  /** Remote resources removed ("N trackers removed"). */
+  /** Remote resources removed or blocked. */
   blocked: number;
+  /** Tracking pixels among them ("N trackers removed"). */
+  trackers: number;
   /** Sentences the host shows above the frame (flattened, truncated). Never inside the frame. */
   notices: string[];
 }
@@ -82,5 +84,5 @@ export function frameDocument(
     `<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">` +
     `<style>${hostCss(mark)}</style></head>` +
     `<body${body.bodyAttributes}>${highlight(body.html, findQuery, mark)}</body></html>`;
-  return { srcdoc, blocked: body.blocked, notices: body.notices };
+  return { srcdoc, blocked: body.blocked, trackers: body.trackers, notices: body.notices };
 }

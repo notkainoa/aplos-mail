@@ -1,0 +1,160 @@
+/**
+ * The notices a send leaves on the shell's toast stack once no composer shows it (DESIGN 7.6 "one notice per send",
+ * 7.13, 7.15 Send failed): a refused or failed send ("Couldn’t send to Jordan. Your draft is saved." · Try again ·
+ * Edit), a send later ("Scheduled for tomorrow, 8:00 AM" · Undo), an offline send ("Saved here · will sync"), an Undo
+ * that came too late ("Already sent."), and the held sends behind the newest one (the newest is the toast's UndoTray).
+ * Each toast's id is its send's, so a send never has two. Nothing here sends mail by itself: every verb is the owner's.
+ */
+import { api, getNow, type Submission } from '../../../data';
+import { dismissToast, openCompose, pushToast, type PushedToast } from '../../../shell';
+import { UNDO_ACTION } from '../../undoOperation';
+import { recipientPhrase } from '../model/recipients';
+import { SEND_COPY } from '../model/sendState';
+import { refusalOf } from './composeApi';
+import { releaseSend } from './sendHandoff';
+
+const TRY_AGAIN = { id: 'retry', label: 'Try again' } as const;
+const EDIT = { id: 'edit', label: 'Edit' } as const;
+const SEND_NOW = { id: 'sendNow', label: 'Send now' } as const;
+
+/** A send the engine refused before it made a submission (the compose page had already closed). */
+export interface RefusedSend {
+  readonly draftId: string;
+  readonly revision: number;
+  readonly names: readonly string[];
+  readonly notBefore?: number;
+  readonly alsoDone?: boolean;
+}
+
+/** "Already sent.": an Undo reached the engine after the send had left. */
+export function pushAlreadySent(id: string): void {
+  pushToast({
+    id: `send-late-undo-${id}`,
+    kind: 'info',
+    message: SEND_COPY.alreadySent,
+    undoable: false,
+  });
+}
+
+/** Undo for a submission; a refusal because it already left says so. */
+export function undoSubmission(id: string): void {
+  void api.submission.set({ action: { type: 'undo', submissionId: id } }).catch(error => {
+    if (refusalOf(error).type === 'conflict') pushAlreadySent(id);
+  });
+}
+
+function failedToast(
+  id: string,
+  recipient: string,
+  onAction: (actionId: string) => void,
+): PushedToast {
+  return {
+    id,
+    kind: 'info',
+    message: SEND_COPY.failed(recipient),
+    actions: [TRY_AGAIN, EDIT],
+    undoable: false,
+    persistent: true,
+    onAction,
+  };
+}
+
+/** Sends a refused draft again with what the press asked for; a second refusal comes back as the same notice. */
+function sendAgain(refused: RefusedSend): void {
+  const action = {
+    type: 'send',
+    draftId: refused.draftId,
+    revision: refused.revision,
+    ...(refused.alsoDone ? { alsoDone: true } : {}),
+    ...(refused.notBefore !== undefined && refused.notBefore > getNow()
+      ? { notBefore: refused.notBefore }
+      : {}),
+  } as const;
+  api.submission
+    .set({ action })
+    .then(({ submission }) => releaseSend(submission.id, true))
+    .catch(() => pushRefusedSend(refused));
+}
+
+/** "Couldn’t send to Jordan. Your draft is saved." · Try again · Edit, for a send refused with no thread showing it. */
+export function pushRefusedSend(refused: RefusedSend): void {
+  const id = `send-refused-${refused.draftId}`;
+  const recipient = recipientPhrase(refused.names);
+  pushToast(
+    failedToast(id, recipient, actionId => {
+      if (actionId === TRY_AGAIN.id) sendAgain(refused);
+      if (actionId === EDIT.id) openCompose({ draftId: refused.draftId });
+    }),
+  );
+}
+
+/** Edit after a failed send: the submission lets the draft go, then the compose page opens on it. */
+function editFailed(row: Submission): void {
+  void api.submission
+    .set({ action: { type: 'cancel', submissionId: row.id } })
+    .then(() => openCompose({ draftId: row.draftId }))
+    .catch(() => undefined);
+}
+
+/** Try again after a failed send: the stack follows it again, so its next phase is shown too. */
+function retryFailed(row: Submission): void {
+  void api.submission
+    .set({ action: { type: 'retry', submissionId: row.id, revision: row.revision } })
+    .then(() => releaseSend(row.id, true))
+    .catch(() => pushFailedSubmission(row));
+}
+
+/** The same notice for a handed-off submission that failed; one per failure (`rev`). */
+export function pushFailedSubmission(row: Submission): void {
+  const recipient = recipientPhrase(row.toNames);
+  pushToast(
+    failedToast(`send-failed-${row.id}-${row.rev}`, recipient, actionId => {
+      if (actionId === TRY_AGAIN.id) retryFailed(row);
+      if (actionId === EDIT.id) editFailed(row);
+    }),
+  );
+}
+
+/** "Scheduled for …" · Undo, or "Saved here · will sync", once per send. */
+export function pushSendNotice(id: string, kind: 'scheduled' | 'offline', message: string): void {
+  const undoable = kind === 'scheduled';
+  pushToast({
+    id: `send-${id}:${kind}`,
+    kind: kind === 'offline' ? 'offline' : 'info',
+    message,
+    actions: undoable ? [UNDO_ACTION] : [],
+    undoable,
+    onAction: actionId => {
+      if (actionId === UNDO_ACTION.id) undoSubmission(id);
+    },
+  });
+}
+
+/** The toast id of a held send shown behind the newest one. */
+export function heldToastId(id: string): string {
+  return `send-held-${id}`;
+}
+
+/** A held send behind the newest: "Sending to Mina in 6 s" · Undo · Send now, an Undo toast (never evicted). */
+export function pushHeldSend(row: Submission, recipients: string, secondsLeft: number): void {
+  pushToast({
+    id: heldToastId(row.id),
+    kind: 'info',
+    message: `Sending to ${recipients} in ${Math.max(0, Math.ceil(secondsLeft))} s`,
+    actions: [{ id: UNDO_ACTION.id, label: UNDO_ACTION.label }, SEND_NOW],
+    undoable: true,
+    persistent: true,
+    onAction: actionId => {
+      if (actionId === UNDO_ACTION.id) undoSubmission(row.id);
+      if (actionId === SEND_NOW.id)
+        void api.submission
+          .set({ action: { type: 'sendNow', submissionId: row.id, revision: row.revision } })
+          .catch(() => undefined);
+    },
+  });
+}
+
+/** The held toast goes once that send is the newest (its tray takes over) or no longer held. */
+export function dropHeldSend(id: string): void {
+  dismissToast(heldToastId(id));
+}

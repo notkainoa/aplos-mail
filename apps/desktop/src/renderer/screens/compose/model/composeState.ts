@@ -39,7 +39,15 @@ export interface ComposeState {
   readonly discarding: boolean;
   /** Sends of this draft that ended cancelled in this composer; part of the next send's idempotency key. */
   readonly attempt: number;
+  /** The newest engine row seen for this draft (a refused stale save is resolved against it). */
+  readonly remote?: Draft;
 }
+
+/** Why a save failed, when it is not worth a blind retry: the draft is gone, or the engine has a newer or locked row. */
+export type SaveFailure = 'gone' | 'mismatch';
+
+/** The one-off notices a composer asks the shell to show. */
+export type ComposeNotice = 'discarded' | 'discardFailed' | 'alreadySent';
 
 /** What a refused write said, without the transport's error class. */
 export interface Refusal {
@@ -59,9 +67,18 @@ export type ComposeEvent =
       readonly seq: number;
       readonly draft: Pick<Draft, 'id' | 'revision' | 'rev'>;
     }
-  | { readonly type: 'saveFailed'; readonly seq: number; readonly now: number }
+  | {
+      readonly type: 'saveFailed';
+      readonly seq: number;
+      readonly now: number;
+      readonly cause?: SaveFailure;
+    }
+  /** The newer remote text was kept as a draft of its own (`ok`), or could not be. */
+  | { readonly type: 'preserved'; readonly ok: boolean; readonly now: number }
+  /** An Undo reached the engine after the send had left. */
+  | { readonly type: 'undoLost' }
   | { readonly type: 'retrySave'; readonly now: number }
-  | { readonly type: 'observeDraft'; readonly draft: Draft | null }
+  | { readonly type: 'observeDraft'; readonly draft: Draft | null; readonly now?: number }
   | { readonly type: 'observeSubmission'; readonly submission: Submission }
   | {
       readonly type: 'send';
@@ -72,7 +89,13 @@ export type ComposeEvent =
     }
   | { readonly type: 'sendAccepted'; readonly submission: Submission }
   | { readonly type: 'sendRefused'; readonly refusal: Refusal }
-  | { readonly type: 'action'; readonly action: SendAction; readonly notBefore?: number }
+  | {
+      readonly type: 'action';
+      readonly action: SendAction;
+      readonly notBefore?: number;
+      /** The clock at the press (Try again keeps a send-at only while it is still ahead). */
+      readonly now?: number;
+    }
   | { readonly type: 'escape' }
   | { readonly type: 'askDiscard' }
   | { readonly type: 'confirmDiscard' }
@@ -108,7 +131,9 @@ export type ComposeEffect =
   | { readonly type: 'submission'; readonly action: FollowUpAction }
   | { readonly type: 'destroy'; readonly draftId: string }
   | { readonly type: 'checkSent' }
-  | { readonly type: 'notify'; readonly notice: 'discarded' | 'discardFailed' };
+  /** Keep a newer remote revision as a draft of its own before the local text is saved over it. */
+  | { readonly type: 'preserve'; readonly draft: Draft }
+  | { readonly type: 'notify'; readonly notice: ComposeNotice };
 
 /** One reducer step: the next state and what to do about it. */
 export interface Step {

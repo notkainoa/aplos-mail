@@ -5,6 +5,7 @@
 import type { BlockedSend, DraftStateKind } from '../../../ui/props';
 import { draftStateOf } from './autosave';
 import type { ComposeState, ComposeSuggestion } from './composeState';
+import type { ComposeFields } from './fields';
 import { invalidIds } from './recipients';
 import { phaseOf, sendView, type SendPhase, type SendView } from './sendState';
 
@@ -43,4 +44,9 @@ export function composeView(
     conditions: { suggestion: state.suggestion !== null, emptyBody: state.fields.body === '' },
     invalid: invalidIds([...to, ...cc, ...bcc]),
   };
+}
+
+/** Cc and Bcc rows show when asked for, and always while either holds a recipient (a hidden row still sends). */
+export function ccRowsShown(asked: boolean, fields: Pick<ComposeFields, 'cc' | 'bcc'>): boolean {
+  return asked || fields.cc.length + fields.bcc.length > 0;
 }

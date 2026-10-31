@@ -437,7 +437,7 @@ describe('UndoTray', () => {
       <UndoTray {...tray({ state: { kind: 'uncertain' }, placement: 'toast' })} />,
     );
     assert.match(uncertain, /data-placement="toast" role="status"/);
-    assert.equal(text(uncertain), 'We could not confirm this was sent. Check Sent Send anyway');
+    assert.equal(text(uncertain), 'Couldn’t confirm this was sent. Check Sent Send anyway');
     assert.equal(
       text(render(<UndoTray {...tray({ state: { kind: 'suspended' } })} />)),
       'Missed its time while your Mac was off. Send now Reschedule',

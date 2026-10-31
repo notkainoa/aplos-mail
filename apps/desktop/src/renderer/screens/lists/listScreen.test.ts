@@ -39,6 +39,7 @@ import { ListEmpty, ListFailed } from './ListStates';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { getComposeRequest } from '../../shell/store-compose';
 import { getScreen } from '../../shell/store-route';
+import { getOpenThread, getOpenThreadContext, setOpenThread } from '../../shell/store-thread';
 import { listOpener } from '../../App';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -88,6 +89,7 @@ function depsOver(world: World, config: ListConfig, start: string | null = null)
     acts: 0,
     held: 0,
     opened: [] as string[],
+    listIds: [] as (readonly string[] | undefined)[],
     destroyed: [] as string[],
     deleted: [] as (readonly string[])[],
   };
@@ -112,7 +114,10 @@ function depsOver(world: World, config: ListConfig, start: string | null = null)
     push: pushToast,
     dismiss: dismissToast,
     hold: { extend: () => void state.held++ },
-    open: (id, kind) => void state.opened.push(`${kind}:${id}`),
+    open: (id, kind, listIds) => {
+      state.opened.push(`${kind}:${id}`);
+      state.listIds.push(listIds);
+    },
     confirmation: () => state.confirmation,
     setConfirmation: next => {
       state.confirmation = next;
@@ -273,6 +278,11 @@ test('arrows on All mail move the cursor and archive nothing', async () => {
     assert.equal(getToasts().length, 0, 'and nothing was announced');
     actions.open();
     assert.deepEqual(state.opened, [`thread:${before[2]}`], 'Return opens through onOpen');
+    assert.deepEqual(
+      state.listIds,
+      [before],
+      'and hands over the ids the list shows, in order, for J and K',
+    );
   } finally {
     world.connection.close();
   }
@@ -478,4 +488,22 @@ test('Enter on a draft opens it in the compose page, coming from Drafts', async 
     navigate('home');
     world.connection.close();
   }
+});
+
+test('a list opens a thread in the reader with its own ids, so J and K walk that list and the crumb counts it', () => {
+  const open = listOpener('later');
+  open('t2', 'thread', ['t1', 't2', 't3']);
+  assert.equal(getOpenThread(), 't2');
+  assert.deepEqual(getOpenThreadContext().listIds, ['t1', 't2', 't3']);
+  assert.equal(getOpenThreadContext().from, 'later');
+  setOpenThread(null);
+  navigate('later');
+  open('t9', 'thread');
+  assert.equal(
+    getOpenThreadContext().listIds,
+    null,
+    'without ids the reader falls back to Home order',
+  );
+  setOpenThread(null);
+  navigate('home');
 });

@@ -276,9 +276,11 @@ function HomeSlot() {
 }
 
 /** What opening a list row does: a thread opens in the reader, a draft in the compose page, a submission nothing. */
-export function listOpener(from: Screen): (id: string, kind: OpenKind) => void {
-  return (id, kind) => {
-    if (kind === 'thread') openThread(id, { from });
+export function listOpener(
+  from: Screen,
+): (id: string, kind: OpenKind, listIds?: readonly string[]) => void {
+  return (id, kind, listIds) => {
+    if (kind === 'thread') openThread(id, listIds ? { from, listIds } : { from });
     if (kind === 'draft') openCompose({ draftId: id });
   };
 }

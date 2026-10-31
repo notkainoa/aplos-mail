@@ -7,12 +7,20 @@ import type { MailFrameProps } from './types';
 import { releaseSource, useFrameSource } from './useFrameSource';
 
 /** Show one message body, double-buffered against the previous letter. */
-export function MailFrame({ messageId, imagePolicy, findQuery, onReady, onKey }: MailFrameProps) {
+export function MailFrame({
+  messageId,
+  imagePolicy,
+  findQuery,
+  label,
+  onReady,
+  onKey,
+}: MailFrameProps) {
   const { source, failed } = useFrameSource(messageId, imagePolicy, findQuery);
   return (
     <MailFrameView
       source={source}
       findQuery={findQuery}
+      label={label}
       failed={failed}
       onReady={onReady}
       onKey={onKey}

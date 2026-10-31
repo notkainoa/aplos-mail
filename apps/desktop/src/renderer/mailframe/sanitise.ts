@@ -35,8 +35,10 @@ export interface SanitisedBody {
   notices: string[];
   /** Attributes for the frame's `<body>` taken from the email's own `<body>` (bgcolor, style, …), already escaped. */
   bodyAttributes: string;
-  /** Remote resources removed or blocked ("N trackers removed"). */
+  /** Remote resources removed or blocked: every remote image, style import and `url()` the policy refused. */
   blocked: number;
+  /** Tracking pixels among them ("N trackers removed"): remote images sized 0 or 1, or hidden. */
+  trackers: number;
   /** Shown as text because of the table-cell or nesting cap. */
   flattened: boolean;
   /** Cut at MAX_BODY_CHARS. */
@@ -162,7 +164,7 @@ function flatText(html: string): string {
  */
 export function sanitiseBody(html: string, policy: ImagePolicy): SanitisedBody {
   const truncated = html.length > MAX_BODY_CHARS;
-  const cx: AttributeContext = { policy, blocked: 0 };
+  const cx: AttributeContext = { policy, blocked: 0, trackers: 0 };
   const input = truncated ? html.slice(0, MAX_BODY_CHARS) : html;
   const writer = parse(input, cx);
   const flattened = writer.overflow;
@@ -175,6 +177,7 @@ export function sanitiseBody(html: string, policy: ImagePolicy): SanitisedBody {
     notices,
     bodyAttributes: flattened ? '' : writer.bodyAttributes,
     blocked: cx.blocked,
+    trackers: cx.trackers,
     flattened,
     truncated,
   };

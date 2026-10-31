@@ -24,6 +24,7 @@ import { ReaderMessage } from './ReaderMessage';
 import {
   collapsedOf,
   dueOf,
+  loadingLabel,
   myAddresses,
   participantsOf,
   recipientsLabel,
@@ -203,6 +204,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       cursor={cursor}
       imagesLoaded={ui.imagesLoaded.includes(m.id)}
       findQuery={props.paper ? (ui.find ?? undefined) : undefined}
+      loadingLabel={loadingLabel(row) ?? undefined}
       onFrame={props.onFrame}
       onLoadImages={id => dispatch({ type: 'loadImages', id })}
       onKey={controls.relayKey}
@@ -228,6 +230,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       {props.paper && ui.find !== null ? (
         <FindBar
           query={ui.find}
+          focusKey={ui.findFocus}
           onChange={query => dispatch({ type: 'setFind', query })}
           onClose={() => dispatch({ type: 'closeFind' })}
         />

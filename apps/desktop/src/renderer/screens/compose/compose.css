@@ -51,3 +51,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The compose page fills the pane, so its hairline and Send sit at the pane's bottom (DESIGN 7.6; mockups/compose.html)
+   however short the text, and a long text scrolls inside the page above them. */
+.aplos-screen:has(> .ui-composer) {
+  height: 100%;
+}
