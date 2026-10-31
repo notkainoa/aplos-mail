@@ -1,4 +1,4 @@
-# Integrator handoff (rewritten 2026-10-31 ~08:30 local; replaces all earlier ones)
+# Integrator handoff (rewritten 2026-10-31 ~08:30 local, updated ~10:00 by integrator-3; replaces all earlier ones)
 
 Old threads (never wake): `mcp:6116799a-5bed-4b61-a845-873061513d92` and the thread this file came from (context past 340k average: a fresh lean thread continues). Routing is roadmap 5.1a: Sonnet default for reviews, Opus ONLY for contract, send guard, vault, SSRF/sanitizer, auth/tokens, store commit path, sync correctness and draft data-loss code, Devin SWE-2 (`delegate_task`, providerInstanceId `acpRegistry_devin`, model `swe-2-high`) for well-specified non-UI volume work; name a model on every subagent, at most 4 concurrent. Never merge to main, publish, send mail, change visibility or rotate credentials; headless only.
 
@@ -9,6 +9,8 @@ Old threads (never wake): `mcp:6116799a-5bed-4b61-a845-873061513d92` and the thr
 DRAFT PORT SERIES (nine Opus rounds on #153 alone): remove/deleteDraft carry the expected message id; create-path conflict carries remoteDraftId/remoteInternetId adopted only on exact Message-ID equality; remote draft bodies are delivered with a `message`; a copy counts as COMPLETE only when a closed-world field list (DRAFT_CONTENT_FIELDS, checked by `satisfies` and a runtime test) shows every field; running-upload proof is by content fingerprint; Bcc/signature/attachment/From holders raise a conflict instead of being replaced; take-theirs never restores a removed attachment; `earlier`/`supersedes` ids (max 5) clear on any answer; `adoptCopy` adopts only PROVEN-ours copies (#164, per-id fingerprints); inline parts / `cid:` make a copy incomplete (#162, linear regex, timing test); BINDING sender comparison (#161). Engine bundle 391,352/400,000 B; budget stays 400,000 (ask the owner for 450,000 only if needed). Provider draft sync is NOT wired yet (nothing wires DraftSyncPort).
 
 ## Open
+
+- Merged since this file was written, on local checks only (GitHub Actions is down: billing; the local full check is the merge gate): #165 (engine self-test), #166 (budget rows), #167 (eng-host host-1 window lifecycle). Nothing else is open except the items below.
 
 - #156 (providers, Gmail drafts adapter, base revamp, head 119c98bf): Opus final review = FIX, one MEDIUM: a draft with two To/Cc (or From/Subject) headers is read first-match-only and delivered as a complete body: deliver NO body when any appears more than once, plus a test; optional lows in my 23:30 REQUEST. On a new head: check-multi + a short Opus re-check of the fix diff, merge head-guarded. The #156 body-with-`message` fix is already in it.
 - #158 (providers, base rv/prov-gmail-write/draft-ports, e57f9d56): CLOSE as superseded once #156 merges; the Gmail create lookup honouring `DraftUpload.supersedes` (PORT GAP 2) becomes a NEW small PR on revamp (recorded-hash decision: in-memory record, conflict fallback after a restart, accepted).
