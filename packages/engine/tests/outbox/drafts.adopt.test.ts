@@ -146,11 +146,19 @@ test('adopt: an early row that shows ANOTHER version (a phone edit) is kept, and
     const upload = w.remoteDrafts.saves.at(-1)!;
     fact(w, 'rd1', 'msg-phone', { ...PHONE, internetId: upload.internetId });
     g.open();
-    await wait(w, 5 * SEC);
+    await w.settle();
     assert.equal(shown(w, REMOTE), true, "the phone's version stays visible");
-    assert.notEqual(row(w, d.id)!.remote_draft_id, 'rd1', 'this draft is not bound to it');
     assert.equal(w.remoteDrafts.remote.has('rd1'), true, 'and nothing deleted it');
     assert.equal(w.remoteDrafts.removes.includes('rd1'), false);
+    // Its next upload makes a fresh copy of its own: it does not point back at the copy the other row holds.
+    await wait(w, 60 * SEC);
+    const next = w.remoteDrafts.saves.at(-1)!;
+    assert.notEqual(next.internetId, upload.internetId);
+    assert.equal(next.supersedes, undefined, "no supersedes pointing at the other row's copy");
+    assert.equal(next.remoteDraftId, undefined, 'a create');
+    assert.notEqual(row(w, d.id)!.remote_draft_id, null, 'and it ends up bound to its own copy');
+    assert.notEqual(row(w, d.id)!.remote_draft_id, 'rd1');
+    assert.equal(shown(w, REMOTE), true, "the phone's version is still shown");
   }));
 
 test('adopt: an early row the owner has edited is never given up for the reply', () =>
@@ -189,4 +197,33 @@ test('adopt: a create-path conflict does not bind a draft to a copy another row 
     assert.equal(row(w, d.id)!.remote_draft_id, null, 'not bound to the copy the other row shows');
     assert.equal(shown(w, REMOTE), true);
     assert.equal(w.remoteDrafts.remote.has('rd1'), true);
+  }));
+
+test('adopt: an early row that is being discarded is not given up for the reply either', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    fact(w, 'rd1', 'msg2', { ...PHONE, internetId: upload.internetId });
+    assert.equal(shown(w, REMOTE), true);
+    // The owner discards the duplicate; its removal of the copy is still in flight when our reply arrives.
+    const hold = gate();
+    w.remoteDrafts.removeScript.push({ wait: hold.wait });
+    service(w).destroy(next(), REMOTE);
+    await w.settle();
+    await wait(w, 5 * SEC);
+    g.open();
+    await w.settle();
+    assert.equal(
+      row(w, d.id)!.remote_draft_id === 'rd1',
+      false,
+      'this draft is not bound to the copy being removed',
+    );
+    hold.open();
+    await wait(w, 60 * SEC);
+    assert.equal(count(w), 1, 'the discarded row is gone, ours is left');
+    assert.notEqual(row(w, d.id)!.remote_draft_id, 'rd1');
+    assert.notEqual(row(w, d.id)!.remote_draft_id, null, 'and it made a copy of its own');
   }));

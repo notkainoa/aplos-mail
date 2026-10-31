@@ -291,10 +291,14 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // ours). Only the very same untouched version is the same copy; anything else (a newer version, a draft the owner
   // edited, one with a send queued) keeps its row, and this row is NOT bound to it: the upload is done with, nothing is
   // lost, and the next upload makes its own copy.
-  const holders = holdersOf(tx, row, w.remoteDraftId);
+  const holders = row.remote_draft_id === null ? holdersOf(tx, row, w.remoteDraftId) : [];
   if (!holders.every(h => sameCopy(tx, h, w.remoteMessageId))) {
     if (meta.removing) return deleteHidden(tx, row.id);
-    const given = abandoned(meta, null, { internetId: w.internetId, fingerprint: w.fingerprint });
+    // Not into `earlier`: the next create must not point back at the copy the other row holds (an adapter would replace it).
+    const given = abandoned(meta, w.remoteDraftId, {
+      internetId: w.internetId,
+      fingerprint: w.fingerprint,
+    });
     return writeRow(
       tx,
       w.id,
@@ -349,12 +353,15 @@ function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) 
 /**
  * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
  * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
- * if nobody touched it (`origin: 'remote'`), it holds the very message id the reply names, and no send is queued on it;
+ * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and no send is queued on it;
  * then it goes (two rows must never share a remote draft).
  */
 function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
   return (
-    copy.origin === 'remote' && copy.remote_message_id === remoteMessageId && !liveOf(tx, copy.id)
+    copy.origin === 'remote' &&
+    copy.remote_message_id === remoteMessageId &&
+    !parseData(copy.data).meta.removing &&
+    !liveOf(tx, copy.id)
   );
 }
 
