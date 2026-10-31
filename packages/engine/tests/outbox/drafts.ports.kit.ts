@@ -69,6 +69,10 @@ export interface Fact {
   snippet?: string;
   hasAttachments?: boolean;
   from?: { address: string };
+  /** The Bcc the copy shows (default: none, shown). */
+  bcc?: { address: string }[];
+  /** A provider that cannot show a draft's Bcc: the copy carries no `bcc` at all. */
+  omitBcc?: true;
 }
 
 /** What history reports when another device saves a draft. */
@@ -93,6 +97,7 @@ export function fact(w: World, remoteDraftId: string, messageId: string, f: Fact
           remoteThreadId: 'phone-thread',
           to: f.to ?? [{ address: 'jordan@mail.example' }],
           from: f.from ?? { address: 'owner@mail.example' },
+          ...(f.omitBcc ? {} : { bcc: f.bcc ?? [] }),
           cc: [],
           subject: f.subject ?? 'From the phone',
           snippet: f.snippet ?? 'only a snippet',
