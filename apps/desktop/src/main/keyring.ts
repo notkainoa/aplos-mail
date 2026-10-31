@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { removeStaleTemporaries, writeFileDurably } from './durable-file';
 
 /**
  * Credentials are sealed with a random data key (AES-256-GCM) instead of the OS keychain directly,
@@ -57,6 +58,7 @@ export async function loadDataKey(dataDir: string, keychain: Keychain): Promise<
   if (!keychain.available()) throw new Error('macOS secure credential storage is unavailable.');
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const path = join(dataDir, KEY_FILE);
+  await removeStaleTemporaries(path);
   if (existsSync(path)) {
     let key: Buffer;
     try {
@@ -69,8 +71,7 @@ export async function loadDataKey(dataDir: string, keychain: Keychain): Promise<
     return key;
   }
   const key = randomBytes(32);
-  await writeFile(`${path}.tmp`, keychain.encrypt(key.toString('base64')), { mode: 0o600 });
-  await rename(`${path}.tmp`, path);
+  await writeFileDurably(path, keychain.encrypt(key.toString('base64')));
   return key;
 }
 
@@ -110,8 +111,7 @@ export async function migrateCredentials(
         }
       }
       if (changed) {
-        await writeFile(`${path}.tmp`, JSON.stringify(entries), { mode: 0o600 });
-        await rename(`${path}.tmp`, path);
+        await writeFileDurably(path, JSON.stringify(entries));
         migrated += changed;
       }
     } catch (error) {
