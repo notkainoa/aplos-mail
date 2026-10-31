@@ -13,6 +13,7 @@ import {
   onRefused,
   onSend,
   onSubmission,
+  onUnconfirmed,
   saveStep,
   submitStep,
 } from './sendReducer';
@@ -249,6 +250,13 @@ export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
   switch (event.type) {
     case 'undoLost':
       return { state, effects: [{ type: 'notify', notice: 'alreadySent' }] };
+    case 'undoRefused':
+      return {
+        state,
+        effects: [{ type: 'notify', notice: 'undoRefused', message: event.message }],
+      };
+    case 'sendUnconfirmed':
+      return onUnconfirmed(state);
     case 'observeSubmission':
       return onSubmission(state, event);
     case 'send':

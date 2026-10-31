@@ -19,7 +19,10 @@ import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { setOpenThread } from '../../shell/store-thread';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import { createLetterController } from './letterController';
-import { createReaderActions, type ReaderDeps } from './readerActions';
+import { createReaderActions, whileOpen, type ReaderDeps } from './readerActions';
+import { afterAccepted } from '../undoOperation';
+import { settleFocus } from './readerFocus';
+import { takeFocus } from './FindBar';
 import { commandsForReader } from './readerCommands';
 import { ReaderLetter, GONE_COPY } from './ReaderLetter';
 import { ReaderScreen, NO_THREAD_COPY } from './ReaderScreen';
@@ -542,9 +545,9 @@ test('Undo of a Done brings the reader back to the thread and lets J and K see i
     const toast = getToasts().find(t => t.kind === 'done');
     assert.ok(toast, 'a Done toast');
     runToastAction(toast.id, 'undo');
+    await world.flush();
     assert.equal(state.open, first, 'the reader shows the thread that was brought back');
     assert.ok(!state.gone.has(first));
-    await world.flush();
   } finally {
     world.connection.close();
   }
@@ -595,6 +598,129 @@ test('find is a bar above the thread that carries its query, only on the letter 
       /aplos-reader__find/,
       'an off-paper letter has no bar',
     );
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Done then Z brings the thread back into the walk, with or without the reader reopening it', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const second = ids[1]!;
+    const { deps, state } = depsOver(world, second);
+    deps.reopen = () => undefined;
+    const actions = createReaderActions(deps);
+    actions.done();
+    assert.ok(state.gone.has(second));
+    assert.equal(state.open, ids[2]);
+    actions.undo();
+    await world.flush();
+    assert.ok(!state.gone.has(second), 'Z clears it, as the toast’s Undo does');
+    actions.step('previous');
+    assert.equal(state.open, second, 'K lands on the restored thread');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Z reopens the restored thread; a Z for another operation leaves the departed thread gone', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const { deps, state } = depsOver(world, ids[0]!);
+    const actions = createReaderActions(deps);
+    actions.done();
+    actions.bookmark();
+    actions.undo();
+    await world.flush();
+    assert.ok(state.gone.has(ids[0]!), 'the newest change was the bookmark, not the Done');
+    actions.undo();
+    await world.flush();
+    assert.ok(!state.gone.has(ids[0]!));
+    assert.equal(state.open, ids[0], 'and the reader went back to it');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a refused Done puts the thread back into the walk', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const { deps, state } = depsOver(world, ids[0]!);
+    deps.act = () => ({ opId: 'op-no', receipt: Promise.reject(new Error('no')) }) as never;
+    createReaderActions(deps).done();
+    assert.ok(state.gone.has(ids[0]!), 'gone while the write is in flight');
+    await nextTask();
+    assert.ok(!state.gone.has(ids[0]!), 'and back once the engine refuses it');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('an undo runs its follow-up only when the engine accepted it', async () => {
+  const ran: string[] = [];
+  afterAccepted({ opId: 'u1', receipt: Promise.reject(new Error('no')) } as never, () =>
+    ran.push('rejected'),
+  );
+  afterAccepted({ opId: 'u2', receipt: Promise.resolve({}) } as never, () => ran.push('accepted'));
+  await nextTask();
+  assert.deepEqual(ran, ['accepted']);
+});
+
+test('reopen only acts while the reader is mounted', () => {
+  const opened: string[] = [];
+  const open = { current: true };
+  const reopen = whileOpen(open, id => void opened.push(id));
+  reopen('a');
+  open.current = false;
+  reopen('b');
+  assert.deepEqual(opened, ['a']);
+});
+
+test('the reader takes focus through settleFocus only when the decision says so', () => {
+  const focused: unknown[] = [];
+  const root = {
+    contains: (other: unknown) => other === root || other === inside,
+    focus: (options: unknown) => void focused.push(options),
+  };
+  const inside = { closest: () => null };
+  const body = {};
+  const docWith = (active: unknown) => ({ activeElement: active, body }) as unknown as Document;
+  const settle = (active: unknown) => settleFocus(root as never, docWith(active));
+  assert.equal(settle(body), 'root');
+  assert.equal(settle(null), 'root');
+  assert.equal(settle({}), 'keep', 'focus elsewhere in the app is left alone');
+  assert.equal(settle(inside), 'keep', 'inside the reader but outside a letter');
+  assert.deepEqual(focused, [{ preventScroll: true }, { preventScroll: true }]);
+});
+
+test('find: a second ⌘F reaches the field as a new key, and the field takes and selects', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    await world.threadWindow(id);
+    const render = (findFocus: number) =>
+      renderToStaticMarkup(
+        createElement(ReaderLetter, {
+          threadId: id,
+          paper: true,
+          ui: { ...freshUi(id), find: '', findFocus },
+          dispatch: () => undefined,
+          controls: NO_CONTROLS,
+          onReady: () => undefined,
+        }),
+      );
+    assert.match(render(1), /data-focus-key="1"/);
+    assert.match(render(2), /data-focus-key="2"/);
+    const calls: string[] = [];
+    takeFocus({ focus: () => void calls.push('focus'), select: () => void calls.push('select') });
+    takeFocus(null);
+    assert.deepEqual(calls, ['focus', 'select']);
   } finally {
     world.connection.close();
   }

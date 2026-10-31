@@ -12,7 +12,7 @@ import type { UndoTrayAction, UndoTrayProps } from '../../../ui/props';
 import { scheduledLabel } from '../model/schedule';
 import { useReducedMotion } from '../views/SendStatus';
 import { undoSendCommands } from './composeCommands';
-import { handoffStore, settleSend, watchedByToast } from './sendHandoff';
+import { handoffStore, settleSend, watchedByToast, watchedSends } from './sendHandoff';
 import {
   dropHeldSend,
   pushFailedSubmission,
@@ -24,27 +24,33 @@ import { toastPlan, type HeldBehind, type ToastPlan, type Watched } from './toas
 
 const NONE: CommandHandlerTable = {};
 
-function actOn(id: string, revision: number, action: UndoTrayAction): void {
+function actOn(row: Submission, action: UndoTrayAction): void {
+  const { id, revision } = row;
   if (action === 'checkSent') return navigate('sent');
-  if (action === 'undo') return undoSubmission(id);
+  if (action === 'undo') return undoSubmission(id, row);
   if (action === 'sendNow' || action === 'sendAnyway')
     void api.submission
       .set({ action: { type: action, submissionId: id, revision } })
       .catch(() => undefined);
 }
 
-/** The watched sends with their rows; a fixed number of row hooks (the stack's three), stable while nothing changes. */
+/**
+ * Every handed-off send with its row. Hooks come in a fixed number, so the oldest `LIVE_ROW_SLOTS` read their live
+ * rows and any later ones show the row they were handed off with until a slot frees; none is ever dropped.
+ */
 function useWatched(): readonly Watched[] {
   const handoff = useSyncExternalStore(handoffStore.subscribe, handoffStore.get, handoffStore.get);
   const ids = watchedByToast(handoff);
-  const first = useRow('Submission', ids[0]);
-  const second = useRow('Submission', ids[1]);
-  const third = useRow('Submission', ids[2]);
-  const key = ids.join(' ');
-  return useMemo(() => {
-    const rows = [first, second, third];
-    return key === '' ? [] : key.split(' ').map((id, index) => ({ id, row: rows[index] }));
-  }, [key, first, second, third]);
+  const s0 = useRow('Submission', ids[0]);
+  const s1 = useRow('Submission', ids[1]);
+  const s2 = useRow('Submission', ids[2]);
+  const s3 = useRow('Submission', ids[3]);
+  const s4 = useRow('Submission', ids[4]);
+  const s5 = useRow('Submission', ids[5]);
+  return useMemo(
+    () => watchedSends(handoff, [s0, s1, s2, s3, s4, s5]),
+    [handoff, s0, s1, s2, s3, s4, s5],
+  );
 }
 
 /** What a held toast says now: it is pushed again only when this changes (once a second). */
@@ -87,7 +93,7 @@ function usePlanEffects(plan: ToastPlan): void {
 function useHeldUndo(tray: ToastPlan['tray']): void {
   const held: Submission | null = tray?.state.kind === 'sending' ? tray.row : null;
   const commands = useMemo(
-    () => (held ? undoSendCommands(() => undoSubmission(held.id)) : NONE),
+    () => (held ? undoSendCommands(() => undoSubmission(held.id, held)) : NONE),
     [held],
   );
   useRegisterCommands(commands);
@@ -110,6 +116,6 @@ export function useUndoSendNotice(): Omit<UndoTrayProps, 'placement'> | undefine
     state: tray.state,
     reducedMotion,
     undoCommandId: 'app.undo',
-    onAction: action => actOn(tray.row.id, tray.row.revision, action),
+    onAction: action => actOn(tray.row, action),
   };
 }

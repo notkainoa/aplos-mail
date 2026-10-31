@@ -10,6 +10,9 @@ import { sendOpId } from './composeState';
 import { blockedSend, namesOf } from './recipients';
 import { NO_SEND, type SendAction } from './sendState';
 
+/** "Undo send" defaults to 8 s (DESIGN 7.6), for a refusal that does not know the press's window. */
+const DEFAULT_UNDO_SECONDS = 8;
+
 type Event<T extends ComposeEvent['type']> = Extract<ComposeEvent, { type: T }>;
 
 const still = (state: ComposeState): Step => ({ state, effects: [] });
@@ -127,7 +130,7 @@ export function onRefused(state: ComposeState, event: Event<'sendRefused'>): Ste
   if (refusal.type === 'conflict') return still(state);
   if (refusal.type === 'validation' || refusal.type === 'stateMismatch')
     return still({ ...state, send: NO_SEND, open: true, blocked: blockedFrom(refusal) });
-  const { names, notBefore, alsoDone } = state.send;
+  const { names, notBefore, alsoDone, undoSeconds } = state.send;
   const reasonCode = refusal.reasonCode ?? refusal.type;
   const until = refusal.resumeAt;
   return still({
@@ -136,6 +139,7 @@ export function onRefused(state: ComposeState, event: Event<'sendRefused'>): Ste
       kind: 'refused',
       names,
       reasonCode,
+      undoSeconds,
       ...(alsoDone ? { alsoDone } : {}),
       ...(until !== undefined ? { until } : {}),
       ...(notBefore !== undefined ? { notBefore } : {}),
@@ -205,8 +209,16 @@ function rowAction(state: ComposeState, event: Event<'action'>, row: Submission)
   }
 }
 
+/** An unconfirmed send offers the uncertain verbs: Check Sent, or Send anyway with the same key (one submission). */
+function unconfirmedAction(state: ComposeState, action: SendAction): Step {
+  if (action === 'checkSent') return { state, effects: [{ type: 'checkSent' }] };
+  if (action === 'sendAnyway') return submitStep(state);
+  return still(state);
+}
+
 function pendingAction(state: ComposeState, action: SendAction): Step {
   if (state.send.kind !== 'pending') return still(state);
+  if (state.send.unconfirmed) return unconfirmedAction(state, action);
   if (action === 'undo') return still({ ...state, send: { ...state.send, undoAsked: true } });
   if (action === 'sendNow') return still({ ...state, send: { ...state.send, sendNowAsked: true } });
   return still(state);
@@ -225,7 +237,8 @@ function refusedAction(state: ComposeState, event: Event<'action'>): Step {
     send: {
       kind: 'pending',
       pressedAt: now,
-      undoSeconds: 0,
+      // The account's undo window, as on the first press: Try again is a send like any other, with its Undo.
+      undoSeconds: state.send.undoSeconds ?? DEFAULT_UNDO_SECONDS,
       names,
       alsoDone: alsoDone ?? false,
       undoAsked: false,
@@ -234,6 +247,12 @@ function refusedAction(state: ComposeState, event: Event<'action'>): Step {
     },
   };
   return submitStep(pending);
+}
+
+/** No answer in time: the send reads as uncertain, Z lets go, and the page can hand it to the toast stack. */
+export function onUnconfirmed(state: ComposeState): Step {
+  if (state.send.kind !== 'pending' || state.send.unconfirmed) return still(state);
+  return still({ ...state, send: { ...state.send, unconfirmed: true } });
 }
 
 /** A verb from the tray, the send-failed line or Z. */

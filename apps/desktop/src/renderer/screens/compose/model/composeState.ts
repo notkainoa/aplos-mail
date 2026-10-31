@@ -47,7 +47,7 @@ export interface ComposeState {
 export type SaveFailure = 'gone' | 'mismatch';
 
 /** The one-off notices a composer asks the shell to show. */
-export type ComposeNotice = 'discarded' | 'discardFailed' | 'alreadySent';
+export type ComposeNotice = 'discarded' | 'discardFailed' | 'alreadySent' | 'undoRefused';
 
 /** What a refused write said, without the transport's error class. */
 export interface Refusal {
@@ -77,6 +77,10 @@ export type ComposeEvent =
   | { readonly type: 'preserved'; readonly ok: boolean; readonly now: number }
   /** An Undo reached the engine after the send had left. */
   | { readonly type: 'undoLost' }
+  /** An Undo the engine refused for another reason, in its own words. */
+  | { readonly type: 'undoRefused'; readonly message: string }
+  /** `Submission/set send` has not answered within `SEND_CONFIRM_MS`. */
+  | { readonly type: 'sendUnconfirmed' }
   | { readonly type: 'retrySave'; readonly now: number }
   | { readonly type: 'observeDraft'; readonly draft: Draft | null; readonly now?: number }
   | { readonly type: 'observeSubmission'; readonly submission: Submission }
@@ -133,7 +137,7 @@ export type ComposeEffect =
   | { readonly type: 'checkSent' }
   /** Keep a newer remote revision as a draft of its own before the local text is saved over it. */
   | { readonly type: 'preserve'; readonly draft: Draft }
-  | { readonly type: 'notify'; readonly notice: ComposeNotice };
+  | { readonly type: 'notify'; readonly notice: ComposeNotice; readonly message?: string };
 
 /** One reducer step: the next state and what to do about it. */
 export interface Step {

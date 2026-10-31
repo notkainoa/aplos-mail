@@ -32,7 +32,12 @@ import { loadingLabel } from './readerRows';
 import { crumbPosition, stepThread } from './readerModel';
 import { readerHeader } from './readerHeader';
 import { settleFocus } from './readerFocus';
-import { createReaderActions, type ReaderActions, type ReaderDeps } from './readerActions';
+import {
+  createReaderActions,
+  whileOpen,
+  type ReaderActions,
+  type ReaderDeps,
+} from './readerActions';
 import { commandsForReader, relayToShell } from './readerCommands';
 import {
   PLAIN_REPLY,
@@ -44,7 +49,7 @@ import {
 } from './readerUi';
 import { ReaderLetter, type LetterControls, type PopOut } from './ReaderLetter';
 import { useLetterBuffer, useLetterController, usePrefetchAround } from './useLetterBuffer';
-import { useReaderList } from './useReaderList';
+import { useHomeOrder, useReaderList } from './useReaderList';
 
 /** The loading line's words when the thread has no subject or sender to name yet (DESIGN 5 rule 10 names what it loads). */
 export const LOADING_COPY = 'Loading this email…';
@@ -115,9 +120,7 @@ function useReaderActions(
       rowOf: id => (live.current.row?.id === id ? live.current.row : undefined),
       go: openThread,
       markGone: (id, gone) => markGone({ id, gone }),
-      reopen: id => {
-        if (open.current) openThread(id);
-      },
+      reopen: whileOpen(open, openThread),
       leave: () => {
         closeThread();
         const { backTo } = live.current.props;
@@ -191,11 +194,13 @@ function ignore(_event: UiEvent): void {
   return undefined;
 }
 
-function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
+type OpenProps = ReaderScreenProps & { readonly open: string };
+
+function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   const { open } = props;
   const context = useOpenThreadContext();
   const [gone, markGone] = useReducer(goneReducer, NOBODY);
-  const list = useReaderList(props.listIds ?? context.listIds ?? undefined, open, gone);
+  const list = useReaderList(props.source, open, gone);
   const controller = useLetterController();
   const buffer = useLetterBuffer(controller, open);
   const shown = buffer.letter;
@@ -270,6 +275,14 @@ function OpenReader(props: ReaderScreenProps & { readonly open: string }) {
 /** The reader for the shell's open thread. */
 export function ReaderScreen(props: ReaderScreenProps) {
   const open = useOpenThread();
+  const context = useOpenThreadContext();
   if (open === null) return <EmptyLine text={NO_THREAD_COPY} />;
-  return <OpenReader {...props} open={open} />;
+  const listIds = props.listIds ?? context.listIds;
+  if (listIds) return <OpenReader {...props} open={open} source={listIds} />;
+  return <ReaderOverHome {...props} open={open} />;
+}
+
+/** No list came with the thread (a deep link, the palette): the walk follows Home, which only this branch subscribes to. */
+function ReaderOverHome(props: OpenProps) {
+  return <OpenReader {...props} source={useHomeOrder()} />;
 }

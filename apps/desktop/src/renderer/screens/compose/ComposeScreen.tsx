@@ -13,7 +13,7 @@ import { useAccountScope, useRegisterCommands, type CommandHandlerTable } from '
 import { Composer } from '../../ui/compose';
 import { headerMenu, headerMoreButton } from './composeHeader';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
-import { replySeed } from './model/replySeed';
+import { ownAddresses, replySeed } from './model/replySeed';
 import { undoSendCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
 import { withKeptText } from './runtime/recovery';
@@ -62,7 +62,7 @@ function startingState(
 ): ComposeState | null {
   if (props.draftId) return known.draft ? composeFromDraft(known.draft) : null;
   if (props.replyTo) {
-    const me = new Set(known.accounts.map(a => a.address.toLowerCase()));
+    const me = ownAddresses(known.accounts);
     const replyAll = props.replyTo.replyAll ?? false;
     const seed = known.message ? replySeed(known.message, me, replyAll) : null;
     return seed ? freshCompose(seed.context, seed.fields) : null;
@@ -73,17 +73,25 @@ function startingState(
 
 const NO_COMMANDS: CommandHandlerTable = {};
 
-/** The page has nothing left to show: the composer is closed, nothing is being confirmed, no send awaits its answer. */
-export function pageDone(state: ComposeState): boolean {
-  return !state.open && state.confirm === null && state.send.kind !== 'pending';
+/** A pressed send still waiting for its answer (not one that has waited past `SEND_CONFIRM_MS`). */
+function awaitingAnswer(state: ComposeState): boolean {
+  return state.send.kind === 'pending' && !state.send.unconfirmed;
 }
 
-/** Z between Send and the engine's answer: this send's Undo (it shadows the shell's Z). */
+/**
+ * The page has nothing left to show: the composer is closed, nothing is being confirmed, no send awaits its answer. A
+ * send unconfirmed after `SEND_CONFIRM_MS` no longer holds the page: it goes to the toast stack.
+ */
+export function pageDone(state: ComposeState): boolean {
+  return !state.open && state.confirm === null && !awaitingAnswer(state);
+}
+
+/** Z between Send and the engine's answer: this send's Undo (it shadows the shell's Z), let go once unconfirmed. */
 export function pendingUndoTable(
   state: ComposeState,
   session: Pick<ComposeSession, 'dispatch'>,
 ): CommandHandlerTable {
-  if (state.send.kind !== 'pending') return NO_COMMANDS;
+  if (!awaitingAnswer(state)) return NO_COMMANDS;
   return undoSendCommands(() => session.dispatch({ type: 'action', action: 'undo' }));
 }
 
@@ -102,7 +110,7 @@ function useCloseWhenDone(binding: ComposeBinding | null, onClose: (() => void) 
 /** Between Send and the engine's answer, Z undoes this send (it is sent the moment the submission exists). */
 function usePendingUndo(binding: ComposeBinding | null) {
   const session = binding?.session;
-  const pending = binding?.state.send.kind === 'pending';
+  const pending = binding ? awaitingAnswer(binding.state) : false;
   const table = useMemo(
     () => (pending && session ? pendingUndoTable(session.getState(), session) : NO_COMMANDS),
     [pending, session],

@@ -4,7 +4,7 @@
  *
  * The cursor is a key (a thread id, or the Low band's), never an index, so a row arriving above it can not move it.
  */
-import type { ThreadId, ThreadRow, ViewRange } from '../../data';
+import type { HomeView, ThreadId, ThreadRow, ViewRange } from '../../data';
 import { absoluteIndex, LIST_WINDOW, rangeAround } from '../lists/listModel';
 
 /** A section of rows as the engine keys them; `fromLater` is Back from Later, the bottom block of Do now. */
@@ -28,6 +28,19 @@ export interface HomeLayout {
   readonly update: readonly ThreadId[];
   readonly follow: readonly ThreadId[];
   readonly lowCount: number;
+}
+
+/** The layout of a live Home view: each section's ids and the Low band's count. */
+export function layoutOf(home: Pick<HomeView, 'sections' | 'low'>): HomeLayout {
+  const bySection = (key: 'do' | 'update' | 'follow') =>
+    home.sections.find(section => section.key === key);
+  return {
+    do: bySection('do')?.ids ?? [],
+    fromLater: bySection('do')?.fromLater?.ids ?? [],
+    update: bySection('update')?.ids ?? [],
+    follow: bySection('follow')?.ids ?? [],
+    lowCount: home.low.count,
+  };
 }
 
 /** A row lookup; a row the cache has not fetched yet is undefined. */

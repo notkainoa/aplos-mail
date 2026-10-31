@@ -46,7 +46,8 @@
 }
 
 /* The host's own sentence above a letter it could not show in full (too long, layout flattened): quiet, like the
-   trackers line, and set off from the body by one step. */
+   trackers line, and set off from the body by one step. It is rendered by mailframe/slots.tsx (`Notices`) as host DOM
+   outside the email's frame, and styled here because the reader is the only screen that loads a letter. */
 .aplos-mailframe__notice {
   margin: 0 0 var(--space-2);
   color: var(--dim);

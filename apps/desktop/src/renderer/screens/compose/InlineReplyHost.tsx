@@ -13,7 +13,7 @@ import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { InlineReply } from '../../ui/compose';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
 import { replyDraftFor } from './model/reopen';
-import { replySeed } from './model/replySeed';
+import { ownAddresses, replySeed } from './model/replySeed';
 import { dictateReplyCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
 import { withKeptText } from './runtime/recovery';
@@ -67,7 +67,7 @@ function useInitialReply(props: InlineReplyHostProps): ComposeState | null {
   const decided = useRef<ComposeState | null>(null);
   if (decided.current || !ready) return decided.current;
   if (candidate && !draft) return null;
-  const me = new Set(accounts.map(a => a.address.toLowerCase()));
+  const me = ownAddresses(accounts);
   const start = draft ? composeFromDraft(draft) : freshFrom(message, me, props.replyAll ?? false);
   // Text a closed reply could not save yet is taken over, never shown stale.
   decided.current = withKeptText(start);

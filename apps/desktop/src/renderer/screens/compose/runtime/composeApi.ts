@@ -6,8 +6,9 @@ import type { DataApi, Draft, DraftFields, Submission, SubmissionAction } from '
 import type { Refusal } from '../model/composeState';
 
 export interface ComposeApi {
-  /** `Draft/set`: create (no `id`) or save with `baseRevision`. */
+  /** `Draft/set`: create (no `id`, with the create's `opId` so a retry replays it) or save with `baseRevision`. */
   saveDraft(args: {
+    readonly opId?: string;
     readonly id?: string;
     readonly baseRevision?: number;
     readonly fields: DraftFields;

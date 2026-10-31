@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../../data';
-import { replySeed } from './replySeed';
+import { ownAddresses, replySeed } from './replySeed';
 
 const me = new Set(['me@example.com']);
 
@@ -82,4 +82,36 @@ test('a reply to your own message still goes to the people you wrote to', () => 
     false,
   );
   assert.deepEqual(addresses(seed.fields.to), ['mina@example.com']);
+});
+
+test('"me" holds every account address and send-as alias; a message from an alias replies to its To', () => {
+  const own = ownAddresses([
+    {
+      address: 'Me@Example.com',
+      identities: [{ address: 'Alias@Example.com', default: false }],
+    },
+  ] as never);
+  assert.deepEqual([...own], ['me@example.com', 'alias@example.com']);
+  const fromAlias = message({
+    from: { address: 'alias@example.com' },
+    to: [{ address: 'jordan@example.com' }],
+    cc: [{ address: 'me@example.com' }],
+  });
+  const seed = replySeed(fromAlias, own, true);
+  assert.deepEqual(addresses(seed.fields.to), ['jordan@example.com']);
+  assert.deepEqual(addresses(seed.fields.cc), [], 'neither alias nor main address is copied');
+});
+
+test('a message with no From is not taken for yours: Reply-To, else an empty To to fill', () => {
+  const noFrom = message({
+    from: undefined,
+    to: [{ address: 'me@example.com' }, { address: 'mina@example.com' }],
+  });
+  assert.deepEqual(
+    addresses(replySeed(noFrom, me, false).fields.to),
+    [],
+    'no guess at the other To people',
+  );
+  const withReplyTo = message({ from: undefined, replyTo: [{ address: 'list@example.com' }] });
+  assert.deepEqual(addresses(replySeed(withReplyTo, me, false).fields.to), ['list@example.com']);
 });

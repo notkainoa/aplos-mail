@@ -3,7 +3,8 @@
  * in `read`, growing with its content, with any dim suggested text drawn at the end of the typed text (DESIGN 7.6 "AI
  * draft is dim suggestion text at the caret", 9 rule 6). The suggestion lives in a mirror behind a transparent-backed
  * textarea, so it is never part of the value: Tab keeps it (`compose.keepSuggestion`), Esc or typing drops it. Keys go
- * through the registry; the editor binds none of its own.
+ * through the registry; the editor binds none of its own. It is the one field a held Space dictates into
+ * (`data-dictation="body"`, read by the shell's key listener); To and Subject type spaces.
  */
 import type { Ref } from 'react';
 
@@ -40,6 +41,7 @@ export function BodyEditor({
       <textarea
         ref={editorRef}
         className="aplos-compose-editor__input"
+        data-dictation="body"
         aria-label={label}
         aria-describedby={describedBy}
         dir="auto"

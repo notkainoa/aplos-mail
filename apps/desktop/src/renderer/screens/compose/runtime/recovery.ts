@@ -89,14 +89,25 @@ export function withKeptText(state: ComposeState): ComposeState {
   const key = findKept(keysFor(state));
   if (key === null) return state;
   const held = kept.get(key)!.session.getState();
-  if (held.send.kind === 'pending' || held.send.kind === 'tracking') return state;
+  if (sending(held)) return state;
   return reopened(held);
 }
 
-/** A composer took over: the kept one stops writing (one writer per draft). */
+/** True when a kept composer still owns a send in flight: a new composer does not take it over (`withKeptText`). */
+function sending(state: ComposeState): boolean {
+  return state.send.kind === 'pending' || state.send.kind === 'tracking';
+}
+
+/**
+ * A composer took over: the kept one stops writing (one writer per draft). One whose send is still pending or tracked
+ * was not taken over (the new composer started from the saved row), so it stays: its unsaved text and its send's answer
+ * are not dropped.
+ */
 export function releaseKeptFor(state: ComposeState): void {
   const key = findKept(keysFor(state));
-  if (key !== null) release(key);
+  if (key === null) return;
+  if (sending(kept.get(key)!.session.getState())) return;
+  release(key);
 }
 
 /** How many composers are kept (tests). */

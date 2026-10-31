@@ -268,6 +268,7 @@ test('refusals: already on its way waits for the row; validation outlines; the d
     kind: 'refused',
     names: ['Jordan Lee'],
     reasonCode: 'quota.sendLimit',
+    undoSeconds: 8,
     until: T0 + 60_000,
   });
   const edit = run(limit.state, { type: 'action', action: 'edit' });

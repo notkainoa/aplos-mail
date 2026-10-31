@@ -134,6 +134,16 @@ export function mediaRecorderSource(deps: MediaRecorderDeps = {}): DictationSour
     if (blob.size === 0) return null;
     return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: current.mimeType };
   };
+  /** What a stop hands back: the recording, or null when nothing was heard or reading it failed. Always settles. */
+  const settleStop = async (current: MediaRecorder, stopped: number): Promise<Recording | null> => {
+    try {
+      return stopped === generation ? await finish(current) : null;
+    } catch {
+      return null;
+    } finally {
+      chunks = [];
+    }
+  };
   return {
     async start(onLevel) {
       const mine = ++generation;
@@ -157,10 +167,9 @@ export function mediaRecorderSource(deps: MediaRecorderDeps = {}): DictationSour
       recorder = null;
       if (!current) return Promise.resolve(null);
       return new Promise(resolve => {
-        current.onstop = async () => {
+        current.onstop = () => {
           release();
-          resolve(stopped === generation ? await finish(current) : null);
-          chunks = [];
+          void settleStop(current, stopped).then(resolve);
         };
         current.stop();
       });

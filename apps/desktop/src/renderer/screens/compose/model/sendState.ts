@@ -38,6 +38,12 @@ export type SendIntent =
       /** Undo was pressed before the answer: it is sent the moment the submission id is known. */
       readonly undoAsked: boolean;
       readonly sendNowAsked: boolean;
+      /**
+       * No answer within `SEND_CONFIRM_MS`: it may or may not have reached the engine. It reads as uncertain ("Couldn’t
+       * confirm this was sent." · Check Sent · Send anyway, the same idempotency key), Z is let go, and the page hands it
+       * to the toast stack; a late answer is still followed.
+       */
+      readonly unconfirmed?: boolean;
     }
   | {
       /** The engine took it: follow `Submission` `submissionId`. */
@@ -55,7 +61,12 @@ export type SendIntent =
       /** What the refused press asked for, so Try again sends the same thing (a send later stays a send later). */
       readonly notBefore?: number;
       readonly alsoDone?: boolean;
+      /** The undo window of the refused press (the account's setting then), so Try again gets an Undo too. */
+      readonly undoSeconds?: number;
     };
+
+/** How long a pressed send waits for `Submission/set` before it reads as unconfirmed. */
+export const SEND_CONFIRM_MS = 15_000;
 
 export const NO_SEND: SendIntent = { kind: 'none' };
 
@@ -100,6 +111,7 @@ export function isLiveSubmission(row: Pick<Submission, 'state'>): boolean {
 }
 
 function pendingPhase(intent: Extract<SendIntent, { kind: 'pending' }>, now: number): SendPhase {
+  if (intent.unconfirmed) return { kind: 'uncertain' };
   const later =
     intent.notBefore !== undefined &&
     intent.notBefore > intent.pressedAt + intent.undoSeconds * 1000;
@@ -192,6 +204,12 @@ export const SEND_COPY = {
   failed: (recipient: string) => `Couldn’t send to ${recipient}. Your draft is saved.`,
   /** An Undo that lost the race with the send. */
   alreadySent: 'Already sent.',
+  /** An Undo the engine refused for another reason, when it gave no sentence of its own. */
+  undoFailed: 'Couldn’t undo this send.',
+  /** A send whose `Submission/set` never answered (the UndoTray's uncertain words). */
+  unconfirmed: 'Couldn’t confirm this was sent.',
+  /** Another window's send locked the draft: this window's text became a draft of its own and was not sent. */
+  sendingElsewhere: 'This draft is being sent from another window.',
 } as const;
 
 /** The view of a phase. `formatTime` names a scheduled send's time ("Tue 9:00 AM"). */

@@ -1,9 +1,11 @@
 /**
  * A fresh reply's starting fields (DESIGN 7.6 Inline reply): To is the Reply-To addresses when the message has them,
  * else the sender (or, on your own message, the people you wrote to); reply all adds everyone else on From, Reply-To,
- * To and Cc except you; the subject gains one "Re: ".
+ * To and Cc except you; the subject gains one "Re: ". "You" is every account address and every send-as alias the
+ * accounts list (`Account.identities`). A message with no From is not taken for yours: the reply goes to its Reply-To,
+ * else To starts empty for you to fill (no guessing).
  */
-import type { Address, Message } from '../../../data';
+import type { Account, Address, Message } from '../../../data';
 import type { ComposeContext, ComposeFields } from './fields';
 import { recipientOf } from './fields';
 
@@ -23,8 +25,26 @@ export function replySubject(subject: string): string {
   return /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 }
 
+/** The owner's lower-cased addresses: each account's own and its send-as aliases. */
+export function ownAddresses(
+  accounts: readonly Pick<Account, 'address' | 'identities'>[],
+): ReadonlySet<string> {
+  const own = new Set<string>();
+  for (const account of accounts) {
+    own.add(account.address.toLowerCase());
+    for (const identity of account.identities ?? []) own.add(identity.address.toLowerCase());
+  }
+  return own;
+}
+
 function repliesTo(message: Message): readonly Address[] {
-  return message.replyTo && message.replyTo.length > 0 ? message.replyTo : [message.from!];
+  if (message.replyTo && message.replyTo.length > 0) return message.replyTo;
+  return message.from ? [message.from] : [];
+}
+
+/** Yours: the engine says so, or its From is one of your addresses (an alias included). */
+function isOwn(message: Message, me: ReadonlySet<string>): boolean {
+  return message.fromMe || (!!message.from && me.has(message.from.address.toLowerCase()));
 }
 
 function senders(message: Message): readonly Address[] {
@@ -37,7 +57,7 @@ export function replySeed(
   me: ReadonlySet<string>,
   replyAll: boolean,
 ): { readonly context: ComposeContext; readonly fields: ComposeFields } {
-  const own = message.fromMe || !message.from;
+  const own = isOwn(message, me);
   const to = own ? others(message.to, me) : others(repliesTo(message), new Set());
   const toKeys = new Set([...me, ...to.map(a => a.address.toLowerCase())]);
   const everyone = [...(own ? [] : senders(message)), ...message.to, ...message.cc];

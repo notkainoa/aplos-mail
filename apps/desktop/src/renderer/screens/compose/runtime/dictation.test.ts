@@ -149,6 +149,40 @@ test('a recording that finishes is returned and releases the microphone', async 
   assert.equal(meters.stopped, 1);
 });
 
+test('a recording that cannot be read still settles stop() (null) and dictation leaves "transcribing"', async () => {
+  const { source, answer } = lateMicrophone();
+  const { stream, tracks } = fakeStream();
+  const original = Blob.prototype.arrayBuffer;
+  Blob.prototype.arrayBuffer = () => Promise.reject(new Error('unreadable'));
+  try {
+    const dictation = createDictation({
+      source,
+      transcribe: async () => 'never',
+      onText: () => assert.fail('nothing was heard'),
+      now: () => 0,
+      setTimeout: () => () => undefined,
+    });
+    dictation.start('Space');
+    answer.resolve(stream);
+    await settle();
+    assert.equal(FakeRecorder.instances.length, 1, 'recording');
+    const released = dictation.release(true);
+    const settled = await Promise.race([
+      released.then(() => 'settled'),
+      new Promise(resolve => setTimeout(() => resolve('stuck'), 200)),
+    ]);
+    assert.equal(settled, 'settled', 'stop() settled');
+    assert.equal(dictation.getPhase().kind, 'idle');
+    assert.deepEqual(
+      tracks.map(track => track.stopped),
+      [1, 1],
+      'the microphone is released',
+    );
+  } finally {
+    Blob.prototype.arrayBuffer = original;
+  }
+});
+
 interface Pending {
   readonly source: DictationSource & { calls: string[] };
   readonly startAnswer: ReturnType<typeof deferred<void>>;

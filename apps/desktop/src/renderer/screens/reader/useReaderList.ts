@@ -8,22 +8,8 @@
 import { useMemo, useRef } from 'react';
 import { useHold, useHome } from '../../data';
 import { useAccountScope } from '../../shell';
-import { orderLayout, type HomeLayout } from '../home/homeModel';
+import { layoutOf, orderLayout } from '../home/homeModel';
 import { NO_MEMORY, walkList, type ListMemory } from './readerModel';
-
-type HomeData = ReturnType<typeof useHome>;
-
-function layoutOf(home: HomeData): HomeLayout {
-  const section = home.sections.find(s => s.key === 'do');
-  const ids = (key: 'update' | 'follow') => home.sections.find(s => s.key === key)?.ids ?? [];
-  return {
-    do: section?.ids ?? [],
-    fromLater: section?.fromLater?.ids ?? [],
-    update: ids('update'),
-    follow: ids('follow'),
-    lowCount: home.low.count,
-  };
-}
 
 /** The ids of Home in the order the owner sees them (the Low band's rows are not on the list). */
 export function useHomeOrder(): readonly string[] {
@@ -53,14 +39,15 @@ export interface ReaderList {
   readonly walk: readonly string[];
 }
 
-/** `listIds` when the screen has them, else Home's order. Stable while the ids do not change. */
+/**
+ * The list to walk, from `source`: the ids the screen was opened with, or Home's order (`useHomeOrder`, which the screen
+ * subscribes to only when it has no ids). Stable while the ids do not change.
+ */
 export function useReaderList(
-  listIds: readonly string[] | undefined,
+  source: readonly string[],
   open: string | null,
   gone: ReadonlySet<string>,
 ): ReaderList {
-  const home = useHomeOrder();
-  const source = listIds ?? home;
   const ids = useStableIds(gone.size === 0 ? source : source.filter(id => !gone.has(id)));
   const memory = useRef<ListMemory>(NO_MEMORY);
   const walked = walkList(memory.current, ids, open);

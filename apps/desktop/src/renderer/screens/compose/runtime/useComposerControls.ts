@@ -4,7 +4,7 @@
  * dictation, the ⋯ menu, Cc and Bcc, the scheduled and offline notices, and the one-tray-per-send claim.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getNow } from '../../../data';
+import { getNow, type Submission } from '../../../data';
 import {
   pushToast,
   useRegisterCommands,
@@ -72,11 +72,13 @@ function useSendClaim(binding: ComposeBinding): void {
   const send = binding.state.send;
   const id = send.kind === 'tracking' ? send.submissionId : null;
   const live = useRef(true);
+  const row = useRef<Submission | null>(null);
   live.current = send.kind === 'tracking' && (send.row === null || isLiveSubmission(send.row));
+  row.current = send.kind === 'tracking' ? send.row : null;
   useEffect(() => {
     if (!id) return;
     claimSend(id);
-    return () => releaseSend(id, live.current);
+    return () => releaseSend(id, live.current, row.current);
   }, [id]);
 }
 

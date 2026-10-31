@@ -3,7 +3,7 @@
  * time (a save always lands before the send that names it), keeps the autosave timer, and feeds every answer back as an
  * event. React reads it with `useSyncExternalStore`; the tests drive it against the stand-in engine directly.
  */
-import type { Draft, DraftFields } from '../../../data';
+import type { Draft, DraftFields, Submission } from '../../../data';
 import type { Timers } from '../../../data/scheduler';
 import { saveDueAt } from '../model/autosave';
 import { composeReducer } from '../model/composeReducer';
@@ -15,16 +15,29 @@ import type {
   SaveFailure,
 } from '../model/composeState';
 import { contextFromDraft, draftFieldsOf } from '../model/fields';
+import { SEND_CONFIRM_MS } from '../model/sendState';
+import { undoRefusalOutcome } from '../model/undoRefusal';
 import { refusalOf, type ComposeApi } from './composeApi';
+
+/** The answer to a `Submission/set send`, as the event the reducer takes. */
+export type SendAnswer = Extract<ComposeEvent, { type: 'sendAccepted' | 'sendRefused' }>;
 
 export interface ComposeSessionDeps {
   readonly api: ComposeApi;
   /** The clock and timer source (the data layer's, or a test's fake). */
   readonly timers: Pick<Timers, 'now' | 'setTimeout'>;
-  /** "Draft discarded" / "Couldn't discard the draft. It is still saved." / "Already sent." */
-  readonly notify?: (notice: ComposeNotice) => void;
+  /** "Draft discarded" / "Couldn't discard the draft. It is still saved." / "Already sent." / the engine's sentence. */
+  readonly notify?: (notice: ComposeNotice, message?: string) => void;
   /** "Check Sent" after an unconfirmed send. */
   readonly checkSent?: () => void;
+  /** A send's answer that came after the session was disposed (it had timed out): the toast stack follows it. */
+  readonly onLateAnswer?: (answer: SendAnswer) => void;
+  /** A fresh idempotency key for one draft create (its retries reuse it). */
+  readonly mintOpId?: () => string;
+}
+
+function randomOpId(): string {
+  return `draft-create:${globalThis.crypto.randomUUID()}`;
 }
 
 export interface ComposeSession {
@@ -69,9 +82,19 @@ function contextFieldsOf(context: ReturnType<typeof contextFromDraft>) {
   };
 }
 
-/** An Undo the engine refused because the send had already left. */
-function lostUndo(effect: Extract<ComposeEffect, { type: 'submission' }>, error: unknown): boolean {
-  return effect.action.type === 'undo' && refusalOf(error).type === 'conflict';
+function answerOf(call: Promise<{ readonly submission: Submission }>): Promise<SendAnswer> {
+  return call.then(
+    ({ submission }): SendAnswer => ({ type: 'sendAccepted', submission }),
+    (error: unknown): SendAnswer => ({ type: 'sendRefused', refusal: refusalOf(error) }),
+  );
+}
+
+/** The newest row this composer has for the submission an action names. */
+function rowFor(state: ComposeState, submissionId: string): Submission | undefined {
+  const send = state.send;
+  return send.kind === 'tracking' && send.submissionId === submissionId
+    ? (send.row ?? undefined)
+    : undefined;
 }
 
 export function createComposeSession(
@@ -83,6 +106,9 @@ export function createComposeSession(
   let queue: Promise<void> = Promise.resolve();
   let cancelTimer: (() => void) | null = null;
   const listeners = new Set<() => void>();
+  // A create that has not been confirmed: its retries reuse the key, so a lost reply never makes a second draft.
+  let pendingCreate: { readonly opId: string; readonly seq: number } | null = null;
+  const mintOpId = deps.mintOpId ?? randomOpId;
 
   function dispatch(event: ComposeEvent): void {
     if (disposed) return;
@@ -127,19 +153,30 @@ export function createComposeSession(
       case 'checkSent':
         return deps.checkSent?.();
       case 'notify':
-        return deps.notify?.(effect.notice);
+        return deps.notify?.(effect.notice, effect.message);
     }
+  }
+
+  /** The key of this create: the first attempt's, while it is unconfirmed. */
+  function createFor(seq: number): { readonly opId: string; readonly seq: number } {
+    pendingCreate ??= { opId: mintOpId(), seq };
+    return pendingCreate;
+  }
+
+  function saveTarget(effect: Extract<ComposeEffect, { type: 'save' }>) {
+    if (effect.draftId !== null)
+      return { id: effect.draftId, baseRevision: effect.baseRevision ?? undefined };
+    return { opId: createFor(effect.seq).opId };
   }
 
   async function runSave(effect: Extract<ComposeEffect, { type: 'save' }>): Promise<void> {
     const fields = draftFieldsOf(effect.fields, effect.context);
-    const target =
-      effect.draftId === null
-        ? {}
-        : { id: effect.draftId, baseRevision: effect.baseRevision ?? undefined };
     try {
-      const { draft } = await deps.api.saveDraft({ ...target, fields });
-      dispatch({ type: 'saved', seq: effect.seq, draft });
+      const { draft } = await deps.api.saveDraft({ ...saveTarget(effect), fields });
+      // A replayed create answers with what the first attempt wrote: only that attempt's edits count as saved.
+      const seq = effect.draftId === null ? (pendingCreate?.seq ?? effect.seq) : effect.seq;
+      if (effect.draftId === null) pendingCreate = null;
+      dispatch({ type: 'saved', seq, draft });
     } catch (error) {
       const cause = effect.draftId === null ? undefined : saveFailureOf(error);
       const now = deps.timers.now();
@@ -164,12 +201,17 @@ export function createComposeSession(
       ...(effect.alsoDone ? { alsoDone: true } : {}),
       ...(effect.notBefore !== undefined ? { notBefore: effect.notBefore } : {}),
     } as const;
-    try {
-      const { submission } = await deps.api.setSubmission({ opId: effect.opId, action });
-      dispatch({ type: 'sendAccepted', submission });
-    } catch (error) {
-      dispatch({ type: 'sendRefused', refusal: refusalOf(error) });
-    }
+    const answer = answerOf(deps.api.setSubmission({ opId: effect.opId, action }));
+    let stopWaiting: () => void = () => undefined;
+    const timedOut = new Promise<null>(resolve => {
+      stopWaiting = deps.timers.setTimeout(() => resolve(null), SEND_CONFIRM_MS);
+    });
+    const first = await Promise.race([answer, timedOut]);
+    stopWaiting();
+    if (first) return dispatch(first);
+    // No answer yet: the queue moves on (saves, the hand-off) and the answer is still followed when it comes.
+    dispatch({ type: 'sendUnconfirmed' });
+    void answer.then(late => (disposed ? deps.onLateAnswer?.(late) : dispatch(late)));
   }
 
   async function runFollowUp(
@@ -179,9 +221,16 @@ export function createComposeSession(
       const { submission } = await deps.api.setSubmission({ action: effect.action });
       dispatch({ type: 'observeSubmission', submission });
     } catch (error) {
-      // Refused: the row's next frame says what happened, and the tray follows it. An Undo too late says so.
-      if (lostUndo(effect, error)) dispatch({ type: 'undoLost' });
+      // Refused: the row's next frame says what happened, and the tray follows it. A refused Undo always says why.
+      if (effect.action.type === 'undo') undoRefused(effect.action.submissionId, error);
     }
+  }
+
+  function undoRefused(submissionId: string, error: unknown): void {
+    const row = rowFor(state, submissionId);
+    const outcome = undoRefusalOutcome(refusalOf(error), row, deps.timers.now());
+    if (outcome.kind === 'alreadySent') dispatch({ type: 'undoLost' });
+    if (outcome.kind === 'refused') dispatch({ type: 'undoRefused', message: outcome.message });
   }
 
   async function runDestroy(draftId: string): Promise<void> {

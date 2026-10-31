@@ -133,7 +133,7 @@ test("after a reload the thread's send comes first, then its newest local reply 
 });
 
 test('one tray per send: a submission is claimed by a composer or shown by the toast stack, never both', () => {
-  let state: HandoffState = { handedOff: [], claims: new Map() };
+  let state: HandoffState = { handedOff: [], claims: new Map(), rows: new Map() };
   state = claim(state, 's1');
   assert.equal(shownByToast(state), null);
   state = release(state, 's1', true);

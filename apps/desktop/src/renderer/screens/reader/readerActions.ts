@@ -5,9 +5,9 @@
  * per-operation Undo, and says plainly when the engine refuses. The screen supplies the live state and the side effects
  * as `ReaderDeps`, so there is no React here and the tests drive it with the stand-in engine.
  */
-import type { DataApi, ThreadAction, ThreadRow } from '../../data';
+import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, afterAccepted, undoHandler } from '../undoOperation';
 import { failurePhrase } from '../home/homeRows';
 import { suggestionFor } from './readerRows';
 import type { CursorDirection } from './model/threadCursor';
@@ -48,6 +48,16 @@ export interface ReaderDeps {
   suggested(id: string, action: SuggestedAction): void;
 }
 
+/** `go`, but only while the reader is still open: an Undo that lands after Esc must not pull the owner back into it. */
+export function whileOpen(
+  open: { readonly current: boolean },
+  go: (id: string) => void,
+): (id: string) => void {
+  return id => {
+    if (open.current) go(id);
+  };
+}
+
 /** The commands the reader answers, as plain functions. */
 export interface ReaderActions {
   step(direction: CursorDirection): void;
@@ -55,6 +65,8 @@ export interface ReaderActions {
   later(): void;
   trash(): void;
   bookmark(): void;
+  /** Z: undoes the newest change; a Done, Later or Trash of this reading brings its thread back, however it is undone. */
+  undo(): void;
   /** Space: the filled button's action. */
   suggest(): void;
   reply(): void;
@@ -68,6 +80,12 @@ export interface ReaderActions {
 const FOLLOW_UP_VERB = 'Reply with a nudge';
 const NUDGE: ReplyRequest = { ...PLAIN_REPLY, suggest: { kind: 'followUp' } };
 
+/** What happens to a thread that left when its write is undone (it comes back and the reader opens it) or refused (it comes back where it was). */
+interface Restore {
+  readonly undone: () => void;
+  readonly rejected: () => void;
+}
+
 type Toasted = Omit<PushedToast, 'id' | 'undoable' | 'actions' | 'onAction'>;
 
 export function createReaderActions(deps: ReaderDeps): ReaderActions {
@@ -80,6 +98,9 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
    */
   const left = new Set<string>();
 
+  /** What bringing a thread back does, by the operation that sent it away: the toast's Undo and Z both run it. */
+  const restorers = new Map<string, () => void>();
+
   function current(): ThreadRow | undefined {
     const id = deps.shown();
     for (const gone of left) if (gone !== id) left.delete(gone);
@@ -87,8 +108,14 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
   }
 
   /** A refused write says so once, plainly, where the thread already left: the row returns to its list. */
-  function failOnReject(opId: string, action: ThreadAction, receipt: Promise<unknown>): void {
+  function failOnReject(
+    opId: string,
+    action: ThreadAction,
+    receipt: Promise<unknown>,
+    rejected?: () => void,
+  ): void {
     receipt.catch(() => {
+      rejected?.();
       deps.dismiss(opId);
       deps.push({
         id: `${opId}-failed`,
@@ -100,16 +127,23 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     });
   }
 
-  function actOn(row: ThreadRow, action: ThreadAction, toast: Toasted, after?: () => void): string {
+  /** The thread is part of this reading again: J, K and Done see it. */
+  function forget(id: string): void {
+    left.delete(id);
+    deps.markGone(id, false);
+  }
+
+  function actOn(row: ThreadRow, action: ThreadAction, toast: Toasted, restore?: Restore): string {
     const { opId, receipt } = deps.act({ ids: [row.id], action });
+    if (restore) restorers.set(opId, restore.undone);
     deps.push({
       id: opId,
       undoable: true,
       actions: [UNDO_ACTION],
-      onAction: undoHandler(opId, after),
+      onAction: undoHandler(opId, restore?.undone),
       ...toast,
     });
-    failOnReject(opId, action, receipt);
+    failOnReject(opId, action, receipt, restore?.rejected);
     return opId;
   }
 
@@ -119,10 +153,12 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     left.add(row.id);
     deps.markGone(row.id, true);
     // Undo puts the row back in its list, and the reader goes back to it.
-    actOn(row, action, toast, () => {
-      left.delete(row.id);
-      deps.markGone(row.id, false);
-      deps.reopen(row.id);
+    actOn(row, action, toast, {
+      undone: () => {
+        forget(row.id);
+        deps.reopen(row.id);
+      },
+      rejected: () => forget(row.id),
     });
     if (next === null) deps.leave();
     else deps.go(next);
@@ -177,6 +213,11 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     later,
     trash,
     bookmark,
+    undo: () => {
+      const outcome = undoStack.undoLast();
+      if (outcome?.kind !== 'operation') return;
+      afterAccepted(outcome.result, restorers.get(outcome.opId));
+    },
     suggest: () => {
       const row = current();
       if (!row) return;

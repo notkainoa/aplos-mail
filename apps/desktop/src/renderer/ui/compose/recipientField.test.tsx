@@ -39,3 +39,11 @@ test('a name that looks like an address is never the visible label', () => {
   );
   assert.ok(!markup.includes('boss@company.com'), 'the fake name is not rendered anywhere');
 });
+
+test('a name with a fullwidth or small look-alike "@" is never the visible label either', () => {
+  for (const name of ['boss＠company.com', 'boss﹫company.com']) {
+    const markup = chipsFor([{ id: 'a', name, address: 'attacker@evil.example' }]);
+    assert.match(markup, /aria-label="attacker@evil\.example"/);
+    assert.ok(!markup.includes(name), `the look-alike name is not rendered: ${name}`);
+  }
+});

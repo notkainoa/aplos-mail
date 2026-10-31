@@ -14,10 +14,10 @@ import type { ComposeNotice } from '../model/composeState';
 import { scheduledLabel } from '../model/schedule';
 import { isLiveSubmission, SEND_COPY } from '../model/sendState';
 import { dataComposeApi } from './composeApi';
-import { keepUntilSaved, releaseKeptFor } from './recovery';
+import { keepUntilSaved, recoveryKey, releaseKeptFor } from './recovery';
 import { releaseSend } from './sendHandoff';
-import { pushRefusedSend } from './sendNotices';
-import { createComposeSession, type ComposeSession } from './session';
+import { dropUnconfirmedSend, pushRefusedSend, pushUnconfirmedSend } from './sendNotices';
+import { createComposeSession, type ComposeSession, type SendAnswer } from './session';
 
 /** "Undo send" defaults to 8 s (DESIGN 7.6) until the settings arrive. */
 const DEFAULT_UNDO_SECONDS = 8;
@@ -30,13 +30,15 @@ export const DISCARD_COPY = {
 const NOTICE_COPY: Record<ComposeNotice, string> = {
   ...DISCARD_COPY,
   alreadySent: SEND_COPY.alreadySent,
+  undoRefused: SEND_COPY.undoFailed,
 };
 
-function notify(notice: ComposeNotice): void {
+/** A composer's one-off notice; a refused Undo carries the engine's own sentence. */
+function notify(notice: ComposeNotice, message?: string): void {
   pushToast({
     id: `compose-${notice}-${getNow()}`,
     kind: 'info',
-    message: NOTICE_COPY[notice],
+    message: message ?? NOTICE_COPY[notice],
     undoable: false,
   });
 }
@@ -50,10 +52,17 @@ const realTimers = {
 };
 
 function newSession(initial: ComposeState): ComposeSession {
-  return createComposeSession(
-    { api: dataComposeApi(api), timers: realTimers, notify, checkSent: () => navigate('sent') },
+  const session: ComposeSession = createComposeSession(
+    {
+      api: dataComposeApi(api),
+      timers: realTimers,
+      notify,
+      checkSent: () => navigate('sent'),
+      onLateAnswer: answer => followLateAnswer(answer, session.getState()),
+    },
     initial,
   );
+  return session;
 }
 
 /** One session for the composer's lifetime, created when `initial` first becomes known. */
@@ -117,9 +126,40 @@ export function flushOnHide(
 export function handOffIfLive(state: ComposeState): void {
   const send = state.send;
   if (send.kind === 'refused' && !state.open) return handOffRefusal(state);
+  if (send.kind === 'pending' && send.unconfirmed)
+    return pushUnconfirmedSend(unconfirmedKey(state));
   if (send.kind !== 'tracking') return;
   if (send.row && !isLiveSubmission(send.row)) return;
-  releaseSend(send.submissionId, true);
+  releaseSend(send.submissionId, true, send.row);
+}
+
+/** The unconfirmed notice's key: the draft the send names. */
+function unconfirmedKey(state: ComposeState): string {
+  return state.save.draftId ?? recoveryKey(state);
+}
+
+/**
+ * A send that timed out answered after its composer was gone: the toast stack follows the submission (its tray, or
+ * its failure), or the refusal becomes "Couldn’t send to …"; the unconfirmed notice goes either way.
+ */
+export function followLateAnswer(answer: SendAnswer, state: ComposeState): void {
+  const key = unconfirmedKey(state);
+  if (answer.type === 'sendAccepted') {
+    dropUnconfirmedSend(key);
+    return releaseSend(answer.submission.id, true, answer.submission);
+  }
+  // `conflict`: a send of this draft is already on its way; "Check Sent" stays the honest notice.
+  if (answer.refusal.type === 'conflict') return;
+  const { send, save } = state;
+  if (send.kind !== 'pending' || save.draftId === null || save.revision === null) return;
+  dropUnconfirmedSend(key);
+  pushRefusedSend({
+    draftId: save.draftId,
+    revision: save.revision,
+    names: send.names,
+    ...(send.notBefore !== undefined ? { notBefore: send.notBefore } : {}),
+    ...(send.alsoDone ? { alsoDone: true } : {}),
+  });
 }
 
 function handOffRefusal(state: ComposeState): void {

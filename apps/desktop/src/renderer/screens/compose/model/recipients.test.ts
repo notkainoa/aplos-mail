@@ -47,3 +47,12 @@ test('the draft never carries a display name that contains "@"', () => {
 test('the sent message line names the real address too', () => {
   assert.equal(toLabelOf(fieldsOf([spoofed()])), 'to attacker@evil.example');
 });
+
+test('a fullwidth ＠ or small ﹫ in a display name counts as "@": the address shows, the draft drops the name', () => {
+  for (const fake of ['boss＠company.com', 'boss﹫company.com']) {
+    const recipient: Recipient = { id: 'a', name: fake, address: 'attacker@evil.example' };
+    assert.equal(safeDisplayName(recipient), 'attacker@evil.example', fake);
+    assert.deepEqual(addressOf(recipient), { address: 'attacker@evil.example' }, fake);
+    assert.deepEqual(namesOf(fieldsOf([recipient])), ['attacker@evil.example'], fake);
+  }
+});

@@ -6,16 +6,18 @@
  * Each toast's id is its send's, so a send never has two. Nothing here sends mail by itself: every verb is the owner's.
  */
 import { api, getNow, type Submission } from '../../../data';
-import { dismissToast, openCompose, pushToast, type PushedToast } from '../../../shell';
+import { dismissToast, navigate, openCompose, pushToast, type PushedToast } from '../../../shell';
 import { UNDO_ACTION } from '../../undoOperation';
 import { recipientPhrase } from '../model/recipients';
 import { SEND_COPY } from '../model/sendState';
+import { undoRefusalOutcome } from '../model/undoRefusal';
 import { refusalOf } from './composeApi';
 import { releaseSend } from './sendHandoff';
 
 const TRY_AGAIN = { id: 'retry', label: 'Try again' } as const;
 const EDIT = { id: 'edit', label: 'Edit' } as const;
 const SEND_NOW = { id: 'sendNow', label: 'Send now' } as const;
+const CHECK_SENT = { id: 'checkSent', label: 'Check Sent' } as const;
 
 /** A send the engine refused before it made a submission (the compose page had already closed). */
 export interface RefusedSend {
@@ -36,11 +38,46 @@ export function pushAlreadySent(id: string): void {
   });
 }
 
-/** Undo for a submission; a refusal because it already left says so. */
-export function undoSubmission(id: string): void {
+/** A refused Undo the engine explained: its own sentence (or the plain fallback), never nothing. */
+function pushUndoRefused(id: string, message: string): void {
+  pushToast({ id: `send-undo-refused-${id}`, kind: 'info', message, undoable: false });
+}
+
+/**
+ * Undo for a submission. `row` is the newest row the caller shows for it (a frame may be behind the engine). A send that
+ * already left says "Already sent." (the engine's `stateMismatch` or the fixture's `conflict`); any other refusal says
+ * why.
+ */
+export function undoSubmission(id: string, row?: Submission): void {
   void api.submission.set({ action: { type: 'undo', submissionId: id } }).catch(error => {
-    if (refusalOf(error).type === 'conflict') pushAlreadySent(id);
+    const outcome = undoRefusalOutcome(refusalOf(error), row, getNow());
+    if (outcome.kind === 'alreadySent') pushAlreadySent(id);
+    if (outcome.kind === 'refused') pushUndoRefused(id, outcome.message);
   });
+}
+
+function unconfirmedToastId(key: string): string {
+  return `send-unconfirmed-${key}`;
+}
+
+/** "Couldn’t confirm this was sent." · Check Sent, for a send whose `Submission/set` never answered before its page went. */
+export function pushUnconfirmedSend(key: string): void {
+  pushToast({
+    id: unconfirmedToastId(key),
+    kind: 'info',
+    message: SEND_COPY.unconfirmed,
+    actions: [CHECK_SENT],
+    undoable: false,
+    persistent: true,
+    onAction: actionId => {
+      if (actionId === CHECK_SENT.id) navigate('sent');
+    },
+  });
+}
+
+/** The late answer came: the unconfirmed notice goes (the stack follows the send, or says it failed). */
+export function dropUnconfirmedSend(key: string): void {
+  dismissToast(unconfirmedToastId(key));
 }
 
 function failedToast(
@@ -72,7 +109,7 @@ function sendAgain(refused: RefusedSend): void {
   } as const;
   api.submission
     .set({ action })
-    .then(({ submission }) => releaseSend(submission.id, true))
+    .then(({ submission }) => releaseSend(submission.id, true, submission))
     .catch(() => pushRefusedSend(refused));
 }
 
@@ -145,7 +182,7 @@ export function pushHeldSend(row: Submission, recipients: string, secondsLeft: n
     undoable: true,
     persistent: true,
     onAction: actionId => {
-      if (actionId === UNDO_ACTION.id) undoSubmission(row.id);
+      if (actionId === UNDO_ACTION.id) undoSubmission(row.id, row);
       if (actionId === SEND_NOW.id)
         void api.submission
           .set({ action: { type: 'sendNow', submissionId: row.id, revision: row.revision } })

@@ -10,6 +10,7 @@ import type { ContextName, ConditionState, TargetSummary } from '../commands';
 import {
   cancelShellHold,
   dispatchShellKey,
+  focusLeftShellHold,
   releaseShellKey,
   type ShellHold,
   type ShellKeyState,
@@ -18,7 +19,14 @@ import { shellRegistryFor } from './ShellRegistry';
 
 type Fake = Partial<Omit<KeyboardEvent, 'target'>> & { key: string; target?: unknown };
 
-const TEXTAREA = { tagName: 'TEXTAREA' };
+/** A field with the attribute it carries in the DOM (the body editor is `data-dictation="body"`). */
+function field(tagName: string, attributes: Record<string, string> = {}) {
+  return { tagName, getAttribute: (name: string) => attributes[name] ?? null };
+}
+
+const TEXTAREA = field('TEXTAREA', { 'data-dictation': 'body' });
+const TO_FIELD = field('INPUT');
+const SUBJECT_FIELD = field('INPUT');
 const THREAD: TargetSummary = { kind: 'thread', id: 't1', title: 'Hi' };
 
 function key(init: Fake): KeyboardEvent {
@@ -75,6 +83,7 @@ function setup(initial: MutableState) {
   let now = 0;
   const timers: Timer[] = [];
   let removed = 0;
+  let active: unknown = TEXTAREA;
   const hold: ShellHold = {
     tracker: createHoldTracker(250),
     now: () => now,
@@ -86,6 +95,7 @@ function setup(initial: MutableState) {
       };
     },
     readState: () => state,
+    focused: () => active,
     removeTyped: () => {
       removed++;
     },
@@ -102,7 +112,22 @@ function setup(initial: MutableState) {
   const down = (event: KeyboardEvent) => dispatchShellKey(shell.registry, snapshot(), event, hold);
   const up = (event: KeyboardEvent) => releaseShellKey(shell.registry, snapshot(), event, hold);
   const cancel = () => cancelShellHold(shell.registry, snapshot(), hold);
-  return { calls, releases, state, advance, down, up, cancel, removed: () => removed };
+  const focusLeft = (left: unknown) => focusLeftShellHold(shell.registry, snapshot(), hold, left);
+  const focus = (next: unknown) => {
+    active = next;
+  };
+  return {
+    calls,
+    releases,
+    state,
+    advance,
+    down,
+    up,
+    cancel,
+    focusLeft,
+    focus,
+    removed: () => removed,
+  };
 }
 
 const reader = (): MutableState => ({
@@ -239,4 +264,72 @@ test('a quick Space tap in an empty body only types', () => {
   assert.equal(kit.removed(), 0);
   assert.deepEqual(kit.calls, []);
   assert.equal(kit.releases[0]?.upgraded, false);
+});
+
+const composing = (): MutableState => ({
+  stack: ['global', 'reader', 'compose'],
+  target: THREAD,
+  conditions: { emptyBody: true },
+});
+
+test('focus moving to another field before the tick: the typed space there is not deleted, the hold ends', () => {
+  const kit = setup(composing());
+  kit.down(SPACE);
+  // Tab to Subject before the threshold: the keyup lands there, or never.
+  kit.focus(SUBJECT_FIELD);
+  kit.focusLeft(TEXTAREA);
+  kit.advance(300);
+  assert.equal(kit.removed(), 0, 'nothing is deleted from the field that has focus now');
+  assert.deepEqual(kit.calls, [], 'no dictation');
+  assert.equal(kit.releases[0]?.ended, 'cancel', 'the missed keyup released the hold');
+  assert.equal(
+    kit.down(key({ key: ' ', code: 'Space', repeat: true, target: SUBJECT_FIELD })),
+    false,
+  );
+});
+
+test('focus elsewhere at the tick (no focusout seen): the hold dictates but deletes nothing', () => {
+  const kit = setup(composing());
+  kit.down(SPACE);
+  kit.focus(SUBJECT_FIELD);
+  kit.advance(250);
+  assert.equal(kit.removed(), 0, 'the space typed into the body is not taken from Subject');
+});
+
+test('a held Space in To or Subject types spaces: it never arms dictation', () => {
+  for (const target of [TO_FIELD, SUBJECT_FIELD]) {
+    const kit = setup(composing());
+    kit.focus(target);
+    assert.equal(kit.down(key({ key: ' ', code: 'Space', target })), false);
+    kit.advance(30);
+    assert.equal(
+      kit.down(key({ key: ' ', code: 'Space', repeat: true, target })),
+      false,
+      'repeats are not swallowed: they are spaces',
+    );
+    kit.advance(500);
+    assert.deepEqual(kit.calls, []);
+    assert.equal(kit.removed(), 0);
+    assert.equal(kit.releases.length, 0);
+  }
+});
+
+test('blur mid-hold ends a typing hold too, and focus leaving an unrelated field leaves it armed', () => {
+  const kit = setup(composing());
+  kit.down(SPACE);
+  kit.focusLeft(SUBJECT_FIELD);
+  assert.equal(kit.releases.length, 0, 'another field losing focus is not this hold');
+  kit.cancel();
+  assert.equal(kit.releases[0]?.ended, 'cancel');
+  kit.advance(500);
+  assert.deepEqual(kit.calls, []);
+});
+
+test('holding R moves focus into the reply: that is not a missed keyup', () => {
+  const kit = setup(reader());
+  kit.down(R);
+  kit.focusLeft(null);
+  kit.advance(300);
+  assert.deepEqual(kit.calls, ['mail.reply', 'mail.dictateReply']);
+  assert.equal(kit.releases.length, 0);
 });

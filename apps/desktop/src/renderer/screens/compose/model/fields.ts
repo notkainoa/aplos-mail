@@ -5,6 +5,7 @@
  */
 import type { Address, Draft, DraftFields } from '../../../data';
 import type { Recipient } from '../../../ui/props';
+import { containsAt } from './recipients';
 
 /** The four recipient-free fields and the three recipient rows the composer shows. */
 export interface ComposeFields {
@@ -81,7 +82,7 @@ export function recipientOf(address: Address): Recipient {
 /** A recipient chip as a contract address. A name that contains "@" is dropped, so the draft names the real address. */
 export function addressOf(recipient: Recipient): Address {
   const name = recipient.name?.trim();
-  const safe = name && !name.includes('@') ? name : undefined;
+  const safe = name && !containsAt(name) ? name : undefined;
   return safe ? { address: recipient.address, name: safe } : { address: recipient.address };
 }
 

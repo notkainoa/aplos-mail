@@ -12,6 +12,14 @@ const MAX_ADDRESS = 320;
 /** One local part, one `@`, a dotted domain, no spaces or angle brackets. Deliberately plain, not RFC 5322. */
 const ADDRESS = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;".]{2,}$/;
 
+/** "@" and the look-alikes that pose as it: fullwidth ＠ (U+FF20) and small ﹫ (U+FE6B). */
+const AT_SIGNS = /[@\uFF20\uFE6B]/u;
+
+/** True when `text` holds an "@" or anything that normalises (NFKC) or looks like one: such a name could pose as an address. */
+export function containsAt(text: string): boolean {
+  return AT_SIGNS.test(text) || AT_SIGNS.test(text.normalize('NFKC'));
+}
+
 /** True for an address the composer will send to. */
 export function isValidAddress(address: string): boolean {
   return address.length <= MAX_ADDRESS && ADDRESS.test(address);
@@ -65,7 +73,7 @@ export function blockedSend(fields: ComposeFields): BlockedSend | null {
 
 function firstName(name: string): string {
   const trimmed = name.trim();
-  if (trimmed.includes('@')) return trimmed;
+  if (containsAt(trimmed)) return trimmed;
   return trimmed.split(/\s+/)[0] ?? trimmed;
 }
 
@@ -84,7 +92,7 @@ export function recipientPhrase(names: readonly string[]): string {
  */
 export function safeDisplayName(recipient: Recipient): string {
   const name = recipient.name?.trim();
-  return name && !name.includes('@') ? name : recipient.address;
+  return name && !containsAt(name) ? name : recipient.address;
 }
 
 /** The display names `Submission.toNames` would carry for these fields, for the tray shown before the engine answers. */

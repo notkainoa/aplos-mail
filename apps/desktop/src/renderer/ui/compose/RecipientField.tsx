@@ -9,10 +9,20 @@ const INPUT_LABEL = {
   Bcc: 'Add Bcc recipients',
 } as const;
 
-/** The name a chip shows. A name that contains "@" never stands in for the address (it could pose as another one). */
+/** "@" and its look-alikes: fullwidth ＠ (U+FF20) and small ﹫ (U+FE6B), also after NFKC normalisation. */
+const AT_SIGNS = /[@\uFF20\uFE6B]/u;
+
+function containsAt(text: string): boolean {
+  return AT_SIGNS.test(text) || AT_SIGNS.test(text.normalize('NFKC'));
+}
+
+/**
+ * The name a chip shows. A name that contains "@" or a look-alike of it never stands in for the address (it could pose
+ * as another one).
+ */
 function shownName(person: Recipient): string {
   const name = person.name?.trim();
-  return name && !name.includes('@') ? name : person.address;
+  return name && !containsAt(name) ? name : person.address;
 }
 
 /** The chip's title and accessible name: the shown name with the real address, "Jordan Lee <jordan@example.com>". */

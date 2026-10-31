@@ -15,11 +15,16 @@ export interface FindBarProps {
   readonly focusKey: number;
 }
 
+/** Focuses the field and selects the query (the ⌘F effect). */
+export function takeFocus(field: Pick<HTMLInputElement, 'focus' | 'select'> | null): void {
+  field?.focus();
+  field?.select();
+}
+
 export function FindBar({ query, onChange, onClose, focusKey }: FindBarProps) {
   const field = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    field.current?.focus();
-    field.current?.select();
+    takeFocus(field.current);
   }, [focusKey]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape') return;
@@ -28,7 +33,7 @@ export function FindBar({ query, onChange, onClose, focusKey }: FindBarProps) {
     onClose();
   };
   return (
-    <div className="aplos-reader__find" onKeyDown={onKeyDown}>
+    <div className="aplos-reader__find" data-focus-key={focusKey} onKeyDown={onKeyDown}>
       <TextField
         id="reader-find"
         label="Find in this email"

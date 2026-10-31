@@ -96,6 +96,8 @@ export interface ShellHold {
   schedule(ms: number, callback: () => void): () => void;
   /** The state at the tick: a tap (R) has changed it by then (the reply is open, so the stack holds `compose`). */
   readState(): ShellKeyState;
+  /** The element that has focus now (`document.activeElement`). */
+  focused(): unknown;
   /** Deletes the one character a phase 'hold' keydown typed into the focused field. */
   removeTyped(): void;
 }
@@ -107,6 +109,18 @@ interface PendingTick {
 }
 
 const pendingTicks = new WeakMap<ShellHold, PendingTick>();
+/** The field a typing hold's keydown typed into: the typed character is removed only there, and leaving it ends the hold. */
+const typedTargets = new WeakMap<ShellHold, unknown>();
+
+/** The one field a held Space dictates into: the reply or compose body (`BodyEditor`'s `data-dictation="body"`). */
+export const DICTATION_FIELD_ATTRIBUTE = 'data-dictation';
+
+/** True for the reply or compose body; To, Subject and every other field type a held Space as spaces. */
+export function isDictationField(target: unknown): boolean {
+  if (typeof target !== 'object' || target === null) return false;
+  const el = target as ElementLike;
+  return el.getAttribute?.(DICTATION_FIELD_ATTRIBUTE) === 'body';
+}
 
 /** Modifiers pressed or released mid-hold leave it armed: holds are tracked by physical key. */
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta']);
@@ -129,7 +143,10 @@ function finishHold(
   hold: ShellHold,
   release: HoldRelease | null,
 ): void {
-  if (!hold.tracker.armed) clearTick(hold);
+  if (!hold.tracker.armed) {
+    clearTick(hold);
+    typedTargets.delete(hold);
+  }
   if (release) registry.release(release, context);
 }
 
@@ -148,7 +165,9 @@ function tickHold(registry: HoldRegistry, hold: ShellHold): void {
     scheduleTick(registry, hold, typedConditions);
     return;
   }
-  if (upgrade.removeTyped) hold.removeTyped();
+  // Only from the field the key typed into, and only while it still has focus: never from whatever is focused now.
+  const target = typedTargets.get(hold);
+  if (upgrade.removeTyped && target !== undefined && hold.focused() === target) hold.removeTyped();
   registry.run(upgrade.commandId, upgradeContext(hold, typedConditions));
 }
 
@@ -175,6 +194,8 @@ function armHold(
 ): void {
   const previous = hold.tracker.down(event, holdCommandId, hold.now(), { typed });
   finishHold(registry, context, hold, previous);
+  if (typed) typedTargets.set(hold, event.target);
+  else typedTargets.delete(hold);
   scheduleTick(registry, hold, typed ? context.conditions : null);
 }
 
@@ -221,7 +242,10 @@ function dispatchWithHold(
   const resolution = registry.resolve(event, context);
   if (!resolution) return false;
   if (resolution.phase === 'hold') {
-    armHold(registry, context, event, hold, resolution.commandId, context.focus === 'text');
+    const typed = context.focus === 'text';
+    // A held key in a text field dictates only in the body; anywhere else it just types.
+    if (typed && !isDictationField(event.target)) return false;
+    armHold(registry, context, event, hold, resolution.commandId, typed);
     return false;
   }
   const ran = registry.run(resolution.commandId, context).status === 'ran';
@@ -276,6 +300,20 @@ export function cancelShellHold(
   finishHold(registry, shellKeyContext(state, activeElement()), hold, release);
 }
 
+/**
+ * Focus left the field a typing hold typed into (the keyup will land elsewhere, or never): the hold ends ('cancel'), as
+ * on blur. A hold that typed nothing (R in the reader, which moves focus into the reply) is left alone.
+ */
+export function focusLeftShellHold(
+  registry: HoldRegistry,
+  state: ShellKeyState,
+  hold: ShellHold,
+  left: unknown,
+): void {
+  if (!hold.tracker.armed || !typedTargets.has(hold) || typedTargets.get(hold) !== left) return;
+  cancelShellHold(registry, state, hold);
+}
+
 /** Deletes the character before the caret in the focused field, as Backspace would, so a controlled field hears it. */
 export function removeTypedCharacter(): void {
   if (typeof document === 'undefined') return;
@@ -295,6 +333,7 @@ function domHold(thresholdMs: number, readState: () => ShellKeyState): ShellHold
       return () => window.clearTimeout(id);
     },
     readState,
+    focused: activeElement,
     removeTyped: removeTypedCharacter,
   };
 }
@@ -325,18 +364,22 @@ function listenShellKeys(registry: HoldRegistry, readState: () => ShellKeyState)
   };
   const onKeyUp = (event: KeyboardEvent) => releaseShellKey(registry, readState(), event, holds());
   const onBlur = () => cancelShellHold(registry, readState(), holds());
+  const onFocusOut = (event: FocusEvent) =>
+    focusLeftShellHold(registry, readState(), holds(), event.target);
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') onBlur();
   };
   window.addEventListener('keydown', onRepeat, true);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp, true);
+  window.addEventListener('focusout', onFocusOut, true);
   window.addEventListener('blur', onBlur);
   document.addEventListener('visibilitychange', onVisibility);
   return () => {
     window.removeEventListener('keydown', onRepeat, true);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp, true);
+    window.removeEventListener('focusout', onFocusOut, true);
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('visibilitychange', onVisibility);
     onBlur();
