@@ -20,6 +20,8 @@ export const DRAFT_REMOVE_GRACE_MS = 600_000;
 export const DRAFT_REMOVE_MAX_MS = 3_600_000;
 /** A removal the provider refuses for good is asked again this much later. */
 export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
+/** How many unanswered creates a draft offers as `supersedes`. */
+const EARLIER_KEEP = 5;
 /** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
 export const REMOTE_BODY_MAX = 1_000_000;
 /** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
@@ -58,6 +60,12 @@ export interface DraftMeta {
   uploading?: { internetId: string; revision: number; fingerprint?: string };
   /** Message-IDs and remote message ids this device uploaded: their echo in history is not a remote edit. */
   wrote?: string[];
+  /**
+   * Message-IDs of earlier creates of this draft that were never answered (a new revision replaced the attempt). The next
+   * create offers them as `DraftUpload.supersedes`, so a provider that finds one of those copies replaces it instead of
+   * leaving a second remote draft. Cleared when a create is answered.
+   */
+  earlier?: string[];
   problem?: { reasonCode: string; message: string; at: number };
   conflict?: DraftConflictState;
   /** How many other-device versions were seen (`Draft.conflict.theirsRevision`). */
@@ -134,6 +142,11 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
     else next[key] = value;
   }
   return next as unknown as DraftMeta;
+}
+
+/** The unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own, so each appears once). */
+export function earlierWith(meta: DraftMeta, ...ids: string[]): string[] {
+  return [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP);
 }
 
 /** Keeps the newest ids only. */
@@ -287,35 +300,30 @@ export function theirsFields(
  * How a remote copy relates to each content field of a draft, in ONE place. A copy is taken as this device's own upload
  * (a fingerprint proof) only when it SHOWS every `shown` field, and every `notShown` field is empty on this device: a
  * field the copy cannot show would be filled in from the local draft and make a foreign edit of it look like ours.
- * Typed against `DraftFields`, so a new draft field does not compile until it is classified here; a test pins the same
- * list against the contract's schema.
+ * Checked against `DraftFields` by the compiler, so a new draft field does not compile until it is classified here; a
+ * test pins the same lists against the contract's schema.
  *   - `shown`: the copy carries it and the comparison reads it (`to`, `cc`, `bcc` when the provider can show it,
  *     `subject`, `html`, and `from`, which must be the account's own address).
  *   - `carried`: the draft's identity (account, mode, thread, reply target); a provider edit cannot change it.
  *   - `notShown`: the copy cannot show it (attachments, sign-off): no proof unless it is empty here.
  */
 export const DRAFT_CONTENT_FIELDS = {
-  accountId: 'carried',
-  mode: 'carried',
-  threadId: 'carried',
-  replyToMessageId: 'carried',
-  from: 'shown',
-  to: 'shown',
-  cc: 'shown',
-  bcc: 'shown',
-  subject: 'shown',
-  html: 'shown',
-  attachments: 'notShown',
-  signature: 'notShown',
-  signatureSource: 'notShown',
-} as const satisfies Record<keyof DraftFields, 'shown' | 'carried' | 'notShown'>;
+  carried: ['accountId', 'mode', 'threadId', 'replyToMessageId'],
+  shown: ['from', 'to', 'cc', 'bcc', 'subject', 'html'],
+  notShown: ['attachments', 'signature', 'signatureSource'],
+} as const;
 
-/** The fields a copy must show to count as this device's upload (every key of `DRAFT_CONTENT_FIELDS` that is `shown`). */
-export type ShownField = {
-  [K in keyof typeof DRAFT_CONTENT_FIELDS]: (typeof DRAFT_CONTENT_FIELDS)[K] extends 'shown'
-    ? K
-    : never;
-}[keyof typeof DRAFT_CONTENT_FIELDS];
+/** The fields a copy must show to count as this device's upload. */
+export type ShownField = (typeof DRAFT_CONTENT_FIELDS.shown)[number];
+
+// Closed world, checked by the compiler: every `DraftFields` key is in exactly one list, and the lists name no other key.
+type Classified = (typeof DRAFT_CONTENT_FIELDS)[keyof typeof DRAFT_CONTENT_FIELDS][number];
+const _complete: [
+  Exclude<keyof DraftFields, Classified>,
+  Exclude<Classified, keyof DraftFields>,
+] extends [never, never]
+  ? true
+  : never = true;
 
 /** The same mailbox, ignoring case and surrounding space. */
 export const sameAddress = (a: string, b: string) =>

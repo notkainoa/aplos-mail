@@ -15,6 +15,7 @@ import {
   parseData,
   patched,
   remembered,
+  earlierWith,
   sameAddress,
   theirsFields,
   type DraftMeta,
@@ -294,6 +295,7 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fingerprint: w.partial ? null : w.fingerprint,
     uploading: null,
     problem: null,
+    earlier: null,
     wrote: remembered(meta, w.internetId, w.remoteMessageId),
     changedElsewhere: null,
     dueAt: idle ? null : (meta.dueAt ?? w.at),
@@ -336,6 +338,8 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
   const { fields, meta } = parseData(row.data);
   if (meta.uploading?.internetId !== w.internetId) return;
   const gone = w.gone;
+  // A conflict, or a copy that is gone, is an answer: the create is over, so no earlier Message-ID is offered again.
+  const answered = { uploading: null, earlier: null };
   // A discarded draft adopts nothing: the copy differs from ours, so it is not to be deleted either.
   const adopted = meta.removing ? undefined : adoptedByConflict(row, meta, w);
   // The copy is gone: its id names nothing a delete or a replace may touch (on some providers it is now the sent message).
@@ -344,7 +348,7 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
   if (meta.removing) {
     // With no copy known (a create) there is nothing to delete or wait for: the hidden row ends, the other copy stays.
     const done = !gone && row.remote_draft_id === null ? { removeAt: w.at } : {};
-    return writeRow(tx, row.id, columns, fields, patched(meta, { uploading: null, ...done }));
+    return writeRow(tx, row.id, columns, fields, patched(meta, { ...answered, ...done }));
   }
   // A conflict already open stays, but a copy that is gone is gone: keep mine then has no base to overwrite.
   if (meta.conflict) {
@@ -354,7 +358,7 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
       row.id,
       columns,
       fields,
-      patched(meta, { uploading: null, conflict, ...wrote }),
+      patched(meta, { ...answered, conflict, ...wrote }),
     );
   }
   const seen = (meta.theirsSeen ?? 0) + 1;
@@ -365,7 +369,7 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
     conflict,
     theirsSeen: seen,
     dueAt: null,
-    uploading: null,
+    ...answered,
     announce: tx.seq,
     ...wrote,
   };
@@ -397,6 +401,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
       fingerprint: null,
       uploading: null,
       wrote: remembered(meta, ...old),
+      ...(row.remote_draft_id === null && old.length ? { earlier: earlierWith(meta, ...old) } : {}),
       dueAt: meta.dueAt ?? w.at,
     }),
   );
@@ -649,7 +654,9 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
     fields,
     patched(
       meta,
-      meta.removing ? { removeAt: w.changedAt } : { wrote: remembered(meta, w.remoteMessageId) },
+      meta.removing
+        ? { removeAt: w.changedAt }
+        : { wrote: remembered(meta, w.remoteMessageId), earlier: null },
     ),
   );
   announce(row.id);
