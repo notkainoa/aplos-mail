@@ -263,6 +263,23 @@ export function readAnyRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | 
 }
 
 /**
+ * The explicit `from` of a draft built from a remote copy, or none (it goes out from the account's own address). The
+ * copy's sender is compared with the one the draft goes out under (`mine`, else `own`): another sender is taken from the
+ * copy, unless it is the account's own address (the absence of an explicit `from`); the same sender keeps the draft's
+ * `from`, with the copy's display name when it has one.
+ */
+function copySender(
+  named: Address | undefined,
+  mine: Address | undefined,
+  own: string | undefined,
+) {
+  const now = mine?.address ?? own;
+  if (named !== undefined && now !== undefined && !sameAddress(named.address, now))
+    return own !== undefined && sameAddress(named.address, own) ? undefined : named;
+  return mine === undefined || named?.name === undefined ? mine : { ...mine, name: named.name };
+}
+
+/**
  * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is
  * complete when the body came and the copy has no attachments: attachments are not delivered, so an edit in place would
  * upload `attachments: []` over the other device's draft.
@@ -280,7 +297,10 @@ export function theirsFields(
     from?: Address;
   } = {},
   base?: DraftFields,
-  /** The account's own address: a copy sent from another address carries that sender, else the draft's `from` is kept. */
+  /**
+   * The account's own address. The copy's sender is compared with the one this draft goes out under (`base.from`, else
+   * `own`): another sender is taken from the copy, the same one keeps the draft's `from` (with the copy's display name).
+   */
   own?: string,
 ): { fields: DraftFields; complete: boolean } {
   const escaped = (message.snippet ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -298,9 +318,8 @@ export function theirsFields(
   };
   if (base?.threadId !== undefined) fields.threadId = base.threadId;
   if (base?.replyToMessageId !== undefined) fields.replyToMessageId = base.replyToMessageId;
-  if (message.from !== undefined && own !== undefined && !sameAddress(message.from.address, own))
-    fields.from = message.from;
-  else if (base?.from !== undefined) fields.from = base.from;
+  const from = copySender(message.from, base?.from, own);
+  if (from !== undefined) fields.from = from;
   return { fields, complete: message.html !== undefined && message.hasAttachments !== true };
 }
 
