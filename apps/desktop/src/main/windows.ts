@@ -116,8 +116,10 @@ function lockNavigation(win: BrowserWindow) {
       if (!isTest) void external(url).catch(() => {});
     }
   });
+  // Subframes only: Electron emits will-navigate for a main frame only when will-frame-navigate was not prevented,
+  // so judging main frames here would hide a link click from the handler above (it would vanish, not open).
   contents.on('will-frame-navigate', event => {
-    if (trustedURL(event.url) || (!event.isMainFrame && mailFrameURL(event))) return;
+    if (event.isMainFrame || trustedURL(event.url) || mailFrameURL(event)) return;
     event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {

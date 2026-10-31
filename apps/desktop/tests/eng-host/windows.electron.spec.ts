@@ -26,7 +26,7 @@ test('startup opens exactly one hidden window and test hooks are exposed', async
   }
 });
 
-test('window.open is denied: no second window, an https link is dropped, mailto stays inside Aplos', async () => {
+test('window.open is denied: no second window opens and none is visible', async () => {
   const aplos = await launchAplos();
   try {
     const page = await aplos.app.firstWindow();
@@ -45,7 +45,7 @@ test('window.open is denied: no second window, an https link is dropped, mailto 
   }
 });
 
-test('the welcome window is opt-in and hands off to the mail window without a visible window', async () => {
+test('with the welcome window opted in, exactly one window opens and it is hidden', async () => {
   const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '1' } });
   try {
     const window = await aplos.app.firstWindow();
