@@ -787,7 +787,9 @@ function relink(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, fields: D
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
   const { fields: stored, meta } = parseData(row.data);
-  const base = withParent(tx, stored, w);
+  // While a send of this draft is queued or done its revision must not move (the draft leaves Drafts only if the sent
+  // revision is the current one), so a late-found parent is not added then.
+  const base = hasSend(tx, row.id) ? stored : withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
   // message it answers (which may have synced after the draft did: then only the reply target is added, never a body

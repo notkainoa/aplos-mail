@@ -237,3 +237,30 @@ test('the parent found on a same-version report that carries no body keeps the s
     assert.equal(d.html, '<p>Answer</p>', 'and the stored body is untouched');
     assert.equal(syncOf(w, REPLY).incomplete, undefined, 'still a complete draft');
   }));
+
+test('a late-found parent is not added while a send of the phone reply is queued: the draft still leaves Drafts once sent', () =>
+  world(async w => {
+    phoneReply(w, 'pm-1');
+    assert.equal(read(w, REPLY).mode, 'new', 'the parent is not stored yet');
+    const sub = w.send(w.first, REPLY, { revision: read(w, REPLY).revision });
+    const queued = read(w, REPLY).revision;
+    // The parent syncs and history reports the same version again while the send waits.
+    parent(w, 'orig-1', 't-1');
+    phoneReply(w, 'pm-1');
+    assert.equal(
+      read(w, REPLY).revision,
+      queued,
+      'the revision did not move under the queued send',
+    );
+    await wait(w, 15 * SEC);
+    assert.equal(w.get(sub.id).state, 'sent');
+    assert.equal(service(w).get([REPLY]).notFound.length, 1, 'the sent draft is gone from Drafts');
+  }));
+
+test('a late-found parent is still added when no send is queued (control)', () =>
+  world(async w => {
+    phoneReply(w, 'pm-1');
+    parent(w, 'orig-1', 't-1');
+    phoneReply(w, 'pm-1');
+    assert.equal(read(w, REPLY).mode, 'reply');
+  }));
