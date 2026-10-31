@@ -15,7 +15,7 @@ import { NotSentError, PausedError } from '../../src/ports/base';
 import type { DraftSyncPort, SendPort, SubmissionPayload } from '../../src/ports';
 import type { DraftSaveResult, DraftUpload } from '../../src/ports/provider';
 import type { EngineFrame } from '../../src/runtime/frames';
-import { openStore, type CommitInput, type StorePort } from '../../src/store';
+import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
 
 export { ACCOUNT };
@@ -604,4 +604,40 @@ export function assertIdsPerRevision(w: World, draftId: string) {
     );
     owner.set(r.internet_id, r.revision);
   }
+}
+
+/**
+ * What history reports for the copy of THIS device's upload (default content of `fields()`): the body and every field a
+ * copy has to show, so the engine can prove the copy is its own.
+ */
+export function copyWrite(f: {
+  remoteDraftId: string;
+  remoteMessageId: string;
+  internetId: string;
+  changedAt: number;
+  content?: DraftFields;
+}): StoreWrite {
+  const c = f.content ?? fields();
+  return {
+    kind: 'remoteDraft',
+    accountId: ACCOUNT,
+    remoteDraftId: f.remoteDraftId,
+    remoteMessageId: f.remoteMessageId,
+    internetId: f.internetId,
+    changedAt: f.changedAt,
+    html: c.html,
+    message: {
+      remoteId: f.remoteMessageId,
+      remoteThreadId: 'copy-thread',
+      from: { address: 'owner@mail.example' },
+      to: c.to,
+      cc: c.cc,
+      bcc: c.bcc,
+      subject: c.subject,
+      snippet: 'copy',
+      date: f.changedAt,
+      internalDate: f.changedAt,
+      flags: { seen: true, flagged: false, draft: true, fromMe: true },
+    },
+  } as StoreWrite;
 }

@@ -313,6 +313,13 @@ test('body: html over the limit next to a text that fits leaves the draft incomp
     assert.equal(syncOf(w, `${ACCOUNT}:both`).incomplete, true);
   }));
 
+/** What history shows for the copy of an upload of `fields()`: the body and every field, so it can be proven ours. */
+const OWN_COPY: Fact = {
+  subject: 'Lunch',
+  html: '<p>Lunch at noon?</p>',
+  to: [{ address: 'jordan@mail.example', name: 'Jordan' }],
+};
+
 const WITH_FILE = [{ id: 'att-1', name: 'z.txt', mime: 'text/plain', size: 1 }];
 
 /** A synced draft, then an edit whose reply is lost (`uploading` stays set): the fact of the landed copy comes next. */
@@ -655,7 +662,7 @@ test('earlier: a fact that adopts the landed copy ends the list', () =>
     assert.deepEqual((syncOf(w, d.id) as { earlier?: string[] }).earlier, [first.internetId]);
     // History reports the copy of the first create (its reply was lost): this draft adopts it.
     const copy = [...w.remoteDrafts.remote.entries()][0]!;
-    fact(w, copy[0], copy[1].messageId, { internetId: first.internetId });
+    fact(w, copy[0], copy[1].messageId, { ...OWN_COPY, internetId: first.internetId });
     assert.equal(row(w, d.id)!.remote_draft_id, copy[0]);
     assert.equal(
       (syncOf(w, d.id) as { earlier?: string[] }).earlier,
@@ -740,7 +747,7 @@ test('earlier: a refusal that arrives after a fact adopted the copy keeps the ad
     await wait(w, 5 * SEC);
     const first = w.remoteDrafts.saves.at(-1)!;
     // While the create runs, history reports its copy under the create's Message-ID: the draft adopts it.
-    fact(w, 'rd-landed', 'm-landed', { internetId: first.internetId });
+    fact(w, 'rd-landed', 'm-landed', { ...OWN_COPY, internetId: first.internetId });
     assert.equal(row(w, d.id)!.remote_draft_id, 'rd-landed');
     g.open();
     await wait(w, 1);

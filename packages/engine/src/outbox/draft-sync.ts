@@ -251,10 +251,12 @@ function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: s
   const { meta } = parseData(now.data);
   // A refused create may still have landed, and so may the attempt the row still names: their Message-IDs are kept like
   // any given-up attempt's.
-  const ids = [meta.uploading?.internetId, attempt].filter(
-    (id, at, all): id is string => id !== undefined && all.indexOf(id) === at,
-  );
-  const kept = abandoned(meta, now.remote_draft_id, ...ids);
+  const running = meta.uploading ? [meta.uploading] : [];
+  const others =
+    attempt !== undefined && attempt !== meta.uploading?.internetId
+      ? [{ internetId: attempt }]
+      : [];
+  const kept = abandoned(meta, now.remote_draft_id, ...running, ...others);
   setMeta(
     ctx,
     row.id,
@@ -370,8 +372,7 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   }
   // A first create nobody answered, then an edit: the new attempt takes the old one's place, and the old Message-ID is
   // kept so history reporting the copy it made is recognised as ours (no phantom draft).
-  const old =
-    meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
+  const old = meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading] : [];
   // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
   const given = abandoned(meta, row.remote_draft_id, ...old);
   const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];

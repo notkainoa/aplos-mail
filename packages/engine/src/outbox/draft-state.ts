@@ -66,6 +66,12 @@ export interface DraftMeta {
    * leaving a second remote draft. Cleared when a create is answered.
    */
   earlier?: string[];
+  /**
+   * The content fingerprint of each attempt that is no longer running, by its Message-ID (the newest few). A copy that
+   * history reports under one of those Message-IDs is adopted as this draft's own only if its content has the matching
+   * fingerprint: a Message-ID alone proves nothing (providers keep it across edits).
+   */
+  prints?: Record<string, string>;
   problem?: { reasonCode: string; message: string; at: number };
   conflict?: DraftConflictState;
   /** How many other-device versions were seen (`Draft.conflict.theirsRevision`). */
@@ -148,14 +154,32 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
  * Message-IDs of attempts given up on (replaced by a newer revision, or refused): remembered as ours so history
  * reporting their copy is recognised, and, while the draft has no remote copy, offered as `supersedes` by the next create.
  */
-export function abandoned(meta: DraftMeta, remoteDraftId: string | null, ...ids: string[]) {
-  if (!ids.length) return {};
+export function abandoned(
+  meta: DraftMeta,
+  remoteDraftId: string | null,
+  ...attempts: { internetId: string; fingerprint?: string }[]
+) {
+  if (!attempts.length) return {};
+  const ids = attempts.map(a => a.internetId);
   const wrote = remembered(meta, ...ids);
+  const prints = withPrints(meta, ...attempts);
   // `earlier`: the unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own).
   return remoteDraftId === null
-    ? { wrote, earlier: [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP) }
-    : { wrote };
+    ? { wrote, prints, earlier: [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP) }
+    : { wrote, prints };
 }
+
+/** `meta.prints` with these attempts' fingerprints added, newest last, at most `EARLIER_KEEP`. */
+export const withPrints = (
+  meta: DraftMeta,
+  ...attempts: { internetId: string; fingerprint?: string }[]
+) =>
+  Object.fromEntries(
+    [
+      ...Object.entries(meta.prints ?? {}),
+      ...attempts.flatMap(a => (a.fingerprint ? [[a.internetId, a.fingerprint] as const] : [])),
+    ].slice(-EARLIER_KEEP),
+  );
 
 /** Keeps the newest ids only. */
 export function remembered(meta: DraftMeta, ...ids: string[]): string[] {

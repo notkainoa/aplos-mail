@@ -2,7 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Draft, DraftFields } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { ACCOUNT, assertIdsPerRevision, fields, inWorld, SEC, type World } from './helpers';
+import {
+  ACCOUNT,
+  assertIdsPerRevision,
+  copyWrite,
+  fields,
+  inWorld,
+  SEC,
+  type World,
+} from './helpers';
 
 /** Time-3: local drafts with compare-and-set saves, serialized uploads, and the keep-mine/take-theirs/keep-both state. */
 
@@ -472,14 +480,12 @@ test('our own upload coming back in history is not a remote edit, even before it
       opId: `phone-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
+        copyWrite({
           remoteDraftId: 'rd-new',
           remoteMessageId: 'm-new',
           internetId: upload.internetId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(service(w).get([`${ACCOUNT}:rd-new`]).notFound.length, 1, 'no phantom draft');

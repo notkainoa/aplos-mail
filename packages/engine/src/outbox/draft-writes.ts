@@ -7,7 +7,6 @@ import {
   DraftConflict,
   fingerprintOf,
   keepsMine,
-  type ShownField,
   liveOf,
   LIVE_SQL,
   needsUpload,
@@ -16,13 +15,15 @@ import {
   patched,
   abandoned,
   remembered,
+  withPrints,
   sameAddress,
   theirsFields,
   type DraftMeta,
   type DraftRow,
   type MetaPatch,
 } from './draft-state';
-import { bodyOf, completes, messageOf } from './draft-body';
+import { completes, messageOf } from './draft-body';
+import { accountAddress, explainedByAttempt, holdsOurContent, provenOurs } from './draft-proof';
 
 /**
  * The drafts' writers for the eng-time extension (seam 2): every change to a draft goes through `store.commit` as one of
@@ -283,7 +284,8 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // what the provider now holds, not what this draft is: only its ids are kept, to recognise their echo in history.
   if (meta.uploading?.internetId !== w.internetId) {
     const wrote = remembered(meta, w.internetId, w.remoteMessageId);
-    return writeRow(tx, w.id, {}, fields, patched(meta, { wrote }));
+    const prints = withPrints(meta, { internetId: w.internetId, fingerprint: w.fingerprint });
+    return writeRow(tx, w.id, {}, fields, patched(meta, { wrote, prints }));
   }
   const same = (meta.cur ?? fingerprintOf(fields)) === w.fingerprint;
   // An edit that landed during the upload keeps its own upload due; this copy is the revision that was sent.
@@ -315,6 +317,22 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fields,
     next,
   );
+  dropEarlyCopy(tx, row, w.remoteDraftId);
+}
+
+/**
+ * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body, other
+ * content), shows it as a remote draft. The reply then names the same remote draft for this row: the early row is the
+ * same copy, so it goes. Only a row nobody edited (`origin: 'remote'`) is dropped.
+ */
+function dropEarlyCopy(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
+  const early = tx.all<DraftRow>(
+    "SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND origin = 'remote' AND id <> ?",
+    row.account_id,
+    remoteDraftId,
+    row.id,
+  );
+  for (const copy of early) deleteRow(tx, copy);
 }
 
 /**
@@ -391,7 +409,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
   if (!w.uncertain) return;
   // The reply may hide a write of the old revision: the copy is not the one the fingerprint names. Upload what the
   // draft holds now. The old attempt's Message-ID is kept in `wrote`, so history reporting that copy is recognised.
-  const old = meta.uploading ? [meta.uploading.internetId] : [];
+  const old = meta.uploading ? [meta.uploading] : [];
   writeRow(
     tx,
     w.id,
@@ -646,6 +664,10 @@ function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
 function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   const { fields, meta } = parseData(row.data);
   if (row.remote_draft_id !== null || w.removed) return;
+  // A Message-ID alone proves nothing (a provider keeps it across edits, so a phone-edited copy carries it too): the copy
+  // must also have the content of an upload this engine made under it. Otherwise it is shown as a remote draft, a
+  // visible duplicate the owner can discard, and is never replaced or deleted from here.
+  if (!provenOurs(tx, row, meta, fields, w)) return insertRemote(tx, w);
   writeRow(
     tx,
     row.id,
@@ -674,58 +696,6 @@ function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
 }
 
 /**
- * Is this fact the copy this device uploaded, judged by its content? The body (and the fields it carries) must hash to
- * the fingerprint of what the provider holds. A provider keeps a draft's Message-ID across edits, so the Message-ID alone
- * does not tell a phone edit from our own copy. No body, attachments or a body over the limit: no proof.
- */
-function holdsOurContent(
-  w: RemoteDraftWrite,
-  row: DraftRow,
-  meta: DraftMeta,
-  base: DraftFields,
-  own: string,
-) {
-  return hasFingerprint(w, row, base, meta.fingerprint, own);
-}
-
-/**
- * Closed world (see `DRAFT_CONTENT_FIELDS`): can this copy show everything the fingerprint covers? Each `shown` field
- * must be on the copy (a Bcc the provider cannot show is not an empty Bcc), the sender must be the account's own
- * address, and each `notShown` field must be empty here and not reported by the copy (attachments).
- */
-function showsEveryField(w: RemoteDraftWrite, base: DraftFields, own: string) {
-  const m = w.message;
-  if (!m) return false;
-  const shown: Record<ShownField, boolean> = {
-    from: m.from !== undefined && m.from.address.trim().toLowerCase() === own.trim().toLowerCase(),
-    to: m.to !== undefined,
-    cc: m.cc !== undefined,
-    bcc: m.bcc !== undefined,
-    subject: m.subject !== undefined,
-    html: bodyOf(w) !== undefined,
-  };
-  const emptyHere = !keepsMine(base) && m.hasAttachments !== true;
-  return Object.values(shown).every(Boolean) && emptyHere;
-}
-
-/**
- * Does the fact's delivered content hash to `fingerprint`? Only a copy that shows every field (`showsEveryField`) can
- * prove it: the comparison fills in the rest from the local draft, so anything else could differ from ours without the
- * hash noticing. No fingerprint, or no body: no proof; no proof is a conflict, the safe direction. */
-function hasFingerprint(
-  w: RemoteDraftWrite,
-  row: DraftRow,
-  base: DraftFields,
-  fingerprint: string | undefined,
-  own: string,
-) {
-  if (fingerprint === undefined || !completes(w)) return false;
-  if (!showsEveryField(w, base, own)) return false;
-  const theirs = theirsFields(row.account_id, messageOf(w), base);
-  return fingerprintOf(theirs.fields) === fingerprint;
-}
-
-/**
  * A fact that replaces the message id this row holds (or one it wrote) and is the copy of this row's own upload is that
  * upload's echo, under the new message id a create-then-destroy update gave it. It is ours only when an upload under its
  * Message-ID is still running, or when its content is the content we uploaded; a Message-ID alone is not proof (Graph,
@@ -748,24 +718,6 @@ function supersedesOwn(
   return (
     explainedByAttempt(w, row, meta, fields, own) || holdsOurContent(w, row, meta, fields, own)
   );
-}
-
-/**
- * The running (or unanswered) upload's echo: the same Message-ID and content that hashes to what the upload sends. The
- * Message-ID alone proves nothing (a phone edit can keep it, and a retry of the same revision reuses it), so there is
- * no "one move per attempt" rule to get wrong: a fact whose content differs, or that delivers no body, is never
- * explained by the upload and goes the ordinary way (a conflict is the safe direction).
- */
-function explainedByAttempt(
-  w: RemoteDraftWrite,
-  row: DraftRow,
-  meta: DraftMeta,
-  base: DraftFields,
-  own: string,
-) {
-  const attempt = meta.uploading;
-  if (!attempt || attempt.internetId !== w.internetId) return false;
-  return hasFingerprint(w, row, base, attempt.fingerprint, own);
 }
 
 /** The echo of our own upload under a new message id: the row's base moves to it, nothing else changes. */
@@ -858,11 +810,7 @@ function raise(
       theirsSeen: seen,
       dueAt: null,
       uploading: null,
-      ...abandoned(
-        meta,
-        row.remote_draft_id,
-        ...(meta.uploading ? [meta.uploading.internetId] : []),
-      ),
+      ...abandoned(meta, row.remote_draft_id, ...(meta.uploading ? [meta.uploading] : [])),
       announce: tx.seq,
     }),
   );
@@ -967,9 +915,6 @@ const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | und
   const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
   return then !== undefined && now !== undefined && !sameAddress(then, now);
 };
-
-const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
-  tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
 
 /** A `remoteDraft` fact from the provider actor (D9). */
 export function applyRemoteDraft(write: { kind: string }, tx: CommitExtensionTx) {
