@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   activationPolicy,
   createProcessState,
+  createQuitGate,
   drain,
   pendingWork,
   quitWarning,
@@ -84,4 +85,44 @@ test('the quit drain waits at most 3 s for a stuck close', async () => {
   await drain(new Promise(() => {}), 3000, timers);
   assert.ok(Date.now() - started < 1000);
   await drain(Promise.reject(new Error('close failed')), 3000, timers);
+});
+
+test('the quit gate asks once at a time, and a confirm that rejects or throws still lets the quit go ahead', async () => {
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  let release: (go: boolean) => void = () => {};
+  let asked = 0;
+  let begun = 0;
+  const gate = createQuitGate(
+    () => {
+      asked++;
+      return new Promise<boolean>(resolve => (release = resolve));
+    },
+    () => void begun++,
+  );
+  gate.request();
+  gate.request();
+  assert.equal(asked, 1, 'a second ⌘Q while the question is open is ignored');
+  release(false);
+  await settle();
+  assert.equal(begun, 0, '"Keep running" does not quit');
+  gate.request();
+  assert.equal(asked, 2, 'and the gate is open again');
+  release(true);
+  await settle();
+  assert.equal(begun, 1);
+
+  for (const failing of [
+    () => Promise.reject(new Error('dialog failed')),
+    () => {
+      throw new Error('boom');
+    },
+  ]) {
+    let quits = 0;
+    const broken = createQuitGate(failing as () => Promise<boolean>, () => void quits++);
+    broken.request();
+    await settle();
+    broken.request();
+    await settle();
+    assert.equal(quits, 2, 'a failing confirm is a yes, and does not stick the gate');
+  }
 });

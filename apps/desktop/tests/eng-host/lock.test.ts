@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import {
   acquireLock,
   LockHeldError,
+  nodeLockFs,
   lockPath,
   parseLock,
   type LockFs,
   type LockPorts,
 } from '../../src/host/lock';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createProcessState } from '../../src/host/lifecycle';
 
 /** An in-memory file system with the same failure codes as node:fs. */
@@ -31,12 +35,13 @@ function fakeFs(files = new Map<string, string>()): LockFs & { files: Map<string
   };
 }
 
-function ports(fs: LockFs, pid: number, alive: number[] = []): LockPorts {
-  return { fs, pid, now: () => 1_000, pidAlive: other => alive.includes(other) };
+const BOOT = 5_000_000;
+function ports(fs: LockFs, pid: number, alive: number[] = [], boot = BOOT): LockPorts {
+  return { fs, pid, now: () => 1_000, boot: () => boot, pidAlive: other => alive.includes(other) };
 }
 
 const dir = '/data';
-const lock = (pid: number) => JSON.stringify({ pid, startedAt: 5 });
+const lock = (pid: number, boot = BOOT) => JSON.stringify({ pid, startedAt: 5, boot });
 
 test('a stale lock from a crashed run is reclaimed, and release removes only our own file', () => {
   const fs = fakeFs(new Map([[lockPath(dir), lock(111)]]));
@@ -106,9 +111,6 @@ function fakeDatabase() {
     open(pid: number, alivePids: number[]) {
       if (openBy !== undefined && alivePids.includes(openBy)) throw new Error('database is open');
       openBy = pid;
-      // Recovery on open: an interrupted write from a killed engine is rolled back, so only whole rows remain.
-      for (let i = rows.length - 1; i >= 0; i--)
-        if (rows[i].startsWith('partial')) rows.splice(i, 1);
     },
   };
 }
@@ -129,21 +131,14 @@ function startHost(
   step('lock', () => void (held = acquireLock(dir, ports(fs, pid, alive))));
   step('engine', () => {
     database.open(pid, alive);
-    database.rows.push(`partial-write-by-${pid}`);
+    database.rows.push(`engine-by-${pid}`);
   });
-  step('window', () => {
-    // The write the engine started at open completes once the window is up.
-    database.rows.splice(
-      database.rows.indexOf(`partial-write-by-${pid}`),
-      1,
-      `whole-write-by-${pid}`,
-    );
-  });
+  step('window', () => void database.rows.push(`window-by-${pid}`));
   step('ready', () => state.engineReady());
   return { held: held!, state };
 }
 
-test('kill at startup: killed after each step, the next launch recovers and opens the same data', () => {
+test('kill at startup: killed after each step, the next launch reclaims the lock and opens the same data', () => {
   for (const killAfter of startSteps) {
     const fs = fakeFs();
     const database = fakeDatabase();
@@ -153,11 +148,10 @@ test('kill at startup: killed after each step, the next launch recovers and open
     const next = startHost(fs, database, 222, [222]);
     assert.equal(next.state.state, 'ready', `killed after ${killAfter}`);
     assert.equal(parseLock(fs.read(lockPath(dir)))?.pid, 222, `killed after ${killAfter}`);
-    assert.equal(
-      database.rows.some(row => row.startsWith('partial')),
-      false,
-      `a half-written row survived a kill after ${killAfter}`,
-    );
+    // What the killed launch had written is still there, and the new launch wrote its own beside it.
+    const written = startSteps.indexOf(killAfter) >= 1 ? ['engine-by-111'] : [];
+    for (const row of [...written, 'engine-by-222', 'window-by-222'])
+      assert.ok(database.rows.includes(row), `${row} missing after a kill at ${killAfter}`);
     next.held.release();
     assert.equal(fs.files.size, 0);
   }
@@ -179,4 +173,44 @@ test('a second engine on data a live engine holds exits with a clear message and
   first.held.release();
   const later = startHost(fs, database, 222, [222]);
   assert.equal(later.state.state, 'ready');
+});
+
+test('a lock from another boot is stale even when its pid is alive again; the same boot refuses', () => {
+  const sameBoot = fakeFs(new Map([[lockPath(dir), lock(111)]]));
+  assert.throws(() => acquireLock(dir, ports(sameBoot, 222, [111])), LockHeldError);
+  // Clock adjustments within the tolerance are still the same boot.
+  const nudged = fakeFs(new Map([[lockPath(dir), lock(111, BOOT + 30_000)]]));
+  assert.throws(() => acquireLock(dir, ports(nudged, 222, [111])), LockHeldError);
+
+  // The Mac rebooted after a crash and gave pid 111 to an unrelated process: the old lock no longer counts.
+  const otherBoot = fakeFs(new Map([[lockPath(dir), lock(111, BOOT - 3_600_000)]]));
+  acquireLock(dir, ports(otherBoot, 222, [111]));
+  assert.equal(parseLock(otherBoot.read(lockPath(dir)))?.pid, 222);
+});
+
+test('a lock with no boot time (an earlier build) falls back to the pid check', () => {
+  const old = JSON.stringify({ pid: 111, startedAt: 5 });
+  assert.throws(
+    () => acquireLock(dir, ports(fakeFs(new Map([[lockPath(dir), old]])), 222, [111])),
+    LockHeldError,
+  );
+  acquireLock(dir, ports(fakeFs(new Map([[lockPath(dir), old]])), 222));
+});
+
+test('the real file system: create is all-or-nothing, refuses an existing lock and leaves no temp file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aplos-lock-test-'));
+  try {
+    const path = join(root, 'aplos.lock');
+    const text = JSON.stringify({ pid: 1, startedAt: 2, boot: 3 });
+    nodeLockFs.create(path, text);
+    assert.equal(readFileSync(path, 'utf8'), text);
+    assert.throws(
+      () => nodeLockFs.create(path, 'other'),
+      (error: unknown) => (error as { code?: string }).code === 'EEXIST',
+    );
+    assert.equal(readFileSync(path, 'utf8'), text);
+    assert.deepEqual(readdirSync(root), ['aplos.lock']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

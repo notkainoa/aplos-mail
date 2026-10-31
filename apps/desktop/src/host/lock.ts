@@ -4,13 +4,19 @@
  * unreadable or garbage, is reclaimed; a lock held by a live process refuses, so a second engine never opens the
  * same database. Every file and process check comes in through `LockPorts`, so this runs under node:test.
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { uptime } from 'node:os';
 import { join } from 'node:path';
 
 export interface LockFile {
   readonly pid: number;
   readonly startedAt: number;
+  /** When the machine booted (epoch ms). A lock from another boot is stale whatever its pid is doing now. */
+  readonly boot?: number;
 }
+
+/** Boot times of one boot differ by clock adjustments only; two boots are further apart than this. */
+export const BOOT_TOLERANCE_MS = 60_000;
 
 /** The file operations the lock needs. `create` must fail with code `EEXIST` when the file is there. */
 export interface LockFs {
@@ -25,6 +31,8 @@ export interface LockPorts {
   fs: LockFs;
   pid: number;
   now(): number;
+  /** When the machine booted (epoch ms). */
+  boot(): number;
   pidAlive(pid: number): boolean;
 }
 
@@ -52,9 +60,10 @@ export function parseLock(text: string | undefined): LockFile | undefined {
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value !== 'object' || value === null) return undefined;
-    const { pid, startedAt } = value as Record<string, unknown>;
+    const { pid, startedAt, boot } = value as Record<string, unknown>;
     if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return undefined;
     if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return undefined;
+    if (typeof boot === 'number' && Number.isFinite(boot)) return { pid, startedAt, boot };
     return { pid, startedAt };
   } catch {
     return undefined;
@@ -73,7 +82,7 @@ const MAX_ATTEMPTS = 5;
  */
 export function acquireLock(dataDir: string, ports: LockPorts): HeldLock {
   const path = lockPath(dataDir);
-  const mine: LockFile = { pid: ports.pid, startedAt: ports.now() };
+  const mine: LockFile = { pid: ports.pid, startedAt: ports.now(), boot: ports.boot() };
   const text = JSON.stringify(mine);
   ports.fs.mkdirp(join(dataDir, 'run'));
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -85,7 +94,7 @@ export function acquireLock(dataDir: string, ports: LockPorts): HeldLock {
     }
     const current = ports.fs.read(path);
     const holder = parseLock(current);
-    if (holder && ports.pidAlive(holder.pid)) throw new LockHeldError(holder);
+    if (holder && holdsLock(holder, ports)) throw new LockHeldError(holder);
     reclaim(path, ports, attempt, current);
   }
   throw new Error('Aplos Mail could not take its data lock. Quit other copies and try again.');
@@ -95,6 +104,17 @@ export function acquireLock(dataDir: string, ports: LockPorts): HeldLock {
  * Move the stale file aside, then check it is the file we judged stale. Between our read and our rename another launch
  * may have reclaimed it and taken the lock; then what we moved is that launch's live lock, and it goes back.
  */
+/**
+ * A holder still holds the lock when its process is alive and it started in this boot. After a crash or power loss the
+ * next boot can give an unrelated process the old pid (EPERM counts as alive), so a lock from another boot is stale.
+ * A lock with no boot time (written by an earlier build) falls back to the pid check alone.
+ */
+function holdsLock(holder: LockFile, ports: LockPorts): boolean {
+  if (holder.boot !== undefined && Math.abs(holder.boot - ports.boot()) > BOOT_TOLERANCE_MS)
+    return false;
+  return ports.pidAlive(holder.pid);
+}
+
 function reclaim(path: string, ports: LockPorts, attempt: number, judged: string | undefined) {
   const aside = `${path}.stale-${ports.pid}-${attempt}`;
   try {
@@ -138,7 +158,16 @@ export function processAlive(pid: number): boolean {
 
 export const nodeLockFs: LockFs = {
   mkdirp: dir => void mkdirSync(dir, { recursive: true, mode: 0o700 }),
-  create: (path, data) => writeFileSync(path, data, { flag: 'wx', mode: 0o600 }),
+  create(path, data) {
+    // Written whole to a private name, then linked into place: a launch that finds the lock never reads half of it.
+    const temp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(temp, data, { flag: 'wx', mode: 0o600 });
+    try {
+      linkSync(temp, path);
+    } finally {
+      rmSync(temp, { force: true });
+    }
+  },
   read(path) {
     try {
       return readFileSync(path, 'utf8');
@@ -154,5 +183,6 @@ export const nodeLockPorts = (): LockPorts => ({
   fs: nodeLockFs,
   pid: process.pid,
   now: () => Date.now(),
+  boot: () => Date.now() - uptime() * 1000,
   pidAlive: processAlive,
 });

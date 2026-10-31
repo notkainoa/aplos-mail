@@ -359,3 +359,26 @@ export function drain(
     work.then(done, done);
   });
 }
+
+/**
+ * One quit question at a time. `request` asks `confirm` (the pending-work warning) and, if the answer is yes, calls
+ * `begin`. A second request while the question is open is ignored. A `confirm` that throws or rejects counts as yes and
+ * never leaves the gate stuck, because a quit that cannot be asked about must still be possible.
+ */
+export function createQuitGate(confirm: () => Promise<boolean>, begin: () => void) {
+  let asking = false;
+  /** Asks at once (not a tick later), turning a synchronous throw into a rejection. */
+  const ask = async () => confirm();
+  return {
+    request() {
+      if (asking) return;
+      asking = true;
+      void ask()
+        .catch(() => true)
+        .then(go => {
+          asking = false;
+          if (go) begin();
+        });
+    },
+  };
+}

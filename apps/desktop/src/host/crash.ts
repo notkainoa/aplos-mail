@@ -108,3 +108,22 @@ export function createHeartbeatSupervisor(ports: HeartbeatPorts): HeartbeatSuper
     },
   };
 }
+
+/** The part of Electron's `app` the startup naming needs. */
+export interface NamedApp {
+  setName(name: string): void;
+}
+/** The part of Electron's `crashReporter` the host starts. */
+export interface Reporter {
+  start(options: { uploadToServer: boolean }): void;
+}
+
+/**
+ * Names the app, then starts the crash reporter, in that order and nowhere else. Starting the reporter fixes the default
+ * `userData` folder from the app name at that moment, and the package name (`@aplos/desktop`) is not the product name,
+ * so starting it first would send a real launch to an empty mailbox folder. Dumps stay on this Mac: no upload.
+ */
+export function startCrashReporting(app: NamedApp, reporter: Reporter, name: string) {
+  app.setName(name);
+  reporter.start({ uploadToServer: false });
+}

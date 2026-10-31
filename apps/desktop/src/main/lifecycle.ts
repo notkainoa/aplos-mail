@@ -22,6 +22,7 @@ import { service, bootEngine, latestState } from './engine-host';
 import {
   activationPolicy,
   createProcessState,
+  createQuitGate,
   drain,
   pendingWork,
   quitWarning,
@@ -31,7 +32,7 @@ import {
 } from '../host/lifecycle';
 import { acquireLock, nodeLockPorts, type HeldLock } from '../host/lock';
 import { watchPowerResume } from '../host/power';
-import { createLoopMonitor, nodeDelayHistogram } from '../host/crash';
+import { createLoopMonitor, nodeDelayHistogram, startCrashReporting } from '../host/crash';
 import { createPause } from '../host/menu-bar';
 import { LOG_FILE, logDir } from '../host/logsink';
 import {
@@ -51,7 +52,6 @@ let started = false;
 let pendingActivation = false;
 let closing = false;
 let quitting = false;
-let confirming = false;
 let systemShutdown = false;
 /** Set by "Try again" after a park: the relaunch quit is ours, so the pending-work warning is skipped. */
 let skipQuitWarning = false;
@@ -151,6 +151,7 @@ async function confirmQuit(): Promise<boolean> {
   });
   return response === 0;
 }
+const quitGate = createQuitGate(confirmQuit, beginQuit);
 function beginQuit() {
   quitting = true;
   // A test run must always end: if a window never answers its save-before-close, quit anyway after 15 s.
@@ -225,9 +226,8 @@ if (isTest) {
   exposeTestHooks();
   app.setPath('userData', join(testDataDir!, 'electron'));
 }
-// Crash dumps stay on this Mac. After `userData` is set, so test mode keeps them inside its data directory.
-crashReporter.start({ uploadToServer: false });
-app.setName(isTest ? testAppName : 'Aplos Mail');
+// Names the app, then starts the crash reporter (dumps stay on this Mac). After test mode set `userData`, which it keeps.
+startCrashReporting(app, crashReporter, isTest ? testAppName : 'Aplos Mail');
 // Test instances run side by side, each on its own data directory, so they take no single-instance lock.
 const locked = isTest || app.requestSingleInstanceLock();
 if (!locked) app.quit();
@@ -253,12 +253,8 @@ else {
     // Every quit runs through here, even one that arrives while Aplos is still starting: a window's save-before-close
     // would otherwise cancel Electron's own quit, and with no window left nothing on macOS would restart it.
     event.preventDefault();
-    if (quitting || confirming) return;
-    confirming = true;
-    void confirmQuit().then(go => {
-      confirming = false;
-      if (go) beginQuit();
-    });
+    if (quitting) return;
+    quitGate.request();
   });
   void app
     .whenReady()

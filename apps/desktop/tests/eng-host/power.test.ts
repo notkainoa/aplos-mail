@@ -153,3 +153,11 @@ test('unsubscribe cancels the fallback timer too', () => {
   clock.sleep(60_000);
   assert.equal(wakes(), 0);
 });
+
+test('a clock that moves backwards does not suppress the next wake', () => {
+  const { clock, power, wakes } = withClock();
+  power.emit('resume');
+  clock.skip(-60_000);
+  power.emit('unlock-screen');
+  assert.equal(wakes(), 2);
+});

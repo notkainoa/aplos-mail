@@ -60,7 +60,8 @@ export function watchPowerResume(
   const wake = () => {
     if (clock) {
       const now = clock.now();
-      if (now - lastWake < DEDUPE_MS) return;
+      // A clock that moved backwards (now < lastWake) is not "just woke": it must not suppress wakes.
+      if (now >= lastWake && now - lastWake < DEDUPE_MS) return;
       lastWake = now;
     }
     callWake();

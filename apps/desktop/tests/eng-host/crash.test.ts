@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   createHeartbeatSupervisor,
   createLoopMonitor,
+  startCrashReporting,
   SILENT_ACTOR_MS,
   type DelayHistogram,
 } from '../../src/host/crash';
@@ -79,4 +82,25 @@ test('the loop monitor logs one numbers-only line when p99 passes 500 ms', () =>
   p99ms = 700;
   sample();
   assert.deepEqual(lines, ['main event loop delay p99 700 ms']);
+});
+
+test('the app is named before the crash reporter starts, and nothing is uploaded', () => {
+  // Starting the reporter fixes userData from the app name at that moment.
+  const calls: string[] = [];
+  startCrashReporting(
+    { setName: name => void calls.push(`setName ${name}`) },
+    { start: options => void calls.push(`start upload=${options.uploadToServer}`) },
+    'Aplos Mail',
+  );
+  assert.deepEqual(calls, ['setName Aplos Mail', 'start upload=false']);
+});
+
+test('the main lifecycle module starts the crash reporter only through startCrashReporting', () => {
+  const source = readFileSync(
+    join(import.meta.dirname, '..', '..', 'src', 'main', 'lifecycle.ts'),
+    'utf8',
+  );
+  assert.match(source, /startCrashReporting\(app, crashReporter,/);
+  assert.doesNotMatch(source, /crashReporter\.start\(/);
+  assert.doesNotMatch(source, /app\.setName\(/);
 });
