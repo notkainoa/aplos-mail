@@ -308,6 +308,38 @@ test('stepWrites turns clearedFailures into failure:null writes after the quaran
   ]);
 });
 
+test('stepWrites carries a remote draft body up to the draft limit and cuts one over it just past the limit', () => {
+  const account = { id: 'acct-1', provider: 'google', address: 'a@b.test' } as AdapterAccount;
+  const draft = (id: string, size: number) => ({
+    remoteDraftId: id,
+    remoteMessageId: `m-${id}`,
+    changedAt: 1,
+    html: 'x'.repeat(size),
+    text: 'y'.repeat(size),
+  });
+  const result = {
+    nextStates: [],
+    done: false,
+    costUnits: 0,
+    drafts: [draft('fits', 1_000_000), draft('over', 1_000_001)],
+  } as unknown as StepResult;
+  const writes = stepWrites(result, {
+    account,
+    step: { scope: 'window:inbox', lane: 'incremental', origin: 'incremental', trigger: 'poll' },
+    state: { scope: 'window:inbox', generation: 1, updatedAt: 0 },
+    now: 0,
+    failures: new Map(),
+    baselineDone: true,
+  });
+  const byId = new Map(
+    writes.flatMap(w => (w.kind === 'remoteDraft' ? [[w.remoteDraftId, w]] : [])),
+  );
+  assert.equal(byId.get('fits')!.html?.length, 1_000_000);
+  assert.equal(byId.get('fits')!.text?.length, 1_000_000);
+  assert.equal(byId.get('over')!.html?.length, 1_000_001, 'still over, so the engine sees it');
+  assert.equal(byId.get('over')!.text?.length, 1_000_001);
+});
+
 test('a failed factory discard is logged once, with the kind and no ref, and still rejects', async () => {
   const lines: LogLine[] = [];
   const host = hostWith(

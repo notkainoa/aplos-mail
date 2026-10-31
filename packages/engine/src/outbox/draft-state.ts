@@ -50,8 +50,12 @@ export interface DraftMeta {
   fingerprint?: string;
   /** When the next upload is due (5 s after the last change, at once on close, or a retry). Absent: nothing to upload. */
   dueAt?: number;
-  /** An upload of this revision under this per-revision Message-ID started and has no result yet. */
-  uploading?: { internetId: string; revision: number };
+  /**
+   * An upload of this revision under this per-revision Message-ID started and has no result yet. `fingerprint` names the
+   * content it sends: a fact is that upload's echo only when its own content has this fingerprint (a Message-ID alone
+   * proves nothing, and a row written before this field has none, so it proves nothing either).
+   */
+  uploading?: { internetId: string; revision: number; fingerprint?: string };
   /** Message-IDs and remote message ids this device uploaded: their echo in history is not a remote edit. */
   wrote?: string[];
   problem?: { reasonCode: string; message: string; at: number };
@@ -252,8 +256,11 @@ export function theirsFields(
     snippet?: string;
     html?: string;
     hasAttachments?: boolean;
+    from?: Address;
   } = {},
   base?: DraftFields,
+  /** The account's own address: a copy sent from another address carries that sender, else the draft's `from` is kept. */
+  own?: string,
 ): { fields: DraftFields; complete: boolean } {
   const escaped = (message.snippet ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const fields: DraftFields = {
@@ -264,21 +271,64 @@ export function theirsFields(
     bcc: message.bcc ?? [],
     subject: message.subject ?? '',
     html: message.html ?? `<p>${escaped}</p>`,
-    attachments: base?.attachments ?? [],
+    // A copy that says it has no attachments has none: a file this device had and the phone removed must not come back.
+    attachments: message.hasAttachments === true ? (base?.attachments ?? []) : [],
     signature: base?.signature ?? false,
   };
   if (base?.threadId !== undefined) fields.threadId = base.threadId;
   if (base?.replyToMessageId !== undefined) fields.replyToMessageId = base.replyToMessageId;
-  if (base?.from !== undefined) fields.from = base.from;
+  if (message.from !== undefined && own !== undefined && !sameAddress(message.from.address, own))
+    fields.from = message.from;
+  else if (base?.from !== undefined) fields.from = base.from;
   return { fields, complete: message.html !== undefined && message.hasAttachments !== true };
 }
+
+/**
+ * How a remote copy relates to each content field of a draft, in ONE place. A copy is taken as this device's own upload
+ * (a fingerprint proof) only when it SHOWS every `shown` field, and every `notShown` field is empty on this device: a
+ * field the copy cannot show would be filled in from the local draft and make a foreign edit of it look like ours.
+ * Typed against `DraftFields`, so a new draft field does not compile until it is classified here; a test pins the same
+ * list against the contract's schema.
+ *   - `shown`: the copy carries it and the comparison reads it (`to`, `cc`, `bcc` when the provider can show it,
+ *     `subject`, `html`, and `from`, which must be the account's own address).
+ *   - `carried`: the draft's identity (account, mode, thread, reply target); a provider edit cannot change it.
+ *   - `notShown`: the copy cannot show it (attachments, sign-off): no proof unless it is empty here.
+ */
+export const DRAFT_CONTENT_FIELDS = {
+  accountId: 'carried',
+  mode: 'carried',
+  threadId: 'carried',
+  replyToMessageId: 'carried',
+  from: 'shown',
+  to: 'shown',
+  cc: 'shown',
+  bcc: 'shown',
+  subject: 'shown',
+  html: 'shown',
+  attachments: 'notShown',
+  signature: 'notShown',
+  signatureSource: 'notShown',
+} as const satisfies Record<keyof DraftFields, 'shown' | 'carried' | 'notShown'>;
+
+/** The fields a copy must show to count as this device's upload (every key of `DRAFT_CONTENT_FIELDS` that is `shown`). */
+export type ShownField = {
+  [K in keyof typeof DRAFT_CONTENT_FIELDS]: (typeof DRAFT_CONTENT_FIELDS)[K] extends 'shown'
+    ? K
+    : never;
+}[keyof typeof DRAFT_CONTENT_FIELDS];
+
+/** The same mailbox, ignoring case and surrounding space. */
+export const sameAddress = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
  * Did these fields keep something from this device's draft that the other copy does not hold? `theirsFields` carries the
  * attachments and the sign-off over, and a provider's metadata has neither, so such a copy is not the draft.
  */
-export function keepsMine(fields: Pick<DraftFields, 'attachments' | 'signature'>): boolean {
-  return fields.attachments.length > 0 || fields.signature;
+export function keepsMine(
+  fields: Pick<DraftFields, 'attachments' | 'signature'> & { signatureSource?: unknown },
+): boolean {
+  return fields.attachments.length > 0 || fields.signature || fields.signatureSource !== undefined;
 }
 
 // ---------------------------------------------------------------- announcements
