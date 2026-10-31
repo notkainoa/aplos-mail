@@ -287,6 +287,22 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     const prints = withPrints(meta, { internetId: w.internetId, fingerprint: w.fingerprint });
     return writeRow(tx, w.id, {}, fields, patched(meta, { wrote, prints }));
   }
+  // The reply names a remote draft that another row already shows (history was faster, and could not prove the copy
+  // ours). Only the very same untouched version is the same copy; anything else (a newer version, a draft the owner
+  // edited, one with a send queued) keeps its row, and this row is NOT bound to it: the upload is done with, nothing is
+  // lost, and the next upload makes its own copy.
+  const holders = holdersOf(tx, row, w.remoteDraftId);
+  if (!holders.every(h => sameCopy(tx, h, w.remoteMessageId))) {
+    if (meta.removing) return deleteHidden(tx, row.id);
+    const given = abandoned(meta, null, { internetId: w.internetId, fingerprint: w.fingerprint });
+    return writeRow(
+      tx,
+      w.id,
+      {},
+      fields,
+      patched(meta, { uploading: null, problem: null, dueAt: meta.dueAt ?? w.at, ...given }),
+    );
+  }
   const same = (meta.cur ?? fingerprintOf(fields)) === w.fingerprint;
   // An edit that landed during the upload keeps its own upload due; this copy is the revision that was sent.
   const done = row.revision === w.revision || same;
@@ -317,22 +333,29 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fields,
     next,
   );
-  dropEarlyCopy(tx, row, w.remoteDraftId);
+  for (const copy of holders) deleteRow(tx, copy);
 }
 
-/**
- * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body, other
- * content), shows it as a remote draft. The reply then names the same remote draft for this row: the early row is the
- * same copy, so it goes. Only a row nobody edited (`origin: 'remote'`) is dropped.
- */
-function dropEarlyCopy(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
-  const early = tx.all<DraftRow>(
-    "SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND origin = 'remote' AND id <> ?",
+/** The other rows that show this remote draft. */
+function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
+  return tx.all<DraftRow>(
+    'SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND id <> ?',
     row.account_id,
     remoteDraftId,
     row.id,
   );
-  for (const copy of early) deleteRow(tx, copy);
+}
+
+/**
+ * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
+ * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
+ * if nobody touched it (`origin: 'remote'`), it holds the very message id the reply names, and no send is queued on it;
+ * then it goes (two rows must never share a remote draft).
+ */
+function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
+  return (
+    copy.origin === 'remote' && copy.remote_message_id === remoteMessageId && !liveOf(tx, copy.id)
+  );
 }
 
 /**
@@ -341,11 +364,14 @@ function dropEarlyCopy(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: stri
  * theirs or mine it is not a version of ours (and a discard of the row then forgets it instead of deleting it).
  */
 function adoptedByConflict(
+  tx: CommitExtensionTx,
   row: DraftRow,
   meta: DraftMeta,
   w: Extract<DraftWrite, { op: 'conflict' }>,
 ) {
   if (w.gone || w.remoteDraftId === undefined || row.remote_draft_id !== null) return undefined;
+  // Another row already shows that copy (history reported it): two rows never share a remote draft.
+  if (holdersOf(tx, row, w.remoteDraftId).length) return undefined;
   if (w.remoteInternetId !== w.internetId) return undefined;
   return { columns: { remote_draft_id: w.remoteDraftId }, wrote: remembered(meta, w.internetId) };
 }
@@ -359,7 +385,7 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
   // A conflict, or a copy that is gone, is an answer: the create is over, so no earlier Message-ID is offered again.
   const answered = { uploading: null, earlier: null };
   // A discarded draft adopts nothing: the copy differs from ours, so it is not to be deleted either.
-  const adopted = meta.removing ? undefined : adoptedByConflict(row, meta, w);
+  const adopted = meta.removing ? undefined : adoptedByConflict(tx, row, meta, w);
   // The copy is gone: its id names nothing a delete or a replace may touch (on some providers it is now the sent message).
   const columns = gone ? FORGET_REMOTE : (adopted?.columns ?? {});
   const wrote = adopted ? { wrote: adopted.wrote } : {};

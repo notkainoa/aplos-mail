@@ -120,19 +120,73 @@ test("adopt (d): a superseded attempt's copy with its own content is adopted", (
     assert.equal(shown(w, REMOTE), false);
   }));
 
-test("adopt: an unproven copy shown early is dropped when the upload's own reply names the same remote draft", () =>
+test("adopt: an unproven copy shown early is dropped when the upload's own reply names that very version", () =>
   world(async w => {
     const g = gate();
     w.remoteDrafts.script.push({ wait: g.wait });
     const d = create(w, fields());
     await wait(w, 5 * SEC);
     const upload = w.remoteDrafts.saves.at(-1)!;
-    // History is faster than the reply and cannot show the body: shown for now.
-    fact(w, 'rd1', 'msg-early', { internetId: upload.internetId });
+    // History is faster than the reply and cannot show the body: shown for now (the copy's message id is `msg2`).
+    fact(w, 'rd1', 'msg2', { internetId: upload.internetId });
     assert.equal(shown(w, REMOTE), true);
     g.open();
     await wait(w, 5 * SEC);
     assert.equal(row(w, d.id)!.remote_draft_id, 'rd1', 'the reply bound the copy to this draft');
     assert.equal(shown(w, REMOTE), false, 'the early row was the same copy and is gone');
     assert.equal(count(w), 1);
+  }));
+
+test('adopt: an early row that shows ANOTHER version (a phone edit) is kept, and the draft is not bound to it', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    fact(w, 'rd1', 'msg-phone', { ...PHONE, internetId: upload.internetId });
+    g.open();
+    await wait(w, 5 * SEC);
+    assert.equal(shown(w, REMOTE), true, "the phone's version stays visible");
+    assert.notEqual(row(w, d.id)!.remote_draft_id, 'rd1', 'this draft is not bound to it');
+    assert.equal(w.remoteDrafts.remote.has('rd1'), true, 'and nothing deleted it');
+    assert.equal(w.remoteDrafts.removes.includes('rd1'), false);
+  }));
+
+test('adopt: an early row the owner has edited is never given up for the reply', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    fact(w, 'rd1', 'msg2', { ...PHONE, internetId: upload.internetId });
+    const early = read(w, REMOTE);
+    const { id: _i, rev: _r, revision: _v, updatedAt: _u, origin: _o, sync: _s, ...own } = early;
+    edit(w, early, { ...own, subject: 'Mine on the copy' } as Parameters<typeof edit>[2], false);
+    assert.equal(row(w, REMOTE)!.origin, 'local', 'the owner took it over');
+    g.open();
+    await wait(w, 5 * SEC);
+    assert.equal(shown(w, REMOTE), true, 'the edited row is still there');
+    assert.notEqual(
+      row(w, d.id)!.remote_draft_id,
+      'rd1',
+      'and this draft is not bound to the same remote draft',
+    );
+  }));
+
+test('adopt: a create-path conflict does not bind a draft to a copy another row already shows', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' }, { result: 'conflictExisting' });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const first = w.remoteDrafts.saves.at(-1)!;
+    const phoneId = w.remoteDrafts.phoneEdit('rd1');
+    fact(w, 'rd1', phoneId, { ...PHONE, internetId: first.internetId });
+    assert.equal(shown(w, REMOTE), true);
+    await wait(w, 5 * 60 * SEC);
+    assert.equal(w.remoteDrafts.saves.length >= 2, true, 'the retry ran');
+    assert.equal(row(w, d.id)!.remote_draft_id, null, 'not bound to the copy the other row shows');
+    assert.equal(shown(w, REMOTE), true);
+    assert.equal(w.remoteDrafts.remote.has('rd1'), true);
   }));
