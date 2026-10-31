@@ -169,14 +169,21 @@ function isGoogle(head: readonly Token[]): boolean {
   return version === undefined || (version.kind === 'word' && VERSION.test(version.text));
 }
 
-/** Google's results from one `Authentication-Results` value; null when it is not Google's, too long or malformed. */
+/**
+ * Google's results from one `Authentication-Results` value; null when it is not Google's, too long or malformed. One
+ * segment that does not parse fails the whole header: Google's own header echoes sender-chosen text (the envelope sender
+ * in an SPF comment), so a stray quote or `;` can make the parser see a result that is not there. An empty segment (a
+ * trailing `;`) carries nothing and is skipped.
+ */
 export function googleResults(value: string): AuthResult[] | null {
   if (value.length > LIST_AUTH_LIMITS.maxResultsChars) return null;
   const tokens = tokenize(value);
   if (!tokens) return null;
-  const [head, ...results] = segments(tokens);
-  if (!isGoogle(head) || results.length > LIST_AUTH_LIMITS.maxResults) return null;
-  return results.flatMap(segment => parseResult(segment) ?? []);
+  const [head, ...rest] = segments(tokens);
+  const parts = rest.filter(segment => segment.length > 0);
+  if (!isGoogle(head) || parts.length > LIST_AUTH_LIMITS.maxResults) return null;
+  const results = parts.map(segment => parseResult(segment));
+  return results.every(result => result !== null) ? results : null;
 }
 
 // ---- DKIM-Signature (RFC 6376 section 3.2 tag list) ----
@@ -279,6 +286,38 @@ function signatureFor(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/**
+ * Could `other` be Google's verdict on the signature `passing` names? Same signing domain and selector, and `header.b`
+ * prefixes that agree. A detail `other` leaves out counts as agreeing (fail closed).
+ */
+function mayNameSameSignature(other: AuthResult, passing: AuthResult): boolean {
+  const domain = signingDomain(other);
+  if (domain !== undefined && domain !== signingDomain(passing)) return false;
+  const selector = other.props.get('header.s')?.toLowerCase();
+  const passingSelector = passing.props.get('header.s')?.toLowerCase();
+  if (selector !== undefined && passingSelector !== undefined && selector !== passingSelector)
+    return false;
+  const prefix = other.props.get('header.b');
+  const passingPrefix = passing.props.get('header.b') ?? '';
+  return (
+    prefix === undefined || prefix.startsWith(passingPrefix) || passingPrefix.startsWith(prefix)
+  );
+}
+
+/**
+ * Google reports its own failure for a forged or replayed signature, and a sender can make one `dkim=pass` segment
+ * appear through text Google echoes. A pass that another non-pass `dkim` result may also name is therefore not believed.
+ */
+function contradicted(passing: AuthResult, results: readonly AuthResult[]): boolean {
+  return results.some(
+    other =>
+      other !== passing &&
+      other.method === 'dkim' &&
+      other.result !== 'pass' &&
+      mayNameSameSignature(other, passing),
+  );
+}
+
 function vouches(result: AuthResult, all: readonly DkimSignature[], from: string): boolean {
   if (result.method !== 'dkim' || result.result !== 'pass') return false;
   const domain = signingDomain(result);
@@ -304,5 +343,5 @@ export function listAuthenticated(
   const domain = fromDomain(headers, from);
   const all = signatures(headers);
   if (domain === undefined || all === null) return false;
-  return results.some(result => vouches(result, all, domain));
+  return results.some(result => vouches(result, all, domain) && !contradicted(result, results));
 }

@@ -142,12 +142,85 @@ test('an A-R over the length cap is false, quickly, and so are unterminated or d
   assert.ok(performance.now() - started < 200);
 });
 
-test('a result that repeats a property is ignored as ambiguous', () => {
+test('a result that repeats a property fails the header as ambiguous', () => {
   const results = [ar(`${PASS} header.d=example.com header.d=evil.test`)];
   assert.equal(verdict(newsletter({ results })), false);
 });
 
 // ---- false: alignment ----
+
+const BANK = {
+  from: [h('From', 'Bank <alerts@bank.example>')],
+  signatures: [signature({ d: 'bank.example', s: 's1', b: 'AAAAAAAAxxxxxxxxxxxx' })],
+};
+
+test('a dkim=fail or neutral for the same signature beside a dkim=pass is false', () => {
+  const results = [
+    ar(
+      'dkim=fail header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results })), false);
+  const neutral = [
+    ar(
+      'dkim=neutral (body hash did not verify) header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results: neutral })), false);
+  const reversed = [
+    ar(
+      'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dkim=fail header.i=@bank.example header.s=s1 header.b=AAAAAAAA',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results: reversed })), false);
+});
+
+test('the injected-comment repro: sender text echoed in Google’s A-R cannot make a dkim=pass appear', () => {
+  // The envelope sender is echoed into the SPF comment; a quote and `;` there split the header so a forged
+  // `dkim=pass` segment is seen next to Google's own `dkim=neutral` for the same signature.
+  const results = [
+    ar(
+      'dkim=neutral (body hash did not verify) header.i=@bank.example header.s=s1 header.b=AAAAAAAA; ' +
+        'spf=pass (google.com: domain of "x); dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; ' +
+        'spf=none ("@evil.example designates 1.2.3.4 as permitted sender) smtp.mailfrom="x"; ' +
+        'dmarc=fail (p=NONE sp=NONE dis=NONE) header.from=bank.example',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results })), false);
+});
+
+test('a failed dkim for another domain or another signature does not hide a good pass', () => {
+  const results = [
+    ar(`dkim=fail header.i=@esp.example.net header.s=k9 header.b=ZZZZZZZZ; ${PASS}; ${SPF}`),
+  ];
+  assert.equal(verdict(newsletter({ results })), true);
+  const sameDomain = [
+    ar(`dkim=fail header.i=@example.com header.s=s2 header.b=ZZZZZZZZ; ${PASS}; ${SPF}`),
+  ];
+  assert.equal(verdict(newsletter({ results: sameDomain })), true);
+});
+
+test('one result that does not parse fails the whole header, and a trailing semicolon does not', () => {
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS}; none`)] })), false);
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS}; dkim=pass header.i`)] })), false);
+  assert.equal(
+    verdict(newsletter({ results: [ar(`${PASS}; spf=pass smtp.mailfrom=a b=`)] })),
+    false,
+  );
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS};`)] })), true);
+});
+
+test('lookalike authserv-ids are not Google’s', () => {
+  for (const id of [
+    'evil-mx.google.com',
+    'mx.google.com.evil.test',
+    'xmx.google.com',
+    'mx.google.com.',
+    'google.com',
+    'mx.google.comx',
+  ])
+    assert.equal(verdict(newsletter({ results: [ar(PASS, id)] })), false, id);
+});
 
 test('dkim=pass for a d= that does not align with From is false', () => {
   const results = [ar('dkim=pass header.i=@evil.test header.s=s1 header.b=AbCdEf12')];
