@@ -47,10 +47,6 @@ export class ImageBook {
     });
   }
 
-  get policy(): ImagePolicy {
-    return this.options.policy;
-  }
-
   /** Classifies one image URL. */
   source(raw: string, context: ImageContext): ImageSource {
     const value = raw.trim();

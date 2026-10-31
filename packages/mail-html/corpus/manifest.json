@@ -1264,5 +1264,26 @@
     "expect": {
       "mustKeepText": ["Click-tracking through the ping attribute"]
     }
+  },
+  {
+    "id": "131-iso-2022-jp-shift-sequences",
+    "title": "Escape characters that switch a sniffed page into a two-byte Japanese charset",
+    "classes": ["malformed-encoding", "mxss", "event-handler"],
+    "html": "messages/131-iso-2022-jp-shift-sequences.html",
+    "expect": {
+      "mustKeepText": ["Shift sequences for a sniffed Japanese charset", "the closing line stays visible"],
+      "notes": "Found by the html-3 bypass review. If the frame were ever read as ISO-2022-JP (no charset declared, the browser guesses), ESC $ B makes the following bytes two-byte characters and can swallow a closing quote, so the next attribute value would be read as attributes (onerror). The sanitizer turns ESC into U+FFFD everywhere and the document declares UTF-8 within its first 1,024 bytes."
+    }
+  },
+  {
+    "id": "132-css-late-values-in-image-functions",
+    "title": "Image functions whose address comes from a variable, an attribute or the environment",
+    "classes": ["css-image-set", "css-url", "relative-url"],
+    "html": "messages/132-css-late-values-in-image-functions.html",
+    "expect": {
+      "remoteImages": 1,
+      "mustKeepText": ["Stylesheet values that are filled in later", "list image from a variable"],
+      "notes": "Found by the html-3 bypass review. var(), env() and attr() are filled in after the sanitizer has read the stylesheet, so inside image-set(), image() and src() they could put a string the sanitizer never classified in URL position (a relative img/<n> or cid/<n> on the frame's own origin, or a remote address). They are replaced inside image functions; address-like strings are emptied everywhere, and url() in a custom property is rewritten like any other (the one remote image left: img/0 through the proxy when images are on)."
+    }
   }
 ]

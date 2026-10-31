@@ -112,7 +112,7 @@ describe('elements and attributes', () => {
     );
     assert.match(bodyOf(result), /<p>Keep me<\/p>/);
     assert.doesNotMatch(
-      result.document,
+      bodyOf(result),
       /x\.example|script|onclick|iframe|object|embed|<meta|<link|<base|video|audio|svg|math/i,
     );
   });
@@ -169,6 +169,19 @@ describe('elements and attributes', () => {
     const result = html('<p title="a\u0000b">x\u0000y \ud800 \u202eevil\u202c</p>');
     assert.equal(result.document.includes('\u0000'), false);
     assert.match(result.document, /title="a\ufffdb"/);
+  });
+
+  it('declares UTF-8 within the first 1,024 bytes and lets no ISO-2022-JP shift through', () => {
+    const result = html(
+      `<html lang="${'x'.repeat(2_000)}" dir="ltr x"><p title="\u001b$B">x</p><p title=" src=x onerror=alert(1) \u001b(B">y</p><style>a{content:"\u001b$B"}</style>`,
+    );
+    assert.ok(result.document.indexOf('<meta charset="utf-8">') < 1_024 - 25);
+    assert.equal(result.document.includes('\u001b'), false);
+    assert.match(result.document, /^<html><head><meta charset="utf-8">/);
+    assert.match(
+      html('<html lang="pt-BR" dir="RTL"><p>x</p>').document,
+      /^<html lang="pt-BR" dir="RTL"><head>/,
+    );
   });
 });
 
@@ -500,6 +513,8 @@ describe('the hostile corpus', () => {
         assert.ok(blocked.marks >= expect.marksMin, `${entry.id}: ${blocked.marks} marks`);
       assert.deepEqual(blocked.remoteImages, [], `${entry.id} lists images while they are blocked`);
       assert.equal(allowed.trackersRemoved, blocked.trackersRemoved, entry.id);
+      if (blocked.bodyKind === 'html')
+        assert.ok(blocked.document.indexOf('<meta charset="utf-8">') < 1_000, entry.id);
     }
   });
 

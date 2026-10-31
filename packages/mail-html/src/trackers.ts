@@ -27,13 +27,6 @@ export function declarationsHide(style: Map<string, string>): boolean {
   return pixels(style.get('max-height')) === 0 || pixels(style.get('max-width')) === 0;
 }
 
-/** True when an element's `hidden` attribute or `style` hides it. */
-export function elementHides(attrs: Map<string, string>): boolean {
-  if (attrs.has('hidden')) return true;
-  const style = attrs.get('style');
-  return style !== undefined && declarationsHide(readDeclarations(style));
-}
-
 export interface ImageFacts {
   url: string;
   attrs: Map<string, string>;

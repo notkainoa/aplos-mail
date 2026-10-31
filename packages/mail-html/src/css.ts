@@ -1,4 +1,5 @@
 import { tokenize, TokenType, type CSSToken } from '@csstools/css-tokenizer';
+import { replaceControls } from './escape';
 import { scopeId } from './ids';
 import type { ImageBook } from './images';
 import { asciiLower } from './parse';
@@ -8,7 +9,7 @@ import { urlCleanup } from './url';
 // back token by token, so the browser re-reads the same tokens. Every URL, wherever it appears, is
 // rewritten to `cid/<n>` or `img/<n>` or dropped; a string that looks like an address is emptied
 // (it could reach a fetch through `src(var(--x))`); `attr()` goes (an attribute value must never
-// become a URL); at-rules other than the layout ones are removed with their blocks; comments become
+// become a URL), and so do `var()` and `env()` inside an image function; at-rules other than the layout ones are removed with their blocks; comments become
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts). Inside `<style>` only `</` can end the element, so it never
 // appears in the output.
@@ -25,6 +26,8 @@ const URL_FUNCTIONS = new Set(['url', 'src']);
 /** Functions whose string arguments are image URLs. */
 const IMAGE_FUNCTIONS = new Set(['image-set', '-webkit-image-set', 'image']);
 const DROPPED_FUNCTIONS = new Set(['attr', 'expression']);
+/** Inside an image function these could put a value in URL position that this writer never saw. */
+const NO_IMAGE_FUNCTIONS = new Set(['var', 'env', 'attr']);
 /** A string the URL parser would read as absolute or scheme-relative (it ignores tabs and newlines). */
 const FETCHABLE = /^(?:[a-z][a-z0-9+.-]*:|[\\/]{2})/i;
 const DROPPED = ' none ';
@@ -39,21 +42,34 @@ const enum Structure {
 
 type Opener = 'fn' | '(' | '[' | '{';
 
+const OPENERS: Partial<Record<TokenType, Opener>> = {
+  [TokenType.OpenParen]: '(',
+  [TokenType.OpenSquare]: '[',
+  [TokenType.OpenCurly]: '{',
+};
+
+const CLOSER_OF: Partial<Record<TokenType, TokenType>> = {
+  [TokenType.Function]: TokenType.CloseParen,
+  [TokenType.OpenParen]: TokenType.CloseParen,
+  [TokenType.OpenSquare]: TokenType.CloseSquare,
+  [TokenType.OpenCurly]: TokenType.CloseCurly,
+};
+
 const CLOSES: Partial<Record<TokenType, Opener[]>> = {
   [TokenType.CloseParen]: ['fn', '('],
   [TokenType.CloseSquare]: ['['],
   [TokenType.CloseCurly]: ['{'],
 };
 
-function cssTokens(css: string): CSSToken[] {
+export function cssTokens(css: string): CSSToken[] {
   return tokenize({ css }, { onParseError: () => undefined });
 }
 
 /** A stylesheet (`<style>`) or a declaration list (`style=""`), made safe. */
-export function sanitizeCss(css: string, images: ImageBook): string {
-  const written = new CssWriter(cssTokens(css), images).write();
+export function sanitizeCss(css: string, images: ImageBook, tokens = cssTokens(css)): string {
+  const written = new CssWriter(tokens, images).write();
   // Safety net: the writer never leaves `</` outside a string, and `\/` is `/` inside one.
-  return written.replaceAll('</', '<\\/').replaceAll('\u0000', '�');
+  return replaceControls(written.replaceAll('</', '<\\/'));
 }
 
 export function cssString(value: string): string {
@@ -85,12 +101,6 @@ export function cssIdent(value: string): string {
 
 function looksFetchable(value: string): boolean {
   return FETCHABLE.test(urlCleanup(value));
-}
-
-function isOpener(type: TokenType): boolean {
-  return (
-    type === TokenType.OpenParen || type === TokenType.OpenSquare || type === TokenType.OpenCurly
-  );
 }
 
 function isCloser(type: TokenType): boolean {
@@ -162,13 +172,9 @@ class CssWriter {
   }
 
   private plain(token: CSSToken): void {
-    const type = token[0];
-    if (isOpener(type))
-      this.push(
-        type === TokenType.OpenParen ? '(' : type === TokenType.OpenSquare ? '[' : '{',
-        false,
-      );
-    if (isCloser(type)) this.close(type);
+    const kind = OPENERS[token[0]];
+    if (kind) this.push(kind, false);
+    if (isCloser(token[0])) this.close(token[0]);
     this.emit(token[1]);
   }
 
@@ -205,6 +211,8 @@ class CssWriter {
     const lower = asciiLower(name);
     if (URL_FUNCTIONS.has(lower))
       return this.replaceFunction(target => (target === undefined ? DROPPED : this.url(target)));
+    if (this.imageDepth > 0 && NO_IMAGE_FUNCTIONS.has(lower))
+      return this.replaceFunction(() => DROPPED);
     if (DROPPED_FUNCTIONS.has(lower)) return this.replaceFunction(() => '""');
     this.push('fn', IMAGE_FUNCTIONS.has(lower));
     this.emit(raw);
@@ -230,30 +238,44 @@ class CssWriter {
 
   /** Index of the `)` closing the function opened at `start`, or the last token. */
   private matchingClose(start: number): number {
-    let depth = 0;
+    const blocks = new BlockTracker();
     for (let index = start; index < this.tokens.length; index++) {
-      const type = this.tokens[index][0];
-      if (type === TokenType.Function || isOpener(type)) depth++;
-      if (isCloser(type)) depth--;
-      if (depth === 0) return index;
+      blocks.read(this.tokens[index][0]);
+      if (blocks.depth === 0) return index;
     }
     return this.tokens.length - 1;
   }
 
   /** Index just past an at-rule: after its `;` or its `{}` block, before a closer that is not its own. */
   private ruleEnd(start: number): number {
-    let depth = 0;
+    const blocks = new BlockTracker();
     for (let index = start; index < this.tokens.length; index++) {
       const type = this.tokens[index][0];
       if (type === TokenType.EOF) return index;
-      if (type === TokenType.Semicolon && depth === 0) return index + 1;
-      if (type === TokenType.Function || isOpener(type)) depth++;
-      if (!isCloser(type)) continue;
-      if (depth === 0) return index;
-      depth--;
-      if (depth === 0 && type === TokenType.CloseCurly) return index + 1;
+      if (blocks.depth === 0 && type === TokenType.Semicolon) return index + 1;
+      if (blocks.depth === 0 && isCloser(type)) return index;
+      blocks.read(type);
+      if (blocks.depth === 0 && type === TokenType.CloseCurly) return index + 1;
     }
     return this.tokens.length;
+  }
+}
+
+/**
+ * Open blocks as CSS Syntax reads them: a block ends only at its own closer (`)` for a function
+ * or `(`, `]` for `[`, `}` for `{`); any other closer inside it is an ordinary token.
+ */
+class BlockTracker {
+  private readonly expected: TokenType[] = [];
+
+  get depth(): number {
+    return this.expected.length;
+  }
+
+  read(type: TokenType): void {
+    const closer = CLOSER_OF[type];
+    if (closer !== undefined) this.expected.push(closer);
+    else if (type === this.expected[this.expected.length - 1]) this.expected.pop();
   }
 }
 
@@ -261,9 +283,8 @@ class CssWriter {
  * The top-level declarations of a `style` attribute, property to value (lowercase, `!important`
  * removed, the last one winning). Read from tokens, so escapes and comments cannot hide one.
  */
-export function readDeclarations(css: string): Map<string, string> {
+export function readDeclarations(css: string, tokens = cssTokens(css)): Map<string, string> {
   const declarations = new Map<string, string>();
-  const tokens = cssTokens(css);
   let index = 0;
   while (index < tokens.length) index = readDeclaration(tokens, index, declarations);
   return declarations;
@@ -285,12 +306,11 @@ function readDeclaration(tokens: CSSToken[], start: number, into: Map<string, st
   at = skipSpace(tokens, at + 1);
   const isDeclaration = name?.[0] === TokenType.Ident && tokens[at]?.[0] === TokenType.Colon;
   const values: string[] = [];
-  let depth = 0;
+  const blocks = new BlockTracker();
   for (at = isDeclaration ? at + 1 : at; at < tokens.length; at++) {
     const type = tokens[at][0];
-    if (type === TokenType.Semicolon && depth === 0) break;
-    if (type === TokenType.Function || isOpener(type)) depth++;
-    if (isCloser(type)) depth = Math.max(0, depth - 1);
+    if (type === TokenType.Semicolon && blocks.depth === 0) break;
+    blocks.read(type);
     values.push(tokenText(tokens[at]));
   }
   if (isDeclaration && name[0] === TokenType.Ident) {

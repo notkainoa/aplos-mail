@@ -1,4 +1,5 @@
-import { readDeclarations, sanitizeCss } from './css';
+import type { CSSToken } from '@csstools/css-tokenizer';
+import { cssTokens, readDeclarations, sanitizeCss } from './css';
 import { escapeAttribute } from './escape';
 import { markText, type Finder } from './find';
 import { ID_LIST_ATTRIBUTES, scopeId, scopeIdList } from './ids';
@@ -25,7 +26,7 @@ import { declarationsHide, isTrackingPixel } from './trackers';
 // The walk: the mail is parsed into a tree once (parse.ts), then written out element by element
 // from the allowlist with every text and attribute value escaped. Nothing from the input is copied
 // as markup, so how a browser would have parsed the input cannot change what the output means.
-// The walk is iterative (an explicit task stack), so 100,000 nested elements cannot overflow it,
+// The walk is iterative (an explicit stack of frames), so 100,000 nested elements cannot overflow it,
 // and it applies the parser's implied end tags to what it writes, so reading the output back gives
 // the same tree (the idempotence check in the tests).
 
@@ -114,7 +115,8 @@ class Walker {
   private bodyAttributes: string | undefined;
   private trackersRemoved = 0;
   private quotedCount = 0;
-  /** Sanitized `style` attributes and whether a style hides, by source text: mail repeats them. */
+  /** `style` attributes tokenized, sanitized and read for hiding, by source text: mail repeats them. */
+  private readonly styleTokens = new Map<string, CSSToken[]>();
   private readonly cleanStyles = new Map<string, string>();
   private readonly hidingStyles = new Map<string, boolean>();
 
@@ -234,7 +236,7 @@ class Walker {
   private rootAttributes(element: ElementNode, allowed: Set<string>): string {
     const parts: string[] = [];
     for (const [name, value] of element.attrs) {
-      if (allowed.has(name)) parts.push(attribute(name, value));
+      if (allowed.has(name) && rootValueOk(name, value)) parts.push(attribute(name, value));
     }
     if (element.name === 'body') parts.push(...this.urlAttributes(element));
     return parts.join('');
@@ -294,7 +296,7 @@ class Walker {
     if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
     let clean = this.cleanStyles.get(style);
     if (clean === undefined) {
-      clean = sanitizeCss(style, this.images).trim();
+      clean = sanitizeCss(style, this.images, this.tokensOf(style)).trim();
       this.cleanStyles.set(style, clean);
     }
     return clean;
@@ -307,10 +309,19 @@ class Walker {
     if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return false;
     let hides = this.hidingStyles.get(style);
     if (hides === undefined) {
-      hides = declarationsHide(readDeclarations(style));
+      hides = declarationsHide(readDeclarations(style, this.tokensOf(style)));
       this.hidingStyles.set(style, hides);
     }
     return hides;
+  }
+
+  private tokensOf(style: string): CSSToken[] {
+    let tokens = this.styleTokens.get(style);
+    if (tokens === undefined) {
+      tokens = cssTokens(style);
+      this.styleTokens.set(style, tokens);
+    }
+    return tokens;
   }
 
   private image(element: ElementNode, context: Context): void {
@@ -325,20 +336,29 @@ class Walker {
     }
     const source = this.images.source(src, 'img');
     if (source.kind === 'none') return this.imageWithoutSource(element);
-    if (source.url)
-      return void this.out.push(
-        `<img src="${escapeAttribute(source.url)}"${this.attributes(element)}>`,
-      );
+    if (source.url) {
+      this.out.push(`<img src="${escapeAttribute(source.url)}"${this.attributes(element)}>`);
+      return;
+    }
     // Blocked: a quiet placeholder that keeps the image's size, or its alt text when unsized.
     if (!hasSize(element.attrs)) return this.imageWithoutSource(element);
-    this.out.push(
-      `<img src="${TRANSPARENT_GIF}" class="aplos-blocked"${this.attributes(element, NO_CLASS)}>`,
-    );
+    const attributes = this.attributes(element, NO_CLASS);
+    this.out.push(`<img src="${TRANSPARENT_GIF}" class="aplos-blocked"${attributes}>`);
   }
 
   private imageWithoutSource(element: ElementNode): void {
     if (element.attrs.get('alt')?.trim()) this.out.push(`<img${this.attributes(element)}>`);
   }
+}
+
+/**
+ * `dir` and `lang` on the frame's own `<html>` and `<body>` must be what they say: short, so the
+ * `<meta charset>` stays inside the first 1,024 bytes where the browser looks for it.
+ */
+function rootValueOk(name: string, value: string): boolean {
+  if (name === 'dir') return /^(?:ltr|rtl|auto)$/i.test(value);
+  if (name === 'lang') return /^[A-Za-z0-9-]{1,35}$/.test(value);
+  return true;
 }
 
 function textOf(element: ElementNode): string {
@@ -382,7 +402,7 @@ const XHTML_TRANSITIONAL =
 
 /** Keeps the mail's rendering mode: standards, limited quirks (XHTML transitional) or quirks. */
 function doctypeFor(doctype: string): string {
-  const data = doctype.trim().slice(0, 300);
+  const data = doctype.slice(0, 300).trim();
   if (/^!?doctype\s{1,20}html$/i.test(data)) return '<!DOCTYPE html>';
   if (/transitional|frameset/i.test(data) && /\.dtd/i.test(data)) return XHTML_TRANSITIONAL;
   if (/strict/i.test(data)) return '<!DOCTYPE html>';

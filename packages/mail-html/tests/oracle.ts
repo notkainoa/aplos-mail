@@ -62,12 +62,29 @@ export function unsafeParts(document: string, options: OracleOptions): string[] 
   return problems;
 }
 
+/** The one element the frame's own head may hold besides `<style>`: the charset declaration. */
+function isCharset(element: Element): boolean {
+  const [only, ...rest] = element.attrs;
+  return (
+    element.tagName === 'meta' &&
+    rest.length === 0 &&
+    only?.name === 'charset' &&
+    only.value === 'utf-8'
+  );
+}
+
 function checkElement(element: Element, options: OracleOptions, problems: string[]): void {
   const name = element.tagName;
+  if (isCharset(element)) return;
   if (element.namespaceURI !== HTML_NS) problems.push(`foreign element <${name}>`);
   if (!ALLOWED_ELEMENTS.has(name)) problems.push(`element <${name}>`);
   if (name === 'style') checkCss(textOf(element), options, problems);
+  for (const child of element.childNodes) {
+    if ('value' in child && child.value.includes('\u001b'))
+      problems.push(`ESC in the text of <${name}>`);
+  }
   for (const { name: attribute, value, namespace } of element.attrs) {
+    if (value.includes('\u001b')) problems.push(`ESC in ${attribute} on <${name}>`);
     if (namespace) problems.push(`namespaced attribute ${attribute} on <${name}>`);
     checkAttribute(name, attribute, value, options, problems);
   }

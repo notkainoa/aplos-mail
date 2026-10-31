@@ -101,6 +101,10 @@ describe('url() in all its spellings', () => {
       'a{--u:"";--v:"";--w:"";--f:"Helvetica Neue"}',
     );
     assert.equal(clean('a{content:attr(title);b:attr(data-src url)}').css, 'a{content:"";b:""}');
+    assert.equal(
+      clean('a{b:image-set(var(--x) 1x, attr(title) 2x, env(x));c:var(--x);--x:"img/0"}').css,
+      'a{b:image-set( none  1x,  none  2x,  none );c:var(--x);--x:"img/0"}',
+    );
   });
 });
 

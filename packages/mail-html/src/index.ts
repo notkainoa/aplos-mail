@@ -49,7 +49,7 @@ function renderHtml(
   const walk = sanitizeHtml(html, images, finder);
   const document = [
     walk.doctype,
-    `<html${walk.htmlAttributes}><head><style>${READING_CSS}</style></head>`,
+    `<html${walk.htmlAttributes}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,
     `<body${walk.bodyAttributes}>${walk.body}${walk.clipped ? CLIPPED_NOTE : ''}</body></html>`,
   ].join('');
   return {

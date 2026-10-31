@@ -31,6 +31,8 @@ connection that appears in the canary log or the Chromium net log names the mess
 `expect` is only what a correct sanitizer must satisfy, and only where the answer is unambiguous:
 `trackersRemovedMin`, `remoteImages` (exact), `quotedCountMin`, `marksMin` (with `findQuery`), `bodyKind`, and
 `mustKeepText` (visible text, so a sanitizer that deletes everything fails). `notes` explains judgement calls.
+An entry with `marksMin` must give the `findQuery` it is graded with (`packages/mail-html/tests/sanitize.test.ts`
+checks this).
 Hidden text (the `hidden-content` class) must be kept as text: it is hostile to AI features, not a leak.
 
 ## Classes
