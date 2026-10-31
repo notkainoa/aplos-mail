@@ -299,8 +299,16 @@ function payloadFetch(holder: { emu?: GmailEmulator }, payload: () => unknown): 
     if (!/\/drafts\/[^/]+$/.test(url.pathname) || !full || !response.ok) return response;
     const json = JSON.parse(await response.text()) as { message: { payload: unknown } };
     const original = (json.message.payload as { headers?: unknown[] }).headers ?? [];
-    const own = (payload() as { headers?: unknown[] }).headers ?? [];
-    json.message.payload = { ...(payload() as object), headers: [...own, ...original] };
+    const { replaceHeaders, ...given } = payload() as {
+      headers?: unknown[];
+      replaceHeaders?: boolean;
+    };
+    const own = given.headers ?? [];
+    const named = new Set(own.map(h => (h as { name: string }).name.toLowerCase()));
+    const kept = replaceHeaders
+      ? original.filter(h => !named.has((h as { name: string }).name.toLowerCase()))
+      : original;
+    json.message.payload = { ...given, headers: [...own, ...kept] };
     return new Response(JSON.stringify(json), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -756,16 +764,44 @@ const ambiguous: [string, { name: string; value: string }[]][] = [
   ['a second From header', [{ name: 'From', value: 'other@mail.example.test' }]],
   ['a second Subject header', [{ name: 'Subject', value: 'Another subject' }]],
   ['a Reply-To header', [{ name: 'Reply-To', value: 'elsewhere@mail.example.test' }]],
+];
+
+/** Single headers that replace the draft's own (not a second copy), so only the decode rule can refuse them. */
+const undecoded: [string, { name: string; value: string }[]][] = [
   ['a subject that did not decode (U+FFFD)', [{ name: 'Subject', value: '=?utf-8?B?/w==?=' }]],
   [
     'a display name that did not decode (U+FFFD)',
     [{ name: 'To', value: '=?utf-8?B?/w==?= <x@mail.example.test>' }],
   ],
+  [
+    'a subject with an encoded word of an unknown charset',
+    [{ name: 'Subject', value: 'Plans =?unknown-charset?Q?caf=E9?=' }],
+  ],
+  [
+    'a display name with an encoded word of an unknown charset',
+    [{ name: 'To', value: '=?unknown-charset?Q?caf=E9?= <x@mail.example.test>' }],
+  ],
 ];
 
-for (const [name, headers] of ambiguous) {
+const refusals: [string, { name: string; value: string }[], boolean][] = [
+  ...ambiguous.map(([name, headers]): [string, { name: string; value: string }[], boolean] => [
+    name,
+    headers,
+    false,
+  ]),
+  ...undecoded.map(([name, headers]): [string, { name: string; value: string }[], boolean] => [
+    name,
+    headers,
+    true,
+  ]),
+];
+
+for (const [name, headers, replace] of refusals) {
   test(`prov-gmail-drafts body delivery: ${name} means no body, the message is still reported`, async () => {
-    const { r, draftId } = await payloadRig(plainBody(headers));
+    const { r, draftId } = await payloadRig({
+      ...plainBody(headers),
+      ...(replace ? { replaceHeaders: true } : {}),
+    });
     const from = r.store.commits.length;
     await historyPass(r);
     const fact = factsSince(r, from).find(f => f.remoteDraftId === draftId)!;

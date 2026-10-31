@@ -197,20 +197,23 @@ const SINGLE_HEADERS = ['from', 'to', 'cc', 'subject'];
 const countOf = (payload: GmailPart, name: string): number =>
   payload.headers?.filter(h => h.name.toLowerCase() === name).length ?? 0;
 
+/** An RFC 2047 encoded word the decoder left as it was (an unknown charset label, for one): the text is not complete. */
+const ENCODED_WORD = /=\?[^?\s]+\?[bq]\?[^?\s]*\?=/i;
+
 const hasBadDecode = (facts: MessageFacts): boolean =>
   [
     facts.subject,
     ...[facts.from, ...facts.to, ...facts.cc, ...(facts.bcc ?? [])].map(
       a => `${a?.name ?? ''}${a?.address ?? ''}`,
     ),
-  ].some(text => text?.includes('\uFFFD'));
+  ].some(text => text !== undefined && (text.includes('\uFFFD') || ENCODED_WORD.test(text)));
 
 /**
  * Whether the draft's headers say more than the fact can show, so a body next to them would make the engine install a
  * "complete" copy that silently lost something: a second From, To, Cc or Subject header (a raw API or IMAP-appended draft
  * can have them; `messageFacts` reads the first), a Reply-To (the engine's copy keeps only the local draft's reply
- * target, it has no Reply-To of its own), or a subject or name that did not decode (U+FFFD from an unknown charset or
- * bad bytes in an encoded word). The message is still reported (snippet only, incomplete).
+ * target, it has no Reply-To of its own), or a subject or name that did not decode (U+FFFD from bad bytes in an encoded
+ * word, or an encoded word left as it was because its charset is unknown). The message is still reported (snippet only, incomplete).
  */
 function ambiguousHeaders(payload: GmailPart, facts: MessageFacts): boolean {
   if (SINGLE_HEADERS.some(name => countOf(payload, name) > 1)) return true;
