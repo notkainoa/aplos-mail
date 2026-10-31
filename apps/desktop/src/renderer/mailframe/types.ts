@@ -1,6 +1,8 @@
 // The MailFrame contract (plan 30 section 4.4, lane card ui-reader). The five props are frozen by the lane card;
 // the shapes they carry are defined here because renderer/ui/props has no MailFrame type.
 
+import type { QuotedRange } from './quoted';
+
 /** Remote images: `block` (default, no network at all) or `load` (https images only, tracking pixels still removed). */
 export type ImagePolicy = 'block' | 'load';
 
@@ -42,6 +44,8 @@ export interface MailFrameProps {
   imagePolicy: ImagePolicy;
   /** Find-in-message query; matches are wrapped in `<mark>`. Empty or undefined shows no marks. */
   findQuery?: string;
+  /** Plain text only: draw its quoted history as a quiet block (O, "Show quoted text"). Additive; default hidden. */
+  showQuoted?: boolean;
   /** The new letter is measured and on screen. */
   onReady: (ready: MailFrameReady) => void;
   /**
@@ -77,4 +81,6 @@ export type FrameSource =
       kind: 'text';
       key: string;
       text: string;
+      /** Quoted history in `text` (the engine's ranges, else the `>` lines); hidden until `showQuoted`. Additive. */
+      quoted?: readonly QuotedRange[];
     };

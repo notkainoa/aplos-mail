@@ -11,8 +11,10 @@ import {
   toIsoDateTime,
   useAccounts,
   useMessageBody,
+  useRow,
   type Account,
   type Message,
+  type ThreadRow,
 } from '../../data';
 import type { MailFrameKey, MailFrameReady } from '../../mailframe';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
@@ -20,6 +22,7 @@ import { EmptyLine, ErrorLine } from '../../ui/list';
 import { EarlierMessages, ReaderHead, ReplyStub } from '../../ui/reader';
 import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
+import { inviteOf, type InviteView } from './invite';
 import { ReaderMessage } from './ReaderMessage';
 import {
   collapsedOf,
@@ -189,10 +192,24 @@ function ReplyArea({
   );
 }
 
+/** The thread's invitation (`eventId`) and the message that carries it: the invite's own, else the latest. */
+function useInvite(
+  row: ThreadRow,
+  messages: readonly Message[],
+  me: ReadonlySet<string>,
+): { readonly messageId: string; readonly view: InviteView } | null {
+  const event = useRow('Event', row.eventId);
+  const latest = messages[messages.length - 1];
+  if (!event || !latest) return null;
+  const carrier = messages.find(m => m.id === event.invite?.messageId) ?? latest;
+  return { messageId: carrier.id, view: inviteOf(event, me, row.subject) };
+}
+
 function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']> }) {
   const { row, data, ui, dispatch, controls } = props;
   const accounts = useAccounts();
   const me = myAddresses(row, accounts);
+  const invite = useInvite(row, data.messages, me);
   const earlier = data.messages.slice(0, -1);
   const latest = data.messages[data.messages.length - 1];
   if (!latest) return null;
@@ -202,6 +219,8 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       message={m}
       me={me}
       cursor={cursor}
+      expanded={ui.expanded}
+      invite={invite?.messageId === m.id ? invite.view : undefined}
       imagesLoaded={ui.imagesLoaded.includes(m.id)}
       findQuery={props.paper ? (ui.find ?? undefined) : undefined}
       loadingLabel={loadingLabel(row) ?? undefined}

@@ -20,6 +20,8 @@ export interface MailFrameViewProps {
   source: FrameSource | null;
   /** Find query for plain text (HTML sources carry their own). */
   findQuery?: string;
+  /** Plain text: draw its quoted history. */
+  showQuoted?: boolean;
   /** The loading line's words; default `LOADING_LABEL`. */
   label?: string;
   /** Set when the body or frame failed: "Couldn't load this email." with Try again. */
@@ -90,6 +92,7 @@ function slot(source: FrameSource, props: Omit<SlotProps<FrameSource>, 'source'>
 export function MailFrameView({
   source,
   findQuery,
+  showQuoted,
   label,
   failed,
   onReady,
@@ -114,7 +117,7 @@ export function MailFrameView({
 
   useRetire(shown, pending, onRetire);
 
-  const common = { findQuery, onMeasured, onKey };
+  const common = { findQuery, showQuoted, onMeasured, onKey };
   return (
     <div
       className="aplos-mailframe"

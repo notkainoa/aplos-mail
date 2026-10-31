@@ -16,6 +16,8 @@ export interface SlotProps<S extends FrameSource> {
   /** Pending slots are laid out at the final width but not seen. */
   hidden: boolean;
   findQuery?: string;
+  /** Plain text: draw the quoted history. */
+  showQuoted?: boolean;
   /** The first measurement; called once. */
   onMeasured: (source: FrameSource, ready: MailFrameReady) => void;
   onKey: (key: MailFrameKey) => boolean | void;
@@ -200,7 +202,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
 
 /** Plain text: host DOM that follows the theme. Measured synchronously after layout. */
 export function TextSlot(props: SlotProps<Extract<FrameSource, { kind: 'text' }>>) {
-  const { source, hidden, findQuery } = props;
+  const { source, hidden, findQuery, showQuoted } = props;
   const ref = useRef<HTMLDivElement>(null);
   const onMeasured = useLatest(props.onMeasured);
   useLayoutEffect(() => {
@@ -209,7 +211,12 @@ export function TextSlot(props: SlotProps<Extract<FrameSource, { kind: 'text' }>
   }, [source, onMeasured]);
   return (
     <div ref={ref} style={hidden ? HIDDEN : undefined}>
-      <PlainText text={source.text} findQuery={findQuery} />
+      <PlainText
+        text={source.text}
+        findQuery={findQuery}
+        quoted={source.quoted}
+        showQuoted={showQuoted}
+      />
     </div>
   );
 }

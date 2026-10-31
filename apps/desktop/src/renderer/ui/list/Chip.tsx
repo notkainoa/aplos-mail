@@ -55,7 +55,7 @@ export function Chip(props: ChipProps) {
       );
     }
     case 'attachment': {
-      const { name, sizeBytes, state, onOpen, onRetry } = props;
+      const { name, sizeBytes, state, icon, onOpen, onRetry } = props;
       const size = formatBytes(sizeBytes);
       return (
         <span className="ui-chip" data-kind="attachment" data-state={state}>
@@ -66,7 +66,7 @@ export function Chip(props: ChipProps) {
             aria-busy={state === 'downloading' ? true : undefined}
             onClick={onOpen}
           >
-            <Icon name={state === 'failed' ? 'alert' : 'file-text'} />
+            <Icon name={state === 'failed' ? 'alert' : (icon ?? 'file-text')} />
             <span className="ui-chip__name">{name}</span>
             {state === 'ready' && size ? <span className="ui-chip__size">{size}</span> : null}
             {state === 'downloading' ? <span className="ui-chip__size">Downloading…</span> : null}

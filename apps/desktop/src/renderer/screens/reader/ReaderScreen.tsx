@@ -47,6 +47,7 @@ import {
   type ReplyRequest,
   type UiEvent,
 } from './readerUi';
+import { useCardStyle, type CardStyle } from '../cardStyle';
 import { ReaderLetter, type LetterControls, type PopOut } from './ReaderLetter';
 import { useLetterBuffer, useLetterController, usePrefetchAround } from './useLetterBuffer';
 import { useHomeOrder, useReaderList } from './useReaderList';
@@ -56,7 +57,7 @@ export const LOADING_COPY = 'Loading this email…';
 export const NO_THREAD_COPY = 'No email is open.';
 
 /** How the letter is grouped: 'off' is DESIGN 7.5's one column with no card; 'a' and 'b' are two card options on trial. */
-export type ReaderCardStyle = 'off' | 'a' | 'b';
+export type ReaderCardStyle = CardStyle;
 
 /** Props for `ReaderScreen`. */
 export interface ReaderScreenProps {
@@ -66,7 +67,7 @@ export interface ReaderScreenProps {
   readonly backTo?: Screen;
   /** Any suggestion that is neither a reply nor Done ("View invoice", "Add to calendar"); a later slice's. */
   readonly onSuggested?: (threadId: string, action: SuggestedAction) => void;
-  /** The card option on trial: 'a' letter cards, 'b' sectioned cards. Absent: 'off', the column with no card. */
+  /** The card option on trial: 'a' letter cards, 'b' sectioned cards. Absent: `CardStyleContext`'s, else 'off'. */
   readonly cardStyle?: ReaderCardStyle;
 }
 
@@ -203,6 +204,7 @@ type OpenProps = ReaderScreenProps & { readonly open: string };
 
 function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   const { open } = props;
+  const cards = useCardStyle(props.cardStyle);
   const context = useOpenThreadContext();
   const [gone, markGone] = useReducer(goneReducer, NOBODY);
   const list = useReaderList(props.source, open, gone);
@@ -260,13 +262,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   // A stable order, so a letter that stays mounted is never moved in the DOM (moving a frame reloads it).
   const letters = [...new Set([shown, open].filter((id): id is string => id !== null))].sort();
   return (
-    <div
-      className="aplos-reader"
-      data-keyctx="reader"
-      data-cards={props.cardStyle ?? 'off'}
-      tabIndex={-1}
-      ref={root}
-    >
+    <div className="aplos-reader" data-keyctx="reader" data-cards={cards} tabIndex={-1} ref={root}>
       {buffer.loadingLine ? <LoadingLine label={loadingLabel(wantedRow) ?? LOADING_COPY} /> : null}
       {letters.map(id => (
         <ReaderLetter

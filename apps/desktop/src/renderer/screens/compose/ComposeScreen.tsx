@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { getNow, useAccounts, useRow, type Account, type Draft, type Message } from '../../data';
 import { useAccountScope, useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Composer } from '../../ui/compose';
+import { useCardStyle, type CardStyle } from '../cardStyle';
 import { headerMenu, headerMoreButton } from './composeHeader';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
 import { ownAddresses, replySeed } from './model/replySeed';
@@ -36,12 +37,12 @@ export interface ComposeScreenProps {
   /** The page has gone (Esc, discarded, sent): the shell goes back. */
   readonly onClose?: () => void;
   readonly dictationSource?: DictationSource | null;
-  /** The card option on trial: 'a' one card, 'b' a card with a quiet address band. Absent: 'off', the bare page. */
+  /** The card option on trial: 'a' one card, 'b' a card with a quiet address band. Absent: `CardStyleContext`'s, else 'off'. */
   readonly cardStyle?: ComposeCardStyle;
 }
 
 /** How the compose page is grouped: 'off' is DESIGN 7.6's bare page; 'a' and 'b' are two card options on trial. */
-export type ComposeCardStyle = 'off' | 'a' | 'b';
+export type ComposeCardStyle = CardStyle;
 
 function useInitialCompose(props: ComposeScreenProps): ComposeState | null {
   const draft = useRow('Draft', props.draftId);
@@ -153,11 +154,12 @@ export function ComposePageView({
     focusTo: binding.state.fields.to.length === 0,
   });
   const { session, state, view } = binding;
+  const cards = useCardStyle(props.cardStyle);
   const presets = useSchedulePresets(controls.menuAnchor !== null);
   useMenuCommands(view.open, controls.setMenuAnchor, shared.editorRef);
   return (
     <>
-      <div className="aplos-compose" data-cards={props.cardStyle ?? 'off'}>
+      <div className="aplos-compose" data-cards={cards}>
         <Composer
           {...shared}
           subject={state.fields.subject}

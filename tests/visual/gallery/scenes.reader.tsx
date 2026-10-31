@@ -22,17 +22,19 @@ import { withNativeStubs } from '../../../apps/desktop/src/renderer/data/native-
 import { connectStandIn } from '../../../apps/desktop/src/renderer/data/standin';
 import { openCompose, openThread, updateToast } from '../../../apps/desktop/src/renderer/shell';
 import { getToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
-import { InlineReply, RecipientField } from '../../../apps/desktop/src/renderer/ui/compose';
-import { ThreadMessage } from '../../../apps/desktop/src/renderer/ui/reader';
-import { BodyEditor } from '../../../apps/desktop/src/renderer/screens/compose/views/BodyEditor';
+import {
+  CardStyleContext,
+  type CardStyle,
+} from '../../../apps/desktop/src/renderer/screens/cardStyle';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
-import { Column, noop } from './scenes.shared';
+import { DictatingScene, REPLY_TEXT } from './scenes.dictating';
 import {
   ALEX,
   DEMO,
   NEW_MESSAGE,
   REPLY_DRAFT,
+  type DemoEvent,
   type DemoKey,
   type DemoMessage,
   type DemoThread,
@@ -303,6 +305,8 @@ interface ReaderScene {
   /** What the screen has when it is ready; the scene waits for it before the steps. */
   readonly ready?: string;
   readonly steps?: readonly Step[];
+  /** The card option the reader and the compose page draw (CardStyleContext); absent: 'off'. */
+  readonly cards?: CardStyle;
 }
 
 interface World {
@@ -405,10 +409,10 @@ function sceneOf(scene: ReaderScene): () => ReactElement {
       openThread(scene.thread, { from: 'home', ...(scene.list ? { listIds: scene.list } : {}) });
     else openCompose();
     return (
-      <>
+      <CardStyleContext.Provider value={scene.cards ?? 'off'}>
         <App client={client} />
         <div hidden data-gallery-pending="" />
-      </>
+      </CardStyleContext.Provider>
     );
   };
 }
@@ -445,7 +449,6 @@ function forceSubmission(
 }
 
 /** R on the open thread, the stand-in's saved reply draft in the card, then Send. */
-const REPLY_TEXT = 'Thanks Jordan. Direction two reads better to me, with the quieter header.';
 const TYPE_REPLY: Step = { type: REPLY_TEXT, into: '.ui-inline-reply textarea' };
 
 /**
@@ -485,54 +488,6 @@ const SEND_REPLY: readonly Step[] = [
 ];
 
 const THREE_WAY: readonly Earlier[] = [CHAT[0]!, CHAT[1]!, CHAT[2]!];
-
-/* ------------------------------ dictation, drawn from the composer's own pieces ------------------------------ */
-
-const COMMANDS = {
-  send: 'compose.send',
-  attach: 'compose.attach',
-  more: 'compose.format',
-  cc: 'compose.ccBcc',
-} as const;
-
-/** There is no microphone in the harness: the reply card is drawn with the dictation props a live recording gives it. */
-function DictatingScene(): ReactElement {
-  return (
-    <Column width="reader">
-      <ThreadMessage
-        id="m-jordan"
-        from="Jordan Park"
-        toLabel="to you and Mina Cho"
-        date="2026-10-29T08:12:00-07:00"
-        cursor={false}
-        body={<p>Can you send me your preference by tomorrow?</p>}
-      />
-      <InlineReply
-        recipients={
-          <RecipientField
-            label="To"
-            recipients={[{ id: 'jordan', ...JORDAN }]}
-            query=""
-            onQueryChange={noop}
-            onCommit={noop}
-            onRemove={noop}
-            listboxId="dictating-to"
-            ccButton={{ onSelect: noop, commandId: 'compose.ccBcc' }}
-          />
-        }
-        onPopOut={noop}
-        editor={<BodyEditor value={REPLY_TEXT} onChange={noop} label="Reply" />}
-        draftState="saving"
-        onRetrySave={noop}
-        dictation={{ holdKey: 'R', level: 0.55 }}
-        commands={COMMANDS}
-        onSend={noop}
-        onAttach={noop}
-        onMore={noop}
-      />
-    </Column>
-  );
-}
 
 /* ------------------------------ the fuller demo threads (readerDemo.ts) ------------------------------ */
 
@@ -580,6 +535,46 @@ function attachmentsOf(def: DemoThread, message: DemoMessage, failed: readonly s
   }));
 }
 
+/** A demo invitation as the stand-in's `Event` row, carried by the thread's latest message (the demo invite as template). */
+function seedRichEvent(fx: Fixture, def: DemoThread, event: DemoEvent): string | undefined {
+  const template = fx.store.get('Event', `${WORK}:ev-review`);
+  if (!template) return undefined;
+  const id = `${WORK}:ev-rich-${def.key}`;
+  const organizer = {
+    ...personOf(event.organizer),
+    response: 'accepted',
+    organizer: true,
+    self: false,
+  };
+  const guests = event.guests.map(p => ({
+    ...personOf(p),
+    response: 'needsAction',
+    organizer: false,
+    self: p.address === ALEX.address,
+  }));
+  fx.write({ kind: 'Fixture/control' }, tx => {
+    tx.put('Event', {
+      ...template,
+      id,
+      rev: 0,
+      title: event.title,
+      start: { type: 'utc', utc: Date.parse(event.start) },
+      end: { type: 'utc', utc: Date.parse(event.end) },
+      location: event.location,
+      description:
+        'Three logo routes and the colour palette, then what goes to the client on Friday.',
+      organizer,
+      attendees: [organizer, ...guests],
+      invite: {
+        threadId: richThreadId(def),
+        messageId: richMessageId(def, def.messages.length - 1),
+        fromName: event.organizer.name,
+      },
+    });
+  });
+  return id;
+}
+
 /** One demo thread into the stand-in's store: its messages (oldest first), their bodies and files, and the thread row. */
 function seedRichThread(fx: Fixture, def: DemoThread, options: RichOptions = {}): void {
   const base = fx.store.get('Thread', DESIGN);
@@ -620,6 +615,7 @@ function seedRichThread(fx: Fixture, def: DemoThread, options: RichOptions = {})
     for (const person of [message.from, ...message.to, ...(message.cc ?? [])])
       people.set(person.address, person);
   const summary = options.noSummary ? { state: 'none' as const } : def.summary;
+  const eventId = def.event ? seedRichEvent(fx, def, def.event) : undefined;
   fx.write({ kind: 'Fixture/control' }, tx => {
     tx.put('Thread', {
       ...base,
@@ -646,6 +642,7 @@ function seedRichThread(fx: Fixture, def: DemoThread, options: RichOptions = {})
         ...(summary.state === 'ready' ? { provider: 'groq', model: 'openai/gpt-oss-120b' } : {}),
       },
       unsubscribe: def.unsubscribe === true,
+      ...(eventId ? { eventId } : {}),
     });
   });
 }
@@ -875,4 +872,21 @@ export const readerScenes: Record<string, () => ReactElement> = {
   'compose-rich-reply-draft': richScene({ open: 'project', steps: REPLY_TO_PROJECT }),
   'compose-rich-new': richScene({ ready: '.ui-composer', steps: NEW_MESSAGE_STEPS }),
   'compose-rich-empty': richScene({ ready: '.ui-composer' }),
+  ...cardScenes('a'),
+  ...cardScenes('b'),
 };
+
+/** The card options on the rich content (owner review 2026-10-31): the same threads and pages, drawn with `cards`. */
+function cardScenes(cards: Exclude<CardStyle, 'off'>): Record<string, () => ReactElement> {
+  return {
+    [`reader-card-${cards}-project`]: richScene({ cards, open: 'project' }),
+    [`reader-card-${cards}-attachments`]: richScene({ cards, open: 'files' }),
+    [`reader-card-${cards}-invite`]: richScene({ cards, open: 'invite' }),
+    [`compose-card-${cards}-new`]: richScene({
+      cards,
+      ready: '.ui-composer',
+      steps: NEW_MESSAGE_STEPS,
+    }),
+    [`compose-card-${cards}-reply`]: richScene({ cards, open: 'project', steps: REPLY_TO_PROJECT }),
+  };
+}

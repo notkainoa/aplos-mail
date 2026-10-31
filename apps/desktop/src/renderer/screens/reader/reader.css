@@ -75,6 +75,40 @@
   padding-inline: 0;
 }
 
+/* The invitation in an invite email's message (InviteCard): a quiet --raised block above the email's own body, with
+   "Invite from …", the title, then the when, place, link and guests lines behind their icons. */
+.aplos-reader__invite {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+.aplos-reader__invite-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+/* The card's lines are Text paragraphs inside the message body: the body's paragraph gap is not theirs. */
+.aplos-reader__invite .ui-text + .ui-text {
+  margin-top: 0;
+}
+
+/* Quoted history in a plain-text body (mailframe PlainText): the sender's own parts a paragraph gap apart; once shown
+   (O, "Show quoted text"), the quotes as a quiet block behind a left hairline, in --dim, without `>`. */
+.aplos-mailframe__part + .aplos-mailframe__part,
+.aplos-mailframe__part + .aplos-mailframe__quote,
+.aplos-mailframe__quote + .aplos-mailframe__part {
+  margin-top: var(--space-4);
+}
+.aplos-mailframe__quote {
+  margin: 0;
+  padding-left: var(--space-4);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
+  color: var(--dim);
+}
+
 /* ---------- Card options on trial (data-cards='a' | 'b'; 'off' is DESIGN 7.5 as written) ----------
    Owner review 2026-10-31 asked for cards that the content sits in. Two options, picked by ReaderScreen's `cardStyle`.
    A card is --paper with --elev-pane's ring and faint shadow (--raised and the sheen in dark), radius-lg, 24 px
@@ -120,9 +154,24 @@
   padding: 0 var(--space-4) var(--space-4) var(--space-6);
 }
 
+/* In a card the invitation is not a second card: no fill, the card's text edge, a wider gap before the email (no rule:
+   the body's reading measure is narrower than the card, so a rule there would end short of the card's other rules). */
+.aplos-reader:not([data-cards='off']) .aplos-reader__invite {
+  margin-bottom: var(--space-7);
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
 /* A, letter cards: each message the thread shows is its own card, header, body and attachments together; the
    attachments sit in the card's footer under a hairline. The subject line and the earlier-message lines stay unboxed,
    in a quiet --raised group. */
+/* One text edge: the unboxed sender line, summary, action row and subject line take the cards' 24 px inset, so every
+   line of text in the letter starts where the card text starts, and only the card edges sit at the column's edge. */
+.aplos-reader[data-cards='a'] .ui-reader-head,
+.aplos-reader[data-cards='a'] .aplos-reader__subject {
+  padding-inline: var(--space-6);
+}
 .aplos-reader[data-cards='a'] .ui-thread-message {
   margin-top: var(--space-4);
   padding: var(--space-6);

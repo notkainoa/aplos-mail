@@ -11,6 +11,7 @@ export function MailFrame({
   messageId,
   imagePolicy,
   findQuery,
+  showQuoted,
   label,
   onReady,
   onKey,
@@ -20,6 +21,7 @@ export function MailFrame({
     <MailFrameView
       source={source}
       findQuery={findQuery}
+      showQuoted={showQuoted}
       label={label}
       failed={failed}
       onReady={onReady}

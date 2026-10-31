@@ -422,4 +422,58 @@ export const readerStates: readonly VisualState[] = [
     mockup: 'compose.html (new)',
     filled: 1,
   },
+  ...cardStates('a', 'letter cards: each message its own card'),
+  ...cardStates('b', 'sectioned cards: a head card, one thread card, a reply card'),
 ];
+
+/** The card options on trial (owner review 2026-10-31), on the rich content: the reader and both compose surfaces. */
+function cardStates(cards: 'a' | 'b', option: string): VisualState[] {
+  const reader = (key: string, what: string, components: readonly string[]): VisualState => ({
+    id: `reader-card-${cards}-${key}`,
+    frame: 'shell',
+    title: `Reader, card option ${cards.toUpperCase()} (${option}): ${what}`,
+    components,
+    design: '7.5',
+    mockup: 'reader.html (default)',
+    filled: 1,
+    summary: 'ready',
+  });
+  return [
+    reader('project', 'the 5-message project thread, its quoted line behind Show quoted text', [
+      'ReaderHead',
+      'Summary',
+      'EarlierMessages',
+      'ThreadMessage',
+      'ReplyStub',
+    ]),
+    reader('attachments', 'a PDF, a zip and a spreadsheet, each chip with its kind icon', [
+      'ThreadMessage',
+      'Chip',
+    ]),
+    reader('invite', 'the invitation card above the email, the .ics chip, Add to calendar filled', [
+      'ReaderHead',
+      'ThreadMessage',
+      'Text',
+      'Chip',
+    ]),
+    {
+      id: `compose-card-${cards}-new`,
+      frame: 'shell',
+      title: `Compose page, card option ${cards.toUpperCase()}: To chip, subject and a 120-word body`,
+      components: ['Composer', 'RecipientField', 'DraftState'],
+      design: '7.6',
+      mockup: 'compose.html (new)',
+      filled: 1,
+    },
+    {
+      id: `compose-card-${cards}-reply`,
+      frame: 'shell',
+      title: `Inline reply, card option ${cards.toUpperCase()}: three sentences typed under the project thread`,
+      components: ['InlineReply', 'RecipientField', 'DraftState'],
+      design: '7.6',
+      mockup: 'reply.html (reply)',
+      filled: 1,
+      summary: 'ready',
+    },
+  ];
+}

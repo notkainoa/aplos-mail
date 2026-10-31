@@ -66,6 +66,8 @@
    thing in hand. The page keeps its 640 px width, so the card is the column. */
 .aplos-compose:not([data-cards='off']) .ui-composer__page {
   box-sizing: border-box;
+  /* Its own block formatting context, so the text's bottom margin stays inside the card. */
+  display: flow-root;
   margin-block: var(--space-7) var(--space-8);
   padding: 0;
   border-radius: var(--radius-lg);

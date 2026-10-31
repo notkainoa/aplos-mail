@@ -37,6 +37,18 @@ export interface DemoAction {
   readonly prompt?: string;
 }
 
+/** The calendar event an invitation carries (the stand-in's `Event` row; the thread's `eventId` points at it). */
+export interface DemoEvent {
+  readonly title: string;
+  /** ISO times with the offset. */
+  readonly start: string;
+  readonly end: string;
+  readonly location?: string;
+  readonly organizer: DemoPerson;
+  /** The guests other than the organiser. */
+  readonly guests: readonly DemoPerson[];
+}
+
 export type DemoSummary =
   | { readonly state: 'ready'; readonly text: string; readonly action?: DemoAction }
   | { readonly state: 'pending' | 'failed' | 'none' };
@@ -47,6 +59,8 @@ export interface DemoThread {
   readonly lane: 'do' | 'update' | 'low';
   readonly summary: DemoSummary;
   readonly unsubscribe?: boolean;
+  /** An invitation: the event the latest message carries. */
+  readonly event?: DemoEvent;
   /** Oldest first; the last one is the letter the reader opens on. */
   readonly messages: readonly DemoMessage[];
 }
@@ -246,6 +260,14 @@ const invite: DemoThread = {
     state: 'ready',
     text: 'Noor invites you to the brand review on Thursday 2:00 to 2:45 PM in the Oak room',
     action: { kind: 'calendar', label: 'Add to calendar' },
+  },
+  event: {
+    title: 'Brand review',
+    start: '2026-11-05T14:00:00-08:00',
+    end: '2026-11-05T14:45:00-08:00',
+    location: 'Oak room, second floor',
+    organizer: NOOR,
+    guests: [ALEX, JORDAN, TOMAS, PRIYA],
   },
   messages: [
     {

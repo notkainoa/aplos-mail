@@ -19,6 +19,7 @@ import type {
 } from '../../ui/props';
 import { dueOf, subjectOf, suggestionOf, summaryOf } from '../home/homeRows';
 import type { SectionKey } from '../home/homeModel';
+import { attachmentIcon } from './attachmentIcon';
 
 export { dueOf };
 
@@ -197,6 +198,7 @@ export function attachmentChips(
         name: meta.name,
         sizeBytes: meta.size,
         state,
+        icon: attachmentIcon(meta.name, meta.mime),
         onOpen: start,
         onRetry: start,
       };

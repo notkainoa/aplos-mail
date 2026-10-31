@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, useMessageBody } from '../data';
 import { tokenOf } from './protocol';
+import { quotedRangesFor } from './quoted';
 import type { FrameSource, ImagePolicy } from './types';
 
 /** The hook's answer. */
@@ -82,10 +83,12 @@ export function useFrameSource(
   }, [html, messageId, imagePolicy, find, request, attempt]);
 
   const plain = ready && ready.messageId === messageId && !html ? ready.text : null;
-  const text = useMemo<FrameSource | null>(
-    () => (plain === null ? null : { kind: 'text', key: `${messageId}|text`, text: plain }),
-    [messageId, plain],
-  );
+  const engineQuoted = ready?.quoted;
+  const text = useMemo<FrameSource | null>(() => {
+    if (plain === null) return null;
+    const quoted = quotedRangesFor(plain, engineQuoted ?? []);
+    return { kind: 'text', key: `${messageId}|text`, text: plain, quoted };
+  }, [messageId, plain, engineQuoted]);
 
   if (body.status === 'failed') return { source: null, failed: { retry: body.retry } };
   if (text) return { source: text, failed: null };
