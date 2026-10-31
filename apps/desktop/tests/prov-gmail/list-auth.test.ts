@@ -233,8 +233,12 @@ test('a raw ( or " inside a value, or a dkim result after spf or dmarc, fails th
     ar(`${PASS}; ${DMARC}; dkim=pass header.i=@example.com header.s=s1 header.b=AbCdEf12`),
   ];
   assert.equal(verdict(newsletter({ results: lateAfterDmarc })), false);
-  const arcFirst = [ar(`arc=pass (i=1) smtp.remote-ip=192.0.2.1; ${PASS}; ${SPF}; ${DMARC}`)];
-  assert.equal(verdict(newsletter({ results: arcFirst })), true);
+  // Google's real order: the dkim run, then arc, spf and dmarc.
+  const arc = 'arc=pass (i=1 spf=pass spfdomain=news.example.com dkim=pass dkdomain=example.com)';
+  const real = [ar(`${PASS}; ${arc}; ${SPF}; ${DMARC}`)];
+  assert.equal(verdict(newsletter({ results: real })), true);
+  const arcFirst = [ar(`${arc}; ${PASS}; ${SPF}; ${DMARC}`)];
+  assert.equal(verdict(newsletter({ results: arcFirst })), false);
 });
 
 test('a ( glued to a value would hide Google’s fail in a comment: the header is refused', () => {
@@ -267,6 +271,70 @@ test('an opener right after = cannot swallow Google’s own header.b and spf res
     'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dmarc=pass header.from=bank.example';
   for (const results of [comment, quote, escaped])
     assert.equal(verdict(newsletter({ ...BANK, results: [ar(results)] })), false, results);
+});
+
+test('round 4: a dkim pass injected after an ARC comment, and a b= that reads back differently, are refused', () => {
+  const junk = signature({ d: 'bank.example', s: 's9', b: '()AAAAAAzz' });
+  // The reviewer's input: the ARC comment (attacker's own hop) is closed by the sender text, `;` is then outside any
+  // comment, and `()` / `""` in b= vanish from Google's header.b but not from the signature.
+  const attack =
+    'dkim=fail header.i=@bank.example header.s=s9 header.b=()AAAAAA; ' +
+    'arc=pass (i=1 spf=pass spfdomain=evil.example dkim=pass dkdomain=x); ' +
+    'dkim=pass header.i=@bank.example header.b="()AAAA"; x.y=z (); ' +
+    'spf=pass (google.com: domain of b@evil.example) smtp.mailfrom=b@evil.example; ' +
+    'dmarc=fail (p=NONE) header.from=bank.example';
+  const attackFrom = { from: [h('From', 'Bank <alerts@bank.example>')] };
+  assert.equal(
+    verdict(newsletter({ ...attackFrom, signatures: [junk], results: [ar(attack)] })),
+    false,
+  );
+  const quotes = signature({ d: 'bank.example', s: 's9', b: '""AAAAAAzz' });
+  assert.equal(
+    verdict(newsletter({ ...attackFrom, signatures: [quotes], results: [ar(attack)] })),
+    false,
+  );
+});
+
+test('round 4, each rule alone: a dkim after another result is refused; a non-base64 b= is not compared', () => {
+  const clean = { from: [h('From', 'Bank <alerts@bank.example>')] };
+  const good = signature({ d: 'bank.example', s: 's1', b: 'AAAAAAAAxxxxxxxxxxxx' });
+  const pass = 'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA';
+  // Order alone: a clean pass, but after an arc result.
+  const late = [ar(`arc=pass (i=1); ${pass}; ${SPF}`)];
+  assert.equal(verdict(newsletter({ ...clean, signatures: [good], results: late })), false);
+  // Base64 alone: right order, a pass whose header.b holds a `(`-free junk character, and a signature to match.
+  const junkBody = signature({ d: 'bank.example', s: 's1', b: 'AAAA-AAAxxxxxxxx' });
+  const junk = [ar('dkim=pass header.i=@bank.example header.s=s1 header.b=AAAA-AAA')];
+  assert.equal(verdict(newsletter({ ...clean, signatures: [junkBody], results: junk })), false);
+  // A failed dkim whose header.b is not base64 cannot be compared with the pass, so it counts against it.
+  const failJunk = [
+    ar(`dkim=fail header.i=@bank.example header.s=s1 header.b=AA!AAAAA; ${pass}; ${SPF}`),
+  ];
+  assert.equal(verdict(newsletter({ ...clean, signatures: [good], results: failJunk })), false);
+  // Control: the same pass, right order, base64: authenticated.
+  assert.equal(
+    verdict(newsletter({ ...clean, signatures: [good], results: [ar(`${pass}; ${SPF}`)] })),
+    true,
+  );
+});
+
+test('a signature whose b= is not base64 is refused even when Google’s prefix matches its first characters', () => {
+  const body = signature({ d: 'bank.example', s: 's1', b: 'AAAAAAAA()xxxx' });
+  const results = [
+    ar(
+      'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; spf=none smtp.mailfrom=a@b.example',
+    ),
+  ];
+  const from = [h('From', 'Bank <alerts@bank.example>')];
+  assert.equal(verdict(newsletter({ from, signatures: [body], results })), false);
+});
+
+test('an escaped ; inside a quoted string fails the header', () => {
+  const results = [
+    ar(`${PASS}; ${SPF.replace('smtp.mailfrom=bounce@news.example.com', 'smtp.mailfrom="a\\;b"')}`),
+  ];
+  assert.equal(verdict(newsletter({ results })), false);
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS}; ${SPF}`)] })), true);
 });
 
 test('a failed dkim for another domain or another signature does not hide a good pass', () => {

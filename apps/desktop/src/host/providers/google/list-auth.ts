@@ -192,15 +192,16 @@ export function googleResults(value: string): AuthResult[] | null {
   if (!isGoogle(head) || parts.length > LIST_AUTH_LIMITS.maxResults) return null;
   const results = parts.map(segment => parseResult(segment));
   if (!results.every(result => result !== null)) return null;
-  return dkimBeforeOthers(results) ? results : null;
+  return dkimRunFirst(results) ? results : null;
 }
 
 /**
- * Google lists its `dkim` results before `spf` and `dmarc`. A `dkim` result after one of those is not where Google
- * writes it, and is the shape sender text echoed into an SPF comment takes, so the header is not believed.
+ * Google writes its `dkim` results as one unbroken run straight after the authserv-id, then `arc`, `spf` and `dmarc`.
+ * A `dkim` result after any other result is not where Google writes it: sender text echoed into an ARC or SPF comment
+ * can close the comment and add one (`arc=pass (... dkdomain=x); dkim=pass ...`), so the header is not believed.
  */
-function dkimBeforeOthers(results: readonly AuthResult[]): boolean {
-  const firstOther = results.findIndex(r => r.method === 'spf' || r.method === 'dmarc');
+function dkimRunFirst(results: readonly AuthResult[]): boolean {
+  const firstOther = results.findIndex(r => r.method !== 'dkim');
   return firstOther === -1 || results.slice(firstOther).every(r => r.method !== 'dkim');
 }
 
@@ -224,13 +225,19 @@ export function tagList(value: string): Map<string, string> | null {
 
 const noSpace = (text: string) => text.replace(/\s+/g, '');
 
+/** The only characters a DKIM `b=` or Google's `header.b` prefix of it holds; anything else is not compared. */
+const BASE64 = /^[A-Za-z0-9+/=]+$/;
+
 export function parseSignature(value: string): DkimSignature | null {
   const tags = tagList(value);
   if (!tags) return null;
+  const b = noSpace(tags.get('b') ?? '');
+  // A signature whose b= is not base64 cannot be told apart from Google's reading of it (`()AAAA` reads back as `AAAA`).
+  if (b !== '' && !BASE64.test(b)) return null;
   return {
     d: noSpace(tags.get('d') ?? '').toLowerCase(),
     s: noSpace(tags.get('s') ?? '').toLowerCase(),
-    b: noSpace(tags.get('b') ?? ''),
+    b,
     h: noSpace(tags.get('h') ?? '')
       .toLowerCase()
       .split(':')
@@ -312,8 +319,12 @@ function signatureFor(
 function mayNameSameSignature(other: AuthResult, passing: AuthResult): boolean {
   const prefix = other.props.get('header.b');
   const passingPrefix = passing.props.get('header.b') ?? '';
+  // A prefix that is not base64 cannot be compared, so it is taken to name the same signature (fail closed).
   return (
-    prefix === undefined || prefix.startsWith(passingPrefix) || passingPrefix.startsWith(prefix)
+    prefix === undefined ||
+    !BASE64.test(prefix) ||
+    prefix.startsWith(passingPrefix) ||
+    passingPrefix.startsWith(prefix)
   );
 }
 
