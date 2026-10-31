@@ -29,6 +29,7 @@ import {
   holdsOurContent,
   provenOurs,
   repliedTo,
+  withParent,
 } from './draft-proof';
 
 /**
@@ -300,18 +301,22 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   const holders =
     row.remote_draft_id === w.remoteDraftId ? [] : holdersOf(tx, row, w.remoteDraftId);
   if (!holders.every(h => sameCopy(tx, h, w.remoteMessageId))) {
-    if (meta.removing) return deleteHidden(tx, row.id);
+    // A discarded draft with no copy of its own has nothing else to delete (the other row's copy is not ours).
+    if (meta.removing && row.remote_draft_id === null) return deleteHidden(tx, row.id);
     // Not into `earlier`: the next create must not point back at the copy the other row holds (an adapter would replace it).
     const given = abandoned(meta, w.remoteDraftId, {
       internetId: w.internetId,
       fingerprint: w.fingerprint,
     });
+    // A discarded draft that already holds a copy (an adopted one) still has it to delete: the hidden row stays and
+    // removes it now; ending it here would leave that copy on the provider for good.
+    const next = meta.removing ? { removeAt: w.at } : { dueAt: meta.dueAt ?? w.at };
     return writeRow(
       tx,
       w.id,
       {},
       fields,
-      patched(meta, { uploading: null, problem: null, dueAt: meta.dueAt ?? w.at, ...given }),
+      patched(meta, { uploading: null, problem: null, ...next, ...given }),
     );
   }
   const same = (meta.cur ?? fingerprintOf(fields)) === w.fingerprint;
@@ -360,15 +365,16 @@ function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) 
 /**
  * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
  * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
- * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and no send is queued on it;
- * then it goes (two rows must never share a remote draft).
+ * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and
+ * no send is queued on it or done with it (a sent copy's id may name the sent message); then it goes (two rows must
+ * never share a remote draft).
  */
 function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
   return (
     copy.origin === 'remote' &&
     copy.remote_message_id === remoteMessageId &&
     !parseData(copy.data).meta.removing &&
-    !liveOf(tx, copy.id)
+    !hasSend(tx, copy.id)
   );
 }
 
@@ -601,6 +607,16 @@ function deleteHidden(tx: CommitExtensionTx, id: string) {
   tx.mark('Draft', id, 'd');
 }
 
+/** Is a send of this draft live, or has one gone out? */
+function hasSend(tx: CommitExtensionTx, draftId: string) {
+  return (
+    tx.get(
+      `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,
+      draftId,
+    ) !== undefined
+  );
+}
+
 /** Has the draft's current revision gone out? */
 function sentAt(tx: CommitExtensionTx, row: DraftRow) {
   return (
@@ -790,10 +806,12 @@ function deleteRow(tx: CommitExtensionTx, row: DraftRow) {
 
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
-  const { fields: base, meta } = parseData(row.data);
+  const { fields: stored, meta } = parseData(row.data);
+  const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
-  // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for.
-  if (same && !(meta.incomplete && completes(w))) return;
+  // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
+  // message it answers (which may have synced after the draft did).
+  if (same && base === stored && !(meta.incomplete && completes(w))) return;
   const { fields, complete } = theirsFields(
     row.account_id,
     messageOf(w),
@@ -917,13 +935,7 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
   // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
   // includes a removal (the other device sent it): the id may now name its sent message.
-  if (
-    tx.get(
-      `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,
-      row.id,
-    )
-  )
-    return markChangedElsewhere(tx, row, fields, meta);
+  if (hasSend(tx, row.id)) return markChangedElsewhere(tx, row, fields, meta);
   // The same version again is known, unless it brings what the conflict lacks (their body). A removal is always news:
   // the other device sent or deleted the copy, and its id must be forgotten.
   const known = meta.conflict;

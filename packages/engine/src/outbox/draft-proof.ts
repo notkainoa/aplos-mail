@@ -104,16 +104,32 @@ export function explainedByAttempt(
 export const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
   tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
 
-/** The stored message a foreign draft answers (by its In-Reply-To), as a contract id; reply-all cannot be known. */
+/**
+ * The stored message a foreign draft answers (by its In-Reply-To), as a contract id; reply-all cannot be known. A
+ * Message-ID is not unique (a forward or a copy of the same mail can be stored twice), so the one in the draft's own
+ * thread wins, then the oldest stored (lowest id), never an arbitrary row.
+ */
 export function repliedTo(tx: CommitExtensionTx, w: RemoteDraftWrite) {
   const id = w.message?.inReplyTo;
   const found =
     id === undefined
       ? undefined
       : tx.get<{ remote_id: string }>(
-          'SELECT remote_id FROM messages WHERE account_id = ? AND internet_id = ? LIMIT 1',
+          `SELECT m.remote_id FROM messages m JOIN threads t ON t.id = m.thread_id
+             WHERE m.account_id = ? AND m.internet_id = ?
+             ORDER BY t.remote_id IS ? DESC, m.id LIMIT 1`,
           w.accountId,
           id,
+          w.remoteThreadId ?? null,
         );
   return found && `${w.accountId}:${found.remote_id}`;
+}
+
+/** A phone reply whose parent message was not stored yet: once it is, the draft becomes a reply to it. */
+export function withParent(tx: CommitExtensionTx, fields: DraftFields, w: RemoteDraftWrite) {
+  if (fields.replyToMessageId !== undefined || fields.mode !== 'new') return fields;
+  const target = repliedTo(tx, w);
+  return target === undefined
+    ? fields
+    : { ...fields, mode: 'reply' as const, replyToMessageId: target };
 }
