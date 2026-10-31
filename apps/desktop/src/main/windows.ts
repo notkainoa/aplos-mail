@@ -307,8 +307,10 @@ const onboarding = createOnboarding({
   setTimer: (run, ms) => setTimeout(run, ms),
   clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
 });
-/** Startup: which window to open. Without the welcome window enabled it is always the mail window, as before. */
+/** Startup: which window to open. Without the welcome window enabled it is the mail window, except at login. */
 function startWindows(atLogin: boolean): WindowChoice {
+  // A login launch is resident: no window until the Dock or the menu-bar item asks for one (host-2).
+  if (atLogin) return 'none';
   return onboardingEnabled ? onboarding.start(sessionFacts(), { atLogin }) : 'mail';
 }
 function activateWindows(): Activation {
