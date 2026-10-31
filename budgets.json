@@ -392,8 +392,8 @@
       "unit": "MB",
       "notes": "Local baseline from the plan. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-10-31",
       "dueBy": "2026-11-07",
       "alertPct": 10
     },
@@ -408,8 +408,8 @@
       "unit": "MB",
       "notes": "Baseline from the plan. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-10-31",
       "dueBy": "2026-11-07",
       "alertPct": 10
     },
@@ -450,12 +450,12 @@
       "environment": "every merge (CI summary and local runs)",
       "gate": "tighten-only",
       "calibration": "calibrate",
-      "value": null,
-      "unit": null,
+      "value": 462.2,
+      "unit": "s",
       "notes": "No number in the plans; recorded at the first measurement. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-10-31",
       "dueBy": "2026-11-07"
     },
     {
