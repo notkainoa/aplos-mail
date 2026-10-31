@@ -327,20 +327,30 @@ test('mailto stays offered, as a prepared email the owner reviews, when the doma
   assert.equal(posts.length, 0);
 });
 
-test('only the newest DOMAIN_WINDOW inbound messages are compared', async () => {
-  const same = Array.from({ length: DOMAIN_WINDOW }, (_, i) =>
-    fromMsg(`n${i}`, 10 + i, 'news@real.example', [REAL], true),
-  );
-  const outside = fromMsg('old', 0, 'x@other.example', [REAL], true);
-  const inside = fromMsg('in', 5, 'x@other.example', [REAL], true);
-  const beyond = await posted([outside, ...same]);
+test('DOMAIN_WINDOW is 100, Gmail cap on messages in a thread', () => {
+  assert.equal(DOMAIN_WINDOW, 100);
+});
+
+test('the window holds 100 OTHER messages: a real message at position 100 is compared, at 101 it is not', async () => {
+  // Literal numbers on purpose, so changing DOMAIN_WINDOW or putting the target's own row back into the window turns
+  // this red. The real sender's unauthenticated message R is the oldest; the attacker's signed message T is the
+  // target (authenticated-first) and `newer` plain messages from the attacker's domain follow. R is the (newer + 1)th
+  // OTHER message counted from the newest, because T is left out of the window.
+  const probe = (newer: number) => [
+    fromMsg('real', 0, 'news@real.example', [REAL]),
+    fromMsg('evil', 5, 'x@attacker.example', [EVIL], true),
+    ...Array.from({ length: newer }, (_, i) => plainMsg(`e${i}`, 10 + i, 'x@attacker.example')),
+  ];
+  const atEdge = await posted(probe(99));
   assert.deepEqual(
-    beyond.get,
-    { method: 'oneClick' },
-    'one message beyond the window is not compared',
+    atEdge.get,
+    { method: 'link', url: EVIL },
+    'R is the 100th other message: compared',
   );
-  const shortened = await posted([inside, ...same.slice(1)]);
-  assert.deepEqual(shortened.get, { method: 'link', url: REAL }, 'inside the window it is');
+  assert.equal(atEdge.posts.length, 0);
+  const beyond = await posted(probe(100));
+  assert.deepEqual(beyond.get, { method: 'oneClick' }, 'R is the 101st: out of the window');
+  assert.equal(beyond.posts.length, 1, 'the documented limit: the POST goes to the target');
 });
 
 function plainMsg(id: string, minutes: number, address: string): MessageWrite {
