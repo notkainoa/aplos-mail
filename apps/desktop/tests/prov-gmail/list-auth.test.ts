@@ -1,0 +1,252 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { messageWrite } from '../../../../packages/engine/src/sync/facts';
+import { METADATA_HEADERS, messageFacts } from '../../src/host/providers/google/facts';
+import {
+  aligned,
+  googleResults,
+  LIST_AUTH_LIMITS,
+  listAuthenticated,
+} from '../../src/host/providers/google/list-auth';
+import type { GmailHeader } from '../../src/host/providers/google/mime';
+
+/**
+ * `list.authenticated` from Gmail's own Authentication-Results (RFC 8058 section 4): hand-written headers in message
+ * order, top first, as `payload.headers` returns them. No network, no clock.
+ */
+
+const B = 'AbCdEf12GhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGhIjKlMnOpQrStUv==';
+const H = 'from:to:subject:date:message-id:list-unsubscribe:list-unsubscribe-post';
+const LIST = '<https://news.example.com/u?t=1>, <mailto:leave@news.example.com>';
+const POST = 'List-Unsubscribe=One-Click';
+const SPF =
+  'spf=pass (google.com: domain of bounce@news.example.com designates 192.0.2.1 as permitted sender) smtp.mailfrom=bounce@news.example.com';
+const DMARC = 'dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=news.example.com';
+const PASS = 'dkim=pass header.i=@example.com header.s=s1 header.b=AbCdEf12';
+
+interface Signature {
+  d?: string;
+  s?: string;
+  h?: string;
+  b?: string;
+}
+
+function signature({ d = 'example.com', s = 's1', h = H, b = B }: Signature = {}): string {
+  return `v=1; a=rsa-sha256; c=relaxed/relaxed; d=${d}; s=${s};\r\n\th=${h};\r\n\tbh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=;\r\n\tb=${b}`;
+}
+
+function ar(results: string, id = 'mx.google.com'): GmailHeader {
+  return { name: 'Authentication-Results', value: `${id};\r\n       ${results}` };
+}
+
+const h = (name: string, value: string): GmailHeader => ({ name, value });
+
+interface Newsletter {
+  results?: GmailHeader[];
+  signatures?: string[];
+  from?: GmailHeader[];
+  list?: GmailHeader[];
+  extra?: GmailHeader[];
+}
+
+/** A signed newsletter from `news.example.com`, signed by the parent `example.com`, as Gmail delivers it. */
+function newsletter(over: Newsletter = {}): GmailHeader[] {
+  return [
+    h('Delivered-To', 'me@gmail.com'),
+    h('ARC-Seal', 'i=1; a=rsa-sha256; t=1; cv=none; d=google.com; s=arc-20240605; b=xyz'),
+    h('ARC-Authentication-Results', `i=1; mx.google.com; ${PASS}; ${SPF}; ${DMARC}`),
+    ...(over.results ?? [ar(`${PASS};\r\n       ${SPF};\r\n       ${DMARC}`)]),
+    ...(over.signatures ?? [signature()]).map(value => h('DKIM-Signature', value)),
+    ...(over.from ?? [h('From', 'News <hello@news.example.com>')]),
+    h('To', 'me@gmail.com'),
+    h('Subject', 'This week'),
+    ...(over.list ?? [h('List-Unsubscribe', LIST), h('List-Unsubscribe-Post', POST)]),
+    ...(over.extra ?? []),
+  ];
+}
+
+function facts(headers: GmailHeader[]) {
+  const message = { id: 'g1', threadId: 't1', internalDate: '1', payload: { headers } };
+  return messageFacts(message, { self: 'me@gmail.com', partial: true });
+}
+
+function verdict(headers: GmailHeader[]): boolean | undefined {
+  return facts(headers).list.authenticated;
+}
+
+// ---- true ----
+
+test('a cleanly signed newsletter is authenticated: Google A-R, aligned parent d=, h= covers all three', () => {
+  assert.equal(verdict(newsletter()), true);
+});
+
+test('strict alignment, header.d instead of header.i, and an unrelated second signature are fine', () => {
+  const results = [ar(`dkim=pass header.d=news.example.com header.s=k2 header.b=QrStUv99; ${SPF}`)];
+  const own = signature({ d: 'news.example.com', s: 'k2', b: 'QrStUv99xyz' });
+  const esp = signature({ d: 'esp.example.net', s: 'k2', b: 'QrStUv99abc' });
+  assert.equal(verdict(newsletter({ results, signatures: [esp, own] })), true);
+});
+
+test('comments, quoting and folded whitespace in the A-R and in b= and h= are read as RFC 8601 and 6376 allow', () => {
+  const results = [
+    ar(
+      'dkim = pass (good (nested) signature; really) reason="ok; fine"\r\n\theader.i="@example.com"' +
+        ' header.s=s1 header.b="AbCdEf12"',
+      'mx.google.com 1 (Google (mail))',
+    ),
+  ];
+  const folded = signature({
+    h: 'From : To:\r\n\tSubject:List-Unsubscribe:\r\n\t List-Unsubscribe-Post',
+    b: 'AbCd\r\n\tEf12GhIj',
+  });
+  assert.equal(verdict(newsletter({ results, signatures: [folded] })), true);
+});
+
+// ---- false: the A-R ----
+
+test('the topmost A-R must be Google’s: a foreign one on top is false', () => {
+  const results = [ar(PASS, 'mx.evil.test'), ar(PASS)];
+  assert.equal(verdict(newsletter({ results })), false);
+});
+
+test('a lower A-R claiming mx.google.com dkim=pass is ignored, and so are ARC-* headers', () => {
+  const results = [ar(`dkim=fail header.i=@example.com header.b=AbCdEf12; ${SPF}`), ar(PASS)];
+  assert.equal(verdict(newsletter({ results })), false);
+  const none = [ar(`${SPF}; ${DMARC}`)];
+  assert.equal(verdict(newsletter({ results: none, extra: [ar(PASS)] })), false);
+});
+
+test('a dkim=pass hidden in a comment or after a second id does not count', () => {
+  const comment = [ar(`dkim=fail (; ${PASS}) header.i=@example.com`)];
+  assert.equal(verdict(newsletter({ results: comment })), false);
+  const spoofed = [h('Authentication-Results', `mx.google.com mx.evil.test; ${PASS}`)];
+  assert.equal(verdict(newsletter({ results: spoofed })), false);
+});
+
+test('dkim=fail, or only spf=pass and dmarc=pass, is false', () => {
+  const fail = [ar(`dkim=fail header.i=@example.com header.s=s1 header.b=AbCdEf12; ${SPF}`)];
+  assert.equal(verdict(newsletter({ results: fail })), false);
+  assert.equal(verdict(newsletter({ results: [ar(`${SPF}; ${DMARC}`)] })), false);
+  assert.equal(verdict(newsletter({ results: [ar('none')] })), false);
+});
+
+test('an A-R over the length cap is false, quickly, and so are unterminated or deeply nested comments', () => {
+  const started = performance.now();
+  const long = [ar(`${PASS}; ${SPF} (${'x'.repeat(LIST_AUTH_LIMITS.maxResultsChars)})`)];
+  assert.equal(verdict(newsletter({ results: long })), false);
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS} (open`)] })), false);
+  const deep = '('.repeat(20) + ')'.repeat(20);
+  assert.equal(verdict(newsletter({ results: [ar(`${PASS} ${deep}`)] })), false);
+  assert.equal(googleResults(`mx.google.com; ${'('.repeat(4_000)}`), null);
+  assert.equal(googleResults(`mx.google.com; ${'a= '.repeat(1_300)}`), null);
+  assert.ok(performance.now() - started < 200);
+});
+
+test('a result that repeats a property is ignored as ambiguous', () => {
+  const results = [ar(`${PASS} header.d=example.com header.d=evil.test`)];
+  assert.equal(verdict(newsletter({ results })), false);
+});
+
+// ---- false: alignment ----
+
+test('dkim=pass for a d= that does not align with From is false', () => {
+  const results = [ar('dkim=pass header.i=@evil.test header.s=s1 header.b=AbCdEf12')];
+  const signatures = [signature({ d: 'evil.test' })];
+  assert.equal(verdict(newsletter({ results, signatures })), false);
+});
+
+test('a dotless d= (a bare TLD) never aligns, and d= below From does not either', () => {
+  const results = [ar('dkim=pass header.i=@com header.s=s1 header.b=AbCdEf12')];
+  const from = [h('From', 'a@example.com')];
+  assert.equal(
+    verdict(newsletter({ results, signatures: [signature({ d: 'com' })], from })),
+    false,
+  );
+  assert.equal(aligned('news.example.com', 'com'), false);
+  assert.equal(aligned('news.example.com', '.example.com'), false);
+  assert.equal(aligned('example.com', 'news.example.com'), false);
+  assert.equal(aligned('badexample.com', 'example.com'), false);
+  assert.equal(aligned('news.example.com', 'example.com'), true);
+});
+
+test('two From headers, or one with two addresses, is false', () => {
+  const two = [h('From', 'hello@news.example.com'), h('From', 'other@evil.test')];
+  assert.equal(verdict(newsletter({ from: two })), false);
+  const both = [h('From', 'hello@news.example.com, other@evil.test')];
+  assert.equal(verdict(newsletter({ from: both })), false);
+});
+
+// ---- false: the signature ----
+
+test('h= must list From, List-Unsubscribe and List-Unsubscribe-Post', () => {
+  const noPost = signature({ h: 'from:to:subject:list-unsubscribe' });
+  assert.equal(verdict(newsletter({ signatures: [noPost] })), false);
+  const noFrom = signature({ h: 'to:subject:list-unsubscribe:list-unsubscribe-post' });
+  assert.equal(verdict(newsletter({ signatures: [noFrom] })), false);
+  const upper = signature().replace('h=', 'H=');
+  assert.equal(verdict(newsletter({ signatures: [upper] })), false);
+});
+
+test('a decoy DKIM-Signature with the same d=, s= and b= prefix makes the match ambiguous', () => {
+  const decoy = signature({ b: 'AbCdEf12ZZZZ' });
+  assert.equal(verdict(newsletter({ signatures: [signature(), decoy] })), false);
+  const other = signature({ b: 'XyXyXy12ZZZZ' });
+  assert.equal(verdict(newsletter({ signatures: [signature(), other] })), true);
+});
+
+test('no matching DKIM-Signature, a selector mismatch, or a header.b under six characters is false', () => {
+  assert.equal(verdict(newsletter({ signatures: [signature({ b: 'ZzZzZz' })] })), false);
+  assert.equal(verdict(newsletter({ signatures: [signature({ s: 's2' })] })), false);
+  assert.equal(verdict(newsletter({ signatures: [] })), false);
+  const short = [ar('dkim=pass header.i=@example.com header.s=s1 header.b=AbCdE')];
+  assert.equal(verdict(newsletter({ results: short })), false);
+  const lower = [ar('dkim=pass header.i=@example.com header.s=s1 header.b=abcdef12')];
+  assert.equal(verdict(newsletter({ results: lower })), false);
+});
+
+test('an unreadable DKIM-Signature (too long, repeated tag) is false: it could be the one that matches', () => {
+  const long = `${signature()}; x=${'a'.repeat(LIST_AUTH_LIMITS.maxSignatureChars)}`;
+  assert.equal(verdict(newsletter({ signatures: [long] })), false);
+  assert.equal(verdict(newsletter({ signatures: [`${signature()}; d=evil.test`] })), false);
+});
+
+// ---- false: the list headers ----
+
+test('List-Unsubscribe and List-Unsubscribe-Post must each appear exactly once', () => {
+  const twoLists = [
+    h('List-Unsubscribe', LIST),
+    h('List-Unsubscribe', LIST),
+    h('List-Unsubscribe-Post', POST),
+  ];
+  assert.equal(verdict(newsletter({ list: twoLists })), false);
+  const twoPosts = [
+    h('List-Unsubscribe', LIST),
+    h('List-Unsubscribe-Post', POST),
+    h('List-Unsubscribe-Post', POST),
+  ];
+  assert.equal(verdict(newsletter({ list: twoPosts })), false);
+  assert.equal(verdict(newsletter({ list: [h('List-Unsubscribe', LIST)] })), false);
+});
+
+// ---- absent ----
+
+test('no A-R at all, or no List-Unsubscribe, leaves the field out (unknown)', () => {
+  const noAr = facts(newsletter({ results: [] })).list;
+  assert.equal('authenticated' in noAr, false);
+  const noList = facts(newsletter({ list: [] })).list;
+  assert.equal('authenticated' in noList, false);
+  assert.equal(listAuthenticated([], []), undefined);
+});
+
+// ---- wiring ----
+
+test('the verdict reaches the store write, and metadata asks for both headers', () => {
+  assert.equal(messageWrite('a1', 'me@gmail.com', facts(newsletter())).listAuthenticated, true);
+  const fail = newsletter({ results: [ar(`${SPF}; ${DMARC}`)] });
+  assert.equal(messageWrite('a1', 'me@gmail.com', facts(fail)).listAuthenticated, false);
+  const unknown = messageWrite('a1', 'me@gmail.com', facts(newsletter({ results: [] })));
+  assert.equal('listAuthenticated' in unknown, false);
+  const asked: readonly string[] = METADATA_HEADERS;
+  assert.ok(asked.includes('Authentication-Results'));
+  assert.ok(asked.includes('DKIM-Signature'));
+});
