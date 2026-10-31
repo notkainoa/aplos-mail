@@ -27,7 +27,7 @@ import {
   needsUpload,
   parseData,
   readAnyRow,
-  remembered,
+  abandoned,
   readDraftRow,
   toDraft,
   type DraftMeta,
@@ -221,6 +221,7 @@ function uploadOf(
   fields: DraftFields,
   internetId: string,
   mime: Uint8Array,
+  earlier: string[],
 ): DraftUpload {
   const { meta } = parseData(row.data);
   const upload: DraftUpload = {
@@ -231,6 +232,7 @@ function uploadOf(
     mime,
   };
   if (row.remote_draft_id) upload.remoteDraftId = row.remote_draft_id;
+  else if (earlier.length) upload.supersedes = earlier;
   if (row.remote_message_id) upload.baseRemoteMessageId = row.remote_message_id;
   if (row.remote_change_key) upload.baseChangeKey = row.remote_change_key;
   const thread = fields.threadId?.startsWith(`${row.account_id}:`)
@@ -243,10 +245,22 @@ function uploadOf(
 /** `attempt` is the upload this answers: once a choice or a newer attempt replaced it, its answer is dropped. */
 function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: string) {
   const at = ctx.clock.now();
+  // Worked out from the row as it is now: `row` was read before the upload, and a fact may have adopted the copy since
+  // (then it has a remote draft and is not offered `supersedes`), or settled other ids.
+  const now = readUploadRow(ctx, row.id) ?? row;
+  const { meta } = parseData(now.data);
+  // A refused create may still have landed, and so may the attempt the row still names: their Message-IDs are kept like
+  // any given-up attempt's.
+  const running = meta.uploading ? [meta.uploading] : [];
+  const others =
+    attempt !== undefined && attempt !== meta.uploading?.internetId
+      ? [{ internetId: attempt }]
+      : [];
+  const kept = abandoned(meta, now.remote_draft_id, ...running, ...others);
   setMeta(
     ctx,
     row.id,
-    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null },
+    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null, ...kept },
     { ifRevision: row.revision, ...(attempt !== undefined ? { ifUploading: attempt } : {}) },
   );
 }
@@ -358,8 +372,10 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   }
   // A first create nobody answered, then an edit: the new attempt takes the old one's place, and the old Message-ID is
   // kept so history reporting the copy it made is recognised as ours (no phantom draft).
-  const old =
-    meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
+  const old = meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading] : [];
+  // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
+  const given = abandoned(meta, row.remote_draft_id, ...old);
+  const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
   const marked = setMeta(
     ctx,
     id,
@@ -369,12 +385,12 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
         revision: row.revision,
         fingerprint: uploadFingerprint(meta, fields),
       },
-      ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
+      ...given,
     },
     { ifRevision: row.revision },
   );
   if (!marked) return;
-  const upload = uploadOf(row, fields, internetId, copy.mime);
+  const upload = uploadOf(row, fields, internetId, copy.mime, earlier);
   let result: DraftSaveResult;
   try {
     result = await ctx.port.save(row.account_id, upload);
