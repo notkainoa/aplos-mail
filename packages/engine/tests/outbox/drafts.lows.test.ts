@@ -142,7 +142,7 @@ function parent(w: W, remoteId: string, thread: string) {
   } as never);
 }
 
-function phoneReply(w: W, messageId: string, subject = 'Re: Question') {
+function phoneReply(w: W, messageId: string, subject = 'Re: Question', body = true) {
   w.first.store.commit({
     opId: `reply-${++replies}`,
     origin: 'sync',
@@ -155,8 +155,9 @@ function phoneReply(w: W, messageId: string, subject = 'Re: Question') {
         remoteThreadId: 't-1',
         internetId: '<reply@phone.example>',
         changedAt: w.clock.now(),
-        html: '<p>Answer</p>',
+        ...(body ? { html: '<p>Answer</p>' } : {}),
         message: {
+          snippet: 'Ans',
           remoteId: messageId,
           remoteThreadId: 't-1',
           inReplyTo: '<original@mail.example>',
@@ -223,4 +224,16 @@ test('a reply that a phone edits keeps its reply target', () =>
     const d = read(w, REPLY);
     assert.equal(d.subject, 'Re: Question (edited)');
     assert.equal(d.replyToMessageId, `${ACCOUNT}:orig-1`);
+  }));
+
+test('the parent found on a same-version report that carries no body keeps the stored body', () =>
+  world(async w => {
+    phoneReply(w, 'pm-1');
+    assert.equal(read(w, REPLY).html, '<p>Answer</p>');
+    parent(w, 'orig-1', 't-1');
+    phoneReply(w, 'pm-1', 'Re: Question', false); // the same version, reported without its body
+    const d = read(w, REPLY);
+    assert.equal(d.replyToMessageId, `${ACCOUNT}:orig-1`, 'the reply target was added');
+    assert.equal(d.html, '<p>Answer</p>', 'and the stored body is untouched');
+    assert.equal(syncOf(w, REPLY).incomplete, undefined, 'still a complete draft');
   }));

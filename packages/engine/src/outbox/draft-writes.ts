@@ -8,7 +8,6 @@ import {
   fingerprintOf,
   keepsMine,
   liveOf,
-  LIVE_SQL,
   needsUpload,
   packData,
   parseData,
@@ -26,9 +25,12 @@ import { completes, messageOf } from './draft-body';
 import {
   accountAddress,
   explainedByAttempt,
+  hasSend,
+  holdersOf,
   holdsOurContent,
   provenOurs,
   repliedTo,
+  sameCopy,
   withParent,
 } from './draft-proof';
 
@@ -352,32 +354,6 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   for (const copy of holders) deleteRow(tx, copy);
 }
 
-/** The other rows that show this remote draft. */
-function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
-  return tx.all<DraftRow>(
-    'SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND id <> ?',
-    row.account_id,
-    remoteDraftId,
-    row.id,
-  );
-}
-
-/**
- * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
- * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
- * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and
- * no send is queued on it or done with it (a sent copy's id may name the sent message); then it goes (two rows must
- * never share a remote draft).
- */
-function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
-  return (
-    copy.origin === 'remote' &&
-    copy.remote_message_id === remoteMessageId &&
-    !parseData(copy.data).meta.removing &&
-    !hasSend(tx, copy.id)
-  );
-}
-
 /**
  * The copy a create-path conflict names becomes the row's own copy (see `remoteDraftId` on the write), only when the
  * provider proved it carries this upload's Message-ID. Its message id is left out of the row: until the owner keeps
@@ -607,16 +583,6 @@ function deleteHidden(tx: CommitExtensionTx, id: string) {
   tx.mark('Draft', id, 'd');
 }
 
-/** Is a send of this draft live, or has one gone out? */
-function hasSend(tx: CommitExtensionTx, draftId: string) {
-  return (
-    tx.get(
-      `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,
-      draftId,
-    ) !== undefined
-  );
-}
-
 /** Has the draft's current revision gone out? */
 function sentAt(tx: CommitExtensionTx, row: DraftRow) {
   return (
@@ -804,14 +770,30 @@ function deleteRow(tx: CommitExtensionTx, row: DraftRow) {
   announce(row.id);
 }
 
+/** The parent of a phone reply was found: the stored draft gains its reply target and keeps every other field. */
+function relink(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, fields: DraftFields) {
+  const fp = fingerprintOf(fields);
+  const synced = row.synced_revision === row.revision ? row.revision + 1 : row.synced_revision;
+  writeRow(
+    tx,
+    row.id,
+    { revision: row.revision + 1, synced_revision: synced },
+    fields,
+    patched(meta, { cur: fp, fingerprint: fp, announce: tx.seq }),
+  );
+  announce(row.id);
+}
+
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
   const { fields: stored, meta } = parseData(row.data);
   const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
-  // message it answers (which may have synced after the draft did).
-  if (same && base === stored && !(meta.incomplete && completes(w))) return;
+  // message it answers (which may have synced after the draft did: then only the reply target is added, never a body
+  // rebuilt from a report that may carry none).
+  if (same && !(meta.incomplete && completes(w)))
+    return base === stored ? undefined : relink(tx, row, meta, base);
   const { fields, complete } = theirsFields(
     row.account_id,
     messageOf(w),

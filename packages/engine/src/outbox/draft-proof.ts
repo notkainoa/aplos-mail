@@ -4,6 +4,8 @@ import { bodyOf, completes, messageOf } from './draft-body';
 import {
   fingerprintOf,
   keepsMine,
+  LIVE_SQL,
+  parseData,
   theirsFields,
   type DraftMeta,
   type DraftRow,
@@ -107,7 +109,7 @@ export const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
 /**
  * The stored message a foreign draft answers (by its In-Reply-To), as a contract id; reply-all cannot be known. A
  * Message-ID is not unique (a forward or a copy of the same mail can be stored twice), so the one in the draft's own
- * thread wins, then the oldest stored (lowest id), never an arbitrary row.
+ * thread wins, then the earliest-dated stored one (`messages.id` orders by date), never an arbitrary row.
  */
 export function repliedTo(tx: CommitExtensionTx, w: RemoteDraftWrite) {
   const id = w.message?.inReplyTo;
@@ -132,4 +134,40 @@ export function withParent(tx: CommitExtensionTx, fields: DraftFields, w: Remote
   return target === undefined
     ? fields
     : { ...fields, mode: 'reply' as const, replyToMessageId: target };
+}
+
+/** Is a send of this draft live, or has one gone out? */
+export function hasSend(tx: CommitExtensionTx, draftId: string) {
+  return (
+    tx.get(
+      `SELECT 1 FROM submissions WHERE draft_id = ? AND state IN (${LIVE_SQL}, 'sent') LIMIT 1`,
+      draftId,
+    ) !== undefined
+  );
+}
+
+/** The other rows that show this remote draft. */
+export function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
+  return tx.all<DraftRow>(
+    'SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND id <> ?',
+    row.account_id,
+    remoteDraftId,
+    row.id,
+  );
+}
+
+/**
+ * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
+ * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
+ * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and
+ * no send is queued on it or done with it (a sent copy's id may name the sent message); then it goes (two rows must
+ * never share a remote draft).
+ */
+export function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
+  return (
+    copy.origin === 'remote' &&
+    copy.remote_message_id === remoteMessageId &&
+    !parseData(copy.data).meta.removing &&
+    !hasSend(tx, copy.id)
+  );
 }
