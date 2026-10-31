@@ -1,7 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+  nodeDurableFs,
+  removeStaleTemporaries,
+  writeFileDurably,
+  type DurableFs,
+} from './durable-file';
 
 /**
  * Credentials are sealed with a random data key (AES-256-GCM) instead of the OS keychain directly,
@@ -50,14 +55,39 @@ export function createCipher(key: Uint8Array): Cipher {
 }
 
 /**
+ * Only a missing file means there is no key. Any other error stops the start: a new key over a key that could not be
+ * checked would leave every saved credential unreadable. The message carries no path (it reaches the window); the
+ * original error is the `cause`.
+ */
+async function keyFileExists(path: string, fs: DurableFs): Promise<boolean> {
+  try {
+    await fs.stat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw new Error(
+      'The credential key could not be checked. Restart Aplos Mail or check the data folder.',
+      {
+        cause: error,
+      },
+    );
+  }
+}
+
+/**
  * The data key, created on first use. An existing key file is never replaced, even when it cannot be
  * read right now (a locked keychain), because replacing it would make every saved credential unreadable.
  */
-export async function loadDataKey(dataDir: string, keychain: Keychain): Promise<Buffer> {
+export async function loadDataKey(
+  dataDir: string,
+  keychain: Keychain,
+  fs: DurableFs = nodeDurableFs,
+): Promise<Buffer> {
   if (!keychain.available()) throw new Error('macOS secure credential storage is unavailable.');
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const path = join(dataDir, KEY_FILE);
-  if (existsSync(path)) {
+  await removeStaleTemporaries(path, fs);
+  if (await keyFileExists(path, fs)) {
     let key: Buffer;
     try {
       key = Buffer.from(keychain.decrypt(await readFile(path)), 'base64');
@@ -69,8 +99,7 @@ export async function loadDataKey(dataDir: string, keychain: Keychain): Promise<
     return key;
   }
   const key = randomBytes(32);
-  await writeFile(`${path}.tmp`, keychain.encrypt(key.toString('base64')), { mode: 0o600 });
-  await rename(`${path}.tmp`, path);
+  await writeFileDurably(path, keychain.encrypt(key.toString('base64')), 0o600, fs);
   return key;
 }
 
@@ -110,8 +139,7 @@ export async function migrateCredentials(
         }
       }
       if (changed) {
-        await writeFile(`${path}.tmp`, JSON.stringify(entries), { mode: 0o600 });
-        await rename(`${path}.tmp`, path);
+        await writeFileDurably(path, JSON.stringify(entries));
         migrated += changed;
       }
     } catch (error) {
