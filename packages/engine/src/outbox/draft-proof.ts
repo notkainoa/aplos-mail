@@ -150,7 +150,10 @@ export function hasSend(tx: CommitExtensionTx, draftId: string) {
  * Does a send hold this draft's current content still? A live send of any revision does; a send that went out does only
  * when it is of the revision the draft is at now (an older sent revision left a newer edit in Drafts, which may change).
  */
-export function sendPins(tx: CommitExtensionTx, row: DraftRow) {
+export function sendPins(
+  tx: Pick<CommitExtensionTx, 'get'>,
+  row: Pick<DraftRow, 'id' | 'revision'>,
+) {
   return (
     tx.get(
       `SELECT 1 FROM submissions WHERE draft_id = ?

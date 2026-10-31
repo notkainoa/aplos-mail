@@ -795,7 +795,7 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
   if (sendPins(tx, row))
     return w.remoteMessageId === row.remote_message_id
       ? undefined
-      : markChangedElsewhere(tx, row, stored, meta);
+      : markChangedElsewhere(tx, row, stored, meta, w);
   const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
@@ -913,9 +913,12 @@ function markChangedElsewhere(
   row: DraftRow,
   fields: DraftFields,
   meta: DraftMeta,
+  w: RemoteDraftWrite,
 ) {
-  if (meta.changedElsewhere) return;
-  const data = packData(fields, { ...meta, changedElsewhere: true });
+  const held = meta.changedElsewhere;
+  if (typeof held === 'object' && held.remoteMessageId === w.remoteMessageId) return;
+  // The newest report is kept: a send that ends without going out applies it (`releaseHeld`), so it is not lost.
+  const data = packData(fields, { ...meta, changedElsewhere: w });
   tx.run('UPDATE drafts SET data = ? WHERE id = ?', data, row.id);
 }
 
@@ -928,7 +931,7 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
   // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
   // includes a removal (the other device sent it): the id may now name its sent message.
-  if (hasSend(tx, row.id)) return markChangedElsewhere(tx, row, fields, meta);
+  if (hasSend(tx, row.id)) return markChangedElsewhere(tx, row, fields, meta, w);
   // The same version again is known, unless it brings what the conflict lacks (their body). A removal is always news:
   // the other device sent or deleted the copy, and its id must be forgotten.
   const known = meta.conflict;
