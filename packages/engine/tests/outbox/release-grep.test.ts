@@ -111,8 +111,10 @@ const DECLARATIONS = [
   'let hook',
 ];
 
+/** Whole declarations only: the store's `let hooks` (store/ingest.ts) is not the kill-point `let hook`. */
 function declared(code: string): string[] {
-  return DECLARATIONS.filter(d => code.includes(d));
+  const whole = (d: string) => new RegExp(`${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w$])`);
+  return DECLARATIONS.filter(d => whole(d).test(code));
 }
 
 function present(code: string): string[] {
