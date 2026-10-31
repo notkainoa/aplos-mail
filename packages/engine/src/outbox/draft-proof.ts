@@ -146,6 +146,21 @@ export function hasSend(tx: CommitExtensionTx, draftId: string) {
   );
 }
 
+/**
+ * Does a send hold this draft's current content still? A live send of any revision does; a send that went out does only
+ * when it is of the revision the draft is at now (an older sent revision left a newer edit in Drafts, which may change).
+ */
+export function sendPins(tx: CommitExtensionTx, row: DraftRow) {
+  return (
+    tx.get(
+      `SELECT 1 FROM submissions WHERE draft_id = ?
+         AND (state IN (${LIVE_SQL}) OR (state = 'sent' AND revision = ?)) LIMIT 1`,
+      row.id,
+      row.revision,
+    ) !== undefined
+  );
+}
+
 /** The other rows that show this remote draft. */
 export function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
   return tx.all<DraftRow>(
