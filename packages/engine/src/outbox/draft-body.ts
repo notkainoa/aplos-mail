@@ -1,5 +1,5 @@
 import type { RemoteDraftWrite } from '../store';
-import { REMOTE_BODY_MAX } from './draft-state';
+import { hasInlineRef, REMOTE_BODY_MAX } from './draft-state';
 
 /**
  * The body a remote draft fact delivers: which of its sources counts, the size limit, and whether it makes the draft
@@ -59,9 +59,10 @@ function pick(w: RemoteDraftWrite): string | undefined {
   return body && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
 }
 
-/** Does this fact make the draft complete: a usable body and no attachments (those are not delivered)? */
+/** Does this fact make the draft complete: a usable body, no attachments and no inline parts (those are not delivered)? */
 export function completes(w: RemoteDraftWrite) {
-  return bodyOf(w) !== undefined && w.message?.hasAttachments !== true;
+  const body = bodyOf(w);
+  return body !== undefined && w.message?.hasAttachments !== true && !hasInlineRef(body);
 }
 
 /** The write's metadata in the shape `theirsFields` reads, with the usable body when there is one. */

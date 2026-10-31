@@ -209,6 +209,9 @@ function draftWrite(accountId: AccountId, self: string, d: RemoteDraftFact): Sto
       ...message
     } = messageWrite(accountId, self, d.message);
     write.message = message;
+    // An inline part (a pasted image) is not delivered either: the copy has parts this device cannot carry, so it is not
+    // complete. `hasAttachments` of a message counts only the visible ones.
+    if (d.message.attachments?.some(a => a.inline)) write.message.hasAttachments = true;
   }
   return write;
 }

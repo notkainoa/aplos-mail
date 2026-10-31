@@ -262,6 +262,16 @@ export function readAnyRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | 
   return q.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
 }
 
+/** Did the copy bring a usable body, with no attachment and no inline reference (none of those are delivered)? */
+const isComplete = (message: { html?: string; hasAttachments?: boolean }) =>
+  message.html !== undefined && message.hasAttachments !== true && !hasInlineRef(message.html);
+
+/**
+ * Does this body point at an inline part (`cid:`)? The copy's inline images are not delivered, so a draft built from it
+ * would show broken references and a replace would drop this device's own inline image: such a copy is not complete.
+ */
+export const hasInlineRef = (html: string) => /(?:^|[^a-z0-9])cid:/i.test(html);
+
 /**
  * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is
  * complete when the body came and the copy has no attachments: attachments are not delivered, so an edit in place would
@@ -301,7 +311,7 @@ export function theirsFields(
   if (message.from !== undefined && own !== undefined && !sameAddress(message.from.address, own))
     fields.from = message.from;
   else if (base?.from !== undefined) fields.from = base.from;
-  return { fields, complete: message.html !== undefined && message.hasAttachments !== true };
+  return { fields, complete: isComplete(message) };
 }
 
 /**
