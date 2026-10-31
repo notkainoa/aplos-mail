@@ -66,6 +66,11 @@ export interface MessageFacts {
   from?: Address;
   to: Address[];
   cc: Address[];
+  /**
+   * Only when the provider can show a draft's Bcc (a sent or received message carries none). The engine takes a remote
+   * draft copy as its own upload only when it can compare Bcc too: absent here means "cannot show", never "empty".
+   */
+  bcc?: Address[];
   replyTo?: Address[];
   subject?: string;
   /** Entity-decoded (D22). */
@@ -153,6 +158,20 @@ export interface RemoteDraftFact {
   removed?: boolean;
   /** Metadata so a phone draft can show in Drafts; the body is fetched lazily. */
   message?: MessageFacts;
+  /**
+   * The draft's body as the provider delivered it. Optional: when present the engine treats the draft as complete (it can
+   * be edited, taken as theirs or kept both); when absent the draft is snippet-only until a fact with a body arrives.
+   * `html` is preferred; `text` is used when there is no `html`.
+   */
+  html?: string;
+  text?: string;
+  /**
+   * Remote message ids this fact replaces: a provider that updates a draft by creating a new message and destroying the
+   * old one (JMAP, IMAP; Gmail `drafts.update` gives the draft a new message id). The engine recognises the fact as the
+   * echo of its own upload when it supersedes the id it holds and carries its Message-ID, and as another device's edit
+   * when it supersedes its base but carries another Message-ID.
+   */
+  supersedes?: string[];
 }
 
 // ---- scopes, state and planning ----
@@ -540,6 +559,20 @@ export interface DraftUpload {
    * `conflict`, so a 5 s idle save never overwrites a phone edit that history has not reported yet.
    */
   baseRemoteMessageId?: string;
+  /**
+   * Only on a create (no `remoteDraftId`): the Message-IDs of this draft's earlier creates that were never answered (a
+   * newer revision replaced the attempt, and the reply may have been lost after the copy landed). Before creating, look
+   * for a draft carrying one of them. REPLACE it with this upload (the result names its `remoteDraftId`) ONLY when all
+   * three hold: it is still a draft, its Message-ID is listed here, AND its canonical bytes equal an upload this adapter
+   * recorded under that Message-ID. A listed Message-ID alone proves nothing: a provider may keep a draft's Message-ID
+   * across edits, so a copy another device edited carries it too. Otherwise answer `conflict` naming `remoteDraftId`,
+   * `remoteMessageId` and `remoteInternetId` of the copy, write nothing and never delete it. An adapter that cannot
+   * record or compare uploads (for example after a restart) simply answers `conflict`: nothing is lost, the owner
+   * chooses. Optional and additive: an adapter that ignores the field keeps today's behaviour (a duplicate remote draft
+   * can remain until the owner removes it, never a loss). The engine stops offering the ids once the create is answered
+   * in any way, including `conflict` and `gone`.
+   */
+  supersedes?: string[];
   /** Graph's `changeKey` of the last synced copy, sent as the precondition where the message id does not change on edit. */
   baseChangeKey?: string;
 }
@@ -554,8 +587,27 @@ export type DraftSaveResult =
     }
   /** The remote draft no longer exists (deleted or sent from another device): the engine decides, never recreates blindly. */
   | { kind: 'gone' }
-  /** The remote copy changed since `baseRemoteMessageId`: nothing was written; the engine asks "keep mine, take theirs, or keep both". */
-  | { kind: 'conflict'; remoteMessageId?: string };
+  /**
+   * The remote copy changed since `baseRemoteMessageId`: nothing was written; the engine asks "keep mine, take theirs, or
+   * keep both".
+   *
+   * On the CREATE path (the upload carried no `remoteDraftId`) a conflict means the provider found an existing copy
+   * carrying this upload's Message-ID (an earlier create whose reply was lost did land) whose bytes differ, or, for an upload
+   * that lists `supersedes`, a copy under one of those Message-IDs that the adapter cannot prove is its own. Name it:
+   * `remoteDraftId` (and `remoteMessageId`) of that copy, and `remoteInternetId`, the Message-ID the copy carries. The
+   * engine adopts the copy only when `remoteInternetId` equals `DraftUpload.internetId`: it then stores the ids on the
+   * draft row, so keep mine replaces that copy instead of creating a second draft, and remembers the upload's Message-ID
+   * as its own. It never adopts a copy it cannot prove is its own, and the copy's bytes differ, so it never deletes it:
+   * it is another device's version until the owner chooses (a discard forgets it). Optional: an adapter that cannot name
+   * or prove the copy leaves the fields out (the ordinary conflict, nothing adopted). Ignored on the update path.
+   */
+  | {
+      kind: 'conflict';
+      remoteMessageId?: string;
+      remoteDraftId?: string;
+      /** The Message-ID header of the copy named by `remoteDraftId`, as the provider read it. */
+      remoteInternetId?: string;
+    };
 
 export interface SubmissionPayload {
   submissionId: string;
@@ -694,8 +746,21 @@ export interface ProviderAdapter {
    * Idempotent: an absent draft is success. It must also do nothing when the target is no longer a draft (no `$draft`
    * keyword, not in Drafts): a send that used the remote draft (`SendReceipt.draftConsumed`) can leave the same entity
    * as the sent message (JMAP keeps the `Email` id), and deleting it would delete the sent mail.
+   *
+   * `expectedMessageId` (optional, additive): the message id the engine last wrote or adopted for this draft. When given,
+   * delete ONLY IF the draft still holds it (Gmail: the draft's `message.id` equals it; JMAP: the `Email` id; Graph: the
+   * message `id`). If the draft holds a different one (it was edited or replaced on another device, or became a sent
+   * message) do NOTHING and resolve: the owner's discard must not destroy a newer version or a sent mail. A missing draft
+   * is success. When it is omitted the engine knows no id (a copy it never read a message id for): the engine's call is the
+   * old unguarded one, but an adapter may and should refuse to delete without a guard when the delete cannot be undone
+   * (Gmail does nothing and the copy stays, which history then reports as another device's draft: an orphan, never a
+   * loss). Either way it resolves.
    */
-  deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
+  deleteDraft?(
+    remoteDraftId: string,
+    ctx: AdapterContext,
+    expectedMessageId?: string,
+  ): Promise<void>;
   /**
    * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
    * When one call makes several requests (iCloud: SMTP, then an `APPEND` to Sent), it may let `PausedError` or

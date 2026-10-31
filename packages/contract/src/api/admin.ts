@@ -157,7 +157,7 @@ export const clients = area('clients', {
 export const notification = area('notification', {
   'Notification/claim': {
     summary:
-      'Main claims notifications to post (the durable outbox, ARCH 7.6); a claimed item is never handed out twice.',
+      'Main claims notifications to post (the durable outbox, ARCH 7.6). Delivery is at-least-once: a claimed item is leased for about a minute and offered again if it is not acked in time, with the same stable `id`, so a repost replaces the banner.',
     kind: 'command',
     scope: 'host',
     input: z.object({ max: z.optional(z.int().check(z.minimum(1), z.maximum(50))) }),

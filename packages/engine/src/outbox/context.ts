@@ -123,7 +123,7 @@ export function transition(
   const result = ctx.store.commit({
     opId: how.opId ?? `outbox:${move.id}:${move.to}:${hex(ctx.random(8))}`,
     origin: how.origin ?? 'system',
-    writes: [{ kind: 'submission', op: 'move', ...move }],
+    writes: [{ kind: 'submission', op: 'move', ...move, why: how.why }],
   });
   if (how.was !== move.to)
     ctx.log.event('submission.state', {

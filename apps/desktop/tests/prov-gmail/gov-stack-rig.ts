@@ -90,14 +90,14 @@ export function mailWorld(threads: number, seed = 31): Mail {
   };
 }
 
-/** The engine's clock over the fake one, reading `skewMs` ahead of it (a Mac whose clock is off); sleeps stay relative. */
-function portClock(fake: FakeClock, skewMs = 0): Clock {
+/** The engine's clock over the fake one, reading `skew()` ahead of it (a Mac whose clock is off); sleeps stay relative. */
+function portClock(fake: FakeClock, skew: () => number): Clock {
   return {
-    now: () => fake.now() + skewMs,
+    now: () => fake.now() + skew(),
     sleep: (ms, signal) => fake.sleep(ms, signal),
     timer(at, fire) {
       const controller = new AbortController();
-      fake.sleep(Math.max(0, at - skewMs - fake.now()), controller.signal).then(fire, () => {});
+      fake.sleep(Math.max(0, at - skew() - fake.now()), controller.signal).then(fire, () => {});
       return { cancel: () => controller.abort() };
     },
   };
@@ -263,6 +263,10 @@ export interface BootOptions {
   workflow?: boolean;
   /** This Mac's clock runs this far ahead of the emulator's (negative: behind); only the engine host sees it. */
   skewMs?: number;
+  /** The same, read on every use (overrides `skewMs`): a test sets the Mac's clock forward or back with it. */
+  skew?: () => number;
+  /** How often the stand-in timer loop wakes (250 ms); a day-long run may wake less often. */
+  leaseTickMs?: number;
 }
 
 interface Engine {
@@ -281,18 +285,19 @@ async function pumpLease(
   clock: FakeClock,
   deadlines: Deadlines,
   signal: AbortSignal,
-  skewMs: number,
+  skew: () => number,
+  tickMs: number,
 ): Promise<void> {
   while (!signal.aborted) {
     try {
-      await clock.sleep(250, signal);
+      await clock.sleep(tickMs, signal);
     } catch {
       return;
     }
     for (const source of [...deadlines.sources.values()]) {
       if (signal.aborted || !source.id.startsWith('lease:')) continue;
       const next = await source.next();
-      const now = clock.now() + skewMs;
+      const now = clock.now() + skew();
       if (next !== undefined && next <= now) await source.fire(now);
     }
   }
@@ -304,7 +309,8 @@ export async function boot(
   options: BootOptions = {},
 ): Promise<Engine> {
   const { clock } = mac.mail;
-  const raw = openStore(openSqlite(mac.path), { now: () => clock.now() + (options.skewMs ?? 0) });
+  const skew = options.skew ?? (() => options.skewMs ?? 0);
+  const raw = openStore(openSqlite(mac.path), { now: () => clock.now() + skew() });
   const commits: CommitRecord[] = [];
   // Records every commit's step and the message rows it writes (for the notification check), then commits it.
   const store: StorePort = Object.create(raw) as StorePort;
@@ -334,11 +340,11 @@ export async function boot(
       governor,
       providers: [factory],
       tokens: mac.vault,
-      clock: portClock(clock, options.skewMs),
+      clock: portClock(clock, skew),
       log: quietLog,
       deadlines,
       deviceId: mac.id,
-      env: () => ({ ...mac.mail.env, now: clock.now() + (options.skewMs ?? 0) }),
+      env: () => ({ ...mac.mail.env, now: clock.now() + skew() }),
     },
     {
       newId: () => `${mac.id}-commit-${++commitIds}`,
@@ -356,7 +362,8 @@ export async function boot(
     },
   );
   const pumpStop = new AbortController();
-  if (options.workflow) void pumpLease(clock, deadlines, pumpStop.signal, options.skewMs ?? 0);
+  if (options.workflow)
+    void pumpLease(clock, deadlines, pumpStop.signal, skew, options.leaseTickMs ?? 250);
   // With the workflow channel the lease is the controller's: a primary asks for it ("Use this Mac") like the owner.
   if (lease && options.workflow) {
     if (lease === 'primary') await host.claimLease(ACCOUNT);

@@ -189,6 +189,37 @@ test('a wall clock set back before the marker does not push findSent past the me
     assert.equal(w.server.sends().length, 1);
   }));
 
+test('a wall clock set back between the two findSent checks does not postpone the second beyond 60 s (wake and relaunch)', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    w.server.script.push({ result: 'lost', delivered: false });
+    const s = w.send(w.first, 'd1');
+    await w.clock.advance(10 * SEC);
+    await w.settle();
+    assert.equal(
+      w.get(s.id).state,
+      'uncertain',
+      'first check found nothing; the second is due in 60 s',
+    );
+    assert.equal(w.get(s.id).problem, undefined);
+
+    // Running: the owner sets the clock back an hour, the host reports it as a wake.
+    await w.clock.set(w.clock.now() - 60 * MIN);
+    w.first.outbox.wake();
+    await w.settle();
+    await w.clock.advance(61 * SEC);
+    await w.settle();
+    const asked = w.get(s.id);
+    assert.equal(asked.state, 'uncertain');
+    assert.equal(
+      asked.problem?.reasonCode,
+      'send.uncertain',
+      'the owner is asked after the second check',
+    );
+    assert.equal(w.server.calls.filter(c => c.op === 'findSent').length, 2);
+    assert.equal(w.server.sends().length, 1);
+  }));
+
 test('a launch with sending, uncertain, queued and overdue rows at once settles each by its own rule', () =>
   inWorld(async w => {
     for (const d of ['lost', 'unsure', 'soon', 'late']) w.draft(d);

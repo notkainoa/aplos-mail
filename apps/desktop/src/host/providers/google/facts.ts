@@ -210,6 +210,18 @@ export function flagsOf(
   };
 }
 
+/**
+ * The header's value only when the message has it exactly once. Two copies of a sender-controlled header (one possibly
+ * outside what the signature covers) are ambiguous, so neither is trusted: List-Unsubscribe-Post then reads as absent
+ * and one-click stays off.
+ */
+function once(headers: readonly GmailHeader[], name: string): string | undefined {
+  const wanted = name.toLowerCase();
+  return headers.filter(h => h.name.toLowerCase() === wanted).length === 1
+    ? headerOf(headers, name)
+    : undefined;
+}
+
 export function messageFacts(message: GmailMessage, options: FactsOptions): MessageFacts {
   const headers: GmailHeader[] = message.payload?.headers ?? [];
   const get = (name: string) => headerOf(headers, name);
@@ -225,7 +237,7 @@ export function messageFacts(message: GmailMessage, options: FactsOptions): Mess
   const replyTo = parseAddresses(get('Reply-To'));
   const list = {
     ...optional('listUnsubscribe', get('List-Unsubscribe')),
-    ...optional('listUnsubscribePost', get('List-Unsubscribe-Post')),
+    ...optional('listUnsubscribePost', once(headers, 'List-Unsubscribe-Post')),
     ...optional('listId', get('List-Id')),
     ...optional('precedence', get('Precedence')),
     ...optional('autoSubmitted', get('Auto-Submitted')),

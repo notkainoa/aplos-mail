@@ -51,13 +51,12 @@ export function portClock(fake: FakeClock): Clock {
   };
 }
 
-/** A clock that reads `skewMs` off the one it wraps; sleeps and timers stay relative. */
-function skewed(clock: Clock, skewMs: number): Clock {
-  if (!skewMs) return clock;
+/** A clock that reads `skew()` off the one it wraps (a skew that changes is a clock set forward or back). */
+function skewed(clock: Clock, skew: () => number): Clock {
   return {
-    now: () => clock.now() + skewMs,
+    now: () => clock.now() + skew(),
     sleep: (ms, signal) => clock.sleep(ms, signal),
-    timer: (at, fire) => clock.timer(at - skewMs, fire),
+    timer: (at, fire) => clock.timer(at - skew(), fire),
   };
 }
 
@@ -252,9 +251,12 @@ export function world(
     host?: ActorHostOptions;
     /** This device's clock runs this far ahead of the shared fake clock (negative: behind); the host sees it. */
     skewMs?: number;
+    /** The same, read on every use (overrides `skewMs`): a test sets the clock forward or back with it. */
+    skew?: () => number;
   } = {},
 ): World {
   const clock = options.clock ?? new FakeClock({ auto: false });
+  const skew = options.skew ?? (() => options.skewMs ?? 0);
   const store = openStore(d.file.open(), { now: () => clock.now() });
   const logs: LogLine[] = [];
   const log = fakeLogger(logs);
@@ -310,7 +312,7 @@ export function world(
       governor,
       providers: [factory],
       tokens: { cached: () => undefined, refresh: async () => ({ token: 'unused', expiresAt: 0 }) },
-      clock: skewed(portClock(clock), options.skewMs ?? 0),
+      clock: skewed(portClock(clock), skew),
       log,
       deadlines,
       deviceId: options.deviceId ?? 'device-a',
@@ -320,7 +322,7 @@ export function world(
   );
   return {
     clock,
-    now: () => clock.now() + (options.skewMs ?? 0),
+    now: () => clock.now() + skew(),
     store,
     governor,
     host,

@@ -1,4 +1,4 @@
-import type { Address, FolderRole, LaneInput, LaneResult, StructuredHint } from '../ports';
+import type { Address, FolderRole, LaneInput, LaneResult, StructuredHint } from '../../src/ports';
 
 /** The 60-case header table for `laneFor` (plan 10 WP5.4). Original text, `.example` addresses only. */
 

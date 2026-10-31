@@ -13,12 +13,17 @@ import {
   packData,
   parseData,
   patched,
+  abandoned,
   remembered,
+  withPrints,
+  sameAddress,
   theirsFields,
   type DraftMeta,
   type DraftRow,
   type MetaPatch,
 } from './draft-state';
+import { completes, messageOf } from './draft-body';
+import { accountAddress, explainedByAttempt, holdsOurContent, provenOurs } from './draft-proof';
 
 /**
  * The drafts' writers for the eng-time extension (seam 2): every change to a draft goes through `store.commit` as one of
@@ -77,6 +82,16 @@ export type DraftWrite =
       internetId: string;
       gone: boolean;
       remoteMessageId?: string;
+      /**
+       * The create path only: the provider found an earlier create of this upload's Message-ID and names its draft, and
+       * says the copy carries `remoteInternetId`. Only when that equals `internetId` (proof the copy is this draft's own)
+       * and the row has no remote draft and is not being discarded, the row stores the draft id (so keep mine updates it
+       * instead of creating a second one) and remembers the Message-ID as its own. The copy's message id is NOT stored
+       * as the row's or remembered as ours: its bytes differ from ours, so it is theirs until the owner chooses, and its
+       * history fact must still be able to bring their version.
+       */
+      remoteDraftId?: string;
+      remoteInternetId?: string;
       at: number;
     }
   | {
@@ -269,7 +284,28 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // what the provider now holds, not what this draft is: only its ids are kept, to recognise their echo in history.
   if (meta.uploading?.internetId !== w.internetId) {
     const wrote = remembered(meta, w.internetId, w.remoteMessageId);
-    return writeRow(tx, w.id, {}, fields, patched(meta, { wrote }));
+    const prints = withPrints(meta, { internetId: w.internetId, fingerprint: w.fingerprint });
+    return writeRow(tx, w.id, {}, fields, patched(meta, { wrote, prints }));
+  }
+  // The reply names a remote draft that another row already shows (history was faster, and could not prove the copy
+  // ours). Only the very same untouched version is the same copy; anything else (a newer version, a draft the owner
+  // edited, one with a send queued) keeps its row, and this row is NOT bound to it: the upload is done with, nothing is
+  // lost, and the next upload makes its own copy.
+  const holders = row.remote_draft_id === null ? holdersOf(tx, row, w.remoteDraftId) : [];
+  if (!holders.every(h => sameCopy(tx, h, w.remoteMessageId))) {
+    if (meta.removing) return deleteHidden(tx, row.id);
+    // Not into `earlier`: the next create must not point back at the copy the other row holds (an adapter would replace it).
+    const given = abandoned(meta, w.remoteDraftId, {
+      internetId: w.internetId,
+      fingerprint: w.fingerprint,
+    });
+    return writeRow(
+      tx,
+      w.id,
+      {},
+      fields,
+      patched(meta, { uploading: null, problem: null, dueAt: meta.dueAt ?? w.at, ...given }),
+    );
   }
   const same = (meta.cur ?? fingerprintOf(fields)) === w.fingerprint;
   // An edit that landed during the upload keeps its own upload due; this copy is the revision that was sent.
@@ -281,6 +317,7 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fingerprint: w.partial ? null : w.fingerprint,
     uploading: null,
     problem: null,
+    earlier: null,
     wrote: remembered(meta, w.internetId, w.remoteMessageId),
     changedElsewhere: null,
     dueAt: idle ? null : (meta.dueAt ?? w.at),
@@ -300,6 +337,50 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     fields,
     next,
   );
+  for (const copy of holders) deleteRow(tx, copy);
+}
+
+/** The other rows that show this remote draft. */
+function holdersOf(tx: CommitExtensionTx, row: DraftRow, remoteDraftId: string) {
+  return tx.all<DraftRow>(
+    'SELECT * FROM drafts WHERE account_id = ? AND remote_draft_id = ? AND id <> ?',
+    row.account_id,
+    remoteDraftId,
+    row.id,
+  );
+}
+
+/**
+ * History may report the copy of an upload before its reply arrives and, when it could not be proven ours (no body,
+ * other content), shows it as a remote draft. The reply then names the same remote draft. That row is the same copy only
+ * if nobody touched it (`origin: 'remote'`), it is not being discarded, it holds the very message id the reply names, and no send is queued on it;
+ * then it goes (two rows must never share a remote draft).
+ */
+function sameCopy(tx: CommitExtensionTx, copy: DraftRow, remoteMessageId: string) {
+  return (
+    copy.origin === 'remote' &&
+    copy.remote_message_id === remoteMessageId &&
+    !parseData(copy.data).meta.removing &&
+    !liveOf(tx, copy.id)
+  );
+}
+
+/**
+ * The copy a create-path conflict names becomes the row's own copy (see `remoteDraftId` on the write), only when the
+ * provider proved it carries this upload's Message-ID. Its message id is left out of the row: until the owner keeps
+ * theirs or mine it is not a version of ours (and a discard of the row then forgets it instead of deleting it).
+ */
+function adoptedByConflict(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  meta: DraftMeta,
+  w: Extract<DraftWrite, { op: 'conflict' }>,
+) {
+  if (w.gone || w.remoteDraftId === undefined || row.remote_draft_id !== null) return undefined;
+  // Another row already shows that copy (history reported it): two rows never share a remote draft.
+  if (holdersOf(tx, row, w.remoteDraftId).length) return undefined;
+  if (w.remoteInternetId !== w.internetId) return undefined;
+  return { columns: { remote_draft_id: w.remoteDraftId }, wrote: remembered(meta, w.internetId) };
 }
 
 function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'conflict' }>) {
@@ -308,20 +389,41 @@ function uploadConflict(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'con
   const { fields, meta } = parseData(row.data);
   if (meta.uploading?.internetId !== w.internetId) return;
   const gone = w.gone;
+  // A conflict, or a copy that is gone, is an answer: the create is over, so no earlier Message-ID is offered again.
+  const answered = { uploading: null, earlier: null };
+  // A discarded draft adopts nothing: the copy differs from ours, so it is not to be deleted either.
+  const adopted = meta.removing ? undefined : adoptedByConflict(tx, row, meta, w);
   // The copy is gone: its id names nothing a delete or a replace may touch (on some providers it is now the sent message).
-  const columns = gone ? FORGET_REMOTE : {};
-  if (meta.removing)
-    return writeRow(tx, row.id, columns, fields, patched(meta, { uploading: null }));
+  const columns = gone ? FORGET_REMOTE : (adopted?.columns ?? {});
+  const wrote = adopted ? { wrote: adopted.wrote } : {};
+  if (meta.removing) {
+    // With no copy known (a create) there is nothing to delete or wait for: the hidden row ends, the other copy stays.
+    const done = !gone && row.remote_draft_id === null ? { removeAt: w.at } : {};
+    return writeRow(tx, row.id, columns, fields, patched(meta, { ...answered, ...done }));
+  }
   // A conflict already open stays, but a copy that is gone is gone: keep mine then has no base to overwrite.
   if (meta.conflict) {
     const conflict = gone ? { ...meta.conflict, gone: true as const } : meta.conflict;
-    return writeRow(tx, row.id, columns, fields, patched(meta, { uploading: null, conflict }));
+    return writeRow(
+      tx,
+      row.id,
+      columns,
+      fields,
+      patched(meta, { ...answered, conflict, ...wrote }),
+    );
   }
   const seen = (meta.theirsSeen ?? 0) + 1;
   const conflict: NonNullable<DraftMeta['conflict']> = { theirsRevision: seen, at: w.at };
   if (gone) conflict.gone = true;
   else if (w.remoteMessageId !== undefined) conflict.theirsMessageId = w.remoteMessageId;
-  const patch = { conflict, theirsSeen: seen, dueAt: null, uploading: null, announce: tx.seq };
+  const patch = {
+    conflict,
+    theirsSeen: seen,
+    dueAt: null,
+    ...answered,
+    announce: tx.seq,
+    ...wrote,
+  };
   writeRow(tx, row.id, columns, fields, patched(meta, patch));
   announce(row.id);
 }
@@ -340,7 +442,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
   if (!w.uncertain) return;
   // The reply may hide a write of the old revision: the copy is not the one the fingerprint names. Upload what the
   // draft holds now. The old attempt's Message-ID is kept in `wrote`, so history reporting that copy is recognised.
-  const old = meta.uploading ? [meta.uploading.internetId] : [];
+  const old = meta.uploading ? [meta.uploading] : [];
   writeRow(
     tx,
     w.id,
@@ -349,7 +451,7 @@ function retry(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'retry' }>) {
     patched(meta, {
       fingerprint: null,
       uploading: null,
-      wrote: remembered(meta, ...old),
+      ...abandoned(meta, row.remote_draft_id, ...old),
       dueAt: meta.dueAt ?? w.at,
     }),
   );
@@ -521,7 +623,9 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
   // A draft whose copy holds another device's version forgets the copy: deleting it would delete that version, and on
   // some providers the id is the sent message. That is an edit made while a send held the draft (even when the owner then
   // cancels the send and discards: the other device's copy is left alone, no conflict is asked), or a conflict on a sent draft.
-  const theirs = meta.changedElsewhere || (meta.conflict && sentAt(tx, row));
+  // A conflict on a copy adopted from the provider's answer (no message id of ours for it) is the same: the copy differs.
+  const theirs =
+    meta.changedElsewhere || (meta.conflict && (row.remote_message_id === null || sentAt(tx, row)));
   const columns = theirs ? FORGET_REMOTE : {};
   if ((theirs || row.remote_draft_id === null) && !meta.uploading) return deleteHidden(tx, w.id);
   // Before the copy is known the removal waits for the upload's result, or for history to report the copy.
@@ -542,19 +646,17 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
 
 // ---------------------------------------------------------------- remote facts
 
-type RemoteMessage = NonNullable<RemoteDraftWrite['message']>;
-
-/** The write's metadata in the shape `theirsFields` reads. `html` is read when a provider delivers the body with it. */
-function messageOf(w: RemoteDraftWrite) {
-  return w.message as (RemoteMessage & { html?: string }) | undefined;
-}
-
 function remoteThreadId(w: RemoteDraftWrite) {
   return w.remoteThreadId === undefined ? undefined : `${w.accountId}:${w.remoteThreadId}`;
 }
 
 function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
-  const { fields, complete } = theirsFields(w.accountId, messageOf(w));
+  const { fields, complete } = theirsFields(
+    w.accountId,
+    messageOf(w),
+    undefined,
+    accountAddress(tx, w.accountId),
+  );
   const thread = remoteThreadId(w);
   if (thread !== undefined) fields.threadId = thread;
   const fp = fingerprintOf(fields);
@@ -595,6 +697,10 @@ function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
 function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   const { fields, meta } = parseData(row.data);
   if (row.remote_draft_id !== null || w.removed) return;
+  // A Message-ID alone proves nothing (a provider keeps it across edits, so a phone-edited copy carries it too): the copy
+  // must also have the content of an upload this engine made under it. Otherwise it is shown as a remote draft, a
+  // visible duplicate the owner can discard, and is never replaced or deleted from here.
+  if (!provenOurs(tx, row, meta, fields, w)) return insertRemote(tx, w);
   writeRow(
     tx,
     row.id,
@@ -602,7 +708,9 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
     fields,
     patched(
       meta,
-      meta.removing ? { removeAt: w.changedAt } : { wrote: remembered(meta, w.remoteMessageId) },
+      meta.removing
+        ? { removeAt: w.changedAt }
+        : { wrote: remembered(meta, w.remoteMessageId), earlier: null },
     ),
   );
   announce(row.id);
@@ -610,11 +718,50 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
 
 function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
   const wrote = meta.wrote ?? [];
+  // The copy an open conflict names is theirs, whatever Message-ID it carries: it completes the conflict (their body).
+  if (meta.conflict?.theirsMessageId === w.remoteMessageId) return false;
   return (
     w.remoteMessageId === row.remote_message_id ||
     wrote.includes(w.remoteMessageId) ||
     (w.internetId !== undefined &&
       (wrote.includes(w.internetId) || meta.uploading?.internetId === w.internetId))
+  );
+}
+
+/**
+ * A fact that replaces the message id this row holds (or one it wrote) and is the copy of this row's own upload is that
+ * upload's echo, under the new message id a create-then-destroy update gave it. It is ours only when an upload under its
+ * Message-ID is still running, or when its content is the content we uploaded; a Message-ID alone is not proof (Graph,
+ * JMAP and IMAP clients keep it across edits), so the same replacement with other content is another device's edit and
+ * goes the ordinary way. A removal that supersedes something is not handled here: it is a removal.
+ */
+function supersedesOwn(
+  tx: CommitExtensionTx,
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  fields: DraftFields,
+) {
+  if (w.removed || !w.supersedes?.length || w.internetId === undefined) return false;
+  const wrote = meta.wrote ?? [];
+  const replaces = w.supersedes.some(id => id === row.remote_message_id || wrote.includes(id));
+  if (!replaces) return false;
+  const own = accountAddress(tx, row.account_id);
+  if (own === undefined) return false;
+  return (
+    explainedByAttempt(w, row, meta, fields, own) || holdsOurContent(w, row, meta, fields, own)
+  );
+}
+
+/** The echo of our own upload under a new message id: the row's base moves to it, nothing else changes. */
+function advanceBase(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, w: RemoteDraftWrite) {
+  const { fields } = parseData(row.data);
+  const data = packData(fields, { ...meta, wrote: remembered(meta, w.remoteMessageId) });
+  tx.run(
+    'UPDATE drafts SET remote_message_id = ?, data = ? WHERE id = ?',
+    w.remoteMessageId,
+    data,
+    row.id,
   );
 }
 
@@ -629,8 +776,13 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
   const { fields: base, meta } = parseData(row.data);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for.
-  if (same && !(meta.incomplete && messageOf(w)?.html !== undefined)) return;
-  const { fields, complete } = theirsFields(row.account_id, messageOf(w), base);
+  if (same && !(meta.incomplete && completes(w))) return;
+  const { fields, complete } = theirsFields(
+    row.account_id,
+    messageOf(w),
+    base,
+    accountAddress(tx, row.account_id),
+  );
   const fp = fingerprintOf(fields);
   // Their copy's Message-ID, or none: the previous copy's id does not name a newer one.
   const internetId = w.internetId ?? (same ? row.remote_internet_id : null);
@@ -686,7 +838,14 @@ function raise(
     row.id,
     w.removed ? FORGET_REMOTE : {},
     fields,
-    patched(meta, { conflict, theirsSeen: seen, dueAt: null, uploading: null, announce: tx.seq }),
+    patched(meta, {
+      conflict,
+      theirsSeen: seen,
+      dueAt: null,
+      uploading: null,
+      ...abandoned(meta, row.remote_draft_id, ...(meta.uploading ? [meta.uploading] : [])),
+      announce: tx.seq,
+    }),
   );
   announce(row.id);
 }
@@ -734,6 +893,9 @@ function markChangedElsewhere(
 
 function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   const { fields, meta } = parseData(row.data);
+  // First: our own upload's Message-ID makes `isEcho` true too, but only this moves the base to the new message id.
+  if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(tx, w, row, meta, fields))
+    return advanceBase(tx, row, meta, w);
   if (isEcho(w, row, meta)) return;
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
   // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
@@ -751,7 +913,7 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   if (
     !w.removed &&
     known?.theirsMessageId === w.remoteMessageId &&
-    (known.complete === true || (known.theirs !== undefined && messageOf(w)?.html === undefined))
+    (known.complete === true || (known.theirs !== undefined && !completes(w)))
   )
     return;
   const clean =
@@ -761,11 +923,31 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     meta.fingerprint !== undefined &&
     (meta.cur ?? fingerprintOf(fields)) === meta.fingerprint;
   if (w.removed) return clean ? deleteRow(tx, row) : raise(tx, row, meta, fields, w, undefined);
-  const theirs = theirsFields(row.account_id, messageOf(w), fields);
-  // Without the body (metadata only) nothing is replaced silently: the owner chooses.
-  if (clean && theirs.complete) return replaceWithTheirs(tx, row, meta, theirs.fields, w);
+  const own = accountAddress(tx, row.account_id);
+  const theirs = theirsFields(row.account_id, messageOf(w), fields, own);
+  // Without the body (metadata only) nothing is replaced silently: the owner chooses. Nor when the copy cannot hold
+  // something this draft has (no Bcc by design, no sign-off source, and attachments the phone may have removed): a
+  // silent replace would drop or resurrect it, and the copy's own Bcc is not merged in either (a phone that removed one
+  // it added would be hidden). Nor when the copy was sent from another address: the sender is send-relevant.
+  if (
+    clean &&
+    theirs.complete &&
+    !holdsOnlyHere(fields) &&
+    !changesSender(theirs.fields, fields, own)
+  )
+    return replaceWithTheirs(tx, row, meta, theirs.fields, w);
   raise(tx, row, meta, fields, w, theirs);
 }
+
+/** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
+const holdsOnlyHere = (fields: DraftFields) =>
+  fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
+
+/** Does the copy go out under another sender than this draft does (its `from`, else the account's own address)? */
+const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | undefined) => {
+  const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
+  return then !== undefined && now !== undefined && !sameAddress(then, now);
+};
 
 /** A `remoteDraft` fact from the provider actor (D9). */
 export function applyRemoteDraft(write: { kind: string }, tx: CommitExtensionTx) {

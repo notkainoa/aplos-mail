@@ -58,7 +58,8 @@ export function applyStartRule(ctx: OutboxCtx, now = ctx.clock.now()): number {
 
 /**
  * At launch, an `uncertain` row that already showed its prompt gets one more round of checks: the search index or the
- * Sent sync may have caught up while Aplos was quit. Rows with a check already due are left alone.
+ * Sent sync may have caught up while Aplos was quit. Rows with a check already due are left alone, except that a due
+ * time more than one recheck away is pulled in (`pullInChecks`).
  */
 export function recheckUncertain(ctx: OutboxCtx): void {
   const now = ctx.clock.now();
@@ -72,6 +73,34 @@ export function recheckUncertain(ctx: OutboxCtx): void {
         ctx,
         { id: row.id, from: ['uncertain'], to: 'uncertain', set: { checkCount: 0, checkAt: now } },
         { was: 'uncertain', why: 'startRule' },
+      );
+    } catch (error) {
+      if (!(error instanceof SubmissionConflict)) throw error;
+    }
+  }
+  pullInChecks(ctx, now);
+}
+
+/**
+ * A pending check is never due more than one recheck (60 s) from now. A due time further away was set against a wall
+ * clock that has since moved back (a manual change, a bad NTP step, a restored VM): left alone, the second `findSent` of
+ * a send would wait out the difference, and the owner would not be asked for hours while the message may be lost. A due
+ * time in the past (the clock moved forward) is already prompt and is left alone. Only the due time moves; the count of
+ * checks done is kept, so the owner is still asked after the one remaining check. Runs at launch, on a wake and on every
+ * fire; a legitimate due time is at most `RECHECK_MS` ahead, so it never touches one.
+ */
+export function pullInChecks(ctx: OutboxCtx, now = ctx.clock.now()): void {
+  const rows = ctx.store.read(q =>
+    q.all<SubmissionRow>("SELECT * FROM submissions WHERE state = 'uncertain'"),
+  );
+  for (const row of rows) {
+    const checkAt = extraOf(row).checkAt;
+    if (checkAt === undefined || checkAt <= now + RECHECK_MS) continue;
+    try {
+      transition(
+        ctx,
+        { id: row.id, from: ['uncertain'], to: 'uncertain', set: { checkAt: now + RECHECK_MS } },
+        { was: 'uncertain', why: 'clockMoved' },
       );
     } catch (error) {
       if (!(error instanceof SubmissionConflict)) throw error;

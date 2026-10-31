@@ -27,7 +27,7 @@ import {
   needsUpload,
   parseData,
   readAnyRow,
-  remembered,
+  abandoned,
   readDraftRow,
   toDraft,
   type DraftMeta,
@@ -64,6 +64,8 @@ export interface DraftsDeps {
 interface RowlessRemoval {
   account: string;
   remoteDraftId: string;
+  /** The message id the copy was saved under: the provider deletes only a draft that still holds it. */
+  expectedMessageId?: string;
   at: number;
   attempts: number;
   busy: boolean;
@@ -210,21 +212,27 @@ function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internet
   return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
 }
 
+/** The fingerprint of the content an upload of this draft sends. */
+const uploadFingerprint = (meta: DraftMeta, fields: DraftFields) =>
+  meta.cur ?? fingerprintOf(fields);
+
 function uploadOf(
   row: UploadRow,
   fields: DraftFields,
   internetId: string,
   mime: Uint8Array,
+  earlier: string[],
 ): DraftUpload {
   const { meta } = parseData(row.data);
   const upload: DraftUpload = {
     draftId: row.id,
     revision: row.revision,
-    fingerprint: meta.cur ?? fingerprintOf(fields),
+    fingerprint: uploadFingerprint(meta, fields),
     internetId,
     mime,
   };
   if (row.remote_draft_id) upload.remoteDraftId = row.remote_draft_id;
+  else if (earlier.length) upload.supersedes = earlier;
   if (row.remote_message_id) upload.baseRemoteMessageId = row.remote_message_id;
   if (row.remote_change_key) upload.baseChangeKey = row.remote_change_key;
   const thread = fields.threadId?.startsWith(`${row.account_id}:`)
@@ -237,10 +245,22 @@ function uploadOf(
 /** `attempt` is the upload this answers: once a choice or a newer attempt replaced it, its answer is dropped. */
 function problemFor(ctx: DraftsCtx, row: UploadRow, message: string, attempt?: string) {
   const at = ctx.clock.now();
+  // Worked out from the row as it is now: `row` was read before the upload, and a fact may have adopted the copy since
+  // (then it has a remote draft and is not offered `supersedes`), or settled other ids.
+  const now = readUploadRow(ctx, row.id) ?? row;
+  const { meta } = parseData(now.data);
+  // A refused create may still have landed, and so may the attempt the row still names: their Message-IDs are kept like
+  // any given-up attempt's.
+  const running = meta.uploading ? [meta.uploading] : [];
+  const others =
+    attempt !== undefined && attempt !== meta.uploading?.internetId
+      ? [{ internetId: attempt }]
+      : [];
+  const kept = abandoned(meta, now.remote_draft_id, ...running, ...others);
   setMeta(
     ctx,
     row.id,
-    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null },
+    { problem: { reasonCode: 'draft.sync', message, at }, dueAt: null, uploading: null, ...kept },
     { ifRevision: row.revision, ...(attempt !== undefined ? { ifUploading: attempt } : {}) },
   );
 }
@@ -275,7 +295,7 @@ function refused(ctx: DraftsCtx, row: UploadRow, error: unknown, attempt: string
 function raiseConflict(
   ctx: DraftsCtx,
   row: UploadRow,
-  internetId: string,
+  upload: DraftUpload,
   result: DraftSaveResult,
 ) {
   const write: DraftWrite = {
@@ -283,10 +303,18 @@ function raiseConflict(
     op: 'conflict',
     id: row.id,
     revision: row.revision,
-    internetId,
+    internetId: upload.internetId,
     gone: result.kind === 'gone',
     ...(result.kind === 'conflict' && result.remoteMessageId !== undefined
       ? { remoteMessageId: result.remoteMessageId }
+      : {}),
+    // The writer adopts the copy a conflict names only on a create (the row has no remote draft) and only when the
+    // provider proved the copy carries this upload's Message-ID.
+    ...(result.kind === 'conflict' && result.remoteDraftId !== undefined
+      ? { remoteDraftId: result.remoteDraftId }
+      : {}),
+    ...(result.kind === 'conflict' && result.remoteInternetId !== undefined
+      ? { remoteInternetId: result.remoteInternetId }
       : {}),
     at: ctx.clock.now(),
   };
@@ -314,7 +342,8 @@ function recordSaved(
     at: ctx.clock.now(),
   };
   // The draft was discarded or sent while the upload ran: the copy it just made is nobody's, so it goes.
-  if (!tryCommit(ctx, write, upload.draftId)) queueRemoval(ctx, account, saved.remoteDraftId);
+  if (!tryCommit(ctx, write, upload.draftId))
+    queueRemoval(ctx, account, saved.remoteDraftId, saved.remoteMessageId);
 }
 
 async function syncDraft(ctx: DraftsCtx, id: string) {
@@ -343,19 +372,25 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   }
   // A first create nobody answered, then an edit: the new attempt takes the old one's place, and the old Message-ID is
   // kept so history reporting the copy it made is recognised as ours (no phantom draft).
-  const old =
-    meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading.internetId] : [];
+  const old = meta.uploading && meta.uploading.internetId !== internetId ? [meta.uploading] : [];
+  // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
+  const given = abandoned(meta, row.remote_draft_id, ...old);
+  const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
   const marked = setMeta(
     ctx,
     id,
     {
-      uploading: { internetId, revision: row.revision },
-      ...(old.length ? { wrote: remembered(meta, ...old) } : {}),
+      uploading: {
+        internetId,
+        revision: row.revision,
+        fingerprint: uploadFingerprint(meta, fields),
+      },
+      ...given,
     },
     { ifRevision: row.revision },
   );
   if (!marked) return;
-  const upload = uploadOf(row, fields, internetId, copy.mime);
+  const upload = uploadOf(row, fields, internetId, copy.mime, earlier);
   let result: DraftSaveResult;
   try {
     result = await ctx.port.save(row.account_id, upload);
@@ -364,17 +399,23 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   }
   if (result.kind === 'saved')
     return recordSaved(ctx, upload, result, row.account_id, copy.partial);
-  raiseConflict(ctx, row, internetId, result);
+  raiseConflict(ctx, row, upload, result);
 }
 
 // ---------------------------------------------------------------- remote copies
 
 /** Deletes the provider's copy of a draft that is gone here. */
-export function queueRemoval(ctx: DraftsCtx, account: string, remoteDraftId: string) {
+export function queueRemoval(
+  ctx: DraftsCtx,
+  account: string,
+  remoteDraftId: string,
+  expectedMessageId?: string,
+) {
   if (ctx.removals.has(remoteDraftId)) return;
   ctx.removals.set(remoteDraftId, {
     account,
     remoteDraftId,
+    ...(expectedMessageId !== undefined ? { expectedMessageId } : {}),
     at: ctx.clock.now(),
     attempts: 0,
     busy: false,
@@ -382,10 +423,17 @@ export function queueRemoval(ctx: DraftsCtx, account: string, remoteDraftId: str
   ctx.deadlines.changed('drafts');
 }
 
+/** `remove`, passing the expected message id only when one is known (otherwise the call is the old two-argument one). */
+function removeCopy(ctx: DraftsCtx, account: string, remoteDraftId: string, expected?: string) {
+  return expected === undefined
+    ? ctx.port.remove(account, remoteDraftId)
+    : ctx.port.remove(account, remoteDraftId, expected);
+}
+
 async function runRemoval(ctx: DraftsCtx, removal: RowlessRemoval) {
   removal.busy = true;
   try {
-    await ctx.port.remove(removal.account, removal.remoteDraftId);
+    await removeCopy(ctx, removal.account, removal.remoteDraftId, removal.expectedMessageId);
     ctx.removals.delete(removal.remoteDraftId);
   } catch (error) {
     removal.busy = false;
@@ -451,7 +499,14 @@ async function removeHidden(ctx: DraftsCtx, id: string) {
   // are one entity (JMAP) deleting it would delete the sent message.
   if (row.remote_draft_id !== null && !consumedBySend(ctx, id)) {
     try {
-      await ctx.port.remove(row.account_id, row.remote_draft_id);
+      // The copy this device last wrote or adopted: if the draft holds another message id (a phone edit, or a sent
+      // message) the provider leaves it alone and the hidden row still ends.
+      await removeCopy(
+        ctx,
+        row.account_id,
+        row.remote_draft_id,
+        row.remote_message_id ?? undefined,
+      );
     } catch (error) {
       return removalRefused(ctx, row, meta, error);
     }

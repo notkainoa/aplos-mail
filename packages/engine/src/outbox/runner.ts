@@ -14,9 +14,11 @@ import {
   UNRETRYABLE,
   type OutboxCtx,
 } from './context';
-import { applyStartRule, checkSent, lostSending } from './start';
+import { KP, killpoint } from './killpoints';
+import { applyStartRule, checkSent, lostSending, pullInChecks } from './start';
 import {
   extraOf,
+  hadAttempt,
   readSubmission,
   SubmissionConflict,
   type SubmissionProblem,
@@ -120,7 +122,12 @@ function problemOf(error: ClassifiedError, now: number): SubmissionProblem {
   return { reasonCode: 'net.offline', message: OFFLINE_COPY, at: now };
 }
 
-/** The payload: the pinned MIME, plus the remote draft only when its synced copy is provably this revision (FR-7). */
+/**
+ * The payload: the pinned MIME, plus the remote draft only when this is the FIRST attempt and its synced copy is
+ * provably this revision (FR-7). `row` is read before the `sending` marker, so `hadAttempt(row)` is true only for an
+ * earlier attempt (Send anyway, Retry, a requeue): that one may have consumed the remote draft (`drafts.send` moves it
+ * to Sent), so a later attempt never names it and sends the pinned MIME under the same Message-ID.
+ */
 function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): SubmissionPayload {
   const meta = extraOf(row);
   const payload: SubmissionPayload = {
@@ -130,6 +137,7 @@ function payloadOf(ctx: OutboxCtx, row: SubmissionRow, mime: Uint8Array): Submis
     envelope: meta.envelope,
   };
   if (meta.remoteThreadId) payload.remoteThreadId = meta.remoteThreadId;
+  if (hadAttempt(row)) return payload;
   const draft = ctx.store.read(q =>
     q.get<{
       remote_draft_id: string | null;
@@ -328,9 +336,16 @@ async function sendOne(ctx: OutboxCtx, due: DueSubmission) {
   const payload = payloadOf(ctx, row, row.mime);
   ctx.inflight.add(row.id);
   try {
+    if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__)
+      killpoint(KP.BEFORE_MARKER);
     if (!commitMarker(ctx, row, attemptAt)) return;
+    if (typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__)
+      killpoint(KP.AFTER_MARKER);
     const a: Attempt = { row, waiting: due.state, attemptAt, started: ctx.clock.now() };
-    await settle(ctx, a, await deliver(ctx, row, payload));
+    const outcome = await deliver(ctx, row, payload);
+    if ((typeof __APLOS_TEST_MODE__ === 'undefined' || __APLOS_TEST_MODE__) && outcome.ok)
+      killpoint(KP.AFTER_ACCEPT);
+    await settle(ctx, a, outcome);
   } finally {
     ctx.inflight.delete(row.id);
   }
@@ -445,6 +460,7 @@ function startSends(ctx: OutboxCtx, due: DueSubmission[], now: number) {
 /** The deadline source's `fire`. */
 export async function fireOutbox(ctx: OutboxCtx, now: number): Promise<void> {
   if (lostSending(ctx).length) applyStartRule(ctx, now);
+  pullInChecks(ctx, now);
   const { due, overdue } = ctx.store.read(q => dueSubmissions(q, now));
   for (const row of overdue) suspend(ctx, row, now);
   startChecks(ctx, now);

@@ -1,40 +1,31 @@
-# Integrator handoff (paused 2026-10-28 20:05 UTC)
+# Integrator handoff (rewritten 2026-10-31 ~08:30 local, updated ~10:00 by integrator-3; replaces all earlier ones)
 
-Old thread: `mcp:6116799a-5bed-4b61-a845-873061513d92` (71 runs, snoozed). Read-only. The new thread works event-driven (roadmap 5.1a): no sweeps, Sonnet by default, Opus only for contract/security merge judgement.
+Old threads (never wake): `mcp:6116799a-5bed-4b61-a845-873061513d92` and the thread this file came from (context past 340k average: a fresh lean thread continues). Routing is roadmap 5.1a: Sonnet default for reviews, Opus ONLY for contract, send guard, vault, SSRF/sanitizer, auth/tokens, store commit path, sync correctness and draft data-loss code, Devin SWE-2 (`delegate_task`, providerInstanceId `acpRegistry_devin`, model `swe-2-high`) for well-specified non-UI volume work; name a model on every subagent, at most 4 concurrent. Never merge to main, publish, send mail, change visibility or rotate credentials; headless only.
 
-## Lane state
+## State of revamp
 
-| Worktree | Branch | HEAD | State |
-|---|---|---|---|
-| `rv-thread-integrator` | `rv/thread/integrator` | merged with `origin/revamp` e6b97cf | clean; this file is its only new content |
-| `rv-integrator-freeze` | `integrator/f9-merge` (local only) | aed3782 | clean. Same SHA as #44's head `rv/ui-foundation/f9`; the merge of revamp into #44 (STATUS.md conflict, revamp's file taken). Disposable |
-| `rv-integrator-check` | `rv/plat-release/integrator-check-40` (local only) | d9c6d67 | clean. #40 head 0dd8be1 merged with revamp for a check; result not recorded. Disposable, redo the check from the PR |
+`contract-v1` (tag 9544e97) is FROZEN; only additive/optional changes within v:1 via eng-contract PRs I review with Opus. About 150 PRs merged. Since the 10-30 handoff: #123 (hill-climb per-worktree node_modules, after 3 review rounds), #124/#131/#137/#133/#145/#146 (send kill-point harness, release-grep, restart test), #125 (release builds minify syntax), #134/#143/#148/#155 (image proxy + SSRF classifier, hardening, test nits), #127/#140 (lease), #129/#139/#152 (Gmail send transport, findSent fallback that answers "absent" only for a provably complete listing), #136/#151 (Gmail drafts API; deletes OFF by default), #138 (List-Unsubscribe executor), #142 (UnsubscribePort seam), #147/#150/#154 (notification outbox, host claim loop, retry timer), #149/#163 (docs), #153/#157/#159/#160/#161/#162/#164 (the DRAFT PORT SERIES, below), #132/#135 (vault), #122/#126/#130 (UI scorers).
 
-No uncommitted work in any of the three, so no `wip-pause-1028` branch was needed.
+DRAFT PORT SERIES (nine Opus rounds on #153 alone): remove/deleteDraft carry the expected message id; create-path conflict carries remoteDraftId/remoteInternetId adopted only on exact Message-ID equality; remote draft bodies are delivered with a `message`; a copy counts as COMPLETE only when a closed-world field list (DRAFT_CONTENT_FIELDS, checked by `satisfies` and a runtime test) shows every field; running-upload proof is by content fingerprint; Bcc/signature/attachment/From holders raise a conflict instead of being replaced; take-theirs never restores a removed attachment; `earlier`/`supersedes` ids (max 5) clear on any answer; `adoptCopy` adopts only PROVEN-ours copies (#164, per-id fingerprints); inline parts / `cid:` make a copy incomplete (#162, linear regex, timing test); BINDING sender comparison (#161). Engine bundle 391,352/400,000 B; budget stays 400,000 (ask the owner for 450,000 only if needed). Provider draft sync is NOT wired yet (nothing wires DraftSyncPort).
 
-## Open PRs into `revamp` (all MERGEABLE; no CI check results posted yet)
+## Open
 
-| PR | Head | What it is | Blocker |
-|---|---|---|---|
-| #44 | aed3782 | ui-core F9 freeze artifacts + contract swap + ui-shell base (last freeze item) | integrator check was queued, never finished. On green: merge, tag `contract-v1`, post FROZEN (none posted yet) |
-| #43 | 40735c4 | eng-host quit-race fix | not checked |
-| #45 | 1029150 | plat-ci `test:engine` under Electron Node, SQLite floor check | not checked |
-| #46 | 3e77eed | eng-contract runtime seam (contract-1); lane PRs after it carry squashed Phase 0 commits, so squash | not checked |
-| #47 | 37df8f5 | eng-ai Home lanes | not checked; free-model code needs a Claude review |
-| #40 | 0dd8be1 | plat-release Q2 hardening | security area: Opus final review; platform has review fixes pending |
-| #38 | f302415 | prov-emu live-run guard (send-to-self) | security area: Opus review; RESUME says needs its review fixes |
+- Merged since this file was written, on local checks only (GitHub Actions is down: billing; the local full check is the merge gate): #165 (engine self-test), #166 (budget rows), #167 (eng-host host-1 window lifecycle). Nothing else is open except the items below.
 
-## Next 5 actions, in order
+- #156 (providers, Gmail drafts adapter, base revamp, head 119c98bf): Opus final review = FIX, one MEDIUM: a draft with two To/Cc (or From/Subject) headers is read first-match-only and delivered as a complete body: deliver NO body when any appears more than once, plus a test; optional lows in my 23:30 REQUEST. On a new head: check-multi + a short Opus re-check of the fix diff, merge head-guarded. The #156 body-with-`message` fix is already in it.
+- #158 (providers, base rv/prov-gmail-write/draft-ports, e57f9d56): CLOSE as superseded once #156 merges; the Gmail create lookup honouring `DraftUpload.supersedes` (PORT GAP 2) becomes a NEW small PR on revamp (recorded-hash decision: in-memory record, conflict fallback after a restart, accepted).
+- Engine low follow-ups with the wiring (STATUS 05:10): `holders` check when remote ids differ, drop an unproven copy's id from `earlier`, require `hasAttachments === false` / adapters always report attachments.
+- THEN: engine wires draft sync; I run the end-to-end Opus review of the wired path (mine, not started).
+- Owner: feature 4 (ui-reader) READY-FOR-OWNER posted 2026-10-31 20:30 by ui-core (3 decisions); weekly Gmail reconnect Mon 2026-11-02 (days 7/14/21); Vercel production-branch check still unanswered; no live Gmail run requested yet (follow plans/LIVE-RUNS.md, tier R first). Daily digest 08:00 (`scheduled-task:1c252312-eb43-405b-a4da-15163f3e17cb`), next one day 6.
 
-1. Run the integrator check on #44 at head (merge with revamp, `npm run check`, owners check, conformance on the stand-in engine). If red, STATUS REQUEST to ui-core. If green: squash-merge, tag `contract-v1` on the merge commit, append FROZEN to `plans/STATUS.md` straight on `revamp`.
-2. Merge #43, #45, #46, #47 one at a time in that order (critical lane #46 may go first), each: owners check, `npm run check`, a Sonnet review for non-Claude code, evidence on the PR, squash. Re-merge revamp into the next one after each merge.
-3. #40: Opus review of the hardening diff, then merge after platform's fixes. #38: only after its guard fixes and an Opus review of the send and live-run guard.
-4. Re-enable the 08:00 daily digest (max 10 plain sentences, plus one `plans/tools/token-report.py` line). Use `sh plans/tools/watch.sh`, not polling.
-5. Check STATUS for MERGED entries without earlier READY-FOR-OWNER and APPROVED; revert and tell the thread if missing. Feature 14 (website) is owner-approved: web lane merges its own PR, then you verify.
+## How I check a PR
 
-## Gotchas
+Two check worktrees under `/Users/knewton/.t3/worktrees/aplos-mail/`: `rv-integrator-check` (scripts `~/.cache/aplos-integrator/check-multi.sh <pr> <branch-lane> <sha> <acting-lanes,> <approved-lanes,>`) and `rv-integrator-check2` (`check-multi2.sh`; locks `/tmp/aplos-integrator/check.lock`, `check2.lock`). Results `/tmp/aplos-integrator/pr<N>.txt` (merge/install/steps/owners/build) plus `pr<N>-<step>.log`. Start with plain `nohup sh ... &` (macOS has NO setsid), ONE chain per worktree, wait with `timeout 590 bash -c 'until grep -q "^build=\|^stopped" file; do sleep 20; done'`. If a worktree vanished: `git worktree prune; git worktree add --detach <abs path> origin/revamp`. A load flake (calendar fuzz oracle hang, redirect/port-probe tests) is rerun once solo; report it to the owning lane. Squash merge ONLY head-guarded: `[ "$(gh pr view N --json headRefOid --jq .headRefOid)" = "$H" ] && gh pr merge N --squash --subject ... --body ...` then verify `gh pr view N --json state` BEFORE posting MERGED; never re-run a refused merge without re-reading the head. Squash-merged stacked PRs conflict afterwards: merge revamp into the branch in a scratch worktree with an ABSOLUTE guarded path (`case "$W" in <exact path>) ;; *) exit 1;; esac` before any rm/remove), strip markers with Python and verify `grep -c '^<<<<<<<'` is 0; where revamp already holds the branch's content take `--ours`. NEVER `rm -rf` a path built from an unquoted zsh variable (zsh does not word-split: `set -- $x` fails; I once deleted 69 worktree folders this way). Owners step: add rows to plans/OWNERS.md myself; cross-lane approvals via `--approved` / `lane-approved:<lane>` labels.
 
-- Never merge to main. Never merge PR #21. Never force-push.
-- Contract, `ports.ts`, migrations, `methods/index.ts` PRs from outside eng-contract/eng-store are refused.
-- Platform REQUEST: eng-host test mode should quit on SIGTERM within seconds (open, with eng-host).
-- Lane card: `plans/lanes/integrator-merge.md` (PR from `rv/lanes/integrator-cards`).
+## STATUS line format (queue.mjs parses it)
+
+`YYYY-MM-DD HH:MM | integrator | TYPE | <lane or -> | text`, TYPE in MERGED, REQUEST, NOTICE, DECIDED, PARKED, HANDOFF-READY, SLIP (REQUEST/NOTICE text starts `to <thread>:`). Many of my lines since 10-30 omitted the pipes (queue.mjs reports them "malformed"): use the pipe form from now on. Pull first (`git pull --no-rebase origin revamp`), commit with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`, push `HEAD:revamp`; STATUS.md append conflicts: keep both sides. Settle the thread (`t3_thread_organize settle`) when parked, unsettle when new work arrives.
+
+## Review pattern that worked
+
+Opus on draft/send/vault/SSRF/contract diffs with a BRIEF listing the previous findings and "try to break it"; write REQUESTs with file:line, scenario and fix; stop my check when the verdict is FIX (it cannot merge); judge finding-by-finding whether a round-N finding is in code the PR introduced (block) or pre-existing (record as BINDING in DECISIONS, to fix before the wiring).

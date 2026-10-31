@@ -20,6 +20,10 @@ export const DRAFT_REMOVE_GRACE_MS = 600_000;
 export const DRAFT_REMOVE_MAX_MS = 3_600_000;
 /** A removal the provider refuses for good is asked again this much later. */
 export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
+/** How many unanswered creates a draft offers as `supersedes`. */
+const EARLIER_KEEP = 5;
+/** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
+export const REMOTE_BODY_MAX = 1_000_000;
 /** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
 const WROTE_KEEP = 20;
 
@@ -48,10 +52,26 @@ export interface DraftMeta {
   fingerprint?: string;
   /** When the next upload is due (5 s after the last change, at once on close, or a retry). Absent: nothing to upload. */
   dueAt?: number;
-  /** An upload of this revision under this per-revision Message-ID started and has no result yet. */
-  uploading?: { internetId: string; revision: number };
+  /**
+   * An upload of this revision under this per-revision Message-ID started and has no result yet. `fingerprint` names the
+   * content it sends: a fact is that upload's echo only when its own content has this fingerprint (a Message-ID alone
+   * proves nothing, and a row written before this field has none, so it proves nothing either).
+   */
+  uploading?: { internetId: string; revision: number; fingerprint?: string };
   /** Message-IDs and remote message ids this device uploaded: their echo in history is not a remote edit. */
   wrote?: string[];
+  /**
+   * Message-IDs of earlier creates of this draft that were never answered (a new revision replaced the attempt). The next
+   * create offers them as `DraftUpload.supersedes`, so a provider that finds one of those copies replaces it instead of
+   * leaving a second remote draft. Cleared when a create is answered.
+   */
+  earlier?: string[];
+  /**
+   * The content fingerprint of each attempt that is no longer running, by its Message-ID (the newest few). A copy that
+   * history reports under one of those Message-IDs is adopted as this draft's own only if its content has the matching
+   * fingerprint: a Message-ID alone proves nothing (providers keep it across edits).
+   */
+  prints?: Record<string, string>;
   problem?: { reasonCode: string; message: string; at: number };
   conflict?: DraftConflictState;
   /** How many other-device versions were seen (`Draft.conflict.theirsRevision`). */
@@ -129,6 +149,37 @@ export function patched(meta: DraftMeta, patch: MetaPatch): DraftMeta {
   }
   return next as unknown as DraftMeta;
 }
+
+/**
+ * Message-IDs of attempts given up on (replaced by a newer revision, or refused): remembered as ours so history
+ * reporting their copy is recognised, and, while the draft has no remote copy, offered as `supersedes` by the next create.
+ */
+export function abandoned(
+  meta: DraftMeta,
+  remoteDraftId: string | null,
+  ...attempts: { internetId: string; fingerprint?: string }[]
+) {
+  if (!attempts.length) return {};
+  const ids = attempts.map(a => a.internetId);
+  const wrote = remembered(meta, ...ids);
+  const prints = withPrints(meta, ...attempts);
+  // `earlier`: the unanswered creates' Message-IDs to offer as `supersedes` (the newest few; every revision has its own).
+  return remoteDraftId === null
+    ? { wrote, prints, earlier: [...(meta.earlier ?? []), ...ids].slice(-EARLIER_KEEP) }
+    : { wrote, prints };
+}
+
+/** `meta.prints` with these attempts' fingerprints added, newest last, at most `EARLIER_KEEP`. */
+export const withPrints = (
+  meta: DraftMeta,
+  ...attempts: { internetId: string; fingerprint?: string }[]
+) =>
+  Object.fromEntries(
+    [
+      ...Object.entries(meta.prints ?? {}),
+      ...attempts.flatMap(a => (a.fingerprint ? [[a.internetId, a.fingerprint] as const] : [])),
+    ].slice(-EARLIER_KEEP),
+  );
 
 /** Keeps the newest ids only. */
 export function remembered(meta: DraftMeta, ...ids: string[]): string[] {
@@ -235,7 +286,59 @@ export function readAnyRow(q: Pick<StoreReader, 'get'>, id: string): DraftRow | 
   return q.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
 }
 
-/** Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. */
+/** Did the copy bring a usable body, with no attachment and no inline reference (none of those are delivered)? */
+const isComplete = (message: { html?: string; hasAttachments?: boolean }) =>
+  message.html !== undefined && message.hasAttachments !== true && !hasInlineRef(message.html);
+
+/**
+ * Does this body point at an inline part (`cid:` as a `src`, `srcset`, `href`, `background` or `data` value or in `url()`, after decoding character references, or Outlook's `[cid:` placeholder in text; the words "CID: 4471" or a link's `?cid:1` do not count)? The copy's inline images are not delivered, so a draft built from it
+ * would show broken references and a replace would drop this device's own inline image: such a copy is not complete.
+ */
+export const hasInlineRef = (html: string) => {
+  const text = decodeEntities(html);
+  return (
+    // One `\s*` before the optional quote and one after it, never two around it: a run of spaces would backtrack
+    // quadratically on hostile mail (10k spaces 0.2 s, 100k 22 s).
+    /(?:\b(?:src|href|background|data)\s*=|url\()\s*(?:["']\s*)?cid:/i.test(text) ||
+    /\bsrcset\s*=\s*["'][^"']*\bcid:/i.test(text) ||
+    /\[cid:/i.test(text)
+  );
+};
+
+const NAMED_CHARS: Record<string, string> = { quot: '"', apos: "'", amp: '&', lt: '<', gt: '>' };
+
+/** One pass of character-reference decoding, as a browser does for attribute values (`&quot;`, `&#39;`, `&#x63;`). */
+function decodeEntities(html: string) {
+  return html.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (whole, name: string) => {
+    if (name[0] !== '#') return NAMED_CHARS[name.toLowerCase()] ?? whole;
+    const code =
+      name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
+}
+
+/**
+ * The explicit `from` of a draft built from a remote copy, or none (it goes out from the account's own address). The
+ * copy's sender is compared with the one the draft goes out under (`mine`, else `own`): another sender is taken from the
+ * copy, unless it is the account's own address (the absence of an explicit `from`); the same sender keeps the draft's
+ * `from`, with the copy's display name when it has one.
+ */
+function copySender(
+  named: Address | undefined,
+  mine: Address | undefined,
+  own: string | undefined,
+) {
+  const now = mine?.address ?? own;
+  if (named !== undefined && now !== undefined && !sameAddress(named.address, now))
+    return own !== undefined && sameAddress(named.address, own) ? undefined : named;
+  return mine === undefined || named?.name === undefined ? mine : { ...mine, name: named.name };
+}
+
+/**
+ * Fields from a remote draft's metadata. `html` is the snippet until the provider delivers the body. The draft is
+ * complete when the body came and the copy has no attachments: attachments are not delivered, so an edit in place would
+ * upload `attachments: []` over the other device's draft.
+ */
 export function theirsFields(
   accountId: string,
   message: {
@@ -245,8 +348,15 @@ export function theirsFields(
     subject?: string;
     snippet?: string;
     html?: string;
+    hasAttachments?: boolean;
+    from?: Address;
   } = {},
   base?: DraftFields,
+  /**
+   * The account's own address. The copy's sender is compared with the one this draft goes out under (`base.from`, else
+   * `own`): another sender is taken from the copy, the same one keeps the draft's `from` (with the copy's display name).
+   */
+  own?: string,
 ): { fields: DraftFields; complete: boolean } {
   const escaped = (message.snippet ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const fields: DraftFields = {
@@ -257,21 +367,58 @@ export function theirsFields(
     bcc: message.bcc ?? [],
     subject: message.subject ?? '',
     html: message.html ?? `<p>${escaped}</p>`,
-    attachments: base?.attachments ?? [],
+    // A copy that says it has no attachments has none: a file this device had and the phone removed must not come back.
+    attachments: message.hasAttachments === true ? (base?.attachments ?? []) : [],
     signature: base?.signature ?? false,
   };
   if (base?.threadId !== undefined) fields.threadId = base.threadId;
   if (base?.replyToMessageId !== undefined) fields.replyToMessageId = base.replyToMessageId;
-  if (base?.from !== undefined) fields.from = base.from;
-  return { fields, complete: message.html !== undefined };
+  const from = copySender(message.from, base?.from, own);
+  if (from !== undefined) fields.from = from;
+  return { fields, complete: isComplete(message) };
 }
+
+/**
+ * How a remote copy relates to each content field of a draft, in ONE place. A copy is taken as this device's own upload
+ * (a fingerprint proof) only when it SHOWS every `shown` field, and every `notShown` field is empty on this device: a
+ * field the copy cannot show would be filled in from the local draft and make a foreign edit of it look like ours.
+ * Checked against `DraftFields` by the compiler, so a new draft field does not compile until it is classified here; a
+ * test pins the same lists against the contract's schema.
+ *   - `shown`: the copy carries it and the comparison reads it (`to`, `cc`, `bcc` when the provider can show it,
+ *     `subject`, `html`, and `from`, which must be the account's own address).
+ *   - `carried`: the draft's identity (account, mode, thread, reply target); a provider edit cannot change it.
+ *   - `notShown`: the copy cannot show it (attachments, sign-off): no proof unless it is empty here.
+ */
+export const DRAFT_CONTENT_FIELDS = {
+  carried: ['accountId', 'mode', 'threadId', 'replyToMessageId'],
+  shown: ['from', 'to', 'cc', 'bcc', 'subject', 'html'],
+  notShown: ['attachments', 'signature', 'signatureSource'],
+} as const;
+
+/** The fields a copy must show to count as this device's upload. */
+export type ShownField = (typeof DRAFT_CONTENT_FIELDS.shown)[number];
+
+// Closed world, checked by the compiler: every `DraftFields` key is in exactly one list, and the lists name no other key.
+type Classified = (typeof DRAFT_CONTENT_FIELDS)[keyof typeof DRAFT_CONTENT_FIELDS][number];
+const _complete: [
+  Exclude<keyof DraftFields, Classified>,
+  Exclude<Classified, keyof DraftFields>,
+] extends [never, never]
+  ? true
+  : never = true;
+
+/** The same mailbox, ignoring case and surrounding space. */
+export const sameAddress = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
  * Did these fields keep something from this device's draft that the other copy does not hold? `theirsFields` carries the
  * attachments and the sign-off over, and a provider's metadata has neither, so such a copy is not the draft.
  */
-export function keepsMine(fields: Pick<DraftFields, 'attachments' | 'signature'>): boolean {
-  return fields.attachments.length > 0 || fields.signature;
+export function keepsMine(
+  fields: Pick<DraftFields, 'attachments' | 'signature'> & { signatureSource?: unknown },
+): boolean {
+  return fields.attachments.length > 0 || fields.signature || fields.signatureSource !== undefined;
 }
 
 // ---------------------------------------------------------------- announcements

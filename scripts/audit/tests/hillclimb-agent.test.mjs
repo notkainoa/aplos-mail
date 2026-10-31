@@ -165,9 +165,27 @@ describe('agentEnv/evalEnv allow-lists', () => {
     assert.deepEqual(Object.keys(agent).sort(), expected.sort());
   });
 
-  it('evalEnv keeps the common names and nothing agent-only', () => {
-    assert.deepEqual(Object.keys(evald).sort(), COMMON.sort());
+  it('evalEnv keeps the common names and nothing agent-only, plus the harness-set SCORER_ISOLATED=1', () => {
+    assert.deepEqual(Object.keys(evald).sort(), [...COMMON, 'SCORER_ISOLATED'].sort());
+    assert.equal(evald.SCORER_ISOLATED, '1');
     for (const name of AGENT_ONLY) assert.ok(!(name in evald), `${name} must be dropped`);
+  });
+
+  it('SCORER_ISOLATED is set by the harness, never inherited, and UI scorers get no APLOS_VISUAL_PORT', () => {
+    const hostile = { ...env, SCORER_ISOLATED: '0', APLOS_VISUAL_PORT: '5173' };
+    assert.equal(
+      evalEnv(hostile).SCORER_ISOLATED,
+      '1',
+      'an inherited value cannot switch isolation off',
+    );
+    assert.ok(
+      !('APLOS_VISUAL_PORT' in evalEnv(hostile)),
+      'the visual port must not reach a scorer',
+    );
+    assert.ok(
+      !('SCORER_ISOLATED' in agentEnv(hostile)),
+      'agents do not run scorers and get neither value',
+    );
   });
 
   it('drops prefix-shaped secrets and injection vectors in both', () => {

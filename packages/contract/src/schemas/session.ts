@@ -301,7 +301,10 @@ export function parseDiagnosticsBundle(value: unknown): DiagnosticsBundle {
 }
 export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundle>;
 
-/** A notification main posts for the engine (ARCH 7.6): durable, claimed once, never duplicated by a crash. */
+/**
+ * A notification main posts for the engine (ARCH 7.6): durable and delivered at least once. `id` is stable, so a repost
+ * after a crash or an expired claim lease replaces the banner instead of stacking a second one.
+ */
 export const NotificationItem = z.object({
   id: Id,
   kind: openEnum(['mail', 'reminder', 'later', 'send']),
