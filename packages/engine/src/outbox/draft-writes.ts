@@ -599,7 +599,12 @@ function remoteThreadId(w: RemoteDraftWrite) {
 }
 
 function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
-  const { fields, complete } = theirsFields(w.accountId, messageOf(w));
+  const { fields, complete } = theirsFields(
+    w.accountId,
+    messageOf(w),
+    undefined,
+    accountAddress(tx, w.accountId),
+  );
   const thread = remoteThreadId(w);
   if (thread !== undefined) fields.threadId = thread;
   const fp = fingerprintOf(fields);
@@ -784,7 +789,12 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for.
   if (same && !(meta.incomplete && completes(w))) return;
-  const { fields, complete } = theirsFields(row.account_id, messageOf(w), base);
+  const { fields, complete } = theirsFields(
+    row.account_id,
+    messageOf(w),
+    base,
+    accountAddress(tx, row.account_id),
+  );
   const fp = fingerprintOf(fields);
   // Their copy's Message-ID, or none: the previous copy's id does not name a newer one.
   const internetId = w.internetId ?? (same ? row.remote_internet_id : null);

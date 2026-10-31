@@ -439,6 +439,45 @@ test('take-theirs path: a draft with my attachment is not replaced silently (the
     assert.ok(d.conflict, 'the owner is asked');
   }));
 
+test('take-theirs path: after an attachment-removal conflict, take theirs does not bring the removed file back', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, { attachments: WITH_FILE });
+    assert.ok(read(w, s.draft.id).conflict);
+    service(w).resolve(next(), s.draft.id, 'takeTheirs');
+    const d = read(w, s.draft.id);
+    assert.equal(d.html, '<p>Phone wrote this</p>');
+    assert.deepEqual(d.attachments, [], 'the phone removed it');
+  }));
+
+test('a draft started on the phone from an alias keeps that sender (so a send refuses loudly), also when refreshed', () =>
+  world(async w => {
+    const alias = { address: 'alias@mail.example' };
+    fact(w, 'rd-phone', 'pm-1', {
+      from: alias,
+      html: '<p>One</p>',
+      internetId: '<p1@phone.example>',
+    });
+    const id = `${ACCOUNT}:rd-phone`;
+    assert.equal(read(w, id).from?.address, 'alias@mail.example');
+    fact(w, 'rd-phone', 'pm-2', {
+      from: alias,
+      html: '<p>Two</p>',
+      internetId: '<p2@phone.example>',
+    });
+    assert.equal(read(w, id).html, '<p>Two</p>');
+    assert.equal(
+      read(w, id).from?.address,
+      'alias@mail.example',
+      'still the alias after the refresh',
+    );
+  }));
+
+test('a draft started on the phone from the account address has no explicit sender', () =>
+  world(async w => {
+    fact(w, 'rd-own', 'pm-1', { html: '<p>One</p>', internetId: '<o1@phone.example>' });
+    assert.equal(read(w, `${ACCOUNT}:rd-own`).from, undefined);
+  }));
+
 test('take-theirs path: a phone edit that changes the sender is a conflict, and the copy shows its sender', () =>
   world(async w => {
     const s = await phoneEditsTextOf(w, {}, { from: { address: 'alias@mail.example' } });
