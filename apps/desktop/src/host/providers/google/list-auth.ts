@@ -51,15 +51,18 @@ export interface DkimSignature {
 
 // ---- Authentication-Results (RFC 8601) ----
 
-/** The index after a `( ... )` comment starting at `start`, or -1 when it is unterminated or nested too deep. */
+/** The index after a `( ... )` comment starting at `start`, or -1 when it is unterminated, nested too deep or holds a `;`. */
 function skipComment(text: string, start: number): number {
   let depth = 0;
   for (let i = start; i < text.length; i++) {
     const c = text[i];
     if (c === '\\') {
       i++;
+      if (text[i] === ';') return -1;
       continue;
     }
+    // A `;` inside a comment would let sender text echoed into the header hide the results around it.
+    if (c === ';') return -1;
     if (c === '(') depth++;
     else if (c === ')') depth--;
     if (depth > LIST_AUTH_LIMITS.maxCommentDepth) return -1;
@@ -74,8 +77,11 @@ function readQuoted(text: string, start: number): { value: string; end: number }
   for (let i = start + 1; i < text.length; i++) {
     const c = text[i];
     if (c === '"') return { value, end: i + 1 };
+    // Same for a quoted string: Google writes neither with a `;`, a sender could.
+    if (c === ';') return null;
     if (c === '\\') {
       i++;
+      if (text[i] === ';') return null;
       value += text[i] ?? '';
     } else value += c;
   }

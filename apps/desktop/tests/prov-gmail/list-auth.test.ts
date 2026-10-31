@@ -90,7 +90,7 @@ test('strict alignment, header.d instead of header.i, and an unrelated second si
 test('comments, quoting and folded whitespace in the A-R and in b= and h= are read as RFC 8601 and 6376 allow', () => {
   const results = [
     ar(
-      'dkim = pass (good (nested) signature; really) reason="ok; fine"\r\n\theader.i="@example.com"' +
+      'dkim = pass (good (nested) signature, really) reason="ok, fine"\r\n\theader.i="@example.com"' +
         ' header.s=s1 header.b="AbCdEf12"',
       'mx.google.com 1 (Google (mail))',
     ),
@@ -251,6 +251,22 @@ test('a ( glued to a value would hide Google’s fail in a comment: the header i
   assert.equal(verdict(newsletter({ ...BANK, results })), false);
   const quoted = [ar('dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA"x; spf=pass')];
   assert.equal(verdict(newsletter({ ...BANK, results: quoted })), false);
+});
+
+test('an opener right after = cannot swallow Google’s own header.b and spf result: no ; inside a comment or quote', () => {
+  // Forged `s=(` or `s="` plus a crafted envelope sender in the SPF comment: the comment or quote runs across the `;`
+  // between results, so the real fail loses its b= and the injected pass appears before any spf result.
+  const comment =
+    'dkim=fail header.i=@bank.example header.s=( header.b=AAAAAAAA; spf=pass (google.com: domain of x)) s2 header.b=ZZZZZZZZ; ' +
+    'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dmarc=pass header.from=bank.example';
+  const quote =
+    'dkim=fail header.i=@bank.example header.s=" header.b=AAAAAAAA; spf=pass (google.com: domain of x" header.b=ZZZZZZZZ; ' +
+    'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dmarc=pass header.from=bank.example';
+  const escaped =
+    'dkim=fail header.i=@bank.example header.s=( header.b=AAAAAAAA\\; spf=pass (google.com: domain of x)) s2 header.b=ZZZZZZZZ; ' +
+    'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; dmarc=pass header.from=bank.example';
+  for (const results of [comment, quote, escaped])
+    assert.equal(verdict(newsletter({ ...BANK, results: [ar(results)] })), false, results);
 });
 
 test('a failed dkim for another domain or another signature does not hide a good pass', () => {
