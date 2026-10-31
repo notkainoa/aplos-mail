@@ -948,7 +948,12 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   // something this draft has (no Bcc by design, no sign-off source, and attachments the phone may have removed): a
   // silent replace would drop or resurrect it, and the copy's own Bcc is not merged in either (a phone that removed one
   // it added would be hidden). Nor when the copy was sent from another address: the sender is send-relevant.
-  if (clean && theirs.complete && !holdsOnlyHere(fields) && !changesSender(theirs.fields, own))
+  if (
+    clean &&
+    theirs.complete &&
+    !holdsOnlyHere(fields) &&
+    !changesSender(theirs.fields, fields, own)
+  )
     return replaceWithTheirs(tx, row, meta, theirs.fields, w);
   raise(tx, row, meta, fields, w, theirs);
 }
@@ -957,9 +962,11 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
 const holdsOnlyHere = (fields: DraftFields) =>
   fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
 
-/** Does the copy name a sender other than the account's own address? */
-const changesSender = (theirs: DraftFields, own: string | undefined) =>
-  theirs.from !== undefined && own !== undefined && !sameAddress(theirs.from.address, own);
+/** Does the copy go out under another sender than this draft does (its `from`, else the account's own address)? */
+const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | undefined) => {
+  const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
+  return then !== undefined && now !== undefined && !sameAddress(then, now);
+};
 
 const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
   tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
