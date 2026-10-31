@@ -230,16 +230,27 @@ async function listDraftIds(
   return { ids, more: Boolean(page.nextPageToken) };
 }
 
-/** The first of `ids` that is a draft holding one of `internetIds`; a hit that vanished before it could be read is reported. */
+/**
+ * The drafts one create has already read (`drafts.get`, metadata), by draft id. A later lookup of the same create
+ * checks these copies against its own Message-IDs instead of reading them again; nothing is kept between creates.
+ */
+type DraftReads = Map<string, RemoteCopy>;
+
+/**
+ * The first of `ids` that is a draft holding one of `internetIds`; a hit that vanished before it could be read is
+ * reported. A draft in `reads` is not read again (its copy is checked); a copy read here is added to it.
+ */
 async function verifyDrafts(
   client: GmailClient,
   ids: string[],
   internetIds: string | string[],
+  reads: DraftReads = new Map(),
 ): Promise<{ found?: RemoteCopy; vanished: boolean }> {
   const wanted = new Set([internetIds].flat().map(bareId));
   let vanished = false;
   for (const id of ids) {
-    const copy = await readCopy(client, id);
+    const copy = reads.get(id) ?? (await readCopy(client, id));
+    if (copy) reads.set(id, copy);
     if (!copy) vanished = true;
     else if (copy.isDraft && copy.internetId && wanted.has(bareId(copy.internetId)))
       return { found: copy, vanished };
@@ -378,17 +389,21 @@ type Lookup =
  * mail. A hit in (a) or (b) is compared with our bytes (`verifiedHit`). An answer that is not complete (more hits than one page of the search, a hit that vanished before it could be
  * checked) is thrown, never reported as absent.
  */
-async function findByInternetId(client: GmailClient, draft: DraftUpload): Promise<Lookup> {
+async function findByInternetId(
+  client: GmailClient,
+  draft: DraftUpload,
+  reads: DraftReads = new Map(),
+): Promise<Lookup> {
   const internetId = draft.internetId;
   const searched = await listDraftIds(client, searchQuery(internetId));
-  const first = await verifyDrafts(client, searched.ids, internetId);
+  const first = await verifyDrafts(client, searched.ids, internetId, reads);
   if (first.found) return verifiedHit(client, first.found, draft);
   if (first.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
   // The search lags the index: the newest drafts, read without it, cover a copy made a moment ago.
   const newest = await listDraftIds(client);
   const fresh = newest.ids.filter(id => !searched.ids.includes(id));
-  const second = await verifyDrafts(client, fresh, internetId);
+  const second = await verifyDrafts(client, fresh, internetId, reads);
   if (second.found) return verifiedHit(client, second.found, draft);
   if (second.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   const verdict = await allMailVerdict(client, internetId);
@@ -421,19 +436,21 @@ function earlierIds(draft: DraftUpload): string[] {
  * Where an earlier, unanswered create of this draft may have landed (`DraftUpload.supersedes`): the same three lookups as
  * `findByInternetId` for each listed Message-ID, the drafts search per id and the newest drafts once. A draft carrying
  * one of them is `earlier` only after `verifiedEarlier`; a SENT or TRASH message holding one (and no draft found) is
- * `gone`. Nothing else is matched: an unrelated draft is never read as ours.
+ * `gone`. Nothing else is matched: an unrelated draft is never read as ours. `reads` holds the drafts `findByInternetId`
+ * of the same create already read: they are matched against `supersedes` from those reads, not read a second time.
  */
 async function findEarlier(
   client: GmailClient,
   draft: DraftUpload,
   attempts: DraftAttempts,
+  reads: DraftReads,
 ): Promise<EarlierLookup> {
   const ids = earlierIds(draft);
   if (ids.length === 0) return undefined;
   const searchedIds: string[] = [];
   for (const id of ids) {
     const searched = await listDraftIds(client, searchQuery(id));
-    const hit = await verifyDrafts(client, searched.ids, id);
+    const hit = await verifyDrafts(client, searched.ids, id, reads);
     if (hit.found) return verifiedEarlier(client, hit.found, draft, attempts, ids);
     if (hit.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
     if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
@@ -444,6 +461,7 @@ async function findEarlier(
     client,
     newest.ids.filter(id => !searchedIds.includes(id)),
     ids,
+    reads,
   );
   if (hit.found) return verifiedEarlier(client, hit.found, draft, attempts, ids);
   if (hit.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
@@ -549,10 +567,11 @@ async function createCopy(
   ctx: AdapterContext,
   client: GmailClient,
 ): Promise<DraftSaveResult> {
-  const existing = await findByInternetId(client, draft);
+  const reads: DraftReads = new Map();
+  const existing = await findByInternetId(client, draft, reads);
   if (existing) return answered(existing, draft);
   const attempts = attemptsFor(deps);
-  const earlier = await findEarlier(client, draft, attempts);
+  const earlier = await findEarlier(client, draft, attempts, reads);
   if (earlier?.kind === 'earlier') return replaceEarlier(deps, draft, ctx, client, earlier.copy);
   if (earlier) return answered(earlier, draft);
   // Remembered before the request goes out: a reply lost after the copy landed still leaves the proof for the next revision.
