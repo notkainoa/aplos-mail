@@ -189,6 +189,70 @@ test('the injected-comment repro: sender text echoed in Google’s A-R cannot ma
   assert.equal(verdict(newsletter({ ...BANK, results })), false);
 });
 
+test('i= below d= cannot hide Google’s fail: sameness is decided by the b= prefix alone', () => {
+  // Forged `d=bank.example; i=@sub.bank.example`: Google reports header.i=@sub.bank.example for it, the injected
+  // pass says @bank.example. Different domains, same signature.
+  const attack = {
+    ...BANK,
+    signatures: [signature({ d: 'bank.example', s: 's1', b: 'AAAAAAAAxxxxxxxxxxxx' })],
+  };
+  const results = [
+    ar(
+      'dkim=fail header.i=@sub.bank.example header.s=s1 header.b=AAAAAAAA; ' +
+        'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...attack, results })), false);
+  const otherSelector = [
+    ar(
+      'dkim=fail header.i=@bank.example header.s=zz header.b=AAAAAAAA; ' +
+        'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...attack, results: otherSelector })), false);
+});
+
+test('a non-pass dkim result without a b= counts as contradicting', () => {
+  const results = [ar(`dkim=neutral header.i=@example.com; ${PASS}; ${SPF}`)];
+  assert.equal(verdict(newsletter({ results })), false);
+});
+
+test('a raw ( or " inside a value, or a dkim result after spf or dmarc, fails the header', () => {
+  const hidden = [
+    ar(
+      'dkim=fail header.s=k( header.i=@bank.example header.b=AAAAAAAA; spf=pass (google.com: domain of "a)); ' +
+        'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; x.y=z ("@evil.example) smtp.mailfrom="b"',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results: hidden })), false);
+  const quote = [ar('dkim=pass header.i=@example.com"x header.s=s1 header.b=AbCdEf12')];
+  assert.equal(verdict(newsletter({ results: quote })), false);
+  const late = [ar(`${SPF}; ${PASS}; ${DMARC}`)];
+  assert.equal(verdict(newsletter({ results: late })), false);
+  const lateAfterDmarc = [
+    ar(`${PASS}; ${DMARC}; dkim=pass header.i=@example.com header.s=s1 header.b=AbCdEf12`),
+  ];
+  assert.equal(verdict(newsletter({ results: lateAfterDmarc })), false);
+  const arcFirst = [ar(`arc=pass (i=1) smtp.remote-ip=192.0.2.1; ${PASS}; ${SPF}; ${DMARC}`)];
+  assert.equal(verdict(newsletter({ results: arcFirst })), true);
+});
+
+test('a ( glued to a value would hide Google’s fail in a comment: the header is refused', () => {
+  // Only this rule stops it: no dkim result is left that contradicts, and the dkim results all precede the spf ones.
+  // Without it the comment opened at `header.s=k(` swallows the real `dkim=fail` for the forged signature.
+  const results = [
+    ar(
+      'dkim=pass header.i=@example.com header.s=k( header.b=ZZZZZZZZ; ' +
+        'dkim=fail header.i=@bank.example header.s=s1 header.b=AAAAAAAA; ' +
+        'spf=pass (google.com: domain of "a)); ' +
+        'dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA; spf=none smtp.mailfrom="x"',
+    ),
+  ];
+  assert.equal(verdict(newsletter({ ...BANK, results })), false);
+  const quoted = [ar('dkim=pass header.i=@bank.example header.s=s1 header.b=AAAAAAAA"x; spf=pass')];
+  assert.equal(verdict(newsletter({ ...BANK, results: quoted })), false);
+});
+
 test('a failed dkim for another domain or another signature does not hide a good pass', () => {
   const results = [
     ar(`dkim=fail header.i=@esp.example.net header.s=k9 header.b=ZZZZZZZZ; ${PASS}; ${SPF}`),

@@ -98,8 +98,10 @@ export function tokenize(text: string): Token[] | null {
   let i = 0;
   while (i < text.length) {
     const c = text[i];
+    // A comment or quote right after word characters is not where RFC 8601 allows one, and it would hide the text
+    // around it from this parser (`header.s=k(` ...), so it fails the header.
+    if ((c === '(' || c === '"') && word) return null;
     if (c === '(') {
-      flush();
       i = skipComment(text, i);
       if (i < 0) return null;
       continue;
@@ -183,7 +185,17 @@ export function googleResults(value: string): AuthResult[] | null {
   const parts = rest.filter(segment => segment.length > 0);
   if (!isGoogle(head) || parts.length > LIST_AUTH_LIMITS.maxResults) return null;
   const results = parts.map(segment => parseResult(segment));
-  return results.every(result => result !== null) ? results : null;
+  if (!results.every(result => result !== null)) return null;
+  return dkimBeforeOthers(results) ? results : null;
+}
+
+/**
+ * Google lists its `dkim` results before `spf` and `dmarc`. A `dkim` result after one of those is not where Google
+ * writes it, and is the shape sender text echoed into an SPF comment takes, so the header is not believed.
+ */
+function dkimBeforeOthers(results: readonly AuthResult[]): boolean {
+  const firstOther = results.findIndex(r => r.method === 'spf' || r.method === 'dmarc');
+  return firstOther === -1 || results.slice(firstOther).every(r => r.method !== 'dkim');
 }
 
 // ---- DKIM-Signature (RFC 6376 section 3.2 tag list) ----
@@ -287,16 +299,11 @@ function signatureFor(
 }
 
 /**
- * Could `other` be Google's verdict on the signature `passing` names? Same signing domain and selector, and `header.b`
- * prefixes that agree. A detail `other` leaves out counts as agreeing (fail closed).
+ * Could `other` be Google's verdict on the signature `passing` names? Decided by the `header.b` prefixes alone: one is
+ * a prefix of the other, or `other` has none. Not by domain or selector: `d=bank.example; i=@sub.bank.example` makes
+ * Google report `header.i=@sub.bank.example` for the same signature an injected pass names as `@bank.example`.
  */
 function mayNameSameSignature(other: AuthResult, passing: AuthResult): boolean {
-  const domain = signingDomain(other);
-  if (domain !== undefined && domain !== signingDomain(passing)) return false;
-  const selector = other.props.get('header.s')?.toLowerCase();
-  const passingSelector = passing.props.get('header.s')?.toLowerCase();
-  if (selector !== undefined && passingSelector !== undefined && selector !== passingSelector)
-    return false;
   const prefix = other.props.get('header.b');
   const passingPrefix = passing.props.get('header.b') ?? '';
   return (
