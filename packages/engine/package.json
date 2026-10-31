@@ -11,6 +11,7 @@
     "./store/*": "./src/store/*.ts",
     "./diag/*": "./src/diag/*.ts",
     "./clock/loop": "./src/clock/loop.ts",
+    "./clock/system": "./src/clock/system.ts",
     "./sync/account-read": "./src/sync/account-read.ts",
     "./sync/connect-sessions": "./src/sync/connect-sessions.ts",
     "./sync/governor": "./src/sync/governor.ts",

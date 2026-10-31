@@ -1,0 +1,265 @@
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  MessageChannelMain,
+  nativeTheme,
+  safeStorage,
+  shell,
+  utilityProcess,
+  type IpcMainInvokeEvent,
+  type MessagePortMain,
+} from 'electron';
+import { join } from 'node:path';
+import { HostEvent, NotificationItem, parseArgs, type MethodName } from '@aplos/contract';
+import type { PendingWork } from '../host/lifecycle';
+import {
+  createEngineLink,
+  createEngineSupervisor,
+  createPortBroker,
+  draftOpenable,
+  REAL_ENGINE_ARG,
+  REAL_ENGINE_SERVICE,
+  signInURL,
+  trustedCaller,
+  type DesktopFrame,
+  type EngineLink,
+  type PortWindow,
+  type Timers,
+  type UtilityInit,
+  type UtilityRequest,
+} from '../host/transports/port';
+import { KeyringError, loadDataKey } from './keyring';
+import { invokeNative, nativeMethods, notify } from './native-methods';
+import { assertCaller, trustedURL } from './security';
+import { isTest } from './test-mode';
+import { popout } from './windows';
+
+/**
+ * Main's half of the real engine path (lane eng-contract, contract-4), on only with `APLOS_ENGINE=real`. Main forks the
+ * new engine in a utility process, gives each window's trusted main frame its own MessagePort, and keeps only its control
+ * connection, the native methods and the host channel. Main holds no copy of mail state here; the transport logic is
+ * in `host/transports/port.ts`, which this file wires to Electron.
+ */
+
+const timers: Timers = {
+  set: (run, ms) => setTimeout(run, ms),
+  clear: handle => clearTimeout(handle as NodeJS.Timeout),
+};
+
+let supervisor: ReturnType<typeof createEngineSupervisor> | undefined;
+const link = () => supervisor?.current();
+const ok = { ok: true } as const;
+
+function portWindow(win: BrowserWindow): PortWindow {
+  const contents = win.webContents;
+  return {
+    id: win.id,
+    isDestroyed: () => win.isDestroyed() || contents.isDestroyed(),
+    trusted: () => !contents.isDestroyed() && trustedURL(contents.mainFrame.url),
+    deliver: (port, generation) =>
+      contents.mainFrame.postMessage('aplos:engine-port', { generation }, [
+        port as MessagePortMain,
+      ]),
+    desktop: frame => contents.send('aplos:desktop', frame),
+  };
+}
+
+const broker = createPortBroker({
+  channel: () => {
+    const { port1, port2 } = new MessageChannelMain();
+    return { engineEnd: port1, windowEnd: port2 };
+  },
+  link,
+});
+
+const engineFrame = (state: 'connecting' | 'ready' | 'parked'): DesktopFrame => ({
+  frame: 'desktop',
+  event: {
+    type: 'engine',
+    state,
+    at: Date.now(),
+    ...(state === 'parked' ? { reasonCode: 'engine.parked', canRetry: true } : {}),
+  },
+});
+
+function openSignIn(raw: unknown) {
+  const url = signInURL(raw);
+  if (!url) throw new Error('Only a provider sign-in page can be opened.');
+  return shell.openExternal(url);
+}
+
+const themes: ReadonlySet<string> = new Set(['light', 'dark', 'system']);
+
+/** Typed host-channel events (plan 10 E3 item 6). Anything that fails the contract's schema is ignored. */
+function hostEvent(raw: unknown) {
+  const parsed = HostEvent.safeParse(raw);
+  if (!parsed.success) return;
+  const event = parsed.data;
+  if (event.type === 'badge' && !isTest) app.setBadgeCount(event.count);
+  // An open enum: a theme a newer engine adds is ignored here.
+  if (event.type === 'appearance' && themes.has(event.theme))
+    nativeTheme.themeSource = event.theme as 'light' | 'dark' | 'system';
+  if (event.type === 'openExternal') void Promise.resolve(openSignIn(event.url)).catch(() => {});
+  if (event.type === 'reminder')
+    notify(event.item.title, event.item.body ?? '', event.item.threadId);
+  if (event.type === 'parked') broker.desktop(engineFrame('parked'));
+  // `notify {pending}`: the claim loop runs beside the engine (host/compose.ts) and posts each item through the
+  // `notify` request below, so main has nothing to claim itself. `clock` concerns windows only.
+}
+
+async function request(input: UtilityRequest): Promise<unknown> {
+  if (input.op === 'openExternal') {
+    await openSignIn(input.url);
+    return ok;
+  }
+  const parsed = NotificationItem.safeParse(input.item);
+  if (!parsed.success) throw new Error('Not a notification.');
+  notify(parsed.data.title, parsed.data.body ?? '', parsed.data.threadId);
+  return 'posted';
+}
+
+async function engineInit(dataDir: string): Promise<UtilityInit> {
+  const init: UtilityInit = { dataDir, appVersion: app.getVersion() };
+  const keychain = {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value: string) => safeStorage.encryptString(value),
+    decrypt: (value: Buffer) => safeStorage.decryptString(value),
+  };
+  try {
+    init.key = await loadDataKey(dataDir, keychain);
+  } catch (error) {
+    // Only the keyring's own plain sentences go on; the engine then refuses to store any secret.
+    init.keyError =
+      error instanceof KeyringError ? error.message : 'Secure credential storage is unavailable.';
+  }
+  return init;
+}
+
+function spawn(init: UtilityInit): EngineLink {
+  const child = utilityProcess.fork(join(__dirname, 'engine.cjs'), [REAL_ENGINE_ARG], {
+    serviceName: REAL_ENGINE_SERVICE,
+    env: process.env,
+  });
+  return createEngineLink(
+    {
+      post: (message, ports) => child.postMessage(message, ports as MessagePortMain[] | undefined),
+      onMessage: handler => void child.on('message', handler),
+      onExit: handler => void child.once('exit', handler),
+      kill: () => void child.kill(),
+    },
+    init,
+    { hostEvent, request },
+    timers,
+  );
+}
+
+const callerWindow = (event: IpcMainInvokeEvent) =>
+  trustedCaller(event, {
+    trustedURL,
+    windowOf: sender => {
+      const win = BrowserWindow.fromWebContents(sender as Electron.WebContents);
+      return win ? portWindow(win) : undefined;
+    },
+  });
+
+async function composeWindow(event: IpcMainInvokeEvent, draftId: string) {
+  // Through main's own engine connection (`Draft/get`), never a copy of the mailbox in main.
+  if (!(await draftOpenable(link(), draftId)))
+    throw new Error('Save this draft before opening a separate window.');
+  popout('draft', draftId, BrowserWindow.fromWebContents(event.sender)!.id);
+  return ok;
+}
+
+/** The desktop methods main serves on this path today, by their v1 names; each maps to main's own handler. */
+const legacyNames: Record<string, string> = {
+  'App/info': 'app.info',
+  'Window/thread': 'window.thread',
+  'Window/closeReady': 'window.closeReady',
+  'Window/closeCancel': 'window.closeCancel',
+  'Window/openOnboarding': 'Window/openOnboarding',
+  'Window/finishOnboarding': 'Window/finishOnboarding',
+  'System/openSettings': 'System/openSettings',
+};
+
+async function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
+  assertCaller(event);
+  if (typeof method !== 'string') throw new Error('Unsupported application method.');
+  const args = parseArgs(method as MethodName, input ?? {}) as Record<string, unknown>;
+  if (method === 'Window/compose') return composeWindow(event, String(args.draftId));
+  const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
+  if (!name) throw new Error('This is not available on the new engine yet.');
+  const result = await invokeNative(event, name, args);
+  return result === true ? ok : result;
+}
+
+/**
+ * Today's renderer still runs on this path and still calls `aplos:invoke`. It keeps main's native methods (its window
+ * closes, quits and pop-outs work), and every engine call is refused with a plain sentence: there is no legacy engine
+ * here and main forwards nothing.
+ */
+async function legacyInvoke(event: IpcMainInvokeEvent, method: unknown, payload: unknown) {
+  assertCaller(event);
+  if (typeof method !== 'string' || !nativeMethods.has(method))
+    throw new Error('This screen is not on the new engine yet.');
+  if (method === 'window.compose') {
+    const draftId = (payload as { draftId?: unknown } | undefined)?.draftId;
+    if (typeof draftId !== 'string' || draftId.length > 200) throw new Error('Invalid draft ID.');
+    await composeWindow(event, draftId);
+    return true;
+  }
+  return invokeNative(event, method, payload);
+}
+
+function connectWindow(event: IpcMainInvokeEvent) {
+  const win = callerWindow(event);
+  if (!win) throw new Error('Untrusted application window.');
+  broker.connect(win);
+  return ok;
+}
+
+/** A window's port stops when the window closes or its main frame starts a new document (a reload). */
+function watchWindows() {
+  app.on('browser-window-created', (_event, win) => {
+    const id = win.id;
+    win.once('closed', () => broker.revoke(id));
+    win.webContents.on('did-start-navigation', details => {
+      if (details.isMainFrame && !details.isSameDocument) broker.revoke(id);
+    });
+  });
+}
+
+/** Starts the new engine and the IPC that reaches it. `noteExit` is lifecycle's park counter (3 stops in 60 s). */
+async function bootRealEngine(options: { dataDir: string; noteExit(): boolean }): Promise<void> {
+  const init = await engineInit(options.dataDir);
+  supervisor = createEngineSupervisor({
+    spawn: () => spawn(init),
+    noteExit: options.noteExit,
+    onUp: (_link, restarted) => {
+      if (restarted) broker.reissue();
+      broker.desktop(engineFrame('ready'));
+    },
+    onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    timers,
+  });
+  await supervisor.start();
+  watchWindows();
+  ipcMain.handle('aplos:engine-connect', connectWindow);
+  ipcMain.handle('aplos:desktop', desktopMethod);
+  ipcMain.handle('aplos:invoke', legacyInvoke);
+  if (isTest) console.error('Aplos Mail test: engine: real engine ready');
+}
+
+/** What lifecycle.ts needs from the real engine: power wakes, the quit warning's facts, and the quit itself. */
+const realEngine = {
+  wake: () => link()?.power('resume'),
+  /** Rejects when the engine is down or slow; the quit gate then quits without a warning (host/lifecycle.ts). */
+  pending: async () => {
+    const current = link();
+    if (!current) throw new Error('The mailbox is restarting.');
+    return (await current.call('Outbox/pending', {}, 3000)) as PendingWork;
+  },
+  close: () => supervisor?.close() ?? Promise.resolve(),
+};
+
+export { bootRealEngine, realEngine };

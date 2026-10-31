@@ -18,7 +18,7 @@ import { windows, focusMain, syncTheme, createWindow, setMain, startWindows } fr
 import { handleLink } from './protocol';
 import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
-import { service, bootEngine, latestState } from './engine-host';
+import { service, bootEngine, latestState, realPath, realEngine } from './engine-host';
 import {
   activationPolicy,
   createProcessState,
@@ -75,14 +75,19 @@ const loopMonitor = createLoopMonitor({
  * The legacy engine has no pause of its own, so while paused (or parked) main simply does not forward the wake.
  */
 function wakeEngine() {
-  if (pause.active() || processState.state === 'parked' || !service) return;
+  if (pause.active() || processState.state === 'parked') return;
+  // The real engine (APLOS_ENGINE=real) gets the power event itself; its host dedupes wakes (host/power.ts).
+  if (realPath) return realEngine.wake();
+  if (!service) return;
   void service.invoke('sync', { auto: true }).catch(() => {});
 }
 
-/** The engine's utility process stopped (any reason). The third stop within 60 s parks the app. */
-function noteEngineExit() {
-  if (closing) return;
-  if (processState.noteEngineExit(Date.now())) void showParked();
+/** The engine's utility process stopped (any reason). The third stop within 60 s parks the app; returns true then. */
+function noteEngineExit(): boolean {
+  if (closing) return false;
+  const parked = processState.noteEngineExit(Date.now());
+  if (parked) void showParked();
+  return parked;
 }
 async function showParked() {
   if (isTest)
@@ -132,7 +137,9 @@ function watchWindowCount() {
 
 async function confirmQuit(): Promise<boolean> {
   if (installUpdate || skipQuitWarning || systemShutdown) return true;
-  const warning = quitWarning(pendingWork(latestState));
+  // The real path asks the engine (`Outbox/pending`); a rejection counts as yes in the quit gate.
+  const pending = realPath ? await realEngine.pending() : pendingWork(latestState);
+  const warning = quitWarning(pending);
   if (!warning) return true;
   // A test must be able to quit: it records the text and goes on (a dialog would also answer with its first button).
   if (isTest) {
@@ -170,7 +177,8 @@ function finishQuit() {
     set: (run: () => void, ms: number) => setTimeout(run, ms),
     clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
   };
-  void drain(Promise.resolve(service?.close()), QUIT_DRAIN_MS, quitTimers).finally(() => {
+  const engineClosed = realPath ? realEngine.close() : service?.close();
+  void drain(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers).finally(() => {
     lock?.release();
     updates?.stop();
     if (!(installUpdate && updates?.install())) app.quit();
@@ -278,7 +286,7 @@ else {
       installPermissionHandlers();
       // One engine per data directory: a live holder refuses here (the catch below shows why), a dead one is reclaimed.
       lock = acquireLock(dataDirOverride ?? app.getPath('userData'), nodeLockPorts());
-      await bootEngine();
+      await bootEngine({ noteExit: noteEngineExit });
       processState.engineReady();
       started = true;
       nativeTheme.on('updated', () => syncTheme(true));
