@@ -327,7 +327,7 @@ test('mailto stays offered, as a prepared email the owner reviews, when the doma
   assert.equal(posts.length, 0);
 });
 
-test('only the newest DOMAIN_WINDOW List-Unsubscribe messages are compared', async () => {
+test('only the newest DOMAIN_WINDOW inbound messages are compared', async () => {
   const same = Array.from({ length: DOMAIN_WINDOW }, (_, i) =>
     fromMsg(`n${i}`, 10 + i, 'news@real.example', [REAL], true),
   );
@@ -341,4 +341,58 @@ test('only the newest DOMAIN_WINDOW List-Unsubscribe messages are compared', asy
   );
   const shortened = await posted([inside, ...same.slice(1)]);
   assert.deepEqual(shortened.get, { method: 'link', url: REAL }, 'inside the window it is');
+});
+
+function plainMsg(id: string, minutes: number, address: string): MessageWrite {
+  return msg(id, 't1', minutes, { from: { address } });
+}
+
+test('the target is compared too: an old authenticated attacker message is not hidden by a window of real issues', async () => {
+  // The review probe: the real sender is not authenticated, the attacker's single signed message is the newest
+  // AUTHENTICATED one (so the target) but older than every row in the window, which holds DOMAIN_WINDOW real issues.
+  const attacker = fromMsg('evil', 0, 'x@attacker.example', [EVIL], true);
+  const issues = Array.from({ length: DOMAIN_WINDOW }, (_, i) =>
+    fromMsg(`issue${i}`, 10 + i, 'news@real.example', [REAL]),
+  );
+  const { get, run, posts } = await posted([attacker, ...issues]);
+  assert.deepEqual(get, { method: 'link', url: EVIL });
+  assert.equal(run.outcome, 'openLink');
+  assert.equal(posts.length, 0);
+});
+
+test('messages without List-Unsubscribe are compared: a lone signed header in a personal conversation gets no POST', async () => {
+  const writes = [
+    plainMsg('p1', 0, 'friend@personal.example'),
+    plainMsg('p2', 3, 'friend@personal.example'),
+    fromMsg('evil', 5, 'x@attacker.example', [EVIL], true),
+  ];
+  const { get, run, posts } = await posted(writes);
+  assert.deepEqual(get, { method: 'link', url: EVIL });
+  assert.equal(run.outcome, 'openLink');
+  assert.equal(posts.length, 0);
+});
+
+test('plain messages from the target domain keep the POST', async () => {
+  const writes = [
+    plainMsg('p1', 0, 'Support@Real.Example'),
+    fromMsg('m1', 5, 'news@real.example', [REAL], true),
+  ];
+  const { get, posts } = await posted(writes);
+  assert.deepEqual(get, { method: 'oneClick' });
+  assert.equal(posts.length, 1);
+});
+
+test("the owner's own replies and drafts are not compared", async () => {
+  const reply = msg('mine', 't1', 3, {
+    from: { address: 'owner@mail.example' },
+    flags: { seen: true, flagged: false, draft: false, fromMe: true },
+  });
+  const draft = msg('draft', 't1', 4, {
+    from: { address: 'owner@mail.example' },
+    flags: { seen: true, flagged: false, draft: true, fromMe: false },
+  });
+  const writes = [fromMsg('m1', 0, 'news@real.example', [REAL], true), reply, draft];
+  const { get, posts } = await posted(writes);
+  assert.deepEqual(get, { method: 'oneClick' });
+  assert.equal(posts.length, 1);
 });
