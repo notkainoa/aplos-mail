@@ -14,7 +14,7 @@ import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import { harnessClock } from '../../data/clock';
 import { api, setClock, undoStack, type ThreadRow } from '../../data';
-import { pushToast } from '../../shell';
+import { dismissToast, pushToast } from '../../shell';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { setOpenThread } from '../../shell/store-thread';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
@@ -641,6 +641,41 @@ test('Z reopens the restored thread; a Z for another operation leaves the depart
     await world.flush();
     assert.ok(!state.gone.has(ids[0]!));
     assert.equal(state.open, ids[0], 'and the reader went back to it');
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Z closes the toast of the Done, Later or Trash it undid; the toast’s own Undo does too', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const ids = world.doIds();
+    const { deps } = depsOver(world, ids[0]!);
+    deps.dismiss = dismissToast;
+    const actions = createReaderActions(deps);
+    const toastOf = (kind: string) => getToasts().find(t => t.kind === kind);
+    actions.done();
+    assert.ok(toastOf('done'), 'a Done toast');
+    actions.undo();
+    await world.flush();
+    assert.equal(toastOf('done'), undefined, 'Z closed the Done toast');
+    actions.later();
+    assert.ok(toastOf('later'), 'a Later toast');
+    actions.undo();
+    await world.flush();
+    assert.equal(toastOf('later'), undefined, 'Z closed the Later toast');
+    actions.trash();
+    assert.ok(toastOf('trash'), 'a Trash toast');
+    actions.undo();
+    await world.flush();
+    assert.equal(toastOf('trash'), undefined, 'Z closed the Trash toast');
+    actions.done();
+    const done = toastOf('done');
+    assert.ok(done, 'a second Done toast');
+    runToastAction(done.id, 'undo');
+    await world.flush();
+    assert.equal(toastOf('done'), undefined, 'the toast’s Undo closed it');
   } finally {
     world.connection.close();
   }

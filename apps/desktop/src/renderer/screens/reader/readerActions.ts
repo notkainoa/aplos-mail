@@ -133,6 +133,14 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     deps.markGone(id, false);
   }
 
+  /** An operation was undone, by its toast's Undo or by Z: its toast closes, then its thread comes back. */
+  function undone(opId: string, restore?: () => void): () => void {
+    return () => {
+      deps.dismiss(opId);
+      restore?.();
+    };
+  }
+
   function actOn(row: ThreadRow, action: ThreadAction, toast: Toasted, restore?: Restore): string {
     const { opId, receipt } = deps.act({ ids: [row.id], action });
     if (restore) restorers.set(opId, restore.undone);
@@ -140,7 +148,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       id: opId,
       undoable: true,
       actions: [UNDO_ACTION],
-      onAction: undoHandler(opId, restore?.undone),
+      onAction: undoHandler(opId, undone(opId, restore?.undone)),
       ...toast,
     });
     failOnReject(opId, action, receipt, restore?.rejected);
@@ -216,7 +224,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     undo: () => {
       const outcome = undoStack.undoLast();
       if (outcome?.kind !== 'operation') return;
-      afterAccepted(outcome.result, restorers.get(outcome.opId));
+      afterAccepted(outcome.result, undone(outcome.opId, restorers.get(outcome.opId)));
     },
     suggest: () => {
       const row = current();
