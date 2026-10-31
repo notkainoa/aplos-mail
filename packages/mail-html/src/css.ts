@@ -203,10 +203,12 @@ class CssWriter {
   }
 
   private string(value: string, raw: string): string {
-    const attribute = this.classValues.get(this.at);
-    if (attribute !== undefined) return cssString(attribute);
-    if (this.imageDepth > 0) return this.url(value);
-    return looksFetchable(value) ? '""' : raw.replaceAll('</', '<\\/');
+    // A `[class=…]` value is written as rewritten, so it is judged as rewritten, like any string.
+    const moved = this.classValues.get(this.at);
+    const text = moved ?? value;
+    if (this.imageDepth > 0) return this.url(text);
+    if (looksFetchable(text)) return '""';
+    return moved === undefined ? raw.replaceAll('</', '<\\/') : cssString(moved);
   }
 
   private hash(token: CSSToken): string {

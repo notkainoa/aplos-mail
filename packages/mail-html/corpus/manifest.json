@@ -1312,5 +1312,19 @@
       ],
       "notes": "From the Integrator's round-2 review of html-3. Aplos's own wrappers carry classes that start aplos-, and a mail class of that name is moved to m-aplos-. The selectors here reached the wrappers by a dot, a comment and a name, by [class] attribute selectors with every operator, quoting and flag, and inside :is(), :where(), :not() and :has() (also malformed ones); each now names m-aplos- instead. The oracle in tests/oracle.ts fails any sanitized corpus message whose CSS still names an aplos- class. Tag and position selectors (details, p:last-child) can still hide a wrapper: cosmetic, recorded in DECISIONS."
     }
+  },
+  {
+    "id": "135-css-class-selector-value-as-address",
+    "title": "A class selector whose value is an address, with an aplos- name beside it",
+    "classes": ["css-exfil", "css-image-set"],
+    "html": "messages/135-css-class-selector-value-as-address.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": [
+        "A stylesheet whose class selector values double as addresses",
+        "Contact the sender"
+      ],
+      "notes": "From the Integrator's security review of the aplos- selector fix. A [class=...] string that holds an aplos- name is rewritten (aplos- to m-aplos-), and the rewritten value was first written without the checks every other string gets: an address-like string was kept, and inside image-set(), -webkit-image-set() or image() the value skipped URL classification. Now the rewritten value is judged as written: an address-like string is emptied, and inside an image function it goes through the image book (here none, because a name in front makes it relative). The oracle fails any message that still carries an address."
+    }
   }
 ]

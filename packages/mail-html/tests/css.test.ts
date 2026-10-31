@@ -221,6 +221,46 @@ describe('aplos- class names, in every selector position', () => {
     for (const [selector, want] of cases) assert.equal(hidden(selector), `${want}{display:none}`);
   });
 
+  it('moves every name in a value that holds several, and keeps its whitespace as written', () => {
+    const cases: [string, string][] = [
+      ['[class="foo aplos-x"]', '[class="foo m-aplos-x"]'],
+      ['[class~="foo aplos-x"]', '[class~="foo m-aplos-x"]'],
+      ['[class$="foo aplos-x"]', '[class$="foo m-aplos-x"]'],
+      ['[class^="foo aplos-x"]', '[class^="foo m-aplos-x"]'],
+      ['[class|="foo aplos-x"]', '[class|="foo m-aplos-x"]'],
+      ['[class="foo  aplos-x\\9 bar\\a aplos-y"]', '[class="foo  m-aplos-x\\9 bar\\a m-aplos-y"]'],
+      ['[class="  foo   aplos-x "]', '[class="  foo   m-aplos-x "]'],
+      ['[class="xaplos-x aplos-y"]', '[class="xaplos-x m-aplos-y"]'],
+    ];
+    for (const [selector, want] of cases) assert.equal(hidden(selector), `${want}{display:none}`);
+    // Unquoted, `foo aplos-x` is not one value: the browser drops the whole rule (the value would
+    // be `foo`), so it is written as it came. (Not through `clean`: the oracle reads the brackets.)
+    const css = '[class=foo aplos-x]{display:none}';
+    assert.equal(sanitizeCss(css, new ImageBook({ cids: [], policy: 'block' })), css);
+  });
+
+  it('judges a rewritten [class] value like any other string: no address gets through it', () => {
+    // A string that looks like an address is emptied, whatever the rewrite made of it.
+    assert.equal(
+      clean('a{--x:[class="https://evil.example/p.png aplos-q"]}').css,
+      'a{--x:[class=""]}',
+    );
+    assert.equal(clean('a{--x:[class="aplos-q:x"]}').css, 'a{--x:[class=""]}');
+    // Inside an image function it is an image URL: classified, never written as it came.
+    const inside = clean(
+      'a{b:image-set([class="aplos-q https://evil.example/p.png"] 1x, [class="https://evil.example/q.png aplos-q"] 2x)}',
+      'allow',
+    );
+    assert.equal(inside.css, 'a{b:image-set([class= none ] 1x, [class=url("img/0")] 2x)}');
+    assert.doesNotMatch(inside.css, /evil|aplos/);
+    assert.equal(inside.images.remote.length, 1);
+    // The address after the aplos- name is no URL in a plain string, as before the rewrite.
+    assert.equal(
+      clean('a{--x:[class="aplos-q https://evil.example/p.png"]}').css,
+      'a{--x:[class="m-aplos-q https://evil.example/p.png"]}',
+    );
+  });
+
   it('keeps attribute selectors that cannot name an Aplos class', () => {
     for (const selector of [
       '[class^=m-aplos-]',
