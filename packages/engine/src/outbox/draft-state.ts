@@ -271,7 +271,8 @@ export function theirsFields(
     bcc: message.bcc ?? [],
     subject: message.subject ?? '',
     html: message.html ?? `<p>${escaped}</p>`,
-    attachments: base?.attachments ?? [],
+    // A copy that says it has no attachments has none: a file this device had and the phone removed must not come back.
+    attachments: message.hasAttachments === true ? (base?.attachments ?? []) : [],
     signature: base?.signature ?? false,
   };
   if (base?.threadId !== undefined) fields.threadId = base.threadId;

@@ -376,7 +376,7 @@ test('6: a copy uploaded without an attachment it could not read is not marked a
     assert.notEqual(read(w, d.id).sync, 'synced');
   }));
 
-test('6: taking their version keeps my attachments, so the copy is not marked as this revision', () =>
+test('6: taking their version (a copy that has no attachments) does not bring my removed attachment back', () =>
   world(async w => {
     const s = await synced(w, fields({ attachments: [attachment(w)] }));
     edit(w, s.draft, fields({ subject: 'Mine', attachments: [attachment(w)] }));
@@ -389,7 +389,12 @@ test('6: taking their version keeps my attachments, so the copy is not marked as
     service(w).resolve(next(), s.draft.id, 'takeTheirs');
     const r = row(w, s.draft.id)!;
     assert.equal(r.remote_internet_id, THEIRS_ID);
-    assert.equal(r.synced_revision, null, 'their copy has no attachments');
+    assert.deepEqual(
+      read(w, s.draft.id).attachments,
+      [],
+      'the file the phone removed stays removed',
+    );
+    assert.equal(r.synced_revision, r.revision, 'and the draft is exactly their copy');
   }));
 
 test('6: a phone edit of a draft with my attachments is a conflict, never a silent replace that puts them back', () =>
