@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  ignoreUnsyncable,
   nodeDurableFs,
   removeStaleTemporaries,
   writeFileDurably,
   type DurableFs,
+  type DurableHandle,
 } from '../../src/main/durable-file';
 import { createCipher, loadDataKey, migrateCredentials } from '../../src/main/keyring';
 
@@ -26,13 +28,31 @@ async function withDir(run: (dir: string) => Promise<void>): Promise<void> {
   }
 }
 
-test('a durable write flushes the file, renames it, then flushes the folder', () =>
+test('a durable write writes, flushes and closes the file, renames it, then flushes the folder', () =>
   withDir(async dir => {
     const calls: string[] = [];
     const fs: DurableFs = {
-      writeSynced: async (path, data, mode) => {
-        calls.push(`write ${mode.toString(8)}`);
-        await nodeDurableFs.writeSynced(path, data, mode);
+      ...nodeDurableFs,
+      open: async (path, mode) => {
+        calls.push(`open ${mode.toString(8)}`);
+        const real = await nodeDurableFs.open(path, mode);
+        const step = (name: 'write' | 'sync' | 'close') => {
+          calls.push(name);
+        };
+        return {
+          write: async data => {
+            step('write');
+            await real.write(data);
+          },
+          sync: async () => {
+            step('sync');
+            await real.sync();
+          },
+          close: async () => {
+            step('close');
+            await real.close();
+          },
+        };
       },
       rename: async (from, to) => {
         calls.push('rename');
@@ -42,22 +62,51 @@ test('a durable write flushes the file, renames it, then flushes the folder', ()
         calls.push('syncDir');
         await nodeDurableFs.syncDir(path);
       },
-      remove: nodeDurableFs.remove,
     };
     const path = join(dir, 'engine-key.bin');
     await writeFileDurably(path, 'new', 0o600, fs);
-    assert.deepEqual(calls, ['write 600', 'rename', 'syncDir']);
+    assert.deepEqual(calls, ['open 600', 'write', 'sync', 'close', 'rename', 'syncDir']);
     assert.equal(await readFile(path, 'utf8'), 'new');
     assert.deepEqual(await readdir(dir), ['engine-key.bin']);
+  }));
+
+test('the temporary file is created new: an existing file at that name is refused', () =>
+  withDir(async dir => {
+    const path = join(dir, 'taken');
+    await writeFile(path, 'planted');
+    await assert.rejects(nodeDurableFs.open(path, 0o600), { code: 'EEXIST' });
+    assert.equal(await readFile(path, 'utf8'), 'planted');
+  }));
+
+test('a folder flush error other than the four unsupported ones is thrown', () =>
+  withDir(async dir => {
+    for (const code of ['EISDIR', 'EINVAL', 'EPERM', 'ENOTSUP'])
+      assert.equal(ignoreUnsyncable(Object.assign(new Error(code), { code })), undefined);
+    for (const code of ['EIO', 'EACCES', 'ENOENT'])
+      assert.throws(() => ignoreUnsyncable(Object.assign(new Error(code), { code })), { code });
+    await assert.rejects(nodeDurableFs.syncDir(join(dir, 'missing')), { code: 'ENOENT' });
   }));
 
 test('each write uses a temporary name of its own', () =>
   withDir(async dir => {
     const names: string[] = [];
-    const fs: DurableFs = { ...nodeDurableFs, writeSynced: async path => void names.push(path) };
+    const handle: DurableHandle = {
+      write: async () => {},
+      sync: async () => {},
+      close: async () => {},
+    };
+    const fs: DurableFs = {
+      ...nodeDurableFs,
+      open: async path => {
+        names.push(path);
+        return handle;
+      },
+      rename: async () => {},
+      syncDir: async () => {},
+    };
     const path = join(dir, 'x.enc.json');
-    await writeFileDurably(path, 'a', 0o600, { ...fs, rename: async () => {} }).catch(() => {});
-    await writeFileDurably(path, 'b', 0o600, { ...fs, rename: async () => {} }).catch(() => {});
+    await writeFileDurably(path, 'a', 0o600, fs);
+    await writeFileDurably(path, 'b', 0o600, fs);
     assert.equal(new Set(names).size, 2);
     assert.ok(names.every(name => /\.[0-9a-f-]{36}\.tmp$/.test(name)));
   }));
@@ -133,22 +182,31 @@ test('migrating a credential file leaves no temporary copy and keeps the entries
     assert.equal(cipher.decrypt(Buffer.from(entries.acct, 'base64')), 'secret');
   }));
 
-test(
-  'a key file that cannot be checked is not taken for a missing one',
-  {
-    skip: process.platform === 'win32' || process.getuid?.() === 0,
-  },
-  () =>
-    withDir(async dir => {
-      const dataDir = join(dir, 'data');
-      await loadDataKey(dataDir, keychain);
-      const before = await readFile(join(dataDir, 'engine-key.bin'));
-      await chmod(dataDir, 0o000);
-      try {
-        await assert.rejects(loadDataKey(dataDir, keychain), /EACCES/);
-      } finally {
-        await chmod(dataDir, 0o700);
-      }
-      assert.deepEqual(await readFile(join(dataDir, 'engine-key.bin')), before);
-    }),
-);
+test('a key file that cannot be checked is not taken for a missing one', () =>
+  withDir(async dir => {
+    const dataDir = join(dir, 'data');
+    await loadDataKey(dataDir, keychain);
+    const before = await readFile(join(dataDir, 'engine-key.bin'));
+    let writes = 0;
+    const fs: DurableFs = {
+      ...nodeDurableFs,
+      // The folder stays writable: only the check fails, the case that would orphan the sealed store.
+      stat: async () => {
+        throw Object.assign(new Error(`EIO: i/o error, stat '${dataDir}/engine-key.bin'`), {
+          code: 'EIO',
+        });
+      },
+      open: async (path, mode) => {
+        writes++;
+        return nodeDurableFs.open(path, mode);
+      },
+    };
+    await assert.rejects(loadDataKey(dataDir, keychain, fs), (error: Error) => {
+      assert.match(error.message, /could not be checked/);
+      assert.ok(!error.message.includes(dataDir), 'no path in the message');
+      assert.equal((error.cause as NodeJS.ErrnoException).code, 'EIO');
+      return true;
+    });
+    assert.equal(writes, 0);
+    assert.deepEqual(await readFile(join(dataDir, 'engine-key.bin')), before);
+  }));
