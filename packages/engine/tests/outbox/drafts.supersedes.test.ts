@@ -394,6 +394,49 @@ test('supersedes: a finished upload (last synced fingerprint) with a Bcc-only di
     assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
   }));
 
+/** A clean synced draft that holds something no copy carries, then a phone edit that delivers its body. */
+async function phoneEditsTextOf(w: World, extra: Partial<DraftFields>, shows: Partial<Fact> = {}) {
+  const s = await synced(w, fields(extra));
+  fact(w, s.remoteDraftId, 'msg-phone', {
+    subject: 'Lunch',
+    html: '<p>Phone wrote this</p>',
+    to: [{ address: 'jordan@mail.example', name: 'Jordan' }],
+    internetId: '<phone@phone.example>',
+    ...shows,
+  });
+  return s;
+}
+
+for (const [name, shows] of [
+  ['shows an empty Bcc', {}],
+  ['cannot show Bcc', { omitBcc: true as const }],
+] as const)
+  test(`take-theirs path: a local Bcc is never dropped silently by a phone edit (the copy ${name})`, () =>
+    world(async w => {
+      const bcc = [{ address: 'quiet@mail.example' }];
+      const s = await phoneEditsTextOf(w, { bcc }, shows);
+      const d = read(w, s.draft.id);
+      assert.deepEqual(d.bcc, bcc, 'our Bcc is untouched');
+      assert.ok(d.conflict, 'the owner is asked');
+      assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId, 'the base did not move');
+    }));
+
+test('take-theirs path: a draft with a sign-off source is not replaced silently either', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, { signature: true, signatureSource: 'account' });
+    const d = read(w, s.draft.id);
+    assert.equal(d.signatureSource, 'account');
+    assert.ok(d.conflict);
+  }));
+
+test('take-theirs path: a clean draft with nothing only we hold is still replaced silently (control)', () =>
+  world(async w => {
+    const s = await phoneEditsTextOf(w, {});
+    const d = read(w, s.draft.id);
+    assert.equal(d.html, '<p>Phone wrote this</p>');
+    assert.equal(d.conflict, undefined);
+  }));
+
 test('closed world: every draft field is classified, and a field that is neither shown nor carried cannot become provable by accident', () => {
   const classified = Object.keys(DRAFT_CONTENT_FIELDS).sort();
   assert.deepEqual(
@@ -412,6 +455,12 @@ test('closed world: every draft field is classified, and a field that is neither
     .map(([name]) => name)
     .sort();
   assert.deepEqual(shown, ['bcc', 'cc', 'from', 'html', 'subject', 'to']);
+  const carried = Object.entries(DRAFT_CONTENT_FIELDS)
+    .filter(([, how]) => how === 'carried')
+    .map(([name]) => name)
+    .sort();
+  // A carried field is one a provider edit cannot change; adding to this list is a decision too.
+  assert.deepEqual(carried, ['accountId', 'mode', 'replyToMessageId', 'threadId']);
 });
 
 test('supersedes: without those, the same content from our own address still moves the base', () =>
