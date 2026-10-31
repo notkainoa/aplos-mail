@@ -178,6 +178,8 @@ export interface DraftStep {
   wait?: Promise<void>;
   /** A `conflict*` step leaves the copy's message id out (an adapter that cannot read it). */
   omitMessageId?: true;
+  /** The save is answered with this remote draft id (a provider whose update makes a new draft: JMAP, IMAP). */
+  renameTo?: string;
 }
 
 /**
@@ -263,7 +265,7 @@ export function fakeDrafts(server: CountingSend) {
         : state.honourSupersedes
           ? [...remote.entries()].find(([, r]) => upload.supersedes?.includes(r.internetId))?.[0]
           : undefined;
-      const remoteDraftId = upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
+      const remoteDraftId = step.renameTo ?? upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
       const messageId = `msg${++counter}`;
       remote.set(remoteDraftId, {
         messageId,

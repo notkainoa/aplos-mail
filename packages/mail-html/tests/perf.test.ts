@@ -147,6 +147,10 @@ describe('time', () => {
     '1 MB of links': '<a href="https://x.example/a?b=c">l</a>'.repeat(MB / 38),
     'a find query over 1 MB of matches': `<p>${'deal '.repeat(MB / 5)}</p>`,
     '240 levels of a noframes fallback that rebuilds itself': selfRebuildingFallback(240, 250_000),
+    // Mutation checks (sanitize.ts `fallback()`): letting a fallback inside a fallback be re-parsed
+    // takes this shape to 8.4 s; re-parsing after stripping nested `<noframes>` (the old regex)
+    // takes the shape above to 1.8 s. Corpus 133 and the p99 test stay green under both.
+    '2,000 nested noframes fallbacks over 250,000 characters': `${'<noframes>'.repeat(2_000)}${'x'.repeat(250_000)}`,
   };
   for (const [name, html] of Object.entries(shapes)) {
     it(`finishes ${name} well under a second`, t => {
