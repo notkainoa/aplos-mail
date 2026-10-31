@@ -25,10 +25,10 @@ export interface ImageBookOptions {
   cids: readonly string[];
   policy: ImagePolicy;
   /**
-   * Treat `cid/<n>` and `img/<n>` as already rewritten. Only for re-reading the sanitizer's own
-   * output (the idempotence check); mail input never gets this.
+   * Re-reading the sanitizer's own output (the idempotence check): `cid/<n>` and `img/<n>` count
+   * as already rewritten. Mail input never gets this.
    */
-  keepRewritten?: boolean;
+  ownOutput?: boolean;
 }
 
 export class ImageBook {
@@ -50,7 +50,7 @@ export class ImageBook {
   /** Classifies one image URL. */
   source(raw: string, context: ImageContext): ImageSource {
     const value = raw.trim();
-    if (this.options.keepRewritten && REWRITTEN.test(value)) return { kind: 'inline', url: value };
+    if (this.options.ownOutput && REWRITTEN.test(value)) return { kind: 'inline', url: value };
     if (/^cid:/i.test(value)) return this.cid(value.slice(4));
     if (RASTER_DATA.test(value)) return context === 'img' ? dataSource(value) : { kind: 'none' };
     const url = this.remoteUrl(value);

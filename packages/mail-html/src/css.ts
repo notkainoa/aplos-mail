@@ -1,6 +1,6 @@
 import { tokenize, TokenType, type CSSToken } from '@csstools/css-tokenizer';
 import { replaceControls } from './escape';
-import { scopeId } from './ids';
+import { ID_PREFIX, isOwnClass, scopeId } from './ids';
 import type { ImageBook } from './images';
 import { asciiLower } from './parse';
 import { urlCleanup } from './url';
@@ -154,6 +154,8 @@ class CssWriter {
         return this.emit(this.string(token[4].value, token[1]));
       case TokenType.Hash:
         return this.emit(this.hash(token));
+      case TokenType.Ident:
+        return this.emit(this.ident(token));
       case TokenType.AtKeyword:
         return this.atRule(token[4].value, token[1]);
       case TokenType.Function:
@@ -205,6 +207,16 @@ class CssWriter {
     const selector = this.structure[this.at] === Structure.OpenCurly;
     if (token[0] !== TokenType.Hash || !selector || token[4].type !== 'id') return token[1];
     return `#${cssIdent(scopeId(token[4].value))}`;
+  }
+
+  /** `.aplos-x` in a selector names Aplos's own elements; the mail's class moved to `m-aplos-x`. */
+  private ident(token: CSSToken): string {
+    const previous = this.tokens[this.at - 1];
+    const isClass = previous?.[0] === TokenType.Delim && previous[4].value === '.';
+    const selector = this.structure[this.at] === Structure.OpenCurly;
+    if (token[0] !== TokenType.Ident || !isClass || !selector || !isOwnClass(token[4].value))
+      return token[1];
+    return cssIdent(ID_PREFIX + token[4].value);
   }
 
   private func(name: string, raw: string): void {

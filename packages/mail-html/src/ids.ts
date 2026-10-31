@@ -32,6 +32,24 @@ export function scopeIdList(value: string): string {
     .join(' ');
 }
 
+/** Aplos's own class names (find marks, quote wrappers, placeholders, the clipped note). */
+export function isOwnClass(name: string): boolean {
+  return name.slice(0, 6).toLowerCase() === 'aplos-';
+}
+
+/**
+ * A mail's `class` value with any `aplos-` name moved to `m-aplos-`, so neither its markup nor its
+ * CSS can pose as, or hide, what Aplos adds. Case-insensitive, as quirks-mode class matching is.
+ */
+export function scopeClassList(value: string): string {
+  if (!value.toLowerCase().includes('aplos-')) return value;
+  return value
+    .split(/[\t\n\f\r ]+/)
+    .filter(Boolean)
+    .map(name => (isOwnClass(name) ? ID_PREFIX + name : name))
+    .join(' ');
+}
+
 /** `#x` to `#m-x`; a bare `#` stays (it scrolls to the top). */
 export function scopeFragment(fragment: string): string {
   return fragment.length > 1 ? `#${scopeId(fragment.slice(1))}` : fragment;

@@ -189,7 +189,7 @@ describe('ids and declarations', () => {
       const once = sanitizeCss(css, new ImageBook({ cids: [], policy: 'allow' }));
       const twice = sanitizeCss(
         once,
-        new ImageBook({ cids: [], policy: 'allow', keepRewritten: true }),
+        new ImageBook({ cids: [], policy: 'allow', ownOutput: true }),
       );
       assert.equal(twice, once, css);
     }

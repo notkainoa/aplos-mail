@@ -26,8 +26,8 @@ export interface BodyOptions {
   cids?: readonly string[];
   imagePolicy?: MailHtmlInput['imagePolicy'];
   findQuery?: string;
-  /** Re-reading the sanitizer's own output: keep `cid/<n>` and `img/<n>` (tests only). */
-  keepRewritten?: boolean;
+  /** Re-reading the sanitizer's own output: keep `cid/<n>`, `img/<n>` and `aplos-` classes (tests only). */
+  ownOutput?: boolean;
 }
 
 /** The sanitized `<body>` content alone, for the idempotence check and diagnostics. */
@@ -35,9 +35,9 @@ export function sanitizeBody(html: string, options: BodyOptions = {}): WalkOutpu
   const images = new ImageBook({
     cids: options.cids ?? [],
     policy: options.imagePolicy ?? 'block',
-    keepRewritten: options.keepRewritten,
+    ownOutput: options.ownOutput,
   });
-  return sanitizeHtml(html, images, createFinder(options.findQuery));
+  return sanitizeHtml(html, images, createFinder(options.findQuery), options.ownOutput);
 }
 
 function renderHtml(

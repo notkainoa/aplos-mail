@@ -2,7 +2,7 @@ import type { CSSToken } from '@csstools/css-tokenizer';
 import { cssTokens, readDeclarations, sanitizeCss } from './css';
 import { escapeAttribute } from './escape';
 import { markText, type Finder } from './find';
-import { ID_LIST_ATTRIBUTES, scopeId, scopeIdList } from './ids';
+import { ID_LIST_ATTRIBUTES, scopeClassList, scopeId, scopeIdList } from './ids';
 import type { ImageBook } from './images';
 import { classifyLink } from './links';
 import {
@@ -43,18 +43,17 @@ interface Context {
   readonly hidden: boolean;
   /** Inside quoted history already, so nothing nested is wrapped again. */
   readonly quoted: boolean;
+  /** Inside re-parsed `<noframes>` text, where a further `<noframes>` is dropped, never re-parsed. */
+  readonly fallback: boolean;
 }
 
-/** The four contexts, shared so the walk allocates nothing per element for them. */
-const CONTEXTS: readonly Context[] = [
-  { hidden: false, quoted: false },
-  { hidden: false, quoted: true },
-  { hidden: true, quoted: false },
-  { hidden: true, quoted: true },
-];
+/** The eight contexts, shared so the walk allocates nothing per element for them. */
+const CONTEXTS: readonly Context[] = [false, true].flatMap(hidden =>
+  [false, true].flatMap(quoted => [false, true].map(fallback => ({ hidden, quoted, fallback }))),
+);
 
-function contextOf(hidden: boolean, quoted: boolean): Context {
-  return CONTEXTS[(hidden ? 2 : 0) + (quoted ? 1 : 0)];
+function contextOf(hidden: boolean, quoted: boolean, fallback: boolean): Context {
+  return CONTEXTS[(hidden ? 4 : 0) + (quoted ? 2 : 0) + (fallback ? 1 : 0)];
 }
 
 /** One element written to the output, open until its end tag (or an implied end) is written. */
@@ -100,9 +99,10 @@ export function sanitizeHtml(
   html: string,
   images: ImageBook,
   finder: Finder | undefined,
+  ownOutput = false,
 ): WalkOutput {
   const parsed = parseMail(html, LIMITS);
-  const walker = new Walker(images, finder);
+  const walker = new Walker(images, finder, ownOutput);
   const output = walker.run(parsed.root);
   return { ...output, doctype: doctypeFor(parsed.doctype), clipped: parsed.clipped };
 }
@@ -119,14 +119,18 @@ class Walker {
   private readonly styleTokens = new Map<string, CSSToken[]>();
   private readonly cleanStyles = new Map<string, string>();
   private readonly hidingStyles = new Map<string, boolean>();
+  /** What every `<noframes>` re-parse together may still build. */
+  private fallbackElements = LIMITS.maxElements;
 
   constructor(
     private readonly images: ImageBook,
     private readonly finder: Finder | undefined,
+    /** Re-reading Aplos's own output: its `aplos-` classes stay (the idempotence check). */
+    private readonly ownOutput: boolean,
   ) {}
 
   run(root: ElementNode): Omit<WalkOutput, 'doctype' | 'clipped'> {
-    this.pushFrame(root.children, contextOf(false, false), undefined);
+    this.pushFrame(root.children, contextOf(false, false, false), undefined);
     while (this.frames.length > 0) this.step(this.frames[this.frames.length - 1]);
     return {
       htmlAttributes: this.htmlAttributes ?? '',
@@ -151,7 +155,8 @@ class Walker {
     const index = frame.next++;
     const child = frame.children[index];
     if (frame.wrap && !frame.quote) this.startQuote(frame, index);
-    const context = frame.quote ? contextOf(frame.context.hidden, true) : frame.context;
+    const { hidden, fallback } = frame.context;
+    const context = frame.quote ? contextOf(hidden, true, fallback) : frame.context;
     if (child.kind === 'text') this.out.push(markText(child.data, this.finder));
     else this.element(child, context);
   }
@@ -214,8 +219,9 @@ class Walker {
     const rule = elementRule(name);
     if (rule === 'drop') return;
     if (rule === 'style') return this.style(element);
-    if (rule === 'reparse') return this.pushFrame(reparsed(element), context, undefined);
-    const inner = contextOf(context.hidden || this.hides(element.attrs), context.quoted);
+    if (rule === 'reparse') return this.fallback(element, context);
+    const hidden = context.hidden || this.hides(element.attrs);
+    const inner = contextOf(hidden, context.quoted, context.fallback);
     if (rule === 'unwrap' || (this.depth() >= MAX_DEPTH && !VOID.has(name))) {
       return this.pushFrame(element.children, inner, undefined);
     }
@@ -236,7 +242,8 @@ class Walker {
   private rootAttributes(element: ElementNode, allowed: Set<string>): string {
     const parts: string[] = [];
     for (const [name, value] of element.attrs) {
-      if (allowed.has(name) && rootValueOk(name, value)) parts.push(attribute(name, value));
+      if (!allowed.has(name) || !rootValueOk(name, value)) continue;
+      parts.push(attribute(name, name === 'class' ? this.classValue(value) : value));
     }
     if (element.name === 'body') parts.push(...this.urlAttributes(element));
     return parts.join('');
@@ -248,7 +255,7 @@ class Walker {
     if (VOID.has(name)) return;
     const entry: Written = { name, open: true };
     this.written.push(entry);
-    const wrapper = !context.quoted && isQuoteWrapper(element);
+    const wrapper = this.ownOutput && !context.quoted && isQuoteWrapper(element);
     if (wrapper) this.quotedCount++;
     const only = element.children.length === 1 ? element.children[0] : undefined;
     if (only?.kind === 'text') {
@@ -256,7 +263,25 @@ class Walker {
       this.out.push(markText(only.data, this.finder));
       return this.close(entry);
     }
-    this.pushFrame(element.children, contextOf(context.hidden, context.quoted || wrapper), entry);
+    const inner = contextOf(context.hidden, context.quoted || wrapper, context.fallback);
+    this.pushFrame(element.children, inner, entry);
+  }
+
+  /**
+   * A `<noframes>` fallback, read as markup. Only at the top level: one inside re-parsed text is
+   * dropped, so each input character is parsed at most twice, and all fallbacks share one element
+   * budget. (Re-parsing nested fallbacks was quadratic: `<nofr<noframes>ames>` rebuilds itself.)
+   */
+  private fallback(element: ElementNode, context: Context): void {
+    if (context.fallback || this.fallbackElements <= 0) return;
+    const limits = { ...LIMITS, maxElements: this.fallbackElements };
+    const parsed = parseMail(textOf(element), limits);
+    this.fallbackElements -= Math.max(1, parsed.elements);
+    this.pushFrame(
+      parsed.root.children,
+      contextOf(context.hidden, context.quoted, true),
+      undefined,
+    );
   }
 
   private style(element: ElementNode): void {
@@ -271,7 +296,7 @@ class Walker {
     for (const [name, value] of element.attrs) {
       if (exclude?.has(name) || !ATTRIBUTE_NAME.test(name) || !keepsAttribute(element.name, name))
         continue;
-      const kept = keptValue(name, value);
+      const kept = name === 'class' ? this.classValue(value) || undefined : keptValue(name, value);
       if (kept !== undefined) parts.push(attribute(name, kept));
     }
     parts.push(...this.urlAttributes(element));
@@ -290,6 +315,10 @@ class Walker {
       if (source.kind !== 'none' && source.url) parts.push(attribute('background', source.url));
     }
     return parts;
+  }
+
+  private classValue(value: string): string {
+    return this.ownOutput ? value : scopeClassList(value);
   }
 
   private cleanStyle(style: string | undefined): string {
@@ -363,11 +392,6 @@ function rootValueOk(name: string, value: string): boolean {
 
 function textOf(element: ElementNode): string {
   return element.children.map(child => (child.kind === 'text' ? child.data : '')).join('');
-}
-
-/** A raw-text fallback (`<noframes>`) read as markup, once: nested fallbacks lose their tags. */
-function reparsed(element: ElementNode): MailNode[] {
-  return parseMail(textOf(element).replace(/<\/?noframes[^>]*>?/gi, ''), LIMITS).root.children;
 }
 
 /** The value written for an allowlisted attribute (ids scoped), or undefined to leave it out. */

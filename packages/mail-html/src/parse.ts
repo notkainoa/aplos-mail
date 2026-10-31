@@ -39,6 +39,8 @@ export interface ParsedMail {
   doctype: string;
   /** A limit stopped the parse before the end of the input. */
   clipped: boolean;
+  /** Elements built, for a caller that shares one element budget across several parses. */
+  elements: number;
 }
 
 const VOID = new Set([
@@ -147,7 +149,7 @@ class TreeBuilder implements TokenizerCallbacks {
   private pending: ElementNode | undefined;
   private attributeName = '';
   private attributeValue = '';
-  private elements = 0;
+  elements = 0;
   private styleChars = 0;
 
   constructor(
@@ -344,5 +346,6 @@ export function parseMail(html: string, limits: ParseLimits): ParsedMail {
     root: builder.root,
     doctype: builder.doctype,
     clipped: builder.clipped || input.length < cut.length,
+    elements: Math.min(builder.elements, limits.maxElements),
   };
 }

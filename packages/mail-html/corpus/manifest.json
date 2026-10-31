@@ -1285,5 +1285,15 @@
       "mustKeepText": ["Stylesheet values that are filled in later", "list image from a variable"],
       "notes": "Found by the html-3 bypass review. var(), env() and attr() are filled in after the sanitizer has read the stylesheet, so inside image-set(), image() and src() they could put a string the sanitizer never classified in URL position (a relative img/<n> or cid/<n> on the frame's own origin, or a remote address). They are replaced inside image functions; address-like strings are emptied everywhere, and url() in a custom property is rewritten like any other (the one remote image left: img/0 through the proxy when images are on)."
     }
+  },
+  {
+    "id": "133-noframes-self-rebuilding-fallback",
+    "title": "A frameset fallback whose tags rebuild themselves each time one is removed",
+    "classes": ["resource-exhaustion", "mxss"],
+    "html": "messages/133-noframes-self-rebuilding-fallback.html",
+    "expect": {
+      "mustKeepText": ["A frameset fallback that rebuilds itself"],
+      "notes": "Found by the Opus review of html-3. The sanitizer re-parses <noframes> text as markup; once it also removed nested <noframes> tags in one pass, <nofr<noframes>ames> became <noframes> again, and each level re-read everything below it with fresh limits (quadratic). Fallbacks are now re-parsed only at the top level, one inside re-parsed text is dropped, and all re-parses share one element budget. The bigger shape is timed in tests/perf.test.ts."
+    }
   }
 ]

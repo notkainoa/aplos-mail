@@ -128,7 +128,36 @@ describe('elements and attributes', () => {
     const result = html(
       '<frameset><frame src="https://x.example/a"><noframes><p>Fallback</p><img src=x onerror=alert(1)><noframes><b>inner</b></noframes></frameset>',
     );
-    assert.equal(bodyOf(result), '<p>Fallback</p><b>inner</b>');
+    assert.equal(bodyOf(result), '<p>Fallback</p>', 'a fallback inside a fallback is dropped');
+    const rebuilt = html('<noframes><nofr<noframes>ames><p>z</p><noframes><b>b</b>');
+    assert.equal(
+      bodyOf(rebuilt),
+      'ames&gt;<p>z</p>',
+      'read once: no tag is rebuilt, the inner fallback goes',
+    );
+  });
+
+  it('keeps the mail from posing as, or hiding, what Aplos adds (aplos- classes)', () => {
+    const result = html(
+      '<style>.aplos-clipped{display:none} details.APLOS-quote, .x .aplos-find{display:none} .aplosx{color:red}</style>' +
+        '<details class="aplos-quote Note"><summary>s</summary><div class="gmail_quote">q</div></details><p class="aplos-clipped">x</p>',
+    );
+    assert.match(
+      result.document,
+      /<style>\.m-aplos-clipped\{display:none\} details\.m-APLOS-quote, \.x \.m-aplos-find\{display:none\} \.aplosx\{color:red\}<\/style>/,
+    );
+    assert.match(
+      bodyOf(result),
+      /<details class="m-aplos-quote Note"><summary>s<\/summary><details class="aplos-quote">/,
+    );
+    assert.match(bodyOf(result), /<p class="m-aplos-clipped">x<\/p>/);
+    assert.equal(
+      result.quotedCount,
+      1,
+      "the mail's own details is not counted; the quote inside it is",
+    );
+    const body = html('<body class="aplos-find x"><p>y</p></body>');
+    assert.match(body.document, /<body class="m-aplos-find x">/);
   });
 
   it('keeps attributes only from the allowlist and never with a namespace prefix', () => {
@@ -416,7 +445,7 @@ describe('mutation XSS and parser differentials', () => {
       const second = sanitizeBody(first.body, {
         cids: ['a'],
         imagePolicy: 'allow',
-        keepRewritten: true,
+        ownOutput: true,
       });
       assert.equal(second.body, first.body, input);
     }
@@ -529,7 +558,7 @@ describe('the hostile corpus', () => {
       const options = { cids: entry.cids, imagePolicy: 'allow' as const };
       const first = sanitizeBody(entry.html, { ...options, findQuery: entry.findQuery });
       if (first.clipped) continue;
-      const second = sanitizeBody(first.body, { ...options, keepRewritten: true });
+      const second = sanitizeBody(first.body, { ...options, ownOutput: true });
       assert.equal(second.body, first.body, entry.id);
     }
   });
