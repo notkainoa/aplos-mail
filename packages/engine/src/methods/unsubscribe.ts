@@ -114,6 +114,7 @@ function receiptsOf(executor: UnsubscribePort): Receipts {
 }
 
 type TargetRow = {
+  id: number;
   hdr: number;
   list_unsub: string;
   list_auth: number | null;
@@ -133,7 +134,8 @@ function gated(headers: ListHeaders, mixed: boolean): ListHeaders {
 
 /**
  * How many of the thread's newest inbound messages (with List-Unsubscribe or not, authenticated or not) are compared
- * for their From domains, besides the target itself. 100 is Gmail's cap on messages in a thread.
+ * for their From domains, not counting the target itself (its own From is compared separately). 100 is Gmail's cap on
+ * messages in a thread.
  */
 export const DOMAIN_WINDOW = 100;
 
@@ -154,7 +156,7 @@ export function fromDomain(address: string | null): string | undefined {
 }
 
 /**
- * True when the target's own From (`own`) and the From of the thread's newest `DOMAIN_WINDOW` inbound, non-draft
+ * True when the target's own From (`own`) and the From of the thread's newest `DOMAIN_WINDOW` OTHER inbound, non-draft
  * messages (with List-Unsubscribe or without, authenticated or not) do not all come from one From domain. A message
  * whose domain is unknown counts as a domain of its own, so it always answers true. "Authenticated" only means aligned
  * with that message's own From, so an attacker who signs their own domain and replies into a real thread could
@@ -164,17 +166,24 @@ export function fromDomain(address: string | null): string | undefined {
  * conversation, or a real sender whose messages are not authenticated). Trade: one-click needs the target to carry
  * List-Unsubscribe-Post, and a thread only loses it when some other inbound message in the window has a different
  * From domain than the target (a spoofed reply, or a second correspondent beside a bulk sender): that thread shows the
- * page link, the safe side. Only stored fields are read. Limit: an attacker who adds more than `DOMAIN_WINDOW` newer
- * messages pushes the real sender out of the window; the effect is then what it was before this check (the POST reveals
- * the owner's IP address and that the mail is read).
+ * page link, the safe side. Only stored fields are read. Limit: the target's row is left out of the
+ * window, so a real sender's message leaves it once `DOMAIN_WINDOW` other messages are newer than it (an attacker needs
+ * `DOMAIN_WINDOW` newer messages besides the target: 99 leave it in, 100 push it out); the effect is then what it was
+ * before this check (the POST reveals the owner's IP address and that the mail is read).
  */
-function mixedDomains(q: StoreReader, rowid: number, own: string | null): boolean {
+function mixedDomains(
+  q: StoreReader,
+  rowid: number,
+  targetId: number,
+  own: string | null,
+): boolean {
   const rows = q.all<{ from_addr: string | null }>(
     `SELECT from_addr FROM messages
-     WHERE thread_id = ? AND (flags & ?) = 0
+     WHERE thread_id = ? AND (flags & ?) = 0 AND id <> ?
      ORDER BY internal_date DESC, id DESC LIMIT ?`,
     rowid,
     FLAG.draft | FLAG.fromMe,
+    targetId,
     DOMAIN_WINDOW,
   );
   const domains = [own, ...rows.map(r => r.from_addr)].map(fromDomain);
@@ -191,14 +200,14 @@ function readTarget(q: StoreReader, threadId: string): Target | undefined {
   const rowid = threadRowId(q, threadId);
   if (rowid === undefined) throw new ContractError({ type: 'notFound', message: GONE });
   const m = q.get<TargetRow>(
-    `SELECT m.hdr, m.list_unsub, m.list_auth, m.from_addr, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
+    `SELECT m.id, m.hdr, m.list_unsub, m.list_auth, m.from_addr, a.address FROM messages m JOIN accounts a ON a.id = m.account_id
      WHERE m.thread_id = ? AND (m.flags & ?) = 0 AND m.list_unsub IS NOT NULL
      ORDER BY m.list_auth IS 1 DESC, m.internal_date DESC, m.id DESC LIMIT 1`,
     rowid,
     FLAG.draft | FLAG.fromMe,
   );
   if (!m) return undefined;
-  const mixed = m.list_auth === 1 && mixedDomains(q, rowid, m.from_addr);
+  const mixed = m.list_auth === 1 && mixedDomains(q, rowid, m.id, m.from_addr);
   return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth), mixed) };
 }
 
