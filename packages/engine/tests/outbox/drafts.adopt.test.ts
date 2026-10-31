@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT, fields, gate, SEC } from './helpers';
+import { ACCOUNT, copyWrite, fields, gate, SEC } from './helpers';
 import {
   count,
   create,
@@ -9,6 +9,7 @@ import {
   read,
   row,
   service,
+  syncOf,
   next,
   wait,
   world,
@@ -226,4 +227,133 @@ test('adopt: an early row that is being discarded is not given up for the reply 
     assert.equal(count(w), 1, 'the discarded row is gone, ours is left');
     assert.notEqual(row(w, d.id)!.remote_draft_id, 'rd1');
     assert.notEqual(row(w, d.id)!.remote_draft_id, null, 'and it made a copy of its own');
+  }));
+
+// ---------------------------------------------------------------- follow-ups from the #164 and #156 reviews
+
+test('a reply written on the phone keeps its reply target, so an edit uploaded from here stays in the thread', () =>
+  world(async w => {
+    w.first.store.commit({
+      opId: 'seed-original',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'message',
+          accountId: ACCOUNT,
+          remoteId: 'orig-1',
+          remoteThreadId: 't-1',
+          internetId: '<original@mail.example>',
+          to: [{ address: 'owner@mail.example' }],
+          cc: [],
+          subject: 'Question',
+          date: w.clock.now(),
+          internalDate: w.clock.now(),
+          flags: { seen: true, flagged: false, draft: false, fromMe: false },
+        },
+      ],
+    } as never);
+    w.first.store.commit({
+      opId: 'phone-reply',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'remoteDraft',
+          accountId: ACCOUNT,
+          remoteDraftId: 'rd-reply',
+          remoteMessageId: 'pm-1',
+          remoteThreadId: 't-1',
+          internetId: '<reply@phone.example>',
+          changedAt: w.clock.now(),
+          html: '<p>Answer</p>',
+          message: {
+            remoteId: 'pm-1',
+            remoteThreadId: 't-1',
+            inReplyTo: '<original@mail.example>',
+            from: { address: 'owner@mail.example' },
+            to: [{ address: 'jordan@mail.example' }],
+            cc: [],
+            bcc: [],
+            subject: 'Re: Question',
+            hasAttachments: false,
+            date: w.clock.now(),
+            internalDate: w.clock.now(),
+            flags: { seen: true, flagged: false, draft: true, fromMe: true },
+          },
+        },
+      ],
+    } as never);
+    const d = read(w, `${ACCOUNT}:rd-reply`);
+    assert.equal(d.mode, 'reply');
+    assert.equal(d.replyToMessageId, `${ACCOUNT}:orig-1`);
+    assert.equal(d.threadId, `${ACCOUNT}:t-1`);
+  }));
+
+test('a phone draft that answers a message we do not hold stays a plain draft', () =>
+  world(async w => {
+    fact(w, 'rd-x', 'pm-1', { ...OWN, internetId: '<x@phone.example>' });
+    assert.equal(read(w, `${ACCOUNT}:rd-x`).mode, 'new');
+    assert.equal(read(w, `${ACCOUNT}:rd-x`).replyToMessageId, undefined);
+  }));
+
+test('an unproven copy shown for an attempt takes that id out of `earlier`, so the next create does not offer it', () =>
+  world(async w => {
+    const { d, first } = await lostReply(w);
+    w.remoteDrafts.script.push({ result: 'lost' });
+    edit(w, read(w, d.id), fields({ subject: 'Second' }), true);
+    await wait(w, 5 * SEC);
+    assert.deepEqual((syncOf(w, d.id) as { earlier?: string[] }).earlier, [first.internetId]);
+    // The first attempt's copy comes back unproven (the phone edited it): shown, and no longer offered.
+    fact(w, 'rd1', 'msg-phone', { ...PHONE, internetId: first.internetId });
+    assert.equal((syncOf(w, d.id) as { earlier?: string[] }).earlier, undefined);
+    assert.equal(shown(w, REMOTE), true);
+  }));
+
+test('a copy that does not say whether it has attachments is not proven ours', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    // Our own content, but the adapter reports nothing about attachments (neither true nor false).
+    const copy = copyWrite({
+      remoteDraftId: 'rd1',
+      remoteMessageId: 'msg2',
+      internetId: upload.internetId,
+      changedAt: w.clock.now(),
+    }) as unknown as { message: { hasAttachments?: boolean } };
+    delete copy.message.hasAttachments;
+    w.first.store.commit({ opId: 'no-attachment-report', origin: 'sync', writes: [copy] } as never);
+    assert.equal(row(w, d.id)!.remote_draft_id, null, 'not adopted without a report');
+    g.open();
+    await w.settle();
+  }));
+
+test('a reply that names a remote draft another row shows is not bound even when this draft already holds a different copy', () =>
+  world(async w => {
+    const g = gate();
+    w.remoteDrafts.script.push({ result: 'landedLost' }, { wait: g.wait });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    const first = w.remoteDrafts.saves.at(-1)!;
+    // The edit's create (a new Message-ID) is still running when the first attempt's copy is proven and adopted.
+    edit(w, read(w, d.id), fields({ subject: 'Second' }), true);
+    await wait(w, 5 * SEC);
+    const second = w.remoteDrafts.saves.at(-1)!;
+    assert.notEqual(second.internetId, first.internetId);
+    // History shows the second attempt's copy as the phone's version first (unproven: shown) ...
+    fact(w, 'rd3', 'msg-phone', { ...PHONE, internetId: second.internetId });
+    assert.equal(shown(w, `${ACCOUNT}:rd3`), true);
+    // ... and then the first attempt's copy is proven and adopted.
+    const firstMessage = w.remoteDrafts.remote.get('rd1')!.messageId;
+    fact(w, 'rd1', firstMessage, { ...OWN, internetId: first.internetId });
+    assert.equal(row(w, d.id)!.remote_draft_id, 'rd1', "the first attempt's copy was adopted");
+    g.open();
+    await w.settle();
+    assert.equal(
+      row(w, d.id)!.remote_draft_id,
+      'rd1',
+      'not re-bound to the copy the other row shows',
+    );
+    assert.equal(shown(w, `${ACCOUNT}:rd3`), true, 'and that row is kept');
   }));

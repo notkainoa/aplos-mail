@@ -61,7 +61,8 @@ function showsEveryField(w: RemoteDraftWrite, base: DraftFields, own: string) {
     subject: m.subject !== undefined,
     html: bodyOf(w) !== undefined,
   };
-  const emptyHere = !keepsMine(base) && m.hasAttachments !== true;
+  // A copy that does not say whether it has attachments is not shown to have none: adapters must always report.
+  const emptyHere = !keepsMine(base) && m.hasAttachments === false;
   return Object.values(shown).every(Boolean) && emptyHere;
 }
 
@@ -102,3 +103,17 @@ export function explainedByAttempt(
 
 export const accountAddress = (tx: CommitExtensionTx, accountId: string) =>
   tx.get<{ address: string }>('SELECT address FROM accounts WHERE id = ?', accountId)?.address;
+
+/** The stored message a foreign draft answers (by its In-Reply-To), as a contract id; reply-all cannot be known. */
+export function repliedTo(tx: CommitExtensionTx, w: RemoteDraftWrite) {
+  const id = w.message?.inReplyTo;
+  const found =
+    id === undefined
+      ? undefined
+      : tx.get<{ remote_id: string }>(
+          'SELECT remote_id FROM messages WHERE account_id = ? AND internet_id = ? LIMIT 1',
+          w.accountId,
+          id,
+        );
+  return found && `${w.accountId}:${found.remote_id}`;
+}
