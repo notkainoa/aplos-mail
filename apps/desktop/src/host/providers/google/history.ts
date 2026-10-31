@@ -13,6 +13,15 @@ import {
   type SyncState,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
+import {
+  deliverBodies,
+  pendingJson,
+  BODY_FETCHES,
+  PENDING_KEY,
+  READS_KEY,
+  readPending,
+  type PendingBodies,
+} from './draft-body';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
 import { isQuarantined, passWrites, readSchedule, settleFailures } from './failures';
 import {
@@ -267,6 +276,16 @@ function headWrites(
   return { [HEAD_AT_KEY]: String(state.updatedAt) };
 }
 
+/** The `READS_KEY` write after a page: the pass's body reads so far while it goes on, cleared once it reaches the head. */
+function readsWrite(
+  next: SyncState,
+  memory: ReadonlyMap<string, string>,
+  total: number,
+): Record<string, string | null> {
+  if (atHead(next)) return memory.has(READS_KEY) ? { [READS_KEY]: null } : {};
+  return String(total) === memory.get(READS_KEY) ? {} : { [READS_KEY]: String(total) };
+}
+
 /**
  * After the baseline a reset remembers when history last reached the head, for `missedArrivals`; before it, nothing.
  * Never a later time: mail that a stalled pass had not fetched yet must still count as missed.
@@ -393,6 +412,19 @@ function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>
   );
 }
 
+/**
+ * The message ids this adapter reported or saw for `draftId` earlier that are not `messageId`: Gmail gives a draft a new
+ * message id on every update, so these are the versions the fact replaces. Only ids this adapter itself recorded for the
+ * same draft id (`DRAFTS_KEY`) are named; nothing is guessed from the page's deleted messages.
+ */
+function previousMessages(
+  draftMap: ReadonlyMap<string, string>,
+  draftId: string,
+  messageId: string,
+): string[] {
+  return [...draftMap].filter(([id, d]) => d === draftId && id !== messageId).map(([id]) => id);
+}
+
 /** The drafts facts and the next message id -> draft id map, given the drafts Gmail has now (`current`). */
 async function settleDrafts(
   ctx: AdapterContext,
@@ -429,11 +461,13 @@ async function settleDrafts(
     if (!draftId || !live(m)) continue;
     nextDraftMap.set(m.id, draftId);
     if (own.has(m.id)) continue;
+    const supersedes = previousMessages(draftMap, draftId, m.id);
     drafts.push({
       remoteDraftId: draftId,
       remoteMessageId: m.id,
       remoteThreadId: m.threadId,
       changedAt: now,
+      ...(supersedes.length ? { supersedes } : {}),
     });
   }
   return { drafts, nextDraftMap };
@@ -529,11 +563,14 @@ function pageExtras(
   ctx: AdapterContext,
   drafts: RemoteDraftFact[],
   nextDraftMap: ReadonlyMap<string, string>,
+  pending: PendingBodies,
   inboxMoves: readonly [string, boolean][],
 ): Pick<StepResult, 'drafts' | 'memory'> {
   const memory: Record<string, string | null> = {};
   const draftsJson = nextDraftMap.size ? JSON.stringify(Object.fromEntries(nextDraftMap)) : null;
   if (draftsJson !== (ctx.memory.get(DRAFTS_KEY) ?? null)) memory[DRAFTS_KEY] = draftsJson;
+  const waiting = pendingJson(pending);
+  if (waiting !== (ctx.memory.get(PENDING_KEY) ?? null)) memory[PENDING_KEY] = waiting;
   const regained = regainedList(ctx.memory, inboxMoves);
   if (regained !== undefined) memory[REGAINED_KEY] = regained;
   return {
@@ -572,6 +609,33 @@ function nextHistoryState(
         : {}),
     ...(pending.length ? { pending } : {}),
   };
+}
+
+/**
+ * Bodies for the foreign drafts of this page (`draft-body.ts`). The bound is per pass (all its pages), not per page: the
+ * pages of a pass that is not at its head count together, and a page of a pass that used its reads makes none.
+ */
+async function bodiesFor(
+  client: GmailClient,
+  step: PlannedStep,
+  state: SyncState,
+  ctx: AdapterContext,
+  drafts: RemoteDraftFact[],
+  now: number,
+) {
+  const priorReads = atHead(state) ? 0 : Number(ctx.memory.get(READS_KEY)) || 0;
+  const budget = Math.max(0, BODY_FETCHES - priorReads);
+  const delivered = await deliverBodies(
+    client,
+    step.lane,
+    ctx.log,
+    drafts,
+    readPending(ctx.memory),
+    now,
+    ctx.account.address,
+    budget,
+  );
+  return { ...delivered, priorReads };
 }
 
 export async function historyStep(
@@ -621,9 +685,12 @@ export async function historyStep(
     if (isStop(error)) return untouched(state, client.spent);
     throw error;
   }
-  const { drafts, nextDraftMap } = current
+  const settled = current
     ? await settleDrafts(ctx, changes, draftMap, current, now)
     : { drafts: [], nextDraftMap: draftMap };
+  const { nextDraftMap } = settled;
+  const delivered = await bodiesFor(client, step, state, ctx, settled.drafts, now);
+  const { drafts } = delivered;
 
   const candidates = await fetchCandidates(ctx, changes, current);
   // Without labelIds, Inbox membership of mail in an unknown thread comes from one Inbox list page (5 units): new mail
@@ -647,7 +714,7 @@ export async function historyStep(
   const removals: Removal[] = [...changes.deleted]
     .filter(id => !draftMessages.has(id))
     .map(remoteId => ({ remoteId }));
-  const extras = pageExtras(ctx, drafts, nextDraftMap, changes.inboxMoves);
+  const extras = pageExtras(ctx, drafts, nextDraftMap, delivered.pending, changes.inboxMoves);
 
   if (passFetches > CHANGE_CAP) {
     // Keep the free part of this page (deltas, removals, drafts); the resync fetches what the Inbox now holds.
@@ -675,6 +742,7 @@ export async function historyStep(
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
   const next = nextHistoryState(state, page, records, fetched, passFetches, now);
   Object.assign(memory, headWrites(state, next, ctx.memory));
+  Object.assign(memory, readsWrite(next, ctx.memory, delivered.priorReads + delivered.reads));
   return {
     ...pageDeltas(changes, upserted),
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),
