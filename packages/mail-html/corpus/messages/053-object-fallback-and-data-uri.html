@@ -1,0 +1,10 @@
+<p>Document viewer fallback: the preview needs a plugin.</p>
+<object data="data:text/html,%3Cscript%3Efetch('{{CANARY}}/{{ID}}/object-data-script')%3C/script%3E"></object>
+<object data="data:text/html;base64,PHNjcmlwdD5mZXRjaCgnL3gnKTwvc2NyaXB0Pg=="></object>
+<object data="javascript:fetch('{{CANARY}}/{{ID}}/object-javascript')"></object>
+<object data="{{CANARY}}/{{ID}}/object-with-fallback"><img src="{{CANARY}}/{{ID}}/fallback-img"><script>fetch('{{CANARY}}/{{ID}}/fallback-script')</script></object>
+<object><param name="data" value="{{CANARY}}/{{ID}}/param-data"></object>
+<embed src="data:text/html,<img src='{{CANARY}}/{{ID}}/embed-data'>">
+<embed src="javascript:fetch('{{CANARY}}/{{ID}}/embed-javascript')">
+<embed type="text/html" src="x" onload="fetch('{{CANARY}}/{{ID}}/embed-onload')">
+<object type="text/html" data="x" onload="fetch('{{CANARY}}/{{ID}}/object-onload')" onerror="fetch('{{CANARY}}/{{ID}}/object-onerror')"></object>

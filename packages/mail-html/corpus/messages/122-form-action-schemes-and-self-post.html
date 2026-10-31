@@ -1,0 +1,18 @@
+<p>Feedback form for the library.</p>
+<form action="mailto:feedback@shop.example?subject=Feedback" method="post" enctype="text/plain"><input name="body" value="hello"><input type="submit"></form>
+<form action="tel:+15550100"><input type="submit" value="call"></form>
+<form action="ftp://{{CANARY_HOST}}/upload" method="post"><input type="submit"></form>
+<form action="file:///tmp/upload" method="post"><input type="submit"></form>
+<form action="data:text/html,x" method="post"><input type="submit"></form>
+<form action="blob:aplos-mail://m/x" method="post"><input type="submit"></form>
+<form action="aplos-mail://m/0123456789abcdef" method="post"><input type="submit" value="post to another token"></form>
+<form action="" method="post"><input name="own" value="self"><input type="submit" value="post to the frame itself"></form>
+<form method="post"><input type="submit" value="post with no action"></form>
+<form action="." method="post"><input type="submit" value="post to dot"></form>
+<form action="?q=1" method="post"><input type="submit" value="post to query"></form>
+<form action="cid/0" method="post"><input type="submit" value="post to cid"></form>
+<form action="img/0" method="post"><input type="submit" value="post to img"></form>
+<form action="{{CANARY}}/{{ID}}/form-put" method="put"><input type="submit"></form>
+<form action="{{CANARY}}/{{ID}}/form-trace" method="TRACE"><input type="submit"></form>
+<a href="">link to the frame itself</a> <a href=".">link to dot</a> <a href="?x=1">link to query</a> <a href="#">link to fragment</a>
+<script>document.forms[7].submit();document.forms[8].requestSubmit();</script>

@@ -1,0 +1,7 @@
+<html><head><title>Frameset test message</title></head>
+<frameset cols="50%,50%" onload="fetch('{{CANARY}}/{{ID}}/frameset-onload')">
+  <frame src="{{CANARY}}/{{ID}}/frame-one">
+  <frame src="{{CANARY}}/{{ID}}/frame-two" name="two">
+  <noframes><body><p>Frameset test message: your viewer does not support frames.</p><img src="{{CANARY}}/{{ID}}/noframes-img"></body></noframes>
+</frameset>
+</html>

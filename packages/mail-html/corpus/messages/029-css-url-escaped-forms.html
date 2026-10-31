@@ -1,0 +1,31 @@
+<style>
+  .a { background: u\72l({{CANARY}}/{{ID}}/escape-r); }
+  .b { background: \75rl({{CANARY}}/{{ID}}/escape-u); }
+  .c { background: \000075rl({{CANARY}}/{{ID}}/escape-padded); }
+  .d { background: u\000072l({{CANARY}}/{{ID}}/escape-padded-r); }
+  .e { background: url(\68ttp://{{CANARY_HOST}}/escape-scheme); }
+  .f { background: url("\68ttp://{{CANARY_HOST}}/escape-scheme-quoted"); }
+  .g { background: url(http\3a //{{CANARY_HOST}}/escape-colon); }
+  .h { background: url(http://{{CANARY_HOST}}/escape\2f slash); }
+  .i { background: url({{CANARY}}/{{ID}}/escape-in-path\
+continued); }
+  .j { background: \75 rl({{CANARY}}/{{ID}}/escape-space-terminated); }
+  .k { b\61ckground: url({{CANARY}}/{{ID}}/escape-in-property); }
+  .l { background-i\6dage: url({{CANARY}}/{{ID}}/escape-in-property-2); }
+  .m { background: url(&quot;{{CANARY}}/{{ID}}/html-entity-quote&quot;); }
+  .n { background: url('{{CANARY}}/{{ID}}/single-quoted'); }
+  .o { background: url( {{CANARY}}/{{ID}}/padded-space ); }
+  .p { background: url(
+    {{CANARY}}/{{ID}}/newlines
+  ); }
+  .q { background: URL({{CANARY}}/{{ID}}/uppercase); }
+  .r { background: Url({{CANARY}}/{{ID}}/mixed-case); }
+  .s { background: url({{CANARY}}/{{ID}}/with%20encoded); }
+  .t { background: url({{CANARY}}/{{ID}}/with-paren\)escape); }
+  .u { background: url("{{CANARY}}/{{ID}}/with-(paren)"); }
+</style>
+<p>Garden tool library: borrow a spade for a week.</p>
+<div class="a b c d e f g h i j k l m n o p q r s t u">escaped</div>
+<div style="background:u\72l({{CANARY}}/{{ID}}/attr-escape-r)">attr escape</div>
+<div style="background:&#117;rl({{CANARY}}/{{ID}}/attr-html-entity-u)">attr entity</div>
+<div style="background:url({{CANARY}}/{{ID}}/attr-unterminated">unterminated</div>

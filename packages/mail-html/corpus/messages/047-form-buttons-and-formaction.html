@@ -1,0 +1,15 @@
+<p>Reply to confirm your seat at the dinner.</p>
+<form action="#" method="post">
+  <input type="text" name="name" value="Guest">
+  <button type="submit" formaction="{{CANARY}}/{{ID}}/button-formaction" formmethod="post">Confirm</button>
+  <input type="submit" formaction="{{CANARY}}/{{ID}}/input-formaction" value="Confirm too">
+  <input type="image" src="{{CANARY}}/{{ID}}/input-image.png" formaction="{{CANARY}}/{{ID}}/input-image-formaction" alt="Confirm image">
+  <button formtarget="_blank" formaction="{{CANARY}}/{{ID}}/button-formtarget">New window</button>
+  <button formtarget="_top" formaction="{{CANARY}}/{{ID}}/button-formtarget-top">Top</button>
+</form>
+<button form="outside" formaction="{{CANARY}}/{{ID}}/outside-button">Outside button</button>
+<form id="outside" action="{{CANARY}}/{{ID}}/outside-form"></form>
+<fieldset form="outside"><input name="x" value="y"></fieldset>
+<form action="{{CANARY}}/{{ID}}/get-with-query?a=1" method="get" target="_blank"><input type="submit" value="Go"></form>
+<isindex action="{{CANARY}}/{{ID}}/isindex" prompt="Search">
+<form action="{{CANARY}}/{{ID}}/nested-outer"><form action="{{CANARY}}/{{ID}}/nested-inner"><input type="submit"></form></form>

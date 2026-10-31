@@ -1,0 +1,19 @@
+before the html tag: <img src="{{CANARY}}/{{ID}}/before-html">
+<html lang="en" onload="fetch('{{CANARY}}/{{ID}}/html-onload')">
+<head><title>First head</title></head>
+<body class="one" onload="fetch('{{CANARY}}/{{ID}}/first-body-onload')" background="{{CANARY}}/{{ID}}/first-body-bg">
+<p>Real content in the first body.</p>
+<html onmouseover="fetch('{{CANARY}}/{{ID}}/second-html-merged')" data-merged="yes">
+<head><base href="{{CANARY}}/{{ID}}/second-head-base/"><meta http-equiv="refresh" content="0;url={{CANARY}}/{{ID}}/second-head-meta"></head>
+<body onpageshow="fetch('{{CANARY}}/{{ID}}/second-body-merged')" bgcolor="red" style="background:url({{CANARY}}/{{ID}}/second-body-style)">
+<title>Title inside the body</title>
+<style>p { color: green }</style>
+</body>
+<img src="{{CANARY}}/{{ID}}/between-body-and-body">
+<body onresize="fetch('{{CANARY}}/{{ID}}/third-body-merged')">
+<img src="{{CANARY}}/{{ID}}/after-first-close-body">
+</html>
+<p>Content after the closing html tag.</p>
+<img src="{{CANARY}}/{{ID}}/after-html">
+</body>
+<frameset><frame src="{{CANARY}}/{{ID}}/frameset-after-body"></frameset>
