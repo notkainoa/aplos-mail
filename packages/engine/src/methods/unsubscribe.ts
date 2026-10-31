@@ -119,15 +119,61 @@ type TargetRow = { hdr: number; list_unsub: string; list_auth: number | null; ad
  * RFC 8058 section 4: one-click only for an authenticated message. Any other one keeps only the owner-visible ways (the
  * mailto the owner reviews and sends, the page the owner opens), so its List-Unsubscribe-Post never reaches the port.
  */
-function gated(headers: ListHeaders): ListHeaders {
-  if (headers.authenticated === true) return headers;
+function gated(headers: ListHeaders, mixed: boolean): ListHeaders {
+  if (headers.authenticated === true && !mixed) return headers;
   const { listUnsubscribePost: _post, ...rest } = headers;
   return rest;
 }
 
+/** How many of the thread's newest List-Unsubscribe messages (authenticated or not) are compared for their From domains. */
+export const DOMAIN_WINDOW = 50;
+
+/**
+ * The exact, lower-cased domain of a stored From address: the text after its last `@`, trimmed. There is no public-suffix
+ * list here, so `news.example.com` and `mail.example.com` are different domains (the safe side: a legitimate sender that
+ * mails from two subdomains gets the owner-visible ways, never a wrong one-click). `undefined` when the address is
+ * missing, has no `@`, or has an empty domain or one with a character outside printable ASCII (whitespace, controls and
+ * anything non-ASCII, which also keeps lower-casing from folding look-alikes such as the Kelvin sign into ASCII), angle
+ * brackets, commas or another `@`.
+ */
+export function fromDomain(address: string | null): string | undefined {
+  const at = address === null ? -1 : address.lastIndexOf('@');
+  if (address === null || at < 0) return undefined;
+  // Checked before lower-casing, which would fold the Kelvin sign (U+212A) into an ASCII k.
+  const domain = address.slice(at + 1).trim();
+  return domain === '' || /[^\x21-\x7e]|[<>,@]/.test(domain) ? undefined : domain.toLowerCase();
+}
+
+/**
+ * True when the thread's List-Unsubscribe messages (newest `DOMAIN_WINDOW`, inbound, not drafts, authenticated or not)
+ * do not all come from one From domain. A message whose domain is unknown counts as a domain of its own, so it always
+ * answers true. "Authenticated" only means aligned with that message's own From, so an attacker who signs their own
+ * domain and replies into a real newsletter's thread could otherwise become the newest authenticated message and the
+ * one-click target, even when the real sender's messages are not authenticated and the attacker is alone among the
+ * authenticated ones; that is why unauthenticated messages are compared too (the target choice stays
+ * authenticated-first). Trade: a spoofed unauthenticated reply from another domain downgrades a real thread to the page
+ * link, the safe side. Only stored fields are read. Limit: an attacker who adds more than `DOMAIN_WINDOW` newer
+ * messages pushes the real sender out of the window; the effect is then what it was before this check (the POST reveals
+ * the owner's IP address and that the mail is read).
+ */
+function mixedDomains(q: StoreReader, rowid: number): boolean {
+  const rows = q.all<{ from_addr: string | null }>(
+    `SELECT from_addr FROM messages
+     WHERE thread_id = ? AND (flags & ?) = 0 AND list_unsub IS NOT NULL
+     ORDER BY internal_date DESC, id DESC LIMIT ?`,
+    rowid,
+    FLAG.draft | FLAG.fromMe,
+    DOMAIN_WINDOW,
+  );
+  const domains = rows.map(r => fromDomain(r.from_addr));
+  return domains.some(d => d === undefined) || new Set(domains).size > 1;
+}
+
 /**
  * The thread's newest authenticated inbound message with List-Unsubscribe, else its newest one with it: a spoofed
- * newer message cannot replace an authenticated target, and a fallback is gated to the owner-visible ways.
+ * newer message cannot replace an authenticated target, and a fallback is gated to the owner-visible ways. An
+ * authenticated target is gated the same way when the thread's List-Unsubscribe messages come from more than one From
+ * domain (`mixedDomains`).
  */
 function readTarget(q: StoreReader, threadId: string): Target | undefined {
   const rowid = threadRowId(q, threadId);
@@ -140,7 +186,8 @@ function readTarget(q: StoreReader, threadId: string): Target | undefined {
     FLAG.draft | FLAG.fromMe,
   );
   if (!m) return undefined;
-  return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth)) };
+  const mixed = m.list_auth === 1 && mixedDomains(q, rowid);
+  return { from: m.address, headers: gated(listHeaders(m.hdr, m.list_unsub, m.list_auth), mixed) };
 }
 
 function target(ctx: MethodContext, threadId: string): Target | undefined {
