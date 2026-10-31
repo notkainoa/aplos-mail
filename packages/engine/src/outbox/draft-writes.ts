@@ -921,10 +921,17 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     (meta.cur ?? fingerprintOf(fields)) === meta.fingerprint;
   if (w.removed) return clean ? deleteRow(tx, row) : raise(tx, row, meta, fields, w, undefined);
   const theirs = theirsFields(row.account_id, messageOf(w), fields);
-  // Without the body (metadata only) nothing is replaced silently: the owner chooses.
-  if (clean && theirs.complete) return replaceWithTheirs(tx, row, meta, theirs.fields, w);
+  // Without the body (metadata only) nothing is replaced silently: the owner chooses. Nor when the copy cannot hold
+  // something this draft has (the copy carries no Bcc by design, and no sign-off source): a silent replace would drop it,
+  // and the copy's own Bcc is not merged in either (a phone that removed one it added would be hidden).
+  if (clean && theirs.complete && !holdsOnlyHere(fields))
+    return replaceWithTheirs(tx, row, meta, theirs.fields, w);
   raise(tx, row, meta, fields, w, theirs);
 }
+
+/** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
+const holdsOnlyHere = (fields: DraftFields) =>
+  fields.bcc.length > 0 || fields.signatureSource !== undefined;
 
 /** A `remoteDraft` fact from the provider actor (D9). */
 export function applyRemoteDraft(write: { kind: string }, tx: CommitExtensionTx) {
