@@ -25,7 +25,6 @@ import { completes, messageOf } from './draft-body';
 import {
   accountAddress,
   explainedByAttempt,
-  hasSend,
   sendPins,
   holdersOf,
   dropHeld,
@@ -719,6 +718,9 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
 }
 
 function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
+  // A removal is never an echo, whatever id it carries (Gmail reports it under the last known one): the other device sent
+  // or deleted the copy. Our own removals meet a hidden `removing` row first and never get here.
+  if (w.removed) return false;
   const wrote = meta.wrote ?? [];
   // The copy an open conflict names is theirs, whatever Message-ID it carries: it completes the conflict (their body).
   if (meta.conflict?.theirsMessageId === w.remoteMessageId) return false;
@@ -789,7 +791,7 @@ function relink(tx: CommitExtensionTx, row: DraftRow, meta: DraftMeta, fields: D
 
 function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   if (w.removed) return deleteRow(tx, row);
-  const { fields: stored, meta: kept } = parseData(row.data);
+  const { fields: stored, meta } = parseData(row.data);
   // A draft held by a send (queued, running, or gone out at this revision) does not change: its revision is what the
   // send is checked against, and the send names the copy it was queued against. A newer version of the copy is
   // remembered like any change made meanwhile (the copy is then another device's and is never deleted from here), and
@@ -797,8 +799,7 @@ function refreshRemote(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite
   if (sendPins(tx, row))
     return w.remoteMessageId === row.remote_message_id
       ? undefined
-      : markChangedElsewhere(tx, row, stored, kept, w);
-  const meta = dropHeld(tx, row, stored, kept);
+      : markChangedElsewhere(tx, row, stored, meta, w);
   const base = withParent(tx, stored, w);
   const same = w.remoteMessageId === row.remote_message_id;
   // The same version again changes nothing, unless it brings the text a snippet-only draft was waiting for, or the
@@ -905,6 +906,8 @@ function replaceWithTheirs(
       cur: fp,
       fingerprint: fp,
       theirsSeen: (meta.theirsSeen ?? 0) + 1,
+      // The row names the reported version again: a discard deletes the copy, guarded on its id.
+      changedElsewhere: null,
       announce: tx.seq,
     }),
   );
@@ -912,8 +915,7 @@ function replaceWithTheirs(
 }
 
 function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
-  const { fields, meta: stored } = parseData(row.data);
-  const meta = hasSend(tx, row.id) ? stored : dropHeld(tx, row, fields, stored);
+  const { fields, meta } = parseData(row.data);
   // First: our own upload's Message-ID makes `isEcho` true too, but only this moves the base to the new message id.
   if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(tx, w, row, meta, fields))
     return advanceBase(tx, row, meta, w);
@@ -921,7 +923,7 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
   // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
   // includes a removal (the other device sent it): the id may now name its sent message.
-  if (hasSend(tx, row.id)) return markChangedElsewhere(tx, row, fields, meta, w);
+  if (sendPins(tx, row)) return markChangedElsewhere(tx, row, fields, meta, w);
   // The same version again is known, unless it brings what the conflict lacks (their body). A removal is always news:
   // the other device sent or deleted the copy, and its id must be forgotten.
   const known = meta.conflict;
@@ -937,7 +939,9 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     !meta.problem &&
     meta.fingerprint !== undefined &&
     (meta.cur ?? fingerprintOf(fields)) === meta.fingerprint;
-  if (w.removed) return clean ? deleteRow(tx, row) : raise(tx, row, meta, fields, w, undefined);
+  // The report is news that replaces or questions the copy: whatever was held is older than it from here on.
+  const now = dropHeld(meta);
+  if (w.removed) return clean ? deleteRow(tx, row) : raise(tx, row, now, fields, w, undefined);
   const own = accountAddress(tx, row.account_id);
   const theirs = theirsFields(row.account_id, messageOf(w), fields, own);
   // Without the body (metadata only) nothing is replaced silently: the owner chooses. Nor when the copy cannot hold
@@ -950,8 +954,8 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     !holdsOnlyHere(fields) &&
     !changesSender(theirs.fields, fields, own)
   )
-    return replaceWithTheirs(tx, row, meta, theirs.fields, w);
-  raise(tx, row, meta, fields, w, theirs);
+    return replaceWithTheirs(tx, row, now, theirs.fields, w);
+  raise(tx, row, now, fields, w, theirs);
 }
 
 /** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */

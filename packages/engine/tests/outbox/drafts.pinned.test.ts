@@ -352,3 +352,86 @@ for (const [name, extra] of [
       assert.equal(held(w, s.draft.id), true);
       assert.equal(read(w, s.draft.id).subject, 'Lunch');
     }));
+
+// ---------------------------------------------------------------- the Opus re-check of the held copy
+
+test('an echo of our own copy arriving while a report is held does not drop it: the send check still applies it', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const a = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, a, { subject: 'Phone A', html: '<p>A</p>' });
+    w.faults.push((input: CommitInput) => input.opId.startsWith('held:'));
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    assert.equal(read(w, s.draft.id).subject, 'Lunch', 'A is still held');
+    // History repeats the copy this row already holds (an echo): it changes nothing, and A stays held.
+    fact(w, s.remoteDraftId, s.messageId, { subject: 'Lunch', html: '<p>Lunch at noon?</p>' });
+    assert.equal(held(w, s.draft.id), a, 'A is still held after the echo');
+    refusedWith(() => w.send(w.first, s.draft.id, { revision: s.draft.revision }), 'stateMismatch');
+    assert.equal(read(w, s.draft.id).subject, 'Phone A', 'the check applied A');
+    assert.equal(w.server.payloads.length, 0, 'and nothing went out');
+  }));
+
+test('a phone edit of a draft whose OLDER revision was sent is asked about, not held for good', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    // Keep the sent draft in Drafts for a moment, so the owner can edit it after the send.
+    for (let i = 0; i < 40; i++)
+      w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
+    await wait(w, 15 * SEC);
+    assert.equal(w.get(sub.id).state, 'sent');
+    const after = edit(w, read(w, s.draft.id), fields({ subject: 'After' }));
+    assert.equal(after.revision, s.draft.revision + 1);
+    const b = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, b, { subject: 'Phone B', html: '<p>B</p>' });
+    assert.equal(held(w, s.draft.id), undefined, 'nothing is held: no send pins this revision');
+    const conflict = (syncOf(w, s.draft.id) as { conflict?: { theirsMessageId?: string } })
+      .conflict;
+    assert.equal(conflict?.theirsMessageId, b, 'the owner is asked about the phone version');
+    refusedWith(() => w.send(w.first, s.draft.id, { revision: after.revision }), 'stateMismatch');
+    assert.equal(w.server.payloads.length, 1, 'the later text was not mailed over it');
+  }));
+
+test('a removal reported under the row’s own message id is a removal, not an echo (no send, queued send)', () =>
+  world(async w => {
+    const s = await synced(w);
+    fact(w, s.remoteDraftId, s.messageId, { removed: true });
+    assert.equal(service(w).get([s.draft.id]).notFound.length, 1, 'the draft is gone');
+    const t = await synced(w, fields({ subject: 'Second' }));
+    const sub = w.send(w.first, t.draft.id, { revision: t.draft.revision });
+    fact(w, t.remoteDraftId, t.messageId, { removed: true });
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    assert.equal(service(w).get([t.draft.id]).notFound.length, 1, 'gone once the send is undone');
+    refusedWith(() => w.send(w.first, t.draft.id, { revision: t.draft.revision }), 'notFound');
+    assert.equal(w.server.payloads.length, 0, 'nothing can be mailed a second time');
+  }));
+
+test('our own removal of the copy, reported back under the row’s id, still just ends the hidden row', () =>
+  world(async w => {
+    const s = await synced(w);
+    service(w).destroy(next(), s.draft.id);
+    await wait(w, 60 * SEC);
+    assert.deepEqual(w.remoteDrafts.removeAttempts, [s.remoteDraftId], 'we removed the copy');
+    fact(w, s.remoteDraftId, s.messageId, { removed: true });
+    assert.equal(count(w), 0, 'nothing is left');
+    assert.equal(w.remoteDrafts.removeAttempts.length, 1);
+  }));
+
+test('after a later version replaced the clean draft over a held one, a discard deletes the copy again, guarded on its id', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const a = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, a, { subject: 'Phone A', html: '<p>A</p>' });
+    w.faults.push((input: CommitInput) => input.opId.startsWith('held:'));
+    w.act(w.first, { type: 'undo', submissionId: sub.id });
+    const b = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, b, { subject: 'Phone B', html: '<p>B</p>' });
+    assert.equal(read(w, s.draft.id).subject, 'Phone B');
+    assert.equal(held(w, s.draft.id), undefined, 'the mark is cleared with the version taken');
+    service(w).destroy(next(), s.draft.id);
+    await wait(w, 60 * SEC);
+    assert.deepEqual(w.remoteDrafts.removeAttempts, [s.remoteDraftId]);
+    assert.deepEqual(w.remoteDrafts.removeExpected, [b]);
+  }));

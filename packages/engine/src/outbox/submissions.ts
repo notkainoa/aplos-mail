@@ -11,7 +11,7 @@ import {
   type OutboxCtx,
 } from './context';
 import { DraftConflict, INCOMPLETE_SENTENCE, parseData } from './draft-state';
-import { hasSend, sendPins } from './draft-proof';
+import { sendPins } from './draft-proof';
 import {
   buildEnvelope,
   buildMime,
@@ -127,7 +127,6 @@ interface DraftRow {
   display_name: string | null;
   remote_internet_id: string | null;
   synced_revision: number | null;
-  origin: string;
   remote_draft_id: string | null;
   provider: string;
   [k: string]: string | number | null;
@@ -136,7 +135,7 @@ interface DraftRow {
 function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
-            d.origin, d.remote_draft_id, a.address, a.display_name, a.provider
+            d.remote_draft_id, a.address, a.display_name, a.provider
      FROM drafts d JOIN accounts a ON a.id = d.account_id
      WHERE d.id = ? AND json_extract(d.data, '$._sync.removing') IS NULL`,
     id,
@@ -290,9 +289,7 @@ export function releaseHeld(ctx: OutboxCtx, draftId: string) {
   const found = ctx.store.read(q => {
     const d = readDraft(q, draftId);
     const copy = d && parseData(d.data).meta.changedElsewhere;
-    // The same test the report meets when it is applied: a remote draft is held by `sendPins`, a local one by any send.
-    const pinned = d && (d.origin === 'remote' ? sendPins(q, d) : hasSend(q, d.id));
-    return d && typeof copy === 'object' && !pinned ? { d, copy } : undefined;
+    return d && typeof copy === 'object' && !sendPins(q, d) ? { d, copy } : undefined;
   });
   if (!found) return;
   const { d, copy } = found;

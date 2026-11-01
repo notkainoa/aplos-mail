@@ -211,17 +211,10 @@ export function markChangedElsewhere(
 }
 
 /**
- * A report is applied while nothing holds the draft: whatever was held is older news now and must never be replayed
- * over it. The copy stays marked (`true`: a discard forgets it instead of deleting it), only the stored report goes.
+ * The meta of a draft whose copy a newer report is about to REPLACE or ask about (the one write that makes the held
+ * report older news): the copy stays marked (`true`: a discard forgets it instead of deleting it), the stored report goes,
+ * so it can never be replayed over the newer one. Echoes and repeats of known versions do not call this: they change
+ * nothing, and the held report must still be released.
  */
-export function dropHeld(
-  tx: CommitExtensionTx,
-  row: DraftRow,
-  fields: DraftFields,
-  meta: DraftMeta,
-) {
-  if (typeof meta.changedElsewhere !== 'object') return meta;
-  const next: DraftMeta = { ...meta, changedElsewhere: true };
-  tx.run('UPDATE drafts SET data = ? WHERE id = ?', packData(fields, next), row.id);
-  return next;
-}
+export const dropHeld = (meta: DraftMeta): DraftMeta =>
+  typeof meta.changedElsewhere === 'object' ? { ...meta, changedElsewhere: true } : meta;
