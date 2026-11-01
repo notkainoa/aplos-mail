@@ -69,11 +69,11 @@ function executor(s: Spy, extra: UnsubscribeDeps = {}) {
   return createUnsubscribeExecutor({ resolve: s.resolve, transport: s.transport, ...extra });
 }
 
-/** `null` leaves List-Unsubscribe-Post out. */
+/** Headers of an authenticated message (RFC 8058 section 4's precondition). `null` leaves List-Unsubscribe-Post out. */
 function headers(list: string, post: string | null = POST): ListHeaders {
   return post === null
-    ? { listUnsubscribe: list }
-    : { listUnsubscribe: list, listUnsubscribePost: post };
+    ? { listUnsubscribe: list, authenticated: true }
+    : { listUnsubscribe: list, listUnsubscribePost: post, authenticated: true };
 }
 
 function run(s: Spy, h: ListHeaders, extra: UnsubscribeDeps = {}) {
@@ -160,6 +160,27 @@ test('the plan follows Decision 5: one-click with both headers, else mailto, els
   const mixed = planUnsubscribe(headers(`<mailto:a@list.example>, <${LIST}>`));
   assert.equal(mixed.kind, 'oneClick');
   assert.equal(mixed.kind === 'oneClick' && mixed.url.href, LIST);
+});
+
+/** Both one-click headers with `authenticated` set to `verdict`, or left out for `undefined`. */
+function withVerdict(list: string, verdict: unknown): ListHeaders {
+  const { authenticated: _drop, ...rest } = headers(list);
+  return verdict === undefined ? rest : { ...rest, authenticated: verdict as boolean };
+}
+
+test('one-click is planned only for authenticated: true; false, absent, "true" or 1 fall back to mailto or the page', async () => {
+  for (const verdict of [false, undefined, 'true', 1]) {
+    const page = withVerdict(`<${LIST}>`, verdict);
+    assert.equal(planUnsubscribe(page).kind, 'open', String(verdict));
+    const mail = withVerdict(`<mailto:a@list.example>, <${LIST}>`, verdict);
+    assert.equal(planUnsubscribe(mail).kind, 'mailto', String(verdict));
+    const s = spy();
+    const result = await run(s, page);
+    assert.deepEqual({ kind: result.kind, url: result.url }, { kind: 'open', url: LIST });
+    assert.deepEqual([s.lookups, s.targets], [[], []]);
+    assert.deepEqual(executor(s).describe(page), { method: 'link', url: LIST });
+  }
+  assert.equal(planUnsubscribe(withVerdict(`<${LIST}>`, true)).kind, 'oneClick');
 });
 
 // ---------------------------------------------------------------- URL checks
