@@ -157,6 +157,33 @@ test('messageBytes: a huge sparse array or too many nodes is refused at once', (
   assert.equal(messageBytes(new Map(pairs)), Number.POSITIVE_INFINITY, 'a Map past the budget');
 });
 
+test('messageBytes: a boxed String, Number or Boolean is a leaf measured by its value, at once', () => {
+  const run = timed(() => messageBytes({ s: new String('x'.repeat(8_000_000)) }, MAX_ARGS_BYTES));
+  assert.equal(run.value, Number.POSITIVE_INFINITY);
+  assert.ok(run.ms < 100, `measured in ${run.ms.toFixed(0)} ms`);
+  assert.equal(messageBytes(new String('é')), 4);
+  assert.equal(messageBytes(new Number(42)), 2);
+  assert.equal(messageBytes(new Boolean(false)), 5);
+  assert.equal(messageBytes(Object(1n)), Number.POSITIVE_INFINITY);
+});
+
+test('messageBytes: a view counts its whole buffer, and a buffer shared by two views counts once', () => {
+  const view = new Uint8Array(new ArrayBuffer(50_000_000), 0, 1);
+  assert.equal(messageBytes({ bytes: view }, MAX_BLOB_MESSAGE_BYTES), Number.POSITIVE_INFINITY);
+  const buffer = new ArrayBuffer(1000);
+  const envelope = messageBytes({ a: 0, b: 0, c: 0 });
+  const shared = { a: new Uint8Array(buffer), b: new DataView(buffer), c: buffer };
+  assert.equal(messageBytes(shared), envelope + 1000);
+});
+
+test('messageBytes: named properties on an array count', () => {
+  const list: unknown[] & { foo?: string } = [1, 2];
+  list.foo = 'y'.repeat(MAX_ARGS_BYTES);
+  assert.equal(messageBytes({ list }, MAX_ARGS_BYTES), Number.POSITIVE_INFINITY);
+  // A plain array still measures exactly as JSON.
+  assert.equal(messageBytes([1, 2]), 5);
+});
+
 test('messageBytes stops reading as soon as the total passes the limit', () => {
   let reads = 0;
   const item = () => ({

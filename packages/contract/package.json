@@ -11,6 +11,7 @@
     "./client": "./src/client/index.ts",
     "./allowlists": "./src/allowlists.ts",
     "./access": "./src/access.ts",
+    "./measure": "./src/measure.ts",
     "./contract-error": "./src/contract-error.ts",
     "./legacy-methods": "./src/legacy-methods.ts",
     "./generated/openapi.json": "./generated/openapi.json",

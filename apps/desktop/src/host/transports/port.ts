@@ -17,6 +17,7 @@ import {
   hostMethods,
   rendererMethods,
 } from '@aplos/contract/allowlists';
+import { messageBytes } from '@aplos/contract/measure';
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 
@@ -91,139 +92,7 @@ const refusal = (id: number, type: string, message: string): PortMessage => ({
   error: { type, message },
 });
 
-/** UTF-8 length without allocating the encoded string. */
-function utf8Length(text: string): number {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code < 0x80) bytes += 1;
-    else if (code < 0x800) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else bytes += 3;
-  }
-  return bytes;
-}
-
-/** At most this many values are visited to measure one message; a message with more counts as infinite. */
-export const MAX_MEASURED_NODES = 1_000_000;
-
-/** JSON leaves these out of an object and writes `null` for them in an array. */
-const dropped = (value: unknown) =>
-  value === undefined || typeof value === 'function' || typeof value === 'symbol';
-
-/**
- * The JSON text length of a value with no children (binary counts as a one-character placeholder plus its bytes), or
- * undefined for a container. Throws on a BigInt, which cannot be measured.
- */
-function leafBytes(value: unknown, inArray: boolean): number | undefined {
-  if (value === null) return 4;
-  if (dropped(value)) return inArray ? 4 : 0;
-  if (typeof value === 'string') return utf8Length(JSON.stringify(value));
-  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value).length;
-  if (typeof value === 'bigint') throw new TypeError('A BigInt cannot be measured.');
-  if (value instanceof Date) return JSON.stringify(value).length;
-  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return 1 + value.byteLength;
-  return undefined;
-}
-
-/** A container's own text (brackets, commas, keys) and the children the structured clone carries in it. */
-type Contents = { bytes: number; children: unknown[]; inArray: boolean };
-
-const listText = (count: number) => 2 + Math.max(count - 1, 0);
-
-/** An array's (or a list-shaped value's) contents, or undefined when it has more than `room` slots. */
-function listContents(list: ArrayLike<unknown>, room: number): Contents | undefined {
-  if (list.length > room) return undefined;
-  const children: unknown[] = [];
-  for (let i = 0; i < list.length; i++) children.push(list[i]);
-  return { bytes: listText(list.length), children, inArray: true };
-}
-
-/** A plain object's contents: every own enumerable key JSON would write, with its value. */
-function objectContents(object: Record<string, unknown>, room: number): Contents | undefined {
-  const keys = Object.keys(object);
-  if (keys.length > room) return undefined;
-  const kept = keys.filter(key => !dropped(object[key]));
-  let bytes = listText(kept.length);
-  for (const key of kept) bytes += utf8Length(JSON.stringify(key)) + 1;
-  return { bytes, children: kept.map(key => object[key]), inArray: false };
-}
-
-/**
- * What the structured clone carries in a container, measured as JSON would write it. A Map counts as `[[k,v],...]`
- * and a Set as `[...]` (JSON alone writes both as `{}`), a RegExp as `[source, flags]`, an Error as its name, message,
- * stack and cause. Undefined when it has more than `room` children.
- */
-function contents(value: object, room: number): Contents | undefined {
-  if (value instanceof Map) {
-    if (value.size * 2 > room) return undefined;
-    const children: unknown[] = [];
-    for (const [key, item] of value) children.push(key, item);
-    return { bytes: listText(value.size) + 3 * value.size, children, inArray: true };
-  }
-  if (value instanceof Set) return listContents([...value], room);
-  if (value instanceof RegExp) return listContents([value.source, value.flags], room);
-  if (value instanceof Error)
-    return listContents([value.name, value.message, value.stack, value.cause], room);
-  if (Array.isArray(value)) return listContents(value, room);
-  return objectContents(value as Record<string, unknown>, room);
-}
-
-type Visit = { value: unknown; inArray: boolean } | { leave: object };
-
-/**
- * Walks `root` with an explicit stack (no recursion, so no stack overflow) and stops as soon as the total passes
- * `limit` or more than `MAX_MEASURED_NODES` values were seen. Each object counts once, like the structured clone copies
- * a shared object once; a later reference counts one byte. A cycle counts as infinite (no JSON-shaped message has one).
- */
-function measure(root: unknown, limit: number): number {
-  const counted = new Set<object>();
-  const ancestors = new Set<object>();
-  const stack: Visit[] = [{ value: root, inArray: false }];
-  let total = 0;
-  let nodes = 1;
-  while (stack.length) {
-    const visit = stack.pop()!;
-    if ('leave' in visit) {
-      ancestors.delete(visit.leave);
-      continue;
-    }
-    const leaf = leafBytes(visit.value, visit.inArray);
-    const object = visit.value as object;
-    if (leaf !== undefined) total += leaf;
-    else if (ancestors.has(object)) return Number.POSITIVE_INFINITY;
-    else if (counted.has(object)) total += 1;
-    else {
-      const inner = contents(object, MAX_MEASURED_NODES - nodes);
-      if (!inner) return Number.POSITIVE_INFINITY;
-      counted.add(object);
-      ancestors.add(object);
-      nodes += inner.children.length;
-      total += inner.bytes;
-      stack.push({ leave: object });
-      for (let i = inner.children.length - 1; i >= 0; i--)
-        stack.push({ value: inner.children[i], inArray: inner.inArray });
-    }
-    if (total > limit) return Number.POSITIVE_INFINITY;
-  }
-  return total;
-}
-
-/**
- * About what a message costs on the wire: its JSON text in UTF-8 plus every binary payload's bytes, measured on what
- * the structured clone really carries (a Map's and a Set's entries, a Buffer's bytes; never a `toJSON` view). Anything
- * that cannot be measured (a cycle, a BigInt, more than `MAX_MEASURED_NODES` values) or that passes `limit` counts as
- * infinite, so it never leaves. Never throws, never recurses.
- */
-export function messageBytes(value: unknown, limit = Number.POSITIVE_INFINITY): number {
-  try {
-    return measure(value, limit);
-  } catch {
-    return Number.POSITIVE_INFINITY;
-  }
-}
+export { MAX_MEASURED_NODES, messageBytes } from '@aplos/contract/measure';
 
 /** The largest arguments a window's call to `method` may carry: an upload route's bytes, or `MAX_ARGS_BYTES`. */
 const argsLimit = (method: string) =>
