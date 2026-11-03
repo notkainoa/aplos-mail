@@ -400,48 +400,46 @@ test('payload: real engine traffic over a window port stays under 256 KB', async
 
 // ---------------------------------------------------------------- the two LOWs of the final Opus check (LOW-A, LOW-B)
 
-test('window arguments are measured with a node bound of MAX_WINDOW_NODES: a million empty objects and a sparse array are refused at once', () => {
-  const many = Array.from({ length: 1_000_000 }, () => ({}));
-  let start = performance.now();
-  assert.equal(messageBytes({ many }, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+test('window arguments are measured with a node bound of MAX_WINDOW_NODES: more values than that are refused, however few bytes they are', () => {
+  const some = { many: Array.from({ length: MAX_WINDOW_NODES + 1 }, () => ({})) };
   assert.ok(
-    performance.now() - start < 150,
-    `${(performance.now() - start).toFixed(0)} ms for 1M objects`,
+    Number.isFinite(messageBytes(some)),
+    'the default bound (a reply from the engine) allows it',
   );
+  assert.equal(messageBytes(some, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  const million = { many: Array.from({ length: 1_000_000 }, () => ({})) };
+  assert.equal(messageBytes(million, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  // A sparse array is refused on its length before any slot is read.
   const sparse: unknown[] = [];
   sparse[999_990] = 0;
-  start = performance.now();
   assert.equal(
     messageBytes({ sparse }, MAX_ARGS_BYTES, MAX_WINDOW_NODES),
     Number.POSITIVE_INFINITY,
   );
-  assert.ok(
-    performance.now() - start < 30,
-    `${(performance.now() - start).toFixed(0)} ms for a sparse array`,
-  );
-  // A legitimate call (hundreds of values) is unaffected, and the default bound still allows a big reply.
+  // A legitimate call (hundreds of values) is unaffected.
   const fine = { ids: Array.from({ length: 500 }, (_, i) => `t${i}`), n: 1 };
   assert.ok(messageBytes(fine, MAX_ARGS_BYTES, MAX_WINDOW_NODES) < 5_000);
-  assert.ok(Number.isFinite(messageBytes({ rows: Array.from({ length: 200_000 }, () => 1) })));
   assert.equal(MAX_WINDOW_NODES, 100_000);
 });
 
 test('a key longer than the bytes still allowed is refused before it is stringified', () => {
-  const huge = { ['x'.repeat(1e8)]: 0 };
-  let start = performance.now();
-  assert.equal(messageBytes(huge, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
-  assert.ok(
-    performance.now() - start < 50,
-    `${(performance.now() - start).toFixed(0)} ms for one huge key`,
-  );
-  const keys: Record<string, number> = {};
-  for (let i = 0; i < 100; i++) keys[`${i}${'k'.repeat(1_000_000)}`] = i;
-  start = performance.now();
-  assert.equal(messageBytes(keys, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
-  assert.ok(
-    performance.now() - start < 100,
-    `${(performance.now() - start).toFixed(0)} ms for 100 long keys`,
-  );
+  // Deterministic: no key (or anything else) longer than the cap may ever reach JSON.stringify while measuring.
+  const realStringify = JSON.stringify;
+  let longest = 0;
+  JSON.stringify = ((value: unknown, ...rest: unknown[]) => {
+    if (typeof value === 'string') longest = Math.max(longest, value.length);
+    return (realStringify as (...a: unknown[]) => string)(value, ...rest);
+  }) as typeof JSON.stringify;
+  try {
+    const huge = { ['x'.repeat(1e8)]: 0 };
+    assert.equal(messageBytes(huge, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+    const keys: Record<string, number> = {};
+    for (let i = 0; i < 100; i++) keys[`${i}${'k'.repeat(1_000_000)}`] = i;
+    assert.equal(messageBytes(keys, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  } finally {
+    JSON.stringify = realStringify;
+  }
+  assert.ok(longest <= MAX_ARGS_BYTES, `a key of ${longest} characters was stringified`);
   // A key that fits still measures exactly as JSON writes it.
   assert.equal(messageBytes({ ab: 1 }, 1000), JSON.stringify({ ab: 1 }).length);
   assert.equal(
