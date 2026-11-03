@@ -6,6 +6,8 @@ import type { Frame } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 import { windowCaller } from '@aplos/engine';
 import {
+  MAX_ARGS_BYTES,
+  MAX_BLOB_MESSAGE_BYTES,
   MAX_WINDOW_MESSAGE_BYTES,
   blobRoutes,
   createPortClient,
@@ -76,6 +78,56 @@ test('messageBytes counts UTF-8 text and binary bytes', () => {
   const cycle: Record<string, unknown> = {};
   cycle.self = cycle;
   assert.equal(messageBytes(cycle), Number.POSITIVE_INFINITY);
+});
+
+test('messageBytes measures what the structured clone carries, not what toJSON shows', () => {
+  // JSON.stringify turns a Map or a Set into `{}`; the structured clone carries every entry.
+  const text = big(MAX_ARGS_BYTES);
+  assert.ok(messageBytes({ m: new Map([['k', text]]) }) > MAX_ARGS_BYTES, 'a Map’s values count');
+  assert.ok(messageBytes({ m: new Map([[text, 1]]) }) > MAX_ARGS_BYTES, 'a Map’s keys count');
+  assert.ok(messageBytes({ s: new Set([text]) }) > MAX_ARGS_BYTES, 'a Set’s entries count');
+  assert.ok(messageBytes({ r: new RegExp(text) }) > MAX_ARGS_BYTES, 'a RegExp’s source counts');
+  assert.ok(messageBytes({ e: new Error(text) }) > MAX_ARGS_BYTES, 'an Error’s message counts');
+  // A Node Buffer is its bytes, not `{"type":"Buffer","data":[...]}` (about 3.5 times larger).
+  const envelope = messageBytes({ bytes: 0 });
+  assert.equal(messageBytes({ bytes: Buffer.alloc(1000) }), envelope + 1000);
+  assert.equal(messageBytes({ bytes: new ArrayBuffer(1000) }), envelope + 1000);
+  assert.equal(messageBytes({ bytes: new DataView(new ArrayBuffer(1000)) }), envelope + 1000);
+  // A Date still counts as its JSON text.
+  assert.equal(messageBytes(new Date(0)), JSON.stringify(new Date(0)).length);
+});
+
+test('payload: a Map or Set over the argument cap is refused; a Buffer is measured by its bytes', async t => {
+  const engine = sessionAnswering(method => ({ method }));
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => engine.session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  const text = big(MAX_ARGS_BYTES);
+  // A page past preload posts raw envelopes: the engine side must still see the Map's and the Set's content.
+  port2.postMessage({ v: 1, id: 1, method: 'Draft/set', args: { m: new Map([['k', text]]) } });
+  port2.postMessage({ v: 1, id: 2, method: 'Draft/set', args: { s: new Set([text]) } });
+  port2.postMessage({ v: 1, id: 3, method: 'Draft/set', args: { m: new Map([['k', 'small']]) } });
+  await until(() => replies.length === 4, 'the hello and three answers');
+  const errorOf = (message: PortMessage) =>
+    message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
+  assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'tooLarge', 'ok']);
+
+  // A Blob/get reply carrying a Node Buffer: just under the blob cap goes out, just over it is refused.
+  let size = 0;
+  const blob = sessionAnswering(() => ({ bytes: Buffer.alloc(size), mime: 'application/pdf' }));
+  const w = served(t, blob.session);
+  const envelope = (id: number) =>
+    messageBytes({ kind: 'reply', id, ok: true, result: { bytes: 0, mime: 'application/pdf' } });
+  size = MAX_BLOB_MESSAGE_BYTES - envelope(1);
+  const reply = (await w.client.call('Blob/get', { blobId: 'b1' })) as { bytes: Uint8Array };
+  assert.equal(reply.bytes.byteLength, size);
+  size = MAX_BLOB_MESSAGE_BYTES - envelope(2) + 1;
+  await assert.rejects(w.client.call('Blob/get', { blobId: 'b1' }), { type: 'tooLarge' });
 });
 
 test('payload: a reply over 256 KB never reaches a window outside blob routes', async t => {

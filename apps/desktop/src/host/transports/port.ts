@@ -31,6 +31,11 @@ export const MAX_WINDOW_MESSAGE_BYTES = 256 * 1024;
 export const MAX_BLOB_MESSAGE_BYTES = 26 * 1024 * 1024;
 /** Calls one window may have open at once; more are refused until some answer. */
 export const MAX_IN_FLIGHT = 256;
+/**
+ * The arguments of one port's open calls may add up to at most this many bytes; more are refused until some answer.
+ * Without it 256 open 26 MB uploads would hold about 6.6 GB per window.
+ */
+export const MAX_IN_FLIGHT_BYTES = 64 * 1024 * 1024;
 /** A window's call arguments may be at most this large, except an upload route's (a draft's HTML is at most 1M chars). */
 export const MAX_ARGS_BYTES = 4 * 1024 * 1024;
 /** Methods whose arguments carry `Bytes` from a window (25 MB at most). */
@@ -102,24 +107,42 @@ function utf8Length(text: string): number {
 }
 
 /**
- * About what a message costs on the wire: its JSON text plus every binary payload's bytes. A message that cannot be
- * measured (a cycle, a BigInt) counts as infinite, so it never leaves.
+ * What JSON would hide of a value the structured clone carries in full. `raw` is the value before `toJSON` ran: a
+ * Map or a Set stringifies as `{}`, a RegExp as `{}`, an Error as `{}`, and a Node Buffer as `{"type":"Buffer",...}`.
+ * Binary counts as its bytes (returned as `bytes`); the others are replaced by their content.
+ */
+function clonedShape(raw: unknown): { bytes: number } | { value: unknown } | undefined {
+  if (raw instanceof ArrayBuffer || ArrayBuffer.isView(raw)) return { bytes: raw.byteLength };
+  if (raw instanceof Map || raw instanceof Set) return { value: [...raw] };
+  if (raw instanceof RegExp) return { value: [raw.source, raw.flags] };
+  if (raw instanceof Error) return { value: [raw.name, raw.message, raw.stack, raw.cause] };
+  return undefined;
+}
+
+/**
+ * About what a message costs on the wire: its JSON text plus every binary payload's bytes, measured on the raw values
+ * (never their `toJSON`), so a Map, a Set or a Buffer counts by what the structured clone really carries. A message that
+ * cannot be measured (a cycle, a BigInt) counts as infinite, so it never leaves.
  */
 export function messageBytes(value: unknown): number {
   let binary = 0;
   try {
-    const json = JSON.stringify(value, (_key, item: unknown) => {
-      if (item instanceof ArrayBuffer || ArrayBuffer.isView(item)) {
-        binary += item.byteLength;
-        return 0;
-      }
-      return item;
+    const json = JSON.stringify(value, function (this: Record<string, unknown>, key, item) {
+      const shape = clonedShape(this[key]);
+      if (!shape) return item as unknown;
+      if ('value' in shape) return shape.value;
+      binary += shape.bytes;
+      return 0;
     });
     return utf8Length(json ?? '') + binary;
   } catch {
     return Number.POSITIVE_INFINITY;
   }
 }
+
+/** The largest arguments a window's call to `method` may carry: an upload route's bytes, or `MAX_ARGS_BYTES`. */
+const argsLimit = (method: string) =>
+  uploadRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
 
 function errorBody(error: unknown): PortError {
   const body = (error as { body?: unknown } | null)?.body as Partial<PortError> | undefined;
@@ -193,18 +216,23 @@ export function serveWindowPort(
     send(refusal(message.id, 'tooLarge', sentence), MAX_WINDOW_MESSAGE_BYTES);
   };
   let inFlight = 0;
+  let inFlightBytes = 0;
   const refuse = (call: PortCall, type: string, sentence: string) =>
     void send(refusal(call.id, type, sentence), MAX_WINDOW_MESSAGE_BYTES);
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
       return refuse(call, 'unsupported', 'Unsupported application method.');
-    const argsLimit = uploadRoutes.has(call.method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
-    if (messageBytes(call.args ?? {}) > argsLimit)
+    const size = messageBytes(call.args ?? {});
+    if (size > argsLimit(call.method))
       return refuse(call, 'tooLarge', 'This request is too large to send.');
-    if (inFlight >= MAX_IN_FLIGHT)
+    if (inFlight >= MAX_IN_FLIGHT || inFlightBytes + size > MAX_IN_FLIGHT_BYTES)
       return refuse(call, 'unavailable', 'Too many requests at once. Try again in a moment.');
     inFlight++;
-    const done = () => void inFlight--;
+    inFlightBytes += size;
+    const done = () => {
+      inFlight--;
+      inFlightBytes -= size;
+    };
     session.call(call.method, call.args ?? {}).then(
       result => (done(), answer(call.method, { kind: 'reply', id: call.id, ok: true, result })),
       error => (
@@ -803,6 +831,9 @@ export function createPortClient(
     call(method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> {
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
+      // The engine refuses these too, but only after the port has copied them into its process: refuse them here.
+      if (messageBytes(args ?? {}) > argsLimit(method))
+        return Promise.reject({ type: 'tooLarge', message: 'This request is too large to send.' });
       // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
       const buffers = Array.isArray(transfer)
         ? transfer.filter((item): item is ArrayBuffer => item instanceof ArrayBuffer)
@@ -839,3 +870,83 @@ export function createPortClient(
 }
 
 export type PortClient = ReturnType<typeof createPortClient>;
+
+/**
+ * The renderer argument main gives a window on the real path (`webPreferences.additionalArguments`). Without it
+ * preload exposes no engine bridge and listens on no engine channel, so the default path shows a page nothing new.
+ */
+export const ENGINE_PORT_ARG = '--aplos-engine-port';
+
+/** A window's `additionalArguments`: the engine bridge's flag on the real path, nothing otherwise. */
+export const engineWindowArguments = (real: boolean): string[] => (real ? [ENGINE_PORT_ARG] : []);
+
+/** The parts of Electron's `contextBridge` and `ipcRenderer` the engine bridge uses (preload passes the real ones). */
+export interface PreloadElectron {
+  contextBridge: { exposeInMainWorld(key: string, api: unknown): void };
+  ipcRenderer: {
+    invoke(channel: string, ...args: unknown[]): Promise<unknown>;
+    on(
+      channel: string,
+      listener: (event: { ports: readonly unknown[] }, data?: unknown) => void,
+    ): unknown;
+  };
+}
+
+/** The DOM `MessagePort` preload receives, as far as the bridge uses it. */
+interface DomMessagePort {
+  postMessage(message: unknown, transfer: ArrayBuffer[]): void;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  addEventListener(type: 'close', listener: () => void): void;
+  close(): void;
+}
+
+function domWindowEnd(port: DomMessagePort): WindowPortEnd {
+  return {
+    post: (message, transfer) => port.postMessage(message, transfer),
+    onMessage: handler => {
+      port.onmessage = message => handler(message.data);
+    },
+    onClose: handler => port.addEventListener('close', handler),
+    close: () => port.close(),
+  };
+}
+
+/**
+ * Exposes `window.aplosEngine` (only `call`, `subscribe` and `position`; never a port or an Electron object) when
+ * main passed `ENGINE_PORT_ARG`, and returns whether it did. Engine methods go down this window's own port after the
+ * allowlist and size checks; desktop methods go to main. Main hands the port only to this window's trusted main frame.
+ */
+export function exposeEngineBridge(electron: PreloadElectron, argv: readonly string[]): boolean {
+  if (!argv.includes(ENGINE_PORT_ARG)) return false;
+  const { contextBridge, ipcRenderer } = electron;
+  let asked: Promise<unknown> | undefined;
+  // A port that closes under the page (revoked, engine stopped) fails its open calls; the next call asks main again.
+  const engine = createPortClient(portMethods, { onLost: () => (asked = undefined) });
+  /** Asks main for this window's port once; a refusal (no real engine, an untrusted frame) fails the waiting calls. */
+  const connect = () => {
+    asked ??= ipcRenderer.invoke('aplos:engine-connect').catch(() => {
+      asked = undefined;
+      engine.fail({ type: 'unavailable', message: 'The new mailbox engine is not running.' });
+    });
+  };
+  ipcRenderer.on('aplos:engine-port', event => {
+    const [port] = event.ports;
+    if (port) engine.attach(domWindowEnd(port as DomMessagePort));
+  });
+  ipcRenderer.on('aplos:desktop', (_event, frame) => engine.desktop(frame));
+  contextBridge.exposeInMainWorld('aplosEngine', {
+    call: (method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> => {
+      if (typeof method === 'string' && isDesktopMethod(method))
+        return ipcRenderer.invoke('aplos:desktop', method, args);
+      // A refused name never even asks for a port.
+      if (typeof method === 'string' && portMethods.has(method)) connect();
+      return engine.call(method, args, transfer);
+    },
+    subscribe: (listener: Parameters<typeof engine.subscribe>[0]) => {
+      connect();
+      return engine.subscribe(frame => listener(frame));
+    },
+    position: () => engine.position(),
+  });
+  return true;
+}

@@ -4,7 +4,7 @@ import { DraftOwnership } from './desktop-policy';
 import type { AppState, Listener } from '@aplos/contract/legacy/types';
 import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
-import { latestState, service } from './engine-host';
+import { latestState, realPath, service } from './engine-host';
 import { closing, quitting, finishQuit } from './lifecycle';
 import { isTest } from './test-mode';
 import {
@@ -16,6 +16,7 @@ import {
   type WindowPort,
 } from '../host/lifecycle';
 import { releaseBuild } from './oauth-config';
+import { engineWindowArguments } from '../host/transports/port';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -99,6 +100,8 @@ const webPreferences = () => ({
   // A test window is never shown, and Chromium throttles hidden pages' timers hard: the renderer's save-before-close
   // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
   backgroundThrottling: !isTest,
+  // Only the real engine path's windows get `window.aplosEngine` (preload checks this argument).
+  additionalArguments: engineWindowArguments(realPath),
 });
 /** A subframe the app's own page points at a mail view (`aplos-mail://m/<token>`), or an empty or inline document. */
 function mailFrameURL(event: { url: string; initiator?: { url: string } | null }) {
