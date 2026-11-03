@@ -161,6 +161,11 @@ test('messageBytes: a boxed String, Number or Boolean is a leaf measured by its 
   const run = timed(() => messageBytes({ s: new String('x'.repeat(8_000_000)) }, MAX_ARGS_BYTES));
   assert.equal(run.value, Number.POSITIVE_INFINITY);
   assert.ok(run.ms < 100, `measured in ${run.ms.toFixed(0)} ms`);
+  // A string longer than the room left is refused before it is copied or scanned.
+  const huge = 'x'.repeat(100_000_000);
+  const plain = timed(() => messageBytes({ html: huge }, MAX_ARGS_BYTES));
+  assert.equal(plain.value, Number.POSITIVE_INFINITY);
+  assert.ok(plain.ms < 50, `a 100M-character string measured in ${plain.ms.toFixed(0)} ms`);
   assert.equal(messageBytes(new String('é')), 4);
   assert.equal(messageBytes(new Number(42)), 2);
   assert.equal(messageBytes(new Boolean(false)), 5);

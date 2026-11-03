@@ -143,6 +143,15 @@ function contents(value: object, room: number): Contents | undefined {
 type Visit = Child | { leave: object };
 
 /**
+ * A free lower bound of what a string (boxed or not) measures: its UTF-8 bytes are at least its UTF-16 length. A string
+ * longer than the room left is refused before it is copied or scanned.
+ */
+function lowerBound(value: unknown): number {
+  const text = value instanceof String ? value.valueOf() : value;
+  return typeof text === 'string' ? text.length : 0;
+}
+
+/**
  * Walks `root` with an explicit stack (no recursion, so no stack overflow) and stops as soon as the total passes
  * `limit` or more than `MAX_MEASURED_NODES` values were seen. Each object and each binary buffer counts once, like the
  * structured clone copies a shared one once; a later reference counts one byte. A cycle counts as infinite (no
@@ -160,6 +169,7 @@ function measure(root: unknown, limit: number): number {
       ancestors.delete(visit.leave);
       continue;
     }
+    if (total + lowerBound(visit.value) > limit) return Number.POSITIVE_INFINITY;
     const leaf = leafBytes(visit.value, visit.inArray) ?? binaryBytes(visit.value, counted);
     const object = visit.value as object;
     if (leaf !== undefined) total += leaf;
