@@ -10,6 +10,7 @@ import {
   MAX_BLOB_MESSAGE_BYTES,
   MAX_MEASURED_NODES,
   MAX_WINDOW_MESSAGE_BYTES,
+  MAX_WINDOW_NODES,
   blobRoutes,
   createPortClient,
   messageBytes,
@@ -395,4 +396,76 @@ test('payload: real engine traffic over a window port stays under 256 KB', async
   await clock.advance(500);
   assert.ok(sent.length > 5);
   assertWithinBudget(sent);
+});
+
+// ---------------------------------------------------------------- the two LOWs of the final Opus check (LOW-A, LOW-B)
+
+test('window arguments are measured with a node bound of MAX_WINDOW_NODES: a million empty objects and a sparse array are refused at once', () => {
+  const many = Array.from({ length: 1_000_000 }, () => ({}));
+  let start = performance.now();
+  assert.equal(messageBytes({ many }, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  assert.ok(
+    performance.now() - start < 150,
+    `${(performance.now() - start).toFixed(0)} ms for 1M objects`,
+  );
+  const sparse: unknown[] = [];
+  sparse[999_990] = 0;
+  start = performance.now();
+  assert.equal(
+    messageBytes({ sparse }, MAX_ARGS_BYTES, MAX_WINDOW_NODES),
+    Number.POSITIVE_INFINITY,
+  );
+  assert.ok(
+    performance.now() - start < 30,
+    `${(performance.now() - start).toFixed(0)} ms for a sparse array`,
+  );
+  // A legitimate call (hundreds of values) is unaffected, and the default bound still allows a big reply.
+  const fine = { ids: Array.from({ length: 500 }, (_, i) => `t${i}`), n: 1 };
+  assert.ok(messageBytes(fine, MAX_ARGS_BYTES, MAX_WINDOW_NODES) < 5_000);
+  assert.ok(Number.isFinite(messageBytes({ rows: Array.from({ length: 200_000 }, () => 1) })));
+  assert.equal(MAX_WINDOW_NODES, 100_000);
+});
+
+test('a key longer than the bytes still allowed is refused before it is stringified', () => {
+  const huge = { ['x'.repeat(1e8)]: 0 };
+  let start = performance.now();
+  assert.equal(messageBytes(huge, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  assert.ok(
+    performance.now() - start < 50,
+    `${(performance.now() - start).toFixed(0)} ms for one huge key`,
+  );
+  const keys: Record<string, number> = {};
+  for (let i = 0; i < 100; i++) keys[`${i}${'k'.repeat(1_000_000)}`] = i;
+  start = performance.now();
+  assert.equal(messageBytes(keys, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  assert.ok(
+    performance.now() - start < 100,
+    `${(performance.now() - start).toFixed(0)} ms for 100 long keys`,
+  );
+  // A key that fits still measures exactly as JSON writes it.
+  assert.equal(messageBytes({ ab: 1 }, 1000), JSON.stringify({ ab: 1 }).length);
+  assert.equal(
+    messageBytes({ ['é'.repeat(3)]: [] }, 1000),
+    Buffer.byteLength(JSON.stringify({ ['é'.repeat(3)]: [] })),
+  );
+});
+
+test('payload: a window message with more than MAX_WINDOW_NODES values is refused tooLarge at the port, and the engine keeps serving', async t => {
+  const engine = sessionAnswering(method => ({ method }));
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => engine.session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  // Under the byte cap (about 450 KB), over the value bound.
+  const many = Array.from({ length: MAX_WINDOW_NODES + 1 }, () => ({}));
+  port2.postMessage({ v: 1, id: 1, method: 'Draft/set', args: { many } });
+  port2.postMessage({ v: 1, id: 2, method: 'Counts/get', args: {} });
+  await until(() => replies.length === 3, 'the hello and two answers', 2000);
+  const errorOf = (message: PortMessage) =>
+    message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
+  assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'ok']);
 });
