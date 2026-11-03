@@ -280,7 +280,10 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
   const account = await accountFor(args, deps.env);
   requireAccountCheck(account, args.account, args.tier);
 
-  const probes = probesFor(args.provider, args.tier, deps.probes);
+  // `--phase` names a step of a probe that has phases; it must not also authorise the tier's other probes.
+  const probes = probesFor(args.provider, args.tier, deps.probes).filter(
+    probe => args.phase === undefined || probe.phased === true,
+  );
   const expectedRunMs = probes.length * EXPECTED_MS_PER_PROBE + EXPECTED_SLACK_MS;
   const started = deps.now();
   const check = preflight(account, args.account, expectedRunMs, started);
