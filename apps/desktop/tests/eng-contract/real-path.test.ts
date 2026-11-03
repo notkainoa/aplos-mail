@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { windowCaller } from '@aplos/engine';
 import type { ComposedHost } from '../../src/host/compose';
-import { createProcessState } from '../../src/host/lifecycle';
+import { closeThenRelease, createProcessState, QUIT_DRAIN_MS } from '../../src/host/lifecycle';
 import {
+  ENGINE_EXIT_AFTER_KILL_MS,
+  ENGINE_QUIT_MS,
   createEngineLink,
   createEngineSupervisor,
   createPortBroker,
@@ -234,9 +236,15 @@ function manualTimers() {
     },
     clear: (handle: unknown) => void due.delete(handle as number),
     advance(ms: number) {
-      now += ms;
-      for (const [id, timer] of [...due].sort((a, b) => a[1].at - b[1].at))
-        if (timer.at <= now && due.delete(id)) timer.run();
+      const target = now + ms;
+      for (;;) {
+        const first = [...due].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!first || first[1].at > target) break;
+        due.delete(first[0]);
+        now = Math.max(now, first[1].at);
+        first[1].run();
+      }
+      now = target;
     },
   };
 }
@@ -312,4 +320,105 @@ test('an engine that never answers ready is killed after the ready timeout, and 
   assert.deepEqual(downs, [false, false, true], 'the third stop parks');
   assert.equal(links.length, 3);
   assert.equal(supervisor.current(), undefined);
+});
+
+// ---------------------------------------------------------------- the data lock and a stuck engine (#203)
+
+/** An engine that ignores quit and kill until the test lets it exit. */
+function stuckLink() {
+  const exits: (() => void)[] = [];
+  let exited = false;
+  let kills = 0;
+  let quits = 0;
+  const link: EngineLink = {
+    ready: Promise.resolve({ dbEpoch: 'e1', seq: 0 }),
+    get exited() {
+      return exited;
+    },
+    call: async () => ({}),
+    attach: () => undefined,
+    detach: () => undefined,
+    power: () => undefined,
+    quit: () => void quits++,
+    kill: () => void kills++,
+    onExit: handler => (exited ? handler() : void exits.push(handler)),
+  };
+  const exit = () => {
+    if (exited) return;
+    exited = true;
+    exits.splice(0).forEach(handler => handler());
+  };
+  return { link, exit, kills: () => kills, quits: () => quits };
+}
+
+/** The supervisor wired into `closeThenRelease` exactly as `finishQuit` does it (main/lifecycle.ts, main/engine-real.ts). */
+async function quitWith(engine: ReturnType<typeof stuckLink>, whenExits?: number) {
+  const timers = manualTimers();
+  const supervisor = createEngineSupervisor({
+    spawn: () => engine.link,
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers,
+  });
+  await supervisor.start();
+  let released = 0;
+  const closed = supervisor.close().then(result => {
+    if (result !== 'exited') throw new Error('The mailbox engine did not stop.');
+  });
+  const outcome = closeThenRelease(closed, QUIT_DRAIN_MS, timers, () => void released++);
+  if (whenExits !== undefined) {
+    timers.advance(whenExits);
+    engine.exit();
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  timers.advance(ENGINE_QUIT_MS + ENGINE_EXIT_AFTER_KILL_MS + 1);
+  await new Promise(resolve => setImmediate(resolve));
+  timers.advance(QUIT_DRAIN_MS);
+  const result = await outcome;
+  return { result, released };
+}
+
+test('quit with a stuck engine: the data lock stays held, even after the supervisor killed it', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine);
+  assert.equal(result, false);
+  assert.equal(released, 0, 'the engine never exited: the lock is not let go');
+  assert.equal(engine.quits(), 1);
+  assert.equal(engine.kills(), 1, 'it was killed after the quit wait');
+});
+
+test('quit with an engine that exits just after the kill: the lock is released', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine, ENGINE_QUIT_MS + 500);
+  assert.equal(engine.kills(), 1);
+  assert.equal(result, true);
+  assert.equal(released, 1);
+});
+
+test('quit with an engine that exits when asked: the lock is released at once', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine, 1);
+  assert.equal(engine.kills(), 0);
+  assert.equal(result, true);
+  assert.equal(released, 1);
+});
+
+test('the quit drain outlasts the supervisor wait, so a late exit is still seen', () => {
+  assert.ok(QUIT_DRAIN_MS > ENGINE_QUIT_MS + ENGINE_EXIT_AFTER_KILL_MS);
+});
+
+test('once the quit has begun, the supervisor starts no engine', async () => {
+  const engine = stuckLink();
+  let spawned = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => (spawned++, engine.link),
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers: manualTimers(),
+  });
+  await supervisor.close();
+  await assert.rejects(supervisor.start());
+  assert.equal(spawned, 0);
 });

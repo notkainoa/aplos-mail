@@ -4,6 +4,7 @@ import {
   activationPolicy,
   createProcessState,
   createQuitGate,
+  closeThenRelease,
   drain,
   pendingWork,
   quitWarning,
@@ -85,6 +86,31 @@ test('the quit drain waits at most 3 s for a stuck close', async () => {
   await drain(new Promise(() => {}), 3000, timers);
   assert.ok(Date.now() - started < 1000);
   await drain(Promise.reject(new Error('close failed')), 3000, timers);
+});
+
+test('the data lock is released only when the engine confirmed it closed: a stuck or failed close leaves it held', async () => {
+  const timers = {
+    set: (run: () => void, ms: number) => setTimeout(run, ms / 100),
+    clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
+  };
+  let released = 0;
+  const release = () => void released++;
+  assert.equal(await closeThenRelease(Promise.resolve(), 3000, timers, release), true);
+  assert.equal(released, 1, 'the engine closed: the lock is let go');
+  assert.equal(await closeThenRelease(new Promise(() => {}), 3000, timers, release), false);
+  assert.equal(released, 1, 'the engine is stuck: the lock stays held until this process is gone');
+  assert.equal(
+    await closeThenRelease(Promise.reject(new Error('close failed')), 3000, timers, release),
+    false,
+  );
+  assert.equal(released, 1, 'the close failed: the lock stays held');
+  // A close that finishes just after the wait does not release it later either.
+  let finish: () => void = () => {};
+  const late = new Promise<void>(resolve => (finish = resolve));
+  assert.equal(await closeThenRelease(late, 3000, timers, release), false);
+  finish();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(released, 1);
 });
 
 test('the quit gate asks once at a time, and a confirm that rejects or throws still lets the quit go ahead', async () => {

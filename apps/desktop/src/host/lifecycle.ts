@@ -341,8 +341,12 @@ export function createProcessState(): ProcessState {
   };
 }
 
-/** The most `finishQuit` waits for the engine to close before quitting anyway. */
-export const QUIT_DRAIN_MS = 3000;
+/**
+ * The most `finishQuit` waits for the engine to close before quitting anyway. It must outlast the supervisor's own wait
+ * (`ENGINE_QUIT_MS` to ask, `ENGINE_EXIT_AFTER_KILL_MS` to see the kill take) with room to spare, so an engine that
+ * exits just after the kill still releases the lock, and one that does not is reported stuck first.
+ */
+export const QUIT_DRAIN_MS = 6000;
 
 /** Resolves when `work` settles or after `ms`, whichever is first. Never rejects. */
 export function drain(
@@ -358,6 +362,31 @@ export function drain(
     };
     work.then(done, done);
   });
+}
+
+/**
+ * Closes the engine, then lets go of the data lock, but ONLY if the engine confirmed it closed within `ms`. A second
+ * instance that takes the lock must not open the database while this one's engine may still be writing it; a lock that
+ * is not released names this process and is reclaimed as stale the moment the process is gone. Resolves true when the
+ * engine closed in time (and the lock was released). A close that fails or times out leaves the lock held.
+ */
+export async function closeThenRelease(
+  work: Promise<unknown>,
+  ms: number,
+  timers: { set(run: () => void, ms: number): unknown; clear(handle: unknown): void },
+  release: () => void,
+): Promise<boolean> {
+  let closed = false;
+  await drain(
+    work.then(
+      () => void (closed = true),
+      () => undefined,
+    ),
+    ms,
+    timers,
+  );
+  if (closed) release();
+  return closed;
 }
 
 /**
