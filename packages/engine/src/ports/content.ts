@@ -48,7 +48,7 @@ export type MailHtmlResult = {
 
 /**
  * The allowlist sanitizer (ARCH 10). Implemented by `eng-html` in `packages/mail-html` (pure JS, no DOM, no Node,
- * bundled outside the 400 KB core); called by the `Mail/frame` render pipeline (`methods/mail.ts`). Pure and
+ * bundled outside the engine core budget); called by the `Mail/frame` render pipeline (`methods/mail.ts`). Pure and
  * synchronous: the same input and version always give the same output.
  */
 export interface MailHtml {
