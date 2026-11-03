@@ -361,6 +361,31 @@ export function drain(
 }
 
 /**
+ * Closes the engine, then lets go of the data lock, but ONLY if the engine confirmed it closed within `ms`. A second
+ * instance that takes the lock must not open the database while this one's engine may still be writing it; a lock that
+ * is not released names this process and is reclaimed as stale the moment the process is gone. Resolves true when the
+ * engine closed in time (and the lock was released). A close that fails or times out leaves the lock held.
+ */
+export async function closeThenRelease(
+  work: Promise<unknown>,
+  ms: number,
+  timers: { set(run: () => void, ms: number): unknown; clear(handle: unknown): void },
+  release: () => void,
+): Promise<boolean> {
+  let closed = false;
+  await drain(
+    work.then(
+      () => void (closed = true),
+      () => undefined,
+    ),
+    ms,
+    timers,
+  );
+  if (closed) release();
+  return closed;
+}
+
+/**
  * One quit question at a time. `request` asks `confirm` (the pending-work warning) and, if the answer is yes, calls
  * `begin`. A second request while the question is open is ignored. A `confirm` that throws or rejects counts as yes and
  * never leaves the gate stuck, and neither does a `begin` that throws, because a quit that cannot be asked about must still be possible.

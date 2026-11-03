@@ -23,7 +23,7 @@ import {
   activationPolicy,
   createProcessState,
   createQuitGate,
-  drain,
+  closeThenRelease,
   pendingWork,
   quitWarning,
   quitWarningButtons,
@@ -178,8 +178,10 @@ function finishQuit() {
     clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
   };
   const engineClosed = realPath ? realEngine.close() : service?.close();
-  void drain(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers).finally(() => {
-    lock?.release();
+  // The data lock is let go only when the engine confirmed it closed: otherwise it stays held until this process is gone.
+  void closeThenRelease(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers, () =>
+    lock?.release(),
+  ).finally(() => {
     updates?.stop();
     if (!(installUpdate && updates?.install())) app.quit();
   });
