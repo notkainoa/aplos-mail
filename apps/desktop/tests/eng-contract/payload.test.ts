@@ -10,6 +10,7 @@ import {
   MAX_BLOB_MESSAGE_BYTES,
   MAX_MEASURED_NODES,
   MAX_WINDOW_MESSAGE_BYTES,
+  MAX_WINDOW_NODES,
   blobRoutes,
   createPortClient,
   messageBytes,
@@ -395,4 +396,74 @@ test('payload: real engine traffic over a window port stays under 256 KB', async
   await clock.advance(500);
   assert.ok(sent.length > 5);
   assertWithinBudget(sent);
+});
+
+// ---------------------------------------------------------------- the two LOWs of the final Opus check (LOW-A, LOW-B)
+
+test('window arguments are measured with a node bound of MAX_WINDOW_NODES: more values than that are refused, however few bytes they are', () => {
+  const some = { many: Array.from({ length: MAX_WINDOW_NODES + 1 }, () => ({})) };
+  assert.ok(
+    Number.isFinite(messageBytes(some)),
+    'the default bound (a reply from the engine) allows it',
+  );
+  assert.equal(messageBytes(some, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  const million = { many: Array.from({ length: 1_000_000 }, () => ({})) };
+  assert.equal(messageBytes(million, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  // A sparse array is refused on its length before any slot is read.
+  const sparse: unknown[] = [];
+  sparse[999_990] = 0;
+  assert.equal(
+    messageBytes({ sparse }, MAX_ARGS_BYTES, MAX_WINDOW_NODES),
+    Number.POSITIVE_INFINITY,
+  );
+  // A legitimate call (hundreds of values) is unaffected.
+  const fine = { ids: Array.from({ length: 500 }, (_, i) => `t${i}`), n: 1 };
+  assert.ok(messageBytes(fine, MAX_ARGS_BYTES, MAX_WINDOW_NODES) < 5_000);
+  assert.equal(MAX_WINDOW_NODES, 100_000);
+});
+
+test('a key longer than the bytes still allowed is refused before it is stringified', () => {
+  // Deterministic: no key (or anything else) longer than the cap may ever reach JSON.stringify while measuring.
+  const realStringify = JSON.stringify;
+  let longest = 0;
+  JSON.stringify = ((value: unknown, ...rest: unknown[]) => {
+    if (typeof value === 'string') longest = Math.max(longest, value.length);
+    return (realStringify as (...a: unknown[]) => string)(value, ...rest);
+  }) as typeof JSON.stringify;
+  try {
+    const huge = { ['x'.repeat(1e8)]: 0 };
+    assert.equal(messageBytes(huge, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+    const keys: Record<string, number> = {};
+    for (let i = 0; i < 100; i++) keys[`${i}${'k'.repeat(1_000_000)}`] = i;
+    assert.equal(messageBytes(keys, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  } finally {
+    JSON.stringify = realStringify;
+  }
+  assert.ok(longest <= MAX_ARGS_BYTES, `a key of ${longest} characters was stringified`);
+  // A key that fits still measures exactly as JSON writes it.
+  assert.equal(messageBytes({ ab: 1 }, 1000), JSON.stringify({ ab: 1 }).length);
+  assert.equal(
+    messageBytes({ ['é'.repeat(3)]: [] }, 1000),
+    Buffer.byteLength(JSON.stringify({ ['é'.repeat(3)]: [] })),
+  );
+});
+
+test('payload: a window message with more than MAX_WINDOW_NODES values is refused tooLarge at the port, and the engine keeps serving', async t => {
+  const engine = sessionAnswering(method => ({ method }));
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => engine.session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  // Under the byte cap (about 450 KB), over the value bound.
+  const many = Array.from({ length: MAX_WINDOW_NODES + 1 }, () => ({}));
+  port2.postMessage({ v: 1, id: 1, method: 'Draft/set', args: { many } });
+  port2.postMessage({ v: 1, id: 2, method: 'Counts/get', args: {} });
+  await until(() => replies.length === 3, 'the hello and two answers', 2000);
+  const errorOf = (message: PortMessage) =>
+    message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
+  assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'ok']);
 });
