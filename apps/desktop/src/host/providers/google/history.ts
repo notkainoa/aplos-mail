@@ -323,6 +323,9 @@ function readDraftMap(memory: ReadonlyMap<string, string>): Map<string, string> 
   }
 }
 
+/** A message whose labels are unknown or include DRAFT may be a draft (Google's history refs often carry no labels). */
+const mayBeDraft = (m: HistoryRef): boolean => !m.labelIds || m.labelIds.includes('DRAFT');
+
 /** What one history page says, in record order. */
 interface PageChanges {
   labels: Map<string, Pending>;
@@ -330,6 +333,8 @@ interface PageChanges {
   inboxGained: HistoryRef[];
   /** Messages that lost DRAFT without being deleted: a draft sent with `drafts.send` keeps its id and becomes mail. */
   undrafted: HistoryRef[];
+  /** Draft candidates that left Trash: a restored draft is news again (it was reported `removed` while trashed). */
+  untrashed: HistoryRef[];
   deleted: Set<string>;
   /** Inbox entries and exits in record order, for the running Inbox round's sweep (REGAINED_KEY). */
   inboxMoves: [string, boolean][];
@@ -364,10 +369,11 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
     added: [],
     inboxGained: [],
     undrafted: [],
+    untrashed: [],
     deleted: new Set(),
     inboxMoves: [],
   };
-  const { labels, added, inboxGained, undrafted, deleted, inboxMoves } = changes;
+  const { labels, added, inboxGained, undrafted, untrashed, deleted, inboxMoves } = changes;
   for (const record of records) {
     for (const { message } of record.messagesAdded ?? []) {
       rt.memo.changed(message.id, record.id);
@@ -392,6 +398,8 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
       rt.memo.changed(entry.message.id, record.id);
       changeLabels(labels, entry.message, entry.labelIds, false);
       if (entry.labelIds?.includes('DRAFT')) undrafted.push(entry.message);
+      if (entry.labelIds?.includes('TRASH') && mayBeDraft(entry.message))
+        untrashed.push(entry.message);
       if (entry.labelIds?.includes('INBOX')) inboxMoves.push([entry.message.id, false]);
     }
   }
@@ -407,9 +415,9 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
  * a draft that exists.
  */
 function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>): boolean {
-  const { added, undrafted, deleted } = changes;
+  const { added, undrafted, untrashed, deleted } = changes;
   return (
-    added.some(m => !deleted.has(m.id) && (!m.labelIds || m.labelIds.includes('DRAFT'))) ||
+    [...added, ...untrashed].some(m => !deleted.has(m.id) && mayBeDraft(m)) ||
     undrafted.length > 0 ||
     [...deleted].some(id => draftMap.has(id))
   );
@@ -437,8 +445,10 @@ async function settleDrafts(
   { retained, rotate }: Retained,
   now: number,
 ): Promise<{ drafts: RemoteDraftFact[]; nextDraftMap: Map<string, string> }> {
-  const { added, deleted } = changes;
+  const { deleted } = changes;
   const live = (m: HistoryRef) => !deleted.has(m.id);
+  // New messages and restored-from-Trash ones, each once.
+  const added = [...new Map([...changes.added, ...changes.untrashed].map(m => [m.id, m])).values()];
   const drafts: RemoteDraftFact[] = [];
   const currentIds = new Set(current.values());
   const nextDraftMap = new Map<string, string>();
@@ -847,7 +857,7 @@ interface Retained {
  * when drafts change while it is paged) or that is past the bounds (`DRAFT_DELETED_CONFIRMS` for those this page deleted, `DRAFT_CONFIRMS` for the rest). Gone is: a 404 with Gmail's
  * `notFound` reason, or a draft that is in Trash, sent or no longer a draft (`drafts.list` hides trashed drafts, but
  * `drafts.get` still answers 200 for them). Missing drafts whose message this page deleted are checked first, then the
- * least recently checked (a draft seen alive moves to the back of the tracked map), so every draft gets its turn. Any
+ * least recently checked (a draft seen alive or unknown moves to the back of the tracked map), so every draft gets its turn. Any
  * other failure keeps the draft tracked and a pause (429) stops the step.
  */
 async function retainedDrafts(
@@ -872,7 +882,7 @@ async function retainedDrafts(
     const verdict = await draftVerdict(client, step, draftId);
     if (verdict === 'gone') continue;
     retained.add(draftId);
-    if (verdict === 'alive') rotate.add(draftId);
+    rotate.add(draftId); // alive or unknown: either way it goes to the back, so it cannot hold the front
   }
   return { retained, rotate };
 }

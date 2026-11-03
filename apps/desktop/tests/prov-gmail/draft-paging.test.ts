@@ -332,3 +332,72 @@ for (const [name, reply] of [
     getReply = undefined;
   });
 }
+
+for (const [name, labelIds, removed] of [
+  ['a 200 with no labelIds', undefined, false],
+  ['labels without DRAFT', ['INBOX'], true],
+  ['a SENT label', ['DRAFT', 'SENT'], true],
+  ['a plain DRAFT label', ['DRAFT'], false],
+] as const) {
+  test(`prov-gmail-drafts paging: ${name} on the check ${removed ? 'means gone' : 'keeps the draft'}`, async () => {
+    const skip = new Set<string>();
+    const { r } = await hiddenFrom(skip);
+    const subject = r.emu.mailbox.createDraftElsewhere(spec('Checked'));
+    await historyPass(r);
+    skip.add(subject.draftId);
+    getReply = id =>
+      id === subject.draftId
+        ? Response.json({ id, ...(labelIds ? { message: { id: 'x', labelIds } } : {}) })
+        : undefined;
+    r.emu.mailbox.createDraftElsewhere(spec('Prompt'));
+    await r.clock.advance(60_000);
+    await historyPass(r);
+    assert.ok(getCalls.includes(subject.draftId));
+    assert.equal(r.store.drafts.get(subject.draftId)?.removed, removed ? true : undefined);
+    getReply = undefined;
+  });
+}
+
+test('prov-gmail-drafts paging: drafts whose check keeps failing do not hold the front of the line', async () => {
+  const skip = new Set<string>();
+  const endless = { on: false };
+  const { r } = await hiddenFrom(skip, endless);
+  const stuck = Array.from({ length: 12 }, (_, i) =>
+    r.emu.mailbox.createDraftElsewhere(spec(`Stuck ${i}`)),
+  );
+  const doomed = r.emu.mailbox.createDraftElsewhere(spec('Doomed'));
+  await historyPass(r);
+  for (const d of stuck) skip.add(d.draftId);
+  const failing = new Set(stuck.map(d => d.draftId));
+  getReply = id => (failing.has(id) ? errorReply(500, 'backendError') : undefined);
+  endless.on = true;
+  r.emu.mailbox.deleteDraft(doomed.draftId);
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  endless.on = false;
+  for (let pass = 0; pass < 3 && !r.store.drafts.get(doomed.draftId)?.removed; pass++) {
+    r.emu.mailbox.createDraftElsewhere(spec(`Prompt ${pass}`));
+    await r.clock.advance(60_000);
+    await historyPass(r);
+  }
+  assert.equal(r.store.drafts.get(doomed.draftId)?.removed, true);
+  getReply = undefined;
+});
+
+test('prov-gmail-drafts paging: a draft restored from Trash is reported as a draft again', async () => {
+  const { r } = await hiddenFrom(new Set());
+  const draft = r.emu.mailbox.createDraftElsewhere(spec('Trashed, then restored'));
+  await historyPass(r);
+  r.emu.mailbox.trashMessage(draft.messageId);
+  r.emu.mailbox.createDraftElsewhere(spec('Prompt'));
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  assert.equal(r.store.drafts.get(draft.draftId)?.removed, true);
+  r.emu.mailbox.untrashMessage(draft.messageId);
+  await r.clock.advance(60_000);
+  const from = r.store.commits.length;
+  await historyPass(r);
+  const again = factsSince(r, from).find(f => f.remoteDraftId === draft.draftId);
+  assert.ok(again && !again.removed, 'reported again as a live draft');
+  assert.equal(r.store.drafts.get(draft.draftId)?.removed, undefined);
+});
