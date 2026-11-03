@@ -99,6 +99,17 @@ describe('test-shard arguments', () => {
     });
   });
 
+  it('rejects --script without a name', () => {
+    assert.throws(() => parseArgs(['.', '1/3', '--script']), /needs a script name/);
+    assert.throws(() => parseArgs(['.', '1/3', '--script', '--run']), /needs a script name/);
+  });
+
+  it('names the script in its errors', () => {
+    const pkg = { scripts: { 'test:x': 'vitest run', 'test:y': 'tsx --test' } };
+    assert.throws(() => testCommand(pkg, 'test:x'), /scripts\.test:x has no --test/);
+    assert.throws(() => testCommand(pkg, 'test:y'), /scripts\.test:y has no patterns/);
+  });
+
   it('testCommand reads a named script', () => {
     const parsed = testCommand(
       { scripts: { 'test:engine': 'node x.mjs --test "a/*.ts"' } },
