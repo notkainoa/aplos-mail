@@ -1,6 +1,6 @@
 import type { Address, Draft, DraftFields } from '@aplos/contract';
 import { sha256Hex } from '../diag/sha256';
-import type { SqlValue, StoreReader } from '../store';
+import type { RemoteDraftWrite, SqlValue, StoreReader } from '../store';
 import { htmlToText } from './mime';
 import { LIVE_STATES, type SubmissionState } from './store';
 
@@ -87,9 +87,10 @@ export interface DraftMeta {
   /**
    * Another device changed the copy while a send of this draft was live or had gone out, and nothing could be asked then
    * (the send owns the copy). Once the draft has been sent, a copy marked so holds somebody else's version and is not
-   * deleted with the draft.
+   * deleted with the draft. Holds the newest report of the copy (a row from before this was kept has `true`): it is
+   * applied, as if it had just arrived, when nothing pins the draft any more (`releaseHeld`).
    */
-  changedElsewhere?: true;
+  changedElsewhere?: true | RemoteDraftWrite;
   /**
    * The owner discarded this draft (or it was sent) and its remote copy is still to be deleted. The row stays, hidden from
    * every read, so the removal survives a restart and a late fact for the copy is not taken for another device's draft.

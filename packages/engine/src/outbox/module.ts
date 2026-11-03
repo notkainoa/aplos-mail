@@ -189,7 +189,14 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
     service,
     extension: outboxExtension,
     notifications: notes.service,
-    ...(draftsCtx ? { drafts: createDraftService(draftsCtx, service) } : {}),
+    // A discard cancels the send itself and must not first apply the copy held under it: the discard decides its fate.
+    ...(draftsCtx
+      ? {
+          drafts: createDraftService(draftsCtx, {
+            set: (opId, action) => setSubmission(ctx, opId, action, false),
+          }),
+        }
+      : {}),
     start() {
       applyStartRule(ctx);
       recheckUncertain(ctx);
