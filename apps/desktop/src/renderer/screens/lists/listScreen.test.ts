@@ -120,6 +120,10 @@ function depsOver(world: World, config: ListConfig, start: string | null = null)
 }
 
 test('every list renders its own rows: groups in All mail, recipients in Drafts and Sent, the stamp in Done', async () => {
+  // The Done stamp compares the row's day with "today" (format.ts keeps its own clock, which the
+  // data-layer harness clock does not reach): pin it to the fixture's day, or the stamp turns into
+  // "Done Oct 26" the moment the real date moves on. Restored in the finally below.
+  setFormatClock(() => harnessClock.now());
   const world = await boot();
   try {
     const all = renderToStaticMarkup(createElement(ListScreen, { which: 'all' }));
@@ -158,6 +162,7 @@ test('every list renders its own rows: groups in All mail, recipients in Drafts 
       'no Done or Later on a done row',
     );
   } finally {
+    setFormatClock(null);
     world.connection.close();
   }
 });
