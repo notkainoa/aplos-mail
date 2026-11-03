@@ -1,11 +1,12 @@
-import { notImplemented, type AreaHandlers } from './types';
+import type { AreaHandlers } from './types';
 
 /**
- * The `operation` area, owned by lane `eng-views`. Replace a stub with the real handler; never edit `index.ts`.
- * Arguments arrive validated; throw `ContractError` (`@aplos/contract/contract-error`) with the sentence the UI shows.
+ * The `operation` area, owned by lane `eng-views`: what happened to a command after its receipt, undo as an inverse
+ * operation and retry of a failed one. `Operation/undo` and `retry` need the scope of the method that made the
+ * operation as well as their own (FR-3); `services.threadOps` checks it.
  */
 export const handlers: AreaHandlers<'operation'> = {
-  'Operation/undo': notImplemented('Operation/undo'),
-  'Operation/get': notImplemented('Operation/get'),
-  'Operation/retry': notImplemented('Operation/retry'),
+  'Operation/undo': (args, ctx) => ctx.services.threadOps.undo(args, ctx.caller),
+  'Operation/get': (args, ctx) => ctx.services.threadOps.get(args.opIds),
+  'Operation/retry': (args, ctx) => ctx.services.threadOps.retry(args, ctx.caller),
 };

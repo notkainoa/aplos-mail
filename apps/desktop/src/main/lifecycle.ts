@@ -1,36 +1,218 @@
-import { app, dialog, nativeTheme } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  crashReporter,
+  dialog,
+  nativeTheme,
+  powerMonitor,
+  shell,
+  systemPreferences,
+} from 'electron';
 import { config } from 'dotenv';
 import { loadDevEnv } from './env';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { installPermissionHandlers } from './security';
-import { windows, focusMain, syncTheme, createWindow, setMain } from './windows';
+import { windows, focusMain, syncTheme, createWindow, setMain, startWindows } from './windows';
 import { handleLink } from './protocol';
-import { menus } from './menu-bar';
+import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
-import { service, bootEngine } from './engine-host';
+import { service, bootEngine, latestState, realPath, realEngine } from './engine-host';
+import {
+  activationPolicy,
+  createProcessState,
+  createQuitGate,
+  drain,
+  pendingWork,
+  quitWarning,
+  quitWarningButtons,
+  QUIT_DRAIN_MS,
+  type ActivationPolicy,
+} from '../host/lifecycle';
+import { acquireLock, nodeLockPorts, type HeldLock } from '../host/lock';
+import { watchPowerResume } from '../host/power';
+import { createLoopMonitor, nodeDelayHistogram, startCrashReporting } from '../host/crash';
+import { createPause } from '../host/menu-bar';
+import { LOG_FILE, logDir } from '../host/logsink';
 import {
   isTest,
   testModeError,
   testDataDir,
+  dataDirOverride,
   testAppName,
   silenceDialogs,
+  silenceSystem,
+  exposeTestHooks,
   markTestDir,
 } from './test-mode';
 
 let started = false;
+// A second launch or Dock click while Aplos boots is answered once startup has chosen its window.
+let pendingActivation = false;
 let closing = false;
 let quitting = false;
+let systemShutdown = false;
+/** Set by "Try again" after a park: the relaunch quit is ours, so the pending-work warning is skipped. */
+let skipQuitWarning = false;
+let lock: HeldLock | undefined;
+let stopPower: (() => void) | undefined;
+
+const pause = createPause(() => Date.now());
+const timers = {
+  every: (run: () => void, ms: number) => setInterval(run, ms),
+  cancel: (handle: unknown) => clearInterval(handle as NodeJS.Timeout),
+};
+const processState = createProcessState();
+const loopMonitor = createLoopMonitor({
+  histogram: nodeDelayHistogram(),
+  timers,
+  log: line => console.error(`Aplos Mail: ${line}`),
+});
+
+/**
+ * Today the legacy engine syncs on `sync {auto: true}`; the new engine takes `engine.wake()` here instead.
+ * The legacy engine has no pause of its own, so while paused (or parked) main simply does not forward the wake.
+ */
+function wakeEngine() {
+  if (pause.active() || processState.state === 'parked') return;
+  // The real engine (APLOS_ENGINE=real) gets the power event itself; its host dedupes wakes (host/power.ts).
+  if (realPath) return realEngine.wake();
+  if (!service) return;
+  void service.invoke('sync', { auto: true }).catch(() => {});
+}
+
+/** The engine's utility process stopped (any reason). The third stop within 60 s parks the app; returns true then. */
+function noteEngineExit(): boolean {
+  if (closing) return false;
+  const parked = processState.noteEngineExit(Date.now());
+  if (parked) void showParked();
+  return parked;
+}
+async function showParked() {
+  if (isTest)
+    return console.error('Aplos Mail test: parked: the engine stopped 3 times in 60 seconds');
+  app.focus({ steal: true });
+  for (;;) {
+    const { response } = await dialog.showMessageBox({
+      type: 'error',
+      message: 'Aplos Mail stopped reading your mail',
+      detail:
+        'The mailbox stopped 3 times in a minute. Your mail is safe. Send us the log, or try again.',
+      buttons: ['Export diagnostics', 'Try again'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (response === 1) break;
+    // Until the diagnostics report exists, "Export diagnostics" shows the log folder.
+    const dir = logDir({ dataDir: dataDirOverride });
+    shell.showItemInFolder(existsSync(join(dir, LOG_FILE)) ? join(dir, LOG_FILE) : dir);
+  }
+  processState.tryAgain();
+  skipQuitWarning = true;
+  app.relaunch();
+  app.quit();
+}
+
+// Resident mode: with no window Aplos is a menu-bar app (no Dock icon). Test mode stays accessory throughout.
+let appliedPolicy: ActivationPolicy = isTest ? 'accessory' : 'regular';
+function setPolicy(policy: ActivationPolicy) {
+  if (process.platform !== 'darwin' || policy === appliedPolicy) return;
+  appliedPolicy = policy;
+  app.setActivationPolicy(policy);
+  if (policy === 'regular') void app.dock?.show();
+  else app.dock?.hide();
+}
+function applyPolicy() {
+  if (quitting || closing) return;
+  const open = BrowserWindow.getAllWindows().filter(win => !win.isDestroyed()).length;
+  setPolicy(activationPolicy(open, isTest));
+}
+function watchWindowCount() {
+  app.on('browser-window-created', (_event, win) => {
+    applyPolicy();
+    win.on('closed', () => setImmediate(applyPolicy));
+  });
+}
+
+async function confirmQuit(): Promise<boolean> {
+  if (installUpdate || skipQuitWarning || systemShutdown) return true;
+  // The real path asks the engine (`Outbox/pending`); a rejection counts as yes in the quit gate.
+  const pending = realPath ? await realEngine.pending() : pendingWork(latestState);
+  const warning = quitWarning(pending);
+  if (!warning) return true;
+  // A test must be able to quit: it records the text and goes on (a dialog would also answer with its first button).
+  if (isTest) {
+    console.error(`Aplos Mail test: quit warning: ${warning.message}`);
+    return true;
+  }
+  // A menu-bar quit has no window to attach to; bring the dialog forward.
+  app.focus({ steal: true });
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    message: warning.message,
+    detail: warning.detail,
+    buttons: [...quitWarningButtons],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+const quitGate = createQuitGate(confirmQuit, beginQuit);
+function beginQuit() {
+  quitting = true;
+  // A test run must always end: if a window never answers its save-before-close, quit anyway after 15 s.
+  if (isTest) setTimeout(() => app.exit(0), 15_000);
+  if (!windows.size) finishQuit();
+  else for (const win of windows) win.close();
+}
 function finishQuit() {
   if (closing) return;
   closing = true;
-  void Promise.resolve(service?.close()).finally(() => {
+  stopPower?.();
+  loopMonitor.stop();
+  stopMenuBar();
+  // At most 3 s for the engine to close its database; after that the quit goes ahead anyway.
+  const quitTimers = {
+    set: (run: () => void, ms: number) => setTimeout(run, ms),
+    clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
+  };
+  const engineClosed = realPath ? realEngine.close() : service?.close();
+  void drain(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers).finally(() => {
+    lock?.release();
     updates?.stop();
     if (!(installUpdate && updates?.install())) app.quit();
   });
 }
 function cancelQuit() {
   quitting = false;
+}
+
+/** Power events, the menu-bar item (never in test mode) and the event-loop monitor. Needs `app` to be ready. */
+function startResident() {
+  watchWindowCount();
+  stopPower = watchPowerResume(
+    powerMonitor,
+    { wake: wakeEngine },
+    { now: () => Date.now(), every: timers.every, cancel: timers.cancel },
+  );
+  powerMonitor.on('shutdown', () => {
+    systemShutdown = true;
+  });
+  app.on('child-process-gone', (_event, details) => {
+    if (details.type === 'Utility' && details.serviceName === 'Aplos Mail Engine') noteEngineExit();
+  });
+  loopMonitor.start();
+  if (isTest) return;
+  startMenuBar({
+    pause,
+    sync: () => latestState?.sync,
+    open: () => {
+      app.focus({ steal: true });
+      focusMain();
+    },
+    quit: () => app.quit(),
+  });
 }
 
 if (testModeError) {
@@ -47,10 +229,13 @@ if (isTest) {
   // The separate app name below is the second line of defence should the switch ever be ignored.
   app.commandLine.appendSwitch('use-mock-keychain');
   silenceDialogs(dialog, line => console.error(`Aplos Mail test: ${line}`));
+  silenceSystem(shell, systemPreferences, line => console.error(`Aplos Mail test: ${line}`));
   markTestDir(testDataDir!);
+  exposeTestHooks();
   app.setPath('userData', join(testDataDir!, 'electron'));
 }
-app.setName(isTest ? testAppName : 'Aplos Mail');
+// Names the app, then starts the crash reporter (dumps stay on this Mac). After test mode set `userData`, which it keeps.
+startCrashReporting(app, crashReporter, isTest ? testAppName : 'Aplos Mail');
 // Test instances run side by side, each on its own data directory, so they take no single-instance lock.
 const locked = isTest || app.requestSingleInstanceLock();
 if (!locked) app.quit();
@@ -60,7 +245,9 @@ else {
     handleLink(url);
   });
   app.on('second-instance', (_event, argv) => {
-    focusMain();
+    // While Aplos is still starting, startup is choosing the one window: a second launch only queues its link.
+    if (started) focusMain();
+    else pendingActivation = true;
     for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
   });
   app.on('activate', () => {
@@ -70,12 +257,12 @@ else {
     if (process.platform !== 'darwin') app.quit();
   });
   app.on('before-quit', event => {
-    if (started && !closing) {
-      event.preventDefault();
-      quitting = true;
-      if (!windows.size) finishQuit();
-      else for (const win of windows) win.close();
-    }
+    if (closing) return;
+    // Every quit runs through here, even one that arrives while Aplos is still starting: a window's save-before-close
+    // would otherwise cancel Electron's own quit, and with no window left nothing on macOS would restart it.
+    event.preventDefault();
+    if (quitting) return;
+    quitGate.request();
   });
   void app
     .whenReady()
@@ -97,13 +284,20 @@ else {
         copyright: 'Independent software. Built with original code and design.',
       });
       installPermissionHandlers();
-      await bootEngine();
+      // One engine per data directory: a live holder refuses here (the catch below shows why), a dead one is reclaimed.
+      lock = acquireLock(dataDirOverride ?? app.getPath('userData'), nodeLockPorts());
+      await bootEngine({ noteExit: noteEngineExit });
+      processState.engineReady();
       started = true;
       nativeTheme.on('updated', () => syncTheme(true));
       startUpdates();
       menus();
-      // eng-host: a menu-bar status item added here must also skip creation when `isTest`.
-      setMain(createWindow());
+      startResident();
+      const atLogin = !isTest && app.getLoginItemSettings().wasOpenedAtLogin;
+      // A login launch is windowless and resident: the menu-bar item or the Dock opens the window.
+      if (atLogin) setPolicy('accessory');
+      if (startWindows(atLogin) === 'mail') setMain(createWindow());
+      else if (pendingActivation) focusMain();
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })

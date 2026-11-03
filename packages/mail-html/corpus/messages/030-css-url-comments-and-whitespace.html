@@ -1,0 +1,21 @@
+<style>
+  .a { background: url(/**/{{CANARY}}/{{ID}}/comment-inside-parens); }
+  .b { background: url( /* c */ "{{CANARY}}/{{ID}}/comment-before-string"); }
+  .c { background: u/**/rl({{CANARY}}/{{ID}}/comment-in-name); }
+  .d { background: ur/**/l({{CANARY}}/{{ID}}/comment-in-name-2); }
+  .e { background/**/: url({{CANARY}}/{{ID}}/comment-before-colon); }
+  .f { background:/**/url({{CANARY}}/{{ID}}/comment-after-colon); }
+  .g { background: url(/*{{CANARY}}/{{ID}}/comment-hides*/{{CANARY}}/{{ID}}/comment-real); }
+  .h { background: url({{CANARY}}/{{ID}}/before-comment/**/); }
+  .i { background: url("{{CANARY}}/{{ID}}/string-with-/*-in-it"); }
+  /* unterminated comment hides the closer */ .j { background: url({{CANARY}}/{{ID}}/after-comment); }
+  .k { background: url(	{{CANARY}}/{{ID}}/tab); }
+  .l { background: url({{CANARY}}/{{ID}}/form-feed); }
+  .m { background:url({{CANARY}}/{{ID}}/no-spaces);background:url({{CANARY}}/{{ID}}/second-declaration) }
+  .n { background: url({{CANARY}}/{{ID}}/important) !important; }
+  .o { background: red url({{CANARY}}/{{ID}}/after-keyword) no-repeat center / cover; }
+  .p { <!-- background: url({{CANARY}}/{{ID}}/html-comment-open) --> }
+  .q { background: url({{CANARY}}/{{ID}}/cdo-cdc); } <!-- --> .r { background: url({{CANARY}}/{{ID}}/after-cdo); }
+</style>
+<p>Recycling calendar: glass on the first Monday of each month.</p>
+<div class="a b c d e f g h i j k l m n o p q r">comments</div>

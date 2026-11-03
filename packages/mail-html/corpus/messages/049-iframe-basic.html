@@ -1,0 +1,15 @@
+<p>Embedded status page below.</p>
+<iframe src="{{CANARY}}/{{ID}}/iframe-plain" width="400" height="200"></iframe>
+<iframe src="//{{CANARY_HOST}}/iframe-protocol-relative" width="0" height="0" style="display:none"></iframe>
+<iframe src="{{CANARY}}/{{ID}}/iframe-sandboxed" sandbox="allow-scripts allow-same-origin"></iframe>
+<iframe src="{{CANARY}}/{{ID}}/iframe-allow" allow="camera; microphone; geolocation; clipboard-read"></iframe>
+<iframe src="{{CANARY}}/{{ID}}/iframe-credentialless" credentialless></iframe>
+<iframe src="{{CANARY}}/{{ID}}/iframe-lazy" loading="lazy"></iframe>
+<iframe name="victim" src="about:blank"></iframe>
+<a href="{{CANARY}}/{{ID}}/targets-named-frame" target="victim">link into a named frame</a>
+<iframe src="{{CANARY}}/{{ID}}/iframe-inside-details" ></iframe>
+<IFRAME SRC="{{CANARY}}/{{ID}}/iframe-upper"></IFRAME>
+<iframe src="{{CANARY}}/{{ID}}/iframe-unclosed" <p>text after an unclosed iframe</p>
+<portal src="{{CANARY}}/{{ID}}/portal"></portal>
+<fencedframe src="{{CANARY}}/{{ID}}/fencedframe"></fencedframe>
+<iframe src="{{CANARY}}/{{ID}}/iframe-fallback">fallback <img src="{{CANARY}}/{{ID}}/iframe-fallback-img"></iframe>

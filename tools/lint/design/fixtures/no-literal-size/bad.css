@@ -1,0 +1,41 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.spacing {
+  padding: 0 7px; /* @expect */
+  padding: 12px; /* @expect */
+  padding-left: 0.5rem; /* @expect */
+  margin: 8px auto; /* @expect */
+  margin-top: -4px; /* @expect */
+  margin-inline: 1em; /* @expect */
+  gap: 10px; /* @expect */
+  row-gap: 2px; /* @expect */
+  column-gap: 1rem; /* @expect */
+  padding: var(--space-2, 8px); /* @expect */
+  padding: calc(var(--space-2) + 3px); /* @expect */
+  margin: min(5vw, var(--space-4)); /* @expect */
+}
+
+.type {
+  font-size: 14px; /* @expect */
+  font-size: 1rem; /* @expect */
+  font-size: large; /* @expect */
+  line-height: 1.5; /* @expect */
+  line-height: 22px; /* @expect */
+  font: 600 14px/22px var(--font-sans); /* @expect */
+  font: bold sans-serif; /* @expect */
+  letter-spacing: -0.1px; /* @expect */
+  letter-spacing: 0.02em; /* @expect */
+}
+
+.shape {
+  border-radius: 8px; /* @expect */
+  border-radius: 50%; /* @expect */
+  border-radius: 100%; /* @expect */
+  border-radius: 999px; /* @expect */
+  border-top-left-radius: 6px; /* @expect */
+  border-radius: var(--radius-md) 4px; /* @expect */
+  box-shadow: 0 1px 2px var(--line); /* @expect */
+  box-shadow: 0 0 0 3px var(--accent); /* @expect */
+  z-index: 10; /* @expect */
+  z-index: 1; /* @expect */
+  z-index: -1; /* @expect */
+}

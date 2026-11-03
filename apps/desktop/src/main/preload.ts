@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Bridge, Listener } from '@aplos/contract/legacy/types';
 import { legacyMethods } from '@aplos/contract/allowlists';
+import { exposeEngineBridge } from '../host/transports/port';
 
 const allowed = new Set<string>(legacyMethods);
 const listeners = new Set<Listener>();
@@ -32,3 +33,8 @@ const bridge: Bridge = {
   },
 };
 contextBridge.exposeInMainWorld('aplos', bridge);
+
+// ---- The real engine's direct port (APLOS_ENGINE=real, contract-4) ----------------------------------------------
+// Only when main passed `ENGINE_PORT_ARG` (the real path): the default path exposes nothing and listens on nothing new.
+// The bridge itself lives in host/transports/port.ts, where it runs under node:test with fakes.
+exposeEngineBridge({ contextBridge, ipcRenderer }, process.argv);

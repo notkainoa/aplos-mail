@@ -1,0 +1,8 @@
+<p>Odd content identifiers in the attachment list.</p>
+<img src="cid:../../etc/passwd" alt="traversal cid">
+<img src="cid:1/../0" alt="dot dot cid">
+<img src="cid:img/0" alt="img looking cid">
+<img src="cid:<angle@mail.example>" alt="angle cid">
+<img src="cid:a b@mail.example" alt="space cid">
+<img src="cid:x&quot;onerror=&quot;fetch('{{CANARY}}/{{ID}}/cid-attr-break')" alt="quote cid">
+<img src="cid:../../../../{{ID}}" alt="cid with a path">

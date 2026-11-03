@@ -1,0 +1,31 @@
+<p>Notes on relative addresses.</p>
+<img src="img/0" alt="guess an image index">
+<img src="img/999999" alt="out of range index">
+<img src="cid/0" alt="guess a cid index">
+<img src="cid/../../etc/passwd" alt="traversal in cid">
+<img src="../0123456789abcdef/img/0" alt="another token via dot dot">
+<img src="/m/0123456789abcdef/img/0" alt="another token via absolute path">
+<img src="//m/0123456789abcdef/img/0" alt="protocol relative path">
+<img src="//{{CANARY_HOST}}/protocol-relative-image.png" alt="protocol relative host">
+<img src="aplos-mail://m/0123456789abcdef/img/0" alt="absolute other token">
+<img src="aplos-mail://other-host/x" alt="other host in the same scheme">
+<img src="aplos-mail:///img/0" alt="empty host">
+<img src="?x=1" alt="query only">
+<img src="#fragment" alt="fragment only">
+<img src="" alt="empty source">
+<img src="." alt="dot">
+<img src=".." alt="dot dot">
+<img src="%2e%2e/%2e%2e/img/0" alt="encoded traversal">
+<img src="img/0%00.png" alt="nul in path">
+<img src="IMG/0" alt="upper case path">
+<img src="img//0" alt="double slash">
+<img src="img/0/extra" alt="extra path segment">
+<img src="img/0?cache=1#x" alt="query on a real path">
+<img src="img/-1" alt="negative index">
+<img src="img/1e3" alt="exponent index">
+<img src="img/0x10" alt="hex index">
+<a href="cid/0">link to a cid</a>
+<a href="img/0">link to an img</a>
+<a href="relative/page.html">relative link</a>
+<a href="/absolute/path">absolute path link</a>
+<a href="../up">parent path link</a>

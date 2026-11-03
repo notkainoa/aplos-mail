@@ -31,6 +31,22 @@ export interface ListHeaders {
   listId?: string;
   precedence?: string;
   autoSubmitted?: string;
+  /**
+   * RFC 8058 section 4's precondition for one-click. `true` only when the provider verified a signature on this message
+   * that covers both List-Unsubscribe and List-Unsubscribe-Post and aligns with the From domain: a passing DKIM
+   * signature whose `h=` lists both headers and whose `d=` aligns with the From domain as DMARC defines it (RFC 7489
+   * section 3.1.1: the same domain, or relaxed, the same organizational domain), or an equivalent
+   * verdict (a passing ARC chain whose first seal vouches for such a DKIM result, or the provider's own verdict that
+   * says exactly that). `true` is allowed ONLY when the From header holds exactly one mailbox and that mailbox's domain
+   * is the domain the alignment was computed on: the engine compares From domains from the stored first From address
+   * (`methods/unsubscribe.ts`), which must be the very address the verdict covers. A provider that cannot guarantee this
+   * (several From mailboxes, an unparseable From) must leave it absent. `false` means the provider checked and it did not hold. Absent means unknown. Absent, `false`
+   * and any value that is not the boolean `true` (a string `'true'`, `1`) are all treated as not authenticated: the
+   * engine then never offers or performs the one-click POST for this message and never prefers it as a thread's
+   * unsubscribe target (`methods/unsubscribe.ts`). It is stored with the message (`messages.list_auth`), so the
+   * value a later write omits goes back to unknown.
+   */
+  authenticated?: boolean;
 }
 
 export interface MessageFlags {
@@ -66,6 +82,11 @@ export interface MessageFacts {
   from?: Address;
   to: Address[];
   cc: Address[];
+  /**
+   * Only when the provider can show a draft's Bcc (a sent or received message carries none). The engine takes a remote
+   * draft copy as its own upload only when it can compare Bcc too: absent here means "cannot show", never "empty".
+   */
+  bcc?: Address[];
   replyTo?: Address[];
   subject?: string;
   /** Entity-decoded (D22). */
@@ -153,6 +174,20 @@ export interface RemoteDraftFact {
   removed?: boolean;
   /** Metadata so a phone draft can show in Drafts; the body is fetched lazily. */
   message?: MessageFacts;
+  /**
+   * The draft's body as the provider delivered it. Optional: when present the engine treats the draft as complete (it can
+   * be edited, taken as theirs or kept both); when absent the draft is snippet-only until a fact with a body arrives.
+   * `html` is preferred; `text` is used when there is no `html`.
+   */
+  html?: string;
+  text?: string;
+  /**
+   * Remote message ids this fact replaces: a provider that updates a draft by creating a new message and destroying the
+   * old one (JMAP, IMAP; Gmail `drafts.update` gives the draft a new message id). The engine recognises the fact as the
+   * echo of its own upload when it supersedes the id it holds and carries its Message-ID, and as another device's edit
+   * when it supersedes its base but carries another Message-ID.
+   */
+  supersedes?: string[];
 }
 
 // ---- scopes, state and planning ----
@@ -250,6 +285,14 @@ export interface Quarantine {
   error: ClassifiedError;
 }
 
+/** The failures a step really clears: `clearedFailures` minus every item the same step quarantines (quarantine wins). */
+export function effectiveClearedFailures(
+  step: Pick<StepResult, 'clearedFailures' | 'quarantine'>,
+): string[] {
+  const quarantined = new Set((step.quarantine ?? []).map(q => q.item));
+  return (step.clearedFailures ?? []).filter(item => !quarantined.has(item));
+}
+
 /** Everything one bounded step learned, committed by the actor in one transaction with every `nextStates` row. */
 export interface StepResult {
   upserts?: MessageFacts[];
@@ -282,6 +325,12 @@ export interface StepResult {
   /** `provider_memory` writes; null deletes. */
   memory?: Record<string, string | null>;
   quarantine?: Quarantine[];
+  /**
+   * Clears the `sync_failures` rows of items that synced after a retry (`item` as in `Quarantine.item`). The store write is
+   * `SyncFailureWrite { failure: null }`; an item named here and in `quarantine` stays quarantined. The rule is
+   * `effectiveClearedFailures`; the fact writer must call it rather than reading this field directly.
+   */
+  clearedFailures?: string[];
   costUnits: number;
 }
 
@@ -371,10 +420,21 @@ export interface ConnectRequest {
   /**
    * Vault reference of an app password or API token; never the secret. A `reconnect` of an app-password or API-token
    * account (iCloud, generic IMAP, Fastmail) carries the NEW secret's reference, stored by the host before the call.
+   * A reconnect stages under a FRESH ref, never the one its account already uses (not `refFor(accountId)`): the engine
+   * never discards for an account with a committed row (`AccountActorHost.discardCredential`), so a late or refused
+   * attempt cannot delete a live credential, and the host removes the superseded ref after the engine commits the new one.
    */
   secretRef?: string;
   /** A second secret for the calendar half when the provider needs one (Fastmail: an API token for JMAP, an app password for CalDAV). */
   calendarSecretRef?: string;
+  /**
+   * `Account/cancelConnect` aborts this: the host stops its browser or loopback flow and `connect` rejects (the host's
+   * `ConnectContext.signal` follows it), so a cancelled attempt never lingers and a reconnect cannot start a parallel
+   * flow. A host must store nothing after the signal aborts. A result that still arrives after the abort is discarded
+   * by the engine for a first-time connect (`AccountActorHost.discardCredential`; an existing account's credential is
+   * kept) and `connect` rejects with the abort reason.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -402,7 +462,10 @@ export interface ConnectResult {
    * `client` is the OAuth client id the grant belongs to (`accounts.oauth_client`, D21).
    */
   grant?: { grantedAt: number; refreshExpiresAt?: number; client?: string };
-  /** Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. */
+  /**
+   * Vault reference of the stored token bundle (refresh token + client id, D21) or of the app password. A reconnect
+   * returns a fresh ref, not the account's current one (see `ConnectRequest.secretRef`).
+   */
   credentialRef: string;
   /** Initial `provider_memory`: limits learned at connect (JMAP session, IMAP host table), capabilities detail. */
   memory?: Record<string, string>;
@@ -446,6 +509,8 @@ export interface SearchResult {
   upserts: MessageFacts[];
   remoteThreadIds: string[];
   nextPageToken?: string;
+  /** True when the provider could only return part of the matches (a cap, a timeout, a limited-mode host). */
+  partial?: boolean;
   costUnits: number;
 }
 
@@ -510,6 +575,20 @@ export interface DraftUpload {
    * `conflict`, so a 5 s idle save never overwrites a phone edit that history has not reported yet.
    */
   baseRemoteMessageId?: string;
+  /**
+   * Only on a create (no `remoteDraftId`): the Message-IDs of this draft's earlier creates that were never answered (a
+   * newer revision replaced the attempt, and the reply may have been lost after the copy landed). Before creating, look
+   * for a draft carrying one of them. REPLACE it with this upload (the result names its `remoteDraftId`) ONLY when all
+   * three hold: it is still a draft, its Message-ID is listed here, AND its canonical bytes equal an upload this adapter
+   * recorded under that Message-ID. A listed Message-ID alone proves nothing: a provider may keep a draft's Message-ID
+   * across edits, so a copy another device edited carries it too. Otherwise answer `conflict` naming `remoteDraftId`,
+   * `remoteMessageId` and `remoteInternetId` of the copy, write nothing and never delete it. An adapter that cannot
+   * record or compare uploads (for example after a restart) simply answers `conflict`: nothing is lost, the owner
+   * chooses. Optional and additive: an adapter that ignores the field keeps today's behaviour (a duplicate remote draft
+   * can remain until the owner removes it, never a loss). The engine stops offering the ids once the create is answered
+   * in any way, including `conflict` and `gone`.
+   */
+  supersedes?: string[];
   /** Graph's `changeKey` of the last synced copy, sent as the precondition where the message id does not change on edit. */
   baseChangeKey?: string;
 }
@@ -524,8 +603,27 @@ export type DraftSaveResult =
     }
   /** The remote draft no longer exists (deleted or sent from another device): the engine decides, never recreates blindly. */
   | { kind: 'gone' }
-  /** The remote copy changed since `baseRemoteMessageId`: nothing was written; the engine asks "keep mine, take theirs, or keep both". */
-  | { kind: 'conflict'; remoteMessageId?: string };
+  /**
+   * The remote copy changed since `baseRemoteMessageId`: nothing was written; the engine asks "keep mine, take theirs, or
+   * keep both".
+   *
+   * On the CREATE path (the upload carried no `remoteDraftId`) a conflict means the provider found an existing copy
+   * carrying this upload's Message-ID (an earlier create whose reply was lost did land) whose bytes differ, or, for an upload
+   * that lists `supersedes`, a copy under one of those Message-IDs that the adapter cannot prove is its own. Name it:
+   * `remoteDraftId` (and `remoteMessageId`) of that copy, and `remoteInternetId`, the Message-ID the copy carries. The
+   * engine adopts the copy only when `remoteInternetId` equals `DraftUpload.internetId`: it then stores the ids on the
+   * draft row, so keep mine replaces that copy instead of creating a second draft, and remembers the upload's Message-ID
+   * as its own. It never adopts a copy it cannot prove is its own, and the copy's bytes differ, so it never deletes it:
+   * it is another device's version until the owner chooses (a discard forgets it). Optional: an adapter that cannot name
+   * or prove the copy leaves the fields out (the ordinary conflict, nothing adopted). Ignored on the update path.
+   */
+  | {
+      kind: 'conflict';
+      remoteMessageId?: string;
+      remoteDraftId?: string;
+      /** The Message-ID header of the copy named by `remoteDraftId`, as the provider read it. */
+      remoteInternetId?: string;
+    };
 
 export interface SubmissionPayload {
   submissionId: string;
@@ -654,10 +752,31 @@ export interface ProviderAdapter {
    * adapter picks each request's kind: an in-place update by id (Gmail `drafts.update`, Graph PATCH) is
    * `idempotentWrite`; a create, and an update that is a create plus destroy (IMAP `APPEND` then delete, JMAP
    * `Email/set`), is `write` and never re-sent, and an uncertain create is recognised by `DraftUpload.internetId`.
+   * A target that is no longer a draft (sent from another device: no `$draft` keyword, not in Drafts, a sent message on
+   * a provider where the draft and the sent message are one entity) is `gone`: it is never replaced, and a JMAP
+   * replace (create then destroy) must not destroy it, or it would delete sent mail. `DraftUpload.mime` never carries
+   * Bcc: the engine keeps Bcc out of draft copies, so an adapter that sends a copy itself sends it without Bcc.
    */
   saveDraft?(draft: DraftUpload, ctx: AdapterContext): Promise<DraftSaveResult>;
-  /** Idempotent: an absent draft is success. */
-  deleteDraft?(remoteDraftId: string, ctx: AdapterContext): Promise<void>;
+  /**
+   * Idempotent: an absent draft is success. It must also do nothing when the target is no longer a draft (no `$draft`
+   * keyword, not in Drafts): a send that used the remote draft (`SendReceipt.draftConsumed`) can leave the same entity
+   * as the sent message (JMAP keeps the `Email` id), and deleting it would delete the sent mail.
+   *
+   * `expectedMessageId` (optional, additive): the message id the engine last wrote or adopted for this draft. When given,
+   * delete ONLY IF the draft still holds it (Gmail: the draft's `message.id` equals it; JMAP: the `Email` id; Graph: the
+   * message `id`). If the draft holds a different one (it was edited or replaced on another device, or became a sent
+   * message) do NOTHING and resolve: the owner's discard must not destroy a newer version or a sent mail. A missing draft
+   * is success. When it is omitted the engine knows no id (a copy it never read a message id for): the engine's call is the
+   * old unguarded one, but an adapter may and should refuse to delete without a guard when the delete cannot be undone
+   * (Gmail does nothing and the copy stays, which history then reports as another device's draft: an orphan, never a
+   * loss). Either way it resolves.
+   */
+  deleteDraft?(
+    remoteDraftId: string,
+    ctx: AdapterContext,
+    expectedMessageId?: string,
+  ): Promise<void>;
   /**
    * Never retried (`kind: 'send'`). Throws `NotSentError` or `PausedError` only with proof; anything else means uncertain.
    * When one call makes several requests (iCloud: SMTP, then an `APPEND` to Sent), it may let `PausedError` or
@@ -689,4 +808,10 @@ export interface ProviderFactory {
   /** Static for Gmail; from `provider_memory` (JMAP session, IMAP host table) elsewhere. Includes the calendar's budget. */
   budgets(account: AdapterAccount, memory: ReadonlyMap<string, string>): BudgetSpec[];
   open(account: AdapterAccount): ProviderAdapter;
+  /**
+   * Deletes a credential this factory's `connect` stored (or `ConnectRequest.secretRef` named) when the engine refuses
+   * the result. The factory owns the vault, so only it can; a ref that is not stored is not an error. A factory without
+   * this method cannot be discarded from: the host fails closed and rejects rather than keep an orphaned credential.
+   */
+  discardCredential?(ref: string): Promise<void>;
 }

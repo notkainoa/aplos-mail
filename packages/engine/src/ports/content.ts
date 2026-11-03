@@ -156,7 +156,42 @@ export const IMAGE_PROXY_LIMITS = {
  * original name as SNI and `Host` (no second lookup, so a rebinding resolver cannot swap it); follow redirects by hand,
  * each one re-checked from scratch; send no cookies, credentials, `Referer` or client headers; check the type from the
  * bytes, not `Content-Type`. Never throws for a refusal: it resolves `refused`, and aborts with `signal`.
+ *
+ * The `img/<n>` route that serves the result (`Mail/serve`, not written yet) MUST answer with `Content-Type` set from the
+ * sniffed `mime` (never from the sender), `X-Content-Type-Options: nosniff`, and no header taken from the remote
+ * response. Do the same for every route that serves bytes a stranger chose.
  */
 export interface ImageProxy {
   fetch(url: string, opts: { token: string; signal: AbortSignal }): Promise<ProxiedImage>;
+}
+
+/** What an unsubscribe attempt came to; the `Unsubscribe/run` handler maps each kind to a contract outcome. */
+export type UnsubscribeKind = 'done' | 'unsure' | 'failed' | 'open' | 'compose' | 'none';
+
+/**
+ * Plans and performs one List-Unsubscribe (RFC 2369 / RFC 8058) for `Unsubscribe/get` and `Unsubscribe/run`.
+ * Implemented by the host (`apps/desktop/src/host/providers/google/unsubscribe.ts`, Node networking; never in the
+ * neutral core) and injected as `HostPorts.unsubscribe`; the `Unsubscribe/*` handlers (`methods/unsubscribe.ts`) call
+ * it with the headers of the thread's newest authenticated inbound message that carries List-Unsubscribe, else the
+ * newest such message (`ListHeaders.authenticated`). For a message that is not authenticated the engine passes the
+ * headers without `listUnsubscribePost`, so only the owner-visible ways (the mailto the owner reviews, the page the
+ * owner opens) remain; an executor must still plan one-click only when `headers.authenticated === true`.
+ * - `describe` is pure and offline: it reads the headers and names the way the sender offers (`url` for a link or
+ *   mailto), with no network and no side effect.
+ * - `run` performs the one-click POST, or plans the mailto or the link, in the host. It must honour `signal`, and it
+ *   never throws for an ordinary refusal: a sender that refuses or errors resolves `failed`, a sender whose answer does
+ *   not confirm the request resolves `unsure`. `open` carries the `url` to show for review; `compose` carries the
+ *   mailto `url` for the owner to review and send; `none` means no usable way. The SSRF rules (address ranges,
+ *   redirects, no cookies) are the host's, as for `ImageProxy`. When `signal` aborts, `run` rejects with `signal.reason`
+ *   and stops any request in flight.
+ */
+export interface UnsubscribePort {
+  describe(headers: ListHeaders): { method: 'oneClick' | 'mailto' | 'link' | 'none'; url?: string };
+  run(request: {
+    from: string;
+    headers: ListHeaders;
+    /** The caller's `opId` for this attempt, when it sent one; the same value on a retry. Not a secret. */
+    opId?: string;
+    signal: AbortSignal;
+  }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
 }
