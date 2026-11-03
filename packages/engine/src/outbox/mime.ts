@@ -229,10 +229,13 @@ export function checkAddress(address: string): string {
 /** A word the header folder cannot break (it only breaks at spaces): such a value is encoded instead. */
 const hasLongWord = (s: string) => s.split(' ').some(w => w.length > LINE - 12);
 
+/** Plain text a reader may still take for something else: `=?` starts an encoded word, which a reader decodes. */
+const needsEncoding = (s: string) => !isPlainAscii(s) || hasLongWord(s) || s.includes('=?');
+
 function displayName(name: string): string {
   const clean = headerSafe(name).trim();
   if (!clean) return '';
-  if (!isPlainAscii(clean) || hasLongWord(clean)) return encodedWords(clean).join(' ');
+  if (needsEncoding(clean)) return encodedWords(clean).join(' ');
   if (/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~ -]+$/.test(clean) && !/^ | $/.test(clean)) return clean;
   return `"${clean.replace(/[\\"]/g, m => `\\${m}`)}"`;
 }
@@ -245,7 +248,7 @@ export function formatAddress(a: MimeAddress): string {
 
 function unstructured(value: string): string {
   const clean = headerSafe(value);
-  return isPlainAscii(clean) && !hasLongWord(clean) ? clean : encodedWords(clean).join(' ');
+  return needsEncoding(clean) ? encodedWords(clean).join(' ') : clean;
 }
 
 /** Printable ASCII (`!` to `~`) except `<`, `>`, `"` and `\`: no control, NUL, space or 8-bit byte can get in. */
