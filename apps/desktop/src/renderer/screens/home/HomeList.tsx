@@ -59,6 +59,8 @@ export interface HomeListProps {
   readonly accounts: readonly Account[];
   /** Another surface owns the filled button (the Low sheet is open). */
   readonly demoted: boolean;
+  /** The rows in the bulk pick. */
+  readonly picked: ReadonlySet<ThreadId>;
   readonly handlers: HomeListHandlers;
 }
 
@@ -103,6 +105,8 @@ function Rows(props: HomeListProps & { ids: readonly ThreadId[]; section: Sectio
           layout: 'home',
           density,
           cursor: false,
+          picked: props.picked.has(id),
+          picking: props.picked.size > 0,
           accounts,
           rejected,
           handlers: {
@@ -222,7 +226,7 @@ export function HomeList(props: HomeListProps) {
     activeDescendantId: activeDomId(props.cursorKey),
   };
   return (
-    <ListBox binding={binding}>
+    <ListBox binding={binding} multiselectable={props.picked.size > 0}>
       <DoNow {...props} />
       <Section {...props} name="update" />
       <Band {...props} />

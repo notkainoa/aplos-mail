@@ -8,6 +8,7 @@ import type { AccountId, DataApi, Id, State, ThreadId, ThreadRow } from '../../d
 import type { PushedToast } from '../../shell';
 import type { CommitKind } from '../../ui/props';
 import {
+  HOLD_RADIUS,
   jumpSection,
   keyOf,
   laneOf,
@@ -21,6 +22,7 @@ import {
   type RowOf,
   type SectionKey,
 } from './homeModel';
+import { createHomeBulk, type HomeBulkDeps } from './homeBulk';
 import { failurePhrase, senderOf } from './homeRows';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 
@@ -32,6 +34,8 @@ export interface HomeSnapshot {
   /** The `home` window's state, for selectors ("Clear from Home" acts on what the owner saw). */
   readonly state: State | null;
   readonly accountId?: AccountId;
+  /** The bulk pick in list order; absent while nothing is picked. */
+  readonly picked?: readonly ThreadId[];
 }
 
 /** What a command run reports back (the registry's `RunResult` status). */
@@ -50,6 +54,8 @@ export interface HomeDeps {
   dismiss(id: string): void;
   /** The hold gate (`useHold('home')`): a key starts or extends it around `ids`. */
   hold: { extend(ids?: readonly Id[]): void };
+  /** The bulk pick (X, ⇧X, ⌘A) and its trash confirmation. Absent: this screen cannot pick (the one-by-one view). */
+  bulk?: HomeBulkDeps;
   /** Draws the commit (ghost, chip, edge); it also extends the hold, so only one of the two is called. */
   commit?(kind: CommitKind, holdIds: readonly Id[], rowId: ThreadId): void;
   /** Who may press R: the thread a "Remind me if no reply" toast is offering (and that toast's id), or null. */
@@ -72,14 +78,28 @@ export interface HomeDeps {
 export interface HomeActions {
   move(delta: 1 | -1): void;
   jump(delta: 1 | -1): void;
-  /** Done on the row under the cursor, or on the row with this cursor key (a hover button). */
+  /**
+   * Done on the picked rows when any are picked, else on the row under the cursor, or on the row with this cursor key
+   * (a hover button or the focus letter's own, which always mean their own row). Later, Trash and Bookmark follow the same rule.
+   */
   done(key?: string): void;
   later(key?: string): void;
   lane(direction: 'up' | 'down'): void;
-  /** Move to Trash (#); the toast offers Undo. */
-  trash(): void;
+  /** Move to Trash (#); the toast offers Undo. With picks it asks first. */
+  trash(key?: string): void;
   /** Bookmark or remove the bookmark on the row under the cursor. */
-  bookmark(): void;
+  bookmark(key?: string): void;
+  /** X: pick or unpick the cursor row; the cursor stays. Does nothing on the Low band. */
+  select(): void;
+  /** ⇧X: pick the run from the anchor to the cursor. */
+  selectRange(): void;
+  /** ⌘A: every loaded row. */
+  selectAll(): void;
+  /** Esc. */
+  clearSelection(): void;
+  /** The owner chose Move to Trash on the bulk confirmation. */
+  confirm(): void;
+  cancelConfirm(): void;
   suggested(): void;
   open(): void;
   clearFromHome(): void;
@@ -90,9 +110,6 @@ export interface HomeActions {
   /** An operation was undone (its toast's Undo, or Z): its toast closes and its reminder offer, if it had one, is withdrawn. */
   undone(opId: string): void;
 }
-
-/** Radius of rows pinned around the cursor while a burst lasts. */
-const HOLD_RADIUS = 3;
 
 const LANE_LABEL: Readonly<Record<MovableLane, string>> = {
   do: 'Do now',
@@ -129,6 +146,10 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     deps.offerReminder(id, opId ?? undefined);
   };
 
+  const bulk = createHomeBulk(deps);
+  /** The picks when the verb is for them: no key (a hover button or the letter means its own row). */
+  const pickedFor = (key?: string) => (key === undefined ? (bulk?.picks() ?? null) : null);
+
   const around = (snapshot: HomeSnapshot) =>
     neighbourIds(snapshot.items, snapshot.key, HOLD_RADIUS);
 
@@ -149,6 +170,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
   };
 
   function done(key?: string): void {
+    const picked = pickedFor(key);
+    if (picked) return bulk?.done(picked);
     const snapshot = read(key);
     const target = targetOf(snapshot);
     if (!target) return;
@@ -176,6 +199,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
   }
 
   function later(key?: string): void {
+    const picked = pickedFor(key);
+    if (picked) return bulk?.later(picked);
     const snapshot = read(key);
     const target = targetOf(snapshot);
     if (!target) return;
@@ -237,8 +262,10 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     );
   }
 
-  function trash(): void {
-    const snapshot = deps.snapshot();
+  function trash(key?: string): void {
+    const picked = pickedFor(key);
+    if (picked) return bulk?.trash(picked);
+    const snapshot = read(key);
     const target = targetOf(snapshot);
     if (!target) return;
     startHold(snapshot, 'trash', target.row.id);
@@ -254,8 +281,10 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     failOnReject(opId, receipt);
   }
 
-  function bookmark(): void {
-    const target = targetOf(deps.snapshot());
+  function bookmark(key?: string): void {
+    const picked = pickedFor(key);
+    if (picked) return bulk?.bookmark(picked);
+    const target = targetOf(read(key));
     if (!target) return;
     const on = !target.row.workflow.bookmarked;
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'bookmark', on } });
@@ -281,7 +310,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const target = targetOf(deps.snapshot());
     if (!target) return open();
     const command = suggestedCommand(target.row, target.section);
-    if (command === 'mail.done') return done();
+    if (command === 'mail.done') return done(target.row.id);
     if (command === 'mail.open') return deps.openThread(target.row.id, 'open');
     const status = deps.runCommand(command);
     if (status === 'unhandled' || status === 'unknown') deps.openThread(target.row.id, 'reply');
@@ -351,6 +380,12 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     suggested,
     open,
     clearFromHome,
+    select: () => bulk?.select(),
+    selectRange: () => bulk?.selectRange(),
+    selectAll: () => bulk?.selectAll(),
+    clearSelection: () => bulk?.clearSelection(),
+    confirm: () => bulk?.confirm(),
+    cancelConfirm: () => bulk?.cancelConfirm(),
     remind,
     setDate,
     undone,

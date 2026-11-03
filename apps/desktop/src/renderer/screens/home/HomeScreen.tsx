@@ -3,7 +3,7 @@
  * still while keys or the pointer are at work, and routes every key through the CommandRegistry. The list itself is
  * `HomeList`; the empty states are `HomeEmpty`. Later, the lists and Done are the next round.
  */
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import {
   useAccounts,
   useAccountsLoaded,
@@ -18,11 +18,17 @@ import {
   type HoldController,
   type ThreadId,
 } from '../../data';
+import type { ContextName } from '../../commands';
 import { toSyncStatus } from '../../shell/status-map';
 import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shell';
 import { statusCopy } from '../../ui/status';
 import { CommitTemplates } from '../CommitTemplates';
-import { ListFailed } from '../lists/ListStates';
+import { BulkMenu } from '../lists/BulkMenu';
+import type { Confirmation } from '../lists/listActions';
+import { confirmationIsStale } from '../lists/listModel';
+import { ListConfirm, ListFailed } from '../lists/ListStates';
+import { useBulk } from '../lists/useBulk';
+import { moreEntriesOf, useBulkBarPart } from '../lists/useBulkBar';
 import { Reopenable } from '../lists/Reopenable';
 import { accountsAreKnown, HomeEmpty } from './HomeStates';
 import {
@@ -34,9 +40,10 @@ import {
 } from './HomeList';
 import { HomeOverlays } from './HomeOverlays';
 import type { WhyTarget } from './WhyHost';
-import type { HomeSnapshot, OpenHow } from './homeActions';
-import { homeRunContext } from './homeCommands';
-import { buildItems, orderLayout, type HomeLayout } from './homeModel';
+import type { HomeActions, HomeSnapshot, OpenHow } from './homeActions';
+import type { HomeBulkDeps } from './homeBulk';
+import { homeBarActions, homeRunContext } from './homeCommands';
+import { buildItems, orderLayout, pickableIds, type HomeItem, type HomeLayout } from './homeModel';
 import { densityOf, senderOf, subjectOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
 import { useHomeDatePicker } from './useHomeDatePicker';
@@ -111,6 +118,61 @@ function useScrollToCursor(key: string | null): void {
   }, [key]);
 }
 
+/** The key contexts above Home's own: a sheet, the date presets or the trash question, whichever is open. */
+function keyContexts(lowOpen: boolean, datePickerOpen: boolean, asking: boolean): ContextName[] {
+  if (lowOpen) return ['lowImportance'];
+  if (datePickerOpen) return ['datePicker'];
+  return asking ? ['dialog'] : [];
+}
+
+/** The pane header's bulk bar while rows are picked, and its More menu. */
+function useHomeBar(actions: HomeActions, count: number | null) {
+  const plan = useMemo(
+    () => ({ actions: homeBarActions(actions), entries: moreEntriesOf('all') }),
+    [actions],
+  );
+  return useBulkBarPart(plan, actions, count);
+}
+
+/** Home with nothing to list: no account yet, first sync, or inbox zero. */
+function EmptyHome(props: {
+  readonly accountCount: number;
+  readonly counts: ReturnType<typeof useCounts>;
+  readonly status: ReturnType<typeof useStatus>;
+  readonly canUndo: boolean;
+}) {
+  const { counts, status } = props;
+  const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
+  const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;
+  return (
+    <HomeEmpty
+      accountCount={props.accountCount}
+      settling={settling}
+      reason={reason}
+      handledToday={counts.counts.handledToday}
+      canUndo={props.canUndo}
+    />
+  );
+}
+
+/** The bulk pick over the rows X can reach, and the trash question it may raise. */
+function useHomePick(items: readonly HomeItem[]) {
+  const pickable = useMemo(() => pickableIds(items), [items]);
+  const bulk = useBulk(pickable);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const current = useRef(confirmation);
+  current.current = confirmation;
+  useEffect(() => {
+    // The rows it asked about are gone: nothing is left to confirm, and the dialog's keys go.
+    if (confirmation && confirmationIsStale(confirmation, pickable)) setConfirmation(null);
+  }, [confirmation, pickable]);
+  const deps = useMemo<HomeBulkDeps>(
+    () => ({ selection: bulk.controls, confirmation: () => current.current, setConfirmation }),
+    [bulk.controls],
+  );
+  return { bulk, confirmation, deps };
+}
+
 function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const hold = useHold('home');
   const home = useHome({ accountId, holdIds: hold.heldIds });
@@ -128,9 +190,17 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const cursor = useHomeCursor(buildItems(layout));
   useScrollToCursor(cursor.key);
   useFollowHomeCursor(accountId, cursor.key, hold.isHeld);
+  const pick = useHomePick(cursor.items);
 
   const snapshot = useRef<HomeSnapshot>({ items: [], key: null, rowOf, state: null });
-  snapshot.current = { items: cursor.items, key: cursor.key, rowOf, state: home.state, accountId };
+  snapshot.current = {
+    items: cursor.items,
+    key: cursor.key,
+    rowOf,
+    state: home.state,
+    accountId,
+    picked: pick.bulk.picking ? pick.bulk.picked : undefined,
+  };
   const cursorRow = cursor.key === null ? undefined : home.rows.get(cursor.key);
   useCommandTarget(
     cursorRow
@@ -194,6 +264,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     snapshot,
     context,
     hold,
+    bulk: pick.deps,
     setCursor: cursor.setCursor,
     commit,
     openThread: onOpen ?? ignore,
@@ -205,9 +276,10 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   });
   keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
   useShellKeyLayer({
-    contexts: lowOpen ? ['lowImportance'] : datePicker.isOpen && !listHidden ? ['datePicker'] : [],
-    conditions: { remindOffer },
+    contexts: keyContexts(lowOpen, datePicker.isOpen && !listHidden, pick.confirmation !== null),
+    conditions: pick.bulk.picking ? { remindOffer, selection: true } : { remindOffer },
   });
+  const bulkMenu = useHomeBar(actions, pick.bulk.picking ? pick.bulk.picked.length : null);
   const pointer = usePointerHold(hold);
 
   const handlers: HomeListHandlers = {
@@ -216,8 +288,9 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     rowAction: (commandId, key) =>
       commandId === 'mail.later' ? actions.later(key) : actions.done(key),
     suggested: () => actions.suggested(),
-    later: () => actions.later(),
-    done: () => actions.done(),
+    // The letter's own buttons mean its own row, even while others are picked.
+    later: () => actions.later(snapshot.current.key ?? undefined),
+    done: () => actions.done(snapshot.current.key ?? undefined),
     more: setMenuAnchor,
     openLow,
     oneByOne,
@@ -227,14 +300,11 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   // Until the engine has answered, an empty account list means "not loaded yet", not "no accounts": stay neutral.
   if (accounts.length === 0 && !known) return null;
   if (accounts.length === 0 || empty) {
-    const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
-    const reason = status ? statusCopy(toSyncStatus(status))?.text : undefined;
     return (
-      <HomeEmpty
+      <EmptyHome
         accountCount={accounts.length}
-        settling={settling}
-        reason={reason}
-        handledToday={counts.counts.handledToday}
+        counts={counts}
+        status={status}
         canUndo={undoTop !== null}
       />
     );
@@ -250,9 +320,18 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
         density={density}
         accounts={accounts}
         demoted={lowOpen}
+        picked={pick.bulk.selection.picked}
         handlers={handlers}
       />
       <CommitTemplates forwardedRef={templates} />
+      <BulkMenu menu={bulkMenu} />
+      {pick.confirmation ? (
+        <ListConfirm
+          confirmation={pick.confirmation}
+          onConfirm={actions.confirm}
+          onCancel={actions.cancelConfirm}
+        />
+      ) : null}
       {datePicker.element}
       <HomeOverlays
         accountId={accountId}

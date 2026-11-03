@@ -23,6 +23,7 @@ import {
   type OpenHow,
   type RunStatus,
 } from './homeActions';
+import type { HomeBulkDeps } from './homeBulk';
 import { commandsForHome } from './homeCommands';
 
 /** The screen's inputs to its actions. */
@@ -31,6 +32,8 @@ export interface HomeActionInputs {
   /** The command context a command run from here (Space on a reply) gets. */
   readonly context: () => CommandContext;
   readonly hold: HoldController;
+  /** The bulk pick and its confirmation; absent where the screen cannot pick (the one-by-one view). */
+  readonly bulk?: HomeBulkDeps;
   readonly setCursor: (key: string | null) => void;
   /** Draws a commit on the row that is leaving (the one acted on, not necessarily under the cursor) and extends the hold. */
   readonly commit: (kind: CommitKind, holdIds: readonly string[], rowId: ThreadId) => void;
@@ -100,8 +103,19 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
     setCurrent(null);
   }, [current, toasts]);
 
+  const canPick = inputs.bulk !== undefined;
   const actions = useMemo(() => {
     const now = () => latest.current;
+    const bulk: HomeBulkDeps = {
+      selection: {
+        toggle: id => now().bulk?.selection.toggle(id),
+        extendTo: id => now().bulk?.selection.extendTo(id),
+        selectAll: () => now().bulk?.selection.selectAll(),
+        clear: () => now().bulk?.selection.clear(),
+      },
+      confirmation: () => now().bulk?.confirmation() ?? null,
+      setConfirmation: next => now().bulk?.setConfirmation(next),
+    };
     const deps: HomeDeps = {
       snapshot: () => now().snapshot.current ?? EMPTY,
       setCursor: key => now().setCursor(key),
@@ -109,6 +123,7 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
       push: pushToast,
       dismiss: dismissToast,
       hold: { extend: ids => now().hold.extend(ids) },
+      bulk: canPick ? bulk : undefined,
       commit: (kind, ids, rowId) => now().commit(kind, ids, rowId),
       offerReminder: (id, opId) => {
         offer.current = id;
@@ -124,7 +139,7 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
       undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
     };
     return createHomeActions(deps);
-  }, [registry]);
+  }, [registry, canPick]);
 
   return { actions, remindOffer };
 }

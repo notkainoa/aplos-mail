@@ -147,6 +147,10 @@ export interface RowContext {
   readonly layout: ListRowProps['layout'];
   readonly density: Density;
   readonly cursor: boolean;
+  /** The row is in the bulk pick (it takes the accent wash; no box changes). */
+  readonly picked?: boolean;
+  /** Some rows are picked, so every row shows its pick mark. */
+  readonly picking?: boolean;
   readonly accounts: readonly Account[];
   readonly handlers: RowHandlers;
   readonly rejected?: ListRowProps['rejected'];
@@ -168,8 +172,8 @@ export function listRowProps(row: ThreadRow, context: RowContext): ListRowProps 
     account: showAccountDot ? accountMark(row.accountId, context.accounts) : undefined,
     showAccountDot,
     cursor: context.cursor,
-    picked: false,
-    picking: false,
+    picked: context.picked === true,
+    picking: context.picking === true,
     hoverActions: ROW_ACTIONS,
     rejected: context.rejected,
     ...context.handlers,

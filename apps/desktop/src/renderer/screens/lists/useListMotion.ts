@@ -6,9 +6,7 @@ import { useCallback, useRef } from 'react';
 import type { HoldController } from '../../data';
 import type { CommitKind } from '../../ui/props';
 import { useHomeMotion } from '../home/useHomeMotion';
-
-/** The most rows one bulk commit flies; a hundred ghosts would be noise, not feedback. */
-export const MAX_FLYING = 6;
+import { MAX_FLYING } from './bulkActions';
 
 /** The mounted elements among these DOM ids; none without a DOM. */
 function elementsOf(domIds: readonly string[]): HTMLElement[] {

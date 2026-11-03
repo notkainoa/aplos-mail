@@ -5,20 +5,22 @@
  * keydown, starts the hold, and raises one toast keyed by its opId. The screen supplies the live state and side effects
  * as `ListDeps`, so there is no React here and the tests drive it with the stand-in engine.
  */
-import type { DataApi, ThreadActArgs, ThreadRow } from '../../data';
+import type { DataApi, ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
 import type { CommitKind } from '../../ui/props';
-import { bulkCount, bulkMessage, bulkTargetOf, type BulkScope } from './bulkTarget';
-import { stepKey, neighbourKeys, survivorKey } from './listModel';
+import {
+  TRIAGE_KINDS,
+  countedMessage,
+  createListBulk,
+  createPickActions,
+  holdRows,
+  type BulkPick,
+  type PickControls,
+} from './bulkActions';
+import { stepKey, neighbourKeys } from './listModel';
 import { openKindOf, isThread, type ListRowData, type OpenKind } from './listRows';
 import type { ListKind } from './listKinds';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
-
-/** The bulk pick and the view it sits on: what a bulk action needs to name its target. */
-export type BulkPick = BulkScope & {
-  /** Picked ids in list order. */
-  readonly picked: readonly string[];
-};
 
 /** The live state an action reads when its key arrives. */
 export interface ListSnapshot {
@@ -35,14 +37,6 @@ export interface Confirmation {
   readonly ids: readonly string[];
   /** The number the question names, when it is not `ids.length` (a whole-view pick). Absent for a single row. */
   readonly count?: number;
-}
-
-/** What X, ⇧X, ⌘A and Esc do to the pick (`useBulk`'s controls). */
-export interface PickControls {
-  toggle(id: string): void;
-  extendTo(id: string): void;
-  selectAll(): void;
-  clear(): void;
 }
 
 /** The screen's side of the actions. */
@@ -108,44 +102,12 @@ export interface ListActions {
   cancelConfirm(): void;
 }
 
-const TRIAGE_KINDS: readonly ListKind[] = ['all', 'label', 'sent', 'bookmarks', 'later'];
-const COMMIT_KINDS: readonly string[] = ['done', 'later', 'trash'];
+/** The lists Restore and Not spam belong to. */
+const SPAM_KINDS: readonly ListKind[] = ['trash', 'spam'];
 
 type ThreadAction = Parameters<DataApi['thread']['act']>[0]['action'];
 
-/** What a bulk verb sends and says. */
-interface BulkVerb {
-  readonly action: ThreadAction;
-  readonly kind: PushedToast['kind'];
-  readonly message: (count: number) => string;
-}
-
-const DONE_VERB: BulkVerb = {
-  action: { type: 'done' },
-  kind: 'done',
-  message: count => bulkMessage('done', count),
-};
-const LATER_VERB: BulkVerb = {
-  action: { type: 'later' },
-  kind: 'later',
-  message: count => bulkMessage('later', count),
-};
-const TRASH_VERB: BulkVerb = {
-  action: { type: 'trash' },
-  kind: 'trash',
-  message: count => bulkMessage('trash', count),
-};
-
-/** "Restored · 3 emails": a verb's own words, then how many. */
-function countedMessage(label: string, count: number): string {
-  return `${label} · ${count === 1 ? '1 email' : `${count} emails`}`;
-}
-
-/** `Thread/act` arguments for the picks: named ids (copied, the contract's array is mutable) or the whole-view selector. */
-function actArgs(pick: BulkPick, action: ThreadAction): ThreadActArgs {
-  const target = bulkTargetOf(pick);
-  return 'ids' in target ? { ids: [...target.ids], action } : { selector: target.selector, action };
-}
+const COMMIT_KINDS: readonly string[] = ['done', 'later', 'trash'];
 
 function commitKindOf(kind: PushedToast['kind']): CommitKind | null {
   return COMMIT_KINDS.includes(kind) ? (kind as CommitKind) : null;
@@ -167,55 +129,14 @@ function threadAt(deps: ListDeps, key?: string): ThreadRow | null {
   return target && isThread(target.row) ? target.row : null;
 }
 
-export function createListActions(deps: ListDeps): ListActions {
-  /** The rows around the cursor stay still; with a commit kind the rows leaving also fly. */
-  function hold(kind: CommitKind | null, rowIds: readonly string[], extra: readonly string[] = []) {
-    const snapshot = deps.snapshot();
-    const holdIds = [...extra, ...neighbourKeys(snapshot.ids, snapshot.key)];
-    if (kind !== null && deps.commit) deps.commit(kind, holdIds, rowIds);
-    else deps.hold.extend(holdIds);
-  }
-
-  /** The bulk pick, or null when nothing is picked. */
-  function picks(): BulkPick | null {
-    const bulk = deps.snapshot().bulk;
-    return bulk && bulk.picked.length > 0 ? bulk : null;
-  }
-
-  /** The number a bar, a toast and a question name: the whole view after ⌘A past the window, else the picks. */
-  function countOf(pick: BulkPick): number {
-    return bulkCount({ ...pick, count: pick.picked.length });
-  }
-
-  /** One bulk action: one `act` over the target, one toast with Undo, then the picks clear and the cursor settles. */
-  function actOnPicks(pick: BulkPick, verb: BulkVerb): void {
-    const snapshot = deps.snapshot();
-    hold(commitKindOf(verb.kind), pick.picked, pick.picked);
-    const { opId, receipt } = deps.act(actArgs(pick, verb.action));
-    deps.push({
-      id: opId,
-      undoable: true,
-      actions: [UNDO_ACTION],
-      onAction: undoHandler(opId),
-      kind: verb.kind,
-      message: verb.message(countOf(pick)),
-    });
-    failOnReject(opId, receipt);
-    deps.selection?.clear();
-    deps.setCursor(survivorKey(snapshot.ids, snapshot.key, pick.picked));
-  }
-
-  function failOnReject(opId: string, receipt: Promise<unknown>): void {
-    receipt.catch(() => deps.dismiss(opId));
-  }
-
-  /** One thread action, one toast. */
+/** The single-row verbs: one thread action, one toast. */
+function createRowVerbs(deps: ListDeps) {
   function actOn(
     row: ThreadRow,
-    action: Parameters<DataApi['thread']['act']>[0]['action'],
+    action: ThreadAction,
     toast: Omit<PushedToast, 'id' | 'undoable' | 'actions'>,
   ): void {
-    hold(commitKindOf(toast.kind), [row.id]);
+    holdRows(deps, commitKindOf(toast.kind), [row.id]);
     const { opId, receipt } = deps.act({ ids: [row.id], action });
     deps.push({
       id: opId,
@@ -224,121 +145,31 @@ export function createListActions(deps: ListDeps): ListActions {
       onAction: undoHandler(opId),
       ...toast,
     });
-    failOnReject(opId, receipt);
+    receipt.catch(() => deps.dismiss(opId));
   }
 
-  function done(key?: string): void {
-    const pick = key === undefined && TRIAGE_KINDS.includes(deps.kind) ? picks() : null;
-    if (pick) return actOnPicks(pick, DONE_VERB);
+  /** Acts on the row at `key` (or the cursor) when this list owns the verb. */
+  function onRow(
+    kinds: readonly ListKind[],
+    key: string | undefined,
+    action: ThreadAction,
+    toast: Omit<PushedToast, 'id' | 'undoable' | 'actions'>,
+  ): void {
     const row = threadAt(deps, key);
-    if (!row || !TRIAGE_KINDS.includes(deps.kind)) return;
-    actOn(row, { type: 'done' }, { kind: 'done', message: deps.undoLabel('mail.done', 'Done') });
+    if (row && kinds.includes(deps.kind)) actOn(row, action, toast);
   }
 
-  function later(key?: string): void {
-    const pick = key === undefined && TRIAGE_KINDS.includes(deps.kind) ? picks() : null;
-    if (pick) return actOnPicks(pick, LATER_VERB);
-    const row = threadAt(deps, key);
-    if (!row || !TRIAGE_KINDS.includes(deps.kind)) return;
-    const message = deps.undoLabel('mail.later', 'Moved to Later');
-    actOn(row, { type: 'later' }, { kind: 'later', message });
-  }
+  return { actOn, onRow };
+}
 
-  /** Bookmark the picks, or remove the bookmark from all of them when every one has it. */
-  function bookmarkPicks(pick: BulkPick): void {
-    const marked = (id: string) => {
-      const row = deps.snapshot().rowOf(id);
-      return row !== undefined && isThread(row) && row.workflow.bookmarked;
-    };
-    const on = !pick.picked.every(marked);
-    actOnPicks(pick, {
-      action: { type: 'bookmark', on },
-      kind: 'bookmark',
-      message: count => countedMessage(on ? 'Bookmarked' : 'Bookmark removed', count),
-    });
-  }
-
-  function bookmark(): void {
-    const pick = TRIAGE_KINDS.includes(deps.kind) ? picks() : null;
-    if (pick) return bookmarkPicks(pick);
-    const row = threadAt(deps);
-    if (!row || !TRIAGE_KINDS.includes(deps.kind)) return;
-    const on = !row.workflow.bookmarked;
-    const message = on ? 'Bookmarked' : 'Bookmark removed';
-    actOn(row, { type: 'bookmark', on }, { kind: 'bookmark', message });
-  }
-
-  function restore(key?: string): void {
-    const pick =
-      key === undefined && (deps.kind === 'trash' || deps.kind === 'spam') ? picks() : null;
-    if (pick) {
-      const label = deps.undoLabel('mail.restore', 'Restored');
-      return actOnPicks(pick, {
-        action: { type: 'restore' },
-        kind: 'info',
-        message: count => countedMessage(label, count),
-      });
-    }
-    const row = threadAt(deps, key);
-    if (!row || (deps.kind !== 'trash' && deps.kind !== 'spam')) return;
-    const message = deps.undoLabel('mail.restore', 'Restored');
-    actOn(row, { type: 'restore' }, { kind: 'info', message });
-  }
-
-  function moveToHome(key?: string): void {
-    const pick = key === undefined && deps.kind === 'done' ? picks() : null;
-    if (pick) {
-      const label = deps.undoLabel('done.moveToHome', 'Moved to Home');
-      return actOnPicks(pick, {
-        action: { type: 'restore' },
-        kind: 'home',
-        message: count => countedMessage(label, count),
-      });
-    }
-    const row = threadAt(deps, key);
-    if (!row || deps.kind !== 'done') return;
-    const message = deps.undoLabel('done.moveToHome', 'Moved to Home');
-    actOn(row, { type: 'restore' }, { kind: 'home', message });
-  }
-
-  /** # with rows picked: every kind asks first, because a bulk removal is the one thing Undo may not reach in time. */
-  function trashPicks(pick: BulkPick): void {
-    const count = countOf(pick);
-    const ids = pick.picked;
-    if (deps.kind === 'drafts') return deps.setConfirmation({ kind: 'discardDraft', ids, count });
-    if (deps.kind === 'trash' || deps.kind === 'spam') {
-      if (deps.canDeleteForever()) deps.setConfirmation({ kind: 'deleteForever', ids, count });
-      return;
-    }
-    if (TRIAGE_KINDS.includes(deps.kind)) deps.setConfirmation({ kind: 'trashPicked', ids, count });
-  }
-
-  function trash(): void {
-    const pick = picks();
-    if (pick) return trashPicks(pick);
-    const target = targetAt(deps);
-    if (!target) return;
-    if (deps.kind === 'drafts') {
-      deps.setConfirmation({ kind: 'discardDraft', ids: [target.row.id] });
-      return;
-    }
-    if (deps.kind === 'trash' || deps.kind === 'spam') {
-      if (deps.canDeleteForever())
-        deps.setConfirmation({ kind: 'deleteForever', ids: [target.row.id] });
-      return;
-    }
-    const row = threadAt(deps);
-    if (!row || !TRIAGE_KINDS.includes(deps.kind)) return;
-    const message = deps.undoLabel('mail.trash', 'Moved to Trash');
-    actOn(row, { type: 'trash' }, { kind: 'trash', message });
-  }
-
+/** Delete forever and discard a draft, once the owner has confirmed. */
+function createDestroyers(deps: ListDeps) {
   function notice(id: string, message: string, persistent = false): void {
     deps.push({ id, kind: 'info', message, undoable: false, persistent });
   }
 
   function confirmDelete(ids: readonly string[]): void {
-    hold(null, ids);
+    holdRows(deps, null, ids);
     deps.deleteForever(ids).then(
       () => notice(`delete-${ids.join(',')}`, 'Deleted forever'),
       () => notice('delete-failed', 'Couldn’t delete that. It is still here.', true),
@@ -354,7 +185,7 @@ export function createListActions(deps: ListDeps): ListActions {
   }
 
   function confirmDiscard(ids: readonly string[]): void {
-    hold(null, ids);
+    holdRows(deps, null, ids);
     if (ids.length > 1) return discardMany(ids);
     for (const id of ids) {
       deps.discardDraft(id).then(
@@ -364,42 +195,100 @@ export function createListActions(deps: ListDeps): ListActions {
     }
   }
 
+  return { confirmDelete, confirmDiscard };
+}
+
+export function createListActions(deps: ListDeps): ListActions {
+  const bulk = createListBulk(deps);
+  const picking = createPickActions(deps.selection, () => deps.snapshot().key);
+  const { onRow } = createRowVerbs(deps);
+  const { confirmDelete, confirmDiscard } = createDestroyers(deps);
+
+  /** The picks when the verb is for them: no key (a hover button means its own row) and a list that owns the verb. */
+  function pickIn(kinds: readonly ListKind[], key?: string) {
+    return key === undefined && kinds.includes(deps.kind) ? bulk.picks() : null;
+  }
+
+  function done(key?: string): void {
+    const pick = pickIn(TRIAGE_KINDS, key);
+    if (pick) return bulk.done(pick);
+    const toast = { kind: 'done', message: deps.undoLabel('mail.done', 'Done') } as const;
+    onRow(TRIAGE_KINDS, key, { type: 'done' }, toast);
+  }
+
+  function later(key?: string): void {
+    const pick = pickIn(TRIAGE_KINDS, key);
+    if (pick) return bulk.later(pick);
+    const message = deps.undoLabel('mail.later', 'Moved to Later');
+    onRow(TRIAGE_KINDS, key, { type: 'later' }, { kind: 'later', message });
+  }
+
+  function bookmark(): void {
+    const pick = pickIn(TRIAGE_KINDS);
+    if (pick) return bulk.bookmark(pick);
+    const row = threadAt(deps);
+    if (!row) return;
+    const on = !row.workflow.bookmarked;
+    const message = on ? 'Bookmarked' : 'Bookmark removed';
+    onRow(TRIAGE_KINDS, undefined, { type: 'bookmark', on }, { kind: 'bookmark', message });
+  }
+
+  function restore(key?: string): void {
+    const pick = pickIn(SPAM_KINDS, key);
+    if (pick) return bulk.restore(pick);
+    const message = deps.undoLabel('mail.restore', 'Restored');
+    onRow(SPAM_KINDS, key, { type: 'restore' }, { kind: 'info', message });
+  }
+
+  function moveToHome(key?: string): void {
+    const pick = pickIn(['done'], key);
+    if (pick) return bulk.moveToHome(pick);
+    const message = deps.undoLabel('done.moveToHome', 'Moved to Home');
+    onRow(['done'], key, { type: 'restore' }, { kind: 'home', message });
+  }
+
+  function trash(): void {
+    const pick = bulk.picks();
+    if (pick) return bulk.trash(pick);
+    const target = targetAt(deps);
+    if (!target) return;
+    if (deps.kind === 'drafts')
+      return deps.setConfirmation({ kind: 'discardDraft', ids: [target.row.id] });
+    if (deps.kind === 'trash' || deps.kind === 'spam') {
+      if (deps.canDeleteForever())
+        deps.setConfirmation({ kind: 'deleteForever', ids: [target.row.id] });
+      return;
+    }
+    const message = deps.undoLabel('mail.trash', 'Moved to Trash');
+    onRow(TRIAGE_KINDS, undefined, { type: 'trash' }, { kind: 'trash', message });
+  }
+
   function confirm(): void {
     const pending = deps.confirmation();
     deps.setConfirmation(null);
     if (!pending) return;
-    if (pending.kind === 'trashPicked') return confirmTrashPicks();
+    if (pending.kind === 'trashPicked') return bulk.confirmTrash();
     if (pending.kind === 'deleteForever') confirmDelete(pending.ids);
     else confirmDiscard(pending.ids);
     deps.selection?.clear();
   }
 
-  /** The owner confirmed: trash whatever is picked now (the dialog's keys leave the pick as it was). */
-  function confirmTrashPicks(): void {
-    const pick = picks();
-    if (pick) actOnPicks(pick, TRASH_VERB);
+  function move(delta: 1 | -1): void {
+    const snapshot = deps.snapshot();
+    const key = stepKey(snapshot.ids, snapshot.key, delta);
+    deps.setCursor(key);
+    deps.hold.extend(neighbourKeys(snapshot.ids, key));
   }
 
-  function withCursor(run: (id: string) => void): void {
-    const key = deps.snapshot().key;
-    if (key !== null) run(key);
+  function open(key?: string): void {
+    const target = targetAt(deps, key);
+    if (target) deps.open(target.row.id, openKindOf(target.row));
   }
 
   return {
-    move: delta => {
-      const snapshot = deps.snapshot();
-      const key = stepKey(snapshot.ids, snapshot.key, delta);
-      deps.setCursor(key);
-      deps.hold.extend(neighbourKeys(snapshot.ids, key));
-    },
-    open: key => {
-      const target = targetAt(deps, key);
-      if (target) deps.open(target.row.id, openKindOf(target.row));
-    },
-    select: () => withCursor(id => deps.selection?.toggle(id)),
-    selectRange: () => withCursor(id => deps.selection?.extendTo(id)),
-    selectAll: () => deps.selection?.selectAll(),
-    clearSelection: () => deps.selection?.clear(),
+    move,
+    open,
+    ...picking,
     done,
     later,
     bookmark,

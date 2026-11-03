@@ -63,8 +63,25 @@ export interface BulkMenu {
   readonly onClose: () => void;
 }
 
+/** What the bar shows: the verbs, then the More menu's rows. */
+export interface BulkBarPlan {
+  readonly actions: readonly CommandAction[];
+  readonly entries: readonly MenuEntry[];
+}
+
+/** What the bar's More menu and Esc call. A list's and Home's actions both have these. */
+export interface BulkBarControls {
+  bookmark(): void;
+  selectAll(): void;
+  clearSelection(): void;
+}
+
 /** Puts the bar in the pane header while `count` rows are picked, and returns the More menu. */
-export function useBulkBar(kind: ListKind, actions: ListActions, count: number | null): BulkMenu {
+export function useBulkBarPart(
+  plan: BulkBarPlan,
+  controls: BulkBarControls,
+  count: number | null,
+): BulkMenu {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const onClose = useCallback(() => setAnchor(null), []);
   const part = useMemo<PaneHeaderPart | null>(
@@ -74,22 +91,30 @@ export function useBulkBar(kind: ListKind, actions: ListActions, count: number |
         : {
             bulk: {
               count,
-              actions: barActionsOf(kind, actions),
+              actions: plan.actions,
               onMore: setAnchor,
-              onClear: () => actions.clearSelection(),
+              onClear: () => controls.clearSelection(),
             },
           },
-    [kind, actions, count],
+    [plan.actions, controls, count],
   );
   usePaneHeaderPart(part);
   const onSelect = useCallback(
     (id: string) => {
       setAnchor(null);
-      if (id === 'bookmark') actions.bookmark();
-      else actions.selectAll();
+      if (id === 'bookmark') controls.bookmark();
+      else controls.selectAll();
     },
-    [actions],
+    [controls],
   );
-  const entries = useMemo(() => moreEntriesOf(kind), [kind]);
-  return { anchor: count === null ? null : anchor, entries, onSelect, onClose };
+  return { anchor: count === null ? null : anchor, entries: plan.entries, onSelect, onClose };
+}
+
+/** A list's bar: the verbs it owns for its kind. */
+export function useBulkBar(kind: ListKind, actions: ListActions, count: number | null): BulkMenu {
+  const plan = useMemo(
+    () => ({ actions: barActionsOf(kind, actions), entries: moreEntriesOf(kind) }),
+    [kind, actions],
+  );
+  return useBulkBarPart(plan, actions, count);
 }
