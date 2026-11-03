@@ -409,9 +409,9 @@ test('window arguments are measured with a node bound of MAX_WINDOW_NODES: more 
   assert.equal(messageBytes(some, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
   const million = { many: Array.from({ length: 1_000_000 }, () => ({})) };
   assert.equal(messageBytes(million, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
-  // A sparse array is refused on its length before any slot is read.
+  // A sparse array is refused on its length (4 bytes a hole, and past MAX_MEASURED_NODES at once) without being walked.
   const sparse: unknown[] = [];
-  sparse[999_990] = 0;
+  sparse[1_999_990] = 0;
   assert.equal(
     messageBytes({ sparse }, MAX_ARGS_BYTES, MAX_WINDOW_NODES),
     Number.POSITIVE_INFINITY,
@@ -467,3 +467,88 @@ test('payload: a window message with more than MAX_WINDOW_NODES values is refuse
     message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
   assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'ok']);
 });
+
+// ---------------------------------------------------------------- the two LOWs of the #201 review (sparse holes, upload text)
+
+test('a hole in an array costs 4 bytes and no entry, so a sparse array is counted by its length, never walked', () => {
+  const sparse: unknown[] = [];
+  sparse[99_990] = 0;
+  // A bound of ten values: one entry per slot (the old code) would refuse it; holes are free.
+  const size = messageBytes({ sparse }, MAX_ARGS_BYTES, 10);
+  assert.equal(size, Buffer.byteLength(JSON.stringify({ sparse })), 'a hole is JSON null');
+  // The slots still count as bytes: a sparse array cannot hide behind its few real values.
+  const wide: unknown[] = [];
+  wide[MAX_WINDOW_NODES - 1] = 0;
+  assert.ok(messageBytes({ wide }, 600_000, 10) < 600_000);
+  assert.equal(messageBytes({ wide }, 400_000, 10), Number.POSITIVE_INFINITY, '4 bytes a hole');
+  // A length past the bound is refused on the length alone, before any slot is read.
+  const huge = new Array(1_000_000_000);
+  assert.equal(messageBytes({ huge }, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  // Named properties on a sparse array are still found and counted.
+  const named: unknown[] & { note?: string } = [];
+  named[5] = 1;
+  named.note = 'y'.repeat(MAX_ARGS_BYTES);
+  assert.equal(messageBytes({ named }, MAX_ARGS_BYTES, 10), Number.POSITIVE_INFINITY);
+});
+
+test('a text limit holds everything except binary payloads: an upload’s big allowance is for its bytes only', () => {
+  const upload = (extra: Record<string, unknown>, bytes = 1000) => ({
+    bytes: new Uint8Array(bytes),
+    mime: 'audio/webm',
+    ...extra,
+  });
+  const measureUpload = (value: unknown) =>
+    messageBytes(value, MAX_BLOB_MESSAGE_BYTES, MAX_WINDOW_NODES, MAX_ARGS_BYTES);
+  // Bytes use the whole allowance...
+  const full = upload({}, 25 * 1024 * 1024);
+  assert.equal(measureUpload(full), messageBytes(full));
+  // ...text does not: a long string value, a long key, a boxed string, and the same inside a Map.
+  const inf = Number.POSITIVE_INFINITY;
+  assert.equal(measureUpload(upload({ mime: big(MAX_ARGS_BYTES) })), inf);
+  assert.equal(measureUpload(upload({ ['k'.repeat(MAX_ARGS_BYTES)]: 1 })), inf);
+  assert.equal(measureUpload(upload({ note: new String(big(MAX_ARGS_BYTES)) })), inf);
+  assert.equal(measureUpload(upload({ m: new Map([['k', big(MAX_ARGS_BYTES)]]) })), inf);
+  // Text and bytes are counted apart: 3 MB of text next to 20 MB of bytes is fine, 5 MB of text is not.
+  assert.ok(Number.isFinite(measureUpload(upload({ n: big(3_000_000) }, 20_000_000))));
+  assert.equal(measureUpload(upload({ n: big(5_000_000) }, 20_000_000)), inf);
+  // The default text limit is the limit itself, so every other caller measures as before.
+  assert.ok(Number.isFinite(messageBytes(upload({ n: big(5_000_000) }), MAX_BLOB_MESSAGE_BYTES)));
+});
+
+test('Blob/put: text in the arguments is held to MAX_ARGS_BYTES at the port, and its bytes still pass', async t => {
+  const calls: string[] = [];
+  const engine = sessionAnswering(method => (calls.push(method), {}));
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => engine.session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  const bytes = new Uint8Array(MAX_ARGS_BYTES + 1);
+  const mime = big(MAX_ARGS_BYTES + 1);
+  port2.postMessage({ v: 1, id: 1, method: 'Blob/put', args: { bytes, mime: 'audio/webm' } });
+  port2.postMessage({ v: 1, id: 2, method: 'Blob/put', args: { bytes: new Uint8Array(8), mime } });
+  await until(() => replies.length === 3, 'the hello and two answers', 2000);
+  const errorOf = (message: PortMessage) =>
+    message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
+  assert.deepEqual(replies.slice(1).map(errorOf), ['ok', 'tooLarge']);
+  assert.deepEqual(calls, ['Blob/put'], 'the text-heavy upload never reached the engine');
+});
+
+test(
+  'Blob/put: the window’s own client refuses text past MAX_ARGS_BYTES before the port copies it',
+  { timeout: 5000 },
+  async t => {
+    const { port1, port2 } = new MessageChannel();
+    t.after(() => {
+      port1.close();
+      port2.close();
+    });
+    const client = createPortClient();
+    client.attach(windowEndOf(port2));
+    const args = { bytes: new Uint8Array(8), mime: big(MAX_ARGS_BYTES + 1) };
+    await assert.rejects(client.call('Blob/put', args), { type: 'tooLarge' });
+  },
+);

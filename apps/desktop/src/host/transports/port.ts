@@ -98,6 +98,17 @@ export { MAX_MEASURED_NODES, MAX_WINDOW_NODES, messageBytes } from '@aplos/contr
 const argsLimit = (method: string) =>
   uploadRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
 
+/**
+ * How many bytes of a call's arguments, binary payloads aside, are allowed. An upload route's big allowance is for its
+ * bytes only: text (a string, a key) in its arguments stays at `MAX_ARGS_BYTES`, where it costs 4 ms to decode.
+ */
+const ARGS_TEXT_BYTES = MAX_ARGS_BYTES;
+
+/** What the arguments of a window's call to `method` cost, or infinity when too many values or too many bytes. */
+function argsBytes(method: string, args: unknown): number {
+  return messageBytes(args ?? {}, argsLimit(method), MAX_WINDOW_NODES, ARGS_TEXT_BYTES);
+}
+
 function errorBody(error: unknown): PortError {
   const body = (error as { body?: unknown } | null)?.body as Partial<PortError> | undefined;
   if (body && typeof body.type === 'string' && typeof body.message === 'string')
@@ -176,7 +187,7 @@ export function serveWindowPort(
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
       return refuse(call, 'unsupported', 'Unsupported application method.');
-    const size = messageBytes(call.args ?? {}, argsLimit(call.method), MAX_WINDOW_NODES);
+    const size = argsBytes(call.method, call.args);
     if (size > argsLimit(call.method))
       return refuse(call, 'tooLarge', 'This request is too large to send.');
     if (inFlight >= MAX_IN_FLIGHT || inFlightBytes + size > MAX_IN_FLIGHT_BYTES)
@@ -486,6 +497,15 @@ export interface SupervisorOptions {
   readyTimeoutMs?: number;
 }
 
+/** Kills an engine; a kill that throws is no uncaught error in main: the exit wait that follows still decides. */
+function stop(link: EngineLink): void {
+  try {
+    link.kill();
+  } catch {
+    // The process may already be gone, or the OS refused; the caller waits for the exit event either way.
+  }
+}
+
 /** Keeps one engine process running: restarts it after an unexpected stop until `noteExit` parks, never after `close`. */
 export function createEngineSupervisor(options: SupervisorOptions) {
   let current: EngineLink | undefined;
@@ -512,7 +532,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    const timer = options.timers.set(() => link.kill(), options.readyTimeoutMs ?? 60_000);
+    const timer = options.timers.set(() => stop(link), options.readyTimeoutMs ?? 60_000);
     try {
       await link.ready;
     } finally {
@@ -544,7 +564,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
           resolve('exited');
         });
         timer = options.timers.set(() => {
-          link.kill();
+          stop(link);
           timer = options.timers.set(
             () => resolve('stuck'),
             options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,
@@ -823,7 +843,7 @@ export function createPortClient(
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
       // The engine refuses these too, but only after the port has copied them into its process: refuse them here.
-      if (messageBytes(args ?? {}, argsLimit(method), MAX_WINDOW_NODES) > argsLimit(method))
+      if (argsBytes(method, args) > argsLimit(method))
         return Promise.reject({ type: 'tooLarge', message: 'This request is too large to send.' });
       // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
       const buffers = Array.isArray(transfer)

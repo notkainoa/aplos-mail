@@ -325,7 +325,7 @@ test('an engine that never answers ready is killed after the ready timeout, and 
 // ---------------------------------------------------------------- the data lock and a stuck engine (#203)
 
 /** An engine that ignores quit and kill until the test lets it exit. */
-function stuckLink() {
+function stuckLink(options: { killThrows?: boolean } = {}) {
   const exits: (() => void)[] = [];
   let exited = false;
   let kills = 0;
@@ -340,7 +340,10 @@ function stuckLink() {
     detach: () => undefined,
     power: () => undefined,
     quit: () => void quits++,
-    kill: () => void kills++,
+    kill: () => {
+      kills++;
+      if (options.killThrows) throw new Error('kill EPERM');
+    },
     onExit: handler => (exited ? handler() : void exits.push(handler)),
   };
   const exit = () => {
@@ -421,4 +424,61 @@ test('once the quit has begun, the supervisor starts no engine', async () => {
   await supervisor.close();
   await assert.rejects(supervisor.start());
   assert.equal(spawned, 0);
+});
+
+// ---------------------------------------------------------------- the #203 LOWs (kill throws, source shape, quit during start-up)
+
+test('quit with an engine whose kill throws: no uncaught error, the exit wait still runs, a late exit releases', async () => {
+  const stuck = stuckLink({ killThrows: true });
+  const first = await quitWith(stuck);
+  assert.equal(first.result, false, 'still running after the kill: the lock stays held');
+  assert.equal(first.released, 0);
+  assert.equal(stuck.kills(), 1, 'the kill was tried');
+  const dying = stuckLink({ killThrows: true });
+  const second = await quitWith(dying, ENGINE_QUIT_MS + 500);
+  assert.equal(second.result, true, 'it exited anyway, within the wait after the kill');
+  assert.equal(second.released, 1);
+});
+
+test('an engine that never answers ready and whose kill throws is not an uncaught error either', async () => {
+  const engine = stuckLink({ killThrows: true });
+  const timers = manualTimers();
+  const supervisor = createEngineSupervisor({
+    spawn: () => ({ ...engine.link, ready: new Promise(() => undefined) }),
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers,
+    readyTimeoutMs: 1000,
+  });
+  void supervisor.start().catch(() => undefined);
+  timers.advance(1000);
+  assert.equal(engine.kills(), 1, 'killed at the timeout, and the throw did not escape the timer');
+});
+
+/** The source of a main-process module, for the guards that cannot run Electron here. */
+const sourceOf = (path: string) =>
+  readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+
+test('source shape: realEngine.close() sets closeRequested and rejects unless the engine exited', () => {
+  const source = sourceOf('../../src/main/engine-real.ts');
+  const close = /close: async \(\): Promise<void> => \{([\s\S]*?)\n {2}\},/.exec(source)?.[1] ?? '';
+  assert.match(close, /closeRequested = true;/, 'the quit is recorded before the engine is asked');
+  assert.match(close, /await supervisor\?\.close\(\)/);
+  assert.match(close, /if \(result !== 'exited'\) throw new Error\(/, 'a stuck engine rejects');
+  // No engine starts once the quit began, wherever the start-up had got to.
+  const boot = /async function bootRealEngine[\s\S]*?supervisor = createEngineSupervisor/.exec(
+    source,
+  );
+  assert.match(boot?.[0] ?? '', /if \(closeRequested\) return;/);
+});
+
+test('source shape: finishQuit hands the REAL close to closeThenRelease, and start-up shows no error during a quit', () => {
+  const source = sourceOf('../../src/main/lifecycle.ts');
+  assert.match(source, /realPath \? realEngine\.close\(\) : service\?\.close\(\)/);
+  assert.match(source, /closeThenRelease\(Promise\.resolve\(engineClosed\), QUIT_DRAIN_MS/);
+  const startup = /\.catch\(error => \{([\s\S]*?)\n {4}\}\);/.exec(source)?.[1] ?? '';
+  const guard = startup.indexOf('if (closing) return;');
+  assert.ok(guard >= 0, 'the start-up catch returns while a quit is in progress');
+  assert.ok(guard < startup.indexOf('showErrorBox'), '... before it shows the dialog');
 });
