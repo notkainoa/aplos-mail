@@ -341,8 +341,12 @@ export function createProcessState(): ProcessState {
   };
 }
 
-/** The most `finishQuit` waits for the engine to close before quitting anyway. */
-export const QUIT_DRAIN_MS = 3000;
+/**
+ * The most `finishQuit` waits for the engine to close before quitting anyway. It must outlast the supervisor's own wait
+ * (`ENGINE_QUIT_MS` to ask, `ENGINE_EXIT_AFTER_KILL_MS` to see the kill take) with room to spare, so an engine that
+ * exits just after the kill still releases the lock, and one that does not is reported stuck first.
+ */
+export const QUIT_DRAIN_MS = 6000;
 
 /** Resolves when `work` settles or after `ms`, whichever is first. Never rejects. */
 export function drain(

@@ -453,6 +453,14 @@ export function createEngineLink(
 
 // ---- the restart policy -------------------------------------------------------------------------------------------
 
+/** `close` asks the engine to quit and waits this long, then kills it (host/lifecycle.ts's `QUIT_DRAIN_MS` is longer). */
+export const ENGINE_QUIT_MS = 3000;
+/** After the kill, `close` waits this long for the exit event before it reports the engine as stuck. */
+export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
+
+/** How `close` ended: the engine exited (asked or after the kill), or it is still running after the kill. */
+export type CloseResult = 'exited' | 'stuck';
+
 export interface SupervisorOptions {
   spawn(): EngineLink;
   /**
@@ -467,8 +475,10 @@ export interface SupervisorOptions {
   timers: Timers;
   /** Default 500 ms, so a crash loop cannot spin. */
   restartDelayMs?: number;
-  /** How long `close` waits for the engine to exit before killing it. Default 3 s (host/lifecycle's `QUIT_DRAIN_MS`). */
+  /** How long `close` waits for the engine to exit before killing it. Default `ENGINE_QUIT_MS`. */
   quitMs?: number;
+  /** How long `close` waits for the exit AFTER killing it. Default `ENGINE_EXIT_AFTER_KILL_MS`. */
+  exitAfterKillMs?: number;
   /**
    * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
    * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
@@ -517,21 +527,29 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   return {
     start: () => up(false),
     current: () => current,
-    /** Stops restarting, asks the engine to quit and resolves when it exited (killed after `quitMs`). */
-    close(): Promise<void> {
+    /**
+     * Stops restarting, asks the engine to quit, kills it after `quitMs`, and says how it ended: `'exited'` when the
+     * process is gone (a quit that was heard, or one that died after the kill), `'stuck'` when it is still running
+     * `exitAfterKillMs` after the kill. Nothing running (never started, or already gone) counts as exited.
+     */
+    close(): Promise<CloseResult> {
       closing = true;
       if (restart !== undefined) options.timers.clear(restart);
       const link = current;
-      if (!link || link.exited) return Promise.resolve();
-      return new Promise<void>(resolve => {
-        const timer = options.timers.set(() => {
-          link.kill();
-          resolve();
-        }, options.quitMs ?? 3000);
+      if (!link || link.exited) return Promise.resolve('exited');
+      return new Promise<CloseResult>(resolve => {
+        let timer: unknown;
         link.onExit(() => {
           options.timers.clear(timer);
-          resolve();
+          resolve('exited');
         });
+        timer = options.timers.set(() => {
+          link.kill();
+          timer = options.timers.set(
+            () => resolve('stuck'),
+            options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,
+          );
+        }, options.quitMs ?? ENGINE_QUIT_MS);
         link.quit();
       });
     },

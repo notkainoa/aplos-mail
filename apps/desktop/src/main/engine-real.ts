@@ -228,9 +228,14 @@ function watchWindows() {
   });
 }
 
+/** Set by the quit: from then on no engine is started, whatever stage the start-up had reached. */
+let closeRequested = false;
+
 /** Starts the new engine and the IPC that reaches it. `noteExit` is lifecycle's park counter (3 stops in 60 s). */
 async function bootRealEngine(options: { dataDir: string; noteExit(): boolean }): Promise<void> {
   const init = await engineInit(options.dataDir);
+  // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
+  if (closeRequested) return;
   supervisor = createEngineSupervisor({
     spawn: () => spawn(init),
     noteExit: options.noteExit,
@@ -258,7 +263,12 @@ const realEngine = {
     if (!current) throw new Error('The mailbox is restarting.');
     return (await current.call('Outbox/pending', {}, 3000)) as PendingWork;
   },
-  close: () => supervisor?.close() ?? Promise.resolve(),
+  /** Rejects unless the engine really exited, so the data lock is never released over a running engine. */
+  close: async (): Promise<void> => {
+    closeRequested = true;
+    const result = (await supervisor?.close()) ?? 'exited';
+    if (result !== 'exited') throw new Error('The mailbox engine did not stop.');
+  },
 };
 
 export { bootRealEngine, realEngine };
