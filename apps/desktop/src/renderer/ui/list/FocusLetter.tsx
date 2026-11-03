@@ -23,6 +23,7 @@ export function FocusLetter({
   commands,
   demoted,
   narrow,
+  picked,
   rejected,
   onSuggestion,
   onLater,
@@ -38,6 +39,7 @@ export function FocusLetter({
       className="ui-focus-letter"
       data-demoted={demoted ? 'true' : undefined}
       data-narrow={narrow ? 'true' : undefined}
+      data-picked={picked ? 'true' : undefined}
       data-state={rejected ? 'rejected' : undefined}
     >
       <div className="ui-focus-letter__meta">

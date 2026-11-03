@@ -813,6 +813,9 @@
 .ui-list-row[data-picked='true'] .ui-list-row__actions-fill {
   background-color: var(--accent-wash);
 }
+.ui-focus-letter[data-picked='true'] {
+  background-color: var(--accent-wash);
+}
 .ui-list-row[data-state='rejected'],
 .ui-list-row[data-state='rejected'] .ui-list-row__actions-fill {
   background-color: var(--stamp-tint);
