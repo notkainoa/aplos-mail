@@ -2,13 +2,11 @@ import type { DraftFields } from '@aplos/contract';
 import type { CommitExtensionTx, RemoteDraftWrite, SqlValue } from '../store';
 import {
   announce,
-  DRAFT_IDLE_MS,
   DRAFT_REMOVE_GRACE_MS,
   DraftConflict,
   fingerprintOf,
   keepsMine,
   liveOf,
-  needsUpload,
   packData,
   parseData,
   patched,
@@ -21,6 +19,15 @@ import {
   type MetaPatch,
 } from './draft-state';
 import { completes, messageOf } from './draft-body';
+import {
+  dueAfter,
+  freshId,
+  insertRow,
+  readRow,
+  showUnseen,
+  threadRow,
+  writeRow,
+} from './draft-rows';
 import {
   accountAddress,
   adoptedByConflict,
@@ -152,84 +159,6 @@ declare module '../store/port' {
 }
 
 // ---------------------------------------------------------------- helpers
-
-function readRow(tx: CommitExtensionTx, id: string): DraftRow {
-  const row = tx.get<DraftRow>('SELECT * FROM drafts WHERE id = ?', id);
-  if (!row) throw new DraftConflict('missing');
-  return row;
-}
-
-/** Rewrites a row's data (with a fresh `rev`) and the given columns, and records the change. */
-function writeRow(
-  tx: CommitExtensionTx,
-  id: string,
-  columns: Record<string, SqlValue>,
-  fields: DraftFields,
-  meta: DraftMeta,
-) {
-  const set = { ...columns, data: packData(fields, { ...meta, rev: tx.seq }) };
-  tx.run(
-    `UPDATE drafts SET ${Object.keys(set)
-      .map(k => `${k} = ?`)
-      .join(', ')} WHERE id = ?`,
-    ...Object.values(set),
-    id,
-  );
-  tx.mark('Draft', id, 'u');
-}
-
-function remotePart(accountId: string, contractId: string | undefined) {
-  const prefix = `${accountId}:`;
-  return contractId?.startsWith(prefix) ? contractId.slice(prefix.length) : undefined;
-}
-
-/** The internal thread row a reply belongs to, when the thread is stored. */
-function threadRow(tx: CommitExtensionTx, accountId: string, fields: DraftFields) {
-  const remote = remotePart(accountId, fields.threadId);
-  return (remote !== undefined ? tx.threadRowId(accountId, remote) : undefined) ?? null;
-}
-
-function insertRow(
-  tx: CommitExtensionTx,
-  row: {
-    id: string;
-    accountId: string;
-    fields: DraftFields;
-    meta: DraftMeta;
-    at: number;
-    origin: 'local' | 'remote';
-    remote?: Pick<RemoteDraftWrite, 'remoteDraftId' | 'remoteMessageId' | 'internetId'>;
-  },
-) {
-  tx.run(
-    `INSERT INTO drafts(id, account_id, thread_id, revision, data, remote_draft_id, remote_message_id,
-       remote_internet_id, synced_revision, origin, updated_at)
-     VALUES(?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
-    row.id,
-    row.accountId,
-    threadRow(tx, row.accountId, row.fields),
-    packData(row.fields, { ...row.meta, rev: tx.seq }),
-    row.remote?.remoteDraftId ?? null,
-    row.remote?.remoteMessageId ?? null,
-    row.remote?.internetId ?? null,
-    row.remote ? 1 : null,
-    row.origin,
-    row.at,
-  );
-  tx.mark('Draft', row.id, 'u');
-}
-
-/** When the next upload is due after a change, or undefined when the remote copy already holds this content. */
-function dueAfter(
-  fields: DraftFields,
-  meta: DraftMeta,
-  hasRemote: boolean,
-  at: number,
-  close: boolean,
-) {
-  if (meta.conflict || !needsUpload(fields, meta, hasRemote)) return undefined;
-  return close ? at : at + DRAFT_IDLE_MS;
-}
 
 // ---------------------------------------------------------------- save
 
@@ -486,6 +415,7 @@ function keepMine(tx: CommitExtensionTx, row: DraftRow, at: number) {
   // A version the owner has seen whole is replaced on purpose: the upload is checked against it.
   if (!forget) columns.remote_message_id = theirsId ?? null;
   writeRow(tx, row.id, columns, fields, patched(next, { dueAt: due ?? null }));
+  if (unseen) showUnseen(tx, row, meta.conflict);
 }
 
 /** The other version, when it can be shown whole; a snippet is not a version to keep. */
@@ -646,11 +576,7 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
  */
 function resurface(tx: CommitExtensionTx, held: RemoteDraftWrite | undefined) {
   if (!held || held.removed) return;
-  const usual = `${held.accountId}:${held.remoteDraftId}`;
-  const taken =
-    tx.get('SELECT 1 FROM drafts WHERE id = ?', usual) ??
-    tx.get('SELECT 1 FROM submissions WHERE draft_id = ?', usual);
-  insertRemote(tx, held, taken ? `${usual}~${tx.seq}` : usual);
+  insertRemote(tx, held, freshId(tx, `${held.accountId}:${held.remoteDraftId}`));
 }
 
 // ---------------------------------------------------------------- remote facts

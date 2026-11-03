@@ -223,3 +223,50 @@ test('resurface: a held phone version of a draft that came from the phone gets i
     assert.match(rows[0]!.id, /^.+:rd-p~\d+$/, "under a fresh id, not the sent draft's");
     assert.match(read(w, rows[0]!.id).html, /PHONE TEXT/);
   }));
+
+// ---------------------------------------------------------------- the 17:00 review of #194
+
+test('echo: after keep mine on a version that was never shown whole, that version is shown as a remote draft of its own', () =>
+  world(async w => {
+    const s = await synced(w);
+    const phoneId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    // Our edit is pending when history reports the phone's edit with no body (a snippet): a conflict, incomplete.
+    edit(w, s.draft, fields({ subject: 'Mine' }), false);
+    fact(w, s.remoteDraftId, phoneId, {
+      subject: 'Phone subject',
+      internetId: '<phone@phone.example>',
+    });
+    assert.equal(syncOf(w, s.draft.id).conflict?.complete, false);
+    service(w).resolve(next(), s.draft.id, 'keepMine');
+    await w.settle();
+    const shown = read(w, `${ACCOUNT}:${s.remoteDraftId}`);
+    assert.equal(
+      shown.subject,
+      'Phone subject',
+      'the version keep mine stepped away from is visible',
+    );
+    assert.equal(syncOf(w, `${ACCOUNT}:${s.remoteDraftId}`).incomplete, true);
+    // Discarding it never deletes the phone's copy from the provider (an incomplete draft's copy is not ours to delete).
+    service(w).destroy(next(), `${ACCOUNT}:${s.remoteDraftId}`);
+    await wait(w, 60 * SEC);
+    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId, phoneId);
+  }));
+
+test('echo: a REAL conflict survives an ack that names another copy; only an ack for the conflicting copy itself ends it', () =>
+  world(async w => {
+    const s = await synced(w);
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    // The phone edits (another message id, another Message-ID, a body): a real conflict while our upload runs.
+    fact(w, s.remoteDraftId, 'msg-phone', { ...PHONE, internetId: '<phone@phone.example>' });
+    assert.ok(read(w, s.draft.id).conflict);
+    g.open();
+    await wait(w, 1);
+    // Our ack names OUR copy (msg3), not the phone's: the conflict about the phone's version stays.
+    assert.ok(read(w, s.draft.id).conflict, 'the phone version is still asked about');
+    assert.equal(syncOf(w, s.draft.id).conflict?.theirsMessageId, 'msg-phone');
+    assert.notEqual(upload.internetId, '<phone@phone.example>');
+  }));

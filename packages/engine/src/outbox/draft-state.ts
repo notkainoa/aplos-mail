@@ -203,7 +203,18 @@ function canonical(value: unknown): string {
 
 /** The content fingerprint: a hash of the draft fields. An upload whose fingerprint is the synced one is skipped. */
 export function fingerprintOf(fields: DraftFields): string {
-  return sha256Hex(canonical(fields));
+  return sha256Hex(canonical({ ...fields, html: withoutTrailingNewlines(fields.html) }));
+}
+
+/**
+ * The line break before a MIME boundary belongs to the boundary, but a reader may hand it back as part of the body, so
+ * `<p>x</p>` and `<p>x</p>\r\n` are the same content: our own uploaded copy must hash the same when a provider's parser
+ * returns it. A scan from the end, not a regex, so a long run of line breaks costs nothing.
+ */
+function withoutTrailingNewlines(html: string) {
+  let end = html.length;
+  while (end > 0 && (html[end - 1] === '\n' || html[end - 1] === '\r')) end -= 1;
+  return end === html.length ? html : html.slice(0, end);
 }
 
 /** Nothing to keep: no recipient, subject, text or attachment. A new empty draft is not uploaded. */

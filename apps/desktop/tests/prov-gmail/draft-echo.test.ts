@@ -16,16 +16,19 @@ import type {
   PlannedStep,
   RemoteDraftFact,
   StepResult,
+  DraftUpload,
   SyncState,
 } from '@aplos/engine/ports';
 import { createFaultInjector } from '@aplos/emulators';
 // Type-only: the engine's modules augment `EngineServices`; the kit below needs all of them in this project.
 import type {} from '../../../../packages/engine/src/index';
 import { stepWrites } from '../../../../packages/engine/src/sync/facts';
-import { ACCOUNT, fields } from '../../../../packages/engine/tests/outbox/helpers';
+import { ACCOUNT, fields, SEC } from '../../../../packages/engine/tests/outbox/helpers';
 import {
   read,
   count,
+  create,
+  wait,
   edit,
   row,
   synced,
@@ -33,6 +36,7 @@ import {
   world,
 } from '../../../../packages/engine/tests/outbox/drafts.ports.kit';
 import { rig } from './harness';
+import { setup } from './draft-rig';
 
 // The engine world's account address; the copy must be sent from it.
 const OWNER = 'owner@mail.example';
@@ -208,4 +212,61 @@ test("prov-gmail-drafts echo: another device's edit of a clean draft replaces it
     assert.equal(d.subject, 'Dinner instead');
     assert.match(d.html, /Dinner at 7\?/);
     assert.doesNotMatch(d.html, /Lunch/);
+  }));
+
+// ---- the engine's OWN uploaded MIME, through the real adapter, must be recognised as ours ----
+
+/** The fact the Gmail adapter reports for `upload` after it was saved to the emulator by the adapter itself. */
+async function factOfOwnUpload(upload: DraftUpload) {
+  const s = await setup({ threads: 60 });
+  await s.r.drive({
+    until: () => s.r.store.states.get('window:inbox')?.phase === 'done',
+    maxSteps: 300,
+  });
+  await s.r.clock.advance(60_000);
+  const saved = await s.r.adapter.saveDraft(upload, s.r.ctx());
+  assert.equal(saved.kind, 'saved', JSON.stringify(saved));
+  if (saved.kind !== 'saved') throw new Error('unreachable');
+  const from = s.r.store.commits.length;
+  for (let i = 0; i < 50; i++) {
+    await s.r.drive({ trigger: 'manual', scopes: ['history'], maxSteps: 1 });
+    if (!/^pass:/.test(s.r.store.states.get('history')?.phase ?? '')) break;
+  }
+  const facts = s.r.store.commits.slice(from).flatMap(c => c.result.drafts ?? []);
+  return facts.find(f => f.remoteDraftId === saved.remoteDraftId) as RemoteDraftFact;
+}
+
+test("prov-gmail-drafts echo: the copy of the engine's own uploaded MIME (html part before the boundary) is recognised as our echo", () =>
+  world(async w => {
+    const s = await synced(w, fields());
+    const upload = w.remoteDrafts.saves[0] as unknown as DraftUpload;
+    const own = await factOfOwnUpload(upload);
+    assert.ok(own?.html, 'the adapter delivered the body');
+    w.first.store.commit({
+      opId: 'own-echo',
+      origin: 'sync',
+      writes: actorWrites(own, s.remoteDraftId),
+    });
+    // Our own copy under a new message id and our Message-ID: an echo, nothing replaced, no conflict.
+    assert.equal(read(w, s.draft.id).conflict, undefined);
+    assert.equal(row(w, s.draft.id)!.revision, s.draft.revision);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test("prov-gmail-drafts echo: a lost reply, then the adapter's report of the same upload: adopted, not shown as another draft", () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' });
+    const d = create(w, fields());
+    await wait(w, 5 * SEC);
+    assert.equal(row(w, d.id)!.remote_draft_id, null, 'its reply was lost');
+    const upload = w.remoteDrafts.saves.at(-1) as unknown as DraftUpload;
+    const own = await factOfOwnUpload(upload);
+    assert.ok(own?.html);
+    w.first.store.commit({
+      opId: 'own-adopt',
+      origin: 'sync',
+      writes: actorWrites(own, 'rd1'),
+    });
+    assert.equal(count(w), 1, 'no duplicate draft from our own landed copy');
+    assert.equal(row(w, d.id)!.remote_draft_id, 'rd1', 'adopted');
   }));
