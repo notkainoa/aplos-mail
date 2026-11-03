@@ -1123,3 +1123,9 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **#203 LOW-2: source-shape guards for `closeRequested` and reject-unless-exited** (real-path.test.ts): the real `close` sets `closeRequested` first, awaits the supervisor and throws unless the result is `'exited'`; `bootRealEngine` returns when the quit began; `finishQuit` hands `realEngine.close()` to `closeThenRelease`.
 - **#203 LOW-3: no startup-error dialog while a quit is in progress.** The start-up `catch` in main/lifecycle.ts returns when `closing` is set (the quit is finishing by itself); guarded by a source-shape test.
 - Tests are mutation-checked: each one goes red when its change is reverted (list in the thread report). Not done: pruning the `asked` map on window close (the optional #201 item).
+
+## 2026-11-03 prov-emu: #202 follow-ups (one probe draft at a time, `--phase` runs only phased probes)
+
+- **One probe draft at a time.** `inspect` used to judge the newest of several probe drafts, so an older edited-or-not draft could report `bodyUnchanged=1` for the wrong one. Now `create` stops (`probeDraftsExisting`, status fail, nothing created) when a probe draft is among the newest 25, and `inspect` gives no verdict (fail, `draftsMatching` > 1, no `messageIdIsOurs`/`bodyUnchanged`). The owner discards old probe drafts by hand (the guard refuses every draft delete).
+- **`--phase` selects phased probes only.** `SmokeProbe.phased` marks a probe that runs in steps; with `--phase` the runner runs only those, so `--phase inspect --confirm-mutating` cannot authorise any other tier M probe. Without `--phase` nothing changes.
+- **Tests.** Create-stop and two-draft no-verdict, inspect sends only GETs and leaves every draft unchanged, the phase filter (each red under its mutation).
