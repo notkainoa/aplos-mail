@@ -79,6 +79,7 @@ export const COUNT_KEYS: readonly string[] = [
   'messageIdIsOurs',
   'bodyUnchanged',
   'bodyEdited',
+  'probeDraftsExisting',
 ];
 export const TIMING_KEYS: readonly string[] = [
   'profile',

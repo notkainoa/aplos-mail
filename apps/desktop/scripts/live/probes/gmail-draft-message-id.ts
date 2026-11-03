@@ -100,6 +100,13 @@ function idsOf(json: Record<string, unknown>): { draftId?: string; messageId?: s
 }
 
 async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void> {
+  // One probe draft at a time: an older one would be judged in place of the new one by `inspect`.
+  const existing = await findProbeDrafts(ctx);
+  result.counts.probeDraftsExisting = existing.matches.length;
+  if (existing.matches.length > 0) {
+    result.status = 'fail';
+    return;
+  }
   const date = new Date();
   const { messageId: ours } = probeNames(date);
   const made = await sendJson(
@@ -150,7 +157,10 @@ function plainBody(part: unknown): string | undefined {
   return undefined;
 }
 
-async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<void> {
+/** The probe drafts among the newest `SCAN` drafts, newest first, and how many drafts were looked at. */
+async function findProbeDrafts(
+  ctx: ProbeContext,
+): Promise<{ matches: { id: string; read: DraftRead }[]; scanned: number }> {
   const list = await getJson(ctx, '/drafts', {
     maxResults: String(SCAN),
     fields: 'drafts(id)',
@@ -159,24 +169,32 @@ async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
     .map((d: { id?: unknown }) => String(d.id))
     .filter(id => DRAFT_ID.test(id))
     .slice(0, SCAN);
-  result.counts.draftsScanned = 0;
-  result.counts.draftsMatching = 0;
-  let newest: { id: string; read: DraftRead } | undefined;
+  const matches: { id: string; read: DraftRead }[] = [];
   for (const id of ids) {
     const read = await readHeaders(ctx, id);
-    result.counts.draftsScanned++;
-    if (!SUBJECT.test(read.headers.get('subject') ?? '')) continue;
-    result.counts.draftsMatching++;
-    newest ??= { id, read };
+    if (SUBJECT.test(read.headers.get('subject') ?? '')) matches.push({ id, read });
   }
-  result.counts.draftFound = newest ? 1 : 0;
-  if (!newest) return;
-  const subject = SUBJECT.exec(newest.read.headers.get('subject') ?? '')!;
+  return { matches, scanned: ids.length };
+}
+
+async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<void> {
+  const { matches, scanned } = await findProbeDrafts(ctx);
+  result.counts.draftsScanned = scanned;
+  result.counts.draftsMatching = matches.length;
+  result.counts.draftFound = matches.length > 0 ? 1 : 0;
+  // Several probe drafts cannot be told apart without state, and an older one could be judged for the newest: no verdict.
+  if (matches.length > 1) {
+    result.status = 'fail';
+    return;
+  }
+  const only = matches[0];
+  if (!only) return;
+  const subject = SUBJECT.exec(only.read.headers.get('subject') ?? '')!;
   const { messageId: ours } = probeNames(
     new Date(`${subject[1]}-${subject[2]}-${subject[3]}T00:00:00Z`),
   );
-  result.counts.messageIdIsOurs = newest.read.headers.get('message-id') === ours ? 1 : 0;
-  const full = await getJson(ctx, `/drafts/${newest.id}`, {
+  result.counts.messageIdIsOurs = only.read.headers.get('message-id') === ours ? 1 : 0;
+  const full = await getJson(ctx, `/drafts/${only.id}`, {
     format: 'full',
     fields: 'message(payload(mimeType,body(data),parts))',
   });
@@ -190,6 +208,7 @@ export const draftMessageIdAfterEdit: SmokeProbe = {
   id: 'gmail.draft-message-id-after-edit',
   provider: 'gmail',
   tier: 'M',
+  phased: true,
   async run(ctx: ProbeContext): Promise<ProbeResult> {
     if (ctx.phase !== 'create' && ctx.phase !== 'inspect') return emptyResult('skip');
     const result = emptyResult();

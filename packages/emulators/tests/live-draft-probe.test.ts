@@ -12,6 +12,7 @@ import { parseArgs, runLive, type RunDeps } from '../../../apps/desktop/scripts/
 import { signIn } from '../../../apps/desktop/scripts/live/signin';
 import { PROBES } from '../../../apps/desktop/scripts/live/probes';
 import { COUNT_KEYS } from '../../../apps/desktop/scripts/live/evidence';
+import { emptyResult, type SmokeProbe } from '../../../apps/desktop/scripts/live/types';
 import { probeNames } from '../../../apps/desktop/scripts/live/probes/gmail-draft-message-id';
 
 const CLIENT = { clientId: 'live-client', clientSecret: 'live-secret' };
@@ -24,7 +25,7 @@ interface Rig {
   ): Promise<{ counts: Record<string, number>; text: string; status: string }>;
 }
 
-async function rig(): Promise<Rig> {
+async function rig(extraProbes: SmokeProbe[] = []): Promise<Rig> {
   const clock = new FakeClock();
   const emu = createGmailEmulator({ clock, latencyMs: 0 });
   emu.oauth.addClient(CLIENT.clientId, CLIENT.clientSecret);
@@ -59,7 +60,7 @@ async function rig(): Promise<Rig> {
     sleep: ms => clock.advance(ms),
     log: () => undefined,
     evidenceDir: evidence,
-    probes: PROBES.filter(p => p.id === 'gmail.draft-message-id-after-edit'),
+    probes: [...extraProbes, ...PROBES.filter(p => p.id === 'gmail.draft-message-id-after-edit')],
   };
   return {
     emu,
@@ -195,13 +196,63 @@ test('inspect: no probe draft is draftFound 0; no phase or an unknown phase is a
   );
 });
 
-test('inspect: two probe drafts are counted and the newest is the one judged', async () => {
+test('create stops when a probe draft already exists; inspect gives no verdict when there are two', async () => {
   const r = await rig();
   await r.run('create');
-  await r.run('create');
+  const again = await r.run('create');
+  assert.equal(again.status, 'fail');
+  assert.equal(again.counts.probeDraftsExisting, 1);
+  assert.equal(again.counts.created, undefined, 'no second draft was made');
+  assert.equal(
+    r.emu.mailbox.listDrafts().filter(d => d.message.subject.startsWith('aplos-live-probe '))
+      .length,
+    1,
+  );
+  // An older probe draft left behind (made elsewhere) next to the new one: nothing is judged.
+  r.emu.mailbox.createDraftElsewhere({ subject: probeNames(new Date()).subject, text: 'older' });
   const out = await r.run('inspect');
+  assert.equal(out.status, 'fail');
   assert.equal(out.counts.draftsMatching, 2);
   assert.equal(out.counts.draftFound, 1);
+  assert.equal(out.counts.messageIdIsOurs, undefined);
+  assert.equal(out.counts.bodyUnchanged, undefined);
+});
+
+test('inspect sends nothing but GETs (after the token refresh), and does not touch any draft', async () => {
+  const r = await rig();
+  await r.run('create');
+  const before = r.emu.log.length;
+  const drafts = JSON.stringify(
+    r.emu.mailbox.listDrafts().map(d => [d.id, d.message.id, d.message.subject]),
+  );
+  await r.run('inspect');
+  const writes = r.emu.log
+    .slice(before)
+    .filter(e => e.httpMethod !== 'GET')
+    .map(e => e.apiMethod);
+  assert.deepEqual(writes, ['oauth.token']);
+  assert.equal(
+    JSON.stringify(r.emu.mailbox.listDrafts().map(d => [d.id, d.message.id, d.message.subject])),
+    drafts,
+  );
+});
+
+test('--phase runs only probes that declare phases: --phase inspect --confirm-mutating does not authorise another tier M probe', async () => {
+  let ran = 0;
+  const other: SmokeProbe = {
+    id: 'gmail.profile-and-labels',
+    provider: 'gmail',
+    tier: 'M',
+    async run() {
+      ran++;
+      return emptyResult();
+    },
+  };
+  const r = await rig([other]);
+  await r.run('inspect');
+  assert.equal(ran, 0, 'the unphased probe did not run');
+  await r.run(undefined);
+  assert.equal(ran, 1, 'without --phase the tier runs every probe as before');
 });
 
 test('command line: --phase takes a short lowercase word only; the counts are on the evidence allowlist', () => {
@@ -222,6 +273,7 @@ test('command line: --phase takes a short lowercase word only; the counts are on
     'messageIdIsOurs',
     'bodyUnchanged',
     'bodyEdited',
+    'probeDraftsExisting',
   ])
     assert.ok(COUNT_KEYS.includes(key), key);
 });

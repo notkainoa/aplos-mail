@@ -1104,3 +1104,9 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **A window may ask for a port at most 5 times in 10 seconds (`CONNECT_LIMIT`).** `aplos:engine-connect` had no limit, and each ask gave a fresh 64 MB in-flight budget; a reload asks once, so a loop of asks is not a page of ours. A sixth ask answers `unavailable`, issues nothing, and does not touch the port the window holds. Per window id, with an injectable clock for the test. The in-flight budget still resets with each real port (closing a port aborts that session's calls); with at most 5 ports in 10 s the exposure is bounded.
 - Tests: `payload.test.ts` (nodes, sparse array, long keys, a raw 100,001-value message refused at the port, each red against the previous code) and `port.test.ts` (the connect limit).
 
+
+## 2026-11-03 prov-emu: #202 follow-ups (one probe draft at a time, `--phase` runs only phased probes)
+
+- **One probe draft at a time.** `inspect` used to judge the newest of several probe drafts, so an older edited-or-not draft could report `bodyUnchanged=1` for the wrong one. Now `create` stops (`probeDraftsExisting`, status fail, nothing created) when a probe draft is among the newest 25, and `inspect` gives no verdict (fail, `draftsMatching` > 1, no `messageIdIsOurs`/`bodyUnchanged`). The owner discards old probe drafts by hand (the guard refuses every draft delete).
+- **`--phase` selects phased probes only.** `SmokeProbe.phased` marks a probe that runs in steps; with `--phase` the runner runs only those, so `--phase inspect --confirm-mutating` cannot authorise any other tier M probe. Without `--phase` nothing changes.
+- **Tests.** Create-stop and two-draft no-verdict, inspect sends only GETs and leaves every draft unchanged, the phase filter (each red under its mutation).
