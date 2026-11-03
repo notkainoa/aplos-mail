@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { MessageChannel } from 'node:worker_threads';
@@ -10,7 +10,10 @@ import {
   createPortClient,
   createPortHost,
   MAX_ARGS_BYTES,
+  MAX_BLOB_MESSAGE_BYTES,
   MAX_IN_FLIGHT,
+  MAX_IN_FLIGHT_BYTES,
+  messageBytes,
   portMethods,
   revokeOnNewDocument,
   serveWindowPort,
@@ -378,18 +381,140 @@ test('a window may not flood its port: at most MAX_IN_FLIGHT open calls, argumen
   });
   const engine = fakeSession();
   serveWindowPort(() => engine.session, engineEndOf(fresh.port1), { position });
+  const html = 'x'.repeat(MAX_ARGS_BYTES);
+  // A page past preload posts the raw envelope: the engine side refuses it.
+  const raw: PortMessage[] = [];
+  fresh.port2.on('message', message => raw.push(message));
+  fresh.port2.postMessage({
+    v: 1,
+    id: 1,
+    method: 'Draft/set',
+    args: { opId: 'o', fields: { html } },
+  });
+  await until(() => raw.length === 2, 'the hello and the refusal');
+  assert.equal(raw[1].kind === 'reply' && !raw[1].ok && raw[1].error.type, 'tooLarge');
+  assert.deepEqual(engine.calls, [], 'the oversized call never reached the engine');
+  // An upload route carries its bytes (Blob/put, 25 MB at most).
+  const bytes = new Uint8Array(MAX_ARGS_BYTES + 1);
+  fresh.port2.postMessage({ v: 1, id: 2, method: 'Blob/put', args: { bytes, mime: 'audio/webm' } });
+  // (The fake engine echoes the bytes back, a reply too large for a non-blob route: only the arrival matters here.)
+  await until(() => raw.length === 3, 'the upload’s answer');
+  assert.deepEqual(engine.calls, ['Blob/put']);
+});
+
+/** A session whose calls stay open until the test answers them, oldest first. */
+function heldSession() {
+  const open: (() => void)[] = [];
+  const session: EngineSession = {
+    call: () => new Promise(resolve => open.push(() => resolve({}))),
+    subscribe: () => () => undefined,
+    close: () => undefined,
+  };
+  return { session, open };
+}
+
+/** A served port whose raw envelopes the test posts itself, as a page past preload would. */
+function rawPort(t: TestContext, session: EngineSession) {
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  let id = 0;
+  const post = (method: string, args: unknown) =>
+    port2.postMessage({ v: 1, id: ++id, method, args });
+  const outcome = (n: number) => {
+    const reply = replies.find(message => message.kind === 'reply' && message.id === n);
+    if (!reply || reply.kind !== 'reply') return undefined;
+    return reply.ok ? 'ok' : reply.error.type;
+  };
+  return { post, outcome };
+}
+
+test('a window may have at most MAX_IN_FLIGHT_BYTES of arguments open on its port; a reply releases them', async t => {
+  const held = heldSession();
+  const a = rawPort(t, held.session);
+  const mime = 'audio/webm';
+  const envelope = messageBytes({ bytes: 0, mime });
+  const chunk = 24 * 1024 * 1024;
+  const source = new Uint8Array(chunk);
+  a.post('Blob/put', { bytes: source, mime });
+  a.post('Blob/put', { bytes: source, mime });
+  // The third fills the budget exactly.
+  const rest = MAX_IN_FLIGHT_BYTES - 2 * (chunk + envelope) - envelope;
+  a.post('Blob/put', { bytes: new Uint8Array(rest), mime });
+  await until(() => held.open.length === 3, 'three uploads up to the budget to reach the engine');
+  // Any more arguments are over it.
+  a.post('Counts/get', {});
+  await until(() => a.outcome(4) !== undefined, 'the refusal');
+  assert.equal(a.outcome(4), 'unavailable');
+  assert.equal(held.open.length, 3, 'the refused call never reached the engine');
+
+  // Per port: another window's port has its own budget.
+  const b = rawPort(t, held.session);
+  b.post('Blob/put', { bytes: source, mime });
+  b.post('Blob/put', { bytes: source, mime });
+  await until(() => held.open.length === 5, 'the other port’s uploads');
+
+  // A reply releases its bytes.
+  held.open[0]();
+  await until(() => a.outcome(1) === 'ok', 'the first upload’s reply');
+  a.post('Blob/put', { bytes: source, mime });
+  await until(() => held.open.length === 6, 'an upload after the release');
+  assert.equal(a.outcome(5), undefined, 'still open, not refused');
+});
+
+test('preload refuses oversized arguments before they leave the window', async () => {
   const client = createPortClient();
-  client.attach(windowEndOf(fresh.port2));
+  const posted: string[] = [];
+  let deliver: (data: unknown) => void = () => undefined;
+  client.attach({
+    post: message => void posted.push(message.method),
+    onMessage: handler => void (deliver = handler),
+    close: () => undefined,
+  });
+  deliver({ kind: 'hello', dbEpoch: 'e1', seq: 1 });
   const html = 'x'.repeat(MAX_ARGS_BYTES);
   await assert.rejects(client.call('Draft/set', { opId: 'o', fields: { html } }), {
     type: 'tooLarge',
   });
-  assert.deepEqual(engine.calls, [], 'the oversized call never reached the engine');
-  // An upload route carries its bytes (Blob/put, 25 MB at most).
-  const bytes = new Uint8Array(MAX_ARGS_BYTES + 1);
-  // (The fake engine echoes the bytes back, a reply too large for a non-blob route: only the arrival matters here.)
-  await client
-    .call('Blob/put', { bytes, mime: 'audio/webm' }, [bytes.buffer])
-    .catch(() => undefined);
-  assert.deepEqual(engine.calls, ['Blob/put']);
+  const bytes = new Uint8Array(MAX_BLOB_MESSAGE_BYTES);
+  await assert.rejects(client.call('Blob/put', { bytes, mime: 'audio/webm' }, [bytes.buffer]), {
+    type: 'tooLarge',
+  });
+  assert.equal(bytes.byteLength, MAX_BLOB_MESSAGE_BYTES, 'the refused buffer did not move');
+  assert.deepEqual(posted, [], 'nothing oversized was posted on the port');
+  // An upload under its cap still leaves.
+  void client.call('Blob/put', { bytes: new Uint8Array(MAX_ARGS_BYTES + 1), mime: 'audio/webm' });
+  assert.deepEqual(posted, ['Blob/put']);
+});
+
+test('port hijack: connect refuses a window whose main frame no longer shows the app', async t => {
+  const host = createPortHost(() => fakeSession().session, { position });
+  const ports = portTracker(t);
+  const broker = createPortBroker({ channel: ports.channel, link: () => directLink(host) });
+  const one = fakeWindow(1);
+  one.state.url = 'https://evil.example/';
+  assert.throws(() => broker.connect(one.win), /Untrusted application window/);
+  assert.equal(one.state.deliveries, 0);
+  assert.deepEqual(broker.holders(), []);
+  assert.deepEqual(host.windows(), []);
+});
+
+test('port hijack: an engine restart re-issues no port to a window that no longer shows the app', async t => {
+  const host = createPortHost(() => fakeSession().session, { position });
+  const ports = portTracker(t);
+  const broker = createPortBroker({ channel: ports.channel, link: () => directLink(host) });
+  const one = fakeWindow(1);
+  const two = fakeWindow(2);
+  broker.connect(one.win);
+  broker.connect(two.win);
+  one.state.url = 'https://evil.example/';
+  broker.reissue();
+  assert.equal(one.state.deliveries, 1, 'the untrusted window got no new port');
+  assert.equal(two.state.deliveries, 2, 'the trusted window did');
+  assert.deepEqual(broker.holders(), [2]);
 });
