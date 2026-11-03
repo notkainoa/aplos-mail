@@ -58,6 +58,8 @@ export interface SmokeProbe {
   id: string;
   provider: LiveProvider;
   tier: Tier;
+  /** True for a probe that runs in steps named by `--phase`. A run given `--phase` runs only these probes. */
+  phased?: boolean;
   run(ctx: ProbeContext): Promise<ProbeResult>;
 }
 
