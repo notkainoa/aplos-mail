@@ -1088,3 +1088,11 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **`withDara`, `withUnknownMethod`:** a new method kind is tolerated by the parser (it only reads dkim); counted so a format change shows up.
 - **`falseNoListPair` high:** many newsletters send `List-Unsubscribe` without `-Post`; that is why `authenticated` is false for them and one-click is not offered (by design, RFC 8058).
 - Usage and the meaning of each count are in plans/LIVE-RUNS.md.
+
+## 2026-11-03 — eng-contract: measurer LOW-A and LOW-B, and a limit on port asks (before the real path defaults on)
+
+- **LOW-A: window arguments are measured with a bound of `MAX_WINDOW_NODES` (100,000) values, not a million.** `messageBytes(value, limit, maxNodes)` takes the bound; `port.ts` passes `MAX_WINDOW_NODES` for what a window sends (the engine side and the preload check). A million empty objects (3 MB on the wire, under the 4 MB cap) took 0.5 s to measure and a sparse array `a[999_990] = 0` about 100 ms, enough for a compromised renderer to stall the engine that serves every window; both are now refused in a few milliseconds, while a legitimate call (hundreds of values) is untouched and a big reply from the engine itself keeps the one-million bound.
+- **LOW-B: a key longer than the bytes still allowed is refused before it is stringified.** `keyedContents` gets the bytes left (`limit - total`) and subtracts each key as it goes, so `{['x'.repeat(1e8)]: 0}` and 100 keys of a million characters each cost nothing (about 500 ms and 100 MB before).
+- **A window may ask for a port at most 5 times in 10 seconds (`CONNECT_LIMIT`).** `aplos:engine-connect` had no limit, and each ask gave a fresh 64 MB in-flight budget; a reload asks once, so a loop of asks is not a page of ours. A sixth ask answers `unavailable`, issues nothing, and does not touch the port the window holds. Per window id, with an injectable clock for the test. The in-flight budget still resets with each real port (closing a port aborts that session's calls); with at most 5 ports in 10 s the exposure is bounded.
+- Tests: `payload.test.ts` (nodes, sparse array, long keys, a raw 100,001-value message refused at the port, each red against the previous code) and `port.test.ts` (the connect limit).
+

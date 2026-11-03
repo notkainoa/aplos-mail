@@ -6,6 +6,7 @@ import type { Frame } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 import { hostMethods, secretMethods } from '@aplos/contract/allowlists';
 import {
+  CONNECT_LIMIT,
   createPortBroker,
   createPortClient,
   createPortHost,
@@ -517,4 +518,30 @@ test('port hijack: an engine restart re-issues no port to a window that no longe
   assert.equal(one.state.deliveries, 1, 'the untrusted window got no new port');
   assert.equal(two.state.deliveries, 2, 'the trusted window did');
   assert.deepEqual(broker.holders(), [2]);
+});
+
+test('a window may ask for a port CONNECT_LIMIT.count times in CONNECT_LIMIT.windowMs: a loop of asks is refused, and a reload later is not', async t => {
+  const engine = fakeSession();
+  const host = createPortHost(() => engine.session, { position });
+  const ports = portTracker(t);
+  const link = directLink(host);
+  let now = 1_000;
+  const broker = createPortBroker({ channel: ports.channel, link: () => link, now: () => now });
+  const one = fakeWindow(1);
+  const other = fakeWindow(2);
+  for (let i = 0; i < CONNECT_LIMIT.count; i++) {
+    broker.connect(one.win);
+    now += 100;
+  }
+  assert.throws(() => broker.connect(one.win), /./, 'the next ask is refused');
+  assert.equal(one.state.deliveries, CONNECT_LIMIT.count, 'and issues no new port');
+  broker.connect(other.win);
+  assert.equal(other.state.deliveries, 1, 'another window has its own allowance');
+  now += CONNECT_LIMIT.windowMs;
+  broker.connect(one.win);
+  assert.equal(
+    one.state.deliveries,
+    CONNECT_LIMIT.count + 1,
+    'after the window passes it may ask again',
+  );
 });

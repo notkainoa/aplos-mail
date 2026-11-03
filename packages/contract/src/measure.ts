@@ -21,6 +21,12 @@ function utf8Length(text: string): number {
 /** At most this many values are visited to measure one message; a message with more counts as infinite. */
 export const MAX_MEASURED_NODES = 1_000_000;
 
+/**
+ * The same bound for what a WINDOW sends: a legitimate call has hundreds of values, and a million empty objects
+ * (3 MB on the wire) took about 0.5 s to measure, enough for a hostile renderer to stall an engine that serves every window.
+ */
+export const MAX_WINDOW_NODES = 100_000;
+
 /** JSON leaves these out of an object and writes `null` for them in an array. */
 const dropped = (value: unknown) =>
   value === undefined || typeof value === 'function' || typeof value === 'symbol';
@@ -80,11 +86,23 @@ function ownKeys(object: object, room: number, keep: (key: string) => boolean) {
   return keys;
 }
 
-/** Each key JSON would write, with its value: the key's text, a colon and a comma, and the value as a child. */
-function keyedContents(object: Record<string, unknown>, keys: string[], into: Contents) {
+/**
+ * Each key JSON would write, with its value: the key's text, a colon and a comma, and the value as a child. A key longer
+ * than the bytes still allowed is refused (undefined) before it is stringified, so a huge key costs nothing.
+ */
+function keyedContents(
+  object: Record<string, unknown>,
+  keys: string[],
+  into: Contents,
+  bytesLeft: number,
+) {
+  let left = bytesLeft;
   for (const key of keys) {
     if (dropped(object[key])) continue;
-    into.bytes += utf8Length(JSON.stringify(key)) + 2;
+    if (key.length > left) return undefined;
+    const bytes = utf8Length(JSON.stringify(key)) + 2;
+    left -= bytes;
+    into.bytes += bytes;
     into.children.push({ value: object[key], inArray: false });
   }
   return into;
@@ -99,18 +117,25 @@ function listContents(list: ArrayLike<unknown>, room: number): Contents | undefi
 }
 
 /** An array's slots plus any named own property (JSON drops those; the structured clone copies them). */
-function arrayContents(list: unknown[], room: number): Contents | undefined {
+function arrayContents(list: unknown[], room: number, bytesLeft: number): Contents | undefined {
   const slots = listContents(list, room);
   if (!slots) return undefined;
   const named = ownKeys(list, room - list.length, key => !isIndex(key));
-  return named && keyedContents(list as unknown as Record<string, unknown>, named, slots);
+  return (
+    named && keyedContents(list as unknown as Record<string, unknown>, named, slots, bytesLeft)
+  );
 }
 
 /** A plain object's contents: every own enumerable key JSON would write, with its value. */
-function objectContents(object: Record<string, unknown>, room: number): Contents | undefined {
+function objectContents(
+  object: Record<string, unknown>,
+  room: number,
+  bytesLeft: number,
+): Contents | undefined {
   const keys = ownKeys(object, room, () => true);
   if (!keys) return undefined;
-  const contents = keyedContents(object, keys, { bytes: 0, children: [] });
+  const contents = keyedContents(object, keys, { bytes: 0, children: [] }, bytesLeft);
+  if (!contents) return undefined;
   // `{` and `}` with one comma fewer than keys (keyedContents counted one per key).
   contents.bytes += contents.children.length ? 1 : 2;
   return contents;
@@ -130,14 +155,14 @@ function mapContents(map: Map<unknown, unknown>, room: number): Contents | undef
  * and a Set as `[...]` (JSON alone writes both as `{}`), a RegExp as `[source, flags]`, an Error as its name, message,
  * stack and cause. Undefined when it has more than `room` children.
  */
-function contents(value: object, room: number): Contents | undefined {
+function contents(value: object, room: number, bytesLeft: number): Contents | undefined {
   if (value instanceof Map) return mapContents(value, room);
   if (value instanceof Set) return value.size > room ? undefined : listContents([...value], room);
   if (value instanceof RegExp) return listContents([value.source, value.flags], room);
   if (value instanceof Error)
     return listContents([value.name, value.message, value.stack, value.cause], room);
-  if (Array.isArray(value)) return arrayContents(value, room);
-  return objectContents(value as Record<string, unknown>, room);
+  if (Array.isArray(value)) return arrayContents(value, room, bytesLeft);
+  return objectContents(value as Record<string, unknown>, room, bytesLeft);
 }
 
 type Visit = Child | { leave: object };
@@ -153,11 +178,11 @@ function lowerBound(value: unknown): number {
 
 /**
  * Walks `root` with an explicit stack (no recursion, so no stack overflow) and stops as soon as the total passes
- * `limit` or more than `MAX_MEASURED_NODES` values were seen. Each object and each binary buffer counts once, like the
+ * `limit` or more than `maxNodes` values (default `MAX_MEASURED_NODES`) were seen. Each object and each binary buffer counts once, like the
  * structured clone copies a shared one once; a later reference counts one byte. A cycle counts as infinite (no
  * JSON-shaped message has one).
  */
-function measure(root: unknown, limit: number): number {
+function measure(root: unknown, limit: number, maxNodes: number): number {
   const counted = new Set<object>();
   const ancestors = new Set<object>();
   const stack: Visit[] = [{ value: root, inArray: false }];
@@ -176,7 +201,7 @@ function measure(root: unknown, limit: number): number {
     else if (ancestors.has(object)) return Number.POSITIVE_INFINITY;
     else if (counted.has(object)) total += 1;
     else {
-      const inner = contents(object, MAX_MEASURED_NODES - nodes);
+      const inner = contents(object, maxNodes - nodes, limit - total);
       if (!inner) return Number.POSITIVE_INFINITY;
       counted.add(object);
       ancestors.add(object);
@@ -196,9 +221,13 @@ function measure(root: unknown, limit: number): number {
  * that cannot be measured (a cycle, a BigInt, more than `MAX_MEASURED_NODES` values) or that passes `limit` counts as
  * infinite, so it never leaves. Never throws, never recurses.
  */
-export function messageBytes(value: unknown, limit = Number.POSITIVE_INFINITY): number {
+export function messageBytes(
+  value: unknown,
+  limit = Number.POSITIVE_INFINITY,
+  maxNodes = MAX_MEASURED_NODES,
+): number {
   try {
-    return measure(value, limit);
+    return measure(value, limit, maxNodes);
   } catch {
     return Number.POSITIVE_INFINITY;
   }
