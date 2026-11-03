@@ -16,6 +16,7 @@ import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   listTestFiles,
+  parseArgs,
   parseShard,
   partition,
   shardFiles,
@@ -84,6 +85,30 @@ describe('test-shard command parsing', () => {
   });
 });
 
+describe('test-shard arguments', () => {
+  it('reads --run and --script anywhere among the positional arguments', () => {
+    assert.deepEqual(parseArgs(['.', '1/3', '--script', 'test:engine', '--run']), {
+      run: true,
+      script: 'test:engine',
+      positional: ['.', '1/3'],
+    });
+    assert.deepEqual(parseArgs(['apps/desktop', '2/2']), {
+      run: false,
+      script: 'test',
+      positional: ['apps/desktop', '2/2'],
+    });
+  });
+
+  it('testCommand reads a named script', () => {
+    const parsed = testCommand(
+      { scripts: { 'test:engine': 'node x.mjs --test "a/*.ts"' } },
+      'test:engine',
+    );
+    assert.deepEqual(parsed.runner, ['node', 'x.mjs', '--test']);
+    assert.throws(() => testCommand({ scripts: {} }, 'test:engine'), /scripts\.test:engine/);
+  });
+});
+
 describe('test-shard file list', () => {
   it("expands a workspace's own patterns, sorted and deduplicated", () => {
     const { patterns } = testCommand({ scripts: { test: fixtureTest } });
@@ -133,6 +158,18 @@ describe('test-shard partition', () => {
     assert.deepEqual(shards.flat().sort(), all);
   });
 
+  it('shards of the root test:engine script cover its list, so the Electron-Node job loses no file', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    const all = listTestFiles(root, testCommand(pkg, 'test:engine').patterns);
+    assert.ok(
+      all.some(file => file.startsWith('packages/engine/tests/')),
+      'engine tests listed',
+    );
+    const shards = [1, 2, 3].map(shard => shardFiles(root, shard, 3, 'test:engine'));
+    assert.equal(new Set(shards.flat()).size, all.length, 'no file in two shards');
+    assert.deepEqual(shards.flat().sort(), all);
+  });
+
   // An expansion that does not go through test-shard.mjs: walk the workspace for anything that looks
   // like a test file and require that a shard runs it. A test file that no glob in scripts.test
   // matches (the 15 renderer/ui .test.tsx files were once in this state) fails here, by name.
@@ -175,10 +212,11 @@ describe('test-shard partition', () => {
         [...match[1].matchAll(/-w\s+(\S+)/g)].map(workspaceMatch => workspaceMatch[1]),
       ),
     );
-    const sharded = /test-shard\.mjs\s+apps\/desktop\b/.test(ci);
-    const missing = withTests.filter(name =>
-      name === '@aplos/desktop' ? !sharded : !named.has(name),
-    );
+    // Sharded workspaces are named by directory in a test-shard.mjs line instead.
+    const shardedDirs = { '@aplos/desktop': 'apps/desktop', '@aplos/engine': 'packages/engine' };
+    const isSharded = name =>
+      name in shardedDirs && new RegExp(`test-shard\\.mjs\\s+${shardedDirs[name]}\\b`).test(ci);
+    const missing = withTests.filter(name => !isSharded(name) && !named.has(name));
     assert.deepEqual(
       missing,
       [],
