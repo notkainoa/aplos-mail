@@ -1,4 +1,3 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { incoming, worldEngine, type TestEngine } from './harness';
 import { inboxIds, nextOp, openOps, settle } from './acts';
@@ -11,9 +10,12 @@ import { rng } from './world';
  * `optimistic.ts` does: apply a receipt's effect to the newest frame until a frame reaches the receipt's state) must never
  * show a thread in a place the engine never had it since the client's last frame, never let an old frame bring a handled
  * thread back, and must equal the engine once it has caught up.
+ *
+ * The run is split over `overlay.property.<n>.test.ts` (8 parts of 15 seeds by default, 120 in all; `APLOS_VIEWS_PROPERTY`
+ * sets the total) so the CI shards spread it: no part runs for more than about 40 s.
  */
 
-const SEQUENCES = Number(process.env.APLOS_VIEWS_PROPERTY ?? 120);
+export const SEQUENCES = Number(process.env.APLOS_VIEWS_PROPERTY ?? 120);
 const STEPS = 30;
 
 type Move = 'done' | 'trash' | 'spam' | 'restore';
@@ -209,6 +211,14 @@ async function runSequence(seed: number) {
   }
 }
 
-test(`${SEQUENCES} seeded sequences of commands, mail and frames never show a state the engine never had`, async () => {
-  for (let seed = 1; seed <= SEQUENCES; seed++) await runSequence(seed);
-});
+/** The seed range part `part` of `of` covers, out of `SEQUENCES` in all (seeds count from 1). */
+export function seedRange(part: number, of: number) {
+  const per = Math.ceil(SEQUENCES / of);
+  return { first: (part - 1) * per + 1, last: Math.min(part * per, SEQUENCES) };
+}
+
+/** Runs the seeds of one part: the property test files each cover a slice so the CI shards can spread them. */
+export async function runPart(part: number, of: number) {
+  const { first, last } = seedRange(part, of);
+  for (let seed = first; seed <= last; seed++) await runSequence(seed);
+}
