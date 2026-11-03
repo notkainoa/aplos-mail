@@ -3,6 +3,7 @@ import type { CommitExtensionTx, RemoteDraftWrite } from '../store';
 import { bodyOf, completes, messageOf } from './draft-body';
 import {
   fingerprintOf,
+  sameAddress,
   keepsMine,
   packData,
   LIVE_SQL,
@@ -218,3 +219,29 @@ export function markChangedElsewhere(
  */
 export const dropHeld = (meta: DraftMeta): DraftMeta =>
   typeof meta.changedElsewhere === 'object' ? { ...meta, changedElsewhere: true } : meta;
+
+/** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
+export const holdsOnlyHere = (fields: DraftFields) =>
+  fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
+
+/** Does the copy go out under another sender than this draft does (its `from`, else the account's own address)? */
+export const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | undefined) => {
+  const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
+  return then !== undefined && now !== undefined && !sameAddress(then, now);
+};
+
+/**
+ * The draft whose upload (not yet recorded) history reports: the Message-ID is the one that upload was made under,
+ * whether it is still running (`uploading`) or was set aside for a newer revision (`wrote`).
+ */
+export function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
+  if (w.internetId === undefined) return undefined;
+  return tx.get<DraftRow>(
+    `SELECT * FROM drafts WHERE account_id = ?
+       AND (json_extract(data, '$._sync.uploading.internetId') = ?
+         OR EXISTS (SELECT 1 FROM json_each(data, '$._sync.wrote') WHERE value = ?)) LIMIT 1`,
+    w.accountId,
+    w.internetId,
+    w.internetId,
+  );
+}

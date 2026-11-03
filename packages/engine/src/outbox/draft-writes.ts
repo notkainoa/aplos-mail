@@ -15,7 +15,6 @@ import {
   abandoned,
   remembered,
   withPrints,
-  sameAddress,
   theirsFields,
   type DraftMeta,
   type DraftRow,
@@ -24,7 +23,10 @@ import {
 import { completes, messageOf } from './draft-body';
 import {
   accountAddress,
+  changesSender,
   explainedByAttempt,
+  holdsOnlyHere,
+  ownUpload,
   sendPins,
   holdersOf,
   dropHeld,
@@ -473,6 +475,11 @@ function keepMine(tx: CommitExtensionTx, row: DraftRow, at: number) {
   const { fields, meta } = parseData(row.data);
   const gone = meta.conflict?.gone === true;
   const theirsId = meta.conflict?.theirsMessageId;
+  // The other version was never shown whole (no body arrived): replacing the copy would overwrite a version nobody has
+  // seen. Like a copy that is gone, the remote ids are forgotten and the upload makes a NEW copy; the other version stays
+  // where it is and is shown if history reports it again.
+  const unseen = !gone && meta.conflict?.complete !== true;
+  const forget = gone || unseen;
   // The remote copy is theirs now, so what this device holds replaces it: its fingerprint no longer applies.
   const next = patched(meta, {
     conflict: null,
@@ -480,14 +487,14 @@ function keepMine(tx: CommitExtensionTx, row: DraftRow, at: number) {
     changedElsewhere: null,
     announce: tx.seq,
   });
-  const due = dueAfter(fields, next, !gone, at, true);
+  const due = dueAfter(fields, next, !forget, at, true);
   // Until the upload lands the copy is theirs: it is not this revision, and our Message-ID does not name it, so a send
   // right now leaves the pinned MIME instead of their copy.
-  const columns: Record<string, SqlValue> = gone
+  const columns: Record<string, SqlValue> = forget
     ? FORGET_REMOTE
     : { synced_revision: null, remote_internet_id: null, remote_change_key: null };
-  // A conflict that named no copy leaves no base: the upload replaces whatever is there, as the owner chose.
-  if (!gone) columns.remote_message_id = theirsId ?? null;
+  // A version the owner has seen whole is replaced on purpose: the upload is checked against it.
+  if (!forget) columns.remote_message_id = theirsId ?? null;
   writeRow(tx, row.id, columns, fields, patched(next, { dueAt: due ?? null }));
 }
 
@@ -618,7 +625,13 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
   const theirs =
     meta.changedElsewhere || (meta.conflict && (row.remote_message_id === null || sentAt(tx, row)));
   const columns = theirs ? FORGET_REMOTE : {};
-  if ((theirs || row.remote_draft_id === null) && !meta.uploading) return deleteHidden(tx, w.id);
+  // The newer version a send held back (`changedElsewhere` as a report) is not lost with the draft: it is shown as the
+  // other device's own draft once this one is gone, instead of staying on the provider unseen.
+  const held = typeof meta.changedElsewhere === 'object' ? meta.changedElsewhere : undefined;
+  if ((theirs || row.remote_draft_id === null) && !meta.uploading) {
+    deleteHidden(tx, w.id);
+    return resurface(tx, held);
+  }
   // Before the copy is known the removal waits for the upload's result, or for history to report the copy.
   const removeAt = row.remote_draft_id !== null && !theirs ? w.at : w.at + DRAFT_REMOVE_GRACE_MS;
   const hidden = patched(meta, {
@@ -633,6 +646,12 @@ export function applyDraftDelete(write: { kind: string }, tx: CommitExtensionTx)
   const assignments = Object.keys(set).map(k => `${k} = ?`);
   tx.run(`UPDATE drafts SET ${assignments.join(', ')} WHERE id = ?`, ...Object.values(set), w.id);
   tx.mark('Draft', w.id, 'd');
+  if (theirs) resurface(tx, held);
+}
+
+/** Shows a held report as a remote draft of its own (a removal report has nothing to show). */
+function resurface(tx: CommitExtensionTx, held: RemoteDraftWrite | undefined) {
+  if (held && !held.removed) insertRemote(tx, held);
 }
 
 // ---------------------------------------------------------------- remote facts
@@ -670,22 +689,6 @@ function insertRemote(tx: CommitExtensionTx, w: RemoteDraftWrite) {
 }
 
 /**
- * The draft whose upload (not yet recorded) history reports: the Message-ID is the one that upload was made under,
- * whether it is still running (`uploading`) or was set aside for a newer revision (`wrote`).
- */
-function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
-  if (w.internetId === undefined) return undefined;
-  return tx.get<DraftRow>(
-    `SELECT * FROM drafts WHERE account_id = ?
-       AND (json_extract(data, '$._sync.uploading.internetId') = ?
-         OR EXISTS (SELECT 1 FROM json_each(data, '$._sync.wrote') WHERE value = ?)) LIMIT 1`,
-    w.accountId,
-    w.internetId,
-    w.internetId,
-  );
-}
-
-/**
  * An upload landed without its result being recorded. A discarded draft's copy is the one to delete; a live draft with
  * no copy yet takes it as its own, so its next upload replaces it instead of making a second one.
  */
@@ -717,18 +720,30 @@ function adoptCopy(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWrite) {
   announce(row.id);
 }
 
-function isEcho(w: RemoteDraftWrite, row: DraftRow, meta: DraftMeta) {
+function isEcho(
+  tx: CommitExtensionTx,
+  w: RemoteDraftWrite,
+  row: DraftRow,
+  meta: DraftMeta,
+  fields: DraftFields,
+) {
   // A removal is never an echo, whatever id it carries (Gmail reports it under the last known one): the other device sent
   // or deleted the copy. Our own removals meet a hidden `removing` row first and never get here.
   if (w.removed) return false;
   const wrote = meta.wrote ?? [];
   // The copy an open conflict names is theirs, whatever Message-ID it carries: it completes the conflict (their body).
   if (meta.conflict?.theirsMessageId === w.remoteMessageId) return false;
+  // The very message id this row holds or wrote is our own copy.
+  if (w.remoteMessageId === row.remote_message_id || wrote.includes(w.remoteMessageId)) return true;
+  // A NEW message id under a Message-ID we used proves nothing by itself: a provider may keep the Message-ID across a
+  // phone edit (Gmail is believed to), and dropping that edit as an echo hides it for good. It is ours only with the
+  // content of an upload this engine made (the running one, a superseded attempt, or the last synced one).
+  const id = w.internetId;
+  if (id === undefined || !(wrote.includes(id) || meta.uploading?.internetId === id)) return false;
+  const own = accountAddress(tx, row.account_id);
   return (
-    w.remoteMessageId === row.remote_message_id ||
-    wrote.includes(w.remoteMessageId) ||
-    (w.internetId !== undefined &&
-      (wrote.includes(w.internetId) || meta.uploading?.internetId === w.internetId))
+    own !== undefined &&
+    (provenOurs(tx, row, meta, fields, w) || holdsOurContent(w, row, meta, fields, own))
   );
 }
 
@@ -919,7 +934,7 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
   // First: our own upload's Message-ID makes `isEcho` true too, but only this moves the base to the new message id.
   if (w.remoteMessageId !== row.remote_message_id && supersedesOwn(tx, w, row, meta, fields))
     return advanceBase(tx, row, meta, w);
-  if (isEcho(w, row, meta)) return;
+  if (isEcho(tx, w, row, meta, fields)) return;
   // A send of this draft (or one that just went out) removes or changes its copy itself. A change made meanwhile cannot
   // be asked about now, but it is remembered: the copy then holds another device's version and is not deleted. That
   // includes a removal (the other device sent it): the id may now name its sent message.
@@ -957,16 +972,6 @@ function editedElsewhere(tx: CommitExtensionTx, row: DraftRow, w: RemoteDraftWri
     return replaceWithTheirs(tx, row, now, theirs.fields, w);
   raise(tx, row, now, fields, w, theirs);
 }
-
-/** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
-const holdsOnlyHere = (fields: DraftFields) =>
-  fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
-
-/** Does the copy go out under another sender than this draft does (its `from`, else the account's own address)? */
-const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | undefined) => {
-  const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
-  return then !== undefined && now !== undefined && !sameAddress(then, now);
-};
 
 /** A `remoteDraft` fact from the provider actor (D9). */
 export function applyRemoteDraft(write: { kind: string }, tx: CommitExtensionTx) {

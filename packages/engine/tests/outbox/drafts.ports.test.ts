@@ -102,7 +102,7 @@ async function retriedCreate(w: World, step: DraftStep = { result: 'conflictExis
   return { draft: d, internetId };
 }
 
-test('gap 4: a copy proven to carry our Message-ID is adopted: keep mine updates it, no second copy', () =>
+test('gap 4: a copy proven to carry our Message-ID is adopted; keep mine, with its body never shown, makes a new copy and leaves it', () =>
   world(async w => {
     const { draft: d, internetId } = await retriedCreate(w);
     const held = row(w, d.id)!;
@@ -119,9 +119,10 @@ test('gap 4: a copy proven to carry our Message-ID is adopted: keep mine updates
     service(w).resolve(next(), d.id, 'keepMine');
     await wait(w, 40 * SEC);
     const third = w.remoteDrafts.saves.at(-1)!;
-    assert.equal(third.remoteDraftId, 'rd1', 'keep mine replaced the copy');
-    assert.equal(third.baseRemoteMessageId, 'msg2');
-    assert.equal(w.remoteDrafts.remote.size, 1, 'no second Gmail draft');
+    // The conflict never showed the other version whole, so it is not overwritten: a NEW copy is made.
+    assert.equal(third.remoteDraftId, undefined, 'a create');
+    assert.equal(third.baseRemoteMessageId, undefined);
+    assert.equal(w.remoteDrafts.remote.size, 2, 'the adopted copy is left alone');
     assert.equal(read(w, d.id).conflict, undefined);
     assert.equal(read(w, d.id).sync, 'synced');
   }));
@@ -173,7 +174,7 @@ test('gap 4: a copy the adapter does not prove is ours is not adopted either', (
     assert.deepEqual(syncOf(w, d.id).wrote ?? [], [], 'nothing remembered');
   }));
 
-test('gap 4: an adopted copy without a message id still serves keep mine (unguarded replace, as the owner chose)', () =>
+test('gap 4: an adopted copy without a message id: keep mine makes a new copy too', () =>
   world(async w => {
     const { draft: d } = await retriedCreate(w, {
       result: 'conflictExisting',
@@ -185,9 +186,9 @@ test('gap 4: an adopted copy without a message id still serves keep mine (unguar
     service(w).resolve(next(), d.id, 'keepMine');
     await wait(w, 1);
     const third = w.remoteDrafts.saves.at(-1)!;
-    assert.equal(third.remoteDraftId, 'rd1');
+    assert.equal(third.remoteDraftId, undefined);
     assert.equal(third.baseRemoteMessageId, undefined);
-    assert.equal(w.remoteDrafts.remote.size, 1);
+    assert.equal(w.remoteDrafts.remote.size, 2);
   }));
 
 for (const omitMessageId of [false, true]) {

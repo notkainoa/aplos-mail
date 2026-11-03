@@ -56,29 +56,26 @@ test('supersedes: our own upload finished, the same content under our Message-ID
 test('supersedes: a phone edit that keeps our Message-ID is NOT our echo when no upload is running and the content differs', () =>
   world(async w => {
     const s = await synced(w);
-    const revision = row(w, s.draft.id)!.revision;
     const phoneId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
     fact(w, s.remoteDraftId, phoneId, echoOf(s, { html: '<p>Dinner at eight instead</p>' }));
+    // The phone's edit keeps our Message-ID, but its content is not ours: it is shown, like any other device's edit.
     const held = row(w, s.draft.id)!;
-    assert.equal(
-      held.remote_message_id,
-      s.messageId,
-      'our base did not move to the phone`s version',
-    );
-    assert.equal(held.revision, revision);
-    // Our next upload is still checked against the version we wrote, so the provider answers conflict.
+    assert.equal(held.remote_message_id, phoneId, 'the draft now holds the phone`s version');
+    assert.match(read(w, s.draft.id).html, /Dinner at eight instead/);
+    assert.equal(read(w, s.draft.id).conflict, undefined, 'a clean draft takes it silently');
+    // Our next upload is checked against that version, which the owner has seen, and goes through.
     edit(w, read(w, s.draft.id), fields({ subject: 'Mine' }), true);
     await wait(w, 1);
-    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, s.messageId);
-    assert.ok(read(w, s.draft.id).conflict, 'the phone`s edit is asked about, not overwritten');
-    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)!.messageId, phoneId, 'and still there');
+    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, phoneId);
+    assert.equal(read(w, s.draft.id).conflict, undefined);
   }));
 
 test('supersedes: a changed subject under our Message-ID is not our echo either', () =>
   world(async w => {
     const s = await synced(w);
     fact(w, s.remoteDraftId, 'msg-new', echoOf(s, { subject: 'Changed on the phone' }));
-    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg-new', 'shown as the phone`s edit');
+    assert.equal(read(w, s.draft.id).subject, 'Changed on the phone');
   }));
 
 test('supersedes: with no body to compare, a finished upload`s Message-ID alone does not move the base', () =>
@@ -191,7 +188,9 @@ test('supersedes: our Message-ID on a fact that does not replace our base moves 
     );
     g.open();
     await wait(w, 1);
-    assert.equal(read(w, s.draft.id).conflict, undefined);
+    // A report with no body under our running upload's Message-ID is not proof of our own copy: the draft was edited
+    // meanwhile, so the owner is asked rather than the report guessed at.
+    assert.ok(read(w, s.draft.id).conflict);
   }));
 
 test('supersedes: a running upload explains a fact only by its content; a phone edit that keeps the Message-ID afterwards is not ours', () =>
@@ -222,9 +221,11 @@ test('supersedes: a running upload explains a fact only by its content; a phone 
       'msg-c',
       "the phone's edit did not move the base",
     );
-    // The retry (same revision, same Message-ID) goes out against C, never D.
+    // The phone's edit is shown to the owner as a conflict (it is no echo), and nothing is uploaded over it.
+    assert.ok(read(w, s.draft.id).conflict);
+    const saves = w.remoteDrafts.saves.length;
     await wait(w, 5 * 60 * SEC);
-    assert.equal(w.remoteDrafts.saves.at(-1)!.baseRemoteMessageId, 'msg-c');
+    assert.equal(w.remoteDrafts.saves.length, saves, 'no retry goes out over the phone`s version');
   }));
 
 test('supersedes: after a retry has started, a phone edit under the same Message-ID still does not move the base', () =>
@@ -400,7 +401,9 @@ test('supersedes: a finished upload (last synced fingerprint) with a Bcc-only di
       ...echoOf(s),
       bcc: [{ address: 'hidden@mail.example' }],
     });
-    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+    // Not our copy: shown (the draft holds nothing only-local, so the phone's version replaces it).
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg-new');
+    assert.deepEqual(read(w, s.draft.id).bcc, [{ address: 'hidden@mail.example' }]);
   }));
 
 /** A clean synced draft that holds something no copy carries, then a phone edit that delivers its body. */
