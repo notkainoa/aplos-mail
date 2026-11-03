@@ -9,6 +9,7 @@ import { Summary } from '../reader/Summary';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
+import { Icon } from './internal/Icon';
 import { formatFull, formatListDate } from './internal/format';
 import { keycapFor, tooltipText } from './internal/keys';
 
@@ -42,6 +43,11 @@ export function FocusLetter({
       data-picked={picked ? 'true' : undefined}
       data-state={rejected ? 'rejected' : undefined}
     >
+      {picked ? (
+        <span className="ui-focus-letter__pick" aria-hidden="true">
+          <Icon name="check" size="xs" />
+        </span>
+      ) : null}
       <div className="ui-focus-letter__meta">
         <span className="ui-focus-letter__sender" dir="auto">
           {sender}

@@ -53,7 +53,12 @@ function OneByOneBody(props: OneByOneScreenProps) {
   // Until the walk has read Do now, show nothing: never a skeleton.
   if (view.failed) return <ListFailed />;
   if (!view.ready) return null;
-  if (view.finished) return <OneByOneFinish nothing={view.nothingToWalk} onBack={view.exit} />;
+  if (view.finished)
+    return (
+      <div className="aplos-one-by-one" data-screen="one-by-one">
+        <OneByOneFinish nothing={view.nothingToWalk} onBack={view.exit} />
+      </div>
+    );
   if (!row) return null;
   return (
     <div className="aplos-one-by-one" data-screen="one-by-one">
