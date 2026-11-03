@@ -119,11 +119,12 @@ function listContents(list: ArrayLike<unknown>, room: number): Contents | undefi
 /**
  * An array's slots plus any named own property (JSON drops those; the structured clone copies them). Only the slots
  * that exist are listed and visited, by key, so a sparse array costs what it holds: a hole is JSON's `null` (4 bytes,
- * counted from the length) with no entry, and `a[99_990] = 0` is one entry, not 100,000. A length past
- * `MAX_MEASURED_NODES` is refused before any key is read.
+ * counted from the length) with no entry, and `a[99_990] = 0` is one entry, not 100,000. A length past the
+ * room left (or `MAX_MEASURED_NODES`) is refused before any key is read.
  */
 function arrayContents(list: unknown[], room: number, bytesLeft: number): Contents | undefined {
-  if (list.length > MAX_MEASURED_NODES) return undefined;
+  // The room is checked on the length first: a longer array is refused before any key is built (`for...in` builds every index key of a dense array).
+  if (list.length > Math.min(room, MAX_MEASURED_NODES)) return undefined;
   const keys = ownKeys(list, room, () => true);
   if (!keys) return undefined;
   const slots = keys.filter(isIndex);

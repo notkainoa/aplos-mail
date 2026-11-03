@@ -443,6 +443,7 @@ test('quit with an engine whose kill throws: no uncaught error, the exit wait st
 test('an engine that never answers ready and whose kill throws is not an uncaught error either', async () => {
   const engine = stuckLink({ killThrows: true });
   const timers = manualTimers();
+  const failures: unknown[] = [];
   const supervisor = createEngineSupervisor({
     spawn: () => ({ ...engine.link, ready: new Promise(() => undefined) }),
     noteExit: () => false,
@@ -450,10 +451,12 @@ test('an engine that never answers ready and whose kill throws is not an uncaugh
     onDown: () => undefined,
     timers,
     readyTimeoutMs: 1000,
+    onKillFailed: error => void failures.push(error),
   });
   void supervisor.start().catch(() => undefined);
   timers.advance(1000);
   assert.equal(engine.kills(), 1, 'killed at the timeout, and the throw did not escape the timer');
+  assert.equal(failures.length, 1, 'the failed kill was reported, not swallowed silently');
 });
 
 /** The source of a main-process module, for the guards that cannot run Electron here. */

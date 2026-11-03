@@ -495,14 +495,17 @@ export interface SupervisorOptions {
    * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
    */
   readyTimeoutMs?: number;
+  /** A kill threw (the OS refused): tell someone, since an engine that never becomes ready then leaves `start` waiting. */
+  onKillFailed?(error: unknown): void;
 }
 
 /** Kills an engine; a kill that throws is no uncaught error in main: the exit wait that follows still decides. */
-function stop(link: EngineLink): void {
+function stop(link: EngineLink, onKillFailed?: (error: unknown) => void): void {
   try {
     link.kill();
-  } catch {
+  } catch (error) {
     // The process may already be gone, or the OS refused; the caller waits for the exit event either way.
+    onKillFailed?.(error);
   }
 }
 
@@ -532,7 +535,10 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    const timer = options.timers.set(() => stop(link), options.readyTimeoutMs ?? 60_000);
+    const timer = options.timers.set(
+      () => stop(link, options.onKillFailed),
+      options.readyTimeoutMs ?? 60_000,
+    );
     try {
       await link.ready;
     } finally {
@@ -564,7 +570,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
           resolve('exited');
         });
         timer = options.timers.set(() => {
-          stop(link);
+          stop(link, options.onKillFailed);
           timer = options.timers.set(
             () => resolve('stuck'),
             options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,

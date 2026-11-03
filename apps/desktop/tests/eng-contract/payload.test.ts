@@ -473,17 +473,32 @@ test('payload: a window message with more than MAX_WINDOW_NODES values is refuse
 test('a hole in an array costs 4 bytes and no entry, so a sparse array is counted by its length, never walked', () => {
   const sparse: unknown[] = [];
   sparse[99_990] = 0;
-  // A bound of ten values: one entry per slot (the old code) would refuse it; holes are free.
-  const size = messageBytes({ sparse }, MAX_ARGS_BYTES, 10);
+  // Room for the slots: the length must fit the node bound, but the holes are not walked or counted as entries.
+  const size = messageBytes({ sparse }, MAX_ARGS_BYTES, MAX_WINDOW_NODES);
   assert.equal(size, Buffer.byteLength(JSON.stringify({ sparse })), 'a hole is JSON null');
   // The slots still count as bytes: a sparse array cannot hide behind its few real values.
   const wide: unknown[] = [];
   wide[MAX_WINDOW_NODES - 1] = 0;
-  assert.ok(messageBytes({ wide }, 600_000, 10) < 600_000);
-  assert.equal(messageBytes({ wide }, 400_000, 10), Number.POSITIVE_INFINITY, '4 bytes a hole');
+  assert.ok(messageBytes({ wide }, 600_000, MAX_WINDOW_NODES + 10) < 600_000);
+  assert.equal(
+    messageBytes({ wide }, 400_000, MAX_WINDOW_NODES + 10),
+    Number.POSITIVE_INFINITY,
+    '4 bytes a hole',
+  );
   // A length past the bound is refused on the length alone, before any slot is read.
   const huge = new Array(1_000_000_000);
   assert.equal(messageBytes({ huge }, MAX_ARGS_BYTES, MAX_WINDOW_NODES), Number.POSITIVE_INFINITY);
+  // An array longer than the room left is refused on its length before any key is built, dense or not (a 600,000
+  // zeros array used to cost 60 ms and 35 MB of keys before the refusal).
+  let keyed = 0;
+  const longRun = new Proxy(new Array<number>(600_000).fill(0), {
+    ownKeys: target => (keyed++, Reflect.ownKeys(target)),
+  });
+  assert.equal(
+    messageBytes({ longRun }, MAX_ARGS_BYTES, MAX_WINDOW_NODES),
+    Number.POSITIVE_INFINITY,
+  );
+  assert.equal(keyed, 0, 'no key of the long array was listed');
   // Named properties on a sparse array are still found and counted.
   const named: unknown[] & { note?: string } = [];
   named[5] = 1;
