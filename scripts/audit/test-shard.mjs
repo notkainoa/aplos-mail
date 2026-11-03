@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Unit-test sharding for CI. Usage:
-//   node scripts/audit/test-shard.mjs <workspace-dir> <shard>/<of> [--run]
-// Reads <workspace-dir>/package.json, takes the glob patterns after `--test` in scripts.test,
+//   node scripts/audit/test-shard.mjs <workspace-dir> <shard>/<of> [--script <name>] [--run]
+// Reads <workspace-dir>/package.json, takes the glob patterns after `--test` in scripts.test (or scripts.<name> with --script),
 // expands them the way the test runner does, sorts the file list and keeps the files of one
 // deterministic shard (every of-th file, starting at index shard - 1). Without --run the
 // shard's files print one per line; with --run the workspace's own test command runs on just
@@ -23,15 +23,15 @@ export function shellWords(command) {
   return words;
 }
 
-/** The argv of a `scripts.test` command: runner words up to --test, then the glob patterns. */
-export function testCommand(packageJson) {
-  const command = packageJson?.scripts?.test;
-  if (typeof command !== 'string') throw new Error('package.json has no scripts.test');
+/** The argv of a `scripts.<script>` command (default test): runner words up to --test, then the glob patterns. */
+export function testCommand(packageJson, script = 'test') {
+  const command = packageJson?.scripts?.[script];
+  if (typeof command !== 'string') throw new Error(`package.json has no scripts.${script}`);
   const words = shellWords(command);
   const at = words.indexOf('--test');
-  if (at === -1) throw new Error(`scripts.test has no --test flag: ${command}`);
+  if (at === -1) throw new Error(`scripts.${script} has no --test flag: ${command}`);
   const patterns = words.slice(at + 1);
-  if (patterns.length === 0) throw new Error(`scripts.test has no patterns: ${command}`);
+  if (patterns.length === 0) throw new Error(`scripts.${script} has no patterns: ${command}`);
   return { runner: words.slice(0, at + 1), patterns };
 }
 
@@ -64,19 +64,38 @@ export function parseShard(text) {
 }
 
 /** The sorted file list of one shard of a workspace's scripts.test. */
-export function shardFiles(dir, shard, of) {
+export function shardFiles(dir, shard, of, script = 'test') {
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-  const { patterns } = testCommand(pkg);
+  const { patterns } = testCommand(pkg, script);
   return partition(listTestFiles(dir, patterns), of)[shard - 1];
+}
+
+function scriptName(value) {
+  if (value === undefined || value.startsWith('--'))
+    throw new Error('--script needs a script name');
+  return value;
+}
+
+/** Splits argv into the --run flag, the --script <name> option and the positional arguments. */
+export function parseArgs(args) {
+  const positional = [];
+  let run = false;
+  let script = 'test';
+  for (let at = 0; at < args.length; at++) {
+    if (args[at] === '--run') run = true;
+    else if (args[at] === '--script') script = scriptName(args[++at]);
+    else positional.push(args[at]);
+  }
+  return { run, script, positional };
 }
 
 function main() {
   const args = process.argv.slice(2);
-  const run = args.includes('--run');
-  const [dir = '.', shardText] = args.filter(arg => arg !== '--run');
+  const { run, script, positional } = parseArgs(args);
+  const [dir = '.', shardText] = positional;
   const { shard, of } = parseShard(shardText);
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-  const { runner, patterns } = testCommand(pkg);
+  const { runner, patterns } = testCommand(pkg, script);
   const all = listTestFiles(dir, patterns);
   const files = partition(all, of)[shard - 1];
   if (!run) {

@@ -31,3 +31,19 @@ One STATUS line: `NOTICE | prov-<lane> | live-run <tier> at <sha>: <pass or fail
 ## Never
 
 No mail to any address but the account's own. No permanent delete, emptying Trash, unsubscribe, RSVP or attendee. No settings change. Nothing on the owner's main account; those checks are the owner's own, by hand, on days 14 to 16.
+
+## Probe: `gmail.auth-results-shape` (tier R, no write)
+
+Checks the assumptions of the #180 `Authentication-Results` parser (`google/list-auth.ts`) on real mail. It lists up to 200 recent Inbox messages, reads each one as metadata (`Authentication-Results`, `DKIM-Signature`, `List-Unsubscribe`, `List-Unsubscribe-Post`, `From` only) and keeps counts of structure, never a header value, address, subject or id. About 4,000 units, paced under the 3,000 a minute limit (a couple of minutes).
+
+Command (from the repo root, on the commit under test): `npx tsx apps/desktop/scripts/live/run.ts --provider gmail --tier R --account agent --expect-sha <40-char sha>`. It runs with the other tier R probes.
+
+What the evidence lines mean (all counts; `...Max`/`...Min` are the largest/smallest seen):
+
+- `withAuthResults` / `withoutAuthResults` / `severalAuthResults`: messages with the header, without it, with more than one.
+- `googleParsed` / `notGoogleOrMalformed`: the strict parser accepted the header / refused it. `notTokenizable` (an unterminated comment or quote) and `foreignAuthservId` (the topmost header is not `mx.google.com`) say why the loose reading found nothing.
+- `shapeExpected` / `shapeUnexpected`: the method kinds, read loosely, are in Google's order (dkim, arc, spf, dmarc) or not. `arcBeforeDkim`, `spfBeforeDkim`, `dmarcBeforeSpf` name the broken pairs; `withDara` and `withUnknownMethod` count methods outside those four.
+- `noDkimResult`, `severalDkimResults`, `dkimResultsMax`: how many dkim results a header carries.
+- `headerBMin`, `headerBMax`, `headerBNotEight`, `dkimNoHeaderB`: the length of `header.b` (the parser assumes 8 characters) and how often it is missing or another length.
+- `withQuote`, `withNestedParens`, `commentsMax`: quotes in the value, nesting deeper than one parenthesis, most comments in one header.
+- `authTrue` / `authFalse` / `authUnknown` / `authNotJudged`: the real `listAuthenticated` verdict for mail with List-Unsubscribe; `authUnknown` is no `Authentication-Results` at all; `authNotJudged` is mail without List-Unsubscribe (the app does not judge it). `falseNotGoogle`, `falseNoListPair` (List-Unsubscribe and -Post not exactly once each), `falseNoFromDomain`, `falseOther` split the `false` ones.
