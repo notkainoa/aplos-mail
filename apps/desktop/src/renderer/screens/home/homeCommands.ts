@@ -32,6 +32,7 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.laneUp': run(() => actions.lane('up')),
     'mail.trash': run(() => actions.trash()),
     'mail.bookmark': run(() => actions.bookmark()),
+    'mail.why': run(extra.why),
     'mail.suggested': run(() => actions.suggested()),
     'mail.open': run(() => actions.open()),
     'home.clearFromHome': run(() => actions.clearFromHome()),
@@ -46,6 +47,8 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
 export interface HomeExtras {
   readonly oneByOne: () => void;
   readonly more: () => void;
+  /** I: "Why it's here" for the row under the cursor. */
+  readonly why: () => void;
   readonly undo: () => void;
 }
 

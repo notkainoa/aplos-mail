@@ -3,7 +3,7 @@
  * still while keys or the pointer are at work, and routes every key through the CommandRegistry. The list itself is
  * `HomeList`; the empty states are `HomeEmpty`. Later, the lists and Done are the next round.
  */
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import {
   useAccounts,
   useAccountsLoaded,
@@ -20,8 +20,8 @@ import {
 } from '../../data';
 import { toSyncStatus } from '../../shell/status-map';
 import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shell';
-import { CommitChip, CommitEdge } from '../../ui/list';
 import { statusCopy } from '../../ui/status';
+import { CommitTemplates } from '../CommitTemplates';
 import { ListFailed } from '../lists/ListStates';
 import { Reopenable } from '../lists/Reopenable';
 import { accountsAreKnown, HomeEmpty } from './HomeStates';
@@ -33,6 +33,7 @@ import {
   type HomeListHandlers,
 } from './HomeList';
 import { HomeOverlays } from './HomeOverlays';
+import type { WhyTarget } from './WhyHost';
 import type { HomeSnapshot, OpenHow } from './homeActions';
 import { homeRunContext } from './homeCommands';
 import { buildItems, orderLayout, type HomeLayout } from './homeModel';
@@ -54,7 +55,6 @@ export interface HomeScreenProps {
 }
 
 const SETTLING_STATES: readonly string[] = ['backfilling', 'paused'];
-const COMMIT_KINDS = ['done', 'later', 'trash'] as const;
 
 function ignore(): void {
   return undefined;
@@ -103,24 +103,6 @@ function usePointerHold(hold: HoldController) {
   return { onPointerMove, onPointerLeave };
 }
 
-/** The hidden chip and edge the motion clones onto a leaving letter. */
-function CommitTemplates({ forwardedRef }: { forwardedRef: RefObject<HTMLDivElement | null> }) {
-  return (
-    <div ref={forwardedRef} hidden aria-hidden="true">
-      {COMMIT_KINDS.map(kind => (
-        <span key={`chip-${kind}`} data-part="chip" data-kind={kind}>
-          <CommitChip kind={kind} />
-        </span>
-      ))}
-      {COMMIT_KINDS.map(kind => (
-        <span key={`edge-${kind}`} data-part="edge" data-kind={kind}>
-          <CommitEdge kind={kind} />
-        </span>
-      ))}
-    </div>
-  );
-}
-
 /** Keeps the cursor row in view as it moves. */
 function useScrollToCursor(key: string | null): void {
   useEffect(() => {
@@ -163,6 +145,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
 
   const [lowOpen, setLowOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [why, setWhy] = useState<WhyTarget | null>(null);
   const templates = useRef<HTMLDivElement>(null);
   const motionCommit = useHomeMotion(hold, templates);
   const target = useCurrentTarget();
@@ -199,6 +182,13 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     const dom = activeDomId(snapshot.current.key);
     setMenuAnchor(dom ? document.getElementById(dom) : null);
   }, []);
+  const openWhy = useCallback(() => {
+    const { key, items } = snapshot.current;
+    const dom = activeDomId(key);
+    const anchor = dom ? document.getElementById(dom) : null;
+    const onRow = items.some(item => item.kind === 'row' && item.id === key);
+    if (anchor && key !== null && onRow) setWhy({ id: key, anchor });
+  }, []);
   const oneByOne = onOneByOne ?? ignore;
   const { actions, remindOffer } = useHomeActions({
     snapshot,
@@ -211,6 +201,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     oneByOne,
     openMore,
     openDatePicker: datePicker.open,
+    why: openWhy,
   });
   keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
   useShellKeyLayer({
@@ -275,6 +266,9 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
         cursorKey={cursor.key}
         onOpen={onOpen ?? ignore}
         actions={actions}
+        why={why}
+        onWhy={openWhy}
+        onCloseWhy={() => setWhy(null)}
       />
     </div>
   );

@@ -99,6 +99,10 @@ export interface ListRowContext extends Omit<RowContext, 'layout'> {
   readonly config: ListConfig;
   /** The clock, for the Later chip's overdue flag. */
   readonly nowMs?: number;
+  /** This row is in the bulk pick (`--accent-wash`). */
+  readonly picked?: boolean;
+  /** A bulk pick is under way, so every row shows its pick box. */
+  readonly picking?: boolean;
 }
 
 /** When a Later thread comes back: a moment (overdue once it has passed) or Someday. */
@@ -108,7 +112,10 @@ export function laterUntilOf(row: ThreadRow, nowMs: number): LaterUntil {
   return { kind: 'at', at: toIsoDateTime(at), overdue: at < nowMs };
 }
 
-function draftProps(draft: Draft, context: ListRowContext): ListRowProps {
+/** A row before the bulk pick state is added: `listRowPropsFor` adds it for every kind at once. */
+type UnpickedProps = Omit<ListRowProps, 'picked' | 'picking'>;
+
+function draftProps(draft: Draft, context: ListRowContext): UnpickedProps {
   return {
     id: context.domId,
     layout: context.config.layout,
@@ -120,15 +127,13 @@ function draftProps(draft: Draft, context: ListRowContext): ListRowProps {
     marks: { attachment: draft.attachments.length > 0 },
     showAccountDot: false,
     cursor: context.cursor,
-    picked: false,
-    picking: false,
     hoverActions: context.config.hoverActions,
     rejected: context.rejected,
     ...context.handlers,
   };
 }
 
-function submissionProps(submission: Submission, context: ListRowContext): ListRowProps {
+function submissionProps(submission: Submission, context: ListRowContext): UnpickedProps {
   const at = submission.sentAt ?? submission.notBefore;
   return {
     id: context.domId,
@@ -140,8 +145,6 @@ function submissionProps(submission: Submission, context: ListRowContext): ListR
     date: toIsoDateTime(at),
     showAccountDot: false,
     cursor: context.cursor,
-    picked: false,
-    picking: false,
     hoverActions: context.config.hoverActions,
     rejected: context.rejected,
     ...context.handlers,
@@ -154,7 +157,7 @@ function doneStampOf(row: ThreadRow): ListRowProps['doneAt'] {
   return at === undefined ? undefined : toIsoDateTime(at);
 }
 
-function threadProps(row: ThreadRow, context: ListRowContext): ListRowProps {
+function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
   const { config } = context;
   const base = listRowProps(row, { ...context, layout: config.layout });
   const who = config.kind === 'sent' ? recipientsOfThread(row) : base.sender;
@@ -171,9 +174,10 @@ function threadProps(row: ThreadRow, context: ListRowContext): ListRowProps {
 
 /** Everything `ListRow` needs for one row of this list. */
 export function listRowPropsFor(row: ListRowData, context: ListRowContext): ListRowProps {
-  if (isDraft(row)) return draftProps(row, context);
-  if (isSubmission(row)) return submissionProps(row, context);
-  return threadProps(row, context);
+  const picks = { picked: context.picked ?? false, picking: context.picking ?? false };
+  if (isDraft(row)) return { ...draftProps(row, context), ...picks };
+  if (isSubmission(row)) return { ...submissionProps(row, context), ...picks };
+  return { ...threadProps(row, context), ...picks };
 }
 
 /** The cursor target the palette's first line names. */

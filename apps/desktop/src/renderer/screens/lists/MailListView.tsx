@@ -4,12 +4,14 @@
  * the destructive verbs. Presentational over `MailListState`: every change goes out through its actions.
  */
 import { useNow } from '../../data';
+import { CommitTemplates } from '../CommitTemplates';
 import { ListBox, ListGroup, ListRow } from '../../ui/list';
 import type { ListboxBinding } from '../../ui/props';
 import { failurePhrase } from '../home/homeRows';
 import type { ListActions } from './listActions';
 import { groupByDate } from './listModel';
 import { dateMsOf, listRowPropsFor } from './listRows';
+import { BulkMenu } from './BulkMenu';
 import { ListConfirm, ListEmpty, ListFailed } from './ListStates';
 import { rowDomId, type MailListState } from './useMailList';
 
@@ -55,6 +57,8 @@ export function Row({ list, id, nowMs, onAction }: RowProps) {
         density: list.density,
         cursor: cursor.key === id,
         accounts: list.accounts,
+        picked: list.bulk.selection.picked.has(id),
+        picking: list.bulk.picking,
         rejected,
         handlers: {
           onSelect: () => cursor.setCursor(id),
@@ -110,9 +114,11 @@ export function MailListView({ list }: { readonly list: MailListState }) {
   };
   return (
     <div className="aplos-list-column" data-screen={config.kind} {...pointer}>
-      <ListBox binding={binding}>
+      <ListBox binding={binding} multiselectable={list.bulk.picking}>
         {config.dateGroups ? <Groups list={list} /> : <Rows list={list} ids={list.ids} />}
       </ListBox>
+      <CommitTemplates forwardedRef={list.templates} />
+      <BulkMenu menu={list.bulkMenu} />
       {confirmation ? (
         <ListConfirm
           confirmation={confirmation}

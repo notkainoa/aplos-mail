@@ -1,0 +1,33 @@
+/* The one-by-one view (DESIGN 7.2): one focus letter at a time, centred in the pane's reading column. No card chrome
+   beyond the letter itself. The letter arrives with a short fade (`swap`); reduced motion shortens it via the tokens. */
+.aplos-one-by-one {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  /* The header sits above the content; the extra space under the letter lifts it a little above centre. */
+  padding: var(--pane-head) 0 var(--space-10);
+}
+
+.aplos-one-by-one__stage {
+  box-sizing: border-box;
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  animation: aplos-one-by-one-in var(--dur-swap) var(--ease-out) both;
+}
+
+@keyframes aplos-one-by-one-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* "Why it's here" could not be read: one line inside the popover. */
+.aplos-why-failed {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}

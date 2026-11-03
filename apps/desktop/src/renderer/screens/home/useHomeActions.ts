@@ -42,6 +42,11 @@ export interface HomeActionInputs {
   readonly openDatePicker: (id: ThreadId) => void;
 }
 
+/** Home's inputs, and the ⋯ menu's "Why it's here" (I). */
+export interface HomeKeyInputs extends HomeActionInputs {
+  readonly why: () => void;
+}
+
 /** What the screen reads back: the thread a Remind toast is offering (so R is live), and the actions. */
 export interface HomeActionState {
   readonly actions: HomeActions;
@@ -71,8 +76,11 @@ function undoLabelOf(registry: Registry, commandId: string, fallback: string): s
   return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
 }
 
-/** The actions for one mounted Home, attached to `registry` until it unmounts. */
-export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
+/**
+ * The actions for one mounted screen and the Remind offer they raise, with no keys attached: Home attaches its own
+ * table (`useHomeActions`), the one-by-one view another (`commandsForOneByOne`).
+ */
+export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
   const { registry } = useShellRegistry();
   const latest = useRef(inputs);
   useEffect(() => {
@@ -118,19 +126,27 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
     return createHomeActions(deps);
   }, [registry]);
 
-  const { oneByOne, openMore } = inputs;
+  return { actions, remindOffer };
+}
+
+/** The actions for one mounted Home, with Home's keys attached to the registry until it unmounts. */
+export function useHomeActions(inputs: HomeKeyInputs): HomeActionState {
+  const state = useHomeActionState(inputs);
+  const { actions } = state;
+  const { oneByOne, openMore, why } = inputs;
   const table = useMemo(
-    () => commandsForHome(actions, { oneByOne, more: openMore, undo: () => undoLast(actions) }),
-    [actions, oneByOne, openMore],
+    () =>
+      commandsForHome(actions, { oneByOne, more: openMore, why, undo: () => undoLast(actions) }),
+    [actions, oneByOne, openMore, why],
   );
   useRegisterCommands(table);
-  return { actions, remindOffer };
+  return state;
 }
 
 const EMPTY: HomeSnapshot = { items: [], key: null, rowOf: () => undefined, state: null };
 
 /** Z: undoes the newest change; if it was the operation behind the live reminder offer, the offer ends with it. */
-function undoLast(actions: HomeActions): void {
+export function undoLast(actions: HomeActions): void {
   const outcome = undoStack.undoLast();
   if (outcome?.kind === 'operation') actions.undone(outcome.opId);
 }
