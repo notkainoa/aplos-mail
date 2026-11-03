@@ -144,6 +144,7 @@ function LetterSlot(
           more: 'list.more',
         }}
         demoted={demoted}
+        picked={props.picked.has(row.id)}
         rejected={rejected}
         onSuggestion={handlers.suggested}
         onLater={handlers.later}
