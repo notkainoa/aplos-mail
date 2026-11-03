@@ -403,7 +403,8 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
  * message without labelIds may be a draft; one `drafts.list` (5 units) settles every such message, finds the drafts
  * deleted or sent elsewhere, and maps message ids to draft ids. It runs only when the page touches a draft. The list is
  * paged to its end (`DRAFT_LIST_PAGES`); a draft is reported `removed` only when the listing is complete AND a
- * `drafts.get` answers 404 for it (`retainedDrafts`): a partial or racing listing never deletes a draft that exists.
+ * `drafts.get` answers 404 for it (`retainedDrafts`; a draft in Trash counts as gone, `drafts.list` hides it): a partial or racing listing never deletes
+ * a draft that exists.
  */
 function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>): boolean {
   const { added, undrafted, deleted } = changes;
@@ -433,7 +434,7 @@ async function settleDrafts(
   changes: PageChanges,
   draftMap: Map<string, string>,
   current: Map<string, string>,
-  retained: ReadonlySet<string>,
+  { retained, rotate }: Retained,
   now: number,
 ): Promise<{ drafts: RemoteDraftFact[]; nextDraftMap: Map<string, string> }> {
   const { added, deleted } = changes;
@@ -454,6 +455,12 @@ async function settleDrafts(
         changedAt: now,
         removed: true,
       });
+  }
+  // A draft just confirmed alive goes to the back of the line, so the next pass checks the others first.
+  for (const [messageId, draftId] of [...nextDraftMap]) {
+    if (!rotate.has(draftId)) continue;
+    nextDraftMap.delete(messageId);
+    nextDraftMap.set(messageId, draftId);
   }
   // A draft copy this device wrote (`drafts.remote_message_id`) is Aplos's own save, not news; any other message id on
   // a draft is a phone draft or an edit made elsewhere, which the engine reconciles (ARCH 7.4, FR-26).
@@ -684,12 +691,12 @@ export async function historyStep(
 
   const draftMap = readDraftMap(ctx.memory);
   let current: Map<string, string> | undefined; // message id -> draft id, as Gmail has them now
-  let retained: ReadonlySet<string> = new Set();
+  let retained: Retained = { retained: new Set(), rotate: new Set() };
   try {
     if (needsDrafts(changes, draftMap)) {
       const listing = await listDrafts(client, step);
       current = listing.current;
-      retained = await retainedDrafts(client, step, draftMap, listing);
+      retained = await retainedDrafts(client, step, draftMap, listing, changes.deleted);
     }
   } catch (error) {
     if (isStop(error)) return untouched(state, client.spent);
@@ -788,8 +795,10 @@ function regainedList(
 
 /** At most this many `drafts.list` pages (500 drafts each, 5 units each) are read in one pass. */
 export const DRAFT_LIST_PAGES = 20;
-/** At most this many missing drafts are confirmed with a `drafts.get` in one pass; the rest stay tracked. */
+/** At most this many missing drafts are checked with a `drafts.get` in one pass; the rest stay tracked. */
 export const DRAFT_CONFIRMS = 10;
+/** Missing drafts whose message this very page deleted are checked first and have their own, larger bound. */
+export const DRAFT_DELETED_CONFIRMS = 50;
 
 interface DraftListing {
   /** message id -> draft id, as Gmail has them now. */
@@ -826,38 +835,71 @@ async function listDrafts(client: GmailClient, step: PlannedStep): Promise<Draft
   return { current, complete: false };
 }
 
+/** The drafts that stay tracked this pass (`retained`) and the ones just seen alive (`rotate`, moved to the back). */
+interface Retained {
+  retained: ReadonlySet<string>;
+  rotate: ReadonlySet<string>;
+}
+
 /**
  * The tracked drafts that must NOT be reported `removed` this pass: all of them when the listing is incomplete, and,
- * for a complete one, every missing draft that still answers `drafts.get` (a listing can skip an item when drafts change
- * while it is paged) or that is past the `DRAFT_CONFIRMS` bound (it is confirmed on a later pass that touches a draft).
- * Only a 404 proves a draft gone; any other failure keeps it tracked and a pause (429) stops the step.
+ * for a complete one, every missing draft that still answers `drafts.get` as a live draft (a listing can skip an item
+ * when drafts change while it is paged) or that is past the bounds (`DRAFT_DELETED_CONFIRMS` for those this page deleted, `DRAFT_CONFIRMS` for the rest). Gone is: a 404 with Gmail's
+ * `notFound` reason, or a draft that is in Trash, sent or no longer a draft (`drafts.list` hides trashed drafts, but
+ * `drafts.get` still answers 200 for them). Missing drafts whose message this page deleted are checked first, then the
+ * least recently checked (a draft seen alive moves to the back of the tracked map), so every draft gets its turn. Any
+ * other failure keeps the draft tracked and a pause (429) stops the step.
  */
 async function retainedDrafts(
   client: GmailClient,
   step: PlannedStep,
   draftMap: ReadonlyMap<string, string>,
   { current, complete }: DraftListing,
-): Promise<Set<string>> {
+  deleted: ReadonlySet<string>,
+): Promise<Retained> {
   const listed = new Set(current.values());
+  const hot = new Set<string>();
+  for (const [messageId, draftId] of draftMap) if (deleted.has(messageId)) hot.add(draftId);
   const missing = [...new Set(draftMap.values())].filter(id => !listed.has(id));
-  if (!complete) return new Set(missing);
-  const retained = new Set(missing.slice(DRAFT_CONFIRMS));
-  for (const draftId of missing.slice(0, DRAFT_CONFIRMS)) {
-    try {
-      await client.call({
-        method: 'gmail.drafts.get',
-        path: `/drafts/${encodeURIComponent(draftId)}`,
-        fields: 'id',
-        lane: step.lane,
-        item: draftId,
-      });
-      retained.add(draftId);
-    } catch (error) {
-      if (isStop(error)) throw error;
-      if (!(error instanceof ProviderError && error.error.status === 404)) retained.add(draftId);
-    }
+  if (!complete) return { retained: new Set(missing), rotate: new Set() };
+  const order = [
+    ...missing.filter(id => hot.has(id)).slice(0, DRAFT_DELETED_CONFIRMS),
+    ...missing.filter(id => !hot.has(id)).slice(0, DRAFT_CONFIRMS),
+  ];
+  const retained = new Set(missing.filter(id => !order.includes(id)));
+  const rotate = new Set<string>();
+  for (const draftId of order) {
+    const verdict = await draftVerdict(client, step, draftId);
+    if (verdict === 'gone') continue;
+    retained.add(draftId);
+    if (verdict === 'alive') rotate.add(draftId);
   }
-  return retained;
+  return { retained, rotate };
+}
+
+/** What `drafts.get` says about a draft: gone (proved), alive (a live draft) or unknown (an error that proves nothing). */
+async function draftVerdict(
+  client: GmailClient,
+  step: PlannedStep,
+  draftId: string,
+): Promise<'gone' | 'alive' | 'unknown'> {
+  try {
+    const reply = await client.call<{ message?: { labelIds?: string[] } }>({
+      method: 'gmail.drafts.get',
+      path: `/drafts/${encodeURIComponent(draftId)}`,
+      fields: 'id,message(labelIds)',
+      lane: step.lane,
+      item: draftId,
+    });
+    const labels = reply.message?.labelIds;
+    if (!Array.isArray(labels)) return 'unknown';
+    const live = labels.includes('DRAFT') && !labels.includes('TRASH') && !labels.includes('SENT');
+    return live ? 'alive' : 'gone';
+  } catch (error) {
+    if (isStop(error)) throw error;
+    const proved = error instanceof ProviderError && error.error.status === 404;
+    return proved && error.error.reason === 'notFound' ? 'gone' : 'unknown';
+  }
 }
 
 /** Ids on the newest Inbox page (one `messages.list`, 5 units). */

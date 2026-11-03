@@ -44,6 +44,9 @@ const isList = (url: URL) => /\/drafts$/.test(url.pathname);
 /** A fetch that lets `change` rewrite each `drafts.list` reply (pages, tokens, dropped items). */
 let n = 0;
 let listCalls = 0;
+/** Draft ids whose `drafts.get` is answered by `getReply` (and counted in `getCalls`) instead of the emulator. */
+let getCalls: string[] = [];
+let getReply: ((draftId: string) => Response | undefined) | undefined;
 
 function listFetch(
   holder: { emu?: GmailEmulator },
@@ -52,6 +55,12 @@ function listFetch(
   return async (input, init) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     const token = url.searchParams.get('pageToken');
+    const getId = /\/drafts\/([^/]+)$/.exec(url.pathname)?.[1];
+    if (getId && url.searchParams.get('fields') === 'id,message(labelIds)') {
+      getCalls.push(getId);
+      const given = getReply?.(getId);
+      if (given) return given;
+    }
     if (isList(url)) listCalls++;
     if (isList(url) && token?.startsWith('fake:')) {
       const empty = { drafts: [], nextPageToken: token === 'fake:same' ? token : `fake:${n++}` };
@@ -210,3 +219,116 @@ test('prov-gmail-drafts paging: a repeated page token ends the listing as incomp
   );
   assert.equal(listCalls, 2, 'a token seen twice stops the loop at once');
 });
+
+const errorReply = (status: number, reason: string) =>
+  Response.json(
+    { error: { code: status, message: 'x', errors: [{ reason, message: 'x' }] } },
+    { status },
+  );
+
+async function hiddenFrom(
+  skip: Set<string>,
+  endless?: { on: boolean },
+): Promise<{ r: Rig; holder: { emu?: GmailEmulator } }> {
+  const holder: { emu?: GmailEmulator } = {};
+  getCalls = [];
+  getReply = undefined;
+  const r = await synced(
+    {
+      adapter: {
+        fetch: listFetch(holder, json => {
+          if (json.drafts) json.drafts = json.drafts.filter(d => !skip.has(d.id));
+          if (endless?.on) json.nextPageToken = 'fake:start';
+        }),
+      },
+    },
+    holder,
+  );
+  return { r, holder };
+}
+
+test('prov-gmail-drafts paging: a draft moved to Trash is reported removed (drafts.list hides it, drafts.get still answers 200)', async () => {
+  const { r } = await hiddenFrom(new Set());
+  const trashed = r.emu.mailbox.createDraftElsewhere(spec('Trashed on the phone'));
+  await historyPass(r);
+  assert.ok(r.store.drafts.get(trashed.draftId));
+  r.emu.mailbox.trashMessage(trashed.messageId);
+  r.emu.mailbox.createDraftElsewhere(spec('Another draft prompts a listing'));
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  assert.equal(r.store.drafts.get(trashed.draftId)?.removed, true);
+});
+
+test('prov-gmail-drafts paging: ten live drafts the listing hides never starve a later real deletion (least recently checked first)', async () => {
+  const skip = new Set<string>();
+  const endless = { on: false };
+  const { r } = await hiddenFrom(skip, endless);
+  const hidden = Array.from({ length: 12 }, (_, i) =>
+    r.emu.mailbox.createDraftElsewhere(spec(`Hidden ${i}`)),
+  );
+  const doomed = r.emu.mailbox.createDraftElsewhere(spec('Doomed'));
+  await historyPass(r);
+  for (const d of hidden) skip.add(d.draftId);
+  // The deletion arrives while the listing is incomplete, so nothing is checked yet: it is a cold entry later.
+  endless.on = true;
+  r.emu.mailbox.deleteDraft(doomed.draftId);
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  assert.equal(r.store.drafts.get(doomed.draftId)?.removed, undefined);
+  endless.on = false;
+  const perPass: number[] = [];
+  for (let pass = 0; pass < 3 && !r.store.drafts.get(doomed.draftId)?.removed; pass++) {
+    getCalls = [];
+    r.emu.mailbox.createDraftElsewhere(spec(`Prompt ${pass}`));
+    await r.clock.advance(60_000);
+    await historyPass(r);
+    perPass.push(getCalls.length);
+  }
+  assert.equal(r.store.drafts.get(doomed.draftId)?.removed, true, 'confirmed within three passes');
+  assert.ok(
+    perPass.every(c => c <= 10),
+    `at most ten checks per pass: ${perPass.join(',')}`,
+  );
+  for (const d of hidden) assert.equal(r.store.drafts.get(d.draftId)?.removed, undefined);
+});
+
+test('prov-gmail-drafts paging: more than ten drafts deleted on one history page are all removed at once', async () => {
+  const { r } = await hiddenFrom(new Set());
+  const made = Array.from({ length: 13 }, (_, i) =>
+    r.emu.mailbox.createDraftElsewhere(spec(`Bulk ${i}`)),
+  );
+  await historyPass(r);
+  for (const d of made) r.emu.mailbox.deleteDraft(d.draftId);
+  await r.clock.advance(60_000);
+  await historyPass(r);
+  assert.equal(
+    made.filter(d => r.store.drafts.get(d.draftId)?.removed).length,
+    13,
+    'the drafts this page deleted are checked first, beyond the ten for the rest',
+  );
+});
+
+for (const [name, reply] of [
+  ['a 404 without the notFound reason', () => errorReply(404, 'backendError')],
+  ['a permission refusal (403)', () => errorReply(403, 'forbidden')],
+  ['a server error (500)', () => errorReply(500, 'backendError')],
+] as const) {
+  test(`prov-gmail-drafts paging: ${name} on the check proves nothing, the draft stays tracked`, async () => {
+    const skip = new Set<string>();
+    const { r } = await hiddenFrom(skip);
+    const kept = r.emu.mailbox.createDraftElsewhere(spec('Kept'));
+    await historyPass(r);
+    skip.add(kept.draftId);
+    getReply = id => (id === kept.draftId ? reply() : undefined);
+    r.emu.mailbox.createDraftElsewhere(spec('Prompt'));
+    await r.clock.advance(60_000);
+    const from = r.store.commits.length;
+    await historyPass(r);
+    assert.ok(getCalls.includes(kept.draftId), 'the draft was checked');
+    assert.deepEqual(
+      factsSince(r, from).filter(f => f.removed),
+      [],
+    );
+    getReply = undefined;
+  });
+}
