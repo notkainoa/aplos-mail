@@ -333,70 +333,77 @@ async function runRow(row: Row): Promise<Run> {
 
 const report: string[] = [];
 
-describe(
-  'kill-point matrix on the Gmail adapter over the Gmail emulator',
-  { concurrency: 2 },
-  () => {
-    after(() => console.log(`\nkill-point matrix (gmail)\n${report.sort().join('\n')}`));
-    for (const row of rows())
-      it(label(row), async () => {
-        const run = await runRow(row);
-        const r = { ...run.result, sendCalls: run.sendCalls, findCalls: run.findCalls };
-        report.push(
-          `${label(row).padEnd(90)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,
-        );
-        assertSendInvariant(r);
-        assert.equal(r.submission.state, row.state, JSON.stringify(r.submission.problem));
-        assert.equal(r.deliveries, row.deliveries);
-        assert.equal(r.sendCalls, row.sendCalls);
-        if (row.findCalls !== undefined) assert.equal(r.findCalls, row.findCalls);
-        if (row.state === 'uncertain') assert.equal(r.submission.problem?.message, UNCERTAIN_COPY);
-        if (row.reason) assert.equal(r.submission.problem?.reasonCode, row.reason);
-        assert.equal(r.signals.length, [row.killAt].flat().length);
-      });
-  },
-);
+/** Part `part` (from 0) of `of` of the Gmail matrix: the rows are dealt out by index so the CI shards can spread them. */
+export function defineMatrix(part: number, of: number) {
+  describe(
+    'kill-point matrix on the Gmail adapter over the Gmail emulator',
+    { concurrency: 2 },
+    () => {
+      after(() => console.log(`\nkill-point matrix (gmail)\n${report.sort().join('\n')}`));
+      for (const row of rows().filter((_, i) => i % of === part))
+        it(label(row), async () => {
+          const run = await runRow(row);
+          const r = { ...run.result, sendCalls: run.sendCalls, findCalls: run.findCalls };
+          report.push(
+            `${label(row).padEnd(90)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,
+          );
+          assertSendInvariant(r);
+          assert.equal(r.submission.state, row.state, JSON.stringify(r.submission.problem));
+          assert.equal(r.deliveries, row.deliveries);
+          assert.equal(r.sendCalls, row.sendCalls);
+          if (row.findCalls !== undefined) assert.equal(r.findCalls, row.findCalls);
+          if (row.state === 'uncertain')
+            assert.equal(r.submission.problem?.message, UNCERTAIN_COPY);
+          if (row.reason) assert.equal(r.submission.problem?.reasonCode, row.reason);
+          assert.equal(r.signals.length, [row.killAt].flat().length);
+        });
+    },
+  );
+}
 
-describe('the Gmail matrix covers the engine matrix', () => {
-  it('every kill point is exercised', () => {
-    const used = new Set(rows().flatMap(r => [r.killAt].flat()));
-    assert.deepEqual(
-      [...KILL_POINTS].filter(p => !used.has(p)),
-      [],
-    );
+/** The checks that look at the whole matrix, and the test server's own tests. */
+export function defineChecks() {
+  describe('the Gmail matrix covers the engine matrix', () => {
+    it('every kill point is exercised', () => {
+      const used = new Set(rows().flatMap(r => [r.killAt].flat()));
+      assert.deepEqual(
+        [...KILL_POINTS].filter(p => !used.has(p)),
+        [],
+      );
+    });
   });
-});
 
-describe('the Gmail test server tells an injected drop from a bug', () => {
-  const profile = (server: GmailServer) =>
-    fetch(`${server.config.baseUrl}/gmail/v1/users/me/profile`, {
-      headers: {
-        authorization: `Bearer ${server.config.accessToken}`,
-        'x-kp-origin': 'https://gmail.googleapis.com',
-        'x-kp-now': String(Date.UTC(2026, 9, 28, 9, 0, 10)),
-      },
+  describe('the Gmail test server tells an injected drop from a bug', () => {
+    const profile = (server: GmailServer) =>
+      fetch(`${server.config.baseUrl}/gmail/v1/users/me/profile`, {
+        headers: {
+          authorization: `Bearer ${server.config.accessToken}`,
+          'x-kp-origin': 'https://gmail.googleapis.com',
+          'x-kp-now': String(Date.UTC(2026, 9, 28, 9, 0, 10)),
+        },
+      });
+
+    it('an exception that is not an injected drop answers 500 and is recorded', async () => {
+      const server = await startGmailServer();
+      try {
+        server.breakNext(new Error('bridge exploded'));
+        const reply = await profile(server);
+        assert.equal(reply.status, 500);
+        assert.deepEqual(server.errors, ['Error: bridge exploded']);
+      } finally {
+        await server.close();
+      }
     });
 
-  it('an exception that is not an injected drop answers 500 and is recorded', async () => {
-    const server = await startGmailServer();
-    try {
-      server.breakNext(new Error('bridge exploded'));
-      const reply = await profile(server);
-      assert.equal(reply.status, 500);
-      assert.deepEqual(server.errors, ['Error: bridge exploded']);
-    } finally {
-      await server.close();
-    }
+    it('an injected drop resets the connection and records nothing', async () => {
+      const server = await startGmailServer();
+      try {
+        server.faults.dropNext({ apiMethod: 'gmail.users.getProfile' });
+        await assert.rejects(profile(server), TypeError);
+        assert.deepEqual(server.errors, []);
+      } finally {
+        await server.close();
+      }
+    });
   });
-
-  it('an injected drop resets the connection and records nothing', async () => {
-    const server = await startGmailServer();
-    try {
-      server.faults.dropNext({ apiMethod: 'gmail.users.getProfile' });
-      await assert.rejects(profile(server), TypeError);
-      assert.deepEqual(server.errors, []);
-    } finally {
-      await server.close();
-    }
-  });
-});
+}

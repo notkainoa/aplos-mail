@@ -1,9 +1,12 @@
 import type { DraftFields } from '@aplos/contract';
 import type { CommitExtensionTx, RemoteDraftWrite } from '../store';
 import { bodyOf, completes, messageOf } from './draft-body';
+import type { DraftWrite } from './draft-writes';
 import {
   fingerprintOf,
+  sameAddress,
   keepsMine,
+  remembered,
   packData,
   LIVE_SQL,
   parseData,
@@ -218,3 +221,64 @@ export function markChangedElsewhere(
  */
 export const dropHeld = (meta: DraftMeta): DraftMeta =>
   typeof meta.changedElsewhere === 'object' ? { ...meta, changedElsewhere: true } : meta;
+
+/** Does this draft hold something no copy carries (so a copy can never replace it without losing that)? */
+export const holdsOnlyHere = (fields: DraftFields) =>
+  fields.bcc.length > 0 || fields.signatureSource !== undefined || fields.attachments.length > 0;
+
+/** Does the copy go out under another sender than this draft does (its `from`, else the account's own address)? */
+export const changesSender = (theirs: DraftFields, mine: DraftFields, own: string | undefined) => {
+  const [then, now] = [theirs.from?.address ?? own, mine.from?.address ?? own];
+  return then !== undefined && now !== undefined && !sameAddress(then, now);
+};
+
+/**
+ * The draft whose upload (not yet recorded) history reports: the Message-ID is the one that upload was made under,
+ * whether it is still running (`uploading`) or was set aside for a newer revision (`wrote`).
+ */
+export function ownUpload(tx: CommitExtensionTx, w: RemoteDraftWrite) {
+  if (w.internetId === undefined) return undefined;
+  return tx.get<DraftRow>(
+    `SELECT * FROM drafts WHERE account_id = ?
+       AND (json_extract(data, '$._sync.uploading.internetId') = ?
+         OR EXISTS (SELECT 1 FROM json_each(data, '$._sync.wrote') WHERE value = ?)) LIMIT 1`,
+    w.accountId,
+    w.internetId,
+    w.internetId,
+  );
+}
+
+/** The echo of our own upload under a new message id: the row's base moves to it, nothing else changes. */
+export function advanceBase(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  meta: DraftMeta,
+  w: RemoteDraftWrite,
+) {
+  const { fields } = parseData(row.data);
+  const data = packData(fields, { ...meta, wrote: remembered(meta, w.remoteMessageId) });
+  tx.run(
+    'UPDATE drafts SET remote_message_id = ?, data = ? WHERE id = ?',
+    w.remoteMessageId,
+    data,
+    row.id,
+  );
+}
+
+/**
+ * The copy a create-path conflict names becomes the row's own copy (see `remoteDraftId` on the write), only when the
+ * provider proved it carries this upload's Message-ID. Its message id is left out of the row: until the owner keeps
+ * theirs or mine it is not a version of ours (and a discard of the row then forgets it instead of deleting it).
+ */
+export function adoptedByConflict(
+  tx: CommitExtensionTx,
+  row: DraftRow,
+  meta: DraftMeta,
+  w: Extract<DraftWrite, { op: 'conflict' }>,
+) {
+  if (w.gone || w.remoteDraftId === undefined || row.remote_draft_id !== null) return undefined;
+  // Another row already shows that copy (history reported it): two rows never share a remote draft.
+  if (holdersOf(tx, row, w.remoteDraftId).length) return undefined;
+  if (w.remoteInternetId !== w.internetId) return undefined;
+  return { columns: { remote_draft_id: w.remoteDraftId }, wrote: remembered(meta, w.internetId) };
+}

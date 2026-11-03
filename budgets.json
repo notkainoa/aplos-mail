@@ -469,8 +469,8 @@
       "unit": "min",
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-03",
       "dueBy": "2026-11-07"
     },
     {
@@ -484,8 +484,8 @@
       "unit": "min",
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-03",
       "dueBy": "2026-11-07"
     },
     {
@@ -499,8 +499,8 @@
       "unit": "min",
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
-      "maxAgeDays": null,
-      "lastMeasured": null,
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-03",
       "dueBy": "2026-11-07"
     },
     {
