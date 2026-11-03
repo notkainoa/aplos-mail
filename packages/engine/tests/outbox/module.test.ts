@@ -153,3 +153,33 @@ test('Draft/set, Draft/get, Draft/resolve and Draft/destroy run through the engi
     await w.cleanup();
   }
 });
+
+test('with no send port a new send is refused up front, so no draft is locked for a message that can never leave', async () => {
+  const file = tempDb();
+  const clock = fakeClock(T0);
+  const log = createLogger({ sink: { write: () => undefined }, salt: 's', clock });
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  store.commit({ opId: 'setup', origin: 'sync', writes: [{ ...accountWrite }] });
+  const engine = await createEngine({ store, clock, log, ports: {} });
+  try {
+    const db = file.open();
+    db.prepare(
+      'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
+    ).run('d1', accountWrite.id, JSON.stringify(fields()), T0);
+    db.close();
+    const session = engine.connect();
+    await assert.rejects(
+      session.call('Submission/set', {
+        opId: 'op-no-send',
+        action: { type: 'send', draftId: 'd1', revision: 1 },
+      }) as Promise<unknown>,
+      (error: unknown) => error instanceof ContractError && error.body.type === 'unavailable',
+    );
+    const rows = store.read(q => q.all('SELECT 1 FROM submissions'));
+    assert.equal(rows.length, 0, 'nothing was queued');
+  } finally {
+    await engine.close();
+    store.close();
+    file.cleanup();
+  }
+});

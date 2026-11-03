@@ -1,6 +1,7 @@
 import type { ClassifiedError, DraftFields } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Logger } from '../diag/log';
+import { sha256Hex } from '../diag/sha256';
 import { NotSentError, PausedError, ProviderError } from '../ports/base';
 import type { DraftSyncPort } from '../ports/engine';
 import type { DraftSaveResult, DraftUpload } from '../ports/provider';
@@ -447,7 +448,11 @@ async function runRemoval(ctx: DraftsCtx, removal: RowlessRemoval) {
     if (removal.attempts < MAX_REMOVE_ATTEMPTS) return;
     ctx.removals.delete(removal.remoteDraftId);
     if (error instanceof NotSentError || error instanceof ProviderError)
-      ctx.log.event('draft.sync_failed', { draft: removal.remoteDraftId, error: error.error });
+      // No row to name: a digest of the provider's draft id, never the id itself.
+      ctx.log.event('draft.sync_failed', {
+        draft: `r${sha256Hex(`${removal.account}:${removal.remoteDraftId}`).slice(0, 16)}`,
+        error: error.error,
+      });
   }
 }
 
@@ -596,7 +601,11 @@ export function closeDraft(ctx: DraftsCtx, id: string) {
   ctx.deadlines.changed('drafts');
 }
 
-/** The Mac woke or the network returned: problems and waits end, so every pending draft asks again. */
+/**
+ * The Mac woke or the network returned: waits end, so every draft with an upload or removal pending asks again. A draft
+ * parked by a refusal that will not change (`permission`, `config`) has no pending upload; it tries again with its next
+ * edit, not here.
+ */
 export function wakeDrafts(ctx: DraftsCtx) {
   const now = ctx.clock.now();
   scanDue(ctx);

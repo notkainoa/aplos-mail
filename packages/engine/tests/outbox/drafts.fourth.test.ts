@@ -165,7 +165,11 @@ test('N3: a phone edit during the undo hold does not get its copy deleted after 
     await wait(w, 30 * SEC);
     assert.equal(w.server.payloads.length, 1, 'the message was sent');
     assert.deepEqual(w.remoteDrafts.removeAttempts, [], 'their newer copy is not deleted');
-    assert.equal(count(w), 0);
+    // The sent draft is gone and the phone's newer version shows as the other device's own draft.
+    assert.equal(count(w), 1);
+    const shown = read(w, `${ACCOUNT}:${s.remoteDraftId}`);
+    assert.equal(shown.subject, 'Theirs');
+    assert.equal(shown.origin, 'remote');
   }));
 
 test('N3: a phone edit during the undo hold, then the owner discards the draft: the phone’s only complete version is not deleted', () =>
@@ -187,7 +191,10 @@ test('N3: a phone edit during the undo hold, then the owner discards the draft: 
     assert.equal(w.server.payloads.length, 0, 'nothing was sent');
     assert.deepEqual(w.remoteDrafts.removeAttempts, [], 'the phone’s copy is left alone');
     assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId, theirId);
-    assert.equal(count(w), 0, 'no hidden row waiting to delete anything');
+    // The discarded draft is gone for good; the phone's version shows as its own draft, and nothing waits to delete it.
+    assert.equal(count(w), 1);
+    assert.equal(read(w, `${ACCOUNT}:${s.remoteDraftId}`).subject, 'Theirs');
+    assert.equal(row(w, `${ACCOUNT}:${s.remoteDraftId}`)?.origin, 'remote');
   }));
 
 test('N3: history reports the draft removed (the phone sent it) during our live send: their sent message is not deleted after ours', () =>

@@ -1,7 +1,7 @@
 import type { Address, Draft, DraftFields } from '@aplos/contract';
 import { sha256Hex } from '../diag/sha256';
 import type { RemoteDraftWrite, SqlValue, StoreReader } from '../store';
-import { htmlToText } from './mime';
+import { headerSafe, htmlToText } from './mime';
 import { LIVE_STATES, type SubmissionState } from './store';
 
 /**
@@ -203,7 +203,23 @@ function canonical(value: unknown): string {
 
 /** The content fingerprint: a hash of the draft fields. An upload whose fingerprint is the synced one is skipped. */
 export function fingerprintOf(fields: DraftFields): string {
-  return sha256Hex(canonical(fields));
+  const { html, subject } = fields;
+  return sha256Hex(
+    canonical({ ...fields, html: asWritten(html), subject: headerSafe(subject).trim() }),
+  );
+}
+
+/**
+ * The html as a reader gets it back from our own MIME: the writer turns every CRLF and lone CR into a line break of its
+ * own and the line break before a boundary belongs to the boundary, so `<p>a</p>\n<p>b</p>` comes back as
+ * `<p>a</p>\r\n<p>b</p>\r\n`. Both are one content, or our own copy would never pass the content proof. The subject
+ * likewise (see `headerSafe` and the trim above). A scan from the end, not a regex, so a long run of line breaks is cheap.
+ */
+function asWritten(html: string) {
+  const text = html.replace(/\r\n?/g, '\n');
+  let end = text.length;
+  while (end > 0 && text[end - 1] === '\n') end -= 1;
+  return end === text.length ? text : text.slice(0, end);
 }
 
 /** Nothing to keep: no recipient, subject, text or attachment. A new empty draft is not uploaded. */
