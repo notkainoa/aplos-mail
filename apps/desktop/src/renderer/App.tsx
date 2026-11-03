@@ -26,7 +26,7 @@ import {
   type HomeShellProps,
   type Screen,
 } from './shell';
-import { HomeScreen as HomeRoute } from './screens/home';
+import { HomeScreen as HomeRoute, OneByOneScreen } from './screens/home';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
@@ -268,6 +268,12 @@ function HomeSlot() {
   return <HomeRoute {...useHomeShellProps()} />;
 }
 
+/** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
+function OneByOneSlot() {
+  const { accountId, onOpen } = useHomeShellProps();
+  return <OneByOneScreen accountId={accountId} onExit={() => navigate('home')} onOpen={onOpen} />;
+}
+
 /** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
 function useListProps() {
   const scope = useAccountScope();
@@ -293,14 +299,8 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
   return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps()} />;
 }
 
-/** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = [
-  'thread',
-  'one by one',
-  'Search',
-  'Help',
-  'New message',
-];
+/** Labels other lanes open as placeholders (the reader, search, help, compose); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['thread', 'Search', 'Help', 'New message'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -310,6 +310,7 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
 
 /** The screen slot: Home, Later, the lists and Done are `ui-home`'s; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
+  if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />
