@@ -19,6 +19,12 @@ import { nativeMethods, notify, invokeNative } from './native-methods';
 import { closing } from './lifecycle';
 import { legacyEngineMethods } from '@aplos/contract/allowlists';
 import { dataDirOverride } from './test-mode';
+import { realEngineRequested } from '../host/transports/port';
+import { releaseBuild } from './oauth-config';
+import { bootRealEngine, realEngine } from './engine-real';
+
+/** `APLOS_ENGINE=real` (never in a release build): the new engine in its utility process, no state mirror in main. */
+const realPath = realEngineRequested(process.env, releaseBuild);
 
 const methods = new Set<string>(legacyEngineMethods);
 type Engine = ReturnType<typeof connectEngine>;
@@ -162,8 +168,11 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
     },
   );
 }
-async function bootEngine() {
-  service = await startEngine(await engineInit(dataDirOverride ?? app.getPath('userData')));
+/** `noteExit` counts an engine stop toward the park (lifecycle.ts); the legacy path keeps its own restart dialog. */
+async function bootEngine(hooks: { noteExit(): boolean }) {
+  const dataDir = dataDirOverride ?? app.getPath('userData');
+  if (realPath) return bootRealEngine({ dataDir, noteExit: hooks.noteExit });
+  service = await startEngine(await engineInit(dataDir));
   ipcMain.handle('aplos:invoke', async (event, method: unknown, payload: unknown) => {
     assertCaller(event);
     if (typeof method !== 'string') throw new Error('Invalid application method.');
@@ -186,4 +195,4 @@ async function bootEngine() {
   applyAppearance(latestState);
 }
 
-export { latestState, service, bootEngine };
+export { latestState, service, bootEngine, realPath, realEngine };
