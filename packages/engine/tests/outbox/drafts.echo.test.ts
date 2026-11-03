@@ -270,3 +270,32 @@ test('echo: a REAL conflict survives an ack that names another copy; only an ack
     assert.equal(syncOf(w, s.draft.id).conflict?.theirsMessageId, 'msg-phone');
     assert.notEqual(upload.internetId, '<phone@phone.example>');
   }));
+
+test('fingerprint: the same content as the writer produces it hashes the same (line breaks, subject spacing)', async () => {
+  const { fingerprintOf } = await import('../../src/outbox/draft-state');
+  const base = fields({ subject: 'Lunch  at noon ', html: '<p>a</p>\n<p>b</p>\n' });
+  const back = fields({ subject: 'Lunch at noon', html: '<p>a</p>\r\n<p>b</p>\r\n' });
+  assert.equal(fingerprintOf(base), fingerprintOf(back));
+  assert.equal(
+    fingerprintOf(fields({ html: '<p>x</p>\r' })),
+    fingerprintOf(fields({ html: '<p>x</p>' })),
+  );
+  // Real differences still differ: text, an inner break, a space in the html, a different subject.
+  assert.notEqual(
+    fingerprintOf(fields({ html: '<p>a</p>' })),
+    fingerprintOf(fields({ html: '<p>b</p>' })),
+  );
+  assert.notEqual(
+    fingerprintOf(fields({ html: '<p>a</p>\n<p>b</p>' })),
+    fingerprintOf(fields({ html: '<p>a</p><p>b</p>' })),
+  );
+  assert.notEqual(
+    fingerprintOf(fields({ html: '<p>a</p> ' })),
+    fingerprintOf(fields({ html: '<p>a</p>' })),
+  );
+  assert.notEqual(fingerprintOf(fields({ subject: 'A' })), fingerprintOf(fields({ subject: 'B' })));
+  // A long run of line breaks costs nothing.
+  const start = performance.now();
+  fingerprintOf(fields({ html: `x${'\r\n'.repeat(500_000)}y` }));
+  assert.ok(performance.now() - start < 500);
+});

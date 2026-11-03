@@ -270,3 +270,39 @@ test("prov-gmail-drafts echo: a lost reply, then the adapter's report of the sam
     assert.equal(count(w), 1, 'no duplicate draft from our own landed copy');
     assert.equal(row(w, d.id)!.remote_draft_id, 'rd1', 'adopted');
   }));
+
+// ---- what the writer changes besides the last line break: every line break, and runs of spaces in the subject ----
+
+const AWKWARD = fields({ subject: 'Lunch  at noon ', html: '<p>a</p>\n<p>b</p>\r<p>c</p>\n' });
+
+test('prov-gmail-drafts echo: a multi-line html body and a subject with a double space come back as the same content (our echo)', () =>
+  world(async w => {
+    const s = await synced(w, AWKWARD);
+    const upload = w.remoteDrafts.saves[0] as unknown as DraftUpload;
+    const own = await factOfOwnUpload(upload);
+    assert.ok(own?.html?.includes('\r\n'), 'the writer made every line break a CRLF');
+    w.first.store.commit({
+      opId: 'own-echo-awkward',
+      origin: 'sync',
+      writes: actorWrites(own, s.remoteDraftId),
+    });
+    assert.equal(read(w, s.draft.id).conflict, undefined);
+    assert.equal(row(w, s.draft.id)!.revision, s.draft.revision, 'our own text was not replaced');
+    assert.equal(row(w, s.draft.id)!.remote_message_id, s.messageId);
+  }));
+
+test('prov-gmail-drafts echo: a lost reply with the same awkward content is adopted, not shown as a duplicate', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' });
+    const d = create(w, AWKWARD);
+    await wait(w, 5 * SEC);
+    const upload = w.remoteDrafts.saves.at(-1) as unknown as DraftUpload;
+    const own = await factOfOwnUpload(upload);
+    w.first.store.commit({
+      opId: 'own-adopt-awkward',
+      origin: 'sync',
+      writes: actorWrites(own, 'rd1'),
+    });
+    assert.equal(count(w), 1, 'no duplicate draft');
+    assert.equal(row(w, d.id)!.remote_draft_id, 'rd1', 'adopted');
+  }));
