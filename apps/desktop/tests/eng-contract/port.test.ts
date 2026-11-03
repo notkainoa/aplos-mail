@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { MessageChannel } from 'node:worker_threads';
 import type { Frame } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
@@ -8,7 +9,10 @@ import {
   createPortBroker,
   createPortClient,
   createPortHost,
+  MAX_ARGS_BYTES,
+  MAX_IN_FLIGHT,
   portMethods,
+  revokeOnNewDocument,
   serveWindowPort,
   signInURL,
   trustedCaller,
@@ -290,7 +294,102 @@ test('the engine may only ask main to open a provider sign-in page', () => {
     'file:///etc/passwd',
     'javascript:alert(1)',
     'https://evil.example/',
+    'https://accounts.google.com/',
+    'https://accounts.google.com/signin/v2/identifier',
+    'https://accounts.google.com/o/oauth2/v2/authx',
     42,
   ])
     assert.equal(signInURL(url), undefined, String(url));
+});
+
+const hangingSession = (): EngineSession => ({
+  call: () => new Promise(() => undefined),
+  subscribe: () => () => undefined,
+  close: () => undefined,
+});
+
+test('port hijack: a prevented navigation keeps the port; a committed one revokes it and the new document gets a fresh one', async t => {
+  const engine = fakeSession();
+  const host = createPortHost(() => engine.session, { position });
+  const ports = portTracker(t);
+  const broker = createPortBroker({ channel: ports.channel, link: () => directLink(host) });
+  const contents = new EventEmitter();
+  revokeOnNewDocument(contents, () => broker.revoke(1));
+  const one = fakeWindow(1);
+  broker.connect(one.win);
+  assert.ok(await one.client.call('Counts/get', {}));
+
+  // Electron's order for a link the window layer opens in the browser instead: did-start-navigation, then
+  // will-navigate (prevented), and no did-navigate. The page stays, and so must its port.
+  contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+  contents.emit('will-navigate', { preventDefault: () => undefined });
+  assert.deepEqual(broker.holders(), [1]);
+  assert.deepEqual(await one.client.call('Counts/get', {}), { method: 'Counts/get', args: {} });
+
+  // A committed main-frame navigation (a reload) revokes it; the new document's preload asks again.
+  contents.emit('did-navigate');
+  assert.deepEqual(broker.holders(), []);
+  const reloaded = fakeWindow(1);
+  broker.connect(reloaded.win);
+  assert.deepEqual(await reloaded.client.call('Counts/get', {}), {
+    method: 'Counts/get',
+    args: {},
+  });
+  // A dead renderer ends the port too.
+  contents.emit('render-process-gone');
+  assert.deepEqual(broker.holders(), []);
+});
+
+test('a port that closes under the window fails its open calls at once and lets preload ask again', async t => {
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => port2.close());
+  const served = serveWindowPort(hangingSession, engineEndOf(port1), { position });
+  let lostCount = 0;
+  const client = createPortClient(portMethods, { onLost: () => void lostCount++ });
+  client.attach(windowEndOf(port2));
+  const pending = client.call('Counts/get', {});
+  await until(() => client.position().dbEpoch === 'e1', 'hello');
+  served.close();
+  await assert.rejects(pending, { type: 'unavailable' });
+  assert.equal(lostCount, 1);
+  assert.equal(client.connected(), false);
+});
+
+test('a window may not flood its port: at most MAX_IN_FLIGHT open calls, arguments at most MAX_ARGS_BYTES', async t => {
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(hangingSession, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  for (let id = 1; id <= MAX_IN_FLIGHT + 1; id++)
+    port2.postMessage({ v: 1, id, method: 'Counts/get', args: {} });
+  await until(() => replies.length === 2, 'the hello and one refusal');
+  const refused = replies[1];
+  assert.equal(refused.kind === 'reply' && refused.id, MAX_IN_FLIGHT + 1);
+  assert.equal(refused.kind === 'reply' && !refused.ok && refused.error.type, 'unavailable');
+
+  const fresh = new MessageChannel();
+  t.after(() => {
+    fresh.port1.close();
+    fresh.port2.close();
+  });
+  const engine = fakeSession();
+  serveWindowPort(() => engine.session, engineEndOf(fresh.port1), { position });
+  const client = createPortClient();
+  client.attach(windowEndOf(fresh.port2));
+  const html = 'x'.repeat(MAX_ARGS_BYTES);
+  await assert.rejects(client.call('Draft/set', { opId: 'o', fields: { html } }), {
+    type: 'tooLarge',
+  });
+  assert.deepEqual(engine.calls, [], 'the oversized call never reached the engine');
+  // An upload route carries its bytes (Blob/put, 25 MB at most).
+  const bytes = new Uint8Array(MAX_ARGS_BYTES + 1);
+  // (The fake engine echoes the bytes back, a reply too large for a non-blob route: only the arrival matters here.)
+  await client
+    .call('Blob/put', { bytes, mime: 'audio/webm' }, [bytes.buffer])
+    .catch(() => undefined);
+  assert.deepEqual(engine.calls, ['Blob/put']);
 });

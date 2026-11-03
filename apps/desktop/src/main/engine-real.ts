@@ -20,6 +20,7 @@ import {
   draftOpenable,
   REAL_ENGINE_ARG,
   REAL_ENGINE_SERVICE,
+  revokeOnNewDocument,
   signInURL,
   trustedCaller,
   type DesktopFrame,
@@ -218,14 +219,12 @@ function connectWindow(event: IpcMainInvokeEvent) {
   return ok;
 }
 
-/** A window's port stops when the window closes or its main frame starts a new document (a reload). */
+/** A window's port stops when the window closes, its main frame commits a new document, or its renderer dies. */
 function watchWindows() {
   app.on('browser-window-created', (_event, win) => {
     const id = win.id;
     win.once('closed', () => broker.revoke(id));
-    win.webContents.on('did-start-navigation', details => {
-      if (details.isMainFrame && !details.isSameDocument) broker.revoke(id);
-    });
+    revokeOnNewDocument(win.webContents, () => broker.revoke(id));
   });
 }
 

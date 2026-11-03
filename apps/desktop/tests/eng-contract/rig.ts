@@ -39,6 +39,7 @@ export function windowEndOf(port: MessagePort): WindowPortEnd {
   return {
     post: (message, transfer) => port.postMessage(message, transfer),
     onMessage: handler => void port.on('message', handler),
+    onClose: handler => void port.on('close', handler),
     close: () => port.close(),
   };
 }

@@ -44,8 +44,9 @@ contextBridge.exposeInMainWorld('aplos', bridge);
 // down this window's own port after the generated allowlist check; desktop methods go to main. Main hands the port only
 // to this window's trusted main frame, so a mail frame, a subframe or another origin never gets one.
 
-const engine = createPortClient(portMethods);
 let asked: Promise<unknown> | undefined;
+// A port that closes under the page (revoked, engine stopped) fails its open calls; the next call asks main again.
+const engine = createPortClient(portMethods, { onLost: () => (asked = undefined) });
 /** Asks main for this window's port once; a refusal (no real engine, an untrusted frame) fails the waiting calls. */
 function connect() {
   asked ??= ipcRenderer.invoke('aplos:engine-connect').catch(() => {
@@ -61,6 +62,7 @@ ipcRenderer.on('aplos:engine-port', (event: Electron.IpcRendererEvent) => {
     onMessage: handler => {
       port.onmessage = message => handler(message.data);
     },
+    onClose: handler => port.addEventListener('close', handler),
     close: () => port.close(),
   });
 });

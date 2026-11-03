@@ -221,3 +221,95 @@ test('real path: quitting closes the engine cleanly (database closed, process ex
   assert.equal(main.ups.length, 1, 'no restart after a quit');
   assert.throws(() => main.hosts[0].engine.connect(), /not running/);
 });
+
+/** Timers that run only when the test moves them. */
+function manualTimers() {
+  let now = 0;
+  const due = new Map<number, { at: number; run: () => void }>();
+  let next = 0;
+  return {
+    set: (run: () => void, ms: number) => {
+      due.set(++next, { at: now + ms, run });
+      return next;
+    },
+    clear: (handle: unknown) => void due.delete(handle as number),
+    advance(ms: number) {
+      now += ms;
+      for (const [id, timer] of [...due].sort((a, b) => a[1].at - b[1].at))
+        if (timer.at <= now && due.delete(id)) timer.run();
+    },
+  };
+}
+
+/** A link to an engine that answers `ready` only if told to, and exits when killed. */
+function fakeLink(readies: boolean) {
+  const exits: (() => void)[] = [];
+  let exited = false;
+  let kills = 0;
+  let fail!: (error: unknown) => void;
+  const ready = new Promise<{ dbEpoch: string; seq: number }>((resolve, reject) => {
+    fail = reject;
+    if (readies) resolve({ dbEpoch: 'e1', seq: 0 });
+  });
+  ready.catch(() => undefined);
+  const exit = () => {
+    if (exited) return;
+    exited = true;
+    fail(new Error('stopped'));
+    exits.splice(0).forEach(handler => handler());
+  };
+  const link: EngineLink = {
+    ready,
+    get exited() {
+      return exited;
+    },
+    call: async () => ({}),
+    attach: () => undefined,
+    detach: () => undefined,
+    power: () => undefined,
+    quit: exit,
+    kill: () => {
+      kills++;
+      exit();
+    },
+    onExit: handler => (exited ? handler() : void exits.push(handler)),
+  };
+  return { link, exit, kills: () => kills };
+}
+
+test('an engine that never answers ready is killed after the ready timeout, and that counts as a stop', async () => {
+  const timers = manualTimers();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let stops = 0;
+  const downs: boolean[] = [];
+  const supervisor = createEngineSupervisor({
+    // The first engine starts; every restart hangs before `ready`.
+    spawn: () => {
+      const next = fakeLink(links.length === 0);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => ++stops >= 3,
+    onUp: () => undefined,
+    onDown: parked => void downs.push(parked),
+    timers,
+    restartDelayMs: 10,
+    readyTimeoutMs: 1000,
+  });
+  await supervisor.start();
+  links[0].exit();
+  timers.advance(10);
+  assert.equal(links.length, 2, 'restarted');
+  timers.advance(999);
+  assert.equal(links[1].kills(), 0, 'not before the timeout');
+  timers.advance(1);
+  assert.equal(links[1].kills(), 1, 'killed at the timeout');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stops, 2, 'the hung start counted as a stop');
+  timers.advance(10);
+  timers.advance(1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(downs, [false, false, true], 'the third stop parks');
+  assert.equal(links.length, 3);
+  assert.equal(supervisor.current(), undefined);
+});

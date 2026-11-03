@@ -29,6 +29,12 @@ export const REAL_ENGINE_SERVICE = 'Aplos Mail Engine (new)';
 export const MAX_WINDOW_MESSAGE_BYTES = 256 * 1024;
 /** A blob route's reply carries bytes (25 MB at most, `Blob/put`'s cap) plus a small envelope. */
 export const MAX_BLOB_MESSAGE_BYTES = 26 * 1024 * 1024;
+/** Calls one window may have open at once; more are refused until some answer. */
+export const MAX_IN_FLIGHT = 256;
+/** A window's call arguments may be at most this large, except an upload route's (a draft's HTML is at most 1M chars). */
+export const MAX_ARGS_BYTES = 4 * 1024 * 1024;
+/** Methods whose arguments carry `Bytes` from a window (25 MB at most). */
+export const uploadRoutes: ReadonlySet<string> = new Set(['Blob/put']);
 /** Methods whose reply carries `Bytes` to a window. Each moves as binary, never base64. */
 export const blobRoutes: ReadonlySet<string> = new Set(['Blob/get']);
 
@@ -186,16 +192,25 @@ export function serveWindowPort(
     const sentence = 'This answer is too large to send to the window.';
     send(refusal(message.id, 'tooLarge', sentence), MAX_WINDOW_MESSAGE_BYTES);
   };
+  let inFlight = 0;
+  const refuse = (call: PortCall, type: string, sentence: string) =>
+    void send(refusal(call.id, type, sentence), MAX_WINDOW_MESSAGE_BYTES);
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
-      return void send(
-        refusal(call.id, 'unsupported', 'Unsupported application method.'),
-        MAX_WINDOW_MESSAGE_BYTES,
-      );
+      return refuse(call, 'unsupported', 'Unsupported application method.');
+    const argsLimit = uploadRoutes.has(call.method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
+    if (messageBytes(call.args ?? {}) > argsLimit)
+      return refuse(call, 'tooLarge', 'This request is too large to send.');
+    if (inFlight >= MAX_IN_FLIGHT)
+      return refuse(call, 'unavailable', 'Too many requests at once. Try again in a moment.');
+    inFlight++;
+    const done = () => void inFlight--;
     session.call(call.method, call.args ?? {}).then(
-      result => answer(call.method, { kind: 'reply', id: call.id, ok: true, result }),
-      error =>
-        answer(call.method, { kind: 'reply', id: call.id, ok: false, error: errorBody(error) }),
+      result => (done(), answer(call.method, { kind: 'reply', id: call.id, ok: true, result })),
+      error => (
+        done(),
+        answer(call.method, { kind: 'reply', id: call.id, ok: false, error: errorBody(error) })
+      ),
     );
   };
   send({ kind: 'hello', ...options.position() }, MAX_WINDOW_MESSAGE_BYTES);
@@ -472,6 +487,11 @@ export interface SupervisorOptions {
   restartDelayMs?: number;
   /** How long `close` waits for the engine to exit before killing it. Default 3 s (host/lifecycle's `QUIT_DRAIN_MS`). */
   quitMs?: number;
+  /**
+   * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
+   * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
+   */
+  readyTimeoutMs?: number;
 }
 
 /** Keeps one engine process running: restarts it after an unexpected stop until `noteExit` parks, never after `close`. */
@@ -500,7 +520,12 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    await link.ready;
+    const timer = options.timers.set(() => link.kill(), options.readyTimeoutMs ?? 60_000);
+    try {
+      await link.ready;
+    } finally {
+      options.timers.clear(timer);
+    }
     if (closing || current !== link) throw unavailable();
     everUp = true;
     options.onUp(link, restarted);
@@ -620,6 +645,23 @@ export function createPortBroker(deps: BrokerDeps) {
   };
 }
 
+/** The events of a window's webContents that end its port (`main/engine-real.ts` passes the real webContents). */
+export interface RevokeSource {
+  on(event: 'did-navigate' | 'render-process-gone' | 'destroyed', listener: () => void): unknown;
+}
+
+/**
+ * Revokes a window's port when its main frame COMMITS a new document (`did-navigate`, main frame only, never in-page),
+ * when its renderer dies, or when the webContents goes. Never on `did-start-navigation`: Electron fires that before
+ * `will-navigate`, so a link the window layer cancels (opened in the browser instead) would leave the page without a
+ * port. A committed document runs a fresh preload, which asks again.
+ */
+export function revokeOnNewDocument(contents: RevokeSource, revoke: () => void): void {
+  contents.on('did-navigate', revoke);
+  contents.on('render-process-gone', revoke);
+  contents.on('destroyed', revoke);
+}
+
 /** `window.compose` through main's own connection: the draft must exist in the engine (`Draft/get`). */
 export async function draftOpenable(
   link: EngineLink | undefined,
@@ -633,7 +675,9 @@ export async function draftOpenable(
 }
 
 /** Sign-in pages the engine may ask main to open (the host channel's `openExternal`, purpose `oauth`). */
-const signInHosts: ReadonlySet<string> = new Set(['accounts.google.com']);
+const signInPaths: ReadonlyMap<string, string> = new Map([
+  ['accounts.google.com', '/o/oauth2/v2/auth'],
+]);
 
 /** The URL to open when it is a provider's https sign-in page, else undefined. */
 export function signInURL(raw: unknown): string | undefined {
@@ -641,7 +685,7 @@ export function signInURL(raw: unknown): string | undefined {
   try {
     const url = new URL(raw);
     if (url.protocol !== 'https:' || url.username || url.password || url.port) return undefined;
-    return signInHosts.has(url.hostname) ? url.href : undefined;
+    return signInPaths.get(url.hostname) === url.pathname ? url.href : undefined;
   } catch {
     return undefined;
   }
@@ -653,6 +697,8 @@ export function signInURL(raw: unknown): string | undefined {
 export interface WindowPortEnd {
   post(message: PortCall, transfer: ArrayBuffer[]): void;
   onMessage(handler: (data: unknown) => void): void;
+  /** The other end went away (main revoked the port, the engine stopped). */
+  onClose?(handler: () => void): void;
   close(): void;
 }
 
@@ -663,14 +709,22 @@ const restarted: PortError = {
   type: 'unavailable',
   message: 'The mailbox restarted. Try again.',
 };
+const lost: PortError = {
+  type: 'unavailable',
+  message: 'The connection to the mailbox closed. Try again.',
+};
 
 /**
  * A window's engine connection over whatever port main delivered last. Calls wait for the first port. A new port
  * (an engine restart) answers the old port's open calls `unavailable` and resumes: on the same `dbEpoch` the window
  * keeps its state token and nothing is re-sent; on another one the window gets a `reset {reason: 'dbEpoch'}`.
- * Failed calls reject with the contract's error body, a plain object that crosses `contextBridge` intact.
+ * Failed calls reject with the contract's error body, a plain object that crosses `contextBridge` intact. When the port
+ * closes under the window, its open calls fail at once and `onLost` runs, so preload asks main for a new one.
  */
-export function createPortClient(allow: ReadonlySet<string> = portMethods) {
+export function createPortClient(
+  allow: ReadonlySet<string> = portMethods,
+  options: { onLost?(): void } = {},
+) {
   const listeners = new Set<(frame: Frame | DesktopFrame) => void>();
   const waiting = new Map<number, Waiting>();
   const queue: Queued[] = [];
@@ -735,7 +789,17 @@ export function createPortClient(allow: ReadonlySet<string> = portMethods) {
       next.onMessage(data => {
         if (end === next) receive(data);
       });
+      next.onClose?.(() => {
+        if (end !== next) return;
+        end = undefined;
+        open = false;
+        for (const call of waiting.values()) call.reject(lost);
+        waiting.clear();
+        options.onLost?.();
+      });
     },
+    /** A port is held (it may still be waiting for its `hello`). */
+    connected: () => end !== undefined,
     call(method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> {
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
