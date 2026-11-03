@@ -10,12 +10,19 @@ import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { api } from '../../../apps/desktop/src/renderer/data';
 import { navigate, type Screen } from '../../../apps/desktop/src/renderer/shell';
+import { resetToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
 
+/** Modifier keys held for a `key` step: `{ meta: true }` is ⌘, `{ shift: true }` is ⇧. */
+interface KeyMods {
+  readonly meta?: boolean;
+  readonly shift?: boolean;
+}
+
 /** One thing the scene does once the screen has painted. */
 type Step =
-  | { readonly key: string; readonly times?: number }
+  | { readonly key: string; readonly times?: number; readonly mods?: KeyMods }
   | { readonly click: string }
   | { readonly drag: string; readonly to: string; readonly hold: boolean }
   | { readonly run: () => Promise<void> };
@@ -99,7 +106,14 @@ async function drag(from: string, to: string, hold: boolean): Promise<void> {
 async function runStep(step: Step): Promise<void> {
   if ('key' in step) {
     for (let i = 0; i < (step.times ?? 1); i += 1) {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: step.key, bubbles: true }));
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: step.key,
+          metaKey: step.mods?.meta ?? false,
+          shiftKey: step.mods?.shift ?? false,
+          bubbles: true,
+        }),
+      );
       await frames(2);
     }
   } else if ('click' in step) {
@@ -179,6 +193,26 @@ const LABEL = { label: 'demo-work:label-projects' } as const;
 const NO_MAIL = { label: 'demo-work:label-nothing-here' } as const;
 const LATER_ROW = '.aplos-screen [role="option"]';
 
+/** Presses `keys` one after another, each once (J then X, say). */
+const keys = (...pressed: readonly string[]): readonly Step[] => pressed.map(key => ({ key }));
+
+/** Three rows picked on Home: X, J, X, J, X. */
+const THREE_PICKED = keys('x', 'j', 'x', 'j', 'x');
+
+/** Plays E until the walk is over (the finish line is on show). */
+const WALK_THROUGH: Step = {
+  run: async () => {
+    for (let i = 0; i < 80 && !document.body.textContent?.includes('everyone'); i += 1) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+      await frames(4);
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    // Each Done left its toast; the finish line is what the state shows, so the toasts go.
+    resetToasts();
+    await frames(8);
+  },
+};
+
 /* ------------------------------ the scenes ------------------------------ */
 
 export const homeScenes: Record<string, () => ReactElement> = {
@@ -205,6 +239,28 @@ export const homeScenes: Record<string, () => ReactElement> = {
     steps: [{ key: 'j', times: 5 }],
   }),
   'home-follow-up': sceneOf({ scenario: 'demo', screen: 'home', steps: [{ key: 'j', times: 8 }] }),
+  'home-bulk': sceneOf({ scenario: 'demo', screen: 'home', steps: THREE_PICKED }),
+  'home-bulk-trash-confirm': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [...THREE_PICKED, { key: '#' }],
+  }),
+  'one-by-one': sceneOf({ scenario: 'demo', screen: 'home', steps: [{ key: 's' }] }),
+  'one-by-one-middle': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [{ key: 's' }, { key: 'j', times: 2 }],
+  }),
+  'one-by-one-done': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [{ key: 's' }, WALK_THROUGH],
+  }),
+  'home-why': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [{ key: 'j', times: 6 }, { key: 'i' }],
+  }),
   'later-groups': sceneOf({ scenario: 'demo', screen: 'later' }),
   'later-drag-ghost': sceneOf({
     scenario: 'demo',
@@ -217,6 +273,16 @@ export const homeScenes: Record<string, () => ReactElement> = {
     steps: [actOnView({ kind: 'later' }, { type: 'done' })],
   }),
   'list-all-mail': sceneOf({ scenario: 'demo', screen: 'all' }),
+  'list-all-bulk': sceneOf({
+    scenario: 'demo',
+    screen: 'all',
+    steps: [{ key: 'a', mods: { meta: true } }],
+  }),
+  'list-all-bulk-range': sceneOf({
+    scenario: 'demo',
+    screen: 'all',
+    steps: [{ key: 'x' }, { key: 'j', times: 3 }, { key: 'X', mods: { shift: true } }],
+  }),
   'list-drafts': sceneOf({ scenario: 'demo', screen: 'drafts' }),
   'list-sent': sceneOf({ scenario: 'demo', screen: 'sent' }),
   'list-trash': sceneOf({ scenario: 'demo', screen: 'trash' }),

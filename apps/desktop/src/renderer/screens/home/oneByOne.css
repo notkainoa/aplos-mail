@@ -1,5 +1,10 @@
 /* The one-by-one view (DESIGN 7.2): one focus letter at a time, centred in the pane's reading column. No card chrome
    beyond the letter itself. The letter arrives with a short fade (`swap`); reduced motion shortens it via the tokens. */
+/* The slot only has a min-height, so the view's own 100% would resolve to auto and leave the letter at the top. */
+.aplos-screen:has(> .aplos-one-by-one) {
+  height: 100%;
+}
+
 .aplos-one-by-one {
   box-sizing: border-box;
   display: flex;
