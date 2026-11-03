@@ -1088,3 +1088,12 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **`withDara`, `withUnknownMethod`:** a new method kind is tolerated by the parser (it only reads dkim); counted so a format change shows up.
 - **`falseNoListPair` high:** many newsletters send `List-Unsubscribe` without `-Post`; that is why `authenticated` is false for them and one-click is not offered (by design, RFC 8058).
 - Usage and the meaning of each count are in plans/LIVE-RUNS.md.
+
+## 2026-11-03 prov-gmail / prov-emu: live probe `gmail.draft-message-id-after-edit` (tier M) and what its answers mean for `isEcho`
+
+- **What it is.** Two phases of one probe through the guarded runner (`--phase create` with `--confirm-mutating`, then the owner edits the one draft, then `--phase inspect`). The draft has no recipient, a fixed subject and a known Message-ID; the runner can only update a draft its own run made, so the API re-save happens inside `create`. The evidence holds 0/1 flags and counts only. The draft is left in Drafts because the guard refuses every draft delete in every tier.
+- **`updatedKeptMessageIdHeader = 1`, `updatedMessageIdChanged = 1`, `updatedDraftIdKept = 1`:** Gmail keeps our Message-ID across our own API saves while giving the draft a NEW message id each time and keeping the draft id. This is what the engine already assumes for its own uploads (`drafts.ts` precondition on the message id; a Message-ID match is never proof by itself).
+- **`messageIdIsOurs = 1` with `bodyEdited = 1` after the owner's edit** (a phone or web edit keeps our Message-ID): the engine's `isEcho` must NOT treat "internetId is ours" as an echo of our own upload. This is the case the end-to-end review HIGH 1 was about, and the engine now requires content proof (`holdsOurContent` / the fingerprint); the probe turns that from a safe assumption into a measured fact. Nothing changes in the adapter: it already reports the new message id and lets the engine decide.
+- **`messageIdIsOurs = 0` after the edit** (the other client replaces the header): our Message-ID can no longer find a copy that was edited elsewhere, so `findByInternetId`-style adoption of a lost-reply create must not rely on it after a foreign edit; the `supersedes`/fingerprint path already covers it. The `TODO(live)` comment at `google/drafts.ts` is then resolved as "Gmail clients rewrite it".
+- **`draftFound = 0`:** the draft was not among the newest 25 (a busy account) or was removed; run `create` again.
+- **#180:** unrelated to this probe; see the `gmail.auth-results-shape` note.

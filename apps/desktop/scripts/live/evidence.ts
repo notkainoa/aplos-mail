@@ -67,6 +67,18 @@ export const COUNT_KEYS: readonly string[] = [
   'falseNoListPair',
   'falseNoFromDomain',
   'falseOther',
+  // gmail.draft-message-id-after-edit: flags (0 or 1) and counts about one probe draft, never its text or ids.
+  'created',
+  'createKeptMessageId',
+  'updatedDraftIdKept',
+  'updatedMessageIdChanged',
+  'updatedKeptMessageIdHeader',
+  'draftsScanned',
+  'draftsMatching',
+  'draftFound',
+  'messageIdIsOurs',
+  'bodyUnchanged',
+  'bodyEdited',
 ];
 export const TIMING_KEYS: readonly string[] = [
   'profile',

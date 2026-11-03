@@ -54,6 +54,7 @@ import {
 /** Every tier runs only on the agent test account, never on another vault label. */
 const AGENT_ACCOUNT = 'agent';
 const FULL_SHA = /^[0-9a-f]{40}$/;
+const PHASE_NAME = /^[a-z]{1,20}$/;
 /** A generous guess per probe plus slack; a token that would expire inside this window is skipped. */
 const EXPECTED_MS_PER_PROBE = 2 * 60_000;
 const EXPECTED_SLACK_MS = 60_000;
@@ -67,6 +68,8 @@ export interface RunArgs {
   confirmMutating: boolean;
   /** The commit the run must be made from; the command line requires it for every real run. */
   expectSha?: string;
+  /** `--phase <name>`: a fixed word for a probe that runs in steps across runs (never free text). */
+  phase?: string;
 }
 
 export interface RunDeps {
@@ -112,6 +115,9 @@ export function parseArgs(argv: string[]): RunArgs {
     throw new RunnerError('--expect-sha must be the full 40-character commit SHA');
   if (!dryRun && expectSha === undefined)
     throw new RunnerError('--expect-sha <commit> is required: a live run names the code it runs');
+  const phase = value('--phase');
+  if (phase !== undefined && !PHASE_NAME.test(phase))
+    throw new RunnerError('--phase must be a short lowercase word');
   return {
     provider,
     tier: tier as Tier,
@@ -119,6 +125,7 @@ export function parseArgs(argv: string[]): RunArgs {
     dryRun,
     confirmMutating: argv.includes('--confirm-mutating'),
     ...(expectSha ? { expectSha } : {}),
+    ...(phase ? { phase } : {}),
   };
 }
 
@@ -359,7 +366,13 @@ async function runLocked(plan: RunPlan): Promise<RunOutcome> {
 
   const clock = deps.clock ?? (() => performance.now());
   // Frozen: one probe cannot swap the fetch (or anything else) the probes after it get.
-  const ctx: ProbeContext = Object.freeze({ fetch: guard, tier: args.tier, now: clock, runId });
+  const ctx: ProbeContext = Object.freeze({
+    fetch: guard,
+    tier: args.tier,
+    now: clock,
+    runId,
+    ...(args.phase ? { phase: args.phase } : {}),
+  });
   const results: EvidenceResult[] = [];
   for (const probe of probes) {
     const sentBefore = mergeRequests(...guards.map(g => g.requests()));
