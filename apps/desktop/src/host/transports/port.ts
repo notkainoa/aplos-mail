@@ -17,7 +17,7 @@ import {
   hostMethods,
   rendererMethods,
 } from '@aplos/contract/allowlists';
-import { MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
+import { MAX_WINDOW_NODES, argsBytes, messageBytes } from '@aplos/contract/measure';
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 
@@ -92,11 +92,20 @@ const refusal = (id: number, type: string, message: string): PortMessage => ({
   error: { type, message },
 });
 
-export { MAX_MEASURED_NODES, MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
+export {
+  MAX_MEASURED_NODES,
+  MAX_WINDOW_NODES,
+  argsBytes,
+  messageBytes,
+} from '@aplos/contract/measure';
 
 /** The largest arguments a window's call to `method` may carry: an upload route's bytes, or `MAX_ARGS_BYTES`. */
 const argsLimit = (method: string) =>
   uploadRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
+
+/** The size of a window's call arguments, infinite when too big: all but the binary stays within `MAX_ARGS_BYTES` on every route. */
+const argsSize = (method: string, args: unknown) =>
+  argsBytes(args ?? {}, MAX_ARGS_BYTES, argsLimit(method), MAX_WINDOW_NODES);
 
 function errorBody(error: unknown): PortError {
   const body = (error as { body?: unknown } | null)?.body as Partial<PortError> | undefined;
@@ -176,7 +185,7 @@ export function serveWindowPort(
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
       return refuse(call, 'unsupported', 'Unsupported application method.');
-    const size = messageBytes(call.args ?? {}, argsLimit(call.method), MAX_WINDOW_NODES);
+    const size = argsSize(call.method, call.args);
     if (size > argsLimit(call.method))
       return refuse(call, 'tooLarge', 'This request is too large to send.');
     if (inFlight >= MAX_IN_FLIGHT || inFlightBytes + size > MAX_IN_FLIGHT_BYTES)
@@ -805,7 +814,7 @@ export function createPortClient(
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
       // The engine refuses these too, but only after the port has copied them into its process: refuse them here.
-      if (messageBytes(args ?? {}, argsLimit(method), MAX_WINDOW_NODES) > argsLimit(method))
+      if (argsSize(method, args) > argsLimit(method))
         return Promise.reject({ type: 'tooLarge', message: 'This request is too large to send.' });
       // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
       const buffers = Array.isArray(transfer)

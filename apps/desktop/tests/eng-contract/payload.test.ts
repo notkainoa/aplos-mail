@@ -12,6 +12,7 @@ import {
   MAX_WINDOW_MESSAGE_BYTES,
   MAX_WINDOW_NODES,
   blobRoutes,
+  argsBytes,
   createPortClient,
   messageBytes,
   serveWindowPort,
@@ -466,4 +467,43 @@ test('payload: a window message with more than MAX_WINDOW_NODES values is refuse
   const errorOf = (message: PortMessage) =>
     message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
   assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'ok']);
+});
+
+test('messageBytes: a hole in a sparse array costs the 4 bytes of its null and is never visited', () => {
+  const holes: unknown[] = [1];
+  holes.length = 50_000;
+  holes[49_999] = 2;
+  let reads = 0;
+  const watched = new Proxy(holes, {
+    get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) reads++;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  assert.equal(messageBytes(watched), JSON.stringify(holes).length);
+  assert.equal(reads, 2, 'only the two real slots were read');
+});
+
+test('argsBytes: an upload route holds everything but the binary to the text limit', () => {
+  const bytes = new Uint8Array(MAX_ARGS_BYTES + 1024);
+  assert.ok(
+    Number.isFinite(
+      argsBytes({ bytes, mime: 'audio/webm' }, MAX_ARGS_BYTES, MAX_BLOB_MESSAGE_BYTES),
+    ),
+  );
+  const text = big(MAX_ARGS_BYTES + 10);
+  assert.equal(
+    argsBytes({ bytes, mime: text }, MAX_ARGS_BYTES, MAX_BLOB_MESSAGE_BYTES),
+    Number.POSITIVE_INFINITY,
+    'a 4 MB+ text field is refused though the total is far below 26 MB',
+  );
+  assert.equal(
+    argsBytes(
+      { bytes: new Uint8Array(MAX_BLOB_MESSAGE_BYTES), mime: 'a' },
+      MAX_ARGS_BYTES,
+      MAX_BLOB_MESSAGE_BYTES,
+    ),
+    Number.POSITIVE_INFINITY,
+    'the total limit still applies',
+  );
 });

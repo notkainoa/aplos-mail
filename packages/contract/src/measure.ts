@@ -112,8 +112,13 @@ function keyedContents(
 function listContents(list: ArrayLike<unknown>, room: number): Contents | undefined {
   if (list.length > room) return undefined;
   const children: Child[] = [];
-  for (let i = 0; i < list.length; i++) children.push({ value: list[i], inArray: true });
-  return { bytes: listText(list.length), children };
+  let holes = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (i in list) children.push({ value: list[i], inArray: true });
+    else holes++;
+  }
+  // JSON writes `null` (4 bytes) for a hole; it has no value to visit, so it costs no entry and no node.
+  return { bytes: listText(list.length) + holes * 4, children };
 }
 
 /** An array's slots plus any named own property (JSON drops those; the structured clone copies them). */
@@ -182,11 +187,12 @@ function lowerBound(value: unknown): number {
  * structured clone copies a shared one once; a later reference counts one byte. A cycle counts as infinite (no
  * JSON-shaped message has one).
  */
-function measure(root: unknown, limit: number, maxNodes: number): number {
+function measure(root: unknown, limit: number, maxNodes: number, textLimit = limit): number {
   const counted = new Set<object>();
   const ancestors = new Set<object>();
   const stack: Visit[] = [{ value: root, inArray: false }];
   let total = 0;
+  let binary = 0;
   let nodes = 1;
   while (stack.length) {
     const visit = stack.pop()!;
@@ -195,8 +201,11 @@ function measure(root: unknown, limit: number, maxNodes: number): number {
       continue;
     }
     if (total + lowerBound(visit.value) > limit) return Number.POSITIVE_INFINITY;
-    const leaf = leafBytes(visit.value, visit.inArray) ?? binaryBytes(visit.value, counted);
+    const text = leafBytes(visit.value, visit.inArray);
+    const bin = text === undefined ? binaryBytes(visit.value, counted) : undefined;
+    const leaf = text ?? bin;
     const object = visit.value as object;
+    if (bin !== undefined) binary += bin;
     if (leaf !== undefined) total += leaf;
     else if (ancestors.has(object)) return Number.POSITIVE_INFINITY;
     else if (counted.has(object)) total += 1;
@@ -210,7 +219,7 @@ function measure(root: unknown, limit: number, maxNodes: number): number {
       stack.push({ leave: object });
       for (let i = inner.children.length - 1; i >= 0; i--) stack.push(inner.children[i]);
     }
-    if (total > limit) return Number.POSITIVE_INFINITY;
+    if (total > limit || total - binary > textLimit) return Number.POSITIVE_INFINITY;
   }
   return total;
 }
@@ -228,6 +237,24 @@ export function messageBytes(
 ): number {
   try {
     return measure(value, limit, maxNodes);
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * What a window's call arguments cost: like `messageBytes`, but everything except binary payloads (text, keys, brackets)
+ * must also fit `textLimit`, so an upload route's large allowance covers the file's bytes and not a large text field.
+ * Infinite when either limit is passed.
+ */
+export function argsBytes(
+  value: unknown,
+  textLimit: number,
+  totalLimit: number,
+  maxNodes = MAX_MEASURED_NODES,
+): number {
+  try {
+    return measure(value, totalLimit, maxNodes, textLimit);
   } catch {
     return Number.POSITIVE_INFINITY;
   }

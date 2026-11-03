@@ -401,6 +401,16 @@ test('a window may not flood its port: at most MAX_IN_FLIGHT open calls, argumen
   // (The fake engine echoes the bytes back, a reply too large for a non-blob route: only the arrival matters here.)
   await until(() => raw.length === 3, 'the upload’s answer');
   assert.deepEqual(engine.calls, ['Blob/put']);
+  // ...but its text still stays within MAX_ARGS_BYTES: the 26 MB allowance is for the file, not for a long text field.
+  fresh.port2.postMessage({
+    v: 1,
+    id: 3,
+    method: 'Blob/put',
+    args: { bytes, mime: 'x'.repeat(MAX_ARGS_BYTES) },
+  });
+  await until(() => raw.length === 4, 'the upload with a huge text field');
+  assert.equal(raw[3].kind === 'reply' && !raw[3].ok && raw[3].error.type, 'tooLarge');
+  assert.deepEqual(engine.calls, ['Blob/put'], 'the second upload never reached the engine');
 });
 
 /** A session whose calls stay open until the test answers them, oldest first. */
