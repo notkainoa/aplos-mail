@@ -39,10 +39,31 @@ function errorReason(json: unknown): string | undefined {
 }
 
 /** GET JSON through the guarded fetch. Returns the body and how long it took. */
-export async function getJson(
+export function getJson(
   ctx: ProbeContext,
   path: string,
   query: Record<string, string | string[]>,
+): Promise<{ json: JsonBody; ms: number }> {
+  return requestJson(ctx, 'GET', path, query);
+}
+
+/** POST or PUT a JSON body through the guarded fetch (tier M and S-self probes). */
+export function sendJson(
+  ctx: ProbeContext,
+  method: 'POST' | 'PUT',
+  path: string,
+  query: Record<string, string | string[]>,
+  body: unknown,
+): Promise<{ json: JsonBody; ms: number }> {
+  return requestJson(ctx, method, path, query, body);
+}
+
+async function requestJson(
+  ctx: ProbeContext,
+  method: 'GET' | 'POST' | 'PUT',
+  path: string,
+  query: Record<string, string | string[]>,
+  body?: unknown,
 ): Promise<{ json: JsonBody; ms: number }> {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query))
@@ -50,7 +71,16 @@ export async function getJson(
   const started = ctx.now();
   let response: Response;
   try {
-    response = await ctx.fetch(`${GMAIL_BASE}${path}?${params}`);
+    response = await ctx.fetch(
+      `${GMAIL_BASE}${path}?${params}`,
+      method === 'GET'
+        ? undefined
+        : {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          },
+    );
   } catch (error) {
     // A guard refusal is a bug in the probe, so it keeps its own class; anything else is the network.
     throw new ProbeHttpError(
