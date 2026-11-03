@@ -8,6 +8,7 @@ import { windowCaller } from '@aplos/engine';
 import {
   MAX_ARGS_BYTES,
   MAX_BLOB_MESSAGE_BYTES,
+  MAX_MEASURED_NODES,
   MAX_WINDOW_MESSAGE_BYTES,
   blobRoutes,
   createPortClient,
@@ -95,6 +96,157 @@ test('messageBytes measures what the structured clone carries, not what toJSON s
   assert.equal(messageBytes({ bytes: new DataView(new ArrayBuffer(1000)) }), envelope + 1000);
   // A Date still counts as its JSON text.
   assert.equal(messageBytes(new Date(0)), JSON.stringify(new Date(0)).length);
+});
+
+/** Runs `measure` and returns its result and how long it took. */
+function timed<T>(measure: () => T): { value: T; ms: number } {
+  const start = performance.now();
+  const value = measure();
+  return { value, ms: performance.now() - start };
+}
+
+test('messageBytes: a self-containing Map or Set of 100,000 entries is refused at once, without exhausting memory', () => {
+  const map = new Map<unknown, unknown>();
+  const set = new Set<unknown>();
+  for (let i = 0; i < 100_000; i++) {
+    map.set(i, map);
+    set.add([set]);
+  }
+  for (const value of [{ m: map }, { s: set }, map, set]) {
+    const run = timed(() => messageBytes(value, MAX_ARGS_BYTES));
+    assert.equal(run.value, Number.POSITIVE_INFINITY);
+    assert.ok(run.ms < 200, `measured in ${run.ms.toFixed(0)} ms`);
+  }
+});
+
+test('messageBytes: shared children are counted once, so a deep DAG returns at once', () => {
+  let nested: unknown[] = [];
+  for (let depth = 0; depth < 30; depth++) nested = [nested, nested];
+  const run = timed(() => messageBytes(nested, MAX_ARGS_BYTES));
+  assert.ok(run.value < 1000, `${run.value} bytes`);
+  assert.ok(run.ms < 200, `measured in ${run.ms.toFixed(0)} ms`);
+  const child = { text: big(100) };
+  const dag = { a: child, b: child, c: [child, child] };
+  assert.ok(messageBytes(dag) < messageBytes({ a: child, b: { text: big(100) } }) + 20);
+});
+
+test('messageBytes: cycles in plain objects and arrays are refused without hanging', () => {
+  const object: Record<string, unknown> = { a: 1 };
+  object.deep = { again: [object] };
+  const array: unknown[] = [1];
+  array.push([array]);
+  const error = new Error('x');
+  error.cause = error;
+  for (const value of [object, array, error]) {
+    const run = timed(() => messageBytes(value));
+    assert.equal(run.value, Number.POSITIVE_INFINITY);
+    assert.ok(run.ms < 200);
+  }
+});
+
+test('messageBytes: a huge sparse array or too many nodes is refused at once', () => {
+  const sparse: unknown[] = [];
+  sparse.length = 1_000_000_000;
+  const run = timed(() => messageBytes({ sparse }));
+  assert.equal(run.value, Number.POSITIVE_INFINITY);
+  assert.ok(run.ms < 200, `measured in ${run.ms.toFixed(0)} ms`);
+  assert.equal(messageBytes(new Array(2_000_000).fill(0)), Number.POSITIVE_INFINITY);
+  const entries = Array.from({ length: MAX_MEASURED_NODES }, (_, i) => i);
+  assert.equal(messageBytes(new Set(entries)), Number.POSITIVE_INFINITY, 'a Set past the budget');
+  const pairs = entries.slice(0, MAX_MEASURED_NODES / 2 + 1).map(i => [i, 0] as const);
+  assert.equal(messageBytes(new Map(pairs)), Number.POSITIVE_INFINITY, 'a Map past the budget');
+});
+
+test('messageBytes stops reading as soon as the total passes the limit', () => {
+  let reads = 0;
+  const item = () => ({
+    get text() {
+      reads++;
+      return 'x'.repeat(100);
+    },
+  });
+  const list = Array.from({ length: 1000 }, item);
+  assert.equal(messageBytes(list, 500), Number.POSITIVE_INFINITY);
+  assert.ok(reads < 30, `${reads} values read`);
+});
+
+test('messageBytes: a normal message measures exactly its JSON text in UTF-8, as before', () => {
+  const samples: unknown[] = [
+    { kind: 'reply', id: 7, ok: true, result: { list: [{ id: 't1', subject: 'Hi', n: -0.5 }] } },
+    { text: 'é € 😀 "quoted" back\\slash \n\t\u0001 \ud800 lone', empty: '', zero: 0 },
+    { skip: undefined, fn: () => 1, keep: null, list: [undefined, () => 1, null, true, false] },
+    [1e21, -0, Number.NaN, Number.POSITIVE_INFINITY, 1.5e-7],
+    { when: new Date(0), nested: { a: [{ b: [{ c: 'd' }] }] } },
+    'just a string',
+    42,
+    null,
+    [],
+    {},
+  ];
+  for (const sample of samples)
+    assert.equal(
+      messageBytes(sample),
+      Buffer.byteLength(JSON.stringify(sample), 'utf8'),
+      JSON.stringify(sample),
+    );
+  assert.equal(messageBytes(undefined), 0);
+});
+
+test('every caller stops measuring at its own cap: engine dispatch, engine replies, preload', async () => {
+  let reads = 0;
+  // Getters count how far a measure reads; each item is about 110 bytes, 100,000 of them about 11 MB.
+  const items = () =>
+    Array.from({ length: 100_000 }, () => ({
+      get text() {
+        reads++;
+        return 'x'.repeat(100);
+      },
+    }));
+  const posted: PortMessage[] = [];
+  let deliver: (data: unknown) => void = () => undefined;
+  const end = {
+    post: (message: PortMessage) => void posted.push(message),
+    onMessage: (handler: (data: unknown) => void) => void (deliver = handler),
+    onClose: () => undefined,
+    close: () => undefined,
+  };
+  const replying = sessionAnswering(() => ({ list: items() }));
+  serveWindowPort(() => replying.session, end, { position });
+  // Dispatch: arguments over MAX_ARGS_BYTES (4 MB) are refused after reading about 4 MB of them.
+  deliver({ v: 1, id: 1, method: 'Draft/set', args: { list: items() } });
+  const refused = posted.at(-1);
+  assert.equal(refused?.kind === 'reply' && !refused.ok && refused.error.type, 'tooLarge');
+  assert.ok(reads < 100_000, `dispatch read ${reads} values`);
+  // A reply over 256 KB is refused after reading about 256 KB of it.
+  reads = 0;
+  deliver({ v: 1, id: 2, method: 'Counts/get', args: {} });
+  await until(() => posted.length === 3, 'the reply to be refused');
+  assert.ok(reads < 10_000, `the reply check read ${reads} values`);
+  // Preload: refused before posting, after reading about 4 MB.
+  reads = 0;
+  const client = createPortClient();
+  await assert.rejects(client.call('Draft/set', { list: items() }), { type: 'tooLarge' });
+  assert.ok(reads < 100_000, `preload read ${reads} values`);
+});
+
+test('payload: a self-containing Map posted raw is refused tooLarge and the engine keeps serving', async t => {
+  const engine = sessionAnswering(method => ({ method }));
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => engine.session, engineEndOf(port1), { position });
+  const replies: PortMessage[] = [];
+  port2.on('message', message => replies.push(message));
+  const map = new Map<unknown, unknown>();
+  for (let i = 0; i < 100_000; i++) map.set(i, map);
+  port2.postMessage({ v: 1, id: 1, method: 'Draft/set', args: { m: map } });
+  port2.postMessage({ v: 1, id: 2, method: 'Counts/get', args: {} });
+  await until(() => replies.length === 3, 'the hello and two answers', 2000);
+  const errorOf = (message: PortMessage) =>
+    message.kind === 'reply' && !message.ok ? message.error.type : 'ok';
+  assert.deepEqual(replies.slice(1).map(errorOf), ['tooLarge', 'ok']);
 });
 
 test('payload: a Map or Set over the argument cap is refused; a Buffer is measured by its bytes', async t => {
