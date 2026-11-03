@@ -1,0 +1,841 @@
+/**
+ * The direct MessagePort transport (lane eng-contract, contract-4; plan 10 E3 items 5 and 6, ARCH 9.4 and 12.1).
+ *
+ * One channel per window: main creates it, hands one end to the engine's utility process and the other to the window's
+ * trusted main frame, then steps out of the data path. Main keeps only its own control connection (a few named
+ * queries), the native methods, and the host channel (typed events the engine sends main).
+ *
+ * This file imports no Electron, no Node module and no zod. Preload bundles the client half into a sandboxed page, the
+ * utility process runs the serving half, and main runs the broker, the link and the supervisor. Every Electron object
+ * comes in as a small interface, so all of it runs under node:test with fakes.
+ */
+import type { DesktopEvent, ErrorBody, Frame } from '@aplos/contract';
+import type { EngineSession } from '@aplos/contract/client';
+import {
+  desktopMethods,
+  engineMethods,
+  hostMethods,
+  rendererMethods,
+} from '@aplos/contract/allowlists';
+
+// ---- wire ---------------------------------------------------------------------------------------------------------
+
+/** The argument main passes the utility process to start the new engine instead of the legacy one. */
+export const REAL_ENGINE_ARG = '--aplos-engine=real';
+/** The utility process's service name; the legacy engine's is `Aplos Mail Engine`, so their exits are counted apart. */
+export const REAL_ENGINE_SERVICE = 'Aplos Mail Engine (new)';
+
+/** No engine-to-window message may be larger than this, except a blob route's reply (plan 10 E3 acceptance). */
+export const MAX_WINDOW_MESSAGE_BYTES = 256 * 1024;
+/** A blob route's reply carries bytes (25 MB at most, `Blob/put`'s cap) plus a small envelope. */
+export const MAX_BLOB_MESSAGE_BYTES = 26 * 1024 * 1024;
+/** Calls one window may have open at once; more are refused until some answer. */
+export const MAX_IN_FLIGHT = 256;
+/** A window's call arguments may be at most this large, except an upload route's (a draft's HTML is at most 1M chars). */
+export const MAX_ARGS_BYTES = 4 * 1024 * 1024;
+/** Methods whose arguments carry `Bytes` from a window (25 MB at most). */
+export const uploadRoutes: ReadonlySet<string> = new Set(['Blob/put']);
+/** Methods whose reply carries `Bytes` to a window. Each moves as binary, never base64. */
+export const blobRoutes: ReadonlySet<string> = new Set(['Blob/get']);
+
+const desktopSet: ReadonlySet<string> = new Set(desktopMethods);
+const hostSet: ReadonlySet<string> = new Set(hostMethods);
+const engineSet: ReadonlySet<string> = new Set(engineMethods);
+
+/**
+ * What a window may send down its engine port: the generated renderer table's engine methods. Never a `host` method
+ * (main's own), never a desktop method (preload sends those to main), never a name the registry does not know.
+ */
+export const portMethods: ReadonlySet<string> = new Set(
+  rendererMethods.filter(m => engineSet.has(m) && !hostSet.has(m) && !desktopSet.has(m)),
+);
+
+/** True for a desktop method, which preload routes to main and never down the engine port. */
+export const isDesktopMethod = (method: string) => desktopSet.has(method);
+
+/** The real engine is opt-in (`APLOS_ENGINE=real`) and never in a release build until the switch (plan 10 4.1). */
+export function realEngineRequested(env: Record<string, string | undefined>, release: boolean) {
+  return !release && env.APLOS_ENGINE === 'real';
+}
+
+/** A window's call down its port (ARCH 9.1's envelope). */
+export interface PortCall {
+  v: 1;
+  id: number;
+  method: string;
+  args?: unknown;
+}
+
+/** A failed call's error as it crosses a port: the contract's error body. */
+export type PortError = ErrorBody;
+
+/** What the engine sends down a window's port. `hello` comes first, once per port. */
+export type PortMessage =
+  | { kind: 'hello'; dbEpoch: string; seq: number }
+  | { kind: 'reply'; id: number; ok: true; result: unknown }
+  | { kind: 'reply'; id: number; ok: false; error: PortError }
+  | { kind: 'frame'; frame: Frame };
+
+/** A frame main sends a window itself (`desktop`), outside the engine's change log. */
+export type DesktopFrame = { frame: 'desktop'; event: DesktopEvent };
+
+const refusal = (id: number, type: string, message: string): PortMessage => ({
+  kind: 'reply',
+  id,
+  ok: false,
+  error: { type, message },
+});
+
+/** UTF-8 length without allocating the encoded string. */
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+/**
+ * About what a message costs on the wire: its JSON text plus every binary payload's bytes. A message that cannot be
+ * measured (a cycle, a BigInt) counts as infinite, so it never leaves.
+ */
+export function messageBytes(value: unknown): number {
+  let binary = 0;
+  try {
+    const json = JSON.stringify(value, (_key, item: unknown) => {
+      if (item instanceof ArrayBuffer || ArrayBuffer.isView(item)) {
+        binary += item.byteLength;
+        return 0;
+      }
+      return item;
+    });
+    return utf8Length(json ?? '') + binary;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function errorBody(error: unknown): PortError {
+  const body = (error as { body?: unknown } | null)?.body as Partial<PortError> | undefined;
+  if (body && typeof body.type === 'string' && typeof body.message === 'string')
+    return body as PortError;
+  return { type: 'internal', message: 'Something went wrong. Try again.' };
+}
+
+function parseCall(data: unknown): PortCall | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const call = data as Partial<PortCall>;
+  if (call.v !== 1 || typeof call.id !== 'number' || !Number.isSafeInteger(call.id))
+    return undefined;
+  if (typeof call.method !== 'string' || call.method.length > 100) return undefined;
+  return call as PortCall;
+}
+
+// ---- engine side (the utility process) ----------------------------------------------------------------------------
+
+/** The engine's end of one window's channel (Electron's `MessagePortMain` in the utility process). */
+export interface EnginePortEnd {
+  post(message: PortMessage): void;
+  onMessage(handler: (data: unknown) => void): void;
+  /** May be called more than once; every handler runs when the other end goes away. */
+  onClose(handler: () => void): void;
+  close(): void;
+}
+
+export interface ServeOptions {
+  /** Where the store's change log stands now, for the port's `hello`. */
+  position(): { dbEpoch: string; seq: number };
+  /** A message that did not go out: too large, or a call that was not even an envelope. Never logs arguments. */
+  onDrop?(reason: 'tooLarge' | 'badCall', what?: string): void;
+}
+
+export interface ServedPort {
+  close(): void;
+  readonly closed: boolean;
+}
+
+/** A frame too large to send becomes a `reset` at the same position: the window re-reads instead of missing it. */
+function voidWindows(frame: Frame, position: { dbEpoch: string; seq: number }): Frame {
+  const at = 'seq' in frame ? { dbEpoch: frame.dbEpoch, seq: frame.seq } : position;
+  return { frame: 'reset', ...at, reason: 'cannotCalculateChanges' };
+}
+
+/**
+ * Serves one window over its port: a session opened as an Electron window (`open`), one `hello`, then replies and
+ * frames. Only `portMethods` reach the session, whose own dispatch checks scope again. Nothing larger than 256 KB goes
+ * out except a blob route's reply. Once closed (the window went away, main revoked the port, or the session ended)
+ * nothing more is sent or dispatched.
+ */
+export function serveWindowPort(
+  open: () => EngineSession,
+  end: EnginePortEnd,
+  options: ServeOptions,
+): ServedPort {
+  const session = open();
+  let closed = false;
+  const send = (message: PortMessage, limit: number) => {
+    if (closed) return true;
+    if (messageBytes(message) > limit) return false;
+    end.post(message);
+    return true;
+  };
+  const answer = (method: string, message: PortMessage & { kind: 'reply' }) => {
+    const limit = blobRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
+    if (send(message, limit)) return;
+    options.onDrop?.('tooLarge', method);
+    const sentence = 'This answer is too large to send to the window.';
+    send(refusal(message.id, 'tooLarge', sentence), MAX_WINDOW_MESSAGE_BYTES);
+  };
+  let inFlight = 0;
+  const refuse = (call: PortCall, type: string, sentence: string) =>
+    void send(refusal(call.id, type, sentence), MAX_WINDOW_MESSAGE_BYTES);
+  const dispatch = (call: PortCall) => {
+    if (!portMethods.has(call.method))
+      return refuse(call, 'unsupported', 'Unsupported application method.');
+    const argsLimit = uploadRoutes.has(call.method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
+    if (messageBytes(call.args ?? {}) > argsLimit)
+      return refuse(call, 'tooLarge', 'This request is too large to send.');
+    if (inFlight >= MAX_IN_FLIGHT)
+      return refuse(call, 'unavailable', 'Too many requests at once. Try again in a moment.');
+    inFlight++;
+    const done = () => void inFlight--;
+    session.call(call.method, call.args ?? {}).then(
+      result => (done(), answer(call.method, { kind: 'reply', id: call.id, ok: true, result })),
+      error => (
+        done(),
+        answer(call.method, { kind: 'reply', id: call.id, ok: false, error: errorBody(error) })
+      ),
+    );
+  };
+  send({ kind: 'hello', ...options.position() }, MAX_WINDOW_MESSAGE_BYTES);
+  const unsubscribe = session.subscribe(frame => {
+    if (send({ kind: 'frame', frame }, MAX_WINDOW_MESSAGE_BYTES)) return;
+    options.onDrop?.('tooLarge', frame.frame);
+    send(
+      { kind: 'frame', frame: voidWindows(frame, options.position()) },
+      MAX_WINDOW_MESSAGE_BYTES,
+    );
+  });
+  end.onMessage(data => {
+    if (closed) return;
+    const call = parseCall(data);
+    if (call) dispatch(call);
+    else options.onDrop?.('badCall');
+  });
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    unsubscribe();
+    session.close();
+    end.close();
+  };
+  end.onClose(close);
+  return {
+    close,
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+/** Every window's served port in the utility process, by window id. A window has at most one. */
+export function createPortHost(open: () => EngineSession, options: ServeOptions) {
+  const served = new Map<number, ServedPort>();
+  const detach = (windowId: number) => {
+    served.get(windowId)?.close();
+    served.delete(windowId);
+  };
+  return {
+    attach(windowId: number, end: EnginePortEnd) {
+      detach(windowId);
+      const port = serveWindowPort(open, end, options);
+      served.set(windowId, port);
+      end.onClose(() => {
+        if (served.get(windowId) === port) served.delete(windowId);
+      });
+    },
+    detach,
+    closeAll() {
+      for (const id of [...served.keys()]) detach(id);
+    },
+    windows: () => [...served.keys()],
+  };
+}
+
+// ---- main <-> utility process -------------------------------------------------------------------------------------
+
+/** What the utility process needs to start the engine. `key` is the data key main unwrapped with the keychain. */
+export interface UtilityInit {
+  dataDir: string;
+  appVersion: string;
+  key?: Uint8Array;
+  /** Why there is no key: a plain sentence, never a path. */
+  keyError?: string;
+}
+
+/** Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`). */
+export const controlMethods: ReadonlySet<string> = new Set([
+  'Draft/get',
+  'Outbox/pending',
+  'Session/get',
+  'Counts/get',
+]);
+
+export type PowerEvent = 'resume' | 'unlock-screen';
+
+export type ToUtility =
+  | { kind: 'init'; init: UtilityInit }
+  /** Carries exactly one transferred port: the engine's end of the window's channel. */
+  | { kind: 'attach'; windowId: number }
+  | { kind: 'detach'; windowId: number }
+  | { kind: 'call'; id: number; method: string; args: unknown }
+  | { kind: 'answer'; id: number; ok: true; result: unknown }
+  | { kind: 'answer'; id: number; ok: false; message: string }
+  | { kind: 'power'; event: PowerEvent }
+  | { kind: 'quit' };
+
+/** Requests the engine makes of main: post a banner, open a sign-in page. */
+export type UtilityRequest = { op: 'notify'; item: unknown } | { op: 'openExternal'; url: unknown };
+
+export type FromUtility =
+  | { kind: 'ready'; dbEpoch: string; seq: number }
+  | { kind: 'failed'; message: string }
+  | { kind: 'reply'; id: number; ok: true; result: unknown }
+  | { kind: 'reply'; id: number; ok: false; error: PortError }
+  /** A host-channel event (`HostEvent` in the contract); main validates it before acting. */
+  | { kind: 'host'; event: unknown }
+  | ({ kind: 'request'; id: number } & UtilityRequest)
+  | { kind: 'closed' };
+
+/** The utility process as main sees it (Electron's `UtilityProcess`). */
+export interface UtilityChild {
+  post(message: ToUtility, ports?: unknown[]): void;
+  onMessage(handler: (message: unknown) => void): void;
+  onExit(handler: (code: number) => void): void;
+  kill(): void;
+}
+
+export interface Timers {
+  set(run: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+export interface LinkHandlers {
+  /** A host-channel event, still unvalidated. */
+  hostEvent(event: unknown): void;
+  /** A request, still unvalidated; the promise's value is the answer. */
+  request(request: UtilityRequest): Promise<unknown>;
+}
+
+/** Main's link to one engine process: its control calls, the ports it attaches, and its end. */
+export interface EngineLink {
+  /** Resolves when the engine answers `ready`; rejects when it fails or stops first. */
+  readonly ready: Promise<{ dbEpoch: string; seq: number }>;
+  readonly exited: boolean;
+  /** A control-connection call; `controlMethods` only, rejected after `timeoutMs` or when the engine stops. */
+  call(method: string, args?: unknown, timeoutMs?: number): Promise<unknown>;
+  attach(windowId: number, port: unknown): void;
+  detach(windowId: number): void;
+  power(event: PowerEvent): void;
+  /** Asks the engine to close its database and exit. */
+  quit(): void;
+  kill(): void;
+  onExit(handler: () => void): void;
+}
+
+export class LinkError extends Error {
+  constructor(
+    readonly body: PortError,
+    options?: { cause?: unknown },
+  ) {
+    super(body.message, options);
+    this.name = 'LinkError';
+  }
+}
+
+const unavailable = (message = 'The mailbox is restarting. Try again in a moment.') =>
+  new LinkError({ type: 'unavailable', message });
+
+const CALL_TIMEOUT_MS = 10_000;
+
+type Pending = { resolve(value: unknown): void; reject(error: unknown): void; timer: unknown };
+
+function isUtilityMessage(message: unknown): message is FromUtility {
+  return (
+    !!message && typeof message === 'object' && typeof (message as FromUtility).kind === 'string'
+  );
+}
+
+/** Starts talking to a freshly forked utility process: sends `init`, routes replies, requests and host events. */
+export function createEngineLink(
+  child: UtilityChild,
+  init: UtilityInit,
+  handlers: LinkHandlers,
+  timers: Timers,
+): EngineLink {
+  const pending = new Map<number, Pending>();
+  const exitHandlers: (() => void)[] = [];
+  let counter = 0;
+  let exited = false;
+  let settle!: {
+    resolve(at: { dbEpoch: string; seq: number }): void;
+    reject(error: unknown): void;
+  };
+  const ready = new Promise<{ dbEpoch: string; seq: number }>((resolve, reject) => {
+    settle = { resolve, reject };
+  });
+  // A failed start is the caller's to handle; nobody else may see an unhandled rejection.
+  ready.catch(() => undefined);
+
+  const finish = (id: number, outcome: { result: unknown } | { error: unknown }) => {
+    const call = pending.get(id);
+    if (!call) return;
+    pending.delete(id);
+    timers.clear(call.timer);
+    if ('result' in outcome) call.resolve(outcome.result);
+    else call.reject(outcome.error);
+  };
+  const answer = (id: number, request: UtilityRequest) => {
+    handlers.request(request).then(
+      result => !exited && child.post({ kind: 'answer', id, ok: true, result }),
+      error =>
+        !exited &&
+        child.post({
+          kind: 'answer',
+          id,
+          ok: false,
+          message: error instanceof Error ? error.message : 'Refused.',
+        }),
+    );
+  };
+  const receive = (message: FromUtility) => {
+    if (message.kind === 'ready')
+      return settle.resolve({ dbEpoch: message.dbEpoch, seq: message.seq });
+    if (message.kind === 'failed') {
+      settle.reject(new Error(String(message.message)));
+      return child.kill();
+    }
+    if (message.kind === 'reply')
+      return finish(
+        message.id,
+        message.ok
+          ? { result: message.result }
+          : { error: new LinkError(errorBody({ body: message.error })) },
+      );
+    if (message.kind === 'host') return handlers.hostEvent(message.event);
+    if (message.kind === 'request' && typeof message.id === 'number') answer(message.id, message);
+  };
+  child.onMessage(message => {
+    if (!exited && isUtilityMessage(message)) receive(message);
+  });
+  child.onExit(() => {
+    exited = true;
+    settle.reject(unavailable('The mailbox stopped before it was ready.'));
+    for (const id of [...pending.keys()]) finish(id, { error: unavailable() });
+    for (const handler of exitHandlers.splice(0)) handler();
+  });
+  child.post({ kind: 'init', init });
+
+  return {
+    ready,
+    get exited() {
+      return exited;
+    },
+    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
+      if (!controlMethods.has(method))
+        return Promise.reject(
+          new LinkError({ type: 'forbidden', message: 'Not a control method.' }),
+        );
+      if (exited) return Promise.reject(unavailable());
+      const id = ++counter;
+      return new Promise((resolve, reject) => {
+        const timer = timers.set(() => finish(id, { error: unavailable() }), timeoutMs);
+        pending.set(id, { resolve, reject, timer });
+        child.post({ kind: 'call', id, method, args });
+      });
+    },
+    attach: (windowId, port) => !exited && child.post({ kind: 'attach', windowId }, [port]),
+    detach: windowId => !exited && child.post({ kind: 'detach', windowId }),
+    power: event => !exited && child.post({ kind: 'power', event }),
+    quit: () => !exited && child.post({ kind: 'quit' }),
+    kill: () => child.kill(),
+    onExit: handler => (exited ? handler() : exitHandlers.push(handler)),
+  };
+}
+
+// ---- the restart policy -------------------------------------------------------------------------------------------
+
+export interface SupervisorOptions {
+  spawn(): EngineLink;
+  /**
+   * The engine process stopped unexpectedly: true when this stop parks the app. Main passes host/lifecycle.ts's
+   * `createProcessState().noteEngineExit` (3 stops within 60 s park), so the legacy and the real path share one policy.
+   */
+  noteExit(): boolean;
+  /** The engine answered `ready`; `restarted` after an unexpected stop. */
+  onUp(link: EngineLink, restarted: boolean): void;
+  /** The engine stopped unexpectedly; `parked` when no restart follows. */
+  onDown(parked: boolean): void;
+  timers: Timers;
+  /** Default 500 ms, so a crash loop cannot spin. */
+  restartDelayMs?: number;
+  /** How long `close` waits for the engine to exit before killing it. Default 3 s (host/lifecycle's `QUIT_DRAIN_MS`). */
+  quitMs?: number;
+  /**
+   * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
+   * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
+   */
+  readyTimeoutMs?: number;
+}
+
+/** Keeps one engine process running: restarts it after an unexpected stop until `noteExit` parks, never after `close`. */
+export function createEngineSupervisor(options: SupervisorOptions) {
+  let current: EngineLink | undefined;
+  let closing = false;
+  let everUp = false;
+  let restart: unknown;
+
+  function down(link: EngineLink) {
+    if (current !== link) return;
+    current = undefined;
+    // A first start that fails is the caller's error (startup shows it); only a running engine restarts.
+    if (closing || !everUp) return;
+    const parked = options.noteExit();
+    options.onDown(parked);
+    if (parked) return;
+    restart = options.timers.set(() => {
+      restart = undefined;
+      up(true).catch(() => undefined);
+    }, options.restartDelayMs ?? 500);
+  }
+
+  async function up(restarted: boolean): Promise<EngineLink> {
+    if (closing) throw unavailable();
+    const link = options.spawn();
+    current = link;
+    link.onExit(() => down(link));
+    const timer = options.timers.set(() => link.kill(), options.readyTimeoutMs ?? 60_000);
+    try {
+      await link.ready;
+    } finally {
+      options.timers.clear(timer);
+    }
+    if (closing || current !== link) throw unavailable();
+    everUp = true;
+    options.onUp(link, restarted);
+    return link;
+  }
+
+  return {
+    start: () => up(false),
+    current: () => current,
+    /** Stops restarting, asks the engine to quit and resolves when it exited (killed after `quitMs`). */
+    close(): Promise<void> {
+      closing = true;
+      if (restart !== undefined) options.timers.clear(restart);
+      const link = current;
+      if (!link || link.exited) return Promise.resolve();
+      return new Promise<void>(resolve => {
+        const timer = options.timers.set(() => {
+          link.kill();
+          resolve();
+        }, options.quitMs ?? 3000);
+        link.onExit(() => {
+          options.timers.clear(timer);
+          resolve();
+        });
+        link.quit();
+      });
+    },
+  };
+}
+
+// ---- main: who gets a port ----------------------------------------------------------------------------------------
+
+/** A window as the broker sees it. `main/engine-real.ts` adapts a `BrowserWindow`. */
+export interface PortWindow {
+  readonly id: number;
+  isDestroyed(): boolean;
+  /** The window's main frame still shows the app's own renderer (re-checked before every port). */
+  trusted(): boolean;
+  /** Hands the window's end of a new channel to its main frame, and nothing else. */
+  deliver(port: unknown, generation: number): void;
+  desktop(frame: DesktopFrame): void;
+}
+
+/** The parts of an IPC event the caller check reads (Electron's `IpcMainInvokeEvent`). */
+export interface CallerEvent {
+  senderFrame: { url: string; detached?: boolean } | null | undefined;
+  sender: { mainFrame: unknown; isDestroyed(): boolean; getType?(): string };
+}
+
+/**
+ * The window whose trusted main frame sent `event`, or undefined. Refused: no frame or a detached one, a subframe
+ * (a mail frame, any iframe), a page other than the app's own renderer (another origin, `devtools://`), a webContents
+ * that is not a window's (DevTools, a webview), or one with no window.
+ */
+export function trustedCaller<W>(
+  event: CallerEvent,
+  deps: {
+    trustedURL(url: string): boolean;
+    windowOf(sender: CallerEvent['sender']): W | undefined;
+  },
+): W | undefined {
+  const frame = event.senderFrame;
+  const sender = event.sender;
+  if (!frame || frame.detached || frame !== sender.mainFrame || sender.isDestroyed())
+    return undefined;
+  if (sender.getType && sender.getType() !== 'window') return undefined;
+  if (!deps.trustedURL(frame.url)) return undefined;
+  return deps.windowOf(sender);
+}
+
+export interface BrokerDeps {
+  /** A new `MessageChannelMain`: one end for the engine, one for the window. */
+  channel(): { engineEnd: unknown; windowEnd: unknown };
+  /** The running engine, if any. */
+  link(): EngineLink | undefined;
+}
+
+/** One channel per window, re-issued after an engine restart, revoked when the window closes or navigates. */
+export function createPortBroker(deps: BrokerDeps) {
+  const holders = new Map<number, PortWindow>();
+  let generation = 0;
+
+  const revoke = (windowId: number) => {
+    if (!holders.delete(windowId)) return;
+    deps.link()?.detach(windowId);
+  };
+  const issue = (win: PortWindow, link: EngineLink) => {
+    const { engineEnd, windowEnd } = deps.channel();
+    link.attach(win.id, engineEnd);
+    holders.set(win.id, win);
+    win.deliver(windowEnd, ++generation);
+  };
+
+  return {
+    /** A window asked for its port (after `trustedCaller`). A second ask replaces the first port. */
+    connect(win: PortWindow): void {
+      const link = deps.link();
+      if (!link || link.exited) throw unavailable();
+      if (win.isDestroyed() || !win.trusted()) throw new Error('Untrusted application window.');
+      revoke(win.id);
+      issue(win, link);
+    },
+    /** The window closed or its main frame navigated: its port stops at once. */
+    revoke,
+    /** A restarted engine: every window that held a port and still shows the app gets a new one. */
+    reissue(): void {
+      const link = deps.link();
+      for (const win of [...holders.values()]) {
+        holders.delete(win.id);
+        if (link && !link.exited && !win.isDestroyed() && win.trusted()) issue(win, link);
+      }
+    },
+    desktop(frame: DesktopFrame): void {
+      for (const win of holders.values()) if (!win.isDestroyed()) win.desktop(frame);
+    },
+    holders: () => [...holders.keys()],
+  };
+}
+
+/** The events of a window's webContents that end its port (`main/engine-real.ts` passes the real webContents). */
+export interface RevokeSource {
+  on(event: 'did-navigate' | 'render-process-gone' | 'destroyed', listener: () => void): unknown;
+}
+
+/**
+ * Revokes a window's port when its main frame COMMITS a new document (`did-navigate`, main frame only, never in-page),
+ * when its renderer dies, or when the webContents goes. Never on `did-start-navigation`: Electron fires that before
+ * `will-navigate`, so a link the window layer cancels (opened in the browser instead) would leave the page without a
+ * port. A committed document runs a fresh preload, which asks again.
+ */
+export function revokeOnNewDocument(contents: RevokeSource, revoke: () => void): void {
+  contents.on('did-navigate', revoke);
+  contents.on('render-process-gone', revoke);
+  contents.on('destroyed', revoke);
+}
+
+/** `window.compose` through main's own connection: the draft must exist in the engine (`Draft/get`). */
+export async function draftOpenable(
+  link: EngineLink | undefined,
+  draftId: string,
+): Promise<boolean> {
+  if (!link) throw unavailable();
+  const result = (await link.call('Draft/get', { ids: [draftId] })) as {
+    list?: { id?: unknown }[];
+  };
+  return Array.isArray(result?.list) && result.list.some(draft => draft?.id === draftId);
+}
+
+/** Sign-in pages the engine may ask main to open (the host channel's `openExternal`, purpose `oauth`). */
+const signInPaths: ReadonlyMap<string, string> = new Map([
+  ['accounts.google.com', '/o/oauth2/v2/auth'],
+]);
+
+/** The URL to open when it is a provider's https sign-in page, else undefined. */
+export function signInURL(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw.length > 4000) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return undefined;
+    return signInPaths.get(url.hostname) === url.pathname ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---- the window's side (preload) ----------------------------------------------------------------------------------
+
+/** The window's end of its channel (a DOM `MessagePort` in preload's isolated world). */
+export interface WindowPortEnd {
+  post(message: PortCall, transfer: ArrayBuffer[]): void;
+  onMessage(handler: (data: unknown) => void): void;
+  /** The other end went away (main revoked the port, the engine stopped). */
+  onClose?(handler: () => void): void;
+  close(): void;
+}
+
+type Waiting = { resolve(value: unknown): void; reject(error: PortError): void };
+type Queued = { method: string; args: unknown; transfer: ArrayBuffer[] } & Waiting;
+
+const restarted: PortError = {
+  type: 'unavailable',
+  message: 'The mailbox restarted. Try again.',
+};
+const lost: PortError = {
+  type: 'unavailable',
+  message: 'The connection to the mailbox closed. Try again.',
+};
+
+/**
+ * A window's engine connection over whatever port main delivered last. Calls wait for the first port. A new port
+ * (an engine restart) answers the old port's open calls `unavailable` and resumes: on the same `dbEpoch` the window
+ * keeps its state token and nothing is re-sent; on another one the window gets a `reset {reason: 'dbEpoch'}`.
+ * Failed calls reject with the contract's error body, a plain object that crosses `contextBridge` intact. When the port
+ * closes under the window, its open calls fail at once and `onLost` runs, so preload asks main for a new one.
+ */
+export function createPortClient(
+  allow: ReadonlySet<string> = portMethods,
+  options: { onLost?(): void } = {},
+) {
+  const listeners = new Set<(frame: Frame | DesktopFrame) => void>();
+  const waiting = new Map<number, Waiting>();
+  const queue: Queued[] = [];
+  let end: WindowPortEnd | undefined;
+  let open = false;
+  let counter = 0;
+  let dbEpoch: string | undefined;
+  let seq: number | undefined;
+
+  const emit = (frame: Frame | DesktopFrame) => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(frame);
+      } catch {
+        // A listener's bug is not the transport's.
+      }
+    }
+  };
+  const post = (call: Queued) => {
+    const id = ++counter;
+    waiting.set(id, call);
+    try {
+      end!.post({ v: 1, id, method: call.method, args: call.args }, call.transfer);
+    } catch {
+      waiting.delete(id);
+      call.reject({ type: 'validation', message: 'These arguments cannot be sent.' });
+    }
+  };
+  const hello = (message: { dbEpoch: string; seq: number }) => {
+    if (dbEpoch !== undefined && message.dbEpoch !== dbEpoch)
+      emit({ frame: 'reset', dbEpoch: message.dbEpoch, seq: message.seq, reason: 'dbEpoch' });
+    if (message.dbEpoch !== dbEpoch) seq = message.seq;
+    dbEpoch = message.dbEpoch;
+    open = true;
+    for (const call of queue.splice(0)) post(call);
+  };
+  const receive = (data: unknown) => {
+    const message = data as PortMessage;
+    if (!message || typeof message !== 'object') return;
+    if (message.kind === 'hello') return hello(message);
+    if (message.kind === 'frame') {
+      const frame = message.frame;
+      if (frame && 'seq' in frame && frame.dbEpoch === dbEpoch) seq = Math.max(seq ?? 0, frame.seq);
+      return emit(frame);
+    }
+    if (message.kind !== 'reply') return;
+    const call = waiting.get(message.id);
+    if (!call) return;
+    waiting.delete(message.id);
+    if (message.ok) call.resolve(message.result);
+    else call.reject(message.error);
+  };
+
+  return {
+    /** Main delivered a port: the first one, or a new one after an engine restart or a reload. */
+    attach(next: WindowPortEnd): void {
+      end?.close();
+      for (const call of waiting.values()) call.reject(restarted);
+      waiting.clear();
+      open = false;
+      end = next;
+      next.onMessage(data => {
+        if (end === next) receive(data);
+      });
+      next.onClose?.(() => {
+        if (end !== next) return;
+        end = undefined;
+        open = false;
+        for (const call of waiting.values()) call.reject(lost);
+        waiting.clear();
+        options.onLost?.();
+      });
+    },
+    /** A port is held (it may still be waiting for its `hello`). */
+    connected: () => end !== undefined,
+    call(method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> {
+      if (typeof method !== 'string' || !allow.has(method))
+        return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
+      // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
+      const buffers = Array.isArray(transfer)
+        ? transfer.filter((item): item is ArrayBuffer => item instanceof ArrayBuffer)
+        : [];
+      return new Promise((resolve, reject) => {
+        const call: Queued = { method, args: args ?? {}, transfer: buffers, resolve, reject };
+        if (open && end) post(call);
+        else queue.push(call);
+      });
+    },
+    /** The window could not get a port at all (no real engine, or refused): every waiting call fails. */
+    fail(error: PortError): void {
+      for (const call of queue.splice(0)) call.reject(error);
+    },
+    /** A `desktop` frame from main (engine reachability, the window's own lifecycle). */
+    desktop(frame: unknown): void {
+      if ((frame as DesktopFrame | null)?.frame === 'desktop') emit(frame as DesktopFrame);
+    },
+    subscribe(listener: (frame: Frame | DesktopFrame) => void): () => void {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    /** The window's state token: the `dbEpoch` and newest `seq` it has seen. */
+    position: () => ({ dbEpoch, seq }),
+    close(): void {
+      end?.close();
+      end = undefined;
+      open = false;
+      for (const call of waiting.values()) call.reject(restarted);
+      waiting.clear();
+      listeners.clear();
+    },
+  };
+}
+
+export type PortClient = ReturnType<typeof createPortClient>;
