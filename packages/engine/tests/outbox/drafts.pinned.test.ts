@@ -435,3 +435,22 @@ test('after a later version replaced the clean draft over a held one, a discard 
     assert.deepEqual(w.remoteDrafts.removeAttempts, [s.remoteDraftId]);
     assert.deepEqual(w.remoteDrafts.removeExpected, [b]);
   }));
+
+test('the phone removes a draft whose older revision was sent and that was edited here since: the text is kept and the owner is told the copy is gone', () =>
+  world(async w => {
+    const s = await synced(w);
+    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    for (let i = 0; i < 40; i++)
+      w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
+    await wait(w, 15 * SEC);
+    assert.equal(w.get(sub.id).state, 'sent');
+    const after = edit(w, read(w, s.draft.id), fields({ subject: 'After' }));
+    fact(w, s.remoteDraftId, s.messageId, { removed: true });
+    const d = read(w, s.draft.id);
+    assert.equal(d.subject, 'After', 'the text is kept');
+    const conflict = (syncOf(w, s.draft.id) as { conflict?: { gone?: true } }).conflict;
+    assert.equal(conflict?.gone, true, 'and the owner is told the copy is gone');
+    assert.equal(held(w, s.draft.id), undefined, 'nothing is held for good');
+    refusedWith(() => w.send(w.first, s.draft.id, { revision: after.revision }), 'stateMismatch');
+    assert.equal(w.server.payloads.length, 1, 'the later text was not mailed');
+  }));
