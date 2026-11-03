@@ -157,3 +157,69 @@ test('a send that is done but whose clean-up has not run still pins the draft: a
       'and shown once the draft is gone',
     );
   }));
+
+// ---------------------------------------------------------------- review of the isEcho change (Opus)
+
+test('echo: our own update reported with no body BEFORE its ack opens no lasting conflict: the ack ends it', () =>
+  world(async w => {
+    const s = await synced(w);
+    const g = gate();
+    w.remoteDrafts.script.push({ wait: g.wait });
+    edit(w, s.draft, fields({ subject: 'Second' }), true);
+    await wait(w, 1);
+    const upload = w.remoteDrafts.saves.at(-1)!;
+    // History reports the update's new message id (the fake gives the next one, `msg3`) with no body, before the ack.
+    fact(w, s.remoteDraftId, 'msg3', { internetId: upload.internetId });
+    assert.ok(read(w, s.draft.id).conflict, 'asked for now: the report cannot be proven ours');
+    g.open();
+    await wait(w, 1);
+    assert.equal(
+      read(w, s.draft.id).conflict,
+      undefined,
+      'the ack named that very copy: it was ours',
+    );
+    assert.equal(row(w, s.draft.id)!.remote_message_id, 'msg3');
+    assert.equal(read(w, s.draft.id).sync, 'synced');
+  }));
+
+test('echo: after keep mine made a new copy, a later report of the old copy under our Message-ID is shown, not swallowed', () =>
+  world(async w => {
+    const s = await synced(w);
+    const phoneId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    edit(w, s.draft, fields({ subject: 'Mine' }), true);
+    await wait(w, 5 * SEC);
+    assert.ok(read(w, s.draft.id).conflict);
+    service(w).resolve(next(), s.draft.id, 'keepMine');
+    await w.settle();
+    assert.notEqual(row(w, s.draft.id)!.remote_draft_id, s.remoteDraftId, 'a new copy');
+    // History now reports the phone's version of the OLD copy, with its body, under our Message-ID.
+    fact(w, s.remoteDraftId, phoneId, { ...PHONE, internetId: s.internetId });
+    assert.match(
+      read(w, `${ACCOUNT}:${s.remoteDraftId}`).html,
+      /PHONE TEXT/,
+      'the phone edit is shown',
+    );
+  }));
+
+test('resurface: a held phone version of a draft that came from the phone gets its own id, and a send does not pin it', () =>
+  world(async w => {
+    // A draft written on the phone, complete, then sent from here unchanged.
+    fact(w, 'rd-p', 'pm-1', { ...OWN, internetId: '<p1@phone.example>' });
+    const id = `${ACCOUNT}:rd-p`;
+    for (let i = 0; i < 20; i++)
+      w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
+    w.send(w.first, id, { revision: read(w, id).revision });
+    await wait(w, 15 * SEC);
+    fact(w, 'rd-p', 'pm-2', { ...PHONE, internetId: '<p1@phone.example>' });
+    w.faults.length = 0;
+    await wait(w, 30 * SEC);
+    const rows = w.first.store.read(q =>
+      q.all<{ id: string; origin: string }>(
+        'SELECT id, origin FROM drafts WHERE account_id = ?',
+        ACCOUNT,
+      ),
+    );
+    assert.equal(rows.length, 1, 'the sent draft is gone and the phone version shows once');
+    assert.match(rows[0]!.id, /^.+:rd-p~\d+$/, "under a fresh id, not the sent draft's");
+    assert.match(read(w, rows[0]!.id).html, /PHONE TEXT/);
+  }));
