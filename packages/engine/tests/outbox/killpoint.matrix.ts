@@ -536,68 +536,74 @@ const label = (r: Row) =>
 
 const report: string[] = [];
 
-describe('kill-point matrix', { concurrency: 6 }, () => {
-  after(() => console.log(`\nkill-point matrix\n${report.sort().join('\n')}`));
-  for (const row of rows())
-    it(label(row), async () => {
-      const r = await runKillScenario({
-        killAt: row.killAt,
-        deliver: row.deliver,
-        find: row.find,
-        ...(row.downtimeMs ? { downtimeMs: row.downtimeMs } : {}),
-        ...(row.answerLost ? { answerLost: true } : {}),
-        ...(row.indexLagMs ? { indexLagMs: row.indexLagMs } : {}),
-        ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
-        ...(row.refuse ? { refuse: row.refuse } : {}),
-        ...(row.onMove ? { onMove: row.onMove } : {}),
-        ...(row.actions ? { actions: row.actions } : {}),
-        ...(row.script ? { script: row.script } : {}),
-        ...(row.killedRunMs ? { killedRunMs: row.killedRunMs } : {}),
+/** Part `part` (from 0) of `of` of the matrix: the rows are dealt out by index so the CI shards can spread them. */
+export function defineMatrix(part: number, of: number) {
+  describe('kill-point matrix', { concurrency: 6 }, () => {
+    after(() => console.log(`\nkill-point matrix\n${report.sort().join('\n')}`));
+    for (const row of rows().filter((_, i) => i % of === part))
+      it(label(row), async () => {
+        const r = await runKillScenario({
+          killAt: row.killAt,
+          deliver: row.deliver,
+          find: row.find,
+          ...(row.downtimeMs ? { downtimeMs: row.downtimeMs } : {}),
+          ...(row.answerLost ? { answerLost: true } : {}),
+          ...(row.indexLagMs ? { indexLagMs: row.indexLagMs } : {}),
+          ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
+          ...(row.refuse ? { refuse: row.refuse } : {}),
+          ...(row.onMove ? { onMove: row.onMove } : {}),
+          ...(row.actions ? { actions: row.actions } : {}),
+          ...(row.script ? { script: row.script } : {}),
+          ...(row.killedRunMs ? { killedRunMs: row.killedRunMs } : {}),
+        });
+        report.push(
+          `${label(row).padEnd(78)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,
+        );
+        assertSendInvariant(r);
+        assert.equal(r.submission.state, row.state);
+        assert.equal(r.deliveries, row.deliveries);
+        assert.equal(r.sendCalls, row.sendCalls);
+        if (row.findCalls !== undefined) assert.equal(r.findCalls, row.findCalls);
+        if (row.state === 'uncertain') assert.equal(r.submission.problem?.message, UNCERTAIN_COPY);
+        if (row.reason) assert.equal(r.submission.problem?.reasonCode, row.reason);
+        assert.equal(r.signals.length, [row.killAt].flat().length);
+        if (row.last) {
+          const last = r.actions.at(-1);
+          assert.equal(last?.outcome, row.last.outcome, JSON.stringify(r.actions));
+          if (row.last.sentence) assert.equal(last?.sentence, row.last.sentence);
+        }
       });
-      report.push(
-        `${label(row).padEnd(78)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,
-      );
+  });
+}
+
+/** The checks that look at the whole matrix and the long-run uncertain case. */
+export function defineChecks() {
+  describe('after the owner is asked', () => {
+    it('an uncertain send is never re-sent by itself, however long the app runs', async () => {
+      const r = await runKillScenario({
+        killAt: 'after-marker',
+        recoverMs: 6 * 60 * 60_000,
+      });
       assertSendInvariant(r);
-      assert.equal(r.submission.state, row.state);
-      assert.equal(r.deliveries, row.deliveries);
-      assert.equal(r.sendCalls, row.sendCalls);
-      if (row.findCalls !== undefined) assert.equal(r.findCalls, row.findCalls);
-      if (row.state === 'uncertain') assert.equal(r.submission.problem?.message, UNCERTAIN_COPY);
-      if (row.reason) assert.equal(r.submission.problem?.reasonCode, row.reason);
-      assert.equal(r.signals.length, [row.killAt].flat().length);
-      if (row.last) {
-        const last = r.actions.at(-1);
-        assert.equal(last?.outcome, row.last.outcome, JSON.stringify(r.actions));
-        if (row.last.sentence) assert.equal(last?.sentence, row.last.sentence);
-      }
+      assert.equal(r.submission.state, 'uncertain');
+      assert.equal(r.sendCalls, 0);
+      assert.equal(r.deliveries, 0);
     });
-});
 
-describe('after the owner is asked', () => {
-  it('an uncertain send is never re-sent by itself, however long the app runs', async () => {
-    const r = await runKillScenario({
-      killAt: 'after-marker',
-      recoverMs: 6 * 60 * 60_000,
+    it('every move that during-commit can name is exercised by the matrix', () => {
+      const used = new Set(rows().flatMap(r => [r.onMove ?? []].flat()));
+      assert.deepEqual(
+        Object.keys(MOVES).filter(m => !used.has(m as MoveName)),
+        [],
+      );
     });
-    assertSendInvariant(r);
-    assert.equal(r.submission.state, 'uncertain');
-    assert.equal(r.sendCalls, 0);
-    assert.equal(r.deliveries, 0);
-  });
 
-  it('every move that during-commit can name is exercised by the matrix', () => {
-    const used = new Set(rows().flatMap(r => [r.onMove ?? []].flat()));
-    assert.deepEqual(
-      Object.keys(MOVES).filter(m => !used.has(m as MoveName)),
-      [],
-    );
+    it('every kill point is exercised by the matrix', () => {
+      const used = new Set(rows().flatMap(r => [r.killAt].flat()));
+      assert.deepEqual(
+        [...KILL_POINTS].filter(p => !used.has(p)),
+        [],
+      );
+    });
   });
-
-  it('every kill point is exercised by the matrix', () => {
-    const used = new Set(rows().flatMap(r => [r.killAt].flat()));
-    assert.deepEqual(
-      [...KILL_POINTS].filter(p => !used.has(p)),
-      [],
-    );
-  });
-});
+}
