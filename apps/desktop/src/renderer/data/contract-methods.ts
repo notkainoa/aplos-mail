@@ -300,6 +300,13 @@ export const CONTRACT_METHODS = {
     notes:
       'opId minted; receipt joins operations and the undo stack; undoUntil is the hold before guests are told',
   },
+  'event.hide': {
+    method: 'Event/hide',
+    kind: 'call',
+    gaps: [],
+    notes:
+      'opId minted; receipt joins operations and the undo stack; Aplos-side only, never written to the provider',
+  },
   'event.rsvp': {
     method: 'Event/rsvp',
     kind: 'call',
@@ -425,6 +432,12 @@ export const CONTRACT_METHODS = {
     kind: 'native',
     gaps: [],
     notes: '',
+  },
+  'shell.open': {
+    method: 'Shell/open',
+    kind: 'native',
+    gaps: [],
+    notes: 'main opens it through its external() gate: http, https or mailto, no credentials',
   },
   'notification.test': {
     method: 'Notification/test',

@@ -38,6 +38,8 @@ export interface OpenOptions {
   height?: number;
   /** Size the frame to every reported height, as the reader does. Default: yes. */
   follow?: boolean;
+  /** Space above the frame in px: the frame sits below the host window's fold, off screen, with no scrolling. */
+  below?: number;
 }
 
 export interface Opened {
@@ -71,10 +73,10 @@ function environment(): Record<string, string> {
 
 function hostPage(
   token: string,
-  options: Required<Pick<OpenOptions, 'height' | 'follow'>>,
+  options: Required<Pick<OpenOptions, 'height' | 'follow' | 'below'>>,
 ): string {
   return `<!doctype html><meta charset="utf-8"><title>host</title>
-<body style="margin:0"><iframe id="f" sandbox="allow-scripts allow-popups" src="/${token}/"
+<body style="margin:0"><div style="height:${options.below}px"></div><iframe id="f" sandbox="allow-scripts allow-popups" src="/${token}/"
   style="border:0;display:block;width:${WIDTH}px;height:${options.height}px"></iframe>
 <script>
 window.reports = [];
@@ -142,6 +144,7 @@ export async function launchBed(): Promise<Bed> {
     const host = hostPage(token, {
       height: options.height ?? 100,
       follow: options.follow ?? true,
+      below: options.below ?? 0,
     });
     pages.set(token, { document: options.document, headers: options.headers ?? 'engine', host });
     const page = await newPage();

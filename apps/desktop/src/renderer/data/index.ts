@@ -968,6 +968,7 @@ export const api: DataApi = {
   },
   event: {
     set: ((...args: unknown[]) => forward('event', 'set', args)) as DataApi['event']['set'],
+    hide: ((...args: unknown[]) => forward('event', 'hide', args)) as DataApi['event']['hide'],
     rsvp: ((...args: unknown[]) => forward('event', 'rsvp', args)) as DataApi['event']['rsvp'],
   },
   calendar: {
@@ -1015,6 +1016,9 @@ export const api: DataApi = {
       forward('system', 'notifications', args)) as DataApi['system']['notifications'],
     openSettings: ((...args: unknown[]) =>
       forward('system', 'openSettings', args)) as DataApi['system']['openSettings'],
+  },
+  shell: {
+    open: ((...args: unknown[]) => forward('shell', 'open', args)) as DataApi['shell']['open'],
   },
   notification: {
     test: ((...args: unknown[]) =>

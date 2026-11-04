@@ -7,7 +7,7 @@ import { useId } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { CalendarEventData, CalendarGridProps } from '../props';
 import { dayOf, dayTitle, durationText, longDay, minutesBetween, timeOf } from './dates';
-import { calVar, eventDomId, eventLabel, walkAt } from './eventText';
+import { agendaLabel, calVar, eventDomId, walkAt } from './eventText';
 import { GridAction } from './GridAction';
 import { allDayOn, daysOf } from './layout';
 import { NowLine } from './NowLine';
@@ -33,7 +33,7 @@ function row(
       data-kind={event.kind}
       data-event-id={event.id}
       aria-pressed={selectedId === event.id}
-      aria-label={eventLabel(event)}
+      aria-label={agendaLabel(event, sub)}
       tabIndex={-1}
       style={{ '--cal': calVar(event.calendar.color) } as CSSProperties}
       onClick={() => onSelect(event.id)}
@@ -47,12 +47,14 @@ function row(
       <span className="ui-calendar-grid__ag-time">
         {event.allDay ? 'All day' : timeOf(event.start)}
       </span>
+      {/* A whitespace text node: a flex row draws none, but the visible text then reads "9:30 AM Dental", like the label. */}{' '}
       <span className="ui-calendar-grid__ag-event">
         <i aria-hidden="true" data-plan={event.kind === 'plan' ? 'true' : undefined} />
         <span className="ui-calendar-grid__ag-text">
           <span className="ui-calendar-grid__ag-name" dir="auto">
             {event.title}
           </span>
+          {sub ? ' ' : null}
           {sub ? <span className="ui-calendar-grid__ag-sub">{sub}</span> : null}
         </span>
       </span>
