@@ -164,6 +164,21 @@ describe('elements and attributes', () => {
     assert.match(body.document, /<body class="m-aplos-find x">/);
   });
 
+  it('opens quoted history only when asked (quotesOpen), with the same count either way', () => {
+    const mail = '<p>new</p><div class="gmail_quote">old</div>';
+    const closed = html(mail);
+    const open = html(mail, { quotesOpen: true });
+    assert.match(bodyOf(closed), /<details class="aplos-quote"><summary>/);
+    assert.match(bodyOf(open), /<details class="aplos-quote" open><summary>/);
+    assert.equal(closed.quotedCount, 1);
+    assert.equal(open.quotedCount, 1);
+    assert.equal(
+      bodyOf(open).replace(' open>', '>'),
+      bodyOf(closed),
+      'nothing else differs between the two',
+    );
+  });
+
   it('moves aplos- names in markup and selectors alike, so =, ^= and $= still match', () => {
     const value = ' foo  aplos-x\tbar \n aplos-y ';
     const result = html(

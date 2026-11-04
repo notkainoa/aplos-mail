@@ -36,6 +36,7 @@ const ATTRIBUTE_NAME = /^[a-z][a-z0-9-]*$/;
 const TRANSPARENT_GIF =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const QUOTE_OPEN = `<details class="${QUOTE_CLASS}"><summary>${QUOTE_SUMMARY}</summary>`;
+const QUOTE_OPEN_EXPANDED = `<details class="${QUOTE_CLASS}" open><summary>${QUOTE_SUMMARY}</summary>`;
 const NO_CLASS = new Set(['class']);
 
 interface Context {
@@ -100,9 +101,10 @@ export function sanitizeHtml(
   images: ImageBook,
   finder: Finder | undefined,
   ownOutput = false,
+  quotesOpen = false,
 ): WalkOutput {
   const parsed = parseMail(html, LIMITS);
-  const walker = new Walker(images, finder, ownOutput);
+  const walker = new Walker(images, finder, ownOutput, quotesOpen);
   const output = walker.run(parsed.root);
   return { ...output, doctype: doctypeFor(parsed.doctype), clipped: parsed.clipped };
 }
@@ -127,6 +129,8 @@ class Walker {
     private readonly finder: Finder | undefined,
     /** Re-reading Aplos's own output: its `aplos-` classes stay (the idempotence check). */
     private readonly ownOutput: boolean,
+    /** Quoted history starts open (`Mail/frame.quotesOpen`). */
+    private readonly quotesOpen: boolean,
   ) {}
 
   run(root: ElementNode): Omit<WalkOutput, 'doctype' | 'clipped'> {
@@ -207,7 +211,7 @@ class Walker {
   private openQuote(entry: Written): void {
     if (this.depth() + 2 > MAX_DEPTH) return;
     this.impliedClose('details');
-    this.out.push(QUOTE_OPEN);
+    this.out.push(this.quotesOpen ? QUOTE_OPEN_EXPANDED : QUOTE_OPEN);
     entry.open = true;
     this.written.push(entry);
     this.quotedCount++;
