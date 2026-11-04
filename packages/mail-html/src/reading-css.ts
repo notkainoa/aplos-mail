@@ -56,7 +56,8 @@ export const READING_CSS = [
   // rules sit in the layer `aplos-reading`, declared before any mail CSS: for !important declarations the
   // earliest layer wins over every later layer and over unlayered rules, whatever their specificity. It does
   // NOT win over an element's own style attribute (element-attached styles rank before layers), so the frame
-  // body's style loses its !important (sanitize.ts) and the frame html takes no style at all. The mail cannot
+  // body's style is cut to an explicit property-name allowlist (body-style.ts) that holds nothing able to size
+  // or move the body, and the frame html takes no style at all. The mail cannot
   // join the layer: its @layer names move to `m-` (css.ts). Not covered, the host's growth fence is required:
   // content in an orthogonal writing mode or a height-dependent media query is rewritten away (css.ts), but a
   // layout that follows the frame by other means (percentage chains with intrinsic sizes, say) is not.
