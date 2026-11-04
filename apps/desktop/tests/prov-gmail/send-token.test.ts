@@ -163,3 +163,85 @@ test('findSent: an error in the pass is thrown, never absent', async () => {
   assert.ok(error instanceof Error);
   assert.ok(classOf(error), 'a classified provider error');
 });
+
+// ---- edges: a token only from a well-formed id, a candidate only inside the window ----
+
+test('send token: an id that is not a plain <local@domain> never becomes a header (no CR/LF injection, no stray bytes)', () => {
+  const raw = Buffer.from('Subject: x\r\n\r\nbody');
+  for (const id of [
+    '<a@mail.example.test>\r\nBcc: evil@attacker.example',
+    '<a@mail.example.test>\nBcc: evil@attacker.example',
+    '<a@mail.example.test>\n',
+    '<a@mail.example.test>\r\n',
+    '\r\n<a@mail.example.test>',
+    '<a b@mail.example.test>',
+    '<a\t@mail.example.test>',
+    '<a\0@mail.example.test>',
+    '<a"@mail.example.test>',
+    '<a<b@mail.example.test>',
+    '<a>b@mail.example.test>',
+    '<@mail.example.test>',
+    '<a@>',
+    '<a>',
+    'a@mail.example.test',
+    '',
+    `<${'a'.repeat(257)}@mail.example.test>`,
+    '<\u00e9@mail.example.test>',
+    '<a@m\u00e4il.example.test>',
+  ]) {
+    assert.equal(withSendToken(raw, id), raw, `no token for ${JSON.stringify(id)}`);
+  }
+  // The id the outbox really makes (32 hex) and a shorter well-formed one both get exactly one header line.
+  for (const id of [`<${'ab'.repeat(16)}@mail.example.test>`, '<Short.id-1@mail.example.test>']) {
+    const out = Buffer.from(withSendToken(raw, id)).toString('latin1');
+    assert.equal(out, `X-Aplos-Send: ${id}\r\n${raw.toString('latin1')}`);
+  }
+});
+
+test('send token: a payload whose internetId carries a CR/LF is refused before anything is sent, never written as a header', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  const evil = '<a@mail.example.test>\r\nBcc: evil@attacker.example';
+  const error = await world.adapter
+    .send({ ...pinned.payload, internetId: evil }, world.ctx())
+    .catch((e: unknown) => e);
+  assert.ok(error instanceof Error);
+  assert.equal(world.sendRequests(), 0, 'no request left');
+  assert.equal(world.bridge.uploads.length, 0);
+});
+
+test('send token: a well-formed id that is not the outbox 32-hex form is written as it is and found by it', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world, { messageId: '<Odd.Id-7@mail.example.test>' });
+  await world.adapter.send(pinned.payload, world.ctx());
+  assert.equal(
+    headerLines(world.bridge.uploads[0].raw)[0],
+    'X-Aplos-Send: <Odd.Id-7@mail.example.test>',
+  );
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'found');
+});
+
+test('findSent: a copy carrying our token but older than the window (since minus 3 days) is not ours; inside the slack it is', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  const at = world.clock.now();
+  const add = (date: number) =>
+    world.emu.mailbox.addMessage({
+      from: world.address,
+      to: ['friend@example.test'],
+      labelIds: ['SENT'],
+      internalDate: date,
+      headers: { 'X-Aplos-Send': pinned.payload.internetId },
+    });
+  add(at - 10 * 86_400_000);
+  const old = await world.port.findSent(ACCOUNT, pinned.payload.internetId, at - 60_000);
+  assert.equal(old.kind, 'absent', 'ten days before the attempt');
+  const inside = add(at - 2 * 86_400_000);
+  const found = await world.port.findSent(ACCOUNT, pinned.payload.internetId, at - 60_000);
+  assert.deepEqual(found, {
+    kind: 'found',
+    remoteMessageId: inside.id,
+    remoteThreadId: inside.threadId,
+  });
+});
