@@ -7,7 +7,7 @@ import { getJson, ProbeHttpError, sendJson } from './http';
  * real Gmail do to a draft's identity when the API saves it and when ANOTHER client edits it? The first live run found
  * that Gmail does not keep the Message-ID the client wrote, so this version never compares to our value alone: it
  * records, per read, a short salted HASH of the Message-ID value (never the value) and its SHAPE (ours, Gmail-style
- * `<...@mail.gmail.com>`, other, absent), plus whether a custom `X-Aplos-Probe` header survives, and what the
+ * `<...@mail.gmail.com>`, other, absent), plus whether two custom headers (`X-Aplos-Probe`, and `X-Aplos-Draft`, the name the engine's draft-identity proposal would use) survives, and what the
  * `rfc822msgid:` search finds. The engine can then decide whether any id of ours (Message-ID or a custom header) can
  * identify a draft after a save or a foreign edit.
  *
@@ -26,6 +26,8 @@ const SCAN = 25;
 const BODY_V1 = 'Aplos live probe, first save.';
 const BODY_V2 = 'Aplos live probe, second save over the API.';
 const CUSTOM_HEADER = 'X-Aplos-Probe';
+/** The header name the engine's draft-identity proposal (plans/engine/draft-identity.md) would carry its own id in. */
+const ENGINE_HEADER = 'X-Aplos-Draft';
 
 const b64url = (text: string): string => Buffer.from(text, 'utf8').toString('base64url');
 
@@ -38,13 +40,14 @@ export function probeNames(date: Date): { subject: string; messageId: string } {
   };
 }
 
-function rawMessage(date: Date, body: string, token: string): string {
+function rawMessage(date: Date, body: string, token: string, draftToken: string): string {
   const { subject, messageId } = probeNames(date);
   return b64url(
     [
       `Subject: ${subject}`,
       `Message-ID: ${messageId}`,
       `${CUSTOM_HEADER}: ${token}`,
+      `${ENGINE_HEADER}: ${draftToken}`,
       'MIME-Version: 1.0',
       'Content-Type: text/plain; charset=utf-8',
       '',
@@ -96,7 +99,7 @@ function headersOf(json: Record<string, unknown>): Map<string, string> {
 async function readHeaders(ctx: ProbeContext, draftId: string): Promise<DraftRead> {
   const { json } = await getJson(ctx, `/drafts/${draftId}`, {
     format: 'metadata',
-    metadataHeaders: ['Subject', 'Message-ID', CUSTOM_HEADER],
+    metadataHeaders: ['Subject', 'Message-ID', CUSTOM_HEADER, ENGINE_HEADER],
     fields: HEADER_FIELDS,
   });
   const message = json.message as { id?: unknown } | undefined;
@@ -181,12 +184,13 @@ async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void
   const { messageId: ours } = probeNames(date);
   const salt = randomBytes(16).toString('hex');
   const token = randomBytes(16).toString('hex');
+  const draftToken = randomBytes(16).toString('hex');
   const made = await sendJson(
     ctx,
     'POST',
     '/drafts',
     {},
-    { message: { raw: rawMessage(date, BODY_V1, token) } },
+    { message: { raw: rawMessage(date, BODY_V1, token, draftToken) } },
   );
   const first = idsOf(made.json);
   if (!first.draftId || !first.messageId) throw new ProbeHttpError('other');
@@ -197,13 +201,15 @@ async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void
   result.counts.messageIdShapeCreate = SHAPE_CODE[shapeOf(createdId, ours)];
   result.counts.customHeaderKeptAfterCreate =
     afterCreate.headers.get(CUSTOM_HEADER.toLowerCase()) === token ? 1 : 0;
+  result.counts.engineHeaderKeptAfterCreate =
+    afterCreate.headers.get(ENGINE_HEADER.toLowerCase()) === draftToken ? 1 : 0;
 
   const saved = await sendJson(
     ctx,
     'PUT',
     `/drafts/${first.draftId}`,
     {},
-    { message: { raw: rawMessage(date, BODY_V2, token) } },
+    { message: { raw: rawMessage(date, BODY_V2, token, draftToken) } },
   );
   const second = idsOf(saved.json);
   result.counts.updatedDraftIdKept = second.draftId === first.draftId ? 1 : 0;
@@ -217,6 +223,8 @@ async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void
     saltedHash(salt, createdId) === saltedHash(salt, savedId) ? 1 : 0;
   result.counts.customHeaderKeptAfterApiSave =
     afterSave.headers.get(CUSTOM_HEADER.toLowerCase()) === token ? 1 : 0;
+  result.counts.engineHeaderKeptAfterApiSave =
+    afterSave.headers.get(ENGINE_HEADER.toLowerCase()) === draftToken ? 1 : 0;
 
   await searchChecks(ctx, result, 'Create', ours, savedId);
 
@@ -224,6 +232,7 @@ async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void
   await ctx.state?.save({
     salt,
     tokenHash: saltedHash(salt, token),
+    draftTokenHash: saltedHash(salt, draftToken),
     afterCreateHash: saltedHash(salt, createdId),
     afterSaveHash: saltedHash(salt, savedId),
     afterCreateShape: shapeOf(createdId, ours),
@@ -300,6 +309,11 @@ async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
     const token = only.read.headers.get(CUSTOM_HEADER.toLowerCase());
     result.counts.customHeaderKeptAfterPhoneEdit =
       token !== undefined && saltedHash(before.salt, token) === before.tokenHash ? 1 : 0;
+    const draftToken = only.read.headers.get(ENGINE_HEADER.toLowerCase());
+    result.counts.engineHeaderKeptAfterPhoneEdit =
+      draftToken !== undefined && saltedHash(before.salt, draftToken) === before.draftTokenHash
+        ? 1
+        : 0;
   }
 
   const full = await getJson(ctx, `/drafts/${only.id}`, {

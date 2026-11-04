@@ -14,6 +14,7 @@ import { applicationSupportDir } from './vault';
 export const STATE_KEYS: readonly string[] = [
   'salt',
   'tokenHash',
+  'draftTokenHash',
   'afterCreateHash',
   'afterSaveHash',
   'afterCreateShape',

@@ -331,6 +331,7 @@ test('v2 kept identity: shapes ours, stable across the API save, custom header k
     [1, 1, 1],
   );
   assert.deepEqual([c.customHeaderKeptAfterCreate, c.customHeaderKeptAfterApiSave], [1, 1]);
+  assert.deepEqual([c.engineHeaderKeptAfterCreate, c.engineHeaderKeptAfterApiSave], [1, 1]);
   assert.equal(c.searchDraftsOursCreate, 1);
   assert.equal(c.searchMessagesOursCreate, 1);
   const file = join(r.stateDir, STATE_FILE);
@@ -341,6 +342,7 @@ test('v2 kept identity: shapes ours, stable across the API save, custom header k
     'afterCreateShape',
     'afterSaveHash',
     'afterSaveShape',
+    'draftTokenHash',
     'salt',
     'tokenHash',
   ]);
@@ -372,6 +374,8 @@ test('v2 kept identity: a phone edit that keeps both ids is stable across the ph
   const phone = await r.run('inspect');
   assert.equal(phone.counts.messageIdStableAcrossPhoneEdit, 1);
   assert.equal(phone.counts.customHeaderKeptAfterPhoneEdit, 0, 'the phone dropped our header');
+  assert.equal(phone.counts.engineHeaderKeptAfterPhoneEdit, 0, 'and the engine-named one');
+  assert.equal(same.counts.engineHeaderKeptAfterPhoneEdit, 1);
   assert.equal(phone.counts.searchDraftsOursPhone, 1);
 });
 
@@ -394,6 +398,11 @@ test('v2 Gmail-like identity: the Message-ID is rewritten on every save and our 
   );
   assert.equal(c.messageIdStableAcrossApiSave, 0, 'every save gives a new Message-ID');
   assert.deepEqual([c.customHeaderKeptAfterCreate, c.customHeaderKeptAfterApiSave], [0, 0]);
+  assert.deepEqual(
+    [c.engineHeaderKeptAfterCreate, c.engineHeaderKeptAfterApiSave],
+    [1, 1],
+    'X-Aplos-Draft is measured on its own: only the named header was dropped',
+  );
   assert.equal(c.searchDraftsOursCreate, 0, 'our Message-ID finds nothing');
   assert.equal(c.searchMessagesOursCreate, 0);
   assert.equal(c.searchDraftsReportedCreate, 1, 'the id Gmail reports finds the draft');
@@ -478,6 +487,9 @@ test('command line: --phase takes a short lowercase word only; the counts are on
     'customHeaderKeptAfterCreate',
     'customHeaderKeptAfterApiSave',
     'customHeaderKeptAfterPhoneEdit',
+    'engineHeaderKeptAfterCreate',
+    'engineHeaderKeptAfterApiSave',
+    'engineHeaderKeptAfterPhoneEdit',
     'stateMissing',
     'searchDraftsOursCreate',
     'searchDraftsReportedCreate',
