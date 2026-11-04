@@ -4,7 +4,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -35,7 +35,7 @@ interface Rig {
 
 async function rig(
   extraProbes: SmokeProbe[] = [],
-  listAnswer?: () => Response,
+  listAnswer?: (url: URL) => Response | undefined,
   emulator: Partial<GmailEmulatorOptions> = {},
 ): Promise<Rig> {
   const clock = new FakeClock();
@@ -68,12 +68,14 @@ async function rig(
       APLOS_GOOGLE_CLIENT_SECRET: CLIENT.clientSecret,
     },
     // `listAnswer` replaces the answer to `drafts.list` (not the other calls), to play Gmail's empty answers.
-    fetch: (input, init) =>
-      listAnswer &&
-      /\/drafts$/.test(new URL(String(input instanceof Request ? input.url : input)).pathname) &&
-      (init?.method ?? 'GET') === 'GET'
-        ? Promise.resolve(listAnswer())
-        : emu.fetch(input, init),
+    fetch: (input, init) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      const answer =
+        listAnswer && /\/drafts$/.test(url.pathname) && (init?.method ?? 'GET') === 'GET'
+          ? listAnswer(url)
+          : undefined;
+      return answer ? Promise.resolve(answer) : emu.fetch(input, init);
+    },
     readSecret,
     now: () => clock.now(),
     sleep: ms => clock.advance(ms),
@@ -342,6 +344,7 @@ test('v2 kept identity: shapes ours, stable across the API save, custom header k
     'afterCreateShape',
     'afterSaveHash',
     'afterSaveShape',
+    'draftIdHash',
     'draftTokenHash',
     'salt',
     'tokenHash',
@@ -457,6 +460,78 @@ test('state.ts: only allowlisted keys and hex or shape values are stored; a reje
   assert.throws(() => createProbeState(dir, '../escape'), /probe id/);
   await writeFile(join(dir, 'some.probe.json'), '{"salt":"not allowed value"}');
   assert.equal(await state.load(), undefined, 'a tampered file is treated as no state');
+});
+
+test('a create whose search fails after the save still leaves ITS state: inspect is not misled by the previous run', async () => {
+  const failing = { on: false };
+  const r = await rig([], url =>
+    failing.on && url.searchParams.has('q')
+      ? Response.json(
+          { error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] } },
+          { status: 429 },
+        )
+      : undefined,
+  );
+  await r.run('create');
+  // The owner discards that draft; the next create finds nothing to refuse, saves its state, then its search is refused.
+  r.emu.mailbox.deleteDraft(probeDraft(r.emu).id);
+  failing.on = true;
+  const second = await r.run('create');
+  assert.equal(second.status, 'fail', 'the failed search is reported');
+  assert.equal(second.counts.created, 1);
+  failing.on = false;
+  const ours = probeNames(new Date()).messageId;
+  r.emu.mailbox.updateDraft(probeDraft(r.emu).id, edited([`Message-ID: ${ours}`], 'Edited.'));
+  const out = await r.run('inspect');
+  assert.equal(out.counts.stateMissing, 0);
+  assert.equal(
+    out.counts.messageIdStableAcrossPhoneEdit,
+    1,
+    'compared with the NEW state, not the old one',
+  );
+});
+
+test('a state file written for another draft is no state: stateMissing 1 and no stability flag', async () => {
+  const r = await rig();
+  await r.run('create');
+  const old = probeDraft(r.emu);
+  r.emu.mailbox.deleteDraft(old.id);
+  // The new probe draft appears without this state ever being written for it (a create that died before saving).
+  r.emu.mailbox.createDraftElsewhere({ subject: probeNames(new Date()).subject, text: 'x' });
+  const out = await r.run('inspect');
+  assert.equal(out.counts.stateMissing, 1);
+  assert.equal(out.counts.messageIdStableAcrossPhoneEdit, undefined);
+});
+
+test('state.ts: a folder that already exists is tightened to 0700, a planted temp symlink is never written through, values must fit their key', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'aplos-state-hard-'));
+  const dir = join(base, 's');
+  await mkdir(dir, { mode: 0o755 });
+  await chmod(dir, 0o755);
+  const decoy = join(base, 'decoy.txt');
+  await writeFile(decoy, 'untouched');
+  await symlink(decoy, join(dir, 'some.probe.json.tmp'));
+  const state = createProbeState(dir, 'some.probe');
+  await state.save({ salt: 'b'.repeat(32), afterSaveHash: 'c'.repeat(16) });
+  assert.equal((await stat(dir)).mode & 0o777, 0o700);
+  assert.equal(
+    await readFile(decoy, 'utf8'),
+    'untouched',
+    'the decoy behind the symlink is untouched',
+  );
+  assert.equal((await stat(join(dir, 'some.probe.json'))).mode & 0o777, 0o600);
+  assert.deepEqual(await state.load(), { salt: 'b'.repeat(32), afterSaveHash: 'c'.repeat(16) });
+  // A 16-hex Gmail message id fits no key but a hash; 32 hex fits no hash; a hash is not a shape.
+  await assert.rejects(state.save({ salt: 'abcdef0123456789' }), /value of salt is not allowed/);
+  await assert.rejects(
+    state.save({ afterSaveHash: 'a'.repeat(32) }),
+    /afterSaveHash is not allowed/,
+  );
+  await assert.rejects(
+    state.save({ afterSaveShape: 'a'.repeat(16) }),
+    /afterSaveShape is not allowed/,
+  );
+  await assert.rejects(state.save({ afterSaveHash: 'ours' }), /afterSaveHash is not allowed/);
 });
 
 test('command line: --phase takes a short lowercase word only; the counts are on the evidence allowlist', () => {
