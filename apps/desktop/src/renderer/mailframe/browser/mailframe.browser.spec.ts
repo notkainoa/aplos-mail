@@ -376,6 +376,150 @@ test('a sealed frame that never reports times out to the failed state; Try again
   expect(await page.locator('iframe').count()).toBe(1);
 });
 
+// mail-key wiring (PROTOCOL.md): main's relayed keys reach the sealed slot through `window.aplos.subscribe` (faked by
+// the `#mailkey` page) and go to `onKey` only under the three guards.
+
+/** The `#mailkey` page with its sealed letter shown (the frame's own report swapped it in). */
+async function mailKeyPage(page: Page): Promise<void> {
+  await openHost(page, 'mailkey');
+  const frame = await sealedFrame(page);
+  await frame.evaluate(
+    ({ t, bg }) =>
+      parent.postMessage({ token: t, h: 240, w: innerWidth, bg, ready: true, marks: 0 }, '*'),
+    { t: SEALED_TOKEN, bg: FRAME_PAPER.canvas },
+  );
+  await page.waitForFunction(() => window.__mailframe.ready.length === 1);
+}
+
+/** Clicks into the shown letter, so the sealed iframe is the host's active element. */
+async function focusLetter(page: Page): Promise<void> {
+  await page
+    .locator('iframe')
+    .first()
+    .click({ position: { x: 5, y: 5 } });
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('IFRAME');
+}
+
+/** Moves focus to a host button outside the letter. */
+async function focusOutside(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.textContent = 'Outside';
+    document.body.append(button);
+    button.focus();
+  });
+}
+
+/** Delivers each payload as preload would; the keys `onKey` heard for them. */
+function deliver(page: Page, ...payloads: unknown[]): Promise<{ key: string; shift: boolean }[]> {
+  return page.evaluate(list => {
+    const before = window.__mailframe.keys.length;
+    for (const payload of list) window.__mailkey.deliver(payload);
+    return window.__mailframe.keys.slice(before);
+  }, payloads);
+}
+
+const KEY_J = { key: 'j', shift: false, alt: false };
+const KEY_K = { key: 'k', shift: false, alt: false };
+const KEY_ESC = { key: 'Escape', shift: false, alt: false };
+
+test('mail-key: a relayed key reaches onKey once, only while the sealed letter has focus', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  await focusLetter(page);
+  expect(await deliver(page, { key: 'j' })).toEqual([KEY_J]);
+  await focusOutside(page);
+  expect(await deliver(page, { key: 'j' }, { key: 'Escape' })).toEqual([]);
+  await focusLetter(page);
+  expect(await deliver(page, { key: 'ArrowDown' })).toEqual([{ ...KEY_J, key: 'ArrowDown' }]);
+  // Nothing was dispatched on the host page: onKey is the only way out.
+  expect(await page.evaluate(() => window.__mailframe.hostKeys)).toEqual([]);
+});
+
+test('mail-key: Caps Lock J, Shift+J and j are one key; unlisted keys and other events are dropped', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  await focusLetter(page);
+  expect(
+    await deliver(page, { key: 'J' }, { key: 'J', shift: false }, { key: 'J', shift: true }),
+  ).toEqual([KEY_J, KEY_J, KEY_J]);
+  expect(await deliver(page, { key: 'K', shift: false }, { key: 'k' })).toEqual([KEY_K, KEY_K]);
+  expect(
+    await deliver(
+      page,
+      { key: 'r' },
+      { key: 'E' },
+      { key: ' ' },
+      { key: 'Enter' },
+      { key: 'Tab' },
+      'j',
+      null,
+    ),
+  ).toEqual([]);
+  await page.evaluate(() => window.__mailkey.deliver({ key: 'j' }, 'command'));
+  expect(await page.evaluate(() => window.__mailframe.keys.length)).toBe(5);
+});
+
+test('mail-key: Esc is routed with only the reader, dropped while a composer or a dialog is above it', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  await focusLetter(page);
+  await page.evaluate(() => window.__mailkey.layer(['reader']));
+  expect(await deliver(page, { key: 'Escape' })).toEqual([KEY_ESC]);
+  await page.evaluate(() => window.__mailkey.layer(['compose']));
+  expect(await deliver(page, { key: 'Escape' }, { key: 'j' })).toEqual([]);
+  await page.evaluate(() => window.__mailkey.clearLayers());
+  await page.evaluate(() => window.__mailkey.layer(['reader', 'dialog']));
+  expect(await deliver(page, { key: 'Escape' })).toEqual([]);
+  await page.evaluate(() => window.__mailkey.clearLayers());
+  await page.evaluate(() => window.__mailkey.dialog(true));
+  expect(await deliver(page, { key: 'Escape' }, { key: 'k' })).toEqual([]);
+  await page.evaluate(() => window.__mailkey.dialog(false));
+  expect(await deliver(page, { key: 'Escape' })).toEqual([KEY_ESC]);
+});
+
+test('mail-key: a pending or off-paper letter never takes a key; the shown one takes it once', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  await page.evaluate(() => window.__mailkey.pend());
+  await expect(page.locator('iframe')).toHaveCount(2);
+  await focusLetter(page);
+  expect(await deliver(page, { key: 'j' })).toEqual([KEY_J]);
+  // The pending (hidden) frame cannot hold focus, and does not take the key whatever has it.
+  await focusOutside(page);
+  await page.evaluate(() => document.querySelectorAll('iframe')[1]!.focus());
+  expect(await deliver(page, { key: 'j' })).toEqual([]);
+  // The off-paper letter is inert.
+  await focusLetter(page);
+  await page.evaluate(() => window.__mailkey.inert(true));
+  expect(await deliver(page, { key: 'j' })).toEqual([]);
+  await page.evaluate(() => window.__mailkey.inert(false));
+  await focusLetter(page);
+  expect(await deliver(page, { key: 'k' })).toEqual([KEY_K]);
+});
+
+test('mail-key: the sealed slot adds no key listener and unsubscribes on unmount (50 remounts)', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  const state = () =>
+    page.evaluate(() => ({
+      listeners: window.__mailkey.listeners(),
+      keyListeners: window.__mailkey.keyListeners,
+    }));
+  expect(await state()).toEqual({ listeners: 1, keyListeners: [] });
+  await page.evaluate(() => window.__mailkey.pend());
+  expect(await state()).toEqual({ listeners: 2, keyListeners: [] });
+  await page.evaluate(() => window.__mailkey.remount(50));
+  expect(await state()).toEqual({ listeners: 1, keyListeners: [] });
+  await page.evaluate(() => window.__mailkey.unmount());
+  expect(await state()).toEqual({ listeners: 0, keyListeners: [] });
+});
+
 test('links open outside the app and never navigate the frame', async ({ page }) => {
   await openHost(page, 'javascript-links/block');
   await page.waitForFunction(() => window.__mailframe.ready.length === 1);

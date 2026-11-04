@@ -16,7 +16,7 @@ the host is stricter than the reporter needs, and what is still owed by the engi
 | CSP                            | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP   | response header (host CSP is not inherited)                     |
 | Scripts in the frame           | none                                                                                                        | one hash-pinned reporter                                        |
 | Height and paper tint          | read by the host from `contentDocument`                                                                     | the reporter's `{token,h,w,bg,ready,marks}`, validated below    |
-| Keys with focus inside         | host listener on the frame document, short key list only                                                    | main's `before-input-event` only (the reporter relays no keys)  |
+| Keys with focus inside         | host listener on the frame document, short key list only                                                    | main's `before-input-event` relay, heard by `useSealedMailKeys` |
 | Links                          | host click listener cancels, opens outside                                                                  | `setWindowOpenHandler` in main, `will-frame-navigate` cancels   |
 | No report within 10 s          | "Couldn't load this email." with Try again (`deadline.ts`)                                                  | the same                                                        |
 | Notices (flattened, truncated) | host DOM above the frame                                                                                    | host DOM above the frame (needs the flags from the engine)      |
@@ -124,6 +124,12 @@ second) let a loop on a busy machine run slower than that and never stop. Unit-t
 than 100 times (images arriving one by one) is frozen early and scrolls inside its frame. The real fix is the engine's
 (REQUEST below).
 
+LOW (Integrator, 2026-11-04 03:26): the fence counts growth only, so a letter whose endless animation keeps its height
+was free to report on every frame (CPU, not memory). The bound is the reporter's (#263: at most 2,000 posts per width,
+colour no longer a reason to post). The host adds no freeze after N reports of any kind: it would freeze a letter
+during a legitimate resize drag (Integrator NOTICE 10:40); if the host fence is ever touched, exempt reports whose
+width changed.
+
 ## Deadline
 
 A frame that has not reported within `timeoutMs` (default `FRAME_TIMEOUT_MS`, 10 s; `deadline.ts`) shows the failed
@@ -163,8 +169,35 @@ listed key (`shared/mail-keys.ts` `MAIL_KEYS`, which `FALLBACK_KEYS` is built fr
 and Shift only for J and K, **no** auto-repeat. Main validates the message before it sends and preload before it
 delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued).
 Main does not cancel the key, so an arrow or Page Down still scrolls the letter; the shell decides what it handles.
-Whoever consumes the event (`MailFrame` / the shell, lane ui-reader) maps it to the same `onKey` path and must not also
-listen to the frame (the srcdoc listener never runs for a sealed frame, and main never relays a srcdoc frame's keys).
+The sealed slot maps it to the same `onKey` path and never also listens to the frame (the srcdoc listener never runs
+for a sealed frame, and main never relays a srcdoc frame's keys): "mail-key wiring" below.
+
+## mail-key wiring
+
+`UrlSlot` (the sealed slot, never the srcdoc one) calls `useSealedMailKeys`, which subscribes through
+`window.aplos.subscribe` while the slot is mounted (no bridge, as in the browser preview or the stand-in: no
+subscription) and unsubscribes on unmount. Each `{ type: 'mail-key', payload: { key } }` goes through
+`sealedMailKey` (`sealedKeys.ts`) and, if accepted, to the slot's `onKey` as `{ key, shift: false, alt: false }`, the
+same path the srcdoc relay uses, so the reader's `relayToShell` resolves it through the shell's one key listener and
+registry exactly like a key typed on the page. Nothing is cancelled (there is no event to cancel) and nothing is
+dispatched into the DOM tree. Anything that is not a listed key (`isMailKey`) is dropped silently. The guards, read
+when the key arrives:
+
+1. **Focus.** The slot's iframe element is `document.activeElement`, the slot is the double buffer's shown letter (not
+   the pending one) and no ancestor is `inert` (the reader's off-paper letter). This ties the key to the letter being
+   read, and since only one element can have focus, exactly one of all the mounted slots takes it: no dedupe by time.
+2. **One path per letter.** The sealed slot installs no keydown listener anywhere; the subscription is its only key
+   path (the browser spec records every key listener the mount adds: none).
+3. **Top-most layer first.** When anything sits above the reader the key is dropped, Esc included, instead of being
+   handed on: a modal context (menu, date picker, dialog, palette, sheet, low importance), the composer (`compose`)
+   or Ask on the shell's key layers or open sheet, an open overlay in the host DOM (role `dialog` or `menu`,
+   `aria-modal`, `data-keyctx`, as the shell's `overlayContexts` reads them), or a host layer marked `data-keylayer`
+   (the reader's find bar). A key relayed from inside an email can never close or cancel anything above the letter.
+
+**Letters, never shift.** Main cannot tell Caps Lock J from Shift+J: both arrive as `J`. The relayed key is the letter,
+lower-cased, with no shift (`J`/`K` become `j`/`k`, whatever a payload says about shift), so j, Caps Lock J and Shift+J
+all run Next email. A Shift+J typed on the page itself is bound to nothing in the reader catalog (pinned in
+`screens/reader/mailKeys.test.ts`).
 
 ## Observed
 
@@ -213,28 +246,34 @@ Requirements on the sealed path. Done means verified by a test; the rest is owed
 
 1. **Done (host).** The frame's sandbox is `allow-scripts allow-popups`, never `allow-same-origin` (unit test on
    `URL_SANDBOX`; the browser spec reads the mounted attribute).
-2. **Done (engine builder; header not yet sent by main).** CSP as a response header: `frameHeaders` builds ARCHITECTURE
-   10's policy with the reporter's hash, and the browser spec runs every document under it. Owed: main's protocol
-   handler must send `Mail/serve`'s headers verbatim on every `aplos-mail://` response (eng-host).
-3. **Built, not verified live.** DNS prefetch off: `frameHeaders` sends `x-dns-prefetch-control: off`. The engine
-   document has no `<meta>` for it (the srcdoc one does); a check through the real scheme handler is owed (eng-host).
-4. **Owed (eng-host).** Main denies every navigation of the frame away from `aplos-mail:` (`will-frame-navigate`,
-   `will-navigate`, `setWindowOpenHandler` opening outside only), and allows the `aplos-mail:` document as a subframe:
-   `SUBFRAME_DOCUMENTS` in `src/main/security.ts` is an exact set (`about:blank`, `about:srcdoc`), so it needs a grammar
-   check for `aplos-mail://m/<32 hex>/` (the engine's `parseFrameUrl`, document route only), not a set entry. mailto
-   links go to `shell.openExternal` today; routing them to Compose is a main change.
-5. **Owed (eng-host).** The frame runs in a separate process from the renderer that holds the IPC bridge (register the
-   scheme as standard and secure so it is its own site; check with a live probe, e.g. an `iframe` target in CDP).
-   The browser spec's frame is cross-site yet shares the host's process there, so it proves nothing about isolation.
-6. **Owed (engine slice 2 + eng-host).** `Mail/serve` answers GET only and binds the requesting window from main, never
-   from the URL; the registry refuses another window's token (engine tests cover `serveFrame`).
+2. **Done (engine builder + main, #241).** CSP as a response header: `frameHeaders` builds ARCHITECTURE 10's policy
+   with the reporter's hash, and the browser spec runs every document under it; main's handler
+   (`main/mail-protocol.ts`, `host/protocol/relay.ts`) passes the engine's headers through on every `aplos-mail://`
+   response.
+3. **Built, not verified live (open).** DNS prefetch off: `frameHeaders` sends `x-dns-prefetch-control: off`. The
+   engine document has no `<meta>` for it (the srcdoc one does); a check through the real scheme handler is owed
+   (eng-host).
+4. **Done (main, #241).** The navigation allowance: `security.ts` allows the `aplos-mail:` subframe document only for
+   the exact `aplos-mail://m/<32 hex>/`, only after `allowMailFrames()` and only when the app's own page started it;
+   redirects, self-navigation and main-frame navigation are denied. **Still open:** mailto links go to
+   `shell.openExternal` (`frame-links.ts`); routing them to Compose is a main change (eng-host).
+5. **Scheme done (main, #241); isolation check open.** The scheme is registered `standard` and `secure` only, so the
+   frame is its own site. **Still open:** a live check that the frame runs in a separate process from the renderer that
+   holds the IPC bridge (e.g. an `iframe` target in CDP, in the packaged app). The browser spec's frame is cross-site
+   yet shares the host's process there, so it proves nothing about isolation.
+6. **Done (engine + main, #241).** `Mail/serve` answers GET only; main stamps the requesting window
+   (`X-Aplos-Window`, every client spelling stripped) and is the backstop: another window's token is a 404.
 7. **Done (host + main).** The reporter relays no keys, so the "never both relays" rule holds; main's
-   `before-input-event` relay is built (Keys). The host still has to consume the `mail-key` event.
+   `before-input-event` relay (#252) is consumed by the sealed slot ("mail-key wiring"). The packaged-app hand-check
+   (a real key in a real sealed letter) stays with the owner.
 8. **Engine sanitiser (eng-html).** The cost fences above (linear CSS, style caps, span clamp, weighted cell count),
    `!important` and `@layer` stripped, gesture-only `url()` and style-sized pixels dropped, and the flattened and
    truncated flags returned with the frame so the host shows the notices outside it. Not checked here.
 
 ## Open for eng-html (REQUESTs)
+
+#249 addressed items 1, 2, 3 and 5 (content-height measuring, the root's colour as fallback, DOM members read from the
+prototypes, viewport and container units rewritten to bounded px); they stay here for their history.
 
 1. **The letter never shrinks.** The reporter's `h` is `max(root.scrollHeight, body.scrollHeight)`, and the root's
    `scrollHeight` is never less than the frame's own height, so once the host sizes the frame the reported height can
@@ -248,8 +287,15 @@ Requirements on the sealed path. Done means verified by a test; the rest is owed
    letter then fails at the deadline) or feeds it another element. The sanitiser's `m-` namespacing for `name`/`id` is
    what prevents it (the corpus's dom-clobbering entries pass). Pin that with a test, or have the reporter read through
    `Document.prototype` getters it captures first.
-4. **Quirks mode.** `render` emits no doctype when the email has none, so most frames lay out in quirks mode, where
-   `body.scrollHeight` follows the viewport; worth a look with item 1.
+4. **Quirks mode: done (#249), one visible cost.** Every served document now starts with `<!DOCTYPE html>`. Checked
+   with original demo letters through `render` + `withReporter` in the sealed host at 640 px: heights now follow the
+   content (a `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its
+   letter), table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air). The
+   one regression is the classic image gap: an image alone in a table cell sits on the text baseline, so sliced-image
+   newsletters show a strip of the cell's background under every image row (8 px with the reading CSS's line height;
+   0 in quirks). The host cannot fix it in a sealed document. REQUEST: an almost-standards doctype (for example HTML
+   4.01 Transitional with its system identifier), which differs from standards only in that line-height rule, or an
+   equivalent rule in the reading CSS.
 5. **Viewport units.** Rewrite `vh`, `vw`, `vmin`, `vmax` (and the `dvh`/`svh`/`lvh` family) to fixed lengths in
    the sanitiser, or lay the frame out at a fixed viewport height, so a letter's height cannot depend on its frame's
    ("Runaway growth"; the host's fence is the backstop, not the fix).
