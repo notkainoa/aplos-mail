@@ -203,15 +203,15 @@ describe('mount-review 5: no accounts never reads as first sync', () => {
 /* ───────────── 6. a slow or failed Session/get must not blank the pane ───────────── */
 
 describe('mount-review 6: the loaded account list proves “no accounts”', () => {
-  test('the session’s word wins when it answered; the loaded list is the fallback', () => {
+  test('the loaded list wins; the session’s word covers the time before it loads', () => {
     assert.equal(
       zeroAccountsProven({ hasAccounts: false, accountsLoaded: true, accountCount: 0 }),
       true,
     );
     assert.equal(
       zeroAccountsProven({ hasAccounts: true, accountsLoaded: true, accountCount: 0 }),
-      false,
-      'the session’s own word is respected when it has one',
+      true,
+      'a stale session answer never blanks Home once the list has loaded empty',
     );
     assert.equal(
       zeroAccountsProven({ hasAccounts: undefined, accountsLoaded: true, accountCount: 0 }),
