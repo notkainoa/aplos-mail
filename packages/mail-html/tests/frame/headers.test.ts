@@ -74,7 +74,7 @@ describe('frame headers', () => {
     }
   });
 
-  it('turns every other type into an opaque download', () => {
+  it('refuses to build headers for any other type (serve answers those with the 404)', () => {
     const others = [
       'image/svg+xml',
       'text/html',
@@ -89,10 +89,7 @@ describe('frame headers', () => {
       42,
     ];
     for (const mime of others) {
-      const headers = resourceHeaders(mime);
-      assert.equal(headers['content-type'], 'application/octet-stream', String(mime));
-      assert.equal(headers['content-disposition'], 'attachment');
-      assert.equal(headers['x-content-type-options'], 'nosniff');
+      assert.throws(() => resourceHeaders(mime as never), /raster/, String(mime));
     }
   });
 

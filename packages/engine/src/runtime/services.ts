@@ -62,6 +62,8 @@ export interface LaneModule {
   start?(): void | Promise<void>;
   /** On `Engine.close`, in reverse order. */
   stop?(): void | Promise<void>;
+  /** A connection closed (a window went away): drop what the lane holds for that `connectionId`. Must not throw. */
+  onConnectionClose?(connectionId: string): void;
 }
 
 /**

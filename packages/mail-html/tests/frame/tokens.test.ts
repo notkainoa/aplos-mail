@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import { parseFrameUrl } from '../../src/frame/paths';
-import { FrameTokens, MAX_TOKENS_PER_WINDOW, TOKEN_TTL_MS } from '../../src/frame/tokens';
+import { FrameTokens, MAX_TOKENS_PER_WINDOW, UNFETCHED_TTL_MS } from '../../src/frame/tokens';
 import { render } from './fixtures';
 
 // The token registry: random, per window, single render, capped, released, replaced, expired.
@@ -13,13 +13,38 @@ describe('frame tokens', () => {
     assert.match(issued.token, /^[0-9a-f]{32}$/);
     assert.equal(issued.url, `aplos-mail://m/${issued.token}/`);
     assert.deepEqual(parseFrameUrl(issued.url)?.token, issued.token);
-    assert.equal(issued.expiresAt, 1_000 + TOKEN_TTL_MS);
+    assert.equal(issued.expiresAt, 1_000 + UNFETCHED_TTL_MS);
+    assert.equal(UNFETCHED_TTL_MS, 60_000);
   });
 
-  it('draws every token from the random source, 16 bytes at a time', () => {
+  it('draws every token from Web Crypto by default', () => {
+    const spy = mock.method(globalThis.crypto, 'getRandomValues');
+    try {
+      const issued = new FrameTokens().issue(render(), 0);
+      assert.equal(spy.mock.callCount(), 1);
+      const filled = spy.mock.calls[0].arguments[0] as Uint8Array;
+      assert.equal(filled.length, 16);
+      assert.equal(issued.token, [...filled].map(b => b.toString(16).padStart(2, '0')).join(''));
+    } finally {
+      spy.mock.restore();
+    }
+  });
+
+  it('ignores an option named like the old injection (only the test-only name is honoured)', () => {
+    const spy = mock.method(globalThis.crypto, 'getRandomValues');
+    try {
+      const options = { random: (b: Uint8Array) => b.fill(1) } as never;
+      assert.notEqual(new FrameTokens(options).issue(render(), 0).token, '01'.repeat(16));
+      assert.equal(spy.mock.callCount(), 1);
+    } finally {
+      spy.mock.restore();
+    }
+  });
+
+  it('draws every token from the test source when one is injected, 16 bytes at a time', () => {
     const sizes: number[] = [];
     const tokens = new FrameTokens({
-      random: bytes => {
+      insecureTestRandom: bytes => {
         sizes.push(bytes.length);
         bytes.fill(0xab);
       },
@@ -30,11 +55,13 @@ describe('frame tokens', () => {
 
   it('never hands out a live token twice, even when the source repeats', () => {
     let calls = 0;
-    const tokens = new FrameTokens({ random: bytes => bytes.fill(calls++ < 2 ? 1 : 2) });
+    const tokens = new FrameTokens({
+      insecureTestRandom: bytes => bytes.fill(calls++ < 2 ? 1 : 2),
+    });
     const a = tokens.issue(render({ windowId: 'w1' }), 0);
     const b = tokens.issue(render({ windowId: 'w2' }), 0);
     assert.notEqual(a.token, b.token);
-    const stuck = new FrameTokens({ random: bytes => bytes.fill(9) });
+    const stuck = new FrameTokens({ insecureTestRandom: bytes => bytes.fill(9) });
     stuck.issue(render(), 0);
     assert.throws(() => stuck.issue(render(), 0), /repeats/);
   });
@@ -88,19 +115,31 @@ describe('frame tokens', () => {
     assert.equal(tokens.forResource('w2', token, 0), undefined);
   });
 
-  it('expires on the injected clock', () => {
+  it('expires an unfetched token on the injected clock', () => {
     const tokens = new FrameTokens({ ttlMs: 100 });
     const { token } = tokens.issue(render(), 1_000);
     assert.ok(tokens.lookup('w1', token, 1_099));
     assert.equal(tokens.lookup('w1', token, 1_100), undefined);
     assert.equal(tokens.liveCount('w1'), 0, 'an expired token is deleted');
+    const late = tokens.issue(render(), 2_000);
+    assert.equal(
+      tokens.takeDocument('w1', late.token, 2_000 + 100),
+      undefined,
+      'document too late',
+    );
   });
 
-  it('expires sub-resources too', () => {
-    const tokens = new FrameTokens({ ttlMs: 100 });
+  it('keeps a served token past the deadline, for the lazy images of a message left open', () => {
+    const tokens = new FrameTokens();
     const { token } = tokens.issue(render(), 0);
-    tokens.takeDocument('w1', token, 0);
-    assert.equal(tokens.forResource('w1', token, 100), undefined);
+    assert.ok(tokens.takeDocument('w1', token, UNFETCHED_TTL_MS - 1));
+    const hours = 6 * 60 * 60 * 1000;
+    assert.ok(tokens.forResource('w1', token, hours), 'sub-resources hours later');
+    tokens.sweep(hours);
+    tokens.issue(render(), hours);
+    assert.ok(tokens.forResource('w1', token, hours + 1), 'neither a sweep nor an issue drops it');
+    assert.equal(tokens.release('w1', token), true, 'release still ends it');
+    assert.equal(tokens.forResource('w1', token, hours + 1), undefined);
   });
 
   it('releases by URL or token, only in its own window', () => {
@@ -162,6 +201,16 @@ describe('frame tokens', () => {
     assert.ok(tokens.lookup('w1', kept.token, 12), 'the expired one went, not the live one');
     tokens.sweep(1_000);
     assert.equal(tokens.liveCount('w1'), 0);
+  });
+
+  it('lets the cap, not the clock, end a served token', () => {
+    const tokens = new FrameTokens({ ttlMs: 10, maxPerWindow: 2 });
+    const served = tokens.issue(render(), 0);
+    tokens.takeDocument('w1', served.token, 0);
+    tokens.issue(render(), 100);
+    assert.ok(tokens.forResource('w1', served.token, 100));
+    tokens.issue(render(), 105);
+    assert.equal(tokens.forResource('w1', served.token, 105), undefined, 'evicted as the oldest');
   });
 
   it('frees every token of a closed window', () => {
