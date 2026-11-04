@@ -358,7 +358,7 @@ describe('viewport units', () => {
       ['a{height:calc(100vh*2 + 10vw)}', 'a{height:calc(600px*2 + 64px)}'],
       ['a{height:min(100vh,max(50vh,10vw))}', 'a{height:min(600px,max(300px,64px))}'],
       ['a{--h:100vh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
-      ['@media (min-height:100vh){a{b:c}}', '@media (min-height:600px){a{b:c}}'],
+      ['@media (min-height:100vh){a{b:c}}', '@media (--m-min-height:600px){a{b:c}}'],
       ['a{height:100vh!important}', 'a{height:600px!important}'],
       ['a{height:calc(1px+100vh)}', 'a{height:calc(1px+600px)}'],
       ['a{height:calc(1px+100cqh)}', 'a{height:calc(1px+600px)}'],
@@ -372,7 +372,7 @@ describe('viewport units', () => {
       ['a{min-height:100CQB;height:100\\63 qh}', 'a{min-height:600px;height:600px}'],
       ['a{height:calc(100cqh - 1cqw)}', 'a{height:calc(600px - 6.4px)}'],
       ['a{--h:100cqh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
-      ['@container (min-height:100cqh){a{b:c}}', '@container (min-height:600px){a{b:c}}'],
+      ['@container (min-height:100cqh){a{b:c}}', '@container (--m-min-height:600px){a{b:c}}'],
     ];
     for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
   });
@@ -443,5 +443,80 @@ describe('@layer names', () => {
     );
     const twice = sanitizeCss(once, new ImageBook({ cids: [], policy: 'block', ownOutput: true }));
     assert.equal(twice, once);
+  });
+});
+
+describe('height-following media features and writing modes', () => {
+  it('makes a height, shape or orientation feature in @media and @container an unknown name', () => {
+    const cases: [string, string][] = [
+      ['@media (max-height:300px){a{b:c}}', '@media (--m-max-height:300px){a{b:c}}'],
+      ['@MEDIA (MIN-HEIGHT:1px){a{b:c}}', '@MEDIA (--m-min-height:1px){a{b:c}}'],
+      [
+        '@media screen and (min-height:1px) and (orientation:landscape),print{a{b:c}}',
+        '@media screen and (--m-min-height:1px) and (--m-orientation:landscape),print{a{b:c}}',
+      ],
+      ['@media (height >= 300px){a{b:c}}', '@media (--m-height >= 300px){a{b:c}}'],
+      ['@media (300px<height<600px){a{b:c}}', '@media (300px<--m-height<600px){a{b:c}}'],
+      ['@media (min-\\68 eight:1px){a{b:c}}', '@media (--m-min-height:1px){a{b:c}}'],
+      ['@media (aspect-ratio:1/1){a{b:c}}', '@media (--m-aspect-ratio:1/1){a{b:c}}'],
+      ['@media (max-device-height:9px){a{b:c}}', '@media (--m-max-device-height:9px){a{b:c}}'],
+      [
+        '@media not (device-aspect-ratio:4/3){a{b:c}}',
+        '@media not (--m-device-aspect-ratio:4/3){a{b:c}}',
+      ],
+      ['@container card (min-height:5px){a{b:c}}', '@container card (--m-min-height:5px){a{b:c}}'],
+      ['@container (block-size > 5px){a{b:c}}', '@container (--m-block-size > 5px){a{b:c}}'],
+      [
+        '@media x{@media (orientation:portrait){a{b:c}}}',
+        '@media x{@media (--m-orientation:portrait){a{b:c}}}',
+      ],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+
+  it('leaves width features, other at-rules and every declaration alone', () => {
+    const same = [
+      '@media (min-width:300px) and (max-width:100px){a{height:1px}}',
+      '@media (min-resolution:2dppx),(prefers-color-scheme:dark){a{b:c}}',
+      '@media screen{a{min-height:1px;orientation:x;height:2px}}',
+      '@supports (height:1px){a{b:c}}',
+      '@container (min-width:5px){a{height:1px}}',
+      'a{height:1px;max-height:2px;aspect-ratio:1/2}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('turns writing-mode into a custom property name, in any spelling, before a colon only', () => {
+    const cases: [string, string][] = [
+      ['a{writing-mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
+      ['a{-webkit-writing-mode:vertical-lr}', 'a{--m--webkit-writing-mode:vertical-lr}'],
+      ['a{WRITING-MODE : vertical-rl !important}', 'a{--m-writing-mode : vertical-rl !important}'],
+      ['a{writing\\2d mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
+      ['a{writing-mode/**/:vertical-rl}', 'a{--m-writing-mode/**/:vertical-rl}'],
+      ['html{writing-mode:horizontal-tb}', 'html{--m-writing-mode:horizontal-tb}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    const same = [
+      'a{transition-property:writing-mode}',
+      'a{writing-mode}',
+      'a{will-change:writing-mode,height}',
+      'a{b:writing-mode}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('rewrites a style attribute too', () => {
+    const images = new ImageBook({ cids: [], policy: 'block' });
+    assert.equal(
+      sanitizeCss('writing-mode:vertical-rl;color:red', images),
+      '--m-writing-mode:vertical-rl;color:red',
+    );
+  });
+});
+
+describe('@layer prelude ends', () => {
+  it('ends a prelude at a closing brace too, so the next rule is not renamed', () => {
+    assert.equal(clean('@media x{@layer a} .foo{b:c}').css, '@media x{@layer m-a} .foo{b:c}');
+    assert.equal(clean('@media x{@layer a.b}.foo{b:c}').css, '@media x{@layer m-a.m-b}.foo{b:c}');
   });
 });

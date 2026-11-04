@@ -222,7 +222,10 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Pro
 }
 
 /**
- * `serve` with at most `max` calls open at once, and at most `perWindow` for one window. One more is refused (a
+ * `serve` with at most `max` calls open at once, and at most `perWindow` for one window. These caps bound how many
+ * requests MAIN keeps waiting (and the memory they hold); they do not bound the engine's work: a call that was aborted or
+ * timed out has freed its slot here while the utility process may still be fetching an image or part for it, until its
+ * own 10 s limits end the work. The engine's per-window token cap and `Mail/serve`'s deadlines bound that side. One more is refused (a
  * rejection, so the handler answers the uniform 404) without calling `serve`. A slot is freed exactly once, on the
  * first of: the answer, a rejection (the link's timeout included), a throw, or the request's own abort (a page that
  * navigated away no longer holds a slot while the engine finishes).
@@ -257,4 +260,17 @@ export function limitInFlight(
       free();
     }
   };
+}
+
+/**
+ * The URL of a mail frame that is already showing its letter. Clicking an in-mail fragment link (a table of contents)
+ * makes the frame's URL `aplos-mail://m/<token>/#m-x`; the fragment never leaves the frame, so for deciding whether a
+ * focused or navigating frame IS a mail frame only the fragment (everything from the first `#`) is ignored. Nothing
+ * else is relaxed: the rest must still be exactly the issued document URL. Navigation checks keep the strict
+ * `isMailDocumentUrl`: a fragment is not an issued document.
+ */
+export function isShownMailDocumentUrl(url: unknown): boolean {
+  if (typeof url !== 'string') return false;
+  const hash = url.indexOf('#');
+  return isMailDocumentUrl(hash < 0 ? url : url.slice(0, hash));
 }

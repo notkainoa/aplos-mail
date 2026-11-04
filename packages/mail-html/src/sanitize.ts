@@ -1,5 +1,5 @@
 import type { CSSToken } from '@csstools/css-tokenizer';
-import { cssTokens, readDeclarations, sanitizeCss } from './css';
+import { cssTokens, keepDeclarations, readDeclarations, sanitizeCss } from './css';
 import { escapeAttribute } from './escape';
 import { markText, type Finder } from './find';
 import { ID_LIST_ATTRIBUTES, scopeClassList, scopeId, scopeIdList } from './ids';
@@ -122,6 +122,9 @@ class Walker {
   private readonly hidingStyles = new Map<string, boolean>();
   /** What every `<noframes>` re-parse together may still build. */
   private fallbackElements = LIMITS.maxElements;
+  /** Style text written so far: the rewrite can lengthen CSS, so the caps judge the output too. */
+  private styleBlockChars = 0;
+  private styleAttributeChars = 0;
 
   constructor(
     private readonly images: ImageBook,
@@ -248,7 +251,7 @@ class Walker {
       if (!allowed.has(name) || !rootValueOk(name, value)) continue;
       parts.push(attribute(name, name === 'class' ? this.classValue(value) : value));
     }
-    if (element.name === 'body') parts.push(...this.urlAttributes(element));
+    if (element.name === 'body') parts.push(...this.urlAttributes(element, true));
     return parts.join('');
   }
 
@@ -291,7 +294,9 @@ class Walker {
     if (element.truncated) return;
     const css = textOf(element);
     const clean = sanitizeCss(css, this.images).trim();
-    if (clean) this.out.push(`<style>${clean}</style>`);
+    if (!clean || this.styleBlockChars + clean.length > LIMITS.maxStyleChars) return;
+    this.styleBlockChars += clean.length;
+    this.out.push(`<style>${clean}</style>`);
   }
 
   private attributes(element: ElementNode, exclude?: Set<string>): string {
@@ -307,11 +312,18 @@ class Walker {
     return parts.join('');
   }
 
-  /** `style` and `background`, both of which can name images. */
-  private urlAttributes(element: ElementNode): string[] {
+  /**
+   * `style` and `background`, both of which can name images. The frame body's `style` keeps only the
+   * properties of `BODY_STYLE_PROPERTIES` (`body` true): an element's own style attribute outranks every
+   * cascade layer, `!important` or not, so nothing in it may touch what the reading layer guards.
+   */
+  private urlAttributes(element: ElementNode, body = false): string[] {
     const parts: string[] = [];
-    const clean = this.cleanStyle(element.attrs.get('style'));
-    if (clean) parts.push(attribute('style', clean));
+    const clean = this.cleanStyle(element.attrs.get('style'), body);
+    if (clean && this.styleAttributeChars + clean.length <= LIMITS.maxChars) {
+      this.styleAttributeChars += clean.length;
+      parts.push(attribute('style', clean));
+    }
     const background = element.attrs.get('background');
     if (background !== undefined && BACKGROUND.has(element.name)) {
       const source = this.images.source(background, 'css');
@@ -324,14 +336,16 @@ class Walker {
     return this.ownOutput ? value : scopeClassList(value);
   }
 
-  private cleanStyle(style: string | undefined): string {
+  private cleanStyle(style: string | undefined, body = false): string {
     if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
-    let clean = this.cleanStyles.get(style);
+    const key = body ? `!${style}` : style;
+    let clean = this.cleanStyles.get(key);
     if (clean === undefined) {
-      clean = sanitizeCss(style, this.images, this.tokensOf(style)).trim();
-      this.cleanStyles.set(style, clean);
+      const text = body ? keepDeclarations(style, bodyStyleProperty, this.tokensOf(style)) : style;
+      clean = sanitizeCss(text, this.images, body ? undefined : this.tokensOf(style)).trim();
+      this.cleanStyles.set(key, clean);
     }
-    return clean;
+    return clean.length > MAX_STYLE_ATTRIBUTE ? '' : clean;
   }
 
   /** The element's `hidden` attribute or `style` hides it (and so any image inside). */
@@ -387,6 +401,18 @@ class Walker {
  * `dir` and `lang` on the frame's own `<html>` and `<body>` must be what they say: short, so the
  * `<meta charset>` stays inside the first 1,024 bytes where the browser looks for it.
  */
+/**
+ * What the frame body's own `style` may set: its colours, margins, padding and type. Not position, insets,
+ * size, display, float, writing mode, zoom, transforms, containment or overflow: the reading layer fixes
+ * those, and a style attribute would outrank it.
+ */
+const BODY_STYLE_PROPERTIES =
+  /^(?:background(?:-[a-z]+)*|color|margin(?:-[a-z]+)*|padding(?:-[a-z]+)*|font(?:-[a-z]+)*|text-align|line-height)$/;
+
+function bodyStyleProperty(name: string): boolean {
+  return BODY_STYLE_PROPERTIES.test(name);
+}
+
 function rootValueOk(name: string, value: string): boolean {
   if (name === 'dir') return /^(?:ltr|rtl|auto)$/i.test(value);
   if (name === 'lang') return /^[A-Za-z0-9-]{1,35}$/.test(value);

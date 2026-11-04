@@ -1394,7 +1394,7 @@
     "html": "messages/141-root-positioned-with-negative-bottom.html",
     "expect": {
       "mustKeepText": ["The html element is positioned"],
-      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 1: html{position:absolute;top:0;bottom:-50px} sizes the root from the frame, and the frame from the root, 50 px per report. The reading layer sets position:static and inset:auto !important."
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 1: html{position:absolute;top:0;bottom:-50px} sizes the root from the frame, and the frame from the root, 50 px per report. The reading layer sets position:static and inset:auto !important. Rules with and without !important in a <style> block: the layered !important beats an unlayered one."
     }
   },
   {
@@ -1404,7 +1404,7 @@
     "html": "messages/142-body-positioned-with-negative-bottom.html",
     "expect": {
       "mustKeepText": ["The body element is positioned"],
-      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 2: the same on body, in physical and logical insets, absolute and fixed."
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 2: the same on body, in physical and logical insets, absolute and fixed. Rules with and without !important in a <style> block: the layered !important beats an unlayered one."
     }
   },
   {
@@ -1434,7 +1434,7 @@
     "html": "messages/145-inline-body-style-fixed-important.html",
     "expect": {
       "mustKeepText": ["An inline body style survives"],
-      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 5: the body's style attribute survives on the frame's body (its colours and margins are the common use), and an inline !important declaration beat the unlayered reading rule. The body style is kept, not dropped or moved to a wrapper, because the earliest layer's !important also beats a style attribute; the html style was already dropped. Visual result of the usual body style is unchanged."
+      "notes": "Vector 5 of the Integrator's REQUEST, with !important on every offset. The body's style attribute survives on the frame's body, and an element's own style attribute outranks every cascade layer (element-attached styles rank before layers), so an inline !important beat the layered reading rule. The frame body's style now keeps only background*, color, margin*, padding*, font*, text-align and line-height (css.ts keepDeclarations, sanitize.ts BODY_STYLE_PROPERTIES), so it cannot touch anything the layer guards; the oracle fails any other property there."
     }
   },
   {
@@ -1455,6 +1455,166 @@
     "expect": {
       "mustKeepText": ["Signed viewport units keep their signs"],
       "notes": "From the Integrator's review of PR #249 (reading CSS). calc(1px+100vh) tokenizes as 1px and +100vh; the rewritten unit lost its + and became 1px600px. The + is kept, - is part of the number, and * and / are separate tokens."
+    }
+  },
+  {
+    "id": "148-inline-body-style-zoom-important",
+    "title": "An inline body style with zoom:1000 !important",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/148-inline-body-style-zoom-important.html",
+    "expect": {
+      "mustKeepText": ["An inline zoom with !important"],
+      "notes": "From the independent review of the reading layer (PR following #249). zoom:1000!important in the body's style attribute reported 69,750 px (the same zoom in a <style> rule stays at 86 px, because the layered rule wins there). Fixed by keeping only an allowlist of properties in the body's style attribute."
+    }
+  },
+  {
+    "id": "149-inline-body-style-vertical-writing-important",
+    "title": "An inline body style with writing-mode:vertical-lr !important and a negative margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/149-inline-body-style-vertical-writing-important.html",
+    "expect": {
+      "mustKeepText": ["An inline vertical writing mode"],
+      "notes": "From the independent review of the reading layer (PR following #249). writing-mode:vertical-lr!important in the body's style attribute grew the frame 50 px per report. Fixed the same way. Another element's inline style is kept as written."
+    }
+  },
+  {
+    "id": "150-absolute-content-far-below",
+    "title": "An absolutely positioned box 1,200 px down in a short letter",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/150-absolute-content-far-below.html",
+    "expect": {
+      "mustKeepText": ["The root box leaves out"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: with h = max(root box, body.scrollHeight) the report was 86 against a true 1,224, because the body was not the box's containing block. The body is now positioned (relative, no offsets) by the reading layer and the reporter adds the body's top to its scroll height."
+    }
+  },
+  {
+    "id": "151-relative-box-with-tall-absolute-child",
+    "title": "A relative box holding a 900 px absolutely positioned child",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/151-relative-box-with-tall-absolute-child.html",
+    "expect": {
+      "mustKeepText": ["Short text in a relative box"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 82 against a true 956."
+    }
+  },
+  {
+    "id": "152-dropdown-below-a-relative-menu",
+    "title": "A dropdown menu positioned at top:100% of a relative item",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/152-dropdown-below-a-relative-menu.html",
+    "expect": {
+      "mustKeepText": ["Dropdown items"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 56 against a true 340."
+    }
+  },
+  {
+    "id": "153-transformed-content-below",
+    "title": "A block translated 800 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/153-transformed-content-below.html",
+    "expect": {
+      "mustKeepText": ["Moved down by a transform"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 109 against a true 893. A transform moves a box without changing the flow."
+    }
+  },
+  {
+    "id": "154-body-transform-moves-the-letter",
+    "title": "A body translated 500 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/154-body-transform-moves-the-letter.html",
+    "expect": {
+      "mustKeepText": ["The whole letter sits 500 px lower"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 86 against a true 586. The body keeps its transform (it is a layout the mail asked for and cannot feed back); the body's top is part of the measurement."
+    }
+  },
+  {
+    "id": "155-body-negative-bottom-margin",
+    "title": "A body with a negative bottom margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/155-body-negative-bottom-margin.html",
+    "expect": {
+      "mustKeepText": ["The root box ends 60 px above"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 64 against a true 124."
+    }
+  },
+  {
+    "id": "156-root-offset-path-zero-width",
+    "title": "A zero-width root on an offset path, rotated",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/156-root-offset-path-zero-width.html",
+    "expect": {
+      "mustKeepText": ["A root on a path"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: the root's box was 0 high, the reporter was silent and the host showed Couldn't load. The reading layer sets offset-path:none and a 1 px minimum height on the root."
+    }
+  },
+  {
+    "id": "157-root-offset-path-moves-everything",
+    "title": "A root moved 5,000 px up an offset path",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/157-root-offset-path-moves-everything.html",
+    "expect": {
+      "mustKeepText": ["The whole letter is off screen"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: offset-path:none on the root and the body."
+    }
+  },
+  {
+    "id": "158-size-containers-on-root-and-body",
+    "title": "container-type:size on the root and the body",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/158-size-containers-on-root-and-body.html",
+    "expect": {
+      "mustKeepText": ["Size containment gives a box no height"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: container-type:size is size containment that contain:none does not undo (32 against 916). The layer sets container-type:normal on both."
+    }
+  },
+  {
+    "id": "159-vertical-text-in-a-block",
+    "title": "Vertical Japanese text in a block",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/159-vertical-text-in-a-block.html",
+    "expect": {
+      "mustKeepText": ["Vertical text in a div"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: an orthogonal writing mode inside the body made a block's length the frame's height, and the frame followed (182, 214, 246 px ... for ever). The property name becomes --m-writing-mode, which does nothing; vertical text is lost to mail."
+    }
+  },
+  {
+    "id": "160-max-height-media-flip",
+    "title": "A max-height media query that flips the letter's height",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/160-max-height-media-flip.html",
+    "expect": {
+      "mustKeepText": ["Flips between 132 and 532 px"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: the query follows the frame, the frame follows the letter, for ever. Height, aspect-ratio, orientation and device-* features become unknown (false) names; width features are untouched."
+    }
+  },
+  {
+    "id": "161-orientation-media-flip",
+    "title": "An orientation media query that flips the letter between landscape and portrait",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/161-orientation-media-flip.html",
+    "expect": {
+      "mustKeepText": ["Flips between portrait and landscape"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: 732 against 42 for ever. orientation is rewritten like the height features."
+    }
+  },
+  {
+    "id": "162-min-height-media-staircase",
+    "title": "Forty min-height media rules, each raising the height that enables the next",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/162-min-height-media-staircase.html",
+    "expect": {
+      "mustKeepText": ["A staircase of height queries"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: each step raises the frame past the next rule's threshold. A long chain climbs up to the host's 200,000 px clamp."
+    }
+  },
+  {
+    "id": "163-root-content-visibility-hidden",
+    "title": "A root with content-visibility:hidden and a 5,000 px intrinsic size",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/163-root-content-visibility-hidden.html",
+    "expect": {
+      "mustKeepText": ["The root reports a fixed 5,000 px"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Pre-existing, from the review. contain:none and content-visibility:visible on the root and the body."
     }
   }
 ]

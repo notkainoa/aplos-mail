@@ -12,7 +12,7 @@
  * what is delivered. A link longer than `MAX_FRAME_LINK` is denied; that is the cap `handleLink` and `external` apply
  * too (10,000 characters).
  */
-import { isMailDocumentUrl } from './relay';
+import { isShownMailDocumentUrl } from './relay';
 
 /** The longest link accepted, the same cap `handleLink` and `external` apply. */
 export const MAX_FRAME_LINK = 10_000;
@@ -105,6 +105,6 @@ export interface FrameNavigation {
  */
 export function isMailFrameLink(event: FrameNavigation): boolean {
   if (event.isMainFrame || !event.frame) return false;
-  if (!isMailDocumentUrl(event.frame.url)) return false;
+  if (!isShownMailDocumentUrl(event.frame.url)) return false;
   return !event.initiator || event.initiator === event.frame;
 }

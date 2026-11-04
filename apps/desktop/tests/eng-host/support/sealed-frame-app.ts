@@ -81,6 +81,7 @@ const LETTER = `<!doctype html><html><body tabindex="-1"><p>Hello</p>
 <a id="tel-blank" target="_blank" href="tel:+15551234">tel blank</a>
 <a id="tel-self" href="tel:+15551234">tel self</a>
 <a id="ftp-blank" target="_blank" href="ftp://example.invalid/x">ftp blank</a>
+<a id="toc" href="#m-section">table of contents</a>
 <a id="top-mail" target="_top" href="aplos-mail://m/${'ab'.repeat(16)}/">top mail</a>
 </body></html>`;
 
@@ -140,7 +141,8 @@ async function scenario() {
   const isolation = await measureIsolation(win, frame, page, inFrame);
   const links = await clickLinks(win, frame, inFrame, page, mails, webs, navigations, url);
   const keys = await pressKeys(win, frame, inFrame, page);
-  return { url, isolation, links, keys, hostUrl: win.webContents.getURL() };
+  const fragment = await afterFragmentClick(win, frame, inFrame, page, mails, webs);
+  return { url, isolation, links, keys, fragment, hostUrl: win.webContents.getURL() };
 }
 
 async function measureIsolation(
@@ -228,6 +230,40 @@ async function clickLinks(
     clicked,
     navigations: navigations.filter(n => n.url !== url),
     messages: await page<string[]>('got'),
+  };
+}
+
+/** A newsletter's table of contents: a fragment link changes the frame's URL to `<document>#m-section`. */
+async function afterFragmentClick(
+  win: BrowserWindow,
+  frame: Electron.WebFrameMain,
+  inFrame: <T>(code: string) => Promise<T>,
+  page: <T>(code: string) => Promise<T>,
+  mails: string[],
+  webs: string[],
+) {
+  await inFrame("document.getElementById('toc').click(); 1");
+  await wait(250);
+  const frameUrl = frame.url;
+  await page('mailKeys.splice(0)');
+  await inFrame('document.body.focus(); 1');
+  await page("document.querySelector('iframe').focus(); 1");
+  win.webContents.focus();
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'J' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'J' });
+  await wait(150);
+  const mailKeys = await page<unknown[]>('mailKeys.splice(0)');
+  const before = { mails: mails.length, webs: webs.length };
+  await inFrame("document.getElementById('mail-self').click(); 1");
+  await wait(250);
+  await inFrame("document.getElementById('web-self').click(); 1");
+  await wait(250);
+  return {
+    frameUrl,
+    focused: win.webContents.focusedFrame?.url ?? 'none',
+    mailKeys,
+    mails: mails.slice(before.mails),
+    webs: webs.slice(before.webs),
   };
 }
 

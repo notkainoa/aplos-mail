@@ -112,6 +112,7 @@ function checkAttribute(
   if (name === 'href' && element === 'a') return checkHref(value, problems);
   if (name === 'src' && element === 'img') return checkImage(value, true, options, problems);
   if (name === 'background') return checkImage(value, false, options, problems);
+  if (name === 'style' && element === 'body') problems.push(...bodyStyleProblems(value));
   if (name === 'style') return checkCss(value, options, problems, true);
   if (name === 'target' && value === '_blank') return;
   if (name === 'rel' && value === 'noopener noreferrer') return;
@@ -213,16 +214,46 @@ function checkCss(
 /**
  * A mail's `@layer` names must all be in the `m-` namespace: the reading layer's !important rules
  * keep the frame's height only while the mail cannot add rules to that layer. The prelude runs to
- * the next `{` or `;`, and any identifier in it is a layer name.
+ * the next `{`, `;` or `}`, and any identifier in it is a layer name.
  */
 function unscopedLayerNames(token: CSSToken, tokens: CSSToken[], index: number): string[] {
   if (token[0] !== TokenType.AtKeyword || token[4].value.toLowerCase() !== 'layer') return [];
   const problems: string[] = [];
   for (let at = index + 1; at < tokens.length; at++) {
     const next = tokens[at];
-    if (next[0] === TokenType.OpenCurly || next[0] === TokenType.Semicolon) break;
+    if (
+      next[0] === TokenType.OpenCurly ||
+      next[0] === TokenType.Semicolon ||
+      next[0] === TokenType.CloseCurly
+    )
+      break;
     if (next[0] === TokenType.Ident && !next[4].value.startsWith('m-'))
       problems.push(`layer name ${next[4].value} outside the m- namespace`);
+  }
+  return problems;
+}
+
+/**
+ * The frame body's style attribute outranks every cascade layer, so it may set only colours, margins,
+ * padding and type. Any other property name at the top level of the attribute is a finding.
+ */
+const BODY_STYLE_OK =
+  /^(?:background(?:-[a-z]+)*|color|margin(?:-[a-z]+)*|padding(?:-[a-z]+)*|font(?:-[a-z]+)*|text-align|line-height)$/;
+
+function bodyStyleProblems(css: string): string[] {
+  const tokens = tokenize({ css }, { onParseError: () => undefined });
+  const problems: string[] = [];
+  let depth = 0;
+  let expectName = true;
+  for (const token of tokens) {
+    if (token[0] === TokenType.Whitespace || token[0] === TokenType.Comment) continue;
+    if (depth === 0 && expectName && token[0] !== TokenType.Semicolon) {
+      const name = token[0] === TokenType.Ident ? token[4].value.toLowerCase() : '';
+      if (!BODY_STYLE_OK.test(name)) problems.push(`body style property "${name || token[1]}"`);
+    }
+    expectName = token[0] === TokenType.Semicolon && depth === 0;
+    if (token[0] === TokenType.Function || token[0] === TokenType.OpenParen) depth++;
+    else if (token[0] === TokenType.CloseParen) depth = Math.max(0, depth - 1);
   }
   return problems;
 }
