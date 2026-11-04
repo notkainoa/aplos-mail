@@ -109,3 +109,46 @@ function fillSettings(w: World, data: string) {
     data,
   );
 }
+
+describe('Mail/allowImages audit', () => {
+  it('a listener client leaves one content-free audit row; a window leaves none', () =>
+    withWorld(async w => {
+      const listener = w.engine.connect({
+        kind: 'listener',
+        via: 'socket',
+        clientId: 'audit-1',
+        scopes: ['read', 'admin'],
+      });
+      await listener.call('Mail/allowImages', {
+        opId: 'aud-1',
+        sender: 'client@one.example',
+        allow: true,
+      });
+      const rows = w.store.read(q =>
+        q.all<{ client_id: string; method: string; target: string | null }>(
+          'SELECT client_id, method, target FROM audit_log',
+        ),
+      );
+      assert.deepEqual(
+        rows.map(r => ({ ...r })),
+        [{ client_id: 'audit-1', method: 'Mail/allowImages', target: 'client@one.example' }],
+      );
+      await allow(w, 'win-1', 'window@two.example');
+      assert.equal(
+        w.store.read(q => q.all('SELECT id FROM audit_log')).length,
+        1,
+        'a window call writes no row',
+      );
+      const again = await listener.call('Mail/allowImages', {
+        opId: 'aud-1',
+        sender: 'client@one.example',
+        allow: true,
+      });
+      assert.ok(again.opId === 'aud-1', 'a replay succeeds');
+      assert.equal(
+        w.store.read(q => q.all('SELECT id FROM audit_log')).length,
+        1,
+        'a replayed opId writes the row once',
+      );
+    }));
+});
