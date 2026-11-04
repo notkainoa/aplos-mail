@@ -3,8 +3,9 @@ import type { MethodContext } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
 import { contractError } from '../runtime/errors';
 import { cleanMime, cleanName } from '../runtime/blobs';
-import { deadline, within } from './deadline';
+import { deadline, within, type Deadline } from './deadline';
 import { requireMessage, type MessageRef } from './message';
+import { StoreError } from '../store';
 
 /**
  * `Attachment/get` (Blob package 6, blob-area.md decision 11): a stored attachment's bytes as a blob handle. A
@@ -32,6 +33,9 @@ const busy = () =>
     message: 'Aplos is already downloading several attachments. Try again in a moment.',
     retryAfterMs: 1000,
   });
+
+const nonce = (services: EngineServices) =>
+  [...services.randomBytes(8)].map(b => b.toString(16).padStart(2, '0')).join('');
 
 interface PartRow {
   remote_part: string;
@@ -63,8 +67,12 @@ function stateCommit(
   state: 'absent' | 'fetching' | 'present',
   path?: string,
 ): void {
+  // Every transition needs its own opId: the commits table dedupes by opId forever, so a repeated
+  // `fetching`/`present`/`absent` for the same part would be replayed as a no-op and the row could
+  // never change state twice. The nonce makes each attempt distinct; the account keeps remote ids
+  // that collide across accounts from poisoning each other.
   services.store.commit({
-    opId: `attachment-${ref.remoteId}-${remotePart}-${state}-${path ?? ''}`,
+    opId: `attachment-${ref.accountId}-${ref.remoteId}-${remotePart}-${state}-${path ?? ''}-${nonce(services)}`,
     origin: 'local',
     writes: [
       {
@@ -83,9 +91,9 @@ function stateCommit(
 async function collect(
   services: EngineServices,
   chunks: AsyncIterable<Uint8Array>,
+  total: Deadline,
   signal: AbortSignal,
 ): Promise<Uint8Array | undefined> {
-  const total = deadline(services.clock, TOTAL_MS, signal);
   const iterator = chunks[Symbol.asyncIterator]();
   const parts: Uint8Array[] = [];
   let size = 0;
@@ -93,8 +101,12 @@ async function collect(
   try {
     for (;;) {
       const idle = deadline(services.clock, IDLE_MS, signal);
-      const step = await within(within(iterator.next(), idle), total);
-      idle.end();
+      let step: IteratorResult<Uint8Array> | undefined;
+      try {
+        step = await within(within(iterator.next(), idle), total);
+      } finally {
+        idle.end();
+      }
       if (!step) return undefined;
       if (step.done) {
         done = true;
@@ -112,7 +124,6 @@ async function collect(
       parts.push(step.value);
     }
   } finally {
-    total.end();
     if (!done)
       try {
         void Promise.resolve(iterator.return?.()).catch(() => undefined);
@@ -131,20 +142,36 @@ async function fetchPart(
   signal: AbortSignal,
 ): Promise<{ path: string; size: number }> {
   stateCommit(services, ref, row.remote_part, 'fetching');
+  // One budget for the whole fetch — open, collect and cache-write share the same 120 s total.
+  const total = deadline(services.clock, TOTAL_MS, signal);
   try {
-    const opening = deadline(services.clock, TOTAL_MS, signal);
     const chunks = await within(
       services.accounts.attachment(ref.accountId, {
         remoteMessageId: ref.remoteId,
         part: row.remote_part,
       }),
-      opening,
+      total,
     );
-    opening.end();
-    const bytes = chunks && (await collect(services, chunks, signal));
+    if (!chunks) throw unavailable();
+    const bytes = await collect(services, chunks, total, signal);
     if (!bytes) throw unavailable();
-    const path = await files.write(ref.accountId, ref.remoteId, row.remote_part, bytes);
-    stateCommit(services, ref, row.remote_part, 'present', path);
+    const path = await within(
+      files.write(ref.accountId, ref.remoteId, row.remote_part, bytes),
+      total,
+    );
+    if (!path) throw unavailable();
+    try {
+      stateCommit(services, ref, row.remote_part, 'present', path);
+    } catch (error) {
+      // The row went away under us (message deleted or the parts re-listed): nothing may name the
+      // fresh file, so it is removed rather than orphaned, and the caller sees notFound, not a raw
+      // store error.
+      if (error instanceof StoreError) {
+        await files.remove(path).catch(() => undefined);
+        throw notFound();
+      }
+      throw error;
+    }
     return { path, size: bytes.byteLength };
   } catch (error) {
     try {
@@ -153,6 +180,8 @@ async function fetchPart(
       // The row may be gone itself; either way nothing sticks `fetching`.
     }
     throw error;
+  } finally {
+    total.end();
   }
 }
 
@@ -194,13 +223,18 @@ export async function attachmentGet(
     if (bytes) return handle(ctx, row, row.path, bytes.byteLength);
   }
 
-  const key = `${ref.accountId}:${ref.remoteId}:${row.remote_part}`;
+  // Ids are opaque (a remote id or part may itself hold ':'): JSON keeps the shared-fetch key unambiguous.
+  const key = JSON.stringify([ref.accountId, ref.remoteId, row.remote_part]);
   const shared = services.mailFrames.parts.get(key);
   if (shared === undefined) {
     const count = services.mailFrames.fetching.get(ref.accountId) ?? 0;
     if (count >= PER_ACCOUNT) throw busy();
     services.mailFrames.fetching.set(ref.accountId, count + 1);
-    const work = fetchPart(services, files, ref, row, ctx.signal).finally(() => {
+    // The shared fetch answers to its own never-firing signal: the caller who started it going away
+    // must not kill it for every joined caller (or wedge the row `absent` on behalf of a dead
+    // session). Each caller's own signal governs only its wait below.
+    const own = new AbortController();
+    const work = fetchPart(services, files, ref, row, own.signal).finally(() => {
       services.mailFrames.parts.delete(key);
       const left = (services.mailFrames.fetching.get(ref.accountId) ?? 1) - 1;
       if (left > 0) services.mailFrames.fetching.set(ref.accountId, left);
@@ -208,6 +242,9 @@ export async function attachmentGet(
     });
     services.mailFrames.parts.set(key, work);
   }
-  const { path, size } = await services.mailFrames.parts.get(key)!;
-  return handle(ctx, row, path, size);
+  const mine = deadline(services.clock, TOTAL_MS + 1000, ctx.signal);
+  const done = await within(services.mailFrames.parts.get(key)!, mine);
+  mine.end();
+  if (!done) throw unavailable();
+  return handle(ctx, row, done.path, done.size);
 }

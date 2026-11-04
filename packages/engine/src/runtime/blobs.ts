@@ -287,7 +287,9 @@ export function createBlobRuntime(deps: {
     let bytes = pending.get(principal)?.bytes ?? 0;
     let count = pending.get(principal)?.count ?? 0;
     for (const entry of index.values()) {
-      if (entry.principal !== principal) continue;
+      // An `attachment` handle owns no BlobFiles bytes — it reads through the shared cache — so it
+      // does not spend the caller's upload quota (Blob/get on it is bounded by the file cap).
+      if (entry.principal !== principal || entry.kind === 'attachment') continue;
       bytes += entry.size;
       count += 1;
     }

@@ -50,11 +50,11 @@ function memoryBlobs() {
 function memoryParts() {
   const files = new Map<string, Uint8Array>();
   const calls: string[] = [];
-  let n = 0;
   const port: AttachmentFiles = {
     async write(accountId, remoteId, remotePart, data) {
       calls.push(`write ${remoteId}/${remotePart}`);
-      const path = `part-${++n}`;
+      // Deterministic: a refetch of the same part lands on the same path, like the real port.
+      const path = `part-${remotePart}`;
       files.set(path, data.slice());
       return path;
     },
@@ -99,6 +99,7 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
         { remotePart: 'p1', name: 'notes.txt', mime: 'text/plain', size: 11, inline: false },
         { remotePart: 'p2', name: 'big.bin', mime: 'application/octet-stream', inline: false },
         { remotePart: 'p3', name: 'odd.bin', mime: 'odd', inline: false },
+        { remotePart: 'p4', name: 'big.bin', mime: 'application/octet-stream', inline: false },
       ],
     },
   ];
@@ -137,6 +138,9 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
     yield new Uint8Array(25 * 1024 * 1024);
     yield enc('more');
   });
+  streams.set('p4', async function* () {
+    yield new Uint8Array(25 * 1024 * 1024);
+  });
   const engine = await createEngine({
     store,
     clock,
@@ -149,6 +153,8 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
     validate: parseArgs as (m: string, a: unknown) => unknown,
   });
   const session = engine.connect();
+  const listener = (clientId = 'c-1') =>
+    engine.connect({ kind: 'listener', via: 'mcp', clientId, scopes: ['read', 'draft'] });
   const row = (remotePart: string) =>
     store.read(q =>
       q.get<{ state: string; path: string | null }>(
@@ -167,6 +173,7 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
     gate,
     partFiles: parts.files,
     partCalls: parts.calls,
+    listener,
     stalled: () => stalls,
     setHeld: () => {
       gate.promise = new Promise<void>(r => {
@@ -178,8 +185,16 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
   };
 }
 
+type AttachOut = { blobId: string; name: string; mime: string; size: number };
+
 const get = (w: Awaited<ReturnType<typeof world>>, attachmentId: string) =>
-  w.session.call('Attachment/get', { messageId: `${ACCOUNT}:r1`, attachmentId });
+  w.session.call('Attachment/get', {
+    messageId: `${ACCOUNT}:r1`,
+    attachmentId,
+  }) as Promise<AttachOut>;
+
+const blobGet = (w: Awaited<ReturnType<typeof world>>, blobId: string) =>
+  w.session.call('Blob/get', { blobId }) as Promise<{ bytes: Uint8Array }>;
 
 test('fetch: streams the part, caches it, commits present, and the handle reads through the cache', async () => {
   const w = await world();
@@ -190,7 +205,7 @@ test('fetch: streams the part, caches it, commits present, and the handle reads 
   assert.ok(row.path, 'a path was committed');
   const file = w.partFiles.get(row.path!);
   assert.equal(new TextDecoder().decode(file), 'hello world');
-  const blob = await w.session.call('Blob/get', { blobId: got.blobId });
+  const blob = await blobGet(w, got.blobId);
   assert.equal(new TextDecoder().decode(blob.bytes), 'hello world');
   assert.equal(got.name, 'notes.txt');
   assert.equal(got.mime, 'text/plain');
@@ -216,10 +231,7 @@ test('dedupe: two concurrent gets share one provider fetch but get their own han
   const [a, b] = await pending;
   assert.deepEqual(w.calls, [`${ACCOUNT}/r1/p2`], 'one fetch for two callers');
   assert.notEqual(a.blobId, b.blobId);
-  const [ra, rb] = await Promise.all([
-    w.session.call('Blob/get', { blobId: a.blobId }),
-    w.session.call('Blob/get', { blobId: b.blobId }),
-  ]);
+  const [ra, rb] = await Promise.all([blobGet(w, a.blobId), blobGet(w, b.blobId)]);
   assert.equal(new TextDecoder().decode(ra.bytes), 'late');
   assert.equal(new TextDecoder().decode(rb.bytes), 'late');
   await w.close();
@@ -238,7 +250,7 @@ test('over 25 MB: tooLarge, and the row is not left fetching', async () => {
   await w.close();
 });
 
-test('a stalled read cancels with the caller signal and reverts to absent', async () => {
+test('a stalled read times out on the total deadline and reverts to absent', async () => {
   const w = await world();
   w.setHeld();
   const pending = get(w, 'p2').then(
@@ -296,4 +308,71 @@ test('without the attachment-files port, Attachment/get is unavailable', async (
   assert.ok(error instanceof ContractError);
   assert.equal(error.type, 'unavailable');
   await engine.close();
+});
+
+test('a refetch after an absent revert writes present again (opIds never replay a transition)', async () => {
+  const w = await world();
+  await get(w, 'p1');
+  assert.equal(w.row('p1')!.state, 'present');
+  // The file is lost behind the app's back and the provider stops answering: the fetch fails and the
+  // row is reverted to absent. With replayed opIds every commit after the first would be a no-op.
+  w.partFiles.delete('part-p1');
+  w.streams.set('p1', () => {
+    throw new Error('provider lost it');
+  });
+  await get(w, 'p1').catch(() => undefined);
+  assert.equal(w.row('p1')!.state, 'absent');
+  // The provider recovers: the re-fetch must commit present again — on the same cache path.
+  w.streams.set('p1', async function* () {
+    yield enc('hello again');
+  });
+  await get(w, 'p1');
+  const row = w.row('p1')!;
+  assert.equal(row.state, 'present');
+  assert.equal(row.path, 'part-p1');
+  const blob = await blobGet(w, (await get(w, 'p1')).blobId);
+  assert.equal(new TextDecoder().decode(blob.bytes), 'hello again');
+  await w.close();
+});
+
+test('a joined caller survives the starter going away: the shared fetch is not theirs to kill', async () => {
+  const w = await world();
+  w.setHeld();
+  const starter = get(w, 'p2').then(
+    () => assert.fail('the starter expected cancellation'),
+    (e: unknown) => e,
+  );
+  const second = w.listener();
+  const joined = second.call('Attachment/get', {
+    messageId: `${ACCOUNT}:r1`,
+    attachmentId: 'p2',
+  }) as Promise<AttachOut>;
+  for (let i = 0; i < 100 && w.stalled() === 0; i++) await new Promise(r => setImmediate(r));
+  assert.equal(w.stalled(), 1, 'one shared fetch is stalled');
+  w.session.close();
+  const starterError = await starter;
+  assert.ok(starterError instanceof ContractError);
+  assert.equal(starterError.type, 'unavailable');
+  w.gate.open!();
+  const got = await joined;
+  const blob = (await second.call('Blob/get', { blobId: got.blobId })) as {
+    bytes: Uint8Array;
+  };
+  assert.equal(new TextDecoder().decode(blob.bytes), 'late');
+  assert.equal(w.row('p2')!.state, 'present', 'the joined caller still lands a present row');
+  await w.close();
+});
+
+test('attachment handles own no upload bytes: several big opens never spend the client quota', async () => {
+  const w = await world();
+  const client = w.listener('quota-client');
+  for (let i = 0; i < 5; i++)
+    await client.call('Attachment/get', {
+      messageId: `${ACCOUNT}:r1`,
+      attachmentId: 'p4',
+    });
+  // 5 x 25 MB would exceed a client's 100 MB blob budget if handles counted; they must not.
+  const put = await client.call('Blob/put', { bytes: enc('x'), mime: 'text/plain' });
+  assert.ok((put as { blobId: string }).blobId.startsWith('b_'));
+  await w.close();
 });
