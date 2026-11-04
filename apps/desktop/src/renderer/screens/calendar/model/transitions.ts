@@ -37,6 +37,13 @@ export const done = (
   handled,
 });
 
+/** Cancelling the scope question returns to the editor with the draft it stashed, edits intact (review1 6). */
+export function cancelScope(state: CalendarState): Transition {
+  const p = state.scope?.pending;
+  const draft = p?.kind === 'edit' || p?.kind === 'delete' ? p.draft : undefined;
+  return done({ ...state, scope: null, ...(draft ? { editor: draft } : {}) });
+}
+
 /** Close every transient surface (popover, its menu, the stack menu, the RSVP choice, a pending scope). */
 export function closed(state: CalendarState): CalendarState {
   return { ...state, detailId: null, moreOpen: false, stackIds: null, rsvp: null, scope: null };
@@ -145,7 +152,12 @@ export function deleteTransition(
   if (!event.can.delete || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
   if (event.recurring && !scope)
-    return done(decideScope({ ...state, editor: null }, entry, 'delete', { kind: 'delete' }));
+    return done(
+      decideScope({ ...state, editor: null }, entry, 'delete', {
+        kind: 'delete',
+        ...(state.editor ? { draft: state.editor } : {}),
+      }),
+    );
   // Focus never lost: the selection moves on to the next event in time order, else the previous one.
   const rest = ctx.entries.filter(e => e.id !== entry.id);
   const next = walk(ctx.entries, entry.id, 1) ?? walk(ctx.entries, entry.id, -1);
@@ -246,6 +258,9 @@ function askEditScope(
   );
 }
 
+/** Pending creates get distinct temp ids even with identical fields, or the second would replace the first (review1 10). */
+let nextTempSeq = 0;
+
 /** A new event's optimistic entry and its create write: the temp id stands in until the receipt lands. */
 function createSave(
   state: CalendarState,
@@ -255,7 +270,7 @@ function createSave(
 ): Transition {
   const calendar = ctx.calendars.find(c => c.id === change.calendarId);
   const times = draftTimes(draft);
-  const tempId = `new:${draft.date}:${draft.start}:${draft.title.trim()}`;
+  const tempId = `new:${++nextTempSeq}:${draft.date}:${draft.start}:${draft.title.trim()}`;
   const entry: CalendarEventData = {
     id: tempId,
     title: draft.title.trim(),

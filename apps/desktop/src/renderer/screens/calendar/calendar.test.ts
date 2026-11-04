@@ -345,6 +345,39 @@ test('Esc closes the scope question, the popover, the answer, the selection, the
   assert.equal(cancelled.state.scope, null);
 });
 
+test('review1: cancelling the scope question returns to the editor with the draft intact', () => {
+  const ctx = ctxFor();
+  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
+  const draft = { ...draftFromEvent(occ), title: 'Renamed standup' };
+  const ask = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
+  assert.equal(ask.state.scope?.action, 'change');
+  assert.equal(ask.state.editor, null);
+  for (const cancel of [{ type: 'scopeCancel' } as const, { type: 'escape' } as const]) {
+    const back = update(ask.state, cancel, ctx);
+    assert.equal(back.state.scope, null);
+    assert.equal(back.state.editor?.title, 'Renamed standup');
+  }
+});
+
+test('review1: two identical pending creates get distinct temp ids', () => {
+  const ctx = ctxFor();
+  const draft = { ...newDraft(THU, NOW, [], 'work'), title: 'Focus' };
+  const first = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
+  const second = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
+  const idOf = (t: typeof first) =>
+    t.effects.find((f): f is Extract<typeof f, { kind: 'eventSet' }> => f.kind === 'eventSet')
+      ?.optimistic.id;
+  assert.ok(idOf(first));
+  assert.notEqual(idOf(first), idOf(second));
+});
+
+test('review1: switching view re-syncs the sidebar month to the anchor', () => {
+  const ctx = ctxFor();
+  const paged = S({ view: 'week', miniMonth: '2026-12' });
+  const t = update(paged, actionForCommand('calendar.monthView'), ctx);
+  assert.equal(t.state.miniMonth, null);
+});
+
 test('the ⋯ menu offers edit and delete on yours, change your reply on an answered invite, no delete on a plan', () => {
   const ctx = ctxFor();
   const own = ctx.entries.find(e => e.id === 'design')!;

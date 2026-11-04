@@ -17,6 +17,7 @@ import {
   type Transition,
 } from './state';
 import {
+  cancelScope,
   closed,
   deleteTransition,
   done,
@@ -90,7 +91,7 @@ function onClose(state: CalendarState): Transition {
  */
 function onEscape(state: CalendarState): Transition {
   if (state.editor) return unhandled(state);
-  if (state.scope) return done({ ...state, scope: null });
+  if (state.scope) return cancelScope(state);
   if (state.moreOpen) return done({ ...state, moreOpen: false });
   if (state.stackIds) return done({ ...state, stackIds: null });
   if (state.detailId) return done(closed(state), [{ kind: 'focus', target: 'grid' }]);
@@ -288,7 +289,8 @@ function onToggleCalendar(
 const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   width: (s, a) => (a.px === s.paneWidth ? unhandled(s) : done({ ...s, paneWidth: a.px })),
   today: (s, _a, ctx) => done({ ...closed(s), anchor: toIsoDate(ctx.now), miniMonth: null }),
-  view: (s, a) => done({ ...closed(s), view: a.view }),
+  // A view switch re-syncs the sidebar's month to the anchor like a period step does (review1 15).
+  view: (s, a) => done({ ...closed(s), view: a.view, miniMonth: null }),
   period: (s, a) =>
     done({ ...closed(s), anchor: stepAnchor(shownView(s), s.anchor, a.dir), miniMonth: null }),
   pick: (s, a) => done({ ...closed(s), anchor: a.date, miniMonth: null }),
@@ -306,7 +308,7 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   answer: onAnswer,
   sendReply: (s, _a, ctx) => rsvpTransition(s, ctx),
   scope: onScope,
-  scopeCancel: s => done({ ...s, scope: null }),
+  scopeCancel: s => cancelScope(s),
   newEvent: onNewEvent,
   createRange: (s, a, ctx) =>
     done({

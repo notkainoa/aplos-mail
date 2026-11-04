@@ -25,7 +25,8 @@ import { lockedMessage, type RsvpState } from './rsvp';
 export type PendingChange =
   | { readonly kind: 'move'; readonly start: IsoDateTime; readonly end: IsoDateTime }
   | { readonly kind: 'edit'; readonly draft: EditorDraft }
-  | { readonly kind: 'delete' }
+  /** The draft is carried so Cancel returns to the editor with the edits intact (review1 6). */
+  | { readonly kind: 'delete'; readonly draft?: EditorDraft }
   | { readonly kind: 'reply'; readonly answer: RsvpAnswer };
 
 export interface ScopeAsk {
