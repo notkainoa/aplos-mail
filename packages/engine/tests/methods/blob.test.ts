@@ -70,7 +70,7 @@ type Memory = ReturnType<typeof memoryFiles>;
 
 /** The real engine over a temp store, the fake clock and `memory` as its host blob port. */
 /** `null`: no host blob port at all. */
-async function world(memory: Memory | null = memoryFiles(), start = T0) {
+async function world(memory: Memory | null = memoryFiles(), start = T0, withSend = false) {
   const file = tempDb();
   const clock = fakeClock(start);
   const records: LogRecord[] = [];
@@ -81,7 +81,20 @@ async function world(memory: Memory | null = memoryFiles(), start = T0) {
     store,
     clock,
     log,
-    ports: memory ? { blobFiles: memory.files } : {},
+    ports: {
+      ...(memory ? { blobFiles: memory.files } : {}),
+      // A send port that never leaves (the row is only queued in these tests): without one, sending is unavailable.
+      ...(withSend
+        ? {
+            send: {
+              send: async () => {
+                throw new Error('not in this test');
+              },
+              findSent: async () => ({ kind: 'absent', checkedAt: 0 }),
+            } as never,
+          }
+        : {}),
+    },
     validate: (method, args) => parseArgs(method as MethodName, args),
   });
   const db = file.open();
@@ -154,8 +167,12 @@ async function refused(promise: Promise<unknown>): Promise<{ type: string; messa
 
 const gone = { type: 'notFound', message: BLOB_SENTENCES.gone };
 
-async function withWorld(fn: (w: World) => Promise<void>, memory?: Memory | null) {
-  const w = await world(memory);
+async function withWorld(
+  fn: (w: World) => Promise<void>,
+  memory?: Memory | null,
+  withSend = false,
+) {
+  const w = await world(memory, undefined, withSend);
   try {
     await fn(w);
   } finally {
@@ -559,3 +576,150 @@ test('the sweep is a source on the timer loop, every 10 minutes', () =>
     await w.clock.advance(BLOB_TIMES.sweepMs);
     assert.equal(await source.next(), w.clock.now() + BLOB_TIMES.sweepMs);
   }));
+
+// ---- Blob package 4: Draft/set's ownership check and the outbox's read through services.blobs ----
+
+const ATTACH_AGAIN = { type: 'notFound', message: `${BLOB_SENTENCES.gone} Attach it again.` };
+
+function fieldsWith(blobIds: string[], subject = 'Lunch') {
+  return {
+    accountId: accountWrite.id,
+    mode: 'new' as const,
+    to: [{ address: 'jordan@mail.example', name: 'Jordan' }],
+    cc: [],
+    bcc: [],
+    subject,
+    html: '<p>Lunch at noon?</p>',
+    attachments: blobIds.map((blobId, n) => ({
+      id: `att${n}`,
+      name: 'menu.pdf',
+      mime: 'application/pdf',
+      size: 10,
+      blobId,
+    })),
+    signature: false,
+  };
+}
+
+let opCounter = 0;
+const setDraft = (
+  s: Session,
+  fields: ReturnType<typeof fieldsWith>,
+  existing?: { id: string; revision: number },
+) =>
+  s.call('Draft/set', {
+    opId: `blob4-op-${++opCounter}`,
+    ...(existing ? { id: existing.id, baseRevision: existing.revision } : {}),
+    fields,
+  }) as Promise<{ draft: { id: string; revision: number } }>;
+
+test('Draft/set: a new attachment must be a blob the caller made; any window may attach any window’s file (one app principal)', () =>
+  withWorld(async w => {
+    const { blobId } = await put(w.window);
+    const second = w.engine.connect();
+    const saved = await setDraft(second, fieldsWith([blobId]));
+    assert.equal(saved.draft.revision, 1);
+    assert.deepEqual(
+      await refused(setDraft(w.window, fieldsWith(['b_' + '0'.repeat(32)]))),
+      ATTACH_AGAIN,
+    );
+    assert.deepEqual(await refused(setDraft(w.window, fieldsWith(['nonsense']))), ATTACH_AGAIN);
+  }));
+
+test('Draft/set: a listener cannot attach a window’s file by id, nor another client’s; its own file works', () =>
+  withWorld(async w => {
+    const windowBlob = await put(w.window);
+    const alice = w.listener('alice');
+    const bob = w.listener('bob');
+    const aliceBlob = await put(alice);
+    assert.deepEqual(await refused(setDraft(alice, fieldsWith([windowBlob.blobId]))), ATTACH_AGAIN);
+    assert.deepEqual(await refused(setDraft(bob, fieldsWith([aliceBlob.blobId]))), ATTACH_AGAIN);
+    assert.ok((await setDraft(alice, fieldsWith([aliceBlob.blobId]))).draft.id);
+    assert.deepEqual(
+      await refused(setDraft(w.window, fieldsWith(['b_' + 'f'.repeat(32)]))),
+      ATTACH_AGAIN,
+    );
+  }));
+
+test('Draft/set: only NEW blob ids are checked; a draft keeps saving after its file lost its owner, and a changed id is checked', () =>
+  withWorld(async w => {
+    const first = await put(w.window);
+    const saved = await setDraft(w.window, fieldsWith([first.blobId]));
+    // The file is released (no live send): the draft still names it, and an edit of the subject does not ask again.
+    await release(w.window, first.blobId);
+    const edited = await setDraft(w.window, fieldsWith([first.blobId], 'Lunch?'), saved.draft);
+    assert.equal(edited.draft.revision, 2);
+    // Swapping in a file the caller does not own is refused, and nothing is saved.
+    const foreign = await put(w.listener('carol'));
+    assert.deepEqual(
+      await refused(setDraft(w.window, fieldsWith([foreign.blobId]), edited.draft)),
+      ATTACH_AGAIN,
+    );
+    const still = (await w.window.call('Draft/get', { ids: [saved.draft.id] })) as {
+      list: { revision: number }[];
+    };
+    assert.equal(still.list[0].revision, 2);
+  }));
+
+test('Draft/set: with the host blob port absent every attachment with a blob id is refused', () =>
+  withWorld(async w => {
+    assert.deepEqual(
+      await refused(setDraft(w.window, fieldsWith(['b_' + 'a'.repeat(32)]))),
+      ATTACH_AGAIN,
+    );
+    assert.ok(
+      (await setDraft(w.window, fieldsWith([]))).draft.id,
+      'a draft with no attachments still saves',
+    );
+  }, null));
+
+test('a send reads the attachment through services.blobs and pins its bytes in the MIME', () =>
+  withWorld(
+    async w => {
+      const payload = new Uint8Array(300).map((_, i) => (i * 7) % 251);
+      const { blobId } = await put(w.window, payload);
+      const saved = await setDraft(w.window, fieldsWith([blobId]));
+      await w.window.call('Submission/set', {
+        opId: `blob4-send-${++opCounter}`,
+        action: { type: 'send', draftId: saved.draft.id, revision: saved.draft.revision },
+      });
+      const db = w.engine.services.store.read(q =>
+        q.get<{ mime: Uint8Array }>(
+          'SELECT mime FROM submissions WHERE draft_id = ?',
+          saved.draft.id,
+        ),
+      );
+      const text = Buffer.from(db!.mime).toString('latin1');
+      assert.ok(
+        text.includes(Buffer.from(payload).toString('base64').slice(0, 60)),
+        'the bytes are in the MIME',
+      );
+      // Held by the queued send: the file cannot be released from under it.
+      assert.equal((await refused(release(w.window, blobId))).type, 'stateMismatch');
+    },
+    undefined,
+    true,
+  ));
+
+test('a send whose file is gone is refused with the attach-again sentence and queues nothing', () =>
+  withWorld(
+    async w => {
+      const { blobId } = await put(w.window);
+      const saved = await setDraft(w.window, fieldsWith([blobId]));
+      w.memory.stored.delete(blobId);
+      const error = await refused(
+        w.window.call('Submission/set', {
+          opId: `blob4-send-${++opCounter}`,
+          action: { type: 'send', draftId: saved.draft.id, revision: saved.draft.revision },
+        }),
+      );
+      assert.equal(error.type, 'notFound');
+      assert.match(error.message, /Attach it again/);
+      const rows = w.engine.services.store.read(q =>
+        q.all<{ id: string }>('SELECT id FROM submissions WHERE draft_id = ?', saved.draft.id),
+      );
+      assert.equal(rows.length, 0);
+    },
+    undefined,
+    true,
+  ));

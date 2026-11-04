@@ -261,6 +261,8 @@ export function createModule(services: EngineServices): LaneModule {
     randomBytes: services.randomBytes,
     drafts: services.drafts,
     frames: services.frames,
+    // A draft's own attachments, whoever made them (`Draft/set` checked the owner); a missing blob is left out.
+    blobs: { get: async id => (await services.blobs.load([id])).get(id) },
   });
   return {
     services: {
