@@ -25,6 +25,10 @@ export interface MailFrames {
   readonly fetching: Map<string, number>;
   /** The lane's fetch signal: `stop()` aborts it, so an engine close takes every in-flight fetch down. */
   readonly aborter: AbortController;
+  /** In-flight `Message/original` fetches, keyed `[principal, messageId]`: joined callers share one fetch. */
+  readonly originals: Map<string, Promise<{ blobId: string; name: string; size: number }>>;
+  /** A live `Message/original` result per `[principal, messageId]`: a repeat opens the same blob. */
+  readonly originalBlobs: Map<string, { blobId: string; name: string; size: number }>;
 }
 
 export function createMailFrames(): MailFrames {
@@ -35,5 +39,7 @@ export function createMailFrames(): MailFrames {
     parts: new Map(),
     fetching: new Map(),
     aborter: new AbortController(),
+    originals: new Map(),
+    originalBlobs: new Map(),
   };
 }

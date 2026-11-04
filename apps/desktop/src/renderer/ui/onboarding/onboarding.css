@@ -364,6 +364,27 @@
   padding-bottom: var(--space-3);
 }
 
+/* A row with a second line lines its lead (icon, swatch, radio) and its status up with the first text line, as
+   onboarding-accounts.html's .tall row does; single-line rows stay centred. */
+.ui-choice-row[data-has-detail='true'],
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__link,
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__pick {
+  align-items: flex-start;
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__end {
+  align-self: flex-start;
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__icon,
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__radio {
+  margin-top: var(--space-half);
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__mark {
+  margin-top: calc(var(--space-1) + var(--space-half));
+}
+
 .ui-choice-row + .ui-choice-row::before {
   content: '';
   position: absolute;

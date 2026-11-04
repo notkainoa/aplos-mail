@@ -5,7 +5,8 @@ import { mailFrame, releaseFrame, toggleQuotes } from '../mail/frame';
 import { prefetchBodies } from '../mail/prefetch';
 import { getMessages } from '../mail/rows';
 import { serveMail } from '../mail/serve';
-import { notImplemented, type AreaHandlers } from './types';
+import { messageOriginal } from '../mail/original';
+import type { AreaHandlers } from './types';
 
 /**
  * The `mail` area, owned by lane `eng-html`; the work lives in `src/mail/`. Arguments arrive validated; errors are
@@ -21,5 +22,5 @@ export const handlers: AreaHandlers<'mail'> = {
   'Mail/toggleQuotes': toggleQuotes,
   'Mail/serve': serveMail,
   'Attachment/get': attachmentGet,
-  'Message/original': notImplemented('Message/original'),
+  'Message/original': messageOriginal,
 };
