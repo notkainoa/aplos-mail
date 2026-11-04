@@ -22,7 +22,15 @@
  *   time; the screen's keys wait while it is open.
  * - Keys follow the owner's settings (single-key shortcuts, remaps), read from `Settings.ui`.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { api, useAccounts, useSettings } from '../data';
 import type { Account, Input, Output } from '../data';
 import { createAppRegistry, focusKindOf } from '../commands';
@@ -144,13 +152,19 @@ export function buttonLabel(button: Element): string {
  * `keepTop` (a new step) focuses without scrolling and shows the step from its top, so a long step at 640 × 520
  * opens on its title, never part-way down (F13); within a step, focus scrolls the control into view.
  */
-export function focusTarget(root: HTMLElement | null, target: FocusTarget, keepTop = false): boolean {
+export function focusTarget(
+  root: HTMLElement | null,
+  target: FocusTarget,
+  keepTop = false,
+): boolean {
   if (!root) return false;
   let el: HTMLElement | null = null;
   if (target.kind === 'field') {
     el = root.querySelector<HTMLElement>(`#${CSS.escape(target.id)}`);
   } else {
-    const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('main button, footer button'));
+    const buttons = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('main button, footer button'),
+    );
     el = buttons.find(b => !b.disabled && buttonLabel(b) === target.label) ?? null;
   }
   if (!el || (el as HTMLButtonElement | HTMLInputElement).disabled) return false;
@@ -244,7 +258,12 @@ export function OnboardingApp(props: OnboardingAppProps) {
       setAcc(out.state);
       for (const effect of out.effects) {
         // A connect after the session ended (a demo or skip whose handoff failed) carries no setupId.
-        void runAccountsEffect(effect, connectPorts, onAccountsAnswer, sessionSetupId(flowRef.current, setupId.current));
+        void runAccountsEffect(
+          effect,
+          connectPorts,
+          onAccountsAnswer,
+          sessionSetupId(flowRef.current, setupId.current),
+        );
       }
     },
     // onAccountsAnswer (below) forwards through a ref, so this callback never goes stale.
@@ -259,7 +278,10 @@ export function OnboardingApp(props: OnboardingAppProps) {
       setFlow(out.state);
       if (before !== 'accounts' && out.state.step === 'accounts') {
         applyAcc(
-          reduceAccounts(accRef.current, { type: 'enter', hasAccounts: accountsRef.current.length > 0 }),
+          reduceAccounts(accRef.current, {
+            type: 'enter',
+            hasAccounts: accountsRef.current.length > 0,
+          }),
         );
       }
       runFlowEffects(out.effects);
@@ -328,7 +350,10 @@ export function OnboardingApp(props: OnboardingAppProps) {
     const target = keys.focus;
     requestAnimationFrame(() => {
       if (lastFocusKey.current !== keys.focusKey) return;
-      if (target && shouldMoveFocus(newStep, keys.keepUserFocus === true, activeFocus(rootRef.current))) {
+      if (
+        target &&
+        shouldMoveFocus(newStep, keys.keepUserFocus === true, activeFocus(rootRef.current))
+      ) {
         focusTarget(rootRef.current, target, newStep);
       } else if (newStep) showTop(rootRef.current);
     });
@@ -343,7 +368,6 @@ export function OnboardingApp(props: OnboardingAppProps) {
   useEffect(() => {
     registry.configure(keyPrefsRef.current);
     // The prefs object is rebuilt each render; the stored settings are what change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registry, settings?.ui]);
   useEffect(() => {
     // After a failed handoff Return asks for the mail window again, whatever the step's own main action is.
@@ -351,7 +375,8 @@ export function OnboardingApp(props: OnboardingAppProps) {
     const detach = [
       registry.attach('onboarding.continue', {
         when: () => handoffFailed() || Boolean(keysRef.current?.main),
-        run: () => (handoffFailed() ? dispatchFlow({ type: 'retryHandoff' }) : keysRef.current?.main?.()),
+        run: () =>
+          handoffFailed() ? dispatchFlow({ type: 'retryHandoff' }) : keysRef.current?.main?.(),
       }),
       registry.attach('onboarding.back', { run: handleEsc }),
       registry.attach('onboarding.skipSetup', { run: handleEsc }),

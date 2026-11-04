@@ -34,7 +34,8 @@ export const FRAME_MODE: Readonly<Record<ReconnectCall, 'reconnect' | 'grantPerm
   grantPermissions: 'grantPermissions',
 };
 
-export const sheetMode = (call: ReconnectCall): SheetMode => (call === 'grantPermissions' ? 'grant' : 'reconnect');
+export const sheetMode = (call: ReconnectCall): SheetMode =>
+  call === 'grantPermissions' ? 'grant' : 'reconnect';
 
 /** The account facts the decision reads; the contract's `Account` is assignable to it. */
 export interface ReconnectAccount {
@@ -89,7 +90,8 @@ export function reconnectOffer(account: ReconnectAccount, now: number): Reconnec
   if (state === 'needsReauth') return offer('reconnect', 'needsReauth');
   if (state === 'needsPermission') return offer('grantPermissions', 'needsPermission');
   if (state === 'offline') return null;
-  if ((account.missingPermissions?.length ?? 0) > 0) return offer('grantPermissions', 'missingPermission');
+  if ((account.missingPermissions?.length ?? 0) > 0)
+    return offer('grantPermissions', 'missingPermission');
   if (reconnectIsDue(reconnectBy, now)) return offer('reconnect', 'dueSoon');
   return null;
 }
@@ -171,7 +173,12 @@ export type ReconnectEvent =
   | { readonly type: 'retry' };
 
 export type ReconnectEffect =
-  | { readonly type: 'start'; readonly call: ReconnectCall; readonly accountId: string; readonly attempt: number }
+  | {
+      readonly type: 'start';
+      readonly call: ReconnectCall;
+      readonly accountId: string;
+      readonly attempt: number;
+    }
   | { readonly type: 'cancelConnect'; readonly connectId: string }
   /** Tell the parent the sheet is gone. "Reconnected" also raises the toast. */
   | { readonly type: 'close'; readonly outcome: ReconnectOutcome };
@@ -215,7 +222,11 @@ export function failureSentence(code: string | undefined, address: string): stri
   return sentence === reasonSentence(undefined) ? undefined : sentence;
 }
 
-function closed(state: ReconnectState, outcome: ReconnectOutcome, effects: ReconnectEffect[] = []): ReconnectResult {
+function closed(
+  state: ReconnectState,
+  outcome: ReconnectOutcome,
+  effects: ReconnectEffect[] = [],
+): ReconnectResult {
   return {
     state: { ...state, phase: 'closed', outcome, connectId: null, early: [] },
     effects: [...effects, { type: 'close', outcome }],
@@ -225,9 +236,16 @@ function closed(state: ReconnectState, outcome: ReconnectOutcome, effects: Recon
 function failed(state: ReconnectState, code: string | undefined): ReconnectResult {
   const reason = failureSentence(code, state.address);
   const { reason: _old, ...rest } = state;
-  return keep({ ...rest, phase: 'failed', connectId: null, early: [], ...(reason ? { reason } : {}) });
+  return keep({
+    ...rest,
+    phase: 'failed',
+    connectId: null,
+    early: [],
+    ...(reason ? { reason } : {}),
+  });
 }
 
+// eslint-disable-next-line complexity -- the sheet's whole event table; splitting it would scatter the state machine
 export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): ReconnectResult {
   switch (event.type) {
     case 'open': {
@@ -245,7 +263,10 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
         // Cancelled, failed or superseded before the id arrived: cancel that flow, change nothing on screen.
         return {
           state,
-          effects: event.connectId === state.connectId ? [] : [{ type: 'cancelConnect', connectId: event.connectId }],
+          effects:
+            event.connectId === state.connectId
+              ? []
+              : [{ type: 'cancelConnect', connectId: event.connectId }],
         };
       }
       const settled = state.early.find(f => f.connectId === event.connectId);
@@ -289,7 +310,9 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
     case 'cancel': {
       if (state.phase === 'closed') return keep(state);
       if (state.phase === 'failed') return closed(state, 'failed');
-      const cancel: ReconnectEffect[] = state.connectId ? [{ type: 'cancelConnect', connectId: state.connectId }] : [];
+      const cancel: ReconnectEffect[] = state.connectId
+        ? [{ type: 'cancelConnect', connectId: state.connectId }]
+        : [];
       return closed(state, 'cancelled', cancel);
     }
 
@@ -351,11 +374,17 @@ export async function runReconnectEffect(
       try {
         const input = { accountId: effect.accountId };
         const out =
-          effect.call === 'grantPermissions' ? await ports.grantPermissions(input) : await ports.reconnect(input);
+          effect.call === 'grantPermissions'
+            ? await ports.grantPermissions(input)
+            : await ports.reconnect(input);
         dispatch({ type: 'started', attempt: effect.attempt, connectId: out.connectId });
       } catch (error) {
         const code = reasonOf(error);
-        dispatch({ type: 'startFailed', attempt: effect.attempt, ...(code ? { reasonCode: code } : {}) });
+        dispatch({
+          type: 'startFailed',
+          attempt: effect.attempt,
+          ...(code ? { reasonCode: code } : {}),
+        });
       }
       return;
     case 'cancelConnect':

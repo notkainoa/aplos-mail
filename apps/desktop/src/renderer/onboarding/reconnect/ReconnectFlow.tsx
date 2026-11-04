@@ -60,7 +60,8 @@ interface Facts {
 export function restoreFocus(opener: Element | null): boolean {
   if (!(opener instanceof HTMLElement) || !opener.isConnected) return false;
   const active = document.activeElement;
-  if (active && active !== document.body && active !== opener && !active.closest('[role="dialog"]')) return false;
+  if (active && active !== document.body && active !== opener && !active.closest('[role="dialog"]'))
+    return false;
   opener.focus({ preventScroll: true });
   return document.activeElement === opener;
 }
@@ -81,7 +82,13 @@ export function ReconnectFlow({ accountId, onClose, ports: given }: ReconnectFlo
 }
 
 /** The account is gone: report it once, draw nothing. */
-function Missing({ onClose, accounts }: { onClose: ReconnectFlowProps['onClose']; accounts: number }) {
+function Missing({
+  onClose,
+  accounts,
+}: {
+  onClose: ReconnectFlowProps['onClose'];
+  accounts: number;
+}) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -125,7 +132,12 @@ function Run({
       if (!mounted.current) return;
       if (outcome === 'reconnected') {
         try {
-          pushToast({ id: `reconnect-${accountId}`, kind: 'info', message: 'Reconnected', undoable: false });
+          pushToast({
+            id: `reconnect-${accountId}`,
+            kind: 'info',
+            message: 'Reconnected',
+            undoable: false,
+          });
         } catch {
           // The shell's toast stack may not be there yet; onClose('reconnected') still tells the parent.
         }

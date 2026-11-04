@@ -18,17 +18,25 @@ import { stepStates } from '../steps/states';
 type StateEntry = { title: string; render: () => JSX.Element; height?: number };
 type StateTable = Record<string, StateEntry>;
 
-const firstSyncModules = import.meta.glob<{ firstSyncStates?: StateTable }>('../firstSync/states.tsx', {
-  eager: true,
-});
+const firstSyncModules = import.meta.glob<{ firstSyncStates?: StateTable }>(
+  '../firstSync/states.tsx',
+  {
+    eager: true,
+  },
+);
 const firstSyncStates: StateTable = Object.values(firstSyncModules)[0]?.firstSyncStates ?? {};
 
-const reconnectModules = import.meta.glob<{ reconnectStates?: StateTable }>('../reconnect/states.tsx', {
-  eager: true,
-});
+const reconnectModules = import.meta.glob<{ reconnectStates?: StateTable }>(
+  '../reconnect/states.tsx',
+  {
+    eager: true,
+  },
+);
 const reconnectStates: StateTable = Object.values(reconnectModules)[0]?.reconnectStates ?? {};
 
-const demoModules = import.meta.glob<{ demoStates?: StateTable }>('../demo.states.tsx', { eager: true });
+const demoModules = import.meta.glob<{ demoStates?: StateTable }>('../demo.states.tsx', {
+  eager: true,
+});
 const demoStates: StateTable = Object.values(demoModules)[0]?.demoStates ?? {};
 
 /** Every state, steps first; a first-sync or reconnect state with an earlier state's name is kept under a prefix. */
@@ -84,9 +92,19 @@ function Index() {
 }
 
 function Gallery() {
-  if (!stateName) return <Ready><Index /></Ready>;
+  if (!stateName)
+    return (
+      <Ready>
+        <Index />
+      </Ready>
+    );
   const entry = allStates[stateName];
-  if (!entry) return <Ready><Index /></Ready>;
+  if (!entry)
+    return (
+      <Ready>
+        <Index />
+      </Ready>
+    );
   return (
     <Ready>
       <div className="onb-frame" data-height={String(entry.height ?? 600)} data-state={stateName}>
@@ -97,9 +115,10 @@ function Gallery() {
 }
 
 // The capture script reads the state list from here.
-(window as unknown as { __onbStates?: Record<string, { height: number }> }).__onbStates = Object.fromEntries(
-  Object.entries(allStates).map(([name, entry]) => [name, { height: entry.height ?? 600 }]),
-);
+(window as unknown as { __onbStates?: Record<string, { height: number }> }).__onbStates =
+  Object.fromEntries(
+    Object.entries(allStates).map(([name, entry]) => [name, { height: entry.height ?? 600 }]),
+  );
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -54,8 +54,16 @@ export const DRILL_STEPS: readonly {
   readonly say: string;
   readonly sub: string;
 }[] = [
-  { commands: ['drill.next', 'drill.previous'], say: 'Move through the letters', sub: 'J goes down, K goes up.' },
-  { commands: ['drill.suggested'], say: 'Run the suggestion', sub: 'Space does the one thing Aplos recommends.' },
+  {
+    commands: ['drill.next', 'drill.previous'],
+    say: 'Move through the letters',
+    sub: 'J goes down, K goes up.',
+  },
+  {
+    commands: ['drill.suggested'],
+    say: 'Run the suggestion',
+    sub: 'Space does the one thing Aplos recommends.',
+  },
   { commands: ['drill.done'], say: 'Mark it Done', sub: 'E puts it away. Z brings it back.' },
   { commands: ['drill.ask'], say: 'Ask about it', sub: 'A opens Ask beside your mail.' },
 ];
@@ -124,7 +132,12 @@ export function drillReduce(state: DrillState, key: DrillKey): DrillState {
       if (state.ids.length === 0) return state;
       const delta = key === 'next' ? 1 : -1;
       const cursor = Math.max(0, Math.min(state.ids.length - 1, state.cursor + delta));
-      return { ...state, cursor, ran: cursor === state.cursor ? state.ran : false, step: state.step === 0 ? 1 : state.step };
+      return {
+        ...state,
+        cursor,
+        ran: cursor === state.cursor ? state.ran : false,
+        step: state.step === 0 ? 1 : state.step,
+      };
     }
     case 'suggested':
       return state.step === 1 ? { ...state, ran: true, step: 2 } : state;
@@ -167,6 +180,7 @@ export function drillCount(state: DrillState): string {
 
 /** A click on a practice row: the cursor moves there, as J/K would. */
 export function drillPick(state: DrillState, index: number): DrillState {
-  if (state.step >= 4 || index < 0 || index >= state.ids.length || index === state.cursor) return state;
+  if (state.step >= 4 || index < 0 || index >= state.ids.length || index === state.cursor)
+    return state;
   return { ...state, cursor: index, ran: false, step: state.step === 0 ? 1 : state.step };
 }

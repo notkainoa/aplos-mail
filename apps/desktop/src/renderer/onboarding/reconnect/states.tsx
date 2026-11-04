@@ -31,7 +31,11 @@ const ADDRESS = 'jordan.lee@example.com';
 /** A sheet's state after real events, so the pictures cannot drift from the machine. */
 function sheetAfter(call: ReconnectCall, events: readonly ReconnectEvent[]): ReconnectState {
   let state = initialReconnect({ accountId: 'acc-jordan', address: ADDRESS, call });
-  for (const event of [{ type: 'open' } as const, { type: 'started', attempt: 1, connectId: 'c1' } as const, ...events]) {
+  for (const event of [
+    { type: 'open' } as const,
+    { type: 'started', attempt: 1, connectId: 'c1' } as const,
+    ...events,
+  ]) {
     state = reduceReconnect(state, event).state;
   }
   return state;
@@ -63,7 +67,13 @@ function Backdrop({ children }: { children?: JSX.Element }): JSX.Element {
  * The mail window's shell with the sidebar's footer slot beside the plain pane: where the status slot lives (DESIGN
  * 7.1). The slot is the real `StatusSlot`; the rest of the sidebar belongs to the shell lane and is left out.
  */
-export function SlotBackdrop({ slot, children }: { slot: JSX.Element; children?: JSX.Element }): JSX.Element {
+export function SlotBackdrop({
+  slot,
+  children,
+}: {
+  slot: JSX.Element;
+  children?: JSX.Element;
+}): JSX.Element {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', background: 'var(--shell)' }}>
       <aside
@@ -95,7 +105,8 @@ export function reconnectDueBy(now: Date = new Date()): string {
   const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   const nineAm = tomorrow.getTime() + 9 * 3_600_000;
   if (nineAm - now.getTime() <= 24 * 3_600_000 - 60_000) return new Date(nineAm).toISOString();
-  const sinceMidnight = now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const sinceMidnight =
+    now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return new Date(tomorrow.getTime() + Math.max(60_000, sinceMidnight - 30 * 60_000)).toISOString();
 }
 
@@ -103,7 +114,9 @@ export function reconnectDueBy(now: Date = new Date()): string {
 function slotState(status: SyncStatus): JSX.Element {
   return (
     <SlotBackdrop
-      slot={<StatusSlot status={status} account={{ address: ADDRESS, color: 'sky' }} onAction={noop} />}
+      slot={
+        <StatusSlot status={status} account={{ address: ADDRESS, color: 'sky' }} onAction={noop} />
+      }
     />
   );
 }
@@ -127,8 +140,14 @@ function sheet(state: ReconnectState): JSX.Element {
 
 export const reconnectStates: Record<string, StateEntry> = {
   'reconnect-due': {
-    title: 'Status slot a day before reconnectBy: "Gmail will ask you to reconnect tomorrow…" (Reconnect now)',
-    render: () => slotState({ kind: 'ok', lastSyncedAt: new Date().toISOString(), reconnectBy: reconnectDueBy() }),
+    title:
+      'Status slot a day before reconnectBy: "Gmail will ask you to reconnect tomorrow…" (Reconnect now)',
+    render: () =>
+      slotState({
+        kind: 'ok',
+        lastSyncedAt: new Date().toISOString(),
+        reconnectBy: reconnectDueBy(),
+      }),
   },
   reconnecting: {
     title: 'Reconnect sheet while waiting for Google (the same sheet as reconnect-waiting)',
@@ -143,7 +162,15 @@ export const reconnectStates: Record<string, StateEntry> = {
     render: () => (
       <Backdrop>
         <ToastStack
-          toasts={[{ id: 'reconnected', kind: 'info', message: 'Reconnected', undoable: false, persistent: true }]}
+          toasts={[
+            {
+              id: 'reconnected',
+              kind: 'info',
+              message: 'Reconnected',
+              undoable: false,
+              persistent: true,
+            },
+          ]}
           onAction={noop}
           onDismiss={noop}
         />
@@ -178,15 +205,25 @@ export const reconnectStates: Record<string, StateEntry> = {
     title: 'Main pane, no accounts: Add an account could not open the setup window (review1)',
     render: () => (
       <Backdrop>
-        <ZeroAccountsView notice={WINDOW_COPY.setupWindowFailed} onAddAccount={noop} onTryDemo={noop} />
+        <ZeroAccountsView
+          notice={WINDOW_COPY.setupWindowFailed}
+          onAddAccount={noop}
+          onTryDemo={noop}
+        />
       </Backdrop>
     ),
   },
   'zero-accounts-first-sync': {
-    title: 'Main pane while a first sync runs: the first-mail line instead (never the zero-accounts line)',
+    title:
+      'Main pane while a first sync runs: the first-mail line instead (never the zero-accounts line)',
     render: () => (
       <Backdrop>
-        <ZeroAccountsView firstSyncRunning detail="Reading your newest mail" onAddAccount={noop} onTryDemo={noop} />
+        <ZeroAccountsView
+          firstSyncRunning
+          detail="Reading your newest mail"
+          onAddAccount={noop}
+          onTryDemo={noop}
+        />
       </Backdrop>
     ),
   },

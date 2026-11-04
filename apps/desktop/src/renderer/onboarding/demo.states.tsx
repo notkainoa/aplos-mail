@@ -23,25 +23,41 @@ const noop = () => undefined;
 /** The status line the window announces while `Demo/load` runs (OnboardingApp `setStatus`). */
 export const DEMO_LOADING_STATUS = 'Loading demo mail.';
 
-export const demoStates: Record<string, { title: string; render: () => JSX.Element; height?: number }> = {
+export const demoStates: Record<
+  string,
+  { title: string; render: () => JSX.Element; height?: number }
+> = {
   'demo-loading': {
-    title: 'Try demo mail clicked: Demo/load running (Welcome, one status line announced, second click ignored)',
+    title:
+      'Try demo mail clicked: Demo/load running (Welcome, one status line announced, second click ignored)',
     render: () => (
       <Welcome
-        chrome={{ dashes: { step: 1, of: 4 }, onTryDemo: noop, onBack: noop, status: DEMO_LOADING_STATUS }}
+        chrome={{
+          dashes: { step: 1, of: 4 },
+          onTryDemo: noop,
+          onBack: noop,
+          status: DEMO_LOADING_STATUS,
+        }}
         onAddAccount={noop}
         onSkip={noop}
       />
     ),
   },
   'demo-loaded': {
-    title: 'Demo mail loaded: the mail window with the demo status slot and the "Demo mail loaded" toast',
+    title:
+      'Demo mail loaded: the mail window with the demo status slot and the "Demo mail loaded" toast',
     render: () => (
-      <SlotBackdrop
-        slot={<StatusSlot status={{ kind: 'demo' }} onAction={noop} />}
-      >
+      <SlotBackdrop slot={<StatusSlot status={{ kind: 'demo' }} onAction={noop} />}>
         <ToastStack
-          toasts={[{ id: 'demo-loaded', kind: 'info', message: DEMO_NOTICE.loaded, undoable: false, persistent: true }]}
+          toasts={[
+            {
+              id: 'demo-loaded',
+              kind: 'info',
+              message: DEMO_NOTICE.loaded,
+              undoable: false,
+              persistent: true,
+            },
+          ]}
           onAction={noop}
           onDismiss={noop}
         />

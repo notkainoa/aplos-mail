@@ -36,12 +36,20 @@ const typed = (address = 'jordan.lee@example.com') =>
   ]).state;
 
 const waiting = (connectId = 'c1') =>
-  run([{ type: 'connect', loginHint: 'jordan.lee@example.com' }, { type: 'started', attempt: 1, connectId }], typed())
-    .state;
+  run(
+    [
+      { type: 'connect', loginHint: 'jordan.lee@example.com' },
+      { type: 'started', attempt: 1, connectId },
+    ],
+    typed(),
+  ).state;
 
 describe('discovery and focus (F12)', () => {
   test('onb-discover-focus-F12: typed address + Return discovers, and Google focuses Continue with Google', () => {
-    const { state, effects } = run([{ type: 'edit', address: 'jordan.lee@example.com' }, { type: 'submit' }]);
+    const { state, effects } = run([
+      { type: 'edit', address: 'jordan.lee@example.com' },
+      { type: 'submit' },
+    ]);
     assert.equal(state.mode, 'discovering');
     assert.deepEqual(effects, [{ type: 'discover', address: 'jordan.lee@example.com', seq: 1 }]);
     const found = reduceAccounts(state, { type: 'discovered', seq: 1, provider: 'google' }).state;
@@ -100,13 +108,22 @@ describe('discovery and focus (F12)', () => {
 
 describe('connect, cancel and late answers (F9)', () => {
   test('Continue with Google waits and passes the address as login_hint', () => {
-    const { state, effects } = run([{ type: 'connect', loginHint: 'jordan.lee@example.com' }], typed());
+    const { state, effects } = run(
+      [{ type: 'connect', loginHint: 'jordan.lee@example.com' }],
+      typed(),
+    );
     assert.equal(state.mode, 'waiting');
-    assert.deepEqual(effects, [{ type: 'connect', attempt: 1, loginHint: 'jordan.lee@example.com' }]);
+    assert.deepEqual(effects, [
+      { type: 'connect', attempt: 1, loginHint: 'jordan.lee@example.com' },
+    ]);
   });
 
   test('the awaited flow connecting shows the list', () => {
-    const s = reduceAccounts(waiting(), { type: 'frame', connectId: 'c1', state: 'connected' }).state;
+    const s = reduceAccounts(waiting(), {
+      type: 'frame',
+      connectId: 'c1',
+      state: 'connected',
+    }).state;
     assert.equal(s.mode, 'connected');
   });
 
@@ -131,7 +148,11 @@ describe('connect, cancel and late answers (F9)', () => {
 
   test('F9: a connected frame after Cancel changes nothing on screen', () => {
     const cancelled = reduceAccounts(waiting(), { type: 'cancel' }).state;
-    const after = reduceAccounts(cancelled, { type: 'frame', connectId: 'c1', state: 'connected' }).state;
+    const after = reduceAccounts(cancelled, {
+      type: 'frame',
+      connectId: 'c1',
+      state: 'connected',
+    }).state;
     assert.deepEqual(after, cancelled);
     assert.equal(isLateFrame(cancelled, 'c1'), true);
   });
@@ -198,8 +219,14 @@ describe('Esc ladder and the list', () => {
   });
 
   test('entering the step shows the list when accounts exist, else the field', () => {
-    assert.equal(reduceAccounts(typed(), { type: 'enter', hasAccounts: true }).state.mode, 'connected');
-    assert.equal(reduceAccounts(typed(), { type: 'enter', hasAccounts: false }).state.mode, 'choose');
+    assert.equal(
+      reduceAccounts(typed(), { type: 'enter', hasAccounts: true }).state.mode,
+      'connected',
+    );
+    assert.equal(
+      reduceAccounts(typed(), { type: 'enter', hasAccounts: false }).state.mode,
+      'choose',
+    );
   });
 
   test('the list with no accounts draws the field instead', () => {
@@ -230,7 +257,9 @@ describe('runAccountsEffect over ports', () => {
       e => events.push(e),
       'setup-1',
     );
-    assert.deepEqual(calls, [{ provider: 'google', loginHint: 'jordan.lee@example.com', setupId: 'setup-1' }]);
+    assert.deepEqual(calls, [
+      { provider: 'google', loginHint: 'jordan.lee@example.com', setupId: 'setup-1' },
+    ]);
     assert.deepEqual(events, [{ type: 'started', attempt: 3, connectId: 'c9' }]);
   });
 

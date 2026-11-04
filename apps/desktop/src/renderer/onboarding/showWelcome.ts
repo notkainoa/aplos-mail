@@ -7,7 +7,8 @@ import { WINDOW_COPY } from './copy';
 import { missingMethod } from './flow';
 
 /** Where the browser preview shows the onboarding window (REQUEST ui-shell: this route does not exist yet). */
-export const onboardingRoute = (mode: 'first' | 'review'): string => `?window=onboarding&mode=${mode}`;
+export const onboardingRoute = (mode: 'first' | 'review'): string =>
+  `?window=onboarding&mode=${mode}`;
 export const ONBOARDING_ROUTE = onboardingRoute('review');
 
 export interface WelcomePorts {
@@ -24,7 +25,8 @@ export const defaultWelcomePorts: WelcomePorts = {
   openOnboarding: async () => {
     throw missingMethod('Window/openOnboarding');
   },
-  isBrowserPreview: () => typeof navigator === 'undefined' || !/\bElectron\//.test(navigator.userAgent),
+  isBrowserPreview: () =>
+    typeof navigator === 'undefined' || !/\bElectron\//.test(navigator.userAgent),
   navigate: route => {
     window.location.assign(route);
   },

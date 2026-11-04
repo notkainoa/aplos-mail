@@ -126,7 +126,11 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
                       subject: letter.subject,
                       provenance: { provider: 'Aplos', local: true },
                     }}
-                    suggestion={{ verb: letter.suggestion.verb, icon: letter.suggestion.icon, isDone: false }}
+                    suggestion={{
+                      verb: letter.suggestion.verb,
+                      icon: letter.suggestion.icon,
+                      isDone: false,
+                    }}
                     commands={COMMANDS}
                     demoted={finished}
                     onSuggestion={() => onKey('suggested')}
@@ -160,7 +164,6 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
           })}
         </ListBox>
       </div>
-
     </section>
   );
 }

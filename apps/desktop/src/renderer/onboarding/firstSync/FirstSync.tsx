@@ -85,7 +85,17 @@ function AccountRow({
 }
 
 export function FirstSync(props: FirstSyncProps) {
-  const { view, drill, now, onOpen, onRetry, onReconnect, onOpenSettings, onTryKeys, onLeaveDrill } = props;
+  const {
+    view,
+    drill,
+    now,
+    onOpen,
+    onRetry,
+    onReconnect,
+    onOpenSettings,
+    onTryKeys,
+    onLeaveDrill,
+  } = props;
   const titleId = `${useId()}-title`;
 
   const rowProps = { onRetry, onReconnect, onOpenSettings };
@@ -93,7 +103,13 @@ export function FirstSync(props: FirstSyncProps) {
   if (drill) {
     const finished = drill.step >= 4;
     const leave: StepButton = finished
-      ? { label: DRILL_COPY.leave, emphasis: 'filled', keys: 'Return', keyHint: 'always', onSelect: onLeaveDrill }
+      ? {
+          label: DRILL_COPY.leave,
+          emphasis: 'filled',
+          keys: 'Return',
+          keyHint: 'always',
+          onSelect: onLeaveDrill,
+        }
       : { label: DRILL_COPY.leave, emphasis: 'text', onSelect: onLeaveDrill };
     return (
       <div className="fs" data-keyctx="firstSync" data-outcome={view.outcome} data-mode="drill">
@@ -117,7 +133,8 @@ export function FirstSync(props: FirstSyncProps) {
   }
 
   const buttons: StepButton[] = [];
-  if (view.continueAnyway) buttons.push({ label: CONTINUE_ANYWAY, emphasis: 'text', onSelect: onOpen });
+  if (view.continueAnyway)
+    buttons.push({ label: CONTINUE_ANYWAY, emphasis: 'text', onSelect: onOpen });
   buttons.push({
     label: view.primary.label,
     emphasis: 'filled',
@@ -142,7 +159,11 @@ export function FirstSync(props: FirstSyncProps) {
             <ProgressSegments
               variant="ready"
               label="ready"
-              accounts={view.rows.map(r => ({ ...r.account, read: r.ready.read, sorted: r.ready.sorted }))}
+              accounts={view.rows.map(r => ({
+                ...r.account,
+                read: r.ready.read,
+                sorted: r.ready.sorted,
+              }))}
             />
             {/* The result comes first, then what happens next: the title keeps its place across states (DESIGN 7.11). */}
             <Text variant="lede">{view.lede}</Text>

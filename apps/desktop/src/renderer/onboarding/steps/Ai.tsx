@@ -346,7 +346,11 @@ export function AiStep(props: AiStepProps) {
     >
       {rows}
       {vm.addressField ? (
-        <AddressField field={vm.addressField} onEdit={props.onEditAddress} onSave={props.onSaveAddress} />
+        <AddressField
+          field={vm.addressField}
+          onEdit={props.onEditAddress}
+          onSave={props.onSaveAddress}
+        />
       ) : null}
       {notice}
     </OnboardingStep>
@@ -538,7 +542,11 @@ export function AiContainer({ chrome, bindKeys, onDone, ports: given }: AiContai
             : { kind: 'failed', ...(out.reasonCode ? { reasonCode: out.reasonCode } : {}) },
         });
       } catch (error) {
-        dispatch({ type: 'testDone', provider, test: { kind: 'failed', reasonCode: reasonOf(error) } });
+        dispatch({
+          type: 'testDone',
+          provider,
+          test: { kind: 'failed', reasonCode: reasonOf(error) },
+        });
       }
     },
     [ports, refreshProviders, loadModels],
@@ -551,7 +559,9 @@ export function AiContainer({ chrome, bindKeys, onDone, ports: given }: AiContai
       const current = settings.ai.providers;
       try {
         await ports.setSettings({
-          ai: { providers: { ...current, [provider]: { ...current[provider], address: draft.trim() } } },
+          ai: {
+            providers: { ...current, [provider]: { ...current[provider], address: draft.trim() } },
+          },
         });
         await refreshProviders();
         void loadModels(provider, true);

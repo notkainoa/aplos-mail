@@ -19,7 +19,11 @@ export const FIXTURE_NOW = new Date(2026, 9, 29, 10, 0).getTime();
 const at = (h: number, m = 0, dayOffset = 0) => new Date(2026, 9, 29 + dayOffset, h, m).getTime();
 
 const ALEX: AccountFacts = { id: 'acc-alex', address: 'alex.moreno@example.com', colorTag: 'sky' };
-const STUDIO: AccountFacts = { id: 'acc-studio', address: 'alex@studio.example.org', colorTag: 'hill' };
+const STUDIO: AccountFacts = {
+  id: 'acc-studio',
+  address: 'alex@studio.example.org',
+  colorTag: 'hill',
+};
 const ACCOUNTS = [ALEX, STUDIO];
 
 function account(id: string, patch: Partial<SetupAccount> = {}): SetupAccount {
@@ -27,14 +31,25 @@ function account(id: string, patch: Partial<SetupAccount> = {}): SetupAccount {
     accountId: id,
     state: 'reading',
     firstWindow: { read: 24, total: 50, done: false },
-    ai: { sorted: 0, total: 0, capped: 0, failed: 0, model: { provider: 'groq', model: 'llama-3.3-70b' } },
+    ai: {
+      sorted: 0,
+      total: 0,
+      capped: 0,
+      failed: 0,
+      model: { provider: 'groq', model: 'llama-3.3-70b' },
+    },
     backfill: { read: 0, target: 0 },
     runId: `${id}-run-1`,
     ...patch,
   };
 }
 
-const ready = (id: string, sorted: number, of: number, patch: Partial<SetupAccount> = {}): SetupAccount =>
+const ready = (
+  id: string,
+  sorted: number,
+  of: number,
+  patch: Partial<SetupAccount> = {},
+): SetupAccount =>
   account(id, {
     state: 'ready',
     firstWindow: { read: 50, total: 50, done: true },
@@ -78,7 +93,9 @@ function render(scene: Scene): JSX.Element {
       onLeaveDrill={noop}
       onDrillKey={noop}
       onDrillPick={noop}
-      {...(scene.handoffFailed ? { notice: { text: WINDOW_COPY.handoffFailed, onRetry: noop } } : {})}
+      {...(scene.handoffFailed
+        ? { notice: { text: WINDOW_COPY.handoffFailed, onRetry: noop } }
+        : {})}
     />
   );
 }
@@ -97,11 +114,19 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
   },
   'progress-estimate': {
     title: 'Progress: found about 214, reading 24 of 50',
-    scene: { status: status([account(ALEX.id, { firstWindow: { found: 214, read: 24, total: 50, done: false } })]) },
+    scene: {
+      status: status([
+        account(ALEX.id, { firstWindow: { found: 214, read: 24, total: 50, done: false } }),
+      ]),
+    },
   },
   finding: {
     title: 'Finding recent mail (indeterminate)',
-    scene: { status: status([account(ALEX.id, { state: 'finding', firstWindow: { read: 0, total: 50, done: false } })]) },
+    scene: {
+      status: status([
+        account(ALEX.id, { state: 'finding', firstWindow: { read: 0, total: 50, done: false } }),
+      ]),
+    },
   },
   paused: {
     title: 'Paused after the first window (Google slow-down, resumes 2:14 PM)',
@@ -226,7 +251,14 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
         ],
         {
           partial: true,
-          errors: [{ accountId: ALEX.id, phase: 'firstWindow', reasonCode: 'server.unavailable', at: at(9, 59) }],
+          errors: [
+            {
+              accountId: ALEX.id,
+              phase: 'firstWindow',
+              reasonCode: 'server.unavailable',
+              at: at(9, 59),
+            },
+          ],
         },
       ),
     },
@@ -235,8 +267,18 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
     title: 'Failed: Google needs sign-in again (Reconnect)',
     scene: {
       status: status(
-        [account(ALEX.id, { state: 'failed', firstWindow: { read: 0, total: 50, done: false }, reasonCode: 'auth.expired' })],
-        { errors: [{ accountId: ALEX.id, phase: 'connect', reasonCode: 'auth.expired', at: at(9, 59) }] },
+        [
+          account(ALEX.id, {
+            state: 'failed',
+            firstWindow: { read: 0, total: 50, done: false },
+            reasonCode: 'auth.expired',
+          }),
+        ],
+        {
+          errors: [
+            { accountId: ALEX.id, phase: 'connect', reasonCode: 'auth.expired', at: at(9, 59) },
+          ],
+        },
       ),
     },
   },
@@ -244,8 +286,18 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
     title: 'Failed: blocked by an administrator (no action)',
     scene: {
       status: status(
-        [account(ALEX.id, { state: 'failed', firstWindow: { read: 0, total: 50, done: false }, reasonCode: 'auth.adminPolicy' })],
-        { errors: [{ accountId: ALEX.id, phase: 'connect', reasonCode: 'auth.adminPolicy', at: at(9, 59) }] },
+        [
+          account(ALEX.id, {
+            state: 'failed',
+            firstWindow: { read: 0, total: 50, done: false },
+            reasonCode: 'auth.adminPolicy',
+          }),
+        ],
+        {
+          errors: [
+            { accountId: ALEX.id, phase: 'connect', reasonCode: 'auth.adminPolicy', at: at(9, 59) },
+          ],
+        },
       ),
     },
   },
@@ -254,7 +306,10 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
     scene: {
       status: status([
         account(ALEX.id),
-        account(STUDIO.id, { state: 'notConnected', firstWindow: { read: 0, total: 0, done: false } }),
+        account(STUDIO.id, {
+          state: 'notConnected',
+          firstWindow: { read: 0, total: 0, done: false },
+        }),
       ]),
     },
   },
@@ -262,23 +317,35 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
     title: 'Two accounts: one in, one reading (Open Aplos enabled)',
     scene: {
       status: status([
-        ready(ALEX.id, 8, 40, { state: 'sorting', firstWindow: { found: 214, read: 50, total: 50, done: true } }),
+        ready(ALEX.id, 8, 40, {
+          state: 'sorting',
+          firstWindow: { found: 214, read: 50, total: 50, done: true },
+        }),
         account(STUDIO.id, { firstWindow: { read: 38, total: 50, done: false } }),
       ]),
     },
   },
-  'drill-step1': { title: 'Try the keys: step 1 (J/K)', scene: { status: twoReading, drill: drillPreset('step1') } },
-  'drill-step3': { title: 'Try the keys: step 3 (E)', scene: { status: twoReading, drill: drillPreset('step3') } },
+  'drill-step1': {
+    title: 'Try the keys: step 1 (J/K)',
+    scene: { status: twoReading, drill: drillPreset('step1') },
+  },
+  'drill-step3': {
+    title: 'Try the keys: step 3 (E)',
+    scene: { status: twoReading, drill: drillPreset('step3') },
+  },
   'handoff-failed': {
     title: 'Open Aplos, the mail window did not open (Try again; review1)',
     scene: { status: status([ready(ALEX.id, 40, 40)], { done: true }), handoffFailed: true },
   },
   'failed-after-window': {
-    title: 'Sign-in expired after the newest mail and sorting were in: Reconnect, never blames the AI (review1)',
+    title:
+      'Sign-in expired after the newest mail and sorting were in: Reconnect, never blames the AI (review1)',
     scene: {
       status: status([ready(ALEX.id, 40, 40, { state: 'failed', reasonCode: 'auth.expired' })], {
         done: true,
-        errors: [{ accountId: ALEX.id, phase: 'backfill', reasonCode: 'auth.expired', at: at(9, 55) }],
+        errors: [
+          { accountId: ALEX.id, phase: 'backfill', reasonCode: 'auth.expired', at: at(9, 55) },
+        ],
       }),
     },
   },
@@ -286,14 +353,25 @@ export const firstSyncScenes: Record<string, { title: string; scene: Scene }> = 
     title: 'Paused: the AI provider asked to slow down (names Groq, never Google; review1)',
     scene: {
       status: status([
-        ready(ALEX.id, 12, 40, { state: 'paused', reasonCode: 'ai.rateLimited', pausedUntil: at(10, 20) }),
+        ready(ALEX.id, 12, 40, {
+          state: 'paused',
+          reasonCode: 'ai.rateLimited',
+          pausedUntil: at(10, 20),
+        }),
       ]),
     },
   },
-  'drill-done': { title: 'Try the keys: done', scene: { status: twoReading, drill: drillPreset('done') } },
+  'drill-done': {
+    title: 'Try the keys: done',
+    scene: { status: twoReading, drill: drillPreset('done') },
+  },
 };
 
 /** The preview gallery's entries: every state of the first-sync screen and the drill. */
-export const firstSyncStates: Record<string, { title: string; render: () => JSX.Element }> = Object.fromEntries(
-  Object.entries(firstSyncScenes).map(([name, { title, scene }]) => [name, { title, render: () => render(scene) }]),
-);
+export const firstSyncStates: Record<string, { title: string; render: () => JSX.Element }> =
+  Object.fromEntries(
+    Object.entries(firstSyncScenes).map(([name, { title, scene }]) => [
+      name,
+      { title, render: () => render(scene) },
+    ]),
+  );

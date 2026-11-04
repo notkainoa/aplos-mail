@@ -14,8 +14,20 @@ import { useRef, useState } from 'react';
 import { useSession, useSetupStatus } from '../data';
 import { pushToast } from '../shell';
 import { EmptyLine } from '../ui/list';
-import { DEMO_NOTICE, ZERO_ACCOUNTS, defaultDemoPorts, loadDemo, zeroAccountsMode, type DemoPorts } from './demo';
-import { defaultWelcomePorts, openOnboardingWindow, welcomeFailureLine, type WelcomePorts } from './showWelcome';
+import {
+  DEMO_NOTICE,
+  ZERO_ACCOUNTS,
+  defaultDemoPorts,
+  loadDemo,
+  zeroAccountsMode,
+  type DemoPorts,
+} from './demo';
+import {
+  defaultWelcomePorts,
+  openOnboardingWindow,
+  welcomeFailureLine,
+  type WelcomePorts,
+} from './showWelcome';
 
 export interface ZeroAccountsViewProps {
   /** A first sync is running: show its line instead. */
@@ -42,7 +54,12 @@ export function ZeroAccountsView({
     <EmptyLine
       text={ZERO_ACCOUNTS.text}
       {...(notice ? { detail: notice } : {})}
-      action={{ label: ZERO_ACCOUNTS.add, icon: 'plus', emphasis: 'filled', onSelect: onAddAccount }}
+      action={{
+        label: ZERO_ACCOUNTS.add,
+        icon: 'plus',
+        emphasis: 'filled',
+        onSelect: onAddAccount,
+      }}
       secondaryAction={{ label: ZERO_ACCOUNTS.tryDemo, onSelect: onTryDemo }}
     />
   );
@@ -63,8 +80,12 @@ export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAcc
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
 
-  const running = firstSyncRunning ?? (setup !== undefined && setup.accounts.length > 0 && !setup.done);
-  const mode = zeroAccountsMode({ accountCount: session?.hasAccounts === false ? 0 : 1, firstSyncRunning: running });
+  const running =
+    firstSyncRunning ?? (setup !== undefined && setup.accounts.length > 0 && !setup.done);
+  const mode = zeroAccountsMode({
+    accountCount: session?.hasAccounts === false ? 0 : 1,
+    firstSyncRunning: running,
+  });
   if (mode === 'none') return null;
 
   const tryDemo = () => {
@@ -88,7 +109,9 @@ export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAcc
       {...(notice ? { notice } : {})}
       onAddAccount={() => {
         setNotice(undefined);
-        void openOnboardingWindow('first', ports).then(result => setNotice(welcomeFailureLine(result)));
+        void openOnboardingWindow('first', ports).then(result =>
+          setNotice(welcomeFailureLine(result)),
+        );
       }}
       onTryDemo={tryDemo}
     />

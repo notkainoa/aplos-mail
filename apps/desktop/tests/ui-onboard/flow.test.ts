@@ -22,7 +22,12 @@ function at(step: StepId, connected = false): FlowState {
   const events: FlowEvent[] = [];
   if (connected) {
     events.push({ type: 'connectStarted', connectId: 'c1' });
-    events.push({ type: 'connectResolved', connectId: 'c1', outcome: 'connected', accountId: 'a1' });
+    events.push({
+      type: 'connectResolved',
+      connectId: 'c1',
+      outcome: 'connected',
+      accountId: 'a1',
+    });
   }
   const order: StepId[] = ['welcome', 'accounts', 'ai', 'permissions', 'firstSync'];
   for (let i = 0; i < order.indexOf(step); i += 1) events.push({ type: 'next' });
@@ -84,7 +89,13 @@ describe('steps and keys', () => {
 
   test('a connected demo account never sends the window to first sync', () => {
     const { state } = runFlow([
-      { type: 'connectResolved', connectId: 'd', outcome: 'connected', accountId: 'demo1', demo: true },
+      {
+        type: 'connectResolved',
+        connectId: 'd',
+        outcome: 'connected',
+        accountId: 'demo1',
+        demo: true,
+      },
       { type: 'next' },
       { type: 'next' },
       { type: 'next' },
@@ -157,7 +168,12 @@ describe('close-at-any-moment matrix (plan 30 U8 acceptance 2; F1, F2)', () => {
     const events: FlowEvent[] = [];
     if (connect !== 'idle') events.push({ type: 'connectStarted', connectId: 'c1' });
     if (connect !== 'idle' && connect !== 'pending') {
-      events.push({ type: 'connectResolved', connectId: 'c1', outcome: 'connected', accountId: 'a1' });
+      events.push({
+        type: 'connectResolved',
+        connectId: 'c1',
+        outcome: 'connected',
+        accountId: 'a1',
+      });
     }
     const order: StepId[] = ['welcome', 'accounts', 'ai', 'permissions', 'firstSync'];
     for (let i = 0; i < order.indexOf(step); i += 1) events.push({ type: 'next' });
@@ -186,7 +202,11 @@ describe('close-at-any-moment matrix (plan 30 U8 acceptance 2; F1, F2)', () => {
           before.state,
         );
         assert.deepEqual(ends(closed.effects), [{ type: 'setupEnd', reason: 'closed' }]);
-        assert.equal(handoffs(closed.effects).length, 0, 'a closed window never asks for the mail window');
+        assert.equal(
+          handoffs(closed.effects).length,
+          0,
+          'a closed window never asks for the mail window',
+        );
         assert.equal(closed.state.step, step, 'no late answer or key moved the window');
         assert.equal(closed.state.ended, 'closed');
       });
@@ -231,10 +251,18 @@ describe('close-at-any-moment matrix (plan 30 U8 acceptance 2; F1, F2)', () => {
 // These need the Playwright base on the browser preview with the stand-in engine (renderer/data lands in ui-shell U2).
 // The pure halves are tested above and in connect.test.ts; the DOM halves stay todo until then.
 describe('DOM (needs the Playwright base and the stand-in engine)', () => {
-  test.todo('F12 typed address + Return focuses Continue with Google; Return continues – dom (focusTarget in OnboardingApp)');
-  test.todo('F9 connect resolving after Esc or Back never navigates; list updates in place – dom with resolveConnect');
-  test.todo('F13 steps never clip their top at 640×520 with long content; Welcome uses safe center – checked today by preview/shoot.mjs');
-  test.todo('close-at-any-moment matrix in the window: pagehide at each step × connect state → one Setup/end in the contract log');
+  test.todo(
+    'F12 typed address + Return focuses Continue with Google; Return continues – dom (focusTarget in OnboardingApp)',
+  );
+  test.todo(
+    'F9 connect resolving after Esc or Back never navigates; list updates in place – dom with resolveConnect',
+  );
+  test.todo(
+    'F13 steps never clip their top at 640×520 with long content; Welcome uses safe center – checked today by preview/shoot.mjs',
+  );
+  test.todo(
+    'close-at-any-moment matrix in the window: pagehide at each step × connect state → one Setup/end in the contract log',
+  );
   test.todo('keys-tab-order-visual – Tab order equals visual order on every step');
   test.todo('onb-ai-env-key – DOM, attributes and screenshots contain no canary key');
 });

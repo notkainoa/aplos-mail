@@ -52,7 +52,8 @@ export function demoControls(accounts: readonly DemoAccountFacts[]): DemoControl
 }
 
 /** What a demo action did. `exists` and `none` mean it was refused without reaching the engine. */
-export type DemoResult = 'loaded' | 'reset' | 'removed' | 'exists' | 'none' | 'cancelled' | 'failed';
+export type DemoResult =
+  'loaded' | 'reset' | 'removed' | 'exists' | 'none' | 'cancelled' | 'failed';
 
 /** `Demo/load`, for an explicit click. Refused when a demo account already exists. */
 export async function loadDemo(
@@ -113,7 +114,8 @@ export async function removeDemo(
  */
 export const REMOVE_DEMO_CONFIRM = {
   question: 'Remove demo mail?',
-  consequence: "The demo accounts and their mail are deleted from this Mac. This can't be undone. Your own accounts aren't touched.",
+  consequence:
+    "The demo accounts and their mail are deleted from this Mac. This can't be undone. Your own accounts aren't touched.",
   confirmLabel: 'Remove',
   cancelLabel: 'Cancel',
   destructive: true,

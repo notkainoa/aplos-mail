@@ -69,7 +69,8 @@ function accounts(
 
 /* ---------- AI ---------- */
 
-type Row = Omit<AiProvider, 'status' | 'keySource'> & Partial<Pick<AiProvider, 'status' | 'keySource'>>;
+type Row = Omit<AiProvider, 'status' | 'keySource'> &
+  Partial<Pick<AiProvider, 'status' | 'keySource'>>;
 
 const hosted = (row: Row): AiProvider => ({
   status: row.keySource && row.keySource !== 'none' ? 'ready' : 'missingKey',
@@ -77,8 +78,15 @@ const hosted = (row: Row): AiProvider => ({
   ...row,
 });
 
-function providerTable(over: { groqKey?: AiProvider['keySource']; ollamaRunning?: boolean } = {}): AiProvider[] {
-  const base = { keyOptional: false, trainsOnInputs: false, sttCapable: false, local: false } as const;
+function providerTable(
+  over: { groqKey?: AiProvider['keySource']; ollamaRunning?: boolean } = {},
+): AiProvider[] {
+  const base = {
+    keyOptional: false,
+    trainsOnInputs: false,
+    sttCapable: false,
+    local: false,
+  } as const;
   return [
     hosted({
       ...base,
@@ -114,8 +122,20 @@ function providerTable(over: { groqKey?: AiProvider['keySource']; ollamaRunning?
       envVar: 'GEMINI_API_KEY',
       trainsOnInputs: true,
     }),
-    hosted({ ...base, id: 'openrouter', label: 'OpenRouter', group: 'hosted', envVar: 'OPENROUTER_API_KEY' }),
-    hosted({ ...base, id: 'opencode-go', label: 'OpenCode Go', group: 'hosted', envVar: 'OPENCODE_API_KEY' }),
+    hosted({
+      ...base,
+      id: 'openrouter',
+      label: 'OpenRouter',
+      group: 'hosted',
+      envVar: 'OPENROUTER_API_KEY',
+    }),
+    hosted({
+      ...base,
+      id: 'opencode-go',
+      label: 'OpenCode Go',
+      group: 'hosted',
+      envVar: 'OPENCODE_API_KEY',
+    }),
     {
       ...base,
       id: 'ollama',
@@ -237,7 +257,10 @@ function permissions(
 
 /* ---------- The table ---------- */
 
-export const stepStates: Record<string, { title: string; render: () => JSX.Element; height?: number }> = {
+export const stepStates: Record<
+  string,
+  { title: string; render: () => JSX.Element; height?: number }
+> = {
   welcome: {
     title: 'Welcome',
     render: () => <Welcome chrome={chromeAt(1, true)} onAddAccount={noop} onSkip={noop} />,
@@ -245,7 +268,11 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
   'welcome-handoff-failed': {
     title: 'Welcome · Skip setup, the mail window did not open (Try again; review1)',
     render: () => (
-      <Welcome chrome={chromeAt(1, false, WINDOW_COPY.handoffFailed)} onAddAccount={noop} onSkip={noop} />
+      <Welcome
+        chrome={chromeAt(1, false, WINDOW_COPY.handoffFailed)}
+        onAddAccount={noop}
+        onSkip={noop}
+      />
     ),
   },
   'accounts-choose': { title: 'Accounts · choose', render: () => accounts('choose') },
@@ -265,7 +292,9 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
   'accounts-connected': {
     title: 'Accounts · connected',
     render: () =>
-      accounts('connected', { list: [{ id: 'acct-1', address: JORDAN, demo: false, color: 'sky' }] }),
+      accounts('connected', {
+        list: [{ id: 'acct-1', address: JORDAN, demo: false, color: 'sky' }],
+      }),
   },
   'accounts-failed': {
     title: 'Accounts · sign-in declined',
@@ -308,7 +337,8 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
     render: () => permissions('granted', 'granted', true),
   },
   'permissions-handoff-failed': {
-    title: 'Voice and permissions · Finish setup, the mail window did not open (Try again; review1)',
+    title:
+      'Voice and permissions · Finish setup, the mail window did not open (Try again; review1)',
     render: () => permissions('notDetermined', 'notDetermined', false, WINDOW_COPY.handoffFailed),
   },
   'ai-key-save-failed': {
@@ -316,7 +346,8 @@ export const stepStates: Record<string, { title: string; render: () => JSX.Eleme
     render: () => ai(aiState({ keyFailure: 'unknown' }), providerTable({ groqKey: 'none' })),
   },
   'permissions-denied': {
-    title: 'Voice and permissions · microphone blocked by macOS (where to turn it on, Open System Settings)',
+    title:
+      'Voice and permissions · microphone blocked by macOS (where to turn it on, Open System Settings)',
     render: () => permissions('denied', 'notDetermined', false),
   },
   'window-long-content': {

@@ -51,7 +51,8 @@ export interface AccountsStepProps {
 }
 
 const TITLE = 'Add your mail';
-const LEDE = 'Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.';
+const LEDE =
+  'Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.';
 
 /** The sentence under the field for each notice; round 1 supports Google only. */
 export function noticeSentence(notice: ChooseNotice): string {
@@ -101,7 +102,13 @@ function AddressField(
         </Text>
       ) : null}
       {props.failure ? (
-        <ErrorLine kind="reason" text={props.failure} retryable={false} placement="checklist" onAction={() => {}} />
+        <ErrorLine
+          kind="reason"
+          text={props.failure}
+          retryable={false}
+          placement="checklist"
+          onAction={() => {}}
+        />
       ) : null}
     </div>
   );
@@ -112,7 +119,13 @@ function GoogleChoice({ onChooseGoogle }: Pick<AccountsStepProps, 'onChooseGoogl
     <div className="onb-group">
       <Text variant="label">Or choose a provider</Text>
       <div className="onb-rows">
-        <ChoiceRow id="onb-provider-google" role="link" label="Google" icon="mail" onPress={onChooseGoogle} />
+        <ChoiceRow
+          id="onb-provider-google"
+          role="link"
+          label="Google"
+          icon="mail"
+          onPress={onChooseGoogle}
+        />
       </div>
     </div>
   );
@@ -205,7 +218,12 @@ export function AccountsStep(props: AccountsStepProps) {
         ]}
         phaseStatus={chrome.status ?? 'Found Google.'}
       >
-        <AddressField address={props.address} onEdit={props.onEdit} onSubmit={props.onSubmit} keycap={false} />
+        <AddressField
+          address={props.address}
+          onEdit={props.onEdit}
+          onSubmit={props.onSubmit}
+          keycap={false}
+        />
         <div className="onb-rows">
           <ChoiceRow
             id="onb-found-google"
@@ -222,7 +240,9 @@ export function AccountsStep(props: AccountsStepProps) {
   }
 
   if (mode === 'failed') {
-    const sentence = connectSentence(props.failure ?? undefined, { address: props.address || undefined });
+    const sentence = connectSentence(props.failure ?? undefined, {
+      address: props.address || undefined,
+    });
     return (
       <OnboardingStep
         {...common}

@@ -71,7 +71,14 @@ export function FirstSyncContainer({
 
   // Counters never move backwards within a run: each build reads the view before it.
   const previous = useRef<FirstSyncView | undefined>(undefined);
-  const view = buildFirstSyncView({ status, accounts, aiProvider, consentStored, now, previous: previous.current });
+  const view = buildFirstSyncView({
+    status,
+    accounts,
+    aiProvider,
+    consentStored,
+    now,
+    previous: previous.current,
+  });
   previous.current = view;
 
   const [drill, setDrill] = useState<DrillState | null>(null);
@@ -151,7 +158,11 @@ export function FirstSyncContainer({
         const hit = target.resolve(event, ctx);
         if (!hit) return;
         // A focused button keeps its own Return and Space.
-        if ((event.key === 'Enter' || event.key === ' ') && document.activeElement instanceof HTMLButtonElement) return;
+        if (
+          (event.key === 'Enter' || event.key === ' ') &&
+          document.activeElement instanceof HTMLButtonElement
+        )
+          return;
         event.preventDefault();
         target.run(hit.commandId, ctx);
       };

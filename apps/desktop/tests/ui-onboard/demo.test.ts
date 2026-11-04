@@ -13,7 +13,11 @@ import {
   zeroAccountsMode,
   type DemoPorts,
 } from '../../src/renderer/onboarding/demo';
-import { ONBOARDING_ROUTE, openOnboardingWindow, showWelcome } from '../../src/renderer/onboarding/showWelcome';
+import {
+  ONBOARDING_ROUTE,
+  openOnboardingWindow,
+  showWelcome,
+} from '../../src/renderer/onboarding/showWelcome';
 
 const REAL = { demo: false };
 const DEMO = { demo: true };
@@ -87,13 +91,21 @@ describe('onb-demo-isolation: nothing reaches the engine until the explicit acti
 
 describe('removing demo mail has no Undo, so it asks first', () => {
   test('without a yes nothing is removed: false, undefined, a rejection and a non-true value all cancel', async () => {
-    for (const answer of [() => false, () => undefined as unknown as boolean, () => Promise.resolve(false), () => 1 as unknown as boolean]) {
+    for (const answer of [
+      () => false,
+      () => undefined as unknown as boolean,
+      () => Promise.resolve(false),
+      () => 1 as unknown as boolean,
+    ]) {
       const { ports, calls } = recorder();
       assert.equal(await removeDemo(ports, [DEMO], answer), 'cancelled');
       assert.deepEqual(calls, []);
     }
     const { ports, calls } = recorder();
-    assert.equal(await removeDemo(ports, [DEMO], () => Promise.reject(new Error('closed'))), 'cancelled');
+    assert.equal(
+      await removeDemo(ports, [DEMO], () => Promise.reject(new Error('closed'))),
+      'cancelled',
+    );
     assert.deepEqual(calls, []);
   });
 

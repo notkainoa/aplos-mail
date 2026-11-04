@@ -18,7 +18,13 @@
 import type { CommandHandlers, CommandId } from '../../commands';
 import { toIsoDateTime, type SetupAccount, type SetupStatus } from '../../data';
 import type { ErrorLineKind, SyncAccount, SyncCheckpoint, TagColor } from '../../ui/props';
-import { aiSentence, isAdminBlock, needsReconnect, reasonSentence, type AnyReasonCode } from '../copy';
+import {
+  aiSentence,
+  isAdminBlock,
+  needsReconnect,
+  reasonSentence,
+  type AnyReasonCode,
+} from '../copy';
 import type { FocusTarget } from '../flow';
 import { DRILL_LIST_ID } from './drill.model';
 
@@ -91,7 +97,10 @@ export interface FirstSyncRow {
   /** This account's first window is committed. */
   readonly firstWindowIn: boolean;
   /** The ready line: "Newest 50 read · sorted 40 of 40" (sort only when it was shown and finished). */
-  readonly ready: { readonly read: number; readonly sorted?: { readonly done: number; readonly of: number } };
+  readonly ready: {
+    readonly read: number;
+    readonly sorted?: { readonly done: number; readonly of: number };
+  };
 }
 
 /** The screen's one filled button. */
@@ -205,7 +214,12 @@ const TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'embe
 const SORT_OMITTED = new Set<string>(['ai.noProvider', 'ai.noConsent', 'ai.accountExcluded']);
 const SORT_PAUSED = new Set<string>(['ai.rateLimited']);
 /** Pause reasons whose sentence already says when it resumes. */
-const PAUSE_SAYS_WHEN = new Set<string>(['quota.daily', 'quota.bandwidth', 'quota.project', 'quota.calendarAbuse']);
+const PAUSE_SAYS_WHEN = new Set<string>([
+  'quota.daily',
+  'quota.bandwidth',
+  'quota.project',
+  'quota.calendarAbuse',
+]);
 const MAX_RETIRED = 16;
 
 /** The account's colour from its `colorTag`; "sky" when it has none the screen knows. */
@@ -217,7 +231,11 @@ export function tagColor(colorTag: string | undefined): TagColor {
 function sameLocalDay(a: number, b: number): boolean {
   const x = new Date(a);
   const y = new Date(b);
-  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+  return (
+    x.getFullYear() === y.getFullYear() &&
+    x.getMonth() === y.getMonth() &&
+    x.getDate() === y.getDate()
+  );
 }
 
 function clockTime(ms: number): string {
@@ -257,7 +275,10 @@ export function pauseLede(
     !code.startsWith('rate.') &&
     reasonSentence(code) !== reasonSentence(undefined);
   if (ownWords) {
-    const when = resumeAt !== undefined && !PAUSE_SAYS_WHEN.has(code) ? ` Resuming ${resumePhrase(resumeAt, now)}.` : '';
+    const when =
+      resumeAt !== undefined && !PAUSE_SAYS_WHEN.has(code)
+        ? ` Resuming ${resumePhrase(resumeAt, now)}.`
+        : '';
     return `${reasonSentence(code)}${when} ${after}`;
   }
   if (resumeAt === undefined) return `${COPY.pauseFallback} ${after}`;
@@ -321,6 +342,7 @@ interface Derived {
   findDone: boolean;
 }
 
+// eslint-disable-next-line complexity -- one account's honest-state derivation; the branches are DESIGN 7.12's rules
 function deriveAccount(
   a: SetupAccount,
   status: SetupStatus,
@@ -344,12 +366,18 @@ function deriveAccount(
   const err = latestError(status, a.accountId);
   const code: AnyReasonCode | undefined = a.reasonCode ?? err?.reasonCode;
   const evidence =
-    fw.done || fw.read > 0 || fw.found !== undefined || ['finding', 'reading', 'sorting', 'ready', 'paused'].includes(state);
+    fw.done ||
+    fw.read > 0 ||
+    fw.found !== undefined ||
+    ['finding', 'reading', 'sorting', 'ready', 'paused'].includes(state);
   // A state the screen doesn't know shows nothing as running; once it has lasted, the row offers Try again.
   const unknown = !KNOWN_STATES.has(state);
   const unknownSince = unknown ? (mem0.unknownSince ?? now) : undefined;
   const unknownStuck =
-    unknown && unknownSince !== undefined && now - unknownSince >= UNKNOWN_STATE_GRACE_MS && !(mem0.readDone || fw.done);
+    unknown &&
+    unknownSince !== undefined &&
+    now - unknownSince >= UNKNOWN_STATE_GRACE_MS &&
+    !(mem0.readDone || fw.done);
   const stateFailed = state === 'failed' || unknownStuck;
   // Where the failure happened: the engine's error for this account when it has one (backfill is never part of this
   // screen), else the account's own reason code: an AI code is the sorting pass, anything else is the account. The
@@ -365,7 +393,10 @@ function deriveAccount(
     : undefined;
   const hardFailed = stateFailed && failPhase !== 'ai';
 
-  const paused = !notConnected && !hardFailed && (state === 'paused' || (a.pausedUntil !== undefined && a.pausedUntil > now));
+  const paused =
+    !notConnected &&
+    !hardFailed &&
+    (state === 'paused' || (a.pausedUntil !== undefined && a.pausedUntil > now));
   const resumeAt = a.pausedUntil !== undefined && a.pausedUntil > now ? a.pausedUntil : undefined;
 
   // Stage completion is sticky within a run: the engine said it once.
@@ -390,7 +421,12 @@ function deriveAccount(
   const running: SyncCheckpoint['state'] = unknown ? 'pending' : 'current';
 
   // Read: n of the first window, never the mailbox.
-  const read = counter({ shown: mem0.read, of: mem0.readOf }, fw.read, fw.total, readDone ? 'done-own' : 'no');
+  const read = counter(
+    { shown: mem0.read, of: mem0.readOf },
+    fw.read,
+    fw.total,
+    readDone ? 'done-own' : 'no',
+  );
   const found = fw.found !== undefined ? Math.max(mem0.found ?? 0, fw.found) : mem0.found;
 
   // Connect.
@@ -407,15 +443,16 @@ function deriveAccount(
   // Find, and whether the read step has a total to count against yet.
   const readCountable = readDone || read.of > 0;
   const stuckInFind = !readDone && (!findDone || !readCountable);
-  const findState: SyncCheckpoint['state'] = findDone && readCountable
-    ? 'done'
-    : notConnected || !connectDone
-      ? 'pending'
-      : hardFailed
-        ? 'failed'
-        : paused
-          ? 'paused'
-          : running;
+  const findState: SyncCheckpoint['state'] =
+    findDone && readCountable
+      ? 'done'
+      : notConnected || !connectDone
+        ? 'pending'
+        : hardFailed
+          ? 'failed'
+          : paused
+            ? 'paused'
+            : running;
 
   const readState: SyncCheckpoint['state'] = readDone
     ? 'done'
@@ -430,22 +467,29 @@ function deriveAccount(
   // Sort: only with a provider, stored consent and an AI block from the engine; omitted, never failed, otherwise.
   const ai = a.ai;
   const aiCode = ai?.reasonCode as string | undefined;
-  const aiReady = !!ai && aiProvider !== null && consentStored && !(aiCode && SORT_OMITTED.has(aiCode));
+  const aiReady =
+    !!ai && aiProvider !== null && consentStored && !(aiCode && SORT_OMITTED.has(aiCode));
   const aiFailure =
     aiReady &&
     !!ai &&
-    (ai.failed > 0 || (!!aiCode && !SORT_PAUSED.has(aiCode)) || (stateFailed && failPhase === 'ai'));
+    (ai.failed > 0 ||
+      (!!aiCode && !SORT_PAUSED.has(aiCode)) ||
+      (stateFailed && failPhase === 'ai'));
   const aiCapped = aiReady && !!ai && ai.capped > 0 && !aiFailure;
   const aiPaused = aiReady && !!aiCode && SORT_PAUSED.has(aiCode);
   const aiAccounted = ai ? ai.sorted + ai.capped + ai.failed >= ai.total : false;
   // Nothing to sort once the pass ended with zero candidates: the segment is left out rather than "0 of 0".
-  const sortEmpty = aiReady && !!ai && ai.total === 0 && readDone && state !== 'sorting' && !aiFailure;
+  const sortEmpty =
+    aiReady && !!ai && ai.total === 0 && readDone && state !== 'sorting' && !aiFailure;
   const sortShown = aiReady && !sortEmpty;
 
   // Sorting shown complete stays complete, unless the engine later says there is more to sort than was shown sorted:
   // a larger total, a cap or a failure [F10]. Then the pass shows its true count again ("Sorted 10 of 40").
   const sortReopened =
-    mem0.sortDone && !!ai && (aiFailure || aiCapped || ai.total > mem0.sortOf) && ai.total > mem0.sorted;
+    mem0.sortDone &&
+    !!ai &&
+    (aiFailure || aiCapped || ai.total > mem0.sortOf) &&
+    ai.total > mem0.sorted;
   const sortComplete =
     !!ai && !aiFailure && !aiCapped && state !== 'sorting' && ai.sorted >= ai.total && ai.total > 0;
 
@@ -473,10 +517,13 @@ function deriveAccount(
 
   const checkpoints: SyncCheckpoint[] = [
     { step: 'connect', state: connectState },
-    found !== undefined ? { step: 'find', state: findState, estimate: found } : { step: 'find', state: findState },
+    found !== undefined
+      ? { step: 'find', state: findState, estimate: found }
+      : { step: 'find', state: findState },
     { step: 'read', state: readState, read: read.shown, of: read.of },
   ];
-  if (sortShown) checkpoints.push({ step: 'sort', state: sortState, sorted: sort.shown, of: sort.of });
+  if (sortShown)
+    checkpoints.push({ step: 'sort', state: sortState, sorted: sort.shown, of: sort.of });
 
   // What the row offers.
   let action: AccountAction = 'none';
@@ -486,17 +533,31 @@ function deriveAccount(
 
   let failure: ErrorLineKind | undefined;
   if (hardFailed) {
-    failure = { kind: 'reason', text: reasonSentence(code, { address }), retryable: action === 'retry' };
+    failure = {
+      kind: 'reason',
+      text: reasonSentence(code, { address }),
+      retryable: action === 'retry',
+    };
   } else if (notConnected && code) {
-    failure = { kind: 'reason', text: reasonSentence(code, { address }), retryable: action === 'retry' };
+    failure = {
+      kind: 'reason',
+      text: reasonSentence(code, { address }),
+      retryable: action === 'retry',
+    };
   } else if (sortShown && sortState === 'failed') {
-    failure = sortFailure(aiCode ?? (code?.startsWith('ai.') ? code : undefined), aiProvider ?? 'your AI provider');
+    failure = sortFailure(
+      aiCode ?? (code?.startsWith('ai.') ? code : undefined),
+      aiProvider ?? 'your AI provider',
+    );
   }
 
   const pausedUntil =
-    paused && resumeAt !== undefined && sameLocalDay(resumeAt, now) ? toIsoDateTime(resumeAt) : undefined;
+    paused && resumeAt !== undefined && sameLocalDay(resumeAt, now)
+      ? toIsoDateTime(resumeAt)
+      : undefined;
 
-  const sortFinished = !sortShown || sortState === 'done' || sortState === 'partial' || sortState === 'failed';
+  const sortFinished =
+    !sortShown || sortState === 'done' || sortState === 'partial' || sortState === 'failed';
   const settled = notConnected || hardFailed || (readDone && sortFinished);
   const clean =
     readDone &&
@@ -562,7 +623,11 @@ function sortFailure(code: AnyReasonCode | undefined, provider: string): ErrorLi
   if (code === 'ai.unreachable') return { kind: 'sortFailed', provider, cause: 'unreachable' };
   if (code === 'ai.dailyCap') return { kind: 'sortFailed', provider, cause: 'cap' };
   if (code === 'ai.trainsOnInputs')
-    return { kind: 'reason', text: `${aiSentence(code, { aiProvider: provider })} Mail is ready.`, retryable: false };
+    return {
+      kind: 'reason',
+      text: `${aiSentence(code, { aiProvider: provider })} Mail is ready.`,
+      retryable: false,
+    };
   return {
     kind: 'reason',
     text: `${aiSentence(code ?? 'ai.failed', { aiProvider: provider })} Mail is ready; sorting will retry.`,
@@ -575,13 +640,15 @@ function sortFailure(code: AnyReasonCode | undefined, provider: string): ErrorLi
 const EMPTY_MEMORY: FirstSyncMemory = { accounts: {}, rows: {} };
 
 /** Builds the screen from one `Setup/status` and the view shown before it. */
+// eslint-disable-next-line complexity -- screen-wide outcomes fold every row's derivation into one verdict
 export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
   const { status, now } = input;
   // Memory is per setup session. A status that first arrives without a `setupId` and then with one is the same run;
   // only a different id starts clean.
   const prevId = input.previous?.memory.setupId;
   const prevMemory =
-    input.previous && (!status || prevId === undefined || status.setupId === undefined || prevId === status.setupId)
+    input.previous &&
+    (!status || prevId === undefined || status.setupId === undefined || prevId === status.setupId)
       ? input.previous.memory
       : EMPTY_MEMORY;
 
@@ -621,7 +688,11 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
     rowMemo[a.accountId] = d.row;
   }
   const setupId = status.setupId ?? prevMemory.setupId;
-  const memory: FirstSyncMemory = { ...(setupId !== undefined ? { setupId } : {}), accounts, rows: rowMemo };
+  const memory: FirstSyncMemory = {
+    ...(setupId !== undefined ? { setupId } : {}),
+    accounts,
+    rows: rowMemo,
+  };
 
   if (rows.length === 0) {
     return finish({
@@ -676,7 +747,9 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
     lede = COPY.ledePartial;
   } else if (outcome === 'paused') {
     // The earliest known resume speaks for the screen; each row carries its own.
-    const first = [...pausedOnes].sort((x, y) => (x.resumeAt ?? Infinity) - (y.resumeAt ?? Infinity))[0];
+    const first = [...pausedOnes].sort(
+      (x, y) => (x.resumeAt ?? Infinity) - (y.resumeAt ?? Infinity),
+    )[0];
     const newestIn = first.row.firstWindowIn;
     if (everyWindowIn) title = COPY.titleIn;
     lede = pauseLede(first.pauseCode, first.resumeAt, now, newestIn, input.aiProvider);
@@ -686,7 +759,12 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
 }
 
 /** A stale run's status keeps the previous row and contributes what that row already said. */
-function staleDerived(row: FirstSyncRow, memory: AccountMemory, a: SetupAccount, now: number): Derived {
+function staleDerived(
+  row: FirstSyncRow,
+  memory: AccountMemory,
+  a: SetupAccount,
+  now: number,
+): Derived {
   const states = row.checkpoints.map(c => c.state);
   const paused = states.includes('paused');
   const hardFailed = row.failure?.kind === 'reason' && !row.sortFailed && !row.notConnected;
@@ -698,7 +776,8 @@ function staleDerived(row: FirstSyncRow, memory: AccountMemory, a: SetupAccount,
     memory,
     paused,
     hardFailed,
-    settled: row.notConnected || hardFailed || (row.firstWindowIn && (!sort || sort.state !== 'current')),
+    settled:
+      row.notConnected || hardFailed || (row.firstWindowIn && (!sort || sort.state !== 'current')),
     // A stale update never makes the screen clean.
     clean: false,
     connectDone: memory.connectDone,
@@ -767,7 +846,12 @@ export function firstSyncFocus(
   view: FirstSyncView,
   drillOpen: boolean,
 ): { readonly focusKey: string; readonly focus: FocusTarget; readonly keepUserFocus: true } {
-  if (drillOpen) return { focusKey: 'firstSync:drill', focus: { kind: 'field', id: DRILL_LIST_ID }, keepUserFocus: true };
+  if (drillOpen)
+    return {
+      focusKey: 'firstSync:drill',
+      focus: { kind: 'field', id: DRILL_LIST_ID },
+      keepUserFocus: true,
+    };
   if (view.primary.enabled) {
     return {
       focusKey: `firstSync:${view.primary.label}`,

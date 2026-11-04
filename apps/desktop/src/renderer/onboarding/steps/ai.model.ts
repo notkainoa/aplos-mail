@@ -110,7 +110,8 @@ export function localServers(providers: readonly AiProvider[]): AiProvider[] {
 export function isUsable(p: AiProvider | undefined): boolean {
   if (!p || p.trainsOnInputs) return false;
   if (p.group === 'local') {
-    if (p.id === 'custom') return p.status === 'ready' || (!!p.address && p.status !== 'notConfigured');
+    if (p.id === 'custom')
+      return p.status === 'ready' || (!!p.address && p.status !== 'notConfigured');
     return p.running === true || p.status === 'ready';
   }
   return p.keySource === 'env' || p.keySource === 'keychain';
@@ -145,7 +146,9 @@ export function providerDetail(p: AiProvider): { text: string; dot?: 'ok' | 'off
 }
 
 /** A Test result as the row's status word: "Works · 0.4 s", or a plain failure. */
-export function testStatus(test: TestState | undefined): { text: string; tone: 'ok' | 'attention' } | undefined {
+export function testStatus(
+  test: TestState | undefined,
+): { text: string; tone: 'ok' | 'attention' } | undefined {
   if (!test || test.kind === 'testing') return undefined;
   if (test.kind === 'works') {
     return {
@@ -154,8 +157,10 @@ export function testStatus(test: TestState | undefined): { text: string; tone: '
     };
   }
   const code = test.reasonCode ?? '';
-  if (code === 'ai.missingKey' || code.startsWith('auth.')) return { text: 'Key refused', tone: 'attention' };
-  if (code === 'ai.unreachable' || code === 'net.offline') return { text: "Didn't answer", tone: 'attention' };
+  if (code === 'ai.missingKey' || code.startsWith('auth.'))
+    return { text: 'Key refused', tone: 'attention' };
+  if (code === 'ai.unreachable' || code === 'net.offline')
+    return { text: "Didn't answer", tone: 'attention' };
   if (code === 'ai.rateLimited') return { text: 'Busy, try later', tone: 'attention' };
   return { text: "Didn't work", tone: 'attention' };
 }
@@ -221,7 +226,10 @@ export function needsConsent(consent: Consent | undefined, choice: FeatureChoice
 }
 
 /** `Consent/grant`'s arguments for the card on screen. */
-export function consentGrant(consent: Consent | undefined, choice: FeatureChoice): Input<'Consent/grant'> {
+export function consentGrant(
+  consent: Consent | undefined,
+  choice: FeatureChoice,
+): Input<'Consent/grant'> {
   return {
     scope: 'background',
     version: consent?.currentVersion ?? consent?.version ?? 1,
@@ -239,7 +247,11 @@ export const CONSENT_SENT =
 
 export type AiEvent =
   | { readonly type: 'toggleMore' }
-  | { readonly type: 'open'; readonly view: 'hosted' | 'local'; readonly providers: readonly AiProvider[] }
+  | {
+      readonly type: 'open';
+      readonly view: 'hosted' | 'local';
+      readonly providers: readonly AiProvider[];
+    }
   | { readonly type: 'choose'; readonly provider: string }
   | { readonly type: 'editKey'; readonly text: string }
   | { readonly type: 'keySaving' }
@@ -258,16 +270,18 @@ export type AiEvent =
   /** Esc's answer from `aiEsc`. */
   | { readonly type: 'replace'; readonly state: AiState };
 
+// eslint-disable-next-line complexity -- the step's whole event table; splitting it would scatter the state machine
 export function reduceAi(state: AiState, event: AiEvent): AiState {
   switch (event.type) {
     case 'toggleMore':
       return { ...state, moreOpen: !state.moreOpen };
     case 'open': {
-      const list = event.view === 'hosted' ? otherHosted(event.providers) : localServers(event.providers);
+      const list =
+        event.view === 'hosted' ? otherHosted(event.providers) : localServers(event.providers);
       const keepChoice = list.some(p => p.id === state.chosen);
       const chosen = keepChoice
         ? state.chosen
-        : (list.find(isUsable) ?? list[0])?.id ?? state.chosen;
+        : ((list.find(isUsable) ?? list[0])?.id ?? state.chosen);
       return {
         ...state,
         view: event.view,
@@ -281,7 +295,13 @@ export function reduceAi(state: AiState, event: AiEvent): AiState {
     case 'choose':
       if (event.provider === state.chosen) return state;
       // A key typed for one provider is never kept for another.
-      return { ...state, chosen: event.provider, keyDraft: '', keyFailure: null, writeFailed: false };
+      return {
+        ...state,
+        chosen: event.provider,
+        keyDraft: '',
+        keyFailure: null,
+        writeFailed: false,
+      };
     case 'editKey':
       return { ...state, keyDraft: event.text, keyFailure: null };
     case 'keySaving':
@@ -289,7 +309,12 @@ export function reduceAi(state: AiState, event: AiEvent): AiState {
     case 'keySaved':
       return { ...state, keyDraft: '', savingKey: false, keyFailure: null };
     case 'keyFailed':
-      return { ...state, keyDraft: '', savingKey: false, keyFailure: event.reasonCode ?? 'unknown' };
+      return {
+        ...state,
+        keyDraft: '',
+        savingKey: false,
+        keyFailure: event.reasonCode ?? 'unknown',
+      };
     case 'testStarted':
       return { ...state, tests: { ...state.tests, [event.provider]: { kind: 'testing' } } };
     case 'testDone':
@@ -331,7 +356,10 @@ export function reduceAi(state: AiState, event: AiEvent): AiState {
  */
 export function aiEsc(state: AiState): { state: AiState; handled: boolean } {
   if (state.view === 'consent') {
-    return { state: { ...state, view: state.consentFrom, focusNonce: state.focusNonce + 1 }, handled: true };
+    return {
+      state: { ...state, view: state.consentFrom, focusNonce: state.focusNonce + 1 },
+      handled: true,
+    };
   }
   if (state.view === 'hosted' || state.view === 'local') {
     return {
@@ -348,7 +376,10 @@ export function aiEsc(state: AiState): { state: AiState; handled: boolean } {
     };
   }
   if (state.moreOpen) {
-    return { state: { ...state, moreOpen: false, focusNonce: state.focusNonce + 1 }, handled: true };
+    return {
+      state: { ...state, moreOpen: false, focusNonce: state.focusNonce + 1 },
+      handled: true,
+    };
   }
   return { state, handled: false };
 }
@@ -492,6 +523,7 @@ const GROQ_FALLBACK: AiProvider = {
   local: false,
 };
 
+// eslint-disable-next-line complexity -- the step's view folds provider, key and consent state into one drawing
 export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
   const loading = inputs.providers === undefined;
   const all = inputs.providers ?? [];
@@ -503,7 +535,8 @@ export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
       : state.view === 'local'
         ? localServers(all)
         : [groq];
-  const chosen = byId(offered, state.chosen) ?? (state.chosen === DEFAULT_PROVIDER ? groq : undefined);
+  const chosen =
+    byId(offered, state.chosen) ?? (state.chosen === DEFAULT_PROVIDER ? groq : undefined);
   const model = chosen ? modelFor(chosen.id, state, inputs) : undefined;
   const usable = !loading && isUsable(chosen) && !!model;
 
@@ -537,7 +570,11 @@ export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
   const customChosen = state.view === 'local' && chosen?.id === 'custom' ? chosen : undefined;
   const addressField = customChosen ? addressFor(customChosen) : undefined;
   const moreAddresses =
-    state.view === 'local' ? localServers(all).filter(p => p.id !== 'custom').map(addressFor) : [];
+    state.view === 'local'
+      ? localServers(all)
+          .filter(p => p.id !== 'custom')
+          .map(addressFor)
+      : [];
 
   const consent =
     state.view === 'consent' && chosen && model

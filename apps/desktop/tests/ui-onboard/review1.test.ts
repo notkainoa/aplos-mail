@@ -8,9 +8,19 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createAppRegistry, DEFAULT_KEY_PREFS, type CommandContext, type ContextName } from '../../src/renderer/commands';
+import {
+  createAppRegistry,
+  DEFAULT_KEY_PREFS,
+  type CommandContext,
+  type ContextName,
+} from '../../src/renderer/commands';
 import type { SetupAccount, SetupStatus } from '../../src/renderer/data';
-import { connectSentence, keySaveSentence, reasonSentence, WINDOW_COPY } from '../../src/renderer/onboarding/copy';
+import {
+  connectSentence,
+  keySaveSentence,
+  reasonSentence,
+  WINDOW_COPY,
+} from '../../src/renderer/onboarding/copy';
 import { runAccountsEffect, type ConnectPorts } from '../../src/renderer/onboarding/connect';
 import {
   flowView,
@@ -86,7 +96,9 @@ function replay(start: FlowState, events: readonly FlowEvent[]) {
 
 /** Text inside visually hidden live regions removed, so what remains is what a sighted owner sees. */
 const visible = (markup: string) =>
-  markup.replace(/<p class="ui-onboarding-step__sr"[^>]*>[\s\S]*?<\/p>/g, '').replace(/<span class="ui-sr-only"[^>]*>[\s\S]*?<\/span>/g, '');
+  markup
+    .replace(/<p class="ui-onboarding-step__sr"[^>]*>[\s\S]*?<\/p>/g, '')
+    .replace(/<span class="ui-sr-only"[^>]*>[\s\S]*?<\/span>/g, '');
 
 /* ───────────────────────── first-sync fixtures ───────────────────────── */
 
@@ -113,9 +125,17 @@ const status = (accounts: SetupAccount[], patch: Partial<SetupStatus> = {}): Set
   ...patch,
 });
 const build = (s: SetupStatus | undefined, patch: Partial<FirstSyncInput> = {}): FirstSyncView =>
-  buildFirstSyncView({ status: s, accounts: [A], aiProvider: 'Groq', consentStored: true, now: NOW, ...patch });
+  buildFirstSyncView({
+    status: s,
+    accounts: [A],
+    aiProvider: 'Groq',
+    consentStored: true,
+    now: NOW,
+    ...patch,
+  });
 const cp = <S extends SyncCheckpoint['step']>(v: FirstSyncView, step: S) =>
-  v.rows[0].checkpoints.find(c => c.step === step) as Extract<SyncCheckpoint, { step: S }> | undefined;
+  v.rows[0].checkpoints.find(c => c.step === step) as
+    Extract<SyncCheckpoint, { step: S }> | undefined;
 
 /* ───────────────────────── 1. a failed handoff never strands the owner ───────────────────────── */
 
@@ -144,7 +164,9 @@ describe('review1 finding 1: a failed handoff', () => {
     let flow = reduceFlow(atFirstSync(), { type: 'open' }).state;
     flow = reduceFlow(flow, { type: 'handoffFailed' }).state;
     const asked: FlowEffect[] = [];
-    const view = build(status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })]));
+    const view = build(
+      status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })]),
+    );
     const handlers = firstSyncCommands({
       view: () => view,
       drillOpen: () => false,
@@ -166,10 +188,17 @@ describe('review1 finding 1: a failed handoff', () => {
       prefs: DEFAULT_KEY_PREFS,
       focus: 'none',
     };
-    const esc = registry.resolve({ key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }, ctx);
+    const esc = registry.resolve(
+      { key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false },
+      ctx,
+    );
     assert.ok(esc);
     registry.run(esc.commandId, ctx);
-    assert.equal(handoffs(asked).length, 1, 'Esc after a refused handoff asked for the mail window again');
+    assert.equal(
+      handoffs(asked).length,
+      1,
+      'Esc after a refused handoff asked for the mail window again',
+    );
     // The container passes each of these straight to onOpen; the old `opened` latch swallowed every one after the first.
     const container = source('firstSync/FirstSyncContainer.tsx');
     assert.doesNotMatch(container, /opened\.current/, 'FirstSyncContainer latches Open Aplos');
@@ -177,23 +206,41 @@ describe('review1 finding 1: a failed handoff', () => {
   });
 
   test('review1: while a handoff is in flight, a second Esc or the auto-open asks nothing', () => {
-    const { each } = replay(atFirstSync(), [{ type: 'open' }, { type: 'esc' }, { type: 'open' }, { type: 'handoffDone' }]);
+    const { each } = replay(atFirstSync(), [
+      { type: 'open' },
+      { type: 'esc' },
+      { type: 'open' },
+      { type: 'handoffDone' },
+    ]);
     assert.equal(handoffs(each.flat()).length, 1);
   });
 
   test('review1: Skip setup → handoff refused → Skip setup again asks again', () => {
-    const { each } = replay(initialFlow(), [{ type: 'skip' }, { type: 'handoffFailed' }, { type: 'skip' }]);
+    const { each } = replay(initialFlow(), [
+      { type: 'skip' },
+      { type: 'handoffFailed' },
+      { type: 'skip' },
+    ]);
     assert.deepEqual(each[0], [{ type: 'setupEnd', reason: 'skipped' }, { type: 'handoff' }]);
     assert.deepEqual(each[2], [{ type: 'handoff' }]);
   });
 
   test('review1: after a refusal the window knows it (Return retries on any step, the notice shows)', () => {
-    const demo = replay(runFlow([{ type: 'next' }]).state, [{ type: 'demoLoaded' }, { type: 'handoffFailed' }]);
+    const demo = replay(runFlow([{ type: 'next' }]).state, [
+      { type: 'demoLoaded' },
+      { type: 'handoffFailed' },
+    ]);
     assert.equal(demo.state.step, 'accounts');
     assert.equal(flowView(demo.state).handoffFailed, true);
-    assert.deepEqual(reduceFlow(demo.state, { type: 'retryHandoff' }).effects, [{ type: 'handoff' }]);
+    assert.deepEqual(reduceFlow(demo.state, { type: 'retryHandoff' }).effects, [
+      { type: 'handoff' },
+    ]);
     // A closed window never asks, even after a refusal.
-    const closed = replay(demo.state, [{ type: 'close' }, { type: 'retryHandoff' }, { type: 'next' }]);
+    const closed = replay(demo.state, [
+      { type: 'close' },
+      { type: 'retryHandoff' },
+      { type: 'next' },
+    ]);
     assert.equal(handoffs(closed.each.flat()).length, 0);
     assert.equal(flowView(closed.state).handoffFailed, false);
   });
@@ -207,14 +254,22 @@ describe('review1 finding 1: a failed handoff', () => {
   });
   const seen = (markup: string, text: string) => {
     const shown = visible(markup);
-    assert.ok(shown.includes(text.replace(/'/g, '&#x27;')) || shown.includes(text), `"${text}" is not visible`);
+    assert.ok(
+      shown.includes(text.replace(/'/g, '&#x27;')) || shown.includes(text),
+      `"${text}" is not visible`,
+    );
     assert.match(shown, /class="ui-error-line"/);
     assert.match(shown, />Try again</);
   };
 
   test('review1: the refusal is drawn visibly on first sync, not only in the hidden status', () => {
-    seen(renderToStaticMarkup(firstSyncStates['handoff-failed'].render()), WINDOW_COPY.handoffFailed);
-    const v = build(status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })]));
+    seen(
+      renderToStaticMarkup(firstSyncStates['handoff-failed'].render()),
+      WINDOW_COPY.handoffFailed,
+    );
+    const v = build(
+      status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })]),
+    );
     const drill = renderToStaticMarkup(
       createElement(FirstSync, {
         view: v,
@@ -235,7 +290,9 @@ describe('review1 finding 1: a failed handoff', () => {
 
   test('review1: the refusal and a failed demo load are visible on Welcome, Accounts and permissions', () => {
     seen(
-      renderToStaticMarkup(createElement(Welcome, { chrome: chrome(1), onAddAccount: noop, onSkip: noop })),
+      renderToStaticMarkup(
+        createElement(Welcome, { chrome: chrome(1), onAddAccount: noop, onSkip: noop }),
+      ),
       WINDOW_COPY.handoffFailed,
     );
     for (const mode of ['choose', 'typed', 'waiting', 'failed', 'connected'] as const) {
@@ -288,10 +345,17 @@ describe('review1 finding 1: a failed handoff', () => {
 
 describe('review1 finding 2: after the session ended, and demo mail with a real account', () => {
   test('review1: a demo handoff ended the session on Accounts → a new connect carries no setupId', async () => {
-    const ended = replay(runFlow([{ type: 'next' }]).state, [{ type: 'demoLoaded' }, { type: 'handoffFailed' }]).state;
+    const ended = replay(runFlow([{ type: 'next' }]).state, [
+      { type: 'demoLoaded' },
+      { type: 'handoffFailed' },
+    ]).state;
     assert.equal(ended.step, 'accounts');
     assert.equal(sessionSetupId(ended, 's1'), undefined);
-    assert.equal(sessionSetupId(runFlow([{ type: 'next' }]).state, 's1'), 's1', 'a live session keeps its id');
+    assert.equal(
+      sessionSetupId(runFlow([{ type: 'next' }]).state, 's1'),
+      's1',
+      'a live session keeps its id',
+    );
     const sent: unknown[] = [];
     const ports: ConnectPorts = {
       discover: async () => ({ provider: 'google' }),
@@ -299,9 +363,14 @@ describe('review1 finding 2: after the session ended, and demo mail with a real 
         sent.push(input);
         return { connectId: 'c9' };
       },
-      cancelConnect: async () => ({ ok: true }),
+      cancelConnect: async () => ({ cancelled: true }),
     };
-    await runAccountsEffect({ type: 'connect', attempt: 1 }, ports, noop, sessionSetupId(ended, 's1'));
+    await runAccountsEffect(
+      { type: 'connect', attempt: 1 },
+      ports,
+      noop,
+      sessionSetupId(ended, 's1'),
+    );
     assert.deepEqual(sent, [{ provider: 'google' }]);
   });
 
@@ -313,9 +382,16 @@ describe('review1 finding 2: after the session ended, and demo mail with a real 
     ]).state;
     assert.equal(flowView(connected).tryDemo, false);
     const late = reduceFlow(connected, { type: 'demoLoaded' });
-    assert.deepEqual(late.effects, [], 'no Setup/end and no handoff: the account still gets its first sync');
+    assert.deepEqual(
+      late.effects,
+      [],
+      'no Setup/end and no handoff: the account still gets its first sync',
+    );
     assert.equal(late.state.ended, null);
-    const on = runFlow([{ type: 'next' }, { type: 'next' }, { type: 'next' }, { type: 'next' }], late.state).state;
+    const on = runFlow(
+      [{ type: 'next' }, { type: 'next' }, { type: 'next' }, { type: 'next' }],
+      late.state,
+    ).state;
     assert.equal(on.step, 'firstSync');
   });
 });
@@ -325,7 +401,13 @@ describe('review1 finding 2: after the session ended, and demo mail with a real 
 describe('review1 finding 3: first sync', () => {
   test('review1: Sort shown done, then a larger total with a cap and a failure → no longer done, "10 of 40"', () => {
     const first = build(
-      status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true }, ai: { sorted: 10, total: 10, capped: 0, failed: 0 } })]),
+      status([
+        acct({
+          state: 'ready',
+          firstWindow: { read: 50, total: 50, done: true },
+          ai: { sorted: 10, total: 10, capped: 0, failed: 0 },
+        }),
+      ]),
     );
     assert.equal(cp(first, 'sort')?.state, 'done');
     const next = build(
@@ -343,7 +425,11 @@ describe('review1 finding 3: first sync', () => {
     assert.equal(sort?.state, 'failed');
     assert.equal(sort?.sorted, 10);
     assert.equal(sort?.of, 40);
-    assert.equal(next.rows[0].ready.sorted, undefined, 'the ready line never says sorted for an unfinished pass');
+    assert.equal(
+      next.rows[0].ready.sorted,
+      undefined,
+      'the ready line never says sorted for an unfinished pass',
+    );
     assert.equal(next.autoOpen, false);
   });
 
@@ -358,7 +444,11 @@ describe('review1 finding 3: first sync', () => {
             reasonCode: 'auth.expired',
           }),
         ],
-        { errors: [{ accountId: 'a', phase: 'backfill', reasonCode: 'auth.expired', at: NOW - 60_000 }] },
+        {
+          errors: [
+            { accountId: 'a', phase: 'backfill', reasonCode: 'auth.expired', at: NOW - 60_000 },
+          ],
+        },
       ),
       { aiProvider },
     );
@@ -370,38 +460,64 @@ describe('review1 finding 3: first sync', () => {
     assert.equal(cp(v, 'sort')?.sorted, 40, 'no count below the truth (39 of 40)');
     assert.equal(row.sortFailed, false);
     assert.equal(row.action, 'reconnect');
-    assert.deepEqual(row.failure, { kind: 'reason', text: reasonSentence('auth.expired'), retryable: false });
-    assert.doesNotMatch(JSON.stringify(row.failure), /Groq|sort/i, 'a Google sign-in failure blamed on the AI provider');
+    assert.deepEqual(row.failure, {
+      kind: 'reason',
+      text: reasonSentence('auth.expired'),
+      retryable: false,
+    });
+    assert.doesNotMatch(
+      JSON.stringify(row.failure),
+      /Groq|sort/i,
+      'a Google sign-in failure blamed on the AI provider',
+    );
     assert.equal(v.outcome, 'failed');
   });
 
   test('review1: the same failure with no AI provider still says why and offers Reconnect', () => {
     const v = failedAfterWindow(null);
     const row = v.rows[0];
-    assert.equal(row.checkpoints.some(c => c.step === 'sort'), false);
+    assert.equal(
+      row.checkpoints.some(c => c.step === 'sort'),
+      false,
+    );
     assert.equal(row.action, 'reconnect');
-    assert.equal(row.failure?.kind === 'reason' && row.failure.text, 'Google needs you to sign in again.');
+    assert.equal(
+      row.failure?.kind === 'reason' && row.failure.text,
+      'Google needs you to sign in again.',
+    );
     assert.notEqual(v.lede, 'Aplos waits for you. Older mail follows after you open it.');
   });
 
   test('review1: a status without setupId then with one is the same run (30 of 50 never drops to 20 of 50)', () => {
-    const first = build(status([acct({ firstWindow: { read: 30, total: 50, done: false } })], { setupId: undefined }));
+    const first = build(
+      status([acct({ firstWindow: { read: 30, total: 50, done: false } })], { setupId: undefined }),
+    );
     assert.equal(cp(first, 'read')?.read, 30);
-    const next = build(status([acct({ firstWindow: { read: 20, total: 50, done: false } })], { setupId: 's1' }), {
-      previous: first,
-    });
+    const next = build(
+      status([acct({ firstWindow: { read: 20, total: 50, done: false } })], { setupId: 's1' }),
+      {
+        previous: first,
+      },
+    );
     assert.equal(cp(next, 'read')?.read, 30);
     // A different session still starts clean.
-    const other = build(status([acct({ firstWindow: { read: 5, total: 50, done: false } })], { setupId: 's2' }), {
-      previous: next,
-    });
+    const other = build(
+      status([acct({ firstWindow: { read: 5, total: 50, done: false } })], { setupId: 's2' }),
+      {
+        previous: next,
+      },
+    );
     assert.equal(cp(other, 'read')?.read, 5);
   });
 
   test('review1: a state the screen doesn’t know never reads "Connecting…" forever; it offers Try again', () => {
     const unknown = acct({ state: 'importing', firstWindow: { read: 0, total: 0, done: false } });
     const first = build(status([unknown]));
-    assert.equal(first.rows[0].checkpoints.some(c => c.state === 'current'), false, 'nothing runs in an unknown state');
+    assert.equal(
+      first.rows[0].checkpoints.some(c => c.state === 'current'),
+      false,
+      'nothing runs in an unknown state',
+    );
     assert.equal(first.rows[0].action, 'none', 'Try again waits for the grace period');
     const later = build(status([unknown]), { previous: first, now: NOW + UNKNOWN_STATE_GRACE_MS });
     assert.equal(later.rows[0].action, 'retry');
@@ -428,13 +544,19 @@ describe('review1 finding 4: copy', () => {
     assert.equal(v.outcome, 'paused');
     assert.match(v.lede, /^Groq asked us to slow down\. Resuming at 10:20 AM\./);
     assert.doesNotMatch(v.lede, /Google/);
-    const unnamed = build(status([acct({ state: 'paused', reasonCode: 'ai.rateLimited' })]), { aiProvider: null });
+    const unnamed = build(status([acct({ state: 'paused', reasonCode: 'ai.rateLimited' })]), {
+      aiProvider: null,
+    });
     assert.match(unnamed.lede, /^Your AI provider asked us to slow down\./);
   });
 
   test('review1: a refused connect with no code says the sign-in didn’t finish, not "Sync hit a problem"', () => {
     assert.equal(connectSentence(undefined), 'Google sign-in didn’t finish. Try again.');
-    assert.equal(connectSentence('auth.denied'), reasonSentence('auth.denied'), 'known codes keep their sentence');
+    assert.equal(
+      connectSentence('auth.denied'),
+      reasonSentence('auth.denied'),
+      'known codes keep their sentence',
+    );
     const markup = renderToStaticMarkup(stepStates['accounts-failed-no-code'].render());
     assert.match(markup, /Google sign-in didn’t finish\. Try again\./);
     assert.doesNotMatch(markup, /Sync hit a problem/);
@@ -445,10 +567,20 @@ describe('review1 finding 4: copy', () => {
       keyFailureSentence('unknown', 'ChatGPT (OpenAI)'),
       'Aplos couldn’t save your ChatGPT key on this Mac. Paste it again, or skip for now.',
     );
-    assert.equal(keyFailureSentence('ai.missingKey', 'Groq'), 'Groq didn’t take that key. Paste it again, or skip for now.');
+    assert.equal(
+      keyFailureSentence('ai.missingKey', 'Groq'),
+      'Groq didn’t take that key. Paste it again, or skip for now.',
+    );
     assert.doesNotMatch(keyFailureSentence('unknown', 'OpenAI'), /Groq|didn’t take/);
-    assert.equal(keySaveSentence('auth.adminPolicy', 'Groq'), 'Your organisation has turned off saving keys.');
-    assert.doesNotMatch(source('steps/ai.model.ts'), /didn't take that key/, 'the sentence lives in copy.ts');
+    assert.equal(
+      keySaveSentence('auth.adminPolicy', 'Groq'),
+      'Your organisation has turned off saving keys.',
+    );
+    assert.doesNotMatch(
+      source('steps/ai.model.ts'),
+      /didn't take that key/,
+      'the sentence lives in copy.ts',
+    );
   });
 });
 
@@ -461,16 +593,33 @@ describe('review1 finding 6: Reconnect and Open Settings', () => {
     assert.equal(openReconnect('a', 'b'), 'a', 'one sheet at a time');
     const app = source('OnboardingApp.tsx');
     assert.match(app, /<ReconnectFlow\b/);
-    assert.match(app, /onReconnect: accountId => setReconnecting\(current => openReconnect\(current, accountId\)\)/);
+    assert.match(
+      app,
+      /onReconnect: accountId => setReconnecting\(current => openReconnect\(current, accountId\)\)/,
+    );
     assert.doesNotMatch(app, /ports\.reconnect\(|api\.account\.reconnect/);
-    assert.match(app, /keysSuspended: reconnecting !== null/, 'the screen’s Esc would also open Aplos under the sheet');
+    assert.match(
+      app,
+      /keysSuspended: reconnecting !== null/,
+      'the screen’s Esc would also open Aplos under the sheet',
+    );
   });
 
   test('review1: Open Settings after a sorting failure hands over to Settings → AI (and keeps it on a retry)', () => {
-    const { each } = replay(atFirstSync(), [{ type: 'openSettings' }, { type: 'handoffFailed' }, { type: 'next' }]);
-    assert.deepEqual(each[0], [{ type: 'setupEnd', reason: 'finished' }, { type: 'handoff', to: 'settings.ai' }]);
+    const { each } = replay(atFirstSync(), [
+      { type: 'openSettings' },
+      { type: 'handoffFailed' },
+      { type: 'next' },
+    ]);
+    assert.deepEqual(each[0], [
+      { type: 'setupEnd', reason: 'finished' },
+      { type: 'handoff', to: 'settings.ai' },
+    ]);
     assert.deepEqual(each[2], [{ type: 'handoff', to: 'settings.ai' }]);
-    assert.match(source('OnboardingApp.tsx'), /onOpenSettings: \(\) => dispatchFlow\(\{ type: 'openSettings' \}\)/);
+    assert.match(
+      source('OnboardingApp.tsx'),
+      /onOpenSettings: \(\) => dispatchFlow\(\{ type: 'openSettings' \}\)/,
+    );
     const markup = renderToStaticMarkup(firstSyncStates['ai-failed'].render());
     assert.match(markup, />Open Settings</);
   });
@@ -480,14 +629,28 @@ describe('review1 finding 6: Reconnect and Open Settings', () => {
 
 describe('review1 finding 7: focus on first sync (F12)', () => {
   test('review1: Finish setup → first sync focuses Continue anyway, then the filled button once it turns on', () => {
-    const waiting = build(status([acct({ state: 'connecting', firstWindow: { read: 0, total: 0, done: false } })]));
+    const waiting = build(
+      status([acct({ state: 'connecting', firstWindow: { read: 0, total: 0, done: false } })]),
+    );
     const before = firstSyncFocus(waiting, false);
     assert.deepEqual(before.focus, { kind: 'button', label: 'Continue anyway' });
-    const ready = build(status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })], { done: true }));
+    const ready = build(
+      status([acct({ state: 'ready', firstWindow: { read: 50, total: 50, done: true } })], {
+        done: true,
+      }),
+    );
     const after = firstSyncFocus(ready, false);
     assert.deepEqual(after.focus, { kind: 'button', label: ready.primary.label });
-    assert.notEqual(after.focusKey, before.focusKey, 'the key changes when the filled button turns on');
-    assert.equal(after.focusKey.split(':')[0], before.focusKey.split(':')[0], 'same step: no scroll back to the top');
+    assert.notEqual(
+      after.focusKey,
+      before.focusKey,
+      'the key changes when the filled button turns on',
+    );
+    assert.equal(
+      after.focusKey.split(':')[0],
+      before.focusKey.split(':')[0],
+      'same step: no scroll back to the top',
+    );
     const drill = firstSyncFocus(waiting, true);
     assert.deepEqual(drill.focus, { kind: 'field', id: DRILL_LIST_ID });
     assert.notEqual(drill.focusKey, before.focusKey, 'entering and leaving the drill moves focus');
@@ -498,9 +661,17 @@ describe('review1 finding 7: focus on first sync (F12)', () => {
   test('review1: an engine-driven focus change never pulls focus from a control the owner chose', () => {
     assert.equal(shouldMoveFocus(true, true, 'elsewhere'), true, 'a new step always focuses');
     assert.equal(shouldMoveFocus(false, true, 'none'), true, 'focus on the body moves');
-    assert.equal(shouldMoveFocus(false, true, 'footer'), true, 'from Continue anyway to Open Aplos');
+    assert.equal(
+      shouldMoveFocus(false, true, 'footer'),
+      true,
+      'from Continue anyway to Open Aplos',
+    );
     assert.equal(shouldMoveFocus(false, true, 'elsewhere'), false, 'a row’s Try again keeps focus');
-    assert.equal(shouldMoveFocus(false, false, 'elsewhere'), true, 'owner-driven state changes still move focus');
+    assert.equal(
+      shouldMoveFocus(false, false, 'elsewhere'),
+      true,
+      'owner-driven state changes still move focus',
+    );
   });
 });
 
@@ -511,35 +682,85 @@ describe('review1 other findings', () => {
     assert.equal(welcomeFailureLine('failed'), WINDOW_COPY.setupWindowFailed);
     assert.equal(welcomeFailureLine('opened'), undefined);
     const markup = renderToStaticMarkup(
-      createElement(ZeroAccountsView, { notice: WINDOW_COPY.setupWindowFailed, onAddAccount: noop, onTryDemo: noop }),
+      createElement(ZeroAccountsView, {
+        notice: WINDOW_COPY.setupWindowFailed,
+        onAddAccount: noop,
+        onTryDemo: noop,
+      }),
     );
-    assert.ok(markup.includes(WINDOW_COPY.setupWindowFailed.replace(/'/g, '&#x27;')) || markup.includes(WINDOW_COPY.setupWindowFailed));
-    assert.match(source('ZeroAccounts.tsx'), /then\(result => setNotice\(welcomeFailureLine\(result\)\)\)/);
+    assert.ok(
+      markup.includes(WINDOW_COPY.setupWindowFailed.replace(/'/g, '&#x27;')) ||
+        markup.includes(WINDOW_COPY.setupWindowFailed),
+    );
+    assert.match(
+      source('ZeroAccounts.tsx'),
+      /then\(result =>\s*setNotice\(welcomeFailureLine\(result\)\)/,
+    );
   });
 
   test('review1: the reconnect flow never waits forever for an account the list doesn’t have', () => {
-    assert.equal(missingAccountClose(0), 'afterWait', 'an empty list closes after the wait, not never');
+    assert.equal(
+      missingAccountClose(0),
+      'afterWait',
+      'an empty list closes after the wait, not never',
+    );
     assert.equal(missingAccountClose(2), 'now');
     assert.ok(MISSING_ACCOUNT_WAIT_MS > 0 && MISSING_ACCOUNT_WAIT_MS <= 10_000);
-    assert.match(source('reconnect/ReconnectFlow.tsx'), /setTimeout\(\(\) => close\.current\('failed'\), MISSING_ACCOUNT_WAIT_MS\)/);
+    assert.match(
+      source('reconnect/ReconnectFlow.tsx'),
+      /setTimeout\(\(\) => close\.current\('failed'\), MISSING_ACCOUNT_WAIT_MS\)/,
+    );
   });
 
   test('review1: the window’s keys follow the owner’s single-key setting (WCAG 2.1.4)', () => {
-    const off = keyPrefsFor({ singleKeys: false, holdMs: 300, swipeDirection: 'doneRight', keymap: {} });
+    const off = keyPrefsFor({
+      singleKeys: false,
+      holdMs: 300,
+      swipeDirection: 'doneRight',
+      keymap: {},
+    });
     assert.equal(off.singleKeyShortcuts, false);
     assert.equal(off.holdThresholdMs, 300);
     assert.deepEqual(keyPrefsFor(undefined), DEFAULT_KEY_PREFS);
     // The drill's J resolves with the defaults and not with single keys switched off.
     const stack: ContextName[] = ['onboarding', 'firstSync', 'drill'];
-    const ctx = (prefs: typeof off): CommandContext => ({ stack, target: null, selection: [], conditions: {}, prefs, focus: 'none' });
+    const ctx = (prefs: typeof off): CommandContext => ({
+      stack,
+      target: null,
+      selection: [],
+      conditions: {},
+      prefs,
+      focus: 'none',
+    });
     const j = { key: 'j', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+    // Resolve ignores commands with no attached handler, so the screen's own handlers go on as the container's do.
+    const attach = (registry: ReturnType<typeof createAppRegistry>) => {
+      const handlers = firstSyncCommands({
+        view: () => build(status([acct()])),
+        drillOpen: () => true,
+        onOpen: noop,
+        onDrill: noop,
+        onLeaveDrill: noop,
+      });
+      for (const [id, h] of Object.entries(handlers))
+        registry.attach(id as Parameters<typeof registry.attach>[0], h);
+    };
     const registry = createAppRegistry();
+    attach(registry);
     assert.ok(registry.resolve(j, ctx(DEFAULT_KEY_PREFS)), 'J moves in the drill by default');
     const offRegistry = createAppRegistry(off);
+    attach(offRegistry);
     const resolved = offRegistry.resolve(j, ctx(off));
-    assert.ok(!resolved || !resolved.commandId.startsWith('drill.'), 'J still runs with single keys off');
+    assert.ok(
+      !resolved || !resolved.commandId.startsWith('drill.'),
+      'J still runs with single keys off',
+    );
     for (const file of ['OnboardingApp.tsx', 'firstSync/FirstSyncContainer.tsx']) {
-      assert.doesNotMatch(source(file), /prefs: DEFAULT_KEY_PREFS/, `${file} ignores the owner's key settings`);
+      assert.doesNotMatch(
+        source(file),
+        /prefs: DEFAULT_KEY_PREFS/,
+        `${file} ignores the owner's key settings`,
+      );
     }
   });
 });

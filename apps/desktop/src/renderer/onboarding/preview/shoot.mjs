@@ -86,7 +86,10 @@ async function audit(page) {
       banned.forEach(({ src, flags }) => {
         const re = new RegExp(src, flags);
         const hit = copy.match(re);
-        if (hit) out.push(`banned copy ${re} in "${copy.slice(Math.max(0, hit.index - 20), hit.index + 30).replace(/\s+/g, ' ')}"`);
+        if (hit)
+          out.push(
+            `banned copy ${re} in "${copy.slice(Math.max(0, hit.index - 20), hit.index + 30).replace(/\s+/g, ' ')}"`,
+          );
       });
 
       // Glyphs: icon class names, sprite references and icon attributes.
@@ -107,7 +110,10 @@ async function audit(page) {
       const filled = [...root.querySelectorAll('[data-variant="filled"]')].filter(
         b => b.tagName === 'BUTTON' && visible(b),
       );
-      if (filled.length > 1) out.push(`${filled.length} filled buttons: ${filled.map(b => b.innerText.trim()).join(' | ')}`);
+      if (filled.length > 1)
+        out.push(
+          `${filled.length} filled buttons: ${filled.map(b => b.innerText.trim()).join(' | ')}`,
+        );
 
       // Nothing under 11 px.
       const seen = new Set();
@@ -119,7 +125,8 @@ async function audit(page) {
         if (!el || seen.has(el) || !visible(el)) continue;
         seen.add(el);
         const size = parseFloat(getComputedStyle(el).fontSize);
-        if (size < 11) out.push(`text under 11px (${size}px): "${node.textContent.trim().slice(0, 30)}"`);
+        if (size < 11)
+          out.push(`text under 11px (${size}px): "${node.textContent.trim().slice(0, 30)}"`);
       }
       // F13: the step's title is fully on screen, and content taller than the window scrolls inside the step's
       // body (never off the window's top).
@@ -127,14 +134,17 @@ async function audit(page) {
       const frame = root.getBoundingClientRect();
       if (title) {
         const r = title.getBoundingClientRect();
-        if (r.top < frame.top || r.bottom > frame.bottom) out.push(`F13 title clipped (top ${Math.round(r.top)})`);
+        if (r.top < frame.top || r.bottom > frame.bottom)
+          out.push(`F13 title clipped (top ${Math.round(r.top)})`);
       }
       const body = root.querySelector('main');
       if (body && body.scrollHeight > body.clientHeight + 1) {
         const overflow = getComputedStyle(body).overflowY;
-        if (overflow !== 'auto' && overflow !== 'scroll') out.push('F13 long content does not scroll inside the step');
+        if (overflow !== 'auto' && overflow !== 'scroll')
+          out.push('F13 long content does not scroll inside the step');
       }
-      if (document.documentElement.scrollHeight > innerHeight + 1) out.push('F13 the window itself scrolls');
+      if (document.documentElement.scrollHeight > innerHeight + 1)
+        out.push('F13 the window itself scrolls');
       return [...new Set(out)];
     },
     {
@@ -150,13 +160,23 @@ async function hoverShift(page) {
     const root = document.querySelector('.onb-frame');
     const visible = el => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && getComputedStyle(el).visibility !== 'hidden';
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        r.bottom > 0 &&
+        r.top < innerHeight &&
+        getComputedStyle(el).visibility !== 'hidden'
+      );
     };
     window.__targets = [
-      ...root.querySelectorAll('button, a, input, [role="radio"], [role="switch"], .ui-text-field-box'),
+      ...root.querySelectorAll(
+        'button, a, input, [role="radio"], [role="switch"], .ui-text-field-box',
+      ),
     ].filter(visible);
     window.__watch = [
-      ...root.querySelectorAll('button, a, input, kbd, h1, p, span, dt, dd, [role="radio"], .ui-choice-row'),
+      ...root.querySelectorAll(
+        'button, a, input, kbd, h1, p, span, dt, dd, [role="radio"], .ui-choice-row',
+      ),
     ].filter(visible);
     return window.__targets.length;
   });
@@ -239,7 +259,13 @@ if (process.env.SELFTEST === '1') {
     shifty.addEventListener('mouseleave', () => shifty.style.removeProperty('padding'));
   }, plant);
   const found = [...(await audit(page)), ...(await hoverShift(page))].join('\n');
-  const expect = { 'filled buttons': /2 filled buttons/, 'text size': /under 11px/, copy: /banned copy/, glyph: /banned glyph/, hover: /LAYOUT SHIFT/ };
+  const expect = {
+    'filled buttons': /2 filled buttons/,
+    'text size': /under 11px/,
+    copy: /banned copy/,
+    glyph: /banned glyph/,
+    hover: /LAYOUT SHIFT/,
+  };
   let missed = 0;
   for (const [name, re] of Object.entries(expect)) {
     const ok = re.test(found);
@@ -275,9 +301,13 @@ try {
       });
       await page.goto(`${GALLERY}?state=${encodeURIComponent(name)}&theme=${theme}`);
       try {
-        await page.waitForFunction(() => document.documentElement.dataset.previewReady === 'true', null, {
-          timeout: 15_000,
-        });
+        await page.waitForFunction(
+          () => document.documentElement.dataset.previewReady === 'true',
+          null,
+          {
+            timeout: 15_000,
+          },
+        );
       } catch {
         errors.push('the state never became ready');
       }

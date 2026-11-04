@@ -44,20 +44,28 @@ export function voiceName(provider: string | undefined): string | undefined {
 
 /** Where to turn a blocked permission back on: plain words, one sentence (DESIGN 7.11 step 4; 8 "say what to do"). */
 export const DENIED_LINES = {
-  microphone: 'macOS has blocked the microphone. Turn it on for Aplos in System Settings, under Privacy & Security.',
-  notifications: 'macOS has blocked notifications. Turn them on for Aplos in System Settings, under Notifications.',
+  microphone:
+    'macOS has blocked the microphone. Turn it on for Aplos in System Settings, under Privacy & Security.',
+  notifications:
+    'macOS has blocked notifications. Turn them on for Aplos in System Settings, under Notifications.',
 } as const;
 
-export function microphoneDetail(voiceProvider: string | undefined, state?: PermissionState): string {
+export function microphoneDetail(
+  voiceProvider: string | undefined,
+  state?: PermissionState,
+): string {
   if (state === 'denied') return `${HOLD_LINES[0]} ${HOLD_LINES[1]} ${DENIED_LINES.microphone}`;
   const speech = voiceProvider ? ` Speech goes to ${voiceProvider} to become text.` : '';
   return `${HOLD_LINES[0]} ${HOLD_LINES[1]}${speech}`;
 }
 
-export const NOTIFICATIONS_DETAIL = 'Only for mail that reaches Home. Newsletters and receipts stay quiet.';
+export const NOTIFICATIONS_DETAIL =
+  'Only for mail that reaches Home. Newsletters and receipts stay quiet.';
 
 export function notificationsDetail(state?: PermissionState): string {
-  return state === 'denied' ? `${NOTIFICATIONS_DETAIL} ${DENIED_LINES.notifications}` : NOTIFICATIONS_DETAIL;
+  return state === 'denied'
+    ? `${NOTIFICATIONS_DETAIL} ${DENIED_LINES.notifications}`
+    : NOTIFICATIONS_DETAIL;
 }
 
 function permissionEnd(
@@ -73,7 +81,12 @@ function permissionEnd(
       return {
         status: { text: 'Turned off', tone: 'dim' as const },
         control: (
-          <Button variant="text" size="sm" label="Open System Settings" onPress={() => props.onOpenSettings(kind)} />
+          <Button
+            variant="text"
+            size="sm"
+            label="Open System Settings"
+            onPress={() => props.onOpenSettings(kind)}
+          />
         ),
       };
     case 'unavailable':
@@ -81,7 +94,13 @@ function permissionEnd(
     default:
       return {
         control: (
-          <Button variant="text" size="sm" label="Allow…" busy={asking} onPress={() => props.onAllow(kind)} />
+          <Button
+            variant="text"
+            size="sm"
+            label="Allow…"
+            busy={asking}
+            onPress={() => props.onAllow(kind)}
+          />
         ),
       };
   }
@@ -122,7 +141,12 @@ export function PermissionsStep(props: PermissionsStepProps) {
           icon="bell"
           label="Notifications"
           detail={notificationsDetail(props.notifications)}
-          {...permissionEnd('notifications', props.notifications, props.asking === 'notifications', props)}
+          {...permissionEnd(
+            'notifications',
+            props.notifications,
+            props.asking === 'notifications',
+            props,
+          )}
         />
         <ChoiceRow
           id="onb-perm-login"
@@ -209,7 +233,12 @@ export interface PermissionsContainerProps {
   readonly ports?: Partial<SystemPorts>;
 }
 
-export function PermissionsContainer({ chrome, bindKeys, onFinish, ports: given }: PermissionsContainerProps) {
+export function PermissionsContainer({
+  chrome,
+  bindKeys,
+  onFinish,
+  ports: given,
+}: PermissionsContainerProps) {
   const ports = useRef({ ...defaultSystemPorts, ...given }).current;
   const settings = useSettings();
   const [microphone, setMicrophone] = useState<PermissionState>('unknown');

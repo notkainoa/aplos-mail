@@ -125,7 +125,11 @@ const handoffEffect = (state: FlowState): FlowEffect =>
   state.handoffTo ? { type: 'handoff', to: state.handoffTo } : { type: 'handoff' };
 
 /** End the session once and hand over to the mail window. */
-function finish(state: FlowState, reason: Exclude<EndReason, 'closed'>, patch: Partial<FlowState> = {}): FlowResult {
+function finish(
+  state: FlowState,
+  reason: Exclude<EndReason, 'closed'>,
+  patch: Partial<FlowState> = {},
+): FlowResult {
   const next: FlowState = { ...state, ...patch, ended: reason, handoff: 'pending' };
   return { state: next, effects: [{ type: 'setupEnd', reason }, handoffEffect(next)] };
 }
@@ -141,15 +145,21 @@ const RETRIES: ReadonlySet<FlowEvent['type']> = new Set([
 ]);
 
 /** Records a connected account; never moves the step (F9). */
-function recordConnect(state: FlowState, event: Extract<FlowEvent, { type: 'connectResolved' }>): FlowState {
-  const pendingConnectId = state.pendingConnectId === event.connectId ? null : state.pendingConnectId;
+function recordConnect(
+  state: FlowState,
+  event: Extract<FlowEvent, { type: 'connectResolved' }>,
+): FlowState {
+  const pendingConnectId =
+    state.pendingConnectId === event.connectId ? null : state.pendingConnectId;
   if (event.outcome !== 'connected') return { ...state, pendingConnectId };
   if (event.demo) return { ...state, pendingConnectId, hasDemo: true };
   const id = event.accountId;
-  const connected = id && !state.connected.includes(id) ? [...state.connected, id] : state.connected;
+  const connected =
+    id && !state.connected.includes(id) ? [...state.connected, id] : state.connected;
   return { ...state, pendingConnectId, connected };
 }
 
+// eslint-disable-next-line complexity -- the window's whole event table; splitting it would scatter the state machine
 export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
   // Engine answers are recorded at any moment, even after the session ended; they never navigate.
   if (event.type === 'connectResolved') return same(recordConnect(state, event));
@@ -162,13 +172,21 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
     return state.handoff === 'pending' ? same({ ...state, handoff: 'idle' }) : same(state);
   }
   if (event.type === 'handoffFailed') {
-    return state.handoff === 'pending' && state.ended !== 'closed' ? same({ ...state, handoff: 'failed' }) : same(state);
+    return state.handoff === 'pending' && state.ended !== 'closed'
+      ? same({ ...state, handoff: 'failed' })
+      : same(state);
   }
 
   if (state.ended) {
+    // Closing after the session already ended still marks the window gone: its Setup/end went out with the ending
+    // event, and nothing may ask for the mail window again afterwards.
+    if (event.type === 'close') {
+      return state.ended === 'closed' ? same(state) : same({ ...state, ended: 'closed' });
+    }
     // The session is over. Once the handoff failed, any way of going on asks for the mail window again (a failed
     // handoff must not strand the owner); while one is in flight nothing asks twice; a closed window asks for nothing.
-    if (state.ended === 'closed' || state.handoff !== 'failed' || !RETRIES.has(event.type)) return same(state);
+    if (state.ended === 'closed' || state.handoff !== 'failed' || !RETRIES.has(event.type))
+      return same(state);
     const next: FlowState = {
       ...state,
       handoff: 'pending',
@@ -179,7 +197,10 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
 
   switch (event.type) {
     case 'close':
-      return { state: { ...state, ended: 'closed' }, effects: [{ type: 'setupEnd', reason: 'closed' }] };
+      return {
+        state: { ...state, ended: 'closed' },
+        effects: [{ type: 'setupEnd', reason: 'closed' }],
+      };
     case 'demoLoaded':
       // A real account connected in this session keeps its first sync: the demo account is only recorded.
       return state.connected.length > 0
@@ -190,7 +211,9 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
     case 'open':
       return state.step === 'firstSync' ? finish(state, 'finished') : same(state);
     case 'openSettings':
-      return state.step === 'firstSync' ? finish(state, 'finished', { handoffTo: 'settings.ai' }) : same(state);
+      return state.step === 'firstSync'
+        ? finish(state, 'finished', { handoffTo: 'settings.ai' })
+        : same(state);
     case 'retryHandoff':
       return same(state);
     case 'esc':
@@ -322,7 +345,11 @@ export type ActiveFocus =
  * engine caused (`keepUserFocus`, e.g. first sync's Open Aplos becoming enabled) moves focus only from nowhere or from
  * the step's own footer, never away from a control the owner chose.
  */
-export function shouldMoveFocus(newStep: boolean, keepUserFocus: boolean, active: ActiveFocus): boolean {
+export function shouldMoveFocus(
+  newStep: boolean,
+  keepUserFocus: boolean,
+  active: ActiveFocus,
+): boolean {
   return newStep || !keepUserFocus || active !== 'elsewhere';
 }
 
@@ -359,7 +386,9 @@ export function backFooter(chrome: StepChrome): OnboardingFooter {
   return {
     ...(chrome.dashes ? { dashes: chrome.dashes } : {}),
     note: 'setupContinues',
-    buttons: [{ label: 'Back', emphasis: 'text', keys: 'Esc', keyHint: 'hint', onSelect: chrome.onBack }],
+    buttons: [
+      { label: 'Back', emphasis: 'text', keys: 'Esc', keyHint: 'hint', onSelect: chrome.onBack },
+    ],
   };
 }
 

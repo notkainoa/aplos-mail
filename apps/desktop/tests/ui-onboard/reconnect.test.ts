@@ -22,7 +22,10 @@ import {
 const NOW = new Date(2026, 9, 29, 10, 0).getTime();
 const ADDRESS = 'jordan.lee@example.com';
 
-const account = (over: Partial<ReconnectAccount['health']> & { state?: string } = {}, rest: Partial<ReconnectAccount> = {}) => {
+const account = (
+  over: Partial<ReconnectAccount['health']> & { state?: string } = {},
+  rest: Partial<ReconnectAccount> = {},
+) => {
   const { state = 'ok', ...health } = over;
   return { health: { status: { state }, ...health }, ...rest } satisfies ReconnectAccount;
 };
@@ -46,20 +49,38 @@ describe('which accounts offer Reconnect, and which call', () => {
   });
 
   test('needsReauth offers "Reconnect" through Account/reconnect', () => {
-    const offer = reconnectOffer(account({ state: 'needsReauth', reasonCode: 'auth.expired' }), NOW);
-    assert.deepEqual([offer?.call, offer?.label, offer?.reason], ['reconnect', 'Reconnect', 'needsReauth']);
+    const offer = reconnectOffer(
+      account({ state: 'needsReauth', reasonCode: 'auth.expired' }),
+      NOW,
+    );
+    assert.deepEqual(
+      [offer?.call, offer?.label, offer?.reason],
+      ['reconnect', 'Reconnect', 'needsReauth'],
+    );
   });
 
   test('needsPermission offers Account/grantPermissions and the grant copy', () => {
-    const offer = reconnectOffer(account({ state: 'needsPermission', reasonCode: 'permission.mailModify' }), NOW);
-    assert.deepEqual([offer?.call, offer?.mode, offer?.label], ['grantPermissions', 'grant', 'Reconnect']);
+    const offer = reconnectOffer(
+      account({ state: 'needsPermission', reasonCode: 'permission.mailModify' }),
+      NOW,
+    );
+    assert.deepEqual(
+      [offer?.call, offer?.mode, offer?.label],
+      ['grantPermissions', 'grant', 'Reconnect'],
+    );
   });
 
   test('a missing feature permission while mail works grants; needsReauth outranks it; due outranks nothing', () => {
     const missing = [{ capability: 'calendar', reasonCode: 'permission.calendar' }];
-    assert.equal(reconnectOffer(account({}, { missingPermissions: missing }), NOW)?.call, 'grantPermissions');
     assert.equal(
-      reconnectOffer(account({ state: 'needsReauth', reconnectBy: NOW }, { missingPermissions: missing }), NOW)?.call,
+      reconnectOffer(account({}, { missingPermissions: missing }), NOW)?.call,
+      'grantPermissions',
+    );
+    assert.equal(
+      reconnectOffer(
+        account({ state: 'needsReauth', reconnectBy: NOW }, { missingPermissions: missing }),
+        NOW,
+      )?.call,
       'reconnect',
     );
     assert.equal(reconnectOffer(account({}, { missingPermissions: [] }), NOW), null);
@@ -67,8 +88,14 @@ describe('which accounts offer Reconnect, and which call', () => {
 
   test('nothing is offered for demo mail, an administrator block, a build without Google set up, or offline', () => {
     assert.equal(reconnectOffer(account({ state: 'needsReauth' }, { demo: true }), NOW), null);
-    assert.equal(reconnectOffer(account({ state: 'needsAdmin', reasonCode: 'auth.adminPolicy' }), NOW), null);
-    assert.equal(reconnectOffer(account({ state: 'needsReauth', reasonCode: 'auth.adminConsent' }), NOW), null);
+    assert.equal(
+      reconnectOffer(account({ state: 'needsAdmin', reasonCode: 'auth.adminPolicy' }), NOW),
+      null,
+    );
+    assert.equal(
+      reconnectOffer(account({ state: 'needsReauth', reasonCode: 'auth.adminConsent' }), NOW),
+      null,
+    );
     assert.equal(reconnectOffer(account({ state: 'misconfigured' }), NOW), null);
     assert.equal(reconnectOffer(account({ state: 'offline', reconnectBy: NOW }), NOW), null);
   });
@@ -101,8 +128,15 @@ function harness(call: 'reconnect' | 'grantPermissions' = 'reconnect') {
   };
 }
 
-const started = (attempt = 1, connectId = 'c1'): ReconnectEvent => ({ type: 'started', attempt, connectId });
-const frame = (state: string, over: Partial<Extract<ReconnectEvent, { type: 'frame' }>> = {}): ReconnectEvent => ({
+const started = (attempt = 1, connectId = 'c1'): ReconnectEvent => ({
+  type: 'started',
+  attempt,
+  connectId,
+});
+const frame = (
+  state: string,
+  over: Partial<Extract<ReconnectEvent, { type: 'frame' }>> = {},
+): ReconnectEvent => ({
   type: 'frame',
   connectId: 'c1',
   mode: 'reconnect',
@@ -117,8 +151,15 @@ describe('the sheet: idle → waiting → failed | reconnected → closed', () =
     h.send({ type: 'open' });
     h.send({ type: 'open' });
     assert.equal(h.state.phase, 'waiting');
-    assert.deepEqual(h.starts(), [{ type: 'start', call: 'reconnect', accountId: 'acc-1', attempt: 1 }]);
-    assert.deepEqual(sheetView(h.state), { open: true, state: 'waiting', mode: 'reconnect', address: ADDRESS });
+    assert.deepEqual(h.starts(), [
+      { type: 'start', call: 'reconnect', accountId: 'acc-1', attempt: 1 },
+    ]);
+    assert.deepEqual(sheetView(h.state), {
+      open: true,
+      state: 'waiting',
+      mode: 'reconnect',
+      address: ADDRESS,
+    });
   });
 
   test('connected: the sheet closes as "reconnected"', () => {
@@ -153,7 +194,10 @@ describe('the sheet: idle → waiting → failed | reconnected → closed', () =
     h.send(started());
     h.send(frame('failed', { reasonCode: 'auth.wrongAccount' }));
     assert.equal(h.state.phase, 'failed');
-    assert.equal(h.state.reason, `That was a different Google account. Choose ${ADDRESS} to reconnect.`);
+    assert.equal(
+      h.state.reason,
+      `That was a different Google account. Choose ${ADDRESS} to reconnect.`,
+    );
   });
 
   test('timeout and an unknown code: a known code has its sentence; an unknown one falls back to the sheet default', () => {
@@ -176,7 +220,7 @@ describe('the sheet: idle → waiting → failed | reconnected → closed', () =
     h.send({ type: 'open' });
     h.send({ type: 'startFailed', attempt: 1, reasonCode: 'net.offline' });
     assert.equal(h.state.phase, 'failed');
-    assert.equal(h.state.reason, "You’re offline. Aplos continues when you’re back online.");
+    assert.equal(h.state.reason, 'You’re offline. Aplos continues when you’re back online.');
   });
 
   test('grant mode: Account/grantPermissions, the grant copy, and frames of its own mode only', () => {
@@ -239,7 +283,7 @@ describe('races: Cancel, late frames, another flow', () => {
     assert.equal(h.closes().length, 1);
   });
 
-  test('a settled frame that beats the call\'s answer is kept until the id arrives', () => {
+  test("a settled frame that beats the call's answer is kept until the id arrives", () => {
     const h = harness();
     h.send({ type: 'open' });
     h.send(frame('connected'));
@@ -255,7 +299,7 @@ describe('races: Cancel, late frames, another flow', () => {
     assert.equal(other.state.phase, 'waiting');
   });
 
-  test('an older attempt\'s frame or id after Try again does not settle or break the new attempt', () => {
+  test("an older attempt's frame or id after Try again does not settle or break the new attempt", () => {
     const h = harness();
     h.send({ type: 'open' });
     h.send(started(1, 'c1'));
@@ -315,7 +359,10 @@ describe('reconnect-no-resync: no Sync/request, ever', () => {
   }
 
   /** Runs events through the reducer and every effect through the ports, to quiescence. */
-  async function play(call: 'reconnect' | 'grantPermissions', script: (send: (e: ReconnectEvent) => void) => void | Promise<void>) {
+  async function play(
+    call: 'reconnect' | 'grantPermissions',
+    script: (send: (e: ReconnectEvent) => void) => void | Promise<void>,
+  ) {
     const { ports, calls } = recorder();
     let state = initialReconnect({ accountId: 'acc-1', address: ADDRESS, call });
     const pending: Promise<void>[] = [];
@@ -347,7 +394,11 @@ describe('reconnect-no-resync: no Sync/request, ever', () => {
       await new Promise(r => setImmediate(r));
       send({ type: 'cancel' });
     });
-    assert.deepEqual(retry.calls, ['Account/reconnect', 'Account/reconnect', 'Account/cancelConnect']);
+    assert.deepEqual(retry.calls, [
+      'Account/reconnect',
+      'Account/reconnect',
+      'Account/cancelConnect',
+    ]);
     const grant = await play('grantPermissions', async send => {
       await new Promise(r => setImmediate(r));
       send(frame('connected', { mode: 'grantPermissions' }));
@@ -375,14 +426,22 @@ describe('reconnect-no-resync: no Sync/request, ever', () => {
   test('no file of the reconnect flow, the demo controls or Show welcome mentions Sync/request', () => {
     const root = path.resolve(process.cwd(), 'src/renderer/onboarding');
     const files = [
-      ...readdirSync(path.join(root, 'reconnect')).filter(f => /\.(ts|tsx)$/.test(f) && f !== 'states.tsx').map(f => path.join(root, 'reconnect', f)),
+      ...readdirSync(path.join(root, 'reconnect'))
+        .filter(f => /\.(ts|tsx)$/.test(f) && f !== 'states.tsx')
+        .map(f => path.join(root, 'reconnect', f)),
       path.join(root, 'demo.ts'),
       path.join(root, 'showWelcome.ts'),
       path.join(root, 'ZeroAccounts.tsx'),
     ];
     for (const file of files) {
-      const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      assert.doesNotMatch(code, /Sync\/request|sync\.request|\.sync\b/, `${path.basename(file)} must not ask for a sync`);
+      const code = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      assert.doesNotMatch(
+        code,
+        /Sync\/request|sync\.request|\.sync\b/,
+        `${path.basename(file)} must not ask for a sync`,
+      );
     }
   });
 });

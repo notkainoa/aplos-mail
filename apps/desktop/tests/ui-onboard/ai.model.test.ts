@@ -23,8 +23,18 @@ import {
   type AiState,
 } from '../../src/renderer/onboarding/steps/ai.model';
 
-const base = { keyOptional: false, trainsOnInputs: false, sttCapable: false, local: false } as const;
-const hosted = (id: string, label: string, envVar: string, keySource: AiProvider['keySource'] = 'none'): AiProvider => ({
+const base = {
+  keyOptional: false,
+  trainsOnInputs: false,
+  sttCapable: false,
+  local: false,
+} as const;
+const hosted = (
+  id: string,
+  label: string,
+  envVar: string,
+  keySource: AiProvider['keySource'] = 'none',
+): AiProvider => ({
   ...base,
   id,
   label,
@@ -34,7 +44,9 @@ const hosted = (id: string, label: string, envVar: string, keySource: AiProvider
   status: keySource === 'none' ? 'missingKey' : 'ready',
 });
 
-function table(over: { groq?: AiProvider['keySource']; openai?: AiProvider['keySource'] } = {}): AiProvider[] {
+function table(
+  over: { groq?: AiProvider['keySource']; openai?: AiProvider['keySource'] } = {},
+): AiProvider[] {
   return [
     hosted('groq', 'Groq', 'GROQ_API_KEY', over.groq ?? 'env'),
     hosted('openai', 'ChatGPT (OpenAI)', 'OPENAI_API_KEY', over.openai ?? 'none'),
@@ -144,11 +156,12 @@ describe('providers', () => {
 });
 
 describe('what Continue writes', () => {
-  test('Ask, Summaries, Drafts and Plans go to the chosen provider\'s default model', () => {
+  test("Ask, Summaries, Drafts and Plans go to the chosen provider's default model", () => {
     const choice = currentChoice(state({ chosen: 'anthropic' }), inputs());
     assert.deepEqual(choice, { provider: 'anthropic', model: 'claude-haiku-5-5' });
     const f = featuresFor(choice!, inputs());
-    for (const k of ['ask', 'summaries', 'drafts', 'plans'] as const) assert.deepEqual(f?.[k], choice);
+    for (const k of ['ask', 'summaries', 'drafts', 'plans'] as const)
+      assert.deepEqual(f?.[k], choice);
   });
 
   test('the default chat model skips speech models', () => {
@@ -166,7 +179,10 @@ describe('what Continue writes', () => {
 
   test('Voice stays as it was when neither has a key (the contract cannot unset it)', () => {
     const current = { provider: 'groq', model: 'whisper-large-v3-turbo' };
-    const i = inputs({ providers: table({ groq: 'none', openai: 'none' }), features: { ...FEATURES, voice: current } });
+    const i = inputs({
+      providers: table({ groq: 'none', openai: 'none' }),
+      features: { ...FEATURES, voice: current },
+    });
     assert.deepEqual(voiceChoice(i), current);
   });
 
@@ -182,12 +198,29 @@ describe('consent card (plan 30 4.5 row 1)', () => {
   test('asks unless a current consent names this provider and model', () => {
     assert.equal(needsConsent(undefined, choice), true);
     assert.equal(needsConsent(consent(), choice), true);
-    assert.equal(needsConsent(consent({ granted: true, provider: 'groq', model: 'openai/gpt-oss-120b' }), choice), false);
     assert.equal(
-      needsConsent(consent({ granted: true, provider: 'groq', model: 'openai/gpt-oss-120b', needsReconsent: true }), choice),
+      needsConsent(
+        consent({ granted: true, provider: 'groq', model: 'openai/gpt-oss-120b' }),
+        choice,
+      ),
+      false,
+    );
+    assert.equal(
+      needsConsent(
+        consent({
+          granted: true,
+          provider: 'groq',
+          model: 'openai/gpt-oss-120b',
+          needsReconsent: true,
+        }),
+        choice,
+      ),
       true,
     );
-    assert.equal(needsConsent(consent({ granted: true, provider: 'openai', model: 'gpt-5-mini' }), choice), true);
+    assert.equal(
+      needsConsent(consent({ granted: true, provider: 'openai', model: 'gpt-5-mini' }), choice),
+      true,
+    );
   });
 
   test('onb-consent-record: Allow grants background scope with the version, provider and model shown', () => {
@@ -211,7 +244,10 @@ describe('consent card (plan 30 4.5 row 1)', () => {
   });
 
   test('written with consent needed opens the card and remembers where it came from', () => {
-    const s = reduceAi(state({ view: 'hosted', chosen: 'anthropic' }), { type: 'written', consent: true });
+    const s = reduceAi(state({ view: 'hosted', chosen: 'anthropic' }), {
+      type: 'written',
+      consent: true,
+    });
     assert.equal(s.view, 'consent');
     assert.equal(s.consentFrom, 'hosted');
   });
@@ -228,7 +264,11 @@ describe('Esc inside the step', () => {
     assert.equal(fromHosted.state.keyDraft, '');
     const more = aiEsc(state({ moreOpen: true }));
     assert.equal(more.state.moreOpen, false);
-    assert.notEqual(more.state.focusNonce, 0, 'focus moves because the focused control was hidden (F12)');
+    assert.notEqual(
+      more.state.focusNonce,
+      0,
+      'focus moves because the focused control was hidden (F12)',
+    );
     assert.equal(aiEsc(initialAi()).handled, false);
   });
 
@@ -236,7 +276,14 @@ describe('Esc inside the step', () => {
     const before = aiView(initialAi(), inputs()).focusKey;
     assert.equal(aiView(reduceAi(initialAi(), { type: 'toggleMore' }), inputs()).focusKey, before);
     assert.equal(
-      aiView(reduceAi(initialAi(), { type: 'testDone', provider: 'groq', test: { kind: 'works', ms: 1 } }), inputs()).focusKey,
+      aiView(
+        reduceAi(initialAi(), {
+          type: 'testDone',
+          provider: 'groq',
+          test: { kind: 'works', ms: 1 },
+        }),
+        inputs(),
+      ).focusKey,
       before,
     );
     assert.notEqual(aiView(state({ view: 'consent' }), inputs()).focusKey, before);

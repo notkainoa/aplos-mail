@@ -15,13 +15,7 @@ import type { ConnectFrame, Input, Output } from '../data';
 import { missingMethod, type FocusTarget } from './flow';
 
 /** The Accounts step's states (onboarding-accounts.html: choose, typed, waiting, connected; plus failed). */
-export type AccountsMode =
-  | 'choose'
-  | 'discovering'
-  | 'typed'
-  | 'waiting'
-  | 'failed'
-  | 'connected';
+export type AccountsMode = 'choose' | 'discovering' | 'typed' | 'waiting' | 'failed' | 'connected';
 
 /** A plain sentence under the address field in the choose state. */
 export type ChooseNotice =
@@ -135,6 +129,7 @@ function cleared(state: AccountsState): AccountsState {
   };
 }
 
+// eslint-disable-next-line complexity -- the step's whole event table; splitting it would scatter the state machine
 export function reduceAccounts(state: AccountsState, event: AccountsEvent): AccountsResult {
   switch (event.type) {
     case 'enter':
@@ -262,14 +257,16 @@ export function accountsEsc(
   state: AccountsState,
   hasAccounts: boolean,
 ): AccountsResult & { handled: boolean } {
-  if (state.mode === 'waiting') return { ...reduceAccounts(state, { type: 'cancel' }), handled: true };
+  if (state.mode === 'waiting')
+    return { ...reduceAccounts(state, { type: 'cancel' }), handled: true };
   const dirty =
     state.mode === 'typed' ||
     state.mode === 'failed' ||
     state.mode === 'discovering' ||
     state.notice !== null ||
     state.address !== '';
-  if (state.mode !== 'connected' && dirty) return { state: cleared(state), effects: [], handled: true };
+  if (state.mode !== 'connected' && dirty)
+    return { state: cleared(state), effects: [], handled: true };
   if (state.mode === 'choose' && hasAccounts) {
     return { state: { ...cleared(state), mode: 'connected' }, effects: [], handled: true };
   }
@@ -330,7 +327,9 @@ export function accountsMain(mode: AccountsMode): AccountsMain {
 }
 
 /** Reads a `connect` frame into the events both reducers take. */
-export function frameEvent(frame: Pick<ConnectFrame, 'connectId' | 'state' | 'reasonCode'>): AccountsEvent {
+export function frameEvent(
+  frame: Pick<ConnectFrame, 'connectId' | 'state' | 'reasonCode'>,
+): AccountsEvent {
   return {
     type: 'frame',
     connectId: frame.connectId,
