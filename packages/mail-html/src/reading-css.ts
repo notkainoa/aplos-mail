@@ -10,7 +10,6 @@ const MEASURED = [
   'position:static',
   'float:none',
   'height:auto',
-  'min-height:0',
   'max-height:none',
   'contain:none',
   'content-visibility:visible',
@@ -20,10 +19,21 @@ function important(declarations: readonly string[]): string {
   return declarations.map(declaration => `${declaration}!important`).join(';');
 }
 
+/** The root's box is what is measured: no margin outside it, no transform scaling it, at least 1 px tall. */
+const ROOT_ONLY = [
+  'min-height:1px',
+  'margin:0',
+  'transform:none',
+  'scale:none',
+  'rotate:none',
+  'translate:none',
+  'overflow-y:hidden',
+];
+
 export const READING_CSS = [
   ':root{color-scheme:light}',
-  `html{${important([...MEASURED, 'overflow-y:hidden'])}}`,
-  `body{${important(MEASURED)}}`,
+  `html{${important([...MEASURED, ...ROOT_ONLY])}}`,
+  `body{${important([...MEASURED, 'min-height:0'])}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',
   'pre{white-space:pre-wrap}',
