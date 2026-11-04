@@ -15,6 +15,8 @@ import { textSegments } from './text';
 import type { FrameSource, MailFrameKey } from './types';
 
 const noop = () => {};
+/** An engine frame token: 32 lowercase hex digits. */
+const TOKEN = '0123456789abcdef0123456789abcdef';
 
 describe('highlight', () => {
   test('marks case-insensitive matches in text only, never in tags or styles', () => {
@@ -255,8 +257,8 @@ describe('frame document', () => {
     const url: FrameSource = {
       kind: 'url',
       key: 'u',
-      url: 'aplos-mail://m/abc',
-      token: 'abc',
+      url: `aplos-mail://m/${TOKEN}/`,
+      token: TOKEN,
       blocked: 0,
     };
     const html = renderToStaticMarkup(<MailFrameView source={url} onReady={noop} onKey={noop} />);
@@ -346,18 +348,30 @@ describe('sourceOfFrame', () => {
 
   test('a URL-only frame (the real engine) becomes a url source with its token', async () => {
     const { sourceOfFrame } = await import('./useFrameSource');
-    const source = sourceOfFrame(
-      'm1|block|',
-      { url: 'aplos-mail://m/AbCdEfGh12345678', trackersRemoved: 3 },
-      'block',
-      undefined,
-    );
+    const url = `aplos-mail://m/${TOKEN}/`;
+    const source = sourceOfFrame('m1|block|', { url, trackersRemoved: 3 }, 'block', undefined);
     assert.deepEqual(source, {
       kind: 'url',
-      key: 'm1|block||aplos-mail://m/AbCdEfGh12345678',
-      url: 'aplos-mail://m/AbCdEfGh12345678',
-      token: 'AbCdEfGh12345678',
+      key: `m1|block||${url}`,
+      url,
+      token: TOKEN,
       blocked: 3,
     });
+  });
+
+  test('a URL outside the engine grammar is refused at once (no token, so no report could match)', async () => {
+    const { sourceOfFrame } = await import('./useFrameSource');
+    for (const url of [
+      'aplos-mail://m/AbCdEfGh12345678',
+      `aplos-mail://m/${TOKEN.toUpperCase()}/`,
+      `aplos-mail://m/${TOKEN}/cid/0`,
+      `https://m/${TOKEN}/`,
+    ]) {
+      assert.equal(
+        sourceOfFrame('m1|block|', { url, trackersRemoved: 0 }, 'block', undefined),
+        null,
+        url,
+      );
+    }
   });
 });
