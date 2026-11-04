@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  FADE_STEPS,
+  FORCE_CLOSE_MS,
   READY_TIMEOUT_MS,
   activation,
   createOnboarding,
+  fadeOpacities,
   isFirstRun,
   settingsPaneUrl,
   startupWindow,
@@ -49,7 +52,17 @@ class FakeWindow implements WindowPort {
   }
 }
 
-function harness(options: { testMode?: boolean } = {}) {
+/** A window that can fade (a real `BrowserWindow` can); the plain `FakeWindow` has no `setOpacity` and closes at once. */
+class FadeWindow extends FakeWindow {
+  opacities: number[] = [];
+  throws = false;
+  setOpacity = (value: number) => {
+    if (this.throws) throw new Error('window is gone');
+    this.opacities.push(value);
+  };
+}
+
+function harness(options: { testMode?: boolean; fade?: boolean } = {}) {
   const log = {
     onboarding: [] as FakeWindow[],
     mail: [] as FakeWindow[],
@@ -62,7 +75,7 @@ function harness(options: { testMode?: boolean } = {}) {
   let mail: FakeWindow | undefined;
   const deps: OnboardingDeps = {
     createOnboarding: () => {
-      const win = new FakeWindow();
+      const win = options.fade ? new FadeWindow() : new FakeWindow();
       log.onboarding.push(win);
       return win;
     },
@@ -291,4 +304,56 @@ test('System/openSettings only names the three fixed panes', () => {
   assert.match(settingsPaneUrl('loginItems'), /LoginItems/);
   for (const bad of ['', 'toString', '__proto__', 'https://evil.example', undefined, 5])
     assert.throws(() => settingsPaneUrl(bad), /Choose a settings pane/);
+});
+
+test('fade: the welcome window thins out step by step after the mail window is up, then closes', async () => {
+  const { controller, log, mailWindow } = harness({ fade: true });
+  controller.start(fresh, { atLogin: false });
+  const handoff = controller.finish();
+  mailWindow()!.paint();
+  const welcome = log.onboarding[0] as FadeWindow;
+  assert.equal(mailWindow()!.visible, true, 'the mail window is on screen before the fade starts');
+  assert.deepEqual(welcome.opacities, [1], 'the first step ran at once');
+  assert.equal(welcome.destroyed, false);
+  for (let step = 1; step <= FADE_STEPS; step++) {
+    const timer = log.timers.filter(t => !t.cleared && t.ms !== FORCE_CLOSE_MS).at(-1)!;
+    timer.run();
+  }
+  await handoff;
+  assert.deepEqual(welcome.opacities, fadeOpacities());
+  assert.equal(welcome.destroyed, true);
+  assert.equal(
+    log.timers.every(timer => timer.cleared || timer.ms !== FORCE_CLOSE_MS),
+    true,
+    'the force-close timer is cleared once the fade ends',
+  );
+});
+
+test('fade: a stalled fade closes the window at FORCE_CLOSE_MS', async () => {
+  const { controller, log, mailWindow } = harness({ fade: true });
+  controller.start(fresh, { atLogin: false });
+  const handoff = controller.finish();
+  mailWindow()!.paint();
+  assert.equal(log.onboarding[0].destroyed, false);
+  log.timers.find(t => t.ms === FORCE_CLOSE_MS && !t.cleared)!.run();
+  await handoff;
+  assert.equal(log.onboarding[0].destroyed, true);
+});
+
+test('fade: a window that fails to take an opacity closes at once; test mode never fades', async () => {
+  const broken = harness({ fade: true });
+  broken.controller.start(fresh, { atLogin: false });
+  (broken.log.onboarding[0] as FadeWindow).throws = true;
+  const handoff = broken.controller.finish();
+  broken.mailWindow()!.paint();
+  await handoff;
+  assert.equal(broken.log.onboarding[0].destroyed, true);
+
+  const quiet = harness({ fade: true, testMode: true });
+  quiet.controller.start(fresh, { atLogin: false });
+  const done = quiet.controller.finish();
+  quiet.mailWindow()!.paint();
+  await done;
+  assert.deepEqual((quiet.log.onboarding[0] as FadeWindow).opacities, []);
+  assert.equal(quiet.log.onboarding[0].destroyed, true);
 });

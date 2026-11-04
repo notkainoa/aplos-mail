@@ -270,6 +270,7 @@ function portOf(win: BrowserWindow): WindowPort {
     show: () => win.show(),
     focus: () => win.focus(),
     close: () => win.close(),
+    setOpacity: value => win.setOpacity(value),
     onReadyToShow: listener => void win.once('ready-to-show', listener),
     onClosed: listener => void win.once('closed', listener),
   };
