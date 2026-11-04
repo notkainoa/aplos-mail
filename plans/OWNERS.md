@@ -47,7 +47,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Lane | Paths |
 |---|---|
-| `ui-onboard` | `apps/desktop/src/renderer/onboarding/**`, `apps/desktop/src/main/windows/onboarding.ts` |
+| `ui-onboard` | `apps/desktop/src/renderer/onboarding/**`, `apps/desktop/tests/ui-onboard/**`, `apps/desktop/src/main/windows/onboarding.ts` |
 | `ui-calendar` | `apps/desktop/src/renderer/screens/calendar/**` |
 | `ui-settings` | `apps/desktop/src/renderer/screens/settings/**` |
 | `ui-ask` | `apps/desktop/src/renderer/screens/{ask,today,palette,search}/**` |
