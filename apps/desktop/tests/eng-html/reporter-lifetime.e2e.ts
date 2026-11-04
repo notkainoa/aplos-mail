@@ -105,7 +105,7 @@ test.describe('the reporter lifetime and cost', () => {
     await expect.poll(async () => (await opened.reports()).length, { timeout: 30_000 }).toBe(60);
     await opened.page.waitForTimeout(3_000);
     const reports = await opened.reports();
-    expect(reports.length).toBe(60, 'nothing posts past the cap');
+    expect(reports.length, 'nothing posts past the cap').toBe(60);
     expect(reports[0].ready).toBe(false); // the first report was delivered at once
     expect(reports[reports.length - 1].h).toBeGreaterThanOrEqual(100);
     await opened.page.close();
