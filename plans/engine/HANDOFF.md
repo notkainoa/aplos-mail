@@ -32,3 +32,9 @@ Lane cards: `plans/lanes/eng-{store,views,ai,time,html,host}.md`; lane plan `pla
 ## Addendum from the old Engine thread (Blob package 4 wiring)
 
 #254 (async outbox reads, `rv/eng-time/blob-outbox-reads`) now carries the Integrator's FIX (`readFailed` re-reads the row and writes nothing on a gone, removing or live-send-pinned draft, plus a backstop in `setMeta`); it is READY for their delta re-check. The WIRING (Draft/set ownership via `services.blobs.owns`, the outbox's production `BlobSource` over `services.blobs.load`) is on branch `rv/eng-time/blob-4-wire` @0c9933ae, written before package 3 merged: with #254 and package 3 on revamp, merge both into it, run `npx tsx --test packages/engine/tests/methods/blob.test.ts packages/engine/tests/outbox/*.test.ts`, then the chain, and open it as its own PR (`lane-approved:eng-time,eng-contract`, Opus review: send path). Constraint: `outbox/draft-owner.ts` spells the refusal sentence out (importing `runtime/blobs` from `methods/` is a cycle; a test pins it to `BLOB_SENTENCES.gone`); `methods/` keeps one file per engine area.
+
+## Follow-ups for eng-host (Integrator NOTICE on #275, which #276 contains)
+
+- **Prune `audit_log` by `at`** in a later host PR (the audit writer, `packages/engine/src/host/audit.ts`, only inserts; the table grows without bound). Age-out by `at` (a fixed window such as 90 days, run from the host module's `start()` and on a timer), inside one transaction, never touching rows newer than the window.
+- **Redact `target` in readers.** `Clients/audit` and the diagnostics bundle must not hand out the raw `target` (a sender, an account or thread id): return the method, client and time, and the target only as a short hash or not at all; add a test with a canary target that must not appear in the reader's output.
+- Do not rebase #275: the Integrator merges #276 (it contains the audit writer) and closes #275 as contained. The writer's field bound is the contract `Id` bound (1000).
