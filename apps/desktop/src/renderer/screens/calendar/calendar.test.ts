@@ -231,9 +231,7 @@ test('review2: saving an edit whose event left the window writes nothing and say
 });
 
 test('a repeating event asks This event or All events and passes the scope through', () => {
-  // A context that also holds the series row ('standup'), so "All events" can be written safely (review1 1).
-  const occ0 = demoWorld.events.find(e => e.seriesId === 'standup')!;
-  const ctx = ctxFor([...demoWorld.events, { ...occ0, id: 'standup', seriesId: undefined }]);
+  const ctx = ctxFor();
   const standup = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
   const ask = update(
     S({ selectedId: standup.id }),
@@ -248,24 +246,20 @@ test('a repeating event asks This event or All events and passes the scope throu
   assert.equal(fx.change.type, 'update');
   if (fx.change.type === 'update') {
     assert.equal(fx.change.scope, 'series');
-    assert.equal(fx.change.id, 'standup');
+    // The occurrence id goes out with the fields the user sees; the engine shifts the series (DECISIONS 2026-11-04).
+    assert.equal(fx.change.id, standup.id);
   }
 });
 
-test('all-events on a move shifts the series by the delta, not the occurrence times', () => {
+test('all-events on a move sends the occurrence’s new times; the engine shifts the series', () => {
   const ctx = ctxFor();
-  const series = { ...ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!, id: 'standup' };
   const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
-  const target = timeChange(
-    occ,
-    {
-      start: { type: 'utc', utc: msOf(occ.start) + 3_600_000 },
-      end: { type: 'utc', utc: msOf(occ.end) + 3_600_000 },
-    },
-    'series',
-    series,
-  );
-  assert.equal(target.id, 'standup');
+  const target = timeChange(occ, {
+    start: { type: 'utc', utc: msOf(occ.start) + 3_600_000 },
+    end: { type: 'utc', utc: msOf(occ.end) + 3_600_000 },
+  });
+  // Never the master: the update keeps the occurrence id and its new absolute times (DECISIONS 2026-11-04).
+  assert.equal(target.id, occ.id);
   assert.ok(target.fields.start && msOf(target.fields.start) === msOf(occ.start) + 3_600_000);
 });
 

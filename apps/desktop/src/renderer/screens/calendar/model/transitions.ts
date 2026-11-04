@@ -1,6 +1,6 @@
 /** The reducer's transitions that write (move, delete, reply, save) and their shared helpers. Internal to the model. */
 import type { EventChange } from '@aplos/contract';
-import { toIsoDateTime, type Event } from '../../../data';
+import { toIsoDateTime, type Event, type EventTime } from '../../../data';
 import type {
   CalendarEventData,
   EventGuest,
@@ -10,17 +10,17 @@ import type {
 } from '../../../ui/props';
 import { draftChange, draftProblem, draftTimes, timesTouched, type EditorDraft } from './editor';
 import { isoOfTime } from './period';
-import { timeChange } from './times';
+import { shiftInZone, timeChange, wallDeltaMs } from './times';
 import { canSendReply, lockedMessage, RESPONSE } from './rsvp';
 import { organizerFirstName, tagFor, walk } from './entries';
 import {
   detailEntry,
   entryById,
   liveRsvp,
-  seriesAloneLine,
   type CalendarContext,
   type CalendarEffect,
   type CalendarState,
+  type OptimisticChange,
   type PendingChange,
   type ScopeAsk,
   type Transition,
@@ -48,17 +48,11 @@ export function closed(state: CalendarState): CalendarState {
   return { ...state, detailId: null, moreOpen: false, stackIds: null, rsvp: null, scope: null };
 }
 
-/** The series row behind a repeating occurrence, when the window holds it. */
-export function seriesOf(event: Event, ctx: CalendarContext): Event | undefined {
-  return event.seriesId ? ctx.events.get(event.seriesId) : undefined;
-}
-
 export function decideScope(
   state: CalendarState,
   entry: CalendarEventData,
   action: ScopeAsk['action'],
   pending: PendingChange,
-  opts: { readonly seriesAlone?: boolean } = {},
 ): CalendarState {
   return {
     ...state,
@@ -68,13 +62,41 @@ export function decideScope(
       action,
       entryId: entry.id,
       pending,
-      ...(opts.seriesAlone ? { seriesAlone: true } : {}),
     },
   };
 }
 
 export function failureFor(verb: 'move' | 'change' | 'delete', title: string): string {
   return `Couldn't ${verb} ${title}.`;
+}
+
+/**
+ * The `more` overlay for scope `series` on a time change: every loaded row of the same series shifted by the same
+ * wall-clock delta in the series' zone (model/times.ts) — the dragged occurrence's old vs new wall times, so a
+ * 10:00 standup stays 10:00 local across a DST change. The engine's own shift applies when the write lands; the
+ * stand-in only moves the one row until the data owner mirrors the rule, so the settled window can briefly
+ * disagree with what this showed.
+ */
+function seriesShift(
+  ctx: CalendarContext,
+  event: Event,
+  next: { readonly start: EventTime; readonly end: EventTime },
+): readonly OptimisticChange[] {
+  const zone = event.timeZone;
+  const dStart = wallDeltaMs(event.start, next.start, zone);
+  const dEnd = wallDeltaMs(event.end, next.end, zone);
+  // The series key is the dragged row's `seriesId` — or its own id when the master itself is dragged, so its
+  // occurrences (whose `seriesId` names it) shift too.
+  const key = event.seriesId ?? event.id;
+  const out: OptimisticChange[] = [];
+  for (const e of ctx.events.values()) {
+    if (e.id === event.id || (e.seriesId ?? e.id) !== key) continue;
+    const patch: Partial<CalendarEventData> = {};
+    if (dStart) patch.start = isoOfTime(shiftInZone(e.start, dStart, e.timeZone ?? zone));
+    if (dEnd) patch.end = isoOfTime(shiftInZone(e.end, dEnd, e.timeZone ?? zone));
+    if (Object.keys(patch).length > 0) out.push({ id: e.id, patch });
+  }
+  return out;
 }
 
 /** The change a move or resize makes, or why it can't, or the scope question first. */
@@ -94,38 +116,29 @@ export function moveTransition(
   if (!event.can.move || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
   if (event.recurring && !scope)
-    return done(
-      decideScope(
-        state,
-        entry,
-        'move',
-        { kind: 'move', start, end },
-        {
-          seriesAlone: event.seriesId !== undefined && seriesOf(event, ctx) === undefined,
-        },
-      ),
-    );
+    return done(decideScope(state, entry, 'move', { kind: 'move', start, end }));
   const startUtc = new Date(start).getTime();
   const endUtc = new Date(end).getTime();
   const scoped = scope ?? 'occurrence';
-  const series = seriesOf(event, ctx);
-  // "All events" on a time move needs the series row to shift it by the delta; without it there is no safe write
-  // (model/times.ts), so the chooser never offers it and a stale choice answers with why instead.
-  if (scoped === 'series' && event.seriesId && !series)
-    return done({ ...state, scope: null }, [{ kind: 'notice', message: seriesAloneLine('move') }]);
-  // Times keep the event's own type and zone; "All events" shifts the series' own times (model/times.ts).
-  const target = timeChange(
-    event,
-    { start: { type: 'utc', utc: startUtc }, end: { type: 'utc', utc: endUtc } },
-    scoped,
-    series,
-  );
+  const next = {
+    start: { type: 'utc', utc: startUtc },
+    end: { type: 'utc', utc: endUtc },
+  } as const;
+  // Times keep the event's own type and zone. Under `series` the update carries this occurrence's new times and
+  // the engine shifts the master's by the wall-clock delta (DECISIONS 2026-11-04); `more` mirrors the shift on
+  // every loaded occurrence until the window settles.
+  const target = timeChange(event, next);
   if (Object.keys(target.fields).length === 0) return done({ ...state, scope: null });
+  const more = scoped === 'series' ? seriesShift(ctx, event, next) : undefined;
   return done({ ...state, scope: null, selectedId: id }, [
     {
       kind: 'eventSet',
       change: { type: 'update', id: target.id, scope: scoped, fields: target.fields },
-      optimistic: { id, patch: { start: toIsoDateTime(startUtc), end: toIsoDateTime(endUtc) } },
+      optimistic: {
+        id,
+        patch: { start: toIsoDateTime(startUtc), end: toIsoDateTime(endUtc) },
+        ...(more && more.length > 0 ? { more } : {}),
+      },
       toast: {
         kind: 'info',
         message: `Moved ${entry.title}`,
@@ -238,25 +251,10 @@ function askEditScope(
   state: CalendarState,
   ctx: CalendarContext,
   draft: EditorDraft,
-  original: Event,
 ): Transition | null {
   const entry = entryById(ctx, draft.eventId);
   if (!entry) return null;
-  return done(
-    decideScope(
-      { ...state, editor: null },
-      entry,
-      'change',
-      { kind: 'edit', draft },
-      {
-        // "All events" stays for a title-or-place edit; only a time change needs the series row (review1 1).
-        seriesAlone:
-          original.seriesId !== undefined &&
-          seriesOf(original, ctx) === undefined &&
-          timesTouched(draft, original),
-      },
-    ),
-  );
+  return done(decideScope({ ...state, editor: null }, entry, 'change', { kind: 'edit', draft }));
 }
 
 /** Pending creates get distinct temp ids even with identical fields, or the second would replace the first (review1 10). */
@@ -321,22 +319,22 @@ export function saveEditor(
   const original = draft.eventId ? ctx.events.get(draft.eventId) : undefined;
   if (draft.mode === 'edit' && !original) return saveGone(state);
   if (original?.recurring && !scope) {
-    const ask = askEditScope(state, ctx, draft, original);
+    const ask = askEditScope(state, ctx, draft);
     if (ask) return ask;
   }
   const scoped = scope ?? 'occurrence';
-  const series = original ? seriesOf(original, ctx) : undefined;
-  if (scoped === 'series' && original?.seriesId && !series && timesTouched(draft, original))
-    return done({ ...closed(state), editor: null }, [
-      { kind: 'notice', message: seriesAloneLine('change') },
-    ]);
-  const change = draftChange(draft, original, scoped, series);
+  const change = draftChange(draft, original, scoped);
   const next = { ...closed(state), editor: null };
   if (!change) return done(next);
   if (change.type === 'create') return createSave(next, ctx, draft, change);
   const entry = entryById(ctx, draft.eventId);
   const title = draft.title.trim();
   const times = draftTimes(draft);
+  // "All events" on a time edit: the same wall-clock shift the engine makes, mirrored on the loaded series.
+  const more =
+    scoped === 'series' && original && timesTouched(draft, original)
+      ? seriesShift(ctx, original, times)
+      : undefined;
   return done({ ...next, selectedId: draft.eventId ?? null }, [
     {
       kind: 'eventSet',
@@ -344,6 +342,7 @@ export function saveEditor(
       optimistic: {
         id: draft.eventId ?? '',
         patch: { title, start: isoOfTime(times.start), end: isoOfTime(times.end) },
+        ...(more && more.length > 0 ? { more } : {}),
       },
       toast: {
         kind: 'info',

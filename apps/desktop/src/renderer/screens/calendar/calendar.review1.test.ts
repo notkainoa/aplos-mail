@@ -11,12 +11,10 @@ import {
   draftFromEvent,
   entriesFor,
   localMs,
-  msOf,
   newDraft,
   periodOf,
   reached,
   reconcileShown,
-  timeChange,
   update,
   viewModel,
   type ShownOverride,
@@ -33,52 +31,24 @@ import { calendarSidebar } from './sidebar';
 import { demoWorld } from './CalendarStates';
 import { boot, ctxAt, ctxFor, NOW, ports, S, testUi, THU } from './calendar.testkit';
 
-test('review1: a time move on a repeating event whose series row is not loaded offers This event only', () => {
-  const ctx = ctxFor();
-  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
-  // The events window holds occurrences only (seriesId 'standup', no master row), like the real window.
-  assert.ok(occ.seriesId !== undefined && !ctx.events.has(occ.seriesId));
-  const ask = update(
-    S({ selectedId: occ.id }),
-    { type: 'move', id: occ.id, start: '2026-10-28T12:00:00', end: '2026-10-28T12:15:00' },
-    ctx,
-  );
-  assert.equal(ask.state.scope?.action, 'move');
-  assert.equal(ask.state.scope?.seriesAlone, true);
-  assert.equal(viewModel(ask.state, ctx).scope?.seriesAlone, true);
-  // A stale "All events" choice answers with why; no write goes out with this day's absolute times.
-  const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
-  assert.equal(
-    chosen.effects.some(fx => fx.kind === 'eventSet'),
-    false,
-  );
-  assert.ok(chosen.effects.some(fx => fx.kind === 'notice' && fx.message.includes('series')));
-  // And the primitive itself never emits absolute occurrence times under series scope.
-  const target = timeChange(
-    occ,
-    {
-      start: { type: 'utc', utc: msOf(occ.start) + 3_600_000 },
-      end: { type: 'utc', utc: msOf(occ.end) + 3_600_000 },
-    },
-    'series',
-    undefined,
-  );
-  assert.deepEqual(target.fields, {});
-});
+// The review1 seriesAlone tests were replaced by calendar.review5.test.ts: the engine DECIDED on 2026-11-04 that
+// scope 'series' carries the occurrence id and the fields the user sees, so "All events" is always offered.
 
-test('review1: a non-time edit on the same occurrence still offers All events', () => {
+test('review1: a non-time edit on an occurrence still offers All events', () => {
   const ctx = ctxFor();
   const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
   const draft = { ...draftFromEvent(occ), title: 'Standup renamed' };
   const ask = update(S({ editor: draft, selectedId: occ.id }), { type: 'editorSave' }, ctx);
   assert.equal(ask.state.scope?.action, 'change');
-  assert.notEqual(ask.state.scope?.seriesAlone, true);
   const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
   const fx = chosen.effects.find(f => f.kind === 'eventSet');
   assert.ok(fx && fx.kind === 'eventSet' && fx.change.type === 'update');
   if (fx.kind === 'eventSet' && fx.change.type === 'update') {
     assert.equal(fx.change.scope, 'series');
+    assert.equal(fx.change.id, occ.id);
     assert.deepEqual(fx.change.fields, { title: 'Standup renamed' });
+    // A title-only change shifts no occurrence: the overlay touches just the edited one.
+    assert.equal(fx.optimistic.more, undefined);
   }
 });
 
