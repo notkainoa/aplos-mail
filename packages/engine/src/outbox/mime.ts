@@ -503,12 +503,15 @@ const ENTITIES: Record<string, string> = {
 };
 
 function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (whole, body: string) => {
-    if (body[0] !== '#') return ENTITIES[body] ?? whole;
-    const code =
-      body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
-    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-  });
+  return text.replace(
+    /&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,7});/gi,
+    (whole, body: string) => {
+      if (body[0] !== '#') return ENTITIES[body] ?? whole;
+      const code =
+        body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
 }
 
 /** Lower-cases ASCII only, so an index in the result is an index in the input (`toLowerCase` can change a length). */

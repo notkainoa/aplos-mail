@@ -60,7 +60,7 @@ describe('resolveImagePolicy', () => {
       JSON.stringify({ mail: { remoteImages: 'allow' } }),
     );
     assert.equal(w.store.read(readRemoteImages), 'allow');
-    for (const value of ['ALLOW', 'load', 'true', 1, true]) {
+    for (const value of ['ALLOW', 'load', 'block', 'yes', 'true', 1, true]) {
       w.rawSql(
         'INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data',
         JSON.stringify({ mail: { remoteImages: value } }),
