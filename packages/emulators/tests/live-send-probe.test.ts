@@ -103,7 +103,7 @@ test('Message-ID kept: one self-addressed send, shape ours, header kept, found b
   assert.ok(!calls.some(x => /delete|trash|drafts|modify|settings/.test(x)), calls.join(', '));
   const [sent] = probeMessages(r.emu);
   assert.ok(sent);
-  const view = r.emu.mailbox.view(r.emu.mailbox.require(sent!.id));
+  const view = r.emu.mailbox.getMessage(sent!.id)!;
   assert.equal(
     view.to.toLowerCase(),
     r.emu.mailbox.emailAddress.toLowerCase(),
