@@ -151,6 +151,11 @@ export interface ToastPlan {
   readonly kind: ToastKind;
   readonly message: string;
   readonly undoable: boolean;
+  /**
+   * The in-flight wording while the engine holds the write (`undoUntil`, a calendar write guests are not
+   * told about yet); `message` lands once the hold ends, like the RSVP toast's held/sent pair (review2 4).
+   */
+  readonly held?: string;
 }
 
 /** An optimistic change to apply at once (DESIGN 5 rule 1) and drop when the receipt or a failure comes back. */
@@ -166,7 +171,7 @@ export type CalendarEffect =
       kind: 'eventSet';
       change: EventChange;
       optimistic: OptimisticChange;
-      /** Toasted with Undo (a delete); else Z still undoes it through the undo stack with `undoLabel`. */
+      /** Every write's own Undo toast (id = opId); `held` words it while the engine holds the write. */
       toast?: ToastPlan;
       undoLabel: string;
       /** The sentence if it is refused: "Couldn't move Q4 review." */

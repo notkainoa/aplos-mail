@@ -117,7 +117,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
         pushToast({
           id: opId,
           kind: fx.toast.kind,
-          message: fx.toast.message,
+          message: fx.toast.held ?? fx.toast.message,
           actions: UNDO_ACTION,
           undoable: true,
         });
@@ -126,7 +126,15 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           opId,
           entryId: fx.optimistic.id,
           call: () =>
-            ports.eventSet({ opId, change: fx.change }).then(out => out.receipt.appliedState),
+            ports.eventSet({ opId, change: fx.change }).then(out => {
+              // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
+              if (
+                fx.toast?.held !== undefined &&
+                (out.receipt.undoUntil === undefined || out.receipt.undoUntil <= getNow())
+              )
+                updateToast(opId, { message: fx.toast.message });
+              return out.receipt.appliedState;
+            }),
           failure: fx.failure,
         },
         ui,

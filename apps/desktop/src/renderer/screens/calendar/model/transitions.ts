@@ -126,6 +126,12 @@ export function moveTransition(
       kind: 'eventSet',
       change: { type: 'update', id: target.id, scope: scoped, fields: target.fields },
       optimistic: { id, patch: { start: toIsoDateTime(startUtc), end: toIsoDateTime(endUtc) } },
+      toast: {
+        kind: 'info',
+        message: `Moved ${entry.title}`,
+        held: `Moving ${entry.title}`,
+        undoable: true,
+      },
       undoLabel: `Moved ${entry.title}`,
       failure: failureFor('move', entry.title),
     },
@@ -284,6 +290,12 @@ function createSave(
       kind: 'eventSet',
       change,
       optimistic: { id: tempId, add: entry },
+      toast: {
+        kind: 'info',
+        message: `Added ${entry.title}`,
+        held: `Adding ${entry.title}`,
+        undoable: true,
+      },
       undoLabel: `Added ${entry.title}`,
       failure: `Couldn't add ${entry.title}.`,
     },
@@ -332,6 +344,12 @@ export function saveEditor(
       optimistic: {
         id: draft.eventId ?? '',
         patch: { title, start: isoOfTime(times.start), end: isoOfTime(times.end) },
+      },
+      toast: {
+        kind: 'info',
+        message: `Changed ${title}`,
+        held: `Changing ${title}`,
+        undoable: true,
       },
       undoLabel: `Changed ${title}`,
       failure: failureFor('change', entry?.title ?? title),

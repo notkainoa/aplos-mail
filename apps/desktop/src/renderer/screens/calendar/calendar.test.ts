@@ -39,7 +39,18 @@ import {
 import { runCalendarEffect } from './effects';
 import { takesInviteAnswerKey } from './keys';
 import { demoWorld } from './CalendarStates';
-import { boot, calRef, ctxAt, ctxFor, newEvent, ports, S, testUi, THU } from './calendar.testkit';
+import {
+  boot,
+  calRef,
+  ctxAt,
+  ctxFor,
+  newEvent,
+  NOW,
+  ports,
+  S,
+  testUi,
+  THU,
+} from './calendar.testkit';
 // ---------------------------------------------------------------------------
 // Views, periods and labels
 // ---------------------------------------------------------------------------
@@ -473,6 +484,71 @@ test('one write is one Undo toast, undone by its own opId, not the newest', asyn
     runToastAction(toasts[0].id, 'undo');
     await flush();
     assert.equal(getToasts().length, 1);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review2: a move, a create and an edit each plan one Undo toast, held then sent', async () => {
+  const ctx = ctxFor();
+  const moved = update(
+    S({ selectedId: 'dental' }),
+    { type: 'move', id: 'dental', start: '2026-10-29T11:00:00', end: '2026-10-29T12:00:00' },
+    ctx,
+  );
+  const mfx = moved.effects.find(f => f.kind === 'eventSet');
+  assert.ok(mfx && mfx.kind === 'eventSet');
+  assert.equal(mfx.toast?.held, 'Moving Northwind Dental');
+  assert.equal(mfx.toast?.message, 'Moved Northwind Dental');
+  assert.equal(mfx.toast?.undoable, true);
+  const created = update(
+    S({ editor: { ...newDraft(THU, NOW, [], 'work'), title: 'Focus' } }),
+    { type: 'editorSave' },
+    ctx,
+  );
+  const cfx = created.effects.find(f => f.kind === 'eventSet');
+  assert.ok(cfx && cfx.kind === 'eventSet' && cfx.toast?.undoable === true);
+  const edited = update(
+    S({ editor: { ...draftFromEvent(ctx.events.get('dental')!), title: 'Cleaning' } }),
+    { type: 'editorSave' },
+    ctx,
+  );
+  const efx = edited.effects.find(f => f.kind === 'eventSet');
+  assert.ok(efx && efx.kind === 'eventSet' && efx.toast?.undoable === true);
+  // The runner pushes the held wording, then the sent one once the write's hold ends.
+  resetToasts();
+  try {
+    runCalendarEffect(
+      {
+        kind: 'eventSet',
+        change: {
+          type: 'update',
+          id: 'dental',
+          scope: 'occurrence',
+          fields: { title: 'Cleaning' },
+        },
+        optimistic: { id: 'dental', patch: { title: 'Cleaning' } },
+        toast: {
+          kind: 'info',
+          message: 'Changed Cleaning',
+          held: 'Changing Cleaning',
+          undoable: true,
+        },
+        undoLabel: 'Changed Cleaning',
+        failure: "Couldn't change Cleaning.",
+      },
+      {
+        ...ports(),
+        eventSet: () =>
+          Promise.resolve({
+            receipt: { opId: 'op', appliedState: { dbEpoch: 'e', seq: 1 } },
+          }),
+      },
+      testUi(),
+    );
+    assert.ok(getToasts().some(t => t.message === 'Changing Cleaning' && t.undoable));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(getToasts().some(t => t.message === 'Changed Cleaning' && t.undoable));
   } finally {
     resetToasts();
   }
