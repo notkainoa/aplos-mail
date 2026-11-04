@@ -35,7 +35,7 @@ function sentenceOf(t: ThreadDbRow): string {
   if (t.rank_source === 'rule') return `Your rule for ${who} puts their mail in ${lane}.`;
   if (t.lane === 'do') {
     if (!t.todo) return `${who} wrote something that looks like it needs your reply.`;
-    return `${who} is waiting on you: ${t.todo.charAt(0).toLowerCase()}${t.todo.slice(1)}.`;
+    return `${who} asked you something: ${t.todo.charAt(0).toLowerCase()}${t.todo.slice(1)}.`;
   }
   if (t.lane === 'low') return `${who} sends notices and newsletters that rarely need you.`;
   return `An update from ${who} worth knowing about, with nothing for you to do.`;

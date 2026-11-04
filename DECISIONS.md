@@ -1130,6 +1130,9 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **`--phase` selects phased probes only.** `SmokeProbe.phased` marks a probe that runs in steps; with `--phase` the runner runs only those, so `--phase inspect --confirm-mutating` cannot authorise any other tier M probe. Without `--phase` nothing changes.
 - **Tests.** Create-stop and two-draft no-verdict, inspect sends only GETs and leaves every draft unchanged, the phase filter (each red under its mutation).
 
+## 2026-11-03 — eng-views: the Do now Why no longer says "waiting on you"
+
+- DESIGN section 10 bans "waiting on you" and the renderer's banned-string check failed on the Do now Why the engine writes. `Thread/why` (`views/why.ts`) and the fixture engine (`contract-fixture/src/methods/mail.ts`) now word a Do now thread with a to-do as "`<name>` asked you something: `<to-do, lower-cased>`." (no to-do: unchanged, "`<name>` wrote something that looks like it needs your reply."). Tests: `views/act.test.ts` (a Do now thread with a to-do, red with the old wording) and `contract-fixture/tests/fixture.test.ts` (no Why in the demo says "waiting on you", and a Do now Why with its to-do shows, so the harness can show it; red with the old wording). The legacy renderer's "Nobody is waiting on you" empty state is the legacy UI's and is left for its replacement.
 ## 2026-11-04 prov-emu: an empty 200 is "no items", not an error (live tier M probe)
 
 - **Bug.** `requestJson` (scripts/live/probes/http.ts) threw class `other` on a 200 with an empty body. Gmail answers a masked `drafts.list` with no drafts (the normal state of the spare account) with exactly that, so the first live tier M run failed before any write on its `drafts.list` pre-check.
