@@ -18,7 +18,7 @@ The design spec is `plans/DESIGN.md` ("Paper"). The visual target is `mockups/*.
 
 No component takes a raw colour, size, radius, duration, shadow or a class name for styling. Every visual choice is a closed string union tied to DESIGN:
 
-- `Button` `variant: 'filled' | 'text' | 'icon'`, `size: 'sm' | 'md' | 'lg'` (28 / 32 / 40 px). The icon variant requires `icon` and a `label`. A Button in a row takes `labelledBy` (the row label's id) or `ariaLabel` (which must start with the visible text, WCAG 2.5.3) so its name keeps the visible text plus the row context.
+- `Button` `variant: 'filled' | 'text' | 'icon'`, `size: 'sm' | 'md' | 'lg'` (28 / 32 / 40 px). The icon variant requires `icon` and a `label`. A Button in a row takes `labelledBy` (the row label's id) or `ariaLabel` (which must contain the visible text, and start with it for voice control, WCAG 2.5.3) so its name keeps the visible text plus the row context.
 - `Density`, `TagColor`, `CommitKind`, `ToastKind`, `Chip` `kind`, `RowLayout`, `SectionHeader` `variant` and `tone`.
 - Icons come from the closed `IconName` set. AI never gets a glyph. It is marked only by the serif and plain words (DESIGN §9).
 
@@ -86,7 +86,7 @@ The UI-screens thread checked every screen it builds against these props (`plans
 
 - `ChoiceGroup` (onboarding): the radiogroup around radio `ChoiceRow`s.
 - `ProgressSegments` variant `'segments'` with `ProgressSegment {label, state, value?}`: plain labelled segments.
-- `ProgressSegments.live` (`'polite'` default | `'off'`, variants `'checkpoints'` and `'segments'`): `'off'` drops the part's own visually hidden `role="status"` (its phase text stays), so a screen showing several accounts renders ONE `role="status"` wrapper around them.
+- `ProgressSegments.live` (`'polite'` default | `'off'`, variants `'checkpoints'`, `'segments'` and `'ready'`): `'off'` drops the part's own `role="status"` (its phase text stays), so a screen showing several accounts owns ONE live region. That wrapper must be `<div aria-live="polite" aria-atomic="false">`, not a bare `role="status"`: status implies `aria-atomic="true"` and would re-read every account whenever one changes.
 - `MiniMonth.marks`: days with events.
 - `SettingRow.paletteId`: the row's palette entry.
 - `PaletteItem.detail` and `PaletteItem.opensPage`: a Settings row's section, and the chevron for nested pages.

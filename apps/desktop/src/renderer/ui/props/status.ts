@@ -184,7 +184,7 @@ export type ProgressSegmentsProps =
       compact?: boolean;
       /** How many accounts are connected. The account's colour dot shows only with two or more (DESIGN decision 16); omitted means one, so no dot. */
       accountCount?: number;
-      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can render ONE role="status" wrapper around them. */
+      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can own ONE live region. That wrapper must be `<div aria-live="polite" aria-atomic="false">`, not a bare role="status" (which implies aria-atomic="true" and would re-read every account whenever one changes). */
       live?: 'polite' | 'off';
     }
   | {
@@ -208,6 +208,8 @@ export type ProgressSegmentsProps =
       variant: 'ready';
       /** 'ready' = "Your mail is ready"; 'connected' = "Account connected". */
       label: 'ready' | 'connected';
+      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can own ONE live region. That wrapper must be `<div aria-live="polite" aria-atomic="false">`, not a bare role="status" (which implies aria-atomic="true" and would re-read every account whenever one changes). */
+      live?: 'polite' | 'off';
       /** Per-account results; the component writes "Newest 50 read · sorted 40 of 40" (sort omitted with no AI). */
       accounts?: readonly (SyncAccount & { read: number; sorted?: { done: number; of: number } })[];
     }
@@ -218,7 +220,7 @@ export type ProgressSegmentsProps =
       segments: readonly ProgressSegment[];
       /** Accessible name of the progressbar, e.g. "jordan@gmail.com sync" (DESIGN §7.12). */
       label: string;
-      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can render ONE role="status" wrapper around them. */
+      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can own ONE live region. That wrapper must be `<div aria-live="polite" aria-atomic="false">`, not a bare role="status" (which implies aria-atomic="true" and would re-read every account whenever one changes). */
       live?: 'polite' | 'off';
     };
 

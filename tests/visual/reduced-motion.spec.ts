@@ -2,8 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { STATES } from './states';
 import { openState } from './support/gallery';
 
-// The status family's reduced-motion resting poses (DESIGN 4.8 `status`: static). Under prefers-reduced-motion the
-// indeterminate runner rests inside its track and the spinner glyph rests upright, both with no animation; with no
+// The status family under reduced motion. The indeterminate runner is static (DESIGN 4.8 `status`, Reduced column):
+// it rests as a centred 30 % bar inside its track with no animation. The Spinner glyph KEEPS turning (DESIGN 11.5:
+// "spinners stay"). DESIGN 4.8 and 11.5 disagree about spinners; 11.5 is followed for the Spinner. With no
 // preference the normal loops are unchanged. The gallery has no 'waiting' state, so the markup is injected into the
 // first-sync state, which already loads the status stylesheet.
 
@@ -13,7 +14,7 @@ if (!state) throw new Error('progress-first-sync state is missing');
 interface Poses {
   track: { left: number; right: number };
   runner: { left: number; right: number; width: number; animation: string };
-  glyph: { animation: string; playState: string; transform: string };
+  glyph: { animation: string; playState: string };
 }
 
 async function poses(page: Page): Promise<Poses> {
@@ -48,7 +49,6 @@ async function poses(page: Page): Promise<Poses> {
       glyph: {
         animation: glyph.animationName,
         playState: glyph.animationPlayState,
-        transform: glyph.transform,
       },
     };
   });
@@ -58,7 +58,9 @@ test.describe('status reduced motion', () => {
   test.describe('reduce', () => {
     test.use({ reducedMotion: 'reduce' });
 
-    test('the runner rests inside its track and the spinner rests upright', async ({ page }) => {
+    test('the runner rests inside its track (4.8) and the spinner keeps turning (11.5)', async ({
+      page,
+    }) => {
       await openState(page, state);
       const p = await poses(page);
       expect(p.runner.animation).toBe('none');
@@ -66,8 +68,8 @@ test.describe('status reduced motion', () => {
       expect(p.runner.left).toBeGreaterThanOrEqual(p.track.left);
       expect(p.runner.right).toBeLessThanOrEqual(p.track.right);
       expect(p.runner.width).toBeLessThan((p.track.right - p.track.left) / 2);
-      expect(p.glyph.playState).toBe('paused');
-      expect(['none', 'matrix(1, 0, 0, 1, 0, 0)']).toContain(p.glyph.transform);
+      expect(p.glyph.animation).toBe('ui-spin');
+      expect(p.glyph.playState).toBe('running');
     });
   });
 

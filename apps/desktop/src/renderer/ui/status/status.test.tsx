@@ -739,9 +739,16 @@ describe('ProgressSegments live regions and account dot', () => {
     // Default unchanged: one role="status" per account.
     assert.equal(count(render(<div>{parts()}</div>), 'role="status"'), 2);
     assert.equal(count(render(<div>{parts('polite')}</div>), 'role="status"'), 2);
-    const wrapped = render(<div role="status">{parts('off')}</div>);
-    assert.equal(count(wrapped, 'role="status"'), 1);
-    assert.equal(count(wrapped, 'aria-live'), 0);
+    // The parent wrapper is polite and non-atomic: a bare role="status" implies aria-atomic="true" and would re-read
+    // every account on each change.
+    const wrapped = render(
+      <div aria-live="polite" aria-atomic="false">
+        {parts('off')}
+      </div>,
+    );
+    assert.equal(count(wrapped, 'role="status"'), 0);
+    assert.equal(count(wrapped, 'aria-live="polite"'), 1);
+    assert.match(wrapped, /^<div aria-live="polite" aria-atomic="false">/);
     // The phase text and the visible lines stay.
     assert.match(wrapped, new RegExp(`${GM.address}: found recent mail\\.`));
     assert.match(wrapped, /Reading your newest mail · 10 of 50/);
@@ -756,6 +763,12 @@ describe('ProgressSegments live regions and account dot', () => {
     );
     assert.equal(count(seg, 'role="status"'), 0);
     assert.match(seg, /jordan@gmail\.com sync paused\./);
+    const ready = (live?: 'polite' | 'off') =>
+      render(<ProgressSegments variant="ready" label="ready" live={live} />);
+    assert.equal(count(ready(), 'role="status"'), 1);
+    assert.equal(count(ready('polite'), 'role="status"'), 1);
+    assert.equal(count(ready('off'), 'role="status"'), 0);
+    assert.match(ready('off'), /Your mail is ready/);
   });
 
   it('the account dot shows only with two or more accounts', () => {
