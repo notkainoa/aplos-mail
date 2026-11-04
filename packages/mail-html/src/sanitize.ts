@@ -1,4 +1,5 @@
 import type { CSSToken } from '@csstools/css-tokenizer';
+import { keepsBodyDeclaration } from './body-style';
 import { cssTokens, keepDeclarations, readDeclarations, sanitizeCss } from './css';
 import { escapeAttribute } from './escape';
 import { markText, type Finder } from './find';
@@ -314,12 +315,14 @@ class Walker {
 
   /**
    * `style` and `background`, both of which can name images. The frame body's `style` keeps only the
-   * properties of `BODY_STYLE_PROPERTIES` (`body` true): an element's own style attribute outranks every
+   * properties of `body-style.ts` (`body` true): an element's own style attribute outranks every
    * cascade layer, `!important` or not, so nothing in it may touch what the reading layer guards.
    */
   private urlAttributes(element: ElementNode, body = false): string[] {
     const parts: string[] = [];
-    const clean = this.cleanStyle(element.attrs.get('style'), body);
+    const clean = body
+      ? this.bodyStyle(element.attrs.get('style'))
+      : this.cleanStyle(element.attrs.get('style'));
     if (clean && this.styleAttributeChars + clean.length <= LIMITS.maxChars) {
       this.styleAttributeChars += clean.length;
       parts.push(attribute('style', clean));
@@ -336,15 +339,25 @@ class Walker {
     return this.ownOutput ? value : scopeClassList(value);
   }
 
-  private cleanStyle(style: string | undefined, body = false): string {
+  private cleanStyle(style: string | undefined): string {
     if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
-    const key = body ? `!${style}` : style;
-    let clean = this.cleanStyles.get(key);
+    let clean = this.cleanStyles.get(style);
     if (clean === undefined) {
-      const text = body ? keepDeclarations(style, bodyStyleProperty, this.tokensOf(style)) : style;
-      clean = sanitizeCss(text, this.images, body ? undefined : this.tokensOf(style)).trim();
-      this.cleanStyles.set(key, clean);
+      clean = sanitizeCss(style, this.images, this.tokensOf(style)).trim();
+      this.cleanStyles.set(style, clean);
     }
+    return clean.length > MAX_STYLE_ATTRIBUTE ? '' : clean;
+  }
+
+  /**
+   * The frame body's style: the allowed declarations only (`keepsBodyDeclaration`). Not cached, and
+   * never through `cleanStyles`: that map is keyed by the style text, so a shared key would hand the body
+   * another element's unfiltered result for the same text.
+   */
+  private bodyStyle(style: string | undefined): string {
+    if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
+    const text = keepDeclarations(style, keepsBodyDeclaration, this.tokensOf(style));
+    const clean = sanitizeCss(text, this.images).trim();
     return clean.length > MAX_STYLE_ATTRIBUTE ? '' : clean;
   }
 
@@ -401,18 +414,6 @@ class Walker {
  * `dir` and `lang` on the frame's own `<html>` and `<body>` must be what they say: short, so the
  * `<meta charset>` stays inside the first 1,024 bytes where the browser looks for it.
  */
-/**
- * What the frame body's own `style` may set: its colours, margins, padding and type. Not position, insets,
- * size, display, float, writing mode, zoom, transforms, containment or overflow: the reading layer fixes
- * those, and a style attribute would outrank it.
- */
-const BODY_STYLE_PROPERTIES =
-  /^(?:background(?:-[a-z]+)*|color|margin(?:-[a-z]+)*|padding(?:-[a-z]+)*|font(?:-[a-z]+)*|text-align|line-height)$/;
-
-function bodyStyleProperty(name: string): boolean {
-  return BODY_STYLE_PROPERTIES.test(name);
-}
-
 function rootValueOk(name: string, value: string): boolean {
   if (name === 'dir') return /^(?:ltr|rtl|auto)$/i.test(value);
   if (name === 'lang') return /^[A-Za-z0-9-]{1,35}$/.test(value);

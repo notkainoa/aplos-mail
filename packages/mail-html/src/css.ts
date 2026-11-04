@@ -73,12 +73,12 @@ const HEIGHT_FEATURES = new Set([
 ]);
 const QUERY_AT_RULES = new Set(['media', 'container']);
 /**
- * `writing-mode` outside the root turns a block's length into its width and back: vertical text in a
+ * `writing-mode` outside the root (under any vendor prefix: Chromium honours `-epub-writing-mode` and `-webkit-writing-mode` as aliases) turns a block's length into its width and back: vertical text in a
  * `div` grows 182, 214, 246 px ... for ever as the frame follows it. The property name becomes a custom
  * property (`--m-writing-mode`), which does nothing. Vertical text is lost to mail; the root and body are
  * kept horizontal by the reading layer anyway.
  */
-const WRITING_MODES = new Set(['writing-mode', '-webkit-writing-mode']);
+const WRITING_MODE = /writing-mode$/;
 
 const enum Structure {
   None = 0,
@@ -327,7 +327,7 @@ class CssWriter {
   /** A height feature in a query prelude, or a `writing-mode` property name (an identifier before a colon). */
   private unsafeName(lower: string): boolean {
     if (this.queryFeatures) return HEIGHT_FEATURES.has(lower);
-    if (!WRITING_MODES.has(lower)) return false;
+    if (lower.startsWith('--') || !WRITING_MODE.test(lower)) return false;
     let next = this.at + 1;
     while (this.isSpace(next)) next++;
     return this.tokens[next]?.[0] === TokenType.Colon;
@@ -491,7 +491,7 @@ function cleanValue(value: string): string {
  */
 export function keepDeclarations(
   css: string,
-  allowed: (name: string) => boolean,
+  allowed: (name: string, value: readonly CSSToken[]) => boolean,
   tokens = cssTokens(css),
 ): string {
   const kept: string[] = [];
@@ -504,21 +504,27 @@ export function keepDeclarations(
       if (type === TokenType.Semicolon && blocks.depth === 0) break;
       blocks.read(type);
     }
+    const head = declarationHead(tokens, start, index);
     const text = tokens
       .slice(start, index)
       .map(token => token[1])
       .join('');
-    if (allowed(declarationName(tokens, start, index))) kept.push(text);
+    if (head && allowed(head.name, tokens.slice(head.valueFrom, index))) kept.push(text);
     index++;
   }
   return kept.join(';');
 }
 
-/** The lowercase property name a declaration in `tokens[from, to)` starts with, or '' when it has none. */
-function declarationName(tokens: CSSToken[], from: number, to: number): string {
+/** The lowercase property name a declaration in `tokens[from, to)` starts with, and where its value starts. */
+function declarationHead(
+  tokens: CSSToken[],
+  from: number,
+  to: number,
+): { name: string; valueFrom: number } | undefined {
   let at = skipSpace(tokens, from);
   const name = tokens[at];
   at = skipSpace(tokens, at + 1);
-  if (at >= to || name?.[0] !== TokenType.Ident || tokens[at]?.[0] !== TokenType.Colon) return '';
-  return asciiLower(name[4].value);
+  if (at >= to || name?.[0] !== TokenType.Ident || tokens[at]?.[0] !== TokenType.Colon)
+    return undefined;
+  return { name: asciiLower(name[4].value), valueFrom: at + 1 };
 }

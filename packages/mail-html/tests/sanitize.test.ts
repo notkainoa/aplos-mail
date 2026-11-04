@@ -311,6 +311,21 @@ describe('elements and attributes', () => {
       '/* c */ position /* c */ : fixed',
       'all:unset',
       'width:0',
+      // Unknown names under a known prefix, and type sizes past the bound.
+      'font-size-adjust:1000',
+      'font-foo:1',
+      'margin-foo:5px',
+      'padding-inline-foo:5px',
+      'background-foo:1',
+      'font-size:300px',
+      'font-size:20em',
+      'font-size:2000%',
+      'font-size:calc(1px + 2px)',
+      'line-height:50',
+      'line-height:300px',
+      'font:14px/50 Arial',
+      'font:300px Arial',
+      'font-size:100vh',
     ];
     for (const declaration of dropped) {
       assert.equal(
@@ -323,6 +338,15 @@ describe('elements and attributes', () => {
         /<body style=/,
       );
     }
+    // Type inside the bound stays.
+    assert.equal(
+      bodyStyle('font-size:200px;line-height:10;font:700 14px/1.4 Arial;margin-block-start:3px'),
+      'font-size:200px;line-height:10;font:700 14px/1.4 Arial;margin-block-start:3px',
+    );
+    assert.equal(
+      bodyStyle('font-size:150%;line-height:150%;font-size:2em'),
+      'font-size:150%;line-height:150%;font-size:2em',
+    );
     // A `;` inside a string or function does not end a declaration early, nor smuggle one in.
     assert.equal(
       bodyStyle('background:url(a;position:fixed);color:red'),
@@ -340,6 +364,24 @@ describe('elements and attributes', () => {
     assert.match(html('<td style="zoom:2;color:red !important">x</td>').document, /zoom:2/);
     // A <style> rule is not an element's own style attribute: the layer already outranks it.
     assert.match(html('<style>body{margin:0!important}</style>').document, /margin:0!important/);
+  });
+
+  it("never hands the body another element's unfiltered style, whatever the order or the text", () => {
+    const guarded =
+      'position:fixed!important;top:0!important;bottom:-50px!important;zoom:1000!important';
+    for (const prefix of ['!x;', '!', '!x;margin:0;', ';', ' !', '!!']) {
+      const element = `<div style="!${prefix}${guarded}">a</div>`;
+      const body = `<body style="${prefix}${guarded}"><p>b</p></body>`;
+      for (const document of [html(element + body).document, html(body + element).document]) {
+        const style = document.match(/<body style="([^"]*)"/)?.[1] ?? '';
+        assert.doesNotMatch(style, /position|top|bottom|zoom/, `${prefix} -> ${style}`);
+      }
+      // Both elements with the very same text: the div keeps it, the body does not.
+      const same = `<div style="${prefix}${guarded}">a</div><body style="${prefix}${guarded}"><p>b</p></body>`;
+      const result = html(same).document;
+      assert.match(result, /<div style="[^"]*position:fixed/);
+      assert.doesNotMatch(result.match(/<body style="([^"]*)"/)?.[1] ?? '', /position|zoom/);
+    }
   });
 
   it('keeps body colours and drops body handlers', () => {

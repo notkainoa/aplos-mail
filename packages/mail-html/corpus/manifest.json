@@ -1616,5 +1616,35 @@
       "mustKeepText": ["The root reports a fixed 5,000 px"],
       "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Pre-existing, from the review. contain:none and content-visibility:visible on the root and the body."
     }
+  },
+  {
+    "id": "164-body-style-shares-an-elements-style-text",
+    "title": "A div and the body whose style attributes differ only by a leading marker",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/164-body-style-shares-an-elements-style-text.html",
+    "expect": {
+      "mustKeepText": ["The body then asks for the same declarations"],
+      "notes": "From the second independent review of the reading layer. HIGH: the body's filtered style was cached under '!' + its text while every other element's unfiltered style was cached under the bare text, so a div with style=\"!x;P\" planted its unfiltered result under the key a later <body style=\"x;P\"> looked up, and the body kept position:fixed!important and zoom:1000!important (268 reports, 650 to 13,800 px, still growing). The body's style is no longer cached at all (sanitize.ts bodyStyle); the other caches (styleTokens, hidingStyles, cleanStyles) are each keyed by the style text for one transformation, images.ts keeps separate maps per kind."
+    }
+  },
+  {
+    "id": "165-vendor-prefixed-writing-modes",
+    "title": "Vertical Japanese text under -epub-writing-mode and other prefixed aliases",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/165-vendor-prefixed-writing-modes.html",
+    "expect": {
+      "mustKeepText": ["Aliases of writing-mode turn a block sideways"],
+      "notes": "From the second independent review of the reading layer. MEDIUM: Chromium honours -epub-writing-mode (and -webkit-writing-mode) as aliases of writing-mode, and only the unprefixed and -webkit- names were renamed; the -epub- block hit the host's 303-report cap (632 to 5,400 px). Every property whose name ends in writing-mode, under any prefix, escape or case, becomes a custom property. Measured: text-orientation, text-combine-upright, glyph-orientation-vertical, direction with unicode-bidi, -webkit-line-break and -webkit-box-orient settle on their own (no vertical mode without writing-mode)."
+    }
+  },
+  {
+    "id": "166-body-type-sizes-past-the-bound",
+    "title": "A body style with a 3,000 px font, a line height of 100 and a 900 px font shorthand",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/166-body-type-sizes-past-the-bound.html",
+    "expect": {
+      "mustKeepText": ["Huge type on the body is left out"],
+      "notes": "From the second independent review of the reading layer. LOW: the body style's font-*, margin-* and padding-* were prefix patterns, so font-size-adjust:1000 (16,917 px) or a huge font-size or line-height (8,566 px) passed: stable but tall. The allowlist is now explicit names, and font-size, line-height and font are bounded (200 px or the equivalent in other units, a unitless line height of 10, no functions); margin and padding are not bounded (a spacer div can be as tall)."
+    }
   }
 ]

@@ -237,8 +237,11 @@ function unscopedLayerNames(token: CSSToken, tokens: CSSToken[], index: number):
  * The frame body's style attribute outranks every cascade layer, so it may set only colours, margins,
  * padding and type. Any other property name at the top level of the attribute is a finding.
  */
-const BODY_STYLE_OK =
-  /^(?:background(?:-[a-z]+)*|color|margin(?:-[a-z]+)*|padding(?:-[a-z]+)*|font(?:-[a-z]+)*|text-align|line-height)$/;
+const BODY_STYLE_OK = new RegExp(
+  '^(?:background(?:-(?:color|image|repeat|position|size|attachment|origin|clip))?' +
+    '|color|(?:margin|padding)(?:-(?:top|right|bottom|left|block|block-start|block-end|inline|inline-start|inline-end))?' +
+    '|font(?:-(?:family|size|style|weight|variant))?|line-height|text-align)$',
+);
 
 function bodyStyleProblems(css: string): string[] {
   const tokens = tokenize({ css }, { onParseError: () => undefined });

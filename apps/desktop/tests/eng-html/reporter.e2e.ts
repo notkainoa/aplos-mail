@@ -490,6 +490,8 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
     ],
     ['148', 'zoom:1000 !important;margin:0;background:#eef2f7'],
     ['149', 'writing-mode:vertical-lr!important;margin-bottom:-50px;color:#222'],
+    // The same text on a div before the body: the body must not be handed that element's unfiltered style.
+    ['164', 'position:fixed!important;top:0!important;bottom:-50px!important'],
   ] as const;
 
   for (const [id, style] of inline) {
@@ -523,6 +525,23 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
       await opened.page.close();
     });
   }
+
+  test('166: type sizes past the bound never reach the frame body, and a huge font would inflate it', async () => {
+    const document = frameDocument(entry('166').html ?? '');
+    expect(document).not.toMatch(/<body[^>]*font/);
+    const opened = await bed.open({ document });
+    const reports = await opened.settled(5_000);
+    expect(reports[reports.length - 1].h).toBeLessThan(400);
+    await opened.page.close();
+    const huge = document.replace(
+      /<body[^>]*>/,
+      () => '<body style="font:900px/100 Arial;margin:0">',
+    );
+    const control = await bed.open({ document: huge });
+    const inflated = await control.settled(5_000);
+    expect(inflated[inflated.length - 1].h).toBeGreaterThan(5_000);
+    await control.page.close();
+  });
 
   // Item 1: what the root's box leaves out. The body is positioned, so its scroll height takes in positioned and
   // transformed content; the control reports the root's box alone.
@@ -620,11 +639,12 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
     ['160', 'a max-height media query'],
     ['161', 'an orientation media query'],
     ['162', 'a staircase of min-height media rules'],
+    ['165', 'vendor-prefixed writing-mode aliases'],
   ] as const;
 
   const original = (document: string) =>
     document.replace(
-      /--m-(writing-mode|[a-z-]*height|orientation|aspect-ratio)/g,
+      /--m-([a-z-]*writing-mode|[a-z-]*height|orientation|aspect-ratio)/g,
       (_all, name: string) => name,
     );
 

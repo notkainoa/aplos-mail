@@ -490,6 +490,13 @@ describe('height-following media features and writing modes', () => {
     const cases: [string, string][] = [
       ['a{writing-mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
       ['a{-webkit-writing-mode:vertical-lr}', 'a{--m--webkit-writing-mode:vertical-lr}'],
+      ['a{-epub-writing-mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
+      ['a{-EPUB-Writing-Mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
+      [
+        'a{-moz-writing-mode:vertical-rl;x-writing-mode:y}',
+        'a{--m--moz-writing-mode:vertical-rl;--m-x-writing-mode:y}',
+      ],
+      ['a{\\2d epub-writing-mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
       ['a{WRITING-MODE : vertical-rl !important}', 'a{--m-writing-mode : vertical-rl !important}'],
       ['a{writing\\2d mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
       ['a{writing-mode/**/:vertical-rl}', 'a{--m-writing-mode/**/:vertical-rl}'],
@@ -501,6 +508,8 @@ describe('height-following media features and writing modes', () => {
       'a{writing-mode}',
       'a{will-change:writing-mode,height}',
       'a{b:writing-mode}',
+      'a{--writing-mode:vertical-rl}',
+      'a{text-orientation:upright;text-combine-upright:all}',
     ];
     for (const input of same) assert.equal(clean(input).css, input, input);
   });
