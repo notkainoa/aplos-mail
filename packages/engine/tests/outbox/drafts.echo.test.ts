@@ -331,11 +331,36 @@ test('fingerprint: the same content as the writer produces it hashes the same (l
       fingerprintOf(fields({ html: '' })),
       `${markup} is content, not an empty body`,
     );
-  // Attributes on empty containers are ignored: a styled-but-empty p is still empty.
+  // Decorative attributes are ignored: a styled-but-empty p is still empty.
   assert.equal(
     fingerprintOf(fields({ html: '<p style="color:red"></p>' })),
     fingerprintOf(fields({ html: '' })),
   );
+  // But a reference attribute is content wherever it sits.
+  for (const markup of [
+    '<div style="background-image:url(cid:x.png)"></div>',
+    '<body background="cid:logo.png"></body>',
+    '<span style="display:block;background:url(http://t/p.gif)"></span>',
+    '<p poster="x.png"></p>',
+  ])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} references content`,
+    );
+  // Emptied-editor containers suppress like <p></p>.
+  for (const markup of [
+    '<blockquote><br></blockquote>',
+    '<h2><br></h2>',
+    '<pre></pre>',
+    '<section></section>',
+    '<dl><dt></dt><dd></dd></dl>',
+  ])
+    assert.equal(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is trivially empty`,
+    );
   // isEmpty shares the rule: an image-only draft is content and does upload.
   assert.equal(
     isEmpty(
