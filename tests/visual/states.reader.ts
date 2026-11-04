@@ -305,7 +305,8 @@ export const readerStates: readonly VisualState[] = [
   {
     id: 'reader-rich-attachment-failed',
     frame: 'shell',
-    title: 'Reader, rich: the zip failed to download, the other two chips stay quiet',
+    title:
+      'Reader, rich: the zip failed to download, the other two chips stay quiet; scrolled to the end of the thread',
     components: ['ThreadMessage', 'Chip'],
     design: '7.5',
     mockup: 'reader.html (default)',

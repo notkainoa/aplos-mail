@@ -83,13 +83,18 @@ const EXCERPT_LIMIT = 150;
 /** Where a sentence ends: terminal punctuation (with any closing quote) followed by a space. */
 const SENTENCE_END = /[.!?]["')\]]*(?=\s|$)/g;
 
+/** A salutation that opens a message ("Hi Alex,", "Hello Mina and Jordan,", "Dear Ms Park:", "Hey,"): not a sentence. */
+const SALUTATION =
+  /^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^.!?,:\n]{0,40}[,:!]\s+/i;
+
 /**
- * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message,
- * whitespace collapsed, cut at a word when it runs long, and always ending in "…". Taken from the message's own
- * snippet, so a folded card never loads its body.
+ * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message after
+ * its salutation, whitespace collapsed, cut at a sentence end when two fit and at a word when a sentence runs long,
+ * and always ending in "…". Taken from the message's own snippet, so a folded card never loads its body.
  */
 export function excerptOf(message: Pick<Message, 'snippet'>): string {
-  const text = message.snippet.replace(/\s+/g, ' ').trim();
+  const all = message.snippet.replace(/\s+/g, ' ').trim();
+  const text = all.replace(SALUTATION, '') || all;
   const ends = [...text.matchAll(SENTENCE_END)].map(m => (m.index ?? 0) + m[0].length);
   let end = ends[0] ?? text.length;
   const second = ends[1];

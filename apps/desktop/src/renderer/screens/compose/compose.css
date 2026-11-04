@@ -101,11 +101,14 @@
 .aplos-compose[data-cards='a'] .ui-composer__subject {
   margin-top: var(--space-1);
 }
-/* The draft strip hangs off the card's bottom edge: the card gives up its bottom corners and its gap below. */
+/* The footer's Send and icons sit on the card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+.aplos-compose:not([data-cards='off']) .ui-composer__foot .ui-compose-footer {
+  box-sizing: border-box;
+  padding-inline: var(--space-6) var(--space-5);
+}
+/* The draft strip hangs off the card's bottom edge: the card keeps its corners and gives up its gap below. */
 .aplos-compose:not([data-cards='off']) .ui-composer__page:has(+ .ui-suggestion) {
   margin-bottom: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
 }
 
 :root[data-theme='dark'] .aplos-compose:not([data-cards='off']) .ui-composer__page {

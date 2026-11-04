@@ -77,7 +77,7 @@ export interface ReaderActions {
 }
 
 /** Home's Follow up section suggests this; the reply opens with the nudge as dim text. */
-const FOLLOW_UP_VERB = 'Reply with a nudge';
+export const FOLLOW_UP_VERB = 'Reply with a nudge';
 const NUDGE: ReplyRequest = { ...PLAIN_REPLY, suggest: { kind: 'followUp' } };
 
 /** What happens to a thread that left when its write is undone (it comes back and the reader opens it) or refused (it comes back where it was). */

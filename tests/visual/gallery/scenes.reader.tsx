@@ -19,6 +19,7 @@ import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectDataLayer } from '../../../apps/desktop/src/renderer/data/connect';
 import { inProcessTransport } from '../../../apps/desktop/src/renderer/data/client';
 import { withNativeStubs } from '../../../apps/desktop/src/renderer/data/native-stub';
+import { NEW_MESSAGE_DRAFT, seedNewMessageDraft } from './seedDraft';
 import { connectStandIn } from '../../../apps/desktop/src/renderer/data/standin';
 import { openCompose, openThread, updateToast } from '../../../apps/desktop/src/renderer/shell';
 import { getToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
@@ -32,7 +33,6 @@ import { DictatingScene, REPLY_TEXT } from './scenes.dictating';
 import {
   ALEX,
   DEMO,
-  NEW_MESSAGE,
   REPLY_DRAFT,
   type DemoEvent,
   type DemoKey,
@@ -305,6 +305,8 @@ interface ReaderScene {
   /** What the screen has when it is ready; the scene waits for it before the steps. */
   readonly ready?: string;
   readonly steps?: readonly Step[];
+  /** The compose page opens on this saved draft (a page that is only looked at; typing under the harness's frozen clock never finishes saving). */
+  readonly draftId?: string;
   /** The card treatment the reader and the compose page draw (CardStyleContext); absent: 'a', the default. */
   readonly cards?: CardStyle;
 }
@@ -407,6 +409,7 @@ function sceneOf(scene: ReaderScene): () => ReactElement {
     const client = useScene(scene);
     if (scene.thread)
       openThread(scene.thread, { from: 'home', ...(scene.list ? { listIds: scene.list } : {}) });
+    else if (scene.draftId) openCompose({ draftId: scene.draftId });
     else openCompose();
     return (
       <CardStyleContext.Provider value={scene.cards ?? 'a'}>
@@ -683,6 +686,7 @@ function richScene(options: RichScene): () => ReactElement {
     ...(walk ? { list: walk.map(key => richThreadId(DEMO[key])) } : {}),
     seed: fx => {
       for (const key of keys) seedRichThread(fx, DEMO[key], { noSummary, failedFiles });
+      if (scene.draftId === NEW_MESSAGE_DRAFT) seedNewMessageDraft(fx);
     },
     bodies: patches,
   });
@@ -701,19 +705,24 @@ const SCROLL_TO_END: Step = {
   },
 };
 
+/** Waits (up to 6 s) until the draft line no longer says "Saving…", so a shot never catches the transient. */
+const LET_THE_DRAFT_SETTLE: Step = {
+  run: async () => {
+    for (
+      let i = 0;
+      i < 360 && document.querySelector('.ui-draft-state[data-state="saving"]');
+      i += 1
+    )
+      await nextFrame();
+  },
+};
+
 const REPLY_TO_PROJECT: readonly Step[] = [
   { key: 'r' },
   { wait: 300 },
   { type: REPLY_DRAFT, into: '.ui-inline-reply textarea' },
   { wait: 300 },
-];
-
-const NEW_MESSAGE_STEPS: readonly Step[] = [
-  { type: NEW_MESSAGE.to, into: '.ui-recipient-field__input' },
-  { press: 'Enter', on: '.ui-recipient-field__input' },
-  { type: NEW_MESSAGE.subject, into: '.ui-composer__subject' },
-  { type: NEW_MESSAGE.body, into: '.ui-composer textarea' },
-  { wait: 1_500 },
+  LET_THE_DRAFT_SETTLE,
 ];
 
 export const readerScenes: Record<string, () => ReactElement> = {
@@ -860,7 +869,11 @@ export const readerScenes: Record<string, () => ReactElement> = {
     ],
   }),
   'reader-rich-attachments': richScene({ open: 'files' }),
-  'reader-rich-attachment-failed': richScene({ open: 'files', failedFiles: ['att-photos'] }),
+  'reader-rich-attachment-failed': richScene({
+    open: 'files',
+    failedFiles: ['att-photos'],
+    steps: [SCROLL_TO_END],
+  }),
   'reader-rich-invite': richScene({ open: 'invite' }),
   'reader-rich-oneliner': richScene({ open: 'oneliner' }),
   'reader-rich-receipt': richScene({ open: 'receipt' }),
@@ -876,7 +889,10 @@ export const readerScenes: Record<string, () => ReactElement> = {
   }),
   'reader-rich-no-summary': richScene({ open: 'project', noSummary: true }),
   'compose-rich-reply-draft': richScene({ open: 'project', steps: REPLY_TO_PROJECT }),
-  'compose-rich-new': richScene({ ready: '.ui-composer', steps: NEW_MESSAGE_STEPS }),
+  'compose-rich-new': richScene({
+    ready: '.ui-composer',
+    draftId: NEW_MESSAGE_DRAFT,
+  }),
   'compose-rich-empty': richScene({ ready: '.ui-composer' }),
   ...offScenes(),
 };
@@ -889,7 +905,7 @@ function offScenes(): Record<string, () => ReactElement> {
     'compose-card-off-new': richScene({
       cards,
       ready: '.ui-composer',
-      steps: NEW_MESSAGE_STEPS,
+      draftId: NEW_MESSAGE_DRAFT,
     }),
   };
 }

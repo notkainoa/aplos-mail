@@ -69,7 +69,13 @@ test('"Reply to Jordan…" names the sender, or whom the owner last wrote to', (
 
 test('a compact card shows the first sentence or two of the snippet and ends in an ellipsis', () => {
   const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
-  assert.equal(excerpt('Hi Alex,'), 'Hi Alex…');
+  assert.equal(excerpt('Hi Alex,'), 'Hi Alex…', 'a message that is only a greeting keeps it');
+  assert.equal(
+    excerpt('Hi Alex, The first pass of the brochure is ready. Tell me what you think. Mina'),
+    'The first pass of the brochure is ready. Tell me what you think…',
+    'the salutation is skipped, two sentences kept',
+  );
+  assert.equal(excerpt('Hello Mina and Jordan, thanks both.'), 'thanks both…');
   assert.equal(
     excerpt('Kicking off. Here is the brief we agreed on Friday. Please read it before Monday.'),
     'Kicking off. Here is the brief we agreed on Friday…',

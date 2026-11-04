@@ -7,6 +7,8 @@
 .aplos-screen:has(> .aplos-reader) {
   display: flex;
   flex-direction: column;
+  /* The action bar's scrim is as wide as the pane; whatever it overshoots never scrolls sideways. */
+  overflow-x: clip;
 }
 .aplos-reader {
   position: relative;
@@ -16,7 +18,8 @@
   flex-direction: column;
   width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
   margin: 0 auto;
-  padding: var(--space-7) 0 var(--space-4);
+  /* No bottom padding: the pinned bar's wrapper (fade, pill, 16 px) is the last thing in the letter. */
+  padding: var(--space-7) 0 0;
 }
 .aplos-reader__letter[data-paper='true'] {
   display: flex;
@@ -36,17 +39,21 @@
 /* The 12 px loading line sits over the top margin, so it appears without moving the letter. */
 .aplos-reader > .ui-loading-line {
   position: absolute;
-  top: var(--space-3);
+  top: var(--space-2);
   left: 0;
   margin: 0;
+}
+.aplos-reader[data-cards='a'] > .ui-loading-line {
+  left: var(--space-6);
 }
 
 .aplos-reader__thread {
   margin-top: var(--space-6);
 }
 
-.aplos-reader__trackers {
-  margin: var(--space-2) 0 0;
+/* Under the sheet by one step (12 px); the body's `p { margin: 0 }` would win over a bare class, so the selector names it. */
+.aplos-reader .ui-thread-message__body .aplos-reader__trackers {
+  margin: var(--space-3) 0 0;
   color: var(--dim);
   font: var(--type-small);
   font-variant-numeric: var(--num-small);
@@ -165,11 +172,6 @@
 .aplos-reader:not([data-cards='off']) .ui-inline-reply > .ui-compose-footer {
   padding: 0 var(--space-4) var(--space-4) var(--space-6);
 }
-/* The draft strip under the reply card takes the same inset, so its words line up with the reply's text. */
-.aplos-reader:not([data-cards='off']) .ui-suggestion {
-  padding-left: var(--space-6);
-}
-
 /* In a card the invitation is not a second card: no fill, the card's text edge, a wider gap before the email (no rule:
    the body's reading measure is narrower than the card, so a rule there would end short of the card's other rules). */
 .aplos-reader:not([data-cards='off']) .aplos-reader__invite {

@@ -69,22 +69,38 @@
 }
 
 /* ---------- Reader actions: the pinned bar ----------
-   In the flow at the end of the letter, so nothing hides behind it; it sticks to the pane's bottom (16 px up) while the
-   letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the letter is short.
-   The wrapper takes no pointer events, only the bar does. Keycap badges overlay the buttons' corners and take no space. */
+   In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
+   bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
+   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
+   soft blurred edge) spans the pane's width behind it, so text never shows beside or through the pill.
+   The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
+   take no space. */
 
 .ui-reader-actions {
   position: sticky;
-  bottom: var(--space-4);
+  bottom: 0;
   z-index: var(--z-sticky);
   display: flex;
   justify-content: center;
   margin-top: auto;
-  padding-top: var(--space-6);
+  padding: var(--space-6) 0 var(--space-4);
   pointer-events: none;
+}
+.ui-reader-actions::before {
+  content: '';
+  position: absolute;
+  top: var(--space-6);
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--canvas);
+  /* The soft edge is a blurred shadow in the same colour (no gradient): solid 12 px above the pill, fading over 24. */
+  box-shadow: 0 0 var(--space-6) var(--space-3) var(--canvas);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -98,6 +114,9 @@
 .ui-reader-actions[data-demoted='true'] {
   position: relative;
   bottom: auto;
+}
+.ui-reader-actions[data-demoted='true']::before {
+  content: none;
 }
 .ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {
   box-shadow: var(--elev-pane);
@@ -217,7 +236,7 @@
 }
 .ui-thread-message__head {
   min-width: 0;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 .ui-thread-message__line {
   display: flex;
@@ -274,13 +293,19 @@
   text-align: left;
   cursor: default;
 }
+/* Two lines, whatever the text, so every compact card is the same height; a line clamp ends a long one. */
 .ui-thread-message__excerpt {
-  display: block;
-  margin-top: var(--space-2);
+  display: -webkit-box;
+  min-height: 2lh;
+  margin-top: var(--space-3);
+  overflow: hidden;
   color: var(--ink-2);
   font: var(--type-read);
   letter-spacing: var(--track-read);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .ui-thread-message__toggle:focus-visible {
   outline: var(--focus-width) solid var(--accent);
@@ -294,7 +319,9 @@
   margin-bottom: var(--space-3);
 }
 .ui-thread-message__quoted {
-  margin-top: var(--space-3);
+  /* Its 28 px box carries its own 6 px above and below the words: pull the card's bottom edge in by the extra. */
+  margin-top: var(--space-2);
+  margin-bottom: calc(-1 * var(--space-2));
 }
 .ui-thread-message__body {
   max-width: var(--measure-read);
@@ -302,6 +329,10 @@
   font: var(--type-read);
   letter-spacing: var(--track-read);
   overflow-wrap: anywhere;
+}
+/* An HTML mail's sheet runs the card's full content width; only text keeps the reading measure. */
+.ui-thread-message__body:has(.aplos-mailframe__frame) {
+  max-width: none;
 }
 .ui-thread-message__body p {
   margin: 0;

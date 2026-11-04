@@ -59,8 +59,8 @@ axe does not shoot, so ignores it).
 
 ## Scorers
 
-| File | Measures |
-|---|---|
+| File           | Measures                                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `axe.score.ts` | axe-core (wcag2a, wcag2aa, wcag21a, wcag21aa) on every state. Setup is shared with `axe.spec.ts` through `../support/axe.ts`. |
 
 **axe**: each violation costs `impact weight x min(nodes, 3)` with critical 8, serious 5, moderate 2,
