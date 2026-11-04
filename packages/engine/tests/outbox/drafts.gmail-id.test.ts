@@ -89,6 +89,34 @@ test('gmail ids: a phone edit under a Message-ID we never used is still another 
     assert.ok(read(w, s.draft.id).conflict, 'the content is not that of any upload of ours');
   }));
 
+test('gmail ids: while an upload is held open, a phone edit under a new Message-ID with other content is a conflict and the base does not move', () =>
+  world(async w => {
+    w.remoteDrafts.state.gmailIds = true;
+    const s = await synced(w);
+    const held = gate();
+    w.remoteDrafts.script.push({ wait: held.wait });
+    edit(w, s.draft, MINE(), true);
+    await wait(w, 5 * SEC);
+    assert.ok(syncOf(w, s.draft.id).uploading, 'the upload is running');
+    // The draft id is the same and an upload of ours runs, but the content is the phone's own: nothing proves it ours.
+    const phoneId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
+    fact(w, s.remoteDraftId, phoneId, {
+      ...OWN,
+      subject: 'Phone edit',
+      html: '<p>PHONE TEXT</p>',
+      internetId: '<CAphone@mail.gmail.com>',
+      supersedes: [s.messageId],
+    });
+    assert.ok(read(w, s.draft.id).conflict, 'the phone edit is asked about, not absorbed');
+    assert.equal(
+      row(w, s.draft.id)!.remote_message_id,
+      s.messageId,
+      'the base stayed where it was',
+    );
+    held.open();
+    await w.settle();
+  }));
+
 test('gmail ids: a provider that keeps our Message-ID: a phone edit restoring an older attempt’s content under a newer attempt’s id is another device’s edit', () =>
   world(async w => {
     const s = await synced(w);
