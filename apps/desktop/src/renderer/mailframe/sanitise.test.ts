@@ -8,6 +8,9 @@ import { Parser } from 'htmlparser2';
 import { CORPUS } from './corpus';
 import { MAX_STYLE_ATTRIBUTE, MAX_STYLE_BLOCK, sanitiseCss } from './css';
 import { MAX_BODY_CHARS, NOTICES, sanitiseBody } from './sanitise';
+
+/** The quadratic scans this guards against took 8 to 33 s: a 1 s bound still catches them and survives a loaded machine. */
+const MAX_MS = 1000;
 import type { ImagePolicy } from './types';
 
 interface Inspected {
@@ -308,12 +311,12 @@ describe('sanitiseBody: behaviour', () => {
     assert.doesNotMatch(result.bodyAttributes, /!|important/);
   });
 
-  test('a 400 KB pathological style block sanitises in under 200 ms', () => {
+  test('a 400 KB pathological style block sanitises in under 1 s', () => {
     const html = `<style>p{x:${'a'.repeat(400_000)}}</style><p style="x:url(${' '.repeat(8_000)}">x</p>`;
     const start = performance.now();
     sanitiseBody(html, 'load');
     const elapsed = performance.now() - start;
-    assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
+    assert.ok(elapsed < MAX_MS, `${elapsed.toFixed(0)} ms`);
   });
 
   test('is deterministic', () => {
@@ -408,11 +411,11 @@ describe('sanitiseCss: linear time on hostile input', () => {
     ['slashes', '//'.repeat(SIZE / 2)],
   ];
   for (const [name, css] of cases) {
-    test(`${name}: 400 KB in under 200 ms`, () => {
+    test(`${name}: 400 KB in under 1 s`, () => {
       const start = performance.now();
       sanitiseCss(css, 'load', { blocked: 0 });
       const elapsed = performance.now() - start;
-      assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
+      assert.ok(elapsed < MAX_MS, `${elapsed.toFixed(0)} ms`);
     });
   }
 });
