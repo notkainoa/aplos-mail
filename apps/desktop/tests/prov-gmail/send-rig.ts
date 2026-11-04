@@ -442,15 +442,28 @@ export interface SendWorldOptions {
   useDraftsSend?: boolean;
   /** The adapter's own `GmailPacer` in front of the governor (default off: the governor paces). */
   pace?: boolean;
+  /** What `messages.send` does to our Message-ID (the emulator's `sendIdentity`; real Gmail rewrites it). */
+  sendIdentity?: 'kept' | 'rewritten';
+  /** The emulator's search index lag after a send, in ms of its clock (`searchLagMs`). */
+  searchLagMs?: number;
+  /** The mailbox owner (default: the emulator's test user). */
+  user?: { sub: string; email: string; name: string };
+  /** The fake clock's start (default: the emulators' epoch). */
+  clockStart?: number;
 }
 
 export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWorld> {
-  const clock = new FakeClock();
+  const clock = new FakeClock(
+    options.clockStart === undefined ? {} : { start: options.clockStart },
+  );
   const faults = createFaultInjector();
   const emu = createGmailEmulator({
     clock,
     retryAfter: 'none',
     faults,
+    ...(options.sendIdentity ? { sendIdentity: options.sendIdentity } : {}),
+    ...(options.searchLagMs !== undefined ? { searchLagMs: options.searchLagMs } : {}),
+    ...(options.user ? { users: [options.user] } : {}),
     ...(options.sendLimitPerDay !== undefined ? { sendLimitPerDay: options.sendLimitPerDay } : {}),
   });
   emu.oauth.addClient(CLIENT_ID);
