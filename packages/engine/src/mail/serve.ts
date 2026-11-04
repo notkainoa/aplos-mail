@@ -88,8 +88,18 @@ async function inlinePart(
   // The proxy's whole-fetch timeout bounds the part too: a stalled provider stream cannot hold the request open.
   const limit = deadline(services.clock, IMAGE_PROXY_LIMITS.timeoutMs, signal);
   try {
-    const chunks = await within(services.accounts.attachment(record.accountScope, ref), limit);
-    const bytes = chunks && (await collectBytes(chunks, IMAGE_PROXY_LIMITS.maxBytes, limit));
+    const opening = services.accounts.attachment(record.accountScope, ref);
+    const chunks = await within(opening, limit);
+    if (!chunks) {
+      // The deadline won but the provider may still answer: close its stream the moment it does.
+      void opening
+        .then(c => {
+          if (c) closeIterator(c[Symbol.asyncIterator]());
+        })
+        .catch(() => undefined);
+      return undefined;
+    }
+    const bytes = await collectBytes(chunks, IMAGE_PROXY_LIMITS.maxBytes, limit);
     return bytes ? { bytes } : undefined;
   } finally {
     limit.end();
@@ -97,7 +107,8 @@ async function inlinePart(
 }
 
 /** Stops a stream we gave up on; its own failure to stop is not ours to report. */
-function closeIterator(iterator: AsyncIterator<unknown>): void {
+/** Stops a stream we gave up on; its own failure to stop is not ours to report. */
+export function closeIterator(iterator: AsyncIterator<unknown>): void {
   try {
     void Promise.resolve(iterator.return?.()).catch(() => undefined);
   } catch {
@@ -105,11 +116,16 @@ function closeIterator(iterator: AsyncIterator<unknown>): void {
   }
 }
 
-/** The whole stream, or undefined once it passes `max` bytes, is cancelled or runs out of time. */
+/**
+ * The whole stream, or undefined once it passes `max` bytes (unless `overLimit` throws its own
+ * error), is cancelled or runs out of time. `idle` builds a fresh per-chunk deadline: a stalled
+ * stream dies on it even while the outer `limit` still has time.
+ */
 export async function collectBytes(
   chunks: AsyncIterable<Uint8Array>,
   max: number,
   limit: Deadline,
+  options?: { idle?: () => Deadline; overLimit?: () => Error },
 ): Promise<Uint8Array | undefined> {
   const iterator = chunks[Symbol.asyncIterator]();
   const parts: Uint8Array[] = [];
@@ -117,7 +133,13 @@ export async function collectBytes(
   let done = false;
   try {
     for (;;) {
-      const step = await within(iterator.next(), limit);
+      const stepLimit = options?.idle?.();
+      let step: IteratorResult<Uint8Array> | undefined;
+      try {
+        step = await within(within(iterator.next(), stepLimit ?? limit), limit);
+      } finally {
+        stepLimit?.end();
+      }
       if (!step) return undefined;
       if (step.done) {
         done = true;
@@ -125,7 +147,10 @@ export async function collectBytes(
       }
       if (!(step.value instanceof Uint8Array)) return undefined;
       size += step.value.byteLength;
-      if (size > max) return undefined;
+      if (size > max) {
+        if (options?.overLimit) throw options.overLimit();
+        return undefined;
+      }
       parts.push(step.value);
     }
   } finally {

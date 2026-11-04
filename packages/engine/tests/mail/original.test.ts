@@ -106,6 +106,18 @@ async function world(opts: { withOriginal?: boolean } = {}) {
       });
       streams.set('r1', held);
     },
+    hold: (remoteId: string) => {
+      let open: () => void = () => undefined;
+      const promise = new Promise<void>(r => {
+        open = r;
+      });
+      streams.set(remoteId, async function* () {
+        stalls++;
+        await promise;
+        yield enc('late');
+      });
+      return { promise, open };
+    },
     close: () => engine.close(),
   };
 }
@@ -264,5 +276,181 @@ test('without the provider-original port the method answers unavailable', async 
   );
   assert.ok(error instanceof ContractError);
   assert.equal(error.type, 'unavailable');
+  await w.close();
+});
+
+test('two concurrent gets for one message share one provider fetch and one blob', async () => {
+  const w = await world();
+  const gate = w.hold('r1');
+  const a = orig(w);
+  const b = orig(w);
+  for (let i = 0; i < 100 && w.calls.length === 0; i++) await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  gate.open();
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(w.calls.length, 1, 'one provider read for two callers');
+  assert.equal(ra.blobId, rb.blobId);
+  await w.close();
+});
+
+test('a repeat get opens the live blob again: no second fetch, same id', async () => {
+  const w = await world();
+  const first = await orig(w);
+  const second = await orig(w);
+  assert.equal(w.calls.length, 1, 'the repeat read the live blob');
+  assert.equal(second.blobId, first.blobId);
+  const bytes = (await w.session.call('Blob/get', { blobId: second.blobId })) as {
+    bytes: Uint8Array;
+  };
+  assert.ok(bytes.bytes.byteLength > 0, 'the reused blob still reads');
+  await w.close();
+});
+
+test('a fourth concurrent fetch on the account is refused busy, retryable, without a provider read', async () => {
+  const w = await world();
+  const gates: { open: () => void }[] = [];
+  const pending: Promise<{ blobId: string; name: string; size: number }>[] = [];
+  for (const [i, remoteId] of ['r1', 'r2', 'r3'].entries()) {
+    if (i)
+      w.store.commit({
+        opId: `seed-${remoteId}`,
+        origin: 'sync',
+        writes: [msg(remoteId, `t${i}`, i)],
+      });
+    gates.push(w.hold(remoteId));
+    pending.push(orig(w, remoteId));
+  }
+  w.store.commit({ opId: 'seed-r4', origin: 'sync', writes: [msg('r4', 't4', 4)] });
+  w.streams.set('r4', async function* () {
+    yield enc('r4');
+  });
+  for (let i = 0; i < 100 && w.stalled() < 3; i++) await new Promise(r => setImmediate(r));
+  assert.equal(w.stalled(), 3, 'three fetches in flight');
+  const error = await orig(w, 'r4').then(
+    () => assert.fail('expected busy'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  assert.ok((error as { body?: { retryAfterMs?: number } }).body?.retryAfterMs !== undefined);
+  assert.equal(w.calls.length, 3, 'the refused call never reached the provider');
+  for (const g of gates) g.open();
+  await Promise.all(pending);
+  await w.close();
+});
+
+test('a caller already at quota is refused before the provider read', async () => {
+  const w = await world();
+  const listener = w.engine.connect({
+    kind: 'listener',
+    via: 'mcp',
+    clientId: 'mcp-1',
+    scopes: ['read', 'draft'],
+  });
+  for (let i = 0; i < 4; i++)
+    await listener.call('Blob/put', {
+      bytes: new Uint8Array(25 * 1024 * 1024),
+      mime: 'application/octet-stream',
+      name: `f${i}.bin`,
+    });
+  const error = await listener.call('Message/original', { messageId: `${ACCOUNT}:r1` }).then(
+    () => assert.fail('expected quota'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'tooLarge');
+  assert.equal(w.calls.length, 0, 'the quota refusal wasted no provider read');
+  await w.close();
+});
+
+test('an empty original is unavailable and stores nothing', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'empty-m', origin: 'sync', writes: [msg('empty', 'te', 2)] });
+  w.streams.set('empty', async function* () {
+    yield undefined as unknown as Uint8Array;
+  });
+  const error = await orig(w, 'empty').then(
+    () => assert.fail('expected unavailable'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  await w.close();
+});
+
+test('a dot-file subject never names a hidden export; ../ paths collapse to the plain name', async () => {
+  const w = await world();
+  w.store.commit({
+    opId: 'dot-m',
+    origin: 'sync',
+    writes: [msg('hidden', 'td', 2, { subject: '.hidden' })],
+  });
+  w.streams.set('hidden', async function* () {
+    yield enc('x');
+  });
+  const got = await orig(w, 'hidden');
+  assert.equal(got.name, 'hidden.eml');
+  w.store.commit({
+    opId: 'dot2',
+    origin: 'sync',
+    writes: [msg('esc', 'te2', 3, { subject: '../../x' })],
+  });
+  w.streams.set('esc', async function* () {
+    yield enc('y');
+  });
+  const escaped = await orig(w, 'esc');
+  assert.equal(escaped.name, 'x.eml');
+  await w.close();
+});
+
+test('a provider stream that throws mid-read maps to unavailable, not internal', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'boom-m', origin: 'sync', writes: [msg('boom', 'tb', 2)] });
+  w.streams.set('boom', async function* () {
+    yield enc('part');
+    throw new Error('provider exploded with a fake token secret-123');
+  });
+  const error = await orig(w, 'boom').then(
+    () => assert.fail('expected unavailable'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  assert.ok(!error.message.includes('secret-123'), 'provider text never leaks');
+  await w.close();
+});
+
+test("a listener's original blob is notFound to a window session", async () => {
+  const w = await world();
+  const listener = w.engine.connect({
+    kind: 'listener',
+    via: 'mcp',
+    clientId: 'mcp-2',
+    scopes: ['read'],
+  });
+  const got = (await listener.call('Message/original', {
+    messageId: `${ACCOUNT}:r1`,
+  })) as { blobId: string };
+  const error = await w.session.call('Blob/get', { blobId: got.blobId }).then(
+    () => assert.fail('expected notFound'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'notFound');
+  await w.close();
+});
+
+test('an endless small-chunk stream stops at the cap', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'endless-m', origin: 'sync', writes: [msg('endless', 'tn', 2)] });
+  w.streams.set('endless', async function* () {
+    for (;;) yield new Uint8Array(64 * 1024);
+  });
+  const error = await orig(w, 'endless').then(
+    () => assert.fail('expected tooLarge'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'tooLarge');
   await w.close();
 });
