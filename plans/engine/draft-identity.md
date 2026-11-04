@@ -29,7 +29,7 @@ Nothing in this table loses mail, overwrites a copy that is not proven ours, or 
 - The Gmail **message id from the upload answer** is recorded (`wrote`), which is why the normal case works.
 - The content fingerprint and the closed-world proof need no id.
 
-## Proposed redesign (to settle before `APLOS_ENGINE=real`)
+## Proposed redesign (items 1 and 2 built 2026-11-03, see DECISIONS; items 3 and 4 wait for the live answers)
 
 1. **Engine, updates (no new measurement needed):** `explainedByAttempt`, `provenOurs` and `isEcho` accept `w.remoteDraftId === row.remote_draft_id` as the identity of the copy when the row already has one, in place of the Message-ID match; the content proof stays mandatory. This closes 2 and 3 for every update on Gmail and loses nothing on providers that keep the Message-ID. Small, in `draft-proof.ts` and `draft-writes.ts`; test: the existing echo tests rerun with an adapter that reports another Message-ID on every fact.
 2. **Engine, port: the answer reports what the copy shows.** `DraftSaved`/create results may carry `copyInternetId` (the Message-ID the provider now shows for the copy, one `drafts.get` metadata read). The engine remembers it next to ours (`wrote`/`prints`), so a later fact under it with the right content is an echo and the lost-reply search can use it. Additive, optional, `v:1`.
