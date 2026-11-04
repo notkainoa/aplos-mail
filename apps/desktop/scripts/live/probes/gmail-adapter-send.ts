@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { AdapterContext, BoundGovernor, Clock, SubmissionPayload } from '@aplos/engine/ports';
+import {
+  ProviderError,
+  type AdapterContext,
+  type BoundGovernor,
+  type Clock,
+  type SubmissionPayload,
+} from '@aplos/engine/ports';
 import { buildEnvelope, buildMime } from '../../../../../packages/engine/src/outbox/mime';
 import { GMAIL_COSTS } from '../../../src/host/providers/google/costs';
 import {
@@ -45,11 +51,31 @@ export function adapterNames(date: Date): { subject: string; messageId: string }
   return { subject: `${SUBJECT_PREFIX}${day}`, messageId: `<${hex}@aplos.invalid>` };
 }
 
-function failed(error: unknown, result: ProbeResult): void {
-  const errorClass = error instanceof ProbeHttpError ? error.errorClass : 'other';
+/**
+ * What the operator learns after a failed run, as one allow-listed class. The adapter wraps EVERY send failure in a
+ * `ProviderError`, so the class is read from what the failure was: a refusal by the guard (`guard`, nothing left), an
+ * uncertain end (`network`: the bytes may have gone out, so the Sent folder is checked by hand before a rerun,
+ * plans/LIVE-RUNS.md), a 5xx (`server`), anything else (`other`).
+ */
+export function failureClass(error: unknown, guardRefused: boolean): string {
+  if (guardRefused) return 'guard';
+  if (error instanceof ProbeHttpError) return error.errorClass;
+  if (error instanceof ProviderError) {
+    if (error.error.uncertain) return 'network';
+    const status = error.error.status;
+    return status !== undefined && status >= 500 ? 'server' : 'other';
+  }
+  return 'other';
+}
+
+function failed(error: unknown, result: ProbeResult, guardRefused: boolean): void {
+  const errorClass = failureClass(error, guardRefused);
   result.status = 'fail';
   result.errorClasses[errorClass] = (result.errorClasses[errorClass] ?? 0) + 1;
 }
+
+/** Test seam only: extra recipients the probe adds to its message, to prove the guard refuses them. Never set live. */
+export const probeHooks = { extraTo: [] as string[] };
 
 /**
  * The adapter's multipart upload as the guard's simple media upload: the same message bytes, the same path, no thread.
@@ -75,7 +101,13 @@ export function mediaUpload(url: string, init: RequestInit): [string, RequestIni
   target.searchParams.set('uploadType', 'media');
   return [
     target.toString(),
-    { method: 'POST', headers: { 'content-type': 'message/rfc822' }, body: message },
+    {
+      method: 'POST',
+      headers: { 'content-type': 'message/rfc822' },
+      body: message,
+      // The adapter's send timeout and stop signal still apply to the request that goes out.
+      ...(init.signal ? { signal: init.signal } : {}),
+    },
   ];
 }
 
@@ -115,18 +147,31 @@ function adapterContext(self: string): AdapterContext {
   } as unknown as AdapterContext;
 }
 
-async function runAdapterSend(ctx: ProbeContext, result: ProbeResult): Promise<void> {
+async function runAdapterSend(
+  ctx: ProbeContext,
+  result: ProbeResult,
+  seen: { guardRefused: boolean },
+): Promise<void> {
   const started = Date.now();
   const { subject, messageId } = adapterNames(new Date(started));
   const profile = await getJson(ctx, '/profile', { fields: 'emailAddress' });
   const self = typeof profile.json.emailAddress === 'string' ? profile.json.emailAddress : '';
   if (!self) throw new ProbeHttpError('other');
   const adapter = adapterContext(self);
+  // Every request goes through the guarded `ctx.fetch`; a refusal by the guard is noted, because the adapter wraps it.
+  const guarded = async (...args: Parameters<typeof fetch>): Promise<Response> => {
+    try {
+      return await ctx.fetch(...args);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'GuardRefusal') seen.guardRefused = true;
+      throw error;
+    }
+  };
   const deps = {
     fetch: ((url: string | URL | Request, init?: RequestInit) =>
       String(url).includes('/upload/')
-        ? ctx.fetch(...mediaUpload(String(url), init ?? {}))
-        : ctx.fetch(url, init)) as typeof fetch,
+        ? guarded(...mediaUpload(String(url), init ?? {}))
+        : guarded(url, init)) as typeof fetch,
     costs: GMAIL_COSTS,
     userAgent: 'aplos-live-probe',
     closed: new AbortController().signal,
@@ -149,7 +194,7 @@ async function runAdapterSend(ctx: ProbeContext, result: ProbeResult): Promise<v
 
   const input = {
     from: { address: self },
-    to: [{ address: self }],
+    to: [{ address: self }, ...probeHooks.extraTo.map(address => ({ address }))],
     cc: [],
     subject,
     html: '<p>Aplos live probe, one self-addressed message sent through the adapter.</p>',
@@ -203,10 +248,11 @@ export const adapterSendFind: SmokeProbe = {
     if (ctx.phase !== 'adapter') return emptyResult('skip');
     const result = emptyResult();
     const started = ctx.now();
+    const seen = { guardRefused: false };
     try {
-      await runAdapterSend(ctx, result);
+      await runAdapterSend(ctx, result, seen);
     } catch (error) {
-      failed(error, result);
+      failed(error, result, seen.guardRefused);
     }
     result.timingsMs.total = ctx.now() - started;
     return result;

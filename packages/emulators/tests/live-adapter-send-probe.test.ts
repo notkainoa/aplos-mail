@@ -6,6 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ProviderError } from '@aplos/engine/ports';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +24,9 @@ import { COUNT_KEYS } from '../../../apps/desktop/scripts/live/evidence';
 import { searchRetry } from '../../../apps/desktop/scripts/live/probes/gmail-send-message-id';
 import {
   adapterNames,
+  failureClass,
   mediaUpload,
+  probeHooks,
 } from '../../../apps/desktop/scripts/live/probes/gmail-adapter-send';
 
 const CLIENT = { clientId: 'live-client', clientSecret: 'live-secret' };
@@ -196,6 +199,8 @@ test('a failed send is one upload and a fail: the adapter never retries it', asy
   assert.equal(out.status, 'fail');
   assert.equal(out.counts.sent, undefined);
   assert.equal(r.uploads.length, 1, 'exactly one send');
+  // The adapter wraps the failure; the evidence says the send ended uncertain, so the operator checks Sent by hand.
+  assert.match(out.text, /Error classes: network=1/);
 });
 
 test('the evidence holds counts only: no address, Message-ID, subject or token', async () => {
@@ -260,4 +265,93 @@ test('its counts are on the evidence allowlist', () => {
     'probeMessagesExisting',
   ])
     assert.ok(COUNT_KEYS.includes(key), key);
+});
+
+test('a second recipient is refused by the guard through THIS probe path: nothing reaches the network, class guard', async () => {
+  const r = await rig();
+  probeHooks.extraTo = ['evil@example.test'];
+  try {
+    const out = await r.run();
+    assert.equal(out.status, 'fail');
+    assert.match(out.text, /Error classes: guard=1/);
+    assert.equal(out.counts.sent, undefined);
+  } finally {
+    probeHooks.extraTo = [];
+  }
+  assert.equal(r.uploads.length, 0, 'no upload reached the network');
+  assert.equal(probeMessages(r.emu).length, 0, 'no probe message exists');
+});
+
+test('the duplicate check fails closed: a server error on the search sends nothing', async () => {
+  const r = await rig();
+  r.faults.failNext(
+    { apiMethod: 'gmail.users.messages.list' },
+    { status: 500, reason: 'backendError', message: 'Backend Error' },
+    { times: 50 },
+  );
+  const out = await r.run();
+  assert.equal(out.status, 'fail');
+  assert.match(out.text, /Error classes: server=1/);
+  assert.equal(r.uploads.length, 0);
+  assert.equal(probeMessages(r.emu).length, 0);
+});
+
+test('the token header is on the upload exactly once, and nothing else in the message names it', async () => {
+  const r = await rig({ sendIdentity: 'rewritten' });
+  await r.run();
+  const head = r.uploads[0]!.raw.toString('latin1').split('\r\n\r\n')[0]!;
+  assert.equal(head.split('\r\n').filter(l => /^x-aplos-send:/i.test(l)).length, 1);
+  assert.equal(r.uploads[0]!.raw.toString('latin1').match(/x-aplos-send/gi)?.length, 1);
+});
+
+test('the probe never uses the global fetch: with it replaced by a thrower the run still passes', async () => {
+  const r = await rig({ sendIdentity: 'rewritten' });
+  const real = globalThis.fetch;
+  globalThis.fetch = (() => {
+    throw new Error('the global fetch bypasses the guard');
+  }) as typeof fetch;
+  try {
+    const out = await r.run();
+    assert.equal(out.status, 'pass');
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('failureClass: a guard refusal, an uncertain end, a 5xx and anything else are told apart', () => {
+  const wrapped = (extra: Record<string, unknown>) =>
+    new ProviderError({
+      class: 'transient',
+      provider: 'gmail',
+      method: 'gmail.messages.send',
+      reason: 'x',
+      ...extra,
+    });
+  assert.equal(failureClass(wrapped({}), true), 'guard');
+  assert.equal(failureClass(wrapped({ uncertain: true }), false), 'network');
+  assert.equal(failureClass(wrapped({ status: 503 }), false), 'server');
+  assert.equal(failureClass(wrapped({ status: 400 }), false), 'other');
+  assert.equal(failureClass(new Error('x'), false), 'other');
+});
+
+test('mediaUpload keeps the adapter signal, so the send timeout still applies', () => {
+  const boundary = 'b0undary';
+  const message = Buffer.from('To: me@example.test\r\n\r\nbody');
+  const controller = new AbortController();
+  const [, init] = mediaUpload(
+    'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart',
+    {
+      method: 'POST',
+      headers: { 'content-type': `multipart/related; boundary=${boundary}` },
+      signal: controller.signal,
+      body: Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n--${boundary}\r\nContent-Type: message/rfc822\r\n\r\n`,
+        ),
+        message,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]),
+    },
+  );
+  assert.equal(init.signal, controller.signal);
 });
