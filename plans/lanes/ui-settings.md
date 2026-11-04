@@ -8,7 +8,7 @@
 
 **Read only these.**
 - `plans/30-ui-revamp.md`: U7 Settings bullet (line 519), §4.5 rows 2-3 and 11 (251-260), reconnect (577).
-- `plans/DESIGN.md`: 7.10 Settings (794-815), 5 input rules, 8 keyboard map, 9 how AI appears, 10 microcopy, 7.15 error states.
+- `plans/DESIGN.md`: 7.10 Settings (794-810), 5 input rules, 8 keyboard map, 9 how AI appears, 10 microcopy, 7.15 error states.
 - `mockups/settings-{appearance,accounts,ai,keyboard}.html`. DESIGN.md wins over a mockup.
 - AI providers: root `AGENTS.md` (OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, custom OpenAI-compatible, plus Groq). Never print, store in the repo or screenshot key characters.
 
@@ -20,6 +20,6 @@
 5. Harness states, both themes, two sizes, no serious axe violation, hover never shifts layout. No sparkle, wand or star glyph; no sky gradient.
 6. Light and dark shots plus a short keyboard walkthrough in `~/.local/share/aplos-mail-review/ui-settings/<sha>/`; post READY-FOR-OWNER F8 in `plans/STATUS.md`, then STOP for owner approval before deep review and the PR.
 
-**Tests (repo root).** `npm run check`; `npm run typecheck`; `npm run owners:check`; `cd apps/desktop && npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}'`; visual: `npx playwright test -c tests/visual/playwright.config.ts -g settings` (headless only).
+**Tests (repo root).** `npm run check`; `npm run typecheck`; `npm run owners:check`; `cd apps/desktop && npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}'`; visual, from the repo root: `npx playwright test -c tests/visual/playwright.config.ts -g settings` (headless only).
 
 **Models (owner routing 2026-11-04).** SWE-2 (`swe-2-high`) builds the port, wiring, CSS, tests, harness and capture scripts; extra hill-climb candidates also SWE-2. Sonnet only orchestrates, judges visuals and does the one final review. Opus only for key handling, storage and contract questions.
