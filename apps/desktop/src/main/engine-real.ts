@@ -236,10 +236,10 @@ function watchWindows() {
 }
 
 /** `Mail/serve` over main's control connection; no engine means the relay's uniform 404. */
-function serveMail(args: ServeArgs): Promise<unknown> {
+function serveMail({ signal, ...args }: ServeArgs): Promise<unknown> {
   const current = link();
   if (!current) return Promise.reject(new Error('The mailbox is restarting.'));
-  return current.call('Mail/serve', args, SERVE_TIMEOUT_MS);
+  return current.call('Mail/serve', args, SERVE_TIMEOUT_MS, signal);
 }
 
 /** Set by the quit: from then on no engine is started, whatever stage the start-up had reached. */
