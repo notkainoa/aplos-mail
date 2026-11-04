@@ -140,6 +140,8 @@ export interface AccountMemory {
   readonly connectDone: boolean;
   readonly findDone: boolean;
   readonly readDone: boolean;
+  /** The first window was committed in this setup, by this run or by a run a Retry retired (it stays committed). */
+  readonly firstWindowIn: boolean;
   /** Sorting was shown complete in this run; it stays so (the auto-open still checks the current facts). */
   readonly sortDone: boolean;
   readonly found?: number;
@@ -239,14 +241,14 @@ function sameLocalDay(a: number, b: number): boolean {
 }
 
 function clockTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-/** "at 2:14 PM", "tomorrow at 9:00 AM", "on Friday at 9:00 AM". */
+/** "at 2:14 PM", "tomorrow at 9:00 AM", "on Friday at 9:00 AM", in the owner's locale. */
 export function resumePhrase(at: number, now: number): string {
   if (sameLocalDay(at, now)) return `at ${clockTime(at)}`;
   if (sameLocalDay(at, now + 86_400_000)) return `tomorrow at ${clockTime(at)}`;
-  const day = new Date(at).toLocaleDateString('en-US', { weekday: 'long' });
+  const day = new Date(at).toLocaleDateString(undefined, { weekday: 'long' });
   return `on ${day} at ${clockTime(at)}`;
 }
 
@@ -319,6 +321,7 @@ function freshMemory(runId: string, retired: readonly string[]): AccountMemory {
     connectDone: false,
     findDone: false,
     readDone: false,
+    firstWindowIn: false,
     sortDone: false,
     read: 0,
     readOf: 0,
@@ -355,11 +358,15 @@ function deriveAccount(
   const fw = a.firstWindow;
   const state = a.state;
 
-  // Memory is per run: a new runId starts clean and retires the old one.
+  // Memory is per run: a new runId starts clean and retires the old one — except the committed first
+  // window, which stays committed within the setup, so "Open Aplos" never turns back off after a Retry.
   const mem0 =
     prev && prev.runId === a.runId
       ? prev
-      : freshMemory(a.runId, prev ? [...prev.retired, prev.runId].slice(-MAX_RETIRED) : []);
+      : {
+          ...freshMemory(a.runId, prev ? [...prev.retired, prev.runId].slice(-MAX_RETIRED) : []),
+          firstWindowIn: prev?.firstWindowIn ?? false,
+        };
 
   const notConnected = state === 'notConnected';
   const err = latestError(status, a.accountId);
@@ -400,6 +407,8 @@ function deriveAccount(
 
   // Stage completion is sticky within a run: the engine said it once.
   const readDone = mem0.readDone || (fw.done && !notConnected);
+  // The window a retired run committed counts too: it is still in.
+  const firstWindowIn = readDone || mem0.firstWindowIn;
   const findDone =
     mem0.findDone ||
     readDone ||
@@ -580,7 +589,7 @@ function deriveAccount(
     notConnected,
     action,
     sortFailed: sortShown && sortState === 'failed',
-    firstWindowIn: readDone,
+    firstWindowIn,
     ready: {
       read: read.shown,
       sorted: sortShown && sortState === 'done' ? { done: sort.shown, of: sort.of } : undefined,
@@ -593,6 +602,7 @@ function deriveAccount(
     connectDone,
     findDone,
     readDone,
+    firstWindowIn,
     sortDone: sortShown ? sortState === 'done' : mem0.sortDone,
     found,
     read: read.shown,
@@ -607,7 +617,8 @@ function deriveAccount(
     memory,
     paused,
     resumeAt,
-    pauseCode: paused ? code : undefined,
+    // An AI-provider pause names the AI provider (the ai block carries its reasonCode, not the account).
+    pauseCode: paused ? (aiPaused ? (aiCode as AnyReasonCode) : code) : undefined,
     hardFailed,
     settled,
     clean,
@@ -709,7 +720,12 @@ export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
   const pausedOnes = derived.filter(d => d.paused);
   const allSettled = derived.every(d => d.settled);
   const clean =
-    derived.every(d => d.clean) && status.done && !status.partial && status.errors.length === 0;
+    derived.every(d => d.clean) &&
+    status.done &&
+    !status.partial &&
+    // Backfill errors are never part of this screen (latestError already ignores them): a transient one
+    // does not turn a clean finish partial.
+    status.errors.every(e => e.phase === 'backfill');
 
   const outcome: FirstSyncOutcome = anyFailed
     ? 'failed'

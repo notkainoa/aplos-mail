@@ -184,7 +184,7 @@ export function assertHonestStep(
   // Never auto-open unless every fact is clean.
   if (v.autoOpen) {
     assert.equal(a.state, 'ready');
-    assert.ok(s.done && !s.partial && s.errors.length === 0);
+    assert.ok(s.done && !s.partial && s.errors.every(e => e.phase === 'backfill'));
     assert.ok(!(a.pausedUntil && a.pausedUntil > now));
     assert.equal(a.reasonCode, undefined);
     assert.ok(!a.ai || !provider || !consent || (a.ai.capped === 0 && a.ai.failed === 0));

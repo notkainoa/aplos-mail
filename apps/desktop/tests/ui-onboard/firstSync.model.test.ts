@@ -227,7 +227,7 @@ describe('first sync: when Aplos may open', () => {
         'an error recorded',
         status(clean, {
           done: true,
-          errors: [{ accountId: 'a', phase: 'backfill', reasonCode: 'rate.minute', at: at(9) }],
+          errors: [{ accountId: 'a', phase: 'firstWindow', reasonCode: 'rate.minute', at: at(9) }],
         }),
       ],
       ['ready but sort short', status([ready('a', 30, 40), clean[1]], { done: true })],
