@@ -36,6 +36,46 @@ describe('MessageBody/get', () => {
       assert.equal(w.calls.opened.length, 1);
     }));
 
+  it('derives text for an HTML-only letter instead of answering an empty string', () =>
+    withWorld(async w => {
+      w.store.commit({
+        opId: 'html-only',
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'body',
+            accountId: 'acct-1',
+            remoteId: 'r4',
+            body: { html: '<p>Hi <b>there</b></p><p>second line</p>', cidMap: {} },
+          },
+        ],
+      });
+      const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.other })) as {
+        bodyKind: string;
+        text: string;
+      };
+      assert.equal(body.bodyKind, 'html');
+      assert.equal(body.text, 'Hi there\n\nsecond line');
+
+      // A whitespace-only text part counts as no text: the html still answers.
+      w.store.commit({
+        opId: 'stub-text',
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'body',
+            accountId: 'acct-1',
+            remoteId: 'r4',
+            body: { text: ' \r\n ', html: '<p>Real words</p>', cidMap: {} },
+          },
+        ],
+      });
+      const stub = (await w.windowA.call('MessageBody/get', { messageId: IDS.other })) as {
+        text: string;
+      };
+      assert.equal(stub.text, 'Real words');
+    }));
+
   it('answers plain text without rendering, and notFound for an unknown message', () =>
     withWorld(async w => {
       const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.plain })) as {
@@ -118,5 +158,53 @@ describe('MessageBody/prefetch', () => {
       await pending;
       await settle();
       assert.equal(w.renders.length, 1, 'cancelled before it rendered');
+    }));
+});
+
+describe('htmlToText over real incoming documents', () => {
+  it('drops the head and other non-rendered elements a text/plain part never carries', () =>
+    withWorld(async w => {
+      w.store.commit({
+        opId: 'doc',
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'body',
+            accountId: 'acct-1',
+            remoteId: 'r4',
+            body: {
+              html: '<html><head><title>Weekly Deals for You</title></head><body><p>Hi there</p></body></html>',
+              cidMap: {},
+            },
+          },
+        ],
+      });
+      const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.other })) as {
+        text: string;
+      };
+      assert.equal(body.text, 'Hi there', 'the document title is not the first line of the text');
+    }));
+
+  it('a self-closing or truncated script tag does not eat the rest of the letter', () =>
+    withWorld(async w => {
+      w.store.commit({
+        opId: 'selfclose',
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'body',
+            accountId: 'acct-1',
+            remoteId: 'r4',
+            body: {
+              html: '<p>First</p><script src="https://x/a.js"/><p>Second</p>',
+              cidMap: {},
+            },
+          },
+        ],
+      });
+      const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.other })) as {
+        text: string;
+      };
+      assert.equal(body.text, 'First\n\nSecond');
     }));
 });

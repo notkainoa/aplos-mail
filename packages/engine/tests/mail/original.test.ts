@@ -53,6 +53,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
   store.commit({ opId: 'seed', origin: 'sync', writes: seed });
   const blobs = memoryBlobs();
   const calls: string[] = [];
+  const signals: (AbortSignal | undefined)[] = [];
   let stalls = 0;
   let gate: { promise: Promise<void>; open: () => void } | undefined;
   const streams = new Map<
@@ -76,8 +77,9 @@ async function world(opts: { withOriginal?: boolean } = {}) {
   };
   const accounts: Record<string, unknown> = {};
   if (opts.withOriginal !== false)
-    accounts.original = (account: string, remoteId: string) => {
+    accounts.original = (account: string, remoteId: string, options?: { signal?: AbortSignal }) => {
       calls.push(`${account}/${remoteId}`);
+      signals.push(options?.signal);
       const fn = streams.get(remoteId);
       if (!fn) return Promise.reject(new Error(`no original ${remoteId}`));
       return Promise.resolve(fn());
@@ -97,6 +99,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
     clock,
     calls,
     streams,
+    signals,
     blobs,
     stalled: () => stalls,
     setHeld: () => {
@@ -375,6 +378,39 @@ test('an empty original is unavailable and stores nothing', async () => {
   );
   assert.ok(error instanceof ContractError);
   assert.equal(error.type, 'unavailable');
+  await w.close();
+});
+
+test("the deadline aborts the port's signal so the HTTP read stops", async () => {
+  const w = await world();
+  w.setHeld();
+  const pending = orig(w).then(
+    () => assert.fail('expected unavailable'),
+    (e: unknown) => e,
+  );
+  await new Promise(r => setImmediate(r));
+  assert.equal(w.signals.length, 1);
+  assert.equal(w.signals[0]!.aborted, false);
+  w.clock.advance(120_000);
+  const error = await pending;
+  assert.ok(error instanceof ContractError);
+  assert.equal(w.signals[0]!.aborted, true, 'the deadline reached the adapter read');
+  await w.close();
+});
+
+test('a provider `unavailable` answers the not-running sentence', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'dead-m', origin: 'sync', writes: [msg('dead', 'te', 2)] });
+  w.streams.set('dead', () => {
+    throw new ContractError({ type: 'unavailable', message: 'adapter offline' });
+  });
+  const error = await orig(w, 'dead').then(
+    () => assert.fail('expected unavailable'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  assert.equal(error.message, 'This part of Aplos is not running yet.');
   await w.close();
 });
 

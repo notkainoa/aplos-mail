@@ -51,19 +51,31 @@ async function fetchOriginal(
   const lane = services.mailFrames.aborter.signal;
   const total = deadline(services.clock, TOTAL_MS, lane);
   try {
-    const opening = services.accounts.original!(ref.accountId, ref.remoteId);
+    // The fetch signal is the port's own view of the deadline: the lane's stop or the 120 s total,
+    // whichever is first, aborts the adapter's HTTP read rather than leaving it to resolve late.
+    const fetchAbort = new AbortController();
+    void total.stopped.then(() => fetchAbort.abort());
+    let opening: Promise<AsyncIterable<Uint8Array>> | undefined;
     let chunks: AsyncIterable<Uint8Array> | undefined;
     try {
+      opening = services.accounts.original!(ref.accountId, ref.remoteId, {
+        signal: fetchAbort.signal,
+      });
       chunks = await within(opening, total);
     } catch (error) {
       // A provider failure is never the caller's internal: the adapter's own reason stays in the log.
-      if (error instanceof ContractError) throw error;
+      if (error instanceof ContractError) {
+        // A routed port that answers `unavailable` is the same not-wired-yet state as an absent one.
+        if (error.type === 'unavailable')
+          throw unavailable('This part of Aplos is not running yet.');
+        throw error;
+      }
       throw unavailable();
     }
     if (!chunks) {
       // The deadline won but the provider may still answer: close its stream the moment it does.
       void opening
-        .then(c => {
+        ?.then(c => {
           if (c) closeIterator(c[Symbol.asyncIterator]());
         })
         .catch(() => undefined);
