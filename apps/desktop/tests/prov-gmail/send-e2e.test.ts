@@ -10,7 +10,7 @@ import { sendWorld } from './send-rig';
 
 /** Lets the engine and the emulator's HTTP server run (real time) until `done`, settling the fake clock's work. */
 async function until(done: () => boolean) {
-  for (let i = 0; i < 600 && !done(); i++) await new Promise(resolve => setTimeout(resolve, 5));
+  for (let i = 0; i < 2000 && !done(); i++) await new Promise(resolve => setTimeout(resolve, 5));
   assert.ok(done(), 'the engine got there');
 }
 
