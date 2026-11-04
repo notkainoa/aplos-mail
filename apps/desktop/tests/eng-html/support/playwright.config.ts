@@ -6,7 +6,7 @@ import { baseConfig } from '../../../../../tests/e2e/base.config';
 export default defineConfig({
   ...baseConfig,
   testDir: '..',
-  testMatch: ['leak.e2e.ts', 'reporter.e2e.ts'],
+  testMatch: ['leak.e2e.ts', 'reporter.e2e.ts', 'reporter-lifetime.e2e.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 900_000,
