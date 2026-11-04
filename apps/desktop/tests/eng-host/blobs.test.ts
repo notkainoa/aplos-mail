@@ -1,9 +1,13 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
+  renameSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -28,12 +32,21 @@ const ID = `b_${'a'.repeat(32)}`;
 const ID2 = `b_${'b'.repeat(32)}`;
 const plenty = async () => 100 * GB;
 
+/** Gives every folder and file below `path` back to its owner (tests lock some), without following links. */
+function unlock(path: string): void {
+  const stats = lstatSync(path, { throwIfNoEntry: false });
+  if (!stats || stats.isSymbolicLink()) return;
+  chmodSync(path, stats.isDirectory() ? 0o700 : 0o600);
+  if (stats.isDirectory()) for (const name of readdirSync(path)) unlock(join(path, name));
+}
+
 /** A fresh folder for one test, removed after it (only ever this mkdtemp folder). */
 function scratch(t: TestContext): string {
   const root = mkdtempSync(join(tmpdir(), 'aplos-blobs-'));
   t.after(() => {
-    if (root.startsWith(join(tmpdir(), 'aplos-blobs-')))
-      rmSync(root, { recursive: true, force: true });
+    if (!root.startsWith(join(tmpdir(), 'aplos-blobs-'))) return;
+    unlock(root);
+    rmSync(root, { recursive: true, force: true });
   });
   return root;
 }
@@ -385,4 +398,186 @@ test('no refusal names a path', async t => {
     assert.equal(String(error.message).includes(dir), false);
     assert.equal(String(error.stack).includes(dir), false);
   }
+});
+
+test(
+  'a FIFO named like a blob never blocks: open, list and get return, and the scan drops it',
+  { timeout: 5000 },
+  async t => {
+    const dir = join(scratch(t), 'blobs');
+    mkdirSync(dir, { mode: 0o700 });
+    execFileSync('mkfifo', [join(dir, `${ID}.blob`)]);
+    const store = await open(dir);
+    assert.equal(existsSync(join(dir, `${ID}.blob`)), false, 'a FIFO is positively no blob');
+    execFileSync('mkfifo', [join(dir, `${ID2}.blob`)]);
+    assert.equal(await store.get(ID2), undefined);
+    assert.deepEqual(await store.list(), []);
+  },
+);
+
+test('a blob that cannot be read right now is never deleted, and reads as unavailable', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const store = await open(dir);
+  const bytes = bytesOf(50);
+  await store.put(ID, header(bytes), bytes);
+  const path = join(dir, `${ID}.blob`);
+  chmodSync(path, 0o000);
+  assert.deepEqual(await store.list(), []);
+  assert.ok(existsSync(path), 'list() left it alone');
+  assert.equal(await store.get(ID), undefined);
+  const reopened = await open(dir);
+  assert.ok(existsSync(path), 'a restart left it alone');
+  assert.ok((await reopened.usage()) > 50, 'and still counts it against the folder cap');
+  chmodSync(path, 0o600);
+  assert.deepEqual((await reopened.get(ID))?.bytes, bytes, 'readable again later, whole');
+});
+
+test('a blob folder swapped for a link after start: nothing in the target is read, written or deleted', async t => {
+  const root = scratch(t);
+  const dir = join(root, 'blobs');
+  const store = await open(dir);
+  const bytes = bytesOf(20);
+  await store.put(ID, header(bytes), bytes);
+  const target = join(root, 'target');
+  mkdirSync(target);
+  writeFileSync(join(target, 'precious.txt'), 'x');
+  writeFileSync(join(target, `${ID2}.blob`), 'not a blob');
+  // Even a target that looks like a blob folder (with its own .tmp) is never written to.
+  mkdirSync(join(target, '.tmp'));
+  renameSync(dir, join(root, 'moved'));
+  symlinkSync(target, dir);
+  assert.equal(await refusal(store.list()), 'io');
+  assert.equal(await refusal(store.put(ID2, header(bytes), bytes)), 'io');
+  assert.equal(await refusal(store.remove(ID2)), 'io');
+  assert.equal(await store.get(ID2), undefined);
+  assert.deepEqual(readdirSync(target).sort(), ['.tmp', `${ID2}.blob`, 'precious.txt']);
+  assert.deepEqual(readdirSync(join(target, '.tmp')), []);
+  assert.equal(readFileSync(join(target, `${ID2}.blob`), 'utf8'), 'not a blob');
+});
+
+test('a failure inside list() leaves as a reason code, never a path; an undeletable stranger is skipped', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const store = await open(dir);
+  const locked = join(dir, 'junk', 'locked');
+  mkdirSync(locked, { recursive: true });
+  writeFileSync(join(locked, 'x'), 'x');
+  chmodSync(locked, 0o500);
+  const bytes = bytesOf(5);
+  await store.put(ID, header(bytes), bytes);
+  const listed = await store.list();
+  assert.deepEqual(
+    listed.map(entry => entry.id),
+    [ID],
+  );
+  chmodSync(dir, 0o000);
+  try {
+    await store.list();
+    assert.fail('expected a refusal');
+  } catch (error) {
+    chmodSync(dir, 0o700);
+    assert.ok(error instanceof BlobFilesError);
+    assert.equal(error.reason, 'io');
+    assert.equal(`${error.message} ${error.stack}`.includes(dir), false);
+  }
+});
+
+test('a blob with a second hard link is refused by get and dropped by the scan; the other link is untouched', async t => {
+  const root = scratch(t);
+  const dir = join(root, 'blobs');
+  const store = await open(dir);
+  const bytes = bytesOf(8);
+  await store.put(ID, header(bytes), bytes);
+  linkSync(join(dir, `${ID}.blob`), join(root, 'second'));
+  assert.equal(await store.get(ID), undefined);
+  assert.deepEqual(await store.list(), []);
+  assert.equal(existsSync(join(dir, `${ID}.blob`)), false);
+  assert.ok(existsSync(join(root, 'second')));
+});
+
+test('a put while list() runs is counted against the folder cap', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const store = await open(dir, { limits: { folderBytes: 1000 } });
+  const bytes = bytesOf(400);
+  await store.put(ID, header(bytes), bytes);
+  const listing = store.list();
+  assert.equal(await refusal(store.put(ID2, header(bytes), bytes)), 'folderFull');
+  await listing;
+  assert.equal(await refusal(store.put(ID2, header(bytes), bytes)), 'folderFull');
+  const ID3 = `b_${'c'.repeat(32)}`;
+  await store.remove(ID);
+  const racing = store.list();
+  await store.put(ID3, header(bytes), bytes);
+  await racing;
+  assert.equal(
+    await refusal(store.put(ID2, header(bytes), bytes)),
+    'folderFull',
+    'a put that finished mid-scan stays counted',
+  );
+});
+
+/** Lets a running scan get well into its folder (many I/O turns). */
+async function midScan(): Promise<void> {
+  for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve));
+}
+
+test('while a slow scan runs, the blobs already there stay counted and a put that finishes is kept', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const seed = await open(dir);
+  for (let i = 0; i < 40; i++) {
+    const id = `b_${i.toString(16).padStart(32, '0')}`;
+    await seed.put(id, header(bytesOf(40)), bytesOf(40));
+  }
+  const existing = await seed.usage();
+  const small = bytesOf(100);
+  // Room for the new file only if the 40 old ones were forgotten.
+  const capped = await open(dir, { limits: { folderBytes: existing + 100 } });
+  const listing = capped.list();
+  await midScan();
+  assert.equal(await refusal(capped.put(ID, header(small), small)), 'folderFull');
+  await listing;
+
+  const roomy = await open(dir);
+  const racing = roomy.list();
+  await midScan();
+  await roomy.put(ID, header(small), small);
+  await racing;
+  assert.ok(
+    (await roomy.usage()) > existing + 100,
+    'the put that finished mid-scan is still counted',
+  );
+});
+
+test('a scan while a write is between its link and its temp unlink leaves the new blob alone', async t => {
+  const dir = join(scratch(t), 'blobs');
+  let midway: Promise<unknown> | undefined;
+  const holder: { store?: Awaited<ReturnType<typeof open>> } = {};
+  const store = await open(dir, {
+    step: async step => {
+      // The file has two links right now (its final name and the temp): a scan must not judge it.
+      if (step === 'unlinkTemp') await (midway = holder.store!.list());
+    },
+  });
+  holder.store = store;
+  const bytes = bytesOf(12);
+  await store.put(ID, header(bytes), bytes);
+  assert.deepEqual(await midway, []);
+  assert.deepEqual((await store.get(ID))?.bytes, bytes);
+  assert.deepEqual(
+    (await store.list()).map(entry => entry.id),
+    [ID],
+  );
+});
+
+test('a delete that fails keeps the blob counted', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const store = await open(dir);
+  const bytes = bytesOf(30);
+  await store.put(ID, header(bytes), bytes);
+  const before = await store.usage();
+  chmodSync(dir, 0o500);
+  assert.equal(await refusal(store.remove(ID)), 'io');
+  chmodSync(dir, 0o700);
+  assert.equal(await store.usage(), before);
+  await store.remove(ID);
+  assert.equal(await store.usage(), 0);
 });

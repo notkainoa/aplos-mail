@@ -5,11 +5,15 @@
  * One file is a magic line, one JSON header line (at most `BLOB_FILE_LIMITS.maxHeaderBytes`), then the bytes, so header
  * and bytes appear together in one atomic step: write a temp file (`O_CREAT|O_EXCL|O_NOFOLLOW`), `fsync` it, hard-link
  * it to the final name (`link` refuses an existing name, where `rename` would replace it), unlink the temp, `fsync` the
- * folder. Every open uses `O_NOFOLLOW`; the folders are `lstat`ed and must be real directories this user owns. The id is
- * checked against `BLOB_ID_PATTERN` here, again, before any path is formed. Nothing a caller sees names a path: errors
- * are `BlobFilesError` reason codes.
+ * folder. The folder is checked (a real directory this user owns, not a link) at open and again before every call. A
+ * blob file is `lstat`ed and must be a regular file with one link before it is opened (`O_NOFOLLOW|O_NONBLOCK`, so a
+ * FIFO can never block), and the open file must be the one `lstat` saw. The id is checked against `BLOB_ID_PATTERN`
+ * here, again, before any path is formed. Only names that are not a blob's, and files positively seen to be no blob
+ * (not regular, linked twice, corrupt after a full read), are ever deleted by a scan; a file that merely cannot be read
+ * right now (permissions, a file-handle shortage) is left alone. Nothing a caller sees names a path: every error that
+ * leaves this module is a `BlobFilesError` reason code.
  */
-import { constants, promises as fs } from 'node:fs';
+import { constants, promises as fs, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import {
   BLOB_FILE_LIMITS,
@@ -24,7 +28,7 @@ const MAGIC = 'aplos-blob/1\n';
 const MAGIC_BYTES = new TextEncoder().encode(MAGIC);
 const TMP = '.tmp';
 const FILE_NAME = /^(b_[0-9a-f]{32})\.blob$/;
-const { O_CREAT, O_EXCL, O_WRONLY, O_RDONLY, O_NOFOLLOW } = constants;
+const { O_CREAT, O_EXCL, O_WRONLY, O_RDONLY, O_NOFOLLOW, O_NONBLOCK, O_DIRECTORY } = constants;
 
 /** The steps of one `put`, in order; tests watch them to pin the fsync order. */
 export type BlobWriteStep = 'open' | 'write' | 'fsync' | 'link' | 'unlinkTemp' | 'fsyncDir';
@@ -58,23 +62,52 @@ const isId = (id: unknown): id is string => typeof id === 'string' && BLOB_ID_PA
 
 const errorCode = (error: unknown) => (error as { code?: unknown } | null)?.code;
 
+/** Runs `work`; any error that is not already a reason code leaves as `io`, so no OS text or path escapes. */
+async function coded<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    throw error instanceof BlobFilesError ? error : new BlobFilesError('io');
+  }
+}
+
 async function statfsFree(dir: string): Promise<number> {
   const stats = await fs.statfs(dir);
   return Number(stats.bavail) * Number(stats.bsize);
 }
 
-/** Creates `dir` (0700) if missing, then insists it is a real directory owned by this user, and makes it 0700. */
+const ours = (stats: Stats) => {
+  const uid = process.getuid?.();
+  return uid === undefined || stats.uid === uid;
+};
+
+/**
+ * Creates `dir` (0700) if missing, then opens it with `O_DIRECTORY|O_NOFOLLOW` and checks and `fchmod`s the open
+ * folder itself, so a link swapped in between can neither pass nor have its target's mode changed.
+ */
 async function privateFolder(dir: string): Promise<void> {
   try {
     await fs.mkdir(dir, { mode: 0o700 });
   } catch (error) {
     if (errorCode(error) !== 'EEXIST') throw new BlobFilesError('io');
   }
-  const stats = await fs.lstat(dir);
-  const uid = process.getuid?.();
-  if (!stats.isDirectory() || stats.isSymbolicLink() || (uid !== undefined && stats.uid !== uid))
+  await coded(async () => {
+    const handle = await fs.open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    try {
+      const stats = await handle.stat();
+      if (!stats.isDirectory() || !ours(stats)) throw new BlobFilesError('io');
+      await handle.chmod(0o700);
+    } finally {
+      await handle.close();
+    }
+  });
+}
+
+/** The folder is still a real directory of ours, not a link swapped in since it was opened. */
+async function checkFolder(dir: string): Promise<void> {
+  const stats = await fs.lstat(dir).catch(() => undefined);
+  if (!stats?.isDirectory() || stats.isSymbolicLink() || !ours(stats))
     throw new BlobFilesError('io');
-  await fs.chmod(dir, 0o700);
 }
 
 /** A header the engine may have written: exactly the known fields, each of the right kind and size. */
@@ -109,16 +142,14 @@ function encodePrefix(header: BlobHeader, limits: Limits): Uint8Array | undefine
   return prefix;
 }
 
-/** Reads the header of an open blob file: `{header, offset}` of the bytes, or undefined when it is not one of ours. */
-async function readHeader(
-  handle: fs.FileHandle,
+/** Parses the head of a blob file: `{header, offset}` of the bytes, or undefined when it is not one of ours. */
+function parseHead(
+  head: Uint8Array,
   fileSize: number,
   limits: Limits,
-): Promise<{ header: BlobHeader; offset: number } | undefined> {
-  const head = new Uint8Array(Math.min(fileSize, MAGIC_BYTES.byteLength + limits.maxHeaderBytes));
-  const { bytesRead } = await handle.read(head, 0, head.byteLength, 0);
+): { header: BlobHeader; offset: number } | undefined {
   for (let i = 0; i < MAGIC_BYTES.byteLength; i++) if (head[i] !== MAGIC_BYTES[i]) return undefined;
-  const end = head.subarray(0, bytesRead).indexOf(10, MAGIC_BYTES.byteLength);
+  const end = head.indexOf(10, MAGIC_BYTES.byteLength);
   if (end < 0) return undefined;
   let parsed: unknown;
   try {
@@ -133,23 +164,6 @@ async function readHeader(
   if (!header || header.size > limits.maxBytes || offset + header.size !== fileSize)
     return undefined;
   return { header, offset };
-}
-
-/** Opens a blob file without following a link; a regular file of a plausible size, or undefined. */
-async function openBlob(path: string, limits: Limits) {
-  let handle: fs.FileHandle;
-  try {
-    handle = await fs.open(path, O_RDONLY | O_NOFOLLOW);
-  } catch {
-    return undefined;
-  }
-  const stats = await handle.stat().catch(() => undefined);
-  const most = MAGIC_BYTES.byteLength + limits.maxHeaderBytes + limits.maxBytes;
-  if (!stats?.isFile() || stats.size > most) {
-    await handle.close();
-    return undefined;
-  }
-  return { handle, stats };
 }
 
 /** Writes every byte of `data` at `position` (a write may be short). */
@@ -182,17 +196,75 @@ async function readAll(
   return true;
 }
 
-/** Removes everything in `.tmp/`: writes a crash left half done. */
-async function emptyTemp(tmp: string): Promise<void> {
-  for (const name of await fs.readdir(tmp)) {
-    await fs.rm(join(tmp, name), { recursive: true, force: true });
+/**
+ * What one blob file is: `ok` (open, with its header), `bad` (positively no blob: not a regular file, more than one
+ * link, too large, or a corrupt head after a full read; a scan deletes it), `skip` (cannot be read right now; left
+ * alone, never deleted) or `missing`.
+ */
+type Inspected =
+  | {
+      kind: 'ok';
+      handle: fs.FileHandle;
+      header: BlobHeader;
+      offset: number;
+      stats: Stats;
+    }
+  | { kind: 'bad' }
+  | { kind: 'skip'; size: number }
+  | { kind: 'missing' };
+
+const isBlobFile = (stats: Stats) => stats.isFile() && !stats.isSymbolicLink() && stats.nlink === 1;
+
+async function inspect(path: string, limits: Limits): Promise<Inspected> {
+  let seen: Stats;
+  try {
+    seen = await fs.lstat(path);
+  } catch (error) {
+    return errorCode(error) === 'ENOENT' ? { kind: 'missing' } : { kind: 'skip', size: 0 };
   }
+  const most = MAGIC_BYTES.byteLength + limits.maxHeaderBytes + limits.maxBytes;
+  if (!isBlobFile(seen) || seen.size > most) return { kind: 'bad' };
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  } catch {
+    return { kind: 'skip', size: seen.size };
+  }
+  try {
+    const stats = await handle.stat();
+    // Swapped since the lstat: leave it for the next look.
+    if (stats.ino !== seen.ino || stats.dev !== seen.dev) throw new Error('swapped');
+    if (!isBlobFile(stats) || stats.size > most) {
+      await handle.close();
+      return { kind: 'bad' };
+    }
+    const head = new Uint8Array(
+      Math.min(stats.size, MAGIC_BYTES.byteLength + limits.maxHeaderBytes),
+    );
+    if (!(await readAll(handle, head, 0))) throw new Error('short');
+    const read = parseHead(head, stats.size, limits);
+    if (!read) {
+      await handle.close();
+      return { kind: 'bad' };
+    }
+    return { kind: 'ok', handle, header: read.header, offset: read.offset, stats };
+  } catch {
+    await handle.close().catch(() => undefined);
+    return { kind: 'skip', size: seen.size };
+  }
+}
+
+/** Removes everything in `.tmp/`: writes a crash left half done. One that cannot be removed is left. */
+async function emptyTemp(tmp: string): Promise<void> {
+  const names = await coded(() => fs.readdir(tmp));
+  for (const name of names)
+    await fs.rm(join(tmp, name), { recursive: true, force: true }).catch(() => undefined);
 }
 
 /** Best effort: the folder's entry for a new file reaches the disk. */
 async function syncFolder(dir: string): Promise<void> {
   try {
-    const handle = await fs.open(dir, O_RDONLY | O_NOFOLLOW);
+    const handle = await fs.open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
     try {
       await handle.sync();
     } finally {
@@ -204,8 +276,8 @@ async function syncFolder(dir: string): Promise<void> {
 }
 
 /**
- * Opens (and creates) the blob folder, clears writes a crash left in `.tmp/`, deletes anything whose name is not a
- * blob's or that is not a regular file, and returns the store. Throws `BlobFilesError('io')` when the folder is unsafe;
+ * Opens (and creates) the blob folder, clears writes a crash left in `.tmp/`, deletes names that are not a blob's and
+ * files that are positively no blob, and returns the store. Throws `BlobFilesError('io')` when the folder is unsafe;
  * the composition root then leaves `Blob/*` unavailable.
  */
 export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFiles> {
@@ -217,43 +289,49 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
   await privateFolder(dir);
   await privateFolder(tmp);
   await emptyTemp(tmp);
-  const sizes = new Map<string, number>();
+  let sizes = new Map<string, number>();
   const pending = new Set<string>();
   let reserved = 0;
   const pathOf = (id: string) => join(dir, `${id}.blob`);
   const used = () => [...sizes.values()].reduce((sum, size) => sum + size, 0) + reserved;
+  const discard = (name: string) =>
+    fs.rm(join(dir, name), { recursive: true, force: true }).catch(() => undefined);
 
-  /** Every name in the folder: blobs that read back are kept and sized; everything else is deleted. */
+  /** Every name in the folder; builds a fresh size table and swaps it in at the end. */
   async function scan() {
+    await checkFolder(dir);
+    const names = await coded(() => fs.readdir(dir));
     const found: { id: string; header: BlobHeader; mtimeMs: number }[] = [];
-    sizes.clear();
-    for (const name of await fs.readdir(dir)) {
+    const next = new Map<string, number>();
+    const writing = new Set<string>();
+    for (const name of names) {
       if (name === TMP) continue;
       const id = FILE_NAME.exec(name)?.[1];
-      const read = id ? await describe(id) : undefined;
-      if (!id || !read) {
-        await fs.rm(join(dir, name), { recursive: true, force: true });
+      if (!id) {
+        await discard(name);
         continue;
       }
-      sizes.set(id, read.fileSize);
-      found.push({ id, header: read.header, mtimeMs: read.mtimeMs });
+      // A put between its link and its temp unlink has two links for a moment: never judge it mid-write.
+      if (pending.has(id)) {
+        writing.add(id);
+        continue;
+      }
+      const seen = await inspect(pathOf(id), limits);
+      if (seen.kind === 'bad') await discard(name);
+      else if (seen.kind === 'skip') next.set(id, seen.size);
+      else if (seen.kind === 'ok') {
+        await seen.handle.close().catch(() => undefined);
+        next.set(id, seen.stats.size);
+        found.push({ id, header: seen.header, mtimeMs: seen.stats.mtimeMs });
+      }
     }
+    // Puts that finished while the scan ran (after the listing, or skipped as mid-write) stay counted.
+    for (const [id, size] of sizes) {
+      const unseen = writing.has(id) || !names.includes(`${id}.blob`);
+      if (!next.has(id) && unseen) next.set(id, size);
+    }
+    sizes = next;
     return found;
-  }
-
-  async function describe(id: string) {
-    const opened = await openBlob(pathOf(id), limits);
-    if (!opened) return undefined;
-    try {
-      const read = await readHeader(opened.handle, opened.stats.size, limits);
-      return (
-        read && { header: read.header, mtimeMs: opened.stats.mtimeMs, fileSize: opened.stats.size }
-      );
-    } catch {
-      return undefined;
-    } finally {
-      await opened.handle.close();
-    }
   }
 
   /** Synchronous on purpose: `put` reserves the id in the same turn, so a second put of it is `exists`. */
@@ -302,7 +380,7 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
     }
   }
 
-  // Sizes every blob already there (the folder cap counts them) and deletes what is not one.
+  // Sizes every blob already there (the folder cap counts them) and deletes what is positively not one.
   await scan();
 
   return {
@@ -313,6 +391,7 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
       pending.add(id);
       reserved += total;
       try {
+        await checkFolder(dir);
         const free = await freeBytes(dir).catch(() => 0);
         // Written so that a NaN (an odd `statfs`) fails closed too.
         if (!(free - total >= limits.freeDiskFloor)) throw new BlobFilesError('diskFull');
@@ -326,29 +405,38 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
 
     async get(id) {
       if (!isId(id)) return undefined;
-      const opened = await openBlob(pathOf(id), limits);
-      if (!opened) return undefined;
       try {
-        const read = await readHeader(opened.handle, opened.stats.size, limits);
-        if (!read) return undefined;
+        await checkFolder(dir);
+      } catch {
+        return undefined;
+      }
+      const seen = await inspect(pathOf(id), limits);
+      if (seen.kind !== 'ok') return undefined;
+      try {
         // A fresh buffer of exactly the blob's bytes per call, so a caller may transfer (detach) it.
-        const bytes = new Uint8Array(read.header.size);
-        const complete = await readAll(opened.handle, bytes, read.offset);
-        return complete ? { header: read.header, bytes } : undefined;
+        const bytes = new Uint8Array(seen.header.size);
+        const complete = await readAll(seen.handle, bytes, seen.offset);
+        return complete ? { header: seen.header, bytes } : undefined;
       } catch {
         return undefined;
       } finally {
-        await opened.handle.close();
+        await seen.handle.close().catch(() => undefined);
       }
     },
 
     async remove(id) {
       if (!isId(id)) return;
+      await checkFolder(dir);
+      try {
+        await fs.unlink(pathOf(id));
+      } catch (error) {
+        // The size stays counted until the file is really gone.
+        if (errorCode(error) !== 'ENOENT') throw new BlobFilesError('io');
+      }
       sizes.delete(id);
-      await fs.unlink(pathOf(id)).catch(() => undefined);
     },
 
-    list: scan,
+    list: () => coded(scan),
 
     async usage() {
       return used();
