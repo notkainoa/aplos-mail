@@ -10,7 +10,7 @@
 
 **Design rules.** Cards option A where cards appear, calm Notion/Redakt feel, roomy type, ink blue only for the one main action, no sky gradient, no airmail stripe, never a sparkle, wand or star glyph for AI, hover never shifts layout. Empty states carry real substance (what the day is for, next event, a way to add one), not a blank grid.
 
-**Honest status.** The sidebar slot (MiniMonth + Calendars list) is wired through the shell's `useSidebarSlot` and `api.event.hide` drives the ⋯ menu's Hide in Aplos (both landed in PR #271); the standalone harness still draws the same `calendarSidebar` props in an aside. Only the open-url port for meeting links (engine/eng-host) is still not wired — `livePorts` falls back to `window.open`.
+**Honest status.** The sidebar slot (MiniMonth + Calendars list) is wired through the shell's `useSidebarSlot` and `api.event.hide` drives the ⋯ menu's Hide in Aplos (both landed in PR #271); the standalone harness still draws the same `calendarSidebar` props in an aside. Meeting links open through `api.shell.open` (PR #266, main's `external()` gate); only an https link is ever handed on. Nothing in this lane is waiting on another lane.
 
 **Done criteria.**
 1. Harness states, light and dark, two sizes, no serious axe violation: week (default, overlap, 3+ overlap "+N" stack), day (default, empty day), month, agenda (narrow pane under 720 px), event detail with RSVP unanswered / answered / Send reply disabled until chosen, repeating-event edit scope chooser ("this event" / "all events" first), create by drag, move, resize, all-day events, now-line, today column, Calendars list toggles, loading, and error states.

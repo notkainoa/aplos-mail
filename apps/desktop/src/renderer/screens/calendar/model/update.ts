@@ -251,6 +251,15 @@ function onOpenSource(
   return done(state, [{ kind: 'openThread', threadId: entry.source.threadId }]);
 }
 
+/** Only an https meeting link is opened outside Aplos; a malformed or other-scheme link is never handed on. */
+function isHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function onOpenVideo(
   state: CalendarState,
   _action: ActionOf<'openVideo'>,
@@ -258,7 +267,7 @@ function onOpenVideo(
 ): Transition {
   const entry = detailEntry(state, ctx);
   const url = entry ? ctx.events.get(entry.id)?.conference?.url : undefined;
-  return url ? done(state, [{ kind: 'openUrl', url }]) : unhandled(state);
+  return url && isHttpsUrl(url) ? done(state, [{ kind: 'openUrl', url }]) : unhandled(state);
 }
 
 function onToggleCalendar(

@@ -6,8 +6,7 @@
  * call runs next.
  *
  * The screen publishes its sidebar block through the shell's `useSidebarSlot` (`calendarSidebar` produces the props)
- * and hides events through `api.event.hide`. REQUEST still open: a shell open-url port for meeting links (effects.ts
- * falls back to `window.open`).
+ * and hides events through `api.event.hide`. Meeting links open through `api.shell.open` (main's external() gate).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommandContext } from '../../commands';

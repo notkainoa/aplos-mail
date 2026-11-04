@@ -294,11 +294,9 @@ export function livePorts(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
-    // REQUEST: a shell/engine port for opening a meeting link in the browser (`System/open` or similar). Until
-    // then the link opens in a new window where the platform allows it.
+    // Main opens it through its external() gate (http, https or mailto, no credentials; anything else is refused).
     openUrl: url => {
-      if (typeof window !== 'undefined' && typeof window.open === 'function')
-        window.open(url, '_blank');
+      void api.shell.open({ url }).catch(() => undefined);
     },
     copyText: text => {
       void navigator.clipboard?.writeText(text).catch(() => undefined);
