@@ -8,6 +8,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  createFaultInjector,
   createGmailEmulator,
   FakeClock,
   type GmailEmulator,
@@ -22,6 +23,7 @@ import { searchRetry } from '../../../apps/desktop/scripts/live/probes/gmail-sen
 const CLIENT = { clientId: 'live-client', clientSecret: 'live-secret' };
 
 async function rig(emulator: Partial<GmailEmulatorOptions> = {}) {
+  sendPosts.count = 0;
   searchRetry.waitMs = 0;
   const clock = new FakeClock();
   const emu: GmailEmulator = createGmailEmulator({ clock, latencyMs: 0, ...emulator });
@@ -51,7 +53,12 @@ async function rig(emulator: Partial<GmailEmulatorOptions> = {}) {
       APLOS_GOOGLE_CLIENT_ID: CLIENT.clientId,
       APLOS_GOOGLE_CLIENT_SECRET: CLIENT.clientSecret,
     },
-    fetch: emu.fetch,
+    fetch: (input, init) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (/\/messages\/send$/.test(url.pathname) && (init?.method ?? 'GET') === 'POST')
+        sendPosts.count++;
+      return emu.fetch(input, init);
+    },
     readSecret,
     now: () => clock.now(),
     sleep: ms => clock.advance(ms),
@@ -80,6 +87,9 @@ async function rig(emulator: Partial<GmailEmulatorOptions> = {}) {
     },
   };
 }
+
+/** Every POST to messages.send the runner's fetch made, faulted ones included. */
+const sendPosts = { count: 0 };
 
 const probeMessages = (emu: GmailEmulator) =>
   emu.mailbox.select({ q: 'subject:aplos-live-probe-send', includeSpamTrash: true });
@@ -163,4 +173,71 @@ test('the probe is a tier S-self probe only, and its counts are on the evidence 
     'probeMessagesExisting',
   ])
     assert.ok(COUNT_KEYS.includes(key), key);
+});
+
+test('the duplicate check fails closed: a server error on the search sends nothing', async () => {
+  const faults = createFaultInjector();
+  const r = await rig({ faults });
+  faults.failNext(
+    { apiMethod: 'gmail.users.messages.list' },
+    { status: 500, reason: 'backendError', message: 'Backend Error' },
+  );
+  const out = await r.run();
+  assert.equal(out.status, 'fail');
+  assert.match(out.text, /Error classes: server=1/);
+  assert.equal(sendPosts.count, 0, 'no send was attempted');
+  assert.equal(probeMessages(r.emu).length, 0);
+  assert.equal(out.counts.sent, undefined);
+});
+
+for (const [name, fault] of [
+  [
+    'a 503',
+    (f: ReturnType<typeof createFaultInjector>) =>
+      f.failNext(
+        { apiMethod: 'gmail.users.messages.send' },
+        { status: 503, reason: 'backendError', message: 'Backend Error' },
+        { times: 5 },
+      ),
+  ],
+  [
+    'a dropped connection',
+    (f: ReturnType<typeof createFaultInjector>) =>
+      f.dropNext({ apiMethod: 'gmail.users.messages.send' }, { times: 5 }),
+  ],
+] as const) {
+  test(`the send is never retried: ${name} on messages.send is exactly one POST and a fail`, async () => {
+    const faults = createFaultInjector();
+    const r = await rig({ faults });
+    fault(faults);
+    const out = await r.run();
+    assert.equal(out.status, 'fail');
+    assert.equal(sendPosts.count, 1, 'exactly one send POST, no retry');
+    assert.equal(out.counts.sent, undefined);
+    assert.ok(!/@/.test(out.text));
+  });
+}
+
+test('the same-day refusal also counts our fixed Message-ID, so a subject the search cannot match still refuses', async () => {
+  const r = await rig();
+  await r.run();
+  // The probe message's subject is changed by a client; only the fixed Message-ID still identifies it.
+  const [sent] = probeMessages(r.emu);
+  const stored = r.emu.mailbox.getMessage(sent!.id)!;
+  assert.ok(stored);
+  r.emu.mailbox.deleteMessage(sent!.id);
+  r.emu.mailbox.addMessage({
+    subject: 'something else entirely',
+    messageId:
+      'aplos-live-probe-send-' +
+      new Date().toISOString().slice(0, 10).replaceAll('-', '') +
+      '@aplos.invalid',
+    labelIds: ['INBOX'],
+    text: 'x',
+  });
+  const before = sendPosts.count;
+  const again = await r.run();
+  assert.equal(again.status, 'fail');
+  assert.equal(again.counts.probeMessagesExisting, 1);
+  assert.equal(sendPosts.count, before, 'no second send');
 });

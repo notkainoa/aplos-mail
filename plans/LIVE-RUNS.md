@@ -87,3 +87,7 @@ It sends ONE message to the account's own address, subject `aplos-live-probe-sen
 Counts: `sent` (1 = the send went through), `sentKeptMessageId` (0/1), `sentMessageIdShape` (0 absent, 1 ours, 2 Gmail-style, 3 other), `sentHeaderKept` (our `X-Aplos-Draft` token is on the Sent copy), `sentFoundByRfc822msgidOurs` and `sentFoundByRfc822msgidGmails` (Sent messages `rfc822msgid:` finds for our id and for the id Gmail shows), `sentSearchTries` (the searches are repeated up to 4 times, 3 s apart, while an index may still be catching up).
 
 Emulator: `sendIdentity: 'rewritten'` (or `APLOS_EMU_SEND_IDENTITY=rewritten`) makes `messages.send` replace the Message-ID like the draft finding, to run suites as if Gmail does that on send too.
+
+### Before re-running `gmail.send-message-id` after an unclear result
+
+The same-day refusal rests on two Gmail searches (the subject, and today's fixed Message-ID `<aplos-live-probe-send-YYYYMMDD@aplos.invalid>`), and both can lag behind a send by seconds. If a run ended with error class `network` or `server` (or `fail` with `sent` missing after the send was posted), the mail may still have gone out. The operator checks the agent account's Sent folder BY HAND (search `aplos-live-probe-send`) before any rerun, and reruns only when no probe message of that day is there. The probe itself never retries a send and fails closed when its duplicate check cannot run.
