@@ -147,11 +147,11 @@ describe('providers', () => {
     assert.equal(reduceAi(typedKey, { type: 'choose', provider: 'openai' }).keyDraft, '');
   });
 
-  test('while the table loads, nothing is offered as usable and Skip is focused', () => {
+  test('while the table loads, nothing is offered as usable and nothing is focused', () => {
     const vm = aiView(initialAi(), inputs({ providers: undefined }));
     assert.equal(vm.loading, true);
     assert.equal(vm.canContinue, false);
-    assert.deepEqual(vm.focus, { kind: 'button', label: 'Skip for now' });
+    assert.equal(vm.focus, undefined, 'a focused Skip for now would let Return skip the step');
   });
 });
 

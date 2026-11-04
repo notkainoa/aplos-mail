@@ -471,11 +471,8 @@ export function AiContainer({ chrome, bindKeys, onDone, ports: given }: AiContai
     if (s.writing) return;
     const choice = currentChoice(s, i);
     if (!choice) return;
+    // featuresFor always resolves (a missing voice keeps the stored or default one).
     const features = featuresFor(choice, i);
-    if (!features) {
-      dispatch({ type: 'writeFailed' });
-      return;
-    }
     dispatch({ type: 'writing' });
     try {
       await ports.setSettings({ ai: { features } });

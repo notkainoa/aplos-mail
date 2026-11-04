@@ -62,6 +62,9 @@ export interface AiState {
 /** The provider every feature uses by default (AGENTS.md). */
 export const DEFAULT_PROVIDER = 'groq';
 
+/** Voice's default when nothing else resolves: the contract's Voice fallback (Groq's Whisper model). */
+export const DEFAULT_VOICE: FeatureChoice = { provider: 'groq', model: 'whisper-large-v3-turbo' };
+
 export function initialAi(): AiState {
   return {
     view: 'pick',
@@ -213,10 +216,9 @@ export function voiceChoice(inputs: AiInputs): FeatureChoice | undefined {
   return inputs.features?.voice;
 }
 
-/** The whole `features` object Continue writes, or undefined when it cannot be written yet. */
-export function featuresFor(choice: FeatureChoice, inputs: AiInputs): AiFeatures | undefined {
-  const voice = voiceChoice(inputs);
-  if (!voice) return undefined;
+/** The whole `features` object Continue writes; a voice that cannot resolve keeps the stored or default one. */
+export function featuresFor(choice: FeatureChoice, inputs: AiInputs): AiFeatures {
+  const voice = voiceChoice(inputs) ?? DEFAULT_VOICE;
   return { ask: choice, summaries: choice, drafts: choice, plans: choice, voice };
 }
 
@@ -446,8 +448,8 @@ export interface AiViewModel {
     readonly sent: string;
     readonly showLocalNote: boolean;
   };
-  /** The control to focus on this screen (F12). */
-  readonly focus: FocusTarget;
+  /** The control to focus on this screen (F12); nothing while the provider table loads. */
+  readonly focus: FocusTarget | undefined;
   /** Changes when focus should move (screen change, or Esc hid the focused control). */
   readonly focusKey: string;
 }
@@ -595,8 +597,10 @@ export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
         }
       : undefined;
 
-  const focus: FocusTarget =
-    state.view === 'consent'
+  // While the table loads nothing is focused: a focused "Skip for now" would let Return skip the step.
+  const focus: FocusTarget | undefined = loading
+    ? undefined
+    : state.view === 'consent'
       ? { kind: 'button', label: AI_LABELS.allow }
       : usable
         ? { kind: 'button', label: AI_LABELS.continue }
@@ -607,6 +611,11 @@ export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
             : state.view === 'local' && rows.some(r => r.check?.label === 'Check again')
               ? { kind: 'button', label: AI_LABELS.checkAgain }
               : { kind: 'button', label: AI_LABELS.skip };
+
+  // The key names the resolved target, so a late answer (models, the provider table) still moves focus.
+  const focusPart = focus
+    ? `${focus.kind}:${focus.kind === 'button' ? focus.label : focus.id}`
+    : 'none';
 
   return {
     view: state.view,
@@ -623,7 +632,7 @@ export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
       : {}),
     ...(consent ? { consent } : {}),
     focus,
-    focusKey: `ai:${state.view}:${state.focusNonce}:${loading ? 'loading' : 'ready'}`,
+    focusKey: `ai:${state.view}:${state.focusNonce}:${focusPart}`,
   };
 }
 
