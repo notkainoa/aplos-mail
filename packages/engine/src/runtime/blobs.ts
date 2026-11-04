@@ -122,6 +122,10 @@ export interface BlobRuntime {
    * (package 4), synchronous so the check and the commit share one turn.
    */
   owns(caller: Caller, blobId: string): boolean;
+  /** Would `bytes` more fit the caller's quota? Checked BEFORE a paid provider fetch (Message/original). */
+  fits(caller: Caller, bytes: number): boolean;
+  /** Bumps a live owned handle's last-read clock without reading its bytes (Message/original reuse). */
+  touch(caller: Caller, blobId: string): boolean;
   /**
    * The bytes of a draft's own attachments for the outbox (package 4), ignoring principal (checked at `Draft/set`).
    * A missing blob is left out of the map. Each value is a fresh buffer.
@@ -514,7 +518,22 @@ export function createBlobRuntime(deps: {
 
   const owns = (caller: Caller, blobId: string) => ready && own(caller, blobId) !== undefined;
 
-  return { put, get, release, owns, load, attach, source, connectionClosed, start };
+  const fits = (caller: Caller, bytes: number) => {
+    if (!ready) return false;
+    const principal = principalOf(caller);
+    const used = usage(principal);
+    const cap = quotaOf(principal);
+    return used.bytes + bytes <= cap.bytes && used.count + 1 <= cap.count;
+  };
+
+  const touch = (caller: Caller, blobId: string) => {
+    const entry = ready ? own(caller, blobId) : undefined;
+    if (!entry) return false;
+    entry.lastReadAt = clock.now();
+    return true;
+  };
+
+  return { put, get, release, owns, fits, touch, load, attach, source, connectionClosed, start };
 }
 
 /** Seam 1: the blob runtime as a module of the composition root, after `clock` (it registers the sweep source). */

@@ -2,9 +2,10 @@
 // One filled button per screen, owned by the topmost surface; that is the screen's job, not this file's.
 // Keycaps: inline when keyHint says so ('always', or 'hint' in "Show all key hints"), a badge overlay while ⌘ is
 // held, and always in the tooltip. Hover never reveals one.
-import { useRef, useState, type MouseEvent, type RefObject } from 'react';
+import { useId, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { timing } from '../generated/motion';
 import type { ButtonProps } from '../props';
+import { buttonNaming, type ButtonNaming } from './buttonName';
 import { Icon } from './Icon';
 import { KeyCaps } from './Kbd';
 import { showsInline, useControlKeys, useKeyHints } from './keyHints';
@@ -62,6 +63,7 @@ function buttonAttributes(
   props: ButtonProps,
   model: ButtonModel,
   clip: { clipped: boolean; checkClipped: () => void },
+  naming: ButtonNaming,
 ) {
   const {
     variant,
@@ -84,7 +86,7 @@ function buttonAttributes(
   };
   return {
     ref: props.ref,
-    id: props.id,
+    id: naming.buttonId,
     type: props.type ?? 'button',
     className: 'ui-button',
     'data-variant': variant,
@@ -97,7 +99,8 @@ function buttonAttributes(
     title: labelVisible && !needsTooltip && clip.clipped ? label : undefined,
     disabled: disabled && !explained,
     'aria-disabled': explained ? true : undefined,
-    'aria-label': labelVisible ? undefined : label,
+    'aria-label': naming.ariaLabel,
+    'aria-labelledby': naming.labelledby,
     'aria-pressed': props.pressed,
     'aria-busy': busy || undefined,
     'aria-haspopup': popup ? popup.kind : undefined,
@@ -113,10 +116,11 @@ interface FaceProps {
   props: ButtonProps;
   model: ButtonModel;
   labelRef: RefObject<HTMLSpanElement | null>;
+  labelId: string | undefined;
 }
 
 /** Spinner or icon, label, trailing icon, then the inline keycap or the held-⌘ badge. */
-function ButtonFace({ props, model, labelRef }: FaceProps) {
+function ButtonFace({ props, model, labelRef, labelId }: FaceProps) {
   const { icon, trailingIcon, label } = props;
   const { labelVisible, caps, inline, badge, spinning } = model;
   const hasCaps = caps.length > 0;
@@ -128,7 +132,7 @@ function ButtonFace({ props, model, labelRef }: FaceProps) {
         <Icon name={icon} />
       ) : null}
       {labelVisible ? (
-        <span ref={labelRef} className="ui-button-label">
+        <span ref={labelRef} id={labelId} className="ui-button-label">
           {label}
         </span>
       ) : null}
@@ -150,9 +154,10 @@ function ButtonFace({ props, model, labelRef }: FaceProps) {
 export function Button(props: ButtonProps) {
   const model = useButtonModel(props);
   const { labelRef, clipped, checkClipped } = useLabelClip();
+  const naming = buttonNaming(props, model.labelVisible, useId());
   const button = (
-    <button {...buttonAttributes(props, model, { clipped, checkClipped })}>
-      <ButtonFace props={props} model={model} labelRef={labelRef} />
+    <button {...buttonAttributes(props, model, { clipped, checkClipped }, naming)}>
+      <ButtonFace props={props} model={model} labelRef={labelRef} labelId={naming.labelId} />
     </button>
   );
 
