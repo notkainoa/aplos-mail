@@ -77,3 +77,13 @@ Never compares with our value alone. Each read records a short salted hash of th
 ## Running the emulator as real Gmail behaves
 
 `APLOS_EMU_DRAFT_IDENTITY=rewritten` (any test that creates a Gmail emulator) makes every `drafts.create` / `drafts.update` replace the draft's Message-ID with `<hex@mail.gmail.com>`; `APLOS_EMU_DROP_DRAFT_HEADERS=X-Aplos-Probe,X-Other` also drops those headers. The same are the `draftIdentity` and `dropDraftHeaders` options of `createGmailEmulator`. The emulator's `drafts.list` now also honours `q=`.
+
+## Probe: `gmail.send-message-id` (tier S-self, one mail to the agent account itself)
+
+Measurement (d) of engine's draft-identity note: does `messages.send` of our MIME keep OUR Message-ID on the Sent copy? It decides how `findSent` can recover an uncertain send and whether `useDraftsSend` can ever be switched on. Command: `npx tsx apps/desktop/scripts/live/run.ts --provider gmail --tier S-self --account agent --confirm-mutating --expect-sha <sha>`. Guard unchanged: the only send path is `messages.send` with every recipient the account itself.
+
+It sends ONE message to the account's own address, subject `aplos-live-probe-send <date>`, a one-line body, a known Message-ID and the `X-Aplos-Draft` header. The address is read from the profile inside the probe, used for that one `To:` header and never stored, logged or reported. It refuses to send (`probeMessagesExisting`, fail) while a probe message of the same day exists, so a run sends at most once a day. The guard refuses deletes, so the message (one copy, labelled Sent and Inbox) stays; the owner discards it by hand.
+
+Counts: `sent` (1 = the send went through), `sentKeptMessageId` (0/1), `sentMessageIdShape` (0 absent, 1 ours, 2 Gmail-style, 3 other), `sentHeaderKept` (our `X-Aplos-Draft` token is on the Sent copy), `sentFoundByRfc822msgidOurs` and `sentFoundByRfc822msgidGmails` (Sent messages `rfc822msgid:` finds for our id and for the id Gmail shows), `sentSearchTries` (the searches are repeated up to 4 times, 3 s apart, while an index may still be catching up).
+
+Emulator: `sendIdentity: 'rewritten'` (or `APLOS_EMU_SEND_IDENTITY=rewritten`) makes `messages.send` replace the Message-ID like the draft finding, to run suites as if Gmail does that on send too.
