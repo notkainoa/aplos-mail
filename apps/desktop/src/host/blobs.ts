@@ -26,6 +26,8 @@ import {
 /** The first line of every blob file. */
 const MAGIC = 'aplos-blob/1\n';
 const MAGIC_BYTES = new TextEncoder().encode(MAGIC);
+/** Every version's magic starts with this. */
+const FAMILY = new TextEncoder().encode('aplos-blob/');
 const TMP = '.tmp';
 const FILE_NAME = /^(b_[0-9a-f]{32})\.blob$/;
 const { O_CREAT, O_EXCL, O_WRONLY, O_RDONLY, O_NOFOLLOW, O_NONBLOCK, O_DIRECTORY } = constants;
@@ -105,10 +107,10 @@ async function privateFolder(dir: string): Promise<void> {
   });
 }
 
-/** The folder is still a real directory of ours, not a link swapped in since it was opened. */
+/** The folder is still a private (no group or other access) directory of ours, not a link swapped in since it was opened. */
 async function checkFolder(dir: string): Promise<void> {
   const stats = await fs.lstat(dir).catch(() => undefined);
-  if (!stats?.isDirectory() || stats.isSymbolicLink() || !ours(stats))
+  if (!stats?.isDirectory() || stats.isSymbolicLink() || !ours(stats) || stats.mode & 0o077)
     throw new BlobFilesError('io');
 }
 
@@ -145,12 +147,25 @@ function encodePrefix(header: BlobHeader, limits: Limits): Uint8Array | undefine
 }
 
 /** Parses the head of a blob file: `{header, offset}` of the bytes, or undefined when it is not one of ours. */
+const startsWith = (head: Uint8Array, prefix: Uint8Array) =>
+  head.byteLength >= prefix.byteLength && prefix.every((byte, i) => head[i] === byte);
+
+/** A header with a `kind` this version does not know: a newer Aplos wrote it. */
+const foreignKind = (parsed: unknown) => {
+  const kind = (parsed as { kind?: unknown } | null)?.kind;
+  return typeof kind === 'string' && kind !== 'upload' && kind !== 'original';
+};
+
+/**
+ * `foreign` is a blob of another version of this format (another `aplos-blob/` magic, or a `kind` this version does not
+ * know): a newer Aplos wrote it, so after a downgrade it is kept and counted, never served or deleted.
+ */
 function parseHead(
   head: Uint8Array,
   fileSize: number,
   limits: Limits,
-): { header: BlobHeader; offset: number } | undefined {
-  for (let i = 0; i < MAGIC_BYTES.byteLength; i++) if (head[i] !== MAGIC_BYTES[i]) return undefined;
+): { header: BlobHeader; offset: number } | 'foreign' | undefined {
+  if (!startsWith(head, MAGIC_BYTES)) return startsWith(head, FAMILY) ? 'foreign' : undefined;
   const end = head.indexOf(10, MAGIC_BYTES.byteLength);
   if (end < 0) return undefined;
   let parsed: unknown;
@@ -162,6 +177,7 @@ function parseHead(
     return undefined;
   }
   const header = cleanHeader(parsed);
+  if (!header && foreignKind(parsed)) return 'foreign';
   const offset = end + 1;
   if (!header || header.size > limits.maxBytes || offset + header.size !== fileSize)
     return undefined;
@@ -170,14 +186,11 @@ function parseHead(
 
 /** Writes every byte of `data` at `position` (a write may be short). */
 async function writeAll(handle: fs.FileHandle, data: Uint8Array, position: number): Promise<void> {
+  // Read once: a buffer detached (transferred) mid-write must fail the write, not end it early.
+  const length = data.byteLength;
   let done = 0;
-  while (done < data.byteLength) {
-    const { bytesWritten } = await handle.write(
-      data,
-      done,
-      data.byteLength - done,
-      position + done,
-    );
+  while (done < length) {
+    const { bytesWritten } = await handle.write(data, done, length - done, position + done);
     if (bytesWritten <= 0) throw new BlobFilesError('io');
     done += bytesWritten;
   }
@@ -253,9 +266,9 @@ async function inspect(
     );
     if (!(await readAll(handle, head, 0))) throw new Error('short');
     const read = parseHead(head, stats.size, limits);
-    if (!read) {
+    if (!read || read === 'foreign') {
       await handle.close();
-      return { kind: 'bad' };
+      return read ? { kind: 'skip', size: stats.size } : { kind: 'bad' };
     }
     return { kind: 'ok', handle, header: read.header, offset: read.offset, stats };
   } catch {
@@ -387,7 +400,8 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
     return prefix;
   }
 
-  async function write(id: string, prefix: Uint8Array, bytes: Uint8Array): Promise<void> {
+  /** `total` is the size taken before any await, so a buffer detached since cannot shrink what must be written. */
+  async function write(id: string, prefix: Uint8Array, bytes: Uint8Array, total: number) {
     const temp = join(tmp, `${id}.${process.pid}.${Date.now().toString(36)}.part`);
     let linked = false;
     try {
@@ -399,6 +413,8 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
         await writeAll(handle, bytes, prefix.byteLength);
         await step('fsync');
         await handle.sync();
+        // Never link a short file: it would be deleted as corrupt by the next scan after `put` said ok.
+        if ((await handle.stat()).size !== total) throw new BlobFilesError('io');
       } finally {
         await handle.close();
       }
@@ -430,10 +446,11 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
       reserved += total;
       try {
         await checkFolder(dir);
+        await checkFolder(tmp);
         const free = await freeBytes(dir).catch(() => 0);
         // Written so that a NaN (an odd `statfs`) fails closed too.
         if (!(free - total >= limits.freeDiskFloor)) throw new BlobFilesError('diskFull');
-        await write(id, prefix, bytes);
+        await write(id, prefix, bytes, total);
         sizes.set(id, total);
         noteAdded(id, total);
       } finally {
