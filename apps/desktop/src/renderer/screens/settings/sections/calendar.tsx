@@ -2,8 +2,10 @@
 import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { Group, NotAvailable, Row, Select } from '../parts';
-import { hasCapability, WEEK_START_OPTIONS } from '../settings.model';
+import { hasCapability, WEEK_START_OPTIONS, withCurrent } from '../settings.model';
 import type { SectionProps } from './types';
+
+const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function Calendar({ data, actions }: SectionProps) {
   const { calendar, ui } = data.settings;
@@ -31,7 +33,7 @@ export function Calendar({ data, actions }: SectionProps) {
           control={
             <Select
               label="Week starts on"
-              options={WEEK_START_OPTIONS}
+              options={withCurrent(WEEK_START_OPTIONS, week, WEEK_DAYS[Number(week)] ?? week)}
               value={week}
               onChange={v =>
                 void actions.setUi({

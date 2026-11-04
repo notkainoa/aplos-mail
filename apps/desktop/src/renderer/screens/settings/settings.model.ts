@@ -72,9 +72,9 @@ export function hasCapability(
   return session?.capabilities?.[key] === true;
 }
 
-/** "Version 0.3.0 · macOS" (DESIGN 10). */
+/** "Version 0.3.0 · macOS" (DESIGN 10). Without a build number, just "macOS". */
 export function versionLine(session: Pick<Session, 'appVersion'> | undefined): string {
-  return `Version ${session?.appVersion ?? ''} · macOS`;
+  return session?.appVersion ? `Version ${session.appVersion} · macOS` : 'macOS';
 }
 
 /* ───────────────────────── patches ───────────────────────── */
@@ -527,10 +527,6 @@ export function usableFor(p: AiProvider, feature: AiFeature): boolean {
   return p.status === 'ready' && p.running !== false;
 }
 
-function knownId(id: string): id is ProviderId {
-  return id in PROVIDER_NAMES;
-}
-
 /** Model ids a provider offers a feature: speech models for Voice, the rest for everything else. */
 export function modelIds(models: readonly AiModelInfo[] | undefined, feature: AiFeature): string[] {
   return (models ?? [])
@@ -551,7 +547,8 @@ export function featureRows(
       const p = byId(providers, id);
       return p && usableFor(p, feature);
     });
-    const provider = (knownId(choice.provider) ? choice.provider : 'groq') as ProviderId;
+    // An unknown stored id is shown as it is (the picker prepends an unlisted value); coercing it would mislabel.
+    const provider = choice.provider as ProviderId;
     return {
       feature,
       provider,
@@ -696,7 +693,6 @@ export function aiNotices(
   settings: Pick<Settings, 'ai'>,
   providers: readonly AiProvider[],
 ): readonly AiNotice[] {
-  if (providers.length === 0) return [];
   const anyReady = providers.some(p => p.status === 'ready' && p.running !== false);
   if (!anyReady) {
     return [
@@ -750,18 +746,15 @@ export const HOW_MAIL_IS_USED: readonly { lead: string; body: string }[] = [
 
 /* ───────────────────────── Notifications, tools, help ───────────────────────── */
 
-/** Per-account switches follow the account row. */
+/** Per-account switches follow the account row. The colour index is the account list's, so a mark matches everywhere. */
 export function notifyRows(
   accounts: readonly Account[],
 ): readonly { id: string; name: string; mark: TagColor; on: boolean }[] {
-  return accounts
-    .filter(a => !a.demo)
-    .map((a, i) => ({
-      id: a.id,
-      name: a.name || a.address,
-      mark: tagColor(a, i),
-      on: a.notifications,
-    }));
+  return accounts.flatMap((a, i) =>
+    a.demo
+      ? []
+      : [{ id: a.id, name: a.name || a.address, mark: tagColor(a, i), on: a.notifications }],
+  );
 }
 
 const SCOPE_WORDS: Record<string, string> = {

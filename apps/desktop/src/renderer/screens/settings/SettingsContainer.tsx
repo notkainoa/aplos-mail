@@ -98,12 +98,17 @@ function Loaded({
   const [section, setSection] = useState<SettingSection>(parsed?.section ?? 'general');
   const routeSection = parsed?.section;
   const routeRow = parsed?.row;
-  useEffect(() => {
-    if (routeSection) setSection(routeSection);
-  }, [routeSection, routeRow]);
 
   const resolved = useMemo(() => ports ?? dataPorts(), [ports]);
   const { data, view, actions, failure } = useSettingsState(base, host, resolved, section);
+
+  // A route-driven section change (a deep link, back/forward) leaves like the nav does: drafts and failures drop.
+  useEffect(() => {
+    if (routeSection && routeSection !== section) {
+      actions.leave();
+      setSection(routeSection);
+    }
+  }, [routeSection, routeRow, section, actions]);
 
   const choose = useCallback(
     (next: SettingSection) => {

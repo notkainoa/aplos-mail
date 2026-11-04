@@ -4,7 +4,7 @@
  * a write is optimistic and, when rejected, puts the control back and says so in one inline line with Retry
  * (DESIGN 5 rule 11, 7.15); a key goes out once and is never kept (DESIGN 7.10); a destructive step asks first.
  */
-import type { SettingsPatch } from '../../data';
+import type { Settings, SettingsPatch } from '../../data';
 import { createAppRegistry } from '../../commands';
 import type { AiFeature, ProviderId } from '../../ui/props';
 import {
@@ -80,17 +80,67 @@ export function createController(deps: ControllerDeps) {
     }
   }
 
+  /* The optimistic overlay is one slot per write in flight, not one for the page: a write that settles takes
+   * down only its own, so a slow write never snaps a concurrent one back. */
+  let overlaySeq = 0;
+  const inFlight = new Map<number, SettingsPatch>();
+  const overlayNow = (): SettingsPatch | null => {
+    if (inFlight.size === 0) return null;
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const patch of inFlight.values())
+      for (const section of Object.keys(patch)) {
+        const part = (patch as Record<string, Record<string, unknown> | undefined>)[section];
+        if (part) out[section] = { ...(out[section] ?? {}), ...part };
+      }
+    return out as SettingsPatch;
+  };
+  const pushOverlay = (patch: SettingsPatch): number => {
+    const id = ++overlaySeq;
+    inFlight.set(id, patch);
+    deps.overlay(overlayNow());
+    return id;
+  };
+  const dropOverlay = (id: number): void => {
+    inFlight.delete(id);
+    deps.overlay(overlayNow());
+  };
+
   /** `Settings/set` with the optimistic overlay: the control moves at once and goes back if the write is refused. */
   async function set(patch: SettingsPatch, op = 'save that setting'): Promise<boolean> {
-    deps.overlay(patch);
+    const id = pushOverlay(patch);
     const ok = await guard(op, () => ports.settingsSet(patch));
-    deps.overlay(null);
+    dropOverlay(id);
     return ok;
   }
+
+  /** The provider table re-read after a key changed; it failing quietly must never skip what follows. */
+  const refreshProviders = async (): Promise<void> => {
+    try {
+      await ports.loadProviders?.();
+    } catch {
+      /* the table keeps what it had */
+    }
+  };
+
+  /* Feature choices the engine has not echoed back yet. `ai.features` is written whole, so a feature write built
+   * on the stale read would silently revert a change that is still on its way (or just landed). */
+  type FeatureChoice = Settings['ai']['features'][AiFeature];
+  const pendingFeatures = new Map<AiFeature, FeatureChoice>();
+  const featuresNow = (settings: Settings): Settings['ai']['features'] => {
+    const stored = settings.ai.features;
+    for (const [feature, choice] of [...pendingFeatures]) {
+      const s = stored[feature];
+      if (s.provider === choice.provider && s.model === choice.model)
+        pendingFeatures.delete(feature);
+    }
+    return { ...stored, ...Object.fromEntries(pendingFeatures) } as Settings['ai']['features'];
+  };
 
   const keyFields = (): KeyFields => data().settings.ui;
 
   const addressTimers = new Map<LocalId, () => void>();
+  /** Bumped by leave(), so a provider test that lands after the page was left writes nothing. */
+  let testGeneration = 0;
 
   const self = {
     set,
@@ -151,7 +201,8 @@ export function createController(deps: ControllerDeps) {
     /** A feature's provider or model changed; a new provider resets the model to its first one. */
     async changeFeature(feature: AiFeature, choice: { provider: ProviderId; model: string }) {
       const d = data();
-      const current = d.settings.ai.features[feature];
+      const features = featuresNow(d.settings);
+      const current = features[feature];
       let models = d.models;
       if (choice.provider !== current.provider && !models?.[choice.provider]?.length) {
         try {
@@ -171,10 +222,14 @@ export function createController(deps: ControllerDeps) {
         });
         return false;
       }
-      return set(
-        featurePatch(data().settings, feature, next),
+      pendingFeatures.set(feature, next);
+      const ok = await set(
+        featurePatch({ ai: { ...d.settings.ai, features } }, feature, next),
         `change the ${featureLabel(feature)} model`,
       );
+      // A refused write puts the control back and drops the intent; a newer one for the same feature stays.
+      if (!ok && pendingFeatures.get(feature) === next) pendingFeatures.delete(feature);
+      return ok;
     },
     async loadModels(provider: string) {
       if (data().models?.[provider]) return;
@@ -199,12 +254,14 @@ export function createController(deps: ControllerDeps) {
           addressTimers.delete(provider);
           void (async () => {
             const patch = addressPatch(data().settings, provider, address);
-            deps.overlay(patch);
+            const overlayId = pushOverlay(patch);
             try {
               await ports.settingsSet(patch);
-              deps.setView({
-                addressDraft: { ...view().addressDraft, [provider]: undefined },
-              });
+              // Only this save clears its own draft; typing that arrived since must stay.
+              if (view().addressDraft[provider] === address)
+                deps.setView({
+                  addressDraft: { ...view().addressDraft, [provider]: undefined },
+                });
             } catch (error) {
               deps.setView({
                 addressError: {
@@ -213,25 +270,34 @@ export function createController(deps: ControllerDeps) {
                 },
               });
             }
-            deps.overlay(null);
+            dropOverlay(overlayId);
           })();
         }, 600),
       );
     },
     /** Test a provider's key: one cheap request, no mail. The result replaces the status until the page is left. */
     async testProvider(provider: ProviderId) {
+      const generation = testGeneration;
       deps.setView({ testing: { ...view().testing, [provider]: { kind: 'testing' } } });
       try {
         const result = await ports.aiTestKey(provider);
-        deps.setView({ testing: { ...view().testing, [provider]: testResultStatus(result) } });
+        if (generation === testGeneration)
+          deps.setView({
+            testing: { ...view().testing, [provider]: testResultStatus(result) },
+          });
       } catch {
-        deps.setView({ testing: { ...view().testing, [provider]: { kind: 'unreachable' } } });
+        if (generation === testGeneration)
+          deps.setView({
+            testing: { ...view().testing, [provider]: { kind: 'unreachable' } },
+          });
       }
     },
-    /** Leaving the page drops test results and anything half-typed. */
+    /** Leaving the page drops test results, anything half-typed and a stale failure line. */
     leave() {
+      testGeneration += 1;
       for (const cancel of addressTimers.values()) cancel();
       addressTimers.clear();
+      deps.fail(null);
       deps.setView({
         testing: {},
         addKey: null,
@@ -252,11 +318,22 @@ export function createController(deps: ControllerDeps) {
      */
     async submitKey(provider: ProviderId, key: string) {
       deps.setView({ addKey: null });
-      const ok = await guard(`save the ${providerName(provider)} key`, () =>
-        ports.aiSetKey(provider, key),
-      );
+      let ok: boolean;
+      try {
+        await ports.aiSetKey(provider, key);
+        deps.fail(null);
+        ok = true;
+      } catch {
+        ok = false;
+        // The key is never kept: Retry reopens the add-key dialog for a fresh paste, it does not resubmit.
+        deps.fail({
+          op: `save the ${providerName(provider)} key`,
+          retry: () => self.openAddKey(provider, 'add'),
+          dismiss: () => deps.fail(null),
+        });
+      }
       if (ok) {
-        await ports.loadProviders?.();
+        await refreshProviders();
         await self.testProvider(provider);
       }
       return ok;
@@ -408,11 +485,14 @@ export function createController(deps: ControllerDeps) {
       deps.setData({ bundle: undefined });
     },
     saveDiagnostics() {
+      if (view().busy.diagnostics) return Promise.resolve(false);
+      busy('diagnostics', true);
+      // A failure stays inside the open dialog (the page line is behind it), so the dialog stays up on a miss.
       return guard('save the report', async () => {
         await ports.diagnosticsSave();
         deps.setView({ diagnostics: false });
         deps.setData({ bundle: undefined });
-      });
+      }).finally(() => busy('diagnostics', false));
     },
     openQueue() {
       deps.setView({ queue: true });
@@ -452,7 +532,7 @@ export function createController(deps: ControllerDeps) {
           const ok = await guard(`remove the ${providerName(c.provider)} key`, () =>
             ports.aiRemoveKey(c.provider),
           );
-          if (ok) await ports.loadProviders?.();
+          if (ok) await refreshProviders();
           return ok;
         }
         case 'discardQueueItem':
