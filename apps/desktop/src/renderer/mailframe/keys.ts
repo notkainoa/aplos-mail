@@ -5,27 +5,18 @@
 // dictates). Keyups are never relayed, and none is needed: no listed key is a hold key. Ctrl and Cmd belong to the
 // frame (copy, select all through the Edit menu), and keys typed during IME composition belong to the composer.
 // Nothing in the frame is editable (forms are removed). The sealed frame's reporter relays no keys at all (PROTOCOL.md
-// "Keys"): its keys need main's `before-input-event`, filtered to this same list.
+// "Keys"): its keys arrive from main's `before-input-event` relay (host/protocol/frame-keys.ts), filtered to this same
+// list. The two never meet: this one listens inside a same-origin srcdoc frame (development only), and main's fires
+// only while the focused frame is an `aplos-mail://m/<token>/` document.
 
+import { MAIL_KEYS } from '../../shared/mail-keys';
 import type { MailFrameKey } from './types';
 
 /**
  * The only keys a frame may hand to the shell: non-destructive and never a hold key (research section 7: never E,
- * Space or R).
+ * Space or R). The list is `shared/mail-keys.ts`'s, which main's `before-input-event` relay reads too.
  */
-export const FALLBACK_KEYS: ReadonlySet<string> = new Set([
-  'j',
-  'k',
-  'J',
-  'K',
-  'ArrowUp',
-  'ArrowDown',
-  'PageUp',
-  'PageDown',
-  'Home',
-  'End',
-  'Escape',
-]);
+export const FALLBACK_KEYS: ReadonlySet<string> = new Set<string>(MAIL_KEYS);
 
 /** The parts of a KeyboardEvent the relay reads and may cancel. Duck-typed: the event comes from the frame realm. */
 export interface RelayableKeyEvent {

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Bridge, Listener } from '@aplos/contract/legacy/types';
 import { legacyMethods } from '@aplos/contract/allowlists';
 import { exposeEngineBridge } from '../host/transports/port';
+import { MAIL_KEY_CHANNEL, mailKeyEvent } from '../shared/mail-keys';
 
 const allowed = new Set<string>(legacyMethods);
 const listeners = new Set<Listener>();
@@ -19,6 +20,12 @@ ipcRenderer.on(
     for (const listener of listeners) listener(event);
   },
 );
+// A key main relayed from the sealed mail frame: one narrow message, validated again here, anything else dropped.
+// Never queued: a key nobody is listening for is stale.
+ipcRenderer.on(MAIL_KEY_CHANNEL, (_event: Electron.IpcRendererEvent, message: unknown) => {
+  const event = mailKeyEvent(message);
+  if (event) for (const listener of listeners) listener(event);
+});
 const bridge: Bridge = {
   invoke: async <T>(method: string, payload?: unknown): Promise<T> => {
     if (!allowed.has(method)) throw new Error('Unsupported application method.');
