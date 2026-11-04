@@ -34,6 +34,15 @@ export const SERVE_TIMEOUT_MS = 15_000;
 /** How many `Mail/serve` relays main keeps open at once; the next one is the uniform 404 with no engine call. */
 export const MAX_RELAY_IN_FLIGHT = 64;
 
+/** The same, per window: one window (or a page in it) cannot take the whole pool and starve the others. */
+export const MAX_RELAY_PER_WINDOW = 16;
+
+/**
+ * The largest answer main relays: a `cid` part is capped at 10 MB by the engine, a remote image at the proxy's 10 MB and
+ * a document is far smaller. Above this the answer is the uniform 404 (defence in depth: the engine's caps are the rule).
+ */
+export const MAX_SERVE_BODY_BYTES = 10 * 1024 * 1024;
+
 /** Every header name the engine's `Mail/serve` writes (`@aplos/mail-html/frame` headers.ts). Nothing else passes. */
 export const ENGINE_HEADERS: ReadonlySet<string> = new Set([
   'content-security-policy',
@@ -53,6 +62,8 @@ export interface ServeArgs {
   path: string;
   /** The requesting Electron window's id, as decimal text; the utility process swaps it for a connection id. */
   windowId: string;
+  /** The protocol request's own signal: the page gave up (navigated away, removed the frame), so the work can stop. */
+  signal?: AbortSignal;
 }
 
 export interface RelayDeps {
@@ -153,7 +164,7 @@ export function servedResponse(answer: unknown): ServeResponse | undefined {
   if (!answer || typeof answer !== 'object') return undefined;
   const { status, headers, body } = answer as Record<string, unknown>;
   if (typeof status !== 'number' || !ENGINE_STATUSES.has(status)) return undefined;
-  if (!(body instanceof Uint8Array)) return undefined;
+  if (!(body instanceof Uint8Array) || body.byteLength > MAX_SERVE_BODY_BYTES) return undefined;
   const checked = plainHeaders(headers);
   if (!checked || checked['content-security-policy'] === undefined) return undefined;
   return { status, headers: checked, body };
@@ -181,7 +192,9 @@ async function answer(request: Request, deps: RelayDeps): Promise<Response> {
   const contents = stampedContents(request.headers);
   const window = contents === undefined ? undefined : deps.windowOf(contents);
   if (!target || window === undefined) return refused();
-  const served = servedResponse(await deps.serve({ ...target, windowId: String(window) }));
+  const served = servedResponse(
+    await deps.serve({ ...target, windowId: String(window), signal: request.signal }),
+  );
   return served ? toResponse(served) : refused();
 }
 
@@ -197,23 +210,51 @@ export function createMailHandler(deps: RelayDeps): (request: Request) => Promis
   };
 }
 
+/** Settles with the work or, once `signal` aborts, with an abort rejection (the work itself is the caller's to cancel). */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.reject(new Error('The request was cancelled.'));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new Error('The request was cancelled.'));
+    signal.addEventListener('abort', abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+
 /**
- * `serve` with at most `max` calls open at once. One more is refused (a rejection, so the handler answers the uniform
- * 404) without calling `serve`. The count drops on every exit: an answer, a rejection (the link's timeout included) or
- * a throw.
+ * `serve` with at most `max` calls open at once, and at most `perWindow` for one window. One more is refused (a
+ * rejection, so the handler answers the uniform 404) without calling `serve`. A slot is freed exactly once, on the
+ * first of: the answer, a rejection (the link's timeout included), a throw, or the request's own abort (a page that
+ * navigated away no longer holds a slot while the engine finishes).
  */
 export function limitInFlight(
   serve: RelayDeps['serve'],
   max: number = MAX_RELAY_IN_FLIGHT,
+  perWindow: number = MAX_RELAY_PER_WINDOW,
 ): RelayDeps['serve'] {
   let open = 0;
+  const byWindow = new Map<string, number>();
+  const release = (window: string) => {
+    open--;
+    const left = (byWindow.get(window) ?? 1) - 1;
+    if (left <= 0) byWindow.delete(window);
+    else byWindow.set(window, left);
+  };
   return async args => {
-    if (open >= max) throw new Error('Too many mail requests at once.');
+    const mine = byWindow.get(args.windowId) ?? 0;
+    if (open >= max || mine >= perWindow) throw new Error('Too many mail requests at once.');
     open++;
+    byWindow.set(args.windowId, mine + 1);
+    let freed = false;
+    const free = () => {
+      if (freed) return;
+      freed = true;
+      release(args.windowId);
+    };
     try {
-      return await serve(args);
+      return await untilAborted(serve(args), args.signal);
     } finally {
-      open--;
+      free();
     }
   };
 }

@@ -1372,5 +1372,19 @@
       "mustKeepText": ["The paper colour is on the html element only"],
       "notes": "From the ui-core REQUEST (html-5 slice 2). The reporter reported only the body's background, so a mail that coloured <html> showed on light paper. It now falls back to the root's colour when the body's is transparent; the browser run checks the reported colour."
     }
+  },
+  {
+    "id": "140-container-query-units-grow-the-frame",
+    "title": "Container query units with no container, in escapes, calc(), custom properties and style attributes",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/140-container-query-units-grow-the-frame.html",
+    "expect": {
+      "mustKeepText": [
+        "Container units fall back to the viewport",
+        "The frame follows the letter",
+        "Absurd container values stay bounded"
+      ],
+      "notes": "From the independent review of the frame reporter fixes. cqw, cqh, cqi, cqb, cqmin and cqmax resolve against the small viewport when no ancestor is a size container, which is how the sanitizer's own output is laid out, so 100cqh grew the frame exactly like 100vh (132 to 4,900 px, then the 300-report cap in the browser run). They are rewritten to px like the viewport units (css.ts viewportLength), also with a container declared: the mail cannot be relied on to declare one, and a declared size container could still be sized by the frame. container-type and container are left alone. The oracle fails any sanitized CSS that still holds a cq unit; reporter.e2e.ts checks that the frame settles."
+    }
   }
 ]

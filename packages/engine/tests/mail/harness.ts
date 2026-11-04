@@ -85,6 +85,7 @@ export async function mailWorld(options: WorldOptions = {}) {
   const remote = new Map<string, BodyRecord>([['r3', RICH]]);
   const parts = new Map<string, Uint8Array>([['part-1', PNG]]);
   let image: ProxiedImage = { kind: 'image', mime: 'image/png', bytes: PNG };
+  let imageFn: (() => Promise<ProxiedImage>) | undefined;
   let stream: (() => AsyncIterable<Uint8Array>) | undefined;
   const accounts = {
     async openThread(account: string, thread: string, opts?: { lane?: string }) {
@@ -113,7 +114,7 @@ export async function mailWorld(options: WorldOptions = {}) {
   const images: ImageProxy = {
     async fetch(url, opts) {
       calls.images.push(`${opts.token} ${url}`);
-      return image;
+      return imageFn ? imageFn() : image;
     },
   };
   const engine = await createEngine({
@@ -156,6 +157,11 @@ export async function mailWorld(options: WorldOptions = {}) {
     },
     setImage(next: ProxiedImage) {
       image = next;
+      imageFn = undefined;
+    },
+    /** The proxy answers by calling `next` each time (a host proxy that hangs, say). */
+    setImageFn(next: () => Promise<ProxiedImage>) {
+      imageFn = next;
     },
     async cleanup() {
       await engine.close();

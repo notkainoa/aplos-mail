@@ -358,7 +358,18 @@ describe('reporter: the paper colour', () => {
 
   it('falls back to the root when the body has none', () => {
     const root = 'rgb(240, 240, 232)';
-    for (const bodyPaint of ['rgba(0, 0, 0, 0)', 'transparent', '', 'rgba(12, 34, 56, 0)']) {
+    const clear = [
+      'rgba(0, 0, 0, 0)',
+      'transparent',
+      '',
+      'rgba(12, 34, 56, 0)',
+      'oklch(0.5 0.2 30 / 0)',
+      'color(srgb 1 0 0 / 0)',
+      'color(srgb 1 0 0 / 0%)',
+      'color(srgb 1 0 0 / 0.0)',
+      'lab(50 20 30 /0)',
+    ];
+    for (const bodyPaint of clear) {
       assert.equal(report({ bodyPaint, rootPaint: root }), root, bodyPaint);
     }
   });
@@ -368,6 +379,17 @@ describe('reporter: the paper colour', () => {
     assert.equal(report({ bodyPaint: 'rgb(1, 2, 3)', rootPaint }), 'rgb(1, 2, 3)');
     assert.equal(report({ bodyPaint: 'rgba(1, 2, 3, 0.5)', rootPaint }), 'rgba(1, 2, 3, 0.5)');
     assert.equal(report({ bodyPaint: 'rgb(1, 2, 30)', rootPaint }), 'rgb(1, 2, 30)');
+    // Opaque colours that happen to end in a 0 channel are colours, not see-through.
+    for (const bodyPaint of [
+      'rgb(255, 255, 0)',
+      'rgb(0, 0, 0)',
+      'oklch(0.5 0.2 30 / 0.5)',
+      'color(srgb 1 0 0 / 10%)',
+      'color(srgb 1 0 0 / 0.05)',
+      'color(srgb 1 0 0)',
+    ]) {
+      assert.equal(report({ bodyPaint, rootPaint }), bodyPaint, bodyPaint);
+    }
   });
 
   it('reports the body when neither has a colour', () => {

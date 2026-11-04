@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ContractError } from '@aplos/contract/contract-error';
 import { notFound } from '@aplos/mail-html/frame';
+import { IMAGE_PROXY_LIMITS } from '../../src/ports';
 import { EXE, frameOf, HTML, IDS, mailWorld, PNG, serve, SVG, text, type World } from './harness';
 
 // `Mail/serve`: main's relay only, the window id it passes or the 404, and bytes typed by sniffing alone.
@@ -85,6 +86,32 @@ describe('Mail/serve', () => {
       w.parts.delete('part-1');
       assert.deepEqual(await serve(w, frame.url, 'cid/0', w.ids.windowA), notFound());
       assert.deepEqual(await serve(w, frame.url, 'cid/1', w.ids.windowA), notFound(), 'unissued');
+    }));
+
+  it('refuses a proxied image over the proxy’s byte cap, even if the proxy hands it over', () =>
+    withWorld(async w => {
+      const frame = await servedFrame(w);
+      const big = new Uint8Array(IMAGE_PROXY_LIMITS.maxBytes + 1);
+      big.set(PNG);
+      w.setImage({ kind: 'image', mime: 'image/png', bytes: big });
+      // Compared by status: a failing deepEqual of two 10 MB arrays would take a minute to print.
+      assert.equal((await serve(w, frame.url, 'img/0', w.ids.windowA)).status, 404);
+      const exact = new Uint8Array(IMAGE_PROXY_LIMITS.maxBytes);
+      exact.set(PNG);
+      w.setImage({ kind: 'image', mime: 'image/png', bytes: exact });
+      assert.equal((await serve(w, frame.url, 'img/0', w.ids.windowA)).status, 200, 'at the cap');
+    }));
+
+  it('gives a proxy that never answers the proxy’s time limit, then the 404', () =>
+    withWorld(async w => {
+      const frame = await servedFrame(w);
+      w.setImageFn(() => new Promise(() => undefined));
+      const pending = serve(w, frame.url, 'img/0', w.ids.windowA);
+      await new Promise(resolve => setImmediate(resolve));
+      w.clock.advance(IMAGE_PROXY_LIMITS.timeoutMs - 1);
+      await new Promise(resolve => setImmediate(resolve));
+      w.clock.advance(1);
+      assert.deepEqual(await pending, notFound());
     }));
 
   it('refuses an inline part over the byte cap', () =>

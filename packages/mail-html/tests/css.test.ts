@@ -360,6 +360,13 @@ describe('viewport units', () => {
       ['a{--h:100vh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
       ['@media (min-height:100vh){a{b:c}}', '@media (min-height:600px){a{b:c}}'],
       ['a{height:100vh!important}', 'a{height:600px!important}'],
+      ['a{height:100cqh;width:100cqw}', 'a{height:600px;width:640px}'],
+      ['a{height:10cqb;width:10cqi}', 'a{height:60px;width:64px}'],
+      ['a{height:10cqmin;width:10cqmax}', 'a{height:60px;width:64px}'],
+      ['a{min-height:100CQB;height:100\\63 qh}', 'a{min-height:600px;height:600px}'],
+      ['a{height:calc(100cqh - 1cqw)}', 'a{height:calc(600px - 6.4px)}'],
+      ['a{--h:100cqh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
+      ['@container (min-height:100cqh){a{b:c}}', '@container (min-height:600px){a{b:c}}'],
     ];
     for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
   });
@@ -380,7 +387,7 @@ describe('viewport units', () => {
     const same = [
       'a{height:100px;width:50%;margin:1em 2rem;line-height:1.5;z-index:100}',
       'a{height:100vhx;width:100v;font-size:100 vh}',
-      'a{height:100cqh;width:100ch;top:0}',
+      'a{height:100ch;width:100cq;top:0;margin:1cqx 2vq}',
       'a{content:"100vh";grid-area:vh}',
     ];
     for (const input of same) assert.equal(clean(input).css, input, input);
@@ -391,6 +398,11 @@ describe('viewport units', () => {
     assert.equal(viewportLength(100, 'DVW'), '640px');
     assert.equal(viewportLength(100, 'vmin'), '600px');
     assert.equal(viewportLength(100, 'vmax'), '640px');
+    assert.equal(viewportLength(100, 'cqh'), '600px');
+    assert.equal(viewportLength(100, 'CQW'), '640px');
+    assert.equal(viewportLength(100, 'cqmin'), '600px');
+    assert.equal(viewportLength(100, 'cqmax'), '640px');
+    assert.equal(viewportLength(100, 'cq'), undefined);
     assert.equal(viewportLength(100, 'px'), undefined);
     assert.equal(viewportLength(100, 'vhh'), undefined);
     assert.equal(viewportLength(100, 'xvh'), undefined);

@@ -156,6 +156,22 @@ test('real path: a window gets its own port, Session/get answers, main validates
   assert.deepEqual(main.broker.holders(), [2]);
 });
 
+test('real path: a control call whose signal aborts rejects at once and its late answer is dropped', async t => {
+  const main = mainSide(t);
+  const link = await main.supervisor.start();
+  await link.ready;
+  const args = { token: 'f'.repeat(32), path: '', windowId: '' };
+  const before = new AbortController();
+  before.abort();
+  await assert.rejects(link.call('Mail/serve', args, 5000, before.signal), /cancelled/);
+  const during = new AbortController();
+  const call = link.call('Mail/serve', args, 5000, during.signal);
+  during.abort();
+  await assert.rejects(call, /cancelled/);
+  // The link still works, and the dropped answer did not confuse it.
+  assert.ok(await link.call('Counts/get', {}));
+});
+
 test('real path: killing the engine reconnects windows on the same dbEpoch with no re-snapshot', async t => {
   const main = mainSide(t);
   const first = await (await main.supervisor.start()).ready;

@@ -15,6 +15,7 @@ import {
   jobMinutes,
   maxJobMinutes,
   measureRows,
+  medianMinutes,
   newestMinutes,
   createdSince,
   ciUnreadableReason,
@@ -291,6 +292,52 @@ describe('measure-budgets CI rows', () => {
     };
     const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: [run] });
     assert.equal(result.measured, 2.6);
+  });
+
+  it('static-unit is the median of the newest five green runs, leaving out web-only runs', async () => {
+    const unitName = 'Unit tests (desktop 1/2)';
+    const run = seconds => ({
+      conclusion: 'success',
+      jobs: [ciJob(ciJobNames.staticJob, seconds), ciJob(unitName, seconds - 20)],
+    });
+    // A web-only run: Static ran, the unit jobs were skipped (zero length).
+    const webOnly = seconds => ({
+      conclusion: 'success',
+      jobs: [ciJob(ciJobNames.staticJob, seconds), ciJob(unitName, 0, 'skipped')],
+    });
+    const failed = { conclusion: 'failure', jobs: [ciJob(ciJobNames.staticJob, 900)] };
+    const runs = [
+      run(300),
+      failed,
+      webOnly(60),
+      run(200),
+      run(210),
+      webOnly(50),
+      run(230),
+      run(240),
+      run(900),
+    ];
+    const isStaticUnit = name => name === ciJobNames.staticJob || name === unitName;
+    const isUnit = name => name === unitName;
+    // newest five green desktop runs: 300, 200, 210, 230, 240 s -> median 230 s; web-only and failed runs
+    // and the 900 s sixth run do not count.
+    assert.equal(medianMinutes(runs, isStaticUnit, 5, isUnit), 230 / 60);
+    assert.equal(medianMinutes(runs, isStaticUnit, 2, isUnit), 250 / 60);
+    assert.equal(medianMinutes([failed], isStaticUnit), null);
+    assert.equal(medianMinutes([webOnly(60)], isStaticUnit, 5, isUnit), null);
+    assert.equal(
+      medianMinutes([webOnly(60)], isStaticUnit),
+      1,
+      'without the rule the web-only run counts',
+    );
+    assert.equal(
+      medianMinutes([run(120)], name => name === ciJobNames.macosJob),
+      null,
+    );
+    const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: runs });
+    assert.equal(result.measured, 3.9);
+    const newest = await measurers['ci.wall-clock-e2e-browser'](null, { ci: true, ciRuns: runs });
+    assert.match(newest.skip, /no completed browser E2E/);
   });
 
   it('wall-clock rows ignore runs that did not succeed', () => {

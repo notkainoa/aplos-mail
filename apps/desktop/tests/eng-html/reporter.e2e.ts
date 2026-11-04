@@ -200,6 +200,21 @@ test.describe('paper colour', () => {
     expect((await last(none)).bg).toBe('rgba(0, 0, 0, 0)');
     await none.page.close();
   });
+
+  test('an opaque body colour that ends in a 0 channel is a colour, not see-through', async () => {
+    const yellow = '<style>html{background:#e8efe4}</style><body bgcolor="#ffff00"><p>x</p></body>';
+    const opened = await bed.open({ document: frameDocument(yellow) });
+    expect((await last(opened)).bg).toBe('rgb(255, 255, 0)');
+    await opened.page.close();
+  });
+
+  test('a body colour with alpha 0 in the slash form falls back to the html element', async () => {
+    const html =
+      '<style>html{background:#e8efe4}body{background:oklch(0.5 0.2 30 / 0)}</style><p>x</p>';
+    const opened = await bed.open({ document: frameDocument(html) });
+    expect((await last(opened)).bg).toBe('rgb(232, 239, 228)');
+    await opened.page.close();
+  });
 });
 
 test.describe('DOM clobbering', () => {
@@ -323,6 +338,36 @@ test.describe('viewport units cannot grow the frame', () => {
     // The units are bounded lengths now, so the letter is as tall as its own content says.
     expect(final).toBeLessThan(10_000);
     expect(await opened.frameHeight()).toBe(final);
+    await opened.page.close();
+  });
+
+  test('container query units with no container settle too (the sanitized corpus message)', async () => {
+    const opened = await bed.open({ document: frameDocument(entry('140').html ?? '') });
+    const reports = await opened.settled(6_000);
+    expect(await opened.capped()).toBe(false);
+    expect(reports.length).toBeLessThan(20);
+    expect(reports[reports.length - 1].h).toBeLessThan(10_000);
+    expect(await opened.frameHeight()).toBe(reports[reports.length - 1].h);
+    await opened.page.close();
+  });
+
+  test('control: unsanitized 100cqh and 100cqb blocks grow without end', async () => {
+    for (const unit of ['cqh', 'cqb']) {
+      const opened = await bed.open({
+        document: rawDocument(`<div style="height:100${unit};padding:16px">x</div>`, 'real'),
+        headers: 'none',
+      });
+      await opened.page.waitForTimeout(5_000);
+      expect(await opened.capped(), unit).toBe(true);
+      await opened.page.close();
+    }
+  });
+
+  test('a scaled or zoomed root cannot inflate the reported height', async () => {
+    const html =
+      '<style>html{transform:scale(1000);zoom:50;scale:1000;translate:0 900px}</style><p>short</p>';
+    const opened = await bed.open({ document: frameDocument(html), height: 2000, follow: false });
+    expect((await last(opened)).h).toBeLessThan(120);
     await opened.page.close();
   });
 

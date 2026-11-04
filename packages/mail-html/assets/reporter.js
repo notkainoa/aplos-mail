@@ -30,8 +30,15 @@
       const colour = element ? w.getComputedStyle(element).backgroundColor : '';
       return typeof colour === 'string' ? colour : '';
     }
+    // See-through: nothing, `transparent`, `rgba(..., 0)`, or any slash-alpha colour with alpha 0
+    // (`oklch(0.5 0.2 30 / 0)`). An opaque `rgb(255, 255, 0)` ends in `0)` and is a colour.
     function clear(colour) {
-      return colour === '' || colour === 'transparent' || /,\s*0\)$/.test(colour);
+      return (
+        colour === '' ||
+        colour === 'transparent' ||
+        /^rgba\(.*,\s*0\)$/.test(colour) ||
+        /\/\s*0(?:\.0*)?%?\)$/.test(colour)
+      );
     }
     function background(root, body) {
       const colour = paint(body);

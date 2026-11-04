@@ -35,8 +35,8 @@ const KEPT_AT_RULES = new Set([
   'layer',
   'container',
 ]);
-/** A length that follows the viewport (the frame is sized to the letter, so it would chase its own tail). */
-const VIEWPORT_LENGTH = /^(?:[sld]?v(?:w|h|i|b|min|max))$/i;
+/** A length that follows the viewport, or a container query unit that falls back to it (the frame is sized to the letter, so it would chase its own tail). */
+const VIEWPORT_LENGTH = /^(?:[sld]?v|cq)(?:w|h|i|b|min|max)$/i;
 const IMAGE_ROUTE = /^(?:cid|img)\/\d+$/;
 const RASTER_DATA = /^data:image\/(?:png|jpe?g|gif|webp)[;,]/i;
 const SAFE_HREF = /^(?:https?:\/\/|mailto:|tel:|#)/i;
