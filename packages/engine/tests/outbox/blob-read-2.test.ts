@@ -90,3 +90,27 @@ test('viii: a draft with no copy deleted while its failing upload read runs writ
     },
     { drafts: true },
   ));
+
+test('viii: a hidden row left holding a due time (pre-guard damage) loses it when the due scan fires', () =>
+  inWorld(
+    async w => {
+      // Unreachable through today's writers (the hide clears dueAt atomically and the commit guard
+      // refuses every later dueAt write on a removing row), so this is the legacy shape the backstop
+      // repairs: removing:true with a past deadline still on the row.
+      const f = withFile(w) as { _sync?: Record<string, unknown> } & typeof f;
+      f._sync = { rev: 1, removing: true, removeAt: 1, dueAt: 1 };
+      w.draft('d1', f, { remoteDraftId: 'rd-x' });
+      // Hold the provider's delete so the hidden row stays observable.
+      const hold = gate();
+      w.remoteDrafts.removeScript.push({ wait: hold.wait });
+      await w.clock.advance(5 * SEC);
+      await w.settle();
+      const row = draftRow(w, 'd1');
+      const meta = (JSON.parse(row.data) as { _sync: { removing?: boolean; dueAt?: number } })
+        ._sync;
+      assert.equal(meta.removing, true, 'still hidden');
+      assert.equal(meta.dueAt, undefined, 'the backstop cleared the stale deadline');
+      hold.open();
+    },
+    { drafts: true },
+  ));
