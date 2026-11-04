@@ -299,3 +299,64 @@ test('the returned path never names a sender-chosen string', async t => {
   assert.match(path, GRAMMAR);
   assert.equal(path.includes('passwd') || path.includes('.pdf') || path.includes('\0'), false);
 });
+
+test('an account folder swapped for a link keeps read and remove inside the tree', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const files = await open(dir);
+  const path = await files.write('acct', 'msg', 'part', bytesOf(16));
+  const [acct] = path.split('/');
+  const sub = leaf(dir, acct);
+  // Swap the real account folder for a link into a folder holding a staged file with our leaf's name.
+  const outside = join(scratch(t), 'outside');
+  mkdirSync(outside);
+  writeFileSync(join(outside, path.split('/')[1]), bytesOf(16, 9));
+  rmSync(sub, { recursive: true });
+  symlinkSync(outside, sub);
+  assert.equal(await files.read(path), undefined, 'a link in the middle is not followed');
+  await files.remove(path);
+  assert.ok(existsSync(join(outside, path.split('/')[1])), 'nothing outside is deleted');
+});
+
+test('an over-cap file planted on disk is not served', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const files = await open(dir);
+  const path = await files.write('acct', 'msg', 'part', bytesOf(4));
+  writeFileSync(leaf(dir, path), bytesOf(26 * 1024 * 1024));
+  assert.equal(await files.read(path), undefined);
+});
+
+test('two stores on one folder write without their temp names colliding', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const one = await open(dir);
+  const two = await open(dir);
+  const [a, b] = await Promise.all([
+    one.write('acct', 'msg', 'p1', bytesOf(8, 1)),
+    two.write('acct', 'msg', 'p2', bytesOf(8, 2)),
+  ]);
+  assert.equal((await one.read(a))?.byteLength, 8);
+  assert.equal((await two.read(b))?.byteLength, 8);
+});
+
+test('a failure after the rename still reports the write done', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const files = await open(dir, {
+    step: async label => {
+      if (label === 'fsyncDir') throw new Error('boom');
+    },
+  });
+  const path = await files.write('acct', 'msg', 'part', bytesOf(6));
+  assert.match(path, GRAMMAR);
+  assert.deepEqual(await files.read(path), bytesOf(6), 'the renamed file is the truth');
+});
+
+test('open clears only .part files from .tmp, nothing else', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const tmp = join(dir, '.noindex', '.tmp');
+  mkdirSync(tmp, { recursive: true });
+  writeFileSync(join(tmp, 'abandoned.part'), bytesOf(4));
+  writeFileSync(join(tmp, 'keep.me'), bytesOf(4));
+  const files = await open(dir);
+  assert.equal(existsSync(join(tmp, 'abandoned.part')), false);
+  assert.equal(existsSync(join(tmp, 'keep.me')), true, 'not ours: left alone');
+  assert.match(await files.write('a', 'b', 'c', bytesOf(2)), GRAMMAR);
+});

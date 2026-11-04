@@ -12,7 +12,7 @@
  * trick or a name a row was made to hold can never reach another file. Every error that leaves this module is an
  * `AttachmentFilesError` reason code; no OS text or path escapes.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { constants, promises as fs, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import type { AttachmentFiles } from '@aplos/engine/store';
@@ -172,10 +172,14 @@ async function removeEntry(path: string): Promise<void> {
   await gone.catch(() => undefined);
 }
 
-/** Removes what is in `.tmp/`: writes a crash left half done. One that cannot be removed is left. */
+/**
+ * Removes what is in `.tmp/`: writes a crash left half done. One that cannot be removed is left. Only
+ * `.part` names go: if `.tmp` were swapped out between the folder check and this walk, the deletes land on
+ * our own temp names at worst, not on arbitrary entries in whatever folder stands in for it.
+ */
 async function emptyTemp(tmp: string): Promise<void> {
   const names = await coded(() => fs.readdir(tmp));
-  for (const name of names) await removeEntry(join(tmp, name));
+  for (const name of names) if (name.endsWith('.part')) await removeEntry(join(tmp, name));
 }
 
 /** Best effort: the folder's entry for a new file reaches the disk. */
@@ -237,14 +241,17 @@ export async function openAttachmentFiles(
         const sub = join(files, rel.split('/')[0]);
         const target = join(files, rel);
         await checkFolder(files);
+        await checkFolder(tmp);
         await privateFolder(sub);
         const free = await freeBytes(files).catch(() => 0);
         // Written so that a NaN (an odd `statfs`) fails closed too.
         if (!(free - data.byteLength >= limits.freeDiskFloor))
           throw new AttachmentFilesError('diskFull');
+        // pid+time+counter alone collides between two stores on one dir in one process; the token makes
+        // every attempt's name its own, so a failure below never deletes a live writer's temp.
         const temp = join(
           tmp,
-          `${process.pid}.${Date.now().toString(36)}.${(counter += 1).toString(36)}.part`,
+          `${process.pid}.${Date.now().toString(36)}.${(counter += 1).toString(36)}.${randomBytes(4).toString('hex')}.part`,
         );
         let renamed = false;
         try {
@@ -277,22 +284,22 @@ export async function openAttachmentFiles(
 
     async read(path) {
       if (!clean(path)) return undefined;
-      try {
-        await checkFolder(files);
-      } catch {
-        return undefined;
-      }
+      const sub = join(files, path.split('/')[0]);
       const target = join(files, path);
       let seen: Stats;
       try {
+        // The leaf's guards cover the last component; the account folder is checked too, or a swap of
+        // it for a link (or another folder) would let the read leave the tree.
+        await checkFolder(files);
+        await checkFolder(sub);
         seen = await fs.lstat(target);
       } catch {
         return undefined;
       }
       if (!isRegular(seen) || seen.nlink !== 1 || seen.size > limits.maxBytes) return undefined;
-      await options.peek?.();
       let handle: fs.FileHandle;
       try {
+        await options.peek?.();
         handle = await fs.open(target, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
       } catch {
         return undefined;
@@ -315,8 +322,17 @@ export async function openAttachmentFiles(
 
     async remove(path) {
       if (!clean(path)) return;
-      await checkFolder(files);
+      const sub = join(files, path.split('/')[0]);
       const target = join(files, path);
+      try {
+        await checkFolder(files);
+        // The account folder is checked too: a swap of it for a link would put the unlink's target
+        // outside the tree. Missing or unsafe means there is nothing of ours to remove anyway.
+        await checkFolder(sub);
+      } catch (error) {
+        if (error instanceof AttachmentFilesError) return;
+        throw error;
+      }
       const stats = await fs.lstat(target).catch(() => undefined);
       if (!stats) return;
       // Never recursive and never a directory: a swapped-in folder is left alone, not emptied.
@@ -327,7 +343,7 @@ export async function openAttachmentFiles(
         if (errorCode(error) !== 'ENOENT') throw new AttachmentFilesError('io');
       }
       // The account subfolder goes when it is empty; anything still in it keeps it.
-      await fs.rmdir(join(files, path.split('/')[0])).catch(() => undefined);
+      await fs.rmdir(sub).catch(() => undefined);
     },
 
     async usage() {
