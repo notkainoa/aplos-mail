@@ -179,15 +179,22 @@ function movable(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
 
 const quotaOf = (principal: string) => (principal === 'app' ? BLOB_QUOTAS.app : BLOB_QUOTAS.client);
 
-/** Every blob id a draft row names, and the ones a draft with a live submission names. */
+/**
+ * Every blob id a draft row names, and the ones a draft with a live submission names. A hidden row
+ * (`_sync.removing`: a discarded or sent draft kept until the provider confirms its copy is gone) does not
+ * hold its blobs unless a submission is still live; the bytes a dead send referenced may be swept while the
+ * row itself waits on the provider.
+ */
 function references(q: StoreReader): { held: Set<string>; live: Set<string> } {
   const held = new Set<string>();
   const live = new Set<string>();
-  const rows = q.all<{ data: string; live: number }>(
+  const rows = q.all<{ data: string; live: number; removing: number }>(
     `SELECT d.data AS data, EXISTS(SELECT 1 FROM submissions s WHERE s.draft_id = d.id
-       AND s.state NOT IN ('sent', 'cancelled')) AS live FROM drafts d`,
+       AND s.state NOT IN ('sent', 'cancelled')) AS live,
+       json_extract(d.data, '$._sync.removing') IS NOT NULL AS removing FROM drafts d`,
   );
   for (const row of rows) {
+    if (row.removing && !row.live) continue;
     for (const id of attachmentIds(row.data)) {
       held.add(id);
       if (row.live) live.add(id);

@@ -96,8 +96,8 @@ async function world(memory: Memory | null = memoryFiles(), start = T0) {
     window,
     listener: (clientId = 'mcp-1') =>
       engine.connect({ kind: 'listener', via: 'mcp', clientId, scopes: ['read', 'draft'] }),
-    /** A draft row naming `blobIds`, with a submission in `state` when given. */
-    draft(blobIds: string[], state?: string) {
+    /** A draft row naming `blobIds`, with a submission in `state` when given; `removing` hides it. */
+    draft(blobIds: string[], state?: string, removing = false) {
       const id = `d${++drafts}`;
       const attachments = blobIds.map((blobId, n) => ({
         id: `a${n}`,
@@ -106,9 +106,10 @@ async function world(memory: Memory | null = memoryFiles(), start = T0) {
         size: 1,
         blobId,
       }));
+      const data = removing ? { attachments, _sync: { removing: { at: T0 } } } : { attachments };
       db.prepare(
         'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
-      ).run(id, accountWrite.id, JSON.stringify({ attachments }), T0);
+      ).run(id, accountWrite.id, JSON.stringify(data), T0);
       if (state)
         db.prepare(
           `INSERT INTO submissions(id, draft_id, account_id, internet_id, not_before, state) VALUES(?, ?, ?, ?, 1, ?)`,
@@ -388,6 +389,21 @@ test('the sweep: unheld uploads go 24 h after they were made, original handles 3
     assert.equal(w.memory.stored.has(loose.blobId), false, 'an unheld upload after 24 h');
     assert.equal(w.memory.stored.has(kept.blobId), true, 'a held upload stays');
     assert.equal((await get(w.window, kept.blobId)).size, 10);
+  }));
+
+test('a hidden draft holds its blobs only while a submission is still live', () =>
+  withWorld(async w => {
+    const dead = await put(w.window);
+    const sending = await put(w.window);
+    const kept = await put(w.window);
+    w.draft([dead.blobId], undefined, true);
+    w.draft([sending.blobId], 'sending', true);
+    w.draft([kept.blobId], 'sent', true);
+    // A removing row with a live submission keeps its blob; 'sent' does not.
+    await w.clock.advance(24 * HOUR + 60_000);
+    assert.equal(w.memory.stored.has(dead.blobId), false, 'hidden, nothing live');
+    assert.equal(w.memory.stored.has(sending.blobId), true, 'hidden but still sending');
+    assert.equal(w.memory.stored.has(kept.blobId), false, 'hidden, send settled');
   }));
 
 test('at start the index is rebuilt: held blobs stay, unheld originals go, unheld uploads go after 24 h', async () => {
