@@ -214,6 +214,9 @@ function nextSection(
   return present[0] ?? 'do';
 }
 
+/** Radius of rows pinned around the cursor while a burst lasts. */
+export const HOLD_RADIUS = 3;
+
 /** Ids of the rows around the cursor, for `hold`: the neighbours a re-rank must not move. */
 export function neighbourIds(
   items: readonly HomeItem[],
@@ -227,6 +230,28 @@ export function neighbourIds(
     if (item.kind === 'row') ids.push(item.id);
   }
   return ids;
+}
+
+// ---------------------------------------------------------------------------
+// The bulk pick
+// ---------------------------------------------------------------------------
+
+/**
+ * The ids X, ⇧X and ⌘A can pick, in list order: the ordinary rows of every section. The Low importance band is a
+ * cursor stop but not a thread, so it is never pickable and a ⇧X run steps over it.
+ */
+export function pickableIds(items: readonly HomeItem[]): ThreadId[] {
+  const ids: ThreadId[] = [];
+  for (const item of items) {
+    if (item.kind === 'row') ids.push(item.id);
+  }
+  return ids;
+}
+
+/** The cursor key when it is on a row X can pick, else null (the Low band, an empty list). */
+export function pickableKey(items: readonly HomeItem[], key: string | null): ThreadId | null {
+  const item = items.find(candidate => keyOf(candidate) === key);
+  return item?.kind === 'row' ? item.id : null;
 }
 
 // ---------------------------------------------------------------------------

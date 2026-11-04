@@ -35,7 +35,9 @@ import {
   setAccountScope,
   useAccountScope,
   useAppRoute,
+  usePaneHeaderParts,
   useSheetContextActive,
+  type PaneHeaderPart,
   type Screen,
 } from './index';
 
@@ -48,8 +50,13 @@ export interface ShellProps {
 /** Which dock tab the pane header's Ask and Today buttons show as pressed. No dock is mounted yet; ui-ask owns it. */
 type DockTab = 'closed' | 'ask' | 'today';
 
-function paneHeader(dock: DockTab, setDock: (tab: DockTab) => void): PaneHeaderProps {
+function paneHeader(
+  dock: DockTab,
+  setDock: (tab: DockTab) => void,
+  part: PaneHeaderPart,
+): PaneHeaderProps {
   return {
+    ...part,
     ask: {
       pressed: dock === 'ask',
       scope: 'mail',
@@ -164,6 +171,7 @@ function ShellFrame({ renderScreen }: ShellProps) {
   const minimised = useSettings()?.ui.sidebarMinimised === true;
   const [dock, setDock] = useState<DockTab>('closed');
   const sheetOpen = useSheetContextActive();
+  const headerPart = usePaneHeaderParts();
   const account = (
     <AccountMenu
       accounts={accounts}
@@ -183,7 +191,7 @@ function ShellFrame({ renderScreen }: ShellProps) {
         onCompose={() => navigate({ label: 'New message' })}
         accountSwitcher={account}
         status={<StatusHost />}
-        header={paneHeader(dock, setDock)}
+        header={paneHeader(dock, setDock, headerPart)}
         toasts={<ToastHost />}
         overlay={<SheetHost />}
       >

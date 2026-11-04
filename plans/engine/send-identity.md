@@ -2,6 +2,8 @@
 
 Status: design note, 2026-11-05 (written before the code, as the Integrator asked). Owner of the note: Engine (eng-contract / eng-time), with prov-gmail-write for the adapter half.
 
+> **Superseded (2026-11-05, Integrator DECIDED):** the Gmail adapter adds `X-Aplos-Send` at transmit and `findSent` matches it, as designed in `plans/providers/findsent-token.md` (providers #224); the engine and its pinned MIME stay untouched, so the `mime.ts` part below is NOT built. Kept for the measurements and the reasoning.
+
 ## What the live probe measured (Integrator 03:01, tier S-self `gmail.send-message-id`)
 
 - `messages.send` REWRITES our Message-ID (`sentKeptMessageId=0`); `rfc822msgid:<ours>` never finds the Sent copy (`sentFoundByRfc822msgidOurs=0`).

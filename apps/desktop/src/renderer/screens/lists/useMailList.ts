@@ -2,9 +2,18 @@
  * The shared list's state for one mounted screen (DESIGN 4.1, 5 rule 6, 7.4): the watched view with the list's hold
  * gate, the cursor, the actions and the confirmation they may ask for. All mail, Drafts, Sent, Trash, Spam, labels,
  * Done and Bookmarks all run on this; `MailListView` draws it. Keys come from the shell's registry and key listener:
- * the screen attaches its command table with `use<Screen>Keys(list.actions)`; this hook adds the list's contexts.
+ * the screen attaches its command table with `use<Screen>Keys(list.actions)`; this hook adds the list's contexts, the
+ * bulk pick (X, ⇧X, ⌘A, Esc and the pane header's bar) and the commit motion.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 import type { ContextName, Registry } from '../../commands';
 import {
   api,
@@ -39,9 +48,13 @@ import {
 } from './listActions';
 import type { ListConfig } from './listKinds';
 import { viewSpecOf } from './listKinds';
+import { bulkCount, type BulkScope } from './bulkTarget';
 import { absoluteIndex, confirmationIsStale, LIST_WINDOW, rangeAround } from './listModel';
 import { asListRow, targetOf, type ListRowData, type OpenKind } from './listRows';
+import { useBulk, threadSpecOf, type BulkState } from './useBulk';
+import { useBulkBar, type BulkMenu } from './useBulkBar';
 import { useIdCursor, type IdCursor } from './useIdCursor';
+import { useListMotion } from './useListMotion';
 
 /** What a list screen is given. */
 export interface MailListOptions {
@@ -84,6 +97,12 @@ export interface MailListState {
   readonly accounts: readonly Account[];
   readonly empty: EmptyState;
   readonly hold: HoldController;
+  /** The bulk pick: which rows are picked and whether the pick bar shows. */
+  readonly bulk: BulkState;
+  /** The pick bar's More menu. */
+  readonly bulkMenu: BulkMenu;
+  /** The hidden chip and edge templates the commit motion clones; `MailListView` renders them. */
+  readonly templates: RefObject<HTMLDivElement | null>;
   readonly pointer: {
     onPointerMove(event: PointerEvent<HTMLElement>): void;
     onPointerLeave(): void;
@@ -154,6 +173,23 @@ function undoLabelOf(registry: Registry, commandId: string, fallback: string): s
 
 const NO_SNAPSHOT: ListSnapshot = { ids: [], key: null, rowOf: () => undefined };
 
+/** The view the pick sits on, as `bulkTargetOf` wants it: a ⌘A past the window becomes a selector over the whole view. */
+function useBulkScope(
+  config: ListConfig,
+  accountId: AccountId | undefined,
+  view: ViewResult<unknown>,
+  loadedIds: readonly string[],
+  bulk: BulkState,
+): BulkScope {
+  const spec = useMemo(() => threadSpecOf(viewSpecOf(config, accountId)), [config, accountId]);
+  // After ⌘A the selector speaks for the view as ⌘A saw it, not as mail has changed it since.
+  const { total, state } = bulk.frozen ?? view;
+  return useMemo(
+    () => ({ loadedIds, total, spec, state, allPicked: bulk.everything }),
+    [loadedIds, total, spec, state, bulk.everything],
+  );
+}
+
 export function useMailList(config: ListConfig, options: MailListOptions): MailListState {
   const { accountId, onOpen, deleteForever } = options;
   const hold = useHold(config.scope);
@@ -168,10 +204,23 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   useScrollToCursor(config, cursor.key);
   useFollowCursor(view, cursor.key);
 
+  const bulk = useBulk(cursor.ids, view);
+  const scope = useBulkScope(config, accountId, view, cursor.ids, bulk);
+  const motion = useListMotion(
+    hold,
+    useCallback((id: string) => rowDomId(config, id), [config]),
+  );
+
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const openBulkMore = useRef<() => void>(() => undefined);
   const live = useRef({ snapshot: NO_SNAPSHOT, confirmation, onOpen, deleteForever });
   live.current = {
-    snapshot: { ids: cursor.ids, key: cursor.key, rowOf },
+    snapshot: {
+      ids: cursor.ids,
+      key: cursor.key,
+      rowOf,
+      bulk: bulk.picking ? { ...scope, picked: bulk.picked } : undefined,
+    },
     confirmation,
     onOpen,
     deleteForever,
@@ -195,18 +244,28 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
         push: pushToast,
         dismiss: dismissToast,
         hold: { extend: ids => hold.extend(ids) },
+        selection: bulk.controls,
+        openMore: () => openBulkMore.current(),
+        commit: motion.commit,
         open: (id, kind) => live.current.onOpen?.(id, kind),
         confirmation: () => live.current.confirmation,
         setConfirmation,
         undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
       }),
-    [config.kind, cursor.setCursor, hold, registry],
+    [config.kind, cursor.setCursor, hold, registry, bulk.controls, motion.commit],
   );
 
   const cursorRow = cursor.key === null ? undefined : rowOf(cursor.key);
   useCommandTarget(cursorRow ? targetOf(cursorRow) : null);
   const modal = confirmation ? 'dialog' : (options.modal ?? null);
-  useShellKeyLayer({ contexts: modal ? [...config.contexts, modal] : config.contexts });
+  const contexts = modal ? [...config.contexts, modal] : config.contexts;
+  useShellKeyLayer({ contexts, conditions: bulk.picking ? { selection: true } : {} });
+  const bulkMenu = useBulkBar(
+    config.kind,
+    actions,
+    bulk.picking ? bulkCount({ ...scope, count: bulk.picked.length }) : null,
+  );
+  openBulkMore.current = bulkMenu.open;
   const pointer = usePointerHold(hold, `${config.id}-row-`);
 
   return {
@@ -221,6 +280,9 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
     accounts,
     empty,
     hold,
+    bulk,
+    bulkMenu,
+    templates: motion.templates,
     pointer,
   };
 }

@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import type { CommandHandlers } from '../../commands';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import type { ListActions } from '../lists/listActions';
-import { navigationCommands } from '../lists/listCommands';
+import { navigationCommands, selectionCommands } from '../lists/listCommands';
 
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
@@ -16,6 +16,7 @@ function run(action: () => void): CommandHandlers {
 export function commandsForDone(actions: ListActions): CommandHandlerTable {
   return {
     ...navigationCommands(actions),
+    ...selectionCommands(actions),
     'done.moveToHome': run(() => actions.moveToHome()),
   };
 }

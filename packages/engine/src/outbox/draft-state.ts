@@ -24,8 +24,12 @@ export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
 const EARLIER_KEEP = 5;
 /** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
 export const REMOTE_BODY_MAX = 1_000_000;
-/** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
-const WROTE_KEEP = 20;
+/**
+ * Message ids, remote ids and Message-IDs this device wrote, kept to recognise their echo in history. A save answered
+ * with `copyInternetId` adds three (the upload's Message-ID, the message id, the copy's Message-ID), so 30 still covers
+ * about ten saves.
+ */
+const WROTE_KEEP = 30;
 
 export interface DraftConflictState {
   theirsRevision: number;
