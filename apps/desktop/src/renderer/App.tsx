@@ -16,7 +16,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
-import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus, api } from './data';
+import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus } from './data';
 import { statusCopy } from './ui/status';
 import {
   closeCompose,
@@ -39,7 +39,8 @@ import { ReaderScreen } from './screens/reader';
 import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
-import { FirstSyncLine, NoAccountsLine } from './shell/states';
+import { FirstSyncLine } from './shell/states';
+import { ZeroAccounts } from './onboarding/ZeroAccounts';
 import { toSyncStatus } from './shell/status-map';
 
 /** The typed client the app reads from (the stand-in's today; the real engine's after the switch). */
@@ -254,12 +255,7 @@ export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellPr
   if (accounts.length === 0) {
     // Nothing (the neutral state) until it is a fact there are no accounts: not while they load or the engine connects.
     if (!noAccountsKnown(accountsLoaded, connection.state)) return null;
-    return (
-      <NoAccountsLine
-        onAddAccount={() => navigate('settings')}
-        onTryDemo={() => void api.demo.load({}).catch(() => undefined)}
-      />
-    );
+    return <ZeroAccounts />;
   }
   const empty = home.status === 'live' && homeLines(home.window).every(line => line.count === 0);
   const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');

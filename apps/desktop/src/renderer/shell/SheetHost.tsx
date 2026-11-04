@@ -4,17 +4,13 @@
  * toast. The consent card is a Dialog. Failure copy is ours, picked from the frame's reason code; a provider's own text
  * never reaches the sheet.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, useAccounts, useAccountsLoaded, useConsent, useFrames, useSettings } from '../data';
+import { useEffect, useMemo, useRef } from 'react';
+import { api, useAccounts, useAccountsLoaded, useConsent, useSettings } from '../data';
+import { ReconnectFlow } from '../onboarding/reconnect/ReconnectFlow';
 import { ConsentCard } from '../ui/onboarding';
 import { Dialog } from '../ui/surfaces';
-import { ReconnectSheet } from '../ui/status';
 import { RECONNECT_FAILED_COPY, SAVE_FAILED_COPY } from './failure-copy';
 import { closeSheet, pushToast, useRegisterCommands, useSheet, type SheetArgs } from './index';
-
-function ignore(): void {
-  return undefined;
-}
 
 /** Plain words for a failed connect, from the frame's reason code. */
 export function failureReason(reasonCode: string | undefined): string {
@@ -32,12 +28,6 @@ export function failureReason(reasonCode: string | undefined): string {
 }
 
 type ReconnectArgs = SheetArgs['reconnect'];
-
-function startFlow(args: ReconnectArgs) {
-  return args.mode === 'grant'
-    ? api.account.grantPermissions({ accountId: args.accountId })
-    : api.account.reconnect({ accountId: args.accountId });
-}
 
 /** True once the frame for this flow says it ended (anything but waiting). */
 export function flowEnded(
@@ -75,49 +65,6 @@ export function canStartFlow(
   return loaded && !accountGone(loaded, accounts, accountId);
 }
 
-/** Starts the flow (once `startable`) and follows its frames; returns the connect id once known. */
-function useReconnectFlow({ accountId, mode }: ReconnectArgs, attempt: number, startable: boolean) {
-  const [connectId, setConnectId] = useState('');
-  const [refused, setRefused] = useState(false);
-  const last = ownFrame(useFrames('connect', { connectId }).last, accountId);
-  const latest = useRef({
-    connectId,
-    state: last?.state as string | undefined,
-    startable,
-  });
-  useEffect(() => {
-    latest.current = { connectId, state: last?.state, startable };
-  }, [connectId, last?.state, startable]);
-  useEffect(() => {
-    if (!startable) return undefined;
-    let stale = false;
-    let started = '';
-    setConnectId('');
-    setRefused(false);
-    // The start waits a microtask: StrictMode runs an effect, cleans it up and runs it again at once, and only the
-    // live run may open a flow (the first is stale by then and never starts one).
-    void Promise.resolve().then(() => {
-      if (stale || !latest.current.startable) return;
-      startFlow({ accountId, mode }).then(
-        result => {
-          started = result.connectId;
-          if (stale) void api.account.cancelConnect({ connectId: started }).catch(ignore);
-          else setConnectId(started);
-        },
-        () => {
-          if (!stale) setRefused(true);
-        },
-      );
-    });
-    return () => {
-      stale = true;
-      if (started && !flowEnded(latest.current, started))
-        void api.account.cancelConnect({ connectId: started }).catch(ignore);
-    };
-  }, [accountId, mode, attempt, startable]);
-  return { connectId, last, refused };
-}
-
 /** Return in the reconnect sheet: Try again when the flow failed, nothing otherwise. */
 export function reconnectDefault(failed: boolean, retry: () => void): () => void {
   return () => {
@@ -125,50 +72,22 @@ export function reconnectDefault(failed: boolean, retry: () => void): () => void
   };
 }
 
+/**
+ * The reconnect sheet is ui-onboard's `ReconnectFlow` (STATUS DECIDED 2026-10-28: the same flow for the
+ * status slot, the Settings row and the switcher). It picks the call (`Account/reconnect` or
+ * `grantPermissions`) from the account's own health, starts it on mount, follows the `connect` frames,
+ * pushes the "Reconnected" toast and reports through `onClose`; Esc inside it cancels the flow, and a
+ * close or a replacing sheet unmounts it, which cancels a wait in flight. The host keeps only the shell's
+ * own rule: the sheet closes if its account is removed.
+ */
 function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
   const accounts = useAccounts();
   const loaded = useAccountsLoaded();
-  const [attempt, setAttempt] = useState(0);
-  const startable = canStartFlow(loaded, accounts, args.accountId);
-  const { connectId, last, refused } = useReconnectFlow(args, attempt, startable);
-  const address = accounts.find(a => a.id === args.accountId)?.address ?? '';
-  const state = last?.state;
   const gone = accountGone(loaded, accounts, args.accountId);
   useEffect(() => {
     if (gone) closeSheet();
   }, [gone]);
-  useEffect(() => {
-    if (state === 'connected') {
-      pushToast({
-        id: `reconnected-${connectId}`,
-        kind: 'info',
-        message: 'Reconnected',
-        undoable: false,
-      });
-      closeSheet();
-    } else if (state === 'cancelled') closeSheet();
-  }, [state, connectId]);
-  const failed = refused || state === 'failed';
-  const retry = useCallback(() => setAttempt(n => n + 1), []);
-  const handlers = useMemo(
-    () => ({ 'sheet.default': { run: reconnectDefault(failed, retry) } }),
-    [failed, retry],
-  );
-  useRegisterCommands(handlers);
-  return (
-    <ReconnectSheet
-      open
-      address={address}
-      state={failed ? 'failed' : 'waiting'}
-      reason={failed ? failureReason(last?.reasonCode) : undefined}
-      mode={args.mode}
-      onCancel={() => {
-        if (connectId) void api.account.cancelConnect({ connectId }).catch(ignore);
-        closeSheet();
-      }}
-      onRetry={retry}
-    />
-  );
+  return <ReconnectFlow accountId={args.accountId} onClose={() => closeSheet()} />;
 }
 
 const PROVIDER_NAMES = {

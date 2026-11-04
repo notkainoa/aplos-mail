@@ -62,7 +62,6 @@ import {
   initialFlow,
   keyPrefsFor,
   MAIN_LABEL,
-  missingMethod,
   reduceFlow,
   sessionSetupId,
   shouldMoveFocus,
@@ -109,16 +108,15 @@ export interface WindowPorts {
   finish(input?: { readonly to?: 'settings.ai' }): Promise<unknown>;
 }
 
-// REQUEST ui-shell: `Window/finishOnboarding` (and `Window/openOnboarding` for "Show welcome") are desktop methods that
-// `renderer/data`'s api does not expose yet. REQUEST contract: `Window/finishOnboarding` takes an optional
-// `{ to: 'settings.ai' }` so the mail window opens on Settings → AI.
+// `Window/finishOnboarding` (and `Window/openOnboarding` for "Show welcome") are desktop methods main
+// serves; `renderer/data`'s api exposes them (granted). REQUEST contract stands: `Window/finishOnboarding`
+// takes an optional `{ to: 'settings.ai' }` so the mail window opens on Settings → AI — until the contract
+// carries it, `to` is dropped here and the mail window opens on its default screen.
 export const defaultWindowPorts: WindowPorts = {
   setupBegin: async input => api.setup.begin(input),
   setupEnd: async input => api.setup.end(input),
   demoLoad: async () => api.demo.load(),
-  finish: async () => {
-    throw missingMethod('Window/finishOnboarding');
-  },
+  finish: async () => api.window.finishOnboarding({}),
 };
 
 export interface OnboardingAppProps {

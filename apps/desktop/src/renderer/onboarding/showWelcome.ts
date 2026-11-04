@@ -3,8 +3,8 @@
  * window in review mode and changes nothing: the window's own `Setup/begin` and `Setup/end` keep a close from
  * leaving AI deferred (F1). In the browser preview there is no second window, so it goes to the onboarding route.
  */
+import { api } from '../data';
 import { WINDOW_COPY } from './copy';
-import { missingMethod } from './flow';
 
 /** Where the browser preview shows the onboarding window (REQUEST ui-shell: this route does not exist yet). */
 export const onboardingRoute = (mode: 'first' | 'review'): string =>
@@ -20,11 +20,10 @@ export interface WelcomePorts {
   navigate(route: string): void;
 }
 
-// REQUEST ui-shell: `Window/openOnboarding` is a desktop method that `renderer/data`'s api does not expose yet.
+// `Window/openOnboarding` is a desktop method main serves; `renderer/data`'s api exposes it as
+// `api.window.openOnboarding` (granted). On the stand-in it is stubbed and nothing opens.
 export const defaultWelcomePorts: WelcomePorts = {
-  openOnboarding: async () => {
-    throw missingMethod('Window/openOnboarding');
-  },
+  openOnboarding: async input => api.window.openOnboarding(input),
   isBrowserPreview: () =>
     typeof navigator === 'undefined' || !/\bElectron\//.test(navigator.userAgent),
   navigate: route => {
