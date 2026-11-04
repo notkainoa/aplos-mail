@@ -7,7 +7,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFaultInjector } from '@aplos/emulators';
 import { ProviderError, type DraftUpload } from '@aplos/engine/ports';
-import { apiCalls, mimeOf, saved, setup, uncertainCreate, type Setup } from './draft-rig';
+import {
+  apiCalls,
+  mimeOf,
+  saved,
+  setup,
+  uncertainCreate,
+  uploadedBytes,
+  type Setup,
+} from './draft-rig';
 
 /** The next revision of the draft `first` belongs to, as the engine offers it after an unanswered create. */
 const edited = (s: Setup, first: DraftUpload, body: string, over: Partial<DraftUpload> = {}) =>
@@ -68,8 +76,12 @@ test('prov-gmail-drafts supersedes: the earlier copy was edited on the phone, a 
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const first = await uncertainCreate(s, faults);
-  // The phone edit keeps our Message-ID (the worst case: the header alone looks like ours).
-  const { mime } = mimeOf(s.r.account.address, { id: first.internetId, body: 'Phone text.' });
+  // The phone edit keeps our Message-ID and token (the worst case: the headers alone look like ours).
+  const { mime } = mimeOf(s.r.account.address, {
+    id: first.internetId,
+    token: first.internetId,
+    body: 'Phone text.',
+  });
   const phone = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
   const result = await s.r.adapter.saveDraft(edited(s, first, 'Edited.'), s.r.ctx());
   assert.deepEqual(result, {
@@ -86,9 +98,9 @@ test('prov-gmail-drafts supersedes: the earlier copy was edited on the phone, a 
 test('prov-gmail-drafts supersedes: a copy this adapter never recorded (a restart) is a conflict, never replaced', async () => {
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
-  // Landed by an earlier process: the same bytes, but nothing was recorded for this draft here.
+  // Landed by an earlier process: the same bytes (with its token), but nothing was recorded for this draft here.
   const first = s.upload({ body: 'Before the restart.' });
-  s.r.emu.mailbox.createDraft(Buffer.from(first.mime));
+  s.r.emu.mailbox.createDraft(uploadedBytes(first));
   const result = await s.r.adapter.saveDraft(edited(s, first, 'Edited.'), s.r.ctx());
   assert.equal(result.kind, 'conflict');
   assert.equal(s.bridge.uploads.length, 0);
@@ -178,8 +190,16 @@ test('prov-gmail-drafts supersedes: its own Message-ID in the list is ignored, n
 
 // ---- one create reads each draft once ----
 
-const metadataReads = (s: Setup, since: number) =>
-  apiCalls(s, since).filter(c => c.method === 'gmail.drafts.get' && c.cost !== 60);
+/**
+ * The lookup's metadata reads: those before the write. The one read after it is the saved copy's `copyInternetId`
+ * (`storedCopy` in drafts.ts), not part of the lookup.
+ */
+function metadataReads(s: Setup, since: number) {
+  const calls = apiCalls(s, since);
+  const write = calls.findIndex(c => /^gmail\.drafts\.(create|update)$/.test(c.method));
+  const lookup = write < 0 ? calls : calls.slice(0, write);
+  return lookup.filter(c => c.method === 'gmail.drafts.get' && c.cost !== 60);
+}
 
 test('prov-gmail-drafts supersedes: a lookup that finds nothing reads each of ten drafts once, not twice', async () => {
   const faults = createFaultInjector();

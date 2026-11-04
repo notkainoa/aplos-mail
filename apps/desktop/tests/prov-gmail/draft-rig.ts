@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { createFaultInjector } from '@aplos/emulators';
 import { ProviderError, type DraftUpload } from '@aplos/engine/ports';
+import { withDraftToken } from '../../src/host/providers/google/draft-token';
 import { DraftBridge } from './draft-bridge';
 import { rig, type Rig } from './harness';
 
@@ -21,11 +22,18 @@ export interface MimeSpec {
   inReplyTo?: string;
   references?: string;
   to?: string;
+  /** An `X-Aplos-Draft` token as the first header: a copy that keeps the token the adapter wrote (a phone edit). */
+  token?: string;
 }
+
+/** The bytes the adapter uploads for `upload`: the engine's MIME with the `X-Aplos-Draft` token as the first header. */
+export const uploadedBytes = (upload: { internetId: string; mime: Uint8Array }): Buffer =>
+  Buffer.from(withDraftToken(upload));
 
 export function mimeOf(from: string, spec: MimeSpec = {}): { mime: Buffer; internetId: string } {
   const internetId = spec.id ?? `<draft-${++nextId}@aplos.test>`;
   const head = [
+    ...(spec.token ? [`X-Aplos-Draft: ${spec.token}`] : []),
     'Date: Fri, 30 Oct 2026 10:00:00 +0000',
     `From: ${from}`,
     `To: ${spec.to ?? 'friend@example.test'}`,
