@@ -202,7 +202,21 @@ export function fakeDrafts(server: CountingSend) {
   const removeExpected: (string | undefined)[] = [];
   /** Calls the guard turned into a no-op: the draft held another message id. */
   const removeGuarded: string[] = [];
-  const state = { ignoreExpected: false, honourSupersedes: false };
+  /**
+   * `gmailIds`: the provider shows its own Message-ID for every copy it stores (Gmail's draft id survives saves, the
+   * Message-ID does not); `reportCopy` also names it in the `saved` answer (`copyInternetId`).
+   */
+  const state = {
+    ignoreExpected: false,
+    honourSupersedes: false,
+    gmailIds: false,
+    reportCopy: false,
+  };
+  /** The Message-ID the provider shows for a copy stored under `uploaded`: its own (Gmail) or the upload's. */
+  const shownId = (uploaded: string) =>
+    state.gmailIds ? `<gmail-${++counter}@mail.gmail.com>` : uploaded;
+  const copyField = (shown: string) =>
+    state.gmailIds && state.reportCopy ? { copyInternetId: shown } : {};
   const script: DraftStep[] = [];
   /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
   const removeScript: DraftStep[] = [];
@@ -267,11 +281,8 @@ export function fakeDrafts(server: CountingSend) {
           : undefined;
       const remoteDraftId = step.renameTo ?? upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
       const messageId = `msg${++counter}`;
-      remote.set(remoteDraftId, {
-        messageId,
-        internetId: upload.internetId,
-        revision: upload.revision,
-      });
+      const shown = shownId(upload.internetId);
+      remote.set(remoteDraftId, { messageId, internetId: shown, revision: upload.revision });
       server.uploadDraft(upload.internetId, remoteDraftId);
       if (step.result === 'landedLost') throw new Error('socket hang up');
       return {
@@ -279,6 +290,7 @@ export function fakeDrafts(server: CountingSend) {
         remoteDraftId,
         remoteMessageId: messageId,
         revision: upload.revision,
+        ...copyField(shown),
       };
     },
     async remove(account, remoteDraftId, expectedMessageId) {
