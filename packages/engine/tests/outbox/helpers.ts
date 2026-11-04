@@ -8,6 +8,7 @@ import {
   createOutboxModule,
   outboxExtension,
   SubmissionConflict,
+  type BlobSource,
   type OutboxModule,
 } from '../../src/outbox/module';
 import type { Admission } from '../../src/ports/base';
@@ -408,6 +409,25 @@ export function outboxWorld(
   /** Every `Draft/changed` frame the modules sent. */
   const frames: EngineFrame[] = [];
   const blobs = new Map<string, Uint8Array>();
+  /**
+   * The blob source every instance reads through: `blobs` behind the sync adapter, with a log of the ids asked for, an
+   * optional gate the read waits on (`hold`) and an optional failure it rejects with (`fail`), both read at call time.
+   */
+  const blobReads = {
+    calls: [] as string[],
+    hold: undefined as Promise<void> | undefined,
+    fail: undefined as Error | undefined,
+  };
+  const syncBlobs = syncBlobSource(blobs);
+  const blobSource = {
+    async get(id: string) {
+      blobReads.calls.push(id);
+      const { hold, fail } = blobReads;
+      if (hold) await hold;
+      if (fail) throw fail;
+      return syncBlobs.get(id);
+    },
+  };
   const instances: Instance[] = [];
   let opSeq = 0;
 
@@ -440,7 +460,7 @@ export function outboxWorld(
       clock,
       deadlines: loop,
       log,
-      blobs: { get: id => blobs.get(id) },
+      blobs: blobSource,
       settings: options.settings,
       ...(options.drafts
         ? { drafts: remoteDrafts.port, frames: { emit: f => frames.push(f) } }
@@ -512,17 +532,19 @@ export function outboxWorld(
   const act = (instance: Instance, action: SubmissionAction, opId = `op-${++opSeq}`) =>
     instance.outbox.service.set(opId, action);
 
-  const send = (
+  const send = async (
     instance: Instance,
     draftId: string,
     extra: { notBefore?: number; revision?: number } = {},
   ) =>
-    act(instance, {
-      type: 'send',
-      draftId,
-      revision: extra.revision ?? 1,
-      ...(extra.notBefore !== undefined ? { notBefore: extra.notBefore } : {}),
-    }).submission;
+    (
+      await act(instance, {
+        type: 'send',
+        draftId,
+        revision: extra.revision ?? 1,
+        ...(extra.notBefore !== undefined ? { notBefore: extra.notBefore } : {}),
+      })
+    ).submission;
 
   const get = (id: string, instance: Instance = first) => {
     const s = instance.outbox.service.get([id]).list[0];
@@ -572,6 +594,7 @@ export function outboxWorld(
     frames,
     skew,
     blobs,
+    blobReads,
     records,
     events,
     conflicts,
@@ -657,4 +680,12 @@ export function copyWrite(f: {
       flags: { seen: true, flagged: false, draft: true, fromMe: true },
     },
   } as StoreWrite;
+}
+
+/** A `BlobSource` over bytes held in memory, or a synchronous lookup: the old synchronous reads behind the async shape. */
+export function syncBlobSource(
+  from: ReadonlyMap<string, Uint8Array> | ((blobId: string) => Uint8Array | undefined),
+): BlobSource {
+  const lookup = typeof from === 'function' ? from : (id: string) => from.get(id);
+  return { get: async id => lookup(id) };
 }

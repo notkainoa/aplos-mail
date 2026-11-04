@@ -175,7 +175,7 @@ function ownerOf(
     return { id, row: outbox.service.get([id]).list[0] };
   };
   /** True when the machine accepted the action. */
-  const issue = (spec: ActionSpec): boolean => {
+  const issue = async (spec: ActionSpec): Promise<boolean> => {
     const key = `${run.life ?? 0}:${n++}`;
     const { id, row } = current();
     journal(
@@ -190,7 +190,7 @@ function ownerOf(
       key,
     );
     try {
-      outbox.service.set(`kp-${key}`, { type: spec.do, submissionId: id });
+      await outbox.service.set(`kp-${key}`, { type: spec.do, submissionId: id });
       journal({ phase: 'ok' }, key);
       return true;
     } catch (error) {
@@ -208,21 +208,35 @@ function ownerOf(
     atPoint(name: KillPoint) {
       for (const spec of pending.filter(a => a.when === name)) {
         pending.splice(pending.indexOf(spec), 1);
-        issue(spec);
+        // The hook is synchronous (it runs inside the engine). The action does all its work inside the call, so it lands
+        // here as it always did; only its journal line follows a microtask later, which is why `driveEngine` refuses an
+        // action at the very point this life dies (its outcome would be journaled as a death inside the call).
+        void issue(spec);
       }
     },
     /** After a clock step. */
-    atTime(elapsed: number) {
+    async atTime(elapsed: number) {
       for (const spec of [...pending]) {
         if (typeof spec.when === 'number' && elapsed >= spec.when) {
           pending.splice(pending.indexOf(spec), 1);
-          issue(spec);
-        } else if (spec.when === 'asked' && asked() && issue(spec)) {
+          await issue(spec);
+        } else if (spec.when === 'asked' && asked() && (await issue(spec))) {
           pending.splice(pending.indexOf(spec), 1);
         }
       }
     },
   };
+}
+
+/**
+ * An action set at the point where this life dies would be journaled as having died inside its call even when it was
+ * answered: `Submission/set` answers through a promise, a microtask after the kill. No scenario does that; one that did
+ * would not mean what it says, so it is refused.
+ */
+function refuseActionAtDeath(run: RunSpec, point: KillPoint | undefined) {
+  const clash = point !== undefined && (run.actions ?? []).some(a => a.when === point);
+  if (clash)
+    throw new Error(`an owner action at the kill point ${point} cannot be journaled exactly`);
 }
 
 /**
@@ -243,7 +257,7 @@ export async function driveEngine(run: RunSpec, point?: KillPoint): Promise<Subm
     clock,
     deadlines: loop,
     log,
-    blobs: { get: () => undefined },
+    blobs: { get: async () => undefined },
   });
   const progress = { steps: 0, at: 0 };
   const states = () =>
@@ -264,6 +278,7 @@ export async function driveEngine(run: RunSpec, point?: KillPoint): Promise<Subm
       LIFE_BUDGET_MS,
     );
   });
+  refuseActionAtDeath(run, point);
   const owner = ownerOf(run, clock, outbox, store);
   installKillHook((name, detail) => {
     owner.atPoint(name);
@@ -292,7 +307,7 @@ async function advanceThrough(
   loop: { idle(): Promise<void> },
   outbox: { idle(): Promise<void> },
   progress: { steps: number; at: number },
-  owner: { atTime(elapsed: number): void },
+  owner: { atTime(elapsed: number): Promise<void> },
 ) {
   // Fine steps while the checks run (they are due at once and after 60 s), minutes after that.
   while (progress.at < run.runMs) {
@@ -302,7 +317,7 @@ async function advanceThrough(
     await clock.advance(step);
     await settle(clock, loop, outbox);
     progress.at += step;
-    owner.atTime(progress.at);
+    await owner.atTime(progress.at);
     await settle(clock, loop, outbox);
   }
 }
@@ -321,7 +336,7 @@ async function settle(
 
 // ---------------------------------------------------------------- seeding
 
-function seed(dbPath: string): { id: string; internetId: string } {
+async function seed(dbPath: string): Promise<{ id: string; internetId: string }> {
   const clock = fakeClock(T0);
   const log = createLogger({ sink: { write: () => {} }, salt: 'kill', clock, level: 'error' });
   const store = openStore(openSqlite(dbPath), {
@@ -361,7 +376,7 @@ function seed(dbPath: string): { id: string; internetId: string } {
     deadlines: createTimerLoop({ clock, log }),
     log,
   });
-  const { submission } = outbox.service.set('seed-send', {
+  const { submission } = await outbox.service.set('seed-send', {
     type: 'send',
     draftId: 'd1',
     revision: 1,
@@ -573,7 +588,7 @@ async function runIn(
   const journalPath = join(dir, 'actions.jsonl');
   const moves = [s.onMove ?? []].flat();
   let duringCommit = 0;
-  const sent = seed(dbPath);
+  const sent = await seed(dbPath);
   const points = typeof s.killAt === 'string' ? [s.killAt] : s.killAt;
   const downtime = s.downtimeMs ?? 20 * SEC;
   let clockStart = T0;

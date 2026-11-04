@@ -36,6 +36,7 @@ import {
   type MetaPatch,
 } from './draft-state';
 import type { DraftWrite } from './draft-writes';
+import { blobIdsOf, loadBlobs } from './blob-read';
 import { attachmentsOf, domainOf, replyHeaders, senderOf } from './submissions';
 import { buildMime, checkAddress, MimeError, newMessageId, type MimeAddress } from './mime';
 
@@ -192,12 +193,16 @@ interface DraftCopy {
  * `drafts.send`) would put the header on the wire for every recipient to read, so a draft with Bcc recipients leaves as
  * the pinned MIME with the envelope instead (`prepareSend` gives it a Message-ID of its own).
  */
-function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internetId: string) {
+function draftMime(
+  ctx: DraftsCtx,
+  row: UploadRow,
+  fields: DraftFields,
+  internetId: string,
+  bytes: ReadonlyMap<string, Uint8Array>,
+) {
   const reply = ctx.store.read(q => replyHeaders(q, row, fields));
   // A draft copy keeps the attachments it can read; one whose bytes are gone stays listed in the local draft.
-  const readable = fields.attachments.filter(
-    a => a.blobId !== undefined && ctx.blobs?.get(a.blobId),
-  );
+  const readable = fields.attachments.filter(a => a.blobId !== undefined && bytes.has(a.blobId));
   const mime = buildMime({
     from: senderOf(row, fields),
     to: writable(fields.to),
@@ -207,10 +212,45 @@ function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internet
     messageId: internetId,
     date: row.updated_at,
     ...reply,
-    attachments: attachmentsOf(ctx, { ...fields, attachments: readable }),
+    attachments: attachmentsOf(bytes, { ...fields, attachments: readable }),
     randomBytes: ctx.random,
   });
   return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
+}
+
+/** The draft's attachment bytes; `undefined` when it names none (nothing is read). */
+function bytesFor(ctx: DraftsCtx, fields: DraftFields) {
+  const ids = blobIdsOf(fields);
+  return ids.length ? loadBlobs(ctx.blobs, ids, ctx.clock) : undefined;
+}
+
+/**
+ * After a read: the row is still the one the bytes were read for and no send pins the draft. Otherwise the upload is
+ * dropped and the deadline source runs the draft again from its new row, so an upload's MIME, revision and fingerprint
+ * always come from the one read its bytes were loaded for. Called with nothing awaited between it and the upload's mark.
+ */
+function stillCurrent(ctx: DraftsCtx, row: UploadRow) {
+  const now = readUploadRow(ctx, row.id);
+  const same = now?.revision === row.revision && now.data === row.data;
+  return same && withoutLiveSend(ctx, [row.id]).size > 0;
+}
+
+/** Consecutive failed reads of a draft's attachment bytes before it shows the problem and stops retrying. */
+const MAX_READ_FAILS = 5;
+const UNREADABLE_BLOB = {
+  class: 'transient',
+  provider: 'engine',
+  method: 'blob.read',
+  reason: 'blobUnreadable',
+};
+
+/** A read that failed or ran out of time: retried later, until the fifth in a row shows the problem on the draft. */
+function readFailed(ctx: DraftsCtx, row: UploadRow, meta: DraftMeta) {
+  ctx.log.event('draft.sync_failed', { draft: row.id, error: UNREADABLE_BLOB });
+  const readFails = (meta.readFails ?? 0) + 1;
+  if (readFails >= MAX_READ_FAILS) return problemFor(ctx, row, PROBLEM_COPY);
+  const dueAt = ctx.clock.now() + DRAFT_RETRY_MS;
+  setMeta(ctx, row.id, { dueAt, readFails }, { ifRevision: row.revision });
 }
 
 /** The fingerprint of the content an upload of this draft sends. */
@@ -365,9 +405,15 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
     meta.uploading?.revision === row.revision
       ? meta.uploading.internetId
       : newMessageId(ctx.random, domainOf(row.address));
+  let bytes: Map<string, Uint8Array> | undefined;
+  try {
+    bytes = await bytesFor(ctx, fields);
+  } catch {
+    return readFailed(ctx, row, meta);
+  }
   let copy: DraftCopy;
   try {
-    copy = draftMime(ctx, row, fields, internetId);
+    copy = draftMime(ctx, row, fields, internetId, bytes ?? new Map());
   } catch (error) {
     const known = error instanceof MimeError || error instanceof ContractError;
     return problemFor(ctx, row, known ? error.message : PROBLEM_COPY);
@@ -378,6 +424,8 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
   const given = abandoned(meta, row.remote_draft_id, ...old);
   const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
+  // Nothing awaits between this check and the mark: a send or a change made during the read drops this upload.
+  if (bytes && !stillCurrent(ctx, row)) return;
   const marked = setMeta(
     ctx,
     id,
@@ -388,6 +436,7 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
         fingerprint: uploadFingerprint(meta, fields),
       },
       ...given,
+      readFails: null,
     },
     { ifRevision: row.revision },
   );

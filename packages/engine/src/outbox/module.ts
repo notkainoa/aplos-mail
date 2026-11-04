@@ -43,7 +43,8 @@ export interface OutboxPending {
 /** What the `submission` and `outbox` handlers call (`EngineServices.outbox`). */
 export interface OutboxService {
   get(ids: readonly string[]): { state: State; list: Submission[]; notFound: string[] };
-  set(opId: string, action: SubmissionAction): SetResult;
+  /** Resolves at once for every action but a send of a draft whose attachment bytes must be read first. */
+  set(opId: string, action: SubmissionAction): Promise<SetResult>;
   pending(): OutboxPending;
 }
 
@@ -184,11 +185,17 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       return { state, ...getSubmissions(ctx, ids) };
     },
     set: (opId, action) => {
-      // No send port was given (the real engine path before sending is wired): a queued message would lock its draft for
-      // minutes and then never leave, so a new send is refused up front.
-      if (action.type === 'send' && isAbsent(deps.send))
-        fail('unavailable', 'Sending is not available yet.');
-      return setSubmission(ctx, opId, action);
+      // Not `async`: a call that did all its work within the call (every action but a send that reads bytes) returns a
+      // promise that is already settled, not one that adopts the send's own promise a few microtasks later.
+      try {
+        // No send port was given (the real engine path before sending is wired): a queued message would lock its draft
+        // for minutes and then never leave, so a new send is refused up front.
+        if (action.type === 'send' && isAbsent(deps.send))
+          fail('unavailable', 'Sending is not available yet.');
+        return Promise.resolve(setSubmission(ctx, opId, action));
+      } catch (error) {
+        return Promise.reject(error);
+      }
     },
     pending: () => pendingOf(ctx),
   };
