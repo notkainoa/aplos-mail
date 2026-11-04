@@ -34,6 +34,9 @@ async function boot(): Promise<void> {
     import('./shell/shell.css'),
     import('./screens/screens.css'),
   ]);
+  // The mail window hosts lane pieces now (the zero-accounts pane): the lane's own wrappers come after
+  // the one stylesheet, the same order the onboarding window and the preview gallery keep.
+  await import('./onboarding/onboarding.css');
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario });
   const client = createClient(layer.engine.connect());
