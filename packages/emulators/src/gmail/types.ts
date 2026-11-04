@@ -48,6 +48,11 @@ export interface GmailEmulatorOptions {
    * `<hex@mail.gmail.com>`; no header the client wrote is dropped unless `dropDraftHeaders` names it.
    */
   draftIdentity?: 'kept' | 'rewritten';
+  /**
+   * What `messages.send` does to the Message-ID the client wrote. 'kept' (default), or 'rewritten' to `<hex@mail.gmail.com>`
+   * (unmeasured on real Gmail until the live probe `gmail.send-message-id` runs).
+   */
+  sendIdentity?: 'kept' | 'rewritten';
   /** Header names (any case) Gmail drops from a draft the API saves, e.g. `['X-Aplos-Probe']`. Default none. */
   dropDraftHeaders?: readonly string[];
   /** Test users to start with. By default one user, test.user@example.test. Pass [] for none. */
@@ -68,6 +73,7 @@ export interface GmailSettings {
   historyRetentionMs: number;
   sendLimitPerDay: number;
   draftIdentity: 'kept' | 'rewritten';
+  sendIdentity: 'kept' | 'rewritten';
   dropDraftHeaders: readonly string[];
 }
 

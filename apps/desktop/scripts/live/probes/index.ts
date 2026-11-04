@@ -2,6 +2,7 @@ import type { LiveProvider, SmokeProbe, Tier } from '../types';
 import { authResultsShape } from './gmail-auth-results';
 import { draftMessageIdAfterEdit } from './gmail-draft-message-id';
 import { inboxWindowMetadata, profileAndLabels } from './gmail-r';
+import { sendMessageId } from './gmail-send-message-id';
 
 /** Every registered probe. Tier M and S-self probes are added here when they exist. */
 export const PROBES: readonly SmokeProbe[] = [
@@ -9,6 +10,7 @@ export const PROBES: readonly SmokeProbe[] = [
   inboxWindowMetadata,
   authResultsShape,
   draftMessageIdAfterEdit,
+  sendMessageId,
 ];
 
 export function probesFor(
