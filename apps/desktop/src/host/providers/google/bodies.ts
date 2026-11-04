@@ -204,3 +204,46 @@ export async function fetchAttachment(
     yield bytes;
   })();
 }
+
+/**
+ * The message's raw RFC822 for `ProviderPort.original` (`messages.get format=raw`, priced as full: 60 units,
+ * interactive lane), fetched live and never stored. Decoded here so the port hands bytes, not base64url. The
+ * 25 MB cap is the caller's (`Message/original` `collectBytes` `overLimit` -> `tooLarge`): refusing here would hide it
+ * behind a generic `unavailable`.
+ */
+export async function fetchOriginal(
+  deps: GmailDeps,
+  remoteMessageId: string,
+  ctx: AdapterContext,
+): Promise<AsyncIterable<Uint8Array>> {
+  const client = new GmailClient(deps, ctx);
+  const reply = await client.call<{ raw?: string }>({
+    method: 'gmail.messages.get',
+    path: `/messages/${remoteMessageId}`,
+    format: 'raw',
+    fields: 'raw',
+    lane: 'interactive',
+    item: remoteMessageId,
+  });
+  // `fields=raw` should carry exactly one base64url string; anything else refuses rather than decode into garbage.
+  if (reply.raw !== undefined && !/^[A-Za-z0-9_-]+$/.test(reply.raw))
+    throw new ProviderError({
+      class: 'permanent',
+      provider: 'gmail',
+      method: 'gmail.messages.get',
+      reason: 'malformedOriginal',
+      uncertain: false,
+    });
+  const bytes = fromBase64Url(reply.raw ?? '');
+  if (bytes.byteLength === 0)
+    throw new ProviderError({
+      class: 'permanent',
+      provider: 'gmail',
+      method: 'gmail.messages.get',
+      reason: 'emptyOriginal',
+      uncertain: false,
+    });
+  return (async function* () {
+    yield bytes;
+  })();
+}

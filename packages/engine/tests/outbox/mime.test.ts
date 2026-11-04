@@ -337,6 +337,31 @@ function assertNotQuadratic(label: string, run: (size: number) => void, start: n
   assert.fail(`${label}: ${seen.join('; ')}`);
 }
 
+test('htmlToText: named entities are case-sensitive', () => {
+  assert.equal(htmlToText('&Eacute;t&eacute;'), 'Été');
+  assert.equal(htmlToText('&Ntilde;ame &ntilde;ame'), 'Ñame ñame');
+  assert.equal(htmlToText('&EACUTE;'), '&EACUTE;', 'all-caps stays literal');
+});
+
+test('htmlToText skips the content of every non-rendered element name', () => {
+  for (const name of [
+    'script',
+    'style',
+    'head',
+    'title',
+    'noscript',
+    'textarea',
+    'iframe',
+    'object',
+    'template',
+    'select',
+    'svg',
+  ]) {
+    assert.equal(htmlToText(`<${name}>drop me</${name}>keep`), 'keep', `<${name}>`);
+    assert.equal(htmlToText(`<${name} src="x"/>keep`), 'keep', `self-closing <${name}>`);
+  }
+});
+
 test('htmlToText is linear on hostile input (no regex backtracking over a megabyte)', () => {
   const shapes: Array<(n: number) => string> = [
     n => '<'.repeat(n),

@@ -723,6 +723,54 @@ describe('ProgressSegments live regions and account dot', () => {
     assert.deepEqual(status(seg('done')), ['jordan@gmail.com sync finished.']);
   });
 
+  it('live="off" drops the per-account status, so a parent wrapper is the one live region (F11)', () => {
+    const accounts = [account, { address: ONE.address, color: 'hill' } as const];
+    const parts = (live?: 'polite' | 'off') =>
+      accounts.map(a => (
+        <ProgressSegments
+          key={a.address}
+          variant="checkpoints"
+          account={a}
+          checkpoints={cps(10)}
+          accountCount={2}
+          live={live}
+        />
+      ));
+    // Default unchanged: one role="status" per account.
+    assert.equal(count(render(<div>{parts()}</div>), 'role="status"'), 2);
+    assert.equal(count(render(<div>{parts('polite')}</div>), 'role="status"'), 2);
+    // The parent wrapper is polite and non-atomic: a bare role="status" implies aria-atomic="true" and would re-read
+    // every account on each change.
+    const wrapped = render(
+      <div aria-live="polite" aria-atomic="false">
+        {parts('off')}
+      </div>,
+    );
+    assert.equal(count(wrapped, 'role="status"'), 0);
+    assert.equal(count(wrapped, 'aria-live="polite"'), 1);
+    assert.match(wrapped, /^<div aria-live="polite" aria-atomic="false">/);
+    // The phase text and the visible lines stay.
+    assert.match(wrapped, new RegExp(`${GM.address}: found recent mail\\.`));
+    assert.match(wrapped, /Reading your newest mail · 10 of 50/);
+    assert.match(wrapped, /aria-label="alex\.moreno@gmail\.com sync"/);
+    const seg = render(
+      <ProgressSegments
+        variant="segments"
+        label="jordan@gmail.com sync"
+        live="off"
+        segments={[{ label: 'Read', state: 'paused' }]}
+      />,
+    );
+    assert.equal(count(seg, 'role="status"'), 0);
+    assert.match(seg, /jordan@gmail\.com sync paused\./);
+    const ready = (live?: 'polite' | 'off') =>
+      render(<ProgressSegments variant="ready" label="ready" live={live} />);
+    assert.equal(count(ready(), 'role="status"'), 1);
+    assert.equal(count(ready('polite'), 'role="status"'), 1);
+    assert.equal(count(ready('off'), 'role="status"'), 0);
+    assert.match(ready('off'), /Your mail is ready/);
+  });
+
   it('the account dot shows only with two or more accounts', () => {
     const one = render(
       <ProgressSegments variant="checkpoints" account={account} checkpoints={cps(5)} />,
