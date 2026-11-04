@@ -439,6 +439,9 @@ describe('reporter: DOM clobbering', () => {
     fake.fire('document:toggle');
     assert.equal(fake.posted.length, 3, 'its listeners went to the real EventTarget method');
     assert.equal(lastMessage(fake)?.ready, true);
+    assert.deepEqual(fake.observed, [fake.root], 'it observes the real root');
+    fake.fonts();
+    assert.equal(fake.posted.length, 4, 'it waits on the real document.fonts');
   });
 
   it('captures once: a built-in replaced after it started is not used', () => {
