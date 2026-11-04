@@ -261,6 +261,129 @@ describe('elements and attributes', () => {
     }
   });
 
+  it('puts the reading layer first, before any mail CSS, and the mail cannot name it', () => {
+    const result = html('<style>@layer aplos-reading{html{height:1px!important}}</style><p>x</p>');
+    const reading = result.document.indexOf('@layer aplos-reading{html:root{');
+    const mail = result.document.indexOf('<style>', result.document.indexOf('<body'));
+    assert.ok(reading > 0 && reading < mail, 'declared first');
+    assert.equal(result.document.slice(mail).includes('@layer aplos-reading'), false);
+    assert.match(result.document.slice(mail), /@layer m-aplos-reading\{/);
+    // The body style stays (colours, margins) minus what the layer guards, which a style attribute would outrank.
+    const inline = html('<body style="position:fixed!important;margin:0"><p>x</p></body>');
+    assert.match(inline.document, /<body style="margin:0">/);
+  });
+
+  it('keeps only colours, margins, padding and type in the frame body style', () => {
+    const bodyStyle = (style: string) =>
+      html(`<body style="${style}"><p>x</p></body>`).document.match(/<body style="([^"]*)"/)?.[1];
+    assert.equal(
+      bodyStyle('margin:0;background:#f4f4f4;padding:8px 12px;font:14px Arial;color:#222'),
+      'margin:0;background:#f4f4f4;padding:8px 12px;font:14px Arial;color:#222',
+    );
+    assert.equal(
+      bodyStyle(
+        'text-align:center;line-height:1.4;background-color:#fff!important;margin-top:-4px',
+      ),
+      'text-align:center;line-height:1.4;background-color:#fff!important;margin-top:-4px',
+    );
+    const dropped = [
+      'position:fixed!important',
+      'top:0',
+      'inset-block:0 -50px',
+      'bottom:-50px',
+      'writing-mode:vertical-lr!important',
+      '-webkit-writing-mode:vertical-lr',
+      'zoom:1000!important',
+      'transform:scale(1000)',
+      'height:calc(100% + 50px)!important',
+      'min-height:100%',
+      'block-size:200%',
+      'display:contents',
+      'float:left',
+      'contain:size',
+      'container-type:size',
+      'content-visibility:hidden',
+      "offset-path:path('M0,0 L0,-5000')",
+      'overflow:hidden',
+      '--x:1',
+      'POSITION : fixed',
+      '\\70osition:fixed',
+      '/* c */ position /* c */ : fixed',
+      'all:unset',
+      'width:0',
+      // Unknown names under a known prefix, and type sizes past the bound.
+      'font-size-adjust:1000',
+      'font-foo:1',
+      'margin-foo:5px',
+      'padding-inline-foo:5px',
+      'background-foo:1',
+      'font-size:300px',
+      'font-size:20em',
+      'font-size:2000%',
+      'font-size:calc(1px + 2px)',
+      'line-height:50',
+      'line-height:300px',
+      'font:14px/50 Arial',
+      'font:300px Arial',
+      'font-size:100vh',
+    ];
+    for (const declaration of dropped) {
+      assert.equal(
+        bodyStyle(`${declaration};margin:0`),
+        'margin:0',
+        `${declaration} is not carried onto the frame body`,
+      );
+      assert.doesNotMatch(
+        html(`<body style="${declaration}"><p>x</p></body>`).document,
+        /<body style=/,
+      );
+    }
+    // Type inside the bound stays.
+    assert.equal(
+      bodyStyle('font-size:200px;line-height:10;font:700 14px/1.4 Arial;margin-block-start:3px'),
+      'font-size:200px;line-height:10;font:700 14px/1.4 Arial;margin-block-start:3px',
+    );
+    assert.equal(
+      bodyStyle('font-size:150%;line-height:150%;font-size:2em'),
+      'font-size:150%;line-height:150%;font-size:2em',
+    );
+    // A `;` inside a string or function does not end a declaration early, nor smuggle one in.
+    assert.equal(
+      bodyStyle('background:url(a;position:fixed);color:red'),
+      'background: none ;color:red',
+    );
+    assert.equal(
+      bodyStyle("font-family:'a;position:fixed';margin:0"),
+      'font-family:&#39;a;position:fixed&#39;;margin:0',
+    );
+    // Other elements keep what they wrote.
+    assert.match(
+      html('<p style="position:relative!important">x</p>').document,
+      /position:relative!important/,
+    );
+    assert.match(html('<td style="zoom:2;color:red !important">x</td>').document, /zoom:2/);
+    // A <style> rule is not an element's own style attribute: the layer already outranks it.
+    assert.match(html('<style>body{margin:0!important}</style>').document, /margin:0!important/);
+  });
+
+  it("never hands the body another element's unfiltered style, whatever the order or the text", () => {
+    const guarded =
+      'position:fixed!important;top:0!important;bottom:-50px!important;zoom:1000!important';
+    for (const prefix of ['!x;', '!', '!x;margin:0;', ';', ' !', '!!']) {
+      const element = `<div style="!${prefix}${guarded}">a</div>`;
+      const body = `<body style="${prefix}${guarded}"><p>b</p></body>`;
+      for (const document of [html(element + body).document, html(body + element).document]) {
+        const style = document.match(/<body style="([^"]*)"/)?.[1] ?? '';
+        assert.doesNotMatch(style, /position|top|bottom|zoom/, `${prefix} -> ${style}`);
+      }
+      // Both elements with the very same text: the div keeps it, the body does not.
+      const same = `<div style="${prefix}${guarded}">a</div><body style="${prefix}${guarded}"><p>b</p></body>`;
+      const result = html(same).document;
+      assert.match(result, /<div style="[^"]*position:fixed/);
+      assert.doesNotMatch(result.match(/<body style="([^"]*)"/)?.[1] ?? '', /position|zoom/);
+    }
+  });
+
   it('keeps body colours and drops body handlers', () => {
     const result = html(
       '<html lang="fr" onload=x><body bgcolor="#f0f0f0" onload="alert(1)" style="margin:0" background="https://x.example/b.png"><p>x</p></body></html>',
@@ -636,5 +759,61 @@ describe('the hostile corpus', () => {
       const second = sanitizeBody(first.body, { ...options, ownOutput: true });
       assert.equal(second.body, first.body, entry.id);
     }
+  });
+});
+
+describe('what the rewrite writes is capped too', () => {
+  const sheet = (bytes: number) => {
+    const rule = 'a{b:.01vw .01vw .01vw .01vw}';
+    return rule.repeat(Math.floor(bytes / rule.length));
+  };
+  const styleText = (document: string) =>
+    [...document.matchAll(/<style>([^]*?)<\/style>/g)]
+      .slice(1)
+      .reduce((sum, match) => sum + match[1].length, 0);
+
+  it('drops a <style> block whose rewritten text passes the style cap', () => {
+    // 256 KiB in, but .01vw (5 characters) is 0.06px (6): about 307 KB out.
+    const result = html(`<style>${sheet(256 * 1024)}</style><p>x</p>`);
+    assert.ok(styleText(result.document) <= 262_144, `${styleText(result.document)} characters`);
+    // The same rules under the cap on the way out are kept, rewritten.
+    const kept = html(`<style>${sheet(200 * 1024)}</style><p>x</p>`);
+    assert.ok(styleText(kept.document) > 200 * 1024);
+    assert.ok(styleText(kept.document) <= 262_144);
+  });
+
+  it('drops a style attribute whose rewritten text passes its cap', () => {
+    const input = 'b:.01vw;'.repeat(Math.floor(30_000 / 8));
+    assert.ok(input.length < 32_768);
+    const result = html(`<p style="${input}">x</p>`);
+    assert.equal(result.document.includes('<p style='), false);
+    const small = html(`<p style="${'b:.01vw;'.repeat(100)}">x</p>`);
+    assert.match(small.document, /<p style="b:0.06px;/);
+  });
+
+  it('writes the reading layer first, with the guards on the root and body', () => {
+    const { document } = html('<p>x</p>');
+    const layer = document.match(/@layer aplos-reading\{(.*?)\}\}/)?.[1] ?? '';
+    const [root, body] = layer.split('html:root>body');
+    for (const part of [root, body]) {
+      for (const guard of [
+        'height:auto!important',
+        'max-height:none!important',
+        'inset:auto!important',
+        'float:none!important',
+        'writing-mode:horizontal-tb!important',
+        'zoom:1!important',
+        'offset-path:none!important',
+        'contain:none!important',
+        'content-visibility:visible!important',
+        'container-type:normal!important',
+      ]) {
+        assert.ok(part.includes(guard), guard);
+      }
+    }
+    // An empty letter still has a size; the body is the containing block of positioned content.
+    assert.ok(root.includes('min-height:1px!important'));
+    assert.ok(root.includes('position:static!important') && root.includes('display:flow-root'));
+    assert.ok(body.includes('position:relative!important') && body.includes('min-height:0'));
   });
 });

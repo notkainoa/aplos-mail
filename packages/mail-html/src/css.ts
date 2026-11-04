@@ -14,7 +14,7 @@ import { urlCleanup } from './url';
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
 // position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
-// appears in the output. A viewport or container-query unit (`100vh`, `50dvw`, `100cqh`, inside `calc()` too) becomes a length in px
+// appears in the output. Layer names move to `m-` (ids.ts); height-following media features and `writing-mode` become unknown names. A viewport or container-query unit (`100vh`, `50dvw`, `100cqh`, inside `calc()` too) becomes a length in px
 // against a fixed reading viewport (`viewportLength`): the frame is sized to the letter, so a letter
 // sized by its own viewport would grow the frame, which grows the letter, without end.
 
@@ -45,6 +45,40 @@ const VIEWPORT_UNIT = /^(?:[sld]?v|cq)(?:w|h|i|b|min|max)$/;
 /** The viewport a letter's viewport units are measured against, in px: roughly the reading pane. */
 const READING_VIEWPORT = { width: 640, height: 600 };
 const MAX_LENGTH_PX = 100_000;
+
+/** What ends an at-rule prelude. */
+const STOPS_PRELUDE = new Set([TokenType.OpenCurly, TokenType.Semicolon, TokenType.CloseCurly]);
+/**
+ * Media and container features that follow the frame's own height or shape. The frame is sized to the
+ * letter, so a letter that styles itself by them is sized by the frame: `(max-height:300px)` and
+ * `(orientation:landscape)` flip with every report, for ever. They are renamed to a custom-property
+ * identifier, an unknown feature, so the query is false (the desktop layout) and the rule beside it cannot
+ * toggle. The width features stay: the host fixes the frame's width.
+ */
+const HEIGHT_FEATURES = new Set([
+  'height',
+  'min-height',
+  'max-height',
+  'block-size',
+  'aspect-ratio',
+  'min-aspect-ratio',
+  'max-aspect-ratio',
+  'orientation',
+  'device-height',
+  'min-device-height',
+  'max-device-height',
+  'device-aspect-ratio',
+  'min-device-aspect-ratio',
+  'max-device-aspect-ratio',
+]);
+const QUERY_AT_RULES = new Set(['media', 'container']);
+/**
+ * `writing-mode` outside the root (under any vendor prefix: Chromium honours `-epub-writing-mode` and `-webkit-writing-mode` as aliases) turns a block's length into its width and back: vertical text in a
+ * `div` grows 182, 214, 246 px ... for ever as the frame follows it. The property name becomes a custom
+ * property (`--m-writing-mode`), which does nothing. Vertical text is lost to mail; the root and body are
+ * kept horizontal by the reading layer anyway.
+ */
+const WRITING_MODE = /writing-mode$/;
 
 const enum Structure {
   None = 0,
@@ -161,6 +195,10 @@ class CssWriter {
   private readonly structure: Uint8Array;
   private readonly classValues: Map<number, string>;
   private imageDepth = 0;
+  /** Between `@layer` and the `{` or `;` that ends its prelude: identifiers there are layer names. */
+  private layerNames = false;
+  /** Between `@media` or `@container` and its `{`: feature names are in the prelude. */
+  private queryFeatures = false;
   private at = 0;
 
   constructor(
@@ -197,7 +235,7 @@ class CssWriter {
       case TokenType.Function:
         return this.func(token[4].value, token[1]);
       case TokenType.Dimension:
-        return this.emit(viewportLength(token[4].value, token[4].unit) ?? token[1]);
+        return this.emit(this.dimension(token));
       default:
         return this.plain(token);
     }
@@ -211,7 +249,24 @@ class CssWriter {
     this.at += consumed;
   }
 
+  private isSpace(index: number): boolean {
+    const type = this.tokens[index]?.[0];
+    return type === TokenType.Whitespace || type === TokenType.Comment;
+  }
+
+  /** A viewport length as px, keeping the `+` the number was written with (`calc(1px+100vh)`). */
+  private dimension(token: CSSToken): string {
+    if (token[0] !== TokenType.Dimension) return token[1];
+    const length = viewportLength(token[4].value, token[4].unit);
+    if (length === undefined) return token[1];
+    return token[1].startsWith('+') ? `+${length}` : length;
+  }
+
   private plain(token: CSSToken): void {
+    if (STOPS_PRELUDE.has(token[0])) {
+      this.layerNames = false;
+      this.queryFeatures = false;
+    }
     const kind = OPENERS[token[0]];
     if (kind) this.push(kind, false);
     if (isCloser(token[0])) this.close(token[0]);
@@ -257,12 +312,25 @@ class CssWriter {
    * comment and a name are still a class. Also the value of a `[class=…]` selector (class-selectors.ts).
    */
   private ident(token: CSSToken): string {
+    if (token[0] === TokenType.Ident && this.layerNames) return cssIdent(scopeId(token[4].value));
+    if (token[0] === TokenType.Ident && this.unsafeName(asciiLower(token[4].value))) {
+      return `--m-${asciiLower(token[4].value)}`;
+    }
     const attribute = this.classValues.get(this.at);
     if (attribute !== undefined) return cssIdent(attribute);
     if (token[0] !== TokenType.Ident || !isOwnClass(token[4].value) || !this.afterDot()) {
       return token[1];
     }
     return cssIdent(ID_PREFIX + token[4].value);
+  }
+
+  /** A height feature in a query prelude, or a `writing-mode` property name (an identifier before a colon). */
+  private unsafeName(lower: string): boolean {
+    if (this.queryFeatures) return HEIGHT_FEATURES.has(lower);
+    if (lower.startsWith('--') || !WRITING_MODE.test(lower)) return false;
+    let next = this.at + 1;
+    while (this.isSpace(next)) next++;
+    return this.tokens[next]?.[0] === TokenType.Colon;
   }
 
   private afterDot(): boolean {
@@ -296,7 +364,12 @@ class CssWriter {
 
   /** Drops an at-rule outside the layout allowlist with its prelude and block. */
   private atRule(name: string, raw: string): void {
-    if (KEPT_AT_RULES.has(asciiLower(name))) return this.emit(raw);
+    const lower = asciiLower(name);
+    // The names in an `@layer` prelude move into the mail's `m-` namespace, so no mail layer can be the
+    // reading layer (reading-css.ts), whose !important rules would then be open to the mail's.
+    this.layerNames = lower === 'layer';
+    this.queryFeatures = QUERY_AT_RULES.has(lower);
+    if (KEPT_AT_RULES.has(lower)) return this.emit(raw);
     const end = this.ruleEnd(this.at + 1);
     this.emit(SEPARATOR, end - this.at);
   }
@@ -408,4 +481,50 @@ function cleanValue(value: string): string {
   const bang = lower.lastIndexOf('!');
   const important = bang >= 0 && lower.slice(bang + 1).trim() === 'important';
   return (important ? lower.slice(0, bang) : lower).trim();
+}
+
+/**
+ * The declarations of a style attribute whose property name `allowed` accepts, as source text joined by `;`
+ * (a name is read through escapes and compared in lowercase). A declaration ends at a `;` outside any
+ * bracket, so a `;` in a string, url or function cannot cut it short. Custom properties, malformed
+ * declarations and everything not allowed are left out; the rest is as written, `!important` included.
+ */
+export function keepDeclarations(
+  css: string,
+  allowed: (name: string, value: readonly CSSToken[]) => boolean,
+  tokens = cssTokens(css),
+): string {
+  const kept: string[] = [];
+  let index = 0;
+  while (index < tokens.length) {
+    const start = index;
+    const blocks = new BlockTracker();
+    for (; index < tokens.length; index++) {
+      const type = tokens[index][0];
+      if (type === TokenType.Semicolon && blocks.depth === 0) break;
+      blocks.read(type);
+    }
+    const head = declarationHead(tokens, start, index);
+    const text = tokens
+      .slice(start, index)
+      .map(token => token[1])
+      .join('');
+    if (head && allowed(head.name, tokens.slice(head.valueFrom, index))) kept.push(text);
+    index++;
+  }
+  return kept.join(';');
+}
+
+/** The lowercase property name a declaration in `tokens[from, to)` starts with, and where its value starts. */
+function declarationHead(
+  tokens: CSSToken[],
+  from: number,
+  to: number,
+): { name: string; valueFrom: number } | undefined {
+  let at = skipSpace(tokens, from);
+  const name = tokens[at];
+  at = skipSpace(tokens, at + 1);
+  if (at >= to || name?.[0] !== TokenType.Ident || tokens[at]?.[0] !== TokenType.Colon)
+    return undefined;
+  return { name: asciiLower(name[4].value), valueFrom: at + 1 };
 }

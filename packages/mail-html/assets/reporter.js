@@ -44,6 +44,11 @@
       const colour = paint(body);
       return (clear(colour) && !clear(paint(root)) ? paint(root) : colour).slice(0, 64);
     }
+    function below(body) {
+      if (!body) return 0;
+      const scrolled = typeof w.scrollY === 'number' ? w.scrollY : 0;
+      return M.ceil(boxOf.call(body).top + scrolled + scrollOf.call(body));
+    }
     function report() {
       if (!live) return;
       try {
@@ -51,9 +56,11 @@
         if (!(typeof width === 'number' && width > 0)) return;
         const root = rootOf.call(d);
         const body = bodyOf.call(d);
-        // The content's height: the root's own box (auto height, so never the frame's) and what
-        // the body holds that spills past it. The root's scrollHeight is at least the frame's.
-        const height = M.max(M.ceil(boxOf.call(root).height), body ? scrollOf.call(body) : 0);
+        // The content's height: the root's own box (auto height, so never the frame's) and what the
+        // body holds that spills past it. The body is positioned (reading-css.ts), so its scroll
+        // height takes in absolutely positioned and transformed content; its top (plus how far the
+        // frame is scrolled) is where that height starts. The root's scrollHeight is at least the frame's.
+        const height = M.max(M.ceil(boxOf.call(root).height), below(body));
         host.postMessage(
           {
             token: token,
