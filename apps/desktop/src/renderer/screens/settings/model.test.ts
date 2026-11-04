@@ -390,7 +390,7 @@ describe('patches, nav, copy', () => {
 
   test('"Version 0.3.0 · macOS"; a missing build number leaves just "macOS"', () => {
     assert.equal(versionLine({ appVersion: '0.3.0' }), 'Version 0.3.0 · macOS');
-    assert.equal(versionLine({}), 'macOS');
+    assert.equal(versionLine({} as never), 'macOS');
     assert.equal(versionLine(undefined), 'macOS');
   });
 

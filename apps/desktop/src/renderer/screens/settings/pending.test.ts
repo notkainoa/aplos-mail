@@ -596,7 +596,7 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
   test('ai.key.retry – a rejected key is kept nowhere, and Retry reopens an empty add-key dialog', async () => {
     const KEY = 'gsk_TESTKEY_never-kept-0123';
     const calls: unknown[] = [];
-    let failure: WriteFailure | null = null;
+    let failure = null as WriteFailure | null;
     let view = { ...INITIAL_VIEW };
     const actions = createController({
       ports: {
