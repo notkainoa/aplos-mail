@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Citation, ProgressFrame, Proposal } from '../../data';
+import type { Citation, Conversation, ProgressFrame, Proposal } from '../../data';
 import {
   advance,
   decide,
@@ -13,11 +13,15 @@ import {
   escape,
   foldFrames,
   initialAsk,
+  newChat,
+  openConversation,
   runRefused,
+  runStarted,
   sendNow,
   setField,
   submit,
   toParagraphs,
+  trackedRunIds,
   type AskInputs,
   type AskState,
 } from './ask.model';
@@ -227,7 +231,10 @@ test('decide marks the card pending→sending and effects Ask/decide', () => {
     draft: { subject: 'Re: review' },
   };
   const state = running();
-  const view = dockView(state, inputs({ frames: [frame('proposal', { proposal })] }));
+  const view = dockView(
+    state,
+    inputs({ frames: [frame('proposal', { proposal }), frame('done')] }),
+  );
   const stepped = decide(state, view, true);
   assert.equal(stepped.state.decisions.p1?.phase, 'sending');
   const effect = stepped.effects[0] as Extract<
@@ -259,6 +266,127 @@ test('toParagraphs keeps only the first strong range and drops orphan chips', ()
     flat.map(s => (s.kind === 'text' ? `${s.strong ? '!' : ''}${s.text}` : `[${s.index}]`)),
     ['!alpha', '[1]', ' beta'],
   );
+});
+
+test('a run dropped mid-flight (⌘N, a recent chat) is cancelled when its id arrives', () => {
+  const pending: AskState = {
+    ...initialAsk,
+    run: { clientId: 'c1', question: 'q?', searchAll: false, stopped: false, settled: false },
+  };
+  const stepped = newChat(pending);
+  // The call is still out: no runId, so no cancel effect is possible yet.
+  assert.deepEqual(stepped.effects, []);
+  // `Ask/run` resolves after the state dropped the run — it must not be left to finish unobserved.
+  const late = runStarted(stepped.state, 'c1', 'r-late', 'conv-1');
+  assert.deepEqual(late.effects, [{ kind: 'cancel', runId: 'r-late' }]);
+  assert.equal(late.state.conversationId, undefined);
+  const opened = openConversation(pending, 'conv-9').state;
+  const late2 = runStarted(opened, 'c1', 'r-late', 'conv-1');
+  assert.deepEqual(late2.effects, [{ kind: 'cancel', runId: 'r-late' }]);
+  assert.equal(late2.state.conversationId, 'conv-9');
+});
+
+test('a stored turn with a problem and a partial answer still renders failed, as the live run did', () => {
+  const conversation: Conversation = {
+    id: 'conv-1',
+    rev: 3,
+    title: 'q?',
+    updatedAt: 1,
+    turns: [
+      {
+        id: 'turn-1',
+        question: 'q?',
+        answer: { blocks: [{ text: 'Partial answer only.' }] },
+        citations: [],
+        noSource: true,
+        problem: { reasonCode: 'ai.unreachable', message: 'Provider failed.' },
+        proposals: [],
+        steps: [],
+        createdAt: 1,
+      },
+    ],
+  };
+  const state: AskState = { ...initialAsk, conversationId: 'conv-1' };
+  const view = dockView(state, inputs({ conversation }));
+  assert.equal(view.turns.length, 1);
+  const turn = view.turns[0];
+  assert.equal(turn.state, 'failed');
+  assert.equal(turn.provider, 'Groq');
+  // A failed partial answer does not get the closing source line.
+  assert.equal(turn.sourceLine, null);
+  assert.equal(turn.answer?.length, 1);
+});
+
+test('a streamed proposal becomes actionable only once the run has ended', () => {
+  const proposal: Proposal = {
+    kind: 'reply',
+    id: 'p1',
+    consequence: 'Reply to Mina',
+    state: 'open',
+    draft: { subject: 'Re: review' },
+  };
+  const state = running();
+  // Mid-stream the engine has not stored the turn's proposals yet, so the affordance is held.
+  const mid = dockView(state, inputs({ frames: [frame('proposal', { proposal })] }));
+  assert.equal(mid.turns[0].proposal, undefined);
+  assert.equal(mid.pendingProposal, undefined);
+  assert.deepEqual(decide(state, mid, true).effects, []);
+  // Once the run ends the card shows and Return decides.
+  const done = dockView(
+    state,
+    inputs({ frames: [frame('proposal', { proposal }), frame('done')] }),
+  );
+  assert.equal(done.pendingProposal?.proposalId, 'p1');
+  assert.equal(decide(state, done, true).effects[0].kind, 'decide');
+});
+
+test('a dock reopened after the run finished settles from the seeded run log, no phantom turn', () => {
+  // askStore kept the run while the dock was closed; the engine finished and stored the turn. On reopen the
+  // run-scoped subscription (`trackedRunIds`) replays the whole log, including the terminal frame.
+  const state = running();
+  assert.deepEqual(trackedRunIds(state), ['r1', undefined, undefined, undefined]);
+  const frames = [frame('text', { delta: 'All done.' }), frame('done')];
+  const conversation: Conversation = {
+    id: 'conv-1',
+    rev: 2,
+    title: 'q?',
+    updatedAt: 1,
+    turns: [
+      {
+        id: 'turn-1',
+        question: 'q?',
+        answer: { blocks: [{ text: 'All done.' }] },
+        citations: [],
+        noSource: true,
+        proposals: [],
+        steps: [],
+        createdAt: 1,
+      },
+    ],
+  };
+  const stepped = advance(state, frames);
+  assert.equal(stepped.state.run?.settled, true);
+  const view = dockView(stepped.state, inputs({ frames, conversation }));
+  assert.equal(view.working, false);
+  assert.equal(view.turns.length, 1);
+  assert.equal(view.turns[0].id, 'turn-1');
+  assert.equal(view.turns[0].live, false);
+  // Esc's first rung is not "stop" over a finished run.
+  assert.deepEqual(escape(stepped.state, view).effects, [{ kind: 'close' }]);
+});
+
+test('trackedRunIds covers the live run and the remembered past ones', () => {
+  const past = {
+    clientId: 'c0',
+    question: 'earlier?',
+    searchAll: false,
+    runId: 'r0',
+    stopped: true,
+    settled: true,
+  };
+  const state: AskState = { ...running(), past: [past] };
+  assert.deepEqual(trackedRunIds(state), ['r1', 'r0', undefined, undefined]);
+  assert.deepEqual(trackedRunIds(initialAsk), [undefined, undefined, undefined, undefined]);
 });
 
 test('foldFrames ignores other runs and stops folding after a terminal frame', () => {

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CommandHandlers, PaletteChild } from '../../commands';
 import { api, useAccounts, useConsent, useFrames, useRow, useSettings, useView } from '../../data';
-import type { AiProvider, Calendar, Consent, ErrorBody, ModelRef } from '../../data';
+import type { AiProvider, Calendar, Consent, ErrorBody, ModelRef, ProgressFrame } from '../../data';
 import {
   navigate,
   openCompose,
@@ -43,6 +43,7 @@ import {
   stop,
   submit,
   toggleSteps,
+  trackedRunIds,
   FALLBACK_SUGGESTIONS,
   type AskEffect,
   type AskInputs,
@@ -154,6 +155,24 @@ function consentNeeded(consent: Consent | undefined, dismissed: number | undefin
   return !consent.granted || consent.needsReconsent;
 }
 
+/** An unused slot's filter: contract ids are non-empty, so this `runId` matches nothing. */
+const NO_RUN = '';
+
+/**
+ * The dock's `progress` frames: one runId-scoped subscription per run the state tracks (`trackedRunIds` — the live
+ * run plus its `PAST_RUNS` remembered ones, four slots), never a source-wide one. Only a filter that names a runId
+ * is seeded with the frames the run already sent, so a dock reopened after the run finished folds its whole log and
+ * settles instead of hanging 'working' on an empty buffer beside the stored turn.
+ */
+function useAskFrames(runIds: readonly (string | undefined)[]): readonly ProgressFrame[] {
+  const opts = { max: 5_000 };
+  const live = useFrames('progress', { source: 'ask', runId: runIds[0] ?? NO_RUN }, opts).frames;
+  const p1 = useFrames('progress', { source: 'ask', runId: runIds[1] ?? NO_RUN }, opts).frames;
+  const p2 = useFrames('progress', { source: 'ask', runId: runIds[2] ?? NO_RUN }, opts).frames;
+  const p3 = useFrames('progress', { source: 'ask', runId: runIds[3] ?? NO_RUN }, opts).frames;
+  return useMemo(() => [...live, ...p1, ...p2, ...p3], [live, p1, p2, p3]);
+}
+
 export function AskDockHost(props: AskDockHostProps) {
   const dock = useDock();
   const settings = useSettings();
@@ -162,9 +181,8 @@ export function AskDockHost(props: AskDockHostProps) {
   const target = useCurrentTarget();
   const once = useRef(oncePerTask()).current;
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const [consentDismissed, setConsentDismissed] = useState<number | undefined>();
   const [proposalFocused, setProposalFocused] = useState(false);
-  const frames = useFrames('progress', { source: 'ask' }, { max: 5_000 }).frames;
+  const frames = useAskFrames(trackedRunIds(dock.ask));
   const conversation = useRow('Conversation', dock.ask.conversationId);
   const history = useView({ kind: 'conversations' });
   const sources = useAskSources();
@@ -390,7 +408,7 @@ export function AskDockHost(props: AskDockHostProps) {
   const askModel = sources.status.model;
   const providerRow = sources.providers.find(p => p.id === askModel?.provider);
   const needsConsent =
-    tab === 'ask' && !view.working && consentNeeded(consent, consentDismissed) && askModel;
+    tab === 'ask' && !view.working && consentNeeded(consent, dock.consentDismissed) && askModel;
   const consentNode = needsConsent ? (
     <ConsentLine
       provider={providerRow?.label ?? askModel.provider}
@@ -407,7 +425,9 @@ export function AskDockHost(props: AskDockHostProps) {
           })
           .catch(() => undefined);
       }}
-      onNotNow={() => setConsentDismissed(consent?.currentVersion ?? 0)}
+      onNotNow={() =>
+        askStore.update(s => ({ ...s, consentDismissed: consent?.currentVersion ?? 0 }))
+      }
     />
   ) : undefined;
 

@@ -200,7 +200,10 @@ test('the proposal card shows its consequence and the consent line names provide
     threadIds: ['t1'],
     action: { type: 'later' },
   };
-  const markup = panel(running(), inputs({ frames: [frame('proposal', { proposal })] }));
+  const markup = panel(
+    running(),
+    inputs({ frames: [frame('proposal', { proposal }), frame('done')] }),
+  );
   clean(markup);
   assert.ok(text(markup).includes('Move 3 emails to Later'));
   const consent = html(

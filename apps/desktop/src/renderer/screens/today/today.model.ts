@@ -215,13 +215,19 @@ export function todayModel(
   const folded = upcoming.slice(SHOWN_AHEAD);
   const count = allDay.length + timed.length;
   const next = upcoming[0];
+  // `past` is sorted by start; the event behind you is the one that ended most recently (a long earlier meeting
+  // outranks a short later one).
+  const behind = past.reduce<AgendaEntry | undefined>(
+    (latest, e) => (latest === undefined || e.end > latest.end ? e : latest),
+    undefined,
+  );
 
   return {
     day,
     now: toIsoDateTime(now),
     events: entries.map(e => e.event),
     allDay,
-    behind: past[past.length - 1],
+    behind,
     current,
     next,
     following: ahead.slice(1),

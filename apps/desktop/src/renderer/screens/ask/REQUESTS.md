@@ -27,6 +27,12 @@ host degrades quietly as noted.
   screen; attach `calendar.newEvent` there so it opens the create flow on today.
 - **`useCalendars` hook or `Calendar` state frames.** Today fetches `Calendar/get` once per mount; a watched hook
   would keep names/colours live.
+- **`AgendaView` 'today' re-derives `behind` and the gaps.** `screens/today/today.model.ts` now picks `behind` as the
+  most recently ENDED event and each gap from the running `free` cursor, but `ui/calendar/AgendaView.tsx`
+  `TodayAgenda` computes its own from start-sorted rows: `behind` is the latest-STARTED ended event, and each gap is
+  measured from the previous shown event's end rather than the latest end so far, so a long overlapping event yields
+  a wrong or missing "Free for …" line. Until it lands the model is right but the agenda the Today tab draws can
+  disagree.
 
 ## engine/contract (already frozen — confirm only)
 

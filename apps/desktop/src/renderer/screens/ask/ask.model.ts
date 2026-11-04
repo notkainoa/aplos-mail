@@ -220,7 +220,9 @@ function storedTurn(turn: StoredTurn, inputs: AskInputs, state: AskState): TurnV
   const known = new Set(turn.citations.map(c => c.n));
   const answer = turn.answer ? toParagraphs(turn.answer.blocks, known) : [];
   const dailyLimit = isDailyLimit(turn.problem);
-  const failed = Boolean(turn.problem) && !dailyLimit && answer.length === 0 && !turn.stopped;
+  // The same failure `liveTurn` reads from a terminal frame: a partial answer does not rescue a `problem`.
+  const failed =
+    Boolean(turn.problem) && !dailyLimit && !isNoProvider(turn.problem) && !turn.stopped;
   const stopped = turn.stopped === true;
   const status: TurnView['state'] = stopped
     ? 'stopped'
@@ -246,7 +248,7 @@ function storedTurn(turn: StoredTurn, inputs: AskInputs, state: AskState): TurnV
     provider: providerLabel(turn.model?.provider ?? inputs.askModel?.provider, inputs.providers),
     provenance: hasAnswer ? provenance(turn.model, inputs.providers) : undefined,
     proposal: card,
-    sourceLine: hasAnswer ? (citations.length > 0 ? 'cited' : 'noSource') : null,
+    sourceLine: hasAnswer && !failed ? (citations.length > 0 ? 'cited' : 'noSource') : null,
     excludedNote: excludedNote(turn.excludedAccountIds, inputs.accountNames),
     live: false,
   };
@@ -262,6 +264,22 @@ function pickProposal(
     .map(p => proposalCard(p, turnId, calendars, effectiveProposalState(p, decisionFor(p))))
     .filter((v): v is ProposalView => v !== null && v.state !== 'dismissed');
   return views.find(v => v.state === 'pending') ?? views[views.length - 1];
+}
+
+/**
+ * The live turn's card, held until the run ends: the engine stores a turn's proposals only at finish, so a card the
+ * owner could accept while the run streams would fail `Ask/decide` notFound and revert with a "Couldn't …" toast.
+ */
+function liveCard(
+  run: RunRef,
+  live: LiveRun,
+  id: string,
+  finished: boolean,
+  inputs: AskInputs,
+  state: AskState,
+): ProposalView | undefined {
+  if (run.stopped || !finished) return undefined;
+  return pickProposal(live.proposals, id, inputs.calendars, p => state.decisions[p.id]);
 }
 
 function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState): TurnView {
@@ -294,9 +312,7 @@ function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState
             ? 'streaming'
             : 'working';
   const citations = [...live.citations].map(c => c.citation).sort((a, b) => a.n - b.n);
-  const card = run.stopped
-    ? undefined
-    : pickProposal(live.proposals, id, inputs.calendars, p => state.decisions[p.id]);
+  const card = liveCard(run, live, id, finished, inputs, state);
   return {
     id,
     question: run.question,
@@ -416,6 +432,20 @@ export function askConditions(view: DockView, proposalFocused: boolean) {
   } as const;
 }
 
+/**
+ * The run ids whose `progress` frames the host subscribes to — the live run, then the remembered past ones — padded
+ * to a fixed length (`undefined` = an unused slot) so the hook calls stay constant. A runId-scoped `useFrames`
+ * subscription is seeded with every frame the run has sent (the bus keeps a per-run log for late subscribers), so a
+ * dock reopened mid-run folds the whole stream, settles a finished run, and never draws a phantom live turn beside
+ * the stored one. A source-wide subscription starts empty and can only fold what arrives after it opened.
+ */
+export function trackedRunIds(state: AskState): readonly (string | undefined)[] {
+  const ids: (string | undefined)[] = [state.run?.runId];
+  for (const past of state.past.slice(-PAST_RUNS)) ids.push(past.runId);
+  while (ids.length < PAST_RUNS + 1) ids.push(undefined);
+  return ids;
+}
+
 /* ───────────────────────── actions ───────────────────────── */
 
 export function setField(state: AskState, text: string): AskState {
@@ -432,7 +462,7 @@ function nextId(state: AskState, prefix: string): [AskState, string] {
 }
 
 /** How many earlier runs stay drawn while the engine stores them. */
-const PAST_RUNS = 3;
+export const PAST_RUNS = 3;
 
 function startRun(state: AskState, question: string, searchAll: boolean): AskStep {
   const [next, clientId] = nextId(state, 'ask');
@@ -493,7 +523,10 @@ export function sendNow(state: AskState, view: DockView, id: string): AskStep {
   return step(started.state, ...effects, ...started.effects);
 }
 
-/** `Ask/run` answered. A run stopped before its id came back (Esc, send now) is cancelled now. */
+/**
+ * `Ask/run` answered. A run stopped before its id came back (Esc, send now) is cancelled now; so is a run the state
+ * no longer knows — ⌘N or a recent chat dropped it while the call was in flight, so nothing else watches it.
+ */
 export function runStarted(
   state: AskState,
   clientId: string,
@@ -508,7 +541,7 @@ export function runStarted(
     );
   }
   const past = state.past.find(p => p.clientId === clientId);
-  if (!past) return step(state);
+  if (!past) return step(state, { kind: 'cancel', runId });
   return step(
     { ...state, conversationId, past: state.past.map(p => (p === past ? { ...p, runId } : p)) },
     { kind: 'cancel', runId },
@@ -623,12 +656,6 @@ export function decided(
     ? { ...decision, phase: 'applied', eventId: outcome.eventId, draftId: outcome.draftId }
     : { ...decision, phase: 'failed' };
   return { ...state, decisions: { ...state.decisions, [proposalId]: next } };
-}
-
-/** Undo of an accepted proposal (Z on its toast): the card comes back. */
-export function undone(state: AskState, proposalId: string): AskState {
-  const { [proposalId]: _gone, ...rest } = state.decisions;
-  return { ...state, decisions: rest };
 }
 
 /** ⌘N: a new chat, empty, with the field focused. Queued questions belong to the old chat and go. */

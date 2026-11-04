@@ -19,6 +19,8 @@ export interface DockState {
   readonly pendingQuestion?: string;
   /** Bumped to move focus to the field (A, ⌘J). */
   readonly focusTick: number;
+  /** The consent record version "Not now" dismissed; the line stays hidden until the record's version passes it. */
+  readonly consentDismissed?: number;
 }
 
 /** Ask dock width (DESIGN §4.4): 360, or 320 under a 1180 px window. */

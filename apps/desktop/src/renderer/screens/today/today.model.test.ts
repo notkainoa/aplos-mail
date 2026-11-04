@@ -99,6 +99,15 @@ test('a past event sits behind, a running event is current, an empty day is a re
   assert.equal(todayModel([], calendars, NOW).empty, true);
 });
 
+test('the event behind you is the one that ended most recently, not the one that started last', () => {
+  const model = todayModel(
+    [event('long', at(8), at(9, 50)), event('short', at(9), at(9, 10))],
+    calendars,
+    NOW,
+  );
+  assert.equal(model.behind?.event.title, 'long');
+});
+
 test('instant reads utc, date and floating times; formatWhen merges the meridiem', () => {
   assert.equal(instant({ type: 'utc', utc: NOW }), NOW);
   assert.equal(instant({ type: 'date', date: '2026-10-29' }), at(0));
