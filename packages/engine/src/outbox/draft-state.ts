@@ -229,8 +229,10 @@ function asWritten(html: string) {
   // An empty body comes back from adapters as trivially-empty markup (`<p></p>`, `<div><br></div>`): one empty
   // content must hash the same, or our own copy never proves ours and shows as another device's draft. Only the
   // container markup an editor emits for an empty body is interchangeable — an `<img>`, `<hr>` or `<table>` is
-  // content an edit can add, never an empty body, or the proof would swallow it.
-  return emptyMarkup(body) ? '' : body;
+  // content an edit can add, never an empty body, or the proof would swallow it. The check stays cheap: a real
+  // empty body is a few bytes, so anything larger keeps its hash without the htmlToText pass (the safe
+  // direction — a textless body that big is content anyway).
+  return body.length < 8192 && emptyMarkup(body) ? '' : body;
 }
 
 /** The element names an empty body may contain: containers and inline formatting, nothing that carries content. */
