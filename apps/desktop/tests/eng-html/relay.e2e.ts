@@ -34,6 +34,7 @@ interface Result {
   control: string;
   frameUrls: { url: string; origin: string }[];
   processes: { mail: number; host: number };
+  keys: { type: string; key: string; focused: string | null }[];
 }
 
 function safeEnv(canary: string): NodeJS.ProcessEnv {
@@ -217,5 +218,17 @@ test(
         ],
       );
     });
+
+    await t.test(
+      'keys (recorded, not wired): before-input-event fires with focus inside the mail frame',
+      () => {
+        // sendInputEvent goes through the browser's input path and is seen, with focusedFrame naming the mail frame;
+        // DevTools' Input.dispatchKeyEvent is not seen. A real key in the packaged app is the hand-check (DECISIONS).
+        assert.deepEqual(r.keys, [
+          { type: 'keyDown', key: 'j', focused: r.urls.a1 },
+          { type: 'keyUp', key: 'j', focused: r.urls.a1 },
+        ]);
+      },
+    );
   },
 );

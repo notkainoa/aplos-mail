@@ -235,6 +235,7 @@ async function run(file: string, spare: WebContentsView) {
   const frameUrls = a.webContents.mainFrame.frames.map(f => ({ url: f.url, origin: f.origin }));
   const mailProcess = frameA1.processId;
   const hostProcess = a.webContents.mainFrame.processId;
+  const keys = await keyProbe(a, frameA1);
 
   // A window whose own page is an aplos-mail document forges the header and tries other methods.
   const forger = await hostWindow(file);
@@ -268,8 +269,42 @@ async function run(file: string, spare: WebContentsView) {
     control,
     frameUrls,
     processes: { mail: mailProcess, host: hostProcess },
+    keys,
   };
   return result;
+}
+
+interface KeySeen {
+  type: string;
+  key: string;
+  focused: string | null;
+}
+
+/**
+ * The open question of ARCH 10 (does `before-input-event` fire with focus inside an out-of-process mail frame?),
+ * measured here and recorded, not wired: html-5 builds no key relay (DECISIONS). Focus goes into the frame, then one
+ * key goes in through `sendInputEvent` (the browser-side input path a real key takes) and one through DevTools'
+ * `Input.dispatchKeyEvent`.
+ */
+async function keyProbe(win: BrowserWindow, frame: Electron.WebFrameMain): Promise<KeySeen[]> {
+  const seen: KeySeen[] = [];
+  const contents = win.webContents;
+  const listener = (_event: Electron.Event, input: Electron.Input) => {
+    seen.push({ type: input.type, key: input.key, focused: contents.focusedFrame?.url ?? null });
+  };
+  contents.on('before-input-event', listener);
+  await frame.executeJavaScript('document.body.tabIndex = -1; document.body.focus(); 1', true);
+  await contents.executeJavaScript("document.querySelector('iframe').focus(); 1");
+  contents.sendInputEvent({ type: 'keyDown', keyCode: 'J' });
+  contents.sendInputEvent({ type: 'keyUp', keyCode: 'J' });
+  contents.debugger.attach('1.3');
+  const key = { key: 'k', code: 'KeyK', windowsVirtualKeyCode: 75 };
+  await contents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', ...key });
+  await contents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+  contents.debugger.detach();
+  await wait(200);
+  contents.off('before-input-event', listener);
+  return seen;
 }
 
 void app.whenReady().then(async () => {
