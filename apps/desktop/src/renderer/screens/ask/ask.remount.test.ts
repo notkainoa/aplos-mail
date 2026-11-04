@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProgressFrame } from '../../data';
 import { createHarness } from '../../data/harness';
-import { askStore } from './askStore';
+import { askStore, defaultDockWidth } from './askStore';
 import {
   advance,
   dockView,
@@ -79,6 +79,12 @@ test('a dock reopened after the run finished settles from the run-scoped seed, n
   } finally {
     h.close();
   }
+});
+
+test('defaultDockWidth gives the layout default for the window: 320 under 1180 px, else 360', () => {
+  assert.equal(defaultDockWidth(1179), 320);
+  assert.equal(defaultDockWidth(1180), 360);
+  assert.equal(defaultDockWidth(1600), 360);
 });
 
 test('"Not now" consent dismissal lives in the store, so it survives the host unmounting', () => {

@@ -232,16 +232,17 @@ export function openTarget(citation: Citation): OpenTarget {
 
 /* ───────────────────────── providers ───────────────────────── */
 
+/** Fallback labels while `Ai/providers` has not answered; they mirror the contract's `askProviders` table. */
 const PROVIDER_LABELS: Readonly<Record<string, string>> = {
   groq: 'Groq',
-  openai: 'OpenAI',
+  openai: 'ChatGPT',
   anthropic: 'Claude',
   gemini: 'Gemini',
   openrouter: 'OpenRouter',
   'opencode-go': 'OpenCode Go',
   ollama: 'Ollama',
   lmstudio: 'LM Studio',
-  custom: 'Custom server',
+  custom: 'Custom',
 };
 
 export function providerLabel(

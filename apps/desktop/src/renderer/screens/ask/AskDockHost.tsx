@@ -6,7 +6,16 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CommandHandlers, PaletteChild } from '../../commands';
-import { api, useAccounts, useConsent, useFrames, useRow, useSettings, useView } from '../../data';
+import {
+  api,
+  getNow,
+  useAccounts,
+  useConsent,
+  useFrames,
+  useRow,
+  useSettings,
+  useView,
+} from '../../data';
 import type { AiProvider, Calendar, Consent, ErrorBody, ModelRef, ProgressFrame } from '../../data';
 import {
   navigate,
@@ -26,6 +35,7 @@ import { TodayHost } from '../today/TodayHost';
 import {
   advance,
   arrow,
+  askKeyLayer,
   decide,
   decided,
   dockView,
@@ -34,6 +44,7 @@ import {
   newChat,
   openConversation,
   otherProviders,
+  providerLabel,
   pruneDecisions,
   retry,
   runRefused,
@@ -52,7 +63,8 @@ import {
 } from './ask.model';
 import { AskPanel } from './AskPanel';
 import { ConsentLine } from './AskConsent';
-import { askStore, useDock } from './askStore';
+import { askStore, defaultDockWidth, useDock } from './askStore';
+import { setFormatClock } from '../../ui/ask/format';
 import './ask-screen.css';
 
 export interface AskDockHostProps {
@@ -121,6 +133,8 @@ function useAskSources() {
   const [providers, setProviders] = useState<readonly AiProvider[]>([]);
   const [suggestions, setSuggestions] = useState<readonly string[]>([]);
   const [calendars, setCalendars] = useState<ReadonlyMap<string, TodayCalendar>>(new Map());
+  /** False until the first batch answers, so a pending status never reads as "no provider". */
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -131,6 +145,7 @@ function useAskSources() {
         api.calendar.get({}),
       ]);
       if (!alive) return;
+      setLoaded(true);
       if (status.status === 'fulfilled') setStatus(askFeature(status.value.features));
       if (providerList.status === 'fulfilled') setProviders(providerList.value.list);
       if (suggestionList.status === 'fulfilled') setSuggestions(suggestionList.value.list);
@@ -145,7 +160,7 @@ function useAskSources() {
       alive = false;
     };
   }, []);
-  return { status, setStatus, providers, suggestions, calendars };
+  return { status, setStatus, providers, suggestions, calendars, loaded };
 }
 
 /** "Not now" hides the consent line until the record's version changes (nothing is recorded, per `Consent/grant`). */
@@ -192,6 +207,12 @@ export function AskDockHost(props: AskDockHostProps) {
     askStore.update(s => ({ ...s, ask: setField(s.ask, joined) }));
     fieldRef.current?.focus();
   });
+
+  // The dock's relative times (recent chats, citation dates) read the renderer clock (DESIGN 5 rule 15).
+  useEffect(() => {
+    setFormatClock(() => getNow());
+    return () => setFormatClock(null);
+  }, []);
 
   const tab = props.tab ?? dock.tab;
   const onTab = props.onTab ?? ((t: 'ask' | 'today') => askStore.open(t));
@@ -376,7 +397,8 @@ export function AskDockHost(props: AskDockHostProps) {
     if (restored.current || !settings) return;
     restored.current = true;
     const saved = settings.ui.dock.width;
-    if (saved !== undefined) askStore.update(s => ({ ...s, width: saved }));
+    const seed = typeof window === 'undefined' ? 360 : defaultDockWidth(window.innerWidth);
+    askStore.update(s => ({ ...s, width: saved ?? seed }));
   }, [settings]);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -392,26 +414,23 @@ export function AskDockHost(props: AskDockHostProps) {
     return () => clearTimeout(timer);
   }, [dock.width]);
 
-  // The resolver's conditions for the ask context.
-  useShellKeyLayer({
-    contexts: ['ask'],
-    conditions: {
-      streaming: view.working,
-      askText: view.field.length > 0,
-      proposal: proposalFocused && view.pendingProposal !== undefined,
-      queued: view.queued.length > 0,
-    },
-  });
+  // The resolver's conditions for the ask context, which the dock root's data-keyctx scopes to focus inside.
+  useShellKeyLayer(askKeyLayer(view, proposalFocused));
 
   /* ── consent (first use, before anything else) ── */
 
   const askModel = sources.status.model;
   const providerRow = sources.providers.find(p => p.id === askModel?.provider);
+  // The consent line waits for the provider table so it can name the provider rather than a raw id.
   const needsConsent =
-    tab === 'ask' && !view.working && consentNeeded(consent, dock.consentDismissed) && askModel;
+    tab === 'ask' &&
+    !view.working &&
+    sources.loaded &&
+    consentNeeded(consent, dock.consentDismissed) &&
+    askModel;
   const consentNode = needsConsent ? (
     <ConsentLine
-      provider={providerRow?.label ?? askModel.provider}
+      provider={providerLabel(askModel.provider, sources.providers) ?? askModel.provider}
       model={askModel.model}
       local={providerRow?.local === true}
       onAllow={() => {
@@ -509,6 +528,10 @@ export function AskDockHost(props: AskDockHostProps) {
 
   useRegisterCommands(handlers);
 
+  // Until Ai/status answers, `ready:false` would flash the no-provider pane over an existing chat;
+  // the conversation/empty shell shows while it is pending instead.
+  const shownView = sources.loaded ? view : { ...view, providerReady: true };
+
   return (
     <div
       className="ask-screen"
@@ -518,7 +541,7 @@ export function AskDockHost(props: AskDockHostProps) {
       }
     >
       <AskPanel
-        view={view}
+        view={shownView}
         tab={tab}
         width={dock.width}
         today={props.today ?? <TodayHost />}

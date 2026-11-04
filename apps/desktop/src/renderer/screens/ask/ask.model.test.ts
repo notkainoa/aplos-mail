@@ -15,6 +15,7 @@ import {
   initialAsk,
   newChat,
   openConversation,
+  providerLabel,
   runRefused,
   runStarted,
   sendNow,
@@ -190,6 +191,33 @@ test('typed while streaming queues as an editable card; ⌘Return sends now and 
   assert.deepEqual(kinds, ['cancel', 'run']);
   assert.equal(sent.state.run?.question, 'what else?');
   assert.equal(sent.state.run?.stopped, false);
+});
+
+test('⌘Return in an empty field sends the queued card after the run stopped or failed', () => {
+  const stopped: AskState = {
+    ...running(),
+    run: { ...running().run!, stopped: true, settled: true },
+    queued: [{ id: 'q1', text: 'And is Mina free then?', searchAll: true }],
+  };
+  const view = dockView(stopped, inputs());
+  assert.equal(view.working, false);
+  const stepped = submit(stopped, view, 'searchAll');
+  assert.deepEqual(stepped.state.queued, []);
+  assert.equal(stepped.state.run?.question, 'And is Mina free then?');
+  assert.equal(stepped.state.run?.searchAll, true);
+  assert.deepEqual(
+    stepped.effects.map(e => e.kind),
+    ['run'],
+    'a finished run needs no cancel',
+  );
+});
+
+test('provider labels match the contract table before Ai/providers answers', () => {
+  assert.equal(providerLabel('openai', []), 'ChatGPT');
+  assert.equal(providerLabel('custom', []), 'Custom');
+  assert.equal(providerLabel('groq', []), 'Groq');
+  assert.equal(providerLabel('anthropic', []), 'Claude');
+  assert.equal(providerLabel('nope', []), 'nope');
 });
 
 test('a no-provider refusal puts the question back in the field, not in an error', () => {

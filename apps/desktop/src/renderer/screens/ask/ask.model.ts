@@ -433,6 +433,15 @@ export function askConditions(view: DockView, proposalFocused: boolean) {
 }
 
 /**
+ * The shell key layer the mounted dock contributes: only the resolver's conditions. The 'ask' context itself
+ * comes from the dock root's `data-keyctx="ask"`, so its commands answer while focus is inside the dock and
+ * nowhere else — never in the mail list, a compose field or Settings.
+ */
+export function askKeyLayer(view: DockView, proposalFocused: boolean) {
+  return { conditions: askConditions(view, proposalFocused) };
+}
+
+/**
  * The run ids whose `progress` frames the host subscribes to — the live run, then the remembered past ones — padded
  * to a fixed length (`undefined` = an unused slot) so the hook calls stay constant. A runId-scoped `useFrames`
  * subscription is seeded with every frame the run has sent (the bus keeps a per-run log for late subscribers), so a
@@ -485,7 +494,9 @@ export function submit(state: AskState, view: DockView, mode: 'ask' | 'searchAll
   if (text === '') {
     if (mode === 'ask' && view.pendingProposal) return decide(state, view, true);
     if (mode === 'ask' && view.empty && state.cursor !== undefined) return pickCursor(state, view);
-    if (mode === 'searchAll' && view.working && state.queued.length > 0)
+    // ⌘Return with an empty field sends the first queued card now — while the run works it is stopped
+    // first (sendNow), and after it stopped or failed it simply starts the card's run.
+    if (mode === 'searchAll' && state.queued.length > 0)
       return sendNow(state, view, state.queued[0].id);
     return step(state);
   }
