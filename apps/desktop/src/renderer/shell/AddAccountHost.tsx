@@ -26,6 +26,7 @@ import { noticeSentence } from '../onboarding/steps/Accounts';
 import { dataConnectPorts } from '../onboardingPorts';
 import { Button } from '../ui/buttons-keys';
 import { TextField } from '../ui/controls';
+import { ErrorLine } from '../ui/list';
 import { ChoiceRow } from '../ui/onboarding';
 import { ProgressSegments } from '../ui/status';
 import { Dialog, Text } from '../ui/surfaces';
@@ -37,31 +38,83 @@ const LEDE =
   'Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.';
 const WAITING = 'Waiting for Google in your browser…';
 
+const noop = () => {};
+
+/** The id of the one line under the field (a notice or a failed connect). */
+const LINE_ID = 'add-account-line';
+
+/** What sits under the field: a refusal of the address itself, or one line about something else. */
+type Under =
+  | { readonly kind: 'invalid'; readonly text: string }
+  | { readonly kind: 'notice'; readonly text: string }
+  | { readonly kind: 'failure'; readonly text: string };
+
 /**
- * The field, and under it the one line that belongs to it (a refusal, or why the address was not used). The line is
- * the field's `error`: a polite status, linked to the field with `aria-describedby` and `aria-invalid`.
+ * `TextField` links its own error to the field, so it gets the sentence only when the address itself is refused
+ * (`invalid`: aria-invalid and the red ring are true). A notice or a failed connect is not about the address, so it is
+ * one line under the field instead (the setup window's wording and look), and the field is pointed at it here.
  */
+function useDescribedBy(line: boolean) {
+  useEffect(() => {
+    if (!line) return undefined;
+    const input = document.getElementById(ADDRESS_FIELD_ID);
+    input?.setAttribute('aria-describedby', LINE_ID);
+    return () => {
+      if (input?.getAttribute('aria-describedby') === LINE_ID) {
+        input.removeAttribute('aria-describedby');
+      }
+    };
+  }, [line]);
+}
+
+/** The one line that is not the field's own error: the only live region in the dialog's body. */
+function UnderLine({ under }: { readonly under: Under }) {
+  return (
+    <div id={LINE_ID} role="status">
+      {under.kind === 'failure' ? (
+        <ErrorLine
+          kind="reason"
+          text={under.text}
+          retryable={false}
+          placement="checklist"
+          onAction={noop}
+        />
+      ) : (
+        <Text variant="small" tone="ink-2">
+          {under.text}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+/** The field, and under it the one line that belongs to it. */
 function AddressBlock(props: {
   readonly address: string;
-  readonly problem?: string;
+  readonly under?: Under;
   readonly keycap: boolean;
   readonly onEdit: (address: string) => void;
   readonly onSubmit: () => void;
 }) {
+  const { under } = props;
+  useDescribedBy(under !== undefined && under.kind !== 'invalid');
   return (
-    <TextField
-      id={ADDRESS_FIELD_ID}
-      value={props.address}
-      onChange={props.onEdit}
-      onSubmit={props.onSubmit}
-      label="Email address"
-      placeholder="name@example.com"
-      type="email"
-      size="lg"
-      icon="mail"
-      {...(props.keycap ? { trailingKeys: 'Return' as const } : {})}
-      {...(props.problem ? { error: props.problem } : {})}
-    />
+    <>
+      <TextField
+        id={ADDRESS_FIELD_ID}
+        value={props.address}
+        onChange={props.onEdit}
+        onSubmit={props.onSubmit}
+        label="Email address"
+        placeholder="name@example.com"
+        type="email"
+        size="lg"
+        icon="mail"
+        {...(props.keycap ? { trailingKeys: 'Return' as const } : {})}
+        {...(under?.kind === 'invalid' ? { error: under.text } : {})}
+      />
+      {under && under.kind !== 'invalid' ? <UnderLine under={under} /> : null}
+    </>
   );
 }
 
@@ -84,6 +137,12 @@ export interface AddAccountViewProps {
   readonly onClear: () => void;
   /** Esc, the scrim, Cancel in the field states. */
   readonly onClose: () => void;
+}
+
+function underOf(notice: ChooseNotice | null): Under | undefined {
+  if (!notice) return undefined;
+  const text = noticeSentence(notice);
+  return { kind: notice === 'invalid' ? 'invalid' : 'notice', text };
 }
 
 function bodyOf(props: AddAccountViewProps) {
@@ -120,17 +179,14 @@ function bodyOf(props: AddAccountViewProps) {
     });
     return (
       <div className="aplos-add-account__block">
-        <AddressBlock {...field} keycap={false} problem={problem} />
+        <AddressBlock {...field} keycap={false} under={{ kind: 'failure', text: problem }} />
       </div>
     );
   }
+  const under = underOf(props.notice);
   return (
     <div className="aplos-add-account__block">
-      <AddressBlock
-        {...field}
-        keycap
-        {...(props.notice ? { problem: noticeSentence(props.notice) } : {})}
-      />
+      <AddressBlock {...field} keycap {...(under ? { under } : {})} />
       <Text variant="label">Or choose a provider</Text>
       <ChoiceRow
         id="add-account-google"

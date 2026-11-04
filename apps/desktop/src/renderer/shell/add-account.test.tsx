@@ -76,22 +76,34 @@ test('waiting says so, offers Cancel and has exactly one live region', () => {
   assert.equal(liveRegions(waiting), 1);
 });
 
-test('failed says why in the field status, flags the field and offers Try again', () => {
+test('failed says why in one status line, keeps the field valid and offers Try again', () => {
   const failed = html({ mode: 'failed', failure: 'auth.denied', address: 'alex@gmail.com' });
   assert.match(failed, /Try again/);
   assert.equal(liveRegions(failed), 1);
-  assert.match(failed, /<p id="onb-address-error"[^>]*role="status"/);
-  assert.match(failed, /aria-invalid="true"/);
-  assert.match(failed, /aria-describedby="onb-address-error"/);
-  assert.doesNotMatch(failed, /ui-error-line/);
+  assert.match(failed, /<div id="add-account-line" role="status"><div class="ui-error-line"/);
+  assert.match(failed, /Google sign-in was declined/);
+  assert.doesNotMatch(failed, /aria-invalid/);
+  assert.doesNotMatch(failed, /ui-text-field-error/);
   assert.doesNotMatch(failed, /auth\.denied/);
 });
 
-test('a notice is the field status too, and the choose state has none without one', () => {
+test('a notice is one calm ink-2 status line under a valid field, and none without a notice', () => {
   const noticed = html({ notice: 'unsupported' });
   assert.equal(liveRegions(noticed), 1);
-  assert.match(noticed, /aria-describedby="onb-address-error"/);
+  assert.match(noticed, /<div id="add-account-line" role="status"><p class="ui-text"/);
+  assert.match(noticed, /data-tone="ink-2"/);
+  assert.doesNotMatch(noticed, /aria-invalid/);
+  assert.equal(liveRegions(html({ notice: 'unchecked' })), 1);
   assert.equal(liveRegions(html({})), 0);
+});
+
+test('only an invalid address flags the field, through the field’s own single status', () => {
+  const invalid = html({ notice: 'invalid' });
+  assert.equal(liveRegions(invalid), 1);
+  assert.match(invalid, /aria-invalid="true"/);
+  assert.match(invalid, /aria-describedby="onb-address-error"/);
+  assert.match(invalid, /<p id="onb-address-error"[^>]*role="status"/);
+  assert.doesNotMatch(invalid, /add-account-line/);
 });
 
 test('each mode names its own primary control, and the markup has it', () => {

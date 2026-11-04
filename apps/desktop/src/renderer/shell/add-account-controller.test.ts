@@ -12,16 +12,30 @@ interface Calls {
   toasts: string[];
 }
 
-function rig(provider = 'google') {
+interface RigOptions {
+  /** `discover` throws instead of answering. */
+  readonly discoverThrows?: boolean;
+  /** `discover` waits for `release()` before answering. */
+  readonly holdDiscover?: boolean;
+  /** `connect` rejects with this reason code instead of answering with an id. */
+  readonly connectFails?: string;
+}
+
+function rig(provider = 'google', options: RigOptions = {}) {
   const calls: Calls = { discover: [], connect: [], cancel: [], closed: 0, toasts: [] };
   const pending: Array<(id: string) => void> = [];
+  let release = () => {};
+  const held = new Promise<void>(resolve => void (release = resolve));
   const ports = {
     discover: async (input: { address: string }) => {
       calls.discover.push(input.address);
+      if (options.holdDiscover) await held;
+      if (options.discoverThrows) throw new Error('offline');
       return { provider };
     },
     connect: (input: unknown) => {
       calls.connect.push(input);
+      if (options.connectFails) return Promise.reject({ reasonCode: options.connectFails });
       return new Promise<{ connectId: string }>(resolve =>
         pending.push(id => resolve({ connectId: id })),
       );
@@ -35,7 +49,7 @@ function rig(provider = 'google') {
     closeSheet: () => void (calls.closed += 1),
     pushToast: toast => void calls.toasts.push(toast.message),
   });
-  return { calls, controller, answer: (id: string) => pending.shift()?.(id) };
+  return { calls, controller, release, answer: (id: string) => pending.shift()?.(id) };
 }
 type Rig = ReturnType<typeof rig>;
 
@@ -179,4 +193,77 @@ test('subscribers hear each state change', async () => {
   off();
   r.controller.dispatch({ type: 'edit', address: 'ab' });
   assert.equal(heard, 1);
+});
+
+test('a connected frame that beats the connect id is kept, and lands when the id arrives', async () => {
+  const r = rig();
+  await typed(r);
+  r.controller.enter();
+  r.controller.frame({ connectId: 'c1', state: 'connected' });
+  assert.equal(r.controller.getState().mode, 'waiting');
+  assert.deepEqual(r.calls.toasts, []);
+  r.answer('c1');
+  await settle();
+  assert.equal(r.controller.getState().mode, 'connected');
+  assert.deepEqual(r.calls.toasts, ['Account added']);
+  assert.equal(r.calls.closed, 1);
+});
+
+test('a connect that cannot start fails with its reason and offers a retry', async () => {
+  const r = rig('google', { connectFails: 'auth.denied' });
+  await typed(r);
+  r.controller.enter();
+  await settle();
+  const state = r.controller.getState();
+  assert.equal(state.mode, 'failed');
+  assert.equal(state.failure, 'auth.denied');
+  assert.equal(r.calls.closed, 0);
+  r.controller.enter();
+  assert.equal(r.calls.connect.length, 2);
+});
+
+test('an address Aplos does not support says so, and so does one it could not check', async () => {
+  const other = rig('other');
+  other.controller.dispatch({ type: 'edit', address: 'alex@example.org' });
+  other.controller.enter();
+  await settle();
+  assert.equal(other.controller.getState().mode, 'choose');
+  assert.equal(other.controller.getState().notice, 'unsupported');
+  const offline = rig('google', { discoverThrows: true });
+  offline.controller.dispatch({ type: 'edit', address: 'alex@gmail.com' });
+  offline.controller.enter();
+  await settle();
+  assert.equal(offline.controller.getState().mode, 'choose');
+  assert.equal(offline.controller.getState().notice, 'unchecked');
+});
+
+test('editing while the provider is being found drops the late answer', async () => {
+  const r = rig('google', { holdDiscover: true });
+  r.controller.dispatch({ type: 'edit', address: 'alex@gmail.com' });
+  r.controller.enter();
+  assert.equal(r.controller.getState().mode, 'discovering');
+  r.controller.dispatch({ type: 'edit', address: 'sam@gmail.com' });
+  r.release();
+  await settle();
+  const state = r.controller.getState();
+  assert.equal(state.mode, 'choose');
+  assert.equal(state.address, 'sam@gmail.com');
+  assert.equal(state.notice, null);
+});
+
+test('field Return and the sheet default arriving together act once, at each step', async () => {
+  const r = rig();
+  // The field's onSubmit and the registered `sheet.default` both call enter() for one key press.
+  const bothKeys = () => {
+    r.controller.enter();
+    r.controller.enter();
+  };
+  r.controller.dispatch({ type: 'edit', address: 'alex@gmail.com' });
+  bothKeys();
+  await settle();
+  assert.deepEqual(r.calls.discover, ['alex@gmail.com']);
+  assert.equal(r.controller.getState().mode, 'typed');
+  bothKeys();
+  assert.equal(r.calls.connect.length, 1);
+  assert.equal(r.controller.getState().mode, 'waiting');
 });
