@@ -248,12 +248,20 @@ describe('elements and attributes', () => {
     );
   });
 
-  it('keeps the rendering mode and body colours, drops body handlers', () => {
-    assert.match(html('<!DOCTYPE html><p>x</p>').document, /^<!DOCTYPE html><html>/);
-    assert.match(html('<p>x</p>').document, /^<html>/);
+  it('always renders in standards mode, whatever doctype the mail declared', () => {
     const legacy =
       '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">';
-    assert.ok(html(`${legacy}<p>x</p>`).document.startsWith(legacy));
+    const loose = '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">';
+    const inputs = ['<!DOCTYPE html><p>x</p>', '<p>x</p>', `${legacy}<p>x</p>`, `${loose}<p>x</p>`];
+    inputs.push('<!doctype html public "-//IETF//DTD HTML 2.0//EN"><p>x</p>', '<!--c--><p>x</p>');
+    inputs.push('\ufeff<!DOCTYPE html SYSTEM "about:legacy-compat"><p>x</p>', '<![CDATA[x]]>');
+    for (const input of inputs) {
+      assert.ok(html(input).document.startsWith('<!DOCTYPE html><html>'), input);
+      assert.equal(html(input).document.match(/<!doctype/gi)?.length, 1, input);
+    }
+  });
+
+  it('keeps body colours and drops body handlers', () => {
     const result = html(
       '<html lang="fr" onload=x><body bgcolor="#f0f0f0" onload="alert(1)" style="margin:0" background="https://x.example/b.png"><p>x</p></body></html>',
     );
@@ -273,10 +281,10 @@ describe('elements and attributes', () => {
     );
     assert.ok(result.document.indexOf('<meta charset="utf-8">') < 1_024 - 25);
     assert.equal(result.document.includes('\u001b'), false);
-    assert.match(result.document, /^<html><head><meta charset="utf-8">/);
+    assert.match(result.document, /^<!DOCTYPE html><html><head><meta charset="utf-8">/);
     assert.match(
       html('<html lang="pt-BR" dir="RTL"><p>x</p>').document,
-      /^<html lang="pt-BR" dir="RTL"><head>/,
+      /^<!DOCTYPE html><html lang="pt-BR" dir="RTL"><head>/,
     );
   });
 });

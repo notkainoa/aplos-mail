@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { cssIdent, readDeclarations, sanitizeCss } from '../src/css';
+import { cssIdent, readDeclarations, sanitizeCss, viewportLength } from '../src/css';
 import { ImageBook, type ImagePolicy } from '../src/images';
 import { unsafeParts } from './oracle';
 
@@ -333,5 +333,66 @@ describe('ids and declarations', () => {
       );
       assert.equal(twice, once, css);
     }
+  });
+});
+
+describe('viewport units', () => {
+  it('turns every viewport unit into a fixed length in px, in any case and spelling', () => {
+    const cases: [string, string][] = [
+      ['a{height:100vh}', 'a{height:600px}'],
+      ['a{width:100vw}', 'a{width:640px}'],
+      ['a{height:100VH}', 'a{height:600px}'],
+      ['a{height:50dvh}', 'a{height:300px}'],
+      ['a{height:50svh}', 'a{height:300px}'],
+      ['a{height:50lvh}', 'a{height:300px}'],
+      ['a{width:50dvw;margin:10svw}', 'a{width:320px;margin:64px}'],
+      ['a{height:10vb;width:10vi}', 'a{height:60px;width:64px}'],
+      ['a{height:10vmin;width:10vmax}', 'a{height:60px;width:64px}'],
+      ['a{height:10dvmin;width:10lvmax}', 'a{height:60px;width:64px}'],
+      ['a{height:-10vh}', 'a{height:-60px}'],
+      ['a{height:.5vh}', 'a{height:3px}'],
+      ['a{height:1e2vh}', 'a{height:600px}'],
+      ['a{height:100\\76h}', 'a{height:600px}'],
+      ['a{height:100v\\68}', 'a{height:600px}'],
+      ['a{height:calc(100vh - 20px)}', 'a{height:calc(600px - 20px)}'],
+      ['a{height:calc(100vh*2 + 10vw)}', 'a{height:calc(600px*2 + 64px)}'],
+      ['a{height:min(100vh,max(50vh,10vw))}', 'a{height:min(600px,max(300px,64px))}'],
+      ['a{--h:100vh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
+      ['@media (min-height:100vh){a{b:c}}', '@media (min-height:600px){a{b:c}}'],
+      ['a{height:100vh!important}', 'a{height:600px!important}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+
+  it('bounds an absurd length', () => {
+    assert.equal(clean('a{height:99999999vh}').css, 'a{height:100000px}');
+    assert.equal(clean('a{height:-99999999vh}').css, 'a{height:-100000px}');
+    assert.equal(clean('a{height:1e400vh}').css, 'a{height:100000px}');
+  });
+
+  it('rewrites a style attribute too', () => {
+    const images = new ImageBook({ cids: [], policy: 'block' });
+    const out = sanitizeCss('min-height:100vh;width:100vw', images);
+    assert.equal(out, 'min-height:600px;width:640px');
+  });
+
+  it('leaves every other unit, number and name alone', () => {
+    const same = [
+      'a{height:100px;width:50%;margin:1em 2rem;line-height:1.5;z-index:100}',
+      'a{height:100vhx;width:100v;font-size:100 vh}',
+      'a{height:100cqh;width:100ch;top:0}',
+      'a{content:"100vh";grid-area:vh}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('measures the units against the reading viewport', () => {
+    assert.equal(viewportLength(100, 'vh'), '600px');
+    assert.equal(viewportLength(100, 'DVW'), '640px');
+    assert.equal(viewportLength(100, 'vmin'), '600px');
+    assert.equal(viewportLength(100, 'vmax'), '640px');
+    assert.equal(viewportLength(100, 'px'), undefined);
+    assert.equal(viewportLength(100, 'vhh'), undefined);
+    assert.equal(viewportLength(100, 'xvh'), undefined);
   });
 });

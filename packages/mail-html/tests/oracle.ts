@@ -35,6 +35,8 @@ const KEPT_AT_RULES = new Set([
   'layer',
   'container',
 ]);
+/** A length that follows the viewport (the frame is sized to the letter, so it would chase its own tail). */
+const VIEWPORT_LENGTH = /^(?:[sld]?v(?:w|h|i|b|min|max))$/i;
 const IMAGE_ROUTE = /^(?:cid|img)\/\d+$/;
 const RASTER_DATA = /^data:image\/(?:png|jpe?g|gif|webp)[;,]/i;
 const SAFE_HREF = /^(?:https?:\/\/|mailto:|tel:|#)/i;
@@ -234,6 +236,8 @@ function checkCssToken(
 ): void {
   if (token[0] === TokenType.URL) checkImage(token[4].value, false, options, problems);
   if (token[0] === TokenType.BadURL) problems.push('css bad url');
+  if (token[0] === TokenType.Dimension && VIEWPORT_LENGTH.test(token[4].unit))
+    problems.push(`css viewport unit ${token[1]}`);
   if (token[0] === TokenType.AtKeyword && !KEPT_AT_RULES.has(token[4].value.toLowerCase())) {
     problems.push(`at-rule @${token[4].value}`);
   }
