@@ -290,6 +290,13 @@ function createSave(
   ]);
 }
 
+/** The event being edited left the window while the dialog was open: close with why, no write (review2 2). */
+function saveGone(state: CalendarState): Transition {
+  return done({ ...closed(state), editor: null }, [
+    { kind: 'notice', message: 'That event changed or was removed. Nothing was saved.' },
+  ]);
+}
+
 export function saveEditor(
   state: CalendarState,
   ctx: CalendarContext,
@@ -300,7 +307,8 @@ export function saveEditor(
   const problem = draftProblem(draft);
   if (problem) return done({ ...state, editor: { ...draft, error: problem } });
   const original = draft.eventId ? ctx.events.get(draft.eventId) : undefined;
-  if (draft.mode === 'edit' && original?.recurring && !scope) {
+  if (draft.mode === 'edit' && !original) return saveGone(state);
+  if (original?.recurring && !scope) {
     const ask = askEditScope(state, ctx, draft, original);
     if (ask) return ask;
   }

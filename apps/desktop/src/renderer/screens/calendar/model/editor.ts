@@ -255,7 +255,7 @@ export function draftChange(
   series?: Event,
 ): EventChange | null {
   const times = draftTimes(d);
-  if (d.mode === 'new' || !original || !d.eventId) {
+  if (d.mode === 'new') {
     if (!d.calendarId) return null;
     return {
       type: 'create',
@@ -263,6 +263,8 @@ export function draftChange(
       fields: { title: d.title.trim(), ...times },
     };
   }
+  // An edit whose event left the window writes nothing; saveEditor says why (review2 2).
+  if (!original || !d.eventId) return null;
   const fields: Partial<EventFields> = {};
   if (d.title.trim() !== original.title) fields.title = d.title.trim();
   const target = timeChange(original, times, scope, series);

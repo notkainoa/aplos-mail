@@ -163,6 +163,27 @@ test('review2: Delete and E act only on an explicit selection, never the rail’
   assert.equal(menu.state.editor?.eventId, 'dental');
 });
 
+test('review2: saving an edit whose event left the window writes nothing and says so', () => {
+  const dental = demoWorld.events.find(e => e.id === 'dental')!;
+  const ctx = ctxFor(demoWorld.events.filter(e => e.id !== 'dental'));
+  const draft = { ...draftFromEvent(dental), title: 'Moved cleaning' };
+  const t = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
+  assert.equal(t.state.editor, null);
+  assert.equal(
+    t.effects.some(fx => fx.kind === 'eventSet'),
+    false,
+  );
+  assert.ok(
+    t.effects.some(
+      fx =>
+        fx.kind === 'notice' &&
+        fx.message === 'That event changed or was removed. Nothing was saved.',
+    ),
+  );
+  // The primitive refuses too: an edit draft never becomes a create.
+  assert.equal(draftChange(draft, undefined, 'occurrence'), null);
+});
+
 test('a repeating event asks This event or All events and passes the scope through', () => {
   // A context that also holds the series row ('standup'), so "All events" can be written safely (review1 1).
   const occ0 = demoWorld.events.find(e => e.seriesId === 'standup')!;
