@@ -47,6 +47,11 @@ export function AskTurn(props: AskTurnProps) {
       <p className="ui-ask-turn__question" id={questionId} dir="auto">
         {question}
       </p>
+      {state === 'answered' ? (
+        <span className="ui-sr-only" role="status">
+          Answered
+        </span>
+      ) : null}
       {steps ? <StepLog {...steps} /> : null}
       {hasAnswer ? (
         <div className="ui-ask-turn__answer" dir="auto" title={provenanceText}>

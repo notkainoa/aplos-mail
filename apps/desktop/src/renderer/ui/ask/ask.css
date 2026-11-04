@@ -441,7 +441,7 @@
   left: 0;
   z-index: var(--z-tooltip);
   display: block;
-  width: calc(var(--dock-w) - var(--space-8));
+  width: calc(var(--ask-dock-w) - var(--space-8));
   max-width: calc(var(--dock-w-narrow) - var(--space-8));
   margin-bottom: var(--space-2);
   padding: var(--space-3) var(--space-4);

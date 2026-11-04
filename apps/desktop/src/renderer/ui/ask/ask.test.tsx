@@ -22,7 +22,7 @@ import {
   StepLog,
 } from './index';
 import { openCitation } from './Citation';
-import { formatRecent, formatSource } from './format';
+import { formatRecent, formatSource, setFormatClock } from './format';
 import { nextActiveId } from './palette-nav';
 
 const noop = () => undefined;
@@ -226,6 +226,23 @@ test('AskTurn: every answer cites or says "No source in your mail"; unreferenced
   assert.doesNotMatch(loose, /No source in your mail/);
 });
 
+test('AskTurn announces "Answered" to screen readers when an answer lands, hidden', () => {
+  const answered = html(turn());
+  assert.match(answered, /class="ui-sr-only" role="status">\s*Answered\s*<\/span>/);
+  assert.doesNotMatch(
+    answered,
+    /ui-ask-turn__answer[^>]*role="status"/,
+    'the prose stays out of aria-live',
+  );
+  for (const state of ['working', 'streaming', 'stopped', 'failed', 'paused'] as const) {
+    assert.doesNotMatch(
+      html(turn({ state, answer: undefined, citations: [] })),
+      /Answered/,
+      `no announcement while ${state}`,
+    );
+  }
+});
+
 test('AskTurn states: working, streaming with one caret, stopped, failed', () => {
   const working = html(
     turn({
@@ -387,6 +404,11 @@ test('AskDock: input is never disabled; working shows Stop; queued follow-ups ar
   );
   assert.doesNotMatch(markup, /disabled/);
   assert.match(markup, /<textarea[^>]*aria-label="Ask"[^>]*>draft question<\/textarea>/);
+  assert.match(
+    markup,
+    /class="ui-ask-dock__input"[^>]*data-dictation="body"/,
+    'the field marks itself dictable for the held A',
+  );
   assert.match(markup, /Stop/);
   assert.match(markup, /role="group"[^>]*aria-label="Queued follow-up"/);
   assert.match(text(markup), /Queued · ⌘Return sends now/);
@@ -693,6 +715,17 @@ test('SearchField and OperatorToken survive an 80-character address, CJK, Arabic
   assert.match(token, /<b[^>]*>before:<\/b>/);
   assert.match(token, /title="Remove"/);
   clean(markup);
+});
+
+test('format: the default "now" follows the clock the host injects', () => {
+  try {
+    setFormatClock(() => new Date(2026, 9, 28, 10, 0).getTime());
+    assert.equal(formatRecent('2026-10-28T09:42:00-07:00'), '9:42 AM');
+    assert.equal(formatRecent('2026-10-27T09:42:00-07:00'), 'Yesterday');
+    assert.equal(formatSource('2026-10-28T09:42:00-07:00'), 'Today, 9:42 AM');
+  } finally {
+    setFormatClock(null);
+  }
 });
 
 test('format: wall-clock dates are deterministic and relative to the given clock', () => {

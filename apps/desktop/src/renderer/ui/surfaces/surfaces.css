@@ -298,9 +298,10 @@
 .ui-pane[data-kind='main'] {
   flex: 1;
 }
+/* The dock pane wraps the aside, whose width the owner resizes (300–440): one width, never dead space or a clipped edge. */
 .ui-pane[data-kind='dock'] {
   flex: none;
-  width: var(--dock-w);
+  width: fit-content;
   overflow: hidden;
 }
 .ui-pane__head {

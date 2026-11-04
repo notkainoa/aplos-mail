@@ -28,6 +28,13 @@ interface Wall {
   mm: number;
 }
 
+let clock: () => number = () => Date.now();
+
+/** Test and harness hook: freeze "now" (the host wires it to the renderer clock, `data`'s `getNow`). Null restores the wall clock. */
+export function setFormatClock(now: (() => number) | null): void {
+  clock = now ?? (() => Date.now());
+}
+
 function wall(iso: string): Wall | null {
   const hit = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec(iso);
   if (!hit) return null;
@@ -47,7 +54,7 @@ export function formatTime(iso: string): string {
 }
 
 /** The wall clock of `now` as an ISO-like string (the harness freezes the clock; pass it to be deterministic). */
-export function wallNow(now: Date = new Date()): string {
+export function wallNow(now: Date = new Date(clock())): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}`;
 }
