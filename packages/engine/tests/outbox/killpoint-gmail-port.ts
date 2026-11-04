@@ -257,17 +257,30 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
       refreshToken: session.refreshToken!,
       accessToken: session.accessToken,
     },
+    // A delivery carries the submission's id as its Message-ID (Gmail keeps ours) or, when Gmail rewrites it, as the
+    // `X-Aplos-Send` token the adapter adds at transmit (`APLOS_EMU_SEND_IDENTITY=rewritten`).
     deliveries: internetId =>
       emu.mailbox
         .listMessages()
-        .filter(m => m.labelIds.includes('SENT') && m.messageId.toLowerCase() === bare(internetId))
-        .length,
+        .filter(
+          m =>
+            m.labelIds.includes('SENT') &&
+            (m.messageId.toLowerCase() === bare(internetId) ||
+              sendToken(emu.mailbox.rawOf(m.id)) === bare(internetId)),
+        ).length,
     errors: state.errors,
     breakNext: error => {
       state.breakNext = error;
     },
     close: () => stop(server),
   };
+}
+
+/** The `X-Aplos-Send` token in a message's header block, or undefined (lower-cased, without the angle brackets). */
+function sendToken(raw: Buffer): string | undefined {
+  const head = raw.toString('latin1').split(/\r?\n\r?\n/, 1)[0];
+  const match = /^X-Aplos-Send:[ \t]*<?([^>\r\n]*?)>?[ \t]*$/im.exec(head);
+  return match?.[1].toLowerCase();
 }
 
 interface ServerState {
