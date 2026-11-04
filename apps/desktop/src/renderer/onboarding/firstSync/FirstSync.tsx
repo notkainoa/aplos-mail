@@ -45,12 +45,15 @@ export interface FirstSyncProps {
 
 function AccountRow({
   row,
+  accountCount,
   compact,
   onRetry,
   onReconnect,
   onOpenSettings,
 }: {
   row: FirstSyncRow;
+  /** How many accounts the screen shows; the colour dot only appears with two or more (DESIGN decision 16). */
+  accountCount: number;
   compact: boolean;
   onRetry: (accountId: string) => void;
   onReconnect: (accountId: string) => void;
@@ -61,6 +64,7 @@ function AccountRow({
       <ProgressSegments
         variant="checkpoints"
         account={row.account}
+        accountCount={accountCount}
         checkpoints={row.checkpoints}
         pausedUntil={row.pausedUntil}
         failure={row.failure}
@@ -122,7 +126,13 @@ export function FirstSync(props: FirstSyncProps) {
         >
           <div className="fs-rows" data-compact="true">
             {view.rows.map(row => (
-              <AccountRow key={row.accountId} row={row} compact {...rowProps} />
+              <AccountRow
+                key={row.accountId}
+                row={row}
+                accountCount={view.rows.length}
+                compact
+                {...rowProps}
+              />
             ))}
           </div>
           <Drill state={drill} now={now} onKey={props.onDrillKey} onPick={props.onDrillPick} />
@@ -171,7 +181,13 @@ export function FirstSync(props: FirstSyncProps) {
         ) : view.rows.length > 0 ? (
           <div className="fs-rows">
             {view.rows.map(row => (
-              <AccountRow key={row.accountId} row={row} compact={false} {...rowProps} />
+              <AccountRow
+                key={row.accountId}
+                row={row}
+                accountCount={view.rows.length}
+                compact={false}
+                {...rowProps}
+              />
             ))}
           </div>
         ) : null}

@@ -123,7 +123,8 @@ function ProviderRows({
           id={`onb-ai-${row.id}`}
           role="radio"
           label={row.label}
-          detail={row.detail}
+          {...(row.detail ? { detail: row.detail } : {})}
+          {...(row.keySource ? { keySource: row.keySource } : {})}
           selected={row.selected}
           onPress={() => onChoose(row.id)}
           {...(row.tag ? { tag: row.tag } : {})}

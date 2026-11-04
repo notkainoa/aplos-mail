@@ -87,43 +87,25 @@
   min-width: 0;
 }
 
-/* ---------- Hill-climb candidates (roadmap 5.1c; removed once scored) ---------- */
-
-.onb-cand-wrap {
-  display: contents;
-}
-
-/* accounts-waiting: under reduced motion the indeterminate runner is paused at its first keyframe, off the track,
-   so the bar reads empty. Candidate B rests the segment centred; candidate C rests it flush left. */
+/* Reduced motion: the indeterminate runner's animation is paused at its first keyframe, off the track, so the bar
+   reads empty. It rests centred instead — a 30 % segment at translateX(117%) sits mid-track and still reads as
+   indeterminate, where flush-left would read as 30 % progress (hill-climb winner: accounts-waiting B). */
 @media (prefers-reduced-motion: reduce) {
-  .onb-cand-runner-b .ui-progress-segments__runner {
+  .ui-progress-segments__runner {
     animation: none;
     transform: translateX(117%);
-  }
-  .onb-cand-runner-c .ui-progress-segments__runner {
-    animation: none;
-    transform: translateX(0);
   }
 }
-:root[data-motion='reduced'] {
-  .onb-cand-runner-b .ui-progress-segments__runner {
-    animation: none;
-    transform: translateX(117%);
-  }
-  .onb-cand-runner-c .ui-progress-segments__runner {
-    animation: none;
-    transform: translateX(0);
-  }
+:root[data-motion='reduced'] .ui-progress-segments__runner {
+  animation: none;
+  transform: translateX(117%);
 }
 
-/* accounts-choose: candidate B pulls the provider group closer to the field; candidate C bounds the one-row stack
-   with hairlines above and below. */
-.onb-cand-tight .onb-group {
-  gap: var(--space-1);
-  margin-top: 0;
+/* The found-provider row is the mockup's "tall" row (onboarding-accounts.html .row-q.tall): the icon and the
+   status sit at the top, aligned with the name, not centred across the two lines. */
+#onb-found-google {
+  align-items: flex-start;
 }
-.onb-cand-bounded .onb-rows {
-  box-shadow:
-    0 calc(-1 * var(--hairline)) 0 var(--line),
-    0 var(--hairline) 0 var(--line);
+#onb-found-google .ui-choice-row__icon {
+  margin-top: var(--space-half);
 }

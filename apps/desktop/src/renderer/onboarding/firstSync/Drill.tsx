@@ -4,7 +4,7 @@
  * Each step names its keys with keycaps from the registry. Keys reach the drill through the registry's `drill` context
  * (`data-keyctx`); the buttons on the letter are their pointer duplicates.
  */
-import { useId } from 'react';
+import { useId, type JSX } from 'react';
 import { createAppRegistry, formatBinding, type Registry } from '../../commands';
 import { toIsoDateTime } from '../../data';
 import { Kbd } from '../../ui/buttons-keys';
@@ -57,6 +57,91 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
   const current = state.ids[state.cursor];
   const step = DRILL_STEPS[Math.min(state.step, DRILL_STEPS.length - 1)];
 
+  const prompt = finished ? (
+    <div className="fs-drill__prompt">
+      <Text variant="small" as="span" tone="ink" icon="check">
+        {DRILL_COPY.finished}
+      </Text>
+    </div>
+  ) : (
+    <div className="fs-drill__prompt">
+      <span className="fs-drill__keys">
+        {step.commands.map(id => (
+          <Kbd key={id} chord={capOf(id)} />
+        ))}
+      </span>
+      <span className="fs-drill__say">
+        <Text variant="small" as="span" tone="ink">
+          {step.say}
+        </Text>
+        <Text variant="small" as="span">
+          {step.sub}
+        </Text>
+      </span>
+      <span className="fs-drill__count">
+        <Text variant="small" as="span">
+          {drillCount(state)}
+        </Text>
+      </span>
+    </div>
+  );
+
+  const card = (key: string, letterId: string): JSX.Element => {
+    const letter = drillLetter(letterId);
+    const date = toIsoDateTime(now - letter.hoursAgo * HOUR);
+    return (
+      <FocusSlot key={key} density="compact">
+        <FocusLetter
+          id={optionId(letterId)}
+          sender={letter.sender}
+          date={date}
+          summary={{
+            state: 'ready',
+            text: letter.summary,
+            subject: letter.subject,
+            provenance: { provider: 'Aplos', local: true },
+          }}
+          suggestion={{
+            verb: letter.suggestion.verb,
+            icon: letter.suggestion.icon,
+            isDone: false,
+          }}
+          commands={COMMANDS}
+          demoted={finished}
+          onSuggestion={() => onKey('suggested')}
+          onLater={() => undefined}
+          onDone={() => onKey('done')}
+          onMore={() => undefined}
+        />
+      </FocusSlot>
+    );
+  };
+
+  const row = (letterId: string, index: number, cursor: boolean): JSX.Element => {
+    const letter = drillLetter(letterId);
+    const date = toIsoDateTime(now - letter.hoursAgo * HOUR);
+    return (
+      <ListRow
+        key={letterId}
+        id={optionId(letterId)}
+        layout="home"
+        density="compact"
+        sender={letter.sender}
+        primary={letter.subject}
+        unread
+        date={date}
+        showAccountDot={false}
+        cursor={cursor}
+        picked={false}
+        picking={false}
+        hoverActions={[]}
+        onSelect={() => onPick(index)}
+        onOpen={() => onPick(index)}
+        onAction={() => undefined}
+      />
+    );
+  };
+
   return (
     <section className="fs-drill" aria-labelledby={headId} data-keyctx="drill">
       <div className="fs-drill__head">
@@ -74,34 +159,9 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
         </Text>
       ) : null}
 
-      {finished ? (
-        <div className="fs-drill__prompt">
-          <Text variant="small" as="span" tone="ink" icon="check">
-            {DRILL_COPY.finished}
-          </Text>
-        </div>
-      ) : (
-        <div className="fs-drill__prompt">
-          <span className="fs-drill__keys">
-            {step.commands.map(id => (
-              <Kbd key={id} chord={capOf(id)} />
-            ))}
-          </span>
-          <span className="fs-drill__say">
-            <Text variant="small" as="span" tone="ink">
-              {step.say}
-            </Text>
-            <Text variant="small" as="span">
-              {step.sub}
-            </Text>
-          </span>
-          <span className="fs-drill__count">
-            <Text variant="small" as="span">
-              {drillCount(state)}
-            </Text>
-          </span>
-        </div>
-      )}
+      {/* The current step's keys stay under the head: the instruction must be visible at 640 × 600, and the
+          mockup's prompt-under-card order loses it below the fold with the real FocusLetter (hill-climb 'a'). */}
+      {prompt}
       <div className="fs-drill__list">
         <ListBox
           binding={{
@@ -110,58 +170,9 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
             activeDescendantId: current ? optionId(current) : undefined,
           }}
         >
-          {state.ids.map((id, index) => {
-            const letter = drillLetter(id);
-            const date = toIsoDateTime(now - letter.hoursAgo * HOUR);
-            if (index === state.cursor) {
-              return (
-                <FocusSlot key={id} density="compact">
-                  <FocusLetter
-                    id={optionId(id)}
-                    sender={letter.sender}
-                    date={date}
-                    summary={{
-                      state: 'ready',
-                      text: letter.summary,
-                      subject: letter.subject,
-                      provenance: { provider: 'Aplos', local: true },
-                    }}
-                    suggestion={{
-                      verb: letter.suggestion.verb,
-                      icon: letter.suggestion.icon,
-                      isDone: false,
-                    }}
-                    commands={COMMANDS}
-                    demoted={finished}
-                    onSuggestion={() => onKey('suggested')}
-                    onLater={() => undefined}
-                    onDone={() => onKey('done')}
-                    onMore={() => undefined}
-                  />
-                </FocusSlot>
-              );
-            }
-            return (
-              <ListRow
-                key={id}
-                id={optionId(id)}
-                layout="home"
-                density="compact"
-                sender={letter.sender}
-                primary={letter.subject}
-                unread
-                date={date}
-                showAccountDot={false}
-                cursor={false}
-                picked={false}
-                picking={false}
-                hoverActions={[]}
-                onSelect={() => onPick(index)}
-                onOpen={() => onPick(index)}
-                onAction={() => undefined}
-              />
-            );
-          })}
+          {state.ids.map((id, index) =>
+            index === state.cursor ? card(id, id) : row(id, index, false),
+          )}
         </ListBox>
       </div>
     </section>

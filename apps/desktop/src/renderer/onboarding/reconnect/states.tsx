@@ -193,18 +193,10 @@ export const reconnectStates: Record<string, StateEntry> = {
     title: 'Reconnect sheet: a missing permission (grant mode, waiting)',
     render: () => sheet(sheetAfter('grantPermissions', [])),
   },
+  /* The line in the mail window's proportions (hill-climb winner: candidate B — the sidebar aside the centred list
+     column, where the status slot lives; the sidebar's own contents belong to ui-shell). */
   'zero-accounts': {
     title: 'Main pane, no accounts: Add an account · Try demo mail',
-    render: () => (
-      <Backdrop>
-        <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
-      </Backdrop>
-    ),
-  },
-  /* Hill-climb candidates (roadmap 5.1c): the line in the shell's proportions — sidebar plus the centred list
-     column — versus the column alone on a full-width pane. Scored, then removed. */
-  'zero-accounts-b': {
-    title: 'Zero accounts · candidate B (shell sidebar + list column)',
     render: () => (
       <SlotBackdrop slot={<></>}>
         <div className="onb-list-column">
@@ -213,44 +205,23 @@ export const reconnectStates: Record<string, StateEntry> = {
       </SlotBackdrop>
     ),
   },
-  'zero-accounts-c': {
-    title: 'Zero accounts · candidate C (list column, no sidebar)',
-    render: () => (
-      <Backdrop>
-        <div className="onb-list-column">
-          <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
-        </div>
-      </Backdrop>
-    ),
-  },
   'zero-accounts-open-failed': {
     title: 'Main pane, no accounts: Add an account could not open the setup window (review1)',
     render: () => (
-      <Backdrop>
-        <ZeroAccountsView
-          notice={WINDOW_COPY.setupWindowFailed}
-          onAddAccount={noop}
-          onTryDemo={noop}
-        />
-      </Backdrop>
+      <SlotBackdrop slot={<></>}>
+        <div className="onb-list-column">
+          <ZeroAccountsView
+            notice={WINDOW_COPY.setupWindowFailed}
+            onAddAccount={noop}
+            onTryDemo={noop}
+          />
+        </div>
+      </SlotBackdrop>
     ),
   },
   'zero-accounts-first-sync': {
     title:
-      'Main pane while a first sync runs: the first-mail line instead (never the zero-accounts line)',
-    render: () => (
-      <Backdrop>
-        <ZeroAccountsView
-          firstSyncRunning
-          detail="Reading your newest mail"
-          onAddAccount={noop}
-          onTryDemo={noop}
-        />
-      </Backdrop>
-    ),
-  },
-  'zero-accounts-first-sync-b': {
-    title: 'First mail line · candidate B (shell sidebar, the status slot carrying the same words)',
+      'Main pane while a first sync runs: the first-mail line, the status slot carrying the same words',
     render: () => (
       <SlotBackdrop
         slot={
@@ -270,21 +241,6 @@ export const reconnectStates: Record<string, StateEntry> = {
           />
         </div>
       </SlotBackdrop>
-    ),
-  },
-  'zero-accounts-first-sync-c': {
-    title: 'First mail line · candidate C (list column, no sidebar)',
-    render: () => (
-      <Backdrop>
-        <div className="onb-list-column">
-          <ZeroAccountsView
-            firstSyncRunning
-            detail="Reading your newest mail · 24 of 50"
-            onAddAccount={noop}
-            onTryDemo={noop}
-          />
-        </div>
-      </Backdrop>
     ),
   },
 };

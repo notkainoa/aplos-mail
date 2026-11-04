@@ -2,8 +2,8 @@
  * The AI step's view model (DESIGN 7.10, 7.11 step 3, 9; plan 30 4.5 row 1; AGENTS.md). Pure: contract values in,
  * component props and decisions out.
  *
- * - Groq is preselected. The step shows where its key comes from ("From environment: GROQ_API_KEY", "Saved in
- *   Keychain") or a write-only field. Key characters never enter the model: the field's text is cleared on save,
+ * - Groq is preselected. The step shows where its key comes from ("Key found in the environment as GROQ_API_KEY",
+ *   "Saved in Keychain") or a write-only field. Key characters never enter the model: the field's text is cleared on save,
  *   on failure and on every provider switch, so a key typed for one provider is never sent to another.
  * - "More options" holds "Use another provider" (the other hosted providers) and "Run on this Mac" (Ollama,
  *   LM Studio, a custom server with its address).
@@ -13,6 +13,7 @@
  *   card asks before anything runs in the background. "Skip for now" writes nothing and never causes an error later.
  */
 import type { AiProvider, Consent, Input, Output, Settings } from '../../data';
+import type { KeySource } from '../../ui/props';
 import { keySaveSentence } from '../copy';
 import type { FocusTarget } from '../flow';
 
@@ -391,7 +392,10 @@ export interface AiRowView {
   readonly id: string;
   readonly label: string;
   readonly tag?: string;
-  readonly detail: string;
+  /** A local server's second line ("Found at localhost:11434"). */
+  readonly detail?: string;
+  /** A hosted provider's second line, the key source with its variable in mono ("Key found in the environment as GROQ_API_KEY"). */
+  readonly keySource?: KeySource;
   readonly detailDot?: 'ok' | 'off';
   readonly selected: boolean;
   readonly status?: { readonly text: string; readonly tone: 'ok' | 'attention' };
@@ -483,6 +487,13 @@ const TEXT: Readonly<Record<AiView, { title: string; lede: string }>> = {
   },
 };
 
+/** The hosted row's second line as the component's `keySource` prop (mockup: "Key found in the environment as GROQ_API_KEY"). */
+export function keySourceOf(p: AiProvider): KeySource {
+  if (p.keySource === 'env') return { kind: 'environment', variable: p.envVar };
+  if (p.keySource === 'keychain') return { kind: 'keychain' };
+  return { kind: 'none', variable: p.envVar };
+}
+
 function rowFor(p: AiProvider, state: AiState, inputs: AiInputs): AiRowView {
   const detail = providerDetail(p);
   const test = state.tests[p.id];
@@ -494,7 +505,7 @@ function rowFor(p: AiProvider, state: AiState, inputs: AiInputs): AiRowView {
     id: p.id,
     label: p.label,
     ...(p.id === DEFAULT_PROVIDER ? { tag: 'Default' } : {}),
-    detail: detail.text,
+    ...(local ? { detail: detail.text } : { keySource: keySourceOf(p) }),
     ...(detail.dot ? { detailDot: detail.dot } : {}),
     selected: state.chosen === p.id,
     ...(testStatus(test) ? { status: testStatus(test) } : {}),

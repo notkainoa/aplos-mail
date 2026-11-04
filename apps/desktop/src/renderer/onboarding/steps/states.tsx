@@ -276,15 +276,6 @@ export const stepStates: Record<
     ),
   },
   'accounts-choose': { title: 'Accounts · choose', render: () => accounts('choose') },
-  /* Hill-climb candidates (roadmap 5.1c): scored against the mockup, then removed. */
-  'accounts-choose-b': {
-    title: 'Accounts · choose · candidate B (tighter provider group)',
-    render: () => <div className="onb-cand-wrap onb-cand-tight">{accounts('choose')}</div>,
-  },
-  'accounts-choose-c': {
-    title: 'Accounts · choose · candidate C (hairline-bounded provider row)',
-    render: () => <div className="onb-cand-wrap onb-cand-bounded">{accounts('choose')}</div>,
-  },
   'accounts-demo-failed': {
     title: 'Accounts · demo mail did not load (Try again; review1)',
     render: () => accounts('choose', { windowNotice: WINDOW_COPY.demoFailed }),
@@ -298,14 +289,6 @@ export const stepStates: Record<
     render: () => accounts('typed', { address: JORDAN }),
   },
   'accounts-waiting': { title: 'Accounts · waiting for Google', render: () => accounts('waiting') },
-  'accounts-waiting-b': {
-    title: 'Accounts · waiting · candidate B (reduced-motion runner rests centred)',
-    render: () => <div className="onb-cand-wrap onb-cand-runner-b">{accounts('waiting')}</div>,
-  },
-  'accounts-waiting-c': {
-    title: 'Accounts · waiting · candidate C (reduced-motion runner rests flush left)',
-    render: () => <div className="onb-cand-wrap onb-cand-runner-c">{accounts('waiting')}</div>,
-  },
   'accounts-connected': {
     title: 'Accounts · connected',
     render: () =>

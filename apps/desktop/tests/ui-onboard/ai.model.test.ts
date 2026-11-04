@@ -114,7 +114,7 @@ describe('providers', () => {
     assert.equal(vm.rows.length, 1);
     assert.equal(vm.rows[0].id, 'groq');
     assert.equal(vm.rows[0].selected, true);
-    assert.equal(vm.rows[0].detail, 'From environment: GROQ_API_KEY');
+    assert.deepEqual(vm.rows[0].keySource, { kind: 'environment', variable: 'GROQ_API_KEY' });
     assert.equal(providerDetail(hosted('x', 'X', 'X_KEY', 'keychain')).text, 'Saved in Keychain');
     assert.equal(vm.keyField, undefined);
     assert.equal(vm.canContinue, true);
