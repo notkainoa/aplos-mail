@@ -82,7 +82,6 @@ function TodayAgenda(props: CalendarGridProps) {
     e => new Date(e.start).getTime() < nowMs && new Date(e.end).getTime() > nowMs,
   );
   const past = timed.filter(e => new Date(e.end).getTime() <= nowMs);
-  const behind = past.length > 0 ? past[past.length - 1] : undefined;
   const ahead = upcoming.slice(0, 3);
   const next = upcoming[0];
   const sub = `${plural(todays.length)} · ${next ? `next at ${timeOf(next.start)}` : 'none left today'}`;
@@ -93,7 +92,8 @@ function TodayAgenda(props: CalendarGridProps) {
 
   const parts: ReactNode[] = [];
   for (const e of todays.filter(x => x.allDay)) parts.push(row(props, e, e.calendar.name));
-  if (behind) parts.push(row(props, behind, undefined, 'past'));
+  // The whole day shows: every event already over, dimmed, so the header's count matches the rows.
+  for (const e of past) parts.push(row(props, e, undefined, 'past'));
   for (const e of current) parts.push(row(props, e, detail(e, 'Now')));
   parts.push(<NowLine key="now" now={now} variant="agenda" />);
   ahead.forEach((e, i) => {

@@ -248,6 +248,9 @@ test('CalendarGrid agenda today: nothing left says so; an empty day offers the a
   );
   assert.match(later, /4 events · none left today/);
   assert.match(later, /Climbing with Theo/);
+  // The whole day lists: all four events are rows (every one over, so all dimmed), matching the count.
+  assert.equal((later.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 4);
+  assert.equal((later.match(/data-state="past"/g) ?? []).length, 4);
   const empty = html(
     <CalendarGrid
       {...gridProps({
