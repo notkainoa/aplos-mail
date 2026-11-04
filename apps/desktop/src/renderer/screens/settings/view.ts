@@ -1,0 +1,60 @@
+/**
+ * Settings' own transient state: what is open, being typed or being tested. It is controlled from outside (the
+ * container holds it, the preview starts it somewhere), so every state of the screen can be drawn on purpose.
+ * It never holds a key: the add-key field keeps its text in its own component and hands it over once.
+ */
+import type { ProviderId, ProviderStatus } from '../../ui/props';
+import type { LocalId } from './settings.model';
+import type { Recording } from './keyboard.model';
+
+/** A question that has to be answered before something destructive runs. Cancel is the default. */
+export type Confirmation =
+  | { readonly kind: 'removeAccount'; readonly accountId: string; readonly address: string }
+  | { readonly kind: 'removeDemo' }
+  | { readonly kind: 'removeKey'; readonly provider: ProviderId }
+  | { readonly kind: 'discardQueueItem'; readonly id: string; readonly label: string };
+
+export interface SettingsView {
+  /** A running or finished provider test, by provider; it overrides the status the engine reports. */
+  readonly testing: Partial<Record<ProviderId, ProviderStatus>>;
+  /** The add-key dialog is open for this provider. */
+  readonly addKey: { readonly provider: ProviderId; readonly mode: 'add' | 'replace' } | null;
+  readonly confirm: Confirmation | null;
+  readonly recording: Recording | null;
+  /** "How your mail is used" is open. */
+  readonly howOpen: boolean;
+  /** The consent card for background summaries is open. */
+  readonly consentCard: boolean;
+  /** The reconnect flow is open for this account. */
+  readonly reconnect: { readonly accountId: string; readonly mode: 'reconnect' | 'grant' } | null;
+  readonly addAccount: boolean;
+  /** The diagnostics preview dialog is open. */
+  readonly diagnostics: boolean;
+  /** The report was just copied; the dialog says "Copied." until it is closed. */
+  readonly diagnosticsCopied: boolean;
+  /** Help shows the queue inspector instead of its rows. */
+  readonly queue: boolean;
+  /** Local server addresses as typed, before they are saved. */
+  readonly addressDraft: Partial<Record<LocalId, string>>;
+  /** The engine's sentence when an address was refused. */
+  readonly addressError: Partial<Record<LocalId, string>>;
+  /** Work in flight, by key ("demo", "lease:<id>", "diagnostics"). */
+  readonly busy: Readonly<Record<string, boolean>>;
+}
+
+export const INITIAL_VIEW: SettingsView = {
+  testing: {},
+  addKey: null,
+  confirm: null,
+  recording: null,
+  howOpen: false,
+  consentCard: false,
+  reconnect: null,
+  addAccount: false,
+  diagnostics: false,
+  diagnosticsCopied: false,
+  queue: false,
+  addressDraft: {},
+  addressError: {},
+  busy: {},
+};

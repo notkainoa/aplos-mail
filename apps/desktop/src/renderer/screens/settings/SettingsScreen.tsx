@@ -1,0 +1,191 @@
+/**
+ * The Settings screen (DESIGN 7.10): a 180 px nav and a 600 px column, no page title. The nav is a `Puck` aligned
+ * with the first group; groups are 32 px apart; rows are 40 px, or 48 px with a one-line description. This file is
+ * presentational: data, view state, actions and the shell host come in as props, so every state can be drawn from
+ * fixtures. The container (`SettingsContainer.tsx`) reads the hooks and the ports.
+ */
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { SETTING_SECTIONS, type SettingSection } from '../../commands';
+import { Puck } from '../../ui/surfaces';
+import { Overlays } from './overlays';
+import { FailureLine, MissingAnchor } from './parts';
+import { navItems } from './settings.model';
+import type { WriteFailure } from './ports';
+import { Accounts } from './sections/accounts';
+import { Ai } from './sections/ai';
+import { Calendar } from './sections/calendar';
+import { General } from './sections/general';
+import { Help } from './sections/help';
+import { Keyboard } from './sections/keyboard';
+import { Mail } from './sections/mail';
+import { Notifications } from './sections/notifications';
+import type { SectionProps } from './sections/types';
+
+export interface SettingsScreenProps extends SectionProps {
+  readonly section: SettingSection;
+  onSection(section: SettingSection): void;
+  /** The row ⌘K or a deep link chose: scrolled into view, its control focused. */
+  readonly anchor?: string;
+  /** A rejected write: one inline line with Retry; the control is already back at its old value. */
+  readonly failure?: WriteFailure | null;
+}
+
+const SECTION_VIEWS: Record<SettingSection, (props: SectionProps) => ReactNode> = {
+  general: General,
+  mail: Mail,
+  calendar: Calendar,
+  ai: Ai,
+  notifications: Notifications,
+  accounts: Accounts,
+  keyboard: Keyboard,
+  help: Help,
+};
+
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
+  '[role="switch"]:not([disabled]):not([aria-disabled="true"]), [tabindex="0"]';
+
+/** What the pane does when no row wants focus: reset for a section change, keep its place otherwise. */
+export function scrollWithoutTarget(
+  previous: SettingSection | null,
+  next: SettingSection,
+): 'top' | 'stay' {
+  return previous === next ? 'stay' : 'top';
+}
+
+/**
+ * What the deep-link effect may move, and when it may move it: a fresh section/anchor navigation, the moment a
+ * conditional row is drawn (`wasMissing`), or a recording starting on a different row. A `recordingId` change on
+ * its own never re-runs the anchor's scroll and focus, so finishing a recording does not jump the tall
+ * 'shortcuts' anchor mid-list or steal the recorder's restored focus.
+ */
+export function anchorScroll(input: {
+  /** A KeyRecorder row is recording a chord. */
+  readonly recording: boolean;
+  /** The recorded command changed since the last run. */
+  readonly recordingChanged: boolean;
+  /** The deep-linked row is drawn right now. */
+  readonly linked: boolean;
+  /** The deep-linked row was not drawn on the last run. */
+  readonly wasMissing: boolean;
+  /** The section or the anchor changed since the last run. */
+  readonly freshNav: boolean;
+}): 'recording' | 'linked' | 'top' | 'none' {
+  if (input.recording) return input.recordingChanged ? 'recording' : 'none';
+  if (input.linked) return input.freshNav || input.wasMissing ? 'linked' : 'none';
+  return input.freshNav ? 'top' : 'none';
+}
+
+export function SettingsScreen({
+  section,
+  onSection,
+  anchor,
+  failure,
+  ...rest
+}: SettingsScreenProps) {
+  const root = useRef<HTMLDivElement | null>(null);
+  const View = SECTION_VIEWS[section];
+  const recordingId = rest.view.recording?.commandId;
+  const label = SETTING_SECTIONS.find(s => s.id === section)?.label ?? 'Settings';
+  const [missingAnchor, setMissingAnchor] = useState<string | null>(null);
+  const previous = useRef<{
+    section: SettingSection | null;
+    anchor: string | undefined;
+    recordingId: string | undefined;
+    missing: string | null;
+  }>({ section: null, anchor: undefined, recordingId: undefined, missing: null });
+
+  // A conditional row can appear after the link landed (providers still loading): this cheap identity signal
+  // re-runs the resolution so the row is scrolled to and focused once it is drawn.
+  const { data } = rest;
+  const dataVersion = [
+    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
+    data.accounts.map(a => a.id).join(','),
+    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
+  ].join('|');
+
+  // A deep link lands on its row; a plain section switch starts at the top. Anything else keeps its place.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    // A row being recorded is where the eyes are; otherwise the row the link named.
+    const recording = recordingId
+      ? el.querySelector<HTMLElement>(`[data-command="${CSS.escape(recordingId)}"]`)
+      : null;
+    const linked =
+      !recording && anchor
+        ? el.querySelector<HTMLElement>(`[data-setting-anchor="${CSS.escape(anchor)}"]`)
+        : null;
+    // A conditional row may not be drawn in this state: say so rather than landing silently at the top.
+    const missing = !recording && anchor && !linked ? anchor : null;
+    setMissingAnchor(missing);
+    const p = previous.current;
+    const move = anchorScroll({
+      recording: recording !== null,
+      recordingChanged: p.recordingId !== recordingId,
+      linked: linked !== null,
+      wasMissing: p.missing === anchor,
+      freshNav: p.section !== section || p.anchor !== anchor,
+    });
+    if (move === 'recording' && recording) {
+      recording.scrollIntoView({ block: 'nearest' });
+    } else if (move === 'linked' && linked) {
+      // 'start', not 'center': a tall anchor (every shortcut group) must not land mid-list.
+      linked.scrollIntoView({ block: 'start' });
+      const control = linked.querySelector<HTMLElement>(FOCUSABLE);
+      if (control) control.focus({ preventScroll: true });
+      else {
+        if (!linked.hasAttribute('tabindex')) linked.setAttribute('tabindex', '-1');
+        linked.focus({ preventScroll: true });
+      }
+    } else if (move === 'top') {
+      (el.closest('.ui-pane__body') ?? document.scrollingElement)?.scrollTo?.(0, 0);
+    }
+    previous.current = { section, anchor, recordingId, missing };
+  }, [section, anchor, recordingId, dataVersion]);
+
+  // Arrow keys rove the nav (a navigation Puck keeps Tab order but does not rove on its own).
+  const onNavKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-puck-id] button')];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    let next = -1;
+    if (event.key === 'ArrowDown') next = (at + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (at - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else return;
+    if (items.length === 0) return;
+    event.preventDefault();
+    items[next]?.focus();
+    items[next]?.click();
+  };
+
+  return (
+    <div className="settings-screen" ref={root} data-section={section}>
+      {failure && !rest.view.diagnostics ? (
+        <div className="settings-failure-row">
+          <FailureLine failure={failure} />
+        </div>
+      ) : null}
+      <div className="settings-layout">
+        <div className="settings-nav" onKeyDown={onNavKeyDown}>
+          <Puck
+            kind="selection"
+            role="navigation"
+            label="Settings sections"
+            items={navItems()}
+            selectedId={section}
+            onSelect={id => onSection(id as SettingSection)}
+          />
+        </div>
+        <div className="settings-content" role="region" aria-label={label}>
+          {missingAnchor ? <MissingAnchor section={section} anchor={missingAnchor} /> : null}
+          <View {...rest} />
+        </div>
+      </div>
+      <Overlays {...rest} failure={failure} />
+    </div>
+  );
+}
