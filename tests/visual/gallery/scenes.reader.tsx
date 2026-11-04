@@ -305,7 +305,7 @@ interface ReaderScene {
   /** What the screen has when it is ready; the scene waits for it before the steps. */
   readonly ready?: string;
   readonly steps?: readonly Step[];
-  /** The card option the reader and the compose page draw (CardStyleContext); absent: 'off'. */
+  /** The card treatment the reader and the compose page draw (CardStyleContext); absent: 'a', the default. */
   readonly cards?: CardStyle;
 }
 
@@ -409,7 +409,7 @@ function sceneOf(scene: ReaderScene): () => ReactElement {
       openThread(scene.thread, { from: 'home', ...(scene.list ? { listIds: scene.list } : {}) });
     else openCompose();
     return (
-      <CardStyleContext.Provider value={scene.cards ?? 'off'}>
+      <CardStyleContext.Provider value={scene.cards ?? 'a'}>
         <App client={client} />
         <div hidden data-gallery-pending="" />
       </CardStyleContext.Provider>
@@ -729,7 +729,6 @@ export const readerScenes: Record<string, () => ReactElement> = {
   'reader-long-thread': sceneOf({
     thread: DESIGN,
     seed: fx => seedEarlier(fx, DESIGN, CHAT),
-    steps: [{ key: 'o' }],
   }),
   'reader-earlier-collapsed': sceneOf({
     thread: DESIGN,
@@ -738,7 +737,7 @@ export const readerScenes: Record<string, () => ReactElement> = {
   'reader-earlier-expanded': sceneOf({
     thread: DESIGN,
     seed: fx => seedEarlier(fx, DESIGN, THREE_WAY),
-    steps: [{ key: 'o' }, { key: 'ArrowUp' }],
+    steps: [{ key: 'ArrowUp' }, { key: 'o' }],
   }),
   'reader-attachments': sceneOf({
     thread: DESIGN,
@@ -852,7 +851,14 @@ export const readerScenes: Record<string, () => ReactElement> = {
     steps: [...SEND_REPLY, forceSubmission('suspended')],
   }),
   'reader-rich-project': richScene({ open: 'project' }),
-  'reader-rich-project-expanded': richScene({ open: 'project', steps: [{ key: 'o' }] }),
+  'reader-rich-project-expanded': richScene({
+    open: 'project',
+    steps: [
+      { click: '.ui-thread-message__toggle', text: 'Agreed on the list' },
+      { key: 'ArrowUp' },
+      { key: 'o' },
+    ],
+  }),
   'reader-rich-attachments': richScene({ open: 'files' }),
   'reader-rich-attachment-failed': richScene({ open: 'files', failedFiles: ['att-photos'] }),
   'reader-rich-invite': richScene({ open: 'invite' }),
@@ -872,21 +878,18 @@ export const readerScenes: Record<string, () => ReactElement> = {
   'compose-rich-reply-draft': richScene({ open: 'project', steps: REPLY_TO_PROJECT }),
   'compose-rich-new': richScene({ ready: '.ui-composer', steps: NEW_MESSAGE_STEPS }),
   'compose-rich-empty': richScene({ ready: '.ui-composer' }),
-  ...cardScenes('a'),
-  ...cardScenes('b'),
+  ...offScenes(),
 };
 
-/** The card options on the rich content (owner review 2026-10-31): the same threads and pages, drawn with `cards`. */
-function cardScenes(cards: Exclude<CardStyle, 'off'>): Record<string, () => ReactElement> {
+/** The card-less column behind the switch (`cards: 'off'`): the project thread and the new-message page. */
+function offScenes(): Record<string, () => ReactElement> {
+  const cards = 'off';
   return {
-    [`reader-card-${cards}-project`]: richScene({ cards, open: 'project' }),
-    [`reader-card-${cards}-attachments`]: richScene({ cards, open: 'files' }),
-    [`reader-card-${cards}-invite`]: richScene({ cards, open: 'invite' }),
-    [`compose-card-${cards}-new`]: richScene({
+    'reader-card-off-project': richScene({ cards, open: 'project' }),
+    'compose-card-off-new': richScene({
       cards,
       ready: '.ui-composer',
       steps: NEW_MESSAGE_STEPS,
     }),
-    [`compose-card-${cards}-reply`]: richScene({ cards, open: 'project', steps: REPLY_TO_PROJECT }),
   };
 }

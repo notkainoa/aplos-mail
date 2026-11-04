@@ -9,7 +9,7 @@ export const readerStates: readonly VisualState[] = [
     id: 'reader-full',
     frame: 'shell',
     title: 'Reader: one earlier message, summary, action row and the thread',
-    components: ['ReaderHead', 'Summary', 'EarlierMessages', 'ThreadMessage', 'ReplyStub'],
+    components: ['ReaderHead', 'ReaderActions', 'Summary', 'ThreadMessage', 'ReplyStub'],
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
@@ -38,8 +38,8 @@ export const readerStates: readonly VisualState[] = [
   {
     id: 'reader-long-thread',
     frame: 'shell',
-    title: 'Reader: a long thread with the earlier messages expanded',
-    components: ['EarlierMessages', 'ThreadMessage'],
+    title: 'Reader: a long thread, every earlier message a compact card',
+    components: ['ThreadMessage'],
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
@@ -48,8 +48,8 @@ export const readerStates: readonly VisualState[] = [
   {
     id: 'reader-earlier-collapsed',
     frame: 'shell',
-    title: 'Reader: three earlier messages in one line',
-    components: ['EarlierMessages', 'ThreadMessage'],
+    title: 'Reader: three earlier messages as compact cards (first sentence and an ellipsis)',
+    components: ['ThreadMessage'],
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
@@ -58,8 +58,8 @@ export const readerStates: readonly VisualState[] = [
   {
     id: 'reader-earlier-expanded',
     frame: 'shell',
-    title: 'Reader: earlier messages expanded into one-liners with the rail',
-    components: ['EarlierMessages', 'ThreadMessage'],
+    title: 'Reader: an earlier card opened with ↑ and O, the rail on it',
+    components: ['ThreadMessage'],
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
@@ -275,7 +275,7 @@ export const readerStates: readonly VisualState[] = [
     frame: 'shell',
     title:
       'Reader, rich: a 5-message project thread, earlier ones in one line, the latest expanded with quote, list and signature',
-    components: ['ReaderHead', 'Summary', 'EarlierMessages', 'ThreadMessage', 'ReplyStub'],
+    components: ['ReaderHead', 'ReaderActions', 'Summary', 'ThreadMessage', 'ReplyStub'],
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
@@ -284,8 +284,9 @@ export const readerStates: readonly VisualState[] = [
   {
     id: 'reader-rich-project-expanded',
     frame: 'shell',
-    title: 'Reader, rich: the same thread with the earlier messages expanded (O) and the rail',
-    components: ['EarlierMessages', 'ThreadMessage'],
+    title:
+      'Reader, rich: the same thread with one earlier card opened by a click and the one above it by ↑ and O',
+    components: ['ThreadMessage'],
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
@@ -367,7 +368,7 @@ export const readerStates: readonly VisualState[] = [
     id: 'reader-rich-no-attachments',
     frame: 'shell',
     title: 'Reader, rich: a message without attachments draws nothing where the chips would be',
-    components: ['ThreadMessage', 'EarlierMessages'],
+    components: ['ThreadMessage'],
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
@@ -422,58 +423,30 @@ export const readerStates: readonly VisualState[] = [
     mockup: 'compose.html (new)',
     filled: 1,
   },
-  ...cardStates('a', 'letter cards: each message its own card'),
-  ...cardStates('b', 'sectioned cards: a head card, one thread card, a reply card'),
+  ...offStates(),
 ];
 
-/** The card options on trial (owner review 2026-10-31), on the rich content: the reader and both compose surfaces. */
-function cardStates(cards: 'a' | 'b', option: string): VisualState[] {
-  const reader = (key: string, what: string, components: readonly string[]): VisualState => ({
-    id: `reader-card-${cards}-${key}`,
-    frame: 'shell',
-    title: `Reader, card option ${cards.toUpperCase()} (${option}): ${what}`,
-    components,
-    design: '7.5',
-    mockup: 'reader.html (default)',
-    filled: 1,
-    summary: 'ready',
-  });
+/** The card-less column (`cardStyle: 'off'`, DESIGN 7.5 as first written) stays behind the switch: two states keep it drawn. */
+function offStates(): VisualState[] {
   return [
-    reader('project', 'the 5-message project thread, its quoted line behind Show quoted text', [
-      'ReaderHead',
-      'Summary',
-      'EarlierMessages',
-      'ThreadMessage',
-      'ReplyStub',
-    ]),
-    reader('attachments', 'a PDF, a zip and a spreadsheet, each chip with its kind icon', [
-      'ThreadMessage',
-      'Chip',
-    ]),
-    reader('invite', 'the invitation card above the email, the .ics chip, Add to calendar filled', [
-      'ReaderHead',
-      'ThreadMessage',
-      'Text',
-      'Chip',
-    ]),
     {
-      id: `compose-card-${cards}-new`,
+      id: 'reader-card-off-project',
       frame: 'shell',
-      title: `Compose page, card option ${cards.toUpperCase()}: To chip, subject and a 120-word body`,
+      title: 'Reader, cards off (the switch): the 5-message project thread as an open column',
+      components: ['ReaderHead', 'ReaderActions', 'Summary', 'ThreadMessage', 'ReplyStub'],
+      design: '7.5',
+      mockup: 'reader.html (default)',
+      filled: 1,
+      summary: 'ready',
+    },
+    {
+      id: 'compose-card-off-new',
+      frame: 'shell',
+      title: 'Compose page, cards off (the switch): To chip, subject and a 120-word body',
       components: ['Composer', 'RecipientField', 'DraftState'],
       design: '7.6',
       mockup: 'compose.html (new)',
       filled: 1,
-    },
-    {
-      id: `compose-card-${cards}-reply`,
-      frame: 'shell',
-      title: `Inline reply, card option ${cards.toUpperCase()}: three sentences typed under the project thread`,
-      components: ['InlineReply', 'RecipientField', 'DraftState'],
-      design: '7.6',
-      mockup: 'reply.html (reply)',
-      filled: 1,
-      summary: 'ready',
     },
   ];
 }

@@ -28,7 +28,7 @@ import {
   SectionHeader,
 } from '../../../apps/desktop/src/renderer/ui/list';
 import { Palette, SearchField } from '../../../apps/desktop/src/renderer/ui/ask';
-import { ReaderHead } from '../../../apps/desktop/src/renderer/ui/reader';
+import { ReaderActions, ReaderHead } from '../../../apps/desktop/src/renderer/ui/reader';
 import { Confirm, Menu, ToastStack } from '../../../apps/desktop/src/renderer/ui/surfaces';
 
 import { Column, noop, row } from './scenes.shared';
@@ -324,17 +324,8 @@ function DoneRows(): ReactElement {
 function ReaderHeadScene({ summary }: { summary: SummaryContent }): ReactElement {
   return (
     <Column width="reader">
-      <ReaderHead
-        sender={{
-          name: 'Jordan Park',
-          address: 'jordan@parkandpine.example',
-          accountLabel: 'alex.moreno@example.test',
-          history: '14 emails both ways since March',
-        }}
-        recipientsLabel="to you and Mina Cho"
-        due={TOMORROW}
-        date="2026-10-29T08:12:00-07:00"
-        summary={summary}
+      <ReaderHead due={TOMORROW} summary={summary} />
+      <ReaderActions
         suggestion={{ verb: 'Reply', icon: 'reply', isDone: false }}
         commands={{ suggest: 'mail.suggested', later: 'mail.later', done: 'mail.done' }}
         demoted={false}
