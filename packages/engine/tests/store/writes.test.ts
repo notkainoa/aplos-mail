@@ -296,6 +296,11 @@ test('bodies round-trip through the codec, set the part bits and re-queue search
         store.read(q => readBody(q, ACCOUNT, 'm1', codec)),
         body,
       );
+      // The read side decodes with the store's own codec when no explicit one is given.
+      assert.deepEqual(
+        store.read(q => readBody(q, ACCOUNT, 'm1')),
+        body,
+      );
       const row = store.read(q =>
         q.get<{ codec: number; parts: number }>(
           'SELECT b.codec, m.parts FROM bodies b JOIN messages m ON m.id = b.message_id',

@@ -36,6 +36,28 @@ describe('MessageBody/get', () => {
       assert.equal(w.calls.opened.length, 1);
     }));
 
+  it('derives text for an HTML-only letter instead of answering an empty string', () =>
+    withWorld(async w => {
+      w.store.commit({
+        opId: 'html-only',
+        origin: 'sync',
+        writes: [
+          {
+            kind: 'body',
+            accountId: 'acct-1',
+            remoteId: 'r4',
+            body: { html: '<p>Hi <b>there</b></p><p>second line</p>', cidMap: {} },
+          },
+        ],
+      });
+      const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.other })) as {
+        bodyKind: string;
+        text: string;
+      };
+      assert.equal(body.bodyKind, 'html');
+      assert.equal(body.text, 'Hi there\n\nsecond line');
+    }));
+
   it('answers plain text without rendering, and notFound for an unknown message', () =>
     withWorld(async w => {
       const body = (await w.windowA.call('MessageBody/get', { messageId: IDS.plain })) as {

@@ -19,7 +19,7 @@ export function readBody(
   q: StoreReader,
   accountId: string,
   remoteId: string,
-  codec: BodyCodec = RAW,
+  codec: BodyCodec = q.bodyCodec ?? RAW,
 ): BodyRecord | undefined {
   const row = q.get<{ codec: number; data: Uint8Array }>(
     'SELECT b.codec, b.data FROM bodies b JOIN messages m ON m.id = b.message_id WHERE m.account_id = ? AND m.remote_id = ?',

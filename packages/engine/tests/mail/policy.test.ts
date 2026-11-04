@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { resolveImagePolicy, senderAllowed } from '../../src/mail/policy';
+import { readRemoteImages, resolveImagePolicy, senderAllowed } from '../../src/mail/policy';
 import { frameOf, IDS, mailWorld, serve, text } from './harness';
 
 // The one image-policy mapping, and the render cache keyed on its result.
@@ -36,6 +36,37 @@ describe('resolveImagePolicy', () => {
       assert.equal(resolveImagePolicy(requested, sender, list), expected);
     });
   }
+
+  it('the owner’s global remoteImages setting allows before the allow-list is even read', () => {
+    assert.equal(resolveImagePolicy('block', 'stranger@else.example', [], 'allow'), 'allow');
+    assert.equal(resolveImagePolicy('block', 'stranger@else.example', [], 'block'), 'block');
+    assert.equal(
+      resolveImagePolicy('load', 'stranger@else.example', [], 'block'),
+      'allow',
+      'an explicit load still wins',
+    );
+    assert.equal(
+      resolveImagePolicy('block', 'ada@corp.example', list),
+      'allow',
+      'no global arg: block',
+    );
+  });
+
+  it('readRemoteImages reads the settings document and defaults to block', async () => {
+    const w = await mailWorld();
+    assert.equal(w.store.read(readRemoteImages), 'block');
+    w.rawSql(
+      'INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data',
+      JSON.stringify({ mail: { remoteImages: 'allow' } }),
+    );
+    assert.equal(w.store.read(readRemoteImages), 'allow');
+    w.rawSql(
+      'INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data',
+      'not json',
+    );
+    assert.equal(w.store.read(readRemoteImages), 'block', 'unreadable settings block');
+    await w.cleanup();
+  });
 
   it('ignores unreadable list entries', () => {
     const odd: unknown[] = [null, 42, '', '@', 'not an address', { address: 'a@b.example' }];
