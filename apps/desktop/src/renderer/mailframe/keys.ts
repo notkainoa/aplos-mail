@@ -1,13 +1,31 @@
 // The key relay for the scriptless srcdoc frame. A keydown inside the frame's document never reaches the host's
 // document (events do not cross frames), so the host listens on the frame document and relays each key exactly once.
-// Only the sealed frame's short list goes out (protocol.ts `FALLBACK_KEYS`: J/K, arrows, Page Up/Down, Home, End,
-// Esc), unmodified: never R, E, Space or a letter, so a key typed or tapped in the letter cannot run an app command or
-// start a hold (hold R dictates). Keyups are never relayed, and none is needed: no listed key is a hold key. Ctrl and
-// Cmd belong to the frame (copy, select all through the Edit menu), and keys typed during IME composition belong to
-// the composer. Nothing in the frame is editable (forms are removed).
+// Only the short list goes out (`FALLBACK_KEYS`: J/K, arrows, Page Up/Down, Home, End, Esc), unmodified: never R, E,
+// Space or a letter, so a key typed or tapped in the letter cannot run an app command or start a hold (hold R
+// dictates). Keyups are never relayed, and none is needed: no listed key is a hold key. Ctrl and Cmd belong to the
+// frame (copy, select all through the Edit menu), and keys typed during IME composition belong to the composer.
+// Nothing in the frame is editable (forms are removed). The sealed frame's reporter relays no keys at all (PROTOCOL.md
+// "Keys"): its keys need main's `before-input-event`, filtered to this same list.
 
-import { FALLBACK_KEYS } from './protocol';
 import type { MailFrameKey } from './types';
+
+/**
+ * The only keys a frame may hand to the shell: non-destructive and never a hold key (research section 7: never E,
+ * Space or R).
+ */
+export const FALLBACK_KEYS: ReadonlySet<string> = new Set([
+  'j',
+  'k',
+  'J',
+  'K',
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  'Escape',
+]);
 
 /** The parts of a KeyboardEvent the relay reads and may cancel. Duck-typed: the event comes from the frame realm. */
 export interface RelayableKeyEvent {

@@ -3,9 +3,10 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { frameDocument, SRCDOC_SANDBOX, URL_SANDBOX } from './document';
+import { createGrowthFence } from './growth';
 import { handleLinkClick } from './links';
 import { relayKey } from './keys';
-import { acceptReport, clampHeight, frameContentWidth, MAX_HEIGHT, parseBg } from './protocol';
+import { acceptReport, clampHeight, frameContentWidth, parseBg } from './protocol';
 import { FRAME_PAPER } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
@@ -53,7 +54,7 @@ function useLatest<T>(value: T) {
 /** The letter's height: the root element's laid-out box (the measure CSS keeps it at content height). */
 export function measureDocument(doc: Document): number {
   const rect = doc.documentElement.getBoundingClientRect();
-  return clampHeight(Math.min(rect.height, MAX_HEIGHT)) ?? 1;
+  return clampHeight(rect.height) ?? 1;
 }
 
 const CLEAR = /^(?:transparent|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\))$/i;
@@ -121,8 +122,10 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
     const doc = ref.current?.contentDocument;
     if (!doc) return;
     cleanup.current?.();
-    cleanup.current = wireDocument(doc, onKey, setHeight);
-    const measured = measureDocument(doc);
+    // A fresh fence per document: viewport-unit content would otherwise grow with the frame forever (growth.ts).
+    const fence = createGrowthFence();
+    cleanup.current = wireDocument(doc, onKey, h => setHeight(fence.next(h)));
+    const measured = fence.next(measureDocument(doc));
     setHeight(measured);
     onMeasured.current(source, {
       height: measured,
@@ -151,16 +154,19 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
   );
 }
 
-/** The sealed path: an opaque `aplos-mail://` frame sized only by validated reporter messages. */
+/**
+ * The sealed path: an opaque `aplos-mail://` frame sized only by validated reporter messages. The reporter relays no
+ * keys (PROTOCOL.md "Keys"), so `onKey` is not wired here.
+ */
 export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>) {
   const { source, hidden } = props;
   const [height, setHeight] = useState(1);
   const ref = useRef<HTMLIFrameElement>(null);
-  const onKey = useLatest(props.onKey);
   const onMeasured = useLatest(props.onMeasured);
 
   useEffect(() => {
     let reported = false;
+    const fence = createGrowthFence();
     const listener = (event: MessageEvent) => {
       const frame = ref.current;
       const report = acceptReport(event, {
@@ -169,9 +175,8 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
         token: source.token,
         width: frame ? frameContentWidth(frame, getComputedStyle(frame)) : undefined,
       });
-      if (report?.type === 'key') onKey.current(report);
-      if (report?.type !== 'size') return;
-      setHeight(report.height);
+      if (!report) return;
+      setHeight(fence.next(report.height));
       if (reported) return;
       reported = true;
       onMeasured.current(source, {
@@ -183,7 +188,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
     };
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);
-  }, [source, onKey, onMeasured]);
+  }, [source, onMeasured]);
 
   return (
     <iframe

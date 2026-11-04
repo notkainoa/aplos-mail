@@ -1,11 +1,15 @@
-// The host side of the reporter protocol (PROTOCOL.md, draft). Pure: every check takes the event and what the host
-// expects, so spoofed messages are unit-tested without a browser.
+// The host side of the reporter protocol (PROTOCOL.md). The reporter is the engine's `packages/mail-html/assets/
+// reporter.js` (ARCHITECTURE 10): it posts `{token, h, w, bg, ready, marks}` to `parent` and nothing else. Pure: every
+// check takes the event and what the host expects, so spoofed messages are unit-tested without a browser.
 
 import { FRAME_PAPER } from './paper';
-import type { MailFrameKey } from './types';
 
-/** Heights outside 0-200,000 are rejected; 0 is clamped up to 1. */
+/** Heights are clamped into 1-200,000 for display. */
 export const MAX_HEIGHT = 200_000;
+/** The reporter clamps `h` to 0-1,000,000: a height outside that range is not the reporter's and is rejected. */
+export const REPORTED_MAX_HEIGHT = 1_000_000;
+/** The reporter clamps `marks` to 0-100,000. */
+const MAX_MARKS = 100_000;
 /** A reported width may differ from the slot by this many px (subpixel rounding). */
 const WIDTH_SLACK = 1;
 /** The pixels of a CSS length such as "16px"; 0 for anything else. */
@@ -26,31 +30,13 @@ export function frameContentWidth(
   return Math.max(0, frame.clientWidth - pixels(style.paddingLeft) - pixels(style.paddingRight));
 }
 
-/**
- * The only keys either frame relays to the shell: the sealed reporter's fallback `key` messages and the srcdoc frame's
- * keydown relay (keys.ts). Non-destructive and never a hold key (research section 7: never E, Space or R).
- */
-export const FALLBACK_KEYS = new Set([
-  'j',
-  'k',
-  'J',
-  'K',
-  'ArrowUp',
-  'ArrowDown',
-  'PageUp',
-  'PageDown',
-  'Home',
-  'End',
-  'Escape',
-]);
-
 /** What the host expects of one frame instance. */
 export interface ReportExpectation {
   /** The frame's `contentWindow`; null until mounted (then nothing is accepted). */
   source: unknown;
   /** Accepted origins; an opaque sandboxed frame reports `'null'`. */
   origins: readonly string[];
-  /** The per-render token (the `aplos-mail://m/<token>` path segment). */
+  /** The per-render token (the `aplos-mail://m/<token>/` path segment). */
   token: string;
   /** The slot width in CSS px; a size report of another width is ignored. */
   width?: number;
@@ -58,15 +44,14 @@ export interface ReportExpectation {
 
 /** A size report the host accepted. */
 export interface SizeReport {
-  type: 'size';
+  /** Clamped into 1-200,000. */
   height: number;
+  /** Strict `#rrggbb`; the light paper when the reported colour is transparent or unparsable. */
   bg: string;
+  /** The frame document had finished loading (`readyState === 'complete'`) when it measured. */
   ready: boolean;
-}
-
-/** A key the in-frame fallback relay reported. */
-export interface KeyReport extends MailFrameKey {
-  type: 'key';
+  /** Find marks in the letter (the sanitiser's `mark.aplos-find`), 0-100,000. */
+  marks: number;
 }
 
 /** The minimal shape of a `MessageEvent` the host reads. */
@@ -123,19 +108,14 @@ function fallbackBg(): string {
   return fromHex(LIGHT_PAPER.slice(1));
 }
 
-/** A finite height in 0-200,000, rounded up and clamped to at least 1; anything else is null (rejected). */
+/** A finite, non-negative height rounded up and clamped into 1-200,000; anything else is null. */
 export function clampHeight(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  if (value < 0 || value > MAX_HEIGHT) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
   return Math.min(MAX_HEIGHT, Math.max(1, Math.ceil(value)));
 }
 
-/** The fields each message type may carry; any other own key (`__proto__`, `constructor`, …) rejects the message. */
-const FIELDS = new Map<string, ReadonlySet<string>>([
-  ['size', new Set(['t', 'token', 'h', 'w', 'bg', 'ready'])],
-  ['key', new Set(['t', 'token', 'key', 'shift', 'alt'])],
-]);
-const MAX_FIELDS = 6;
+/** The reporter's one message: exactly these own fields, every one present. Anything else rejects the message. */
+const FIELDS: ReadonlySet<string> = new Set(['token', 'h', 'w', 'bg', 'ready', 'marks']);
 
 function isPlainObject(value: unknown): value is object {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -146,48 +126,52 @@ function isPlainObject(value: unknown): value is object {
 /**
  * A plain object's own data fields copied into a null-prototype record, so nothing is read through a prototype (a
  * polluted `Object.prototype` cannot fill a missing field) and no getter runs. Null for anything else, for symbol
- * keys, and for a field the message type does not define.
+ * keys, and unless the own fields are exactly the reporter's six.
  */
 function ownFields(value: unknown): Record<string, unknown> | null {
   if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) return null;
   const names = Object.getOwnPropertyNames(value);
-  if (names.length > MAX_FIELDS) return null;
+  if (names.length !== FIELDS.size || names.some(name => !FIELDS.has(name))) return null;
   const fields = Object.create(null) as Record<string, unknown>;
   for (const name of names) {
     const descriptor = Object.getOwnPropertyDescriptor(value, name);
     if (!descriptor || !('value' in descriptor)) return null;
     fields[name] = descriptor.value;
   }
-  const allowed = typeof fields.t === 'string' ? FIELDS.get(fields.t) : undefined;
-  if (!allowed || names.some(name => !allowed.has(name))) return null;
   return fields;
 }
 
-function sizeReport(data: Record<string, unknown>, width: number | undefined): SizeReport | null {
-  const height = clampHeight(data.h);
-  if (height === null) return null;
-  // Research section 3: an out-of-process child can report before it knows its width (0 or ~43,000 px tall).
-  if (width !== undefined) {
-    if (typeof data.w !== 'number' || !Number.isFinite(data.w) || data.w <= 0) return null;
-    if (Math.abs(data.w - width) > WIDTH_SLACK) return null;
-  }
-  return { type: 'size', height, bg: parseBg(data.bg), ready: data.ready === true };
+/** The height to show, or null when it is not one the reporter could have sent (NaN, negative, over 1,000,000). */
+function reportedHeight(h: unknown): number | null {
+  if (typeof h !== 'number' || h > REPORTED_MAX_HEIGHT) return null;
+  return clampHeight(h);
 }
 
-function keyReport(data: Record<string, unknown>): KeyReport | null {
-  if (typeof data.key !== 'string' || !FALLBACK_KEYS.has(data.key)) return null;
-  return { type: 'key', key: data.key, shift: data.shift === true, alt: data.alt === true };
+/** Research section 3: an out-of-process child can report before it knows its width (0 or ~43,000 px). */
+function widthMatches(w: unknown, width: number | undefined): boolean {
+  if (typeof w !== 'number' || !Number.isFinite(w) || w <= 0) return false;
+  return width === undefined || Math.abs(w - width) <= WIDTH_SLACK;
+}
+
+function isMarks(marks: unknown): marks is number {
+  return typeof marks === 'number' && Number.isInteger(marks) && marks >= 0 && marks <= MAX_MARKS;
+}
+
+function sizeReport(data: Record<string, unknown>, width: number | undefined): SizeReport | null {
+  const height = reportedHeight(data.h);
+  if (height === null || !widthMatches(data.w, width)) return null;
+  if (typeof data.bg !== 'string' || typeof data.ready !== 'boolean' || !isMarks(data.marks)) {
+    return null;
+  }
+  return { height, bg: parseBg(data.bg), ready: data.ready, marks: data.marks };
 }
 
 /**
  * Accept a `message` event only from this frame instance: the source is its `contentWindow`, the origin is expected,
- * the token matches, and the payload is a plain object with exactly its type's fields, well formed. Returns null for
- * anything else.
+ * the token matches, and the payload is a plain object with exactly the reporter's six fields, well formed. Returns
+ * null for anything else.
  */
-export function acceptReport(
-  event: ReportEvent,
-  expect: ReportExpectation,
-): SizeReport | KeyReport | null {
+export function acceptReport(event: ReportEvent, expect: ReportExpectation): SizeReport | null {
   if (expect.source === null || expect.source === undefined || event.source !== expect.source) {
     return null;
   }
@@ -195,13 +179,18 @@ export function acceptReport(
   const data = ownFields(event.data);
   if (!data || typeof data.token !== 'string' || !expect.token) return null;
   if (data.token !== expect.token) return null;
-  if (data.t === 'size') return sizeReport(data, expect.width);
-  if (data.t === 'key') return keyReport(data);
-  return null;
+  return sizeReport(data, expect.width);
 }
 
-/** The token of an `aplos-mail://m/<token>[/…]` URL, or '' when the URL is not one. */
+/** The engine's document URL: 128 random bits as 32 lowercase hex digits (`@aplos/mail-html/frame` paths.ts). */
+const FRAME_URL = /^aplos-mail:\/\/m\/([0-9a-f]{32})\/?$/;
+
+/**
+ * The token of a `Mail/frame` document URL, `aplos-mail://m/<token>/` (or the contract comment's form without the
+ * slash), or '' for anything else: another scheme or host, a sub-resource path, a query or fragment, another token
+ * shape. The reporter reads the same path segment from its own `location.pathname`; nothing is sent to the frame.
+ */
 export function tokenOf(url: string): string {
-  const m = /^aplos-mail:\/\/m\/([A-Za-z0-9_-]{8,128})(?:[/?#]|$)/.exec(url);
+  const m = FRAME_URL.exec(url);
   return m ? m[1]! : '';
 }
