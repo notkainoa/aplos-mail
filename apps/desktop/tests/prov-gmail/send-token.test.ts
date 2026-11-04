@@ -9,7 +9,12 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { withSendToken } from '../../src/host/providers/google/send';
+import {
+  isSentCopy,
+  MAX_SEND_BYTES,
+  withSendToken,
+  type Candidate,
+} from '../../src/host/providers/google/send';
 import { ACCOUNT, classOf, sendWorld, submission, type SendWorld } from './send-rig';
 
 const since = (world: SendWorld) => world.clock.now() - 60_000;
@@ -162,4 +167,89 @@ test('findSent: an error in the pass is thrown, never absent', async () => {
     .catch((e: unknown) => e);
   assert.ok(error instanceof Error);
   assert.ok(classOf(error), 'a classified provider error');
+});
+
+// ---- the two tests that were too weak, and the size after the token ----
+
+test('findSent: our token on a message WITHOUT the SENT label is never a copy, even when the search lists it', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  const token = pinned.payload.internetId;
+  world.emu.mailbox.addMessage({
+    from: 'someone@example.test',
+    to: [world.address],
+    labelIds: ['INBOX'],
+    headers: { 'X-Aplos-Send': token },
+  });
+  // The search is widened to every message, so the INBOX message IS a candidate; only the label rule can refuse it.
+  world.bridge.rewriteQuery = q =>
+    q.replace(/rfc822msgid:\S+/, '').replace(/in:sent|-in:drafts/g, '');
+  const result = await world.port.findSent(ACCOUNT, token, since(world));
+  assert.equal(result.kind, 'absent');
+  // The same rule, directly: SENT required, DRAFT refused, for the token and for the Message-ID.
+  const headers = (name: string, value: string) => ({ payload: { headers: [{ name, value }] } });
+  const withLabels = (labelIds: string[], name: string): Candidate => ({
+    labelIds,
+    ...headers(name, token),
+  });
+  for (const name of ['X-Aplos-Send', 'Message-ID']) {
+    assert.equal(isSentCopy(withLabels(['SENT'], name), token), true, `${name} with SENT`);
+    assert.equal(isSentCopy(withLabels(['INBOX'], name), token), false, `${name} without SENT`);
+    assert.equal(isSentCopy(withLabels([], name), token), false, `${name} with no labels`);
+    assert.equal(
+      isSentCopy(withLabels(['SENT', 'DRAFT'], name), token),
+      false,
+      `${name} on a DRAFT`,
+    );
+  }
+});
+
+test('findSent: a token that only shares a prefix or differs only in the domain is not ours', async () => {
+  const world = await rewritingWorld();
+  const ours = '<aaaaaa1111bbbb@mail.example.test>';
+  const pinned = submission(world, { messageId: ours });
+  for (const near of [
+    '<aaaaaa2222bbbb@mail.example.test>', // the same first characters
+    '<aaaaaa1111bbbb@other.example.test>', // the same local part, another domain
+    '<aaaaaa1111bbb@mail.example.test>', // one character short
+    '<aaaaaa1111bbbbb@mail.example.test>', // one character long
+  ]) {
+    world.emu.mailbox.addMessage({
+      from: world.address,
+      to: ['friend@example.test'],
+      labelIds: ['SENT'],
+      headers: { 'X-Aplos-Send': near },
+    });
+  }
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'absent');
+  // And the exact token, in the same mailbox, is found (the case and the brackets are not part of identity).
+  const mine = world.emu.mailbox.addMessage({
+    from: world.address,
+    to: ['friend@example.test'],
+    labelIds: ['SENT'],
+    headers: { 'X-Aplos-Send': ours.toUpperCase() },
+  });
+  const found = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.deepEqual(found, {
+    kind: 'found',
+    remoteMessageId: mine.id,
+    remoteThreadId: mine.threadId,
+  });
+});
+
+test('send token: the 35 MiB limit holds for what goes up, token included', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  // A message that fits the limit by itself and not with the token line added.
+  const padded = Buffer.concat([
+    pinned.mime,
+    Buffer.alloc(MAX_SEND_BYTES - pinned.mime.length, 0x61),
+  ]);
+  assert.equal(padded.length, MAX_SEND_BYTES);
+  const error = await world.adapter
+    .send({ ...pinned.payload, mime: padded }, world.ctx())
+    .catch((e: unknown) => e);
+  assert.equal(classOf(error)?.reason, 'messageTooLarge');
+  assert.equal(world.sendRequests(), 0, 'nothing was sent');
 });

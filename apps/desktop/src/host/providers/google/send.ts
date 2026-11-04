@@ -669,7 +669,10 @@ export async function sendSubmission(
   ctx: AdapterContext,
   options: SendOptions = {},
 ): Promise<SendReceipt> {
-  const raw = withSendToken(pinnedMime(payload, ctx.account.address), payload.internetId);
+  const pinned = pinnedMime(payload, ctx.account.address);
+  const raw = withSendToken(pinned, payload.internetId);
+  // The token is a few dozen bytes on top of what `pinnedMime` already measured: the limit holds for what goes up.
+  if (raw.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   const route = await chooseRoute(deps, payload, ctx, options).catch((error: unknown) => {
     throw notSent(error, 'gmail.drafts.get');
   });
@@ -711,7 +714,7 @@ interface SentHit {
   threadId?: string;
 }
 
-interface Candidate {
+export interface Candidate {
   id?: unknown;
   threadId?: unknown;
   labelIds?: unknown;
@@ -737,7 +740,7 @@ function headerValue(m: Candidate, name: string): string | undefined {
  * on an account that kept it, the Message-ID does. The token FINDS and names the copy; the labels and the caller's time
  * window prove it is a sent message of this submission.
  */
-function isSentCopy(m: Candidate, internetId: string): boolean {
+export function isSentCopy(m: Candidate, internetId: string): boolean {
   const labels = Array.isArray(m.labelIds) ? m.labelIds : [];
   if (!labels.includes('SENT') || labels.includes('DRAFT')) return false;
   const token = headerValue(m, SEND_TOKEN_HEADER);
