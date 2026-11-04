@@ -1555,5 +1555,7 @@ html-5 part 1, items (a) to (c) of the Integrator's 2026-11-04 03:59 DECIDED. De
 ## 2026-11-04 — eng-store: files.ts three LOWs (Integrator's 11:35 REQUEST)
 
 - **`remove` no longer rmdirs the account folder.** An `rmdir` racing a concurrent write could land between that write's folder checks and its `rename`, failing the rename ENOENT and losing the write. An emptied hash folder costs nothing to keep; `privateFolder(sub)` re-validates it on the next write. Chosen over rename-retry because it removes the race rather than recovering from it.
-- **`.tmp` is re-checked per write.** The new test swaps `.noindex/.tmp` for an outside symlink after `open` and proves `write` refuses `io` with nothing escaping (the per-write `checkFolder(tmp)` already made this true; the test pins it).
+- **`.tmp` is re-checked per write.** The new test swaps `.noindex/.tmp` for an outside symlink after `open` and proves `write` refuses `io` with the outside folder left empty (the per-write `checkFolder(tmp)` already made this true; the test pins it). A residual swap-between-check-and-open window remains — it needs a same-uid attacker writing inside a 0700 tree, and worst case is a cleaned-up temp.
 - **Ids must be well-formed Unicode.** `write` rejects `accountId`/`remoteId`/`remotePart` failing `isWellFormed()` as `path` — a lone surrogate is not a real id and hashing it names a stable-but-wrong file.
+
+- **`isWellFormed` needed `ES2024.String` in both engine and desktop `lib` arrays** (types-only; Node 24 and Electron's V8 already implement it). Without it `npm run typecheck` — the `npm run check` gate — was red in both workspaces.
