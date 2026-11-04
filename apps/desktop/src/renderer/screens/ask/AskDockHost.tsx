@@ -16,7 +16,7 @@ import {
   useSettings,
   useView,
 } from '../../data';
-import type { AiProvider, Calendar, Consent, ErrorBody, ModelRef, ProgressFrame } from '../../data';
+import type { AiProvider, Calendar, ErrorBody, ModelRef, ProgressFrame } from '../../data';
 import {
   navigate,
   openCompose,
@@ -38,6 +38,8 @@ import {
   askKeyLayer,
   consentDropped,
   consentGranted,
+  consentLineNeeded,
+  consentNeededInput,
   decide,
   decided,
   dockView,
@@ -46,6 +48,7 @@ import {
   newChat,
   openConversation,
   otherProviders,
+  pendingQuestionReady,
   providerLabel,
   pruneDecisions,
   retry,
@@ -65,7 +68,7 @@ import {
 } from './ask.model';
 import { AskPanel } from './AskPanel';
 import { ConsentLine } from './AskConsent';
-import { askStore, defaultDockWidth, useDock } from './askStore';
+import { askStore, defaultDockWidth, dockWidthPersisted, useDock } from './askStore';
 import { setFormatClock } from '../../ui/ask/format';
 import './ask-screen.css';
 
@@ -165,13 +168,6 @@ function useAskSources() {
   return { status, setStatus, providers, suggestions, calendars, loaded };
 }
 
-/** "Not now" hides the consent line until the record's version changes (nothing is recorded, per `Consent/grant`). */
-function consentNeeded(consent: Consent | undefined, dismissed: number | undefined): boolean {
-  if (!consent) return false;
-  if (dismissed !== undefined && dismissed >= consent.currentVersion) return false;
-  return !consent.granted || consent.needsReconsent;
-}
-
 /** An unused slot's filter: contract ids are non-empty, so this `runId` matches nothing. */
 const NO_RUN = '';
 
@@ -239,11 +235,9 @@ export function AskDockHost(props: AskDockHostProps) {
     accountNames,
     suggestions: sources.suggestions.length > 0 ? sources.suggestions : FALLBACK_SUGGESTIONS,
     recents,
-    // The gate submits against, wider than the line's display rule (no tab or working check).
-    consentNeeded:
-      sources.loaded &&
-      sources.status.model !== undefined &&
-      consentNeeded(consent, dock.consentDismissed),
+    // The gate every run start answers to, wider than the line's display rule: "Not now" dismisses
+    // only the line — never the requirement — and an unknown record holds rather than runs.
+    consentNeeded: consentNeededInput(sources.loaded, sources.status.model, consent),
   };
   const view = dockView(dock.ask, inputs);
   const viewRef = useRef(view);
@@ -382,16 +376,26 @@ export function AskDockHost(props: AskDockHostProps) {
     if (pruned !== askStore.get().ask) setAsk(pruned);
   }, [conversation]);
 
-  // The palette's Ask row.
+  // The palette's Ask row. The question stays in the store until the sources and the consent record
+  // have both answered: submitting earlier would run it past the consent gate entirely.
   useEffect(() => {
-    const question = dock.pendingQuestion;
-    if (!question) return;
+    const question = askStore.get().pendingQuestion;
+    if (!question || !pendingQuestionReady(sources.loaded, consent)) return;
     askStore.update(s => ({ ...s, pendingQuestion: undefined }));
     const ready = setField(askStore.get().ask, question);
     askStore.update(s => ({ ...s, ask: ready }));
     perform(submit(ready, dockView(ready, inputsRef.current), 'ask'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dock.pendingQuestion]);
+  }, [dock.pendingQuestion, sources.loaded, consent]);
+
+  // A question held while the sources or the consent record were still loading resolves itself once
+  // the gate clears: granted and current runs it; no provider lets the refusal path answer.
+  useEffect(() => {
+    if (!dock.ask.consentHeld) return;
+    if (consentNeededInput(sources.loaded, sources.status.model, consent)) return;
+    perform(consentGranted(cur()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.ask.consentHeld, sources.loaded, sources.status.model, consent]);
 
   // Hold-A while the dock was closed: the shell's `ask.dictate` fallback opened it and left a pending
   // dictation; start listening now (the key's release reaches this host's handler once attached).
@@ -407,7 +411,7 @@ export function AskDockHost(props: AskDockHostProps) {
     if (tab === 'ask') fieldRef.current?.focus();
   }, [dock.focusTick, tab]);
 
-  // Width: the saved one, or the layout default for this window; written back debounced.
+  // Width: the saved one, or the layout default for this window; a dragged width writes back debounced.
   const restored = useRef(false);
   useEffect(() => {
     if (restored.current || !settings) return;
@@ -418,17 +422,36 @@ export function AskDockHost(props: AskDockHostProps) {
   }, [settings]);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const draggedWidth = useRef(false);
+  const pendingWidth = useRef<number | undefined>(undefined);
+  const writeWidth = useRef((width: number) => {
+    const current = settingsRef.current;
+    if (!current) return;
+    const seed = typeof window === 'undefined' ? 360 : defaultDockWidth(window.innerWidth);
+    const persist = dockWidthPersisted(width, seed, current.ui.dock.width, draggedWidth.current);
+    if (persist === undefined) return;
+    void api.settings
+      .set({ patch: { ui: { dock: { ...current.ui.dock, width: persist } } } })
+      .catch(() => undefined);
+  });
   useEffect(() => {
     if (!restored.current) return;
+    pendingWidth.current = dock.width;
     const timer = setTimeout(() => {
-      const current = settingsRef.current;
-      if (!current) return;
-      void api.settings
-        .set({ patch: { ui: { dock: { ...current.ui.dock, width: dock.width } } } })
-        .catch(() => undefined);
+      pendingWidth.current = undefined;
+      writeWidth.current(dock.width);
     }, 400);
     return () => clearTimeout(timer);
   }, [dock.width]);
+  // Closing the dock inside the debounce still keeps the owner's width.
+  useEffect(
+    () => () => {
+      const owed = pendingWidth.current;
+      pendingWidth.current = undefined;
+      if (owed !== undefined) writeWidth.current(owed);
+    },
+    [],
+  );
 
   // The resolver's conditions for the ask context, which the dock root's data-keyctx scopes to focus inside.
   useShellKeyLayer(askKeyLayer(view, proposalFocused));
@@ -442,7 +465,7 @@ export function AskDockHost(props: AskDockHostProps) {
     tab === 'ask' &&
     !view.working &&
     sources.loaded &&
-    consentNeeded(consent, dock.consentDismissed) &&
+    consentLineNeeded(consent, dock.consentDismissed, dock.ask.consentHeld !== undefined) &&
     askModel;
   const consentNode = needsConsent ? (
     <ConsentLine
@@ -572,7 +595,10 @@ export function AskDockHost(props: AskDockHostProps) {
         handlers={{
           onTabChange: t => onTabRef.current(t),
           onClose: () => onCloseRef.current(),
-          onWidthChange: width => askStore.update(s => ({ ...s, width })),
+          onWidthChange: width => {
+            draggedWidth.current = true;
+            askStore.update(s => ({ ...s, width }));
+          },
           onOpenSettings: () => openRoute('settings/ai'),
           onChange: text => setAsk(setField(cur(), text)),
           onSubmit: mode => once('submit', () => perform(submit(cur(), viewRef.current, mode))),

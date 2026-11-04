@@ -30,6 +30,22 @@ export function defaultDockWidth(windowWidth: number): number {
   return windowWidth < 1180 ? 320 : 360;
 }
 
+/**
+ * The width worth writing back to `Settings.ui.dock.width`: only one the owner dragged — the seeded
+ * layout default is never persisted on its own, since absent means "follow the layout" — and only
+ * when it differs from what settings already store.
+ */
+export function dockWidthPersisted(
+  width: number,
+  seed: number,
+  saved: number | undefined,
+  dragged: boolean,
+): number | undefined {
+  if (!dragged && width === seed) return undefined;
+  if (saved === width) return undefined;
+  return width;
+}
+
 let current: DockState = {
   tab: 'ask',
   openTick: 0,

@@ -23,6 +23,7 @@ import { toIsoDateTime } from '../../data';
 import type {
   AiProvider,
   AskTurn as StoredTurn,
+  Consent,
   Conversation,
   ErrorBody,
   ModelRef,
@@ -756,6 +757,55 @@ export function retry(state: AskState, view: DockView, turnId: string): AskStep 
     });
   }
   return startRun(state, turn.question, state.run?.searchAll ?? false);
+}
+
+/**
+ * The consent half of every run start's gate: only a granted, current record lets a question run;
+ * ungranted, stale or still-unloaded records all hold it — unknown is never consent. "Not now" is
+ * not consulted here at all: it hides only the line (`consentLineNeeded`), it is not consent.
+ */
+export function consentGate(consent: Consent | undefined): boolean {
+  return !consent || !consent.granted || consent.needsReconsent;
+}
+
+/**
+ * The `consentNeeded` input a submit answers to. Once the sources answer with no model at all the
+ * gate steps aside — there is nothing to consent to — and the run is refused so the no-provider
+ * pane shows instead.
+ */
+export function consentNeededInput(
+  sourcesLoaded: boolean,
+  model: ModelRef | undefined,
+  consent: Consent | undefined,
+): boolean {
+  return consentGate(consent) && !(sourcesLoaded && model === undefined);
+}
+
+/**
+ * The consent line's visibility: the record is known and still owes consent, unless "Not now"
+ * dismissed it for this version — but a question held behind the gate brings the line back, so a
+ * further Return after "Not now" re-shows it rather than failing silently.
+ */
+export function consentLineNeeded(
+  consent: Consent | undefined,
+  dismissed: number | undefined,
+  held: boolean,
+): boolean {
+  if (consent === undefined || !consentGate(consent)) return false;
+  if (held) return true;
+  return dismissed === undefined || dismissed < consent.currentVersion;
+}
+
+/**
+ * When the palette's pending question may leave the store: the sources have answered and the
+ * consent record is known — earlier there is no gate to hold it behind and it would run past
+ * consent entirely.
+ */
+export function pendingQuestionReady(
+  sourcesLoaded: boolean,
+  consent: Consent | undefined,
+): boolean {
+  return sourcesLoaded && consent !== undefined;
 }
 
 /** The consent line's Allow (the grant already landed): the held question runs now. */
