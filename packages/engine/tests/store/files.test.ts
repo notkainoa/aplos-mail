@@ -196,7 +196,7 @@ test('read and remove never leave the folder, however the path is shaped', async
   assert.equal(await files.read(flat), undefined);
 });
 
-test('remove is idempotent, deletes the file and the emptied account folder', async t => {
+test('remove is idempotent, deletes the file but keeps the emptied account folder', async t => {
   const dir = join(scratch(t), 'attachments');
   const files = await open(dir);
   const path = await files.write('a', 'm', 'p', bytesOf(8));
@@ -205,7 +205,9 @@ test('remove is idempotent, deletes the file and the emptied account folder', as
   assert.equal(existsSync(leaf(dir, path)), false);
   assert.equal(existsSync(join(dir, '.noindex', hex('a'))), true, 'still holds p2');
   await files.remove(other);
-  assert.equal(existsSync(join(dir, '.noindex', hex('a'))), false, 'emptied, removed');
+  // Emptied account folders stay: rmdir-ing one could fail a concurrent write's rename with
+  // ENOENT. Keeping it costs nothing and the next write re-validates it.
+  assert.equal(existsSync(join(dir, '.noindex', hex('a'))), true, 'emptied, kept');
   await files.remove(other); // idempotent
   await files.remove(`${hex('zz')}/${hex('zz')}_${hex('zz')}`); // missing is fine
 });
@@ -359,4 +361,25 @@ test('open clears only .part files from .tmp, nothing else', async t => {
   assert.equal(existsSync(join(tmp, 'abandoned.part')), false);
   assert.equal(existsSync(join(tmp, 'keep.me')), true, 'not ours: left alone');
   assert.match(await files.write('a', 'b', 'c', bytesOf(2)), GRAMMAR);
+});
+
+test('a .tmp swapped for an outside link makes write refuse io and leaves the outside empty', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const files = await open(dir);
+  const outside = join(scratch(t), 'outside-tmp');
+  mkdirSync(outside);
+  const tmp = join(dir, '.noindex', '.tmp');
+  rmSync(tmp, { recursive: true });
+  symlinkSync(outside, tmp);
+  assert.equal(await refusal(files.write('acct', 'msg', 'part', bytesOf(8))), 'io');
+  assert.equal(readdirSync(outside).length, 0, 'no temp escaped into the outside folder');
+});
+
+test('an id that is not well-formed Unicode is refused as a path error', async t => {
+  const dir = join(scratch(t), 'attachments');
+  const files = await open(dir);
+  const lone = 'a\ud800';
+  assert.equal(await refusal(files.write(lone, 'm', 'p', bytesOf(1))), 'path');
+  assert.equal(await refusal(files.write('a', lone, 'p', bytesOf(1))), 'path');
+  assert.equal(await refusal(files.write('a', 'm', lone, bytesOf(1))), 'path');
 });
