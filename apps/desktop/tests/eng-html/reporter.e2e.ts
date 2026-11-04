@@ -720,7 +720,7 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
     await opened.page.close();
   });
 
-  /** The reporter without its frame loop, or without its animation events, or without both. */
+  /** The reporter without its frame and timer loop, or without its animation events, or without both. */
   function without(
     document: string,
     parts: { loop?: boolean; events?: boolean },
@@ -730,11 +730,15 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
       true,
     );
     let script = REPORTER_SOURCE;
-    if (parts.loop) script = script.replace(line, () => 'null');
+    if (parts.loop) {
+      script = script
+        .replace(line, () => 'null')
+        .replace("typeof w.setTimeout === 'function' ? w.setTimeout : null", () => 'null');
+    }
     if (parts.events) {
       script = script
-        .replace("listen.call(d, 'animationend', recheck, true);", () => '')
-        .replace("listen.call(d, 'transitionend', recheck, true);", () => '');
+        .replace("listen.call(d, 'animationend', watch, true);", () => '')
+        .replace("listen.call(d, 'transitionend', watch, true);", () => '');
     }
     expect(script === REPORTER_SOURCE, 'the control changed the script').toBe(false);
     return { document: document.replace(REPORTER_SOURCE, () => script), headers: 'none' };

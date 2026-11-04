@@ -73,13 +73,19 @@ describe('reporter: the shipped file and its hash', () => {
       'top.',
       'parent.location',
       'opener',
-      'setTimeout',
       'setInterval',
       'textContent',
       'innerText',
       'Worker',
     ];
     for (const word of denied) assert.equal(REPORTER_SOURCE.includes(word), false, word);
+  });
+
+  it('reads setTimeout only as a member captured from the window, never as a bare global', () => {
+    const uses = REPORTER_SOURCE.match(/setTimeout/g)?.length ?? 0;
+    const captured = REPORTER_SOURCE.match(/w\.setTimeout/g)?.length ?? 0;
+    assert.ok(uses > 0 && uses === captured, `${uses} uses, ${captured} through w.setTimeout`);
+    assert.equal(/setInterval/.test(REPORTER_SOURCE), false);
   });
 
   it('is placed last in the body, hashed text exactly between the tags', () => {
@@ -108,18 +114,21 @@ interface FakeOptions {
   bodyTop?: number;
   scrollY?: number;
   resizeObserver?: 'ok' | 'throws' | 'missing';
-  /** A clock and a frame queue, as a page has. */
+  /** A page has a clock, animation frames and timers; `false` is a page without them. */
   frames?: boolean;
   marks?: number;
   bodyPaint?: string;
   rootPaint?: string;
 }
 
+const captured: Record<string, boolean> = {};
+
 class FakeTarget {
   kind = 'window';
   constructor(readonly listeners: Record<string, (() => void)[]>) {}
-  addEventListener(type: string, fn: () => void): void {
+  addEventListener(type: string, fn: () => void, capture?: boolean): void {
     (this.listeners[`${this.kind}:${type}`] ??= []).push(fn);
+    captured[`${this.kind}:${type}`] = capture === true;
   }
 }
 
@@ -127,7 +136,7 @@ class FakeElement {
   constructor(
     readonly scroll: number,
     public box: number,
-    readonly paint: string,
+    public paint: string,
     readonly top = 0,
   ) {}
   get scrollHeight(): number {
@@ -162,8 +171,10 @@ class FakeDocument extends FakeTarget {
   get fonts() {
     return { ready: { then: (ok: () => void) => (this.fontsDone = ok) } };
   }
+  queries = 0;
   querySelectorAll(selector: string): { length: number } {
     assert.equal(selector, 'mark.aplos-find');
+    this.queries += 1;
     return { length: this.markCount };
   }
 }
@@ -214,14 +225,22 @@ function fakeWindow(options: FakeOptions = {}) {
   }
   const clock = { now: 0 };
   const queue: (() => void)[] = [];
-  if (options.frames) {
+  const timers: { run: () => void; ms: number }[] = [];
+  if (options.frames !== false) {
     Object.assign(window, {
       performance: { now: () => clock.now },
       requestAnimationFrame: (callback: () => void) => queue.push(callback),
+      setTimeout: (run: () => void, ms: number) => timers.push({ run, ms }),
     });
   }
   const runFrame = () => queue.splice(0).forEach(callback => callback());
-  const fire = (name: string) => listeners[name]?.forEach(fn => fn());
+  const runTimers = () => timers.splice(0).forEach(timer => timer.run());
+  const fireOnly = (name: string) => listeners[name]?.forEach(fn => fn());
+  /** An event, then the next animation frame (what a page on screen does). */
+  const fire = (name: string) => {
+    fireOnly(name);
+    runFrame();
+  };
   return {
     window,
     document,
@@ -232,14 +251,17 @@ function fakeWindow(options: FakeOptions = {}) {
     observers,
     observed,
     fire,
+    fireOnly,
     clock,
     queue,
+    timers,
     runFrame,
+    runTimers,
   };
 }
 
-function run(fake: ReturnType<typeof fakeWindow>): void {
-  runInNewContext(REPORTER_SOURCE, { window: fake.window });
+function run(fake: ReturnType<typeof fakeWindow>, source = REPORTER_SOURCE): void {
+  runInNewContext(source, { window: fake.window });
 }
 
 describe('reporter: behaviour in a fake DOM', () => {
@@ -289,13 +311,15 @@ describe('reporter: behaviour in a fake DOM', () => {
       'window:resize',
     ]) {
       change();
-      fake.listeners[name]?.forEach(fn => fn());
+      fake.fire(name);
       assert.equal(fake.posted.length, expected, name);
     }
     change();
     fake.observers.forEach(callback => callback());
+    fake.runFrame();
     change();
     fake.document.fontsDone?.();
+    fake.runFrame();
     assert.equal(fake.posted.length, expected);
     assert.equal(fake.posted.at(-1)?.message.ready, true);
   });
@@ -306,11 +330,31 @@ describe('reporter: behaviour in a fake DOM', () => {
     for (const name of [
       'window:load',
       'window:error',
+      'document:toggle',
       'document:animationend',
+      'document:animationcancel',
       'document:transitionend',
     ]) {
       assert.equal(fake.listeners[name]?.length, 1, name);
+      assert.equal(captured[name], true, `${name} in the capture phase`);
     }
+  });
+
+  it('measures nothing inside an event: it asks for a look on the next frame', () => {
+    const fake = fakeWindow({ marks: 2 });
+    run(fake);
+    assert.equal(fake.document.queries, 1, 'the marks are counted once, at the start');
+    fake.root.box += 100;
+    for (const name of Object.keys(fake.listeners)) fake.fireOnly(name);
+    assert.equal(fake.posted.length, 1, 'no report inside an event');
+    fake.runFrame();
+    assert.equal(fake.posted.length, 2);
+    assert.equal(fake.posted[1].message.marks, 2);
+    for (let step = 0; step < 50; step++) {
+      fake.root.box += 1;
+      fake.fire('window:resize');
+    }
+    assert.equal(fake.document.queries, 1, 'no query over the letter in all those frames');
   });
 
   it('watches the root and the body for a change of size', () => {
@@ -325,11 +369,24 @@ describe('reporter: behaviour in a fake DOM', () => {
     for (const name of Object.keys(fake.listeners)) fake.fire(name);
     fake.observers.forEach(callback => callback());
     fake.document.fontsDone?.();
+    fake.runFrame();
     assert.equal(fake.posted.length, 1);
   });
 
+  it('does not post for a change of colour alone, but the next report carries the new colour', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.body.paint = 'rgb(1, 2, 3)';
+    fake.fire('window:resize');
+    assert.equal(fake.posted.length, 1, 'a colour animation costs nothing');
+    fake.root.box += 1;
+    fake.fire('window:resize');
+    assert.equal(fake.posted.length, 2);
+    assert.equal(fake.posted[1].message.bg, 'rgb(1, 2, 3)');
+  });
+
   it('posts at most 20 times a second, then the last state in the next second', () => {
-    const fake = fakeWindow({ frames: true });
+    const fake = fakeWindow();
     run(fake);
     for (let step = 1; step <= 40; step++) {
       fake.root.box = 400 + step;
@@ -343,8 +400,78 @@ describe('reporter: behaviour in a fake DOM', () => {
     assert.equal(fake.posted.at(-1)?.message.h, 440);
   });
 
+  it('still posts the held-back state when the quiet period has passed', () => {
+    const fake = fakeWindow();
+    run(fake);
+    for (let step = 1; step <= 40; step++) {
+      fake.root.box = 400 + step;
+      fake.fire('window:resize');
+    }
+    fake.clock.now = 9000; // far past the last change
+    fake.runFrame();
+    assert.equal(fake.posted.at(-1)?.message.h, 440, 'the loop kept going for the held state');
+  });
+
+  it('posts the held-back state from a timer when animation frames never come (off screen)', () => {
+    const fake = fakeWindow();
+    run(fake);
+    assert.equal(fake.timers[0]?.ms, 250, 'a timer is asked for beside the frame');
+    for (let step = 1; step <= 40; step++) {
+      fake.root.box = 400 + step;
+      fake.fireOnly('window:resize');
+      fake.runTimers();
+    }
+    assert.equal(fake.posted.length, 20, 'limited, with no frame having run');
+    fake.clock.now = 1001;
+    fake.runTimers();
+    assert.equal(fake.posted.length, 21);
+    assert.equal(fake.posted.at(-1)?.message.h, 440);
+  });
+
+  it('runs a look once: whichever of the frame and the timer comes first, the other does nothing', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.root.box += 50;
+    fake.fireOnly('window:resize');
+    fake.runTimers();
+    assert.equal(fake.posted.length, 2);
+    const waiting = fake.queue.length;
+    fake.runFrame(); // the first call's frame, now stale, and the new look's frame
+    assert.equal(fake.posted.length, 2, 'nothing more to report');
+    assert.ok(waiting >= 1);
+  });
+
+  it('a stale frame or timer from an earlier look does nothing once a newer look is asked for', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.root.box += 50;
+    fake.fireOnly('window:resize'); // look 1: a frame and a timer
+    fake.runTimers(); // look 1 runs by its timer and asks for look 2
+    assert.equal(fake.posted.length, 2);
+    fake.root.box += 10;
+    const [staleFrame, newFrame] = fake.queue;
+    staleFrame(); // look 1's frame arrives late
+    assert.equal(fake.posted.length, 2, 'it is ignored');
+    newFrame();
+    assert.equal(fake.posted.length, 3, 'look 2 sees the change');
+  });
+
+  it('a report that changes only readiness does not extend the watch', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.clock.now = 3200;
+    fake.runFrame(); // quiet for 3 s: the watch ends
+    assert.equal(fake.queue.length, 0);
+    fake.document.readyStateValue = 'complete';
+    fake.fireOnly('document:animationend'); // calm: the look is asked for on the timer alone
+    fake.runTimers();
+    assert.equal(fake.posted.length, 2, 'the readiness is posted');
+    assert.equal(fake.posted[1].message.ready, true);
+    assert.equal(fake.queue.length, 0, 'but no new size, so the watch is not extended');
+  });
+
   it('looks at every frame for 3 s after a change, then stops', () => {
-    const fake = fakeWindow({ frames: true });
+    const fake = fakeWindow();
     run(fake);
     assert.equal(fake.queue.length, 1, 'watching from the first report');
     fake.clock.now = 1500;
@@ -361,11 +488,160 @@ describe('reporter: behaviour in a fake DOM', () => {
     assert.equal(fake.posted.length, 2);
   });
 
-  it('keeps no frame running in a page without frames, and survives a missing clock', () => {
+  it('lets an animation event re-arm the watch only when it finds a new size', () => {
     const fake = fakeWindow();
+    run(fake);
+    fake.clock.now = 4000;
+    fake.runFrame(); // the first look ends the watch: nothing changed for 3 s
+    fake.runFrame();
+    assert.equal(fake.queue.length, 0);
+    fake.runTimers(); // the startup generation's timer is spent
+    for (let step = 0; step < 5; step++) {
+      fake.clock.now += 1000;
+      fake.fireOnly('document:animationend');
+      // Once the last look found nothing, an event asks for the timer only, not a frame.
+      assert.equal(fake.queue.length, 0, 'no frame look while calm');
+      assert.equal(fake.timers.length, 1, 'one timer look is asked for');
+      fake.runTimers();
+      assert.equal(fake.timers.length, 0, 'it found nothing, so the watch is not re-armed');
+    }
+    fake.fireOnly('document:animationend');
+    fake.root.box += 300;
+    fake.runTimers();
+    assert.equal(fake.queue.length, 1, 'a new size keeps the watch going');
+    fake.clock.now += 1000;
+    fake.fireOnly('window:load'); // a load always re-arms
+    fake.runFrame();
+    fake.clock.now += 2500;
+    fake.runFrame();
+    assert.equal(fake.queue.length, 1, '3 s after the load the watch is still on');
+  });
+
+  it('stops for good after 2,000 reports, the last carrying the state of that moment', () => {
+    const fake = fakeWindow();
+    run(fake);
+    for (let step = 1; step <= 2_500; step++) {
+      fake.root.box = 400 + step;
+      fake.clock.now += 100; // under the 20 a second limit
+      fake.fire('window:resize');
+    }
+    assert.equal(fake.posted.length, 2_000);
+    assert.equal(fake.posted[0].message.h, 500, 'the first report was delivered');
+    assert.equal(
+      fake.posted.at(-1)?.message.h,
+      400 + 1_999,
+      'the last carries the state at the cap',
+    );
+    assert.equal(fake.queue.length, 0, 'no frame is asked for any more');
+    // Post-cap events do not even schedule a look: `live` gates `watch`.
+    const frames = fake.queue.length;
+    const timers = fake.timers.length;
+    fake.fire('window:load');
+    fake.observers.forEach(callback => callback());
+    assert.equal(fake.queue.length, frames, 'no frame after the cap');
+    assert.equal(fake.timers.length, timers, 'no timer after the cap');
+    assert.equal(fake.posted.length, 2_000);
+  });
+
+  it('lets the resize observer ask for a look, but never extend the watch on its own', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.clock.now = 4_000;
+    fake.runFrame(); // the watch ends after 3 quiet seconds
+    fake.runFrame();
+    assert.equal(fake.queue.length, 0);
+    fake.runTimers(); // the startup generation's timer is spent
+    // A sub-pixel wiggle fires the observer for ever at zero post cost. While the last look found
+    // nothing the events are served by the timer alone, so a storm costs about 4 looks a second,
+    // never a forced layout per frame for as long as the letter is read.
+    for (let step = 0; step < 10; step++) {
+      fake.clock.now += 250;
+      fake.observers.forEach(callback => callback());
+      assert.equal(fake.queue.length, 0, 'no frame look while calm');
+      assert.equal(fake.timers.length, 1, 'one timer look per observer event');
+      fake.runTimers();
+      assert.equal(fake.timers.length, 0, 'nothing new: the watch stays off');
+    }
+    assert.equal(fake.posted.length, 1, 'all those looks never posted');
+    // A real size change through the observer re-arms the watch through the posted shape.
+    fake.root.box += 300;
+    fake.observers.forEach(callback => callback());
+    fake.runTimers();
+    assert.equal(fake.posted.length, 2);
+    assert.equal(fake.queue.length, 1, 'the watch is on again after a real change');
+  });
+
+  it('bounds the looks themselves: a storm of them dies at the LOOKS cap', () => {
+    const fake = fakeWindow();
+    const source = REPORTER_SOURCE.replace('const LOOKS = 100000;', 'const LOOKS = 40;');
+    run(fake, source);
+    fake.clock.now = 4_000;
+    fake.runFrame();
+    // 40 looks of a wiggle that never posts (seen counts the startup look and each step's), then
+    // the reporter stops for good: live gates watch, so later events schedule nothing at all.
+    for (let step = 0; step < 100; step++) {
+      fake.clock.now += 250;
+      fake.observers.forEach(callback => callback());
+      fake.runFrame();
+      fake.runTimers();
+    }
+    const frames = fake.queue.length;
+    const timers = fake.timers.length;
+    fake.observers.forEach(callback => callback());
+    fake.fire('window:load');
+    assert.equal(fake.queue.length, frames, 'no frame after the looks cap');
+    assert.equal(fake.timers.length, timers, 'no timer after the looks cap');
+    assert.equal(fake.posted.length, 1, 'the storm never posted');
+  });
+
+  it('a change of frame width does not count toward the lifetime cap', () => {
+    const fake = fakeWindow();
+    const source = REPORTER_SOURCE.replace('const LIFETIME = 2000;', 'const LIFETIME = 5;');
+    run(fake, source);
+    // Five posts at one width would hit the cap, but every new host-set width restarts the
+    // budget. The startup report is the first at width 640, so that width gets three more.
+    for (let round = 0; round < 5; round++) {
+      for (let step = 0; step < (round === 0 ? 3 : 4); step++) {
+        fake.root.box += 1;
+        fake.clock.now += 100;
+        fake.fire('window:resize');
+      }
+      fake.window.innerWidth += 10; // the host moves the frame; the letter cannot game it
+    }
+    assert.equal(fake.posted.length, 20, 'five widths in, and still alive');
+    // And the cap still bites for the height alone: this last width gets five posts, not six.
+    for (let step = 0; step < 6; step++) {
+      fake.root.box += 1;
+      fake.clock.now += 100;
+      fake.fire('window:resize');
+    }
+    assert.equal(fake.posted.length, 25, 'the fifth post at one width is the last');
+  });
+
+  it('without a clock the rate limiter steps aside and every look can post', () => {
+    const fake = fakeWindow();
+    delete (fake.window as { performance?: unknown }).performance;
+    run(fake);
+    assert.equal(fake.posted.length, 1);
+    for (let step = 0; step < 30; step++) {
+      fake.root.box += 1;
+      fake.fireOnly('window:resize');
+      fake.runFrame();
+      fake.runTimers();
+    }
+    // -Infinity never satisfies the per-second window, so `sent` always resets: 30 changes post.
+    assert.equal(fake.posted.length, 31);
+    assert.equal(fake.queue.length, 0, 'and a look still never re-arms');
+  });
+
+  it('keeps no frame running in a page without frames, timers or a clock', () => {
+    const fake = fakeWindow({ frames: false });
     run(fake);
     assert.equal(fake.posted.length, 1);
     assert.equal(fake.queue.length, 0);
+    assert.equal(fake.timers.length, 0);
+    fake.fire('window:load');
+    assert.equal(fake.posted.length, 1);
   });
 
   it('measures the content, never the root scroll height (which is at least the frame)', () => {

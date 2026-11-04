@@ -161,6 +161,7 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
       notifications: args => c.system.notifications(args),
       openSettings: args => c.system.openSettings(args),
     },
+    shell: { open: args => c.shell.open(args) },
     notification: { test: args => c.notification.test(args) },
     search: { remote: args => c.search.remote(op(args) as never) },
     ai: {

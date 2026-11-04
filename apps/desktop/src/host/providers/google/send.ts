@@ -13,6 +13,7 @@ import {
 } from '@aplos/engine/ports';
 import { googleError } from './classify';
 import { isDraftToken } from './draft-token';
+import { headerEnd, headerFields, singleFields } from './mime-headers';
 import { GmailClient, type GmailDeps } from './client';
 import { gmailCost } from './costs';
 
@@ -93,61 +94,6 @@ const PINNED_HEADERS: ReadonlySet<string> = new Set([
 /** A plain `local@domain`, as the outbox writes it (`checkAddress`): no space, quote, comma, angle bracket or CR/LF. */
 const ADDRESS =
   /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-
-interface HeaderField {
-  name: string;
-  value: string;
-}
-
-/** Offset of the CRLF CRLF that ends the header block, or -1. */
-function headerEnd(mime: Uint8Array): number {
-  for (let i = 0; i + 3 < mime.length; i++) {
-    if (mime[i] === 13 && mime[i + 1] === 10 && mime[i + 2] === 13 && mime[i + 3] === 10) return i;
-  }
-  return -1;
-}
-
-/** Every line ends in CRLF; a lone CR or LF, NUL or another control byte is a header the writer never made. */
-function checkHeaderBytes(head: string): void {
-  const joined = head.replace(/\r\n/g, '');
-  if (/[\r\n]/.test(joined)) throw refuse('bareLineBreak');
-  if ([...joined].some(isControl)) throw refuse('controlCharacter');
-}
-
-/** C0 controls and DEL, except the tab a folded line may start with. */
-function isControl(c: string): boolean {
-  const code = c.charCodeAt(0);
-  return (code < 0x20 && code !== 0x09) || code === 0x7f;
-}
-
-/** Unfolds the header block into fields; a line that is neither `Name: value` nor a continuation is refused. */
-function headerFields(head: string): HeaderField[] {
-  checkHeaderBytes(head);
-  const fields: HeaderField[] = [];
-  for (const line of head.split('\r\n')) {
-    const last = fields[fields.length - 1];
-    if (/^[ \t]/.test(line)) {
-      if (!last) throw refuse('malformedHeader');
-      last.value += line;
-      continue;
-    }
-    const match = /^([\x21-\x39\x3b-\x7e]+):(.*)$/.exec(line);
-    if (!match) throw refuse('malformedHeader');
-    fields.push({ name: match[1].toLowerCase(), value: match[2] });
-  }
-  return fields;
-}
-
-/** Each pinned header at most once (RFC 5322 3.6): a second `To:` or `From:` is an injected one. */
-function singleFields(fields: HeaderField[]): Map<string, string> {
-  const byName = new Map<string, string>();
-  for (const field of fields) {
-    if (!PINNED_HEADERS.has(field.name)) throw refuse('unexpectedHeader');
-    if (byName.has(field.name)) throw refuse('duplicateHeader');
-    byName.set(field.name, field.value.trim());
-  }
-  return byName;
-}
 
 /** Splits an address list at commas outside quotes and angle brackets; groups and comments are not the writer's. */
 function addressElements(value: string): string[] {
@@ -240,7 +186,8 @@ export function pinnedMime(payload: SubmissionPayload, account: string): Uint8Ar
   if (mime.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   const end = headerEnd(mime);
   if (end < 0) throw refuse('noHeaderBlock');
-  const byName = singleFields(headerFields(Buffer.from(mime.subarray(0, end)).toString('latin1')));
+  const head = Buffer.from(mime.subarray(0, end)).toString('latin1');
+  const byName = singleFields(headerFields(head, refuse), PINNED_HEADERS, refuse);
   const rcpt = envelopeOf(payload, account);
   const named = checkHeaders(byName, payload, account);
   const bcc = rcpt.filter(r => !named.has(r.toLowerCase()));
