@@ -54,12 +54,13 @@ export const BLOB_TIMES = {
 } as const;
 
 /**
- * `Blob/get` replies in flight. On the real path a reply is cloned once across the utility boundary (Electron's
- * `MessagePortMain` cannot move a buffer), so one read can hold 25 MB in the engine, 25 MB in flight and 25 MB in the
- * receiver: at most two per principal, and 64 MB of blobs being read in all (a single read always fits). More answer a
- * retryable `unavailable`.
+ * Concurrent `Blob/get` reads in the engine (from the check until the handler returns its bytes). It bounds the engine's
+ * own read buffers; the clone in flight across the utility boundary and the receiver's copy are not counted (the slot is
+ * given back before the reply is serialized). At most two reads per principal; listener clients together hold at most
+ * `clientBytes` (one read always fits), and the owner's windows (`app`) have their own two, so a client cannot starve
+ * them. Worst case about 2 x 25 MB for `app` plus 32 MB for clients. More answer a retryable `unavailable`.
  */
-export const BLOB_READS = { perPrincipal: 2, totalBytes: 64 * MB } as const;
+export const BLOB_READS = { perPrincipal: 2, clientBytes: 32 * MB } as const;
 
 /** The copy every caller sees (decisions 3, 4 and 7, and the fixture's per-file sentence). */
 export const BLOB_SENTENCES = {
@@ -135,13 +136,13 @@ export function cleanMime(raw: unknown): string {
   return token.test(value) ? value : 'application/octet-stream';
 }
 
-/** Control characters (C0, DEL, C1), path separators, and the bidi controls that can disguise an extension. */
-function unsafeChar(c: string): boolean {
-  const n = c.codePointAt(0) ?? 0;
-  if (n <= 0x1f || (n >= 0x7f && n <= 0x9f) || c === '/' || c === '\\') return true;
-  if (n === 0x61c || n === 0x200e || n === 0x200f) return true;
-  return (n >= 0x202a && n <= 0x202e) || (n >= 0x2066 && n <= 0x2069);
-}
+/**
+ * Path separators and every Unicode control (Cc: C0, DEL, C1), format character (Cf: the bidi controls that can
+ * disguise an extension, zero-width characters, U+FEFF) and line or paragraph separator (Zl, Zp), so nothing that could
+ * break a MIME `filename=` or mislead the owner survives.
+ */
+const UNSAFE_CHAR = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}/\\]/u;
+const unsafeChar = (c: string) => UNSAFE_CHAR.test(c);
 
 /** A file name with no separator, NUL, control or bidi character, at most 255 characters; undefined when nothing is left. */
 export function cleanName(raw: unknown): string | undefined {
@@ -220,9 +221,9 @@ export function createBlobRuntime(deps: {
   const index = new Map<string, Entry>();
   /** Bytes and count of puts in flight, per principal, so concurrent puts cannot pass a cap together. */
   const pending = new Map<string, { bytes: number; count: number }>();
-  /** `Blob/get` reads in progress, per principal, and the bytes they hold. */
+  /** `Blob/get` reads in progress, per principal, and the bytes listener clients' reads hold together. */
   const reading = new Map<string, number>();
-  let readingBytes = 0;
+  let clientBytes = 0;
   let ready = false;
   let lastSweep = clock.now();
 
@@ -306,21 +307,20 @@ export function createBlobRuntime(deps: {
     return { blobId: id, size: header.size };
   }
 
-  /**
-   * Takes a read slot: at most `BLOB_READS.perPrincipal` reads per principal and `BLOB_READS.totalBytes` of blobs
-   * being read at once (one read always fits). Each costs up to 25 MB here, 25 MB in the clone and 25 MB in the receiver.
-   */
+  /** Takes a read slot (`BLOB_READS`): two per principal, and a shared byte budget for listener clients only. */
   function readSlot(principal: string, size: number): () => void {
     const mine = reading.get(principal) ?? 0;
-    const crowded = readingBytes > 0 && readingBytes + size > BLOB_READS.totalBytes;
+    const counted = principal === 'app' ? 0 : size;
+    const crowded =
+      counted > 0 && clientBytes > 0 && clientBytes + counted > BLOB_READS.clientBytes;
     if (mine >= BLOB_READS.perPrincipal || crowded) throw busy();
     reading.set(principal, mine + 1);
-    readingBytes += size;
+    clientBytes += counted;
     return () => {
       const left = (reading.get(principal) ?? 1) - 1;
       if (left) reading.set(principal, left);
       else reading.delete(principal);
-      readingBytes -= size;
+      clientBytes -= counted;
     };
   }
 
@@ -350,7 +350,10 @@ export function createBlobRuntime(deps: {
     if (refs().live.has(blobId))
       throw contractError({ type: 'stateMismatch', message: BLOB_SENTENCES.waiting });
     index.delete(blobId);
-    await files.remove(blobId);
+    // Released already: a failed delete is logged, never reported (the next start cleans the file).
+    await files
+      .remove(blobId)
+      .catch(() => log.event('rpc.failed', { method: 'Blob/remove', reason: 'release' }));
   }
 
   /** Unheld blobs past their time: uploads 24 h after they were made, handles 30 min after their last read. */
@@ -397,8 +400,10 @@ export function createBlobRuntime(deps: {
     const held = refs().held;
     for (const { id, header } of listed) {
       if (!BLOB_ID_PATTERN.test(id)) continue;
-      const entry: Entry = { ...header, lastReadAt: header.createdAt };
-      const stale = header.kind === 'original' || now >= header.createdAt + BLOB_TIMES.uploadMs;
+      // A time ahead of now (the clock moved back) would keep an upload forever: it counts from now at most.
+      const createdAt = Math.min(header.createdAt, now);
+      const entry: Entry = { ...header, createdAt, lastReadAt: createdAt };
+      const stale = header.kind === 'original' || now >= createdAt + BLOB_TIMES.uploadMs;
       if (!held.has(id) && stale) void files.remove(id).catch(() => undefined);
       else index.set(id, entry);
     }

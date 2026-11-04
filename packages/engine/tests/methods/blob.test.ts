@@ -44,6 +44,7 @@ function memoryFiles() {
     async remove(id) {
       calls.push(`remove ${id}`);
       await gates.remove;
+      if (refuse) throw refuse;
       stored.delete(id);
     },
     async list() {
@@ -485,7 +486,7 @@ test('without a host blob port every Blob/* method is unavailable', () =>
     assert.deepEqual(await refused(release(w.window, `b_${'0'.repeat(32)}`)), absent);
   }, null));
 
-test('reads in flight are capped: two per principal, 64 MB in all; the rest answer a retryable busy', () =>
+test('reads in flight are capped: two per principal, a shared byte budget for clients; the rest answer a retryable busy', () =>
   withWorld(async w => {
     const busy = {
       type: 'unavailable',
@@ -510,21 +511,68 @@ test('reads in flight are capped: two per principal, 64 MB in all; the rest answ
       'a slot frees when its reply is out',
     );
 
-    // Bytes: two 25 MB reads from two principals pass 64 MB with a third; one big read alone always fits.
-    const bigs = [w.window, w.listener('mcp-2'), w.listener('mcp-3')];
-    const ids = [];
-    for (const session of bigs) ids.push((await put(session, new Uint8Array(25 * MB))).blobId);
+    // Bytes: clients share 32 MB (one 25 MB read always fits, a second client's does not), and a client looping
+    // reads on its own big blobs never makes the owner's windows busy.
+    const clients = [w.listener('mcp-2'), w.listener('mcp-3')];
+    const ids: string[] = [];
+    for (const session of clients) ids.push((await put(session, new Uint8Array(25 * MB))).blobId);
+    const mine = await put(w.window, new Uint8Array(25 * MB));
     w.memory.gates.get = new Promise<void>(resolve => (open = resolve));
-    const a = get(bigs[0], ids[0]);
-    const b = get(bigs[1], ids[1]);
-    assert.deepEqual(await refused(get(bigs[2], ids[2])), busy);
+    const a = get(clients[0], ids[0]);
+    assert.deepEqual(await refused(get(clients[1], ids[1])), busy);
+    const owner = [get(w.window, mine.blobId), get(w.window, mine.blobId)];
     open();
-    await Promise.all([a, b]);
-    assert.equal((await get(bigs[2], ids[2])).size, 25 * MB);
+    await Promise.all([a, ...owner]);
+    assert.equal((await get(clients[1], ids[1])).size, 25 * MB);
+    // A client looping two reads on its own 25 MB blob: the window's reads still go through every time.
+    for (let round = 0; round < 3; round++) {
+      w.memory.gates.get = new Promise<void>(resolve => (open = resolve));
+      const loop = [get(clients[0], ids[0]), get(clients[0], ids[0])];
+      const windowRead = get(w.window, mine.blobId);
+      open();
+      const settled = await Promise.allSettled([...loop, windowRead]);
+      assert.equal(settled[2].status, 'fulfilled', 'the owner is never starved by a client');
+    }
     // A refused or failed read gives its slot back too.
     await refused(get(w.window, `b_${'0'.repeat(32)}`));
     await Promise.all([get(w.window, small.blobId), get(w.window, small.blobId)]);
   }));
+
+test('a release whose file delete fails still answers ok: the release already happened', () =>
+  withWorld(async w => {
+    const { blobId } = await put(w.window);
+    w.memory.refuseWith(new BlobFilesError('io'));
+    assert.deepEqual(await release(w.window, blobId), { ok: true });
+    w.memory.refuseWith(undefined);
+    assert.deepEqual(await refused(get(w.window, blobId)), gone);
+    assert.ok(
+      w.records.some(r => r.event === 'rpc.failed' && JSON.stringify(r).includes('Blob/remove')),
+    );
+  }));
+
+test('at start a creation time ahead of the clock counts from now, so the upload still ends', async () => {
+  const memory = memoryFiles();
+  const future = `b_${'9'.repeat(32)}`;
+  memory.stored.set(future, {
+    header: {
+      principal: 'app',
+      kind: 'upload',
+      mime: 'a/b',
+      size: 1,
+      createdAt: T0 + 365 * 24 * HOUR,
+    },
+    bytes: bytesOf(1),
+    mtimeMs: T0,
+  });
+  const w = await world(memory);
+  try {
+    assert.equal((await get(w.window, future)).size, 1, 'fresh for now');
+    await w.clock.advance(24 * HOUR + BLOB_TIMES.sweepMs);
+    assert.equal(memory.stored.has(future), false, 'gone 24 h after the start, not a year later');
+  } finally {
+    await w.cleanup();
+  }
+});
 
 test('a blob the host cannot read right now answers notFound but stays known, and reads again later', () =>
   withWorld(async w => {
@@ -544,6 +592,7 @@ test('mime and name cleaning', () => {
   assert.equal(cleanName('../../etc/passwd'), '....etcpasswd');
   assert.equal(cleanName('a\u0000b\u0007c\u009fd'), 'abcd');
   assert.equal(cleanName('invoice\u202Efdp.exe'), 'invoicefdp.exe');
+  assert.equal(cleanName('a\u2028b\u2029c\uFEFFd\u200Be\u2066f'), 'abcdef', 'Zl, Zp, Cf');
   assert.equal(cleanName('  report.pdf  '), 'report.pdf');
   assert.equal(cleanName('x'.repeat(400))?.length, 255);
   assert.equal(cleanName('😀'.repeat(300)), '😀'.repeat(255), 'never splits a character');
