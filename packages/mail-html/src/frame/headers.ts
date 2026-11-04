@@ -69,16 +69,16 @@ export function isRasterType(mime: unknown): mime is RasterType {
 }
 
 /**
- * A `cid/<n>` or `img/<n>` response. The type is the caller's sniffed type, never the sender's:
- * one of the four raster types is shown inline, anything else (SVG and HTML included) becomes an
- * opaque download that the frame cannot render.
+ * A `cid/<n>` or `img/<n>` response, for bytes `sniffRaster` recognised: one of the four raster
+ * types, shown inline. Anything else never gets here: `Mail/serve` answers it with `notFound()`,
+ * so SVG, HTML or an executable labelled `image/png` is neither rendered nor offered as a download.
  */
-export function resourceHeaders(mime: unknown): FrameHeaders {
-  const raster = isRasterType(mime);
+export function resourceHeaders(mime: RasterType): FrameHeaders {
+  if (!isRasterType(mime)) throw new Error('frame headers: not a raster type');
   return {
     'content-security-policy': RESOURCE_CSP,
-    'content-type': raster ? mime : 'application/octet-stream',
-    'content-disposition': raster ? 'inline' : 'attachment',
+    'content-type': mime,
+    'content-disposition': 'inline',
     ...baseHeaders(),
   };
 }

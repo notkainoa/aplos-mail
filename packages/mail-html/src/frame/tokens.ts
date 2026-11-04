@@ -9,11 +9,15 @@ import { frameUrl, isToken, tokenOf } from './paths';
 //   is refused. Sub-resources (`cid/<n>`, `img/<n>`) are served only after the document, only for
 //   indexes this render issued, and only while the token lives; `img/<n>` never while blocked.
 // - At most 64 live tokens per window: issuing the 65th evicts that window's oldest token.
-// - A token dies on release, on replacement (a newer render for the same slot), on eviction, on
-//   its window closing and at `expiresAt`. A dead token is deleted, never kept as a tombstone.
+// - A token whose document has not been fetched dies at `expiresAt` (about 60 s after issue).
+//   Once its document was served it has no deadline: it dies on release, on replacement (a newer
+//   render for the same slot), on eviction by the cap, or on its window closing, so the lazy
+//   images of a message left open keep loading. A dead token is deleted, never kept as a
+//   tombstone.
 // Every refusal is the same `undefined`, whatever the reason.
 
-export const TOKEN_TTL_MS = 10 * 60 * 1000;
+/** How long an issued token waits for its document request; a served token has no deadline. */
+export const UNFETCHED_TTL_MS = 60 * 1000;
 export const MAX_TOKENS_PER_WINDOW = 64;
 
 export type FrameImagePolicy = 'block' | 'allow';
@@ -27,6 +31,11 @@ export interface FrameRenderInput {
   messageId: string;
   accountScope: string;
   imagePolicy: FrameImagePolicy;
+  /**
+   * What the reader asked for (`Mail/frame.imagePolicy`), kept so a re-render (`Mail/toggleQuotes`) resolves it again
+   * against the allow-list as it is then, instead of carrying an `allow` the owner has since withdrawn.
+   */
+  requestedPolicy?: 'block' | 'load';
   findQuery?: string;
   quotesOpen?: boolean;
   /** The sanitized frame document, reporter included. */
@@ -42,6 +51,7 @@ export interface FrameRecord extends Readonly<Omit<FrameRenderInput, 'document'>
   readonly token: string;
   readonly bodyKind: 'html';
   readonly createdAt: number;
+  /** The deadline for the document request; it no longer applies once the document was served. */
   readonly expiresAt: number;
 }
 
@@ -52,10 +62,15 @@ export interface IssuedFrame {
 }
 
 export interface FrameTokensOptions {
+  /** How long an unfetched token waits for its document request. */
   ttlMs?: number;
   maxPerWindow?: number;
-  /** Fills `bytes` with random values; Web Crypto unless a test injects one. */
-  random?: (bytes: Uint8Array) => void;
+  /**
+   * TESTS ONLY. Replaces Web Crypto `getRandomValues` as the token source, so a test can force
+   * repeats. Production code never passes it: the name says so, and a test spies on Web Crypto to
+   * prove that the default constructor uses it.
+   */
+  insecureTestRandom?: (bytes: Uint8Array) => void;
 }
 
 interface Entry {
@@ -79,9 +94,9 @@ export class FrameTokens {
   private readonly random: (bytes: Uint8Array) => void;
 
   constructor(options: FrameTokensOptions = {}) {
-    this.ttlMs = options.ttlMs ?? TOKEN_TTL_MS;
+    this.ttlMs = options.ttlMs ?? UNFETCHED_TTL_MS;
     this.maxPerWindow = options.maxPerWindow ?? MAX_TOKENS_PER_WINDOW;
-    this.random = options.random ?? webRandom;
+    this.random = options.insecureTestRandom ?? webRandom;
   }
 
   issue(input: FrameRenderInput, now: number): IssuedFrame {
@@ -143,7 +158,7 @@ export class FrameTokens {
     }
   }
 
-  /** Deletes every expired token. */
+  /** Deletes every unfetched token past its deadline. */
   sweep(now: number): void {
     for (const windowId of [...this.byWindow.keys()]) this.sweepWindow(windowId, now);
   }
@@ -156,7 +171,7 @@ export class FrameTokens {
     if (!isToken(token)) return undefined;
     const entry = this.byToken.get(token);
     if (!entry || entry.record.windowId !== windowId) return undefined;
-    if (now >= entry.record.expiresAt) {
+    if (expired(entry, now)) {
       this.remove(entry.record);
       return undefined;
     }
@@ -165,7 +180,7 @@ export class FrameTokens {
 
   private sweepWindow(windowId: string, now: number): void {
     for (const entry of [...(this.byWindow.get(windowId)?.values() ?? [])]) {
-      if (now >= entry.record.expiresAt) this.remove(entry.record);
+      if (expired(entry, now)) this.remove(entry.record);
     }
   }
 
@@ -209,6 +224,11 @@ export class FrameTokens {
     tokens?.delete(record.token);
     if (tokens?.size === 0) this.byWindow.delete(record.windowId);
   }
+}
+
+/** Only a token still waiting for its document can expire. */
+function expired(entry: Entry, now: number): boolean {
+  return !entry.documentServed && now >= entry.record.expiresAt;
 }
 
 function freeze(

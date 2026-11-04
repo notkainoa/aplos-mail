@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@aplos/contract": "*",
+    "@aplos/mail-html": "*",
     "fast-xml-parser": "^5.11.2"
   },
   "devDependencies": {
