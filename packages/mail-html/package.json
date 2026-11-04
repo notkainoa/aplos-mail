@@ -6,7 +6,8 @@
   "description": "Aplos Mail's email HTML sanitizer: a pure-JS, parser-based allowlist (no DOM, no Node), bundled outside the engine core",
   "license": "UNLICENSED",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./frame": "./src/frame/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
