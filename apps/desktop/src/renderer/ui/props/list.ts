@@ -323,6 +323,8 @@ export type ChipProps =
       sizeBytes: number;
       /** Download state. */
       state: 'ready' | 'downloading' | 'failed';
+      /** The file's kind as an icon (`file-text` PDF, `file-image`, `file-archive`, `file-sheet`, `calendar`, `file`); default `file-text`. A failed chip shows `alert`. */
+      icon?: IconName;
       /** Open or download. */
       onOpen: () => void;
       /** Try again after a failure. */

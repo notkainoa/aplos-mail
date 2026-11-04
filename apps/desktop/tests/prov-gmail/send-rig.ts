@@ -176,6 +176,8 @@ export class UploadBridge {
   failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt' | 'portal' | 'acceptThenHang';
   /** Rewrites a `messages.list` search (to prove the metadata check stands even if the search let a draft through). */
   rewriteQuery?: (q: string) => string;
+  /** The label a `messages.list` by label alone (no `q`: the recent-SENT fallback) reads instead of the one asked for (a listing that returns a message the SENT check must refuse). */
+  listLabel?: string;
   /** Every `messages.list` by label alone (no `q`: the recent-SENT fallback) answers 500. */
   failSentListing?: boolean;
   /** Upload requests go to this fetch instead of the bridge (a real HTTP server, for redirect tests). */
@@ -191,6 +193,8 @@ export class UploadBridge {
     const listing = url.pathname.endsWith('/messages') && (init?.method ?? 'GET') === 'GET';
     if (this.failSentListing && listing && !url.searchParams.has('q'))
       return Promise.resolve(failure(500, 'backendError'));
+    if (this.listLabel && listing && url.searchParams.has('labelIds') && !url.searchParams.has('q'))
+      url.searchParams.set('labelIds', this.listLabel);
     if (this.rewriteQuery && listing && url.searchParams.has('q'))
       url.searchParams.set('q', this.rewriteQuery(url.searchParams.get('q')!));
     return this.emu.fetch(url.href, init);
@@ -442,15 +446,28 @@ export interface SendWorldOptions {
   useDraftsSend?: boolean;
   /** The adapter's own `GmailPacer` in front of the governor (default off: the governor paces). */
   pace?: boolean;
+  /** What `messages.send` does to our Message-ID (the emulator's `sendIdentity`; real Gmail rewrites it). */
+  sendIdentity?: 'kept' | 'rewritten';
+  /** The emulator's search index lag after a send, in ms of its clock (`searchLagMs`). */
+  searchLagMs?: number;
+  /** The mailbox owner (default: the emulator's test user). */
+  user?: { sub: string; email: string; name: string };
+  /** The fake clock's start (default: the emulators' epoch). */
+  clockStart?: number;
 }
 
 export async function sendWorld(options: SendWorldOptions = {}): Promise<SendWorld> {
-  const clock = new FakeClock();
+  const clock = new FakeClock(
+    options.clockStart === undefined ? {} : { start: options.clockStart },
+  );
   const faults = createFaultInjector();
   const emu = createGmailEmulator({
     clock,
     retryAfter: 'none',
     faults,
+    ...(options.sendIdentity ? { sendIdentity: options.sendIdentity } : {}),
+    ...(options.searchLagMs !== undefined ? { searchLagMs: options.searchLagMs } : {}),
+    ...(options.user ? { users: [options.user] } : {}),
     ...(options.sendLimitPerDay !== undefined ? { sendLimitPerDay: options.sendLimitPerDay } : {}),
   });
   emu.oauth.addClient(CLIENT_ID);

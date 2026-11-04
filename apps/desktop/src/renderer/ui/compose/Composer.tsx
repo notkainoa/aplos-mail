@@ -82,9 +82,9 @@ export function Composer(props: ComposerProps) {
             {editor}
           </div>
           {blocked?.field === 'body' ? blockedLine : null}
-          {suggestion ? <Suggestion {...suggestion} /> : null}
           {conflict ? <ConflictBar conflict={conflict} /> : null}
         </div>
+        {suggestion ? <Suggestion {...suggestion} /> : null}
       </div>
       <footer className="ui-composer__foot">
         <ComposeFooter

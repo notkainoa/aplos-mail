@@ -30,25 +30,25 @@ If a screen seems to need a new variant, colour or size, the screen is wrong (DE
 
 Build screens from these parts. Never style a control inside a screen, and never add a fourth button style, a new pill or an ornament. None of these exist and none may be added: `PostEdge`, `SkyScene`, `MarginRail`, `Flap`, `Letterhead`, a reader `Avatar`. A few surfaces in the mockups have no component of their own. Screens compose them from existing parts:
 
-| Surface | Compose from |
-|---|---|
-| Pane header (back, crumb, tools, Ask, calendar button, bulk bar) | `Pane` with structured `header: PaneHeaderProps` (no free slot; at most three tools by type) |
-| Sidebar rows and Settings nav | `Puck` (`kind: 'selection'`, `role: 'navigation'`, vertical; `tooltip` for Done's line) + `NavHead` |
-| Account switcher and its menu | `AccountSwitcher` + `Menu` (`swatch` one or several colours, `detail`, `inlineAction`) |
-| Pickers ("Groq ▾", "500 requests ▾") | `Button` (`trailingIcon: 'chevron-down'`, `popup.kind: 'menu'`) + `Menu` (`checkedId`, so items are `menuitemradio`). There is no listbox popup. This is the frozen Select: there is no `Select` component. |
-| Theme, density, RSVP | `Puck` (`kind: 'segmented'`) |
-| Radio rows (the onboarding AI provider choice) | `ChoiceGroup` (the radiogroup, roving tabindex, ↑/↓) around `ChoiceRow`s with `role: 'radio'`. Short segmented choices stay a `Puck` (`role: 'radio'`). |
-| Onboarding step dashes ("Step 2 of 4") | `OnboardingStep` `footer.dashes {step, of}`. There is no `StepDashes` component. |
-| The first-sync drill's practice letters | `ListBox` + `ListRow` and `FocusSlot` › `FocusLetter` with invented values. Their props are plain strings and callbacks, never engine rows, so the drill makes no data call. |
-| A Settings row reachable from ⌘K | `SettingRow` with `paletteId` = the id it registered with `registerSetting` (`renderer/commands`) |
-| Account colour | `SwatchPicker` in a `SettingRow` |
-| Event detail (day rail, popover) | `EventDetail` (`presentation: 'rail'`, or `'popover'` inside `Popover`) |
-| Low-importance sheet | `LowSheet` |
-| "+N" stack | `Menu` |
-| The thread | `Text` (`variant: 'label'`, `as: 'h2'`) for the subject line, `EarlierMessages`, `ThreadMessage` (body from `renderer/mailframe`), `LoadingLine`, `ReplyStub` |
-| Onboarding steps and first sync | `OnboardingStep` + `ChoiceRow` + `ConsentCard` + `TextField` + `ProgressSegments` (`'waiting'` for the OAuth wait, `'checkpoints'`, `'ready'`) + `Text` |
-| Undo send with no visible thread | `ToastStack.undoSend` (the same `UndoTray`, placement `'toast'`) |
-| AI draft text in the editor | Editor data: ui-reader's editor renders the dim text; `Composer.suggestion` / `InlineReply.suggestion` show the hint line |
+| Surface                                                          | Compose from                                                                                                                                                                                                |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pane header (back, crumb, tools, Ask, calendar button, bulk bar) | `Pane` with structured `header: PaneHeaderProps` (no free slot; at most three tools by type)                                                                                                                |
+| Sidebar rows and Settings nav                                    | `Puck` (`kind: 'selection'`, `role: 'navigation'`, vertical; `tooltip` for Done's line) + `NavHead`                                                                                                         |
+| Account switcher and its menu                                    | `AccountSwitcher` + `Menu` (`swatch` one or several colours, `detail`, `inlineAction`)                                                                                                                      |
+| Pickers ("Groq ▾", "500 requests ▾")                             | `Button` (`trailingIcon: 'chevron-down'`, `popup.kind: 'menu'`) + `Menu` (`checkedId`, so items are `menuitemradio`). There is no listbox popup. This is the frozen Select: there is no `Select` component. |
+| Theme, density, RSVP                                             | `Puck` (`kind: 'segmented'`)                                                                                                                                                                                |
+| Radio rows (the onboarding AI provider choice)                   | `ChoiceGroup` (the radiogroup, roving tabindex, ↑/↓) around `ChoiceRow`s with `role: 'radio'`. Short segmented choices stay a `Puck` (`role: 'radio'`).                                                     |
+| Onboarding step dashes ("Step 2 of 4")                           | `OnboardingStep` `footer.dashes {step, of}`. There is no `StepDashes` component.                                                                                                                            |
+| The first-sync drill's practice letters                          | `ListBox` + `ListRow` and `FocusSlot` › `FocusLetter` with invented values. Their props are plain strings and callbacks, never engine rows, so the drill makes no data call.                                |
+| A Settings row reachable from ⌘K                                 | `SettingRow` with `paletteId` = the id it registered with `registerSetting` (`renderer/commands`)                                                                                                           |
+| Account colour                                                   | `SwatchPicker` in a `SettingRow`                                                                                                                                                                            |
+| Event detail (day rail, popover)                                 | `EventDetail` (`presentation: 'rail'`, or `'popover'` inside `Popover`)                                                                                                                                     |
+| Low-importance sheet                                             | `LowSheet`                                                                                                                                                                                                  |
+| "+N" stack                                                       | `Menu`                                                                                                                                                                                                      |
+| The thread                                                       | `Text` (`variant: 'label'`, `as: 'h2'`) for the subject line, `EarlierMessages`, `ThreadMessage` (body from `renderer/mailframe`), `LoadingLine`, `ReplyStub`                                               |
+| Onboarding steps and first sync                                  | `OnboardingStep` + `ChoiceRow` + `ConsentCard` + `TextField` + `ProgressSegments` (`'waiting'` for the OAuth wait, `'checkpoints'`, `'ready'`) + `Text`                                                     |
+| Undo send with no visible thread                                 | `ToastStack.undoSend` (the same `UndoTray`, placement `'toast'`)                                                                                                                                            |
+| AI draft text in the editor                                      | Editor data: ui-reader's editor renders the dim text; `Composer.suggestion` / `InlineReply.suggestion` show the hint line                                                                                   |
 
 ## Keys
 
@@ -71,10 +71,10 @@ Build screens from these parts. Never style a control inside a screen, and never
 
 ## Shared infrastructure (ui-foundation)
 
-| File | What it is |
-|---|---|
-| `apps/desktop/src/renderer/ui/buttons-keys/keyHints.ts` | The key-hints context and provider (`KeyHintsContextValue`), read by `Kbd` and every control with a keycap |
-| `apps/desktop/src/renderer/ui/format.ts` | The one formatter for every `IsoDateTime` / `IsoDate` prop (relative dates, times, ranges, "Resuming at 2:14 PM") |
+| File                                                    | What it is                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src/renderer/ui/buttons-keys/keyHints.ts` | The key-hints context and provider (`KeyHintsContextValue`), read by `Kbd` and every control with a keycap        |
+| `apps/desktop/src/renderer/ui/format.ts`                | The one formatter for every `IsoDateTime` / `IsoDate` prop (relative dates, times, ranges, "Resuming at 2:14 PM") |
 
 ## Added at the freeze review
 
@@ -104,16 +104,16 @@ The contract freezes after day 3. Changes may only be additive: a new optional p
 
 ## Families and lanes
 
-| Family | Components | Plain version / refined by |
-|---|---|---|
-| `buttons-keys` | Button, Kbd, Tooltip | ui-foundation |
-| `surfaces` | Pane, PageHead, NavHead, AccountSwitcher, Text, Menu, Popover, Dialog, Confirm, Puck, Toast, ToastStack | ui-foundation |
-| `list` | ListBox, ListGroup, ListRow, SectionHeader, FocusSlot, FocusLetter, LowBand, LowSheet, CommitChip, CommitEdge, Chip, EmptyLine, ErrorLine | ui-foundation (motion by ui-shell) |
-| `reader` | ReaderHead, EarlierMessages, ThreadMessage, LoadingLine, ReplyStub, Summary, Why, UndoTray | ui-foundation; used by ui-reader |
-| `compose` | Composer, InlineReply, RecipientField, DraftState, Suggestion, LevelMeter | ui-foundation; used by ui-reader |
-| `ask` | AskDock, AskTurn, StepLog, Citation, ProposalCard, Palette, SearchField, OperatorToken | ui-ask |
-| `calendar` | MiniMonth, CalendarList (plain: ui-foundation), CalendarGrid, EventBlock, PlanOutline, NowLine, EventDetail, DatePresets (plain: ui-foundation, used by ui-home) | ui-calendar |
-| `settings` | SettingRow, ProviderTable, KeyRecorder | ui-settings |
-| `status` | StatusSlot, ReconnectSheet, ProgressSegments, FatalScreen, Spinner | ui-foundation; used by ui-shell and ui-onboard |
-| `controls` | Switch, Checkbox, SwatchPicker (refined by ui-settings), TextField, ShortcutSheet | ui-foundation |
-| `onboarding` | OnboardingStep, ChoiceRow, ChoiceGroup, ConsentCard | plain: ui-foundation; refined by ui-onboard |
+| Family         | Components                                                                                                                                                       | Plain version / refined by                     |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `buttons-keys` | Button, Kbd, Tooltip                                                                                                                                             | ui-foundation                                  |
+| `surfaces`     | Pane, PageHead, NavHead, AccountSwitcher, Text, Menu, Popover, Dialog, Confirm, Puck, Toast, ToastStack                                                          | ui-foundation                                  |
+| `list`         | ListBox, ListGroup, ListRow, SectionHeader, FocusSlot, FocusLetter, LowBand, LowSheet, CommitChip, CommitEdge, Chip, EmptyLine, ErrorLine                        | ui-foundation (motion by ui-shell)             |
+| `reader`       | ReaderHead, EarlierMessages, ThreadMessage, LoadingLine, ReplyStub, Summary, Why, UndoTray                                                                       | ui-foundation; used by ui-reader               |
+| `compose`      | Composer, InlineReply, RecipientField, DraftState, Suggestion, LevelMeter                                                                                        | ui-foundation; used by ui-reader               |
+| `ask`          | AskDock, AskTurn, StepLog, Citation, ProposalCard, Palette, SearchField, OperatorToken                                                                           | ui-ask                                         |
+| `calendar`     | MiniMonth, CalendarList (plain: ui-foundation), CalendarGrid, EventBlock, PlanOutline, NowLine, EventDetail, DatePresets (plain: ui-foundation, used by ui-home) | ui-calendar                                    |
+| `settings`     | SettingRow, ProviderTable, KeyRecorder                                                                                                                           | ui-settings                                    |
+| `status`       | StatusSlot, ReconnectSheet, ProgressSegments, FatalScreen, Spinner                                                                                               | ui-foundation; used by ui-shell and ui-onboard |
+| `controls`     | Switch, Checkbox, SwatchPicker (refined by ui-settings), TextField, ShortcutSheet                                                                                | ui-foundation                                  |
+| `onboarding`   | OnboardingStep, ChoiceRow, ChoiceGroup, ConsentCard                                                                                                              | plain: ui-foundation; refined by ui-onboard    |

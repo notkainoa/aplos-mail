@@ -4,11 +4,22 @@
  * Binding keys is the registry's resolver and the key listener, which are not mounted here. It also hands the toast
  * store a command runner over the same registry and stack, so a toast's Undo runs `app.undo` unless it can undo its own operation.
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import {
   createAppRegistry,
   DEFAULT_KEY_PREFS,
   keyPrefsFromUi,
+  type CommandId,
   type ContextName,
 } from '../commands';
 import { api, useSettings } from '../data';
@@ -21,6 +32,17 @@ import { getTarget } from './store-target';
 import { toastCommandRunner, toastContext } from './toast-runner';
 
 const META_KEY = 'Meta';
+
+const RunCommandContext = createContext<((commandId: CommandId) => void) | null>(null);
+
+/** Runs a command id through the shared registry in the shell's current context stack (a pane header tool uses it). A no-op outside the providers. */
+export function useRunCommand(): (commandId: CommandId) => void {
+  return useContext(RunCommandContext) ?? noRun;
+}
+
+function noRun(): void {
+  return undefined;
+}
 
 /** A toast's Undo: undoes that toast's own operation (its id), not the newest change. True once the data layer took the request. */
 export function undoToastOperation(opId: string): boolean {
@@ -109,14 +131,27 @@ export function KeysProviders({ screen, sheetOpen, children }: KeysProvidersProp
     setToastUndoRunner(undoToastOperation);
     return () => setToastUndoRunner(null);
   }, []);
+  const runCommand = useCallback(
+    (commandId: CommandId) => {
+      const { stack: now, prefs: nowPrefs, layers: nowLayers } = latest.current;
+      const base = toastContext(now, getTarget(), nowPrefs);
+      registry.run(commandId, { ...base, conditions: layerConditions(nowLayers) });
+    },
+    [registry],
+  );
   const showKeys = resolveShowKeys({ all: ui?.keyHints === 'always', held });
   return (
     <ShellRegistryProvider value={shell}>
-      <KeyHintsProvider value={{ showKeys }}>
-        <CommandKeysProvider describe={(id, from) => registry.describeKeys(id, from)} stack={stack}>
-          {children}
-        </CommandKeysProvider>
-      </KeyHintsProvider>
+      <RunCommandContext.Provider value={runCommand}>
+        <KeyHintsProvider value={{ showKeys }}>
+          <CommandKeysProvider
+            describe={(id, from) => registry.describeKeys(id, from)}
+            stack={stack}
+          >
+            {children}
+          </CommandKeysProvider>
+        </KeyHintsProvider>
+      </RunCommandContext.Provider>
     </ShellRegistryProvider>
   );
 }

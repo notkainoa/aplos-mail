@@ -94,6 +94,14 @@ export const COMPOSE_COMMANDS: readonly CommandSpec[] = [
     group: 'Actions',
   },
   {
+    // The compose page header's ⋯ (DESIGN 7.6: send from, schedule, discard); ⌘/ stays the format menu.
+    id: 'compose.more',
+    label: 'More',
+    keys: [],
+    contexts: ['compose'],
+    group: 'Actions',
+  },
+  {
     id: 'compose.popOut',
     label: 'Pop out the reply',
     keys: [],

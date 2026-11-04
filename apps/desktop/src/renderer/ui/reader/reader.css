@@ -50,163 +50,75 @@
   white-space: nowrap;
 }
 
-/* ---------- Reader head: sender line, summary, one action row ---------- */
+/* ---------- Reader head: the summary, its due chip and a hairline ---------- */
 
 .ui-reader-head {
   position: relative;
   min-width: 0;
 }
-.ui-reader-head__from {
+.ui-reader-head__due {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  min-height: var(--control-xs);
-}
-.ui-reader-head__name {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font: var(--type-title);
-  letter-spacing: var(--track-title);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-reader-head__to {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-reader-head__when {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.ui-reader-head__summary {
   margin-top: var(--space-3);
 }
-.ui-reader-head__actions {
+.ui-reader-head__rule {
+  height: var(--hairline);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 0;
+  background-color: var(--line);
+}
+
+/* ---------- Reader actions: the pinned bar ----------
+   In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
+   bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
+   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
+   soft blurred edge) spans the column and a margin either side behind it, so text never shows beside or through the pill.
+   The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
+   take no space. */
+
+.ui-reader-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding: var(--space-6) 0 var(--space-4);
+  pointer-events: none;
+}
+.ui-reader-actions::before {
+  content: '';
+  position: absolute;
+  top: var(--space-6);
+  bottom: 0;
+  /* The column and a 24 px margin each side: all the text and card edges there are, so nothing needs a pane-wide scrim. */
+  inset-inline: calc(-1 * var(--space-6));
+  background: var(--canvas);
+  /* The soft edge is a blurred shadow in the same colour (no gradient): solid 12 px above the pill, fading over 24. */
+  box-shadow: 0 0 var(--space-6) var(--space-3) var(--canvas);
+}
+.ui-reader-actions__bar {
+  box-sizing: border-box;
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  min-width: 0;
-  margin-top: var(--space-5);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+  box-shadow: var(--elev-float);
+  pointer-events: auto;
 }
-.ui-reader-head__suggest {
-  display: inline-flex;
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-right: var(--space-2);
-}
-.ui-reader-head__suggest .ui-list-btn {
-  flex: 0 1 auto;
-}
-
-/* ---------- Earlier messages ---------- */
-
-.ui-earlier-messages {
+/* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
+.ui-reader-actions[data-demoted='true'] {
   position: relative;
+  bottom: auto;
 }
-.ui-earlier-messages__toggle {
-  box-sizing: content-box;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  height: var(--message-collapsed);
-  margin: 0 calc(-1 * var(--space-2));
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background-color: transparent;
-  color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
-  text-align: left;
-  cursor: default;
-  transition:
-    background-color var(--dur-hover) var(--ease-std),
-    color var(--dur-hover) var(--ease-std);
+.ui-reader-actions[data-demoted='true']::before {
+  content: none;
 }
-.ui-earlier-messages__line {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.ui-earlier-messages__list[hidden] {
-  display: none;
-}
-.ui-earlier-messages__message {
-  box-sizing: border-box;
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--sender-w) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  height: var(--message-collapsed);
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
-  color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
-  text-align: left;
-  cursor: default;
-  transition: color var(--dur-hover) var(--ease-std);
-}
-.ui-earlier-messages__from {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-2);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__preview {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__date {
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-/* The one thread cursor: a 2 px accent rail beside the line it is on. */
-.ui-earlier-messages__message[data-cursor='true']::before {
-  content: '';
-  position: absolute;
-  top: var(--space-2);
-  bottom: var(--space-2);
-  left: calc(-1 * var(--space-5));
-  width: var(--thread-rail);
-  border-radius: var(--radius-pill);
-  background-color: var(--accent);
+.ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {
+  box-shadow: var(--elev-pane);
 }
 
 /* ---------- Thread message ---------- */
@@ -228,11 +140,14 @@
   background-color: var(--accent);
 }
 .ui-thread-message__head {
+  min-width: 0;
+  margin-bottom: var(--space-3);
+}
+.ui-thread-message__line {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
-  margin-bottom: var(--space-4);
 }
 .ui-thread-message__from {
   flex: 0 1 auto;
@@ -264,6 +179,52 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* A folded earlier message: one button holds who, when and the excerpt, and stretches over the whole card (a pseudo-element, so
+   nothing moves); once open only the head is the target, so links and attachments keep their own clicks. */
+.ui-thread-message[data-fold='folded'] .ui-thread-message__head {
+  margin-bottom: 0;
+}
+.ui-thread-message__toggle {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.ui-thread-message[data-fold='folded'] .ui-thread-message__toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.ui-thread-message__excerpt[data-empty='true'] {
+  color: var(--dim);
+}
+/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. */
+.ui-thread-message__excerpt {
+  display: -webkit-box;
+  margin-top: var(--space-3);
+  overflow: hidden;
+  color: var(--ink-2);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.ui-thread-message__toggle:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
 .ui-thread-message__images,
 .ui-thread-message__quoted {
   margin-left: calc(-1 * var(--space-3));
@@ -272,7 +233,9 @@
   margin-bottom: var(--space-3);
 }
 .ui-thread-message__quoted {
-  margin-top: var(--space-3);
+  /* Its 28 px box carries its own 6 px above and below the words: pull the card's bottom edge in by the extra. */
+  margin-top: var(--space-2);
+  margin-bottom: calc(-1 * var(--space-2));
 }
 .ui-thread-message__body {
   max-width: var(--measure-read);
@@ -280,6 +243,10 @@
   font: var(--type-read);
   letter-spacing: var(--track-read);
   overflow-wrap: anywhere;
+}
+/* An HTML mail's sheet runs the card's full content width; only text keeps the reading measure. */
+.ui-thread-message__body:has(.aplos-mailframe__frame) {
+  max-width: none;
 }
 .ui-thread-message__body p {
   margin: 0;
@@ -344,7 +311,7 @@
   border: 0;
   border-radius: var(--radius-md);
   background-color: transparent;
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
   color: var(--dim);
   font: var(--type-base);
   letter-spacing: var(--track-base);
@@ -366,9 +333,7 @@
   margin-top: var(--space-2);
 }
 
-.ui-reply-stub:focus-visible,
-.ui-earlier-messages__toggle:focus-visible,
-.ui-earlier-messages__message:focus-visible {
+.ui-reply-stub:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
@@ -469,14 +434,10 @@
 }
 
 @media (hover: hover) {
-  .ui-earlier-messages__toggle:hover {
-    background-color: var(--hover);
-    color: var(--ink-2);
-  }
-  .ui-earlier-messages__message:hover {
-    color: var(--ink-2);
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from {
+    color: var(--ink);
   }
   .ui-reply-stub:hover {
-    box-shadow: inset 0 0 0 1px var(--control-edge);
+    box-shadow: inset 0 0 0 var(--hairline) var(--control-edge);
   }
 }

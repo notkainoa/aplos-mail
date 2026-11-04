@@ -61,7 +61,7 @@ export interface MailListOptions {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
   /** Open a thread, draft or submission (Return, O, double-click). Absent until the reader and composer land. */
-  readonly onOpen?: (id: string, kind: OpenKind) => void;
+  readonly onOpen?: (id: string, kind: OpenKind, listIds?: readonly string[]) => void;
   /** Permanent deletion, offered in Trash and Spam behind a Confirm. Absent: the key does nothing there. */
   readonly deleteForever?: (ids: readonly string[]) => Promise<unknown>;
   /** A transient the screen has open on top of the list (the Later date picker): it owns the keys while it shows. */
@@ -247,7 +247,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
         selection: bulk.controls,
         openMore: () => openBulkMore.current(),
         commit: motion.commit,
-        open: (id, kind) => live.current.onOpen?.(id, kind),
+        open: (id, kind, listIds) => live.current.onOpen?.(id, kind, listIds),
         confirmation: () => live.current.confirmation,
         setConfirmation,
         undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
