@@ -104,6 +104,9 @@ interface FakeOptions {
   box?: number;
   rootScroll?: number;
   bodyScroll?: number;
+  /** The body's top edge in the viewport, and how far the frame is scrolled. */
+  bodyTop?: number;
+  scrollY?: number;
   resizeObserver?: 'ok' | 'throws' | 'missing';
   marks?: number;
   bodyPaint?: string;
@@ -123,12 +126,13 @@ class FakeElement {
     readonly scroll: number,
     readonly box: number,
     readonly paint: string,
+    readonly top = 0,
   ) {}
   get scrollHeight(): number {
     return this.scroll;
   }
-  getBoundingClientRect(): { height: number } {
-    return { height: this.box };
+  getBoundingClientRect(): { height: number; top: number } {
+    return { height: this.box, top: this.top };
   }
 }
 
@@ -176,6 +180,7 @@ function fakeWindow(options: FakeOptions = {}) {
     options.bodyScroll ?? 300,
     0,
     options.bodyPaint ?? 'rgb(255, 255, 255)',
+    options.bodyTop ?? 0,
   );
   const document = new FakeDocument(listeners, root, body, options.marks ?? 0);
   const window = Object.assign(new FakeTarget(listeners), {
@@ -187,6 +192,7 @@ function fakeWindow(options: FakeOptions = {}) {
     Element: FakeElement,
     EventTarget: FakeTarget,
     innerWidth: options.innerWidth ?? 640,
+    scrollY: options.scrollY ?? 0,
     location: { pathname: options.pathname ?? `/${TOKEN}/` },
     parent: {
       postMessage: (message: Record<string, unknown>, target: string) => {
@@ -260,6 +266,26 @@ describe('reporter: behaviour in a fake DOM', () => {
     const fake = fakeWindow({ box: 120, rootScroll: 900, bodyScroll: 90 });
     run(fake);
     assert.equal(fake.posted[0].message.h, 120);
+  });
+
+  it('adds the body top and the scroll offset to the body scroll height', () => {
+    // A body that starts 40 px down, in a frame scrolled 25 px: its content ends at 40 + 25 + 400.
+    const fake = fakeWindow({ box: 120, bodyScroll: 400, bodyTop: 40, scrollY: 25 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 465);
+    const above = fakeWindow({ box: 120, bodyScroll: 400, bodyTop: -300 });
+    run(above);
+    assert.equal(above.posted[0].message.h, 120, 'a body above the viewport never lowers the root');
+  });
+
+  it('rounds the body term up and ignores a scroll offset that is not a number', () => {
+    const fake = fakeWindow({ box: 10, bodyScroll: 100.2, bodyTop: 0.4 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 101);
+    const odd = fakeWindow({ box: 10, bodyScroll: 100 });
+    Object.assign(odd.window, { scrollY: 'x' });
+    run(odd);
+    assert.equal(odd.posted[0].message.h, 100);
   });
 
   it('counts content that spills past the root box', () => {

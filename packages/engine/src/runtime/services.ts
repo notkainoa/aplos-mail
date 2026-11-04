@@ -1,5 +1,6 @@
 import type {
   AccountActorHost,
+  BlobFiles,
   CalendarPort,
   Clock,
   DeadlineRegistry,
@@ -48,6 +49,8 @@ export interface EngineServices {
   unsubscribe: UnsubscribePort;
   /** The data key that seals credentials, unwrapped by the host (`eng-host`). */
   keys: KeyProvider;
+  /** Durable blob bytes (`host/blobs.ts`, `eng-host`); only the blob runtime calls it. Absent: `Blob/*` is `unavailable`. */
+  blobFiles: BlobFiles;
   /** Frames out to connections, stamped with `{dbEpoch, seq}`. */
   frames: FrameBus;
   /** Cryptographic randomness (Web Crypto by default; a phone host may supply its own). */

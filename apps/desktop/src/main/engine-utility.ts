@@ -266,6 +266,8 @@ export function startEngineUtility(): void {
       wrapPort: raw => {
         const port = raw as MainPort;
         const end: EnginePortEnd = {
+          // `MessagePortMain.postMessage` moves only ports (a buffer in its list throws), so a blob reply's
+          // `transfer` is left out here: the bytes are cloned across the process boundary once.
           post: message => port.postMessage(message),
           onMessage: handler => void port.on('message', event => handler(event.data)),
           onClose: handler => void port.on('close', handler),

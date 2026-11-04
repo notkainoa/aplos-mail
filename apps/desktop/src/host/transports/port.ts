@@ -129,7 +129,12 @@ function parseCall(data: unknown): PortCall | undefined {
 
 /** The engine's end of one window's channel (Electron's `MessagePortMain` in the utility process). */
 export interface EnginePortEnd {
-  post(message: PortMessage): void;
+  /**
+   * `transfer` lists a blob reply's buffer, moved instead of copied where the port can move it (a DOM or Node
+   * `MessagePort`). Electron's `MessagePortMain` moves only ports, so the utility process's end ignores it and the
+   * reply is cloned across the process boundary as before.
+   */
+  post(message: PortMessage, transfer?: ArrayBuffer[]): void;
   onMessage(handler: (data: unknown) => void): void;
   /** May be called more than once; every handler runs when the other end goes away. */
   onClose(handler: () => void): void;
@@ -156,6 +161,18 @@ function connectionIdOf(session: EngineSession): string | undefined {
   return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
 
+/**
+ * The buffer a blob route's reply may move instead of copy: its `bytes` when they are a whole, unshared `ArrayBuffer`
+ * (a view onto part of a larger buffer is copied, so a transfer never takes bytes the reply does not carry). The engine
+ * hands out a fresh buffer per call (`BlobFiles.get`), so moving it can never detach one the engine still holds.
+ */
+export function replyTransfer(result: unknown): ArrayBuffer[] {
+  const bytes = (result as { bytes?: unknown } | null)?.bytes;
+  if (!(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)) return [];
+  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+  return whole && bytes.byteLength > 0 ? [bytes.buffer] : [];
+}
+
 /** A frame too large to send becomes a `reset` at the same position: the window re-reads instead of missing it. */
 function voidWindows(frame: Frame, position: { dbEpoch: string; seq: number }): Frame {
   const at = 'seq' in frame ? { dbEpoch: frame.dbEpoch, seq: frame.seq } : position;
@@ -175,15 +192,19 @@ export function serveWindowPort(
 ): ServedPort {
   const session = open();
   let closed = false;
-  const send = (message: PortMessage, limit: number) => {
+  const send = (message: PortMessage, limit: number, transfer?: ArrayBuffer[]) => {
     if (closed) return true;
     if (messageBytes(message, limit) > limit) return false;
-    end.post(message);
+    if (transfer?.length) end.post(message, transfer);
+    else end.post(message);
     return true;
   };
   const answer = (method: string, message: PortMessage & { kind: 'reply' }) => {
-    const limit = blobRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
-    if (send(message, limit)) return;
+    const blob = blobRoutes.has(method);
+    const limit = blob ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
+    // A blob reply's bytes move to the window (no second 25 MB copy in this process).
+    const transfer = blob && message.ok ? replyTransfer(message.result) : undefined;
+    if (send(message, limit, transfer)) return;
     options.onDrop?.('tooLarge', method);
     const sentence = 'This answer is too large to send to the window.';
     send(refusal(message.id, 'tooLarge', sentence), MAX_WINDOW_MESSAGE_BYTES);
@@ -313,6 +334,8 @@ export interface UtilityInit {
 /**
  * Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`).
  * `Mail/serve` is the `aplos-mail://` relay (html-5); the utility rewrites its `windowId` with `hostServeArgs`.
+ * `Blob/get` is main's `File/save`/`File/open` (plans/engine/blob-area.md decision 6): main reads the bytes itself, so
+ * 25 MB never has to sit in a renderer to be saved. Main is the `app` principal, as every window is.
  */
 export const controlMethods: ReadonlySet<string> = new Set([
   'Draft/get',
@@ -320,6 +343,7 @@ export const controlMethods: ReadonlySet<string> = new Set([
   'Session/get',
   'Counts/get',
   'Mail/serve',
+  'Blob/get',
 ]);
 
 export type PowerEvent = 'resume' | 'unlock-screen';
