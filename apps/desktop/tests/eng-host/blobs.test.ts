@@ -136,8 +136,14 @@ test('path traversal: a bad id is refused before any file is touched, by put, ge
   const root = scratch(t);
   const dir = join(root, 'blobs');
   const steps: BlobWriteStep[] = [];
+  // A VALID blob file one level above the folder: without the id check, get('../victim') would serve it.
+  const maker = await open(join(root, 'maker'));
+  const secret = bytesOf(9, 4);
+  await maker.put(ID, header(secret), secret);
+  const victim = readFileSync(join(root, 'maker', `${ID}.blob`));
+  writeFileSync(join(root, 'victim.blob'), victim);
+  rmSync(join(root, 'maker'), { recursive: true, force: true });
   const store = await open(dir, { step: step => void steps.push(step) });
-  writeFileSync(join(root, 'victim.blob'), 'keep me');
   const bad = [
     '../victim',
     `../b_${'a'.repeat(32)}`,
@@ -163,7 +169,7 @@ test('path traversal: a bad id is refused before any file is touched, by put, ge
   assert.deepEqual(steps, [], 'no write ever started');
   assert.deepEqual(readdirSync(dir), ['.tmp']);
   assert.deepEqual(readdirSync(root).sort(), ['blobs', 'victim.blob']);
-  assert.equal(readFileSync(join(root, 'victim.blob'), 'utf8'), 'keep me');
+  assert.deepEqual(readFileSync(join(root, 'victim.blob')), victim);
 });
 
 test('a symlink planted as the blob folder or its temp folder is refused, and its target is left alone', async t => {
@@ -650,4 +656,74 @@ test('a delete that fails keeps the blob counted', async t => {
   assert.equal(await store.usage(), before);
   await store.remove(ID);
   assert.equal(await store.usage(), 0);
+});
+
+test('a buffer detached while it is written fails the put: nothing short is ever linked', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const holder: { bytes?: Uint8Array } = {};
+  const store = await open(dir, {
+    step: step => {
+      // The caller transfers its buffer away after `put` admitted it, before the bytes are written.
+      if (step === 'write' && holder.bytes)
+        structuredClone(holder.bytes.buffer, { transfer: [holder.bytes.buffer as ArrayBuffer] });
+    },
+  });
+  const bytes = bytesOf(4096, 6);
+  holder.bytes = bytes;
+  assert.equal(await refusal(store.put(ID, header(bytes), bytes)), 'io');
+  assert.equal(bytes.byteLength, 0, 'the buffer really was detached');
+  assert.equal(existsSync(join(dir, `${ID}.blob`)), false);
+  assert.deepEqual(readdirSync(join(dir, '.tmp')), []);
+  assert.equal(await store.usage(), 0);
+});
+
+test('a temp folder swapped for a link after start: put refuses and writes nothing through it', async t => {
+  const root = scratch(t);
+  const dir = join(root, 'blobs');
+  const store = await open(dir);
+  const target = join(root, 'target');
+  mkdirSync(target, { mode: 0o700 });
+  renameSync(join(dir, '.tmp'), join(root, 'old-tmp'));
+  symlinkSync(target, join(dir, '.tmp'));
+  const bytes = bytesOf(10);
+  assert.equal(await refusal(store.put(ID, header(bytes), bytes)), 'io');
+  assert.deepEqual(readdirSync(target), []);
+  assert.equal(existsSync(join(dir, `${ID}.blob`)), false);
+  assert.equal(await refusal(open(dir)), 'io', 'and a restart refuses the folder');
+  assert.deepEqual(readdirSync(target), []);
+});
+
+test('a blob of another format version or an unknown kind is kept and counted, never served or deleted', async t => {
+  const dir = join(scratch(t), 'blobs');
+  mkdirSync(dir, { mode: 0o700 });
+  const newer = 'aplos-blob/2\n{"principal":"app","kind":"upload"}\nbytes';
+  const head = { principal: 'app', kind: 'thumbnail', mime: 'image/png', size: 3, createdAt: 1 };
+  const unknownKind = `aplos-blob/1\n${JSON.stringify(head)}\nabc`;
+  writeFileSync(join(dir, `${ID}.blob`), newer);
+  writeFileSync(join(dir, `${ID2}.blob`), unknownKind);
+  const store = await open(dir);
+  assert.deepEqual(await store.list(), []);
+  assert.equal(await store.get(ID), undefined);
+  assert.equal(await store.get(ID2), undefined);
+  assert.equal(readFileSync(join(dir, `${ID}.blob`), 'utf8'), newer);
+  assert.equal(readFileSync(join(dir, `${ID2}.blob`), 'utf8'), unknownKind);
+  assert.equal(await store.usage(), newer.length + unknownKind.length);
+  // A v1 file that is simply corrupt is still deleted.
+  const ID3 = `b_${'c'.repeat(32)}`;
+  writeFileSync(join(dir, `${ID3}.blob`), 'aplos-blob/1\nnot json\n');
+  await store.list();
+  assert.equal(existsSync(join(dir, `${ID3}.blob`)), false);
+});
+
+test('a blob folder or temp folder opened up to group or others after start is refused', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const store = await open(dir);
+  const bytes = bytesOf(5);
+  chmodSync(join(dir, '.tmp'), 0o755);
+  assert.equal(await refusal(store.put(ID, header(bytes), bytes)), 'io');
+  chmodSync(join(dir, '.tmp'), 0o700);
+  chmodSync(dir, 0o750);
+  assert.equal(await refusal(store.list()), 'io');
+  chmodSync(dir, 0o700);
+  await store.put(ID, header(bytes), bytes);
 });
