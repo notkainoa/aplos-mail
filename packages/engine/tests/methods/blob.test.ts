@@ -71,7 +71,7 @@ type Memory = ReturnType<typeof memoryFiles>;
 
 /** The real engine over a temp store, the fake clock and `memory` as its host blob port. */
 /** `null`: no host blob port at all. */
-async function world(memory: Memory | null = memoryFiles(), start = T0) {
+async function world(memory: Memory | null = memoryFiles(), start = T0, withSend = false) {
   const file = tempDb();
   const clock = fakeClock(start);
   const records: LogRecord[] = [];
@@ -82,7 +82,20 @@ async function world(memory: Memory | null = memoryFiles(), start = T0) {
     store,
     clock,
     log,
-    ports: memory ? { blobFiles: memory.files } : {},
+    ports: {
+      ...(memory ? { blobFiles: memory.files } : {}),
+      // A send port that never leaves (the row is only queued in these tests): without one, sending is unavailable.
+      ...(withSend
+        ? {
+            send: {
+              send: async () => {
+                throw new Error('not in this test');
+              },
+              findSent: async () => ({ kind: 'absent', checkedAt: 0 }),
+            } as never,
+          }
+        : {}),
+    },
     validate: (method, args) => parseArgs(method as MethodName, args),
   });
   const db = file.open();
@@ -163,8 +176,12 @@ async function refused(promise: Promise<unknown>): Promise<{ type: string; messa
 
 const gone = { type: 'notFound', message: BLOB_SENTENCES.gone };
 
-async function withWorld(fn: (w: World) => Promise<void>, memory?: Memory | null) {
-  const w = await world(memory);
+async function withWorld(
+  fn: (w: World) => Promise<void>,
+  memory?: Memory | null,
+  withSend = false,
+) {
+  const w = await world(memory, undefined, withSend);
   try {
     await fn(w);
   } finally {
