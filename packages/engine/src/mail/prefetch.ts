@@ -74,7 +74,7 @@ async function warm(services: EngineServices, key: string, refs: readonly Messag
     await renderMessage(
       services,
       ref,
-      { messageId: ref.id, policy, quotesOpen: false },
+      { messageId: ref.id, requested: 'block', policy, quotesOpen: false },
       'prefetch',
     );
   }

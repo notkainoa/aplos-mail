@@ -6,6 +6,12 @@ import type { StoreReader } from '../store/port';
 // on the result, never on the request, so an allow-listed render can never be served for a blocked one or back.
 
 export type ResolvedPolicy = 'block' | 'allow';
+export type RequestedPolicy = 'block' | 'load';
+
+/** The contract's request, closed: anything but `load` is `block`. */
+export function requestedOf(value: unknown): RequestedPolicy {
+  return value === 'load' ? 'load' : 'block';
+}
 
 /** The contract's `SenderMatch` shapes (`common.ts`), restated without zod: an address, or `@domain`. */
 const ADDRESS = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;

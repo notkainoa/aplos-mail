@@ -31,6 +31,11 @@ export interface FrameRenderInput {
   messageId: string;
   accountScope: string;
   imagePolicy: FrameImagePolicy;
+  /**
+   * What the reader asked for (`Mail/frame.imagePolicy`), kept so a re-render (`Mail/toggleQuotes`) resolves it again
+   * against the allow-list as it is then, instead of carrying an `allow` the owner has since withdrawn.
+   */
+  requestedPolicy?: 'block' | 'load';
   findQuery?: string;
   quotesOpen?: boolean;
   /** The sanitized frame document, reporter included. */

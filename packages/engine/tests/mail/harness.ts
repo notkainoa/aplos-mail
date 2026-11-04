@@ -6,6 +6,7 @@ import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
 import type { ImageProxy, MailHtml, MailHtmlInput, ProxiedImage } from '../../src/ports';
+import { findMessage, type MessageRef } from '../../src/mail/message';
 import { openStore, type BodyRecord, type StoreWrite } from '../../src/store';
 import { manualClock } from '../runtime.helpers';
 import { ACCOUNT, accountWrite, folderWrites, msg, T0, tempDb } from '../store/helpers';
@@ -84,6 +85,7 @@ export async function mailWorld(options: WorldOptions = {}) {
   const remote = new Map<string, BodyRecord>([['r3', RICH]]);
   const parts = new Map<string, Uint8Array>([['part-1', PNG]]);
   let image: ProxiedImage = { kind: 'image', mime: 'image/png', bytes: PNG };
+  let stream: (() => AsyncIterable<Uint8Array>) | undefined;
   const accounts = {
     async openThread(account: string, thread: string, opts?: { lane?: string }) {
       calls.opened.push(`${account} ${thread} ${opts?.lane}`);
@@ -99,6 +101,7 @@ export async function mailWorld(options: WorldOptions = {}) {
     },
     async attachment(account: string, ref: { remoteMessageId: string; part: string }) {
       calls.parts.push(`${account} ${ref.remoteMessageId} ${ref.part}`);
+      if (stream) return stream();
       const bytes = parts.get(ref.part);
       if (!bytes) throw new Error('no part');
       return (async function* () {
@@ -142,6 +145,15 @@ export async function mailWorld(options: WorldOptions = {}) {
     rawSql(sql: string, ...params: (string | number)[]) {
       db.prepare(sql).run(...params);
     },
+    /** Replaces every inline part's byte stream (a stalled provider, say). */
+    setStream(next: () => AsyncIterable<Uint8Array>) {
+      stream = next;
+    },
+    refOf(messageId: string): MessageRef {
+      const ref = store.read(q => findMessage(q, messageId));
+      if (!ref) throw new Error(`no message ${messageId}`);
+      return ref;
+    },
     setImage(next: ProxiedImage) {
       image = next;
     },
@@ -180,3 +192,8 @@ export async function serve(world: World, url: string, path: string, windowId?: 
 }
 
 export const text = (body: Uint8Array) => new TextDecoder().decode(body);
+
+/** Lets work queued behind a call (promise jobs, immediates) run. */
+export async function settle(rounds = 20) {
+  for (let i = 0; i < rounds; i++) await new Promise(resolve => setImmediate(resolve));
+}

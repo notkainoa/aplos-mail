@@ -2,7 +2,7 @@ import type { Input, Output } from '@aplos/contract';
 import { tokenOf } from '@aplos/mail-html/frame';
 import type { MethodContext } from '../methods/types';
 import { messageGone, requireMessage } from './message';
-import { readAllowList, resolveImagePolicy } from './policy';
+import { readAllowList, requestedOf, resolveImagePolicy } from './policy';
 import { issueFrame, renderMessage, type RenderRequest } from './render';
 
 // `Mail/frame`, `Mail/release` and `Mail/toggleQuotes` (html-4). The window is the calling connection
@@ -18,9 +18,11 @@ export async function mailFrame(args: Input<'Mail/frame'>, ctx: MethodContext): 
   const ref = requireMessage(services, args.messageId);
   const allowList = services.store.read(readAllowList);
   const findQuery = emptyToUndefined(args.findQuery);
+  const requested = requestedOf(args.imagePolicy);
   const request: RenderRequest = {
     messageId: ref.id,
-    policy: resolveImagePolicy(args.imagePolicy, ref.fromAddr, allowList),
+    requested,
+    policy: resolveImagePolicy(requested, ref.fromAddr, allowList),
     ...(findQuery !== undefined ? { findQuery } : {}),
     quotesOpen: args.quotesOpen === true,
   };
@@ -34,7 +36,10 @@ export function releaseFrame(args: Input<'Mail/release'>, ctx: MethodContext): {
   return { ok: true };
 }
 
-/** The same message, policy and find query with quotes opened or closed, under a new token that replaces the old. */
+/**
+ * The same message, requested policy and find query with quotes opened or closed, under a new token that replaces the
+ * old. The requested policy is resolved against the allow-list as it is now.
+ */
 export async function toggleQuotes(
   args: Input<'Mail/toggleQuotes'>,
   ctx: MethodContext,
@@ -45,9 +50,13 @@ export async function toggleQuotes(
   const record = services.mailFrames.tokens.lookup(ctx.connectionId, token, now);
   if (!token || !record) throw messageGone();
   const ref = requireMessage(services, record.messageId);
+  // The request is resolved again: a sender taken off the allow-list since the first render is blocked now.
+  const requested = requestedOf(record.requestedPolicy);
+  const allowList = services.store.read(readAllowList);
   const request: RenderRequest = {
     messageId: record.messageId,
-    policy: record.imagePolicy === 'allow' ? 'allow' : 'block',
+    requested,
+    policy: resolveImagePolicy(requested, ref.fromAddr, allowList),
     ...(record.findQuery !== undefined ? { findQuery: record.findQuery } : {}),
     quotesOpen: args.open === true,
   };

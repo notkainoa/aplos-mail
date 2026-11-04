@@ -12,6 +12,7 @@ import { IMAGE_PROXY_LIMITS } from '../ports';
 import type { MethodContext } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
 import { readBody } from '../store/bodies';
+import { deadline, within, type Deadline } from './deadline';
 import { partOf } from './message';
 
 // `Mail/serve` (scope `host`, main's control connection only): the whole response for one `aplos-mail://` request.
@@ -74,26 +75,52 @@ async function inlinePart(
   const part = partOf(body, cid);
   if (part === undefined) return undefined;
   const ref = { remoteMessageId: remoteId, part };
-  const chunks = await services.accounts.attachment(record.accountScope, ref);
-  const bytes = await collectBytes(chunks, IMAGE_PROXY_LIMITS.maxBytes, signal);
-  return bytes ? { bytes } : undefined;
+  // The proxy's whole-fetch timeout bounds the part too: a stalled provider stream cannot hold the request open.
+  const limit = deadline(services.clock, IMAGE_PROXY_LIMITS.timeoutMs, signal);
+  try {
+    const chunks = await within(services.accounts.attachment(record.accountScope, ref), limit);
+    const bytes = chunks && (await collectBytes(chunks, IMAGE_PROXY_LIMITS.maxBytes, limit));
+    return bytes ? { bytes } : undefined;
+  } finally {
+    limit.end();
+  }
 }
 
-/** The whole stream, or undefined once it passes `max` bytes or the call is cancelled. */
+/** Stops a stream we gave up on; its own failure to stop is not ours to report. */
+function closeIterator(iterator: AsyncIterator<unknown>): void {
+  try {
+    void Promise.resolve(iterator.return?.()).catch(() => undefined);
+  } catch {
+    // A `return` that throws has stopped as far as we can tell.
+  }
+}
+
+/** The whole stream, or undefined once it passes `max` bytes, is cancelled or runs out of time. */
 export async function collectBytes(
   chunks: AsyncIterable<Uint8Array>,
   max: number,
-  signal: AbortSignal,
+  limit: Deadline,
 ): Promise<Uint8Array | undefined> {
+  const iterator = chunks[Symbol.asyncIterator]();
   const parts: Uint8Array[] = [];
   let size = 0;
-  for await (const chunk of chunks) {
-    if (signal.aborted || !(chunk instanceof Uint8Array)) return undefined;
-    size += chunk.byteLength;
-    if (size > max) return undefined;
-    parts.push(chunk);
+  let done = false;
+  try {
+    for (;;) {
+      const step = await within(iterator.next(), limit);
+      if (!step) return undefined;
+      if (step.done) {
+        done = true;
+        return joinBytes(parts, size);
+      }
+      if (!(step.value instanceof Uint8Array)) return undefined;
+      size += step.value.byteLength;
+      if (size > max) return undefined;
+      parts.push(step.value);
+    }
+  } finally {
+    if (!done) closeIterator(iterator);
   }
-  return joinBytes(parts, size);
 }
 
 function joinBytes(parts: readonly Uint8Array[], size: number): Uint8Array {

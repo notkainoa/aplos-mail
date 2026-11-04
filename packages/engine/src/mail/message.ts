@@ -13,6 +13,8 @@ export interface MessageRef {
   accountId: string;
   remoteId: string;
   rowId: number;
+  /** The seq that stored this row: with `rowId`, which stored copy this is (a re-insert can reuse a freed rowid). */
+  firstSeenSeq: number;
   threadRemoteId: string;
   /** The server's thread size (`threads.remote_count`), the `knownCount` an open passes (AM-1). */
   remoteCount: number | null;
@@ -21,6 +23,7 @@ export interface MessageRef {
 
 interface RefRow {
   id: number;
+  first_seen_seq: number;
   thread_remote: string;
   remote_count: number | null;
   from_addr: string | null;
@@ -38,7 +41,7 @@ export function findMessage(
   const parts = splitId(q, messageId, accounts);
   if (!parts) return undefined;
   const row = q.get<RefRow>(
-    `SELECT m.id, t.remote_id AS thread_remote, t.remote_count, m.from_addr FROM messages m
+    `SELECT m.id, m.first_seen_seq, t.remote_id AS thread_remote, t.remote_count, m.from_addr FROM messages m
       JOIN threads t ON t.id = m.thread_id WHERE m.account_id = ? AND m.remote_id = ?`,
     parts.accountId,
     parts.remoteId,
@@ -49,6 +52,7 @@ export function findMessage(
     accountId: parts.accountId,
     remoteId: parts.remoteId,
     rowId: row.id,
+    firstSeenSeq: row.first_seen_seq,
     threadRemoteId: row.thread_remote,
     remoteCount: row.remote_count,
     fromAddr: row.from_addr,

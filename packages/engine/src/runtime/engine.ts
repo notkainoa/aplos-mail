@@ -127,14 +127,18 @@ export async function buildEngine(
           type: 'forbidden',
           message: 'This connection is not allowed in Aplos.',
         });
+      const connectionId = `c${++counter}`;
       const session = openConnection(
         {
           services,
           hub,
           dispatch,
           validate: options.validate,
-          connectionId: `c${++counter}`,
-          onClose: () => open.delete(session),
+          connectionId,
+          onClose: () => {
+            open.delete(session);
+            connectionClosed(started, connectionId);
+          },
         },
         caller,
       );
@@ -198,6 +202,17 @@ function readOnly(services: EngineServices): EngineServices {
     deleteProperty: refuse,
   };
   return new Proxy(services, traps);
+}
+
+/** Tells every lane a connection closed; one lane's failure never stops the others or the close. */
+function connectionClosed(lanes: readonly LaneModule[], connectionId: string) {
+  for (const lane of lanes) {
+    try {
+      lane.onConnectionClose?.(connectionId);
+    } catch {
+      // A lane's cleanup bug must not keep the connection open.
+    }
+  }
 }
 
 /** Runs each lane's `createModule` in order. A lane may fill a stand-in port, never replace a real one or another lane's. */

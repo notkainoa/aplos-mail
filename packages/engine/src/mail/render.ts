@@ -3,7 +3,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { renderKey, withReporter, type FrameRenderInput } from '@aplos/mail-html/frame';
 import type { EngineServices } from '../runtime/services';
 import { cidsOf, loadBody, type MessageRef } from './message';
-import type { ResolvedPolicy } from './policy';
+import type { RequestedPolicy, ResolvedPolicy } from './policy';
 import type { CachedRender } from './state';
 
 // The render pipeline behind `Mail/frame` and `Mail/toggleQuotes`: sanitize the stored original on read through the
@@ -15,6 +15,9 @@ type MailFrame = Output<'Mail/frame'>;
 
 export interface RenderRequest {
   messageId: string;
+  /** What the reader asked for; kept on the token so a toggle resolves it again. */
+  requested: RequestedPolicy;
+  /** `resolveImagePolicy(requested, sender, allow-list)`: what the render and the cache key use. */
   policy: ResolvedPolicy;
   findQuery?: string;
   quotesOpen: boolean;
@@ -29,13 +32,22 @@ function sanitizerVersion(services: EngineServices): string {
   });
 }
 
-export function cacheKey(request: RenderRequest, version: string): string {
+/** Which stored copy of the message: its rowid and the seq that stored it, never `rev` (flag edits move that). */
+export const bodyIdentity = (ref: Pick<MessageRef, 'rowId' | 'firstSeenSeq'>) =>
+  `${ref.rowId}:${ref.firstSeenSeq}`;
+
+export function cacheKey(
+  request: Omit<RenderRequest, 'requested'>,
+  ref: Pick<MessageRef, 'rowId' | 'firstSeenSeq'>,
+  version: string,
+): string {
   return renderKey({
     messageId: request.messageId,
     imagePolicy: request.policy,
     ...(request.findQuery !== undefined ? { findQuery: request.findQuery } : {}),
     quotesOpen: request.quotesOpen,
     version,
+    body: bodyIdentity(ref),
   });
 }
 
@@ -46,7 +58,7 @@ export async function renderMessage(
   request: RenderRequest,
   lane: 'interactive' | 'prefetch' = 'interactive',
 ): Promise<CachedRender> {
-  const key = cacheKey(request, sanitizerVersion(services));
+  const key = cacheKey(request, ref, sanitizerVersion(services));
   const hit = services.mailFrames.cache.get(key);
   if (hit) return hit;
   const body = await loadBody(services, ref, lane);
@@ -94,6 +106,7 @@ function tokenInput(
     messageId: ref.id,
     accountScope: ref.accountId,
     imagePolicy: request.policy,
+    requestedPolicy: request.requested,
     ...(request.findQuery !== undefined ? { findQuery: request.findQuery } : {}),
     quotesOpen: request.quotesOpen,
     document: withReporter(html.document),
@@ -123,6 +136,8 @@ export function issueFrame(
   const html = { document: result.document, remoteImages: result.remoteImages, cids };
   const input = tokenInput(windowId, ref, request, html);
   const now = services.clock.now();
+  // Every window's unfetched tokens past their deadline go, not only this window's: no document waits forever.
+  tokens.sweep(now);
   const issued =
     replacing !== undefined ? tokens.replace(replacing, input, now) : tokens.issue(input, now);
   return {

@@ -17,5 +17,10 @@ export const lane = 'eng-html';
 export const extensions: readonly CommitExtension[] = [allowListExtension];
 
 export function createModule(): LaneModule {
-  return { services: { mailFrames: createMailFrames() } };
+  const mailFrames = createMailFrames();
+  return {
+    services: { mailFrames },
+    // A closed window's tokens (and any document not yet served) go with it.
+    onConnectionClose: connectionId => mailFrames.tokens.releaseWindow(connectionId),
+  };
 }

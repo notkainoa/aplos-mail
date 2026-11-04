@@ -77,6 +77,7 @@ describe('render key', () => {
       { findQuery: undefined },
       { quotesOpen: true },
       { version: 'mail-html/2' },
+      { body: '7:3' },
     ];
     for (const change of variants) {
       assert.notEqual(renderKey({ ...base, ...change }), renderKey(base), JSON.stringify(change));

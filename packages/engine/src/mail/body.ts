@@ -54,6 +54,7 @@ export async function messageBody(
   const policy = resolveImagePolicy('block', ref.fromAddr, allowList);
   const { result } = await renderMessage(services, ref, {
     messageId: ref.id,
+    requested: 'block',
     policy,
     quotesOpen: false,
   });

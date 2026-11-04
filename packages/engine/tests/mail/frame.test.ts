@@ -76,7 +76,8 @@ describe('Mail/frame', () => {
       const b = await frameOf(w.windowA, { messageId: IDS.rich, imagePolicy: 'block' });
       assert.equal(w.renders.length, 1, 'the second frame is a cache hit');
       assert.notEqual(a.url, b.url, 'a fresh token every time');
-      const key = cacheKey({ messageId: IDS.rich, policy: 'block', quotesOpen: false }, 'v1');
+      const request = { messageId: IDS.rich, policy: 'block' as const, quotesOpen: false };
+      const key = cacheKey(request, w.refOf(IDS.rich), 'v1');
       const cached = w.engine.services.mailFrames.cache.get(key);
       assert.ok(cached && cached.result.bodyKind === 'html');
       assert.doesNotMatch(cached.result.document, /<script/);

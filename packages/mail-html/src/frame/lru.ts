@@ -51,6 +51,8 @@ export interface RenderKeyParts {
   quotesOpen?: boolean;
   /** `MailHtml.version`: a sanitizer fix misses every older entry. */
   version: string;
+  /** Which stored copy of the message was rendered: a message deleted and stored again misses. */
+  body?: string;
 }
 
 /** One unambiguous string per combination (JSON, so no separator can be forged by a part). */
@@ -61,5 +63,6 @@ export function renderKey(parts: RenderKeyParts): string {
     parts.imagePolicy,
     parts.findQuery ?? null,
     parts.quotesOpen ?? false,
+    parts.body ?? null,
   ]);
 }

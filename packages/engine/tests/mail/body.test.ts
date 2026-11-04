@@ -100,7 +100,8 @@ describe('MessageBody/prefetch', () => {
       });
       await settle();
       assert.deepEqual(w.calls.opened, ['acct-1 t3 prefetch']);
-      const key = cacheKey({ messageId: IDS.remote, policy: 'block', quotesOpen: false }, 'v1');
+      const request = { messageId: IDS.remote, policy: 'block' as const, quotesOpen: false };
+      const key = cacheKey(request, w.refOf(IDS.remote), 'v1');
       assert.ok(w.engine.services.mailFrames.cache.has(key));
       await frameOf(w.windowA, { messageId: IDS.remote, imagePolicy: 'block' });
       assert.equal(w.renders.length, 1, 'the frame used the warmed render');
