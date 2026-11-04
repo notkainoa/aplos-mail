@@ -530,3 +530,41 @@ test('token (rewritten): two drafts with our token and neither proven ours: a co
   assert.equal(result.kind === 'conflict' ? result.remoteDraftId : '', newer.draftId);
   assert.equal(s.bridge.uploads.length, 0);
 });
+
+test('token: a 5xx that carries a throttle reason (503 rateLimitExceeded) is not a definite refusal: the retry keeps the extra checks', async () => {
+  const { s, faults } = await world(DROPPED);
+  const upload = s.upload({ body: 'Throttled 503.' });
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.create' },
+    { status: 503, reason: 'rateLimitExceeded', message: 'Rate limit exceeded' },
+  );
+  const failure = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(failure instanceof ProviderError);
+  assert.equal(failure.error.class, 'throttle', 'classified as a throttle');
+  await s.r.clock.advance(300_000);
+  const from = s.r.emu.log.length;
+  saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(listCalls(s, from), 2, 'the all-mail search and the Sent/Trash scan still run');
+});
+
+test('token: uncertain, then a retry that finds nothing and re-records, then a 429: the next retry still runs the extra checks', async () => {
+  const { s, faults } = await world(DROPPED);
+  const upload = s.upload({ body: 'Uncertain, miss, refused.' });
+  // 1. The request is lost before it landed: uncertain, nothing stored.
+  faults.dropNext({ apiMethod: 'gmail.users.drafts.create' });
+  const lost = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(lost instanceof ProviderError && lost.error.uncertain === true);
+  assert.equal(s.remoteDrafts().length, 0);
+  // 2. The retry finds nothing (the lookups run), records the attempt again, and its create is refused with a 429.
+  faults.failNext(
+    { apiMethod: 'gmail.users.drafts.create' },
+    { status: 429, reason: 'rateLimitExceeded', message: 'Rate limit exceeded' },
+  );
+  const refused = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(refused instanceof ProviderError && refused.error.status === 429);
+  await s.r.clock.advance(300_000);
+  // 3. The refusal did not erase that attempt 1 may have landed: the extra checks still run.
+  const from = s.r.emu.log.length;
+  saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(listCalls(s, from), 2, 'the Sent/Trash scan still runs');
+});

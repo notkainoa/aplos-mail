@@ -29,6 +29,7 @@ import { calendarAbuseError, calendarThrottleError } from '../gcal/errors';
 import { CalendarHub } from '../gcal/hub';
 import { calendarShapeOf, CAL_SCOPES_FOR, matchCalendarRoute } from '../gcal/routes';
 import { generateInto, type GenerateOptions } from './generate';
+import { SearchLag } from './search-lag';
 import { Mailbox } from './mailbox';
 import { UnitMeter } from './meter';
 import { OAuthServer, type TestUser, type TestUserInput } from './oauth';
@@ -159,6 +160,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
   readonly clock: Clock;
   readonly log: RequestLogEntry[] = [];
   readonly settings: GmailSettings;
+  private readonly lag = new SearchLag(() => this.settings.searchLagMs);
   readonly blockedOrigins: string[] = [];
   readonly oauth: OAuthServer;
   readonly meter: MeterHelpers;
@@ -195,6 +197,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
       sendIdentity:
         options.sendIdentity ??
         (process.env.APLOS_EMU_SEND_IDENTITY === 'rewritten' ? 'rewritten' : 'kept'),
+      searchLagMs: options.searchLagMs ?? 0,
       dropDraftHeaders:
         options.dropDraftHeaders ??
         (process.env.APLOS_EMU_DROP_DRAFT_HEADERS ?? '').split(',').filter(Boolean),
@@ -672,6 +675,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
       try {
         const ctx: RouteContext = {
           mailbox: this.mailboxFor(user.sub),
+          lag: this.lag,
           query: req.url.searchParams,
           params,
           body: req.body,
