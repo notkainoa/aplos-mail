@@ -1,10 +1,11 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import type { EngineServices } from '../runtime/services';
-import type { Caller } from './types';
-import { BLOB_SENTENCES } from '../runtime/blobs';
+import type { Caller } from '../methods/types';
 
 /** What `Draft/set` refuses a file that is not the caller's own with: the same words as a file that is gone. */
-const ATTACH_AGAIN = `${BLOB_SENTENCES.gone} Attach it again.`;
+// (Spelled out, not imported from the blob runtime: that import is a cycle through the method table. The test pins it
+// to `BLOB_SENTENCES.gone` plus ' Attach it again.')
+const ATTACH_AGAIN = 'This file is no longer available. Attach it again.';
 
 /**
  * `Draft/set`'s ownership check (Blob package 4, decision 9): every NEW `attachments[].blobId` (one the stored draft does

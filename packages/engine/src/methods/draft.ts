@@ -1,5 +1,5 @@
 import { requireScope } from '@aplos/contract/access';
-import { assertOwnedAttachments } from './draft-blobs';
+import { assertOwnedAttachments } from '../outbox/draft-owner';
 import { notImplemented, type AreaHandlers } from './types';
 // Brings in the `EngineServices.draftBox` declaration.
 import type {} from '../outbox/module';
