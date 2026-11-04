@@ -202,7 +202,8 @@ export function serveWindowPort(
   const answer = (method: string, message: PortMessage & { kind: 'reply' }) => {
     const blob = blobRoutes.has(method);
     const limit = blob ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
-    // A blob reply's bytes move to the window (no second 25 MB copy in this process).
+    // A blob reply's buffer is listed for transfer. Only a DOM or Node `MessagePort` end moves it; on the real path
+    // the utility process's `MessagePortMain` ignores the list and the reply is cloned once across the process boundary.
     const transfer = blob && message.ok ? replyTransfer(message.result) : undefined;
     if (send(message, limit, transfer)) return;
     options.onDrop?.('tooLarge', method);
