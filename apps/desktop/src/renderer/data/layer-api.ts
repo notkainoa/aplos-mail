@@ -117,6 +117,12 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
           a => c.event.set(a),
           result => result.receipt,
         ),
+      hide: args =>
+        command(
+          args,
+          a => c.event.hide(a),
+          receipt => receipt,
+        ),
       rsvp: args =>
         command(
           args,
