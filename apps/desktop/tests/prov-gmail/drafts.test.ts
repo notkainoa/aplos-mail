@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFaultInjector } from '@aplos/emulators';
 import { PausedError, ProviderError, type DraftUpload } from '@aplos/engine/ports';
-import { mimeOf, saved, apiCalls, setup, uncertainCreate } from './draft-rig';
+import { mimeOf, saved, apiCalls, setup, uncertainCreate, uploadedBytes } from './draft-rig';
 
 const CRLF = '\r\n';
 
@@ -62,6 +62,8 @@ test('prov-gmail-drafts pacing: governed on the opFlush lane, create is a write,
     [
       ['gmail.drafts.get', 20, 'read'],
       ['gmail.drafts.update', 15, 'idempotentWrite'],
+      // The copy's Message-ID as Gmail shows it (`copyInternetId`), one metadata read after the write.
+      ['gmail.drafts.get', 20, 'read'],
     ],
   );
   assert.ok(apiCalls(s).every(c => c.lane === 'opFlush'));
@@ -87,7 +89,10 @@ test('prov-gmail-drafts reply threading: threadId is passed, In-Reply-To and Ref
   );
   const sent = s.bridge.uploads.at(-1)!;
   assert.deepEqual(sent.metadata, { message: { threadId: parent.threadId } });
-  assert.ok(sent.raw.equals(Buffer.from(upload.mime)), 'the bytes are not rewritten');
+  assert.ok(
+    sent.raw.equals(uploadedBytes(upload)),
+    'the bytes are not rewritten (only the token is added)',
+  );
   const remote = s.r.emu.mailbox.getMessage(result.remoteMessageId)!;
   assert.equal(remote.threadId, parent.threadId, 'the draft sits in the conversation');
   const text = s.remoteDrafts()[0].text;
@@ -156,8 +161,12 @@ test('prov-gmail-drafts a phone edit that keeps our Message-ID header is still a
     { body: 'v2' },
     { remoteDraftId: first.remoteDraftId, baseRemoteMessageId: first.remoteMessageId },
   );
-  // The other client edits the text and keeps the very Message-ID this upload will carry.
-  const { mime } = mimeOf(s.r.account.address, { id: next.internetId, body: 'Phone text.' });
+  // The other client edits the text and keeps the very Message-ID (and token) this upload will carry.
+  const { mime } = mimeOf(s.r.account.address, {
+    id: next.internetId,
+    token: next.internetId,
+    body: 'Phone text.',
+  });
   s.r.emu.mailbox.updateDraft(first.remoteDraftId, mime);
   const result = await s.r.adapter.saveDraft(next, s.r.ctx());
   assert.equal(result.kind, 'conflict');
@@ -442,11 +451,13 @@ test('prov-gmail-drafts the 35 MB limit: accepted at exactly the limit, refused 
   const s = await setup();
   const limit = 35 * 1024 * 1024;
   const base = s.upload({ body: '' });
+  // The limit is on what goes up: the engine's MIME plus the `X-Aplos-Draft` token line.
+  const token = uploadedBytes(base).length - base.mime.length;
   const pad = (bytes: number) => Buffer.concat([Buffer.from(base.mime), Buffer.alloc(bytes, 0x61)]);
-  const atLimit = pad(limit - base.mime.length);
-  assert.equal(atLimit.length, limit);
+  const atLimit = pad(limit - token - base.mime.length);
+  assert.equal(uploadedBytes({ ...base, mime: atLimit }).length, limit);
   const over = await s.r.adapter
-    .saveDraft({ ...base, mime: pad(limit - base.mime.length + 1) }, s.r.ctx())
+    .saveDraft({ ...base, mime: pad(limit - token - base.mime.length + 1) }, s.r.ctx())
     .catch((e: unknown) => e);
   assert.ok(over instanceof ProviderError);
   assert.equal(over.error.reason, 'messageTooLarge');
@@ -464,7 +475,7 @@ test('prov-gmail-drafts a small draft is a multipart upload; a large one is resu
   const small = s.upload({ body: 'tiny' });
   const a = saved(await s.r.adapter.saveDraft(small, s.r.ctx()));
   assert.equal(s.bridge.uploads.at(-1)!.uploadType, 'multipart');
-  assert.ok(s.bridge.uploads.at(-1)!.raw.equals(Buffer.from(small.mime)));
+  assert.ok(s.bridge.uploads.at(-1)!.raw.equals(uploadedBytes(small)));
 
   const line = 'a'.repeat(74) + CRLF;
   const big = s.upload({ body: line.repeat(Math.ceil((5.5 * 1024 * 1024) / line.length)) });
@@ -480,7 +491,7 @@ test('prov-gmail-drafts a small draft is a multipart upload; a large one is resu
   assert.equal(upload.uploadType, 'resumable');
   assert.equal(upload.httpMethod, 'PUT');
   assert.equal(upload.draftId, a.remoteDraftId);
-  assert.ok(upload.raw.equals(Buffer.from(big.mime)), 'every byte arrived');
+  assert.ok(upload.raw.equals(uploadedBytes(big)), 'every byte arrived');
   const uploadRequests = s.bridge.requests
     .slice(requestsBefore)
     .filter(r => r.path.startsWith('/upload/'));

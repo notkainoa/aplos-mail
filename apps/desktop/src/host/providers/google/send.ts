@@ -601,6 +601,14 @@ export interface SendOptions {
    * `message/rfc822` media sends exactly those bytes, not the stored draft; (2) Gmail keeps the client's Message-ID on
    * `drafts.send` and `messages.send` (`rfc822msgid:` finds the sent copy under `internetId`); (3) Gmail strips the
    * `Bcc:` header from delivered copies. The emulator does not model the upload protocol (the test rig bridges it).
+   *
+   * The `X-Aplos-Draft` token (drafts.ts IDENTITY): the stored draft copy carries it, the pinned bytes never do (the
+   * engine's MIME has no such header and `checkHeaders` here does not allow it). Both routes upload the pinned bytes as
+   * the media, so the token does not leave in sent mail, provided (1) above holds. If the live gate shows that
+   * `drafts.send` sends the STORED draft instead, the token would leave with it: then do not switch this on (strip
+   * would mean rewriting the stored copy first). Also note for (2): on Gmail a draft copy shows Gmail's own Message-ID,
+   * so the Sent lookup of a gone draft below (`sentCopy` by `rfc822msgid:`) cannot find a copy a phone sent; that case
+   * stays uncertain (`DRAFT_GONE`, nothing sent twice).
    */
   useDraftsSend?: boolean;
 }
