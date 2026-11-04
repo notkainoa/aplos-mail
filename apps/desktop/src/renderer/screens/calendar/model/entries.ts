@@ -65,15 +65,24 @@ export function writableCalendars(calendars: readonly Calendar[]): Calendar[] {
   return calendars.filter(c => !c.readOnly);
 }
 
-/** Where N, a drag and a confirmed plan land: the setting, else the primary writable calendar, else the first writable one. */
-export function defaultCalendarId(calendars: readonly Calendar[], setting?: string): string | null {
+/**
+ * Where N, a drag and a confirmed plan land: the solo calendar; else the saved default, the primary, then the
+ * first — each only while it is shown and writable, so a new event never lands on a calendar it would vanish
+ * from the moment it was added (review2 3).
+ */
+export function defaultCalendarId(
+  calendars: readonly Calendar[],
+  setting?: string,
+  solo?: string | null,
+): string | null {
   const writable = writableCalendars(calendars);
+  // Solo draws that one calendar alone; anywhere else is invisible.
+  if (solo && calendars.some(c => c.id === solo))
+    return writable.find(c => c.id === solo)?.id ?? null;
   return (
-    writable.find(c => c.id === setting)?.id ??
+    writable.find(c => c.id === setting && c.shown)?.id ??
     writable.find(c => c.primary && c.shown)?.id ??
-    writable.find(c => c.primary)?.id ??
     writable.find(c => c.shown)?.id ??
-    writable[0]?.id ??
     null
   );
 }

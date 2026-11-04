@@ -223,7 +223,7 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       plansWindow.ids.map(id => plansWindow.rows.get(id)).filter((p): p is Plan => p !== undefined),
     [plansWindow.ids, plansWindow.rows],
   );
-  const defaultId = defaultCalendarId(calendars, settings?.calendar.defaultCalendarId);
+  const defaultId = defaultCalendarId(calendars, settings?.calendar.defaultCalendarId, state.solo);
   const entries = useMemo(
     () =>
       entriesFor({

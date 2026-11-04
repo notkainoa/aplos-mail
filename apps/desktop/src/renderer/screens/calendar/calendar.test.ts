@@ -17,6 +17,7 @@ import { undoToastOperation } from '../../shell/KeysProviders';
 import {
   actionForCommand,
   commandEnabled,
+  defaultCalendarId,
   detailMenu,
   draftChange,
   draftFromEvent,
@@ -161,6 +162,22 @@ test('review2: Delete and E act only on an explicit selection, never the rail’
   const menu = update(day, { type: 'menu', item: 'edit' }, ctx);
   assert.equal(menu.state.editor?.mode, 'edit');
   assert.equal(menu.state.editor?.eventId, 'dental');
+});
+
+test('review2: the default calendar is solo, else the saved default, then the first shown writable one', () => {
+  // The saved default is hidden: a new event must not land where it cannot be seen.
+  const hiddenDefault = demoWorld.calendars.map(c =>
+    c.id === 'work' ? { ...c, shown: false } : c,
+  );
+  assert.equal(defaultCalendarId(hiddenDefault, 'work'), 'personal');
+  // Solo draws one calendar alone: it wins over the saved default.
+  assert.equal(defaultCalendarId(demoWorld.calendars, 'work', 'personal'), 'personal');
+  // A read-only solo leaves nothing honest to land on.
+  const ro = demoWorld.calendars.map(c => (c.id === 'personal' ? { ...c, readOnly: true } : c));
+  assert.equal(defaultCalendarId(ro, 'work', 'personal'), null);
+  // Everything hidden: null, so the editor asks for a calendar instead of writing blind.
+  const allHidden = demoWorld.calendars.map(c => ({ ...c, shown: false }));
+  assert.equal(defaultCalendarId(allHidden, 'work'), null);
 });
 
 test('review2: saving an edit whose event left the window writes nothing and says so', () => {

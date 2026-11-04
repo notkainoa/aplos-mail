@@ -353,7 +353,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
   const events = fixture.events ?? WEEK;
   const plans = useMemo(() => fixture.plans ?? [LAUNCH_PREP], [fixture.plans]);
   const { from: periodFrom, to: periodTo } = periodOf(shownView(state), state.anchor, weekStartsOn);
-  const defaultId = defaultCalendarId(calendars);
+  const defaultId = defaultCalendarId(calendars, undefined, state.solo);
   const entries = useMemo<CalendarEventData[]>(
     () =>
       entriesFor({
