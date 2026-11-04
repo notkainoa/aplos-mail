@@ -77,7 +77,7 @@ test('a row with an empty or oversized field is refused, never cut', () => {
   const { store, rows } = world();
   const bad = [
     { kind: 'audit' as const, clientId: 'c1', method: '' },
-    { kind: 'audit' as const, clientId: 'c1', method: 'm', target: 'x'.repeat(501) },
+    { kind: 'audit' as const, clientId: 'c1', method: 'm', target: 'x'.repeat(1_001) },
   ];
   for (const [i, write] of bad.entries())
     assert.throws(
@@ -85,4 +85,15 @@ test('a row with an empty or oversized field is refused, never cut', () => {
       StoreError,
     );
   assert.deepEqual(rows(), []);
+});
+
+test('every id the contract accepts (1000 characters) can be audited', () => {
+  const { store, rows } = world();
+  const long: Caller = { ...client, clientId: 'c'.repeat(1_000) };
+  store.commit({
+    opId: 'long',
+    origin: 'local',
+    writes: auditWrites(long, 'Mail/allowImages', 't'.repeat(1_000)),
+  });
+  assert.equal(rows().length, 1);
 });
