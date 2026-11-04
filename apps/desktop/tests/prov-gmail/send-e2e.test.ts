@@ -35,7 +35,7 @@ test('engine: an uncertain Gmail send (answer lost, Message-ID rewritten, index 
       w.draft('d1');
       // Gmail applies the send; the answer is a truncated body, so the outcome is unknown.
       gmail.bridge.failNext = 'corrupt';
-      const submitted = w.send(w.first, 'd1');
+      const submitted = await w.send(w.first, 'd1');
       await w.clock.advance(10 * SEC);
       await until(() => w.events('send.reconciled').length >= 1);
       assert.equal(w.get(submitted.id).state, 'uncertain');

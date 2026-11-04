@@ -232,7 +232,12 @@ export async function openAttachmentFiles(
           remoteId.length === 0 ||
           remoteId.length > 8192 ||
           remotePart.length === 0 ||
-          remotePart.length > 8192
+          remotePart.length > 8192 ||
+          // A lone surrogate is not a real id: hashing it gives a stable-but-wrong name and any later
+          // logging of it writes malformed text.
+          !accountId.isWellFormed() ||
+          !remoteId.isWellFormed() ||
+          !remotePart.isWellFormed()
         )
           throw new AttachmentFilesError('path');
         if (!(data instanceof Uint8Array) || data.byteLength > limits.maxBytes)
@@ -342,8 +347,9 @@ export async function openAttachmentFiles(
       } catch (error) {
         if (errorCode(error) !== 'ENOENT') throw new AttachmentFilesError('io');
       }
-      // The account subfolder goes when it is empty; anything still in it keeps it.
-      await fs.rmdir(sub).catch(() => undefined);
+      // The account subfolder stays: an `rmdir` here could land between a concurrent write's checks and
+      // its rename, making that rename fail ENOENT. An empty hash folder costs nothing to keep, and the
+      // next write's `privateFolder` re-validates it.
     },
 
     async usage() {

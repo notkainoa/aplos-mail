@@ -1,4 +1,5 @@
 import { ProviderError, type DraftUpload } from '@aplos/engine/ports';
+import { headerEnd, headerFields, singleFields } from './mime-headers';
 
 /**
  * The checks on a draft copy's bytes before anything is uploaded (plan 20 PV4, ARCH 7.4). The draft MIME is the
@@ -35,6 +36,9 @@ const DRAFT_HEADERS: ReadonlySet<string> = new Set([
   'content-transfer-encoding',
 ]);
 
+/** Names refused with their own reason before the allow-list is asked (`singleFields`, field order). */
+const DRAFT_NAMED: ReadonlyMap<string, string> = new Map([['bcc', 'bccInDraft']]);
+
 function refuse(method: string, reason: string): ProviderError {
   return new ProviderError({
     class: 'permanent',
@@ -43,61 +47,6 @@ function refuse(method: string, reason: string): ProviderError {
     reason,
     uncertain: false,
   });
-}
-
-/** Offset of the CRLF CRLF that ends the header block, or -1. */
-function headerEnd(mime: Uint8Array): number {
-  for (let i = 0; i + 3 < mime.length; i++) {
-    if (mime[i] === 13 && mime[i + 1] === 10 && mime[i + 2] === 13 && mime[i + 3] === 10) return i;
-  }
-  return -1;
-}
-
-/** C0 controls and DEL, except the tab a folded line may start with. */
-function isControl(c: string): boolean {
-  const code = c.charCodeAt(0);
-  return (code < 0x20 && code !== 0x09) || code === 0x7f;
-}
-
-interface HeaderField {
-  name: string;
-  value: string;
-}
-
-function checkBytes(method: string, head: string): void {
-  const joined = head.replace(/\r\n/g, '');
-  if (/[\r\n]/.test(joined)) throw refuse(method, 'bareLineBreak');
-  if ([...joined].some(isControl)) throw refuse(method, 'controlCharacter');
-}
-
-/** Unfolds the header block; a line that is neither `Name: value` nor a continuation is refused. */
-function headerFields(method: string, head: string): HeaderField[] {
-  checkBytes(method, head);
-  const fields: HeaderField[] = [];
-  for (const line of head.split('\r\n')) {
-    const last = fields[fields.length - 1];
-    if (/^[ \t]/.test(line)) {
-      if (!last) throw refuse(method, 'malformedHeader');
-      last.value += line;
-      continue;
-    }
-    const match = /^([\x21-\x39\x3b-\x7e]+):(.*)$/.exec(line);
-    if (!match) throw refuse(method, 'malformedHeader');
-    fields.push({ name: match[1].toLowerCase(), value: match[2] });
-  }
-  return fields;
-}
-
-/** Each allowed header at most once; Bcc and anything the writer does not produce are refused. */
-function singleFields(method: string, fields: HeaderField[]): Map<string, string> {
-  const byName = new Map<string, string>();
-  for (const field of fields) {
-    if (field.name === 'bcc') throw refuse(method, 'bccInDraft');
-    if (!DRAFT_HEADERS.has(field.name)) throw refuse(method, 'unexpectedHeader');
-    if (byName.has(field.name)) throw refuse(method, 'duplicateHeader');
-    byName.set(field.name, field.value.trim());
-  }
-  return byName;
 }
 
 /**
@@ -115,7 +64,8 @@ export function checkDraftMime(
   const end = headerEnd(mime);
   if (end < 0) throw refuse(method, 'noHeaderBlock');
   const head = Buffer.from(mime.subarray(0, end)).toString('latin1');
-  const byName = singleFields(method, headerFields(method, head));
+  const deny = (reason: string) => refuse(method, reason);
+  const byName = singleFields(headerFields(head, deny), DRAFT_HEADERS, deny, DRAFT_NAMED);
   if (byName.get('message-id') !== draft.internetId) throw refuse(method, 'messageIdMismatch');
   const token = byName.get('x-aplos-draft');
   if (token !== undefined && token !== draft.internetId) throw refuse(method, 'draftTokenMismatch');

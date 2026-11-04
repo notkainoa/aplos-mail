@@ -26,7 +26,7 @@ async function recorded(fn: () => Promise<void>): Promise<string[]> {
 /** Sends draft `id` and lets the clock run until its first `send` call has settled. */
 async function sendAndSettle(w: World, id: string) {
   w.draft(id);
-  const submission = w.send(w.first, id);
+  const submission = await w.send(w.first, id);
   await w.clock.advance(10 * SEC);
   await w.settle();
   return submission;
@@ -43,9 +43,9 @@ test('a send that goes out commits queued>sending then sending>sent, and both fi
 test('an undo fires during-commit for queued>cancelled', () =>
   inWorld(async w => {
     w.draft('d1');
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     const seen = await recorded(async () => {
-      w.act(w.first, { type: 'undo', submissionId: s.id });
+      await w.act(w.first, { type: 'undo', submissionId: s.id });
     });
     assert.deepEqual(seen, ['queued>cancelled:undo']);
   }));
@@ -73,11 +73,11 @@ test('a send whose answer is lost fires for sending>uncertain, each findSent boo
     await w.settle();
     assert.equal(w.get(other).state, 'uncertain');
     const cancel = await recorded(async () => {
-      w.act(w.first, { type: 'cancel', submissionId: other });
+      await w.act(w.first, { type: 'cancel', submissionId: other });
     });
     assert.deepEqual(cancel, ['uncertain>cancelled:cancel']);
     const anyway = await recorded(async () => {
-      w.act(w.first, { type: 'sendAnyway', submissionId: id });
+      await w.act(w.first, { type: 'sendAnyway', submissionId: id });
     });
     assert.deepEqual(anyway, ['uncertain>queued:sendAnyway']);
   }));
