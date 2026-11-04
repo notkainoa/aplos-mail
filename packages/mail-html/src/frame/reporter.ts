@@ -6,8 +6,11 @@
 // property of the window), before it reads the page, and called with `.call`: the mail's markup is
 // already parsed when it runs, and a document or window named property (`<img name=body>`) shadows
 // `document.body` or what EventTarget gives the window, but never these. Missing one, it posts nothing.
-// The height is the root's box (the reading CSS makes it the content's height), so a letter shrinks;
-// a root with no box yet (0: Chromium can run the script before the frame's first layout) is not posted.
+// The height is the larger of the root's box (the reading CSS makes it the content's height, so a letter
+// shrinks) and the body's top plus its scroll height, which takes in positioned, transformed and
+// negative-margin content the root's box leaves out (the body is the containing block of absolutely
+// positioned content); 0 (no layout yet: Chromium can run the script before the frame's first layout) is
+// not posted.
 // The paper is the body's background, or the root's when the body's is transparent.
 
 export const REPORTER_SOURCE = `/* global window */
@@ -28,11 +31,12 @@ export const REPORTER_SOURCE = `/* global window */
     const fonts = proto(w.Document, 'fonts', 'get');
     const query = proto(w.Document, 'querySelectorAll', 'value');
     const rect = proto(w.Element, 'getBoundingClientRect', 'value');
+    const scroll = proto(w.Element, 'scrollHeight', 'get');
     const listen = proto(w.EventTarget, 'addEventListener', 'value');
     const style = w.getComputedStyle;
     const Observer = w.ResizeObserver;
     const up = w.parent;
-    if (!(root && body && state && query && rect && listen)) return;
+    if (!(root && body && state && query && rect && scroll && listen)) return;
     if (typeof style !== 'function') return;
     const token = ('' + w.location.pathname).split('/')[1];
     if (!/^[0-9a-f]{32}$/.test(token)) return;
@@ -52,6 +56,12 @@ export const REPORTER_SOURCE = `/* global window */
       const page = clear(mine) ? paint(top) : mine;
       return (clear(page) ? mine : page).slice(0, 64);
     };
+    const extent = top => {
+      const page = body.call(d);
+      const own = top ? rect.call(top).height : 0;
+      const below = page ? rect.call(page).top + scroll.call(page) : 0;
+      return M.ceil(M.max(own, below));
+    };
     let live = false;
     const report = () => {
       if (!live) return;
@@ -59,7 +69,7 @@ export const REPORTER_SOURCE = `/* global window */
         const width = w.innerWidth;
         if (!(typeof width === 'number' && width > 0)) return;
         const top = root.call(d);
-        const height = size(top ? M.ceil(rect.call(top).height) : 0, 1000000);
+        const height = size(extent(top), 1000000);
         if (height === 0) return;
         up.postMessage(
           {

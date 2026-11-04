@@ -448,6 +448,8 @@ describe('no mail declaration can outrank the frame’s measuring rules', () => 
       ['@layer{html{height:1px!important}}', '@layer{html{height:1px!important}}'],
       ['@layer a;aplos{b:c}', '@layer m-a;aplos{b:c}'],
       ['@layer a{aplos{b:c}}', '@layer m-a{aplos{b:c}}'],
+      // A block closing right after a layer statement ends its prelude too: `.foo` is not a layer name.
+      ['@media x{@layer a} .foo{b:c}', '@media x{@layer m-a} .foo{b:c}'],
     ];
     for (const [css, out] of cases) assert.equal(clean(css).css, out, css);
   });

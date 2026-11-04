@@ -92,8 +92,17 @@ export const LIMITS: ParseLimits = {
   maxElements: 20_000,
   maxStyleChars: 262_144,
 };
-/** A `style` attribute longer than this is dropped (the element stays). */
+/** A `style` attribute longer than this, as written or once sanitized, is dropped (the element stays). */
 export const MAX_STYLE_ATTRIBUTE = 32_768;
+/**
+ * What the sanitized CSS of one message may add up to: its `<style>` blocks together, and its `style` attributes
+ * together. The viewport rewrite makes CSS longer (`1vmin` is written `calc(1*min(1vw,8px))`), so the input limits
+ * alone do not bound the output: a block or attribute that would pass these totals is dropped.
+ */
+export const OUTPUT_LIMITS = {
+  styleBlocks: LIMITS.maxStyleChars,
+  styleAttributes: LIMITS.maxChars,
+};
 
 export function sanitizeHtml(
   html: string,
@@ -122,6 +131,9 @@ class Walker {
   private readonly hidingStyles = new Map<string, boolean>();
   /** What every `<noframes>` re-parse together may still build. */
   private fallbackElements = LIMITS.maxElements;
+  /** Sanitized CSS still allowed in `<style>` blocks and in `style` attributes (OUTPUT_LIMITS). */
+  private styleBlockRoom = OUTPUT_LIMITS.styleBlocks;
+  private styleAttributeRoom = OUTPUT_LIMITS.styleAttributes;
 
   constructor(
     private readonly images: ImageBook,
@@ -292,7 +304,9 @@ class Walker {
     if (element.truncated) return;
     const css = textOf(element);
     const clean = sanitizeCss(css, this.images).trim();
-    if (clean) this.out.push(`<style>${clean}</style>`);
+    if (!clean || clean.length > this.styleBlockRoom) return;
+    this.styleBlockRoom -= clean.length;
+    this.out.push(`<style>${clean}</style>`);
   }
 
   private attributes(element: ElementNode, exclude?: Set<string>): string {
@@ -313,7 +327,7 @@ class Walker {
     const parts: string[] = [];
     const style = element.attrs.get('style');
     const clean = dropImportance ? this.rootStyle(style) : this.cleanStyle(style);
-    if (clean) parts.push(attribute('style', clean));
+    if (this.spendStyleAttribute(clean)) parts.push(attribute('style', clean));
     const background = element.attrs.get('background');
     if (background !== undefined && BACKGROUND.has(element.name)) {
       const source = this.images.source(background, 'css');
@@ -334,6 +348,14 @@ class Walker {
       this.cleanStyles.set(style, clean);
     }
     return clean;
+  }
+
+  /** Whether a sanitized `style` value is written: not empty, within its own cap and the message's total. */
+  private spendStyleAttribute(clean: string): boolean {
+    if (!clean || clean.length > MAX_STYLE_ATTRIBUTE || clean.length > this.styleAttributeRoom)
+      return false;
+    this.styleAttributeRoom -= clean.length;
+    return true;
   }
 
   /** The frame `<body>`'s style, with no `!important` (once per message, so not cached). */

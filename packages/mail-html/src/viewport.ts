@@ -1,7 +1,8 @@
 import { asciiLower } from './parse';
 
-// Viewport units that follow the frame's height become fixed lengths. The host sizes the frame to the letter, and
-// the letter lays out in that frame, so `height:100vh` would grow the frame, which grows the letter, without end.
+// Viewport length units that follow the frame's height become fixed lengths. The host sizes the frame to the letter,
+// and the letter lays out in that frame, so `height:100vh` would grow the frame, which grows the letter, without end.
+// Only lengths: writing modes and media or container queries can still follow the frame (css.ts, the host's fence).
 // Every height-axis unit is read against a fixed 800 px viewport height; `vw` and `vi` follow the width and stay.
 // The min and max units become `calc(N*min(1vw,8px))` (or `max`), which is exact for negative N too. Container
 // units count: with no size container in the mail they fall back to the small viewport's units.

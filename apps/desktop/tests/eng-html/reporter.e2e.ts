@@ -25,6 +25,7 @@ type Reports = Record<string, Report[]>;
 interface Measured {
   root: number;
   top: number;
+  bottom: number;
   compat: string;
   inner: number;
 }
@@ -36,7 +37,7 @@ interface Result {
   settled: Record<string, Measured | null>;
   clobber: Record<string, unknown> | null;
   frames: Record<string, number>;
-  frozen: Record<string, boolean>;
+  frozen: Record<string, number>;
 }
 
 function safeEnv(clobberFile: string): NodeJS.ProcessEnv {
@@ -171,6 +172,61 @@ test('the reporter and sanitizer in a hidden Chromium', { timeout: 60_000 }, asy
     assert.equal(r.settled.outrank?.top, 0, 'no margin pushes the letter below what is measured');
     assert.ok((last(r.before, 'outrankRaw')?.h ?? 0) > 2_000, 'the control is not measured short');
   });
+
+  await t.test('content outside the root’s box is measured to its true bottom, not cut', () => {
+    // Reviewer's rows (reported before / true): 86/1224, 82/956, 56/340, 109/893, 86/586, 64/124.
+    for (const name of [
+      'absolute',
+      'absoluteInRelative',
+      'dropdown',
+      'childTransform',
+      'bodyTransform',
+      'bodyNegativeBottom',
+    ]) {
+      const h = last(r.reopened, name)?.h ?? 0;
+      const bottom = r.settled[name]?.bottom ?? 0;
+      assert.ok(bottom > 100, `${name}: true bottom ${bottom}`);
+      assert.ok(h >= bottom - 1 && h <= bottom + 40, `${name}: h ${h}, true bottom ${bottom}`);
+      assert.equal(r.frames[name], h, `${name}: the frame is that tall, so nothing is cut`);
+    }
+  });
+
+  await t.test(
+    'layout the measuring rules undo: full-height absolute, offset path, containers, vertical root',
+    () => {
+      const plain: Record<string, number> = {
+        absoluteFull: 86,
+        offsetZeroWidth: 86,
+        offsetAway: 86,
+        bodyContainer: 932,
+        rootContainer: 932,
+        verticalRoot: 86,
+        empty: 1,
+      };
+      for (const [name, height] of Object.entries(plain)) {
+        assert.equal(last(r.reopened, name)?.h, height, name);
+        assert.equal(r.settled[name]?.top, 0, `${name}: the root is where it is measured`);
+      }
+    },
+  );
+
+  await t.test(
+    'not covered, documented: vertical text and a height query follow the frame until the host’s fence',
+    () => {
+      for (const name of ['verticalText', 'heightQuery']) {
+        const reports = r.reopened[name];
+        for (const { data } of reports) assert.deepEqual(Object.keys(data), SIX, name);
+        const heights = new Set(reports.map(report => report.data.h));
+        assert.ok(heights.size > 1, `${name} follows its frame: ${[...heights].join(' ')}`);
+        const frozenAt = r.frozen[name];
+        assert.ok(frozenAt > 0, `${name}: only the host's fence (30 reports here) stopped it`);
+        // With the frame's height held, the reporter posts nothing more of its own accord.
+        const after = reports.filter(report => report.at > frozenAt + 300).length;
+        assert.equal(after, 0, `${name}: ${after} reports after the fence`);
+        assert.ok(reports.length <= 31 + 3, `${name}: ${reports.length} reports in all`);
+      }
+    },
+  );
 
   await t.test('the paper: the root’s colour when the body’s is transparent', () => {
     assert.equal(last(r.before, 'rootPaper')?.bg, 'rgb(18, 52, 86)');

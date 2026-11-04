@@ -6,7 +6,7 @@ import type { MailHtml, MailHtmlInput, MailHtmlResult } from '@aplos/engine/port
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import { loadCorpus, type CorpusEntry } from '../corpus/index';
 import { MAIL_HTML_VERSION, mailHtml, render, sanitizeBody } from '../src/index';
-import { LIMITS, MAX_DEPTH } from '../src/sanitize';
+import { LIMITS, MAX_DEPTH, MAX_STYLE_ATTRIBUTE, OUTPUT_LIMITS } from '../src/sanitize';
 import { loadableValues, unsafeParts } from './oracle';
 
 // The sanitizer against hand-written cases and the whole hostile corpus. Every rendered document
@@ -290,6 +290,56 @@ describe('elements and attributes', () => {
       /<style>@layer aplos\{html\{[^}]*height:auto!important[^}]*overflow-y:hidden!important\}body\{/,
       'the measuring rules are the first layer, first in the document',
     );
+    const layer = /<style>@layer aplos\{html\{([^}]*)\}body\{([^}]*)\}\}/.exec(result.document);
+    const [rootRules, bodyRules] = [layer?.[1] ?? '', layer?.[2] ?? ''];
+    for (const rule of [
+      'position:static',
+      'min-height:1px',
+      'margin:0',
+      'transform:none',
+      'offset-path:none',
+      'writing-mode:horizontal-tb',
+      'container-type:normal',
+    ])
+      assert.ok(rootRules.includes(`${rule}!important`), `html ${rule}`);
+    for (const rule of [
+      'position:relative',
+      'min-height:0',
+      'container-type:normal',
+      'height:auto',
+    ])
+      assert.ok(bodyRules.includes(`${rule}!important`), `body ${rule}`);
+  });
+
+  it('caps sanitized CSS, not only the input: the viewport rewrite makes it longer', () => {
+    // 200 KB of `1vmin` (within the input limits) is about 4x as long once rewritten.
+    const units = '1vmin '.repeat(200_000 / 6);
+    const block = html(`<style>.a{height:${units}}</style><p>x</p>`);
+    assert.equal(block.document.includes('.a{'), false, 'a block over the output cap is dropped');
+    const small = html(`<style>.a{height:1vmin}</style><style>.b{height:${units}}</style><p>x</p>`);
+    assert.ok(
+      small.document.includes('.a{height:calc(1*min(1vw,8px))}'),
+      'a block within it stays',
+    );
+    assert.equal(small.document.includes('.b{'), false);
+    // Blocks each within the cap, together over it: the message total counts every block written.
+    const third = '1vmin '.repeat(40_000 / 6);
+    const blocks = html(
+      ['a', 'b', 'c'].map(name => `<style>.${name}{height:${third}}</style>`).join('') + '<p>x</p>',
+    );
+    assert.ok(blocks.document.includes('.a{'), 'the first block fits');
+    assert.equal(blocks.document.includes('.c{'), false, 'the blocks together do not');
+    const attribute = '1vmin '.repeat(30_000 / 6);
+    assert.ok(attribute.length < MAX_STYLE_ATTRIBUTE, 'the input is within the attribute cap');
+    const one = html(`<p style="margin:${attribute}">x</p>`);
+    assert.equal(bodyOf(one).includes('style='), false, 'an attribute over the cap once rewritten');
+    const each = `<p style="margin:${'1vmin '.repeat(1_000)}">x</p>`;
+    const many = html(each.repeat(80));
+    assert.ok(each.length * 80 < LIMITS.maxChars, 'the markup is within the input limit');
+    const written = (bodyOf(many).match(/style="/g) ?? []).length;
+    assert.ok(written > 0 && written < 80, `${written} of 80 attributes fit the message total`);
+    assert.ok(bodyOf(many).length < OUTPUT_LIMITS.styleAttributes + 80 * 40, 'bounded');
+    assert.ok(block.document.length < LIMITS.maxChars + OUTPUT_LIMITS.styleBlocks + 4_000);
   });
 
   it('escapes control characters, lone surrogates and NUL without breaking the output', () => {

@@ -33,15 +33,22 @@ addEventListener('message', e => {
   if (!f || !e.data || typeof e.data.h !== 'number') return;
   const list = (reports[f.dataset.name] ??= []);
   list.push({ data: e.data, at: performance.now() });
-  // A fence for the positive control only: unbounded growth is cut after 200 reports.
-  if (list.length > 200) return void (frozen[f.dataset.name] = true);
+  // The host's growth fence, as ui-core's renderer has one: after FENCE reports the frame keeps its height. Here a
+  // report count (200, or 30 for the documents that need the fence).
+  if (list.length > Number(f.dataset.fence || 200)) {
+    frozen[f.dataset.name] ??= performance.now();
+    return;
+  }
   f.style.height = Math.max(1, Math.min(e.data.h, 200000)) + 'px';
 });
-window.addFrame = (name, src) => new Promise(resolve => {
+window.addFrame = (name, src, fence) => new Promise(resolve => {
   const f = document.createElement('iframe');
   f.dataset.name = name;
+  if (fence) f.dataset.fence = String(fence);
+  // Fenced frames sit at the top of the window, so Chromium never throttles them as offscreen while they grow.
+  const pin = fence ? 'position:fixed;top:0;left:0;' : '';
   f.setAttribute('sandbox', 'allow-scripts allow-popups');
-  f.style.cssText = 'display:block;border:0;width:600px;height:150px';
+  f.style.cssText = pin + 'display:block;border:0;width:600px;height:150px';
   f.onload = () => resolve(true);
   setTimeout(() => resolve(false), 5000);
   f.src = src;
@@ -101,7 +108,48 @@ const OUTRANK =
   '@layer z{body{min-height:7000px!important}}</style>' +
   '<body style="height:3000px!important;min-height:3000px!important"><p>short</p></body>';
 
+const JAPANESE = '縦書きの日本語の文章です。'.repeat(80);
+const TALL = '<div style="height:900px;background:#eee">tall</div>';
+
+/** Content the root's box leaves out (positioned, transformed, negative margin): measured to its true bottom. */
+const OUTSIDE_THE_ROOT: Record<string, string> = {
+  absolute: '<p>a</p><div style="position:absolute;top:1200px">far</div>',
+  absoluteInRelative:
+    '<div style="position:relative;height:50px"><div style="position:absolute;top:40px;height:900px">x</div></div>',
+  dropdown:
+    '<div style="position:relative">top<div style="position:absolute;top:100%;height:300px">menu</div></div>',
+  childTransform: '<p>x</p><div style="transform:translateY(800px)">moved</div>',
+  bodyTransform: '<style>body{transform:translateY(500px)}</style><p>x</p>',
+  bodyNegativeBottom: '<style>body{margin-bottom:-60px}</style><p>a</p><p>last line</p>',
+};
+
+/** Layout the measuring rules must undo: each of these measures as its plain content. */
+const UNDONE: Record<string, string> = {
+  absoluteFull: '<div style="position:absolute;top:0;height:100%;width:10px"></div><p>x</p>',
+  offsetZeroWidth:
+    "<style>html{width:0;offset-path:path('M0,0 L1,0');offset-rotate:90deg}</style><p>x</p>",
+  offsetAway: "<style>html{offset-path:path('M0,0 L0,-5000');offset-distance:100%}</style><p>x</p>",
+  bodyContainer: `<style>body{container-type:size}</style>${TALL}`,
+  rootContainer: `<style>html{container-type:size}</style>${TALL}`,
+  verticalRoot: '<style>html{writing-mode:vertical-lr}</style><p>short</p>',
+  // An empty letter with no padding: the root's 1 px minimum still lets it report.
+  empty: '<body style="padding:0"><span></span></body>',
+};
+
+/** Not covered by the sanitizer (DECISIONS): the letter follows its frame, and the host's fence (30) stops it. */
+const FENCED: Record<string, string> = {
+  verticalText: `<div style="writing-mode:vertical-rl">${JAPANESE}</div>`,
+  heightQuery:
+    '<style>.a{height:100px} @media (max-height:300px){.a{height:500px}}</style><div class="a">q</div>',
+};
+
 const DOCUMENTS: Record<string, () => string> = {
+  ...Object.fromEntries(
+    Object.entries({ ...OUTSIDE_THE_ROOT, ...UNDONE, ...FENCED }).map(([name, html]) => [
+      name,
+      () => engineDocument(html),
+    ]),
+  ),
   // A closed <details> must report a smaller height than the open one.
   details: () =>
     engineDocument(
@@ -139,7 +187,13 @@ async function measure(win: BrowserWindow, name: string) {
       const get = (type, key) => Object.getOwnPropertyDescriptor(type.prototype, key).get;
       const root = get(Document, 'documentElement').call(document);
       const box = Element.prototype.getBoundingClientRect.call(root);
+      let bottom = 0;
+      for (const element of document.querySelectorAll('*')) {
+        const r = element.getBoundingClientRect();
+        if (r.height > 0 || r.width > 0) bottom = Math.max(bottom, r.bottom);
+      }
       return {
+        bottom: Math.ceil(bottom),
         root: Math.ceil(box.height),
         top: box.top,
         compat: document.compatMode,
@@ -147,7 +201,7 @@ async function measure(win: BrowserWindow, name: string) {
       };
     })()`,
     true,
-  ) as Promise<{ root: number; top: number; compat: string; inner: number }>;
+  ) as Promise<{ root: number; top: number; bottom: number; compat: string; inner: number }>;
 }
 
 const urls: Record<string, string> = {};
@@ -193,8 +247,9 @@ async function scenario() {
   docs.clobber = unsanitized(clobberHtml);
   for (const [name, document] of Object.entries(docs)) {
     urls[name] = issue(document);
+    const fence = name in FENCED ? 30 : 0;
     await win.webContents.executeJavaScript(
-      `addFrame(${JSON.stringify(name)}, ${JSON.stringify(urls[name])})`,
+      `addFrame(${JSON.stringify(name)}, ${JSON.stringify(urls[name])}, ${fence})`,
     );
   }
   await wait(2500);

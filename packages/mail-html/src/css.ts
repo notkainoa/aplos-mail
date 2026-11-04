@@ -18,7 +18,10 @@ import { fixedViewportLength } from './viewport';
 // appears in the output. Mail layer names move to `m-<name>` (as ids do), so no mail rule can join the frame's own
 // first layer, `aplos`, whose `!important` measuring rules (reading-css.ts) therefore outrank every mail stylesheet
 // rule; the `<body>` style attribute, which would outrank a layer, loses its `!important` (`dropImportance`). The
-// height-axis viewport units become fixed lengths (viewport.ts), so a letter's height cannot follow its frame's.
+// height-axis viewport LENGTH units become fixed lengths (viewport.ts), so no length in the mail follows the
+// frame's height. That is all it covers: a letter can still follow its frame through an orthogonal writing mode
+// (vertical text sized by the frame's height), height, orientation or aspect-ratio media features, and container
+// queries on a size container; the host's growth fence is required for those.
 
 const KEPT_AT_RULES = new Set([
   'media',

@@ -16,11 +16,12 @@
     const fonts = proto(w.Document, 'fonts', 'get');
     const query = proto(w.Document, 'querySelectorAll', 'value');
     const rect = proto(w.Element, 'getBoundingClientRect', 'value');
+    const scroll = proto(w.Element, 'scrollHeight', 'get');
     const listen = proto(w.EventTarget, 'addEventListener', 'value');
     const style = w.getComputedStyle;
     const Observer = w.ResizeObserver;
     const up = w.parent;
-    if (!(root && body && state && query && rect && listen)) return;
+    if (!(root && body && state && query && rect && scroll && listen)) return;
     if (typeof style !== 'function') return;
     const token = ('' + w.location.pathname).split('/')[1];
     if (!/^[0-9a-f]{32}$/.test(token)) return;
@@ -40,6 +41,12 @@
       const page = clear(mine) ? paint(top) : mine;
       return (clear(page) ? mine : page).slice(0, 64);
     };
+    const extent = top => {
+      const page = body.call(d);
+      const own = top ? rect.call(top).height : 0;
+      const below = page ? rect.call(page).top + scroll.call(page) : 0;
+      return M.ceil(M.max(own, below));
+    };
     let live = false;
     const report = () => {
       if (!live) return;
@@ -47,7 +54,7 @@
         const width = w.innerWidth;
         if (!(typeof width === 'number' && width > 0)) return;
         const top = root.call(d);
-        const height = size(top ? M.ceil(rect.call(top).height) : 0, 1000000);
+        const height = size(extent(top), 1000000);
         if (height === 0) return;
         up.postMessage(
           {

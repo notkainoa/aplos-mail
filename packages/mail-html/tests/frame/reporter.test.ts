@@ -42,8 +42,8 @@ describe('reporter: the shipped file and its hash', () => {
   });
 
   it('is small, ASCII, and cannot end its own script element', () => {
-    // Small enough to review whole: 2,048 before the clobbering-proof captures, 3,072 now.
-    assert.ok(REPORTER_SOURCE.length < 3_072, `${REPORTER_SOURCE.length} bytes`);
+    // Small enough to review whole: 2,048 before the clobbering-proof captures and the body extent, 3,584 now.
+    assert.ok(REPORTER_SOURCE.length < 3_584, `${REPORTER_SOURCE.length} bytes`);
     assert.match(REPORTER_SOURCE, /^[\x20-\x7e\n]*$/);
     assert.equal(/<\/script|<!--/i.test(REPORTER_SOURCE), false);
   });
@@ -113,6 +113,9 @@ interface FakeOptions {
 interface FakeElement {
   name: string;
   height: number;
+  /** The box's top (getBoundingClientRect) and the scroll height (Element.prototype.scrollHeight). */
+  top: number;
+  scroll: number;
   background: string;
 }
 
@@ -132,11 +135,15 @@ function fakeWindow(options: FakeOptions = {}) {
   const root: FakeElement = {
     name: 'html',
     height: options.height ?? 500,
+    top: 0,
+    scroll: 0,
     background: options.rootBackground ?? 'rgba(0, 0, 0, 0)',
   };
   const body: FakeElement = {
     name: 'body',
     height: 300,
+    top: 0,
+    scroll: 300,
     background: options.background ?? 'rgb(255, 255, 255)',
   };
   const page = { root, body, readyState: 'interactive', marks: options.marks ?? 0 };
@@ -148,8 +155,14 @@ function fakeWindow(options: FakeOptions = {}) {
   };
   function Element() {}
   Element.prototype.getBoundingClientRect = function (this: FakeElement) {
-    return { height: this.height, width: 0 };
+    return { height: this.height, top: this.top, width: 0 };
   };
+  Object.defineProperty(Element.prototype, 'scrollHeight', {
+    get(this: FakeElement) {
+      return this.scroll;
+    },
+    configurable: true,
+  });
   Object.setPrototypeOf(root, Element.prototype);
   Object.setPrototypeOf(body, Element.prototype);
   function Document() {}
@@ -273,7 +286,33 @@ describe('reporter: behaviour in a fake DOM', () => {
     assert.equal(lastMessage(fake)?.h, 340, 'smaller than before');
     fake.body.height = 90_000;
     fake.fire('window:resize');
-    assert.equal(lastMessage(fake)?.h, 340, 'the body’s own box is not what is measured');
+    assert.equal(lastMessage(fake)?.h, 340, 'the body’s own box height is not what is measured');
+  });
+
+  it('measures what lies past the root’s box: the body’s top plus its scroll height', () => {
+    // Positioned, transformed and negative-margin content (reporter.e2e.ts measures each in Chromium).
+    const cases: [number, number, number, number][] = [
+      // [root height, body top, body scroll height, reported]
+      [86, 0, 1223.4, 1224],
+      [86, 500, 86, 586],
+      [64, -300, 1240, 940],
+      [900, -300, 900, 900],
+      [86, 0, 70, 86],
+    ];
+    for (const [height, top, scroll, reported] of cases) {
+      const fake = fakeWindow({ height });
+      fake.body.top = top;
+      fake.body.scroll = scroll;
+      run(fake);
+      assert.equal(lastMessage(fake)?.h, reported, `${height} ${top} ${scroll}`);
+    }
+  });
+
+  it('measures the root alone when there is no body', () => {
+    const fake = fakeWindow({ height: 120 });
+    (fake.page as { body: unknown }).body = null;
+    run(fake);
+    assert.equal(lastMessage(fake)?.h, 120);
   });
 
   it('posts nothing while innerWidth is 0', () => {
@@ -300,6 +339,7 @@ describe('reporter: behaviour in a fake DOM', () => {
   it('posts nothing while the root has no box (a height of 0, non-finite or negative), then reports', () => {
     for (const height of [0, 0.0, Number.NaN, Number.POSITIVE_INFINITY, -5]) {
       const fake = fakeWindow({ height });
+      fake.body.scroll = 0;
       run(fake);
       fake.fire('document:DOMContentLoaded');
       assert.equal(fake.posted.length, 0, String(height));
@@ -309,12 +349,18 @@ describe('reporter: behaviour in a fake DOM', () => {
     }
   });
 
-  it('posts nothing when the document has no root element', () => {
+  it('measures the body alone when the document has no root element, and nothing with neither', () => {
     const fake = fakeWindow();
     (fake.page as { root: unknown }).root = null;
     run(fake);
     fake.fire('window:load');
-    assert.equal(fake.posted.length, 0);
+    assert.equal(lastMessage(fake)?.h, 300);
+    const none = fakeWindow();
+    (none.page as { root: unknown; body: unknown }).root = null;
+    (none.page as { root: unknown; body: unknown }).body = null;
+    run(none);
+    none.fire('window:load');
+    assert.equal(none.posted.length, 0);
   });
 
   it('takes the token from the frame path, and stays quiet on any other path', () => {
@@ -452,6 +498,7 @@ describe('reporter: DOM clobbering', () => {
       get: () => ({ height: 5 }),
     });
     fake.window.getComputedStyle = () => ({ backgroundColor: 'rgb(6, 6, 6)' });
+    Object.defineProperty(fake.prototypes.Element.prototype, 'scrollHeight', { get: () => 9_000 });
     fake.fire('window:resize');
     assert.equal(lastMessage(fake)?.h, 640);
     assert.equal(lastMessage(fake)?.bg, 'rgb(255, 255, 255)');
@@ -467,6 +514,7 @@ describe('reporter: DOM clobbering', () => {
       'Element.prototype.getBoundingClientRect',
       f => drop(f.prototypes.Element, 'getBoundingClientRect'),
     ],
+    ['Element.prototype.scrollHeight', f => drop(f.prototypes.Element, 'scrollHeight')],
     [
       'EventTarget.prototype.addEventListener',
       f => drop(f.prototypes.EventTarget, 'addEventListener'),
