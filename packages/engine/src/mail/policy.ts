@@ -41,10 +41,24 @@ export function resolveImagePolicy(
   requested: unknown,
   sender: unknown,
   allowList: readonly unknown[],
+  global: 'block' | 'allow' = 'block',
 ): ResolvedPolicy {
   if (requested === 'load') return 'allow';
   if (requested !== 'block') return 'block';
+  if (global === 'allow') return 'allow';
   return senderAllowed(sender, allowList) ? 'allow' : 'block';
+}
+
+/** `Settings.mail.remoteImages`: the owner's global always-load choice; 'block' when unset or unreadable. */
+export function readRemoteImages(q: StoreReader): 'block' | 'allow' {
+  try {
+    const row = q.get<{ value: string | null }>(
+      "SELECT json_extract(data, '$.mail.remoteImages') AS value FROM settings WHERE id = 1",
+    );
+    return row && row.value === 'allow' ? 'allow' : 'block';
+  } catch {
+    return 'block';
+  }
 }
 
 /** `Settings.mail.imageAllowList` from the settings document; empty when there is none or it is unreadable. */

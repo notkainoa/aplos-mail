@@ -1,6 +1,8 @@
 /* The status family (DESIGN 5 rule 12, 6, 7.1, 7.12, 7.15). Tokens only. Builds on ../surfaces/surfaces.css for the
    internal button, keycap and dialog. Progress is neutral: done --ink-2, paused --dusk, failed --stamp. Loops use
-   --dur-status and pause with --play-status under reduced motion (spinners keep turning, DESIGN 11.5). */
+   --dur-status. Under reduced motion the Spinner glyph KEEPS turning (DESIGN 11.5: "spinners stay"), while the
+   indeterminate runner is static (DESIGN 4.8 `status` Reduced column): a centred 30 % bar inside its track. DESIGN 4.8
+   and 11.5 disagree about spinners; 11.5 is followed for the Spinner, 4.8 for the runner and the checklist marker. */
 
 /* ───────────── Spinner (only after 150 ms) ───────────── */
 
@@ -148,6 +150,18 @@
   to {
     transform: translateX(340%);
   }
+}
+/* Reduced motion (DESIGN 4.8 static): no loop. Pausing it parked the runner at the keyframe's start, off the track
+   (translateX(-100%)), so it rests as a centred 30 % bar instead. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress-segments__runner {
+    left: calc(50% - 100% * 0.15);
+    animation: none;
+  }
+}
+:root[data-motion='reduced'] .ui-progress-segments__runner {
+  left: calc(50% - 100% * 0.15);
+  animation: none;
 }
 
 .ui-progress-segments[data-variant='checkpoints'] {
