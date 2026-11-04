@@ -22,7 +22,7 @@ import {
   type MailKeyMessage,
   type RelayableInput,
 } from '../../shared/mail-keys';
-import { isMailDocumentUrl } from './relay';
+import { isShownMailDocumentUrl } from './relay';
 
 /** The part of Electron's `WebFrameMain` the relay reads. */
 export interface RelayFrame {
@@ -51,7 +51,7 @@ function sealedFrameFocused(contents: RelayContents): boolean {
     return false;
   }
   if (!frame || frame === contents.mainFrame || frame.parent !== contents.mainFrame) return false;
-  return isMailDocumentUrl(frame.url);
+  return isShownMailDocumentUrl(frame.url);
 }
 
 /**
