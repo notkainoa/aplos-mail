@@ -1,6 +1,7 @@
 import type { Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { MethodContext } from '../methods/types';
+import { auditWrites } from '../host/module';
 import { cleanList, editList, MAX_ALLOW_LIST } from './allow-list';
 import { normaliseMatch, readAllowList } from './policy';
 
@@ -27,7 +28,11 @@ export function allowImages(
   const result = store.commit({
     opId: args.opId,
     origin: 'local',
-    writes: [{ kind: 'imageAllowList', sender, allow }],
+    writes: [
+      { kind: 'imageAllowList', sender, allow },
+      // `audit: true`: a listener client's change is logged, content-free, in the same commit.
+      ...auditWrites(ctx.caller, 'Mail/allowImages', sender),
+    ],
   });
   return {
     opId: args.opId,
