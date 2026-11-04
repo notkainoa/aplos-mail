@@ -80,6 +80,28 @@ export const COUNT_KEYS: readonly string[] = [
   'bodyUnchanged',
   'bodyEdited',
   'probeDraftsExisting',
+  // gmail.draft-message-id-after-edit v2: shape codes (0 absent, 1 ours, 2 Gmail-style, 3 other), 0/1 stability and header
+  // flags, and hit counts of the rfc822msgid: searches. Never a Message-ID value or a token.
+  'messageIdShapeCreate',
+  'messageIdShapeSave',
+  'messageIdShapePhone',
+  'messageIdStableAcrossApiSave',
+  'messageIdStableAcrossPhoneEdit',
+  'customHeaderKeptAfterCreate',
+  'customHeaderKeptAfterApiSave',
+  'customHeaderKeptAfterPhoneEdit',
+  'engineHeaderKeptAfterCreate',
+  'engineHeaderKeptAfterApiSave',
+  'engineHeaderKeptAfterPhoneEdit',
+  'stateMissing',
+  'searchDraftsOursCreate',
+  'searchDraftsReportedCreate',
+  'searchMessagesOursCreate',
+  'searchMessagesReportedCreate',
+  'searchDraftsOursPhone',
+  'searchDraftsReportedPhone',
+  'searchMessagesOursPhone',
+  'searchMessagesReportedPhone',
   // Answers that were 200 with an empty body (a list with no items): ok, not an error.
   'emptyAnswers',
 ];
