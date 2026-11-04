@@ -266,8 +266,12 @@ export class GmailAdapter implements ProviderAdapter {
     return fetchAttachment(this.rt.deps, ref, this.paced(ctx));
   }
 
-  original(remoteMessageId: string, ctx: AdapterContext): Promise<AsyncIterable<Uint8Array>> {
-    return fetchOriginal(this.rt.deps, remoteMessageId, this.paced(ctx));
+  original(
+    remoteMessageId: string,
+    ctx: AdapterContext,
+    opts?: { signal?: AbortSignal },
+  ): Promise<AsyncIterable<Uint8Array>> {
+    return fetchOriginal(this.rt.deps, remoteMessageId, this.paced(ctx), opts);
   }
 
   search(query: ServerSearch, ctx: AdapterContext): Promise<SearchResult> {
