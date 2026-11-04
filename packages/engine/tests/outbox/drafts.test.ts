@@ -347,12 +347,12 @@ test('Message-IDs stay per revision through sync and send, and a synced revision
   world(async w => {
     const s = await synced(w);
     const first = s.draft;
-    const sub1 = w.send(w.first, first.id, { revision: first.revision });
+    const sub1 = await w.send(w.first, first.id, { revision: first.revision });
     assert.equal(sub1.internetId, w.remoteDrafts.saves[0].internetId, 'sent under the copy id');
-    w.act(w.first, { type: 'undo', submissionId: sub1.id });
+    await w.act(w.first, { type: 'undo', submissionId: sub1.id });
     const second = edit(w, read(w, first.id), fields({ subject: 'Revised' }));
     await wait(w, 5 * SEC);
-    const sub2 = w.send(w.first, first.id, { revision: second.revision });
+    const sub2 = await w.send(w.first, first.id, { revision: second.revision });
     assert.equal(sub2.internetId, w.remoteDrafts.saves[1].internetId);
     assert.notEqual(sub2.internetId, sub1.internetId);
     assertIdsPerRevision(w, first.id);
@@ -366,7 +366,7 @@ test('Message-IDs stay per revision through sync and send, and a synced revision
 test('a draft with a live send is locked: save, resolve and sync wait, and discarding cancels a send that has not started', () =>
   world(async w => {
     const d = create(w);
-    const sub = w.send(w.first, d.id);
+    const sub = await w.send(w.first, d.id);
     const message = refused(
       () =>
         service(w).set(next(), {
@@ -395,7 +395,7 @@ test('a draft whose send is sending cannot be discarded or resolved', () =>
     const d = create(w);
     let release!: () => void;
     w.server.script.push({ wait: new Promise<void>(resolve => (release = resolve)) });
-    w.send(w.first, d.id);
+    await w.send(w.first, d.id);
     await w.clock.advance(10 * SEC);
     refused(() => service(w).destroy(next(), d.id), 'conflict');
     refused(
@@ -411,7 +411,7 @@ test('a draft whose send is sending cannot be discarded or resolved', () =>
 test('a sent draft leaves Drafts; the remote draft its send consumed is not deleted again', () =>
   world(async w => {
     const s = await synced(w);
-    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: s.draft.revision });
     await wait(w, 10 * SEC);
     assert.equal(w.get(sub.id).state, 'sent');
     assert.equal(service(w).get([s.draft.id]).notFound.length, 1, 'cleaned up');

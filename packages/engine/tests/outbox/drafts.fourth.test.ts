@@ -41,6 +41,18 @@ function refused(fn: () => unknown, type: string): string {
   assert.fail(`expected ${type}`);
 }
 
+/** `refused` for a refusal that arrives as a rejected promise. */
+async function rejected(fn: () => Promise<unknown>, type: string): Promise<string> {
+  try {
+    await fn();
+  } catch (error) {
+    assert.ok(error instanceof ContractError, `a ContractError, got ${String(error)}`);
+    assert.equal(error.type, type, error.message);
+    return error.message;
+  }
+  assert.fail(`expected ${type}`);
+}
+
 interface Row {
   id: string;
   revision: number;
@@ -144,7 +156,7 @@ test('N3: a send created while an upload is in flight whose upload answers confl
     const mine = edit(w, s.draft, fields({ subject: 'Mine' }), true);
     await wait(w, 1);
     const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
-    w.send(w.first, s.draft.id, { revision: mine.revision });
+    await w.send(w.first, s.draft.id, { revision: mine.revision });
     g.open();
     await w.settle();
     assert.ok(read(w, s.draft.id).conflict, 'the upload raised the conflict under the live send');
@@ -159,7 +171,7 @@ test('N3: a phone edit during the undo hold does not get its copy deleted after 
   world(async w => {
     const s = await synced(w);
     const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
-    w.send(w.first, s.draft.id, { revision: mine.revision });
+    await w.send(w.first, s.draft.id, { revision: mine.revision });
     const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
     phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', html: '<p>Their body</p>' });
     await wait(w, 30 * SEC);
@@ -176,7 +188,7 @@ test('N3: a phone edit during the undo hold, then the owner discards the draft: 
   world(async w => {
     const s = await synced(w);
     const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
-    const sub = w.send(w.first, s.draft.id, { revision: mine.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: mine.revision });
     const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
     phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', html: '<p>Their body</p>' });
     assert.equal(
@@ -201,7 +213,7 @@ test('N3: history reports the draft removed (the phone sent it) during our live 
   world(async w => {
     const s = await synced(w);
     const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
-    w.send(w.first, s.draft.id, { revision: mine.revision });
+    await w.send(w.first, s.draft.id, { revision: mine.revision });
     const theirId = w.remoteDrafts.phoneEdit(s.remoteDraftId);
     phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', removed: true });
     await wait(w, 30 * SEC);
@@ -218,7 +230,7 @@ test('N3: a sent draft whose copy nobody touched still has the copy deleted', ()
   world(async w => {
     const s = await synced(w);
     const mine = edit(w, s.draft, fields({ subject: 'Mine' }));
-    w.send(w.first, s.draft.id, { revision: mine.revision });
+    await w.send(w.first, s.draft.id, { revision: mine.revision });
     await wait(w, 30 * SEC);
     assert.equal(w.server.payloads.length, 1);
     assert.deepEqual(w.remoteDrafts.removeAttempts, [s.remoteDraftId]);
@@ -309,7 +321,7 @@ test('N1: sending a draft whose text never arrived says so honestly', () =>
   world(async w => {
     phone(w, 'phone-1', 'pm-1', { subject: 'Written on the phone' });
     const d = read(w, PHONE_ID);
-    const sentence = refused(
+    const sentence = await rejected(
       () => w.send(w.first, PHONE_ID, { revision: d.revision }),
       'unavailable',
     );

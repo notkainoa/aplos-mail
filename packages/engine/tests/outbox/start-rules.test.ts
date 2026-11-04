@@ -11,11 +11,11 @@ test('killed between the marker and send: on restart it is uncertain, checked fi
     w.draft('d2');
     // The first send hangs without delivering: the process dies after committing `sending`, before any byte left.
     w.server.script.push({ result: 'hang', delivered: false });
-    const lost = w.send(w.first, 'd1');
+    const lost = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(w.get(lost.id).state, 'sending');
-    const other = w.send(w.first, 'd2');
+    const other = await w.send(w.first, 'd2');
     w.first.kill();
 
     // Relaunch two minutes later: a fresh outbox on the same database file.
@@ -53,7 +53,7 @@ test('killed between the marker and send: on restart it is uncertain, checked fi
       'and never silently lost: the owner is asked',
     );
 
-    w.act(next, { type: 'sendAnyway', submissionId: lost.id });
+    await w.act(next, { type: 'sendAnyway', submissionId: lost.id });
     await w.settle();
     await w.clock.advance(1 * SEC);
     await w.settle();
@@ -67,7 +67,7 @@ test('killed between send and the sent commit: findSent finds it and it settles 
     w.draft('d1');
     // Delivered, then the process dies before the `sent` commit.
     w.server.script.push({ result: 'hang', delivered: true });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(w.get(s.id).state, 'sending');
@@ -85,7 +85,7 @@ test('a sending row found days late is uncertain, never suspended, however late'
   inWorld(async w => {
     w.draft('d1');
     w.server.script.push({ result: 'hang', delivered: false });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     w.first.kill();
@@ -101,7 +101,7 @@ test('an outbox that never had start() called applies the start rule on its firs
   inWorld(async w => {
     w.draft('d1');
     w.server.script.push({ result: 'hang', delivered: true });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     w.first.kill();
@@ -117,7 +117,7 @@ test('wake applies the start rule to lost rows only, never to a send this instan
     w.draft('d1');
     const g = gate();
     w.server.script.push({ wait: g.wait });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     assert.equal(w.get(s.id).state, 'sending');
     w.first.outbox.wake();
@@ -133,13 +133,13 @@ test('a quit inside the undo window and a relaunch within the grace sends normal
   inWorld(async w => {
     w.draft('d1');
     w.draft('d2');
-    const soon = w.send(w.first, 'd1');
+    const soon = await w.send(w.first, 'd1');
     w.first.kill();
     await w.clock.set(T0 + 3 * MIN);
     const next = w.open();
     await w.settle();
     assert.equal(w.get(soon.id, next).state, 'sent', 'within the grace: sent');
-    const late = w.send(next, 'd2');
+    const late = await w.send(next, 'd2');
     next.kill();
     await w.clock.set(late.notBefore + OVERDUE_GRACE_MS + 1);
     const third = w.open();
@@ -154,7 +154,7 @@ test('killed during findSent itself: the row is still uncertain with its check d
     const never = gate();
     w.server.script.push({ result: 'lost', delivered: true });
     w.server.holdFindSent(never.wait);
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(w.get(s.id).state, 'uncertain');
@@ -176,7 +176,7 @@ test('a wall clock set back before the marker does not push findSent past the me
   inWorld(async w => {
     w.draft('d1');
     w.server.script.push({ result: 'hang', delivered: false });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     const marker = w.get(s.id).attemptAt!;
@@ -193,7 +193,7 @@ test('a wall clock set back between the two findSent checks does not postpone th
   inWorld(async w => {
     w.draft('d1');
     w.server.script.push({ result: 'lost', delivered: false });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(
@@ -227,16 +227,16 @@ test('a launch with sending, uncertain, queued and overdue rows at once settles 
       { result: 'lost', delivered: false },
       { result: 'hang', delivered: false },
     );
-    const unsure = w.send(w.first, 'unsure');
+    const unsure = await w.send(w.first, 'unsure');
     await w.clock.advance(10 * SEC);
     await w.settle();
     await w.clock.advance(60 * SEC);
     await w.settle();
-    const lost = w.send(w.first, 'lost');
+    const lost = await w.send(w.first, 'lost');
     await w.clock.advance(10 * SEC);
     await w.settle();
-    const late = w.send(w.first, 'late', { notBefore: T0 + 20 * MIN });
-    const soon = w.send(w.first, 'soon', { notBefore: T0 + 30 * MIN });
+    const late = await w.send(w.first, 'late', { notBefore: T0 + 20 * MIN });
+    const soon = await w.send(w.first, 'soon', { notBefore: T0 + 30 * MIN });
     w.first.kill();
     await w.clock.set(soon.notBefore + 1 * MIN);
     const next = w.open();
@@ -262,7 +262,7 @@ test('a fire re-run while a send is in flight (loop wake, an abandoned fire, min
     w.draft('d1');
     const g = gate();
     w.server.script.push({ wait: g.wait });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     assert.equal(w.get(s.id).state, 'sending');
     for (let i = 0; i < 3; i++) {

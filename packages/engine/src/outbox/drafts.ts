@@ -66,7 +66,7 @@ function fail(type: string, message: string): never {
 }
 
 /** An id the same opId always makes again, so a replayed create answers with the draft it made. */
-function idFor(opId: string, tag: string) {
+export function idFor(opId: string, tag: string) {
   return `dr_${sha256Hex(`${tag}:${opId}`).slice(0, 24)}`;
 }
 
