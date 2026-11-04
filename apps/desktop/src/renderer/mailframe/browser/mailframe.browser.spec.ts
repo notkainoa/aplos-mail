@@ -20,7 +20,9 @@ const SEALED_PAGE = `<!doctype html><html><head><meta charset="utf-8"></head><bo
 /** A dark paper a forgery would try to set (a token value: the spec holds no raw colours). */
 const FORGED_BG = FRAME_PAPER.ink;
 /** entry.tsx's sealed token. */
-const SEALED_TOKEN = 'Sealed_Tok3n_0123456789';
+const SEALED_TOKEN = '5ea1ed005ea1ed005ea1ed005ea1ed00';
+/** Another well-formed token, for forgeries. */
+const WRONG_TOKEN = '0bad0bad0bad0bad0bad0bad0bad0bad';
 const HOST_PAGE = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="root" style="width:640px"></div><script src="/entry.js"></script></body></html>`;
 
 let bundle = '';
@@ -244,48 +246,49 @@ function sealedState(page: Page) {
 
 /** Every forgery, posted from the email, a child of the email, a sibling frame and the host realm. Returns the count. */
 async function forge(page: Page, frame: Frame): Promise<number> {
-  const arg = { t: SEALED_TOKEN, bg: FORGED_BG };
-  const fromEmail = await frame.evaluate(({ t, bg }) => {
+  const arg = { t: SEALED_TOKEN, bg: FORGED_BG, wrong: WRONG_TOKEN };
+  const fromEmail = await frame.evaluate(({ t, bg, wrong }) => {
     const w = innerWidth;
-    const size = { t: 'size', token: t, h: 500, w, bg };
-    const own = `"t":"size","token":"${t}","h":500,"w":${w},"bg":"${bg}"`;
+    const size = { token: t, h: 500, w, bg, ready: true, marks: 0 };
+    const own = `"token":"${t}","h":500,"w":${w},"bg":"${bg}","ready":true`;
     const forged: unknown[] = [
-      { ...size, token: 'Wrong_Tok3n_0123456789' },
+      { ...size, token: wrong },
       { ...size, token: '' },
-      { ...size, h: 200_001 },
+      { ...size, h: 1_000_001 },
       { ...size, h: Number.NaN },
       { ...size, h: Number.POSITIVE_INFINITY },
       { ...size, h: -5 },
       { ...size, h: '500' },
       { ...size, w: 0 },
       { ...size, w: 43_000 },
-      JSON.parse(`{${own},"__proto__":{"polluted":true}}`),
+      { ...size, marks: -1 },
+      { ...size, ready: 'true' },
+      JSON.parse(`{${own},"marks":0,"__proto__":{"polluted":true}}`),
+      JSON.parse(`{${own},"__proto__":{"marks":0}}`),
       { ...size, constructor: { prototype: { polluted: true } } },
+      { ...size, t: 'size' },
       JSON.stringify(size),
       [size],
+      { t: 'key', token: t, key: 'j' },
       { t: 'key', token: t, key: 'r' },
-      { t: 'key', token: t, key: 'e' },
       { t: 'key', token: t, key: ' ' },
-      { t: 'key', token: 'Wrong_Tok3n_0123456789', key: 'j' },
-      JSON.parse(`{"t":"key","token":"${t}","key":"j","__proto__":{"key":"r"}}`),
-      { t: 'key', token: t, key: 'j', constructor: {} },
     ];
     for (const data of forged) parent.postMessage(data, '*');
     // A child frame of the email: right shape and token, wrong source.
     const child = document.createElement('iframe');
-    const script = `top.postMessage(${JSON.stringify(size)},'*');top.postMessage(${JSON.stringify({ t: 'key', token: t, key: 'j' })},'*')`;
+    const script = `top.postMessage(${JSON.stringify(size)},'*')`;
     child.srcdoc = `<script>${script}</script>`;
     document.body.append(child);
-    return forged.length + 2;
+    return forged.length + 1;
   }, arg);
   const fromHost = await page.evaluate(({ t, bg }) => {
     const frame = document.querySelector('iframe')!;
     const w = frame.clientWidth;
-    const size = { t: 'size', token: t, h: 500, w, bg };
+    const size = { token: t, h: 500, w, bg, ready: true, marks: 0 };
     // A hostile sibling frame: right shape and token, wrong source (its origin is 'null' too).
     const sibling = document.createElement('iframe');
     sibling.setAttribute('sandbox', 'allow-scripts');
-    sibling.srcdoc = `<script>parent.postMessage(${JSON.stringify(size)},'*');parent.postMessage(${JSON.stringify({ t: 'key', token: t, key: 'j' })},'*')</script>`;
+    sibling.srcdoc = `<script>parent.postMessage(${JSON.stringify(size)},'*')</script>`;
     document.body.append(sibling);
     // Synthetic events: the frame's own window as source and the right token, but the wrong origin or no source.
     const source = frame.contentWindow;
@@ -296,7 +299,7 @@ async function forge(page: Page, frame: Frame): Promise<number> {
       new MessageEvent('message', { data: size, origin: 'null', source: window }),
     ];
     for (const event of events) window.dispatchEvent(event);
-    return events.length + 2;
+    return events.length + 1;
   }, arg);
   return fromEmail + fromHost;
 }
@@ -321,7 +324,7 @@ test('the sealed-frame host ignores every forged message: size, bg and keys stay
   });
 
   // The genuine report from the frame swaps the letter in.
-  const report = { t: 'size', token: SEALED_TOKEN, h: 321, bg: FRAME_PAPER.canvas };
+  const report = { token: SEALED_TOKEN, h: 321, bg: FRAME_PAPER.canvas, ready: true, marks: 0 };
   await frame.evaluate(r => parent.postMessage({ ...r, w: innerWidth }, '*'), report);
   await page.waitForFunction(() => window.__mailframe.ready.length === 1);
   const shown = { height: 321, bg: parseBg(report.bg), blocked: 2, trackers: 2 };
@@ -339,16 +342,10 @@ test('the sealed-frame host ignores every forged message: size, bg and keys stay
     polluted: undefined,
   });
 
-  // Control: the frame's own listed key is relayed once, as a key and not as a window keydown.
-  await frame.evaluate(
-    t => parent.postMessage({ t: 'key', token: t, key: 'j' }, '*'),
-    SEALED_TOKEN,
-  );
-  await page.waitForFunction(() => window.__mailframe.keys.length === 1);
-  expect(await sealedState(page)).toMatchObject({
-    keys: [{ key: 'j', shift: false, alt: false }],
-    hostKeys: [],
-  });
+  // Control: a genuine report from the frame itself still resizes (so the forgeries above were heard and refused).
+  await frame.evaluate(r => parent.postMessage({ ...r, h: 654, w: innerWidth }, '*'), report);
+  await page.waitForFunction(() => document.querySelector('iframe')?.style.height === '654px');
+  expect(await sealedState(page)).toMatchObject({ ready: [shown], keys: [], hostKeys: [] });
 });
 
 test('a sealed frame that never reports times out to the failed state; Try again starts a fresh wait', async ({
@@ -367,7 +364,8 @@ test('a sealed frame that never reports times out to the failed state; Try again
   await expect(failed).toBeHidden();
   const frame = await sealedFrame(page);
   await frame.evaluate(
-    ({ t, bg }) => parent.postMessage({ t: 'size', token: t, h: 222, w: innerWidth, bg }, '*'),
+    ({ t, bg }) =>
+      parent.postMessage({ token: t, h: 222, w: innerWidth, bg, ready: true, marks: 0 }, '*'),
     { t: SEALED_TOKEN, bg: FRAME_PAPER.canvas },
   );
   await page.waitForFunction(() => window.__mailframe.ready.length === 1);
@@ -448,4 +446,25 @@ test("email CSS cannot hide the host's notice", async ({ page }) => {
   expect(notice.display).not.toBe('none');
   expect(notice.height).toBeGreaterThan(0);
   expect(notice.inFrame).toBe(false);
+});
+
+test('a srcdoc letter sized in viewport units stops growing (the growth fence)', async ({
+  page,
+}) => {
+  await openHost(page, 'viewport-units/block');
+  await page.waitForFunction(() => window.__mailframe.ready.length === 1);
+  // Without the fence the letter grows by its first paragraph at every step, forever.
+  let last = '';
+  await expect
+    .poll(
+      async () => {
+        const now = await page.evaluate(() => document.querySelector('iframe')!.style.height);
+        const stable = now === last;
+        last = now;
+        return stable;
+      },
+      { timeout: 30_000, intervals: [750] },
+    )
+    .toBe(true);
+  expect(Number.parseInt(last, 10)).toBeLessThan(12_000);
 });
