@@ -3,7 +3,7 @@
  * list names the verbs it owns, in order; the keycaps come from the registry through the command ids. More opens a
  * small menu (Bookmark, Select all). Pure tables plus one hook that hands the bar to the shell.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CommandAction, MenuEntry } from '../../ui/props';
 import { usePaneHeaderPart, type PaneHeaderPart } from '../../shell';
 import type { ListActions } from './listActions';
@@ -84,6 +84,10 @@ export function useBulkBarPart(
 ): BulkMenu {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const onClose = useCallback(() => setAnchor(null), []);
+  useEffect(() => {
+    // The bar went away (Esc, a bulk action): the menu must not reopen by itself when it comes back.
+    if (count === null) setAnchor(null);
+  }, [count]);
   const part = useMemo<PaneHeaderPart | null>(
     () =>
       count === null

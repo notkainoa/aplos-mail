@@ -1,6 +1,6 @@
 /**
  * The one-by-one walk (DESIGN 7.2's "Go one by one", key S): the Do-now ids snapshotted when the walk starts,
- * and where the walk stands in them. One thread shows at a time; E, L, Space and R commit it and the walk
+ * and where the walk stands in them. One thread shows at a time; E, L and Space commit it (R and Return open it in the reader) and the walk
  * moves on, J/K move, Esc exits. The queue is fixed — mail arriving during a walk never joins it — while
  * `live` is Do now as it stands, so a thread acted elsewhere is simply skipped. Pure: no React, no engine.
  */
@@ -45,7 +45,7 @@ export function stepWalk(walk: Walk, live: ReadonlySet<string>, delta: 1 | -1): 
 }
 
 /**
- * E, L, Space or R just committed the thread showing: it probably left `live`, so take the next live id after
+ * E, L or Space just committed the thread showing: it probably left `live`, so take the next live id after
  * it. At the tail, go back to the live id before it; with none left, the walk is over (`index = queue.length`).
  */
 export function afterCommit(walk: Walk, live: ReadonlySet<string>): Walk {

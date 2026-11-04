@@ -12,6 +12,7 @@ import {
   MAX_FLYING,
   TRASH_VERB,
   commitBulk,
+  confirmedIds,
   createPickActions,
   labelledVerb,
   type BulkSide,
@@ -22,7 +23,7 @@ import {
 import type { Confirmation } from '../lists/listActions';
 import { survivorKey } from '../lists/listModel';
 import type { HomeDeps, HomeSnapshot } from './homeActions';
-import { HOLD_RADIUS, keyOf, neighbourIds, pickableKey } from './homeModel';
+import { HOLD_RADIUS, keyOf, neighbourIds, pickableIds, pickableKey } from './homeModel';
 
 /** The screen's side of the pick: the controls X, ⇧X, ⌘A and Esc drive, and the trash confirmation. */
 export interface HomeBulkDeps {
@@ -106,7 +107,9 @@ export function createHomeBulk(deps: HomeDeps): HomeBulk | undefined {
   const commit = (picked: readonly ThreadId[], verb: BulkVerb) =>
     commitPicks(deps, bulk, picked, verb);
   return {
-    ...createPickActions(bulk.selection, cursorRow),
+    ...createPickActions(bulk.selection, cursorRow, () =>
+      deps.hold.extend(pickableIds(deps.snapshot().items)),
+    ),
     picks: () => {
       const picked = deps.snapshot().picked;
       return picked && picked.length > 0 ? picked : null;
@@ -117,9 +120,12 @@ export function createHomeBulk(deps: HomeDeps): HomeBulk | undefined {
     trash: picked =>
       bulk.setConfirmation({ kind: 'trashPicked', ids: picked, count: picked.length }),
     confirm: () => {
-      const picked = deps.snapshot().picked;
+      const pending = bulk.confirmation();
       bulk.setConfirmation(null);
-      if (picked && picked.length > 0) commit(picked, TRASH_VERB);
+      if (!pending) return;
+      // The rows the owner was asked about, not whatever is picked by now.
+      const asked = confirmedIds(pending.ids, pickableIds(deps.snapshot().items));
+      if (asked.length > 0) commit(asked, TRASH_VERB);
     },
     cancelConfirm: () => bulk.setConfirmation(null),
   };

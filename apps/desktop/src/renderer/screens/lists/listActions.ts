@@ -12,6 +12,7 @@ import {
   TRIAGE_KINDS,
   countedMessage,
   createListBulk,
+  dropFromPick,
   createPickActions,
   holdRows,
   type BulkPick,
@@ -136,8 +137,10 @@ function createRowVerbs(deps: ListDeps) {
     action: ThreadAction,
     toast: Omit<PushedToast, 'id' | 'undoable' | 'actions'>,
   ): void {
+    const picked = deps.snapshot().bulk?.picked;
     holdRows(deps, commitKindOf(toast.kind), [row.id]);
     const { opId, receipt } = deps.act({ ids: [row.id], action });
+    if (action.type !== 'bookmark') dropFromPick(deps.selection, picked, row.id);
     deps.push({
       id: opId,
       undoable: true,
@@ -200,7 +203,11 @@ function createDestroyers(deps: ListDeps) {
 
 export function createListActions(deps: ListDeps): ListActions {
   const bulk = createListBulk(deps);
-  const picking = createPickActions(deps.selection, () => deps.snapshot().key);
+  const picking = createPickActions(
+    deps.selection,
+    () => deps.snapshot().key,
+    () => deps.hold.extend(deps.snapshot().ids),
+  );
   const { onRow } = createRowVerbs(deps);
   const { confirmDelete, confirmDiscard } = createDestroyers(deps);
 
@@ -267,7 +274,7 @@ export function createListActions(deps: ListDeps): ListActions {
     const pending = deps.confirmation();
     deps.setConfirmation(null);
     if (!pending) return;
-    if (pending.kind === 'trashPicked') return bulk.confirmTrash();
+    if (pending.kind === 'trashPicked') return bulk.confirmTrash(pending);
     if (pending.kind === 'deleteForever') confirmDelete(pending.ids);
     else confirmDiscard(pending.ids);
     deps.selection?.clear();

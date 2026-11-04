@@ -23,6 +23,7 @@ import { dismissToast, pushToast } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { menuEntries } from './HomeMenu';
+import { isStaleWhy, restoreListFocus } from './WhyHost';
 import { OneByOneFinish } from './OneByOneStates';
 import { OneByOneScreen } from './OneByOneScreen';
 import { senderOf } from './homeRows';
@@ -422,4 +423,34 @@ test('the view renders the first Do-now thread as one letter, with no list aroun
   } finally {
     world.connection.close();
   }
+});
+
+test('Undo on the last committed thread reopens the finished walk on it, and K reaches the one before', () => {
+  let session = beginSession(['a', 'b', 'c']);
+  session = markActed(session, 'a');
+  session = settleSession(session, new Set(['b', 'c']), NONE);
+  session = markActed(session, 'b');
+  session = settleSession(session, new Set(['c']), NONE);
+  session = markActed(session, 'c');
+  session = settleSession(session, new Set(), NONE);
+  assert.equal(shownId(session, new Set()), null, 'the walk is over');
+  const live = new Set(['c']);
+  const back = settleSession(session, live, NONE);
+  assert.equal(shownId(back, live), 'c', 'Undo brought c back, and it shows');
+  const both = new Set(['b', 'c']);
+  const stepped = stepSession(settleSession(back, both, NONE), both, -1);
+  assert.equal(shownId(stepped, both), 'b', 'K goes to the one before');
+  assert.equal(settleSession(stepped, both, NONE), stepped, 'and nothing reopens again');
+});
+
+test('Why closes into the list, and drops when the cursor has left its thread', () => {
+  const focused: unknown[] = [];
+  const listbox = { focus: (options?: FocusOptions) => void focused.push(options) };
+  restoreListFocus(selector => (selector === '[role="listbox"]' ? listbox : null));
+  assert.deepEqual(focused, [{ preventScroll: true }], 'focus goes to the listbox, not the option');
+  restoreListFocus(() => null);
+  const anchor = { id: 'x' } as unknown as HTMLElement;
+  assert.equal(isStaleWhy({ id: 'a', anchor }, 'a'), false);
+  assert.equal(isStaleWhy({ id: 'a', anchor }, 'b'), true, 'cursor moved while it loaded');
+  assert.equal(isStaleWhy({ id: 'a', anchor }, null), true);
 });

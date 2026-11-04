@@ -222,7 +222,7 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     section,
     density,
     menu: menu?.id === showing ? menu : null,
-    why: whyTarget?.id === showing ? whyTarget : null,
+    why: whyTarget,
     closeMenu: () => setMenu(null),
     closeWhy: () => setWhyTarget(null),
     openMenuAt,

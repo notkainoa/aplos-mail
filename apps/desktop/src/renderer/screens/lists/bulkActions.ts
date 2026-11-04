@@ -18,7 +18,7 @@ import {
 } from './bulkTarget';
 import { neighbourKeys, survivorKey } from './listModel';
 import { isThread } from './listRows';
-import type { ListDeps } from './listActions';
+import type { Confirmation, ListDeps } from './listActions';
 import type { ListKind } from './listKinds';
 
 /** The bulk pick and the view it sits on: what a bulk action needs to name its target. */
@@ -130,6 +130,29 @@ export function commitBulk(side: BulkSide, commit: BulkCommit): void {
   commit.settle();
 }
 
+/** What the owner confirmed, still on screen: the confirmed ids that are loaded now, in the order they were asked about. */
+export function confirmedIds(asked: readonly string[], loaded: readonly string[]): string[] {
+  const live = new Set(loaded);
+  return asked.filter(id => live.has(id));
+}
+
+/** Whether two id lists name the same rows in the same order. */
+export function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, at) => id === b[at]);
+}
+
+/**
+ * A row acted on by itself leaves the pick: while the hold keeps it in the view it must not be picked again by the next
+ * bulk action. `picked` is the pick as it stood before the act.
+ */
+export function dropFromPick(
+  selection: PickControls | undefined,
+  picked: readonly string[] | undefined,
+  id: string,
+): void {
+  if (picked?.includes(id)) selection?.toggle(id);
+}
+
 /** The keys that change the pick, over a cursor key the screen decides (Home's can be on a row only). */
 export interface PickActions {
   select(): void;
@@ -141,6 +164,7 @@ export interface PickActions {
 export function createPickActions(
   selection: PickControls | undefined,
   cursorKey: () => string | null,
+  holdAll: () => void = () => undefined,
 ): PickActions {
   const withCursor = (run: (id: string) => void) => {
     const key = cursorKey();
@@ -149,7 +173,11 @@ export function createPickActions(
   return {
     select: () => withCursor(id => selection?.toggle(id)),
     selectRange: () => withCursor(id => selection?.extendTo(id)),
-    selectAll: () => selection?.selectAll(),
+    selectAll: () => {
+      // Mail arriving while the whole view is picked waits, so what the owner sees picked is what they act on.
+      holdAll();
+      selection?.selectAll();
+    },
     clearSelection: () => selection?.clear(),
   };
 }
@@ -218,14 +246,37 @@ function bookmarkVerb(deps: ListDeps, pick: BulkPick): BulkVerb {
 
 /** # with rows picked: every kind asks first, because a bulk removal is the one thing Undo may not reach in time. */
 function askToTrash(deps: ListDeps, pick: BulkPick): void {
-  const count = countOf(pick);
   const ids = pick.picked;
+  // Deleting and discarding name the rows they act on; only a whole-view trash may name the view's total.
+  const count = ids.length;
   if (deps.kind === 'drafts') return deps.setConfirmation({ kind: 'discardDraft', ids, count });
   if (deps.kind === 'trash' || deps.kind === 'spam') {
     if (deps.canDeleteForever()) deps.setConfirmation({ kind: 'deleteForever', ids, count });
     return;
   }
-  if (TRIAGE_KINDS.includes(deps.kind)) deps.setConfirmation({ kind: 'trashPicked', ids, count });
+  const asked = countOf(pick);
+  if (TRIAGE_KINDS.includes(deps.kind))
+    deps.setConfirmation({ kind: 'trashPicked', ids, count: asked });
+}
+
+/**
+ * The rows a confirmed trash moves: the live pick when it is still exactly what was asked about (a whole-view pick keeps
+ * its selector), else the asked-about rows that are still loaded. Nothing when none are.
+ */
+function confirmedPick(deps: ListDeps, pending: Confirmation): BulkPick | null {
+  const pick = picksOf(deps);
+  if (pick && sameIds(pick.picked, pending.ids)) return pick;
+  const { ids } = deps.snapshot();
+  const picked = confirmedIds(pending.ids, ids);
+  if (picked.length === 0) return null;
+  return {
+    loadedIds: ids,
+    total: picked.length,
+    spec: null,
+    state: null,
+    allPicked: false,
+    picked,
+  };
 }
 
 /** The verbs a list runs over its picks. The caller has already checked the list owns the verb. */
@@ -239,8 +290,8 @@ export interface ListBulk {
   moveToHome(pick: BulkPick): void;
   /** Asks first; nothing moves until `confirmTrash`. */
   trash(pick: BulkPick): void;
-  /** The owner confirmed: trash whatever is picked now (the dialog's keys leave the pick as it was). */
-  confirmTrash(): void;
+  /** The owner confirmed this question: trash the rows it named, not whatever is picked by now. */
+  confirmTrash(pending: Confirmation): void;
 }
 
 export function createListBulk(deps: ListDeps): ListBulk {
@@ -259,8 +310,8 @@ export function createListBulk(deps: ListDeps): ListBulk {
       act(pick, labelledVerb(label, { type: 'restore' }, 'home'));
     },
     trash: pick => askToTrash(deps, pick),
-    confirmTrash: () => {
-      const pick = picksOf(deps);
+    confirmTrash: pending => {
+      const pick = confirmedPick(deps, pending);
       if (pick) act(pick, TRASH_VERB);
     },
   };

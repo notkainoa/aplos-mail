@@ -60,6 +60,7 @@ export function HomeOverlays(props: HomeOverlaysProps) {
         <WhyHost
           key={props.why.id}
           target={props.why}
+          current={cursorKey}
           onMove={direction => {
             if (cursorKey === props.why?.id) actions.lane(direction);
           }}

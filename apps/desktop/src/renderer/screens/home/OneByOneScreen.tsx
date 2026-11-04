@@ -38,6 +38,7 @@ function Overlays({ view }: { readonly view: OneByOne }) {
         <WhyHost
           key={why.id}
           target={why}
+          current={row?.id ?? null}
           onMove={direction => view.lane(direction)}
           onClose={view.closeWhy}
         />

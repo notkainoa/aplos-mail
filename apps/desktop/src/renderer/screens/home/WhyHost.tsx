@@ -63,22 +63,47 @@ function useLaneKeys(lane: Lane | null, onMove: (direction: 'up' | 'down') => vo
   }, [lane, onMove]);
 }
 
+/**
+ * Esc and the other ways out leave focus in the list. The Popover hands focus back to its anchor, but a row or letter is
+ * an option, which cannot take focus; the listbox around it can.
+ */
+export function restoreListFocus(
+  find: (selector: string) => { focus(options?: FocusOptions): void } | null,
+): void {
+  find('[role="listbox"]')?.focus({ preventScroll: true });
+}
+
+/** The answer is for a thread the cursor has left: the popover must not open for the old row. */
+export function isStaleWhy(target: WhyTarget, current: ThreadId | null): boolean {
+  return current !== target.id;
+}
+
 /** Props for `WhyHost`. */
 export interface WhyHostProps {
   readonly target: WhyTarget;
+  /** The thread under the cursor now. A different one drops the popover, even while its answer is still loading. */
+  readonly current: ThreadId | null;
   /** A lane correction was chosen; the host has already closed. */
   readonly onMove: (direction: 'up' | 'down') => void;
   readonly onClose: () => void;
 }
 
-export function WhyHost({ target, onMove, onClose }: WhyHostProps) {
+export function WhyHost({ target, current, onMove, onClose }: WhyHostProps) {
   const state = useWhyAnswer(target.id);
-  const move = (direction: 'up' | 'down') => {
+  const stale = isStaleWhy(target, current);
+  useEffect(() => {
+    if (stale) onClose();
+  }, [stale, onClose]);
+  const close = () => {
+    restoreListFocus(selector => target.anchor.closest<HTMLElement>(selector));
     onClose();
+  };
+  const move = (direction: 'up' | 'down') => {
+    close();
     onMove(direction);
   };
   useLaneKeys(state.kind === 'ready' ? laneOfAnswer(state.answer) : null, move);
-  if (state.kind === 'loading') return null;
+  if (stale || state.kind === 'loading') return null;
   return (
     <Popover
       open
@@ -86,7 +111,7 @@ export function WhyHost({ target, onMove, onClose }: WhyHostProps) {
       label="Why it’s here"
       role="dialog"
       placement="below-start"
-      onClose={onClose}
+      onClose={close}
     >
       {state.kind === 'ready' ? (
         <Why

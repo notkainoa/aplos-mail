@@ -475,3 +475,48 @@ test('picked rows carry the pick state without a new row box', async () => {
     world.connection.close();
   }
 });
+
+test('Move to Trash acts on the rows Home asked about, and a single Done unpicks its row', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    const ids = bulk.idsNow();
+    bulk.actions.select();
+    bulk.actions.move(1);
+    bulk.actions.select();
+    bulk.actions.trash();
+    assert.deepEqual(bulk.state.confirmation?.ids, ids.slice(0, 2));
+    bulk.deps.bulk?.selection.clear();
+    bulk.cursor.key = ids[4] ?? null;
+    bulk.actions.select();
+    bulk.actions.confirm();
+    assert.equal(bulk.state.acted.length, 1);
+    const sent = bulk.state.acted[0];
+    assert.deepEqual(sent && 'ids' in sent && sent.ids, ids.slice(0, 2), 'not the new pick');
+    // A single act on a picked row drops it from the pick.
+    bulk.actions.done(ids[4]);
+    assert.deepEqual(bulk.picked(), [], 'the row done on its own is unpicked');
+    await settleAll(() => undefined);
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('⌘A on Home extends the hold, and the arrows run the bulk Done and Later while rows are picked', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    const keys = keyboardFor(bulk);
+    keys.press('a', { metaKey: true });
+    assert.equal(bulk.state.held, 1, 'the hold waits for arrivals');
+    assert.equal(keys.resolve('ArrowRight')?.commandId, 'mail.done');
+    assert.equal(keys.press('ArrowRight'), 'ran');
+    assert.equal(bulk.state.acted.length, 1, '→ with picks is one bulk Done');
+    keys.detach();
+    await settleAll(() => undefined);
+  } finally {
+    world.connection.close();
+  }
+});

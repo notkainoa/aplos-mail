@@ -1,7 +1,7 @@
 /**
  * What the mounted screen adds to the pane header: the back chevron and crumb ("Home" + "1 of 9" while one by one), and
  * the bulk bar that replaces the left side while rows are picked (DESIGN 7.1, 7.4). The shell owns the header and the
- * Ask and Today buttons; a screen only contributes these parts. Of the mounted contributions the latest wins.
+ * Ask and Today buttons; a screen only contributes these parts. Of the mounted contributions the latest wins; one screen is mounted at a time, so a part that changes (the bulk count) is simply pushed again.
  */
 import { createStore } from './store-core';
 import type { PaneHeaderProps } from '../ui/props';

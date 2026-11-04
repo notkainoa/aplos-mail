@@ -70,14 +70,27 @@ function rewind(session: Session, live: ReadonlySet<string>, failed: ReadonlySet
   };
 }
 
+/** The walk is over and a thread it committed is live again (Undo on the last one): show it, so K and Retry reach it. */
+function revive(session: Session, live: ReadonlySet<string>): Session {
+  const { queue } = session.walk;
+  if (indexOfShown(session, live) < queue.length) return session;
+  const back = session.acted.findLast(id => id !== session.pending && live.has(id));
+  if (back === undefined) return session;
+  return {
+    walk: { ...session.walk, index: queue.indexOf(back) },
+    pending: null,
+    acted: session.acted.filter(id => id !== back),
+  };
+}
+
 /**
- * Brings the session up to the live data, once per render: steps on past a committed thread, then goes back to one
- * whose write failed. Returns the same object when nothing changed, so it is safe to store from a render.
+ * Brings the session up to the live data, once per render: steps on past a committed thread, goes back to one whose
+ * write failed, and reopens a finished walk when a committed thread returns. Returns the same object when nothing changed, so it is safe to store from a render.
  */
 export function settleSession(
   session: Session,
   live: ReadonlySet<string>,
   failed: ReadonlySet<string>,
 ): Session {
-  return rewind(advance(session, live), live, failed);
+  return revive(rewind(advance(session, live), live, failed), live);
 }

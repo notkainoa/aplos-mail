@@ -271,7 +271,14 @@ function HomeSlot() {
 /** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
 function OneByOneSlot() {
   const { accountId, onOpen } = useHomeShellProps();
-  return <OneByOneScreen accountId={accountId} onExit={() => navigate('home')} onOpen={onOpen} />;
+  return (
+    <OneByOneScreen
+      key={accountId ?? 'all'}
+      accountId={accountId}
+      onExit={() => navigate('home')}
+      onOpen={onOpen}
+    />
+  );
 }
 
 /** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */

@@ -16,6 +16,7 @@ import {
   useUndoTop,
   type AccountId,
   type HoldController,
+  type State,
   type ThreadId,
 } from '../../data';
 import type { ContextName } from '../../commands';
@@ -156,9 +157,10 @@ function EmptyHome(props: {
 }
 
 /** The bulk pick over the rows X can reach, and the trash question it may raise. */
-function useHomePick(items: readonly HomeItem[]) {
+function useHomePick(items: readonly HomeItem[], state: State | null) {
   const pickable = useMemo(() => pickableIds(items), [items]);
-  const bulk = useBulk(pickable);
+  // Home acts on named ids, never a selector: the view it freezes is just the rows ⌘A saw.
+  const bulk = useBulk(pickable, { state, total: pickable.length });
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const current = useRef(confirmation);
   current.current = confirmation;
@@ -190,7 +192,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const cursor = useHomeCursor(buildItems(layout));
   useScrollToCursor(cursor.key);
   useFollowHomeCursor(accountId, cursor.key, hold.isHeld);
-  const pick = useHomePick(cursor.items);
+  const pick = useHomePick(cursor.items, home.state);
 
   const snapshot = useRef<HomeSnapshot>({ items: [], key: null, rowOf, state: null });
   snapshot.current = {

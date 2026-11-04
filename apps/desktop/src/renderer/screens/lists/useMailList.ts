@@ -182,7 +182,8 @@ function useBulkScope(
   bulk: BulkState,
 ): BulkScope {
   const spec = useMemo(() => threadSpecOf(viewSpecOf(config, accountId)), [config, accountId]);
-  const { total, state } = view;
+  // After ⌘A the selector speaks for the view as ⌘A saw it, not as mail has changed it since.
+  const { total, state } = bulk.frozen ?? view;
   return useMemo(
     () => ({ loadedIds, total, spec, state, allPicked: bulk.everything }),
     [loadedIds, total, spec, state, bulk.everything],
@@ -203,7 +204,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   useScrollToCursor(config, cursor.key);
   useFollowCursor(view, cursor.key);
 
-  const bulk = useBulk(cursor.ids);
+  const bulk = useBulk(cursor.ids, view);
   const scope = useBulkScope(config, accountId, view, cursor.ids, bulk);
   const motion = useListMotion(
     hold,

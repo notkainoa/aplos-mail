@@ -5,7 +5,7 @@
  * then E) see each other.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { ViewSpec, ThreadListSpec } from '../../data';
+import type { State, ViewSpec, ThreadListSpec } from '../../data';
 import {
   NO_SELECTION,
   extendTo,
@@ -17,18 +17,49 @@ import {
   type Selection,
 } from './selection';
 
-/** What the hook stores: the picks, and whether ⌘A asked for everything. */
+/** What ⌘A saw: the view at the moment it was pressed, so mail that arrives later is not swept in. */
+export interface Frozen {
+  /** The loaded ids at ⌘A. */
+  readonly ids: readonly string[];
+  /** `view.state` at ⌘A: the `atState` of a whole-view selector. */
+  readonly state: State | null;
+  /** Rows in the whole view at ⌘A. */
+  readonly total: number;
+  /** The view held more than the window: the selector covers rows the window slides to. */
+  readonly beyond: boolean;
+}
+
+/** The view a pick sits on, read when ⌘A is pressed. */
+export interface PickView {
+  readonly state: State | null;
+  readonly total: number;
+}
+
+/** What the hook stores: the picks, and whether ⌘A asked for everything (and what it saw). */
 export interface RawPick {
   readonly selection: Selection;
   readonly everything: boolean;
+  readonly frozen?: Frozen;
 }
 
 export const NONE: RawPick = { selection: NO_SELECTION, everything: false };
 
-/** The picks a list shows now: ⌘A means every loaded id, else the stored picks minus rows that left. */
+/**
+ * The picks a list shows now. ⌘A means the rows it saw that are still loaded (mail that arrived since is not picked);
+ * when the view reached past the window, every loaded row, since the selector covers the rows the window slides to.
+ * Otherwise the stored picks minus rows that left.
+ */
 export function settled(raw: RawPick, ids: readonly string[]): Selection {
-  if (raw.everything) return { picked: new Set(ids), anchor: raw.selection.anchor };
-  return prune(raw.selection, ids);
+  if (!raw.everything) return prune(raw.selection, ids);
+  const { frozen } = raw;
+  if (!frozen || frozen.beyond) return { picked: new Set(ids), anchor: raw.selection.anchor };
+  const saw = new Set(frozen.ids);
+  return { picked: new Set(ids.filter(id => saw.has(id))), anchor: raw.selection.anchor };
+}
+
+function freeze(ids: readonly string[], view: PickView | undefined): Frozen {
+  const total = view?.total ?? ids.length;
+  return { ids, state: view?.state ?? null, total, beyond: total > ids.length };
 }
 
 /** The controls a list's actions call. */
@@ -51,6 +82,8 @@ export interface BulkState {
   readonly picking: boolean;
   /** ⌘A is in force: the owner meant the whole view, not just what is loaded. */
   readonly everything: boolean;
+  /** What ⌘A saw, while it is in force. */
+  readonly frozen: Frozen | null;
   readonly controls: BulkControls;
 }
 
@@ -59,7 +92,7 @@ export function threadSpecOf(spec: ViewSpec): ThreadListSpec | null {
   return spec.kind === 'drafts' ? null : (spec as ThreadListSpec);
 }
 
-export function useBulk(ids: readonly string[]): BulkState {
+export function useBulk(ids: readonly string[], view?: PickView): BulkState {
   const [stored, setStored] = useState<RawPick>(NONE);
   const live = useMemo(() => settled(stored, ids), [stored, ids]);
   const drained = stored.everything && ids.length === 0;
@@ -69,11 +102,15 @@ export function useBulk(ids: readonly string[]): BulkState {
   else if (!stored.everything && live !== stored.selection)
     setStored({ selection: live, everything: false });
 
-  const latest = useRef({ selection, ids, everything: stored.everything });
-  latest.current = { selection, ids, everything: stored.everything && !drained };
+  const latest = useRef({ selection, ids, view, everything: stored.everything });
+  latest.current = { selection, ids, view, everything: stored.everything && !drained };
   const apply = useCallback((next: RawPick) => {
     const { ids: now } = latest.current;
-    latest.current = { selection: settled(next, now), ids: now, everything: next.everything };
+    latest.current = {
+      ...latest.current,
+      selection: settled(next, now),
+      everything: next.everything,
+    };
     setStored(next);
   }, []);
 
@@ -85,11 +122,10 @@ export function useBulk(ids: readonly string[]): BulkState {
           selection: extendTo(latest.current.selection, latest.current.ids, id),
           everything: false,
         }),
-      selectAll: () =>
-        apply({
-          selection: selectAll(latest.current.ids),
-          everything: latest.current.ids.length > 0,
-        }),
+      selectAll: () => {
+        const { ids: now, view: seen } = latest.current;
+        apply({ selection: selectAll(now), everything: now.length > 0, frozen: freeze(now, seen) });
+      },
       clear: () => apply(NONE),
     }),
     [apply],
@@ -100,6 +136,7 @@ export function useBulk(ids: readonly string[]): BulkState {
     picked,
     picking: isPicking(selection),
     everything: latest.current.everything,
+    frozen: stored.everything && !drained ? (stored.frozen ?? null) : null,
     controls,
   };
 }

@@ -22,6 +22,7 @@ import {
   type RowOf,
   type SectionKey,
 } from './homeModel';
+import { dropFromPick } from '../lists/bulkActions';
 import { createHomeBulk, type HomeBulkDeps } from './homeBulk';
 import { failurePhrase, senderOf } from './homeRows';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
@@ -150,6 +151,10 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
   /** The picks when the verb is for them: no key (a hover button or the letter means its own row). */
   const pickedFor = (key?: string) => (key === undefined ? (bulk?.picks() ?? null) : null);
 
+  /** A row acted on by itself leaves the pick, so the hold keeping it in view cannot get it picked again. */
+  const unpick = (snapshot: HomeSnapshot, id: ThreadId) =>
+    dropFromPick(deps.bulk?.selection, snapshot.picked, id);
+
   const around = (snapshot: HomeSnapshot) =>
     neighbourIds(snapshot.items, snapshot.key, HOLD_RADIUS);
 
@@ -177,6 +182,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     if (!target) return;
     startHold(snapshot, 'done', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'done' } });
+    unpick(snapshot, target.row.id);
     const remind = offersReminder(target.row, target.section);
     deps.push({
       id: opId,
@@ -206,6 +212,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     if (!target) return;
     startHold(snapshot, 'later', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'later' } });
+    unpick(snapshot, target.row.id);
     deps.push({
       id: opId,
       kind: 'later',
@@ -270,6 +277,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     if (!target) return;
     startHold(snapshot, 'trash', target.row.id);
     const { opId, receipt } = deps.act({ ids: [target.row.id], action: { type: 'trash' } });
+    unpick(snapshot, target.row.id);
     deps.push({
       id: opId,
       kind: 'trash',
