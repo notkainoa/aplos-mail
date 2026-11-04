@@ -331,10 +331,20 @@ export function newestMinutes(runs, match) {
 // few green runs, not the newest one. The limit itself is unchanged.
 const medianRunCount = 5;
 
-/** The median of each run's longest matching job over the newest `count` successful runs where `match` ran (each run counts its longest matching job); null when none did. */
-export function medianMinutes(runs, match, count = medianRunCount) {
+/** True when the jobs `match` accepts exist and every one of them was skipped. */
+const allSkipped = (jobs, match) => {
+  const matching = jobs.filter(job => match(job.name));
+  return matching.length > 0 && matching.every(job => job.conclusion === 'skipped');
+};
+
+/**
+ * The median of each run's longest matching job over the newest `count` successful runs where `match`
+ * ran; null when none did. A run whose `unless` jobs were all skipped is left out (a web-only run
+ * skips the unit jobs, so its short Static job alone would hide a slow desktop run).
+ */
+export function medianMinutes(runs, match, count = medianRunCount, unless = () => false) {
   const minutes = runs
-    .filter(run => run.conclusion === 'success')
+    .filter(run => run.conclusion === 'success' && !allSkipped(run.jobs, unless))
     .map(run => maxJobMinutesWhere(run.jobs, match))
     .filter(value => value != null)
     .slice(0, count)
@@ -360,12 +370,17 @@ const named = names => name => names.includes(name);
 const isStaticUnitJob = name =>
   typeof name === 'string' && (name.startsWith('Static (') || name.startsWith(ciJobNames.unitJob));
 
+const isUnitJob = name => typeof name === 'string' && name.startsWith(ciJobNames.unitJob);
+
+// A web-only run skips the unit jobs and does not count.
+const staticUnitMedian = (runs, match) => medianMinutes(runs, match, medianRunCount, isUnitJob);
+
 const measureCiStaticUnit = (root, options) =>
   measureCiWallClock(
     options,
     isStaticUnitJob,
     'no completed static or unit job in the last 30 days',
-    medianMinutes,
+    staticUnitMedian,
   );
 
 const measureCiE2eBrowser = (root, options) =>

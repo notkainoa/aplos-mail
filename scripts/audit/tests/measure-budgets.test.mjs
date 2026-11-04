@@ -294,18 +294,42 @@ describe('measure-budgets CI rows', () => {
     assert.equal(result.measured, 2.6);
   });
 
-  it('static-unit is the median of the newest five green runs, so one slow run does not decide it', async () => {
+  it('static-unit is the median of the newest five green runs, leaving out web-only runs', async () => {
+    const unitName = 'Unit tests (desktop 1/2)';
     const run = seconds => ({
       conclusion: 'success',
-      jobs: [ciJob(ciJobNames.staticJob, seconds)],
+      jobs: [ciJob(ciJobNames.staticJob, seconds), ciJob(unitName, seconds - 20)],
+    });
+    // A web-only run: Static ran, the unit jobs were skipped (zero length).
+    const webOnly = seconds => ({
+      conclusion: 'success',
+      jobs: [ciJob(ciJobNames.staticJob, seconds), ciJob(unitName, 0, 'skipped')],
     });
     const failed = { conclusion: 'failure', jobs: [ciJob(ciJobNames.staticJob, 900)] };
-    const runs = [run(300), failed, run(200), run(210), run(230), run(240), run(900)];
-    const isStatic = name => name === ciJobNames.staticJob;
-    // newest five green: 300, 200, 210, 230, 240 s -> median 230 s; the 900 s run is the sixth.
-    assert.equal(medianMinutes(runs, isStatic), 230 / 60);
-    assert.equal(medianMinutes(runs, isStatic, 2), 250 / 60);
-    assert.equal(medianMinutes([failed], isStatic), null);
+    const runs = [
+      run(300),
+      failed,
+      webOnly(60),
+      run(200),
+      run(210),
+      webOnly(50),
+      run(230),
+      run(240),
+      run(900),
+    ];
+    const isStaticUnit = name => name === ciJobNames.staticJob || name === unitName;
+    const isUnit = name => name === unitName;
+    // newest five green desktop runs: 300, 200, 210, 230, 240 s -> median 230 s; web-only and failed runs
+    // and the 900 s sixth run do not count.
+    assert.equal(medianMinutes(runs, isStaticUnit, 5, isUnit), 230 / 60);
+    assert.equal(medianMinutes(runs, isStaticUnit, 2, isUnit), 250 / 60);
+    assert.equal(medianMinutes([failed], isStaticUnit), null);
+    assert.equal(medianMinutes([webOnly(60)], isStaticUnit, 5, isUnit), null);
+    assert.equal(
+      medianMinutes([webOnly(60)], isStaticUnit),
+      1,
+      'without the rule the web-only run counts',
+    );
     assert.equal(
       medianMinutes([run(120)], name => name === ciJobNames.macosJob),
       null,
