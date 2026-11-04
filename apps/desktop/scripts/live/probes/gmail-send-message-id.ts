@@ -60,8 +60,13 @@ async function readMetadata(ctx: ProbeContext, id: string): Promise<Map<string, 
   return headersOf(json);
 }
 
-/** How many probe messages of today are already in the account: a second send is refused. */
-async function existingToday(ctx: ProbeContext, subject: string): Promise<number> {
+/**
+ * How many probe messages of today are already in the account: a second send is refused. Two independent ways, because
+ * Gmail's search index lags and tokenises a hyphenated subject its own way: the subject search (each hit's Subject is
+ * compared exactly) and the `rfc822msgid:` search for today's FIXED Message-ID. The larger count decides. Any error
+ * here throws before the send (the duplicate check fails closed).
+ */
+async function existingToday(ctx: ProbeContext, subject: string, ours: string): Promise<number> {
   const found = await getJson(ctx, '/messages', {
     q: 'subject:aplos-live-probe-send in:anywhere',
     maxResults: '10',
@@ -72,7 +77,14 @@ async function existingToday(ctx: ProbeContext, subject: string): Promise<number
     .filter(id => MESSAGE_ID.test(id));
   let same = 0;
   for (const id of ids) if ((await readMetadata(ctx, id)).get('subject') === subject) same++;
-  return same;
+  const bare = ours.replace(/^<|>$/g, '');
+  const byId = await getJson(ctx, '/messages', {
+    q: `rfc822msgid:${bare} in:anywhere`,
+    maxResults: '5',
+    fields: 'messages(id)',
+  });
+  const idHits = Array.isArray(byId.json.messages) ? byId.json.messages.length : 0;
+  return Math.max(same, idHits);
 }
 
 async function sentHits(ctx: ProbeContext, id: string | undefined): Promise<number> {
@@ -111,7 +123,7 @@ async function searchSent(
 async function sendOne(ctx: ProbeContext, result: ProbeResult): Promise<void> {
   const date = new Date();
   const { subject, messageId: ours } = sendNames(date);
-  result.counts.probeMessagesExisting = await existingToday(ctx, subject);
+  result.counts.probeMessagesExisting = await existingToday(ctx, subject, ours);
   if (result.counts.probeMessagesExisting > 0) {
     result.status = 'fail';
     return;
