@@ -293,10 +293,9 @@
   text-align: left;
   cursor: default;
 }
-/* Two lines, whatever the text, so every compact card is the same height; a line clamp ends a long one. */
+/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. */
 .ui-thread-message__excerpt {
   display: -webkit-box;
-  min-height: 2lh;
   margin-top: var(--space-3);
   overflow: hidden;
   color: var(--ink-2);
