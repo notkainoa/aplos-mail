@@ -400,10 +400,19 @@ test('main never loosens the frame sandbox: no allow-same-origin, no sandbox att
   }
 });
 
-test('keys: never both main’s before-input-event relay and the reporter’s key fallback (today: neither)', () => {
+test('keys: never both main’s before-input-event relay and the reporter’s key fallback (today: main’s only)', () => {
   const reporterKeys = /key(?:down|up|press)|['"]key['"]/i.test(REPORTER_SOURCE);
-  const mainKeys = filesWith(/before-input-event/).filter(f => f.startsWith('main/'));
+  const mainKeys = filesWith(/before-input-event/).filter(f => !f.startsWith('renderer/'));
   assert.ok(!(reporterKeys && mainKeys.length > 0), 'a key would arrive twice');
-  // Pinned as it is today (DECISIONS, html-5): whoever adds one relay updates this line and keeps the other off.
-  assert.deepEqual({ reporterKeys, mainKeys }, { reporterKeys: false, mainKeys: [] });
+  // Pinned as it is today (DECISIONS, eng-host sealed-frame): main's relay (main/windows.ts calls
+  // host/protocol/frame-relays.ts) is the sealed frame's one key path; the reporter has no fallback. Whoever adds a
+  // reporter fallback turns main's off.
+  assert.deepEqual(
+    { reporterKeys, mainKeys },
+    { reporterKeys: false, mainKeys: ['host/protocol/frame-relays.ts'] },
+  );
+  assert.match(
+    all.find(s => s.file === 'main/windows.ts')!.text,
+    /attachSealedFrameRelays\(contents, frameLinks\)/,
+  );
 });

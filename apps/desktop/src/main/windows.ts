@@ -18,6 +18,8 @@ import {
 import { releaseBuild } from './oauth-config';
 import { engineWindowArguments } from '../host/transports/port';
 import { isMailDocumentUrl } from '../host/protocol/relay';
+import { attachSealedFrameRelays } from '../host/protocol/frame-relays';
+import type { FrameLinkSinks } from '../host/protocol/frame-links';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -112,6 +114,13 @@ function mailFrameURL(event: { url: string; initiator?: { url: string } | null }
   if (/^about:(blank|srcdoc)$/.test(event.url)) return true;
   return isMailDocumentUrl(event.url) && !!event.initiator && trustedURL(event.initiator.url);
 }
+/** Where a link from a sealed letter goes: mailto to Compose (`handleLink`), web links to the browser (never in test mode). */
+const frameLinks: FrameLinkSinks = {
+  openMail: handleLink,
+  openWeb: url => {
+    if (!isTest) void external(url).catch(() => {});
+  },
+};
 /** ARCH 10: links leave Aplos or open Compose, and nothing but the app's own page ever loads in any frame. */
 function lockNavigation(win: BrowserWindow) {
   const contents = win.webContents;
@@ -130,11 +139,9 @@ function lockNavigation(win: BrowserWindow) {
   contents.on('will-redirect', (event, url) => {
     if (!trustedURL(url)) event.preventDefault();
   });
-  contents.setWindowOpenHandler(({ url }) => {
-    if (/^mailto:/i.test(url)) handleLink(url);
-    else if (!isTest) void external(url).catch(() => {});
-    return { action: 'deny' };
-  });
+  // The sealed letter: its listed keys go to the renderer (the frame is out of process), and its links and every
+  // window.open go to Compose (mailto), the browser (http, https) or nowhere (javascript:, data:, file:, blob:, tel:...).
+  attachSealedFrameRelays(contents, frameLinks);
 }
 function loadRenderer(win: BrowserWindow, query?: Record<string, string>) {
   if (devURL) {
