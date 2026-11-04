@@ -11,7 +11,7 @@
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
  * Low sheet behind the band; rows are never read.
  */
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
@@ -349,10 +349,17 @@ function ComposeSlot() {
   );
 }
 
-/** The Ask dock's host, split out so this module stays loadable in node tests: the host's own stylesheet import only resolves in the app build. */
-const AskDockHost = lazy(() =>
-  import('./screens/ask').then(module => ({ default: module.AskDockHost })),
-);
+/** The Ask dock's host component type, once its chunk has resolved. */
+type AskDockHostComponent = typeof import('./screens/ask').AskDockHost;
+
+/**
+ * The Ask dock's chunk, split out so this module stays loadable in node tests: the host's own stylesheet import only
+ * resolves in the app build. Loaded once, on first call.
+ */
+let askDockModule: Promise<typeof import('./screens/ask')> | undefined;
+function loadAskDockModule(): Promise<typeof import('./screens/ask')> {
+  return (askDockModule ??= import('./screens/ask'));
+}
 
 /** Labels other lanes open as placeholders (help); any other label is a folder id. */
 const PLACEHOLDER_LABELS: readonly string[] = ['Help'];
@@ -382,14 +389,30 @@ export function renderScreen(_client: AppClient, screen: Screen) {
 
 /** The new renderer's root. */
 export function App({ client }: AppProps) {
+  // The dock chunk resolves once at start-up; until then renderDock returns nothing so the shell mounts no pane.
+  // An empty pane for the frame the chunk took would measure zero wide and pop to the dock's width after.
+  const [DockHost, setDockHost] = useState<AskDockHostComponent | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadAskDockModule()
+      .then(module => {
+        if (live) setDockHost(() => module.AskDockHost);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <Shell
       renderScreen={screen => renderScreen(client, screen)}
-      renderDock={(tab, onTab, close) => (
-        <Suspense fallback={null}>
-          <AskDockHost tab={tab} onTab={onTab} onClose={close} />
-        </Suspense>
-      )}
+      renderDock={(tab, onTab, close) =>
+        DockHost ? (
+          <Suspense fallback={null}>
+            <DockHost tab={tab} onTab={onTab} onClose={close} />
+          </Suspense>
+        ) : null
+      }
     />
   );
 }

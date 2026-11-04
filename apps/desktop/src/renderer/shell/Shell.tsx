@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import {
   api,
@@ -99,6 +100,17 @@ export function shellCommands(actions: {
   };
 }
 
+/**
+ * True when the closing dock may hand focus to its tab's header button: the dock pane held the active element (its
+ * unmount leaves body focused) or nothing did. Focus anywhere else — a list row, a field — keeps its place.
+ */
+export function dockFocusOrphaned(): boolean {
+  if (typeof document === 'undefined') return false;
+  const active = document.activeElement;
+  if (!active || active === document.body) return true;
+  return active.closest('.ui-pane[data-kind="dock"]') !== null;
+}
+
 /** Attaches the shell's own command table; sits inside KeysProviders so the shared registry exists. */
 function ShellCommands(props: Parameters<typeof shellCommands>[0]) {
   const { openTab, toggleDock, togglePalette } = props;
@@ -136,6 +148,27 @@ const dockOpenTick = () => askStore.get().openTick;
 /** The tab a new open request asks for, or undefined when `tick` is the value the frame mounted with. */
 export function dockRequest(mountTick: number, tick: number): 'ask' | 'today' | undefined {
   return tick !== mountTick ? askStore.get().tab : undefined;
+}
+
+/** The dock the saved settings reopen to: the remembered tab, or closed on a first run (open false, DESIGN 7.7). */
+export function dockSeed(saved: {
+  readonly open: boolean;
+  readonly tab: 'ask' | 'today';
+}): DockTab {
+  return saved.open ? saved.tab : 'closed';
+}
+
+/** The `settings.ui.dock` {open, tab} a dock state writes back: the open flag and the tab to reopen — the last shown, when closed. */
+export function dockPersistPatch(
+  dock: DockTab,
+  lastTab: 'ask' | 'today',
+): { readonly open: boolean; readonly tab: 'ask' | 'today' } {
+  return { open: dock !== 'closed', tab: dock === 'closed' ? lastTab : dock };
+}
+
+/** The dock pane's landmark name for the tab it shows. */
+export function dockLabel(dock: DockTab): string {
+  return dock === 'today' ? 'Today' : 'Ask';
 }
 
 export function paneHeader(
@@ -211,6 +244,8 @@ export interface ShellLayoutProps {
   readonly toasts: ReactNode;
   /** The dock's content (DESIGN 7.7); mounted as the second pane beside the main one. */
   readonly dock?: ReactNode;
+  /** The dock pane's landmark name: the open tab's ('Ask' or 'Today'). */
+  readonly dockLabel?: string;
   /** Singletons beside the pane: the sheet and palette hosts. */
   readonly overlay?: ReactNode;
   /** The screen slot's content. */
@@ -239,7 +274,7 @@ export function ShellLayout(props: ShellLayoutProps) {
         {props.toasts}
       </Pane>
       {props.dock ? (
-        <Pane kind="dock" label="Ask">
+        <Pane kind="dock" label={props.dockLabel ?? 'Ask'}>
           {props.dock}
         </Pane>
       ) : null}
@@ -269,7 +304,7 @@ function FramedLayout({ dock, setDock, dockPane, ...layout }: FramedProps) {
   const part = usePaneHeaderParts();
   const run = useRunCommand();
   const header = useMemo(() => paneHeader(dock, setDock, part, run), [dock, setDock, part, run]);
-  return <ShellLayout {...layout} header={header} dock={dockPane} />;
+  return <ShellLayout {...layout} header={header} dock={dockPane} dockLabel={dockLabel(dock)} />;
 }
 
 function ShellFrame({ renderScreen, renderDock }: ShellProps) {
@@ -282,10 +317,50 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
     if (scopeIsStale(scope, accounts, accountsLoaded)) setAccountScope(null);
   }, [scope, accounts, accountsLoaded]);
   const counts = useCounts(scope ?? undefined);
-  const minimised = useSettings()?.ui.sidebarMinimised === true;
-  const [dock, setDock] = useState<DockTab>('closed');
+  const settings = useSettings();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const minimised = settings?.ui.sidebarMinimised === true;
+  const [dock, setDockState] = useState<DockTab>('closed');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const sheetOpen = useSheetContextActive();
+  // The dock reopens as it was left (settings.ui.dock, DESIGN 7.7): closed until the saved value lands so a
+  // remembered-open dock never flashes, and a dock the owner already moved keeps their choice.
+  const dockRestored = useRef(false);
+  const dockTouched = useRef(false);
+  const lastDockTab = useRef<'ask' | 'today'>('ask');
+  const setDock = useCallback((next: SetStateAction<DockTab>) => {
+    dockTouched.current = true;
+    setDockState(next);
+  }, []);
+  // {open, tab} are remembered on every change — the host owns width — but never before the saved value seeded,
+  // so a first run can't write 'closed' over a remembered 'open'.
+  useEffect(() => {
+    if (dock !== 'closed') lastDockTab.current = dock;
+    const current = settingsRef.current;
+    if (!dockRestored.current || !current) return;
+    const next = dockPersistPatch(dock, lastDockTab.current);
+    if (current.ui.dock.open === next.open && current.ui.dock.tab === next.tab) return;
+    void api.settings
+      .set({ patch: { ui: { dock: { ...current.ui.dock, ...next } } } })
+      .catch(() => undefined);
+  }, [dock]);
+  useEffect(() => {
+    if (dockRestored.current || !settings) return;
+    dockRestored.current = true;
+    if (dockTouched.current) {
+      // The owner acted before settings landed: write their choice back, not the saved value.
+      const next = dockPersistPatch(dock, lastDockTab.current);
+      if (settings.ui.dock.open !== next.open || settings.ui.dock.tab !== next.tab)
+        void api.settings
+          .set({ patch: { ui: { dock: { ...settings.ui.dock, ...next } } } })
+          .catch(() => undefined);
+      return;
+    }
+    lastDockTab.current = settings.ui.dock.tab;
+    const seeded = dockSeed(settings.ui.dock);
+    if (seeded !== 'closed') setDockState(seeded);
+  }, [settings, dock]);
   // The dock also opens on request (the palette's Ask row): `openTick` bumps once per ask (REQUESTS.md).
   const dockTick = useSyncExternalStore(askStore.subscribe, dockOpenTick, dockOpenTick);
   // Only a request after this mount opens the dock: openTick survives an engine outage in module state, so
@@ -294,19 +369,22 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   useEffect(() => {
     const tab = dockRequest(mountTick.current, dockTick);
     if (tab) setDock(tab);
-  }, [dockTick]);
+  }, [dockTick, setDock]);
   // Search's `>` asks for the palette with a seeded query (screens/palette REQUESTS.md).
   useEffect(() => onPaletteOpenRequest(() => setPaletteOpen(true)), []);
-  // Closing the dock returns focus to the header button of the tab it showed.
+  // Closing the dock returns focus to its tab's header button — only when the dock held it or nothing did.
   const lastDock = useRef(dock);
   useEffect(() => {
     const was = lastDock.current;
     lastDock.current = dock;
-    if (was !== 'closed' && dock === 'closed') focusDockButton(was);
+    if (was !== 'closed' && dock === 'closed' && dockFocusOrphaned()) focusDockButton(was);
   }, [dock]);
-  const openTab = useCallback((tab: 'ask' | 'today') => setDock(tab), []);
-  const toggleDock = useCallback(() => setDock(d => (d === 'closed' ? 'ask' : 'closed')), []);
-  const closeDock = useCallback(() => setDock('closed'), []);
+  const openTab = useCallback((tab: 'ask' | 'today') => setDock(tab), [setDock]);
+  const toggleDock = useCallback(
+    () => setDock(d => (d === 'closed' ? 'ask' : 'closed')),
+    [setDock],
+  );
+  const closeDock = useCallback(() => setDock('closed'), [setDock]);
   const togglePalette = useCallback(() => setPaletteOpen(open => !open), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const dockPane =

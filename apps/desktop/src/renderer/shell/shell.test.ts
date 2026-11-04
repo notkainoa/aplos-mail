@@ -326,6 +326,31 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
   const dock = docked.indexOf('data-kind="dock"');
   assert.ok(main > 0 && dock > main, 'the dock pane sits beside the main pane');
   assert.match(docked, /dock body/);
+  assert.match(docked, /data-kind="dock" aria-label="Ask"/, 'the dock landmark is the Ask tab');
+
+  // On the Today tab the landmark says so.
+  const today = renderToStaticMarkup(
+    createElement(ShellLayout, {
+      screen: 'home',
+      counts: {},
+      minimised: false,
+      onNavigate: () => undefined,
+      onCompose: () => undefined,
+      accountSwitcher: null,
+      status: null,
+      header: paneHeader(
+        'today',
+        () => undefined,
+        {},
+        () => undefined,
+      ),
+      toasts: null,
+      dock: createElement('div', null, 'today body'),
+      dockLabel: 'Today',
+      children: createElement('div', null, 'home body'),
+    }),
+  );
+  assert.match(today, /data-kind="dock" aria-label="Today"/);
 
   // The shell's own table: ⌘K toggles the palette, the dock keys open and toggle it (a mounted host shadows them).
   const ctx = context(['global']);

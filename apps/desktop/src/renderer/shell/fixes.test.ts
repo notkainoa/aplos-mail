@@ -365,3 +365,45 @@ test('the shell ask.dictate fallback opens the dock and flags pending dictation 
   commands['ask.dictate']!.release?.({} as never, {} as never);
   assert.equal(askStore.get().pendingDictation, undefined);
 });
+
+// ---- round 4: dock memory, focus-return guard, dock landmark -------------------------------------
+
+test('the dock restores the remembered tab only when settings say it was open', async () => {
+  const { dockSeed } = await import('./Shell');
+  assert.equal(dockSeed({ open: false, tab: 'ask' }), 'closed', 'first run stays closed');
+  assert.equal(dockSeed({ open: false, tab: 'today' }), 'closed');
+  assert.equal(dockSeed({ open: true, tab: 'ask' }), 'ask');
+  assert.equal(dockSeed({ open: true, tab: 'today' }), 'today', 'the remembered tab reopens');
+});
+
+test('the remembered {open, tab} patch keeps the last shown tab when closing', async () => {
+  const { dockPersistPatch } = await import('./Shell');
+  assert.deepEqual(dockPersistPatch('ask', 'ask'), { open: true, tab: 'ask' });
+  assert.deepEqual(dockPersistPatch('today', 'ask'), { open: true, tab: 'today' });
+  assert.deepEqual(
+    dockPersistPatch('closed', 'today'),
+    { open: false, tab: 'today' },
+    'closing Today reopens Today next launch',
+  );
+});
+
+test('closing the dock hands focus back only when the dock had it or nowhere did', async () => {
+  const { dockFocusOrphaned } = await import('./Shell');
+  const inDock = { closest: (s: string) => (s === '.ui-pane[data-kind="dock"]' ? {} : null) };
+  const listRow = { closest: () => null };
+  const body = {};
+  Object.assign(globalThis, { document: { activeElement: inDock, body } });
+  assert.equal(dockFocusOrphaned(), true, 'focus inside the dock pane');
+  Object.assign(globalThis.document, { activeElement: body });
+  assert.equal(dockFocusOrphaned(), true, 'the unmounted dock left body focused');
+  Object.assign(globalThis.document, { activeElement: listRow });
+  assert.equal(dockFocusOrphaned(), false, 'focus in the mail list keeps its place');
+  Object.assign(globalThis.document, { activeElement: null });
+  assert.equal(dockFocusOrphaned(), true, 'nothing focused');
+});
+
+test('the dock pane landmark names its tab', async () => {
+  const { dockLabel } = await import('./Shell');
+  assert.equal(dockLabel('ask'), 'Ask');
+  assert.equal(dockLabel('today'), 'Today');
+});
