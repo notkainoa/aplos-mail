@@ -54,7 +54,7 @@
     "lint:css": "stylelint \"apps/**/*.css\"",
     "lint:css:baseline": "rm -f stylelint-suppressions.json && stylelint \"apps/**/*.css\" --suppress",
     "test:lint": "node --test \"tools/lint/tests/*.test.mjs\" \"tools/lint/design/*.test.mjs\"",
-    "check": "node scripts/audit/run-if-present.mjs format:check && npm run lint && npm run test:lint && npm run test:audit && npm run lint:css && npm run lint:design && npm run check:tokens && npm run check:contrast && npm run check:identity && node scripts/audit/run-if-present.mjs owners:check && npm run typecheck && npm run check:sqlite && npm run test:engine && npm test",
+    "check": "node scripts/audit/run-if-present.mjs format:check && npm run lint && npm run test:lint && npm run test:audit && npm run lint:css && npm run lint:design && npm run check:tokens && npm run check:contrast && npm run check:identity && node scripts/audit/run-if-present.mjs owners:check && npm run typecheck && npm run check:sqlite && npm run test:engine && npm run test:engine:gmail-rewritten && npm test",
     "prepare": "node scripts/hooks/install.mjs",
     "check:tokens": "node apps/desktop/scripts/design/build-tokens.mjs --check",
     "check:contrast": "node apps/desktop/scripts/design/check-contrast.mjs --contrast",
