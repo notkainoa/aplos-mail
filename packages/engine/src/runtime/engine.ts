@@ -99,7 +99,7 @@ const HOST_PORTS = [
 
 /**
  * Builds the engine (seam 1): wraps the store so commits queue `state` frames, fills the services, then creates each lane
- * module in order and starts them all. The composition root (`src/index.ts`) passes the four lane modules.
+ * module in order and starts them all. The composition root (`src/index.ts`) passes the lane modules.
  */
 export async function buildEngine(
   options: EngineOptions,
