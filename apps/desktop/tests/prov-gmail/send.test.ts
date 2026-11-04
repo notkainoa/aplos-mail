@@ -686,6 +686,11 @@ for (const [name, edit, reason] of [
     'wrongSender',
   ],
   [
+    'an X-Aplos-Send token inside the pinned bytes (only the adapter writes it, on the wire)',
+    (h: string) => h.replace(subjectLine, s => `${s}\r\nX-Aplos-Send: <token@mail.example.test>`),
+    'unexpectedHeader',
+  ],
+  [
     'an X-Aplos-Draft token (the draft identity never leaves in sent mail)',
     (h: string) => h.replace(subjectLine, s => `${s}\r\nX-Aplos-Draft: <token@mail.example.test>`),
     'unexpectedHeader',
