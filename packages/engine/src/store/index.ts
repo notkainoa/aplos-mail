@@ -75,6 +75,7 @@ export function openStore(db: SqlDatabase, options: OpenStoreOptions = {}): Stor
   const dbEpoch = meta('db_epoch')!;
   const seq = () => Number(meta('seq'));
   const reader: StoreReader = {
+    bodyCodec: options.bodyCodec,
     get: (sql, ...params) => stmt(sql).get(...params),
     all: (sql, ...params) => stmt(sql).all(...params),
     iterate: (sql, ...params) => stmt(sql).iterate(...params),

@@ -19,7 +19,7 @@ export function readBody(
   q: StoreReader,
   accountId: string,
   remoteId: string,
-  codec: BodyCodec = RAW,
+  codec: BodyCodec = q.bodyCodec ?? RAW,
 ): BodyRecord | undefined {
   const row = q.get<{ codec: number; data: Uint8Array }>(
     'SELECT b.codec, b.data FROM bodies b JOIN messages m ON m.id = b.message_id WHERE m.account_id = ? AND m.remote_id = ?',
@@ -34,5 +34,8 @@ export function decodeBody(
   row: { codec: number; data: Uint8Array },
   codec: BodyCodec = RAW,
 ): BodyRecord {
-  return JSON.parse(new TextDecoder().decode(codec.decode(row.codec, row.data))) as BodyRecord;
+  // Codec 0 is raw by definition in any store, mixed-codec rows included: it never goes through the
+  // host's codec, which may not know it at all.
+  const use = row.codec === 0 ? RAW : codec;
+  return JSON.parse(new TextDecoder().decode(use.decode(row.codec, row.data))) as BodyRecord;
 }

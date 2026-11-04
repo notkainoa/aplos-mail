@@ -3,7 +3,7 @@ import type { MethodContext } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
 import type { StoreReader } from '../store/port';
 import { findMessage, storedBody, type MessageRef } from './message';
-import { readAllowList, resolveImagePolicy } from './policy';
+import { readAllowList, readRemoteImages, resolveImagePolicy } from './policy';
 import { renderMessage } from './render';
 
 // `MessageBody/prefetch`: on focus or hover, fetch bodies that are not stored on the prefetch lane and warm the LRU with
@@ -69,8 +69,9 @@ async function warm(services: EngineServices, key: string, refs: readonly Messag
   await fetchThread(services, refs);
   if (cancelled.delete(key)) return;
   const allowList = services.store.read(readAllowList);
+  const global = services.store.read(readRemoteImages);
   for (const ref of refs) {
-    const policy = resolveImagePolicy('block', ref.fromAddr, allowList);
+    const policy = resolveImagePolicy('block', ref.fromAddr, allowList, global);
     await renderMessage(
       services,
       ref,
