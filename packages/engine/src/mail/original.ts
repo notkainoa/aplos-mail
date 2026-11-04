@@ -1,4 +1,5 @@
-import { ContractError, type Input, type Output } from '@aplos/contract';
+import type { Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { principalOf } from '@aplos/contract/access';
 import type { MethodContext } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
