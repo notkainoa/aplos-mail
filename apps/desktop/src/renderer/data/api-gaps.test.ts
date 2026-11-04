@@ -246,6 +246,7 @@ test('main-served methods are native in the table and answered by the stand-in s
       'system.microphone',
       'system.notifications',
       'system.openSettings',
+      'shell.open',
       'notification.test',
     ] as const;
     for (const name of nativeNames) {
@@ -259,6 +260,7 @@ test('main-served methods are native in the table and answered by the stand-in s
     assert.deepEqual(await api.window.finishOnboarding(), { ok: true });
     assert.deepEqual(await api.notification.test(), { ok: true });
     assert.deepEqual(await api.system.openSettings({ pane: 'microphone' }), { ok: true });
+    assert.deepEqual(await api.shell.open({ url: 'https://meet.example.com/abc' }), { ok: true });
     assert.deepEqual(await api.system.login({ enabled: true }), { enabled: true });
     assert.deepEqual(await api.system.login({}), { enabled: false });
     assert.deepEqual(await api.system.microphone({ check: true }), {
@@ -379,5 +381,10 @@ test('the native stub refuses what main would refuse under the contract schema',
         (error.body?.type ?? error.type) === 'validation',
     );
     assert.deepEqual(await api.system.openSettings({ pane: 'microphone' }), { ok: true });
+    await assert.rejects(
+      () => api.shell.open({ url: 'x'.repeat(4_001) }),
+      (error: { body?: { type?: string }; type?: string }) =>
+        (error.body?.type ?? error.type) === 'validation',
+    );
   });
 });
