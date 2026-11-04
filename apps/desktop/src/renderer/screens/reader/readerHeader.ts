@@ -1,10 +1,10 @@
 /**
  * The pane header the reader asks for (DESIGN 7.1, 7.5): back with Esc, the crumb "Home  1 of 16" that becomes the
  * thread's subject once the summary has scrolled away, previous and next (K and J), and ⋯. Ask and the calendar button
- * are the shell's. The shell draws the header, so this is only the description; the reader hands it over once the shell
- * has a way to take it (REQUEST in the ui-reader report).
+ * are the shell's. The shell draws the header, so this is only the description, handed over with `usePaneHeaderPart`.
  */
-import type { PaneHeaderProps, PaneTools } from '../../ui/props';
+import type { PaneHeaderPart } from '../../shell';
+import type { PaneTools } from '../../ui/props';
 
 /** What the header is built from. */
 export interface ReaderHeaderInput {
@@ -42,9 +42,10 @@ function toolsOf(input: ReaderHeaderInput): PaneTools {
   ];
 }
 
-/** The header without Ask and the calendar button, which the shell adds. */
-export function readerHeader(input: ReaderHeaderInput): Omit<PaneHeaderProps, 'ask' | 'today'> {
+/** The reader's part of the pane header (the shell adds Ask and the calendar button); Ask means this email. */
+export function readerHeader(input: ReaderHeaderInput): PaneHeaderPart {
   return {
+    askScope: 'thisEmail',
     lead: { kind: 'back', label: 'Back', commandId: 'nav.back', onPress: input.back },
     crumb: {
       label: input.origin,

@@ -34,6 +34,8 @@ import {
 import type { Screen } from './store-route';
 import type { RouteTarget } from './store-route';
 import { addKeyLayer, type KeyLayer } from './store-keys';
+import { addPaneHeaderPart, getPaneHeaderPart, subscribePaneHeaderPart } from './store-pane';
+import type { PaneHeaderPart } from './store-pane';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
@@ -47,13 +49,6 @@ import {
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import type { ComposeRequest } from './store-compose';
-import {
-  clearPaneHeader,
-  getPaneHeader,
-  setPaneHeader,
-  subscribePaneHeader,
-  type ScreenPaneHeader,
-} from './store-header';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
@@ -291,31 +286,20 @@ export function useShellKeyLayer(layer: KeyLayer): void {
 }
 
 // ---------------------------------------------------------------------------
-// The pane header (additive): a screen describes its own back, crumb and tools
+// The pane header's screen parts (additive): back and crumb, tools, and the bulk bar
 // ---------------------------------------------------------------------------
 
-/**
- * Describes the pane header (back or close, crumb, tools) while the calling component is mounted; null clears it. The
- * shell adds Ask and the calendar button. Compared by value, so an inline object is fine; cleared on unmount. A tool
- * press runs the tool's command through the registry unless the header has its own `onTool`.
- */
-export function usePaneHeader(header: ScreenPaneHeader | null): void {
-  const owner = useRef<object>({});
-  useEffect(() => {
-    setPaneHeader(owner.current, header);
-  });
-  useEffect(() => {
-    const who = owner.current;
-    return () => clearPaneHeader(who);
-  }, []);
+export type { PaneHeaderPart } from './store-pane';
+
+/** Sets the header's lead, crumb, tools or bulk bar while the calling screen is mounted. Pass a memoised object: it compares by reference. Null clears it. */
+export function usePaneHeaderPart(part: PaneHeaderPart | null): void {
+  useEffect(() => (part ? addPaneHeaderPart(part) : undefined), [part]);
 }
 
-/** The screen's pane header, live; null when none. The shell reads it. */
-export function usePaneHeaderValue(): ScreenPaneHeader | null {
-  return useSyncExternalStore(subscribePaneHeader, getPaneHeader, getPaneHeader);
+/** The latest mounted screen's header parts, live. */
+export function usePaneHeaderParts(): PaneHeaderPart {
+  return useSyncExternalStore(subscribePaneHeaderPart, getPaneHeaderPart, getPaneHeaderPart);
 }
-
-export type { ScreenPaneHeader };
 
 // ---------------------------------------------------------------------------
 // The account scope (additive): what the sidebar's switcher selects

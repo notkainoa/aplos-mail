@@ -25,12 +25,12 @@ import {
   openThread,
   useAccountScope,
   useComposeRequest,
-  usePaneHeader,
   useHomeShellProps,
+  usePaneHeaderPart,
   type HomeShellProps,
   type Screen,
 } from './shell';
-import { HomeScreen as HomeRoute } from './screens/home';
+import { HomeScreen as HomeRoute, OneByOneScreen } from './screens/home';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
@@ -285,6 +285,19 @@ export function listOpener(
   };
 }
 
+/** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
+function OneByOneSlot() {
+  const { accountId, onOpen } = useHomeShellProps();
+  return (
+    <OneByOneScreen
+      key={accountId ?? 'all'}
+      accountId={accountId}
+      onExit={() => navigate('home')}
+      onOpen={onOpen}
+    />
+  );
+}
+
 /** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader, drafts in the compose page; submissions have no opener. */
 function useListProps(from: Screen) {
   const scope = useAccountScope();
@@ -316,7 +329,11 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
 function ComposeSlot() {
   const request = useComposeRequest();
   const runCommand = useRunCommand();
-  usePaneHeader(composeHeader({ close: () => runCommand('compose.close'), saved: false }));
+  const part = useMemo(
+    () => composeHeader({ close: () => runCommand('compose.close'), saved: false }),
+    [runCommand],
+  );
+  usePaneHeaderPart(part);
   if (!request) return null;
   return (
     <ComposeScreen
@@ -328,8 +345,8 @@ function ComposeSlot() {
   );
 }
 
-/** Labels other lanes open as placeholders (one by one, search, help); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['one by one', 'Search', 'Help'];
+/** Labels other lanes open as placeholders (search, help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['Search', 'Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -341,6 +358,7 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
 export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
+  if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />

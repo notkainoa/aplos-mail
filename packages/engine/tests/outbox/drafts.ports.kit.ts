@@ -43,6 +43,8 @@ export const count = (w: World) =>
 export interface Sync {
   incomplete?: true;
   wrote?: string[];
+  prints?: Record<string, string>;
+  uploading?: { internetId: string };
   conflict?: { complete?: boolean; theirsMessageId?: string; theirs?: { html: string } };
   removing?: true;
 }

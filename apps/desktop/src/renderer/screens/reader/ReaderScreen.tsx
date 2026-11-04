@@ -18,7 +18,7 @@ import {
   useCommandTarget,
   useOpenThread,
   useOpenThreadContext,
-  usePaneHeader,
+  usePaneHeaderPart,
   useRegisterCommands,
   useShellKeyLayer,
   useShellRegistry,
@@ -164,16 +164,30 @@ function useReaderHeader(input: {
   readonly back: () => void;
 }): void {
   const { ids, walk, at, row, from, back } = input;
-  const header = readerHeader({
-    origin: screenLabel(from ?? 'home'),
-    position: crumbPosition(ids, at),
-    subject: row ? subjectOf(row) : '',
-    summaryScrolledAway: false,
-    hasPrevious: stepThread(walk, at, 'previous') !== null,
-    hasNext: stepThread(walk, at, 'next') !== null,
-    back,
-  });
-  usePaneHeader({ ...header, askScope: 'thisEmail' });
+  const latest = useLive({ back });
+  const goBack = useCallback(() => latest.current.back(), [latest]);
+  const origin = screenLabel(from ?? 'home');
+  const place = crumbPosition(ids, at);
+  const index = place?.index;
+  const of = place?.of;
+  const subject = row ? subjectOf(row) : '';
+  const hasPrevious = stepThread(walk, at, 'previous') !== null;
+  const hasNext = stepThread(walk, at, 'next') !== null;
+  // The part compares by reference: it changes only when what it draws does, never with the render.
+  const part = useMemo(
+    () =>
+      readerHeader({
+        origin,
+        position: index === undefined || of === undefined ? null : { index, of },
+        subject,
+        summaryScrolledAway: false,
+        hasPrevious,
+        hasNext,
+        back: goBack,
+      }),
+    [origin, index, of, subject, hasPrevious, hasNext, goBack],
+  );
+  usePaneHeaderPart(part);
 }
 
 function controlsOf(actions: ReaderActions): LetterControls {

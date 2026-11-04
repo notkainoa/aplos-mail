@@ -4,7 +4,7 @@
  * menu). Ask and the calendar button are the shell's. The shell draws the header; this is only the description. A
  * press of ⋯ reaches the mounted page through `headerMenu`, so the page opens its menu under the button.
  */
-import type { PaneHeaderProps } from '../../ui/props';
+import type { PaneHeaderPart } from '../../shell';
 
 export const COMPOSE_CRUMB = 'New message';
 
@@ -42,7 +42,7 @@ export function composeHeader(input: {
   readonly close: () => void;
   /** The subject once typed: "Reply to Studio Kettle" style crumbs are the reader's; the page keeps "New message". */
   readonly saved: boolean;
-}): Omit<PaneHeaderProps, 'ask' | 'today'> {
+}): PaneHeaderPart {
   return {
     lead: {
       kind: 'close',

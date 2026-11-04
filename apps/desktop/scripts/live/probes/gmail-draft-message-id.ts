@@ -226,18 +226,19 @@ async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void
   result.counts.engineHeaderKeptAfterApiSave =
     afterSave.headers.get(ENGINE_HEADER.toLowerCase()) === draftToken ? 1 : 0;
 
-  await searchChecks(ctx, result, 'Create', ours, savedId);
-
-  // What `inspect` compares with after the owner's edit: hashes and shapes only.
+  // Saved BEFORE the searches: a failure there (a 429, say) must not leave the previous run's state for `inspect` to
+  // compare with. What `inspect` compares with after the owner's edit: hashes and shapes only.
   await ctx.state?.save({
     salt,
     tokenHash: saltedHash(salt, token),
     draftTokenHash: saltedHash(salt, draftToken),
     afterCreateHash: saltedHash(salt, createdId),
     afterSaveHash: saltedHash(salt, savedId),
+    draftIdHash: saltedHash(salt, first.draftId),
     afterCreateShape: shapeOf(createdId, ours),
     afterSaveShape: shapeOf(savedId, ours),
   });
+  await searchChecks(ctx, result, 'Create', ours, savedId);
 }
 
 // ---- inspect ----
@@ -300,7 +301,14 @@ async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
   result.counts.messageIdIsOurs = shapeOf(current, ours) === 'ours' ? 1 : 0;
   result.counts.messageIdShapePhone = SHAPE_CODE[shapeOf(current, ours)];
 
-  const before = await ctx.state?.load();
+  const loaded = await ctx.state?.load();
+  // A state file written for another draft (an older run whose create failed before it saved) is no state at all. A
+  // file from before `draftIdHash` existed has none to compare and is taken as it is.
+  const stale =
+    loaded?.salt !== undefined &&
+    loaded.draftIdHash !== undefined &&
+    saltedHash(loaded.salt, only.id) !== loaded.draftIdHash;
+  const before = stale ? undefined : loaded;
   if (!before?.salt) result.counts.stateMissing = 1;
   else {
     result.counts.stateMissing = 0;

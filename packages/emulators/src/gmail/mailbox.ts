@@ -135,6 +135,8 @@ export interface MailboxOptions {
   historyRetentionMs?: number | (() => number);
   /** How a draft saved through the API is changed, read at each save (see `GmailEmulatorOptions.draftIdentity`). */
   draftIdentity?: () => { rewriteMessageId: boolean; dropHeaders: readonly string[] };
+  /** Whether `messages.send` replaces the Message-ID the client wrote (see `GmailEmulatorOptions.sendIdentity`). */
+  rewriteSentMessageId?: () => boolean;
 }
 
 /** Names Gmail keeps for itself; labels.create refuses them in any letter case [observed]. */
@@ -188,6 +190,7 @@ export class Mailbox {
   constructor(options: MailboxOptions) {
     this.clock = options.clock;
     this.draftIdentity = options.draftIdentity;
+    this.rewriteSentMessageId = options.rewriteSentMessageId;
     this.emailAddress = options.emailAddress;
     this.random = new Random(options.seed);
     this.history = new HistoryLog(
@@ -745,6 +748,7 @@ export class Mailbox {
   // ---------- sending and inserting ----------
 
   private readonly draftIdentity?: MailboxOptions['draftIdentity'];
+  private readonly rewriteSentMessageId?: MailboxOptions['rewriteSentMessageId'];
 
   /** A draft saved through the API, as Gmail would store it: Message-ID rewritten and some headers dropped, by option. */
   private draftRaw(raw: Buffer): Buffer {
@@ -777,7 +781,12 @@ export class Mailbox {
 
   /** messages.send: the message lands in SENT, and also in INBOX when it is addressed to the account itself. */
   sendRaw(raw: Buffer, threadId?: string): MessageView {
-    const full = this.outgoing(raw);
+    const sent = this.rewriteSentMessageId?.()
+      ? withDefaultHeaders(withoutHeaders(raw, ['Message-ID']), {
+          'Message-ID': `<${this.random.hex(20)}@mail.gmail.com>`,
+        })
+      : raw;
+    const full = this.outgoing(sent);
     const toSelf = this.recipientsOf(full).includes(this.emailAddress.toLowerCase());
     return this.addRaw(full, {
       labelIds: toSelf ? ['SENT', 'INBOX', 'UNREAD'] : ['SENT'],

@@ -9,6 +9,7 @@ import {
   type SyncLane,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
+import { identityOf } from './draft-token';
 import { messageFacts, parseAddresses } from './facts';
 import { fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
 
@@ -21,7 +22,9 @@ import { fromBase64Url, headerOf, walkPayload, type GmailPart } from './mime';
  * disposition, or a type that is not text/* or multipart/*, such as message/rfc822; inline images too, the engine cannot
  * carry them), the text inside the message itself (not stored by attachment id, which would need more requests), not
  * empty, and not over `BODY_CAP` characters. Otherwise the fact stays as it was (snippet only). The same read names the
- * draft's Message-ID as the fact's `internetId` (the headers come with format=full, no extra request). A read that fails
+ * draft's identity as the fact's `internetId` (the headers come with format=full, no extra request): the
+ * `X-Aplos-Draft` token this adapter writes on every upload when the draft carries exactly one well-formed one, else
+ * its Message-ID header (`draft-token.ts`; Gmail replaces our Message-ID on every API save, the token survives). A read that fails
  * for a transient reason is tried again on the next pass, `MAX_TRIES` reads in all, then dropped (the error is
  * logged as `sync.gmail.request_refused`, never content); a 404 or a message that is no longer a draft drops it at once. Content is never logged.
  *
@@ -257,7 +260,8 @@ async function readFull(
   const labels = message.labelIds;
   if (!labels.includes('DRAFT') || labels.includes('SENT') || labels.includes('TRASH'))
     return undefined;
-  const internetId = headerOf(message.payload?.headers, 'Message-ID')?.trim();
+  // Our `X-Aplos-Draft` token when well-formed, else the Message-ID header (draft-token.ts).
+  const internetId = identityOf(message.payload?.headers);
   const facts = message.payload ? metadataOf(message, message.payload, self) : undefined;
   // A body without the draft's sender, recipients and subject would make the engine take it as complete and drop them.
   const clear = facts && message.payload && !ambiguousHeaders(message.payload, facts);
