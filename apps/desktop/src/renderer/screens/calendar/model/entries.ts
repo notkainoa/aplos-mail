@@ -1,5 +1,5 @@
 /** Calendars (colour, visibility), contract events and plans as grid entries, the optimistic overlay, and the walk. */
-import { toIsoDate, type Calendar, type Event, type Plan } from '../../../data';
+import { toIsoDate, type Calendar, type Event, type Plan, type State } from '../../../data';
 import type {
   CalendarEventData,
   CalendarInfo,
@@ -268,6 +268,40 @@ export function overlayWithout(overlay: Overlay, id: string): Overlay {
   patch.delete(id);
   removed.delete(id);
   return { patch, removed, added: overlay.added.filter(a => a.id !== id) };
+}
+
+/**
+ * An overlay entry settles once a window frame reaches the write's applied state — or once the db epoch changed:
+ * an engine reset means every row is re-read anyway, so holding the overlay would hide the fresh data (review1 8).
+ */
+export function reached(window: State | null, at: State | null): boolean {
+  return window !== null && at !== null && (window.dbEpoch !== at.dbEpoch || window.seq >= at.seq);
+}
+
+/** A calendar's local `shown` while `Calendar/set` and the `Calendar/get` re-read are in flight (review1 5). */
+export interface ShownOverride {
+  readonly shown: boolean;
+  /** The write returned; the next get is authoritative whatever it says (engine-side changes come through). */
+  readonly settled: boolean;
+}
+
+/**
+ * The overrides a resolved `Calendar/get` leaves standing: kept while the write is in flight and the get still
+ * shows the old value; cleared once the get reflects them, the write has settled, or (by the caller) it failed.
+ */
+export function reconcileShown(
+  overrides: ReadonlyMap<string, ShownOverride>,
+  calendars: readonly Calendar[],
+): ReadonlyMap<string, ShownOverride> {
+  if (overrides.size === 0) return overrides;
+  let next: Map<string, ShownOverride> | null = null;
+  for (const [id, o] of overrides) {
+    if (o.settled || calendars.find(c => c.id === id)?.shown === o.shown) {
+      if (next === null) next = new Map(overrides);
+      next.delete(id);
+    }
+  }
+  return next ?? overrides;
 }
 
 export interface EntryInputs {

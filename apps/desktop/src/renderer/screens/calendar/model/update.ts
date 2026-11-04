@@ -269,7 +269,20 @@ function onToggleCalendar(
   if (state.solo) return done({ ...state, solo: null });
   const calendar = ctx.calendars.find(c => c.id === action.id);
   if (!calendar) return unhandled(state);
-  return done(state, [{ kind: 'calendarSet', id: calendar.id, shown: !calendar.shown }]);
+  const shown = !calendar.shown;
+  return done(state, [
+    {
+      kind: 'calendarSet',
+      id: calendar.id,
+      shown,
+      // One Undo toast per write, like every other lane write (review1 17).
+      toast: {
+        kind: 'info',
+        message: `${calendar.name} ${shown ? 'shown' : 'hidden'}`,
+        undoable: true,
+      },
+    },
+  ]);
 }
 
 const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {

@@ -58,6 +58,10 @@ export interface EffectUi {
   rollback(entryId: string): void;
   /** A calendar's `shown` changed locally until `Calendar/get` is re-read. */
   shown(id: string, shown: boolean): void;
+  /** The `Calendar/set` write returned: the next get is authoritative. */
+  shownSettled(id: string): void;
+  /** The write was refused: drop the local `shown` so the real value shows. */
+  shownFailed(id: string): void;
   /** Move focus after the change. */
   focus(target: 'grid' | 'rail'): void;
 }
@@ -163,19 +167,32 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     case 'calendarSet': {
       const opId = newOpId();
       ui.shown(fx.id, fx.shown);
-      ports.calendarSet({ opId, id: fx.id, shown: fx.shown }).catch(() => {
-        // A refused toggle comes back with the next `Calendar/get`; say so and offer Retry.
+      if (fx.toast)
         pushToast({
-          id: `${opId}:failed`,
-          kind: 'info',
-          message: 'Couldn’t change that calendar.',
-          actions: [{ id: 'retry', label: 'Retry' }],
-          undoable: false,
-          onAction: actionId => {
-            if (actionId === 'retry') retry();
-          },
+          id: opId,
+          kind: fx.toast.kind,
+          message: fx.toast.message,
+          actions: UNDO_ACTION,
+          undoable: true,
         });
-      });
+      ports.calendarSet({ opId, id: fx.id, shown: fx.shown }).then(
+        () => ui.shownSettled(fx.id),
+        () => {
+          // A refused toggle rolls the local `shown` back at once; the toast offers Retry.
+          ui.shownFailed(fx.id);
+          dismissToast(opId);
+          pushToast({
+            id: `${opId}:failed`,
+            kind: 'info',
+            message: 'Couldn’t change that calendar.',
+            actions: [{ id: 'retry', label: 'Retry' }],
+            undoable: false,
+            onAction: actionId => {
+              if (actionId === 'retry') retry();
+            },
+          });
+        },
+      );
       return;
     }
     case 'planConfirm': {

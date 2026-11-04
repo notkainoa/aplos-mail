@@ -10,6 +10,8 @@
 
 **Design rules.** Cards option A where cards appear, calm Notion/Redakt feel, roomy type, ink blue only for the one main action, no sky gradient, no airmail stripe, never a sparkle, wand or star glyph for AI, hover never shifts layout. Empty states carry real substance (what the day is for, next event, a way to add one), not a blank grid.
 
+**Honest status.** The sidebar slot (MiniMonth + Calendars list), `api.event.hide` and the shell open-url port are NOT wired yet — REQUESTs are posted to ui-shell, ui-foundation and engine, and the harness draws a stand-in sidebar (`CalendarSidebar` in CalendarStates.tsx). The screen supplies `calendarSidebar`'s props and calls `renderSidebar` when a slot exists.
+
 **Done criteria.**
 1. Harness states, light and dark, two sizes, no serious axe violation: week (default, overlap, 3+ overlap "+N" stack), day (default, empty day), month, agenda (narrow pane under 720 px), event detail with RSVP unanswered / answered / Send reply disabled until chosen, repeating-event edit scope chooser ("this event" / "all events" first), create by drag, move, resize, all-day events, now-line, today column, Calendars list toggles, loading, and error states.
 2. Behaviour tests: D/W/M switch views; T goes to today; arrows move the period; Y/M/N answer only while an unanswered invite is open (otherwise M is Month); Delete only on persisted events; scope chooser appears for repeating events and passes the chosen scope; Escape closes detail; one Undo toast per write, undone by opId.

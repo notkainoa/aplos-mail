@@ -48,6 +48,8 @@ import {
   overlayWithout,
   periodOf,
   plansSpec,
+  reached,
+  reconcileShown,
   shownView,
   update,
   viewModel,
@@ -59,6 +61,7 @@ import {
   type CalendarState,
   type OptimisticChange,
   type Overlay,
+  type ShownOverride,
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
 import {
@@ -92,9 +95,6 @@ interface Settling {
   readonly id: string;
   readonly at: State | null;
 }
-
-const reached = (window: State | null, at: State | null): boolean =>
-  window !== null && at !== null && window.dbEpoch === at.dbEpoch && window.seq >= at.seq;
 
 const focused = (): ElementLike | null =>
   typeof document === 'undefined' ? null : (document.activeElement as ElementLike | null);
@@ -176,7 +176,7 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
   const [overlay, setOverlay] = useState<Overlay>(EMPTY_OVERLAY);
   const [settling, setSettling] = useState<readonly Settling[]>([]);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
-  const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, ShownOverride>>(new Map());
 
   const weekStartsOn = weekStartsOnFor(
     settings?.ui.calendar.weekStart,
@@ -197,10 +197,16 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>
-        shownOverride.has(c.id) ? { ...c, shown: shownOverride.get(c.id)! } : c,
+        shownOverride.has(c.id) ? { ...c, shown: shownOverride.get(c.id)!.shown } : c,
       ),
     [loaded, shownOverride],
   );
+
+  // Drop an override once a resolved `Calendar/get` reflects it or the write settled; a refused write is rolled
+  // back by `shownFailed` (review1 5). Later engine-side changes then flow through again.
+  useEffect(() => {
+    if (loaded !== undefined) setShownOverride(m => reconcileShown(m, loaded));
+  }, [loaded]);
 
   const events = useMemo(
     () =>
@@ -263,7 +269,20 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
       settle: (id: string, at: State | null) => setSettling(list => [...list, { id, at }]),
       rollback: (id: string) => setOverlay(o => overlayWithout(o, id)),
-      shown: (id: string, shown: boolean) => setShownOverride(m => new Map(m).set(id, shown)),
+      shown: (id: string, shown: boolean) =>
+        setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
+      shownSettled: (id: string) =>
+        setShownOverride(m => {
+          const o = m.get(id);
+          return o === undefined || o.settled ? m : new Map(m).set(id, { ...o, settled: true });
+        }),
+      shownFailed: (id: string) =>
+        setShownOverride(m => {
+          if (!m.has(id)) return m;
+          const next = new Map(m);
+          next.delete(id);
+          return next;
+        }),
       focus: (target: 'grid' | 'rail') => setFocus(f => ({ target, seq: (f?.seq ?? 0) + 1 })),
     }),
     [],

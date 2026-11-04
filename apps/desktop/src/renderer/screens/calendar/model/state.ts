@@ -179,7 +179,7 @@ export type CalendarEffect =
       organizer?: string;
       failure: string;
     }
-  | { kind: 'calendarSet'; id: string; shown: boolean }
+  | { kind: 'calendarSet'; id: string; shown: boolean; toast?: ToastPlan }
   | { kind: 'planConfirm'; planId: string; calendarId: string | null; optimistic: OptimisticChange }
   | { kind: 'planDismiss'; planId: string; optimistic: OptimisticChange }
   | { kind: 'eventHide'; id: string; optimistic: OptimisticChange; toast: ToastPlan }

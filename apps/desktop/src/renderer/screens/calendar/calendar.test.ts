@@ -36,6 +36,8 @@ import {
   nextFreeSlot,
   periodOf,
   planEntryId,
+  reached,
+  reconcileShown,
   shownView,
   stepAnchor,
   timeChange,
@@ -43,6 +45,7 @@ import {
   viewModel,
   type CalendarContext,
   type CalendarState,
+  type ShownOverride,
 } from './calendar.model';
 import { runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
 import { ladderTakesEscape, takesInviteAnswerKey } from './keys';
@@ -440,6 +443,42 @@ test('review1: entries lock a no-move event and anything on a read-only calendar
   assert.equal(ctxRo.entries.find(e => e.id === 'ro1')?.locked, true);
 });
 
+test('review1: a calendar toggle plans its write with one Undo toast', () => {
+  const ctx = ctxFor();
+  const t = update(S(), { type: 'toggleCalendar', id: 'personal' }, ctx);
+  const fx = t.effects.find(f => f.kind === 'calendarSet');
+  assert.ok(fx && fx.kind === 'calendarSet');
+  assert.equal(fx.shown, false);
+  assert.equal(fx.toast?.undoable, true);
+  assert.equal(fx.toast?.message, 'Personal hidden');
+});
+
+test('review1: an overlay entry settles when the window reaches it or the epoch resets', () => {
+  const at = { dbEpoch: 'one', seq: 5 };
+  assert.equal(reached(null, at), false);
+  assert.equal(reached({ dbEpoch: 'one', seq: 4 }, at), false);
+  assert.equal(reached({ dbEpoch: 'one', seq: 5 }, at), true);
+  // After an engine reset the epoch differs: the write's old seq is meaningless, so the overlay drops.
+  assert.equal(reached({ dbEpoch: 'two', seq: 0 }, at), true);
+});
+
+test('review1: a shown override clears once Calendar/get reflects it or the write settled', () => {
+  const work = demoWorld.calendars[0];
+  const pending: ReadonlyMap<string, ShownOverride> = new Map([
+    [work.id, { shown: false, settled: false }],
+  ]);
+  // A get that still shows the old value while the write is in flight keeps the override.
+  assert.equal(reconcileShown(pending, demoWorld.calendars).get(work.id)?.shown, false);
+  // One that reflects it clears it.
+  const hidden = demoWorld.calendars.map(c => (c.id === work.id ? { ...c, shown: false } : c));
+  assert.equal(reconcileShown(pending, hidden).size, 0);
+  // After the write settled the get is authoritative, so an engine-side change comes through.
+  const settled: ReadonlyMap<string, ShownOverride> = new Map([
+    [work.id, { shown: false, settled: true }],
+  ]);
+  assert.equal(reconcileShown(settled, demoWorld.calendars).size, 0);
+});
+
 test('review1: Send reply stays disabled while the chosen answer is the one already sent', () => {
   const answered = { ...ctxFor().events.get('q4')!, myResponse: 'accepted' as const };
   const ctx = ctxFor([answered]);
@@ -564,16 +603,33 @@ const newEvent = (id: string, calendarId: string): Event =>
     sync: 'synced',
   }) as Event;
 
-function testUi(): EffectUi & { applied: string[]; dropped: string[] } {
+function testUi(): EffectUi & {
+  applied: string[];
+  dropped: string[];
+  overrides: Map<string, boolean>;
+  settled: string[];
+  failed: string[];
+} {
   const applied: string[] = [];
   const dropped: string[] = [];
+  const overrides = new Map<string, boolean>();
+  const settled: string[] = [];
+  const failed: string[] = [];
   return {
     applied,
     dropped,
+    overrides,
+    settled,
+    failed,
     optimistic: () => undefined,
     settle: id => applied.push(id),
     rollback: id => dropped.push(id),
-    shown: () => undefined,
+    shown: (id, shown) => void overrides.set(id, shown),
+    shownSettled: id => settled.push(id),
+    shownFailed: id => {
+      overrides.delete(id);
+      failed.push(id);
+    },
     focus: () => undefined,
   };
 }
@@ -650,6 +706,37 @@ test('one write is one Undo toast, undone by its own opId, not the newest', asyn
     runToastAction(toasts[0].id, 'undo');
     await flush();
     assert.equal(getToasts().length, 1);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review1: a calendar toggle pushes its Undo toast and settles the override', async () => {
+  const { flush } = await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    const cal = (await api.calendar.get({})).list[0];
+    runCalendarEffect(
+      {
+        kind: 'calendarSet',
+        id: cal.id,
+        shown: !cal.shown,
+        toast: {
+          kind: 'info',
+          message: `${cal.name} ${cal.shown ? 'hidden' : 'shown'}`,
+          undoable: true,
+        },
+      },
+      ports(),
+      ui,
+    );
+    assert.equal(ui.overrides.get(cal.id), !cal.shown);
+    await flush();
+    assert.ok(ui.settled.includes(cal.id));
+    assert.equal(ui.failed.length, 0);
+    const toast = getToasts().find(t => t.undoable);
+    assert.ok(toast && toast.actions?.[0]?.commandId === 'app.undo');
   } finally {
     resetToasts();
   }
