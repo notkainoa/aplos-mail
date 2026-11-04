@@ -378,6 +378,8 @@ export function outboxWorld(
     provider?: string;
     /** Wire a `DraftSyncPort` fake (and its frames): the module then has local drafts. */
     drafts?: boolean;
+    /** A real adapter's `SendPort` in place of the counting fake (`world.server` then sees nothing). */
+    send?: SendPort;
   } = {},
 ) {
   const file = tempDb();
@@ -434,7 +436,7 @@ export function outboxWorld(
     const loop = createTimerLoop({ clock, log });
     const outbox = createOutboxModule({
       store,
-      send: server.port,
+      send: options.send ?? server.port,
       clock,
       deadlines: loop,
       log,

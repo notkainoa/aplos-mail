@@ -97,8 +97,8 @@
   background: var(--accent);
   color: var(--accent-ink);
   box-shadow:
-    inset 0 1px 0 var(--press-hi),
-    inset 0 -1px 0 var(--press-lo);
+    inset 0 var(--hairline) 0 var(--press-hi),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--press-lo);
 }
 .ui-compose-btn[data-variant='filled'] .ui-compose-kbd {
   background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
@@ -124,7 +124,7 @@
   background: var(--press);
 }
 .ui-compose-btn[data-variant='filled']:active {
-  box-shadow: inset 0 1px 0 var(--press-lo);
+  box-shadow: inset 0 var(--hairline) 0 var(--press-lo);
 }
 .ui-compose-btn:disabled {
   color: var(--dim);
@@ -140,7 +140,6 @@
 .ui-compose-btn:focus-visible,
 .ui-suggestion__act:focus-visible,
 .ui-recipient-field__remove:focus-visible,
-.ui-composer__subject:focus-visible,
 .ui-recipient-field__input:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
@@ -241,34 +240,90 @@
   font-weight: 500;
 }
 
-/* ---------- Suggestion hint ---------- */
+/* ---------- Suggestion: the draft strip ----------
+   Its own card hanging off the bottom edge of the reply card (or of the compose page's card), which keeps its full
+   border and rounded corners and wraps nothing: the strip is inset 16 px each side, tucked a hairline under the card,
+   square at the top, rounded at the bottom, with its own ring and soft elevation (--elev-pane) on a different surface
+   (--raised; --sunken in dark, where --paper and --raised are one step apart). It appears in place with a fade
+   (reserving nothing) and moves nothing on hover. The buttons are real buttons on --paper with a ring; the keys sit
+   inside them as keycaps. */
 .ui-suggestion {
+  box-sizing: border-box;
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
-  margin: var(--space-3) 0 0;
-  color: var(--dim);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin: calc(-1 * var(--hairline)) var(--space-4) 0;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--elev-pane);
+  color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
+  animation: ui-suggestion-in var(--dur-arrive) var(--ease-out) both;
+}
+:root[data-theme='dark'] .ui-suggestion {
+  background: var(--sunken);
+}
+@keyframes ui-suggestion-in {
+  from {
+    opacity: 0;
+  }
+}
+/* Reduced motion: it simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-suggestion {
+    animation: none;
+  }
+}
+:root[data-motion='reduced'] .ui-suggestion {
+  animation: none;
+}
+/* The card above paints over the strip's tucked top edge. */
+.ui-inline-reply:has(+ .ui-suggestion) {
+  position: relative;
+  z-index: var(--z-sticky);
+}
+.ui-suggestion__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-suggestion__acts {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 .ui-suggestion__act {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  height: var(--control-xs);
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  color: var(--dim);
-  font: var(--type-small);
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
   transition:
-    background-color var(--dur-hover) var(--ease-std),
-    color var(--dur-hover) var(--ease-std);
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-suggestion__act:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
 }
 @media (hover: hover) {
   .ui-suggestion__act:hover {
-    background: var(--hover);
-    color: var(--ink);
+    background: var(--raised);
   }
 }
 
@@ -313,7 +368,7 @@
 .ui-recipient-field__chip[data-invalid='true'] {
   background: var(--stamp-tint);
   color: var(--stamp-ink);
-  box-shadow: inset 0 0 0 1px var(--stamp-ink);
+  box-shadow: inset 0 0 0 var(--hairline) var(--stamp-ink);
 }
 .ui-recipient-field__name {
   min-width: 0;
@@ -517,7 +572,7 @@
     .ui-inline-reply__editor
   )[data-blocked='true']:not(:focus-visible) {
   border-radius: var(--radius-md);
-  outline: 1px solid var(--stamp-ink);
+  outline: var(--hairline) solid var(--stamp-ink);
   outline-offset: var(--space-1);
 }
 
@@ -538,22 +593,46 @@
   margin: 0 auto;
   padding: var(--space-7) 0 var(--space-8);
 }
+/* On the page the draft strip is the page's sibling, inset 16 px inside the page's width. */
+.ui-composer__scroll > .ui-suggestion {
+  width: calc(min(var(--composer-w), 100% - 2 * var(--gutter)) - 2 * var(--space-4));
+  margin: calc(-1 * var(--hairline)) auto var(--space-8);
+}
+.ui-composer__page:has(+ .ui-suggestion) {
+  position: relative;
+  z-index: var(--z-sticky);
+}
 .ui-composer__to .ui-recipient-field__label {
   min-width: var(--space-8);
 }
+/* The subject is a calm single line, not a heading (owner review 2026-10-31): `title` size at 500, no box. Focus shows
+   as a hairline in the accent along the field's full width (owner review 2026-11-03: the 2 px underline was loud),
+   drawn as a shadow, so nothing moves. The To row shows its focus the same way, from its left edge, so the page never
+   opens on a boxed field or a line that starts after the chip. */
 .ui-composer__subject {
+  box-sizing: border-box;
   display: block;
   width: 100%;
-  margin-top: var(--space-6);
-  padding: 0;
+  margin-top: var(--space-5);
+  padding: var(--space-2) 0;
   border: 0;
   background: none;
   color: var(--ink);
-  font: var(--type-heading);
-  letter-spacing: var(--track-heading);
+  font: var(--type-title);
+  font-weight: 500;
+  letter-spacing: var(--track-title);
+  outline: 0;
 }
 .ui-composer__subject::placeholder {
   color: var(--dim);
+}
+.ui-composer__subject:focus-visible,
+.ui-composer__to .ui-recipient-field__input:focus-visible {
+  outline: 0;
+}
+.ui-composer__to:focus-within,
+.ui-composer__subject:focus-visible {
+  box-shadow: 0 var(--hairline) 0 var(--accent);
 }
 .ui-composer__polish {
   display: flex;

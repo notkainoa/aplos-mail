@@ -275,6 +275,18 @@ interface Run {
   result: Awaited<ReturnType<typeof runKillScenario>>;
 }
 
+/**
+ * `npm run test:engine:gmail-rewritten` switches the emulator to Gmail's real behaviour (`messages.send` replaces the
+ * Message-ID) through the environment. A run that quietly fell back to the kept mode would pass for the wrong reason: so
+ * when the environment asks for rewritten, the server must say it ran rewritten and no Sent copy may keep the engine's id.
+ */
+function assertRewrittenRan(server: GmailServer, internetId: string) {
+  if (process.env.APLOS_EMU_SEND_IDENTITY !== 'rewritten') return;
+  assert.equal(server.sendIdentity(), 'rewritten', 'the emulator did not run in rewritten mode');
+  assert.ok(internetId, 'the row never counted a delivery, so nothing proves the rewrite ran');
+  assert.equal(server.sentUnderOwnId(internetId), 0, 'a Sent copy kept the engine Message-ID');
+}
+
 async function runRow(row: Row): Promise<Run> {
   const dir = mkdtempSync(join(tmpdir(), 'aplos-kill-gmail-'));
   const lagMs = indexLag(row);
@@ -318,6 +330,7 @@ async function runRow(row: Row): Promise<Run> {
       [],
       'the server answered an exception that was not an injected drop',
     );
+    assertRewrittenRan(server, internetId);
     const calls = readCalls(logPath).filter(c => !internetId || c.internetId === internetId);
     return {
       result,

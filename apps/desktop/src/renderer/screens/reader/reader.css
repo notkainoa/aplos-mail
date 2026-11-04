@@ -1,0 +1,224 @@
+/* The reader screen (DESIGN 4.3, 7.5): one column of --reader-w and nothing beside it, every message its own card (owner
+   review 2026-11-03; data-cards='off' is the card-less column of DESIGN 7.5 as first written). Imported once by
+   screens.css. Tokens only; the components own their own looks (ui/reader/reader.css). */
+
+/* The screen slot is a column, so the reader fills the pane and the pinned action bar (margin-top: auto in its
+   letter) rests on the pane's bottom edge even when the letter is short. */
+.aplos-screen:has(> .aplos-reader) {
+  display: flex;
+  flex-direction: column;
+}
+.aplos-reader {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  /* No bottom padding: the pinned bar's wrapper (fade, pill, 16 px) is the last thing in the letter. */
+  padding: var(--space-7) 0 0;
+}
+.aplos-reader__letter[data-paper='true'] {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+/* A letter laying itself out off paper: out of flow and invisible, but measured. Never display:none, which would
+   give the frame no width to measure at. */
+.aplos-reader__letter[data-paper='false'] {
+  position: absolute;
+  inset: var(--space-7) 0 auto 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The 12 px loading line sits over the top margin, so it appears without moving the letter. */
+.aplos-reader > .ui-loading-line {
+  position: absolute;
+  top: var(--space-2);
+  left: 0;
+  margin: 0;
+}
+.aplos-reader[data-cards='a'] > .ui-loading-line {
+  left: var(--space-6);
+}
+
+.aplos-reader__thread {
+  margin-top: var(--space-6);
+}
+
+/* Under the sheet by one step (12 px); the body's `p { margin: 0 }` would win over a bare class, so the selector names it. */
+.aplos-reader .ui-thread-message__body .aplos-reader__trackers {
+  margin: var(--space-3) 0 0;
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+}
+
+/* The host's own sentence above a letter it could not show in full (too long, layout flattened): quiet, like the
+   trackers line, and set off from the body by one step. It is rendered by mailframe/slots.tsx (`Notices`) as host DOM
+   outside the email's frame, and styled here because the reader is the only screen that loads a letter. */
+.aplos-mailframe__notice {
+  margin: 0 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+}
+
+/* The reader's root takes focus when the element that held it leaves (find closes, the letter changes): it is a
+   container, not a control, so it shows no ring. */
+.aplos-reader:focus-visible {
+  outline: none;
+}
+
+.aplos-reader__find {
+  margin-bottom: var(--space-4);
+}
+
+/* HTML mail is a light sheet (DESIGN 7.5): on the dark pane it gets an inset, so its text does not touch the sheet's edge. */
+:root[data-theme='dark'] .aplos-reader {
+  --sheet-inset: var(--space-4);
+}
+
+/* An empty line in the reader starts at the column's edge, like everything else in it. */
+.aplos-reader .ui-empty-line {
+  padding-inline: 0;
+}
+
+/* The invitation in an invite email's message (InviteCard): a quiet --raised block above the email's own body, with
+   "Invite from …", the title, then the when, place, link and guests lines behind their icons. */
+.aplos-reader__invite {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+.aplos-reader__invite-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+/* The card's lines are Text paragraphs inside the message body: the body's paragraph gap is not theirs. */
+.aplos-reader__invite .ui-text + .ui-text {
+  margin-top: 0;
+}
+
+/* Quoted history in a plain-text body (mailframe PlainText): the sender's own parts a paragraph gap apart; once shown
+   (O, "Show quoted text"), the quotes as a quiet block behind a left hairline, in --dim, without `>`. */
+.aplos-mailframe__part + .aplos-mailframe__part,
+.aplos-mailframe__part + .aplos-mailframe__quote,
+.aplos-mailframe__quote + .aplos-mailframe__part {
+  margin-top: var(--space-4);
+}
+.aplos-mailframe__quote {
+  margin: 0;
+  padding-left: var(--space-4);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
+  color: var(--dim);
+}
+
+/* ---------- Cards (data-cards='a', the default; 'off' is DESIGN 7.5 as first written) ----------
+   Each message is its own card: --paper with --elev-pane's ring and faint shadow (--raised and the sheen in dark),
+   radius-lg, 24 px inside, 16 px apart; never --elev-card, which stays the inline reply's (the thing in hand). The column
+   stays --reader-w and the cards are the column: their edges sit where the text of the off mode starts. Rings and rails
+   are shadows and pseudo-elements, so hover and focus never move anything. The HTML mail sheet keeps its own
+   background inside a card, with no ring. One text edge: the summary and the due chip take the cards' 24 px inset, so
+   every line of text starts where the card text starts, and only the card edges (and the hairline) sit at the column's edge. */
+.aplos-reader:not([data-cards='off']) .aplos-reader__thread {
+  margin-top: var(--space-6);
+}
+.aplos-reader[data-cards='a'] .ui-reader-head__summary,
+.aplos-reader[data-cards='a'] .ui-reader-head__due {
+  padding-inline: var(--space-6);
+}
+/* Attachments read as small cards: the chip keeps its size and its failed tint, and takes the card's surface. */
+.aplos-reader:not([data-cards='off'])
+  .ui-thread-message__attachments
+  .ui-chip[data-kind='attachment']:not([data-state='failed']) {
+  background-color: var(--paper);
+  box-shadow: var(--elev-pane);
+}
+/* The HTML mail sheet keeps its own light background inside a card, with no ring, its corners eased to the card's. */
+.aplos-reader:not([data-cards='off']) .ui-thread-message__body iframe {
+  border-radius: var(--radius-md);
+}
+
+/* The Reply stub reads as the last card: the card's radius and inset, a little taller, the same ring it always had. */
+.aplos-reader:not([data-cards='off']) .ui-reply-stub {
+  height: var(--space-9);
+  margin-top: var(--space-4);
+  padding-inline: var(--space-6);
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+}
+/* The inline reply stays the --elev-card card it always is; inside it, its rows take the cards' 24 px inset so its
+   text lines up with the messages' text above it. */
+.aplos-reader:not([data-cards='off']) .ui-inline-reply {
+  margin-top: var(--space-4);
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply__head {
+  padding-left: var(--space-6);
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply__body,
+.aplos-reader:not([data-cards='off']) .ui-inline-reply > .ui-compose-blocked {
+  padding-inline: var(--space-6);
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply > .ui-compose-footer {
+  padding: 0 var(--space-4) var(--space-4) var(--space-6);
+}
+/* In a card the invitation is not a second card: no fill, the card's text edge, a wider gap before the email (no rule:
+   the body's reading measure is narrower than the card, so a rule there would end short of the card's other rules). */
+.aplos-reader:not([data-cards='off']) .aplos-reader__invite {
+  margin-bottom: var(--space-7);
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* Without cards the hairline above the first message would sit under the summary's own; the summary's stays. */
+.aplos-reader:not([data-cards='a']) .aplos-reader__messages > .ui-thread-message:first-child {
+  box-shadow: none;
+}
+.aplos-reader[data-cards='a'] .ui-thread-message {
+  margin-top: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+  box-shadow: var(--elev-pane);
+}
+.aplos-reader[data-cards='a'] .aplos-reader__messages > .ui-thread-message:first-child {
+  margin-top: 0;
+}
+.aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true']::before {
+  top: var(--space-6);
+  left: var(--space-3);
+}
+.aplos-reader[data-cards='a'] .ui-thread-message__attachments {
+  padding-top: var(--space-5);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+/* A folded earlier message is a compact card: tighter inside (the card's inset above and below one head and two lines
+   of excerpt), its whole surface the button's target, a quiet lift on hover. */
+.aplos-reader[data-cards='a'] .ui-thread-message[data-fold='folded'] {
+  padding-block: var(--space-5);
+}
+/* The ring is drawn on the card (not the button's box), so it never clips against the card's rounded corners. */
+.aplos-reader[data-cards='a'] .ui-thread-message__toggle:focus-visible {
+  outline-offset: var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons. */
+.ui-pane:has(.aplos-reader .ui-reader-actions) .ui-toast-stack {
+  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-3));
+}
+
+/* Dark: cards are lifted by --raised (--elev-pane adds the sheen). */
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .ui-thread-message,
+:root[data-theme='dark'] .aplos-reader:not([data-cards='off']) .ui-reply-stub {
+  background-color: var(--raised);
+}

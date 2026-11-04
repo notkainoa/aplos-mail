@@ -88,14 +88,16 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
   assert.equal(text(html(<DraftState state="saving" />)), 'Saving…');
   assert.equal(text(html(<DraftState state="saved" />)), 'Draft saved');
   const failed = html(<DraftState state="failed" onRetry={noop} />);
-  assert.equal(text(failed), "Couldn't save·Retry");
+  assert.equal(text(failed), 'Couldn’t save·Retry', 'the typographic apostrophe (voice rule)');
   assert.match(failed, /role="status"/);
   assert.match(failed, /data-state="failed"/);
   assert.match(failed, /<button[^>]*>.*Retry/);
   // Without a retry handler there is no dangling separator.
   const bare = html(<DraftState state="failed" />);
   assert.doesNotMatch(bare, /<button/);
-  assert.equal(text(bare), "Couldn't save");
+  assert.equal(text(bare), 'Couldn’t save');
+  // An untouched new message has no draft yet: no line at all, never "Draft saved".
+  assert.equal(html(<DraftState state="none" />), '');
   // Worst case at a 300 px pane: the text gives way (own span), the dot and Retry come after it and never shrink.
   assert.ok(failed.indexOf('ui-draft-state__text') < failed.indexOf('ui-draft-state__dot'));
   assert.ok(failed.indexOf('ui-draft-state__dot') < failed.indexOf('Retry'));
@@ -105,7 +107,7 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
 
 test('Suggestion says what DESIGN says for an AI draft and for the follow-up nudge', () => {
   const draft = html(<Suggestion kind="draft" onKeep={noop} onDismiss={noop} />);
-  assert.equal(text(draft), 'The grey sentence is a suggestion.TabkeepEscdismiss');
+  assert.equal(text(draft), 'The grey sentence is a suggestion.KeepTabDismissEsc');
   assert.match(draft, /role="status"/);
   assert.match(draft, /<kbd[^>]*>Tab<\/kbd>/);
   assert.match(draft, /<kbd[^>]*>Esc<\/kbd>/);
@@ -114,6 +116,30 @@ test('Suggestion says what DESIGN says for an AI draft and for the follow-up nud
   assert.match(followUp, /data-kind="followUp"/);
   clean(draft);
   clean(followUp);
+});
+
+test('the draft strip is the reply card’s sibling, not inside it, with two real buttons that hold their keys', () => {
+  const markup = html(reply({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }));
+  const card = markup.slice(0, markup.indexOf('</section>') + '</section>'.length);
+  assert.match(card, /^<section[^>]*class="ui-inline-reply"/);
+  assert.doesNotMatch(card, /ui-suggestion/, 'nothing of the strip is inside the card');
+  const rest = markup.slice(card.length);
+  assert.match(
+    rest,
+    /^<div class="ui-suggestion" role="status" data-kind="followUp">/,
+    'it follows the card directly',
+  );
+  assert.equal(rest.match(/<button type="button" class="ui-suggestion__act"/g)?.length, 2);
+  assert.match(text(rest), /Aplos drafted this follow-up from your last email\.KeepTabDismissEsc/);
+  assert.doesNotMatch(markup, /data-icon="(sparkle|wand|star)/i, 'no sparkle, wand or star');
+  assert.doesNotMatch(html(reply()), /ui-suggestion/, 'no strip without a suggestion');
+});
+
+test('the placeholders are calm: To while empty, Subject; Cc stays bare', () => {
+  assert.match(html(field({ recipients: [] })), /placeholder="Add a name or email"/);
+  assert.doesNotMatch(html(field()), /placeholder=/, 'no placeholder next to chips');
+  assert.doesNotMatch(html(field({ label: 'Cc', recipients: [] })), /placeholder=/);
+  assert.match(html(composer()), /placeholder="Subject"/);
 });
 
 test('RecipientField is a combobox with a labelled listbox, removable people and the Cc owner', () => {
@@ -218,7 +244,7 @@ test('InlineReply: dictation, blocked send, conflict, follow-up hint and a faile
   assert.match(text(nudge), /Aplos drafted this follow-up from your last email\./);
 
   const failed = html(reply({ draftState: 'failed' }));
-  assert.match(text(failed), /Couldn't save·Retry/);
+  assert.match(text(failed), /Couldn’t save·Retry/);
 });
 
 function composer(over: Partial<Parameters<typeof Composer>[0]> = {}) {
@@ -312,7 +338,7 @@ test('Composer survives a 300-character subject, CJK, Arabic and emoji', () => {
 });
 
 test('Composer: failed save and a draft conflict', () => {
-  assert.match(text(html(composer({ draftState: 'failed' }))), /Couldn't save·Retry/);
+  assert.match(text(html(composer({ draftState: 'failed' }))), /Couldn’t save·Retry/);
   assert.match(text(html(composer({ draftState: 'saving' }))), /Saving…/);
   assert.match(
     text(html(composer({ conflict: { onKeepMine: noop, onTakeTheirs: noop, onKeepBoth: noop } }))),

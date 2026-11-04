@@ -3,14 +3,35 @@ import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
 import { Btn } from './parts';
 
+/** The To field's placeholder while it holds no one (owner review 2026-11-03); Cc and Bcc stay bare. */
+const TO_PLACEHOLDER = 'Add a name or email';
+
 const INPUT_LABEL = {
   To: 'Add recipients',
   Cc: 'Add Cc recipients',
   Bcc: 'Add Bcc recipients',
 } as const;
 
+/** "@" and its look-alikes: fullwidth ＠ (U+FF20) and small ﹫ (U+FE6B), also after NFKC normalisation. */
+const AT_SIGNS = /[@\uFF20\uFE6B]/u;
+
+function containsAt(text: string): boolean {
+  return AT_SIGNS.test(text) || AT_SIGNS.test(text.normalize('NFKC'));
+}
+
+/**
+ * The name a chip shows. A name that contains "@" or a look-alike of it never stands in for the address (it could pose
+ * as another one).
+ */
 function shownName(person: Recipient): string {
-  return person.name?.trim() || person.address;
+  const name = person.name?.trim();
+  return name && !containsAt(name) ? name : person.address;
+}
+
+/** The chip's title and accessible name: the shown name with the real address, "Jordan Lee <jordan@example.com>". */
+function chipLabel(person: Recipient): string {
+  const name = shownName(person);
+  return name === person.address ? person.address : `${name} <${person.address}>`;
 }
 
 /**
@@ -75,7 +96,9 @@ export function RecipientField(props: RecipientFieldProps) {
               key={person.id}
               className="ui-recipient-field__chip"
               data-invalid={invalid ? 'true' : undefined}
-              title={person.address}
+              role="group"
+              aria-label={chipLabel(person)}
+              title={chipLabel(person)}
             >
               <span className="ui-recipient-field__name" dir="auto">
                 {shownName(person)}
@@ -99,6 +122,7 @@ export function RecipientField(props: RecipientFieldProps) {
           type="text"
           role="combobox"
           aria-label={INPUT_LABEL[label]}
+          placeholder={label === 'To' && recipients.length === 0 ? TO_PLACEHOLDER : undefined}
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={listboxId}
@@ -144,7 +168,7 @@ export function RecipientField(props: RecipientFieldProps) {
             <span className="ui-recipient-field__option-name" dir="auto">
               {shownName(person)}
             </span>
-            {person.name?.trim() ? (
+            {shownName(person) !== person.address ? (
               <span className="ui-recipient-field__option-address">{person.address}</span>
             ) : null}
           </li>
