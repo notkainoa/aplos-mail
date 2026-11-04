@@ -176,6 +176,8 @@ export class UploadBridge {
   failNext?: 'refused' | 'hang' | 'dropInitiate' | 'corrupt' | 'portal' | 'acceptThenHang';
   /** Rewrites a `messages.list` search (to prove the metadata check stands even if the search let a draft through). */
   rewriteQuery?: (q: string) => string;
+  /** The label a `messages.list` by label alone (no `q`: the recent-SENT fallback) reads instead of the one asked for (a listing that returns a message the SENT check must refuse). */
+  listLabel?: string;
   /** Every `messages.list` by label alone (no `q`: the recent-SENT fallback) answers 500. */
   failSentListing?: boolean;
   /** Upload requests go to this fetch instead of the bridge (a real HTTP server, for redirect tests). */
@@ -191,6 +193,8 @@ export class UploadBridge {
     const listing = url.pathname.endsWith('/messages') && (init?.method ?? 'GET') === 'GET';
     if (this.failSentListing && listing && !url.searchParams.has('q'))
       return Promise.resolve(failure(500, 'backendError'));
+    if (this.listLabel && listing && url.searchParams.has('labelIds') && !url.searchParams.has('q'))
+      url.searchParams.set('labelIds', this.listLabel);
     if (this.rewriteQuery && listing && url.searchParams.has('q'))
       url.searchParams.set('q', this.rewriteQuery(url.searchParams.get('q')!));
     return this.emu.fetch(url.href, init);

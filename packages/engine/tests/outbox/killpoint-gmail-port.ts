@@ -210,6 +210,10 @@ export interface GmailServer {
   config: Omit<GmailPortConfig, 'logPath'>;
   /** The emulator's own count of SENT messages carrying this Message-ID. */
   deliveries(internetId: string): number;
+  /** SENT messages that still carry the Message-ID the engine wrote. Zero when `messages.send` rewrites it (Gmail's live behaviour). */
+  sentUnderOwnId(internetId: string): number;
+  /** The mode the emulator actually runs in (the environment may have switched the default). */
+  sendIdentity(): 'kept' | 'rewritten';
   /** Every exception the bridge or emulator threw that was NOT an injected drop (answered 500). A clean row has none. */
   errors: string[];
   /** The next request the server handles throws this instead of reaching the emulator (to prove it is surfaced). */
@@ -268,6 +272,12 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
             (m.messageId.toLowerCase() === bare(internetId) ||
               sendToken(emu.mailbox.rawOf(m.id)) === bare(internetId)),
         ).length,
+    sentUnderOwnId: internetId =>
+      emu.mailbox
+        .listMessages()
+        .filter(m => m.labelIds.includes('SENT') && m.messageId.toLowerCase() === bare(internetId))
+        .length,
+    sendIdentity: () => emu.settings.sendIdentity,
     errors: state.errors,
     breakNext: error => {
       state.breakNext = error;

@@ -691,6 +691,11 @@ for (const [name, edit, reason] of [
     'unexpectedHeader',
   ],
   [
+    'an x-aplos-send token with the header name in lower case',
+    (h: string) => h.replace(subjectLine, s => `${s}\r\nx-aplos-send: <token@mail.example.test>`),
+    'unexpectedHeader',
+  ],
+  [
     'an X-Aplos-Draft token (the draft identity never leaves in sent mail)',
     (h: string) => h.replace(subjectLine, s => `${s}\r\nX-Aplos-Draft: <token@mail.example.test>`),
     'unexpectedHeader',
