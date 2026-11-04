@@ -93,7 +93,8 @@ const sameAsClient: [
   Equals<DataApi['thread']['open'], ClientApi['thread']['open']>,
   Equals<DataApi['ai']['cancel'], ClientApi['ai']['cancel']>,
   Equals<DataApi['operation']['retry'], ClientApi['operation']['retry']>,
-] = [true, true, true, true, true, true, true, true];
+  Equals<DataApi['account']['discover'], ClientApi['account']['discover']>,
+] = [true, true, true, true, true, true, true, true, true];
 
 /** Commands return the client's result; only the fresh `opId` or `requestId` becomes optional. */
 const commandResults: [

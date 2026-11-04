@@ -34,6 +34,10 @@ interface ButtonBase {
   pressed?: boolean;
   /** Popup wiring for menu and picker triggers. Pickers are a Menu with `checkedId` (menuitemradio), so they use 'menu'; there is no listbox popup. */
   popup?: { kind: 'menu' | 'dialog'; expanded: boolean; controls: string };
+  /** Replaces the accessible name (`aria-label`). It must contain the visible text (start with it for voice control; WCAG 2.5.3 Label in Name), e.g. "Groq, Provider" for a button reading "Groq"; `nameContainsVisibleText` checks it in tests. Ignored when `labelledBy` is given. Omit it to use the visible text. */
+  ariaLabel?: string;
+  /** Id of an element that names this button's context, e.g. its row's label. The name becomes that element's text plus the button's own visible text (`aria-labelledby="<labelledBy> <own text id>"`), so the visible text is always part of the name. */
+  labelledBy?: string;
   /** Click handler. */
   onPress: () => void;
   /** Form role; default 'button'. */
