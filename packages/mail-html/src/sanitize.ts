@@ -248,7 +248,8 @@ class Walker {
       if (!allowed.has(name) || !rootValueOk(name, value)) continue;
       parts.push(attribute(name, name === 'class' ? this.classValue(value) : value));
     }
-    if (element.name === 'body') parts.push(...this.urlAttributes(element));
+    // The frame's own `<body>`: its style would outrank the measuring layer when `!important`, so it never is.
+    if (element.name === 'body') parts.push(...this.urlAttributes(element, true));
     return parts.join('');
   }
 
@@ -308,9 +309,10 @@ class Walker {
   }
 
   /** `style` and `background`, both of which can name images. */
-  private urlAttributes(element: ElementNode): string[] {
+  private urlAttributes(element: ElementNode, dropImportance = false): string[] {
     const parts: string[] = [];
-    const clean = this.cleanStyle(element.attrs.get('style'));
+    const style = element.attrs.get('style');
+    const clean = dropImportance ? this.rootStyle(style) : this.cleanStyle(style);
     if (clean) parts.push(attribute('style', clean));
     const background = element.attrs.get('background');
     if (background !== undefined && BACKGROUND.has(element.name)) {
@@ -332,6 +334,12 @@ class Walker {
       this.cleanStyles.set(style, clean);
     }
     return clean;
+  }
+
+  /** The frame `<body>`'s style, with no `!important` (once per message, so not cached). */
+  private rootStyle(style: string | undefined): string {
+    if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
+    return sanitizeCss(style, this.images, this.tokensOf(style), { dropImportance: true }).trim();
   }
 
   /** The element's `hidden` attribute or `style` hides it (and so any image inside). */

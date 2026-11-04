@@ -94,6 +94,13 @@ function installHandler(): void {
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const OUTRANK =
+  '<style>html{height:5000px!important;margin-top:900px!important;transform:scale(3)!important}' +
+  'body{height:4000px!important;position:absolute!important}' +
+  '@layer aplos{html{height:6000px!important;min-height:6000px!important}}' +
+  '@layer z{body{min-height:7000px!important}}</style>' +
+  '<body style="height:3000px!important;min-height:3000px!important"><p>short</p></body>';
+
 const DOCUMENTS: Record<string, () => string> = {
   // A closed <details> must report a smaller height than the open one.
   details: () =>
@@ -111,6 +118,11 @@ const DOCUMENTS: Record<string, () => string> = {
   // Positive control for the doctype: the same short letter in quirks mode, where the root fills the viewport.
   quirksRaw: () => engineDocument('<p>short</p>').replace('<!DOCTYPE html>', ''),
   shortLetter: () => engineDocument('<p>short</p>'),
+  // A mail trying to outrank the measuring rules: important rules unlayered, in a later layer, in a layer named like
+  // the frame's own, and an important inline style on <body>. It must still measure as a short letter.
+  outrank: () => engineDocument(OUTRANK),
+  // Positive control: the same mail unsanitized (its layer joins the frame's, its <body> style stays important).
+  outrankRaw: () => unsanitized(OUTRANK),
   rootPaper: () => engineDocument('<style>html{background:#123456}</style><p>paper</p>'),
   bodyPaper: () =>
     engineDocument(
@@ -126,14 +138,16 @@ async function measure(win: BrowserWindow, name: string) {
     `(() => {
       const get = (type, key) => Object.getOwnPropertyDescriptor(type.prototype, key).get;
       const root = get(Document, 'documentElement').call(document);
+      const box = Element.prototype.getBoundingClientRect.call(root);
       return {
-        root: Math.ceil(Element.prototype.getBoundingClientRect.call(root).height),
+        root: Math.ceil(box.height),
+        top: box.top,
         compat: document.compatMode,
         inner: innerHeight,
       };
     })()`,
     true,
-  ) as Promise<{ root: number; compat: string; inner: number }>;
+  ) as Promise<{ root: number; top: number; compat: string; inner: number }>;
 }
 
 const urls: Record<string, string> = {};

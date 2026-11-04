@@ -436,25 +436,50 @@ describe('viewport units that follow the frame’s height become fixed lengths',
 });
 
 describe('no mail declaration can outrank the frame’s measuring rules', () => {
-  it('removes every ! and the important after it, in any spelling', () => {
+  it('moves every mail layer name to m-<name>, so no mail rule joins the frame’s own layer', () => {
     const cases: [string, string][] = [
-      ['html{height:100%!important}', 'html{height:100%/**/}'],
-      ['html{height:100% !important}', 'html{height:100% /**/}'],
-      ['html{height:100% ! IMPORTANT}', 'html{height:100% /**/}'],
-      ['html{height:100% !/**/important}', 'html{height:100% /**/}'],
-      ['html{height:100% !\\69mportant}', 'html{height:100% /**/}'],
-      ['html{height:100% !ie}', 'html{height:100% /**/ie}'],
-      ['@layer a{html{height:1px!important}}', '@layer a{html{height:1px/**/}}'],
-      ['a{b:c!d!important}', 'a{b:c/**/d/**/}'],
-      ['a{content:"!important"}', 'a{content:"!important"}'],
+      ['@layer aplos{html{height:1px!important}}', '@layer m-aplos{html{height:1px!important}}'],
+      ['@layer aplos, b;', '@layer m-aplos, m-b;'],
+      ['@layer a.b{x{y:z}}', '@layer m-a.m-b{x{y:z}}'],
+      ['@LAYER \\61 plos{x{y:z}}', '@LAYER m-aplos{x{y:z}}'],
+      ['@layer /**/aplos{x{y:z}}', '@layer /**/m-aplos{x{y:z}}'],
+      ['@layer m-aplos{x{y:z}}', '@layer m-aplos{x{y:z}}'],
+      ['@media print{@layer aplos{x{y:z}}}', '@media print{@layer m-aplos{x{y:z}}}'],
+      ['@layer{html{height:1px!important}}', '@layer{html{height:1px!important}}'],
+      ['@layer a;aplos{b:c}', '@layer m-a;aplos{b:c}'],
+      ['@layer a{aplos{b:c}}', '@layer m-a{aplos{b:c}}'],
     ];
     for (const [css, out] of cases) assert.equal(clean(css).css, out, css);
-    assert.equal(clean('height:100vh !important').css, 'height:800px /**/');
   });
 
-  it('keeps the declaration itself (only its importance goes)', () => {
-    const declarations = readDeclarations(clean('color: red !important; width: 2px').css);
-    assert.equal(declarations.get('color'), 'red');
+  it('keeps !important in mail stylesheets and style attributes (responsive mail relies on it)', () => {
+    const kept = [
+      '@media (max-width:600px){.col{width:100%!important}}',
+      'html{height:100% !important}',
+      'width:100px !important',
+    ];
+    for (const css of kept) assert.equal(clean(css).css, css);
+  });
+
+  it('drops every ! and the important after it when asked (the frame’s <body> style)', () => {
+    const cases: [string, string][] = [
+      ['height:100%!important', 'height:100%/**/'],
+      ['height:100% !important', 'height:100% /**/'],
+      ['height:100% ! IMPORTANT', 'height:100% /**/'],
+      ['height:100% !/**/important', 'height:100% /**/'],
+      ['height:100% !\\69mportant', 'height:100% /**/'],
+      ['height:100% !ie', 'height:100% /**/ie'],
+      ['b:c!d!important', 'b:c/**/d/**/'],
+      ['content:"!important"', 'content:"!important"'],
+      ['height:100vh !important', 'height:800px /**/'],
+    ];
+    const book = new ImageBook({ cids: [], policy: 'block' });
+    for (const [css, out] of cases)
+      assert.equal(sanitizeCss(css, book, undefined, { dropImportance: true }), out, css);
+    const declarations = readDeclarations(
+      sanitizeCss('color: red !important; width: 2px', book, undefined, { dropImportance: true }),
+    );
+    assert.equal(declarations.get('color'), 'red', 'the declaration itself stays');
     assert.equal(declarations.get('width'), '2px');
   });
 });

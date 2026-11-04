@@ -15,9 +15,10 @@ import { fixedViewportLength } from './viewport';
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
 // position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
-// appears in the output. Every `!` goes, with the `important` after it, so no mail declaration can outrank
-// the frame's own measuring rules (reading-css.ts), inline or in a layer; and the height-axis viewport units become
-// fixed lengths (viewport.ts), so a letter's height cannot follow its frame's.
+// appears in the output. Mail layer names move to `m-<name>` (as ids do), so no mail rule can join the frame's own
+// first layer, `aplos`, whose `!important` measuring rules (reading-css.ts) therefore outrank every mail stylesheet
+// rule; the `<body>` style attribute, which would outrank a layer, loses its `!important` (`dropImportance`). The
+// height-axis viewport units become fixed lengths (viewport.ts), so a letter's height cannot follow its frame's.
 
 const KEPT_AT_RULES = new Set([
   'media',
@@ -37,6 +38,12 @@ const NO_IMAGE_FUNCTIONS = new Set(['var', 'env', 'attr']);
 const FETCHABLE = /^(?:[a-z][a-z0-9+.-]*:|[\\/]{2})/i;
 const DROPPED = ' none ';
 const SEPARATOR = '/**/';
+/** The tokens that end an at-rule's prelude. */
+const ENDS_PRELUDE: ReadonlySet<TokenType> = new Set([
+  TokenType.OpenCurly,
+  TokenType.Semicolon,
+  TokenType.CloseCurly,
+]);
 
 const enum Structure {
   None = 0,
@@ -70,9 +77,19 @@ export function cssTokens(css: string): CSSToken[] {
   return tokenize({ css }, { onParseError: () => undefined });
 }
 
+export interface CssOptions {
+  /** Write every `!` (and the `important` after it) as an empty comment: for the frame's `<body>` style attribute. */
+  dropImportance?: boolean;
+}
+
 /** A stylesheet (`<style>`) or a declaration list (`style=""`), made safe. */
-export function sanitizeCss(css: string, images: ImageBook, tokens = cssTokens(css)): string {
-  const written = new CssWriter(tokens, images).write();
+export function sanitizeCss(
+  css: string,
+  images: ImageBook,
+  tokens = cssTokens(css),
+  options: CssOptions = {},
+): string {
+  const written = new CssWriter(tokens, images, options.dropImportance === true).write();
   // Safety net: the writer never leaves `</` outside a string, and `\/` is `/` inside one.
   return replaceControls(written.replaceAll('</', '<\\/'));
 }
@@ -133,10 +150,13 @@ class CssWriter {
   private readonly classValues: Map<number, string>;
   private imageDepth = 0;
   private at = 0;
+  /** Between `@layer` and its `{` or `;`: every name here is the mail's own layer. */
+  private layerPrelude = false;
 
   constructor(
     private readonly tokens: CSSToken[],
     private readonly images: ImageBook,
+    private readonly dropImportance: boolean,
   ) {
     this.structure = structureAfter(tokens);
     this.classValues = classValueRewrites(tokens);
@@ -170,7 +190,7 @@ class CssWriter {
       case TokenType.Dimension:
         return this.emit(this.dimension(token[4].value, token[4].unit, token[1]));
       case TokenType.Delim:
-        return token[4].value === '!' ? this.bang() : this.plain(token);
+        return token[4].value === '!' && this.dropImportance ? this.bang() : this.plain(token);
       default:
         return this.plain(token);
     }
@@ -185,6 +205,7 @@ class CssWriter {
   }
 
   private plain(token: CSSToken): void {
+    if (ENDS_PRELUDE.has(token[0])) this.layerPrelude = false;
     const kind = OPENERS[token[0]];
     if (kind) this.push(kind, false);
     if (isCloser(token[0])) this.close(token[0]);
@@ -245,6 +266,7 @@ class CssWriter {
    * comment and a name are still a class. Also the value of a `[class=…]` selector (class-selectors.ts).
    */
   private ident(token: CSSToken): string {
+    if (this.layerPrelude && token[0] === TokenType.Ident) return cssIdent(scopeId(token[4].value));
     const attribute = this.classValues.get(this.at);
     if (attribute !== undefined) return cssIdent(attribute);
     if (token[0] !== TokenType.Ident || !isOwnClass(token[4].value) || !this.afterDot()) {
@@ -284,7 +306,9 @@ class CssWriter {
 
   /** Drops an at-rule outside the layout allowlist with its prelude and block. */
   private atRule(name: string, raw: string): void {
-    if (KEPT_AT_RULES.has(asciiLower(name))) return this.emit(raw);
+    const lower = asciiLower(name);
+    if (lower === 'layer') this.layerPrelude = true;
+    if (KEPT_AT_RULES.has(lower)) return this.emit(raw);
     const end = this.ruleEnd(this.at + 1);
     this.emit(SEPARATOR, end - this.at);
   }

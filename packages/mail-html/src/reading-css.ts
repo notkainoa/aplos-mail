@@ -1,8 +1,10 @@
 // The frame's base reading style. It comes first, so the mail's own CSS still wins for layout;
 // only Aplos's own marks, quotes and image placeholders use classes the mail cannot rely on.
-// The exception is the measuring rules for `<html>` and `<body>`: `!important`, and the mail's CSS has every `!`
-// removed (css.ts), inline and in layers alike, so no mail rule outranks them. With them the root's box is the
-// letter's content height, which the reporter measures, and never the frame's height: a letter can shrink again.
+// The exception is the measuring rules for `<html>` and `<body>`: `!important`, in the document's first cascade
+// layer, `aplos`. An important declaration in the first layer outranks every important one in a later layer or in
+// none, and the mail can never join this layer (css.ts moves its layer names to `m-<name>`) or style `<html>`
+// inline; the `<body>` style attribute loses its `!important`. So no mail rule outranks these. With them the root's
+// box is the letter's content height, which the reporter measures, and never the frame's: a letter can shrink again.
 // The root never scrolls vertically (the host sizes the frame to the letter); a wide letter still scrolls sideways.
 
 const MEASURED = [
@@ -30,10 +32,12 @@ const ROOT_ONLY = [
   'overflow-y:hidden',
 ];
 
+/** The frame's own first layer. Mail layer names always start `m-`, so this one is never the mail's. */
+export const MEASURING_LAYER = 'aplos';
+
 export const READING_CSS = [
+  `@layer ${MEASURING_LAYER}{html{${important([...MEASURED, ...ROOT_ONLY])}}body{${important([...MEASURED, 'min-height:0'])}}}`,
   ':root{color-scheme:light}',
-  `html{${important([...MEASURED, ...ROOT_ONLY])}}`,
-  `body{${important([...MEASURED, 'min-height:0'])}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',
   'pre{white-space:pre-wrap}',

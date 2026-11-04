@@ -274,20 +274,21 @@ describe('elements and attributes', () => {
     assert.match(result.document, /<body bgcolor="#f0f0f0" style="margin:0">/);
   });
 
-  it('measures content: fixed viewport heights and no mail !important, in style blocks and attributes', () => {
+  it('measures content: fixed viewport heights, mail layers renamed, no !important on the frame body', () => {
     const result = html(
-      '<html style="height:100vh"><body style="height:100vh !important;min-height:150VH"><style>html,body{height:100%!important}div{min-height:calc(50dvh + 1px)}</style><div style="height:10vmin">x</div></body></html>',
+      '<html style="height:100vh"><body style="height:100vh !important;min-height:150VH"><style>@layer aplos{html,body{height:100%!important}}div{min-height:calc(50dvh + 1px)}</style><div style="height:10vmin!important">x</div></body></html>',
     );
+    assert.match(result.document, /<html><head>/, 'no style on the frame’s <html>');
     assert.match(result.document, /<body style="height:800px \/\*\*\/;min-height:1200px">/);
     assert.match(
       result.document,
-      /html,body\{height:100%\/\*\*\/\}div\{min-height:calc\(400px \+ 1px\)\}/,
+      /@layer m-aplos\{html,body\{height:100%!important\}\}div\{min-height:calc\(400px \+ 1px\)\}/,
     );
-    assert.match(result.document, /<div style="height:calc\(10\*min\(1vw,8px\)\)">/);
-    assert.equal(bodyOf(result).includes('!'), false);
+    assert.match(result.document, /<div style="height:calc\(10\*min\(1vw,8px\)\)!important">/);
     assert.match(
       result.document,
-      /<style>[^<]*html\{[^}]*height:auto!important[^}]*overflow-y:hidden!important\}/,
+      /<style>@layer aplos\{html\{[^}]*height:auto!important[^}]*overflow-y:hidden!important\}body\{/,
+      'the measuring rules are the first layer, first in the document',
     );
   });
 

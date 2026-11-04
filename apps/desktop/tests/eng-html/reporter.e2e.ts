@@ -24,6 +24,7 @@ interface Report {
 type Reports = Record<string, Report[]>;
 interface Measured {
   root: number;
+  top: number;
   compat: string;
   inner: number;
 }
@@ -163,6 +164,13 @@ test('the reporter and sanitizer in a hidden Chromium', { timeout: 60_000 }, asy
       assert.ok(raw.at(-1)! >= raw[0] + 96, `grew from ${raw[0]} to ${raw.at(-1)}`);
     },
   );
+
+  await t.test('no mail rule outranks the measuring layer; unsanitized, the same rules do', () => {
+    assert.equal(last(r.before, 'outrank')?.h, 86, 'measured like any short letter');
+    assert.equal(r.settled.outrank?.root, 86);
+    assert.equal(r.settled.outrank?.top, 0, 'no margin pushes the letter below what is measured');
+    assert.ok((last(r.before, 'outrankRaw')?.h ?? 0) > 2_000, 'the control is not measured short');
+  });
 
   await t.test('the paper: the root’s colour when the body’s is transparent', () => {
     assert.equal(last(r.before, 'rootPaper')?.bg, 'rgb(18, 52, 86)');
