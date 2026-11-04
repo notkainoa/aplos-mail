@@ -102,6 +102,16 @@ export const COUNT_KEYS: readonly string[] = [
   'searchDraftsReportedPhone',
   'searchMessagesOursPhone',
   'searchMessagesReportedPhone',
+  // gmail.send-message-id (S-self): did messages.send keep our Message-ID on the Sent copy (0/1), its shape code, the header,
+  // and how many Sent messages rfc822msgid: finds for our id and for the one Gmail shows. No ids, no text.
+  'sent',
+  'sentKeptMessageId',
+  'sentMessageIdShape',
+  'sentHeaderKept',
+  'sentFoundByRfc822msgidOurs',
+  'sentFoundByRfc822msgidGmails',
+  'sentSearchTries',
+  'probeMessagesExisting',
   // Answers that were 200 with an empty body (a list with no items): ok, not an error.
   'emptyAnswers',
 ];
