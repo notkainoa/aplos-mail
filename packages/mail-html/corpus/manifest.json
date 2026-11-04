@@ -1326,5 +1326,65 @@
       ],
       "notes": "From the Integrator's security review of the aplos- selector fix. A [class=...] string that holds an aplos- name is rewritten (aplos- to m-aplos-), and the rewritten value was first written without the checks every other string gets: an address-like string was kept, and inside image-set(), -webkit-image-set() or image() the value skipped URL classification. Now the rewritten value is judged as written: an address-like string is emptied, and inside an image function it goes through the image book (here none, because a name in front makes it relative). The oracle fails any message that still carries an address."
     }
+  },
+  {
+    "id": "136-viewport-units-grow-the-frame",
+    "title": "Lengths in viewport units on the root, in custom properties, calc() and escapes",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/136-viewport-units-grow-the-frame.html",
+    "expect": {
+      "mustKeepText": [
+        "Viewport units sized this letter to its own frame",
+        "Absurd values stay bounded"
+      ],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The frame is sized to the letter, so a letter sized by 100vh grew the frame, which grew the letter, without end (a 7.6 GB renderer in the host's browser spec). Every vw/vh/vi/vb/vmin/vmax length, also the s/l/d forms, in escapes, calc(), min(), max(), clamp(), custom properties, media and supports preludes and style attributes, becomes px against a fixed reading viewport (640 x 600), clamped to 100,000 px. The oracle fails any sanitized message that still holds one; the browser run checks that this message's height settles."
+    }
+  },
+  {
+    "id": "137-dom-clobbering-frame-script-members",
+    "title": "Names and ids on every member the frame's script reads, on every element that can carry one",
+    "classes": ["dom-clobbering", "postmessage-spoof"],
+    "html": "messages/137-dom-clobbering-frame-script-members.html",
+    "expect": {
+      "mustKeepText": [
+        "Every member of document, window and an element",
+        "Two hundred pixels of measured content"
+      ],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). A named img, form, embed, object or iframe shadows document.body, documentElement, addEventListener and the rest on document; an id shadows window members that are inherited from EventTarget. The sanitizer drops form, embed, object, iframe, frameset, select, textarea, button, svg and math, keeps name only on a, and moves every id and name to m-<name>, which is not a JavaScript identifier. The oracle fails any name or id outside m-. The reporter also takes its members from the prototypes before the mail can matter; the browser run loads this message and an unsanitized copy and checks the report."
+    }
+  },
+  {
+    "id": "138-quirks-mode-doctypes-and-comments-first",
+    "title": "A comment and a 3.2 doctype before the real one, and a table that wants to be window-tall",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/138-quirks-mode-doctypes-and-comments-first.html",
+    "expect": {
+      "mustKeepText": ["A layout that was written for quirks mode", "A 400 pixel spacer block"],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The first doctype the mail declared used to decide the frame's rendering mode, and most mail declares none or an old one, so most frames laid out in quirks mode, where body.scrollHeight follows the viewport. The document now always starts with <!DOCTYPE html> (tests pin the first bytes of the served document, and the browser run checks document.compatMode)."
+    }
+  },
+  {
+    "id": "139-background-on-the-root-only",
+    "title": "A paper colour on the html element, with a transparent body",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/139-background-on-the-root-only.html",
+    "expect": {
+      "mustKeepText": ["The paper colour is on the html element only"],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The reporter reported only the body's background, so a mail that coloured <html> showed on light paper. It now falls back to the root's colour when the body's is transparent; the browser run checks the reported colour."
+    }
+  },
+  {
+    "id": "140-container-query-units-grow-the-frame",
+    "title": "Container query units with no container, in escapes, calc(), custom properties and style attributes",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/140-container-query-units-grow-the-frame.html",
+    "expect": {
+      "mustKeepText": [
+        "Container units fall back to the viewport",
+        "The frame follows the letter",
+        "Absurd container values stay bounded"
+      ],
+      "notes": "From the independent review of the frame reporter fixes. cqw, cqh, cqi, cqb, cqmin and cqmax resolve against the small viewport when no ancestor is a size container, which is how the sanitizer's own output is laid out, so 100cqh grew the frame exactly like 100vh (132 to 4,900 px, then the 300-report cap in the browser run). They are rewritten to px like the viewport units (css.ts viewportLength), also with a container declared: the mail cannot be relied on to declare one, and a declared size container could still be sized by the frame. container-type and container are left alone. The oracle fails any sanitized CSS that still holds a cq unit; reporter.e2e.ts checks that the frame settles."
+    }
   }
 ]

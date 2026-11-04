@@ -77,7 +77,6 @@ interface Frame {
 }
 
 export interface WalkOutput {
-  doctype: string;
   htmlAttributes: string;
   bodyAttributes: string;
   body: string;
@@ -106,7 +105,7 @@ export function sanitizeHtml(
   const parsed = parseMail(html, LIMITS);
   const walker = new Walker(images, finder, ownOutput, quotesOpen);
   const output = walker.run(parsed.root);
-  return { ...output, doctype: doctypeFor(parsed.doctype), clipped: parsed.clipped };
+  return { ...output, clipped: parsed.clipped };
 }
 
 class Walker {
@@ -133,7 +132,7 @@ class Walker {
     private readonly quotesOpen: boolean,
   ) {}
 
-  run(root: ElementNode): Omit<WalkOutput, 'doctype' | 'clipped'> {
+  run(root: ElementNode): Omit<WalkOutput, 'clipped'> {
     this.pushFrame(root.children, contextOf(false, false, false), undefined);
     while (this.frames.length > 0) this.step(this.frames[this.frames.length - 1]);
     return {
@@ -423,16 +422,4 @@ function linkAttributes(href: string | undefined): string {
   if (link.kind === 'none') return '';
   if (link.kind === 'fragment') return attribute('href', link.href);
   return `${attribute('href', link.href)} target="_blank" rel="noopener noreferrer"`;
-}
-
-const XHTML_TRANSITIONAL =
-  '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">';
-
-/** Keeps the mail's rendering mode: standards, limited quirks (XHTML transitional) or quirks. */
-function doctypeFor(doctype: string): string {
-  const data = doctype.slice(0, 300).trim();
-  if (/^!?doctype\s{1,20}html$/i.test(data)) return '<!DOCTYPE html>';
-  if (/transitional|frameset/i.test(data) && /\.dtd/i.test(data)) return XHTML_TRANSITIONAL;
-  if (/strict/i.test(data)) return '<!DOCTYPE html>';
-  return '';
 }
