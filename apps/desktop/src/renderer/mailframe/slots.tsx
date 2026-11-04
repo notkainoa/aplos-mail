@@ -6,7 +6,8 @@ import { frameDocument, SRCDOC_SANDBOX, URL_SANDBOX } from './document';
 import { createGrowthFence } from './growth';
 import { handleLinkClick } from './links';
 import { relayKey } from './keys';
-import { acceptReport, clampHeight, frameContentWidth, parseBg } from './protocol';
+import { clampHeight, parseBg } from './protocol';
+import { createReportListener } from './reports';
 import { FRAME_PAPER } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
@@ -165,27 +166,19 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
   const onMeasured = useLatest(props.onMeasured);
 
   useEffect(() => {
-    let reported = false;
-    const fence = createGrowthFence();
-    const listener = (event: MessageEvent) => {
-      const frame = ref.current;
-      const report = acceptReport(event, {
-        source: frame?.contentWindow ?? null,
-        origins: ['null'],
-        token: source.token,
-        width: frame ? frameContentWidth(frame, getComputedStyle(frame)) : undefined,
-      });
-      if (!report) return;
-      setHeight(fence.next(report.height));
-      if (reported) return;
-      reported = true;
-      onMeasured.current(source, {
-        height: report.height,
-        bg: report.bg,
-        blocked: source.blocked,
-        trackers: source.blocked,
-      });
-    };
+    const listener = createReportListener({
+      frame: () => ref.current,
+      token: source.token,
+      setHeight,
+      onFirst: report =>
+        onMeasured.current(source, {
+          height: report.height,
+          bg: report.bg,
+          blocked: source.blocked,
+          // TODO: map trackers separately once the contract carries a blocked-image count (sealed frames report one number).
+          trackers: source.blocked,
+        }),
+    });
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);
   }, [source, onMeasured]);

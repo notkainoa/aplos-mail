@@ -38,8 +38,11 @@ export interface ReportExpectation {
   origins: readonly string[];
   /** The per-render token (the `aplos-mail://m/<token>/` path segment). */
   token: string;
-  /** The slot width in CSS px; a size report of another width is ignored. */
-  width?: number;
+  /**
+   * The slot width in CSS px; a size report of another width is ignored. A function is called only once every other
+   * check has passed, so a forged or foreign message costs the host no layout read.
+   */
+  width?: number | (() => number | undefined);
 }
 
 /** A size report the host accepted. */
@@ -157,12 +160,16 @@ function isMarks(marks: unknown): marks is number {
   return typeof marks === 'number' && Number.isInteger(marks) && marks >= 0 && marks <= MAX_MARKS;
 }
 
-function sizeReport(data: Record<string, unknown>, width: number | undefined): SizeReport | null {
+function sizeReport(
+  data: Record<string, unknown>,
+  width: ReportExpectation['width'],
+): SizeReport | null {
   const height = reportedHeight(data.h);
-  if (height === null || !widthMatches(data.w, width)) return null;
+  if (height === null) return null;
   if (typeof data.bg !== 'string' || typeof data.ready !== 'boolean' || !isMarks(data.marks)) {
     return null;
   }
+  if (!widthMatches(data.w, typeof width === 'function' ? width() : width)) return null;
   return { height, bg: parseBg(data.bg), ready: data.ready, marks: data.marks };
 }
 
