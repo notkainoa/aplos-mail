@@ -227,8 +227,43 @@ function asWritten(html: string) {
   while (end > 0 && text[end - 1] === '\n') end -= 1;
   const body = end === text.length ? text : text.slice(0, end);
   // An empty body comes back from adapters as trivially-empty markup (`<p></p>`, `<div><br></div>`): one empty
-  // content must hash the same, or our own copy never proves ours and shows as another device's draft.
-  return htmlToText(body).trim() ? body : '';
+  // content must hash the same, or our own copy never proves ours and shows as another device's draft. Only the
+  // container markup an editor emits for an empty body is interchangeable — an `<img>`, `<hr>` or `<table>` is
+  // content an edit can add, never an empty body, or the proof would swallow it.
+  return emptyMarkup(body) ? '' : body;
+}
+
+/** The element names an empty body may contain: containers and inline formatting, nothing that carries content. */
+const EMPTY_TAGS = new Set([
+  'html',
+  'head',
+  'body',
+  'p',
+  'div',
+  'br',
+  'span',
+  'o:p',
+  'wbr',
+  'nobr',
+  'b',
+  'i',
+  'em',
+  'strong',
+  'u',
+  's',
+  'strike',
+  'sub',
+  'sup',
+  'small',
+  'mark',
+  'font',
+]);
+
+/** True when the markup has no text AND no element outside the empty-body containers — the `<p></p>` family. */
+function emptyMarkup(html: string): boolean {
+  for (const match of html.matchAll(/<\/?\s*([a-zA-Z][\w:-]*)/g))
+    if (!EMPTY_TAGS.has(match[1].toLowerCase())) return false;
+  return !htmlToText(html).trim();
 }
 
 /** Nothing to keep: no recipient, subject, text or attachment. A new empty draft is not uploaded. */
