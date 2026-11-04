@@ -411,7 +411,7 @@ export function mail(fx: Fixture) {
             ? `Your rule for ${t.fromName} puts their mail in ${lane}.`
             : t.rank.lane === 'do'
               ? t.workflow.todo
-                ? `${t.fromName} is waiting on you: ${t.workflow.todo.charAt(0).toLowerCase()}${t.workflow.todo.slice(1)}.`
+                ? `${t.fromName} asked you something: ${t.workflow.todo.charAt(0).toLowerCase()}${t.workflow.todo.slice(1)}.`
                 : `${t.fromName} asked you something and is waiting for a reply.`
               : t.rank.lane === 'low'
                 ? `${t.fromName} sends notices and newsletters that rarely need you.`
