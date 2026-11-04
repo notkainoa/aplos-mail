@@ -42,6 +42,14 @@ export interface GmailEmulatorOptions {
   historyRetentionMs?: number;
   /** Sends per Pacific day before 429 "Mail sending". Default 2000. */
   sendLimitPerDay?: number;
+  /**
+   * What Gmail does to the identity of a draft the API saves. 'kept' (default): the Message-ID the client wrote is kept.
+   * 'rewritten': like real Gmail (live finding 2026-11-04) every `drafts.create` and `drafts.update` replaces it with
+   * `<hex@mail.gmail.com>`; no header the client wrote is dropped unless `dropDraftHeaders` names it.
+   */
+  draftIdentity?: 'kept' | 'rewritten';
+  /** Header names (any case) Gmail drops from a draft the API saves, e.g. `['X-Aplos-Probe']`. Default none. */
+  dropDraftHeaders?: readonly string[];
   /** Test users to start with. By default one user, test.user@example.test. Pass [] for none. */
   users?: TestUserInput[];
   /** Google Calendar settings (requests per minute, throttle shape, sync-token horizon, ...). */
@@ -59,6 +67,8 @@ export interface GmailSettings {
   retryAfter: RetryAfterMode;
   historyRetentionMs: number;
   sendLimitPerDay: number;
+  draftIdentity: 'kept' | 'rewritten';
+  dropDraftHeaders: readonly string[];
 }
 
 export interface MeterHelpers {
