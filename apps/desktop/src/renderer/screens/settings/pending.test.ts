@@ -4,13 +4,21 @@
 // Run: npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}'   (from apps/desktop)
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { buildStack, createAppRegistry, keyPrefsFromUi } from '../../commands';
+import {
+  buildStack,
+  chordFromEvent,
+  chordId,
+  createAppRegistry,
+  keyPrefsFromUi,
+  type KeyInput,
+} from '../../commands';
 import { createHoldTracker } from '../../commands/hold';
 import { resolve } from '../../commands/resolver';
 import type { AiProvider, SettingsPatch } from '../../data';
 import { createController } from './controller';
 import { SETTING_ROWS } from './paletteEntries';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
+import { recorderKeyAction } from '../../ui/settings/KeyRecorder';
 import {
   accountRows,
   addressPatch,
@@ -342,7 +350,7 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
 
   // covered: screens.test.tsx: a key goes to the engine once and is kept nowhere: not in view state, data, or any later markup
 
-  test.skip('ai.test.states – Testing… (Test disabled) → "Works · 0.4 s"; refused → "Key refused" + the ErrorLine + Replace key; leaving the page cancels [FAILS: a test result that lands after leaving reappears in view.testing]', async () => {
+  test('ai.test.states – Testing… (Test disabled) → "Works · 0.4 s"; refused → "Key refused" + the ErrorLine + Replace key; leaving the page cancels', async () => {
     assert.deepEqual(testResultStatus({ ok: true, ms: 400 }), { kind: 'works', latencyMs: 400 });
     assert.deepEqual(testResultStatus({ ok: false, reasonCode: 'auth.refused' }), {
       kind: 'refused',
@@ -584,6 +592,173 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
     assert.ok(!(h.data().clients ?? []).some(c => c.id === 'client-cli'));
   });
 
+  test('ai.key.retry – a rejected key is kept nowhere, and Retry reopens an empty add-key dialog', async () => {
+    const KEY = 'gsk_TESTKEY_never-kept-0123';
+    const calls: unknown[] = [];
+    let failure: WriteFailure | null = null;
+    let view = { ...INITIAL_VIEW };
+    const actions = createController({
+      ports: {
+        aiSetKey: async (p: string, k: string) => {
+          calls.push([p, k]);
+          throw new Error('rejected');
+        },
+      } as unknown as SettingsApiPort,
+      host: {},
+      data: () => dataAt(),
+      view: () => view,
+      setView: patch => {
+        view = { ...view, ...patch };
+      },
+      setData: () => {},
+      overlay: () => {},
+      fail: f => {
+        failure = f;
+      },
+    });
+    assert.equal(await actions.submitKey('anthropic', KEY), false);
+    assert.ok(failure);
+    assert.equal(JSON.stringify(view).includes(KEY), false, 'no key in view state');
+    assert.equal(JSON.stringify(failure!.op).includes(KEY), false, 'no key in the line');
+    assert.equal(failure!.retry.toString().includes(KEY), false, 'the retry closure keeps no key');
+    assert.equal(failure!.dismiss.toString().includes(KEY), false);
+    failure!.retry();
+    assert.deepEqual(
+      view.addKey,
+      { provider: 'anthropic', mode: 'add' },
+      'Retry reopens the dialog',
+    );
+    assert.equal(calls.length, 1, 'Retry does not resubmit a kept key');
+  });
+
+  test('ai.key.refresh – a failing provider reload is quiet and does not skip the post-save test', async () => {
+    const tested: string[] = [];
+    const h = harness({
+      ports: {
+        aiSetKey: async () => {},
+        aiRemoveKey: async () => {},
+        loadProviders: async () => {
+          throw new Error('reload failed');
+        },
+        aiTestKey: async p => {
+          tested.push(p);
+          return { ok: true, ms: 10 };
+        },
+      },
+    });
+    assert.equal(await h.actions.submitKey('openai', 'k'), true);
+    assert.deepEqual(tested, ['openai']);
+    assert.equal(await h.actions.runConfirm({ kind: 'removeKey', provider: 'openai' }), true);
+  });
+
+  test('ai.feature.overlap – a second feature write is built on the first, not on the stale read', async () => {
+    const calls: SettingsPatch[] = [];
+    const h = harness({
+      ports: {
+        settingsSet: (p: SettingsPatch) => {
+          calls.push(p);
+          return new Promise<void>(() => {});
+        },
+      },
+    });
+    void h.actions.changeFeature('ask', { provider: 'openai', model: 'x' });
+    void h.actions.changeFeature('drafts', { provider: 'openai', model: 'x' });
+    assert.equal(calls.length, 2);
+    const features = calls[1].ai?.features as Record<string, { provider: string; model: string }>;
+    assert.equal(features.ask.provider, 'openai', 'the Drafts write carries the Ask change');
+    assert.equal(features.drafts.provider, 'openai');
+  });
+
+  test('overlay.overlap – a write that settles drops only its own optimistic patch', async () => {
+    const resolvers: (() => void)[] = [];
+    const h = harness({
+      ports: {
+        settingsSet: () => new Promise<void>(r => resolvers.push(r)),
+      },
+    });
+    const theme = h.actions.setUi({ theme: 'dark' });
+    const undo = h.actions.set({ mail: { undoSendSeconds: 20 } });
+    assert.deepEqual(h.overlays.at(-1), {
+      ui: { theme: 'dark' },
+      mail: { undoSendSeconds: 20 },
+    });
+    resolvers[0]();
+    await theme;
+    assert.deepEqual(h.overlays.at(-1), { mail: { undoSendSeconds: 20 } }, 'the other write stays');
+    resolvers[1]();
+    await undo;
+    assert.equal(h.overlays.at(-1), null);
+  });
+
+  test('ai.local.addressDraft – a slower save clears only its own text, not newer typing', async () => {
+    const resolvers: (() => void)[] = [];
+    const h = harness({
+      ports: {
+        settingsSet: () => new Promise<void>(r => resolvers.push(r)),
+      },
+      schedule: fn => {
+        fn();
+        return () => {};
+      },
+    });
+    h.actions.changeAddress('ollama', 'http://a/1');
+    h.actions.changeAddress('ollama', 'http://a/12');
+    resolvers[0]();
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(h.view().addressDraft.ollama, 'http://a/12', 'newer typing is kept');
+    resolvers[1]();
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(h.view().addressDraft.ollama, undefined, 'the latest save clears its draft');
+  });
+
+  test('failure – leave() clears a rejected write, so the line does not follow across sections', async () => {
+    const h = harness({
+      ports: {
+        settingsSet: async () => {
+          throw new Error('no');
+        },
+      },
+    });
+    await h.actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send');
+    assert.ok(h.failures.at(-1), 'the failure line is up');
+    h.actions.leave();
+    assert.equal(h.failures.at(-1), null, 'leaving the section clears it');
+  });
+
+  test('help.diagnostics.save – busy blocks a second Save; a failed save stays inside the open dialog', async () => {
+    const resolvers: (() => void)[] = [];
+    let calls = 0;
+    const h = harness({
+      ports: {
+        diagnosticsSave: () => {
+          calls += 1;
+          return new Promise<void>(r => resolvers.push(r));
+        },
+      },
+    });
+    const first = h.actions.saveDiagnostics();
+    assert.equal(h.view().busy.diagnostics, true);
+    assert.equal(await h.actions.saveDiagnostics(), false, 'a second Save does nothing');
+    resolvers[0]();
+    await first;
+    assert.equal(calls, 1);
+    assert.equal(h.view().busy.diagnostics, false);
+
+    const bad = harness({
+      ports: {
+        diagnosticsPreview: async () => bundle(),
+        diagnosticsSave: async () => {
+          throw new Error('disk full');
+        },
+      },
+    });
+    await bad.actions.openDiagnostics();
+    assert.equal(bad.view().diagnostics, true);
+    await bad.actions.saveDiagnostics();
+    assert.equal(bad.view().diagnostics, true, 'the dialog stays open so its own line can show');
+    assert.equal(bad.failures.at(-1)?.op, 'save the report');
+  });
+
   // covered: screens.test.tsx: every capability that is off reads "Not available yet" with no dead control
 });
 
@@ -597,9 +772,26 @@ describe('ui-settings: keyboard paths (dom)', () => {
   test.todo(
     `kbd.select.escape – Esc closes an open select menu first, then leaves Settings [waits: Playwright base]`,
   );
-  test.todo(
-    `kbd.recorder.swallow – while recording, every key, including E and Space, is swallowed; Esc cancels; modifier-only presses are ignored; isComposing presses are ignored [waits: Playwright base]`,
-  );
+  test('kbd.recorder.swallow – while recording every key is a chord; in conflict Return replaces and Tab moves on; lone modifiers are ignored', () => {
+    const key = (k: string, over: Partial<KeyInput> = {}): KeyInput => ({
+      key: k,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      ...over,
+    });
+    for (const k of ['e', ' ', 'Tab', 'Enter', 'ArrowDown', 'l'])
+      assert.equal(recorderKeyAction('recording', key(k)), 'record', `recording swallows ${k}`);
+    assert.equal(recorderKeyAction('conflict', key('Enter')), 'replace');
+    assert.equal(recorderKeyAction('conflict', key('Tab')), 'move');
+    assert.equal(recorderKeyAction('conflict', key('Tab', { shiftKey: true })), 'move');
+    assert.equal(recorderKeyAction('conflict', key('l')), 'record');
+    assert.equal(recorderKeyAction('conflict', key('Enter', { metaKey: true })), 'record');
+    for (const k of ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'])
+      assert.equal(chordFromEvent(key(k)), null, `${k} alone makes no chord`);
+    assert.equal(chordId(chordFromEvent(key('e'))!), 'e');
+  });
   test.todo(
     `kbd.palette.setting – ⌘K → "density" → Return lands on General with the Density control focused [waits: Playwright base]`,
   );
@@ -653,9 +845,7 @@ describe('ui-settings: accessibility (dom)', () => {
 
   // covered: screens.test.tsx: AI: "How your mail is used" is a disclosure with aria-expanded and aria-controls
 
-  test.todo(
-    `a11y.status.notColourOnly – provider and account states pair a dot or icon with a word [waits: Playwright base]`,
-  );
+  // covered: screens.test.tsx: provider statuses pair a dot or icon with a word; account marks pair with a name
   test.todo(
     `a11y.recorder.live – the recording row announces politely; the conflict text is announced [waits: Playwright base]`,
   );
@@ -665,9 +855,7 @@ describe('ui-settings: accessibility (dom)', () => {
   test.todo(
     `a11y.zoom200 – at 200 % zoom and a 900 px window, the control column does not clip and hints wrap without overlap [waits: Playwright base]`,
   );
-  test.todo(
-    `a11y.disabledReason – a disabled Remove is focusable, with the tooltip reason readable by VoiceOver [waits: Playwright base]`,
-  );
+  // covered: screens.test.tsx: a disabled Remove is focusable and its reason is a describedby twin
 });
 
 describe('ui-settings: design checks (dom / visual)', () => {

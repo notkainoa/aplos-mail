@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SETTING_SECTIONS, createAppRegistry, settingId } from '../../commands';
 import { APP_SETTINGS, copyProblem } from '../../commands/internal';
 import { createController } from './controller';
+import { scrollWithoutTarget } from './SettingsScreen';
 import { SETTING_ROWS } from './paletteEntries';
 import type { SettingsApiPort } from './ports';
 import { AddKeyDialog } from './overlays';
@@ -470,9 +471,75 @@ describe('states, copy and design rules', () => {
     assert.match(a, /a-very-long-local-part/);
   });
 
-  test('a rejected write shows one inline line with Retry', () => {
+  test('a rejected write shows one inline line with Retry and a way to put it away', () => {
     const m = render('write-failed');
     assert.match(m, /Couldn[’']t change undo send\./);
     assert.match(m, />Retry</);
+    assert.match(m, />Dismiss</);
+  });
+});
+
+describe('accessibility in markup', () => {
+  test('every DOM id on a page is unique', () => {
+    for (const name of names) {
+      const ids = [...render(name).matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+      const seen = new Set<string>();
+      for (const id of ids) {
+        assert.ok(!seen.has(id), `${name}: duplicate id "${id}"`);
+        seen.add(id);
+      }
+    }
+  });
+
+  test('every aria-controls resolves, except the one on a closed select trigger', () => {
+    for (const name of names) {
+      const markup = render(name);
+      const ids = new Set([...markup.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
+      for (const m of markup.matchAll(/aria-controls="([^"]+)"/g)) {
+        const tag = markup.slice(0, m.index).match(/<[^>]*$/)?.[0] ?? '';
+        const closedMenu = /aria-expanded="false"/.test(tag) && /aria-haspopup="menu"/.test(tag);
+        assert.ok(ids.has(m[1]) || closedMenu, `${name}: aria-controls "${m[1]}" resolves nowhere`);
+      }
+    }
+  });
+
+  test('a select trigger is named by its setting and its current value', () => {
+    const mail = render('mail');
+    assert.match(mail, /aria-label="Undo send: 8 seconds"[^>]*aria-haspopup="menu"/);
+    assert.match(render('general'), /aria-label="Swipe direction: Right is Done"/);
+    const calendar = render('calendar');
+    assert.match(calendar, /aria-label="Week starts on: Follow the system"/);
+  });
+
+  test('a disabled Remove is focusable and its reason is read', () => {
+    const ai = render('ai-default');
+    const control = ai.match(
+      /<button[^>]*aria-label="Remove key for Groq"[^>]*aria-describedby="([^"]+)"[^>]*>Remove<\/button>/,
+    );
+    assert.ok(control, 'the disabled Remove button');
+    assert.doesNotMatch(control[0], /\sdisabled(=|>|\s)/, 'it stays focusable');
+    const reason = new RegExp(`id="${control[1]}"[^>]*>This key comes from GROQ_API_KEY`);
+    assert.match(ai, reason, 'the reason is a describedby twin');
+  });
+
+  test('statuses pair a dot or icon with a word; account marks pair with a name', () => {
+    for (const name of names) {
+      const markup = render(name);
+      const statuses = markup.match(/class="ui-provider-table__status"/g) ?? [];
+      const words = markup.match(/ui-provider-table__status-text">[^<]+</g) ?? [];
+      assert.equal(words.length, statuses.length, `${name}: a status with no word`);
+      const marks = markup.match(/class="ui-setting-row__mark"/g) ?? [];
+      const named =
+        markup.match(
+          /ui-setting-row__mark"[^>]*><\/span><span class="ui-setting-row__label"[^>]*>[^<]+</g,
+        ) ?? [];
+      assert.equal(named.length, marks.length, `${name}: a mark with no name`);
+    }
+  });
+
+  test('the pane resets to the top only for a section change', () => {
+    assert.equal(scrollWithoutTarget(null, 'general'), 'top');
+    assert.equal(scrollWithoutTarget('general', 'mail'), 'top');
+    assert.equal(scrollWithoutTarget('general', 'general'), 'stay');
   });
 });

@@ -21,6 +21,7 @@ import {
   localRows,
   mergePatch,
   navItems,
+  notifyRows,
   queueRows,
   reconnectKind,
   removeDisabledReason,
@@ -277,6 +278,31 @@ describe('AI: key source, Remove, providers', () => {
     assert.equal(notices[0].id, 'noProvider');
   });
 
+  test('notices: an empty provider list still gets the no-provider line', () => {
+    const notices = aiNotices(baseSettings(), []);
+    assert.deepEqual(
+      notices.map(n => n.id),
+      ['noProvider'],
+    );
+    assert.match(notices[0].text, /No AI provider is set up/);
+  });
+
+  test('an unknown stored provider id passes through to the picker instead of becoming Groq', () => {
+    const settings = baseSettings();
+    const weird = {
+      ...settings,
+      ai: {
+        ...settings.ai,
+        features: {
+          ...settings.ai.features,
+          ask: { provider: 'nimbus' as never, model: 'n-1' },
+        },
+      },
+    };
+    const row = featureRows(weird, providers(), models()).find(r => r.feature === 'ask')!;
+    assert.equal(row.provider, 'nimbus');
+  });
+
   test('removing a key names the features that will stop', () => {
     const c = removeKeyConfirm(baseSettings(), 'groq');
     assert.match(c.consequence, /Ask, Summaries, Drafts, Plans and Voice will stop/);
@@ -362,8 +388,18 @@ describe('patches, nav, copy', () => {
     assert.equal(items.find(i => i.id === 'ai')?.icon, 'bubble');
   });
 
-  test('"Version 0.3.0 · macOS"', () => {
+  test('"Version 0.3.0 · macOS"; a missing build number leaves just "macOS"', () => {
     assert.equal(versionLine({ appVersion: '0.3.0' }), 'Version 0.3.0 · macOS');
+    assert.equal(versionLine({}), 'macOS');
+    assert.equal(versionLine(undefined), 'macOS');
+  });
+
+  test('an account has one colour in Accounts and Notifications (one index source)', () => {
+    const untagged = [ALEX, DEMO, JORDAN].map(a => ({ ...a, colorTag: undefined }));
+    const marks = new Map(accountRows(untagged, NOW).map(r => [r.id, r.mark]));
+    for (const r of notifyRows(untagged)) {
+      assert.equal(r.mark, marks.get(r.id), r.id);
+    }
   });
 
   test('the queue shows reason sentences, never the item message', () => {
