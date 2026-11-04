@@ -23,6 +23,8 @@ export function redirectsToGrid(target: unknown, scroller: unknown): boolean {
 
 /** The minimum of a mouse event this needs. */
 export interface PressEvent {
+  /** The mouse button; 0 is the primary one. Middle and right presses are left alone (autoscroll, context menu). */
+  readonly button?: number;
   readonly target: unknown;
   readonly currentTarget: unknown;
   preventDefault(): void;
@@ -30,7 +32,7 @@ export interface PressEvent {
 
 /** onMouseDown of the scroller: keeps focus (and the selection of nothing) on the grid root for an incidental press. */
 export function keepGridFocus(e: PressEvent, grid: { focus(o?: FocusOptions): void } | null): void {
-  if (!grid || !redirectsToGrid(e.target, e.currentTarget)) return;
+  if (!grid || (e.button ?? 0) !== 0 || !redirectsToGrid(e.target, e.currentTarget)) return;
   e.preventDefault();
   grid.focus({ preventScroll: true });
 }

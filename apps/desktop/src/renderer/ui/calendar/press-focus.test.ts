@@ -44,3 +44,21 @@ test('keepGridFocus leaves scrollbar presses, controls and a missing root alone'
   keepGridFocus({ target: target(false), currentTarget: scroller, preventDefault: prevent }, null);
   assert.deepEqual(calls, []);
 });
+
+test('a middle or right press keeps the default (autoscroll, context menu) and does not move focus', () => {
+  const scroller = target(false);
+  for (const button of [1, 2]) {
+    const calls: string[] = [];
+    const grid = { focus: () => calls.push('focus') };
+    keepGridFocus(
+      {
+        button,
+        target: target(false),
+        currentTarget: scroller,
+        preventDefault: () => calls.push('prevent'),
+      },
+      grid,
+    );
+    assert.deepEqual(calls, [], `button ${button}`);
+  }
+});

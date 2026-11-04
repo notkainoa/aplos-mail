@@ -313,7 +313,8 @@ export type { SidebarSlot } from './store-sidebar';
  * Shows `slot` under the sidebar's place groups while the calling screen is mounted (null shows nothing). The latest
  * mounted slot wins whole and the earlier one returns when it goes. The shell draws `miniMonth` and `calendars` with
  * the ui components in the sidebar's quiet spacing; the minimised nav does not show the slot. A screen that updates
- * its slot keeps its place in the stack. Compared by reference, so memoise it (`useMemo`).
+ * its slot keeps its place in the stack. Compared by reference, so memoise it (`useMemo`). Passing `null` clears the
+ * slot like an unmount, so a later non-null slot enters on top again: keep the entry (an empty slot) to hold a place.
  */
 export function useSidebarSlot(slot: SidebarSlot | null): void {
   const owner = useRef({}).current;
