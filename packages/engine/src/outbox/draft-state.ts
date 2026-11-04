@@ -259,10 +259,65 @@ const EMPTY_TAGS = new Set([
   'small',
   'mark',
   'font',
+  // Structure and flow containers an editor emits around nothing: emptied quotes, headings and
+  // section blocks suppress the same as `<p></p>` (a lone <ul><li> is NOT here — its bullet is text).
+  'blockquote',
+  'pre',
+  'code',
+  'kbd',
+  'samp',
+  'var',
+  'q',
+  'cite',
+  'abbr',
+  'address',
+  'dfn',
+  'del',
+  'ins',
+  'section',
+  'article',
+  'header',
+  'footer',
+  'nav',
+  'main',
+  'aside',
+  'figure',
+  'figcaption',
+  'dl',
+  'dt',
+  'dd',
+  'form',
+  'label',
+  'fieldset',
+  'legend',
+  'caption',
+  'colgroup',
+  'details',
+  'summary',
+  'center',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'rp',
+  'rt',
+  'rtc',
+  'ruby',
+  'bdi',
+  'bdo',
+  'time',
+  'data',
 ]);
+
+/** An attribute that references or embeds anything is content wherever it sits: `background`,
+ * `src`/`href`/`poster`/`action`, a `style` carrying `url(` or `content:`, any `cid:` or `url(`. */
+const CONTENT_ATTR = /\b(?:background|src|href|poster|action)\s*=|url\s*\(|cid:/i;
 
 /** True when the markup has no text AND no element outside the empty-body containers — the `<p></p>` family. */
 function emptyMarkup(html: string): boolean {
+  if (CONTENT_ATTR.test(html)) return false;
   for (const match of html.matchAll(/<\/?\s*([a-zA-Z][\w:-]*)/g))
     if (!EMPTY_TAGS.has(match[1].toLowerCase())) return false;
   return !htmlToText(html).trim();
