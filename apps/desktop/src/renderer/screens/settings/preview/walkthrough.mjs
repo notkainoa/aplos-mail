@@ -168,9 +168,11 @@ try {
       // Does the nav answer the arrow keys, or only Tab?
       const before = await sectionOf(page);
       await page.keyboard.press('ArrowDown');
+      await settle(page);
+      const moved = (await sectionOf(page)) !== before;
       await page.keyboard.press('ArrowUp');
       await settle(page);
-      if ((await sectionOf(page)) === before) {
+      if (!moved) {
         findings.push(
           'Section nav: ArrowDown/ArrowUp on a focused nav item do nothing. The nav is a navigation landmark of plain buttons (every item in the tab order, no arrow handler), so Tab + Return is the only keyboard path.',
         );
