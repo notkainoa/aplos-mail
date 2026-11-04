@@ -5,11 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  FIND_SENT_RETRY,
-  RECENT_EXTRA_PAGES,
-  RECENT_SENT,
-} from '../../src/host/providers/google/send';
+import { RECENT_EXTRA_PAGES, RECENT_SENT } from '../../src/host/providers/google/send';
 import { ACCOUNT, classOf, sendWorld, submission, type SendWorld } from './send-rig';
 
 async function rejection(promise: Promise<unknown>): Promise<unknown> {
@@ -22,9 +18,6 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 const since = (world: SendWorld) => world.clock.now() - 5 * 60_000;
-
-// These tests pin ONE pass over the search and the SENT listing; the look-again bound has its own tests (send-token.test.ts).
-FIND_SENT_RETRY.looks = 0;
 
 test('findSent: more hits than one page, none of them this mail, is thrown (sentSearchPartial), never "absent"', async () => {
   const world = await sendWorld();

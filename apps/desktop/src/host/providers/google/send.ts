@@ -878,26 +878,12 @@ async function recentSentCopy(
   throw incomplete('sentListingPartial');
 }
 
-/** The look-again bound: Gmail's index shows a send a few seconds late (live: the 4th try, about 3 s apart). */
-export const FIND_SENT_RETRY = { looks: 3, waitMs: 3_000, recentMs: 5 * 60_000 };
-
-/** One pass over both paths: the search, then the newest SENT messages by label. */
-async function findOnce(
-  client: GmailClient,
-  internetId: string,
-  since: number,
-): Promise<SentHit | undefined> {
-  return (
-    (await sentCopy(client, internetId, since)) ?? (await recentSentCopy(client, internetId, since))
-  );
-}
-
 /**
  * `ProviderAdapter.findSent` for Gmail: `found` only for a SENT, non-DRAFT message carrying our `X-Aplos-Send` token
- * (or, where Gmail kept it, our Message-ID). When nothing shows and the attempt is recent (`since` within
- * `FIND_SENT_RETRY.recentMs`), the passes are repeated `FIND_SENT_RETRY.looks` more times, `waitMs` apart, before
- * "absent": the index lags a send by seconds. An error in any pass is thrown at once, never retried here (an answer that
- * is not complete is never "absent"); the engine asks again later.
+ * (or, where Gmail kept it, our Message-ID), found by the search or the newest-SENT listing. One pass: Gmail's index
+ * shows a send a few seconds late (live: the 4th try, about 3 s apart), and the engine asks again after 60 s before it
+ * asks the owner, which covers that lag without holding this call (and the engine's dispatch) for seconds. An error in
+ * the pass is thrown, never "absent" (an answer that is not complete is never "absent").
  */
 export async function findSentCopy(
   deps: GmailDeps,
@@ -905,14 +891,12 @@ export async function findSentCopy(
   since: number,
   ctx: AdapterContext,
 ): Promise<FindSentResult> {
+  const checkedAt = ctx.clock.now();
   const client = new GmailClient(deps, ctx);
-  const recent = ctx.clock.now() - since <= FIND_SENT_RETRY.recentMs;
-  let hit = await findOnce(client, internetId, since);
-  for (let look = 0; !hit && recent && look < FIND_SENT_RETRY.looks; look++) {
-    await ctx.clock.sleep(FIND_SENT_RETRY.waitMs, ctx.signal);
-    hit = await findOnce(client, internetId, since);
-  }
-  if (!hit) return { kind: 'absent', checkedAt: ctx.clock.now() };
+  const hit =
+    (await sentCopy(client, internetId, since)) ??
+    (await recentSentCopy(client, internetId, since));
+  if (!hit) return { kind: 'absent', checkedAt };
   return {
     kind: 'found',
     remoteMessageId: hit.id,

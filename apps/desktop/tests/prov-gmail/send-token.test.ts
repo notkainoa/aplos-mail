@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FIND_SENT_RETRY, withSendToken } from '../../src/host/providers/google/send';
+import { withSendToken } from '../../src/host/providers/google/send';
 import { ACCOUNT, classOf, sendWorld, submission, type SendWorld } from './send-rig';
 
 const since = (world: SendWorld) => world.clock.now() - 60_000;
@@ -124,45 +124,32 @@ test('findSent: a message carrying our token twice (not one value) is not a matc
   assert.equal(result.kind, 'absent');
 });
 
-// ---- the look-again bound ----
+// ---- one pass: the engine's own re-check after 60 s covers the index lag ----
 
-test('findSent: a copy that only shows on the third look is found; the waits are the bound, not more', async () => {
+test('findSent: a copy the index shows only later is absent now and found by the next ask (the engine asks again after 60 s)', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  const first = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(first.kind, 'absent');
+  await world.adapter.send(pinned.payload, world.ctx());
+  await world.clock.advance(60_000);
+  const second = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(second.kind, 'found');
+});
+
+test('findSent: one pass, no waiting inside the call (it never sleeps)', async () => {
   const world = await rewritingWorld();
   const pinned = submission(world);
   const start = world.clock.now();
-  const attempt = world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
-  // The copy appears between the first and second look (the index lags a send by seconds).
-  const appears = world.clock
-    .sleep(FIND_SENT_RETRY.waitMs + 500)
-    .then(() => world.adapter.send(pinned.payload, world.ctx()));
-  const [result] = await Promise.all([attempt, appears]);
-  assert.equal(result.kind, 'found');
-  assert.ok(world.clock.now() - start <= FIND_SENT_RETRY.looks * FIND_SENT_RETRY.waitMs + 60_000);
-});
-
-test('findSent: a copy that never shows is absent after the looks, each wait the configured one', async () => {
-  const world = await rewritingWorld();
-  const pinned = submission(world);
-  const jumps = world.clock.jumps.length;
   const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
   assert.equal(result.kind, 'absent');
-  const waited = world.clock.jumps.slice(jumps).reduce((sum, j) => sum + (j.to - j.from), 0);
-  assert.ok(waited >= FIND_SENT_RETRY.looks * FIND_SENT_RETRY.waitMs, `waited ${waited} ms`);
-  assert.ok(waited < FIND_SENT_RETRY.looks * FIND_SENT_RETRY.waitMs + 10_000);
+  assert.ok(
+    world.clock.now() - start < 3_000,
+    `the call moved the clock by ${world.clock.now() - start} ms`,
+  );
 });
 
-test('findSent: an old attempt (the lag is long over) answers after one pass, no waiting', async () => {
-  const world = await rewritingWorld();
-  const pinned = submission(world);
-  const jumps = world.clock.jumps.length;
-  const old = world.clock.now() - 2 * FIND_SENT_RETRY.recentMs;
-  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, old);
-  assert.equal(result.kind, 'absent');
-  const waited = world.clock.jumps.slice(jumps).reduce((sum, j) => sum + (j.to - j.from), 0);
-  assert.ok(waited < FIND_SENT_RETRY.waitMs, 'no look-again wait');
-});
-
-test('findSent: an error in a look is thrown at once, not retried', async () => {
+test('findSent: an error in the pass is thrown, never absent', async () => {
   const world = await rewritingWorld();
   const pinned = submission(world);
   world.faults.failNext(
@@ -170,11 +157,9 @@ test('findSent: an error in a look is thrown at once, not retried', async () => 
     { status: 500, reason: 'backendError', message: 'Backend Error' },
     { times: 50 },
   );
-  const before = world.gmailRequests();
   const error = await world.port
     .findSent(ACCOUNT, pinned.payload.internetId, since(world))
     .catch((e: unknown) => e);
   assert.ok(error instanceof Error);
   assert.ok(classOf(error), 'a classified provider error');
-  assert.ok(world.gmailRequests() - before <= 6, 'not repeated for each look');
 });
