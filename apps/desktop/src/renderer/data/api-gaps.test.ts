@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMethod } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { createHarness, type Harness } from './harness';
 import { CONTRACT_METHODS, HARNESS_NOW_MS, OperationFailedError } from './index';
 
@@ -58,6 +59,32 @@ test('queries go straight to the client, one call each', async () => {
     assert.ok((await api.account.lease({ pin: false })).leases.length > 0);
     // Queries are not operations: no opId was minted for any of them.
     assert.equal(h.layer.operations.all().length, 0);
+  });
+});
+
+test('account discover goes to the client with the input untouched and answers how the account can connect', async () => {
+  await withHarness(async h => {
+    const { api } = h.layer;
+    h.clearCalls();
+    const discovered = await api.account.discover({ address: 'someone@gmail.com' });
+    assert.deepEqual(discovered, { provider: 'google', preset: 'gmail' });
+    assert.equal(h.callsOf('Account/discover').length, 1);
+    // `Account/discover` takes {address | domain} and nothing else: no opId and no requestId to mint.
+    assert.deepEqual(h.callsOf('Account/discover')[0]!.args, { address: 'someone@gmail.com' });
+
+    const byDomain = await api.account.discover({ domain: 'fastmail.com' });
+    assert.equal(byDomain.provider, 'fastmail');
+    assert.deepEqual(h.callsOf('Account/discover')[1]!.args, { domain: 'fastmail.com' });
+    assert.equal(h.layer.operations.all().length, 0, 'discover is a query, not an operation');
+
+    // Neither address nor domain: the engine's refusal reaches the caller as its ContractError, unchanged.
+    await assert.rejects(
+      () => api.account.discover({}),
+      (error: unknown) =>
+        error instanceof ContractError &&
+        error.type === 'validation' &&
+        error.message === 'Enter a valid email address.',
+    );
   });
 });
 
