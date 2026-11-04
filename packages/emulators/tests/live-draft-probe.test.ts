@@ -25,7 +25,7 @@ interface Rig {
   ): Promise<{ counts: Record<string, number>; text: string; status: string }>;
 }
 
-async function rig(extraProbes: SmokeProbe[] = []): Promise<Rig> {
+async function rig(extraProbes: SmokeProbe[] = [], listAnswer?: () => Response): Promise<Rig> {
   const clock = new FakeClock();
   const emu = createGmailEmulator({ clock, latencyMs: 0 });
   emu.oauth.addClient(CLIENT.clientId, CLIENT.clientSecret);
@@ -54,7 +54,13 @@ async function rig(extraProbes: SmokeProbe[] = []): Promise<Rig> {
       APLOS_GOOGLE_CLIENT_ID: CLIENT.clientId,
       APLOS_GOOGLE_CLIENT_SECRET: CLIENT.clientSecret,
     },
-    fetch: emu.fetch,
+    // `listAnswer` replaces the answer to `drafts.list` (not the other calls), to play Gmail's empty answers.
+    fetch: (input, init) =>
+      listAnswer &&
+      /\/drafts$/.test(new URL(String(input instanceof Request ? input.url : input)).pathname) &&
+      (init?.method ?? 'GET') === 'GET'
+        ? Promise.resolve(listAnswer())
+        : emu.fetch(input, init),
     readSecret,
     now: () => clock.now(),
     sleep: ms => clock.advance(ms),
@@ -255,6 +261,49 @@ test('--phase runs only probes that declare phases: --phase inspect --confirm-mu
   assert.equal(ran, 1, 'without --phase the tier runs every probe as before');
 });
 
+const emptyOk = (body: string) => () =>
+  new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+
+for (const [name, body] of [
+  ['an empty body', ''],
+  ['{}', '{}'],
+  ['JSON null', 'null'],
+] as const) {
+  test(`create reaches the write when drafts.list answers ${name} with zero drafts, and says the answer was empty`, async () => {
+    const r = await rig([], emptyOk(body));
+    const out = await r.run('create');
+    assert.equal(out.status, 'pass');
+    assert.equal(out.counts.emptyAnswers, 1, 'ok-empty is counted, not an error');
+    assert.equal(out.counts.probeDraftsExisting, 0);
+    assert.equal(out.counts.created, 1);
+    assert.match(out.text, /Error classes: none/);
+  });
+}
+
+test('inspect on an empty drafts.list: draftFound 0, ok-empty counted, pass', async () => {
+  const r = await rig([], emptyOk(''));
+  const out = await r.run('inspect');
+  assert.equal(out.status, 'pass');
+  assert.equal(out.counts.emptyAnswers, 1);
+  assert.equal(out.counts.draftFound, 0);
+});
+
+for (const [name, body] of [
+  ['text that is not JSON', 'SECRET-TEXT not json'],
+  ['a JSON list', '[{"id":"SECRET-ID"}]'],
+] as const) {
+  test(`${name} in a 200 is a real error of its own class (bad-body), nothing is written and no body text reaches the evidence`, async () => {
+    const r = await rig([], emptyOk(body));
+    const before = r.emu.mailbox.listDrafts().length;
+    const out = await r.run('create');
+    assert.equal(out.status, 'fail');
+    assert.match(out.text, /Error classes: bad-body=1/);
+    assert.equal(out.counts.created, undefined);
+    assert.equal(r.emu.mailbox.listDrafts().length, before, 'nothing was created');
+    assert.ok(!/SECRET/.test(out.text), 'no body text in the evidence');
+  });
+}
+
 test('command line: --phase takes a short lowercase word only; the counts are on the evidence allowlist', () => {
   const base = ['--provider', 'gmail', '--tier', 'M', '--account', 'agent', '--dry-run'];
   assert.equal(parseArgs([...base, '--phase', 'create']).phase, 'create');
@@ -274,6 +323,7 @@ test('command line: --phase takes a short lowercase word only; the counts are on
     'bodyUnchanged',
     'bodyEdited',
     'probeDraftsExisting',
+    'emptyAnswers',
   ])
     assert.ok(COUNT_KEYS.includes(key), key);
 });

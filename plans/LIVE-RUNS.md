@@ -59,3 +59,8 @@ Answers the open `TODO(live)` at `google/drafts.ts`: does Gmail keep a draft's o
 With more than one probe draft in the newest 25, `inspect` fails and gives no verdict (`draftsMatching` says how many): the owner discards the older probe drafts first. `--phase <word>` runs only the probes that declare phases, so `--phase inspect --confirm-mutating` never authorises another tier M probe.
 
 The probe draft stays in Drafts: the guard refuses every draft delete in every tier (permanent), and nothing here empties Trash. The owner discards it by hand. A run with no `--phase` (or another word) is a skip.
+
+## Reading the evidence: `emptyAnswers` and `bad-body`
+
+- `emptyAnswers=1` means a list call (the draft probe's `drafts.list`, the auth probe's `messages.list`) came back 200 with nothing in the body (empty, `null` or `{}`): the account has no such items. That is a normal state of the spare account, not an error.
+- Error class `bad-body` means a 200 whose body was not readable JSON or not a JSON object. It is a real error of its own, named without any of the body text.
