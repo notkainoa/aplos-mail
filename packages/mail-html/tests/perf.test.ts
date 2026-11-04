@@ -135,6 +135,7 @@ describe('time', () => {
     'a long zero-padded character reference': `<a href="&#${'0'.repeat(MB)}106;avascript:x">x</a>`,
     '50,000 nested image-set( with strings': `<style>a{b:${'image-set('.repeat(50_000)}${'"x" '.repeat(50_000)}}</style>`,
     '100,000 junk strings in image-set': `<style>a{b:image-set(${'"x" '.repeat(100_000)})}</style>`,
+    '25,000 viewport lengths in a calc() and a style block': `<style>a{b:calc(${'100vh + 5dvw + '.repeat(9_000)}1px)}${'.x{height:100vh}'.repeat(7_000)}</style>`,
     '100,000 url( openers': `<style>a{b:${'url('.repeat(100_000)}}</style>`,
     '100,000 escaped url spellings': `<p style="${'u\\72l(x) '.repeat(3_000)}">x</p><style>${'a{b:\\75rl(https://x.example/a.png)}'.repeat(5_000)}</style>`,
     'a 5 MB style block before the text': `<style>${'.a{color:red}'.repeat((5 * MB) / 13)}</style><p>after</p>`,
