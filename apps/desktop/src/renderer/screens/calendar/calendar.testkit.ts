@@ -45,6 +45,7 @@ export function ctxFor(
     defaultCalendarId: 'work',
     canHide: true,
     calendarsReady: true,
+    windowReady: true,
   };
 }
 
@@ -74,6 +75,7 @@ export function ctxAt(
     defaultCalendarId: 'work',
     canHide: true,
     calendarsReady: true,
+    windowReady: true,
   };
 }
 

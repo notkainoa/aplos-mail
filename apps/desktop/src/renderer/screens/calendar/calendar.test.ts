@@ -16,6 +16,7 @@ import {
 import { undoToastOperation } from '../../shell/KeysProviders';
 import {
   actionForCommand,
+  CALENDAR_COMMAND_IDS,
   commandEnabled,
   defaultCalendarId,
   detailMenu,
@@ -173,6 +174,15 @@ test('review2: Delete and E act only on an explicit selection, never the rail’
   const menu = update(day, { type: 'menu', item: 'edit' }, ctx);
   assert.equal(menu.state.editor?.mode, 'edit');
   assert.equal(menu.state.editor?.eventId, 'dental');
+});
+
+test('review2: no command runs while the events window is still opening', () => {
+  const blocked = { ...ctxFor(), windowReady: false };
+  const state = S({ selectedId: 'dental', detailId: 'dental' });
+  for (const id of CALENDAR_COMMAND_IDS)
+    assert.equal(commandEnabled(id, state, blocked), false, id);
+  // With the window drawn, commands answer again.
+  assert.equal(commandEnabled('calendar.newEvent', state, ctxFor()), true);
 });
 
 test('review2: the default calendar is solo, else the saved default, then the first shown writable one', () => {

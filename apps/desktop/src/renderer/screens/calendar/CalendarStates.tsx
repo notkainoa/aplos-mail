@@ -378,6 +378,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     defaultCalendarId: defaultId,
     canHide: true,
     calendarsReady: true,
+    windowReady: true,
   };
   const stateRef = useRef(state);
   const ctxRef = useRef(ctx);

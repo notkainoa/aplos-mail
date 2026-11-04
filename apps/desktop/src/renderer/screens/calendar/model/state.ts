@@ -98,6 +98,11 @@ export interface CalendarContext {
   readonly calendars: readonly Calendar[];
   /** `Calendar/get` has answered at least once. Until then the grid is loading, never empty (review1 12). */
   readonly calendarsReady: boolean;
+  /**
+   * The events window draws the grid. Until it does (opening with no rows, or failed), commands stay off so
+   * nothing mutates a state nobody can see — N's editor would pop up unannounced later (review2 5).
+   */
+  readonly windowReady: boolean;
   /** The watched events window's `to` (`eventsRange`): the empty panel's "next" line stays honest inside it. */
   readonly loadedThrough: EpochMs;
   /** Where new events and confirmed plans go. */

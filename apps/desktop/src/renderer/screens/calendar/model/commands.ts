@@ -67,7 +67,7 @@ export function commandEnabled(
   state: CalendarState,
   ctx: CalendarContext,
 ): boolean {
-  if (state.editor) return false;
+  if (!ctx.windowReady || state.editor) return false;
   // Explicit targets only: the day rail's passive first entry is never one (review2 1).
   const selected = entryById(ctx, state.detailId ?? state.selectedId);
   switch (id) {

@@ -249,8 +249,23 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       defaultCalendarId: defaultId,
       canHide: hideAvailable(),
       calendarsReady: loaded !== undefined,
+      // Same conditions the render gates use below: while the pane draws nothing, no command may run.
+      windowReady:
+        eventsWindow.status !== 'failed' &&
+        (eventsWindow.status !== 'opening' || events.length > 0),
     }),
-    [now, weekStartsOn, entries, events, plans, calendars, range.to, defaultId, loaded],
+    [
+      now,
+      weekStartsOn,
+      entries,
+      events,
+      plans,
+      calendars,
+      range.to,
+      defaultId,
+      loaded,
+      eventsWindow.status,
+    ],
   );
 
   // Drop overlay entries once the events window has caught up with their writes.
