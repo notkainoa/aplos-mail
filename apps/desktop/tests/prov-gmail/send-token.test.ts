@@ -214,6 +214,45 @@ test('findSent: a token that only shares a prefix or differs only in the domain 
     '<aaaaaa1111bbb@mail.example.test>', // one character short
     '<aaaaaa1111bbbbb@mail.example.test>', // one character long
   ]) {
+    world.emu.mailbox.addMessage({
+      from: world.address,
+      to: ['friend@example.test'],
+      labelIds: ['SENT'],
+      headers: { 'X-Aplos-Send': near },
+    });
+  }
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'absent');
+  // And the exact token, in the same mailbox, is found (the case and the brackets are not part of identity).
+  const mine = world.emu.mailbox.addMessage({
+    from: world.address,
+    to: ['friend@example.test'],
+    labelIds: ['SENT'],
+    headers: { 'X-Aplos-Send': ours.toUpperCase() },
+  });
+  const found = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.deepEqual(found, {
+    kind: 'found',
+    remoteMessageId: mine.id,
+    remoteThreadId: mine.threadId,
+  });
+});
+
+test('send token: the 35 MiB limit holds for what goes up, token included', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  // A message that fits the limit by itself and not with the token line added.
+  const padded = Buffer.concat([
+    pinned.mime,
+    Buffer.alloc(MAX_SEND_BYTES - pinned.mime.length, 0x61),
+  ]);
+  assert.equal(padded.length, MAX_SEND_BYTES);
+  const error = await world.adapter
+    .send({ ...pinned.payload, mime: padded }, world.ctx())
+    .catch((e: unknown) => e);
+  assert.equal(classOf(error)?.reason, 'messageTooLarge');
+  assert.equal(world.sendRequests(), 0, 'nothing was sent');
+});
 
 // ---- edges: a token only from a well-formed id, a candidate only inside the window ----
 
@@ -282,42 +321,6 @@ test('findSent: a copy carrying our token but older than the window (since minus
       from: world.address,
       to: ['friend@example.test'],
       labelIds: ['SENT'],
-      headers: { 'X-Aplos-Send': near },
-    });
-  }
-  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
-  assert.equal(result.kind, 'absent');
-  // And the exact token, in the same mailbox, is found (the case and the brackets are not part of identity).
-  const mine = world.emu.mailbox.addMessage({
-    from: world.address,
-    to: ['friend@example.test'],
-    labelIds: ['SENT'],
-    headers: { 'X-Aplos-Send': ours.toUpperCase() },
-  });
-  const found = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
-  assert.deepEqual(found, {
-    kind: 'found',
-    remoteMessageId: mine.id,
-    remoteThreadId: mine.threadId,
-  });
-});
-
-test('send token: the 35 MiB limit holds for what goes up, token included', async () => {
-  const world = await rewritingWorld();
-  const pinned = submission(world);
-  // A message that fits the limit by itself and not with the token line added.
-  const padded = Buffer.concat([
-    pinned.mime,
-    Buffer.alloc(MAX_SEND_BYTES - pinned.mime.length, 0x61),
-  ]);
-  assert.equal(padded.length, MAX_SEND_BYTES);
-  const error = await world.adapter
-    .send({ ...pinned.payload, mime: padded }, world.ctx())
-    .catch((e: unknown) => e);
-  assert.equal(classOf(error)?.reason, 'messageTooLarge');
-  assert.equal(world.sendRequests(), 0, 'nothing was sent');
-});
-
       internalDate: date,
       headers: { 'X-Aplos-Send': pinned.payload.internetId },
     });
