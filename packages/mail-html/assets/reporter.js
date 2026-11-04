@@ -19,8 +19,24 @@
     const boxOf = w.Element.prototype.getBoundingClientRect;
     const findAll = w.Document.prototype.querySelectorAll;
     const listen = w.EventTarget.prototype.addEventListener;
+    const schedule = typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame : null;
+    const clock = w.performance;
     const token = ('' + w.location.pathname).split('/')[1];
     if (!/^[0-9a-f]{32}$/.test(token)) return;
+    // A letter that changes after load (a transition, an animation, an image) is looked at on every frame
+    // until it has been still for QUIET ms. A report is posted only when it differs from the last one, and
+    // at most LIMIT times a second: a height that animates for ever costs the host LIMIT messages a second.
+    const QUIET = 3000;
+    const LIMIT = 20;
+    let last = '';
+    let until = 0;
+    let frame = 0;
+    let dirty = false;
+    let sent = 0;
+    let since = 0;
+    function now() {
+      return clock && typeof clock.now === 'function' ? clock.now() : 0;
+    }
     function size(value, max) {
       return typeof value === 'number' && w.isFinite(value)
         ? M.round(M.min(M.max(value, 0), max))
@@ -61,34 +77,66 @@
         // height takes in absolutely positioned and transformed content; its top (plus how far the
         // frame is scrolled) is where that height starts. The root's scrollHeight is at least the frame's.
         const height = M.max(M.ceil(boxOf.call(root).height), below(body));
-        host.postMessage(
-          {
-            token: token,
-            h: size(height, 1000000),
-            w: size(width, 100000),
-            bg: background(root, body),
-            ready: stateOf.call(d) === 'complete',
-            marks: size(findAll.call(d, 'mark.aplos-find').length, 100000),
-          },
-          '*',
-        );
+        const message = {
+          token: token,
+          h: size(height, 1000000),
+          w: size(width, 100000),
+          bg: background(root, body),
+          ready: stateOf.call(d) === 'complete',
+          marks: size(findAll.call(d, 'mark.aplos-find').length, 100000),
+        };
+        const key = [message.h, message.w, message.bg, message.ready, message.marks].join('|');
+        dirty = dirty && key !== last;
+        if (key === last) return;
+        const time = now();
+        if (time - since >= 1000) {
+          since = time;
+          sent = 0;
+        }
+        if (sent >= LIMIT) {
+          dirty = true;
+          return;
+        }
+        sent += 1;
+        last = key;
+        until = time + QUIET;
+        host.postMessage(message, '*');
       } catch {
         return;
       }
     }
-    listen.call(d, 'DOMContentLoaded', report);
-    listen.call(d, 'toggle', report, true);
-    listen.call(w, 'load', report);
-    listen.call(w, 'resize', report);
+    function step() {
+      frame = 0;
+      report();
+      if (dirty || now() < until) watch();
+    }
+    function watch() {
+      if (frame === 0 && schedule) frame = schedule.call(w, step);
+    }
+    function recheck() {
+      report();
+      until = now() + QUIET;
+      watch();
+    }
+    listen.call(d, 'DOMContentLoaded', recheck);
+    listen.call(d, 'toggle', recheck, true);
+    listen.call(d, 'animationend', recheck, true);
+    listen.call(d, 'animationcancel', recheck, true);
+    listen.call(d, 'transitionend', recheck, true);
+    listen.call(w, 'load', recheck, true);
+    listen.call(w, 'error', recheck, true);
+    listen.call(w, 'resize', recheck);
     if (typeof w.ResizeObserver === 'function') {
-      new w.ResizeObserver(report).observe(rootOf.call(d));
+      const observer = new w.ResizeObserver(recheck);
+      observer.observe(rootOf.call(d));
+      observer.observe(bodyOf.call(d));
     }
     const fonts = fontsOf.call(d);
     if (fonts && fonts.ready && typeof fonts.ready.then === 'function') {
-      fonts.ready.then(report, report);
+      fonts.ready.then(recheck, recheck);
     }
     live = true;
-    report();
+    recheck();
   }
   try {
     start();

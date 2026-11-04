@@ -1646,5 +1646,75 @@
       "mustKeepText": ["Huge type on the body is left out"],
       "notes": "From the second independent review of the reading layer. LOW: the body style's font-*, margin-* and padding-* were prefix patterns, so font-size-adjust:1000 (16,917 px) or a huge font-size or line-height (8,566 px) passed: stable but tall. The allowlist is now explicit names, and font-size, line-height and font are bounded (200 px or the equivalent in other units, a unitless line height of 10, no functions); margin and padding are not bounded (a spacer div can be as tall)."
     }
+  },
+  {
+    "id": "167-css-if-media-follows-the-frame",
+    "title": "CSS if() with media() conditions on the frame's height, shape and orientation",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/167-css-if-media-follows-the-frame.html",
+    "expect": {
+      "mustKeepText": ["Flips with the frame's height"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). CSS if() takes media() conditions, and Chromium 137 and later evaluates them: padding-top:if(media(max-height:300px):600px;else:0) brought back the endless flip the @media rewrite stops (217 reports in 3.5 s, 564 and 164 px). if( is now dropped like attr(: the function becomes an empty string, the declaration is invalid and ignored, in style blocks, style attributes and inside calc() or var(). Container queries on min-block-size and max-block-size are renamed like the other height features."
+    }
+  },
+  {
+    "id": "168-body-style-if-media",
+    "title": "The allowlisted body margin carrying an if(media()) condition",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/168-body-style-if-media.html",
+    "expect": {
+      "mustKeepText": ["The body margin asks the frame which way up"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). The same vector through the body's style attribute, which keeps margin and padding by name (786 and 86 px, 217 reports). The function is dropped before the declaration is written."
+    }
+  },
+  {
+    "id": "169-scroll-driven-animation-timeline",
+    "title": "A height keyframe tied to the scroll or view timeline",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/169-scroll-driven-animation-timeline.html",
+    "expect": {
+      "mustKeepText": ["Scroll-driven animations follow the scroller"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). animation-timeline:scroll(root) ties an animation's progress to the scroller, which is the frame, so the keyframe's height was in effect only when the frame could scroll: the letter flipped between 86 and 1086 px (217 reports in 3.5 s). The timeline properties (animation-timeline, animation-range*, scroll-timeline*, view-timeline*, timeline-scope) become custom properties, and scroll() and view() are dropped as functions. Ordinary animations and transitions are untouched."
+    }
+  },
+  {
+    "id": "170-body-display-contents",
+    "title": "display:contents on the body, and a box positioned 1,200 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/170-body-display-contents.html",
+    "expect": {
+      "mustKeepText": ["A body with no box is no containing block"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). With display:contents the body had no box, position:relative made no containing block, and the report was 54 against a true 1,224. The body rule now sets display:block with !important in the reading layer."
+    }
+  },
+  {
+    "id": "171-absolute-box-animated-after-load",
+    "title": "An absolutely positioned box that moves 1,200 px down a second after load",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/171-absolute-box-animated-after-load.html",
+    "expect": {
+      "mustKeepText": ["Nothing changes size, so no observer fires"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). The ResizeObserver watched only the root, whose box does not change when an absolute box moves, and the report stayed at 86 against a true 1,224. The reporter now looks at every frame for 3 s after any change or event (animationend, transitionend, load, error, toggle, resize), posts only a changed report and at most 20 a second, and observes the body as well. A move more than 3 s after the last change, with no event, is not seen (recorded in DECISIONS)."
+    }
+  },
+  {
+    "id": "172-absolute-box-jumps-with-no-end-event",
+    "title": "An absolutely positioned box that jumps 1,200 px down a second after load and animates for 100 s",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/172-absolute-box-jumps-with-no-end-event.html",
+    "expect": {
+      "mustKeepText": ["The jump has no end event"],
+      "notes": "From the independent review of #255 (the clipped-content measurement). Like 171 but the animation does not end for 100 s, so no animationend event can report it: only the reporter's look at every frame after a change sees the jump."
+    }
+  },
+  {
+    "id": "173-absolute-box-animates-after-the-quiet-period",
+    "title": "An absolutely positioned box that starts moving 4.5 s after load",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/173-absolute-box-animates-after-the-quiet-period.html",
+    "expect": {
+      "mustKeepText": ["Nothing moves until the frame loop has gone quiet"],
+      "notes": "From the independent review of #255 (the clipped-content measurement). The frame loop stops after 3 s without a change; a box that starts moving later is reported when its animation ends (the animationend event, captured on the document). A late move with no end event, a long or infinite animation that starts after the quiet period, is not seen and is recorded in DECISIONS."
+    }
   }
 ]
