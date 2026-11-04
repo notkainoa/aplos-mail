@@ -222,7 +222,10 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Pro
 }
 
 /**
- * `serve` with at most `max` calls open at once, and at most `perWindow` for one window. One more is refused (a
+ * `serve` with at most `max` calls open at once, and at most `perWindow` for one window. These caps bound how many
+ * requests MAIN keeps waiting (and the memory they hold); they do not bound the engine's work: a call that was aborted or
+ * timed out has freed its slot here while the utility process may still be fetching an image or part for it, until its
+ * own 10 s limits end the work. The engine's per-window token cap and `Mail/serve`'s deadlines bound that side. One more is refused (a
  * rejection, so the handler answers the uniform 404) without calling `serve`. A slot is freed exactly once, on the
  * first of: the answer, a rejection (the link's timeout included), a throw, or the request's own abort (a page that
  * navigated away no longer holds a slot while the engine finishes).
