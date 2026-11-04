@@ -49,6 +49,8 @@ export interface ProbeContext {
    * (extendedProperties.private.aplosLiveRun); the guard lets them change or delete only those.
    */
   runId: string;
+  /** The `--phase` the operator named for a probe that runs in steps across runs (tier M draft probe); else undefined. */
+  phase?: string;
 }
 
 /** Plan 40's SmokeProbe interface; tier R probes of plan 20 satisfy it directly. */
@@ -56,6 +58,8 @@ export interface SmokeProbe {
   id: string;
   provider: LiveProvider;
   tier: Tier;
+  /** True for a probe that runs in steps named by `--phase`. A run given `--phase` runs only these probes. */
+  phased?: boolean;
   run(ctx: ProbeContext): Promise<ProbeResult>;
 }
 

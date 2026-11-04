@@ -17,7 +17,7 @@ import {
   hostMethods,
   rendererMethods,
 } from '@aplos/contract/allowlists';
-import { messageBytes } from '@aplos/contract/measure';
+import { MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 
@@ -92,7 +92,7 @@ const refusal = (id: number, type: string, message: string): PortMessage => ({
   error: { type, message },
 });
 
-export { MAX_MEASURED_NODES, messageBytes } from '@aplos/contract/measure';
+export { MAX_MEASURED_NODES, MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
 
 /** The largest arguments a window's call to `method` may carry: an upload route's bytes, or `MAX_ARGS_BYTES`. */
 const argsLimit = (method: string) =>
@@ -176,7 +176,7 @@ export function serveWindowPort(
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
       return refuse(call, 'unsupported', 'Unsupported application method.');
-    const size = messageBytes(call.args ?? {}, argsLimit(call.method));
+    const size = messageBytes(call.args ?? {}, argsLimit(call.method), MAX_WINDOW_NODES);
     if (size > argsLimit(call.method))
       return refuse(call, 'tooLarge', 'This request is too large to send.');
     if (inFlight >= MAX_IN_FLIGHT || inFlightBytes + size > MAX_IN_FLIGHT_BYTES)
@@ -453,6 +453,14 @@ export function createEngineLink(
 
 // ---- the restart policy -------------------------------------------------------------------------------------------
 
+/** `close` asks the engine to quit and waits this long, then kills it (host/lifecycle.ts's `QUIT_DRAIN_MS` is longer). */
+export const ENGINE_QUIT_MS = 3000;
+/** After the kill, `close` waits this long for the exit event before it reports the engine as stuck. */
+export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
+
+/** How `close` ended: the engine exited (asked or after the kill), or it is still running after the kill. */
+export type CloseResult = 'exited' | 'stuck';
+
 export interface SupervisorOptions {
   spawn(): EngineLink;
   /**
@@ -467,8 +475,10 @@ export interface SupervisorOptions {
   timers: Timers;
   /** Default 500 ms, so a crash loop cannot spin. */
   restartDelayMs?: number;
-  /** How long `close` waits for the engine to exit before killing it. Default 3 s (host/lifecycle's `QUIT_DRAIN_MS`). */
+  /** How long `close` waits for the engine to exit before killing it. Default `ENGINE_QUIT_MS`. */
   quitMs?: number;
+  /** How long `close` waits for the exit AFTER killing it. Default `ENGINE_EXIT_AFTER_KILL_MS`. */
+  exitAfterKillMs?: number;
   /**
    * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
    * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
@@ -517,21 +527,29 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   return {
     start: () => up(false),
     current: () => current,
-    /** Stops restarting, asks the engine to quit and resolves when it exited (killed after `quitMs`). */
-    close(): Promise<void> {
+    /**
+     * Stops restarting, asks the engine to quit, kills it after `quitMs`, and says how it ended: `'exited'` when the
+     * process is gone (a quit that was heard, or one that died after the kill), `'stuck'` when it is still running
+     * `exitAfterKillMs` after the kill. Nothing running (never started, or already gone) counts as exited.
+     */
+    close(): Promise<CloseResult> {
       closing = true;
       if (restart !== undefined) options.timers.clear(restart);
       const link = current;
-      if (!link || link.exited) return Promise.resolve();
-      return new Promise<void>(resolve => {
-        const timer = options.timers.set(() => {
-          link.kill();
-          resolve();
-        }, options.quitMs ?? 3000);
+      if (!link || link.exited) return Promise.resolve('exited');
+      return new Promise<CloseResult>(resolve => {
+        let timer: unknown;
         link.onExit(() => {
           options.timers.clear(timer);
-          resolve();
+          resolve('exited');
         });
+        timer = options.timers.set(() => {
+          link.kill();
+          timer = options.timers.set(
+            () => resolve('stuck'),
+            options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,
+          );
+        }, options.quitMs ?? ENGINE_QUIT_MS);
         link.quit();
       });
     },
@@ -583,12 +601,30 @@ export interface BrokerDeps {
   channel(): { engineEnd: unknown; windowEnd: unknown };
   /** The running engine, if any. */
   link(): EngineLink | undefined;
+  /** The clock for the connect limit (default `Date.now`). */
+  now?(): number;
 }
+
+/** A window may ask for a port this often: a reload asks once, so a loop of asks is not a page of ours. */
+export const CONNECT_LIMIT = { count: 5, windowMs: 10_000 } as const;
 
 /** One channel per window, re-issued after an engine restart, revoked when the window closes or navigates. */
 export function createPortBroker(deps: BrokerDeps) {
   const holders = new Map<number, PortWindow>();
+  const asked = new Map<number, number[]>();
   let generation = 0;
+
+  /** Records an ask; false when the window has asked `CONNECT_LIMIT.count` times in the last `windowMs`. */
+  const allowAsk = (windowId: number) => {
+    const now = (deps.now ?? Date.now)();
+    const recent = (asked.get(windowId) ?? []).filter(at => now - at < CONNECT_LIMIT.windowMs);
+    if (recent.length >= CONNECT_LIMIT.count) {
+      asked.set(windowId, recent);
+      return false;
+    }
+    asked.set(windowId, [...recent, now]);
+    return true;
+  };
 
   const revoke = (windowId: number) => {
     if (!holders.delete(windowId)) return;
@@ -607,6 +643,7 @@ export function createPortBroker(deps: BrokerDeps) {
       const link = deps.link();
       if (!link || link.exited) throw unavailable();
       if (win.isDestroyed() || !win.trusted()) throw new Error('Untrusted application window.');
+      if (!allowAsk(win.id)) throw unavailable();
       revoke(win.id);
       issue(win, link);
     },
@@ -786,7 +823,7 @@ export function createPortClient(
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
       // The engine refuses these too, but only after the port has copied them into its process: refuse them here.
-      if (messageBytes(args ?? {}, argsLimit(method)) > argsLimit(method))
+      if (messageBytes(args ?? {}, argsLimit(method), MAX_WINDOW_NODES) > argsLimit(method))
         return Promise.reject({ type: 'tooLarge', message: 'This request is too large to send.' });
       // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
       const buffers = Array.isArray(transfer)
