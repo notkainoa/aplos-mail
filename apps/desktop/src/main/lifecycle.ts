@@ -304,6 +304,8 @@ else {
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })
     .catch(error => {
+      // A quit that landed during the start-up is finishing on its own (finishQuit): no dialog, no second quit.
+      if (closing) return;
       dialog.showErrorBox(
         'Aplos Mail could not start',
         error instanceof Error ? error.message : 'An unknown startup error occurred.',
