@@ -261,6 +261,18 @@ describe('elements and attributes', () => {
     }
   });
 
+  it('puts the reading layer first, before any mail CSS, and the mail cannot name it', () => {
+    const result = html('<style>@layer aplos-reading{html{height:1px!important}}</style><p>x</p>');
+    const reading = result.document.indexOf('@layer aplos-reading{html:root{');
+    const mail = result.document.indexOf('<style>', result.document.indexOf('<body'));
+    assert.ok(reading > 0 && reading < mail, 'declared first');
+    assert.equal(result.document.slice(mail).includes('@layer aplos-reading'), false);
+    assert.match(result.document.slice(mail), /@layer m-aplos-reading\{/);
+    // The same rules outrank the mail's inline body style: kept, not dropped.
+    const inline = html('<body style="position:fixed!important;margin:0"><p>x</p></body>');
+    assert.match(inline.document, /<body style="position:fixed!important;margin:0">/);
+  });
+
   it('keeps body colours and drops body handlers', () => {
     const result = html(
       '<html lang="fr" onload=x><body bgcolor="#f0f0f0" onload="alert(1)" style="margin:0" background="https://x.example/b.png"><p>x</p></body></html>',

@@ -14,7 +14,7 @@ import { urlCleanup } from './url';
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
 // position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
-// appears in the output. A viewport or container-query unit (`100vh`, `50dvw`, `100cqh`, inside `calc()` too) becomes a length in px
+// appears in the output. Layer names move to `m-` (ids.ts). A viewport or container-query unit (`100vh`, `50dvw`, `100cqh`, inside `calc()` too) becomes a length in px
 // against a fixed reading viewport (`viewportLength`): the frame is sized to the letter, so a letter
 // sized by its own viewport would grow the frame, which grows the letter, without end.
 
@@ -45,6 +45,9 @@ const VIEWPORT_UNIT = /^(?:[sld]?v|cq)(?:w|h|i|b|min|max)$/;
 /** The viewport a letter's viewport units are measured against, in px: roughly the reading pane. */
 const READING_VIEWPORT = { width: 640, height: 600 };
 const MAX_LENGTH_PX = 100_000;
+
+/** What ends an `@layer` prelude. */
+const STOPS_LAYER_NAMES = new Set([TokenType.OpenCurly, TokenType.Semicolon, TokenType.CloseCurly]);
 
 const enum Structure {
   None = 0,
@@ -161,6 +164,8 @@ class CssWriter {
   private readonly structure: Uint8Array;
   private readonly classValues: Map<number, string>;
   private imageDepth = 0;
+  /** Between `@layer` and the `{` or `;` that ends its prelude: identifiers there are layer names. */
+  private layerNames = false;
   private at = 0;
 
   constructor(
@@ -197,7 +202,7 @@ class CssWriter {
       case TokenType.Function:
         return this.func(token[4].value, token[1]);
       case TokenType.Dimension:
-        return this.emit(viewportLength(token[4].value, token[4].unit) ?? token[1]);
+        return this.emit(this.dimension(token));
       default:
         return this.plain(token);
     }
@@ -211,7 +216,16 @@ class CssWriter {
     this.at += consumed;
   }
 
+  /** A viewport length as px, keeping the `+` the number was written with (`calc(1px+100vh)`). */
+  private dimension(token: CSSToken): string {
+    if (token[0] !== TokenType.Dimension) return token[1];
+    const length = viewportLength(token[4].value, token[4].unit);
+    if (length === undefined) return token[1];
+    return token[1].startsWith('+') ? `+${length}` : length;
+  }
+
   private plain(token: CSSToken): void {
+    if (STOPS_LAYER_NAMES.has(token[0])) this.layerNames = false;
     const kind = OPENERS[token[0]];
     if (kind) this.push(kind, false);
     if (isCloser(token[0])) this.close(token[0]);
@@ -257,6 +271,7 @@ class CssWriter {
    * comment and a name are still a class. Also the value of a `[class=…]` selector (class-selectors.ts).
    */
   private ident(token: CSSToken): string {
+    if (this.layerNames && token[0] === TokenType.Ident) return cssIdent(scopeId(token[4].value));
     const attribute = this.classValues.get(this.at);
     if (attribute !== undefined) return cssIdent(attribute);
     if (token[0] !== TokenType.Ident || !isOwnClass(token[4].value) || !this.afterDot()) {
@@ -296,7 +311,11 @@ class CssWriter {
 
   /** Drops an at-rule outside the layout allowlist with its prelude and block. */
   private atRule(name: string, raw: string): void {
-    if (KEPT_AT_RULES.has(asciiLower(name))) return this.emit(raw);
+    const lower = asciiLower(name);
+    // The names in an `@layer` prelude move into the mail's `m-` namespace, so no mail layer can be the
+    // reading layer (reading-css.ts), whose !important rules would then be open to the mail's.
+    this.layerNames = lower === 'layer';
+    if (KEPT_AT_RULES.has(lower)) return this.emit(raw);
     const end = this.ruleEnd(this.at + 1);
     this.emit(SEPARATOR, end - this.at);
   }

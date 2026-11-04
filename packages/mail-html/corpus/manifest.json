@@ -1386,5 +1386,75 @@
       ],
       "notes": "From the independent review of the frame reporter fixes. cqw, cqh, cqi, cqb, cqmin and cqmax resolve against the small viewport when no ancestor is a size container, which is how the sanitizer's own output is laid out, so 100cqh grew the frame exactly like 100vh (132 to 4,900 px, then the 300-report cap in the browser run). They are rewritten to px like the viewport units (css.ts viewportLength), also with a container declared: the mail cannot be relied on to declare one, and a declared size container could still be sized by the frame. container-type and container are left alone. The oracle fails any sanitized CSS that still holds a cq unit; reporter.e2e.ts checks that the frame settles."
     }
+  },
+  {
+    "id": "141-root-positioned-with-negative-bottom",
+    "title": "The html element positioned against the frame and pushed past it",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/141-root-positioned-with-negative-bottom.html",
+    "expect": {
+      "mustKeepText": ["The html element is positioned"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 1: html{position:absolute;top:0;bottom:-50px} sizes the root from the frame, and the frame from the root, 50 px per report. The reading layer sets position:static and inset:auto !important."
+    }
+  },
+  {
+    "id": "142-body-positioned-with-negative-bottom",
+    "title": "The body element positioned or fixed against the frame and pushed past it",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/142-body-positioned-with-negative-bottom.html",
+    "expect": {
+      "mustKeepText": ["The body element is positioned"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 2: the same on body, in physical and logical insets, absolute and fixed."
+    }
+  },
+  {
+    "id": "143-root-vertical-writing-mode",
+    "title": "A root and body in a vertical writing mode with a negative margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/143-root-vertical-writing-mode.html",
+    "expect": {
+      "mustKeepText": ["A root turned sideways"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 3: writing-mode:vertical-lr on html makes its block size the frame's width and its length the frame's height. The reading layer sets writing-mode:horizontal-tb !important on both."
+    }
+  },
+  {
+    "id": "144-layered-important-height-on-the-root",
+    "title": "!important rules in the mail's own layers, named, ordered and anonymous",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/144-layered-important-height-on-the-root.html",
+    "expect": {
+      "mustKeepText": ["A layered !important rule beats an unlayered one"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 4: a layered !important declaration beats an unlayered !important one, so the unlayered reading rules lost to @layer x{html{height:calc(100% + 50px)!important}}. The reading rules now live in the first declared layer, whose !important wins over every later layer, unlayered rules and a style attribute."
+    }
+  },
+  {
+    "id": "145-inline-body-style-fixed-important",
+    "title": "An inline body style with position:fixed !important, and an html style",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/145-inline-body-style-fixed-important.html",
+    "expect": {
+      "mustKeepText": ["An inline body style survives"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 5: the body's style attribute survives on the frame's body (its colours and margins are the common use), and an inline !important declaration beat the unlayered reading rule. The body style is kept, not dropped or moved to a wrapper, because the earliest layer's !important also beats a style attribute; the html style was already dropped. Visual result of the usual body style is unchanged."
+    }
+  },
+  {
+    "id": "146-layer-named-like-the-reading-layer",
+    "title": "Mail layers named aplos-reading (plain, escaped, dotted, in a statement, after a comment, inside @media)",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/146-layer-named-like-the-reading-layer.html",
+    "expect": {
+      "mustKeepText": ["A mail layer called aplos-reading"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). A mail layer with the reading layer's name would merge into it and add !important rules there, later in the layer so winning. The sanitizer moves every identifier in an @layer prelude to m-<name> (css.ts), so no mail layer can have that name; the oracle fails any sanitized mail @layer name outside m-."
+    }
+  },
+  {
+    "id": "147-signed-viewport-units-in-calc",
+    "title": "Viewport and container units with a leading + or - sign inside calc()",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/147-signed-viewport-units-in-calc.html",
+    "expect": {
+      "mustKeepText": ["Signed viewport units keep their signs"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). calc(1px+100vh) tokenizes as 1px and +100vh; the rewritten unit lost its + and became 1px600px. The + is kept, - is part of the number, and * and / are separate tokens."
+    }
   }
 ]

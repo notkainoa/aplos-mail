@@ -1,13 +1,24 @@
 // The frame's base reading style. It comes first, so the mail's own CSS still wins for layout;
 // only Aplos's own marks, quotes and image placeholders use classes the mail cannot rely on.
 
+/** The cascade layer of the root and body rules. The sanitizer moves every mail layer name to `m-<name>`. */
+export const READING_LAYER = 'aplos-reading';
+
+const SIZING =
+  'height:auto!important;min-height:0!important;max-height:none!important;position:static!important;inset:auto!important;writing-mode:horizontal-tb!important';
+const ROOT_RULE = `html:root{display:flow-root!important;${SIZING};transform:none!important;scale:none!important;rotate:none!important;translate:none!important;zoom:1!important}`;
+const BODY_RULE = `html:root>body{${SIZING};zoom:1!important}`;
+
 export const READING_CSS = [
   ':root{color-scheme:light}',
-  // The frame is sized to the letter, so the letter must size itself: the root and body are auto height here
-  // (the reporter measures the root's box), whatever the mail's own rules say, and the root contains the body's
-  // margins and is never transformed or zoomed (a scaled root would inflate its reported box). The doubled selector outranks a mail rule that shares the element's name.
-  'html:root{display:flow-root!important;height:auto!important;min-height:0!important;max-height:none!important;transform:none!important;scale:none!important;rotate:none!important;translate:none!important;zoom:1!important}',
-  'html:root>body{height:auto!important;min-height:0!important;max-height:none!important}',
+  // The frame is sized to the letter, so the letter must size itself: the root and body keep an auto height,
+  // static position, horizontal writing mode and no transform or zoom, whatever the mail's CSS says (a root or
+  // body positioned or turned sideways is sized by the frame, and the frame by it, 50 px at a time). These
+  // rules sit in the layer `aplos-reading`, declared before any mail CSS: for !important declarations the
+  // earliest layer wins over every later layer, over unlayered rules and over a style attribute, whatever their
+  // specificity. The mail cannot join the layer: its @layer names move to `m-` (css.ts). The root also
+  // contains the body's margins (flow-root), so they are counted.
+  `@layer ${READING_LAYER}{${ROOT_RULE}${BODY_RULE}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',
   'pre{white-space:pre-wrap}',

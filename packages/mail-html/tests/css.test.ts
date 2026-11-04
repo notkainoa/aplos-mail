@@ -360,6 +360,12 @@ describe('viewport units', () => {
       ['a{--h:100vh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
       ['@media (min-height:100vh){a{b:c}}', '@media (min-height:600px){a{b:c}}'],
       ['a{height:100vh!important}', 'a{height:600px!important}'],
+      ['a{height:calc(1px+100vh)}', 'a{height:calc(1px+600px)}'],
+      ['a{height:calc(1px+100cqh)}', 'a{height:calc(1px+600px)}'],
+      ['a{top:+5vmin;left:-5vmax;width:+.5vw}', 'a{top:+30px;left:-32px;width:+3.2px}'],
+      ['a{height:calc(+10vh)}', 'a{height:calc(+60px)}'],
+      ['a{height:calc(100vh/2 - 5vw*2)}', 'a{height:calc(600px/2 - 32px*2)}'],
+      ['a{height:calc(-1*10vh)}', 'a{height:calc(-1*60px)}'],
       ['a{height:100cqh;width:100cqw}', 'a{height:600px;width:640px}'],
       ['a{height:10cqb;width:10cqi}', 'a{height:60px;width:64px}'],
       ['a{height:10cqmin;width:10cqmax}', 'a{height:60px;width:64px}'],
@@ -406,5 +412,36 @@ describe('viewport units', () => {
     assert.equal(viewportLength(100, 'px'), undefined);
     assert.equal(viewportLength(100, 'vhh'), undefined);
     assert.equal(viewportLength(100, 'xvh'), undefined);
+  });
+});
+
+describe('@layer names', () => {
+  it('moves every layer name into the m- namespace, so no mail layer is the reading layer', () => {
+    const cases: [string, string][] = [
+      ['@layer aplos-reading{a{b:c}}', '@layer m-aplos-reading{a{b:c}}'],
+      ['@layer \\61 plos-reading{a{b:c}}', '@layer m-aplos-reading{a{b:c}}'],
+      ['@layer APLOS-reading{a{b:c}}', '@layer m-APLOS-reading{a{b:c}}'],
+      ['@LAYER aplos-reading.x.y{a{b:c}}', '@LAYER m-aplos-reading.m-x.m-y{a{b:c}}'],
+      ['@layer a,aplos-reading ,b;', '@layer m-a,m-aplos-reading ,m-b;'],
+      ['@layer/**/aplos-reading/**/{a{b:c}}', '@layer/**/m-aplos-reading/**/{a{b:c}}'],
+      ['@layer{a{b:c}}', '@layer{a{b:c}}'],
+      ['@media x{@layer aplos-reading{a{b:c}}}', '@media x{@layer m-aplos-reading{a{b:c}}}'],
+      ['@layer m-x{a{b:c}}', '@layer m-x{a{b:c}}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+
+  it('leaves identifiers after the prelude alone', () => {
+    assert.equal(clean('@layer x{aplos-reading{b:c}}').css, '@layer m-x{aplos-reading{b:c}}');
+    assert.equal(clean('@layer x;a{b:aplos-reading}').css, '@layer m-x;a{b:aplos-reading}');
+  });
+
+  it('is idempotent on its own output', () => {
+    const once = sanitizeCss(
+      '@layer a.b,c;@layer a{x{y:z}}',
+      new ImageBook({ cids: [], policy: 'block' }),
+    );
+    const twice = sanitizeCss(once, new ImageBook({ cids: [], policy: 'block', ownOutput: true }));
+    assert.equal(twice, once);
   });
 });

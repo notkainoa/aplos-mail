@@ -371,6 +371,13 @@ test.describe('viewport units cannot grow the frame', () => {
     await opened.page.close();
   });
 
+  test('a zoomed body cannot inflate the reported height either', async () => {
+    const html = '<style>body{zoom:1000}</style><p>short</p>';
+    const opened = await bed.open({ document: frameDocument(html), height: 2000, follow: false });
+    expect((await last(opened)).h).toBeLessThan(120);
+    await opened.page.close();
+  });
+
   test('control: an unsanitized 100vh block grows without end', async () => {
     const opened = await bed.open({
       document: rawDocument('<div style="height:100vh;padding:16px">x</div>', 'real'),
@@ -379,6 +386,62 @@ test.describe('viewport units cannot grow the frame', () => {
     await opened.page.waitForTimeout(5_000);
     expect(await opened.capped()).toBe(true);
     expect((await opened.reports()).length).toBeGreaterThanOrEqual(FOLLOW_CAP);
+    await opened.page.close();
+  });
+});
+
+test.describe('the reading rules cannot be overridden by the mail', () => {
+  /** The root and body reading rules before the layer: unlayered, without position, inset or writing mode. */
+  const BEFORE =
+    'html:root{display:flow-root!important;height:auto!important;min-height:0!important;max-height:none!important;transform:none!important;scale:none!important;rotate:none!important;translate:none!important;zoom:1!important}' +
+    'html:root>body{height:auto!important;min-height:0!important;max-height:none!important}';
+
+  function withoutLayer(document: string): string {
+    const layer = /@layer aplos-reading\{.*?\}\}/;
+    expect(layer.test(document), 'the reading layer is in the document').toBe(true);
+    return document.replace(layer, () => BEFORE);
+  }
+
+  const vectors = [
+    ['141', 'html positioned with a negative bottom'],
+    ['142', 'body positioned or fixed with a negative bottom'],
+    ['143', 'a root and body in a vertical writing mode'],
+    ['144', 'layered !important rules (named, ordered, anonymous)'],
+    ['145', 'an inline body style with position:fixed !important'],
+    ['146', 'mail layers named like the reading layer'],
+  ] as const;
+
+  for (const [id, title] of vectors) {
+    test(`${id}: ${title}: the frame settles`, async () => {
+      const opened = await bed.open({ document: frameDocument(entry(id).html ?? '') });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      const final = reports[reports.length - 1].h;
+      expect(final).toBeGreaterThan(0);
+      expect(final).toBeLessThan(400);
+      expect(await opened.frameHeight()).toBe(final);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: with the reading rules as they were, the frame grows without end`, async () => {
+      const opened = await bed.open({
+        document: withoutLayer(frameDocument(entry(id).html ?? '')),
+      });
+      await opened.page.waitForTimeout(5_000);
+      // Growing 50 px a report, a frame of a few thousand px in 5 s is not a letter of 100 px.
+      const grown = (await opened.capped()) || (await opened.frameHeight()) > 2_000;
+      expect(grown).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  test('the usual inline body style (colour, margin, padding) still shows', async () => {
+    const html = '<body style="margin:0;padding:0;background-color:#336699"><p>x</p></body>';
+    const opened = await bed.open({ document: frameDocument(html) });
+    const report = await last(opened);
+    expect(report.bg).toBe('rgb(51, 102, 153)');
+    expect(report.h).toBeLessThan(80);
     await opened.page.close();
   });
 });

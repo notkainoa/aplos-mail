@@ -206,7 +206,25 @@ function checkCss(
     depth = trackDepth(token, depth, imageSets);
     checkCssToken(token, tokens, index, imageSets.length > 0, options, problems);
     if (fromMail) problems.push(...ownClassSelectors(token, tokens, index));
+    if (fromMail) problems.push(...unscopedLayerNames(token, tokens, index));
   }
+}
+
+/**
+ * A mail's `@layer` names must all be in the `m-` namespace: the reading layer's !important rules
+ * keep the frame's height only while the mail cannot add rules to that layer. The prelude runs to
+ * the next `{` or `;`, and any identifier in it is a layer name.
+ */
+function unscopedLayerNames(token: CSSToken, tokens: CSSToken[], index: number): string[] {
+  if (token[0] !== TokenType.AtKeyword || token[4].value.toLowerCase() !== 'layer') return [];
+  const problems: string[] = [];
+  for (let at = index + 1; at < tokens.length; at++) {
+    const next = tokens[at];
+    if (next[0] === TokenType.OpenCurly || next[0] === TokenType.Semicolon) break;
+    if (next[0] === TokenType.Ident && !next[4].value.startsWith('m-'))
+      problems.push(`layer name ${next[4].value} outside the m- namespace`);
+  }
+  return problems;
 }
 
 function trackDepth(token: CSSToken, depth: number, imageSets: number[]): number {

@@ -1,0 +1,9 @@
+<style>
+  @layer aplos-reading { html:root { position: absolute !important; top: 0; bottom: -50px; height: calc(100% + 50px) !important } }
+  @layer \61 plos-reading { html:root>body { position: fixed !important; inset: 0 0 -50px !important } }
+  @layer APLOS-reading.deeper { html { writing-mode: vertical-lr !important; margin-bottom: -50px } }
+  @layer first, aplos-reading;
+  @layer aplos-reading /* a comment */ { html:root { min-height: calc(100% + 50px) !important } }
+  @media screen { @layer aplos-reading { html:root { height: calc(100% + 50px) !important } } }
+</style>
+<p>A mail layer called aplos-reading would join the reading layer and add rules to it.</p>
