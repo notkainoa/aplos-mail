@@ -51,7 +51,7 @@ export async function messageBody(
   // an HTML-only letter must compute them against this derivation, or `fits` drops them (degrades,
   // never wrong-quote).
   const text =
-    typeof body.text === 'string' && body.text
+    typeof body.text === 'string' && body.text.trim()
       ? body.text
       : typeof body.html === 'string'
         ? htmlToText(body.html)

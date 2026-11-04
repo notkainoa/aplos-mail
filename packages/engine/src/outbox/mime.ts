@@ -524,7 +524,11 @@ function tagText(inner: string, atLineStart: boolean): string {
   return paragraph || LINES.has(name) ? lineBreak : '';
 }
 
-/** Where the text continues after a `<script>` or `<style>` element that starts at `from`: past its end tag. */
+/** Elements whose content is never part of a text/plain part: code and document metadata, forms, embeds. */
+const SKIP_CONTENT =
+  /^(script|style|head|title|noscript|textarea|iframe|object|template|select|svg)\b/;
+
+/** Where the text continues after a skipped element that starts at `from`: past its end tag. */
 function afterElement(lower: string, name: string, from: number): number {
   const close = lower.indexOf(`</${name}`, from);
   if (close < 0) return lower.length;
@@ -564,9 +568,11 @@ export function htmlToText(html: string): string {
       at = html.length;
       break;
     }
-    const name = /^(script|style)\b/.exec(lower.slice(open + 1, open + 8))?.[1];
-    at = name ? afterElement(lower, name, close) : close + 1;
-    if (!name) add(tagText(html.slice(open + 1, close), atLineStart));
+    const name = SKIP_CONTENT.exec(lower.slice(open + 1, open + 8))?.[1];
+    // A self-closing skipped tag (`<script src="x"/>`) swallows only itself — a real one swallows
+    // to its close tag (or the end when unclosed, matching a browser's raw-text read).
+    at = name && html[close - 1] !== '/' ? afterElement(lower, name, close) : close + 1;
+    if (!name || html[close - 1] === '/') add(tagText(html.slice(open + 1, close), atLineStart));
   }
   if (at < html.length) add(html.slice(at));
   return trimLineEnds(decodeEntities(normalizeBreaks(out)))
