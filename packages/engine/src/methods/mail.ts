@@ -4,6 +4,7 @@ import { mailFrame, releaseFrame, toggleQuotes } from '../mail/frame';
 import { prefetchBodies } from '../mail/prefetch';
 import { getMessages } from '../mail/rows';
 import { serveMail } from '../mail/serve';
+import { messageOriginal } from '../mail/original';
 import { notImplemented, type AreaHandlers } from './types';
 
 /**
@@ -20,5 +21,5 @@ export const handlers: AreaHandlers<'mail'> = {
   'Mail/toggleQuotes': toggleQuotes,
   'Mail/serve': serveMail,
   'Attachment/get': notImplemented('Attachment/get'),
-  'Message/original': notImplemented('Message/original'),
+  'Message/original': messageOriginal,
 };

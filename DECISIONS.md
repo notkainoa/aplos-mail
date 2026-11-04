@@ -1559,3 +1559,7 @@ html-5 part 1, items (a) to (c) of the Integrator's 2026-11-04 03:59 DECIDED. De
 - **Ids must be well-formed Unicode.** `write` rejects `accountId`/`remoteId`/`remotePart` failing `isWellFormed()` as `path` — a lone surrogate is not a real id and hashing it names a stable-but-wrong file.
 
 - **`isWellFormed` needed `ES2024.String` in both engine and desktop `lib` arrays** (types-only; Node 24 and Electron's V8 already implement it). Without it `npm run typecheck` — the `npm run check` gate — was red in both workspaces.
+
+## 2026-11-04 — eng-html: Blob package 7 (`Message/original`)
+
+- **`Message/original` fetches the raw RFC822 live** through the optional `ProviderPort.original` (Gmail `format=raw`; absent → `unavailable`), capped at 25 MB under a 120 s total / 30 s idle deadline on the caller's signal, then stores it through `services.blobs.put` as an `original`-kind blob — a real `BlobFiles` file (`message/rfc822`, name = cleaned subject + `.eml`), quota-counted like any put, dropped at start when unheld. Every call mints its own blob under the caller's principal; no dedup (there is no shared cache row for originals). Verified: `original.test.ts` 5/5.
