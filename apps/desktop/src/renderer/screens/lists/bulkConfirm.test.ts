@@ -12,7 +12,11 @@ import { harnessClock } from '../../data/clock';
 import { api, setClock } from '../../data';
 import { dismissToast, pushToast } from '../../shell';
 import { getToasts, resetToasts } from '../../shell/store-toast';
+import { createAppRegistry, DEFAULT_KEY_PREFS, type CommandContext } from '../../commands';
+import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { confirmedIds } from './bulkActions';
+import { commandsForList } from './listCommands';
+import { moreButtonIn } from './useBulkBar';
 import { createListActions, type Confirmation, type ListDeps } from './listActions';
 import { ALL_CONFIG, TRASH_CONFIG, viewSpecOf, type ListConfig } from './listKinds';
 import { asListRow } from './listRows';
@@ -61,6 +65,7 @@ function listWorld(world: World, config: ListConfig) {
     confirmation: null as Confirmation | null,
     acted: [] as Parameters<typeof api.thread.act>[0][],
     held: 0,
+    opened: 0,
     beyond: 0,
   };
   const idsNow = () => window.snapshot().ids;
@@ -100,6 +105,7 @@ function listWorld(world: World, config: ListConfig) {
     dismiss: dismissToast,
     hold: { extend: () => void state.held++ },
     open: () => undefined,
+    openMore: () => void state.opened++,
     confirmation: () => state.confirmation,
     setConfirmation: next => {
       state.confirmation = next;
@@ -195,4 +201,49 @@ test('a row acted on by itself leaves the pick, so a held row is not picked agai
   } finally {
     world.connection.close();
   }
+});
+
+test('. opens the bulk More menu while rows are picked and does nothing otherwise', async () => {
+  const world = await boot();
+  try {
+    const list = listWorld(world, ALL_CONFIG);
+    const registry = createAppRegistry();
+    const detach = shellRegistryFor(registry).register(commandsForList(list.actions));
+    const context = (): CommandContext => ({
+      stack: ['global', 'list'],
+      target: null,
+      selection: [],
+      conditions: list.state.picks.picked.size > 0 ? { selection: true } : {},
+      prefs: DEFAULT_KEY_PREFS,
+      focus: 'none',
+    });
+    const press = (key: string) => {
+      const keyEvent = { key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+      const resolution = registry.resolve(keyEvent, context());
+      assert.equal(resolution?.commandId, key === '.' ? 'list.more' : 'list.select');
+      return registry.run(resolution!.commandId, context()).status;
+    };
+    assert.equal(press('.'), 'ran');
+    assert.equal(list.state.opened, 0, 'nothing picked: a no-op');
+    press('x');
+    press('.');
+    assert.equal(list.state.opened, 1, 'picked: the bulk menu');
+    detach();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the bar’s More button is found in the pane header, and absent without a bar', () => {
+  const button = { id: 'more' };
+  const selectors: string[] = [];
+  const root = {
+    querySelector: (selector: string) => {
+      selectors.push(selector);
+      return button;
+    },
+  };
+  assert.equal(moreButtonIn(root), button);
+  assert.match(selectors[0] ?? '', /ui-pane__bulk.*More/);
+  assert.equal(moreButtonIn({ querySelector: () => null }), null);
 });

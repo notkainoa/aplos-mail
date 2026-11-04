@@ -29,6 +29,7 @@ export function selectionCommands(actions: ListActions): CommandHandlerTable {
     'list.selectRange': run(() => actions.selectRange()),
     'list.selectAll': run(() => actions.selectAll()),
     'list.clearSelection': run(() => actions.clearSelection()),
+    'list.more': run(() => actions.more()),
   };
 }
 

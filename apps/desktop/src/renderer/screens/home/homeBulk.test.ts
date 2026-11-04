@@ -97,6 +97,7 @@ function bulkHome(world: World, start: string | null = null) {
     acted: [] as Parameters<typeof api.thread.act>[0][],
     committed: [] as string[],
     held: 0,
+    more: [] as string[],
   };
   const rowOf = (id: string) => world.home.snapshot().rows.get(id) as ThreadRow | undefined;
   const itemsNow = (): HomeItem[] =>
@@ -150,7 +151,8 @@ function bulkHome(world: World, start: string | null = null) {
     openThread: () => undefined,
     openLow: () => undefined,
     oneByOne: () => undefined,
-    openMore: () => undefined,
+    openMore: () => void state.more.push('row'),
+    openBulkMore: () => void state.more.push('bulk'),
     undoLabel: (_id, fallback) => fallback,
   };
   const picked = () => pickedInOrder(live(), idsNow());
@@ -162,7 +164,12 @@ type Bulk = ReturnType<typeof bulkHome>;
 /** Keys through the real registry, on Home's stack, with `selection` set while rows are picked. */
 function keyboardFor(bulk: Bulk) {
   const registry = createAppRegistry();
-  const extra = { oneByOne: () => {}, more: () => {}, why: () => {}, undo: () => {} };
+  const extra = {
+    oneByOne: () => {},
+    more: () => bulk.actions.more(),
+    why: () => {},
+    undo: () => {},
+  };
   const detach = shellRegistryFor(registry).register(commandsForHome(bulk.actions, extra));
   const context = (): CommandContext => ({
     stack: ['global', 'list', 'home'],
@@ -516,6 +523,22 @@ test('⌘A on Home extends the hold, and the arrows run the bulk Done and Later 
     assert.equal(bulk.state.acted.length, 1, '→ with picks is one bulk Done');
     keys.detach();
     await settleAll(() => undefined);
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('. opens the bulk More menu while rows are picked, else the cursor row’s menu', async () => {
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    const keys = keyboardFor(bulk);
+    assert.equal(keys.press('.'), 'ran');
+    assert.deepEqual(bulk.state.more, ['row'], 'no picks: the row menu, as before');
+    keys.press('x');
+    keys.press('.');
+    assert.deepEqual(bulk.state.more, ['row', 'bulk'], 'with picks: the bulk menu');
+    keys.detach();
   } finally {
     world.connection.close();
   }

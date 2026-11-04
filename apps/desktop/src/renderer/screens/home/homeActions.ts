@@ -71,6 +71,8 @@ export interface HomeDeps {
   openLow(): void;
   oneByOne(): void;
   openMore(): void;
+  /** `.` with rows picked: the bulk bar's More menu, in place of the cursor row's ⋯ menu. */
+  openBulkMore?(): void;
   /** The confirmed toast text of a command ("Done", "Moved to Later"), read from the registry. */
   undoLabel(commandId: string, fallback: string): string;
 }
@@ -104,6 +106,8 @@ export interface HomeActions {
   suggested(): void;
   open(): void;
   clearFromHome(): void;
+  /** `.`: the bulk More menu while rows are picked, else the cursor row's ⋯ menu. */
+  more(): void;
   /** R, or "Remind me if no reply" on that thread's own Done toast. */
   remind(id?: ThreadId): void;
   /** D on the cursor row, or "Set a date" on that thread's own Later toast: opens the date presets. */
@@ -388,6 +392,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     suggested,
     open,
     clearFromHome,
+    more: () => (bulk?.picks() && deps.openBulkMore ? deps.openBulkMore() : deps.openMore()),
     select: () => bulk?.select(),
     selectRange: () => bulk?.selectRange(),
     selectAll: () => bulk?.selectAll(),

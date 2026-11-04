@@ -41,6 +41,8 @@ export interface HomeActionInputs {
   readonly openLow: () => void;
   readonly oneByOne: () => void;
   readonly openMore: () => void;
+  /** Opens the bulk bar's More menu (`.` while rows are picked). */
+  readonly openBulkMore?: () => void;
   /** Opens the Later date presets for this thread. */
   readonly openDatePicker: (id: ThreadId) => void;
 }
@@ -136,6 +138,7 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
       openLow: () => now().openLow(),
       oneByOne: () => now().oneByOne(),
       openMore: () => now().openMore(),
+      openBulkMore: () => now().openBulkMore?.(),
       undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
     };
     return createHomeActions(deps);
@@ -148,11 +151,16 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
 export function useHomeActions(inputs: HomeKeyInputs): HomeActionState {
   const state = useHomeActionState(inputs);
   const { actions } = state;
-  const { oneByOne, openMore, why } = inputs;
+  const { oneByOne, why } = inputs;
   const table = useMemo(
     () =>
-      commandsForHome(actions, { oneByOne, more: openMore, why, undo: () => undoLast(actions) }),
-    [actions, oneByOne, openMore, why],
+      commandsForHome(actions, {
+        oneByOne,
+        more: () => actions.more(),
+        why,
+        undo: () => undoLast(actions),
+      }),
+    [actions, oneByOne, why],
   );
   useRegisterCommands(table);
   return state;

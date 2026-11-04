@@ -212,6 +212,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   );
 
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const openBulkMore = useRef<() => void>(() => undefined);
   const live = useRef({ snapshot: NO_SNAPSHOT, confirmation, onOpen, deleteForever });
   live.current = {
     snapshot: {
@@ -244,6 +245,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
         dismiss: dismissToast,
         hold: { extend: ids => hold.extend(ids) },
         selection: bulk.controls,
+        openMore: () => openBulkMore.current(),
         commit: motion.commit,
         open: (id, kind) => live.current.onOpen?.(id, kind),
         confirmation: () => live.current.confirmation,
@@ -263,6 +265,7 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
     actions,
     bulk.picking ? bulkCount({ ...scope, count: bulk.picked.length }) : null,
   );
+  openBulkMore.current = bulkMenu.open;
   const pointer = usePointerHold(hold, `${config.id}-row-`);
 
   return {

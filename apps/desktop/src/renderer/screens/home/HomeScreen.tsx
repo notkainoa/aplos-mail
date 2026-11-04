@@ -262,6 +262,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     if (anchor && key !== null && onRow) setWhy({ id: key, anchor });
   }, []);
   const oneByOne = onOneByOne ?? ignore;
+  const bulkMore = useRef<() => void>(ignore);
   const { actions, remindOffer } = useHomeActions({
     snapshot,
     context,
@@ -273,6 +274,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     openLow,
     oneByOne,
     openMore,
+    openBulkMore: () => bulkMore.current(),
     openDatePicker: datePicker.open,
     why: openWhy,
   });
@@ -282,6 +284,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     conditions: pick.bulk.picking ? { remindOffer, selection: true } : { remindOffer },
   });
   const bulkMenu = useHomeBar(actions, pick.bulk.picking ? pick.bulk.picked.length : null);
+  bulkMore.current = bulkMenu.open;
   const pointer = usePointerHold(hold);
 
   const handlers: HomeListHandlers = {

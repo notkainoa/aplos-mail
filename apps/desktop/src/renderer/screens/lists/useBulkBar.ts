@@ -61,6 +61,13 @@ export interface BulkMenu {
   readonly entries: readonly MenuEntry[];
   readonly onSelect: (id: string) => void;
   readonly onClose: () => void;
+  /** `.`: opens the menu on the bar's More button. Does nothing while no bar shows. */
+  readonly open: () => void;
+}
+
+/** The bar's More button in the pane header, or null when no bar is showing. */
+export function moreButtonIn(root: Pick<ParentNode, 'querySelector'>): HTMLElement | null {
+  return root.querySelector('.ui-pane__bulk [aria-label="More"]') as HTMLElement | null;
 }
 
 /** What the bar shows: the verbs, then the More menu's rows. */
@@ -111,7 +118,16 @@ export function useBulkBarPart(
     },
     [controls],
   );
-  return { anchor: count === null ? null : anchor, entries: plan.entries, onSelect, onClose };
+  const open = useCallback(() => {
+    if (count !== null) setAnchor(moreButtonIn(document));
+  }, [count]);
+  return {
+    anchor: count === null ? null : anchor,
+    entries: plan.entries,
+    onSelect,
+    onClose,
+    open,
+  };
 }
 
 /** A list's bar: the verbs it owns for its kind. */

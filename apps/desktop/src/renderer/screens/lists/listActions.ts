@@ -57,6 +57,8 @@ export interface ListDeps {
   dismiss(id: string): void;
   /** The hold gate: a key starts or extends it around `ids`. */
   hold: { extend(ids?: readonly string[]): void };
+  /** `.` with rows picked: opens the bulk bar's More menu. Absent: there is no bar to open. */
+  openMore?(): void;
   /** The caller's `onOpen`. */
   open(id: string, kind: OpenKind): void;
   confirmation(): Confirmation | null;
@@ -85,6 +87,8 @@ export interface ListActions {
   selectAll(): void;
   /** Esc. */
   clearSelection(): void;
+  /** `.`: the bulk More menu while rows are picked; nothing otherwise (a list has no row menu). */
+  more(): void;
   /**
    * Done on the picked rows when any are picked, else on the cursor row, or the row with this key (a hover button, which
    * always means its own row). The other verbs follow the same rule.
@@ -292,9 +296,14 @@ export function createListActions(deps: ListDeps): ListActions {
     if (target) deps.open(target.row.id, openKindOf(target.row));
   }
 
+  function more(): void {
+    if (bulk.picks()) deps.openMore?.();
+  }
+
   return {
     move,
     open,
+    more,
     ...picking,
     done,
     later,
