@@ -1,0 +1,79 @@
+/* The onboarding window's own wrappers (DESIGN 7.11). Layout only, tokens only: every control, the strip, the
+   footer, the dashes and the step's scrolling body are the onboarding family's (ui/onboarding/onboarding.css).
+   The app entry imports this file after ui/styles.css; TSX never imports CSS. */
+
+/* STOPGAP (REQUEST ui-foundation): the onboarding family's CSS has no native-control reset, unlike ask.css and
+   compose.css, so its buttons showed browser borders and fills and its title, lede and facts kept the browser's
+   margins. This is the same zero-specificity reset those families carry, scoped to the family's own classes, so every
+   rule of the family still wins. Delete it once ui/onboarding/onboarding.css has it. */
+:where(
+  .ui-onb-button,
+  .ui-choice-row,
+  .ui-choice-row__link,
+  .ui-onboarding-step__title,
+  .ui-onboarding-step__lede,
+  .ui-consent-card__facts,
+  .ui-consent-card__note
+) {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+/* The window is the step: full-bleed white paper, nothing around it. */
+.onb-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* A stack of quiet rows (ChoiceRow): hairlines come from the rows, the stack only spans the column. */
+.onb-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A caption over its rows ("Or choose a provider"): closer to its rows than the step's own spacing. */
+.onb-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+
+/* A field with the one line that belongs to it (a notice, the Keychain line). */
+.onb-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Several fields in a column (local server addresses behind More options). */
+.onb-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+  padding-top: var(--space-2);
+}
+
+/* A part that should span the step's column (the OAuth wait track, an error line). */
+.onb-wide {
+  width: 100%;
+  min-width: 0;
+}
