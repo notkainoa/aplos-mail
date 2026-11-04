@@ -77,34 +77,59 @@ export function replyName(message: Message, me: ReadonlySet<string>): string {
   return other ? firstNameOf(nameOf(other)) : 'sender';
 }
 
-/** The excerpt a folded card shows: at most this many characters before it is cut at a word. */
+/** The excerpt a folded card shows: at most this many characters (code points) before it is cut. */
 const EXCERPT_LIMIT = 150;
 
-/** Where a sentence ends: terminal punctuation (with any closing quote) followed by a space. */
-const SENTENCE_END = /[.!?]["')\]]*(?=\s|$)/g;
+/** A first sentence shorter than this is an abbreviation ("Dr.", "e.g.", "Ok."), not a sentence: keep reading. */
+const SENTENCE_MIN = 20;
+
+/** Where a sentence ends: terminal punctuation (with any closing quote) before a space or the end, or CJK 。！？. */
+const SENTENCE_END = /[.!?]["')\]]*(?=\s|$)|[。！？]["')\]」』]*/gu;
 
 /** A salutation that opens a message ("Hi Alex,", "Hello Mina and Jordan,", "Dear Ms Park:", "Hey,"): not a sentence. */
 const SALUTATION =
   /^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^.!?,:\n]{0,40}[,:!]\s+/i;
 
+/** Cut a long excerpt: at a word when one falls in the back half, else hard at the limit, never inside a character. */
+function cutLong(excerpt: string): string {
+  const chars = Array.from(excerpt);
+  if (chars.length <= EXCERPT_LIMIT) return excerpt;
+  const room = chars.slice(0, EXCERPT_LIMIT).join('');
+  const space = room.lastIndexOf(' ');
+  return space >= EXCERPT_LIMIT / 2 ? room.slice(0, space) : room;
+}
+
+/** A sentence end: where it is, and whether it is long enough to be one (CJK terminators never are abbreviations). */
+function sentenceEnds(text: string): number[] {
+  const ends: number[] = [];
+  for (const match of text.matchAll(SENTENCE_END)) {
+    const end = (match.index ?? 0) + match[0].length;
+    const cjk = /^[。！？]/u.test(match[0]);
+    if (cjk || Array.from(text.slice(0, end)).length >= SENTENCE_MIN) ends.push(end);
+  }
+  return ends;
+}
+
+/** Where the excerpt ends in `text`: the first real sentence end, or the second when it fits too. */
+function excerptEnd(text: string): number {
+  const [first, second] = sentenceEnds(text);
+  if (first === undefined) return text.length;
+  const fits = second !== undefined && Array.from(text.slice(0, second)).length <= EXCERPT_LIMIT;
+  return fits ? second : first;
+}
+
 /**
  * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message after
- * its salutation, whitespace collapsed, cut at a sentence end when two fit and at a word when a sentence runs long,
- * and always ending in "…". Taken from the message's own snippet, so a folded card never loads its body.
+ * its salutation, whitespace collapsed, cut at a sentence end when two fit and otherwise at a word (or hard at the
+ * limit when there is none), and ending in "…". An abbreviation ("Dr.") is not a sentence. Taken from the message's own
+ * snippet, so a folded card never loads its body. A message with no text gives "": the card says "No preview".
  */
 export function excerptOf(message: Pick<Message, 'snippet'>): string {
   const all = message.snippet.replace(/\s+/g, ' ').trim();
   const text = all.replace(SALUTATION, '') || all;
-  const ends = [...text.matchAll(SENTENCE_END)].map(m => (m.index ?? 0) + m[0].length);
-  let end = ends[0] ?? text.length;
-  const second = ends[1];
-  if (second !== undefined && second <= EXCERPT_LIMIT) end = second;
-  let excerpt = text.slice(0, end);
-  if (excerpt.length > EXCERPT_LIMIT) {
-    const room = excerpt.slice(0, EXCERPT_LIMIT);
-    excerpt = room.slice(0, Math.max(room.lastIndexOf(' '), 1));
-  }
-  return `${excerpt.replace(/[\s.…,;:]+$/u, '')}…`;
+  if (text === '') return '';
+  const excerpt = cutLong(text.slice(0, excerptEnd(text)));
+  return `${excerpt.replace(/[\s.…,;:。！？、，]+$/u, '')}…`;
 }
 
 /** The section DESIGN 7.2 would file the thread under, for its suggestion (Home's rule). */

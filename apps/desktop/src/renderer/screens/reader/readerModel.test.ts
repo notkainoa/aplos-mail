@@ -143,6 +143,25 @@ test('O folds or opens the earlier card the cursor is on; on the latest message 
   assert.equal(down.cursor, 'm3', 'ArrowDown from the start stays on the latest');
 });
 
+test('focus moves the cursor to the card, without opening it and without a loop', () => {
+  let ui = freshUi('t1');
+  ui = reduceUi(ui, { type: 'focusMessage', id: 'm2' });
+  assert.equal(ui.cursor, 'm2');
+  assert.deepEqual(ui.opened, [], 'focus alone opens nothing');
+  assert.equal(
+    reduceUi(ui, { type: 'focusMessage', id: 'm2' }),
+    ui,
+    'the same card again is no new state',
+  );
+  const stepped = reduceUi(ui, { type: 'moveCursor', ids: ['m1', 'm2', 'm3'], dir: 'previous' });
+  assert.equal(stepped.cursor, 'm1', 'an arrow key moves on from the focused card');
+  assert.deepEqual(
+    reduceUi(ui, expandEvent(ui.cursor, ['m1', 'm2'])).opened,
+    ['m2'],
+    'O then acts on it',
+  );
+});
+
 test('the letter state: quoted text, opening and folding a card, find, images, and a new thread starts untouched', () => {
   let ui = freshUi('t1');
   ui = reduceUi(ui, { type: 'toggleExpanded' });

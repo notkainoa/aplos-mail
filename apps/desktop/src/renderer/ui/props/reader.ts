@@ -38,38 +38,6 @@ export interface ReaderActionsProps {
   onDone: () => void;
 }
 
-/** An earlier message as a 36 px one-liner. */
-export interface CollapsedMessage {
-  /** Message id. */
-  id: string;
-  /** Sender name, or "You". */
-  from: string;
-  /** First line of the message. */
-  preview: string;
-  /** Sent time. */
-  date: IsoDateTime;
-}
-
-/** One collapsed line for earlier messages ("3 earlier messages from Jordan, you and Mina"); O expands into 36 px one-liners with a 2 px accent rail on the cursor (DESIGN §6 EarlierMessages, §7.5 item 4). Mockups: reader.html (earlier). Plain + refines: ui-foundation; used by ui-reader. */
-export interface EarlierMessagesProps {
-  /** Number of earlier messages. */
-  count: number;
-  /** First names in thread order, "you" for the owner; joined by the component. */
-  participants: readonly string[];
-  /** Expanded into one-liners. */
-  expanded: boolean;
-  /** The one-liners shown when expanded. */
-  messages: readonly CollapsedMessage[];
-  /** The thread cursor: the one message id the ↑/↓ rail is on, shared with ThreadMessage (`cursor` = this id). */
-  cursorId?: string;
-  /** Registry id for O. */
-  commandId: CommandId;
-  /** Expand or collapse. */
-  onToggle: () => void;
-  /** Open one message. */
-  onOpenMessage: (id: string) => void;
-}
-
 /** A remote-images notice on a message (DESIGN §7.5 HTML mail). */
 export interface RemoteImages {
   /** Remote images are blocked: shows "Load images from this sender". */
@@ -88,20 +56,20 @@ export interface ThreadMessageProps {
   toLabel: string;
   /** Sent time. */
   date: IsoDateTime;
-  /** Holds the thread cursor (the one cursor id shared with EarlierMessages): the accent rail shows. */
+  /** Holds the thread cursor (the one thread cursor id): the accent rail shows. */
   cursor: boolean;
   /** The message body from `renderer/mailframe` (sandboxed iframe or plain text); absent while the card is compact. */
   body?: ReactNode;
   /** An earlier message the card can fold: the head is a button (`aria-expanded`), a click or O opens or closes it. Absent: always open (the latest message). */
-  fold?: { open: boolean; onToggle: () => void; commandId: CommandId };
-  /** Compact (folded) card: the plain-text first sentence or two, already ending in "…". Shown under the head while `fold.open` is false. */
+  fold?: { open: boolean; onToggle: () => void; onFocus?: () => void; commandId: CommandId };
+  /** Compact (folded) card: the plain-text first sentence or two, already ending in "…". Shown under the head while `fold.open` is false; an empty string reads "No preview" in dim text. */
   excerpt?: string;
   /** Attachment chips under the body. */
   attachments?: readonly Extract<ChipProps, { kind: 'attachment' }>[];
   /** Remote images notice, when the mail has any. */
   remoteImages?: RemoteImages;
-  /** Quoted text toggle (O also shows quoted text). */
-  quoted?: { shown: boolean; onToggle: () => void; commandId: CommandId };
+  /** Quoted text toggle. `commandId` (O) only where O really toggles quoted text: on the latest message, never on a card O folds. */
+  quoted?: { shown: boolean; onToggle: () => void; commandId?: CommandId };
   /** The undo-send line under a message you just sent (placement 'thread'). */
   undoTray?: Omit<UndoTrayProps, 'placement'>;
   /** Element ref for `arrive` and scrolling the cursor into view. */

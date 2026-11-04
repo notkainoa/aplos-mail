@@ -117,3 +117,10 @@ test('reader.css styles option a only; off draws what DESIGN 7.5 first drew', ()
     'the cards never take the inline reply’s elevation',
   );
 });
+
+test('ReaderMessage is one component with one ThreadMessage, so a fold never remounts the focused toggle', () => {
+  const source = readFileSync(new URL('./ReaderMessage.tsx', import.meta.url), 'utf8');
+  assert.equal(source.match(/<ThreadMessage/g)?.length, 1, 'one ThreadMessage element in the file');
+  assert.equal(source.match(/^export function /gm)?.length, 1, 'one exported component');
+  assert.doesNotMatch(source, /FoldedMessage|FullMessage/, 'no second component type per state');
+});

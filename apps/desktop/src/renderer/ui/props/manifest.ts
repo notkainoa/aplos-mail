@@ -30,7 +30,6 @@ import type {
   SummaryProps,
 } from './list';
 import type {
-  EarlierMessagesProps,
   LoadingLineProps,
   ReaderActionsProps,
   ReaderHeadProps,
@@ -199,11 +198,6 @@ export const COMPONENTS = [
     name: 'ReaderActions',
     family: 'reader',
     file: 'apps/desktop/src/renderer/ui/reader/ReaderActions.tsx',
-  },
-  {
-    name: 'EarlierMessages',
-    family: 'reader',
-    file: 'apps/desktop/src/renderer/ui/reader/EarlierMessages.tsx',
   },
   {
     name: 'ThreadMessage',
@@ -428,7 +422,6 @@ export interface ComponentPropsMap {
   ErrorLine: ErrorLineProps;
   ReaderHead: ReaderHeadProps;
   ReaderActions: ReaderActionsProps;
-  EarlierMessages: EarlierMessagesProps;
   ThreadMessage: ThreadMessageProps;
   LoadingLine: LoadingLineProps;
   ReplyStub: ReplyStubProps;

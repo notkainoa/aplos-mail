@@ -218,6 +218,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
           : {
               open: ui.opened.includes(m.id),
               onToggle: () => dispatch({ type: 'toggleMessage', id: m.id }),
+              onFocus: () => dispatch({ type: 'focusMessage', id: m.id }),
             }
       }
       invite={invite?.messageId === m.id ? invite.view : undefined}

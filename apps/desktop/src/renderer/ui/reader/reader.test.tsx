@@ -6,7 +6,6 @@ import { before, describe, test } from 'node:test';
 import type { ReaderActionsProps, ReaderHeadProps, UndoTrayProps } from '../props';
 import { bannedIn, freezeClock, html, text, WORST } from '../list/testkit.test';
 import {
-  EarlierMessages,
   LoadingLine,
   ReaderActions,
   ReaderHead,
@@ -16,7 +15,6 @@ import {
   UndoTray,
   Why,
 } from './index';
-import { earlierLine } from './EarlierMessages';
 
 const noop = () => {};
 const collected: string[] = [];
@@ -177,95 +175,6 @@ describe('ReaderActions', () => {
   });
 });
 
-describe('EarlierMessages', () => {
-  const messages = [
-    {
-      id: 'm1',
-      from: 'Jordan Park',
-      preview: 'Kicking off: here is the brief we agreed on Friday.',
-      date: '2026-10-20T09:00:00-07:00',
-    },
-    {
-      id: 'm2',
-      from: 'You',
-      preview: 'Love the brief. Two things to keep.',
-      date: '2026-10-21T09:00:00-07:00',
-    },
-    {
-      id: 'm3',
-      from: 'Mina Cho',
-      preview: 'Early sketches before Jordan sends the full set.',
-      date: '2026-10-27T09:00:00-07:00',
-    },
-  ];
-
-  test('collapsed: one line with the O keycap', () => {
-    const m = render(
-      <EarlierMessages
-        count={3}
-        participants={['Jordan', 'you', 'Mina']}
-        expanded={false}
-        messages={messages}
-        commandId="reader.expand"
-        onToggle={noop}
-        onOpenMessage={noop}
-      />,
-    );
-    assert.match(m, /data-state="collapsed"/);
-    assert.match(m, /aria-expanded="false"/);
-    assert.match(text(m), /^3 earlier messages from Jordan, you and Mina O$/);
-    assert.match(m, /title="Show earlier messages · O"/);
-    assert.match(m, /hidden=""/);
-  });
-
-  test('expanded: 36 px one-liners, the cursor rail on one', () => {
-    const m = render(
-      <EarlierMessages
-        count={3}
-        participants={['Jordan', 'you', 'Mina']}
-        expanded
-        messages={messages}
-        cursorId="m2"
-        commandId="reader.expand"
-        onToggle={noop}
-        onOpenMessage={noop}
-      />,
-    );
-    assert.match(m, /data-state="expanded"/);
-    assert.equal((m.match(/class="ui-earlier-messages__message"/g) ?? []).length, 3);
-    assert.match(
-      m,
-      /id="m2" class="ui-earlier-messages__message" data-cursor="true" aria-current="true"/,
-    );
-    assert.match(
-      text(m),
-      /Jordan Park Kicking off.* Oct 20 You Love the brief.* Oct 21 Mina Cho Early sketches.* Tuesday/,
-    );
-  });
-
-  test('singular, zero, many participants', () => {
-    assert.equal(earlierLine(1, ['Jordan']), '1 earlier message from Jordan');
-    assert.equal(
-      earlierLine(9999, ['Jordan', 'you', 'Mina', 'Q', 'Owen']),
-      '9,999 earlier messages from Jordan, you, Mina and 2 others',
-    );
-    assert.equal(
-      render(
-        <EarlierMessages
-          count={0}
-          participants={[]}
-          expanded={false}
-          messages={[]}
-          commandId="reader.expand"
-          onToggle={noop}
-          onOpenMessage={noop}
-        />,
-      ),
-      '',
-    );
-  });
-});
-
 describe('ThreadMessage', () => {
   test('article landmark with header, read body, attachments and the cursor rail', () => {
     const m = render(
@@ -352,6 +261,77 @@ describe('ThreadMessage', () => {
     assert.match(open, /aria-expanded="true"/);
     assert.doesNotMatch(text(open), /never shown/);
     assert.match(text(open), /The whole brief\./);
+  });
+
+  test('a card with no text says "No preview" in dim text; a card never promises O for quoted text', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const empty = render(
+      <ThreadMessage
+        id="e2"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={fold}
+        excerpt=""
+      />,
+    );
+    assert.match(empty, /ui-thread-message__excerpt" dir="auto" data-empty="true">No preview</);
+    assert.doesNotMatch(empty, /!|…/);
+    const open = render(
+      <ThreadMessage
+        id="e3"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={{ ...fold, open: true }}
+        body={<p>The brief.</p>}
+        quoted={{ shown: false, onToggle: noop }}
+      />,
+    );
+    assert.match(open, /title="Fold this message · O"/, 'O folds the card');
+    assert.match(open, /title="Show quoted text"/, "the card's quoted button names no key");
+    const latest = render(
+      <ThreadMessage
+        id="e4"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor
+        body={<p>The latest.</p>}
+        quoted={{ shown: false, onToggle: noop, commandId: 'reader.expand' }}
+      />,
+    );
+    assert.match(
+      latest,
+      /title="Show quoted text · O"/,
+      'on the latest message O does show quoted text',
+    );
+  });
+
+  test('the toggle is the same button, first in the head, folded or open (focus survives a fold)', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const card = (open: boolean) =>
+      render(
+        <ThreadMessage
+          id="e5"
+          from="Jordan Park"
+          toLabel="to you"
+          date="2026-10-20T09:00:00-07:00"
+          cursor={false}
+          fold={{ ...fold, open }}
+          excerpt="First words…"
+          body={<p>All of it.</p>}
+        />,
+      );
+    const head = (markup: string) =>
+      markup.slice(markup.indexOf('<header'), markup.indexOf('<button') + 7);
+    assert.equal(head(card(false)), head(card(true)), 'one button at one place in the tree');
+    assert.match(
+      card(false),
+      /<header[^>]*><button type="button" class="ui-thread-message__toggle"/,
+    );
   });
 
   test('a message you just sent carries the undo tray in place', () => {

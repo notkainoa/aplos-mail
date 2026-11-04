@@ -3,7 +3,9 @@
 // "Load images from this sender" when remote images are blocked, the `read` body at 64ch, quoted text on O,
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
 // An earlier message is a compact card (owner review 2026-11-03): its head is one button (`aria-expanded`) that holds the
-// who, the time and, while folded, the plain-text first sentence or two; a click or O opens it to the full message.
+// who, the time and, while folded, the plain-text first sentence or two; a click anywhere on a folded card (the button
+// stretches over it), Enter, Space or O on it opens it to the full message. Once open, only the head is the target, so
+// links, attachments and the body keep their own clicks.
 
 import type { Ref } from 'react';
 import type { ThreadMessageProps } from '../props';
@@ -12,6 +14,9 @@ import { Action } from '../list/internal/Action';
 import { formatFull, formatMessageTime } from '../list/internal/format';
 import { tooltipText } from '../list/internal/keys';
 import { UndoTray } from './UndoTray';
+
+/** The excerpt's words when a message has no text to show (plain, dim, no exclamation mark). */
+export const NO_PREVIEW = 'No preview';
 
 /** A full message in the thread. */
 export function ThreadMessage({
@@ -42,9 +47,13 @@ export function ThreadMessage({
           {formatMessageTime(date)}
         </time>
       </span>
-      {folded && excerpt ? (
-        <span className="ui-thread-message__excerpt" dir="auto">
-          {excerpt}
+      {folded && excerpt !== undefined ? (
+        <span
+          className="ui-thread-message__excerpt"
+          dir="auto"
+          data-empty={excerpt === '' ? 'true' : undefined}
+        >
+          {excerpt === '' ? NO_PREVIEW : excerpt}
         </span>
       ) : null}
     </>
@@ -69,6 +78,7 @@ export function ThreadMessage({
               fold.open ? 'Fold this message' : 'Open this message',
               fold.commandId,
             )}
+            onFocus={fold.onFocus}
             onClick={fold.onToggle}
           >
             {headLine}
@@ -102,10 +112,14 @@ export function ThreadMessage({
             variant="text"
             size="sm"
             label={quoted.shown ? 'Hide quoted text' : 'Show quoted text'}
-            tooltip={tooltipText(
-              quoted.shown ? 'Hide quoted text' : 'Show quoted text',
-              quoted.commandId,
-            )}
+            tooltip={
+              quoted.commandId
+                ? tooltipText(
+                    quoted.shown ? 'Hide quoted text' : 'Show quoted text',
+                    quoted.commandId,
+                  )
+                : undefined
+            }
             expanded={quoted.shown}
             onPress={() => quoted.onToggle()}
           />

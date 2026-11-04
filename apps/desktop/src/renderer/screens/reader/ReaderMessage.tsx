@@ -40,7 +40,12 @@ export interface ReaderMessageProps {
   /** O is on (the cursor on the latest message): quoted text is shown. */
   readonly expanded?: boolean;
   /** An earlier message: a compact card that opens and folds. Absent: the latest message, always open. */
-  readonly fold?: { readonly open: boolean; readonly onToggle: () => void };
+  readonly fold?: {
+    readonly open: boolean;
+    readonly onToggle: () => void;
+    /** The toggle took keyboard focus: the cursor follows, so O acts on this card. */
+    readonly onFocus?: () => void;
+  };
   /** The invitation this message carries (an invite email). */
   readonly invite?: InviteView;
   /** The frame is laid out and measured. */
@@ -64,45 +69,46 @@ function hasQuoted(body: MessageBody | undefined): boolean {
   return quotedRangesFor(body.text, body.quoted).length > 0;
 }
 
-/** "Show quoted text": the message's own choice once made, else O's. */
-function useQuoted(body: MessageBody | undefined, expanded: boolean) {
+/** "Show quoted text": the message's own choice once made, else O's (on the latest message, where O means it). */
+function useQuoted(body: MessageBody | undefined, expanded: boolean, keyed: boolean) {
   const [chosen, setChosen] = useState<boolean | null>(null);
   const shown = chosen ?? expanded;
   if (!hasQuoted(body)) return { shown: false, toggle: undefined };
   return {
     shown,
-    toggle: { shown, onToggle: () => setChosen(!shown), commandId: 'reader.expand' as const },
+    toggle: {
+      shown,
+      onToggle: () => setChosen(!shown),
+      ...(keyed ? { commandId: 'reader.expand' as const } : {}),
+    },
   };
 }
 
 const FOLD_COMMAND = 'reader.expand' as const;
 
-/** A folded earlier message: who, when and the first sentence or two, from the message's snippet (no body is loaded). */
-function FoldedMessage({ message, me, cursor, fold }: ReaderMessageProps) {
-  return (
-    <ThreadMessage
-      id={message.id}
-      from={fromName(message, me)}
-      toLabel={toLabel(message, me)}
-      date={toIsoDateTime(message.date)}
-      cursor={cursor}
-      fold={fold ? { ...fold, commandId: FOLD_COMMAND } : undefined}
-      excerpt={excerptOf(message)}
-    />
-  );
+/** The fold, with O's command: an earlier message folds and opens with a click, Enter, Space or O on its card. */
+function foldOf(fold: ReaderMessageProps['fold']) {
+  return fold ? { ...fold, commandId: FOLD_COMMAND } : undefined;
 }
 
-/** The message in full (the latest one, or an earlier one that was opened). */
-function FullMessage(props: ReaderMessageProps) {
-  const { message, me, imagesLoaded, onFrame } = props;
-  const body = useMessageBody(message.id);
+/**
+ * One message of the thread, as one component whether it is folded or open, so the card's toggle button is the same node
+ * through every fold and keeps keyboard focus. A folded earlier message shows who, when and the first sentence or two
+ * from its snippet and fetches nothing; open (or the latest), it loads the body, the attachments and the notices.
+ * O toggles quoted text only on the latest message: on a card it folds the card, so a card's own "Show quoted text"
+ * button carries no key.
+ */
+export function ReaderMessage(props: ReaderMessageProps) {
+  const { message, me, imagesLoaded, onFrame, fold } = props;
+  const open = !fold || fold.open;
+  const body = useMessageBody(open ? message.id : undefined);
   const [trackers, setTrackers] = useState<number | undefined>(undefined);
   const chips = useDownloads(message);
-  const quoted = useQuoted(body.body, props.expanded ?? false);
+  const quoted = useQuoted(body.body, fold ? false : (props.expanded ?? false), !fold);
   const policy = imagesLoaded ? 'load' : 'block';
   const hasImages = body.body?.hasRemoteImages === true;
   const trackersNote = trackersLine(trackers);
-  const frame = (
+  const frame = open ? (
     <>
       {props.invite ? <InviteCard invite={props.invite} /> : null}
       <MailFrame
@@ -119,7 +125,7 @@ function FullMessage(props: ReaderMessageProps) {
       />
       {trackersNote ? <p className="aplos-reader__trackers">{trackersNote}</p> : null}
     </>
-  );
+  ) : undefined;
   return (
     <ThreadMessage
       id={message.id}
@@ -127,23 +133,22 @@ function FullMessage(props: ReaderMessageProps) {
       toLabel={toLabel(message, me)}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
-      fold={props.fold ? { ...props.fold, commandId: FOLD_COMMAND } : undefined}
+      fold={foldOf(fold)}
+      excerpt={open ? undefined : excerptOf(message)}
       body={frame}
-      quoted={quoted.toggle}
-      attachments={chips}
-      remoteImages={{
-        blocked: hasImages && !imagesLoaded,
-        onLoad: () => {
-          allowImagesFrom(message);
-          props.onLoadImages(message.id);
-        },
-      }}
+      quoted={open ? quoted.toggle : undefined}
+      attachments={open ? chips : undefined}
+      remoteImages={
+        open
+          ? {
+              blocked: hasImages && !imagesLoaded,
+              onLoad: () => {
+                allowImagesFrom(message);
+                props.onLoadImages(message.id);
+              },
+            }
+          : undefined
+      }
     />
   );
-}
-
-/** One message of the thread: open in full, or (an earlier one) a compact card until it is opened. */
-export function ReaderMessage(props: ReaderMessageProps) {
-  if (props.fold && !props.fold.open) return <FoldedMessage {...props} />;
-  return <FullMessage {...props} />;
 }

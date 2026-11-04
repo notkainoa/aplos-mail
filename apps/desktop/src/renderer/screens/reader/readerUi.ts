@@ -59,6 +59,7 @@ export function freshUi(threadId: string | null): ReaderUi {
 export type UiEvent =
   | { readonly type: 'toggleExpanded' }
   | { readonly type: 'toggleMessage'; readonly id: string }
+  | { readonly type: 'focusMessage'; readonly id: string }
   | { readonly type: 'moveCursor'; readonly ids: readonly string[]; readonly dir: CursorDirection }
   | { readonly type: 'loadImages'; readonly id: string }
   | { readonly type: 'openFind' }
@@ -83,6 +84,8 @@ export function reduceUi(state: ReaderUi, event: UiEvent): ReaderUi {
       return { ...state, expanded: !state.expanded };
     case 'toggleMessage':
       return { ...state, opened: toggled(state.opened, event.id), cursor: event.id };
+    case 'focusMessage':
+      return state.cursor === event.id ? state : { ...state, cursor: event.id };
     case 'moveCursor':
       // No cursor yet means the latest message holds it, which is the last id the keys walk.
       return {

@@ -122,100 +122,6 @@
   box-shadow: var(--elev-pane);
 }
 
-/* ---------- Earlier messages ---------- */
-
-.ui-earlier-messages {
-  position: relative;
-}
-.ui-earlier-messages__toggle {
-  box-sizing: content-box;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  height: var(--message-collapsed);
-  margin: 0 calc(-1 * var(--space-2));
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-md);
-  background-color: transparent;
-  color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
-  text-align: left;
-  cursor: default;
-  transition:
-    background-color var(--dur-hover) var(--ease-std),
-    color var(--dur-hover) var(--ease-std);
-}
-.ui-earlier-messages__line {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.ui-earlier-messages__list[hidden] {
-  display: none;
-}
-.ui-earlier-messages__message {
-  box-sizing: border-box;
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--sender-w) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  height: var(--message-collapsed);
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
-  color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
-  text-align: left;
-  cursor: default;
-  transition: color var(--dur-hover) var(--ease-std);
-}
-.ui-earlier-messages__from {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-2);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__preview {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-earlier-messages__date {
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-/* The one thread cursor: a 2 px accent rail beside the line it is on. */
-.ui-earlier-messages__message[data-cursor='true']::before {
-  content: '';
-  position: absolute;
-  top: var(--space-2);
-  bottom: var(--space-2);
-  left: calc(-1 * var(--space-5));
-  width: var(--thread-rail);
-  border-radius: var(--radius-pill);
-  background-color: var(--accent);
-}
-
 /* ---------- Thread message ---------- */
 
 .ui-thread-message {
@@ -274,7 +180,8 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* A folded earlier message: one button holds who, when and the excerpt; the whole card is its target. */
+/* A folded earlier message: one button holds who, when and the excerpt, and stretches over the whole card (a pseudo-element, so
+   nothing moves); once open only the head is the target, so links and attachments keep their own clicks. */
 .ui-thread-message[data-fold='folded'] .ui-thread-message__head {
   margin-bottom: 0;
 }
@@ -292,6 +199,15 @@
   letter-spacing: inherit;
   text-align: left;
   cursor: default;
+}
+
+.ui-thread-message[data-fold='folded'] .ui-thread-message__toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.ui-thread-message__excerpt[data-empty='true'] {
+  color: var(--dim);
 }
 /* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. */
 .ui-thread-message__excerpt {
@@ -418,9 +334,7 @@
   margin-top: var(--space-2);
 }
 
-.ui-reply-stub:focus-visible,
-.ui-earlier-messages__toggle:focus-visible,
-.ui-earlier-messages__message:focus-visible {
+.ui-reply-stub:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
@@ -523,13 +437,6 @@
 @media (hover: hover) {
   .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from {
     color: var(--ink);
-  }
-  .ui-earlier-messages__toggle:hover {
-    background-color: var(--hover);
-    color: var(--ink-2);
-  }
-  .ui-earlier-messages__message:hover {
-    color: var(--ink-2);
   }
   .ui-reply-stub:hover {
     box-shadow: inset 0 0 0 1px var(--control-edge);
