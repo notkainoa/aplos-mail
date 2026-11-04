@@ -17,7 +17,9 @@ import { connectDataLayer, type DataConnection } from '../data/connect';
 import { HARNESS_NOW_MS, setClock } from '../data';
 import { createManualScheduler, createManualTimers } from '../data/scheduler';
 import { closeSheet, navigate, pushToast, dismissToast } from './index';
-import { Shell } from './Shell';
+import { context } from '../commands/testing';
+import { PaletteHost } from '../screens/palette';
+import { paneHeader, Shell, ShellLayout, shellCommands } from './Shell';
 import { failureReason, flowEnded, reconnectKey } from './SheetHost';
 import { toSyncStatus } from './status-map';
 import { StatusHost } from './StatusHost';
@@ -271,4 +273,82 @@ test('a flow counts as ended only by the last frame of its own connect id', () =
   assert.equal(flowEnded({ connectId: 'c1', state: undefined }, 'c1'), false);
   // A retry starts c2 while the old failed frame (c1) is still the latest: c2 is not ended.
   assert.equal(flowEnded({ connectId: 'c1', state: 'failed' }, 'c2'), false);
+});
+
+test('the dock is closed on first run, opens beside the main pane, and ⌘K reaches the palette', async () => {
+  await boot('demo');
+  // First run: no second pane (DESIGN 7.7: closed until asked).
+  assert.doesNotMatch(render(), /data-kind="dock"/);
+
+  // The pane header's Ask action asks for the ask tab and shows pressed while open.
+  const tabs: string[] = [];
+  const header = paneHeader(
+    'closed',
+    tab => tabs.push(tab),
+    {},
+    () => undefined,
+  );
+  assert.equal(header.ask.pressed, false);
+  header.ask.onPress();
+  assert.deepEqual(tabs, ['ask']);
+  assert.equal(
+    paneHeader(
+      'ask',
+      () => undefined,
+      {},
+      () => undefined,
+    ).ask.pressed,
+    true,
+  );
+
+  // With dock content the layout draws the second pane after the main one.
+  const docked = renderToStaticMarkup(
+    createElement(ShellLayout, {
+      screen: 'home',
+      counts: {},
+      minimised: false,
+      onNavigate: () => undefined,
+      onCompose: () => undefined,
+      accountSwitcher: null,
+      status: null,
+      header: paneHeader(
+        'ask',
+        () => undefined,
+        {},
+        () => undefined,
+      ),
+      toasts: null,
+      dock: createElement('div', null, 'dock body'),
+      children: createElement('div', null, 'home body'),
+    }),
+  );
+  const main = docked.indexOf('data-kind="main"');
+  const dock = docked.indexOf('data-kind="dock"');
+  assert.ok(main > 0 && dock > main, 'the dock pane sits beside the main pane');
+  assert.match(docked, /dock body/);
+
+  // The shell's own table: ⌘K toggles the palette, the dock keys open and toggle it (a mounted host shadows them).
+  const ctx = context(['global']);
+  let palette = false;
+  const opened: string[] = [];
+  const commands = shellCommands({
+    openTab: tab => opened.push(tab),
+    toggleDock: () => opened.push('toggle'),
+    togglePalette: () => {
+      palette = !palette;
+    },
+  });
+  commands['app.palette']!.run(ctx);
+  assert.equal(palette, true, '⌘K opens the palette');
+  commands['app.palette']!.run(ctx);
+  assert.equal(palette, false, '⌘K again closes it');
+  commands['ask.open']!.run(ctx);
+  commands['nav.today']!.run(ctx);
+  assert.deepEqual(opened, ['ask', 'today']);
+
+  // Mounted in the overlay slot, the open palette draws its panel.
+  const paletteHtml = renderToStaticMarkup(
+    createElement(PaletteHost, { open: true, onClose: () => undefined }),
+  );
+  assert.match(paletteHtml, /ui-palette__panel/);
 });

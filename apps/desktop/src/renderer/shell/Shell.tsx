@@ -4,7 +4,15 @@
  * also mounts the singletons: the one ToastStack, the sheet host, the key-hint providers and, when the engine cannot be
  * reached, the FatalScreen in place of everything.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import {
   api,
   useAccounts,
@@ -13,6 +21,10 @@ import {
   useCounts,
   useSettings,
 } from '../data';
+// ui-ask's index also pulls the hosts' stylesheets, which node's test runner cannot load; the store module is
+// css-free and is the same object the index re-exports.
+import { askStore } from '../screens/ask/askStore';
+import { onPaletteOpenRequest, PaletteHost } from '../screens/palette';
 import { FatalScreen } from '../ui/status';
 import { Pane } from '../ui/surfaces';
 import type { CommandId } from '../commands';
@@ -40,7 +52,9 @@ import {
   useAccountScope,
   useAppRoute,
   usePaneHeaderParts,
+  useRegisterCommands,
   useSheetContextActive,
+  type CommandHandlerTable,
   type PaneHeaderPart,
   type Screen,
 } from './index';
@@ -49,12 +63,61 @@ import {
 export interface ShellProps {
   /** A screen's content, or undefined for the placeholder line. */
   readonly renderScreen?: (screen: Screen) => ReactNode | undefined;
+  /** The dock's content for the open tab (ui-ask's `AskDockHost`; DESIGN 7.7); the shell wraps it in the second pane. */
+  readonly renderDock?: (
+    tab: 'ask' | 'today',
+    onTab: (tab: 'ask' | 'today') => void,
+    close: () => void,
+  ) => ReactNode;
 }
 
-/** Which dock tab the pane header's Ask and Today buttons show as pressed. No dock is mounted yet; ui-ask owns it. */
-type DockTab = 'closed' | 'ask' | 'today';
+/** Which dock tab the pane header's Ask and Today buttons show as pressed; `closed` mounts no dock pane. */
+export type DockTab = 'closed' | 'ask' | 'today';
 
-function paneHeader(
+/** The commands the shell answers itself: the dock and palette toggles. A mounted host's own registration shadows these. */
+export function shellCommands(actions: {
+  readonly openTab: (tab: 'ask' | 'today') => void;
+  readonly toggleDock: () => void;
+  readonly togglePalette: () => void;
+}): CommandHandlerTable {
+  return {
+    'app.palette': { run: () => actions.togglePalette() },
+    'ask.open': { run: () => actions.openTab('ask') },
+    'nav.today': { run: () => actions.openTab('today') },
+    'ask.toggleDock': { run: () => actions.toggleDock() },
+  };
+}
+
+/** Attaches the shell's own command table; sits inside KeysProviders so the shared registry exists. */
+function ShellCommands(props: Parameters<typeof shellCommands>[0]) {
+  const { openTab, toggleDock, togglePalette } = props;
+  const handlers = useMemo(
+    () => shellCommands({ openTab, toggleDock, togglePalette }),
+    [openTab, toggleDock, togglePalette],
+  );
+  useRegisterCommands(handlers);
+  return null;
+}
+
+/** Focus the pane header's Ask or Today button after the dock they owned closes; a no-op where there is no DOM. */
+export function focusDockButton(tab: 'ask' | 'today'): void {
+  if (typeof document === 'undefined') return;
+  const label = tab === 'ask' ? 'Ask' : 'Today';
+  const tools = document.querySelectorAll<HTMLElement>(
+    '.ui-pane[data-kind="main"] .ui-pane__tools button',
+  );
+  for (const button of tools) {
+    if ((button.getAttribute('aria-label') ?? button.textContent)?.trim() === label) {
+      button.focus();
+      return;
+    }
+  }
+}
+
+/** How often a command asked for the dock (the palette's Ask row, `askStore.open`); 0 at start-up. */
+const dockOpenTick = () => askStore.get().openTick;
+
+export function paneHeader(
   dock: DockTab,
   setDock: (tab: DockTab) => void,
   part: PaneHeaderPart,
@@ -125,7 +188,9 @@ export interface ShellLayoutProps {
   readonly header: PaneHeaderProps;
   /** The toast stack, mounted inside the pane. */
   readonly toasts: ReactNode;
-  /** Singletons beside the pane: the sheet host. */
+  /** The dock's content (DESIGN 7.7); mounted as the second pane beside the main one. */
+  readonly dock?: ReactNode;
+  /** Singletons beside the pane: the sheet and palette hosts. */
   readonly overlay?: ReactNode;
   /** The screen slot's content. */
   readonly children: ReactNode;
@@ -152,6 +217,11 @@ export function ShellLayout(props: ShellLayoutProps) {
         <div className="aplos-screen">{children}</div>
         {props.toasts}
       </Pane>
+      {props.dock ? (
+        <Pane kind="dock" label="Ask">
+          {props.dock}
+        </Pane>
+      ) : null}
       {props.overlay}
     </div>
   );
@@ -166,20 +236,22 @@ export function scopeIsStale(
   return loaded && scope !== null && !accounts.some(a => a.id === scope);
 }
 
-type FramedProps = Omit<ShellLayoutProps, 'header'> & {
+type FramedProps = Omit<ShellLayoutProps, 'header' | 'dock'> & {
   readonly dock: DockTab;
   readonly setDock: (tab: DockTab) => void;
+  /** The dock pane's content for the open tab. */
+  readonly dockPane?: ReactNode;
 };
 
 /** The layout with the pane header the mounted screen's part asks for (`usePaneHeaderPart`) plus Ask and Today; sits inside the key providers so a tool press can run a command. */
-function FramedLayout({ dock, setDock, ...layout }: FramedProps) {
+function FramedLayout({ dock, setDock, dockPane, ...layout }: FramedProps) {
   const part = usePaneHeaderParts();
   const run = useRunCommand();
   const header = useMemo(() => paneHeader(dock, setDock, part, run), [dock, setDock, part, run]);
-  return <ShellLayout {...layout} header={header} />;
+  return <ShellLayout {...layout} header={header} dock={dockPane} />;
 }
 
-function ShellFrame({ renderScreen }: ShellProps) {
+function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const screen = useAppRoute();
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
@@ -191,7 +263,29 @@ function ShellFrame({ renderScreen }: ShellProps) {
   const counts = useCounts(scope ?? undefined);
   const minimised = useSettings()?.ui.sidebarMinimised === true;
   const [dock, setDock] = useState<DockTab>('closed');
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const sheetOpen = useSheetContextActive();
+  // The dock also opens on request (the palette's Ask row): `openTick` bumps once per ask (REQUESTS.md).
+  const dockTick = useSyncExternalStore(askStore.subscribe, dockOpenTick, dockOpenTick);
+  useEffect(() => {
+    if (dockTick > 0) setDock(askStore.get().tab);
+  }, [dockTick]);
+  // Search's `>` asks for the palette with a seeded query (screens/palette REQUESTS.md).
+  useEffect(() => onPaletteOpenRequest(() => setPaletteOpen(true)), []);
+  // Closing the dock returns focus to the header button of the tab it showed.
+  const lastDock = useRef(dock);
+  useEffect(() => {
+    const was = lastDock.current;
+    lastDock.current = dock;
+    if (was !== 'closed' && dock === 'closed') focusDockButton(was);
+  }, [dock]);
+  const openTab = useCallback((tab: 'ask' | 'today') => setDock(tab), []);
+  const toggleDock = useCallback(() => setDock(d => (d === 'closed' ? 'ask' : 'closed')), []);
+  const closeDock = useCallback(() => setDock('closed'), []);
+  const togglePalette = useCallback(() => setPaletteOpen(open => !open), []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const dockPane =
+    renderDock && dock !== 'closed' ? renderDock(dock, openTab, closeDock) : undefined;
   const account = (
     <AccountMenu
       accounts={accounts}
@@ -203,9 +297,11 @@ function ShellFrame({ renderScreen }: ShellProps) {
   );
   return (
     <KeysProviders screen={screen} sheetOpen={sheetOpen}>
+      <ShellCommands openTab={openTab} toggleDock={toggleDock} togglePalette={togglePalette} />
       <FramedLayout
         dock={dock}
         setDock={setDock}
+        dockPane={dockPane}
         screen={screen}
         counts={placeCounts(counts.counts, counts.hidden)}
         minimised={minimised}
@@ -214,7 +310,12 @@ function ShellFrame({ renderScreen }: ShellProps) {
         accountSwitcher={account}
         status={<StatusHost />}
         toasts={<ToastHost />}
-        overlay={<SheetHost />}
+        overlay={
+          <>
+            <SheetHost />
+            <PaletteHost open={paletteOpen} onClose={closePalette} />
+          </>
+        }
       >
         {renderScreen?.(screen) ?? <PlaceholderScreen screen={screen} />}
       </FramedLayout>

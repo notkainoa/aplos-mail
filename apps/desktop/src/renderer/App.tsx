@@ -11,7 +11,7 @@
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
  * Low sheet behind the band; rows are never read.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
@@ -37,6 +37,7 @@ import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
 import { ComposeScreen, composeHeader } from './screens/compose';
 import { ReaderScreen } from './screens/reader';
+import { SearchScreen } from './screens/search';
 import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
@@ -348,8 +349,13 @@ function ComposeSlot() {
   );
 }
 
-/** Labels other lanes open as placeholders (search, help); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['Search', 'Help'];
+/** The Ask dock's host, split out so this module stays loadable in node tests: the host's own stylesheet import only resolves in the app build. */
+const AskDockHost = lazy(() =>
+  import('./screens/ask').then(module => ({ default: module.AskDockHost })),
+);
+
+/** Labels other lanes open as placeholders (help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -357,10 +363,11 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded), Search is `ui-ask`'s; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
+  if (typeof screen !== 'string' && screen.label === 'Search') return <SearchScreen />;
   if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
@@ -375,5 +382,14 @@ export function renderScreen(_client: AppClient, screen: Screen) {
 
 /** The new renderer's root. */
 export function App({ client }: AppProps) {
-  return <Shell renderScreen={screen => renderScreen(client, screen)} />;
+  return (
+    <Shell
+      renderScreen={screen => renderScreen(client, screen)}
+      renderDock={(tab, onTab, close) => (
+        <Suspense fallback={null}>
+          <AskDockHost tab={tab} onTab={onTab} onClose={close} />
+        </Suspense>
+      )}
+    />
+  );
 }
