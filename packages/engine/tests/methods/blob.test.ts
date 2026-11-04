@@ -772,3 +772,77 @@ test('a send whose file is gone is refused with the attach-again sentence and qu
     undefined,
     true,
   ));
+
+test('Draft/set: EVERY new id is checked, in any position (a mixed request is refused whole)', () =>
+  withWorld(async w => {
+    const windowBlob = await put(w.window);
+    const alice = w.listener('alice');
+    const mine = await put(alice);
+    const mine2 = await put(alice);
+    assert.deepEqual(
+      await refused(setDraft(alice, fieldsWith([mine.blobId, windowBlob.blobId]))),
+      ATTACH_AGAIN,
+    );
+    assert.deepEqual(
+      await refused(setDraft(alice, fieldsWith([windowBlob.blobId, mine.blobId]))),
+      ATTACH_AGAIN,
+    );
+    assert.deepEqual(
+      await refused(setDraft(alice, fieldsWith([mine.blobId, mine2.blobId, windowBlob.blobId]))),
+      ATTACH_AGAIN,
+    );
+    assert.ok(
+      (await setDraft(alice, fieldsWith([mine.blobId, mine2.blobId]))).draft.id,
+      'two own files',
+    );
+  }));
+
+test('Draft/set: the already-attached exemption is per draft: a file another draft names is still foreign', () =>
+  withWorld(async w => {
+    const windowBlob = await put(w.window);
+    await setDraft(w.window, fieldsWith([windowBlob.blobId])); // draft A names it
+    const alice = w.listener('alice');
+    const mine = await put(alice);
+    const own = await setDraft(alice, fieldsWith([mine.blobId])); // draft B, alice's own
+    assert.deepEqual(
+      await refused(setDraft(alice, fieldsWith([mine.blobId, windowBlob.blobId]), own.draft)),
+      ATTACH_AGAIN,
+    );
+    assert.deepEqual(
+      await refused(setDraft(alice, fieldsWith([windowBlob.blobId]))),
+      ATTACH_AGAIN,
+      'a new draft naming it',
+    );
+  }));
+
+test('a listener client sends a draft with its OWN file: the outbox reads it whoever made it', () =>
+  withWorld(
+    async w => {
+      const alice = w.engine.connect({
+        kind: 'listener',
+        via: 'http',
+        clientId: 'alice',
+        scopes: ['read', 'draft', 'send'],
+      });
+      const payload = new Uint8Array(200).map((_, i) => (i * 5) % 241);
+      const { blobId } = await put(alice, payload);
+      const saved = await setDraft(alice, fieldsWith([blobId]));
+      await alice.call('Submission/set', {
+        opId: `blob4-send-${++opCounter}`,
+        action: { type: 'send', draftId: saved.draft.id, revision: saved.draft.revision },
+      });
+      const row = w.engine.services.store.read(q =>
+        q.get<{ mime: Uint8Array }>(
+          'SELECT mime FROM submissions WHERE draft_id = ?',
+          saved.draft.id,
+        ),
+      );
+      const text = Buffer.from(row!.mime).toString('latin1');
+      assert.ok(
+        text.includes(Buffer.from(payload).toString('base64').slice(0, 60)),
+        'its bytes are in the MIME',
+      );
+    },
+    undefined,
+    true,
+  ));

@@ -23,7 +23,10 @@ export function assertOwnedAttachments(
   const named = attachments.flatMap(a => (a.blobId === undefined ? [] : [a.blobId]));
   if (!named.length) return;
   const stored = draftId === undefined ? undefined : services.draftBox.get([draftId]).list[0];
-  const had = new Set(stored?.attachments.flatMap(a => (a.blobId === undefined ? [] : [a.blobId])));
+  // (A row whose data is unreadable reads as having no attachments: every id is then checked.)
+  const had = new Set(
+    (stored?.attachments ?? []).flatMap(a => (a?.blobId === undefined ? [] : [a.blobId])),
+  );
   for (const blobId of named)
     if (!had.has(blobId) && !services.blobs.owns(caller, blobId))
       throw new ContractError({ type: 'notFound', message: ATTACH_AGAIN });
