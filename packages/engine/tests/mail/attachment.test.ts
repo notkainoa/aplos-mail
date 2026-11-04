@@ -173,6 +173,8 @@ async function world(opts: { attachmentFiles?: AttachmentFiles } = {}) {
     gate,
     partFiles: parts.files,
     partCalls: parts.calls,
+    file,
+    blobs,
     listener,
     stalled: () => stalls,
     setHeld: () => {
@@ -219,7 +221,7 @@ test('cache hit: a present row answers without a provider call', async () => {
   assert.equal(w.calls.length, 1, 'the first get fetched');
   const second = await get(w, 'p1');
   assert.equal(w.calls.length, 1, 'the second get read the cache');
-  assert.notEqual(first.blobId, second.blobId, 'each caller gets its own handle');
+  assert.equal(first.blobId, second.blobId, 'same principal + path reuses the live handle');
   await w.close();
 });
 
@@ -230,7 +232,7 @@ test('dedupe: two concurrent gets share one provider fetch but get their own han
   w.gate.open!();
   const [a, b] = await pending;
   assert.deepEqual(w.calls, [`${ACCOUNT}/r1/p2`], 'one fetch for two callers');
-  assert.notEqual(a.blobId, b.blobId);
+  assert.equal(a.blobId, b.blobId, 'same principal + path reuses the live handle');
   const [ra, rb] = await Promise.all([blobGet(w, a.blobId), blobGet(w, b.blobId)]);
   assert.equal(new TextDecoder().decode(ra.bytes), 'late');
   assert.equal(new TextDecoder().decode(rb.bytes), 'late');
@@ -374,5 +376,96 @@ test('attachment handles own no upload bytes: several big opens never spend the 
   // 5 x 25 MB would exceed a client's 100 MB blob budget if handles counted; they must not.
   const put = await client.call('Blob/put', { bytes: enc('x'), mime: 'text/plain' });
   assert.ok((put as { blobId: string }).blobId.startsWith('b_'));
+  await w.close();
+});
+
+test('a fetching row left at quit is reset at start and the attachment opens again', async () => {
+  const w = await world();
+  w.store.commit({
+    opId: 'seed-fetching',
+    origin: 'local',
+    writes: [
+      {
+        kind: 'attachmentState',
+        accountId: ACCOUNT,
+        remoteId: 'r1',
+        remotePart: 'p1',
+        state: 'fetching',
+      },
+    ],
+  });
+  assert.equal(w.row('p1')!.state, 'fetching');
+  await w.close();
+  // A new engine on the same store: the lane's start resets the stale row.
+  const file = w.file;
+  const clock = manualClock();
+  const log = createLogger({ sink: { write: () => undefined }, salt: 're', clock });
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  const blobs = memoryBlobs();
+  const parts = memoryParts();
+  const engine = await createEngine({
+    store,
+    clock,
+    log,
+    ports: {
+      accounts: {
+        attachment: () =>
+          Promise.resolve(
+            (async function* () {
+              yield enc('hello again');
+            })(),
+          ),
+      } as never,
+      blobFiles: blobs.files,
+      attachmentFiles: parts.port,
+    },
+    validate: parseArgs as (m: string, a: unknown) => unknown,
+  });
+  const row = store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM attachments WHERE remote_part = ?', 'p1'),
+  );
+  assert.equal(row!.state, 'absent', 'the stale fetch was reset at start');
+  const got = (await engine.connect().call('Attachment/get', {
+    messageId: `${ACCOUNT}:r1`,
+    attachmentId: 'p1',
+  })) as { blobId: string };
+  assert.ok(got.blobId.startsWith('b_'), 'the attachment opens again');
+  await engine.close();
+});
+
+test('an infinite small-chunk stream stops at the cap and reverts to absent', async () => {
+  const w = await world();
+  w.streams.set('p3', async function* () {
+    for (;;) yield new Uint8Array(64 * 1024);
+  });
+  const error = await get(w, 'p3').then(
+    () => assert.fail('expected tooLarge'),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'tooLarge');
+  assert.equal(w.row('p3')!.state, 'absent');
+  await w.close();
+});
+
+test('the row deleted mid-fetch answers notFound and removes the written file', async () => {
+  const w = await world();
+  w.setHeld();
+  const pending = get(w, 'p2').then(
+    () => assert.fail('expected notFound'),
+    (e: unknown) => e,
+  );
+  for (let i = 0; i < 100 && w.stalled() === 0; i++) await new Promise(r => setImmediate(r));
+  assert.equal(w.stalled(), 1, 'the fetch is mid-stream');
+  w.store.commit({
+    opId: 'gone',
+    origin: 'sync',
+    writes: [{ kind: 'attachments', accountId: ACCOUNT, remoteId: 'r1', list: [] }],
+  });
+  w.gate.open!();
+  const error = await pending;
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'notFound');
+  assert.equal(w.partFiles.size, 0, 'the written file was removed, not orphaned');
   await w.close();
 });

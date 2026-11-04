@@ -20,6 +20,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const TOTAL_MS = 120_000;
 const IDLE_MS = 30_000;
 const PER_ACCOUNT = 3;
+const GLOBAL = 4;
 
 const unavailable = (message = "Couldn't download this attachment. Try again.") =>
   contractError({ type: 'unavailable', message });
@@ -166,7 +167,9 @@ async function fetchPart(
       // The row went away under us (message deleted or the parts re-listed): nothing may name the
       // fresh file, so it is removed rather than orphaned, and the caller sees notFound, not a raw
       // store error.
-      if (error instanceof StoreError) {
+      // Only a row that is genuinely gone (message deleted, parts re-listed) maps to notFound and
+      // un-orphans the file; any other store error propagates as what it is.
+      if (error instanceof StoreError && error.code === 'notFound') {
         await files.remove(path).catch(() => undefined);
         throw notFound();
       }
@@ -228,23 +231,29 @@ export async function attachmentGet(
   const shared = services.mailFrames.parts.get(key);
   if (shared === undefined) {
     const count = services.mailFrames.fetching.get(ref.accountId) ?? 0;
-    if (count >= PER_ACCOUNT) throw busy();
+    const global = [...services.mailFrames.fetching.values()].reduce((a, b) => a + b, 0);
+    if (count >= PER_ACCOUNT || global >= GLOBAL) throw busy();
     services.mailFrames.fetching.set(ref.accountId, count + 1);
-    // The shared fetch answers to its own never-firing signal: the caller who started it going away
-    // must not kill it for every joined caller (or wedge the row `absent` on behalf of a dead
-    // session). Each caller's own signal governs only its wait below.
-    const own = new AbortController();
-    const work = fetchPart(services, files, ref, row, own.signal).finally(() => {
-      services.mailFrames.parts.delete(key);
-      const left = (services.mailFrames.fetching.get(ref.accountId) ?? 1) - 1;
-      if (left > 0) services.mailFrames.fetching.set(ref.accountId, left);
-      else services.mailFrames.fetching.delete(ref.accountId);
-    });
+    // The shared fetch answers to the lane's signal: no caller can kill it for joined callers, and
+    // `stop()` aborts + awaits it while the store is still open, so its `absent` revert always
+    // commits. Each caller's own signal governs only its wait below.
+    const work = fetchPart(services, files, ref, row, services.mailFrames.aborter.signal).finally(
+      () => {
+        services.mailFrames.parts.delete(key);
+        const left = (services.mailFrames.fetching.get(ref.accountId) ?? 1) - 1;
+        if (left > 0) services.mailFrames.fetching.set(ref.accountId, left);
+        else services.mailFrames.fetching.delete(ref.accountId);
+      },
+    );
     services.mailFrames.parts.set(key, work);
   }
   const mine = deadline(services.clock, TOTAL_MS + 1000, ctx.signal);
-  const done = await within(services.mailFrames.parts.get(key)!, mine);
-  mine.end();
+  let done: { path: string; size: number } | undefined;
+  try {
+    done = await within(services.mailFrames.parts.get(key)!, mine);
+  } finally {
+    mine.end();
+  }
   if (!done) throw unavailable();
   return handle(ctx, row, done.path, done.size);
 }

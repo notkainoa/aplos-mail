@@ -23,6 +23,8 @@ export interface MailFrames {
   readonly parts: Map<string, Promise<{ path: string; size: number }>>;
   /** In-flight fetch count per account scope (`Attachment/get` allows at most 3). */
   readonly fetching: Map<string, number>;
+  /** The lane's fetch signal: `stop()` aborts it, so an engine close takes every in-flight fetch down. */
+  readonly aborter: AbortController;
 }
 
 export function createMailFrames(): MailFrames {
@@ -32,5 +34,6 @@ export function createMailFrames(): MailFrames {
     cancelled: new Set(),
     parts: new Map(),
     fetching: new Map(),
+    aborter: new AbortController(),
   };
 }

@@ -376,10 +376,25 @@ export function createBlobRuntime(deps: {
 
   function attach(input: BlobAttach) {
     if (!ready || !deps.attachment) throw unavailable();
+    const principal = principalOf(input.caller);
+    // The same principal asking for the same cached file gets the live handle back — a
+    // `Blob/get` reads the path's current bytes either way — and a per-principal cap keeps a loop
+    // from minting one fresh handle per call (they live 30 min and own no bytes, so bytes exempt
+    // is not enough).
+    let held = 0;
+    for (const [id, entry] of index) {
+      if (entry.kind !== 'attachment' || entry.principal !== principal) continue;
+      if (entry.path === input.path) {
+        entry.lastReadAt = clock.now();
+        return { blobId: id };
+      }
+      held += 1;
+    }
+    if (held >= 200) throw busy();
     const now = clock.now();
     const id = mintId(deps.randomBytes);
     index.set(id, {
-      principal: principalOf(input.caller),
+      principal,
       kind: 'attachment',
       path: input.path,
       mime: input.mime,
