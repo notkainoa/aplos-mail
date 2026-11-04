@@ -202,6 +202,12 @@ export interface GmailServerOptions {
   listingLagMs?: number;
   /** Plant a DRAFT carrying the outgoing Message-ID when the send request arrives (the "Sent only, never a draft" rule). */
   draftTwin?: boolean;
+  /**
+   * What `messages.send` and a draft save do to the Message-ID the engine wrote: `rewritten` is Gmail's live behaviour (the
+   * Message-ID becomes `<hex@mail.gmail.com>`, the custom `X-Aplos-Send` / `X-Aplos-Draft` headers survive), `kept` is the
+   * old emulator default. Set on the emulator itself (it lives in the test process), not through the environment.
+   */
+  sendIdentity?: 'kept' | 'rewritten';
 }
 
 export interface GmailServer {
@@ -235,6 +241,9 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
     retryAfter: 'none',
     faults,
     latencyMs: 0,
+    ...(options.sendIdentity
+      ? { sendIdentity: options.sendIdentity, draftIdentity: options.sendIdentity }
+      : {}),
     users: [{ sub: 'kp-owner', email: OWNER, name: 'Owner' }],
   });
   emu.oauth.addClient(CLIENT_ID);

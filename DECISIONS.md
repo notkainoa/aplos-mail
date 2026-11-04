@@ -1291,3 +1291,8 @@ Pure, unwired code in `packages/mail-html/src/frame/` (exported as `@aplos/mail-
   - (d) Map the contract's `imagePolicy: 'load'` and the sender allow-list to `'allow'` in ONE whitelist function, and key the cache on the resolved policy.
   - (e) Call `withReporter` on every issue, outside the cache.
   - (f) Fix the `MailFrame.url` contract comment: the issued URL ends with a slash.
+
+## 2026-11-04 — eng-contract: the Gmail kill-point matrix runs in Gmail's real mode by default (option 2, at no extra CI time)
+
+- Platform's 2026-11-04 00:19 answer: room for the extra rewritten-mode run. The Integrator's 10:00 DECIDED said the better trade is to make the rewritten run the DEFAULT for the Gmail matrix files instead of adding two always-on files. That is what this does: `killpoint-gmail.matrix.ts` passes `sendIdentity` (and the matching `draftIdentity`) to the emulator itself, `rewritten` unless `APLOS_KILLPOINT_GMAIL_MODE=kept`; `npm run test:engine` therefore already runs the SAME two files, 64 rows, against Gmail's real behaviour (`messages.send` replaces the Message-ID and keeps `X-Aplos-Send`), with no added CI time. The old kept-mode run (the behaviour of providers that keep the Message-ID) is the occasional script `npm run test:engine:gmail-kept`, 64/64 too.
+- The mode assertion no longer depends on the environment: every row asserts the emulator reports the mode it was asked for and, rewritten, that a delivery was counted and no Sent copy kept the engine's Message-ID. Not passing the option to the emulator turns 31 of the 34 rows of one file red. `npm run test:engine:gmail-rewritten` (from #231) is removed: it is now the default run; the `check` script already ran `test:engine`.
