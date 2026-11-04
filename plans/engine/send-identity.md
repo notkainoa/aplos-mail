@@ -35,3 +35,7 @@ So an uncertain Gmail send (bytes out, answer lost) can today never be recovered
 ## Out of scope
 
 Providers other than Gmail (their `findSent` is unchanged); the Mac live re-probe of the full path (owner/Integrator after merge).
+
+## 2026-11-05 update: SUPERSEDED by providers' design (plans/providers/findsent-token.md, #224, implemented in #226)
+
+providers-3 built the adapter half before this note could be implemented, with a better split: the Gmail adapter stamps `X-Aplos-Send: <internetId>` at send time (`transmit`), so there is NO engine change (the engine's pinned MIME stays token-free, as for `X-Aplos-Draft`), and `findSent` accepts a Sent copy by token or by Message-ID. One deviation from the design above, which I accept: no retry loop inside `findSent` (it stalled the kill-point matrix on a fake clock); the engine's own re-check after 60 s covers the few-seconds index lag (the engine asks again before it asks the owner). This note stays as the record of the engine-side alternative that was not built.
