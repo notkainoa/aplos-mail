@@ -430,7 +430,8 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   const given = abandoned(meta, row.remote_draft_id, ...old);
   const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
   // Nothing awaits between this check and the mark: a send or a change made during the read drops this upload.
-  if (bytes && !stillCurrent(ctx, row)) return;
+  // (Also for a draft with no attachment bytes: `bytesFor` still yields once, and a commit may land in that gap.)
+  if (!stillCurrent(ctx, row)) return;
   const marked = setMeta(
     ctx,
     id,

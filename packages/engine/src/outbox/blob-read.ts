@@ -18,15 +18,13 @@ export function blobIdsOf(fields: Pick<DraftFields, 'attachments'>): string[] {
 
 /**
  * `work`, or a rejection once `BLOB_READ_LIMIT_MS` passed on `clock`. A later answer of `work` is dropped (its bytes are
- * never kept) and a later rejection is handled here, so abandoning it never raises an unhandled rejection.
+ * never kept) and a later rejection stays handled by the race, so abandoning it never raises an unhandled rejection.
  */
 async function withinLimit<T>(clock: Pick<Clock, 'sleep'>, work: Promise<T>): Promise<T> {
-  work.catch(() => {});
   const abort = new AbortController();
   const limit = clock.sleep(BLOB_READ_LIMIT_MS, abort.signal).then((): never => {
     throw new Error('blob read timed out');
   });
-  limit.catch(() => {});
   try {
     return await Promise.race([work, limit]);
   } finally {

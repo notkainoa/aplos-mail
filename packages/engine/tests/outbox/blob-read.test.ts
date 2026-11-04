@@ -808,3 +808,37 @@ test('backstop: a meta write never gives a hidden (removing) draft a due time or
     },
     { drafts: true },
   ));
+
+test('loadBlobs: a read that REJECTS after the limit raises no unhandled rejection, and the limit timer is disarmed on success', async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => void unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const clock = fakeClock(0);
+    let reject!: (error: Error) => void;
+    const hung = new Promise<Uint8Array>((_, no) => {
+      reject = no;
+    });
+    const late = loadBlobs({ get: () => hung }, ['b1'], clock);
+    const failed = assert.rejects(
+      late,
+      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+    );
+    await clock.advance(BLOB_READ_LIMIT_MS);
+    await failed;
+    reject(new Error('the host failed after the limit'));
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(unhandled, [], 'abandoning the read left no unhandled rejection');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('loadBlobs: a load that succeeds disarms its limit timer', async () => {
+  const clock = fakeClock(0);
+  const before = clock.pending?.() ?? 0;
+  const map = await loadBlobs({ get: async () => new Uint8Array([1, 2, 3]) }, ['b1'], clock);
+  assert.equal(map.size, 1);
+  assert.equal(clock.pending?.() ?? 0, before, 'no timer is left armed');
+});
