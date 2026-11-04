@@ -25,6 +25,7 @@ export type HostPorts = Partial<
     | 'unsubscribe'
     | 'keys'
     | 'blobFiles'
+    | 'attachmentFiles'
   >
 >;
 
@@ -97,6 +98,7 @@ const HOST_PORTS = [
   'unsubscribe',
   'keys',
   'blobFiles',
+  'attachmentFiles',
 ] as const satisfies readonly (keyof HostPorts)[];
 
 /**

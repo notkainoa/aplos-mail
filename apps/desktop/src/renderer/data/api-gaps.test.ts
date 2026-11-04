@@ -7,11 +7,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMethod } from '@aplos/contract';
+import type { Api as ClientApi } from '@aplos/contract/client';
 import { createHarness, type Harness } from './harness';
 import { CONTRACT_METHODS, HARNESS_NOW_MS, OperationFailedError } from './index';
+import type { CommandArgs, ContractMethodOf, DataApi } from './index';
 
 const DAY = 86_400_000;
 import { isNativeStubbed } from './native-stub';
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+/** `api.event.hide` is the client's `Event/hide` call, with `opId` minted by the data layer when absent. */
+const eventHideSignature: [
+  Equals<ReturnType<DataApi['event']['hide']>, ReturnType<ClientApi['event']['hide']>>,
+  Equals<Parameters<DataApi['event']['hide']>[0], CommandArgs<'Event/hide'>>,
+  Equals<ContractMethodOf<'event.hide'>, 'Event/hide'>,
+] = [true, true, true];
+
+/** Compile-only: `Event/hide`'s input is `{ids, hidden}` plus an `opId` the data layer may mint; never run. */
+export function hideSignature(api: DataApi) {
+  void api.event.hide({ ids: ['e1', 'e2'], hidden: true });
+  void api.event.hide({ ids: ['e1'], hidden: false, opId: 'op-mine' });
+  // @ts-expect-error: `hidden` says hide or show again; it is required.
+  void api.event.hide({ ids: ['e1'] });
+  // @ts-expect-error: `ids` is required.
+  void api.event.hide({ hidden: true });
+}
 
 async function withHarness(run: (h: Harness) => Promise<void>) {
   const h = createHarness();
@@ -174,6 +196,51 @@ test('a calendar toggle, an RSVP and an event edit are operations too', async ()
   });
 });
 
+test('event.hide mints its opId, forwards the input unchanged, and hides in Aplos only', async () => {
+  await withHarness(async h => {
+    const { api, operations, undoStack } = h.layer;
+    assert.ok(eventHideSignature.every(Boolean));
+    const window = await h.truth.api.view.query({
+      spec: { kind: 'events', from: HARNESS_NOW_MS - 7 * DAY, to: HARNESS_NOW_MS + 14 * DAY },
+    });
+    const id = window.ids[0];
+    assert.ok(id, 'the demo week has an event');
+    h.clearCalls();
+
+    const receipt = await api.event.hide({ ids: [id], hidden: true });
+    assert.equal(h.callsOf('Event/hide').length, 1);
+    const sent = h.callsOf('Event/hide')[0]!.args as {
+      opId: string;
+      ids: string[];
+      hidden: boolean;
+    };
+    assert.match(sent.opId, /^op-t\d+$/, 'the data layer minted the opId');
+    assert.deepEqual(
+      { ...sent, opId: '' },
+      { opId: '', ids: [id], hidden: true },
+      'the input went to the client unchanged but for the minted opId',
+    );
+    assert.equal(receipt.opId, sent.opId, "the contract output is the minted operation's receipt");
+    assert.equal(operations.view(sent.opId)?.state, 'confirmed');
+    assert.equal((await h.truth.api.event.get({ ids: [id] })).list[0]?.hidden, true);
+    assert.equal(undoStack.peek()?.kind, 'operation');
+
+    const shown = await api.event.hide({ ids: [id], hidden: false, opId: 'op-show' });
+    assert.equal(shown.opId, 'op-show', 'a caller-supplied opId is kept');
+    assert.equal((await h.truth.api.event.get({ ids: [id] })).list[0]?.hidden, undefined);
+
+    await assert.rejects(
+      () => api.event.hide({ ids: ['no-such-event'], hidden: true, opId: 'op-bad' }),
+      (error: unknown) =>
+        error instanceof OperationFailedError &&
+        error.opId === 'op-bad' &&
+        error.error.type === 'notFound' &&
+        error.error.message === 'This event is no longer available.',
+    );
+    assert.equal(operations.view('op-bad')?.state, 'failed');
+  });
+});
+
 test('a refused command rejects with OperationFailedError, marks the operation failed, and retry sends a fresh opId', async () => {
   await withHarness(async h => {
     const { api, operations, undoStack } = h.layer;
@@ -246,6 +313,7 @@ test('main-served methods are native in the table and answered by the stand-in s
       'system.microphone',
       'system.notifications',
       'system.openSettings',
+      'shell.open',
       'notification.test',
     ] as const;
     for (const name of nativeNames) {
@@ -259,6 +327,7 @@ test('main-served methods are native in the table and answered by the stand-in s
     assert.deepEqual(await api.window.finishOnboarding(), { ok: true });
     assert.deepEqual(await api.notification.test(), { ok: true });
     assert.deepEqual(await api.system.openSettings({ pane: 'microphone' }), { ok: true });
+    assert.deepEqual(await api.shell.open({ url: 'https://meet.example.com/abc' }), { ok: true });
     assert.deepEqual(await api.system.login({ enabled: true }), { enabled: true });
     assert.deepEqual(await api.system.login({}), { enabled: false });
     assert.deepEqual(await api.system.microphone({ check: true }), {
@@ -379,5 +448,10 @@ test('the native stub refuses what main would refuse under the contract schema',
         (error.body?.type ?? error.type) === 'validation',
     );
     assert.deepEqual(await api.system.openSettings({ pane: 'microphone' }), { ok: true });
+    await assert.rejects(
+      () => api.shell.open({ url: 'x'.repeat(4_001) }),
+      (error: { body?: { type?: string }; type?: string }) =>
+        (error.body?.type ?? error.type) === 'validation',
+    );
   });
 });

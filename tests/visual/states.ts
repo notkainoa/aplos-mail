@@ -758,6 +758,15 @@ export const STATES: readonly VisualState[] = [
     mockup: 'empty.html (default)',
     filled: 0,
   },
+  {
+    id: 'shell-sidebar-calendar-slot',
+    frame: 'shell',
+    title: 'Shell: the sidebar slot holds the MiniMonth and the Calendars list under the places',
+    components: ['Sidebar', 'MiniMonth', 'CalendarList'],
+    design: '7.1, 7.8',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
   // ui-reader
   ...readerStates,
   // ui-calendar

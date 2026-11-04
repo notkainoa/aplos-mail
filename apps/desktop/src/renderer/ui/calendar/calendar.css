@@ -454,6 +454,11 @@
   padding-bottom: var(--space-6);
 }
 
+.ui-calendar-grid__scroll:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-width));
+}
+
 .ui-calendar-grid__body {
   position: relative;
   height: calc(var(--gt) + var(--hour) * var(--nhours, 12));

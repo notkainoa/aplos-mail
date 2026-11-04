@@ -1,4 +1,5 @@
 import { allowImages } from '../mail/allow';
+import { attachmentGet } from '../mail/attachment';
 import { messageBody } from '../mail/body';
 import { mailFrame, releaseFrame, toggleQuotes } from '../mail/frame';
 import { prefetchBodies } from '../mail/prefetch';
@@ -19,6 +20,6 @@ export const handlers: AreaHandlers<'mail'> = {
   'Mail/release': releaseFrame,
   'Mail/toggleQuotes': toggleQuotes,
   'Mail/serve': serveMail,
-  'Attachment/get': notImplemented('Attachment/get'),
+  'Attachment/get': attachmentGet,
   'Message/original': notImplemented('Message/original'),
 };

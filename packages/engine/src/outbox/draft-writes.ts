@@ -200,7 +200,7 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
   const live = liveOf(tx, row.id);
   if (live) throw new DraftConflict('live', live.state);
   const hasRemote = row.remote_draft_id !== null;
-  const next = patched(meta, { cur: w.fingerprint, problem: null });
+  const next = patched(meta, { cur: w.fingerprint, problem: null, readFails: null });
   const due = dueAfter(w.fields, next, hasRemote, w.at, w.close === true);
   // The same content again is not a new revision (other windows would see a change that is not one), but a close still
   // asks for the upload now.
@@ -399,6 +399,9 @@ function setMeta(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'meta' }>) 
   const { fields, meta } = parseData(row.data);
   if (w.ifUploading !== undefined && meta.uploading?.internetId !== w.ifUploading)
     throw new DraftConflict('stale');
+  // Backstop: a hidden row only waits for its copy's removal; an upload's due time or read count on it would be stale.
+  if (meta.removing && (w.patch.dueAt != null || w.patch.readFails != null))
+    throw new DraftConflict('missing');
   const base = w.announce ? { ...meta, announce: tx.seq } : meta;
   writeRow(tx, w.id, {}, fields, patched(base, w.patch));
   if (w.announce) announce(w.id);

@@ -18,6 +18,7 @@ const STUBS: Readonly<Record<string, Stub>> = {
   'Window/finishOnboarding': ok,
   'Notification/test': ok,
   'System/openSettings': ok,
+  'Shell/open': ok,
   'System/login': args => ({ enabled: args['enabled'] === true }),
   'System/defaultMail': () => ({ success: false }),
   'System/microphone': () => ({ granted: false, status: 'notDetermined' }),
