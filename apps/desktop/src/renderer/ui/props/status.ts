@@ -184,6 +184,8 @@ export type ProgressSegmentsProps =
       compact?: boolean;
       /** How many accounts are connected. The account's colour dot shows only with two or more (DESIGN decision 16); omitted means one, so no dot. */
       accountCount?: number;
+      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can render ONE role="status" wrapper around them. */
+      live?: 'polite' | 'off';
     }
   | {
       /** The status slot's "Importing N of M" track. */
@@ -216,6 +218,8 @@ export type ProgressSegmentsProps =
       segments: readonly ProgressSegment[];
       /** Accessible name of the progressbar, e.g. "jordan@gmail.com sync" (DESIGN §7.12). */
       label: string;
+      /** 'polite' (default) keeps this part's own visually hidden role="status" for phase changes; 'off' drops it (the phase text stays, without a role) so a parent that shows several accounts can render ONE role="status" wrapper around them. */
+      live?: 'polite' | 'off';
     };
 
 /** One segment of ProgressSegments' 'segments' variant (DESIGN §7.12: neutral colours, never a fake percentage). */

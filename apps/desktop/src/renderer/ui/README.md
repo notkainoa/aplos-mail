@@ -86,6 +86,7 @@ The UI-screens thread checked every screen it builds against these props (`plans
 
 - `ChoiceGroup` (onboarding): the radiogroup around radio `ChoiceRow`s.
 - `ProgressSegments` variant `'segments'` with `ProgressSegment {label, state, value?}`: plain labelled segments.
+- `ProgressSegments.live` (`'polite'` default | `'off'`, variants `'checkpoints'` and `'segments'`): `'off'` drops the part's own visually hidden `role="status"` (its phase text stays), so a screen showing several accounts renders ONE `role="status"` wrapper around them.
 - `MiniMonth.marks`: days with events.
 - `SettingRow.paletteId`: the row's palette entry.
 - `PaletteItem.detail` and `PaletteItem.opensPage`: a Settings row's section, and the chevron for nested pages.

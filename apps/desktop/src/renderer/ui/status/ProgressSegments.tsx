@@ -2,7 +2,7 @@
  * ProgressSegments: first-sync progress by engine checkpoints, never a fake percentage (DESIGN 6, 7.12).
  * Neutral colours: done --ink-2, paused --dusk, failed --stamp. A count fills its segment to the real n of m and
  * the motion sits on the checklist marker, not the bar. Every bar is labelled "<address> sync"; one visually
- * hidden role="status" speaks phase changes only. The same part draws "Importing N of M", the OAuth wait and
+ * hidden role="status" speaks phase changes only (`live="off"` drops it for a parent that owns the one region). The same part draws "Importing N of M", the OAuth wait and
  * the ready check.
  */
 import type { CSSProperties } from 'react';
@@ -192,6 +192,7 @@ function Checkpoints(p: CheckpointsProps) {
     onOpenSettings,
     compact,
     accountCount = 1,
+    live = 'polite',
   } = p;
   const failed = notConnected || checkpoints.some(cp => cp.state === 'failed');
   const status = checkpointsStatus(p);
@@ -271,7 +272,7 @@ function Checkpoints(p: CheckpointsProps) {
           ) : null}
         </p>
       ) : null}
-      <span className="ui-sr-only" role="status">
+      <span className="ui-sr-only" role={live === 'off' ? undefined : 'status'}>
         {phaseOf(p)}
       </span>
     </div>
@@ -323,7 +324,7 @@ export function ProgressSegments(props: ComponentPropsMap['ProgressSegments']) {
             <PlainSegment key={s.label} segment={s} />
           ))}
         </div>
-        <span className="ui-sr-only" role="status">
+        <span className="ui-sr-only" role={props.live === 'off' ? undefined : 'status'}>
           {segmentsPhase(props.label, props.segments)}
         </span>
       </div>
