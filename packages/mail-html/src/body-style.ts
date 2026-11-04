@@ -4,7 +4,9 @@ import { asciiLower } from './parse';
 // What the frame body's own `style` attribute may set. An element's style attribute outranks every
 // cascade layer, so the body's carries only its look: colours, margins, padding and type, by explicit
 // name (an unknown property under a known prefix, today's or tomorrow's, is left out). The font size
-// and the line height are bounded too, so a huge type size cannot make a letter thousands of px tall.
+// and the line height are bounded too, so a huge type size set here stays reasonable. That is a bound on
+// this attribute only: a `<style>` rule can still set `body{font-size:900px}` (the reading layer does not
+// guard the font size, which changes every em and rem in the letter). It is a tall letter, not a runaway.
 
 const SIDES = ['top', 'right', 'bottom', 'left', 'block', 'block-start', 'block-end'];
 const INLINE = ['inline', 'inline-start', 'inline-end'];
