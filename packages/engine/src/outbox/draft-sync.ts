@@ -251,7 +251,11 @@ const UNREADABLE_BLOB = {
  */
 function readFailed(ctx: DraftsCtx, row: UploadRow, meta: DraftMeta) {
   ctx.log.event('draft.sync_failed', { draft: row.id, error: UNREADABLE_BLOB });
-  if (!stillCurrent(ctx, row)) return;
+  // A discard while the bytes were read hides the row WITHOUT changing its revision, and the retry
+  // write below is guarded by revision alone: re-read the row and refuse explicitly. A hidden row
+  // must never be given a due time, nor a problem (a live send, if any, decides instead).
+  const current = readUploadRow(ctx, row.id);
+  if (!current || parseData(current.data).meta.removing || !stillCurrent(ctx, row)) return;
   const readFails = (meta.readFails ?? 0) + 1;
   if (readFails >= MAX_READ_FAILS) return problemFor(ctx, row, PROBLEM_COPY);
   const dueAt = ctx.clock.now() + DRAFT_RETRY_MS;
@@ -397,7 +401,12 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   const row = readUploadRow(ctx, id);
   if (!row) return;
   const { fields, meta } = parseData(row.data);
-  if (meta.removing) return;
+  // Backstop: a hidden row must never keep a due time (a read that failed during the discard may have
+  // left one), or the uploads index pins the drafts timer on it until the provider confirms the copy.
+  if (meta.removing) {
+    if (meta.dueAt !== undefined) setMeta(ctx, id, { dueAt: null }, { ifRevision: row.revision });
+    return;
+  }
   // A draft waiting for a choice uploads nothing, and no longer counts as due.
   if (meta.conflict) {
     if (meta.dueAt === undefined) return;
