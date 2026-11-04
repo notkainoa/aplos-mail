@@ -55,8 +55,11 @@ test('viii: a draft discarded while its failing upload read runs keeps no due ti
       g.open();
       await w.settle();
       const row = draftRow(w, d.id);
-      const meta = (JSON.parse(row.data) as { _sync: { removing?: boolean; dueAt?: number } })
-        ._sync;
+      const meta = (
+        JSON.parse(row.data) as {
+          _sync: { removing?: boolean; dueAt?: number; problem?: unknown };
+        }
+      )._sync;
       assert.equal(meta.removing, true, 'hidden');
       assert.equal(meta.dueAt, undefined, 'no retry deadline lands on the hidden row');
       assert.equal(meta.problem, undefined, 'and no problem');
@@ -97,7 +100,7 @@ test('viii: a hidden row left holding a due time (pre-guard damage) loses it whe
       // Unreachable through today's writers (the hide clears dueAt atomically and the commit guard
       // refuses every later dueAt write on a removing row), so this is the legacy shape the backstop
       // repairs: removing:true with a past deadline still on the row.
-      const f = withFile(w) as { _sync?: Record<string, unknown> } & typeof f;
+      const f = withFile(w) as ReturnType<typeof withFile> & { _sync?: Record<string, unknown> };
       f._sync = { rev: 1, removing: true, removeAt: 1, dueAt: 1 };
       w.draft('d1', f, { remoteDraftId: 'rd-x' });
       // Hold the provider's delete so the hidden row stays observable.
