@@ -10,6 +10,7 @@ import { createAppRegistry } from '../../commands';
 import { COMPONENTS, type IconName } from '../props';
 import { Switch } from '../controls/Switch';
 import { Button } from './Button';
+import { nameContainsVisibleText } from './buttonName';
 import { Icon, IconSetContext, LUCIDE_ICONS } from './Icon';
 import { Kbd, KeyCaps } from './Kbd';
 import {
@@ -198,6 +199,64 @@ test('Button: icon variant has aria-label, no visible label, and a tooltip wrapp
   assert.doesNotMatch(labelled, /aria-label/);
   assert.equal(text(labelled), 'Ask');
   assert.match(labelled, /data-labelled="true"/);
+});
+
+test('Button: ariaLabel replaces the name, labelledBy adds row context and keeps the visible text', () => {
+  const named = html(
+    <Button
+      variant="text"
+      label="Groq"
+      ariaLabel="Groq, Provider"
+      trailingIcon="chevron-down"
+      onPress={noop}
+    />,
+  );
+  assert.match(named, /aria-label="Groq, Provider"/);
+  assert.doesNotMatch(named, /aria-labelledby/);
+  assert.equal(nameContainsVisibleText('Groq, Provider', 'Groq'), true);
+  assert.equal(nameContainsVisibleText('Provider', 'Groq'), false);
+  assert.equal(nameContainsVisibleText('  GROQ   provider ', 'groq'), true);
+
+  const row = html(<Button variant="text" label="Groq" labelledBy="row-provider" onPress={noop} />);
+  const own = /<span id="([^"]+)" class="ui-button-label">Groq<\/span>/.exec(row)?.[1];
+  assert.ok(own, 'visible label span carries a generated id');
+  assert.ok(row.includes(`aria-labelledby="row-provider ${own}"`));
+  assert.doesNotMatch(row, /aria-label=/);
+
+  const iconRow = html(
+    <Button
+      variant="icon"
+      icon="more"
+      label="More"
+      id="more-1"
+      labelledBy="row-provider"
+      onPress={noop}
+    />,
+  );
+  assert.match(iconRow, /aria-label="More"/);
+  assert.match(iconRow, /aria-labelledby="row-provider more-1"/);
+  const iconGenerated = html(
+    <Button variant="icon" icon="more" label="More" labelledBy="row-provider" onPress={noop} />,
+  );
+  const generated = /<button[^>]* id="([^"]+)"/.exec(iconGenerated)?.[1];
+  assert.ok(generated && iconGenerated.includes(`aria-labelledby="row-provider ${generated}"`));
+});
+
+test('Button: the icon variant still requires a label even with ariaLabel or labelledBy', () => {
+  // @ts-expect-error label is required
+  const missing = <Button variant="icon" icon="close" ariaLabel="Close" onPress={noop} />;
+  assert.ok(missing);
+});
+
+test('Button: neither ariaLabel nor labelledBy leaves the markup as it was', () => {
+  assert.equal(
+    html(<Button variant="text" label="Later" onPress={noop} />),
+    '<button type="button" class="ui-button" data-variant="text" data-size="md" data-tone="default"' +
+      ' data-labelled="true"><span class="ui-button-label">Later</span></button>',
+  );
+  const icon = html(<Button variant="icon" icon="close" label="Close" onPress={noop} />);
+  assert.match(icon, /aria-label="Close"/);
+  assert.doesNotMatch(icon, /aria-labelledby| id="/);
 });
 
 test('Button: keycaps come from the registry and never show inline by default', () => {

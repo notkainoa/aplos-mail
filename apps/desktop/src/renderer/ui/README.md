@@ -18,7 +18,7 @@ The design spec is `plans/DESIGN.md` ("Paper"). The visual target is `mockups/*.
 
 No component takes a raw colour, size, radius, duration, shadow or a class name for styling. Every visual choice is a closed string union tied to DESIGN:
 
-- `Button` `variant: 'filled' | 'text' | 'icon'`, `size: 'sm' | 'md' | 'lg'` (28 / 32 / 40 px). The icon variant requires `icon` and a `label`.
+- `Button` `variant: 'filled' | 'text' | 'icon'`, `size: 'sm' | 'md' | 'lg'` (28 / 32 / 40 px). The icon variant requires `icon` and a `label`. A Button in a row takes `labelledBy` (the row label's id) or `ariaLabel` (which must start with the visible text, WCAG 2.5.3) so its name keeps the visible text plus the row context.
 - `Density`, `TagColor`, `CommitKind`, `ToastKind`, `Chip` `kind`, `RowLayout`, `SectionHeader` `variant` and `tone`.
 - Icons come from the closed `IconName` set. AI never gets a glyph. It is marked only by the serif and plain words (DESIGN §9).
 
