@@ -21,11 +21,14 @@ import {
   type DrillState,
 } from './drill.model';
 
-let registry: Registry | undefined;
-/** The first key of a command, as its keycap ("J", "Space"). The shell's remaps arrive with its own registry later. */
-function capOf(id: string): string {
-  registry ??= createAppRegistry();
-  const binding = registry.keysFor(id, ['onboarding', 'firstSync', 'drill'])[0];
+let fallback: Registry | undefined;
+/**
+ * The first key of a command, as its keycap ("J", "Space"). The container's configured registry is what the
+ * drill resolves against, so an owner's remap (J → X) shows X; the shared default covers the preview.
+ */
+function capOf(registry: Registry | undefined, id: string): string {
+  const reg = registry ?? (fallback ??= createAppRegistry());
+  const binding = reg.keysFor(id, ['onboarding', 'firstSync', 'drill'])[0];
   return binding ? formatBinding(binding) : '';
 }
 
@@ -42,13 +45,15 @@ export interface DrillProps {
   readonly state: DrillState;
   /** Epoch ms, for the letters' dates. */
   readonly now: number;
+  /** The registry the drill resolves against, so keycaps match the owner's remaps. */
+  readonly registry?: Registry;
   /** A pointer duplicate of a drill key (the letter's buttons). */
   readonly onKey: (key: DrillKey) => void;
   /** A row was clicked: move the cursor there. */
   readonly onPick: (index: number) => void;
 }
 
-export function Drill({ state, now, onKey, onPick }: DrillProps) {
+export function Drill({ state, now, registry, onKey, onPick }: DrillProps) {
   const uid = useId();
   const headId = `${uid}-head`;
   const listId = DRILL_LIST_ID;
@@ -67,7 +72,7 @@ export function Drill({ state, now, onKey, onPick }: DrillProps) {
     <div className="fs-drill__prompt">
       <span className="fs-drill__keys">
         {step.commands.map(id => (
-          <Kbd key={id} chord={capOf(id)} />
+          <Kbd key={id} chord={capOf(registry, id)} />
         ))}
       </span>
       <span className="fs-drill__say">

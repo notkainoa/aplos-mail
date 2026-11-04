@@ -79,3 +79,11 @@
   flex: none;
   margin-left: auto;
 }
+
+/* The practice letter's Later and ⋯ buttons have no drill step: FocusLetter always draws them (its props
+   require the handlers), so the drill hides them rather than showing buttons that do nothing. Later is the
+   action right after the suggestion; ⋯ is the row's only icon-variant action. */
+.fs-drill .ui-focus-letter__suggest + .ui-list-btn,
+.fs-drill .ui-focus-letter__actions > .ui-list-btn[data-variant='icon'] {
+  display: none;
+}

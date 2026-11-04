@@ -6,6 +6,7 @@
  * footer says "Esc opens Aplos" in every state, including the drill.
  */
 import { useId } from 'react';
+import type { Registry } from '../../commands';
 import { Button } from '../../ui/buttons-keys';
 import { OnboardingStep } from '../../ui/onboarding';
 import type { StepButton } from '../../ui/props';
@@ -23,6 +24,8 @@ export interface FirstSyncProps {
   readonly drill: DrillState | null;
   /** Epoch ms (the practice letters' dates). */
   readonly now: number;
+  /** The registry the drill's keycaps resolve against (the owner's remaps). */
+  readonly registry?: Registry;
   /** Open Aplos: the filled button, "Continue anyway", Esc, and the clean-finish handoff. */
   readonly onOpen: () => void;
   /** Try again on one account (`Setup/retry`). */
@@ -135,7 +138,13 @@ export function FirstSync(props: FirstSyncProps) {
               />
             ))}
           </div>
-          <Drill state={drill} now={now} onKey={props.onDrillKey} onPick={props.onDrillPick} />
+          <Drill
+            state={drill}
+            now={now}
+            registry={props.registry}
+            onKey={props.onDrillKey}
+            onPick={props.onDrillPick}
+          />
           <WindowNoticeLine notice={props.notice} />
         </OnboardingStep>
       </div>

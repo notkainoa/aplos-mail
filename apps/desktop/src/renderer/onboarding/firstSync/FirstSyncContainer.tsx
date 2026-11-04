@@ -9,7 +9,7 @@
  * The screen names its focus target to the window (F12), reads the owner's key settings (single-key shortcuts,
  * remaps) and leaves the keys alone while the reconnect sheet is open over it.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   createAppRegistry,
   focusKindOf,
@@ -120,16 +120,19 @@ export function FirstSyncContainer({
   // Keys come through the registry; the handlers read the latest view and drill at key time.
   const latest = useRef({ view, drill, open, drillKey, prefs, keysSuspended });
   latest.current = { view, drill, open, drillKey, prefs, keysSuspended };
-  const own = useRef<Registry | null>(null);
+  // Without the window's registry the screen still owns Esc [F8]: it resolves keys through a registry of its
+  // own, so a missing wiring can never leave Esc stuck — and the drill's keycaps read the same remaps.
+  const own = useMemo(
+    () => (registry ? null : createAppRegistry(latest.current.prefs)),
+    [registry],
+  );
   useEffect(() => {
-    own.current?.configure(prefs);
+    own?.configure(prefs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.ui]);
+  }, [own, settings?.ui]);
   useEffect(() => {
-    // Without the window's registry the screen still owns Esc [F8]: it resolves keys through a registry of its own,
-    // so a missing wiring can never leave Esc stuck. With the window's registry, the window's listener does this.
-    const target = registry ?? createAppRegistry(latest.current.prefs);
-    own.current = registry ? null : target;
+    const target = registry ?? own;
+    if (!target) return;
     const handlers = firstSyncCommands({
       view: () => latest.current.view,
       drillOpen: () => latest.current.drill !== null,
@@ -172,15 +175,15 @@ export function FirstSyncContainer({
     return () => {
       unlisten();
       detach.forEach(d => d());
-      own.current = null;
     };
-  }, [registry]);
+  }, [registry, own]);
 
   return (
     <FirstSync
       view={view}
       drill={drill}
       now={now}
+      registry={registry ?? own ?? undefined}
       onOpen={open}
       onRetry={retry}
       onReconnect={onReconnect}
