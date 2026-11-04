@@ -54,9 +54,15 @@ export interface ProviderPort {
    * The message's raw RFC822 for "Show original" and `.eml` export (`Message/original`, plans/engine/blob-area.md
    * decision 13), fetched live and never cached: Gmail `messages.get format=raw`, priced as `full`, base64url decoded
    * in the adapter. The caller caps it at 25 MB. Optional and additive: until `prov-gov` routes it to an adapter that has
-   * it, `Message/original` answers `unavailable`.
+   * it, `Message/original` answers `unavailable`. `options.signal` aborts the read itself (the lane's
+   * stop or the fetch's 120 s deadline, whichever is first) — an adapter should stop the HTTP read,
+   * not just resolve late.
    */
-  original?(account: AccountId, remoteMessageId: string): Promise<AsyncIterable<Uint8Array>>;
+  original?(
+    account: AccountId,
+    remoteMessageId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<AsyncIterable<Uint8Array>>;
 }
 
 /** Engine-side facts per account, beyond the F1 wire `AccountHealth`; `Setup/status` and `Account/*` read from here. */
