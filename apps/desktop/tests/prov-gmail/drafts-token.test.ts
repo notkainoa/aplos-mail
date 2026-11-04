@@ -396,3 +396,137 @@ test('token: with drafts.send on, a stored draft that carries the token is sent 
   assert.doesNotMatch(world.bridge.uploads[0].raw.toString('latin1'), /x-aplos-draft/i);
   assert.doesNotMatch(world.sentMessages()[0].raw.toString('latin1'), /x-aplos-draft/i);
 });
+
+// ---- the extra lookups only run after an attempt that may have landed ----
+
+/** `messages.list` calls the adapter made since `from` (an index into the emulator's log). */
+const listCalls = (s: Setup, from: number) =>
+  s.r.emu.log.slice(from).filter(e => e.apiMethod === 'gmail.users.messages.list').length;
+
+/** Raw reads of a draft (priced as full, 60 units) since `from`. */
+const rawReads = (s: Setup, from: number) =>
+  s.r.emu.log.slice(from).filter(e => e.apiMethod === 'gmail.users.drafts.get' && e.units === 60)
+    .length;
+
+for (const [name, fault] of [
+  ['a 403', { status: 403, reason: 'forbidden', message: 'Forbidden' }],
+  [
+    'a 429 (the governor pauses the account)',
+    { status: 429, reason: 'rateLimitExceeded', message: 'Rate limit exceeded' },
+  ],
+] as const) {
+  test(`token: a definite refusal of the create (${name}, nothing landed) leaves the retry on the cheap lookups`, async () => {
+    const { s, faults } = await world(DROPPED);
+    const upload = s.upload({ body: 'Refused once.' });
+    faults.failNext({ apiMethod: 'gmail.users.drafts.create' }, fault);
+    const failure = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+    assert.ok(failure instanceof Error);
+    assert.ok(
+      !(failure instanceof ProviderError && failure.error.uncertain === true),
+      'a refusal is not an uncertain end',
+    );
+    await s.r.clock.advance(300_000);
+    const from = s.r.emu.log.length;
+    saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+    assert.equal(listCalls(s, from), 1, 'only the all-mail search: no Sent/Trash scan');
+    assert.equal(s.remoteDrafts().length, 1);
+    assert.equal(rawReads(s, from), 0, 'no raw reads for the content fallback');
+  });
+}
+
+test('token: an uncertain create (it may have landed) does run the Sent/Trash scan and the content fallback on the retry', async () => {
+  const { s, faults } = await world(DROPPED);
+  const upload = await uncertainCreate(s, faults);
+  const from = s.r.emu.log.length;
+  saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(listCalls(s, from), 2, 'the all-mail search and the Sent/Trash scan');
+  assert.equal(s.remoteDrafts().length, 1, 'adopted by the content fallback, no duplicate');
+});
+
+test('token: an attempt that was answered (the reply was then lost to the engine) also keeps the extra checks for its retry', async () => {
+  const { s } = await world(DROPPED);
+  const upload = s.upload({ body: 'Answered.' });
+  saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  const from = s.r.emu.log.length;
+  const again = saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(listCalls(s, from), 2);
+  assert.equal(again.remoteDraftId, s.remoteDrafts()[0].id);
+  assert.equal(s.remoteDrafts().length, 1);
+});
+
+// ---- the content fallback never takes a draft that carries a token of someone else ----
+
+test('token (dropped): the content fallback skips a draft carrying a DIFFERENT well-formed token even when its content equals our upload', async () => {
+  const { s, faults } = await world(DROPPED);
+  const upload = s.upload({ body: 'Same content.' });
+  faults.dropNext({ apiMethod: 'gmail.users.drafts.create' });
+  const failure = await s.r.adapter.saveDraft(upload, s.r.ctx()).catch((e: unknown) => e);
+  assert.ok(failure instanceof ProviderError && failure.error.uncertain === true);
+  assert.equal(s.remoteDrafts().length, 0, 'the request never landed');
+  // Another device's draft holds exactly our recorded content, under a token that is not ours.
+  const lookalike = Buffer.from(
+    uploadedBytes(upload)
+      .toString('latin1')
+      .replace(
+        `X-Aplos-Draft: ${upload.internetId}`,
+        'X-Aplos-Draft: <someone-else@mail.example.test>',
+      ),
+    'latin1',
+  );
+  // Made on another device: the emulator's header dropping (our API saves only) is off for this one.
+  const dropping = s.r.emu.settings.dropDraftHeaders;
+  s.r.emu.settings.dropDraftHeaders = [];
+  const other = s.r.emu.mailbox.createDraft(lookalike);
+  s.r.emu.settings.dropDraftHeaders = dropping;
+  assert.deepEqual(
+    headerValues(s.remoteDrafts()[0].text, 'X-Aplos-Draft'),
+    ['<someone-else@mail.example.test>'],
+    'the other draft really carries its own token',
+  );
+  const result = saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.notEqual(result.remoteDraftId, other.id, 'the lookalike was not adopted');
+  const drafts = s.remoteDrafts();
+  assert.equal(drafts.length, 2, 'a visible second draft, nothing overwritten');
+  assert.equal(drafts.find(d => d.id === other.id)?.messageId, other.message.id, 'untouched');
+});
+
+// ---- two drafts with one token ----
+
+test('token (rewritten): two drafts with our token, a phone-edited duplicate listed first: our unchanged copy is still found', async () => {
+  const { s } = await world(REWRITTEN);
+  const upload = s.upload({ body: 'Ours.' });
+  const ours = s.r.emu.mailbox.createDraft(uploadedBytes(upload));
+  await s.r.clock.advance(60_000); // the duplicate is NEWER, so Gmail lists it first
+  const duplicate = s.r.emu.mailbox.createDraftElsewhere({
+    subject: 'Draft subject',
+    text: 'A phone edit of a copy.',
+    headers: { 'X-Aplos-Draft': upload.internetId },
+  });
+  const result = saved(await s.r.adapter.saveDraft(upload, s.r.ctx()));
+  assert.equal(result.remoteDraftId, ours.id, 'ours, not a conflict naming the duplicate');
+  assert.equal(s.bridge.uploads.length, 0, 'nothing written');
+  assert.equal(
+    s.remoteDrafts().find(d => d.id === duplicate.draftId)?.messageId,
+    duplicate.messageId,
+  );
+});
+
+test('token (rewritten): two drafts with our token and neither proven ours: a conflict naming the first listed, nothing written', async () => {
+  const { s } = await world(REWRITTEN);
+  const upload = s.upload({ body: 'Ours.' });
+  s.r.emu.mailbox.createDraftElsewhere({
+    subject: 'Draft subject',
+    text: 'Older phone copy.',
+    headers: { 'X-Aplos-Draft': upload.internetId },
+  });
+  await s.r.clock.advance(60_000);
+  const newer = s.r.emu.mailbox.createDraftElsewhere({
+    subject: 'Draft subject',
+    text: 'Newer phone copy.',
+    headers: { 'X-Aplos-Draft': upload.internetId },
+  });
+  const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
+  assert.equal(result.kind, 'conflict');
+  assert.equal(result.kind === 'conflict' ? result.remoteDraftId : '', newer.draftId);
+  assert.equal(s.bridge.uploads.length, 0);
+});
