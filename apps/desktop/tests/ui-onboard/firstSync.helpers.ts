@@ -122,7 +122,6 @@ export function newRun(): RunTrack {
  * nothing claims completion early, no auto-open unless every fact is clean, Esc always opens, the live region
  * changes only with the phase, and no banned copy. `step` samples the rendered checklist to keep the run short.
  */
-// eslint-disable-next-line complexity -- one walk asserts every invariant the screen owes at once
 export function assertHonestStep(
   v: FirstSyncView,
   a: SetupAccount,

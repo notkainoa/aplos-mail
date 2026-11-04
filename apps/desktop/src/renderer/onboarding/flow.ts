@@ -159,7 +159,6 @@ function recordConnect(
   return { ...state, pendingConnectId, connected };
 }
 
-// eslint-disable-next-line complexity -- the window's whole event table; splitting it would scatter the state machine
 export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
   // Engine answers are recorded at any moment, even after the session ended; they never navigate.
   if (event.type === 'connectResolved') return same(recordConnect(state, event));

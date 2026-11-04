@@ -245,7 +245,6 @@ function failed(state: ReconnectState, code: string | undefined): ReconnectResul
   });
 }
 
-// eslint-disable-next-line complexity -- the sheet's whole event table; splitting it would scatter the state machine
 export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): ReconnectResult {
   switch (event.type) {
     case 'open': {

@@ -342,7 +342,6 @@ interface Derived {
   findDone: boolean;
 }
 
-// eslint-disable-next-line complexity -- one account's honest-state derivation; the branches are DESIGN 7.12's rules
 function deriveAccount(
   a: SetupAccount,
   status: SetupStatus,
@@ -640,7 +639,6 @@ function sortFailure(code: AnyReasonCode | undefined, provider: string): ErrorLi
 const EMPTY_MEMORY: FirstSyncMemory = { accounts: {}, rows: {} };
 
 /** Builds the screen from one `Setup/status` and the view shown before it. */
-// eslint-disable-next-line complexity -- screen-wide outcomes fold every row's derivation into one verdict
 export function buildFirstSyncView(input: FirstSyncInput): FirstSyncView {
   const { status, now } = input;
   // Memory is per setup session. A status that first arrives without a `setupId` and then with one is the same run;

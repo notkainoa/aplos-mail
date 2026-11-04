@@ -271,7 +271,6 @@ export type AiEvent =
   /** Esc's answer from `aiEsc`. */
   | { readonly type: 'replace'; readonly state: AiState };
 
-// eslint-disable-next-line complexity -- the step's whole event table; splitting it would scatter the state machine
 export function reduceAi(state: AiState, event: AiEvent): AiState {
   switch (event.type) {
     case 'toggleMore':
@@ -534,7 +533,6 @@ const GROQ_FALLBACK: AiProvider = {
   local: false,
 };
 
-// eslint-disable-next-line complexity -- the step's view folds provider, key and consent state into one drawing
 export function aiView(state: AiState, inputs: AiInputs): AiViewModel {
   const loading = inputs.providers === undefined;
   const all = inputs.providers ?? [];

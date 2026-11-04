@@ -129,7 +129,6 @@ function cleared(state: AccountsState): AccountsState {
   };
 }
 
-// eslint-disable-next-line complexity -- the step's whole event table; splitting it would scatter the state machine
 export function reduceAccounts(state: AccountsState, event: AccountsEvent): AccountsResult {
   switch (event.type) {
     case 'enter':
