@@ -45,6 +45,7 @@ import {
 import { shellScenes } from './scenes.shell';
 import { homeScenes } from './scenes.home';
 import { readerScenes } from './scenes.reader';
+import { calendarScenes } from './scenes.calendar';
 
 export const registry = createAppRegistry();
 
@@ -619,4 +620,6 @@ export const scenes: Record<string, () => ReactElement> = {
   ...homeScenes,
   // ui-reader
   ...readerScenes,
+  // ui-calendar
+  ...calendarScenes,
 };
