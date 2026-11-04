@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AddAccountView, type AddAccountViewProps } from './AddAccountHost';
-import { closeSheet, openAddAccount, openSheet, registerSheetCancel } from './index';
+import { closeSheet, openAddAccount, openSheet, registerSheetCancel, useAddAccount } from './index';
+import { FOCUS_IDS, addAccountFocusId } from './add-account-controller';
 import { getSheet } from './store-sheet';
 import { accountEntries } from './AccountMenu';
 import { emptyText } from './states';
@@ -66,13 +67,58 @@ test('a typed Google address offers Continue with Google as the one filled butto
   assert.equal((out.match(/data-variant="filled"/g) ?? []).length, 1);
 });
 
-test('waiting says so and offers Cancel; failed says why and offers Try again', () => {
+const liveRegions = (out: string) => (out.match(/role="(?:status|alert)"/g) ?? []).length;
+
+test('waiting says so, offers Cancel and has exactly one live region', () => {
   const waiting = html({ mode: 'waiting' });
   assert.match(waiting, /Waiting for Google in your browser…/);
   assert.match(waiting, />Cancel</);
+  assert.equal(liveRegions(waiting), 1);
+});
+
+test('failed says why in the field status, flags the field and offers Try again', () => {
   const failed = html({ mode: 'failed', failure: 'auth.denied', address: 'alex@gmail.com' });
   assert.match(failed, /Try again/);
-  assert.match(failed, /role="alert"|ui-error-line/);
+  assert.equal(liveRegions(failed), 1);
+  assert.match(failed, /<p id="onb-address-error"[^>]*role="status"/);
+  assert.match(failed, /aria-invalid="true"/);
+  assert.match(failed, /aria-describedby="onb-address-error"/);
+  assert.doesNotMatch(failed, /ui-error-line/);
+  assert.doesNotMatch(failed, /auth\.denied/);
+});
+
+test('a notice is the field status too, and the choose state has none without one', () => {
+  const noticed = html({ notice: 'unsupported' });
+  assert.equal(liveRegions(noticed), 1);
+  assert.match(noticed, /aria-describedby="onb-address-error"/);
+  assert.equal(liveRegions(html({})), 0);
+});
+
+test('each mode names its own primary control, and the markup has it', () => {
+  assert.equal(addAccountFocusId('choose'), 'onb-address');
+  assert.equal(addAccountFocusId('discovering'), 'onb-address');
+  assert.equal(addAccountFocusId('typed'), FOCUS_IDS.continue);
+  assert.equal(addAccountFocusId('waiting'), FOCUS_IDS.cancel);
+  assert.equal(addAccountFocusId('failed'), FOCUS_IDS.retry);
+  assert.equal(addAccountFocusId('connected'), undefined);
+  const ids = [FOCUS_IDS.continue, FOCUS_IDS.cancel, FOCUS_IDS.retry];
+  assert.equal(new Set(ids).size, 3);
+  const modes = ['choose', 'typed', 'waiting', 'failed'] as const;
+  for (const mode of modes) {
+    const id = addAccountFocusId(mode);
+    assert.match(html({ mode, address: 'a@b.co' }), new RegExp(`id="${id}"`), mode);
+  }
+});
+
+test('a connected flow draws nothing, so the choose body never flashes before the sheet closes', () => {
+  assert.equal(html({ mode: 'connected' }), '');
+});
+
+test('useAddAccount follows the open sheet', () => {
+  const Probe = () => <i>{String(useAddAccount())}</i>;
+  assert.match(renderToStaticMarkup(<Probe />), />false</);
+  openAddAccount();
+  assert.match(renderToStaticMarkup(<Probe />), />true</);
 });
 
 test('an unsupported address says so in words', () => {
