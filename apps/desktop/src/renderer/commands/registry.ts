@@ -702,6 +702,7 @@ export function createRegistry(
     for (const group of PALETTE_GROUPS) {
       for (const spec of commands) {
         if (spec.group !== group || spec.palette === false) continue;
+        if (spec.paletteWhen !== undefined && ctx.conditions[spec.paletteWhen] !== true) continue;
         if (!spec.contexts.some(c => stack.includes(c))) continue;
         if (!isEnabled(spec.id, ctx)) continue;
         out.push({

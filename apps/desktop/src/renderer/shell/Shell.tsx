@@ -85,6 +85,17 @@ export function shellCommands(actions: {
     'ask.open': { run: () => actions.openTab('ask') },
     'nav.today': { run: () => actions.openTab('today') },
     'ask.toggleDock': { run: () => actions.toggleDock() },
+    'ask.dictate': {
+      // Hold A with the dock closed: open it and leave a pending dictation the host starts on mount
+      // (its own `ask.dictate` shadows this once attached).
+      run: () => {
+        actions.openTab('ask');
+        askStore.update(s => ({ ...s, pendingDictation: true }));
+      },
+      // The hold ended before the host mounted and consumed the flag: nothing may start listening now.
+      release: () =>
+        askStore.update(s => (s.pendingDictation ? { ...s, pendingDictation: undefined } : s)),
+    },
   };
 }
 
@@ -107,7 +118,12 @@ export function focusDockButton(tab: 'ask' | 'today'): void {
     '.ui-pane[data-kind="main"] .ui-pane__tools button',
   );
   for (const button of tools) {
-    if ((button.getAttribute('aria-label') ?? button.textContent)?.trim() === label) {
+    // The button's whole text picks up an inline keycap or the held-⌘ badge; the label element's is stable.
+    const name = (
+      button.querySelector('.ui-part-button__label, .ui-button-label')?.textContent ??
+      button.getAttribute('aria-label')
+    )?.trim();
+    if (name === label) {
       button.focus();
       return;
     }
@@ -116,6 +132,11 @@ export function focusDockButton(tab: 'ask' | 'today'): void {
 
 /** How often a command asked for the dock (the palette's Ask row, `askStore.open`); 0 at start-up. */
 const dockOpenTick = () => askStore.get().openTick;
+
+/** The tab a new open request asks for, or undefined when `tick` is the value the frame mounted with. */
+export function dockRequest(mountTick: number, tick: number): 'ask' | 'today' | undefined {
+  return tick !== mountTick ? askStore.get().tab : undefined;
+}
 
 export function paneHeader(
   dock: DockTab,
@@ -267,8 +288,12 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const sheetOpen = useSheetContextActive();
   // The dock also opens on request (the palette's Ask row): `openTick` bumps once per ask (REQUESTS.md).
   const dockTick = useSyncExternalStore(askStore.subscribe, dockOpenTick, dockOpenTick);
+  // Only a request after this mount opens the dock: openTick survives an engine outage in module state, so
+  // a remounted frame would otherwise pop the dock open unasked on the store's last tab.
+  const mountTick = useRef(dockTick);
   useEffect(() => {
-    if (dockTick > 0) setDock(askStore.get().tab);
+    const tab = dockRequest(mountTick.current, dockTick);
+    if (tab) setDock(tab);
   }, [dockTick]);
   // Search's `>` asks for the palette with a seeded query (screens/palette REQUESTS.md).
   useEffect(() => onPaletteOpenRequest(() => setPaletteOpen(true)), []);

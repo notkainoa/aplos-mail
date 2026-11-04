@@ -312,3 +312,56 @@ test('a paused account with a missing or NaN until has no resume time', () => {
   const ok = paused(Date.UTC(2026, 9, 29, 12));
   assert.ok('resumeAt' in ok && typeof ok.resumeAt === 'string');
 });
+
+// ---- round 3: dock open-tick, focus return, hold-A dictate fallback -------------------------------------
+
+test('the dock opens only on an openTick change after mount, never on the stored value', async () => {
+  const { dockRequest } = await import('./Shell');
+  const { askStore } = await import('../screens/ask/askStore');
+  // The engine went away and came back: a remounted frame sees the same tick and must not open.
+  assert.equal(dockRequest(3, 3), undefined);
+  assert.equal(dockRequest(0, 0), undefined);
+  askStore.open('today');
+  const now = askStore.get().openTick;
+  assert.equal(dockRequest(now, now), undefined);
+  assert.equal(dockRequest(now - 1, now), 'today');
+});
+
+test('focusDockButton matches the label element or aria-label, never the button text with a keycap', async () => {
+  const { focusDockButton } = await import('./Shell');
+  const focused: string[] = [];
+  const button = (labelEl: string | null, aria: string | null, name: string) => ({
+    textContent: `${labelEl ?? ''}A`,
+    getAttribute: (attr: string) => (attr === 'aria-label' ? aria : null),
+    querySelector: () => (labelEl === null ? null : { textContent: labelEl }),
+    focus: () => focused.push(name),
+  });
+  const doc = {
+    querySelectorAll: () => [
+      button('Ask', null, 'ask'), // labelVisible Ask plus an inline "A" keycap in its textContent
+      button(null, 'Today', 'today'),
+    ],
+  };
+  Object.assign(globalThis, { document: doc });
+  focusDockButton('ask');
+  focusDockButton('today');
+  assert.deepEqual(focused, ['ask', 'today']);
+});
+
+test('the shell ask.dictate fallback opens the dock and flags pending dictation for the host', async () => {
+  const { shellCommands } = await import('./Shell');
+  const { askStore } = await import('../screens/ask/askStore');
+  const opened: string[] = [];
+  const commands = shellCommands({
+    openTab: tab => opened.push(tab),
+    toggleDock: () => undefined,
+    togglePalette: () => undefined,
+  });
+  askStore.update(s => ({ ...s, pendingDictation: undefined }));
+  commands['ask.dictate']!.run({} as never);
+  assert.deepEqual(opened, ['ask']);
+  assert.equal(askStore.get().pendingDictation, true, 'the host will start listening on mount');
+  // The hold ended before the host consumed the flag: the fallback's release drops it.
+  commands['ask.dictate']!.release?.({} as never, {} as never);
+  assert.equal(askStore.get().pendingDictation, undefined);
+});
