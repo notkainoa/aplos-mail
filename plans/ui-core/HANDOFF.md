@@ -44,6 +44,7 @@ PRs waiting on the Integrator: #271 (Calendar support: sidebar slot, api.event.h
 3. Commands: palette entries that know whether a Settings row exists (registerSetting row presence), and an optimistic path for account switches (AI use, notifications, colour) in the data layer overlay.
 4. Calendar: ui-calendar calls useSidebarSlot and wires Hide in Aplos to api.event.hide; the eventLabel/scroller known-defects entries can go after #271 merges.
 5. Review ladder applies (two SWE-2 passes, plus a Sonnet pass for UI-only/docs PRs, no Opus authored by lanes); DESIGN 4.8 vs 11.5 (spinners under reduced motion) is flagged for the Integrator.
+6. Comment tidy (fold into the next ui-foundation PR, no dedicated PR): the comments in ui/status/status.css (header and the reduced-motion block) and tests/visual/reduced-motion.spec.ts say 'DESIGN 4.8 and 11.5 disagree about spinners'; the Integrator decided they do not (the status runner rests as a centred 30% bar under reduced motion, the Spinner keeps turning per 11.5, clarified in DESIGN 11.5): reword them to cite 4.8 for the runner and 11.5 for the Spinner without calling it a conflict. Behaviour is already right.
 Worktree on this box: rv-ui-reader (branch rv/ui-foundation/onboarding-support at the time of writing); rv-thread-ui-core (this thread).
 
 ## REVIEW LADDER (integrator DECIDED 2026-11-04 09:47, owner GO; supersedes the earlier 'one Sonnet review per PR')
