@@ -47,6 +47,13 @@ interface Result {
     messages: string[];
   };
   keys: KeyStep[];
+  fragment: {
+    frameUrl: string;
+    focused: string;
+    mailKeys: unknown[];
+    mails: string[];
+    webs: string[];
+  };
 }
 
 function safeEnv(): NodeJS.ProcessEnv {
@@ -250,5 +257,17 @@ test(
       }
       assert.deepEqual(r.links.messages, []);
     });
+
+    await t.test(
+      'after a real in-mail fragment click the letter still gets its keys and its links',
+      () => {
+        const f = r.fragment;
+        assert.equal(f.frameUrl, `${r.url}#m-section`, 'the fragment click changed the frame URL');
+        assert.equal(f.focused, `${r.url}#m-section`);
+        assert.deepEqual(f.mailKeys, [{ key: 'j' }]);
+        assert.deepEqual(f.mails, ['mailto:grace@example.invalid']);
+        assert.deepEqual(f.webs, ['https://example.invalid/y']);
+      },
+    );
   },
 );

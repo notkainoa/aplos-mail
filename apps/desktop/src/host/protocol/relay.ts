@@ -261,3 +261,16 @@ export function limitInFlight(
     }
   };
 }
+
+/**
+ * The URL of a mail frame that is already showing its letter. Clicking an in-mail fragment link (a table of contents)
+ * makes the frame's URL `aplos-mail://m/<token>/#m-x`; the fragment never leaves the frame, so for deciding whether a
+ * focused or navigating frame IS a mail frame only the fragment (everything from the first `#`) is ignored. Nothing
+ * else is relaxed: the rest must still be exactly the issued document URL. Navigation checks keep the strict
+ * `isMailDocumentUrl`: a fragment is not an issued document.
+ */
+export function isShownMailDocumentUrl(url: unknown): boolean {
+  if (typeof url !== 'string') return false;
+  const hash = url.indexOf('#');
+  return isMailDocumentUrl(hash < 0 ? url : url.slice(0, hash));
+}

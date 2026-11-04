@@ -16,6 +16,7 @@ import {
 } from '../../src/shared/mail-keys';
 import { FALLBACK_KEYS } from '../../src/renderer/mailframe/keys';
 import type { WebContents } from 'electron';
+import { isMailDocumentUrl, isShownMailDocumentUrl } from '../../src/host/protocol/relay';
 import { attachSealedFrameRelays } from '../../src/host/protocol/frame-relays';
 import {
   relayMailKey,
@@ -464,5 +465,64 @@ test('windows.ts wires the sealed-frame relays; double-delivery guard: one key p
   assert.doesNotMatch(REPORTER_SOURCE, /key(?:down|up|press)|['"]key['"]/i);
   // The srcdoc listener cannot overlap main’s relay: main ignores about:srcdoc (tested above) and the srcdoc listener
   // exists only in the renderer.
-  assert.match(read('host/protocol/frame-keys.ts'), /isMailDocumentUrl\(frame\.url\)/);
+  assert.match(read('host/protocol/frame-keys.ts'), /isShownMailDocumentUrl\(frame\.url\)/);
+});
+
+test('a shown letter keeps its place after a fragment link: only the fragment is ignored, the grammar is not relaxed', () => {
+  for (const url of [DOC, `${DOC}#m-x`, `${DOC}#`, `${DOC}#a#b`, `${DOC}#/x?y=z`])
+    assert.equal(isShownMailDocumentUrl(url), true, url);
+  const upper = `aplos-mail://m/${TOKEN.toUpperCase()}/`;
+  for (const url of [
+    `${DOC}x#y`,
+    `${DOC}cid/0#y`,
+    `${DOC}?q#f`,
+    `${DOC}?q`,
+    `aplos-mail://m/${TOKEN}#f`,
+    `aplos-mail://m/#${TOKEN}/`,
+    `aplos-mail://m/${TOKEN.slice(0, 10)}#${TOKEN.slice(10)}/`,
+    `aplos-mail://m//#f`,
+    `aplos-mail://m/${TOKEN}//#f`,
+    `${upper}#f`,
+    `aplos-mail://other/${TOKEN}/#f`,
+    `about:srcdoc#f`,
+    `#${DOC}`,
+    '',
+    null,
+    undefined,
+    42,
+  ])
+    assert.equal(isShownMailDocumentUrl(url), false, String(url));
+  // Navigation checks stay strict: a fragment is not an issued document.
+  assert.equal(isMailDocumentUrl(`${DOC}#m-x`), false);
+});
+
+test('after a fragment navigation the letter still gets its keys', () => {
+  const { contents, sent } = fakeContents(main => frame(`${DOC}#m-section-2`, main));
+  assert.equal(relayMailKey(contents, input('j')), true);
+  assert.deepEqual(sent, [[MAIL_KEY_CHANNEL, { key: 'j' }]]);
+  const lookalike = fakeContents(main => frame(`${DOC}x#m-section-2`, main));
+  assert.equal(relayMailKey(lookalike.contents, input('j')), false);
+});
+
+test('after a fragment navigation a plain link click in the letter still routes', () => {
+  const mail = { url: `${DOC}#m-section-2` };
+  const mailto = { url: 'mailto:a@b.invalid', isMainFrame: false };
+  assert.equal(isMailFrameLink({ ...mailto, frame: mail, initiator: mail }), true);
+  assert.equal(isMailFrameLink({ ...mailto, frame: { url: `${DOC}x#y` }, initiator: null }), false);
+  const { out, calls } = sinks();
+  const probe = fakeWebContents(main => frame(`${DOC}#m-section-2`, main));
+  attachSealedFrameRelays(probe.contents, out);
+  const event = {
+    url: 'https://example.invalid/after-toc',
+    isMainFrame: false,
+    frame: mail,
+    initiator: mail,
+    prevented: false,
+    preventDefault() {
+      this.prevented = true;
+    },
+  };
+  probe.handlers['will-frame-navigate'](event);
+  assert.equal(event.prevented, true);
+  assert.deepEqual(calls, [['web', 'https://example.invalid/after-toc']]);
 });
