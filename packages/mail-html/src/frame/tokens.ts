@@ -37,7 +37,8 @@ export interface FrameRenderInput {
   cids: readonly string[];
 }
 
-export interface FrameRecord extends Readonly<FrameRenderInput> {
+/** The render as kept while the token lives; the document is held apart and dropped once served. */
+export interface FrameRecord extends Readonly<Omit<FrameRenderInput, 'document'>> {
   readonly token: string;
   readonly bodyKind: 'html';
   readonly createdAt: number;
@@ -60,6 +61,13 @@ export interface FrameTokensOptions {
 interface Entry {
   record: FrameRecord;
   documentServed: boolean;
+  /** Until the one document request; single render never needs it again. */
+  document: string | undefined;
+}
+
+/** A window id is a non-empty string: a relay defaulting to '' must not merge windows. */
+export function isWindowId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 
 export class FrameTokens {
@@ -77,12 +85,13 @@ export class FrameTokens {
   }
 
   issue(input: FrameRenderInput, now: number): IssuedFrame {
+    if (!isWindowId(input.windowId)) throw new Error('frame tokens: no window id');
     this.sweepWindow(input.windowId, now);
     if (input.slot !== undefined) this.releaseSlot(input.windowId, input.slot);
     this.evictOverCap(input.windowId);
     const token = this.freshToken();
     const record = freeze(input, token, now, now + this.ttlMs);
-    this.add({ record, documentServed: false });
+    this.add({ record, documentServed: false, document: input.document });
     return { token, url: frameUrl(token), expiresAt: record.expiresAt };
   }
 
@@ -97,12 +106,19 @@ export class FrameTokens {
     return this.liveEntry(windowId, token, now)?.record;
   }
 
-  /** The document, the first time only. */
-  takeDocument(windowId: string, token: unknown, now: number): FrameRecord | undefined {
+  /** The document, the first time only; the registry forgets it as it hands it out. */
+  takeDocument(windowId: string, token: unknown, now: number): string | undefined {
     const entry = this.liveEntry(windowId, token, now);
     if (!entry || entry.documentServed) return undefined;
+    const document = entry.document;
     entry.documentServed = true;
-    return entry.record;
+    entry.document = undefined;
+    return document;
+  }
+
+  /** Whether the registry still holds this token's document (until it is served). */
+  holdsDocument(windowId: string, token: unknown, now: number): boolean {
+    return this.liveEntry(windowId, token, now)?.document !== undefined;
   }
 
   /** The record for a sub-resource request: only after the document was served. */
@@ -201,8 +217,9 @@ function freeze(
   createdAt: number,
   expiresAt: number,
 ): FrameRecord {
+  const { document: _document, ...kept } = input;
   return Object.freeze({
-    ...input,
+    ...kept,
     remoteImages: Object.freeze([...input.remoteImages]),
     cids: Object.freeze([...input.cids]),
     token,

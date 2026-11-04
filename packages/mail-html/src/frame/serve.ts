@@ -1,6 +1,6 @@
 import { frameHeaders, notFound, resourceHeaders, type ServeResponse } from './headers';
 import { parseFramePath, type FrameRoute } from './paths';
-import type { FrameRecord, FrameTokens } from './tokens';
+import { isWindowId, type FrameRecord, type FrameTokens } from './tokens';
 
 // `Mail/serve`'s response builder, pure: main forwards `{token, path}` and adds nothing. Every
 // refusal is the same `notFound()`, and nothing here throws: a failure of any kind (a hostile
@@ -50,10 +50,22 @@ async function route(
   deps: ServeDeps,
 ): Promise<ServeResponse> {
   const target = parseFramePath(request.path);
-  if (!target || typeof request.windowId !== 'string') return notFound();
+  if (!target || !isWindowId(request.windowId)) return notFound();
   if (target.kind === 'document') return serveDocument(registry, request.windowId, request, deps);
   const record = registry.forResource(request.windowId, request.token, deps.now());
-  return record ? serveResource(record, target, deps) : notFound();
+  if (!record) return notFound();
+  const response = await serveResource(record, target, deps);
+  return stillLive(registry, request.windowId, record, deps) ? response : notFound();
+}
+
+/** A release, replacement or expiry during the fetch wins: the bytes are dropped. */
+function stillLive(
+  registry: FrameTokens,
+  windowId: string,
+  record: FrameRecord,
+  deps: ServeDeps,
+): boolean {
+  return registry.forResource(windowId, record.token, deps.now()) === record;
 }
 
 function serveDocument(
@@ -63,9 +75,9 @@ function serveDocument(
   deps: ServeDeps,
 ): ServeResponse {
   const headers = frameHeaders(deps.reporterHash);
-  const record = registry.takeDocument(windowId, request.token, deps.now());
-  if (!record) return notFound();
-  return { status: 200, headers, body: new TextEncoder().encode(record.document) };
+  const document = registry.takeDocument(windowId, request.token, deps.now());
+  if (document === undefined) return notFound();
+  return { status: 200, headers, body: new TextEncoder().encode(document) };
 }
 
 async function serveResource(

@@ -105,4 +105,26 @@ describe('frame URL grammar', () => {
     assert.equal(tokenOf(T.toUpperCase()), undefined);
     assert.equal(tokenOf(42), undefined);
   });
+
+  it('lets tokenOf alone take the document URL without its slash (the contract form)', () => {
+    const bare = `aplos-mail://m/${T}`;
+    assert.equal(tokenOf(bare), T);
+    assert.equal(parseFrameUrl(bare), undefined, 'the serving grammar stays strict');
+    for (const bad of [
+      `${bare}x`,
+      `${bare}?x`,
+      `${bare}#x`,
+      `${bare}%2f`,
+      `${bare}\\`,
+      `aplos-mail://m/${T.toUpperCase()}`,
+      `aplos-mail://m/${T.slice(1)}`,
+      `aplos-mail://m/${T}//`,
+      `aplos-mail://m/${T}/cid/0`,
+      `aplos-mail://m/${T}/..`,
+      ` ${bare}`,
+      `APLOS-MAIL://m/${T}`,
+    ]) {
+      assert.equal(tokenOf(bad), undefined, bad);
+    }
+  });
 });

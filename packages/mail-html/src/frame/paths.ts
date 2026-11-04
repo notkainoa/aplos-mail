@@ -57,9 +57,14 @@ export function parseFrameUrl(url: unknown): FrameTarget | undefined {
   return route ? { token, route } : undefined;
 }
 
-/** The token named by a `Mail/release` or `Mail/toggleQuotes` url (the document URL or a bare token). */
+/**
+ * The token named by a `Mail/release` or `Mail/toggleQuotes` url: a bare token, the document URL,
+ * or the document URL without its slash (the form the contract comment shows). Only here: serving
+ * keeps the strict grammar.
+ */
 export function tokenOf(urlOrToken: unknown): string | undefined {
   if (isToken(urlOrToken)) return urlOrToken;
-  const target = parseFrameUrl(urlOrToken);
+  const bare = typeof urlOrToken === 'string' && urlOrToken.length === FRAME_ORIGIN.length + 32;
+  const target = parseFrameUrl(bare ? `${urlOrToken}/` : urlOrToken);
   return target?.route.kind === 'document' ? target.token : undefined;
 }

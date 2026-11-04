@@ -194,4 +194,29 @@ describe('frame tokens', () => {
       assert.equal(tokens.takeDocument('w1', token, now), undefined, name);
     }
   });
+
+  it('refuses an empty or non-string window id at issue', () => {
+    const tokens = new FrameTokens();
+    for (const windowId of ['', undefined, null, 0, {}]) {
+      assert.throws(
+        () => tokens.issue(render({ windowId: windowId as string }), 0),
+        /window/,
+        String(windowId),
+      );
+    }
+    assert.equal(tokens.liveCount(''), 0);
+  });
+
+  it('drops the document from memory once it is served', () => {
+    const tokens = new FrameTokens();
+    const { token } = tokens.issue(render({ document: '<p>secret body</p>' }), 0);
+    const record = tokens.lookup('w1', token, 0);
+    assert.ok(record);
+    assert.equal('document' in record, false, 'the record never carries the document');
+    assert.equal(tokens.holdsDocument('w1', token, 0), true);
+    assert.equal(tokens.takeDocument('w1', token, 0), '<p>secret body</p>');
+    assert.equal(tokens.holdsDocument('w1', token, 0), false);
+    assert.equal(tokens.takeDocument('w1', token, 0), undefined);
+    assert.ok(tokens.forResource('w1', token, 0), 'sub-resources still work');
+  });
 });

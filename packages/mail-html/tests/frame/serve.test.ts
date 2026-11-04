@@ -129,6 +129,74 @@ describe('Mail/serve', () => {
   });
 });
 
+describe('Mail/serve liveness and window ids', () => {
+  function slowImage(deps: ServeDeps) {
+    let finish: () => void = () => undefined;
+    deps.imageBytes = () =>
+      new Promise(resolve => {
+        finish = () => resolve({ mime: 'image/png', bytes: PNG });
+      });
+    return () => finish();
+  }
+
+  it('refuses an image whose token is released while it is being fetched', async () => {
+    const { serve, deps, tokens, issued } = await setup({ imagePolicy: 'allow' });
+    await serve('');
+    const finish = slowImage(deps);
+    const pending = serve('img/0');
+    await Promise.resolve();
+    tokens.release('w1', issued.url);
+    finish();
+    assert.deepEqual(await pending, NOT_FOUND);
+  });
+
+  it('refuses an image whose token expires while it is being fetched', async () => {
+    const { serve, deps, clock } = await setup({ imagePolicy: 'allow' });
+    await serve('');
+    const finish = slowImage(deps);
+    const pending = serve('img/0');
+    await Promise.resolve();
+    clock.now = 1_000;
+    finish();
+    assert.deepEqual(await pending, NOT_FOUND);
+  });
+
+  it('still serves a slow image whose token lives', async () => {
+    const { serve, deps } = await setup({ imagePolicy: 'allow' });
+    await serve('');
+    const finish = slowImage(deps);
+    const pending = serve('img/0');
+    finish();
+    assert.equal((await pending).status, 200);
+  });
+
+  it('refuses an empty or non-string window id', async () => {
+    const { serve, tokens, deps, issued } = await setup();
+    for (const windowId of ['', null, 0, ['w1'], { toString: () => 'w1' }]) {
+      assert.deepEqual(await serve('', undefined, windowId), NOT_FOUND, String(windowId));
+    }
+    const missing = { windowId: undefined, token: issued.token, path: '' };
+    assert.deepEqual(await serveFrame(tokens, missing, deps), NOT_FOUND);
+    assert.equal((await serve('')).status, 200);
+  });
+
+  it('never asks the registry about an empty window', async () => {
+    const { tokens, deps, issued } = await setup();
+    const asked: unknown[] = [];
+    for (const method of ['takeDocument', 'forResource', 'lookup'] as const) {
+      const original = tokens[method].bind(tokens);
+      tokens[method] = ((windowId: string, token: unknown, now: number) => {
+        asked.push(windowId);
+        return original(windowId, token, now);
+      }) as never;
+    }
+    for (const path of ['', 'cid/0', 'img/0']) {
+      await serveFrame(tokens, { windowId: '', token: issued.token, path }, deps);
+    }
+    assert.deepEqual(asked, []);
+  });
+});
+
 describe('token abuse', () => {
   it('refuses a reused token', async () => {
     const { serve } = await setup();
