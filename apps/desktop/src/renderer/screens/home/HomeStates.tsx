@@ -45,10 +45,10 @@ export function HomeEmpty({
   handledToday,
   canUndo,
 }: HomeEmptyProps) {
-  // ui-onboard's zero-accounts block and its inline Add account host (§4.5 row 8); a running first sync
-  // still wins, so it shows the first-mail line inside the same component.
-  if (accountCount === 0)
-    return <ZeroAccounts firstSyncRunning={settling} {...(reason ? { detail: reason } : {})} />;
+  // ui-onboard's zero-accounts block and its inline Add account host (§4.5 row 8). `settling` conflates a
+  // paused sync or hidden counts with a first sync, so the pane's own `useSetupStatus` decides whether a
+  // first sync is actually running (the same check the standalone mount makes).
+  if (accountCount === 0) return <ZeroAccounts {...(reason ? { detail: reason } : {})} />;
   if (settling) return <FirstSyncLine reason={reason} />;
   return (
     <EmptyLine
