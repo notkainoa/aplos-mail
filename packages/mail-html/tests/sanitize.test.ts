@@ -58,7 +58,11 @@ describe('the MailHtml port', () => {
 
   it('imports nothing but the parser, the CSS tokenizer and its own files (no DOM, no Node)', () => {
     const dir = join(import.meta.dirname, '../src');
-    for (const file of readdirSync(dir)) {
+    const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter(f =>
+      f.endsWith('.ts'),
+    );
+    assert.ok(files.includes(join('frame', 'tokens.ts')), 'subfolders are read too');
+    for (const file of files) {
       const source = readFileSync(join(dir, file), 'utf8').replace(
         /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
         '',
