@@ -44,6 +44,7 @@ import {
   type CalendarState,
 } from './calendar.model';
 import { runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
+import { takesInviteAnswerKey } from './keys';
 import { demoWorld } from './CalendarStates';
 
 const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -518,4 +519,35 @@ test('RSVP sends the scope and words the toast while held, then sent', async () 
   } finally {
     resetToasts();
   }
+});
+
+test('the answer-key guard takes bare y/m/n on the screen or in its overlays, never while typing', () => {
+  const nothing = { closest: () => null, matches: () => false };
+  const inDialog = {
+    closest: (s: string) => (s.includes('dialog') ? nothing : null),
+    matches: () => false,
+  };
+  const inField = {
+    closest: (s: string) => (s.includes('textarea') ? nothing : null),
+    matches: () => false,
+  };
+  const key = (k: string, extra = {}) => ({
+    key: k,
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...extra,
+  });
+  // On the screen, in its portaled popover or a menu: the key is the screen's.
+  assert.equal(takesInviteAnswerKey(key('y'), nothing, true), true);
+  assert.equal(takesInviteAnswerKey(key('n'), inDialog, false), true);
+  assert.equal(takesInviteAnswerKey(key('m'), nothing, true), true);
+  // Elsewhere, typing, chorded or already claimed: it is not.
+  assert.equal(takesInviteAnswerKey(key('y'), nothing, false), false);
+  assert.equal(takesInviteAnswerKey(key('y'), inField, true), false);
+  assert.equal(takesInviteAnswerKey(key('y', { metaKey: true }), nothing, true), false);
+  assert.equal(takesInviteAnswerKey(key('Y', { shiftKey: true }), nothing, true), false);
+  assert.equal(takesInviteAnswerKey(key('d'), nothing, true), false);
+  assert.equal(takesInviteAnswerKey(key('y', { defaultPrevented: true }), nothing, true), false);
 });

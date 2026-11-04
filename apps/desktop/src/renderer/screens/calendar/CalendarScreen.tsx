@@ -60,7 +60,14 @@ import {
   type Overlay,
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
-import { createTurnGate, ladderTakesEscape, ownsSideArrows, type ElementLike } from './keys';
+import {
+  createTurnGate,
+  INVITE_ANSWER_KEYS,
+  ladderTakesEscape,
+  ownsSideArrows,
+  takesInviteAnswerKey,
+  type ElementLike,
+} from './keys';
 import {
   hideAvailable,
   livePorts,
@@ -128,6 +135,29 @@ function useEscapeLadder(dispatch: (action: CalendarAction) => boolean) {
         active === null || active === document.body || (root?.contains(active) ?? false);
       if (!ladderTakesEscape(event, active, inScreen)) return;
       if (!dispatch({ type: 'escape' })) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [dispatch]);
+}
+
+/**
+ * Answers an open invite on Y/M/N from a capture listener (keys.ts): the detail popover's role=dialog is a modal
+ * context over `calendar`, so the registry's answer keys end there and never reach the handler. The key is taken only
+ * while the model's answer is live, so M and N still mean Month and New event the rest of the time.
+ */
+function useInviteAnswerKeys(dispatch: (action: CalendarAction) => boolean) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const root = document.querySelector('.cal-screen');
+      const active = document.activeElement;
+      const inScreen =
+        active === null || active === document.body || (root?.contains(active) ?? false);
+      if (!takesInviteAnswerKey(event, active, inScreen)) return;
+      const answer = INVITE_ANSWER_KEYS[event.key];
+      if (!answer || !dispatch({ type: 'answer', answer })) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -278,6 +308,7 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
   );
   useRegisterCommands(handlers);
   useEscapeLadder(apply);
+  useInviteAnswerKeys(apply);
 
   useShellKeyLayer({ conditions: { invite: inviteOpen(state, ctx) } });
   useCommandTarget(commandTarget(state, ctx));

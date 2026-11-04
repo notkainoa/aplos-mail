@@ -36,6 +36,35 @@ export function ownsSideArrows(active: ElementLike | null | undefined): boolean 
 export const ESCAPE_OWNERS =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
+/** What an open invite's Y/M/N means, the registry's calendar.answer* commands word for word (DESIGN 8). */
+export const INVITE_ANSWER_KEYS: Record<string, 'yes' | 'maybe' | 'no'> = {
+  y: 'yes',
+  m: 'maybe',
+  n: 'no',
+};
+
+/** A focused element that types the letter: a field or a text-role widget. */
+const TEXT_FIELD_OWNERS =
+  'input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="password"], input[type="number"], textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="combobox"]';
+
+/**
+ * Whether the screen's answer-key listener may take this keydown: a bare y, m or n, not composing, not already taken,
+ * and never while typing in a field. Focus may sit on the screen or inside one of its portaled surfaces — the detail
+ * popover's role=dialog is a modal context, so the registry's y/m/n end there before they reach `calendar` and the
+ * screen answers from a capture listener instead (the same gap the Esc ladder covers).
+ */
+export function takesInviteAnswerKey(
+  event: EscapeKeyInput,
+  active: ElementLike | null,
+  focusInScreen: boolean,
+): boolean {
+  if (INVITE_ANSWER_KEYS[event.key] === undefined) return false;
+  if (event.isComposing || event.defaultPrevented) return false;
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  if (active?.closest(TEXT_FIELD_OWNERS)) return false;
+  return focusInScreen || active?.closest(ESCAPE_OWNERS) != null;
+}
+
 /** The parts of a keydown the Esc guard reads (a DOM KeyboardEvent satisfies it). */
 export interface EscapeKeyInput {
   readonly key: string;
