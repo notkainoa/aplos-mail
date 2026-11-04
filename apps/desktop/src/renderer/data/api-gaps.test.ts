@@ -26,6 +26,54 @@ const eventHideSignature: [
   Equals<ContractMethodOf<'event.hide'>, 'Event/hide'>,
 ] = [true, true, true];
 
+/** The settings members are the client's own call types, so they cannot drift; `account.disconnect` mints its `opId` like `event.hide`. */
+const settingsSignatures: [
+  Equals<DataApi['ai']['providers'], ClientApi['ai']['providers']>,
+  Equals<DataApi['ai']['models'], ClientApi['ai']['models']>,
+  Equals<DataApi['ai']['usage'], ClientApi['ai']['usage']>,
+  Equals<DataApi['ai']['setKey'], ClientApi['ai']['setKey']>,
+  Equals<DataApi['ai']['removeKey'], ClientApi['ai']['removeKey']>,
+  Equals<DataApi['ai']['testKey'], ClientApi['ai']['testKey']>,
+  Equals<DataApi['account']['discover'], ClientApi['account']['discover']>,
+  Equals<DataApi['account']['lease'], ClientApi['account']['lease']>,
+  Equals<
+    ReturnType<DataApi['account']['disconnect']>,
+    ReturnType<ClientApi['account']['disconnect']>
+  >,
+  Equals<Parameters<DataApi['account']['disconnect']>[0], CommandArgs<'Account/disconnect'>>,
+  Equals<ContractMethodOf<'account.disconnect'>, 'Account/disconnect'>,
+  Equals<DataApi['listener']['get'], ClientApi['listener']['get']>,
+  Equals<DataApi['listener']['set'], ClientApi['listener']['set']>,
+  Equals<DataApi['clients']['list'], ClientApi['clients']['list']>,
+  Equals<DataApi['clients']['grant'], ClientApi['clients']['grant']>,
+  Equals<DataApi['clients']['revoke'], ClientApi['clients']['revoke']>,
+  Equals<DataApi['clients']['audit'], ClientApi['clients']['audit']>,
+  Equals<DataApi['queue']['list'], ClientApi['queue']['list']>,
+  Equals<DataApi['queue']['retry'], ClientApi['queue']['retry']>,
+  Equals<DataApi['queue']['discard'], ClientApi['queue']['discard']>,
+] = [
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+  true,
+];
+
 /** Compile-only: `Event/hide`'s input is `{ids, hidden}` plus an `opId` the data layer may mint; never run. */
 export function hideSignature(api: DataApi) {
   void api.event.hide({ ids: ['e1', 'e2'], hidden: true });
@@ -70,15 +118,22 @@ test('queries go straight to the client, one call each', async () => {
     assert.equal(typeof models.live, 'boolean');
 
     assert.ok((await api.ai.status()).features.length > 0);
+    assert.deepEqual(h.callsOf('Ai/status')[0]!.args, {});
     assert.equal(typeof (await api.ai.usage()), 'object');
+    assert.deepEqual(h.callsOf('Ai/usage')[0]!.args, {});
     assert.equal((await api.ask.suggestions()).list.length, 3);
     assert.ok((await api.calendar.get()).list.length > 0);
     assert.equal(typeof (await api.listener.get()).enabled, 'boolean');
+    assert.deepEqual(h.callsOf('Listener/get')[0]!.args, {});
     assert.ok(Array.isArray((await api.clients.list()).list));
+    assert.deepEqual(h.callsOf('Clients/list')[0]!.args, {});
     assert.ok(Array.isArray((await api.queue.list({})).list));
+    assert.deepEqual(h.callsOf('Queue/list')[0]!.args, {});
     const discovered = await api.account.discover({ address: 'someone@gmail.com' });
     assert.equal(discovered.provider, 'google');
+    assert.deepEqual(h.callsOf('Account/discover')[0]!.args, { address: 'someone@gmail.com' });
     assert.ok((await api.account.lease({ pin: false })).leases.length > 0);
+    assert.deepEqual(h.callsOf('Account/lease')[0]!.args, { pin: false });
     // Queries are not operations: no opId was minted for any of them.
     assert.equal(h.layer.operations.all().length, 0);
   });
@@ -115,10 +170,16 @@ test('a key is saved, tested and removed through the vault calls, and the table 
     const { api } = h.layer;
     const saved = await api.ai.setKey({ provider: 'openai', key: 'sk-test-not-a-real-key' });
     assert.equal(saved.keySource, 'keychain');
+    assert.deepEqual(h.callsOf('Ai/setKey')[0]!.args, {
+      provider: 'openai',
+      key: 'sk-test-not-a-real-key',
+    });
     const table = await api.ai.providers();
     assert.ok(!JSON.stringify(table).includes('sk-test-not-a-real-key'));
     assert.equal((await api.ai.testKey({ provider: 'openai' })).ok, true);
+    assert.deepEqual(h.callsOf('Ai/testKey')[0]!.args, { provider: 'openai' });
     assert.equal((await api.ai.removeKey({ provider: 'openai' })).keySource, 'none');
+    assert.deepEqual(h.callsOf('Ai/removeKey')[0]!.args, { provider: 'openai' });
   });
 });
 
@@ -480,5 +541,147 @@ test('the native stub refuses what main would refuse under the contract schema',
       (error: { body?: { type?: string }; type?: string }) =>
         (error.body?.type ?? error.type) === 'validation',
     );
+  });
+});
+
+test('the tools and queue members forward their input unchanged and return the contract output', async () => {
+  await withHarness(async h => {
+    const { api } = h.layer;
+    assert.ok(settingsSignatures.every(Boolean));
+    h.clearCalls();
+
+    const on = await api.listener.set({ enabled: true });
+    assert.deepEqual(h.callsOf('Listener/set')[0]!.args, { enabled: true });
+    assert.equal(on.enabled, true);
+    assert.equal((await api.listener.get()).enabled, true);
+    assert.equal((await api.listener.set({ enabled: false })).enabled, false);
+
+    const grant = await api.clients.grant({
+      name: 't3-code',
+      kind: 'cli',
+      scopes: ['read', 'triage'],
+    });
+    assert.deepEqual(h.callsOf('Clients/grant')[0]!.args, {
+      name: 't3-code',
+      kind: 'cli',
+      scopes: ['read', 'triage'],
+    });
+    assert.equal(grant.client.name, 't3-code');
+    assert.ok((await api.clients.list()).list.some(c => c.id === grant.client.id));
+
+    const audit = await api.clients.audit({ clientId: grant.client.id, limit: 10 });
+    assert.deepEqual(h.callsOf('Clients/audit')[0]!.args, {
+      clientId: grant.client.id,
+      limit: 10,
+    });
+    assert.deepEqual(audit, { list: [] });
+
+    assert.deepEqual(await api.clients.revoke({ id: grant.client.id }), { ok: true });
+    assert.deepEqual(h.callsOf('Clients/revoke')[0]!.args, { id: grant.client.id });
+    assert.ok(
+      (await api.clients.list()).list.find(c => c.id === grant.client.id)?.revokedAt,
+      'the tool shows as revoked',
+    );
+
+    // A queued AI job is a queue item; retry and discard take it by id.
+    const threads = await h.truth.api.view.query({
+      spec: { kind: 'homeSection', section: 'do' },
+    });
+    await api.ai.request({ kind: 'classify', threadId: threads.ids[0]! });
+    await h.settle();
+    const job = (await api.queue.list({ kinds: ['job'] })).list[0];
+    assert.ok(job, 'the request queued a job');
+    assert.equal(job.kind, 'job');
+
+    assert.deepEqual(await api.queue.retry({ id: job.id }), { ok: true });
+    assert.deepEqual(h.callsOf('Queue/retry')[0]!.args, { id: job.id });
+    assert.deepEqual(await api.queue.discard({ id: job.id }), { ok: true });
+    assert.deepEqual(h.callsOf('Queue/discard')[0]!.args, { id: job.id });
+    assert.ok(!(await api.queue.list({})).list.some(item => item.id === job.id));
+  });
+});
+
+test('a settings refusal surfaces the engine error as a ContractError, unchanged', async () => {
+  await withHarness(async h => {
+    const { api } = h.layer;
+    const refused = (p: Promise<unknown>, type: string, message?: string) =>
+      assert.rejects(p, (error: unknown) => {
+        assert.ok(error instanceof ContractError, 'a plain call surfaces the ContractError');
+        assert.equal(error.type, type);
+        if (message) assert.equal(error.message, message);
+        return true;
+      });
+
+    await refused(api.listener.get('x' as never), 'validation');
+    await refused(api.listener.set({ enabled: 'yes' } as never), 'validation');
+    await refused(api.clients.list('x' as never), 'validation');
+    await refused(api.clients.grant({ name: 'x', kind: 'cli', scopes: [] }), 'validation');
+    await refused(
+      api.clients.revoke({ id: 'no-such-tool' }),
+      'notFound',
+      'This tool is no longer allowed.',
+    );
+    await refused(api.clients.audit({ limit: 0 }), 'validation');
+    await refused(api.queue.list({ kinds: ['nope'] } as never), 'validation');
+    await refused(api.queue.retry({ id: 'no-such-item' }), 'notFound');
+    await refused(api.queue.discard({ id: 'no-such-item' }), 'notFound');
+    await refused(api.ai.providers('x' as never), 'validation');
+    await refused(api.ai.models({ provider: 'nope' } as never), 'validation');
+    await refused(api.ai.usage('x' as never), 'validation');
+    await refused(api.ai.testKey({ provider: 'nope' } as never), 'validation');
+    await refused(
+      api.ai.removeKey({ provider: 'groq' }),
+      'unsupported',
+      'This key comes from the backend environment. Remove it there.',
+    );
+    await refused(api.account.lease({ accountId: 'no-such-account', pin: true }), 'notFound');
+    await refused(api.account.discover({ address: 'not-an-email' } as never), 'validation');
+
+    // A refused command surfaces the same body inside OperationFailedError.
+    await assert.rejects(
+      api.account.disconnect({ accountId: 'no-such-account' }),
+      (error: unknown) =>
+        error instanceof OperationFailedError &&
+        typeof error.opId === 'string' &&
+        error.error.type === 'notFound',
+    );
+    assert.equal(h.layer.operations.all().length, 1, 'only the refused disconnect was recorded');
+    assert.equal(h.layer.undoStack.peek(), null, 'no plain call reaches the undo stack');
+  });
+});
+
+test('a provider key reaches the engine once and the layer retains none of it', async () => {
+  await withHarness(async h => {
+    const { api, operations, undoStack } = h.layer;
+    const key = 'sk-fixture-9f3a-secret';
+    h.clearCalls();
+
+    const saved = await api.ai.setKey({ provider: 'openai', key });
+    assert.equal(saved.keySource, 'keychain');
+    assert.deepEqual(
+      h.callsOf('Ai/setKey')[0]!.args,
+      { provider: 'openai', key },
+      'the input went to the client unchanged, key and all',
+    );
+
+    const kept = () => JSON.stringify({ operations: operations.all(), undo: undoStack.peek() });
+    assert.equal(operations.all().length, 0, 'a key call is not an operation');
+    assert.equal(undoStack.peek(), null, 'a key call is not on the undo stack');
+    assert.ok(!kept().includes(key), 'the layer keeps none of the key');
+    assert.ok(
+      !(await api.ai.providers()).list.some(p => JSON.stringify(p).includes(key)),
+      'the providers table never carries the key',
+    );
+
+    // A refused secret call surfaces the engine's error only — the key is in neither the error nor the layer.
+    await assert.rejects(api.ai.setKey({ provider: 'nope' as never, key }), (error: unknown) => {
+      assert.ok(error instanceof ContractError);
+      assert.ok(!JSON.stringify(error).includes(key), 'the error body has none of the key');
+      assert.ok(!String(error).includes(key), 'the error message has none of the key');
+      return true;
+    });
+    assert.equal(operations.all().length, 0);
+    assert.equal(undoStack.peek(), null);
+    assert.ok(!kept().includes(key));
   });
 });

@@ -21,6 +21,7 @@ import { statusCopy } from './ui/status';
 import {
   closeCompose,
   navigate,
+  openAddAccount,
   openCompose,
   openThread,
   useAccountScope,
@@ -257,7 +258,7 @@ export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellPr
     if (!noAccountsKnown(accountsLoaded, connection.state)) return null;
     return (
       <NoAccountsLine
-        onAddAccount={() => navigate('settings')}
+        onAddAccount={openAddAccount}
         onTryDemo={() => void api.demo.load({}).catch(() => undefined)}
       />
     );

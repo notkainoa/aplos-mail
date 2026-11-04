@@ -4,7 +4,7 @@
  * while an account is still importing or paused, because Home is not really empty then.
  */
 import { api, undoStack } from '../../data';
-import { navigate } from '../../shell';
+import { openAddAccount } from '../../shell';
 import { FirstSyncLine, NoAccountsLine } from '../../shell/states';
 import { EmptyLine } from '../../ui/list';
 
@@ -50,7 +50,7 @@ export function HomeEmpty({
   canUndo,
 }: HomeEmptyProps) {
   if (accountCount === 0)
-    return <NoAccountsLine onAddAccount={() => navigate('settings')} onTryDemo={tryDemo} />;
+    return <NoAccountsLine onAddAccount={openAddAccount} onTryDemo={tryDemo} />;
   if (settling) return <FirstSyncLine reason={reason} />;
   return (
     <EmptyLine
