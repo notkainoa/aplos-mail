@@ -33,6 +33,7 @@ import {
 } from './layout';
 import { NowLine } from './NowLine';
 import { PlanOutline } from './PlanOutline';
+import { keepGridFocus } from './press-focus';
 import { FirstSegment } from './segment';
 
 interface DragState {
@@ -311,7 +312,21 @@ export function TimeGrid(props: CalendarGridProps) {
         </div>
       ) : null}
 
-      <div className="ui-calendar-grid__scroll" ref={scrollRef}>
+      {/* The hours scroll, so the scroller is a tab stop: a rowgroup (a plain role would break the grid's rows) named by
+          the range, and PageUp, PageDown and the arrows scroll it natively (the grid's own walk skips it). Naming a
+          rowgroup is not reliably announced; the label is kept for the tools that do read it. A mouse press inside
+          keeps focus on the grid root (see press-focus), so the arrows still walk the entries after a click. */}
+      <div
+        className="ui-calendar-grid__scroll"
+        ref={scrollRef}
+        role="rowgroup"
+        aria-label={`${props.label}, hours`}
+        tabIndex={0}
+        data-scroller="true"
+        onMouseDown={e =>
+          keepGridFocus(e, e.currentTarget.closest<HTMLElement>('.ui-calendar-grid'))
+        }
+      >
         <div className="ui-calendar-grid__body" role="row">
           <div className="ui-calendar-grid__hours" aria-hidden="true">
             {/* One label per hour; the line that closes the day (the second midnight) has none. */}

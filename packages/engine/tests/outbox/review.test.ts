@@ -1,5 +1,6 @@
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { inspect } from 'node:util';
 import { ContractError } from '@aplos/contract/contract-error';
 import { OVERDUE_GRACE_MS } from '@aplos/contract/rules';
 import { SubmissionConflict } from '../../src/outbox/module';
@@ -8,9 +9,10 @@ import { fields, gate, inWorld, MIN, SEC, T0, type Instance, type World } from '
 
 /** The Opus review of the send state machine (time-2): one test per defect, and one per mutation it found uncaught. */
 
-function refused(fn: () => unknown, type: string): string {
+/** Asserts a `Submission/set` refusal (a rejected promise) by contract error type, and returns its sentence. */
+async function rejected(fn: () => Promise<unknown>, type: string): Promise<string> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     assert.ok(error instanceof ContractError, `a ContractError, got ${String(error)}`);
     assert.equal(error.type, type, error.message);
@@ -28,13 +30,31 @@ const isMove = (to: string) => (input: CommitInput) =>
   writesOf(input).some(x => x.op === 'move' && x.to === to);
 const isCreate = (input: CommitInput) => writesOf(input).some(x => x.op === 'create');
 
+/** Races that did not race: reported by the hook and failed by `afterEach`, whichever call the hook ran inside. */
+const raceErrors: string[] = [];
+afterEach(() => assert.deepEqual(raceErrors.splice(0), [], 'every raceOnce raced'));
+
+/**
+ * A racing call must have done its work inside the hook: a promise still pending there awaits something first (a blob
+ * read, say) and lands after the commit it was meant to beat, so it fails the test. Its outcome is the test's to check
+ * through the store; a rejection is handled here, never left floating.
+ */
+function settledNow(out: unknown) {
+  if (!(out instanceof Promise)) return;
+  out.catch(() => {});
+  if (inspect(out).includes('<pending>')) {
+    raceErrors.push('the racing call was still pending inside the hook: it did not race');
+    throw new Error(raceErrors.at(-1));
+  }
+}
+
 /** Runs `before` once, right before the first commit `match` accepts (the other engine wins the race). */
-function raceOnce(w: World, match: (input: CommitInput) => boolean, before: () => void) {
+function raceOnce(w: World, match: (input: CommitInput) => boolean, before: () => unknown) {
   let done = false;
   w.faults.push(input => {
     if (!done && match(input)) {
       done = true;
-      before();
+      settledNow(before());
     }
     return false;
   });
@@ -62,13 +82,16 @@ test('sendAnyway is refused while the findSent checks are pending, so a lagging 
     w.draft('d1');
     w.server.script.push({ result: 'lost', delivered: true });
     w.server.hideDeliveriesUntil(T0 + 10 * SEC + 30 * SEC);
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     const pending = w.get(s.id);
     assert.equal(pending.state, 'uncertain');
     assert.equal(pending.problem, undefined, 'still checking: no prompt yet');
-    refused(() => w.act(w.first, { type: 'sendAnyway', submissionId: s.id }), 'stateMismatch');
+    await rejected(
+      () => w.act(w.first, { type: 'sendAnyway', submissionId: s.id }),
+      'stateMismatch',
+    );
     await w.clock.advance(1 * SEC);
     await w.settle();
     assert.equal(w.get(s.id).state, 'uncertain', 'the refusal changed nothing');
@@ -83,7 +106,7 @@ test('sendAnyway also loses inside the commit when a check was scheduled after t
   inWorld(async w => {
     w.draft('d1');
     w.server.script.push({ result: 'lost', delivered: false });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     await w.clock.advance(60 * SEC);
@@ -94,7 +117,10 @@ test('sendAnyway also loses inside the commit when a check was scheduled after t
     raceOnce(w, isMove('queued'), () =>
       second.store.commit(recheck(s.id, w.clock.now() + 1 * MIN)),
     );
-    refused(() => w.act(w.first, { type: 'sendAnyway', submissionId: s.id }), 'stateMismatch');
+    await rejected(
+      () => w.act(w.first, { type: 'sendAnyway', submissionId: s.id }),
+      'stateMismatch',
+    );
     assert.equal(w.get(s.id).state, 'uncertain');
     assert.equal(w.server.sends().length, 1);
     // The same guard directly: a move that demands finished checks cannot pass over a pending one.
@@ -125,9 +151,9 @@ test('a recovered row is checked before any other send on its account even when 
     w.draft('d1');
     w.draft('d2');
     w.server.script.push({ result: 'hang', delivered: false });
-    const lost = w.send(w.first, 'd1');
+    const lost = await w.send(w.first, 'd1');
     await w.clock.advance(1 * SEC);
-    const other = w.send(w.first, 'd2');
+    const other = await w.send(w.first, 'd2');
     await w.clock.advance(9 * SEC);
     await w.settle();
     assert.equal(w.get(lost.id).state, 'sending');
@@ -161,7 +187,7 @@ test('the sending marker is durable, with its attempt time, before send() is cal
         seen = { state: row.state, attempt_at: row.attempt_at };
       },
     });
-    w.send(w.first, 'd1');
+    await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.deepEqual(seen, { state: 'sending', attempt_at: T0 + 10 * SEC });
@@ -171,7 +197,7 @@ test('a reschedule that lands between the timer reading a scheduled row and its 
   inWorld(async w => {
     w.draft('d1');
     const second = w.open(false);
-    const s = w.send(w.first, 'd1', { notBefore: T0 + 2 * MIN });
+    const s = await w.send(w.first, 'd1', { notBefore: T0 + 2 * MIN });
     assert.equal(s.state, 'scheduled');
     raceOnce(w, isMove('sending'), () =>
       w.act(second, { type: 'reschedule', submissionId: s.id, notBefore: T0 + 60 * MIN }),
@@ -190,15 +216,41 @@ test('a reschedule that lands between the timer reading a scheduled row and its 
   }));
 
 test('two engines sending the same draft revision at once create one submission', () =>
-  inWorld(w => {
+  inWorld(async w => {
     w.draft('d1');
     const second = w.open(false);
-    raceOnce(w, isCreate, () => w.send(second, 'd1'));
-    refused(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }), 'stateMismatch');
+    raceOnce(w, isCreate, () => w.act(second, { type: 'send', draftId: 'd1', revision: 1 }));
+    await rejected(
+      () => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }),
+      'stateMismatch',
+    );
     const n = w.first.store.read(q =>
       q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
     );
     assert.equal(n?.n, 1, 'the loser of the race created nothing');
+  }));
+
+test('a draft edited elsewhere right before the send commits: the commit compares the revision, no row', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    raceOnce(w, isCreate, () => w.draft('d1', fields({ subject: 'Edited' }), { revision: 2 }));
+    const sentence = await rejected(
+      () => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }),
+      'stateMismatch',
+    );
+    assert.equal(sentence, 'This draft changed in another window. Reopen it before sending.');
+    const n = w.first.store.read(q =>
+      q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
+    );
+    assert.equal(n?.n, 0, 'no row');
+  }));
+
+test('raceOnce fails a race whose call is still pending inside the hook', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    raceOnce(w, isCreate, () => new Promise(() => {}));
+    await assert.rejects(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }));
+    assert.equal(raceErrors.splice(0).length, 1, 'the race was reported');
   }));
 
 /** An attempt that outlives its engine, a newer attempt by another engine, then the old one settles. */
@@ -206,7 +258,7 @@ async function lateSettle(w: World, late: { result?: 'ok' | 'notSent' }, newer =
   w.draft('d1');
   const old = gate();
   w.server.script.push({ wait: old.wait, ...late, delivered: late.result !== 'notSent' });
-  const s = w.send(w.first, 'd1');
+  const s = await w.send(w.first, 'd1');
   await w.clock.advance(10 * SEC);
   const attempt1 = (w.raw(s.id) as { attempt_at: number }).attempt_at;
   assert.equal(w.get(s.id).state, 'sending');
@@ -219,7 +271,7 @@ async function lateSettle(w: World, late: { result?: 'ok' | 'notSent' }, newer =
     await w.settle();
     const hold = gate();
     w.server.script.push({ wait: hold.wait, delivered: false });
-    w.act(second, { type: 'sendAnyway', submissionId: s.id });
+    await w.act(second, { type: 'sendAnyway', submissionId: s.id });
     await w.settle();
     await w.clock.advance(1 * SEC);
     await w.settle();
@@ -261,7 +313,7 @@ test('a send whose slow admission pushed it past the grace is suspended at the m
       w.skew.jump = OVERDUE_GRACE_MS + 1 * MIN;
       w.server.onAdmission(undefined);
     });
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     await w.clock.advance(10 * SEC);
     await w.settle();
     assert.equal(w.server.sends().length, 0, 'never sent late');
@@ -273,7 +325,7 @@ test('a send whose slow admission pushed it past the grace is suspended at the m
 test('Bcc is in the envelope only: the stored and the sent MIME have no Bcc header and no Bcc address', () =>
   inWorld(async w => {
     w.draft('d1', fields({ bcc: [{ address: 'quiet@hidden.example', name: 'Quiet' }] }));
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     const stored = new TextDecoder().decode(w.raw(s.id)!.mime as Uint8Array);
     await w.clock.advance(10 * SEC);
     await w.settle();
@@ -290,7 +342,7 @@ test('Bcc is in the envelope only: the stored and the sent MIME have no Bcc head
 test('a row that lost its bytes says Cancel first: Retry is refused with that sentence, Cancel then a new send works once', () =>
   inWorld(async w => {
     w.draft('d1');
-    const s = w.send(w.first, 'd1');
+    const s = await w.send(w.first, 'd1');
     const db = w.file.open();
     db.prepare('UPDATE submissions SET mime = NULL WHERE id = ?').run(s.id);
     db.close();
@@ -301,12 +353,15 @@ test('a row that lost its bytes says Cancel first: Retry is refused with that se
     assert.equal(failed.problem?.reasonCode, 'send.noBytes');
     assert.match(failed.problem?.message ?? '', /Cancel/);
     assert.match(
-      refused(() => w.act(w.first, { type: 'retry', submissionId: s.id }), 'stateMismatch'),
+      await rejected(() => w.act(w.first, { type: 'retry', submissionId: s.id }), 'stateMismatch'),
       /Cancel/,
     );
-    refused(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }), 'stateMismatch');
-    w.act(w.first, { type: 'cancel', submissionId: s.id });
-    const again = w.send(w.first, 'd1');
+    await rejected(
+      () => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }),
+      'stateMismatch',
+    );
+    await w.act(w.first, { type: 'cancel', submissionId: s.id });
+    const again = await w.send(w.first, 'd1');
     assert.notEqual(
       again.internetId,
       s.internetId,

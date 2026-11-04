@@ -10,6 +10,7 @@ import {
   UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
+import { blobIdsOf, loadBlobs } from './blob-read';
 import { DraftConflict, INCOMPLETE_SENTENCE, parseData } from './draft-state';
 import { sendPins } from './draft-proof';
 import {
@@ -199,18 +200,19 @@ export function replyHeaders(
   return { inReplyTo: msg.internet_id, references };
 }
 
+/** The draft's attachments from bytes already loaded (`loadBlobs`); one that is not in `bytes` is gone. */
 export function attachmentsOf(
-  ctx: Pick<OutboxCtx, 'blobs'>,
+  bytes: ReadonlyMap<string, Uint8Array>,
   fields: DraftFields,
 ): MimeAttachment[] {
   return fields.attachments.map(a => {
-    const bytes = a.blobId !== undefined ? ctx.blobs?.get(a.blobId) : undefined;
-    if (!bytes)
+    const data = a.blobId !== undefined ? bytes.get(a.blobId) : undefined;
+    if (!data)
       fail(
         'notFound',
         `The attachment "${a.name}" is no longer available. Attach it again, then send.`,
       );
-    return { name: a.name, mime: a.mime, bytes, inline: a.inline, contentId: a.contentId };
+    return { name: a.name, mime: a.mime, bytes: data, inline: a.inline, contentId: a.contentId };
   });
 }
 
@@ -313,13 +315,18 @@ export function releaseHeld(ctx: OutboxCtx, draftId: string) {
   }
 }
 
-/** Everything about the new row except the commit: reads the draft and writes the pinned MIME. */
-function prepareSend(
-  ctx: OutboxCtx,
-  opId: string,
-  action: Extract<SubmissionAction, { type: 'send' }>,
-): NewSubmission {
-  const now = ctx.clock.now();
+type SendAction = Extract<SubmissionAction, { type: 'send' }>;
+
+/** The draft a send reads, after every check a send makes before it builds anything. */
+interface CheckedDraft {
+  row: DraftRow;
+  fields: DraftFields;
+  thread: ReturnType<typeof threadOf>;
+  reply: ReturnType<typeof replyHeaders>;
+}
+
+/** Reads the draft and refuses a send of it, synchronously. Runs before the bytes are read and again after. */
+function checkedDraft(ctx: OutboxCtx, action: SendAction): CheckedDraft {
   releaseHeld(ctx, action.draftId);
   const { draft, live, thread, reply } = ctx.store.read(q => {
     const d = readDraft(q, action.draftId);
@@ -340,6 +347,19 @@ function prepareSend(
   const { fields } = draft;
   if (!fields.to.length && !fields.cc.length && !fields.bcc.length)
     fail('validation', 'Add at least one recipient.', { path: ['action', 'draftId'] });
+  return { row: draft.row, fields, thread, reply };
+}
+
+/** The new row from a checked draft and its loaded bytes: the pinned MIME and its Message-ID. No await, no commit. */
+function prepareSend(
+  ctx: OutboxCtx,
+  opId: string,
+  action: SendAction,
+  draft: CheckedDraft,
+  bytes: ReadonlyMap<string, Uint8Array>,
+): NewSubmission {
+  const now = ctx.clock.now();
+  const { fields, reply, thread } = draft;
   const from = senderOf(draft.row, fields);
   // The Date is when the message is meant to leave (the undo window's end, or the chosen time), not when it was composed.
   const undoAt = now + undoSeconds(ctx) * 1_000;
@@ -360,7 +380,7 @@ function prepareSend(
       messageId: internetId,
       date: notBefore,
       ...reply,
-      attachments: attachmentsOf(ctx, fields),
+      attachments: attachmentsOf(bytes, fields),
       randomBytes: ctx.random,
     });
   } catch (error) {
@@ -400,12 +420,7 @@ function conflictSentence(error: SubmissionConflict, checking = STILL_CHECKING) 
   return error.current ? wrongState(error.current) : fail('notFound', NOT_IN_OUTBOX);
 }
 
-function send(
-  ctx: OutboxCtx,
-  opId: string,
-  action: Extract<SubmissionAction, { type: 'send' }>,
-): SetResult {
-  const row = prepareSend(ctx, opId, action);
+function commitSend(ctx: OutboxCtx, opId: string, row: NewSubmission): SetResult {
   let seq: number;
   try {
     seq = ctx.store.commit({
@@ -419,6 +434,26 @@ function send(
   }
   ctx.deadlines.changed('outbox');
   return answer(ctx, opId, seq, row.id);
+}
+
+/**
+ * A draft without attachment bytes to read is sent within the call, as before the reads became async. Otherwise, once
+ * the bytes are read, the same opId may have been answered meanwhile (a replay) and the draft may have been edited,
+ * resolved, discarded or sent: every check runs again on the draft as it is NOW and the MIME is built from that read
+ * only, so the send is refused exactly as one made after the change would be (the commit compares the revision too).
+ * The same revision means the same fields (every field write bumps it), so the same blob ids the bytes were read for.
+ */
+async function send(ctx: OutboxCtx, opId: string, action: SendAction): Promise<SetResult> {
+  let draft = checkedDraft(ctx, action);
+  let bytes = new Map<string, Uint8Array>();
+  const ids = blobIdsOf(draft.fields);
+  if (ids.length) {
+    bytes = await loadBlobs(ctx.blobs, ids, ctx.clock);
+    const prior = replayed(ctx, opId, action);
+    if (prior) return prior;
+    draft = checkedDraft(ctx, action);
+  }
+  return commitSend(ctx, opId, prepareSend(ctx, opId, action, draft, bytes));
 }
 
 // ---------------------------------------------------------------- the other actions
@@ -519,13 +554,16 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction, release: boolean):
   return answer(ctx, opId, seq, row.id);
 }
 
-/** `Submission/set`. Throws `ContractError` with the sentence the UI shows. */
+/**
+ * `Submission/set`. Throws (or, for a send, rejects with) `ContractError` carrying the sentence the UI shows. Only a send
+ * of a draft with attachments awaits anything (its bytes); every other call has done all its work when it returns.
+ */
 export function setSubmission(
   ctx: OutboxCtx,
   opId: string,
   action: SubmissionAction,
   release = true,
-): SetResult {
+): SetResult | Promise<SetResult> {
   const prior = replayed(ctx, opId, action);
   if (prior) return prior;
   return action.type === 'send' ? send(ctx, opId, action) : act(ctx, opId, action, release);
