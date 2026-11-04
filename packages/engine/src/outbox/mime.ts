@@ -469,12 +469,42 @@ const ENTITIES: Record<string, string> = {
   eth: '\u00f0',
   thorn: '\u00fe',
   yuml: '\u00ff',
-  aacuteU: '',
+  // Capital Latin-1 names are distinct entities, not case folds of the lowercase ones.
+  Aacute: '\u00c1',
+  Eacute: '\u00c9',
+  Iacute: '\u00cd',
+  Oacute: '\u00d3',
+  Uacute: '\u00da',
+  Yacute: '\u00dd',
+  Agrave: '\u00c0',
+  Egrave: '\u00c8',
+  Igrave: '\u00cc',
+  Ograve: '\u00d2',
+  Ugrave: '\u00d9',
+  Acirc: '\u00c2',
+  Ecirc: '\u00ca',
+  Icirc: '\u00ce',
+  Ocirc: '\u00d4',
+  Ucirc: '\u00db',
+  Atilde: '\u00c3',
+  Ntilde: '\u00d1',
+  Otilde: '\u00d5',
+  Auml: '\u00c4',
+  Euml: '\u00cb',
+  Iuml: '\u00cf',
+  Ouml: '\u00d6',
+  Uuml: '\u00dc',
+  Ccedil: '\u00c7',
+  Aring: '\u00c5',
+  AElig: '\u00c6',
+  Oslash: '\u00d8',
+  ETH: '\u00d0',
+  THORN: '\u00de',
 };
 
 function decodeEntities(text: string): string {
   return text.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (whole, body: string) => {
-    if (body[0] !== '#') return ENTITIES[body.toLowerCase()] ?? whole;
+    if (body[0] !== '#') return ENTITIES[body] ?? whole;
     const code =
       body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
@@ -568,7 +598,7 @@ export function htmlToText(html: string): string {
       at = html.length;
       break;
     }
-    const name = SKIP_CONTENT.exec(lower.slice(open + 1, open + 8))?.[1];
+    const name = SKIP_CONTENT.exec(lower.slice(open + 1, open + 10))?.[1];
     // A self-closing skipped tag (`<script src="x"/>`) swallows only itself — a real one swallows
     // to its close tag (or the end when unclosed, matching a browser's raw-text read).
     at = name && html[close - 1] !== '/' ? afterElement(lower, name, close) : close + 1;

@@ -139,11 +139,11 @@ describe('Mail/allowImages audit', () => {
         1,
         'a window call writes no row',
       );
-      const again = await listener.call('Mail/allowImages', {
+      const again = (await listener.call('Mail/allowImages', {
         opId: 'aud-1',
         sender: 'client@one.example',
         allow: true,
-      });
+      })) as { opId: string };
       assert.ok(again.opId === 'aud-1', 'a replay succeeds');
       assert.equal(
         w.store.read(q => q.all('SELECT id FROM audit_log')).length,
