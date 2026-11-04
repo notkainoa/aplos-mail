@@ -107,7 +107,7 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
 
 test('Suggestion says what DESIGN says for an AI draft and for the follow-up nudge', () => {
   const draft = html(<Suggestion kind="draft" onKeep={noop} onDismiss={noop} />);
-  assert.equal(text(draft), 'The grey sentence is a suggestion.TabkeepEscdismiss');
+  assert.equal(text(draft), 'The grey sentence is a suggestion.KeepTabDismissEsc');
   assert.match(draft, /role="status"/);
   assert.match(draft, /<kbd[^>]*>Tab<\/kbd>/);
   assert.match(draft, /<kbd[^>]*>Esc<\/kbd>/);
@@ -116,6 +116,30 @@ test('Suggestion says what DESIGN says for an AI draft and for the follow-up nud
   assert.match(followUp, /data-kind="followUp"/);
   clean(draft);
   clean(followUp);
+});
+
+test('the draft strip is the reply card’s sibling, not inside it, with two real buttons that hold their keys', () => {
+  const markup = html(reply({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }));
+  const card = markup.slice(0, markup.indexOf('</section>') + '</section>'.length);
+  assert.match(card, /^<section[^>]*class="ui-inline-reply"/);
+  assert.doesNotMatch(card, /ui-suggestion/, 'nothing of the strip is inside the card');
+  const rest = markup.slice(card.length);
+  assert.match(
+    rest,
+    /^<div class="ui-suggestion" role="status" data-kind="followUp">/,
+    'it follows the card directly',
+  );
+  assert.equal(rest.match(/<button type="button" class="ui-suggestion__act"/g)?.length, 2);
+  assert.match(text(rest), /Aplos drafted this follow-up from your last email\.KeepTabDismissEsc/);
+  assert.doesNotMatch(markup, /data-icon="(sparkle|wand|star)/i, 'no sparkle, wand or star');
+  assert.doesNotMatch(html(reply()), /ui-suggestion/, 'no strip without a suggestion');
+});
+
+test('the placeholders are calm: To while empty, Subject; Cc stays bare', () => {
+  assert.match(html(field({ recipients: [] })), /placeholder="Add a name or email"/);
+  assert.doesNotMatch(html(field()), /placeholder=/, 'no placeholder next to chips');
+  assert.doesNotMatch(html(field({ label: 'Cc', recipients: [] })), /placeholder=/);
+  assert.match(html(composer()), /placeholder="Subject"/);
 });
 
 test('RecipientField is a combobox with a labelled listbox, removable people and the Cc owner', () => {

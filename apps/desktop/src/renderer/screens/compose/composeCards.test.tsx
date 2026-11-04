@@ -1,7 +1,8 @@
 /**
- * The card options on trial for the compose page (owner review 2026-10-31): `cardStyle` only sets `data-cards` on the
- * page's root (`aplos-compose`), the default stays 'off' (DESIGN 7.6 as written), the subject keeps its label and
- * placeholder, and the page still owns its one filled button. The looks are compose.css's; nothing else changes.
+ * The card treatment of the compose page (owner review 2026-11-03): `cardStyle` only sets `data-cards` on the page's
+ * root (`aplos-compose`), the default is 'a' (one card; 'off' is DESIGN 7.6 as first written, option B is gone), the
+ * fields keep their calm placeholders ("Add a name or email", "Subject", "Write something…"), and the page still owns
+ * its one filled button. The looks are compose.css's; nothing else changes.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -63,12 +64,12 @@ function pageWith(session: ComposeSession, cardStyle?: ComposeCardStyle): string
   return renderToStaticMarkup(createElement(ComposePageView, { binding, props }));
 }
 
-test('the compose page root carries the card option; absent, it is off', async () => {
+test('the compose page root carries the card option; absent, it is a', async () => {
   const world = await boot();
   const session = newMessage(world.accountId);
   try {
-    assert.match(pageWith(session), /class="aplos-compose" data-cards="off"/, 'the default is off');
-    for (const style of ['off', 'a', 'b'] as const) {
+    assert.match(pageWith(session), /class="aplos-compose" data-cards="a"/, 'the default is a');
+    for (const style of ['off', 'a'] as const) {
       const html = pageWith(session, style);
       assert.match(html, new RegExp(`class="aplos-compose" data-cards="${style}"`));
       assert.match(
@@ -81,6 +82,8 @@ test('the compose page root carries the card option; absent, it is off', async (
         /aria-label="Subject" placeholder="Subject"/,
         'the subject keeps its words',
       );
+      assert.match(html, /placeholder="Add a name or email"/, 'the To placeholder');
+      assert.match(html, /placeholder="Write something…"/, 'the body placeholder');
       assert.equal(
         html.match(/data-variant="filled"/g)?.length,
         1,
@@ -93,11 +96,11 @@ test('the compose page root carries the card option; absent, it is off', async (
   }
 });
 
-test('compose.css styles only the two options; off draws what DESIGN 7.6 draws', () => {
+test('compose.css styles option a only; off draws what DESIGN 7.6 first drew', () => {
   const css = readFileSync(new URL('./compose.css', import.meta.url), 'utf8');
   assert.match(css, /\.aplos-compose:not\(\[data-cards='off'\]\) \.ui-composer__page \{/);
   assert.match(css, /\.aplos-compose\[data-cards='a'\] /);
-  assert.match(css, /\.aplos-compose\[data-cards='b'\] /);
+  assert.doesNotMatch(css, /data-cards='b'/, 'option B is gone');
   assert.match(css, /\.aplos-screen:has\(> \.aplos-compose\)/, 'the page still fills the pane');
   assert.doesNotMatch(css, /\[data-cards='off'\] /, 'no rule targets off');
   assert.doesNotMatch(

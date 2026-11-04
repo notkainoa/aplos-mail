@@ -37,11 +37,11 @@ export interface ComposeScreenProps {
   /** The page has gone (Esc, discarded, sent): the shell goes back. */
   readonly onClose?: () => void;
   readonly dictationSource?: DictationSource | null;
-  /** The card option on trial: 'a' one card, 'b' a card with a quiet address band. Absent: `CardStyleContext`'s, else 'off'. */
+  /** 'a' one card (the default), 'off' the bare page of DESIGN 7.6. Absent: `CardStyleContext`'s, else 'a'. */
   readonly cardStyle?: ComposeCardStyle;
 }
 
-/** How the compose page is grouped: 'off' is DESIGN 7.6's bare page; 'a' and 'b' are two card options on trial. */
+/** How the compose page is grouped: 'a' is one card (the default); 'off' is DESIGN 7.6's bare page. */
 export type ComposeCardStyle = CardStyle;
 
 function useInitialCompose(props: ComposeScreenProps): ComposeState | null {

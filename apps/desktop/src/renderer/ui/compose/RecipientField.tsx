@@ -3,6 +3,9 @@ import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
 import { Btn } from './parts';
 
+/** The To field's placeholder while it holds no one (owner review 2026-11-03); Cc and Bcc stay bare. */
+const TO_PLACEHOLDER = 'Add a name or email';
+
 const INPUT_LABEL = {
   To: 'Add recipients',
   Cc: 'Add Cc recipients',
@@ -119,6 +122,7 @@ export function RecipientField(props: RecipientFieldProps) {
           type="text"
           role="combobox"
           aria-label={INPUT_LABEL[label]}
+          placeholder={label === 'To' && recipients.length === 0 ? TO_PLACEHOLDER : undefined}
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={listboxId}

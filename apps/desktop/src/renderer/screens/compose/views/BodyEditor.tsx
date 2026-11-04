@@ -21,6 +21,9 @@ export interface BodyEditorProps {
   readonly editorRef?: Ref<HTMLTextAreaElement>;
 }
 
+/** The empty text's placeholder (owner review 2026-11-03); an offered draft takes its place. */
+const BODY_PLACEHOLDER = 'Write something…';
+
 export function BodyEditor({
   value,
   onChange,
@@ -46,6 +49,7 @@ export function BodyEditor({
         aria-describedby={describedBy}
         dir="auto"
         spellCheck
+        placeholder={suggestion ? undefined : BODY_PLACEHOLDER}
         autoFocus={autoFocus}
         value={value}
         onChange={event => onChange(event.target.value)}

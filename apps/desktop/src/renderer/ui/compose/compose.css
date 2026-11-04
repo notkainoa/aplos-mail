@@ -240,34 +240,87 @@
   font-weight: 500;
 }
 
-/* ---------- Suggestion hint ---------- */
+/* ---------- Suggestion: the draft strip ----------
+   A separate card hanging off the bottom of the reply card (or of the compose page's card): the same width, square top
+   corners where it meets the card, rounded bottom corners, a different surface (--raised; --sunken in dark, where
+   --paper and --raised are one step apart). It appears in place with a fade (reserving nothing) and moves nothing
+   on hover. The buttons are real buttons on --paper with a ring; the keys sit inside them as keycaps. */
 .ui-suggestion {
+  box-sizing: border-box;
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
-  margin: var(--space-3) 0 0;
-  color: var(--dim);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--elev-pane);
+  color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
+  animation: ui-suggestion-in var(--dur-arrive) var(--ease-out) both;
+}
+:root[data-theme='dark'] .ui-suggestion {
+  background: var(--sunken);
+}
+@keyframes ui-suggestion-in {
+  from {
+    opacity: 0;
+  }
+}
+/* Reduced motion: it simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-suggestion {
+    animation: none;
+  }
+}
+:root[data-motion='reduced'] .ui-suggestion {
+  animation: none;
+}
+/* The card above gives up its bottom corners to the strip, so the two meet square. */
+.ui-inline-reply:has(+ .ui-suggestion) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ui-suggestion__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-suggestion__acts {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 .ui-suggestion__act {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  height: var(--control-xs);
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  color: var(--dim);
-  font: var(--type-small);
+  gap: var(--space-2);
+  height: var(--control-sm);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
   transition:
-    background-color var(--dur-hover) var(--ease-std),
-    color var(--dur-hover) var(--ease-std);
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-suggestion__act:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
 }
 @media (hover: hover) {
   .ui-suggestion__act:hover {
-    background: var(--hover);
-    color: var(--ink);
+    background: var(--raised);
   }
 }
 
@@ -536,6 +589,11 @@
   width: min(var(--composer-w), 100% - 2 * var(--gutter));
   margin: 0 auto;
   padding: var(--space-7) 0 var(--space-8);
+}
+/* On the page the draft strip is the page's sibling, as wide as the page. */
+.ui-composer__scroll > .ui-suggestion {
+  width: min(var(--composer-w), 100% - 2 * var(--gutter));
+  margin: 0 auto var(--space-8);
 }
 .ui-composer__to .ui-recipient-field__label {
   min-width: var(--space-8);
