@@ -4,7 +4,7 @@
 // window (the agenda state draws a 900 px window at either viewport); the window fills the stage otherwise.
 
 import type { ReactElement } from 'react';
-import { calendarStates } from '../../../apps/desktop/src/renderer/screens/calendar';
+import { calendarStates } from '../../../apps/desktop/src/renderer/screens/calendar/CalendarStates';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
 
 function sceneOf(id: string): () => ReactElement {

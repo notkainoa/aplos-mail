@@ -6,6 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { api, type Event } from '../../data';
 import {
   getToasts,
@@ -174,6 +175,13 @@ test('review2: Delete and E act only on an explicit selection, never the rail’
   const menu = update(day, { type: 'menu', item: 'edit' }, ctx);
   assert.equal(menu.state.editor?.mode, 'edit');
   assert.equal(menu.state.editor?.eventId, 'dental');
+});
+
+test('review2: the barrel never re-exports the demo fixtures', () => {
+  // App.tsx imports { CalendarScreen } from the barrel; re-exporting calendarStates would bundle the
+  // fixture world into the app. The gallery deep-imports './CalendarStates' instead.
+  const src = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+  assert.equal(/^export[^\n]*CalendarStates/m.test(src), false);
 });
 
 test('review2: no command runs while the events window is still opening', () => {
