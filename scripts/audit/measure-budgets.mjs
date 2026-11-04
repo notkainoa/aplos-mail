@@ -5,7 +5,8 @@
 // minutes) and compares each with its budgets.json limit. An artifact that is absent is reported as
 // "not measurable here" and never fails. --ci reads the ci.* rows from the revamp runs of the CI workflow
 // created in the last 30 days with `gh` (30 s limit per call): wall-clock rows use the newest successful
-// run in which the named jobs ran; ci.billed-minutes sums every job that ran in every run in the window,
+// run in which the named jobs ran (static-unit: the median over the newest 5 such runs);
+// ci.billed-minutes sums every job that ran in every run in the window,
 // whatever its outcome (the row is per month) and is skipped, never partial, when the run list hit the
 // cap or any gh step failed. Without --ci each ci.* row is skipped; with --ci, if no run could be read at
 // all, the failing gh steps are printed and the exit code is 2.
@@ -326,10 +327,28 @@ export function newestMinutes(runs, match) {
   return null;
 }
 
-function measureCiWallClock(options, match, absence) {
+// One runner hiccup can add a minute to a single run, so this row is judged on the median of the last
+// few green runs, not the newest one. The limit itself is unchanged.
+const medianRunCount = 5;
+
+/** The median of each run's longest matching job over the newest `count` successful runs where `match` ran (each run counts its longest matching job); null when none did. */
+export function medianMinutes(runs, match, count = medianRunCount) {
+  const minutes = runs
+    .filter(run => run.conclusion === 'success')
+    .map(run => maxJobMinutesWhere(run.jobs, match))
+    .filter(value => value != null)
+    .slice(0, count)
+    .sort((a, b) => a - b);
+  if (minutes.length === 0) return null;
+  const middle = Math.floor(minutes.length / 2);
+  if (minutes.length % 2 === 1) return minutes[middle];
+  return (minutes[middle - 1] + minutes[middle]) / 2;
+}
+
+function measureCiWallClock(options, match, absence, pick = newestMinutes) {
   const unavailable = ciUnavailable(options);
   if (unavailable) return missing(unavailable);
-  const minutes = newestMinutes(options.ciRuns, match);
+  const minutes = pick(options.ciRuns, match);
   if (minutes == null) return missing(absence);
   return { measured: roundUp(minutes, 1), unit: 'min' };
 }
@@ -346,6 +365,7 @@ const measureCiStaticUnit = (root, options) =>
     options,
     isStaticUnitJob,
     'no completed static or unit job in the last 30 days',
+    medianMinutes,
   );
 
 const measureCiE2eBrowser = (root, options) =>

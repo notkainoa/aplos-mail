@@ -15,6 +15,7 @@ import {
   jobMinutes,
   maxJobMinutes,
   measureRows,
+  medianMinutes,
   newestMinutes,
   createdSince,
   ciUnreadableReason,
@@ -291,6 +292,28 @@ describe('measure-budgets CI rows', () => {
     };
     const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: [run] });
     assert.equal(result.measured, 2.6);
+  });
+
+  it('static-unit is the median of the newest five green runs, so one slow run does not decide it', async () => {
+    const run = seconds => ({
+      conclusion: 'success',
+      jobs: [ciJob(ciJobNames.staticJob, seconds)],
+    });
+    const failed = { conclusion: 'failure', jobs: [ciJob(ciJobNames.staticJob, 900)] };
+    const runs = [run(300), failed, run(200), run(210), run(230), run(240), run(900)];
+    const isStatic = name => name === ciJobNames.staticJob;
+    // newest five green: 300, 200, 210, 230, 240 s -> median 230 s; the 900 s run is the sixth.
+    assert.equal(medianMinutes(runs, isStatic), 230 / 60);
+    assert.equal(medianMinutes(runs, isStatic, 2), 250 / 60);
+    assert.equal(medianMinutes([failed], isStatic), null);
+    assert.equal(
+      medianMinutes([run(120)], name => name === ciJobNames.macosJob),
+      null,
+    );
+    const result = await measurers['ci.wall-clock-static-unit'](null, { ci: true, ciRuns: runs });
+    assert.equal(result.measured, 3.9);
+    const newest = await measurers['ci.wall-clock-e2e-browser'](null, { ci: true, ciRuns: runs });
+    assert.match(newest.skip, /no completed browser E2E/);
   });
 
   it('wall-clock rows ignore runs that did not succeed', () => {
