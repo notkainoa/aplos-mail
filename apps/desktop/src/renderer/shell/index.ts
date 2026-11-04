@@ -34,6 +34,8 @@ import {
 import type { Screen } from './store-route';
 import type { RouteTarget } from './store-route';
 import { addKeyLayer, type KeyLayer } from './store-keys';
+import { addPaneHeaderPart, getPaneHeaderPart, subscribePaneHeaderPart } from './store-pane';
+import type { PaneHeaderPart } from './store-pane';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
@@ -274,6 +276,22 @@ export function useShellKeyLayer(layer: KeyLayer): void {
       }),
     [contexts, conditions],
   );
+}
+
+// ---------------------------------------------------------------------------
+// The pane header's screen parts (additive): back and crumb, and the bulk bar
+// ---------------------------------------------------------------------------
+
+export type { PaneHeaderPart } from './store-pane';
+
+/** Sets the header's lead, crumb or bulk bar while the calling screen is mounted. Pass a memoised object: it compares by reference. Null clears it. */
+export function usePaneHeaderPart(part: PaneHeaderPart | null): void {
+  useEffect(() => (part ? addPaneHeaderPart(part) : undefined), [part]);
+}
+
+/** The latest mounted screen's header parts, live. */
+export function usePaneHeaderParts(): PaneHeaderPart {
+  return useSyncExternalStore(subscribePaneHeaderPart, getPaneHeaderPart, getPaneHeaderPart);
 }
 
 // ---------------------------------------------------------------------------
