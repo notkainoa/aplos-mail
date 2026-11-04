@@ -49,8 +49,8 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * sent or trashed a moment ago may not be listed yet, and until it is the lookup answers absent and the draft is created
  * again (the same limit as a hard delete). A create that comes back uncertain re-checks once the same way.
  * On Gmail (a) and (c) never match our own copy (Gmail replaced the Message-ID) and (b) finds it by its token. Only when
- * an attempt under this same Message-ID was recorded by this process (`DraftAttempts.has`: an earlier create may have
- * landed and its reply was lost) and (a) to (c) found nothing, two more: (d) the newest `CANDIDATES` messages of
+ * an attempt under this same Message-ID by this process may have landed (`DraftAttempts.mayHaveLanded`: it was
+ * answered, or ended uncertain; a definite refusal does not count) and (a) to (c) found nothing, two more: (d) the newest `CANDIDATES` messages of
  * `in:sent OR in:trash` (one `messages.list`, metadata reads with the token): a SENT or TRASH copy carrying our identity
  * is `{kind:'gone'}` (the case (c) answers where the Message-ID is kept); (e) the CONTENT-MATCHED FALLBACK for a copy
  * whose token Gmail dropped (it shows only Gmail's id): each draft (b) listed and read that carries no well-formed token
@@ -106,7 +106,7 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * create or replace 20, and the lookup before a create at least 15 (`drafts.list` x2 and `messages.list`, 5 each).
  * Each draft or message the lookup has to read adds 20 (`drafts.get`, `messages.get` metadata): about 215 with 10
  * drafts in the first page, at most about 615 (10 reads in each of (a), (b) and (c)). A verified hit adds one
- * `drafts.get` format=raw (60, priced as full), and then (b) and (c) are skipped. Only after a recorded attempt (a
+ * `drafts.get` format=raw (60, priced as full), and then (b) and (c) are skipped. Only after an attempt that may have landed (a
  * retry): (d) adds 5 plus 20 per message read (at most 205) and (e) 60 per draft read raw (at most 600), so a retry
  * that finds nothing costs at most about 1,420. All through the governor on the `opFlush` lane. A create is `write`,
  * never re-sent by the governor; an update is `idempotentWrite`.
@@ -130,8 +130,8 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  *   - PORT GAP 2 (CLOSED on the Gmail side by `DraftUpload.supersedes`, #157): an uncertain create of revision N may
  *     have landed, and revision N+1 (a new Message-ID) must not make a second copy. When the lookups above find nothing
  *     for this upload's own Message-ID, the create looks up each Message-ID in `supersedes` (at most the last five,
- *     never its own; the search per id, the newest drafts once, then all mail, then, after a recorded attempt under one
- *     of them, the Sent/Trash scan (d); no content-matched fallback). A draft found by one of them is
+ *     never its own; the search per id, the newest drafts once, then all mail, then, after an attempt under one
+ *     of them that may have landed, the Sent/Trash scan (d); no content-matched fallback). A draft found by one of them is
  *     REPLACED (`drafts.update`, the result names its draftId) only with proof it is our own earlier upload, all of:
  *     it is still a DRAFT (not SENT or TRASH) with the message id the search showed, its raw Message-ID header is one
  *     of `supersedes`, its thread is the upload's `remoteThreadId` when that is set, and its raw bytes canonicalise
