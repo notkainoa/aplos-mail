@@ -7,8 +7,6 @@
 .aplos-screen:has(> .aplos-reader) {
   display: flex;
   flex-direction: column;
-  /* The action bar's scrim is as wide as the pane; whatever it overshoots never scrolls sideways. */
-  overflow-x: clip;
 }
 .aplos-reader {
   position: relative;

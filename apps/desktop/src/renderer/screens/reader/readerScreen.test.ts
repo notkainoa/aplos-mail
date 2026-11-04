@@ -210,7 +210,10 @@ test('the letter shows its parts in order inside one column: summary, thread, st
       1,
       'one filled button: the suggestion',
     );
-    assert.match(html, /data-variant="filled"[^>]*title="Reply · Space"/);
+    assert.match(
+      html,
+      /data-variant="filled"[^>]*title="Reply · Space\. Hold R to dictate a reply"/,
+    );
     assert.match(text(html), /Later/);
     assert.match(text(html), /Done|Reply/);
     assert.match(text(html), /Reply to \w+…/);

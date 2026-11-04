@@ -139,7 +139,7 @@ describe('ReaderActions', () => {
     assert.match(m, /role="group" aria-label="Actions"/);
     assert.match(
       m,
-      /data-variant="filled" data-size="md" title="Reply · Space">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
+      /data-variant="filled" data-size="md" title="Reply · Space\. Hold R to dictate a reply">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
     );
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);
@@ -154,6 +154,11 @@ describe('ReaderActions', () => {
       />,
     );
     assert.match(cal, /data-icon="calendar"/);
+    assert.doesNotMatch(
+      cal,
+      /Hold R to dictate/,
+      'only a reply suggestion carries the dictation hint',
+    );
     const done = render(
       <ReaderActions {...actions({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />,
     );
@@ -363,7 +368,10 @@ describe('LoadingLine and ReplyStub', () => {
 
   test('"Reply to Jordan…" with its R keycap always shown', () => {
     const m = render(<ReplyStub recipientName="Jordan" commandId="mail.reply" onOpen={noop} />);
-    assert.match(m, /^<button type="button" class="ui-reply-stub" title="Reply · R">/);
+    assert.match(
+      m,
+      /^<button type="button" class="ui-reply-stub" title="Reply · R\. Hold R to dictate a reply">/,
+    );
     assert.equal(text(m), 'Reply to Jordan… R');
     assert.equal(
       text(

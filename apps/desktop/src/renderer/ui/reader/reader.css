@@ -72,7 +72,7 @@
    In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
    bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
    letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
-   soft blurred edge) spans the pane's width behind it, so text never shows beside or through the pill.
+   soft blurred edge) spans the column and a margin either side behind it, so text never shows beside or through the pill.
    The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
    take no space. */
 
@@ -91,9 +91,8 @@
   position: absolute;
   top: var(--space-6);
   bottom: 0;
-  left: 50%;
-  width: 100vw;
-  transform: translateX(-50%);
+  /* The column and a 24 px margin each side: all the text and card edges there are, so nothing needs a pane-wide scrim. */
+  inset-inline: calc(-1 * var(--space-6));
   background: var(--canvas);
   /* The soft edge is a blurred shadow in the same colour (no gradient): solid 12 px above the pill, fading over 24. */
   box-shadow: 0 0 var(--space-6) var(--space-3) var(--canvas);
@@ -312,7 +311,7 @@
   border: 0;
   border-radius: var(--radius-md);
   background-color: transparent;
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
   color: var(--dim);
   font: var(--type-base);
   letter-spacing: var(--track-base);
@@ -439,6 +438,6 @@
     color: var(--ink);
   }
   .ui-reply-stub:hover {
-    box-shadow: inset 0 0 0 1px var(--control-edge);
+    box-shadow: inset 0 0 0 var(--hairline) var(--control-edge);
   }
 }

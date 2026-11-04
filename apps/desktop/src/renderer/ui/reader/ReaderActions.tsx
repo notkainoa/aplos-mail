@@ -8,6 +8,7 @@
 import type { ReaderActionsProps } from '../props';
 import { Action } from '../list/internal/Action';
 import { keycapFor, tooltipText } from '../list/internal/keys';
+import { HOLD_R } from './ReplyStub';
 
 /** The pinned Reply / Later / Done bar. */
 export function ReaderActions({
@@ -19,6 +20,8 @@ export function ReaderActions({
   onDone,
 }: ReaderActionsProps) {
   const replying = demoted && suggestion.icon === 'reply';
+  const base = tooltipText(suggestion.verb, commands.suggest);
+  const suggestionTooltip = suggestion.icon === 'reply' ? `${base}. ${HOLD_R}` : base;
   return (
     <div className="ui-reader-actions" data-demoted={demoted ? 'true' : undefined}>
       <div className="ui-reader-actions__bar" role="group" aria-label="Actions">
@@ -29,7 +32,7 @@ export function ReaderActions({
           icon={suggestion.icon}
           keycap={demoted ? undefined : keycapFor(commands.suggest)}
           pressed={replying ? true : undefined}
-          tooltip={tooltipText(suggestion.verb, commands.suggest)}
+          tooltip={suggestionTooltip}
           onPress={() => onSuggestion()}
         />
         <Action
