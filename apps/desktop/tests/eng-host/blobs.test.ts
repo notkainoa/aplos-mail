@@ -251,6 +251,9 @@ test('at start, a crash’s temp files and every name that is not a readable blo
   writeFileSync(join(dir, 'notes.txt'), 'x');
   writeFileSync(join(dir, `b_${'D'.repeat(32)}.blob`), 'x');
   mkdirSync(join(dir, 'sub'));
+  // A planted folder with something in it is never deleted recursively: it is left alone.
+  mkdirSync(join(dir, 'full'));
+  writeFileSync(join(dir, 'full', 'keep'), 'x');
 
   const store = await open(dir);
   assert.deepEqual(readdirSync(join(dir, '.tmp')), [], 'the temp folder is emptied at open');
@@ -261,7 +264,8 @@ test('at start, a crash’s temp files and every name that is not a readable blo
     listed.map(entry => entry.id),
     [ID],
   );
-  assert.deepEqual(readdirSync(dir).sort(), ['.tmp', `${ID}.blob`]);
+  assert.deepEqual(readdirSync(dir).sort(), ['.tmp', `${ID}.blob`, 'full']);
+  assert.deepEqual(readdirSync(join(dir, 'full')), ['keep']);
   assert.deepEqual((await store.get(ID))?.bytes, good);
 });
 
@@ -481,18 +485,65 @@ test('a failure inside list() leaves as a reason code, never a path; an undeleta
   }
 });
 
-test('a blob with a second hard link is refused by get and dropped by the scan; the other link is untouched', async t => {
+test('a blob with a second hard link (a backup tool’s) is not served, but never deleted and still counted', async t => {
   const root = scratch(t);
   const dir = join(root, 'blobs');
   const store = await open(dir);
   const bytes = bytesOf(8);
   await store.put(ID, header(bytes), bytes);
+  const usage = await store.usage();
   linkSync(join(dir, `${ID}.blob`), join(root, 'second'));
   assert.equal(await store.get(ID), undefined);
   assert.deepEqual(await store.list(), []);
-  assert.equal(existsSync(join(dir, `${ID}.blob`)), false);
-  assert.ok(existsSync(join(root, 'second')));
+  assert.ok(existsSync(join(dir, `${ID}.blob`)), 'list() left it alone');
+  assert.equal(await store.usage(), usage);
+  const reopened = await open(dir);
+  assert.ok(existsSync(join(dir, `${ID}.blob`)), 'a restart left it alone');
+  assert.equal(await reopened.usage(), usage);
+  rmSync(join(root, 'second'));
+  assert.deepEqual((await reopened.get(ID))?.bytes, bytes, 'served again once it has one link');
 });
+
+test('removes that land while a scan runs stay removed', async t => {
+  const dir = join(scratch(t), 'blobs');
+  const ids = Array.from({ length: 30 }, (_, i) => `b_${i.toString(16).padStart(32, '0')}`);
+  let calls = 0;
+  const holder: { store?: Awaited<ReturnType<typeof open>> } = {};
+  const store = await open(dir, {
+    peek: async () => {
+      // Two thirds into the scan, every blob is removed, the ones it already saw included.
+      if (++calls === 20 && holder.store) for (const id of ids) await holder.store.remove(id);
+    },
+  });
+  for (const id of ids) await store.put(id, header(bytesOf(10)), bytesOf(10));
+  calls = 0;
+  holder.store = store;
+  await store.list();
+  assert.equal(await store.usage(), 0);
+  await store.put(ids[0], header(bytesOf(10)), bytesOf(10));
+});
+
+test(
+  'a blob swapped for a FIFO between lstat and open never blocks a read',
+  { timeout: 5000 },
+  async t => {
+    const dir = join(scratch(t), 'blobs');
+    let swap = false;
+    const store = await open(dir, {
+      peek: async () => {
+        if (!swap) return;
+        swap = false;
+        rmSync(join(dir, `${ID}.blob`));
+        execFileSync('mkfifo', [join(dir, `${ID}.blob`)]);
+      },
+    });
+    const bytes = bytesOf(4);
+    await store.put(ID, header(bytes), bytes);
+    swap = true;
+    assert.equal(await store.get(ID), undefined);
+    assert.ok(lstatSync(join(dir, `${ID}.blob`)).isFIFO(), 'a read never deletes');
+  },
+);
 
 test('a put while list() runs is counted against the folder cap', async t => {
   const dir = join(scratch(t), 'blobs');
@@ -515,12 +566,31 @@ test('a put while list() runs is counted against the folder cap', async t => {
   );
 });
 
-/** Lets a running scan get well into its folder (many I/O turns). */
-async function midScan(): Promise<void> {
-  for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve));
+/** A store whose 20th read during a `list()` runs `during` (the scan is then half way through 40 blobs). */
+async function midScanStore(dir: string, during: () => Promise<void>, extra = {}) {
+  let reads = 0;
+  let armed = false;
+  const store = await open(dir, {
+    ...extra,
+    peek: async () => {
+      if (armed && ++reads === 20) await during();
+    },
+  });
+  return {
+    store,
+    async list() {
+      armed = true;
+      reads = 0;
+      try {
+        return await store.list();
+      } finally {
+        armed = false;
+      }
+    },
+  };
 }
 
-test('while a slow scan runs, the blobs already there stay counted and a put that finishes is kept', async t => {
+test('while a scan runs, the blobs already there stay counted and a put that finishes is kept', async t => {
   const dir = join(scratch(t), 'blobs');
   const seed = await open(dir);
   for (let i = 0; i < 40; i++) {
@@ -530,19 +600,19 @@ test('while a slow scan runs, the blobs already there stay counted and a put tha
   const existing = await seed.usage();
   const small = bytesOf(100);
   // Room for the new file only if the 40 old ones were forgotten.
-  const capped = await open(dir, { limits: { folderBytes: existing + 100 } });
-  const listing = capped.list();
-  await midScan();
-  assert.equal(await refusal(capped.put(ID, header(small), small)), 'folderFull');
-  await listing;
+  let refused: BlobRefusal | undefined;
+  const capped = await midScanStore(
+    dir,
+    async () => void (refused = await refusal(capped.store.put(ID, header(small), small))),
+    { limits: { folderBytes: existing + 100 } },
+  );
+  await capped.list();
+  assert.equal(refused, 'folderFull');
 
-  const roomy = await open(dir);
-  const racing = roomy.list();
-  await midScan();
-  await roomy.put(ID, header(small), small);
-  await racing;
+  const roomy = await midScanStore(dir, () => roomy.store.put(ID, header(small), small));
+  await roomy.list();
   assert.ok(
-    (await roomy.usage()) > existing + 100,
+    (await roomy.store.usage()) > existing + 100,
     'the put that finished mid-scan is still counted',
   );
 });

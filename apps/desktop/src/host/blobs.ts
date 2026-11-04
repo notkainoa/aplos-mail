@@ -9,9 +9,9 @@
  * blob file is `lstat`ed and must be a regular file with one link before it is opened (`O_NOFOLLOW|O_NONBLOCK`, so a
  * FIFO can never block), and the open file must be the one `lstat` saw. The id is checked against `BLOB_ID_PATTERN`
  * here, again, before any path is formed. Only names that are not a blob's, and files positively seen to be no blob
- * (not regular, linked twice, corrupt after a full read), are ever deleted by a scan; a file that merely cannot be read
- * right now (permissions, a file-handle shortage) is left alone. Nothing a caller sees names a path: every error that
- * leaves this module is a `BlobFilesError` reason code.
+ * (not regular, too large, corrupt after a full read), are ever deleted by a scan, and never recursively; a file that
+ * merely cannot be read right now (permissions, a file-handle shortage, a second hard link) is left alone and counted.
+ * Nothing a caller sees names a path: every error that leaves this module is a `BlobFilesError` reason code.
  */
 import { constants, promises as fs, type Stats } from 'node:fs';
 import { join } from 'node:path';
@@ -42,6 +42,8 @@ export interface BlobFilesOptions {
   limits?: Partial<Limits>;
   /** Called before each step of a write; a throw there fails the put as a crash would (tests only). */
   step?: (step: BlobWriteStep) => void | Promise<void>;
+  /** Called between a read's `lstat` and its `open` (tests only: a swap in that window). */
+  peek?: () => Promise<void>;
 }
 
 type Limits = { -readonly [K in keyof typeof BLOB_FILE_LIMITS]: number };
@@ -197,9 +199,9 @@ async function readAll(
 }
 
 /**
- * What one blob file is: `ok` (open, with its header), `bad` (positively no blob: not a regular file, more than one
- * link, too large, or a corrupt head after a full read; a scan deletes it), `skip` (cannot be read right now; left
- * alone, never deleted) or `missing`.
+ * What one blob file is: `ok` (open, with its header), `bad` (positively no blob: not a regular file, too large, or a
+ * corrupt head after a full read; a scan deletes it), `skip` (cannot be read right now, or has a second link; left
+ * alone, never deleted, still counted) or `missing`.
  */
 type Inspected =
   | {
@@ -213,9 +215,17 @@ type Inspected =
   | { kind: 'skip'; size: number }
   | { kind: 'missing' };
 
-const isBlobFile = (stats: Stats) => stats.isFile() && !stats.isSymbolicLink() && stats.nlink === 1;
+const isRegular = (stats: Stats) => stats.isFile() && !stats.isSymbolicLink();
 
-async function inspect(path: string, limits: Limits): Promise<Inspected> {
+/**
+ * `lstat`, then open the same entry. A second hard link (a backup tool's, or a write whose temp unlink failed) is not
+ * served but never deleted: `skip`. `peek` runs between the two (tests only: a swap in that window).
+ */
+async function inspect(
+  path: string,
+  limits: Limits,
+  peek?: () => Promise<void>,
+): Promise<Inspected> {
   let seen: Stats;
   try {
     seen = await fs.lstat(path);
@@ -223,7 +233,9 @@ async function inspect(path: string, limits: Limits): Promise<Inspected> {
     return errorCode(error) === 'ENOENT' ? { kind: 'missing' } : { kind: 'skip', size: 0 };
   }
   const most = MAGIC_BYTES.byteLength + limits.maxHeaderBytes + limits.maxBytes;
-  if (!isBlobFile(seen) || seen.size > most) return { kind: 'bad' };
+  if (!isRegular(seen) || seen.size > most) return { kind: 'bad' };
+  if (seen.nlink !== 1) return { kind: 'skip', size: seen.size };
+  await peek?.();
   let handle: fs.FileHandle;
   try {
     handle = await fs.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
@@ -234,10 +246,8 @@ async function inspect(path: string, limits: Limits): Promise<Inspected> {
     const stats = await handle.stat();
     // Swapped since the lstat: leave it for the next look.
     if (stats.ino !== seen.ino || stats.dev !== seen.dev) throw new Error('swapped');
-    if (!isBlobFile(stats) || stats.size > most) {
-      await handle.close();
-      return { kind: 'bad' };
-    }
+    // Same inode as the lstat, so its type, links and size cannot differ in a way that makes it corrupt: re-check, skip.
+    if (!isRegular(stats) || stats.nlink !== 1 || stats.size > most) throw new Error('changed');
     const head = new Uint8Array(
       Math.min(stats.size, MAGIC_BYTES.byteLength + limits.maxHeaderBytes),
     );
@@ -254,11 +264,21 @@ async function inspect(path: string, limits: Limits): Promise<Inspected> {
   }
 }
 
-/** Removes everything in `.tmp/`: writes a crash left half done. One that cannot be removed is left. */
+/**
+ * Deletes one entry, never recursively: a file is unlinked, an empty folder removed, and a folder with anything in it
+ * is left alone (Node has no `unlinkat`, so a recursive delete by path could follow a link swapped in meanwhile).
+ */
+async function removeEntry(path: string): Promise<void> {
+  const stats = await fs.lstat(path).catch(() => undefined);
+  if (!stats) return;
+  const gone = stats.isDirectory() ? fs.rmdir(path) : fs.unlink(path);
+  await gone.catch(() => undefined);
+}
+
+/** Removes what is in `.tmp/`: writes a crash left half done. One that cannot be removed is left. */
 async function emptyTemp(tmp: string): Promise<void> {
   const names = await coded(() => fs.readdir(tmp));
-  for (const name of names)
-    await fs.rm(join(tmp, name), { recursive: true, force: true }).catch(() => undefined);
+  for (const name of names) await removeEntry(join(tmp, name));
 }
 
 /** Best effort: the folder's entry for a new file reaches the disk. */
@@ -294,16 +314,39 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
   let reserved = 0;
   const pathOf = (id: string) => join(dir, `${id}.blob`);
   const used = () => [...sizes.values()].reduce((sum, size) => sum + size, 0) + reserved;
-  const discard = (name: string) =>
-    fs.rm(join(dir, name), { recursive: true, force: true }).catch(() => undefined);
+  /** Changes made while a scan runs, applied to its fresh size table before the swap. */
+  const scans = new Set<{ removed: Set<string>; added: Map<string, number> }>();
+  const noteAdded = (id: string, size: number) => {
+    for (const s of scans) {
+      s.removed.delete(id);
+      s.added.set(id, size);
+    }
+  };
+  const noteRemoved = (id: string) => {
+    for (const s of scans) {
+      s.added.delete(id);
+      s.removed.add(id);
+    }
+  };
+
+  const discard = (name: string) => removeEntry(join(dir, name));
 
   /** Every name in the folder; builds a fresh size table and swaps it in at the end. */
   async function scan() {
     await checkFolder(dir);
+    const changes = { removed: new Set<string>(), added: new Map<string, number>() };
+    scans.add(changes);
+    try {
+      return await scanInto(changes);
+    } finally {
+      scans.delete(changes);
+    }
+  }
+
+  async function scanInto(changes: { removed: Set<string>; added: Map<string, number> }) {
     const names = await coded(() => fs.readdir(dir));
     const found: { id: string; header: BlobHeader; mtimeMs: number }[] = [];
     const next = new Map<string, number>();
-    const writing = new Set<string>();
     for (const name of names) {
       if (name === TMP) continue;
       const id = FILE_NAME.exec(name)?.[1];
@@ -311,12 +354,9 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
         await discard(name);
         continue;
       }
-      // A put between its link and its temp unlink has two links for a moment: never judge it mid-write.
-      if (pending.has(id)) {
-        writing.add(id);
-        continue;
-      }
-      const seen = await inspect(pathOf(id), limits);
+      // A put between its link and its temp unlink has two links for a moment: `skip`, never deleted; its own record
+      // (`noteAdded`) sets its size when it finishes.
+      const seen = await inspect(pathOf(id), limits, options.peek);
       if (seen.kind === 'bad') await discard(name);
       else if (seen.kind === 'skip') next.set(id, seen.size);
       else if (seen.kind === 'ok') {
@@ -325,11 +365,9 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
         found.push({ id, header: seen.header, mtimeMs: seen.stats.mtimeMs });
       }
     }
-    // Puts that finished while the scan ran (after the listing, or skipped as mid-write) stay counted.
-    for (const [id, size] of sizes) {
-      const unseen = writing.has(id) || !names.includes(`${id}.blob`);
-      if (!next.has(id) && unseen) next.set(id, size);
-    }
+    // Puts that finished and removes that landed while the scan ran win over what it saw.
+    for (const id of changes.removed) next.delete(id);
+    for (const [id, size] of changes.added) next.set(id, size);
     sizes = next;
     return found;
   }
@@ -397,6 +435,7 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
         if (!(free - total >= limits.freeDiskFloor)) throw new BlobFilesError('diskFull');
         await write(id, prefix, bytes);
         sizes.set(id, total);
+        noteAdded(id, total);
       } finally {
         pending.delete(id);
         reserved -= total;
@@ -410,7 +449,7 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
       } catch {
         return undefined;
       }
-      const seen = await inspect(pathOf(id), limits);
+      const seen = await inspect(pathOf(id), limits, options.peek);
       if (seen.kind !== 'ok') return undefined;
       try {
         // A fresh buffer of exactly the blob's bytes per call, so a caller may transfer (detach) it.
@@ -434,6 +473,7 @@ export async function openBlobFiles(options: BlobFilesOptions): Promise<BlobFile
         if (errorCode(error) !== 'ENOENT') throw new BlobFilesError('io');
       }
       sizes.delete(id);
+      noteRemoved(id);
     },
 
     list: () => coded(scan),
