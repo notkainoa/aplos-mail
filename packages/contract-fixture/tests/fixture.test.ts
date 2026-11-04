@@ -333,3 +333,19 @@ test('the control channel parks the engine and forces account states; desktop me
   await fails(session.call('Window/openOnboarding', {}), 'unsupported');
   await fails(session.call('Fixture/nope', {}), 'unsupported');
 });
+
+test('Thread/why for every Do now thread with a to-do reads as asked-something and never says "waiting on you"', async () => {
+  const { call } = start('demo');
+  const home = await call('View/watch', { spec: { kind: 'home' } });
+  const sentences: string[] = [];
+  for (const id of home.ids) {
+    const why = await call('Thread/why', { threadId: id });
+    if (why.lane === 'do' && why.rankSource !== 'user' && why.rankSource !== 'rule')
+      sentences.push(why.sentence);
+    assert.doesNotMatch(why.sentence, /waiting on you/i, 'DESIGN section 10 bans the phrase');
+  }
+  assert.ok(
+    sentences.some(sentence => / asked you something: /.test(sentence)),
+    'the demo shows a Do now Why with its to-do',
+  );
+});
