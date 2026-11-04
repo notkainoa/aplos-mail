@@ -1,4 +1,5 @@
 import {
+  PausedError,
   ProviderError,
   type AdapterContext,
   type DraftSaveResult,
@@ -453,6 +454,40 @@ async function verifiedHit(
   };
 }
 
+/**
+ * The drafts in `ids` that show this create's identity, judged one at a time: the first whose bytes prove it is our copy
+ * is the answer. Two drafts can carry one token (a phone duplicate, a copied header): the first listed must not hide
+ * ours behind a conflict, so a match that is NOT ours is set aside and the next match is looked at (an extra raw read
+ * only after a mismatch, at most `CANDIDATES` matches); when none proves ours, the FIRST mismatch is the answer, a
+ * conflict naming it, and nothing is written. A hit that vanished before it could be read is reported only when
+ * nothing conflicted.
+ */
+async function matchByIdentity(
+  client: GmailClient,
+  ids: string[],
+  internetId: string,
+  reads: DraftReads,
+  draft: DraftUpload,
+): Promise<{ lookup?: Lookup; vanished: boolean }> {
+  const judged = new Set<string>();
+  let conflict: Lookup;
+  for (let round = 0; round < CANDIDATES; round++) {
+    const hit = await verifyDrafts(
+      client,
+      ids.filter(id => !judged.has(id)),
+      internetId,
+      reads,
+    );
+    if (!hit.found)
+      return conflict ? { lookup: conflict, vanished: false } : { vanished: hit.vanished };
+    const verified = await verifiedHit(client, hit.found, draft);
+    if (verified?.kind === 'draft') return { lookup: verified, vanished: false };
+    conflict ??= verified;
+    judged.add(hit.found.draftId);
+  }
+  return { lookup: conflict, vanished: false };
+}
+
 /** What the lookups before a create found: our copy, proof that it was sent or deleted elsewhere, or nothing. */
 type Lookup =
   | { kind: 'draft'; copy: RemoteCopy }
@@ -462,7 +497,7 @@ type Lookup =
 
 /**
  * (e) The content-matched fallback, only for a create whose earlier attempt under this same `internetId` may have
- * landed (`DraftAttempts.has`) and only when (a) to (d) found nothing: Gmail may have dropped the token, so the copy
+ * landed (`DraftAttempts.mayHaveLanded`) and only when (a) to (d) found nothing: Gmail may have dropped the token, so the copy
  * shows Gmail's own Message-ID and no identity of ours. Among the drafts lookup (b) listed and read, each draft with no
  * well-formed token (in the upload's thread when it names one) is read raw (60 units, at most `CANDIDATES`), and it is
  * our copy only when its message id is unchanged since the metadata read and its content equals the upload this
@@ -505,20 +540,20 @@ async function findByInternetId(
 ): Promise<Lookup> {
   const internetId = draft.internetId;
   const searched = await listDraftIds(client, searchQuery(internetId));
-  const first = await verifyDrafts(client, searched.ids, internetId, reads);
-  if (first.found) return verifiedHit(client, first.found, draft);
+  const first = await matchByIdentity(client, searched.ids, internetId, reads, draft);
+  if (first.lookup) return first.lookup;
   if (first.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
   // The search lags the index: the newest drafts, read without it, cover a copy made a moment ago.
   const newest = await listDraftIds(client);
   const fresh = newest.ids.filter(id => !searched.ids.includes(id));
-  const second = await verifyDrafts(client, fresh, internetId, reads);
-  if (second.found) return verifiedHit(client, second.found, draft);
+  const second = await matchByIdentity(client, fresh, internetId, reads, draft);
+  if (second.lookup) return second.lookup;
   if (second.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   const verdict = await allMailVerdict(client, internetId);
   if (verdict === 'gone') return { kind: 'gone' };
   if (verdict === 'indexLag') throw incomplete('gmail.drafts.list', 'draftIndexLag');
-  if (!attempts?.has(draft.draftId, internetId)) return undefined;
+  if (!attempts?.mayHaveLanded(draft.draftId, internetId)) return undefined;
   if (await sentOrTrashed(client, [internetId])) return { kind: 'gone' };
   return contentMatch(client, draft, newest.ids, reads, attempts);
 }
@@ -583,7 +618,7 @@ async function findEarlier(
     lagging ||= verdict === 'indexLag';
   }
   if (lagging) throw incomplete('gmail.drafts.list', 'draftIndexLag');
-  const tried = ids.some(id => attempts.has(draft.draftId, id));
+  const tried = ids.some(id => attempts.mayHaveLanded(draft.draftId, id));
   if (tried && (await sentOrTrashed(client, ids))) return { kind: 'gone' };
   return undefined;
 }
@@ -729,17 +764,25 @@ async function createCopy(
   if (earlier) return answered(earlier, draft);
   // Remembered before the request goes out: a reply lost after the copy landed still leaves the proof for the next revision.
   attempts.record(draft.draftId, draft.internetId, draft.mime);
+  let created: DraftResource;
   try {
-    const created = await uploadDraft(deps, ctx, {
+    created = await uploadDraft(deps, ctx, {
       method: 'gmail.drafts.create',
       raw: draft.mime,
       ...(draft.remoteThreadId ? { threadId: draft.remoteThreadId } : {}),
     });
-    return storedCopy(client, created, draft);
   } catch (error) {
+    // Only an uncertain end leaves a copy that may exist: a definite refusal (429, 503 before anything landed) keeps
+    // the retry on the cheap lookups. Anything that is not a classified refusal is treated as uncertain.
+    const definite =
+      error instanceof PausedError || (error instanceof ProviderError && !error.error.uncertain);
+    if (!definite) attempts.markMayHaveLanded(draft.draftId, draft.internetId);
     if (error instanceof ProviderError) return recheck(client, draft, error, attempts);
     throw error;
   }
+  // Answered: the copy exists, and a lost record of this answer would leave it for the retry to find.
+  attempts.markMayHaveLanded(draft.draftId, draft.internetId);
+  return storedCopy(client, created, draft);
 }
 
 /** The precondition: nothing is written when the copy is not the one this device last synced. */

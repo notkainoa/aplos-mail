@@ -155,24 +155,44 @@ const DRAFTS = 100;
  * ever provably ours and the create answers `conflict` and writes nothing (safe, never a replace).
  */
 export class DraftAttempts {
-  private readonly byDraft = new Map<string, { internetId: string; hash: string }[]>();
+  private readonly byDraft = new Map<
+    string,
+    { internetId: string; hash: string; landed: boolean }[]
+  >();
 
-  /** Remember an attempt. Call it BEFORE the request that may write these bytes goes out. */
+  /**
+   * Remember an attempt. Call it BEFORE the request that may write these bytes goes out: the bytes are the proof an
+   * earlier copy needs (`wrote`), whether or not the request lands. It says nothing yet about whether it did: see
+   * `markMayHaveLanded`.
+   */
   record(draftId: string, internetId: string, bytes: Uint8Array): void {
-    const entry = { internetId: bare(internetId), hash: draftHash(bytes) };
-    const known = (this.byDraft.get(draftId) ?? []).filter(
-      e => e.internetId !== entry.internetId || e.hash !== entry.hash,
+    const entry = { internetId: bare(internetId), hash: draftHash(bytes), landed: false };
+    const same = (this.byDraft.get(draftId) ?? []).filter(
+      e => e.internetId === entry.internetId && e.hash === entry.hash,
     );
+    // Recording the same attempt again must not forget that an earlier request of it may have landed.
+    entry.landed = same.some(e => e.landed);
+    const known = (this.byDraft.get(draftId) ?? []).filter(e => !same.includes(e));
     this.byDraft.delete(draftId);
     this.byDraft.set(draftId, [...known, entry].slice(-PER_DRAFT));
     for (const oldest of [...this.byDraft.keys()].slice(0, Math.max(0, this.byDraft.size - DRAFTS)))
       this.byDraft.delete(oldest);
   }
 
-  /** Whether an attempt was recorded for `draftId` under this Message-ID: an earlier request with it may have landed. */
-  has(draftId: string, internetId: string): boolean {
+  /**
+   * The request of an attempt under this Message-ID ended in a way that leaves a copy behind or leaves it unknown: it
+   * was answered (the copy exists), or it failed uncertainly (it may have landed). A definite refusal (429, 503 before
+   * anything was written) does NOT call this, so a retry of that revision stays on the cheap lookups.
+   */
+  markMayHaveLanded(draftId: string, internetId: string): void {
     const id = bare(internetId);
-    return (this.byDraft.get(draftId) ?? []).some(e => e.internetId === id);
+    for (const e of this.byDraft.get(draftId) ?? []) if (e.internetId === id) e.landed = true;
+  }
+
+  /** Whether a request recorded for `draftId` under this Message-ID may have landed (`markMayHaveLanded`). */
+  mayHaveLanded(draftId: string, internetId: string): boolean {
+    const id = bare(internetId);
+    return (this.byDraft.get(draftId) ?? []).some(e => e.internetId === id && e.landed);
   }
 
   /** Whether `bytes` canonicalise to an attempt recorded for `draftId` under exactly this Message-ID. */
