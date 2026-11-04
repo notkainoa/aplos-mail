@@ -257,6 +257,7 @@ export const authResultsShape: SmokeProbe = {
         fields: 'messages(id)',
       });
       result.timingsMs.list = list.ms;
+      result.counts.emptyAnswers = list.empty ? 1 : 0;
       const ids = (Array.isArray(list.json.messages) ? list.json.messages : [])
         .map((m: { id?: unknown }) => String(m.id))
         .slice(0, SAMPLE);

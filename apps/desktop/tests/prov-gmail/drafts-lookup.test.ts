@@ -16,6 +16,7 @@ import {
   saved,
   setup,
   uncertainCreate,
+  uploadedBytes,
   type Setup,
 } from './draft-rig';
 
@@ -60,7 +61,12 @@ for (const [name, blind] of [
     const faults = createFaultInjector();
     const s = await setup({ emulator: { faults } });
     const upload = await uncertainCreate(s, faults);
-    const { mime } = mimeOf(s.r.account.address, { id: upload.internetId, body: 'Phone text.' });
+    // The phone keeps every header we wrote: our Message-ID and our token.
+    const { mime } = mimeOf(s.r.account.address, {
+      id: upload.internetId,
+      token: upload.internetId,
+      body: 'Phone text.',
+    });
     const phone = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
     s.bridge.blindSearch = blind;
     const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
@@ -80,7 +86,7 @@ test('prov-gmail-drafts known limit: a hit that differs by a harmless rewrite (w
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const upload = await uncertainCreate(s, faults);
-  const padded = Buffer.from(Buffer.from(upload.mime).toString('latin1') + ' ', 'latin1');
+  const padded = Buffer.from(uploadedBytes(upload).toString('latin1') + ' ', 'latin1');
   const edited = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, padded);
   const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
   assert.deepEqual(result, {
@@ -143,7 +149,9 @@ test('prov-gmail-drafts a hit of the all-mail lookup that returns 404 is thrown 
 
 test('prov-gmail-drafts a draft-only hit of the all-mail lookup is index lag: transient, nothing uploaded', async () => {
   const faults = createFaultInjector();
-  const s = await setup({ emulator: { faults } });
+  // The all-mail lookup (c) searches by Message-ID, which only a provider that keeps ours can answer: pinned to
+  // 'kept'. On Gmail (rewritten) the same case is a visible duplicate: drafts-token.test.ts.
+  const s = await setup({ emulator: { faults, draftIdentity: 'kept' } });
   const upload = await uncertainCreate(s, faults);
   s.bridge.blindSearch = true;
   // More drafts than the newest page holds push ours out of lookup (b).
@@ -244,9 +252,10 @@ for (const [name, change] of [
     const s = await setup({ emulator: { faults } });
     const id = `<engine-${nextNumber()}@aplos.test>`;
     await uncertainCreate(s, faults, engineUpload(s, engineMime(s, { id }), id));
+    // The phone keeps our headers, the token included.
     const phone = s.r.emu.mailbox.updateDraft(
       s.remoteDrafts()[0].id,
-      Buffer.from(engineMime(s, { id, ...change })),
+      uploadedBytes({ internetId: id, mime: engineMime(s, { id, ...change }) }),
     );
     const retry = engineUpload(s, engineMime(s, { id }), id);
     assert.deepEqual(await s.r.adapter.saveDraft(retry, s.r.ctx()), {
@@ -316,7 +325,11 @@ test("prov-gmail-drafts PORT GAP 4: a create-path conflict names remoteDraftId, 
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const upload = await uncertainCreate(s, faults);
-  const { mime } = mimeOf(s.r.account.address, { id: upload.internetId, body: 'Phone text.' });
+  const { mime } = mimeOf(s.r.account.address, {
+    id: upload.internetId,
+    token: upload.internetId,
+    body: 'Phone text.',
+  });
   const phone = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
   const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
   assert.deepEqual(result, {
@@ -333,8 +346,9 @@ test('prov-gmail-drafts PORT GAP 4: the Message-ID is the one the copy carries, 
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const upload = await uncertainCreate(s, faults);
-  const raw = Buffer.from(upload.mime)
+  const raw = uploadedBytes(upload)
     .toString('latin1')
+    .replace('X-Aplos-Draft: ', 'x-aplos-draft:\r\n ')
     .replace('Message-ID: ', 'message-id:\r\n ')
     .replace('Landed.', 'Phone text.');
   s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, Buffer.from(raw, 'latin1'));

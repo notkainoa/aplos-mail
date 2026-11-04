@@ -80,6 +80,40 @@ export const COUNT_KEYS: readonly string[] = [
   'bodyUnchanged',
   'bodyEdited',
   'probeDraftsExisting',
+  // gmail.draft-message-id-after-edit v2: shape codes (0 absent, 1 ours, 2 Gmail-style, 3 other), 0/1 stability and header
+  // flags, and hit counts of the rfc822msgid: searches. Never a Message-ID value or a token.
+  'messageIdShapeCreate',
+  'messageIdShapeSave',
+  'messageIdShapePhone',
+  'messageIdStableAcrossApiSave',
+  'messageIdStableAcrossPhoneEdit',
+  'customHeaderKeptAfterCreate',
+  'customHeaderKeptAfterApiSave',
+  'customHeaderKeptAfterPhoneEdit',
+  'engineHeaderKeptAfterCreate',
+  'engineHeaderKeptAfterApiSave',
+  'engineHeaderKeptAfterPhoneEdit',
+  'stateMissing',
+  'searchDraftsOursCreate',
+  'searchDraftsReportedCreate',
+  'searchMessagesOursCreate',
+  'searchMessagesReportedCreate',
+  'searchDraftsOursPhone',
+  'searchDraftsReportedPhone',
+  'searchMessagesOursPhone',
+  'searchMessagesReportedPhone',
+  // gmail.send-message-id (S-self): did messages.send keep our Message-ID on the Sent copy (0/1), its shape code, the header,
+  // and how many Sent messages rfc822msgid: finds for our id and for the one Gmail shows. No ids, no text.
+  'sent',
+  'sentKeptMessageId',
+  'sentMessageIdShape',
+  'sentHeaderKept',
+  'sentFoundByRfc822msgidOurs',
+  'sentFoundByRfc822msgidGmails',
+  'sentSearchTries',
+  'probeMessagesExisting',
+  // Answers that were 200 with an empty body (a list with no items): ok, not an error.
+  'emptyAnswers',
 ];
 export const TIMING_KEYS: readonly string[] = [
   'profile',
@@ -96,6 +130,7 @@ export const ERROR_CLASSES: readonly string[] = [
   'not-found',
   'server',
   'network',
+  'bad-body',
   'guard',
   'other',
 ];

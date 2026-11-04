@@ -121,7 +121,9 @@ test('send: a draft edited on another device is left in place and the pinned byt
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   const phone = submission(world, { subject: 'Edited on the phone' });
-  world.emu.mailbox.updateDraft(draft.id, phone.mime);
+  const edited = world.emu.mailbox.updateDraft(draft.id, phone.mime);
+  // The phone's copy as Gmail stored it (with Gmail's own Message-ID when the emulator rewrites draft ids).
+  const phoneCopy = world.emu.mailbox.rawOf(edited.message.id);
   const receipt = await world.adapter.send(
     { ...pinned.payload, remoteDraftId: draft.id, baseRemoteMessageId: draft.message.id },
     world.ctx(),
@@ -131,7 +133,7 @@ test('send: a draft edited on another device is left in place and the pinned byt
   const [kept] = world.emu.mailbox.listDrafts();
   assert.equal(kept.id, draft.id);
   assert.ok(
-    world.emu.mailbox.rawOf(kept.message.id).equals(phone.mime),
+    world.emu.mailbox.rawOf(kept.message.id).equals(phoneCopy),
     "the phone's edit survives",
   );
   assert.ok(world.sentMessages()[0].raw.equals(pinned.mime));
@@ -231,6 +233,10 @@ test('send: a 4xx from drafts.send (flag on) proves nothing left: NotSentError',
 
 test('send: a remote draft already used up (its mail is in Sent) is never sent again and never "failed"', async () => {
   const world = await sendWorld(DRAFTS_ON);
+  // The Sent lookup of the drafts.send route searches by Message-ID (`sentCopy`), which only answers when the draft
+  // kept ours: pinned to 'kept'. Where the provider replaces it (Gmail), the same case is the uncertain outcome of the
+  // next test (nothing sent, findSent decides); the route is off until the live gate (send.ts TODO(live)).
+  world.emu.settings.draftIdentity = 'kept';
   const pinned = submission(world);
   const draft = world.emu.mailbox.createDraft(pinned.mime);
   // An earlier attempt (or another device) sent it: the draft id now 404s.
@@ -673,6 +679,11 @@ for (const [name, edit, reason] of [
     'a second From address',
     (h: string) => h.replace(/^From: (.*)$/m, (_l, v: string) => `From: ${v}, boss@example.test`),
     'wrongSender',
+  ],
+  [
+    'an X-Aplos-Draft token (the draft identity never leaves in sent mail)',
+    (h: string) => h.replace(subjectLine, s => `${s}\r\nX-Aplos-Draft: <token@mail.example.test>`),
+    'unexpectedHeader',
   ],
   [
     'a Sender header',

@@ -11,6 +11,7 @@ import {
   parseRfc822,
   toPayload,
   withDefaultHeaders,
+  withoutHeaders,
   type BuildAttachment,
   type GmailPart,
   type MimeHeader,
@@ -132,6 +133,10 @@ export interface MailboxOptions {
   seed: number;
   /** Milliseconds history stays valid, or a function so a live setting can change it. Default 7 days. */
   historyRetentionMs?: number | (() => number);
+  /** How a draft saved through the API is changed, read at each save (see `GmailEmulatorOptions.draftIdentity`). */
+  draftIdentity?: () => { rewriteMessageId: boolean; dropHeaders: readonly string[] };
+  /** Whether `messages.send` replaces the Message-ID the client wrote (see `GmailEmulatorOptions.sendIdentity`). */
+  rewriteSentMessageId?: () => boolean;
 }
 
 /** Names Gmail keeps for itself; labels.create refuses them in any letter case [observed]. */
@@ -184,6 +189,8 @@ export class Mailbox {
 
   constructor(options: MailboxOptions) {
     this.clock = options.clock;
+    this.draftIdentity = options.draftIdentity;
+    this.rewriteSentMessageId = options.rewriteSentMessageId;
     this.emailAddress = options.emailAddress;
     this.random = new Random(options.seed);
     this.history = new HistoryLog(
@@ -740,6 +747,22 @@ export class Mailbox {
 
   // ---------- sending and inserting ----------
 
+  private readonly draftIdentity?: MailboxOptions['draftIdentity'];
+  private readonly rewriteSentMessageId?: MailboxOptions['rewriteSentMessageId'];
+
+  /** A draft saved through the API, as Gmail would store it: Message-ID rewritten and some headers dropped, by option. */
+  private draftRaw(raw: Buffer): Buffer {
+    const change = this.draftIdentity?.();
+    if (!change) return this.outgoing(raw);
+    const gone = [...change.dropHeaders, ...(change.rewriteMessageId ? ['Message-ID'] : [])];
+    const stripped = gone.length ? withoutHeaders(raw, gone) : raw;
+    return this.outgoing(
+      change.rewriteMessageId
+        ? withDefaultHeaders(stripped, { 'Message-ID': `<${this.random.hex(20)}@mail.gmail.com>` })
+        : stripped,
+    );
+  }
+
   private outgoing(raw: Buffer): Buffer {
     return withDefaultHeaders(raw, {
       From: this.emailAddress,
@@ -758,7 +781,12 @@ export class Mailbox {
 
   /** messages.send: the message lands in SENT, and also in INBOX when it is addressed to the account itself. */
   sendRaw(raw: Buffer, threadId?: string): MessageView {
-    const full = this.outgoing(raw);
+    const sent = this.rewriteSentMessageId?.()
+      ? withDefaultHeaders(withoutHeaders(raw, ['Message-ID']), {
+          'Message-ID': `<${this.random.hex(20)}@mail.gmail.com>`,
+        })
+      : raw;
+    const full = this.outgoing(sent);
     const toSelf = this.recipientsOf(full).includes(this.emailAddress.toLowerCase());
     return this.addRaw(full, {
       labelIds: toSelf ? ['SENT', 'INBOX', 'UNREAD'] : ['SENT'],
@@ -784,7 +812,7 @@ export class Mailbox {
   // ---------- drafts ----------
 
   createDraft(raw: Buffer, threadId?: string): { id: string; message: MessageView } {
-    const message = this.addRaw(this.outgoing(raw), {
+    const message = this.addRaw(this.draftRaw(raw), {
       labelIds: ['DRAFT'],
       threadId,
       threadRule: 'api',
@@ -804,8 +832,8 @@ export class Mailbox {
     // Add the replacement first so the thread never empties out and keeps its id.
     // Only a threadId the client sends is held to the subject rule; otherwise the draft keeps its thread.
     const message = threadId
-      ? this.addRaw(this.outgoing(raw), { labelIds: ['DRAFT'], threadId, threadRule: 'api' })
-      : this.addRaw(this.outgoing(raw), { labelIds: ['DRAFT'], threadId: old.threadId });
+      ? this.addRaw(this.draftRaw(raw), { labelIds: ['DRAFT'], threadId, threadRule: 'api' })
+      : this.addRaw(this.draftRaw(raw), { labelIds: ['DRAFT'], threadId: old.threadId });
     this.remove(old);
     this.drafts.set(draftId, message.id);
     return { id: draftId, message };

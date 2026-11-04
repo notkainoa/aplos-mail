@@ -18,6 +18,7 @@ import {
   type GuardedFetch,
 } from './guard';
 import { createPacedFetch, UnitPacer } from './pacer';
+import { createProbeState, defaultStateDir } from './state';
 import { PROBES, probesFor } from './probes';
 import { gitRevision, type Revision } from './revision';
 import { acquireRunLock } from './run-lock';
@@ -83,6 +84,8 @@ export interface RunDeps {
   log(line: string): void;
   /** Where the evidence file goes. Default: `defaultEvidenceDir(<date>)`, outside the repository. */
   evidenceDir?: string;
+  /** Where phased probes keep their state. Default: `defaultStateDir()`, outside the repository. */
+  stateDir?: string;
   probes: readonly SmokeProbe[];
   /** HEAD and whether the working tree is clean; needed when `expectSha` is set. */
   revision?(): Promise<Revision>;
@@ -369,17 +372,22 @@ async function runLocked(plan: RunPlan): Promise<RunOutcome> {
 
   const clock = deps.clock ?? (() => performance.now());
   // Frozen: one probe cannot swap the fetch (or anything else) the probes after it get.
-  const ctx: ProbeContext = Object.freeze({
-    fetch: guard,
-    tier: args.tier,
-    now: clock,
-    runId,
-    ...(args.phase ? { phase: args.phase } : {}),
-  });
+  const contextFor = (probe: SmokeProbe): ProbeContext =>
+    Object.freeze({
+      fetch: guard,
+      tier: args.tier,
+      now: clock,
+      runId,
+      ...(args.phase ? { phase: args.phase } : {}),
+      // Only a probe that runs in phases gets a state file, and only its own.
+      ...(probe.phased
+        ? { state: createProbeState(deps.stateDir ?? defaultStateDir(), probe.id) }
+        : {}),
+    });
   const results: EvidenceResult[] = [];
   for (const probe of probes) {
     const sentBefore = mergeRequests(...guards.map(g => g.requests()));
-    results.push(await runOneProbe(probe, ctx, pacer, guards, sentBefore));
+    results.push(await runOneProbe(probe, contextFor(probe), pacer, guards, sentBefore));
   }
 
   // Defence in depth for tier R: even if the guard had a hole, a write in the log fails the run.

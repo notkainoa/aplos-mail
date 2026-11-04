@@ -291,14 +291,29 @@ export class UploadBridge {
     });
   }
 
+  /**
+   * `drafts.send` with media sends exactly the uploaded bytes (the live-gate assumption (1) in send.ts): a SEND, so the
+   * emulator's send identity applies to it, not the draft-save rewrite (`draftIdentity`, `dropDraftHeaders`) that the
+   * replay's `drafts.update` would otherwise apply. The settings are restored right after.
+   */
   private async sendDraft(upload: UploadRecord, auth: Record<string, string>, raw: string) {
     const id = String(upload.metadata.id);
     const message = (upload.metadata.message ?? {}) as Record<string, unknown>;
-    const updated = await this.emu.fetch(`${API}/drafts/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: auth,
-      body: JSON.stringify({ message: { ...message, raw } }),
-    });
+    const settings = this.emu.settings;
+    const saved = { identity: settings.draftIdentity, dropped: settings.dropDraftHeaders };
+    settings.draftIdentity = settings.sendIdentity;
+    settings.dropDraftHeaders = [];
+    let updated: Response;
+    try {
+      updated = await this.emu.fetch(`${API}/drafts/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({ message: { ...message, raw } }),
+      });
+    } finally {
+      settings.draftIdentity = saved.identity;
+      settings.dropDraftHeaders = saved.dropped;
+    }
     if (!updated.ok) return updated;
     return this.emu.fetch(`${API}/drafts/send`, {
       method: 'POST',
