@@ -38,7 +38,7 @@ interface Upload {
   raw: Buffer;
 }
 
-async function rig(emulator: Partial<GmailEmulatorOptions> = {}) {
+async function rig(emulator: Partial<GmailEmulatorOptions> = {}, failList?: (url: URL) => boolean) {
   searchRetry.waitMs = 0;
   // The probe reads the wall clock (findSent's window is the real attempt time), so the emulator's clock starts there.
   const clock = new FakeClock({ start: Date.now() });
@@ -74,6 +74,12 @@ async function rig(emulator: Partial<GmailEmulatorOptions> = {}) {
     // The final network: the emulator has no media upload, so a simple media upload becomes the JSON send.
     fetch: async (input, init) => {
       const url = new URL(String(input instanceof Request ? input.url : input));
+      // One chosen messages.list (by its query) answers 500; every other request is untouched.
+      if (failList && /\/messages$/.test(url.pathname) && failList(url))
+        return Response.json(
+          { error: { code: 500, message: 'Backend Error', errors: [{ reason: 'backendError' }] } },
+          { status: 500 },
+        );
       if (!url.pathname.endsWith('/upload/gmail/v1/users/me/messages/send'))
         return emu.fetch(input, init);
       const headers = new Headers(init?.headers);
@@ -282,19 +288,41 @@ test('a second recipient is refused by the guard through THIS probe path: nothin
   assert.equal(probeMessages(r.emu).length, 0, 'no probe message exists');
 });
 
-test('the duplicate check fails closed: a server error on the search sends nothing', async () => {
-  const r = await rig();
-  r.faults.failNext(
-    { apiMethod: 'gmail.users.messages.list' },
-    { status: 500, reason: 'backendError', message: 'Backend Error' },
-    { times: 50 },
-  );
-  const out = await r.run();
-  assert.equal(out.status, 'fail');
-  assert.match(out.text, /Error classes: server=1/);
-  assert.equal(r.uploads.length, 0);
-  assert.equal(probeMessages(r.emu).length, 0);
-});
+// The probe asks four list questions before it may send; each is failed ALONE so none hides another.
+for (const [name, matches] of [
+  [
+    'the subject search',
+    (u: URL) => (u.searchParams.get('q') ?? '').startsWith('subject:aplos-live-probe-adapter'),
+  ],
+  [
+    "the search for today's Message-ID",
+    (u: URL) => /^rfc822msgid:\S+ in:anywhere$/.test(u.searchParams.get('q') ?? ''),
+  ],
+  [
+    "the adapter's own findSent search",
+    (u: URL) => /^rfc822msgid:\S+ in:sent/.test(u.searchParams.get('q') ?? ''),
+  ],
+  [
+    "the adapter's own findSent listing of the newest Sent",
+    (u: URL) => u.searchParams.getAll('labelIds').includes('SENT') && !u.searchParams.has('q'),
+  ],
+] as const) {
+  test(`the duplicate check fails closed: a server error on ${name} alone sends nothing`, async () => {
+    const seen: string[] = [];
+    const r = await rig({}, url => {
+      const hit = matches(url);
+      if (hit) seen.push(url.searchParams.get('q') ?? 'labelIds');
+      return hit;
+    });
+    const out = await r.run();
+    assert.ok(seen.length >= 1, 'the chosen list question was asked, and failed');
+    assert.equal(out.status, 'fail');
+    assert.match(out.text, /Error classes: (server|other|network)=1/);
+    assert.equal(out.counts.sent, undefined);
+    assert.equal(r.uploads.length, 0, 'nothing was uploaded');
+    assert.equal(probeMessages(r.emu).length, 0);
+  });
+}
 
 test('the token header is on the upload exactly once, and nothing else in the message names it', async () => {
   const r = await rig({ sendIdentity: 'rewritten' });
