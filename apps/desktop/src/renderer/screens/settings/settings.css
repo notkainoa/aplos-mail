@@ -34,6 +34,23 @@
 
 .settings-anchor {
   min-width: 0;
+  scroll-margin-block: var(--space-10);
+}
+
+/* A rejected write: the Retry line takes the room it needs, Dismiss sits beside it. */
+.settings-failure {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.settings-failure .ui-error-line {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* One quiet line for a ⌘K deep link whose row is not drawn in this state. */
+.settings-anchor-miss {
+  margin-bottom: var(--space-4);
 }
 
 /* "How your mail is used": the folded text, one paragraph per idea, under the row's own padding. */

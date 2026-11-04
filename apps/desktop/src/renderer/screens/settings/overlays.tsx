@@ -22,8 +22,9 @@ import {
 } from './settings.model';
 import type { SectionProps } from './sections/types';
 import type { Confirmation } from './view';
+import { FailureLine } from './parts';
 
-export function Overlays({ data, view, actions, host }: SectionProps): ReactNode {
+export function Overlays({ data, view, actions, host, failure }: SectionProps): ReactNode {
   const c = view.confirm;
   const consent = consentView(data.consent, data.settings);
   return (
@@ -51,7 +52,7 @@ export function Overlays({ data, view, actions, host }: SectionProps): ReactNode
           onCancel={() => actions.cancelConfirm()}
         />
       ) : null}
-      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions }} /> : null}
+      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
     </>
   );
 }
@@ -191,7 +192,8 @@ function DiagnosticsDialog({
   data,
   view,
   actions,
-}: Pick<SectionProps, 'data' | 'view' | 'actions'>) {
+  failure,
+}: Pick<SectionProps, 'data' | 'view' | 'actions' | 'failure'>) {
   const sections = data.bundle ? bundleSections(data.bundle) : [];
   return (
     <Dialog
@@ -222,6 +224,7 @@ function DiagnosticsDialog({
       }
     >
       <div className="settings-report">
+        {failure ? <FailureLine failure={failure} /> : null}
         {!data.bundle ? <Text variant="small">Preparing the report.</Text> : null}
         {sections.map(s => (
           <section key={s.title} className="settings-report__section">

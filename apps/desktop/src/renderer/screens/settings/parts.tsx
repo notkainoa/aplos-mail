@@ -6,11 +6,12 @@
  */
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { settingId, type SettingSection } from '../../commands';
-import { Button } from '../../ui/buttons-keys';
-import { SectionHeader } from '../../ui/list';
-import { Menu } from '../../ui/surfaces';
+import { Button, Icon, Tooltip } from '../../ui/buttons-keys';
+import { ErrorLine, SectionHeader } from '../../ui/list';
+import { Menu, Text } from '../../ui/surfaces';
 import { SettingRow } from '../../ui/settings';
 import type { CommandAction, SettingRowProps } from '../../ui/props';
+import type { WriteFailure } from './ports';
 import { NOT_AVAILABLE, type Option } from './settings.model';
 import { rowSpec } from './paletteEntries';
 
@@ -38,7 +39,9 @@ export function Row({ section, anchor, label, control, idSuffix, ...rest }: RowP
         {...rest}
         id={id}
         label={label ?? rowSpec(section, anchor)?.label ?? anchor}
-        paletteId={settingId(section, anchor)}
+        // One anchor lives on several rows (an account each): only a single-instance row may take the
+        // anchor's DOM id, else the page would carry duplicates.
+        paletteId={idSuffix ? undefined : settingId(section, anchor)}
         control={typeof control === 'function' ? control(id) : control}
       />
     </div>
@@ -96,8 +99,10 @@ export function NotAvailable({
 }
 
 /**
- * The picker: a Button that opens a Menu with the current choice checked (`menuitemradio`). There is no listbox
- * popup in the design system. Arrow keys, Return and Esc are the Menu's own.
+ * The picker: a text button that opens a Menu with the current choice checked (`menuitemradio`). There is no
+ * listbox popup in the design system. Arrow keys, Return and Esc are the Menu's own. The trigger is drawn as a
+ * Button (`ui-button`, same classes) rather than being one, so its accessible name can carry the row label
+ * ("Undo send: 8 seconds"); a pressed trigger also closes its menu.
  */
 export function Select({
   label,
@@ -108,7 +113,7 @@ export function Select({
   disabledReason,
   id,
 }: {
-  /** The accessible name of the group the picker belongs to ("Theme"). */
+  /** The setting's name; the trigger's accessible name is "<label>: <current choice>". */
   label: string;
   options: readonly Option[];
   value: string;
@@ -122,23 +127,45 @@ export function Select({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [active, setActive] = useState<string | undefined>(undefined);
   const current = options.find(o => o.id === value);
+  const explained = disabled === true && Boolean(disabledReason);
+  const trigger = (
+    <button
+      ref={ref}
+      id={id}
+      type="button"
+      className="ui-button"
+      data-variant="text"
+      data-size="md"
+      data-tone="default"
+      data-state={disabled ? 'disabled' : undefined}
+      data-labelled="true"
+      aria-label={`${label}: ${current?.label ?? value}`}
+      disabled={disabled && !explained}
+      aria-disabled={explained ? true : undefined}
+      aria-haspopup="menu"
+      aria-expanded={anchor !== null}
+      aria-controls={menuId}
+      onClick={() => {
+        if (disabled) return;
+        setActive(value);
+        setAnchor(a => (a ? null : ref.current));
+      }}
+    >
+      <span className="ui-button-label">{current?.label ?? value}</span>
+      <Icon name="chevron-down" size="xs" />
+    </button>
+  );
   return (
     <>
-      <Button
-        ref={ref}
-        id={id}
-        variant="text"
-        label={current?.label ?? value}
-        trailingIcon="chevron-down"
-        disabled={disabled}
-        disabledReason={disabledReason}
-        popup={{ kind: 'menu', expanded: anchor !== null, controls: menuId }}
-        onPress={() => {
-          setActive(value);
-          setAnchor(ref.current);
-        }}
-      />
+      {explained ? (
+        <Tooltip label={label} detail={disabledReason}>
+          {trigger}
+        </Tooltip>
+      ) : (
+        trigger
+      )}
       <Menu
+        id={menuId}
         open={anchor !== null}
         anchor={anchor}
         label={label}
@@ -153,5 +180,31 @@ export function Select({
         onClose={() => setAnchor(null)}
       />
     </>
+  );
+}
+
+/** A rejected write: the Retry line plus a way to put it away; it must not follow the owner around. */
+export function FailureLine({ failure }: { failure: WriteFailure }) {
+  return (
+    <div className="settings-failure">
+      <ErrorLine
+        kind="writeRejected"
+        op={failure.op}
+        placement="settings"
+        onAction={action => (action === 'retry' ? failure.retry() : failure.dismiss())}
+      />
+      <Button variant="text" label="Dismiss" onPress={() => failure.dismiss()} />
+    </div>
+  );
+}
+
+/** One quiet line for a ⌘K deep link whose row is conditional and not drawn in the current state. */
+export function MissingAnchor({ section, anchor }: { section: SettingSection; anchor: string }) {
+  return (
+    <div className="settings-anchor-miss" role="status">
+      <Text variant="small" tone="dim">
+        {`“${rowSpec(section, anchor)?.label ?? anchor}” is not shown in this state.`}
+      </Text>
+    </div>
   );
 }

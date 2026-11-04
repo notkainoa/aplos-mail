@@ -144,7 +144,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
   const enabled = data.listener?.enabled === true;
   const tools = toolRows(data.clients, data.now);
   return (
-    <Group id="set-general-tools" label="Tools on this Mac">
+    <Group id="set-general-tools-group" label="Tools on this Mac">
       {listenerOn ? (
         <Row
           section="general"
