@@ -26,17 +26,32 @@ export const REPORTER_SOURCE = `/* global window */
     const findAll = w.Document.prototype.querySelectorAll;
     const listen = w.EventTarget.prototype.addEventListener;
     const schedule = typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame : null;
+    const later = typeof w.setTimeout === 'function' ? w.setTimeout : null;
     const clock = w.performance;
     const token = ('' + w.location.pathname).split('/')[1];
     if (!/^[0-9a-f]{32}$/.test(token)) return;
     // A letter that changes after load (a transition, an animation, an image) is looked at on every frame
-    // until it has been still for QUIET ms. A report is posted only when it differs from the last one, and
-    // at most LIMIT times a second: a height that animates for ever costs the host LIMIT messages a second.
+    // until its SIZE has been still for QUIET ms: a new height or width, or a load, resize, toggle or font
+    // event, extends the watch; an animation or transition event asks for one look and extends it only if
+    // that look finds a new size. A report is posted only when its height, width, readiness or marks differ
+    // from the last one (the background rides along but is not a reason to post: a colour animation costs
+    // nothing), at most LIMIT times a second, and at most LIFETIME times in all: the last of those carries
+    // the state of that moment and the reporter then stops for good (the host keeps that size). The mail's
+    // marks cannot change (no script runs in it), so they are counted once, and an event does no
+    // measuring. A look is asked for on the next animation frame AND by a timer WAIT ms later, whichever
+    // comes first: Chromium pauses animation callbacks in a frame that is off screen, and a held-back report
+    // there must still arrive.
     const QUIET = 3000;
+    const WAIT = 250;
     const LIMIT = 20;
+    const LIFETIME = 2000;
     let last = '';
+    let form = '';
+    let total = 0;
+    let marks = 0;
+    let ticket = 0;
+    let armed = false;
     let until = 0;
-    let frame = 0;
     let dirty = false;
     let sent = 0;
     let since = 0;
@@ -89,9 +104,9 @@ export const REPORTER_SOURCE = `/* global window */
           w: size(width, 100000),
           bg: background(root, body),
           ready: stateOf.call(d) === 'complete',
-          marks: size(findAll.call(d, 'mark.aplos-find').length, 100000),
+          marks: marks,
         };
-        const key = [message.h, message.w, message.bg, message.ready, message.marks].join('|');
+        const key = [message.h, message.w, message.ready, message.marks].join('|');
         dirty = dirty && key !== last;
         if (key === last) return;
         const time = now();
@@ -104,31 +119,43 @@ export const REPORTER_SOURCE = `/* global window */
           return;
         }
         sent += 1;
+        total += 1;
         last = key;
-        until = time + QUIET;
+        const shape = message.h + '|' + message.w;
+        if (shape !== form) {
+          form = shape;
+          until = time + QUIET;
+        }
         host.postMessage(message, '*');
+        if (total >= LIFETIME) live = false;
       } catch {
         return;
       }
     }
-    function step() {
-      frame = 0;
+    function step(id) {
+      if (id !== ticket || !armed) return;
+      armed = false;
       report();
-      if (dirty || now() < until) watch();
+      if (live && (dirty || now() < until)) watch();
     }
     function watch() {
-      if (frame === 0 && schedule) frame = schedule.call(w, step);
+      if (armed) return;
+      armed = true;
+      ticket += 1;
+      const id = ticket;
+      const go = () => step(id);
+      if (schedule) schedule.call(w, go);
+      if (later) later.call(w, go, WAIT);
     }
     function recheck() {
-      report();
       until = now() + QUIET;
       watch();
     }
     listen.call(d, 'DOMContentLoaded', recheck);
     listen.call(d, 'toggle', recheck, true);
-    listen.call(d, 'animationend', recheck, true);
-    listen.call(d, 'animationcancel', recheck, true);
-    listen.call(d, 'transitionend', recheck, true);
+    listen.call(d, 'animationend', watch, true);
+    listen.call(d, 'animationcancel', watch, true);
+    listen.call(d, 'transitionend', watch, true);
     listen.call(w, 'load', recheck, true);
     listen.call(w, 'error', recheck, true);
     listen.call(w, 'resize', recheck);
@@ -141,7 +168,9 @@ export const REPORTER_SOURCE = `/* global window */
     if (fonts && fonts.ready && typeof fonts.ready.then === 'function') {
       fonts.ready.then(recheck, recheck);
     }
+    marks = size(findAll.call(d, 'mark.aplos-find').length, 100000);
     live = true;
+    report();
     recheck();
   }
   try {
