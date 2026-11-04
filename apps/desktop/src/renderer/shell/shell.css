@@ -32,6 +32,18 @@
   margin-bottom: var(--space-3);
 }
 
+/* The screen's slot (Calendar's MiniMonth and Calendars list) sits under the groups and above the footer. It shrinks
+   and scrolls before the places or the footer move; the floor keeps it from collapsing to nothing. */
+.aplos-sidebar__slot {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: calc(var(--control-md) * 3);
+  margin-top: var(--space-5);
+  overflow-y: auto;
+}
+
 .aplos-sidebar__foot {
   display: flex;
   flex-direction: column;

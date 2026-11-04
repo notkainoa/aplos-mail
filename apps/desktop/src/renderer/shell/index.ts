@@ -36,6 +36,8 @@ import type { RouteTarget } from './store-route';
 import { addKeyLayer, type KeyLayer } from './store-keys';
 import { addPaneHeaderPart, getPaneHeaderPart, subscribePaneHeaderPart } from './store-pane';
 import type { PaneHeaderPart } from './store-pane';
+import { addSidebarSlot, getSidebarSlot, subscribeSidebarSlot } from './store-sidebar';
+import type { SidebarSlot } from './store-sidebar';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
@@ -299,6 +301,27 @@ export function usePaneHeaderPart(part: PaneHeaderPart | null): void {
 /** The latest mounted screen's header parts, live. */
 export function usePaneHeaderParts(): PaneHeaderPart {
   return useSyncExternalStore(subscribePaneHeaderPart, getPaneHeaderPart, getPaneHeaderPart);
+}
+
+// ---------------------------------------------------------------------------
+// The sidebar slot (additive): a screen's MiniMonth and Calendars list under the place groups
+// ---------------------------------------------------------------------------
+
+export type { SidebarSlot } from './store-sidebar';
+
+/**
+ * Shows `slot` under the sidebar's place groups while the calling screen is mounted (null shows nothing). The latest
+ * mounted slot wins whole and the earlier one returns when it goes. The shell draws `miniMonth` and `calendars` with
+ * the ui components in the sidebar's quiet spacing; the minimised nav does not show the slot. Compared by reference,
+ * so memoise it (`useMemo`).
+ */
+export function useSidebarSlot(slot: SidebarSlot | null): void {
+  useEffect(() => (slot ? addSidebarSlot(slot) : undefined), [slot]);
+}
+
+/** The slot the sidebar draws, live; null when no screen set one. The shell's Sidebar reads it. */
+export function useSidebarSlotValue(): SidebarSlot | null {
+  return useSyncExternalStore(subscribeSidebarSlot, getSidebarSlot, getSidebarSlot);
 }
 
 // ---------------------------------------------------------------------------
