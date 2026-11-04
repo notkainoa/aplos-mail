@@ -394,10 +394,19 @@ test('main never loosens the frame sandbox: no allow-same-origin, no sandbox att
   }
 });
 
-test('keys: never both main’s before-input-event relay and the reporter’s key fallback (today: neither)', () => {
+test('keys: never both main’s before-input-event relay and the reporter’s key fallback (today: main’s only)', () => {
   const reporterKeys = /key(?:down|up|press)|['"]key['"]/i.test(REPORTER_SOURCE);
   const mainKeys = filesWith(/before-input-event/).filter(f => f.startsWith('main/'));
   assert.ok(!(reporterKeys && mainKeys.length > 0), 'a key would arrive twice');
-  // Pinned as it is today (DECISIONS, html-5): whoever adds one relay updates this line and keeps the other off.
-  assert.deepEqual({ reporterKeys, mainKeys }, { reporterKeys: false, mainKeys: [] });
+  // Pinned as it is today (DECISIONS, the ui-core html-5 requests): main relays J, K and Escape from mail-keys.ts,
+  // the reporter relays none. Whoever changes either updates this line and keeps the other off.
+  assert.deepEqual(
+    { reporterKeys, mainKeys },
+    { reporterKeys: false, mainKeys: ['main/mail-keys.ts'] },
+  );
+  // Installed only on the real path, once per app window, from engine-real.ts's window watch.
+  assert.deepEqual(filesWith(/installMailKeys\(/), ['main/engine-real.ts', 'main/mail-keys.ts']);
+  const real = all.find(s => s.file === 'main/engine-real.ts')!.text;
+  const watch = /function watchWindows\(\)[\s\S]*?\n}\n/.exec(real)?.[0] ?? '';
+  assert.match(watch, /browser-window-created[\s\S]*installMailKeys\(win\.webContents\);/);
 });

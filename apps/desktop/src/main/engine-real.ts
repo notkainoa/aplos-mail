@@ -33,6 +33,7 @@ import {
 import { KeyringError, loadDataKey } from './keyring';
 import { invokeNative, nativeMethods, notify } from './native-methods';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
+import { installMailKeys } from './mail-keys';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
@@ -221,12 +222,16 @@ function connectWindow(event: IpcMainInvokeEvent) {
   return ok;
 }
 
-/** A window's port stops when the window closes, its main frame commits a new document, or its renderer dies. */
+/**
+ * A window's port stops when the window closes, its main frame commits a new document, or its renderer dies. Each
+ * window also relays J, K and Escape from a focused sealed mail frame to its page (main/mail-keys.ts).
+ */
 function watchWindows() {
   app.on('browser-window-created', (_event, win) => {
     const id = win.id;
     win.once('closed', () => broker.revoke(id));
     revokeOnNewDocument(win.webContents, () => broker.revoke(id));
+    installMailKeys(win.webContents);
   });
 }
 

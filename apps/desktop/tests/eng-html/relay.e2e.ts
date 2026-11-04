@@ -36,6 +36,15 @@ interface Result {
   frameUrls: { url: string; origin: string }[];
   processes: { mail: number; host: number };
   keys: { type: string; key: string; focused: string | null }[];
+  isolation: Record<'a1' | 'a2' | 'b1' | 'hostA' | 'hostB', number>;
+  relay: {
+    focused: string | null;
+    inFrame: string[];
+    fromFrame: unknown[];
+    hostFocused: string | null;
+    inHost: string[];
+    fromHost: unknown[];
+  };
   escape: {
     urls: Record<'script' | 'link' | 'top' | 'form', string>;
     frameUrl: string;
@@ -219,6 +228,66 @@ test(
     });
 
     await t.test(
+      'process isolation (PROTOCOL.md item 5, live): one mail process, never a window page’s',
+      () => {
+        const p = r.isolation;
+        for (const id of Object.values(p)) assert.ok(id > 0, JSON.stringify(p));
+        assert.equal(p.a1, p.a2, 'two mail frames in one window share a process');
+        assert.notEqual(p.a1, p.hostA, 'and it is not the window page’s');
+        assert.equal(p.b1, p.a1, 'a second window’s mail frame joins the same mail process');
+        assert.notEqual(p.b1, p.hostB, 'which is not that window’s page process either');
+        assert.notEqual(p.hostA, p.hostB, 'the two window pages have their own processes');
+      },
+    );
+
+    await t.test(
+      'key relay (main/mail-keys.ts): J, K and Esc from the focused mail frame reach the app once, nothing else',
+      () => {
+        const k = r.relay;
+        assert.equal(k.focused, r.urls.a1, 'focus is inside the mail frame');
+        const key = (name: string, shift = false) => ({
+          type: 'mail-frame-key',
+          payload: { key: name, shift, alt: false },
+        });
+        // Each once, in order; the last plain K shows focus was still in the frame after the refused ones.
+        assert.deepEqual(k.fromFrame, [
+          key('j'),
+          key('k'),
+          key('J', true),
+          key('Escape'),
+          key('k'),
+        ]);
+        const seen = [...k.inFrame, ...k.inHost.slice(0, k.inHost.length - 2)];
+        const downs = seen.filter(e => e.startsWith('keydown:'));
+        // Cancelled: neither the frame nor the page sees a keydown (or the keyup, which Chromium drops after it).
+        assert.deepEqual(
+          downs.filter(e => e === 'keydown:Escape'),
+          [],
+        );
+        assert.deepEqual(
+          seen.filter(e => e === 'keyup:Escape'),
+          [],
+        );
+        // Not relayed and not cancelled, in order: R, E, Space, ArrowDown, PageDown, then Control+J, Command+K,
+        // Option+J and the auto-repeated K (sendInputEvent keeps their keys j and k).
+        assert.deepEqual(downs, [
+          'keydown:r',
+          'keydown:e',
+          'keydown: ',
+          'keydown:ArrowDown',
+          'keydown:PageDown',
+          'keydown:j',
+          'keydown:k',
+          'keydown:j',
+          'keydown:k',
+        ]);
+        assert.equal(k.hostFocused, r.hostUrl, 'then the app page has focus');
+        assert.deepEqual(k.fromHost, [], 'a key in the app page is not a mail-frame key');
+        assert.deepEqual(k.inHost.slice(-2), ['keydown:j', 'keyup:j'], 'it reaches the app page');
+      },
+    );
+
+    await t.test(
       'no http, https or ws request leaves a mail frame: images blocked, backstop holds',
       () => {
         const fromFrames = canary.hits.filter(
@@ -254,7 +323,7 @@ test(
     });
 
     await t.test(
-      'keys (recorded, not wired): before-input-event fires with focus inside the mail frame',
+      'keys (measured before the relay is installed): before-input-event fires with focus inside the mail frame',
       () => {
         // sendInputEvent goes through the browser's input path and is seen, with focusedFrame naming the mail frame;
         // DevTools' Input.dispatchKeyEvent is not seen. A real key in the packaged app is the hand-check (DECISIONS).

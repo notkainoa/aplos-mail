@@ -18,6 +18,7 @@ import {
   withReporter,
   type ServeResponse,
 } from '@aplos/mail-html/frame';
+import { installMailKeys } from '../../../src/main/mail-keys';
 import { installMailProtocol } from '../../../src/main/mail-protocol';
 import { allowMailFrames, installPermissionHandlers } from '../../../src/main/security';
 import { hostServeArgs } from '../../../src/host/transports/port';
@@ -252,6 +253,8 @@ async function run(file: string, spare: WebContentsView) {
   const mailProcess = frameA1.processId;
   const hostProcess = a.webContents.mainFrame.processId;
   const keys = await keyProbe(a, frameA1);
+  const isolation = processes(a, b, { a1: urlA1, a2: urlA2, b1: urlB1 });
+  const relay = await keyRelay(a, frameA1);
   const escape = await frameEscape(a, frameA1, connA);
   const hosted = await hostedView(a, file, connA);
 
@@ -288,6 +291,8 @@ async function run(file: string, spare: WebContentsView) {
     frameUrls,
     processes: { mail: mailProcess, host: hostProcess },
     keys,
+    isolation,
+    relay,
     escape,
     hosted,
     hostUrl: a.webContents.getURL(),
@@ -359,7 +364,7 @@ interface KeySeen {
 
 /**
  * The open question of ARCH 10 (does `before-input-event` fire with focus inside an out-of-process mail frame?),
- * measured here and recorded, not wired: html-5 builds no key relay (DECISIONS). Focus goes into the frame, then one
+ * measured here before main/mail-keys.ts is installed (keyRelay below tests the relay itself). Focus goes into the frame, then one
  * key goes in through `sendInputEvent` (the browser-side input path a real key takes) and one through DevTools'
  * `Input.dispatchKeyEvent`.
  */
@@ -382,6 +387,83 @@ async function keyProbe(win: BrowserWindow, frame: Electron.WebFrameMain): Promi
   await wait(200);
   contents.off('before-input-event', listener);
   return seen;
+}
+
+/**
+ * PROTOCOL.md item 5, live: the OS process of each mail frame and of each window's own page. With the scheme registered
+ * {standard, secure}, `aplos-mail://m` is its own site, so its frames leave the app page's renderer.
+ */
+function processes(a: BrowserWindow, b: BrowserWindow, urls: Record<'a1' | 'a2' | 'b1', string>) {
+  const frameOf = (win: BrowserWindow, url: string) =>
+    win.webContents.mainFrame.frames.find(f => f.url === url);
+  return {
+    a1: frameOf(a, urls.a1)?.osProcessId ?? -1,
+    a2: frameOf(a, urls.a2)?.osProcessId ?? -1,
+    b1: frameOf(b, urls.b1)?.osProcessId ?? -1,
+    hostA: a.webContents.mainFrame.osProcessId,
+    hostB: b.webContents.mainFrame.osProcessId,
+  };
+}
+
+/** One key through the browser's input path, as relay.e2e.ts's probe sends it (keyDown, char, keyUp). */
+function typeKey(contents: Electron.WebContents, keyCode: string, modifiers: string[] = []) {
+  const event = { keyCode, modifiers: modifiers as Electron.KeyboardInputEvent['modifiers'] };
+  contents.sendInputEvent({ type: 'keyDown', ...event });
+  contents.sendInputEvent({ type: 'char', ...event });
+  contents.sendInputEvent({ type: 'keyUp', ...event });
+}
+
+const RELAY_PROBE_KEYS: [string, string[]][] = [
+  ['J', []],
+  ['K', []],
+  ['J', ['shift']],
+  ['Escape', []],
+  ['R', []],
+  ['E', []],
+  ['Space', []],
+  ['Down', []],
+  ['PageDown', []],
+  ['J', ['control']],
+  ['K', ['meta']],
+  ['J', ['alt']],
+  ['K', ['isAutoRepeat']],
+  ['K', []],
+];
+
+/**
+ * main/mail-keys.ts on window A, with focus inside a real out-of-process mail frame: what `aplos:event` main sends,
+ * and which keydowns still reach a document. `sendInputEvent` hands keys to the window's top widget (the app page,
+ * whose focused element is the frame), not to the frame's own widget as native input is routed, so a key main does
+ * not cancel shows up in the app page's listener here; a key main cancels reaches no document at all. Then the same
+ * J with the app page itself focused.
+ */
+async function keyRelay(win: BrowserWindow, frame: Electron.WebFrameMain) {
+  const contents = win.webContents;
+  const sent: unknown[] = [];
+  const send = contents.send.bind(contents);
+  contents.send = (channel: string, ...args: unknown[]) => {
+    if (channel === 'aplos:event') sent.push(args[0]);
+    send(channel, ...args);
+  };
+  installMailKeys(contents);
+  const record = `window.__keys = []; for (const type of ['keydown', 'keyup']) addEventListener(type, e => __keys.push(e.type + ':' + e.key), true); 1`;
+  await frame.executeJavaScript(record, true);
+  await contents.executeJavaScript(record);
+  await frame.executeJavaScript('document.body.tabIndex = -1; document.body.focus(); 1', true);
+  await contents.executeJavaScript("document.querySelector('iframe').focus(); 1");
+  const focused = contents.focusedFrame?.url ?? null;
+  for (const [keyCode, modifiers] of RELAY_PROBE_KEYS) typeKey(contents, keyCode, modifiers);
+  await wait(300);
+  const inFrame = (await frame.executeJavaScript('__keys', true)) as string[];
+  const fromFrame = sent.splice(0);
+  // The app page itself focused: a J there is the page's own key, not a mail-frame key.
+  await contents.executeJavaScript('document.activeElement.blur(); document.body.focus(); 1');
+  const hostFocused = contents.focusedFrame?.url ?? null;
+  typeKey(contents, 'J');
+  await wait(200);
+  const inHost = (await contents.executeJavaScript('__keys')) as string[];
+  contents.send = send;
+  return { focused, inFrame, fromFrame, hostFocused, inHost, fromHost: sent.splice(0) };
 }
 
 void app.whenReady().then(async () => {
