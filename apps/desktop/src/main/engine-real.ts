@@ -32,7 +32,9 @@ import {
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
 import { invokeNative, nativeMethods, notify } from './native-methods';
-import { assertCaller, trustedURL } from './security';
+import { allowMailFrames, assertCaller, trustedURL } from './security';
+import { installMailProtocol } from './mail-protocol';
+import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
 import { popout } from './windows';
 
@@ -228,6 +230,13 @@ function watchWindows() {
   });
 }
 
+/** `Mail/serve` over main's control connection; no engine means the relay's uniform 404. */
+function serveMail(args: ServeArgs): Promise<unknown> {
+  const current = link();
+  if (!current) return Promise.reject(new Error('The mailbox is restarting.'));
+  return current.call('Mail/serve', args, SERVE_TIMEOUT_MS);
+}
+
 /** Set by the quit: from then on no engine is started, whatever stage the start-up had reached. */
 let closeRequested = false;
 
@@ -250,6 +259,10 @@ async function bootRealEngine(options: { dataDir: string; noteExit(): boolean })
   });
   await supervisor.start();
   watchWindows();
+  // The sealed mail frame (html-5): the `aplos-mail://` relay, its window stamp and backstop, and the subframe rule.
+  // At most MAX_RELAY_IN_FLIGHT relays open at once: a page cannot queue unbounded engine work through main.
+  installMailProtocol(limitInFlight(serveMail));
+  allowMailFrames();
   ipcMain.handle('aplos:engine-connect', connectWindow);
   ipcMain.handle('aplos:desktop', desktopMethod);
   ipcMain.handle('aplos:invoke', legacyInvoke);

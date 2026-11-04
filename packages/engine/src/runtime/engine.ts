@@ -4,7 +4,7 @@ import type { EngineMethodName } from '@aplos/contract';
 import { dispatchWith, handlers as table } from '../methods/index';
 import type { Caller, EngineHandlers } from '../methods/types';
 import type { Clock, Logger, StorePort } from '../ports';
-import { openConnection } from './connection';
+import { openConnection, type ConnectedSession } from './connection';
 import { contractError } from './errors';
 import { createFrameHub, observeCommits } from './frames';
 import type { EngineServices, LaneModule, LaneModuleSource } from './services';
@@ -43,7 +43,7 @@ export interface EngineOptions {
 /** The running engine: an `EngineConnection` (what the stand-in implements), its services, and shutdown. */
 export interface Engine extends EngineConnection {
   /** A session as an Electron window (every scope), or as `caller`: main, or a listener client with its grant. */
-  connect(caller?: Caller): EngineSession;
+  connect(caller?: Caller): ConnectedSession;
   readonly services: EngineServices;
   /**
    * The host's power-resume (or network, or clock-change) hook: re-reads every deadline now instead of at the next
