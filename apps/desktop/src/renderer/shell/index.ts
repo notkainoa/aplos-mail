@@ -36,7 +36,7 @@ import type { RouteTarget } from './store-route';
 import { addKeyLayer, type KeyLayer } from './store-keys';
 import { addPaneHeaderPart, getPaneHeaderPart, subscribePaneHeaderPart } from './store-pane';
 import type { PaneHeaderPart } from './store-pane';
-import { addSidebarSlot, getSidebarSlot, subscribeSidebarSlot } from './store-sidebar';
+import { getSidebarSlot, setSidebarSlot, subscribeSidebarSlot } from './store-sidebar';
 import type { SidebarSlot } from './store-sidebar';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
@@ -312,11 +312,16 @@ export type { SidebarSlot } from './store-sidebar';
 /**
  * Shows `slot` under the sidebar's place groups while the calling screen is mounted (null shows nothing). The latest
  * mounted slot wins whole and the earlier one returns when it goes. The shell draws `miniMonth` and `calendars` with
- * the ui components in the sidebar's quiet spacing; the minimised nav does not show the slot. Compared by reference,
- * so memoise it (`useMemo`).
+ * the ui components in the sidebar's quiet spacing; the minimised nav does not show the slot. A screen that updates
+ * its slot keeps its place in the stack. Compared by reference, so memoise it (`useMemo`).
  */
 export function useSidebarSlot(slot: SidebarSlot | null): void {
-  useEffect(() => (slot ? addSidebarSlot(slot) : undefined), [slot]);
+  const owner = useRef({}).current;
+  // Updates replace the slot in place (its place in the stack is kept); only unmounting removes it.
+  useEffect(() => {
+    setSidebarSlot(owner, slot);
+  }, [owner, slot]);
+  useEffect(() => () => setSidebarSlot(owner, null), [owner]);
 }
 
 /** The slot the sidebar draws, live; null when no screen set one. The shell's Sidebar reads it. */

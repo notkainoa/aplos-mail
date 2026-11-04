@@ -5,6 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   addSidebarSlot,
+  setSidebarSlot,
   getSidebarSlot,
   subscribeSidebarSlot,
   type SidebarSlot,
@@ -101,4 +102,34 @@ test('a slot with only one part draws only that part', () => {
   remove();
   assert.match(html, /ui-calendar-list/);
   assert.doesNotMatch(html, /ui-mini-month/);
+});
+
+test('one owner updating its slot keeps its place; the latest mounted owner still wins', () => {
+  const ownerA = {};
+  const ownerB = {};
+  let notified = 0;
+  const off = subscribeSidebarSlot(() => (notified += 1));
+  const a1: SidebarSlot = { miniMonth: MONTH };
+  const b1: SidebarSlot = { calendars: CALENDARS };
+  setSidebarSlot(ownerA, a1);
+  setSidebarSlot(ownerB, b1);
+  assert.equal(getSidebarSlot(), b1);
+  // A re-renders with a new object: it must not climb above B.
+  const a2: SidebarSlot = { miniMonth: MONTH, calendars: CALENDARS };
+  setSidebarSlot(ownerA, a2);
+  assert.equal(getSidebarSlot(), b1, 'B, mounted later, still wins');
+  assert.equal(notified, 2, 'an update below the winner does not notify');
+  // B re-renders: replaced in place, published once.
+  const b2: SidebarSlot = { calendars: CALENDARS };
+  setSidebarSlot(ownerB, b2);
+  assert.equal(getSidebarSlot(), b2);
+  assert.equal(notified, 3);
+  setSidebarSlot(ownerB, b2);
+  assert.equal(notified, 3, 'the same reference does not publish again');
+  // B goes: A returns with its latest slot, not the first one it set.
+  setSidebarSlot(ownerB, null);
+  assert.equal(getSidebarSlot(), a2);
+  setSidebarSlot(ownerA, null);
+  assert.equal(getSidebarSlot(), null);
+  off();
 });

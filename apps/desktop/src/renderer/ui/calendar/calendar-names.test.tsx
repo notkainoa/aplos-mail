@@ -28,14 +28,23 @@ const norm = (s: string): string =>
 const ENTRY =
   /<button[^>]*class="(?:ui-event-block|ui-plan-outline|ui-calendar-grid__ag|ui-calendar-grid__mev)"[^>]*>/;
 
-/** Every entry button of a render with its name and its visible text (tags read as spaces: these are flex items). */
-function entries(markup: string): { label: string; text: string }[] {
-  const out: { label: string; text: string }[] = [];
+/**
+ * Every entry button of a render with its name and its visible text. `text` reads tags as spaces (these are flex
+ * items); `joined` is the plain textContent (tags removed, nothing inserted), which is what axe compares, so a
+ * whitespace node between two spans matters there.
+ */
+function entries(markup: string): { label: string; text: string; joined: string }[] {
+  const out: { label: string; text: string; joined: string }[] = [];
   for (const m of markup.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)) {
     const tag = m[0].match(/^<button\b[^>]*>/)?.[0] ?? '';
-    const label = tag.match(/aria-label="([^"]*)"/)?.[1];
-    if (!label || !/data-event-id=/.test(tag)) continue;
-    out.push({ label: decode(label), text: decode(m[0].replace(/<[^>]+>/g, ' ')) });
+    if (!/data-event-id=/.test(tag)) continue;
+    const label = tag.match(/aria-label="([^"]*)"/)?.[1] ?? '';
+    assert.ok(label.trim(), `an entry button lost its aria-label: ${tag}`);
+    out.push({
+      label: decode(label),
+      text: decode(m[0].replace(/<[^>]+>/g, ' ')),
+      joined: decode(m[0].replace(/<[^>]+>/g, '')),
+    });
   }
   return out;
 }
@@ -43,8 +52,12 @@ function entries(markup: string): { label: string; text: string }[] {
 function assertNamesHoldText(markup: string, count: number): void {
   const found = entries(markup);
   assert.ok(found.length >= count, `expected at least ${count} entries, saw ${found.length}`);
-  for (const { label, text } of found) {
+  for (const { label, text, joined } of found) {
     assert.ok(norm(label).includes(norm(text)), `name "${label}" does not hold "${text.trim()}"`);
+    assert.ok(
+      norm(label).includes(norm(joined)),
+      `name "${label}" does not hold the textContent "${joined.trim()}" (a whitespace node between spans is missing)`,
+    );
   }
 }
 

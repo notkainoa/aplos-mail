@@ -26,7 +26,7 @@ const eventHideSignature: [
 ] = [true, true, true];
 
 /** Compile-only: `Event/hide`'s input is `{ids, hidden}` plus an `opId` the data layer may mint; never run. */
-function hideSignature(api: DataApi) {
+export function hideSignature(api: DataApi) {
   void api.event.hide({ ids: ['e1', 'e2'], hidden: true });
   void api.event.hide({ ids: ['e1'], hidden: false, opId: 'op-mine' });
   // @ts-expect-error: `hidden` says hide or show again; it is required.
@@ -200,7 +200,6 @@ test('event.hide mints its opId, forwards the input unchanged, and hides in Aplo
   await withHarness(async h => {
     const { api, operations, undoStack } = h.layer;
     assert.ok(eventHideSignature.every(Boolean));
-    assert.equal(typeof hideSignature, 'function', 'the compile-only signature check exists');
     const window = await h.truth.api.view.query({
       spec: { kind: 'events', from: HARNESS_NOW_MS - 7 * DAY, to: HARNESS_NOW_MS + 14 * DAY },
     });
