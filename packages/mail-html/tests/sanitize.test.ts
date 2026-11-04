@@ -347,6 +347,21 @@ describe('elements and attributes', () => {
       bodyStyle('font-size:150%;line-height:150%;font-size:2em'),
       'font-size:150%;line-height:150%;font-size:2em',
     );
+    // A `;` inside a function is part of the declaration, not the start of another one.
+    assert.equal(
+      bodyStyle('margin:calc(1px;position:fixed);color:red'),
+      'margin:calc(1px;position:fixed);color:red',
+    );
+    assert.equal(
+      bodyStyle('margin:foo(a;zoom:1000!important;b);padding:0'),
+      'margin:foo(a;zoom:1000!important;b);padding:0',
+    );
+    // if() takes media() conditions on the frame's height and shape: it is dropped, allowed property or not.
+    const conditional = bodyStyle(
+      'margin-bottom:if(media(orientation:landscape):700px;else:0px);color:red',
+    );
+    assert.doesNotMatch(conditional ?? '', /if\(|media/);
+    assert.match(conditional ?? '', /^margin-bottom:(?:&quot;){2};color:red$/);
     // A `;` inside a string or function does not end a declaration early, nor smuggle one in.
     assert.equal(
       bodyStyle('background:url(a;position:fixed);color:red'),
@@ -815,5 +830,6 @@ describe('what the rewrite writes is capped too', () => {
     assert.ok(root.includes('min-height:1px!important'));
     assert.ok(root.includes('position:static!important') && root.includes('display:flow-root'));
     assert.ok(body.includes('position:relative!important') && body.includes('min-height:0'));
+    assert.ok(body.includes('display:block!important'), 'the body keeps a box');
   });
 });

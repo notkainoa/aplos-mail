@@ -29,7 +29,12 @@ const KEPT_AT_RULES = new Set([
 const URL_FUNCTIONS = new Set(['url', 'src']);
 /** Functions whose string arguments are image URLs. */
 const IMAGE_FUNCTIONS = new Set(['image-set', '-webkit-image-set', 'image']);
-const DROPPED_FUNCTIONS = new Set(['attr', 'expression']);
+/**
+ * `attr` and `expression` (an attribute value must never reach a URL); `if`, whose `media()` conditions take
+ * the very height and orientation features the @media rewrite renames; `scroll` and `view`, the scroll-driven
+ * animation timelines. A dropped function leaves `""`, so the declaration is invalid and the browser ignores it.
+ */
+const DROPPED_FUNCTIONS = new Set(['attr', 'expression', 'if', 'scroll', 'view']);
 /** Inside an image function these could put a value in URL position that this writer never saw. */
 const NO_IMAGE_FUNCTIONS = new Set(['var', 'env', 'attr']);
 /** A string the URL parser would read as absolute or scheme-relative (it ignores tabs and newlines). */
@@ -60,6 +65,8 @@ const HEIGHT_FEATURES = new Set([
   'min-height',
   'max-height',
   'block-size',
+  'min-block-size',
+  'max-block-size',
   'aspect-ratio',
   'min-aspect-ratio',
   'max-aspect-ratio',
@@ -79,6 +86,13 @@ const QUERY_AT_RULES = new Set(['media', 'container']);
  * kept horizontal by the reading layer anyway.
  */
 const WRITING_MODE = /writing-mode$/;
+/**
+ * Scroll-driven animations (`animation-timeline:scroll(root)`, `view()`) tie an animation's progress to a
+ * scroller's size, which is the frame's: a height keyframe flips the letter between two sizes for ever. The
+ * timeline properties become custom properties too; ordinary animations and transitions are untouched.
+ */
+const TIMELINE =
+  /^(?:-webkit-)?(?:animation-timeline|animation-range(?:-start|-end)?|scroll-timeline(?:-[a-z]+)?|view-timeline(?:-[a-z]+)?|timeline-scope)$/;
 
 const enum Structure {
   None = 0,
@@ -324,10 +338,10 @@ class CssWriter {
     return cssIdent(ID_PREFIX + token[4].value);
   }
 
-  /** A height feature in a query prelude, or a `writing-mode` property name (an identifier before a colon). */
+  /** A height feature in a query prelude, or a `writing-mode` or timeline property name (an identifier before a colon). */
   private unsafeName(lower: string): boolean {
     if (this.queryFeatures) return HEIGHT_FEATURES.has(lower);
-    if (lower.startsWith('--') || !WRITING_MODE.test(lower)) return false;
+    if (lower.startsWith('--') || !(WRITING_MODE.test(lower) || TIMELINE.test(lower))) return false;
     let next = this.at + 1;
     while (this.isSpace(next)) next++;
     return this.tokens[next]?.[0] === TokenType.Colon;

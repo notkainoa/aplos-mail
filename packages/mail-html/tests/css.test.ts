@@ -529,3 +529,69 @@ describe('@layer prelude ends', () => {
     assert.equal(clean('@media x{@layer a.b}.foo{b:c}').css, '@media x{@layer m-a.m-b}.foo{b:c}');
   });
 });
+
+describe('functions and properties that follow the frame', () => {
+  it('drops if(), scroll() and view() wherever they stand, so the declaration is ignored', () => {
+    const cases: [string, string][] = [
+      ['a{height:if(media(max-height:300px):532px;else:132px)}', 'a{height:""}'],
+      ['a{height:IF(media(orientation:landscape):1px;else:2px)}', 'a{height:""}'],
+      ['a{height:\\69 f(media(height > 3px):1px;else:2px)}', 'a{height:""}'],
+      [
+        'a{padding:calc(1px + if(media(min-aspect-ratio:1/1):9px;else:0px))}',
+        'a{padding:calc(1px + "")}',
+      ],
+      ['a{margin:var(--x,if(media(max-height:1px):1px;else:2px))}', 'a{margin:var(--x,"")}'],
+      ['a{animation-timeline:scroll(root)}', 'a{--m-animation-timeline:""}'],
+      ['a{b:view(block 10px 20px)}', 'a{b:""}'],
+      ['a{b:if(supports(display:grid):1px;else:2px)}', 'a{b:""}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    // A word that is not a function call is left alone.
+    for (const input of [
+      'a{b:if}',
+      'a{b:scroll;view:1}',
+      'a{scroll-behavior:smooth;overflow:scroll}',
+    ]) {
+      assert.equal(clean(input).css, input, input);
+    }
+  });
+
+  it('turns the scroll-driven animation properties into custom properties', () => {
+    const cases: [string, string][] = [
+      ['a{animation-timeline:view()}', 'a{--m-animation-timeline:""}'],
+      ['a{animation-range:entry 10% exit 90%}', 'a{--m-animation-range:entry 10% exit 90%}'],
+      [
+        'a{animation-range-start:10%;animation-range-end:90%}',
+        'a{--m-animation-range-start:10%;--m-animation-range-end:90%}',
+      ],
+      [
+        'a{scroll-timeline-name:--t;scroll-timeline-axis:y;scroll-timeline:--t y}',
+        'a{--m-scroll-timeline-name:--t;--m-scroll-timeline-axis:y;--m-scroll-timeline:--t y}',
+      ],
+      [
+        'a{view-timeline:--v;view-timeline-inset:1px;view-timeline-name:--v}',
+        'a{--m-view-timeline:--v;--m-view-timeline-inset:1px;--m-view-timeline-name:--v}',
+      ],
+      ['a{timeline-scope:--t}', 'a{--m-timeline-scope:--t}'],
+      ['a{-webkit-animation-timeline:x}', 'a{--m--webkit-animation-timeline:x}'],
+      ['a{ANIMATION-TIMELINE :x}', 'a{--m-animation-timeline :x}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    // Ordinary animations and transitions are untouched.
+    const same = [
+      'a{animation:spin 1s linear infinite;animation-name:x;animation-delay:1s}',
+      'a{transition:height 1s}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('renames the logical and aspect features in container and media queries', () => {
+    const cases: [string, string][] = [
+      ['@container (min-block-size:5px){a{b:c}}', '@container (--m-min-block-size:5px){a{b:c}}'],
+      ['@container (max-block-size:5px){a{b:c}}', '@container (--m-max-block-size:5px){a{b:c}}'],
+      ['@media (max-aspect-ratio:1/1){a{b:c}}', '@media (--m-max-aspect-ratio:1/1){a{b:c}}'],
+      ['@media (min-aspect-ratio:1/1){a{b:c}}', '@media (--m-min-aspect-ratio:1/1){a{b:c}}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+});
