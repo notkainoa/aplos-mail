@@ -47,6 +47,9 @@ export async function messageBody(
   const ref = requireMessage(services, args.messageId);
   const body = await loadBody(services, ref);
   // An HTML-only letter still answers text: the same strip the draft engine uses for its text/plain.
+  // Ranges are UTF-16 offsets into this exact string — a provider that ever records quotedRanges on
+  // an HTML-only letter must compute them against this derivation, or `fits` drops them (degrades,
+  // never wrong-quote).
   const text =
     typeof body.text === 'string' && body.text
       ? body.text

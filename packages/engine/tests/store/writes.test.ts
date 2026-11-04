@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { decodeBody } from '../../src/store/bodies';
 import { readBody, StoreError, type OpWrite, type StorePort } from '../../src/store';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg, withStore } from './helpers';
 
@@ -308,6 +309,19 @@ test('bodies round-trip through the codec, set the part bits and re-queue search
       );
       assert.equal(row.codec, 2);
       assert.equal(row.parts & 0b111, 0b111, 'meta, text and html');
+      // A codec-0 row decodes raw even through a codec that only knows its own number.
+      const raw0 = {
+        codec: 0,
+        data: new TextEncoder().encode(JSON.stringify({ text: 'raw' })),
+      };
+      const picky = {
+        encode: codec.encode,
+        decode: (c: number, d: Uint8Array) => {
+          if (c !== 2) throw new Error('unknown codec');
+          return codec.decode(c, d);
+        },
+      };
+      assert.deepEqual(decodeBody(raw0, picky), { text: 'raw' });
 
       const list = (names: string[]) =>
         ({

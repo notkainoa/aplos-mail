@@ -48,7 +48,7 @@ describe('resolveImagePolicy', () => {
     assert.equal(
       resolveImagePolicy('block', 'ada@corp.example', list),
       'allow',
-      'no global arg: block',
+      'no global arg: the list alone decides',
     );
   });
 
