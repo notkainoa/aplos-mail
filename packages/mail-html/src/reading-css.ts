@@ -46,6 +46,7 @@ const BODY_RULE = `html:root>body{${important([
   ...COMMON.filter(declaration => declaration !== 'position:static'),
   'position:relative',
   'min-height:0',
+  'display:block',
 ])}}`;
 
 export const READING_CSS = [
@@ -57,10 +58,12 @@ export const READING_CSS = [
   // earliest layer wins over every later layer and over unlayered rules, whatever their specificity. It does
   // NOT win over an element's own style attribute (element-attached styles rank before layers), so the frame
   // body's style is cut to an explicit property-name allowlist (body-style.ts) that holds nothing able to size
-  // or move the body, and the frame html takes no style at all. The mail cannot
-  // join the layer: its @layer names move to `m-` (css.ts). Not covered, the host's growth fence is required:
-  // content in an orthogonal writing mode or a height-dependent media query is rewritten away (css.ts), but a
-  // layout that follows the frame by other means (percentage chains with intrinsic sizes, say) is not.
+  // or move the body, and the frame html takes no style at all. The mail cannot join the layer: its @layer
+  // names move to `m-` (css.ts). The body is `display:block` so it keeps a box (`display:contents` would
+  // leave `position:relative` no containing block). The host's growth fence is still required: css.ts rewrites
+  // away the ways measured to follow the frame (height, shape and orientation features in @media and
+  // @container, `if()` and its `media()` conditions, `writing-mode` under any prefix, scroll-driven animation
+  // timelines), but a layout that follows the frame by some other means is not covered.
   `@layer ${READING_LAYER}{${ROOT_RULE}${BODY_RULE}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',

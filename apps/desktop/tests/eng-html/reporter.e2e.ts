@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { loadCorpus } from '../../../../packages/mail-html/corpus/index';
 import { REPORTER_SOURCE, withReporter } from '../../../../packages/mail-html/src/frame/reporter';
 import { render } from '../../../../packages/mail-html/src/index';
-import { launchBed, FOLLOW_CAP, type Bed, type Opened } from './support/reporter-bed';
+import { launchBed, type Bed, type Opened } from './support/reporter-bed';
 
 // THE FRAME REPORTER IN REAL CHROMIUM (ui-core REQUEST, html-5 slice 2). The real reporter, the real sanitizer and
 // the engine's real headers, in a sandboxed iframe in a hidden Electron, with a host page that follows the reported
@@ -358,7 +358,8 @@ test.describe('viewport units cannot grow the frame', () => {
         headers: 'none',
       });
       await opened.page.waitForTimeout(5_000);
-      expect(await opened.capped(), unit).toBe(true);
+      // Growing 32 px a report at up to 20 reports a second, 5 s is a frame of thousands of px.
+      expect((await opened.capped()) || (await opened.frameHeight()) > 2_000, unit).toBe(true);
       await opened.page.close();
     }
   });
@@ -384,8 +385,7 @@ test.describe('viewport units cannot grow the frame', () => {
       headers: 'none',
     });
     await opened.page.waitForTimeout(5_000);
-    expect(await opened.capped()).toBe(true);
-    expect((await opened.reports()).length).toBeGreaterThanOrEqual(FOLLOW_CAP);
+    expect((await opened.capped()) || (await opened.frameHeight()) > 2_000).toBe(true);
     await opened.page.close();
   });
 });
@@ -667,4 +667,158 @@ test.describe('the reading rules cannot be overridden by the mail', () => {
       await opened.page.close();
     });
   }
+
+  // CSS if(media()) and scroll-driven animations follow the frame. The control puts the original message in a
+  // raw document (no sanitizer), which the browser then runs as written.
+  const following = [
+    ['167', 'if(media()) conditions on height, orientation and aspect ratio'],
+    ['168', 'if(media()) in the allowlisted body margin and padding'],
+    ['169', 'scroll-driven animation timelines'],
+  ] as const;
+
+  for (const [id, title] of following) {
+    test(`${id}: ${title}: the frame settles`, async () => {
+      const document = frameDocument(entry(id).html ?? '');
+      expect(document).not.toMatch(/\bif\(|(?<![-\w])animation-timeline\s*:/);
+      const opened = await bed.open({ document });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      // The 1000 px keyframes of 169 apply without a timeline (two blocks, 2086 px), once and steadily.
+      expect(reports[reports.length - 1].h).toBeLessThan(id === '169' ? 3_000 : 400);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: written as the mail wrote it, the frame follows its letter without end`, async () => {
+      const opened = await bed.open({
+        document: rawDocument(entry(id).html ?? '', 'real'),
+        headers: 'none',
+      });
+      await opened.page.waitForTimeout(5_000);
+      expect(await runsAway(opened)).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  test('170: a body with display:contents still has a box, so the report reaches the content', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('170').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 170: with the previous body rule, display:contents hides the content', async () => {
+    const opened = await bed.open({
+      document: withoutLayer(frameDocument(entry('170').html ?? '')),
+      height: 100,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  /** The reporter without its frame loop, or without its animation events, or without both. */
+  function without(
+    document: string,
+    parts: { loop?: boolean; events?: boolean },
+  ): { document: string; headers: 'none' } {
+    const line = "typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame : null";
+    expect(REPORTER_SOURCE.includes(line), 'the frame line is where this control expects').toBe(
+      true,
+    );
+    let script = REPORTER_SOURCE;
+    if (parts.loop) script = script.replace(line, () => 'null');
+    if (parts.events) {
+      script = script
+        .replace("listen.call(d, 'animationend', recheck, true);", () => '')
+        .replace("listen.call(d, 'transitionend', recheck, true);", () => '');
+    }
+    expect(script === REPORTER_SOURCE, 'the control changed the script').toBe(false);
+    return { document: document.replace(REPORTER_SOURCE, () => script), headers: 'none' };
+  }
+
+  async function lastAfter(opened: Opened, ms: number) {
+    await opened.page.waitForTimeout(ms);
+    const reports = await opened.reports();
+    return reports[reports.length - 1].h;
+  }
+
+  test('171: a box that moves down after load is reported at its new place', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('171').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    await opened.page.waitForTimeout(3_500);
+    const reports = await opened.reports();
+    expect(reports[reports.length - 1].h).toBeGreaterThanOrEqual(1_200);
+    expect(reports.length).toBeLessThan(30);
+    await opened.page.close();
+  });
+
+  test('control 171: without the frame loop and its events the move goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('171').html ?? ''), { loop: true, events: true }),
+      height: 100,
+      follow: false,
+    });
+    await opened.page.waitForTimeout(3_500);
+    const reports = await opened.reports();
+    expect(reports[reports.length - 1].h).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('172: a jump with no end event is seen by the frame loop', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('172').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 3_500)).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 172: without the frame loop (the events never come) the jump goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('172').html ?? ''), { loop: true }),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 3_500)).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('173: a move after the quiet period is reported when its animation ends', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('173').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 6_500)).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 173: without the animation events the late move goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('173').html ?? ''), { events: true }),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 6_500)).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('an animated height posts at most 20 reports a second, not one per frame', async () => {
+    const html =
+      '<style>.a { animation: a 1s linear infinite } @keyframes a { from { height: 100px } to { height: 600px } }</style><div class="a">x</div>';
+    const opened = await bed.open({ document: frameDocument(html), height: 100, follow: false });
+    await opened.page.waitForTimeout(3_000);
+    const count = (await opened.reports()).length;
+    expect(count).toBeGreaterThan(10);
+    expect(count).toBeLessThanOrEqual(3 * 20 + 25);
+    await opened.page.close();
+  });
 });
