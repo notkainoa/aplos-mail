@@ -90,7 +90,11 @@ export interface CalendarViewModel {
   readonly rail: CalendarEventData | null;
   /** The popover's entry. */
   readonly popover: CalendarEventData | null;
-  /** The RSVP block of the rail or popover, with "Send reply" enabled only after a choice. */
+  /**
+   * The RSVP block of the rail or popover: `answer` is the pending new answer, null while nothing new is chosen
+   * (never picked, or the pick is the reply already sent) — EventDetail disables "Send reply" exactly then, the
+   * only lever its props give (review1 4). `canSend` is the same condition, kept for the tests.
+   */
   readonly reply: { answer: RsvpAnswer | null; canSend: boolean } | null;
   readonly more: readonly MenuEntry[];
   readonly moreOpen: boolean;
@@ -197,7 +201,10 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
     popover,
     reply:
       live && detail && live.eventId === detail.id
-        ? { answer: live.answer, canSend: canSendReply(live, detail) }
+        ? {
+            answer: canSendReply(live, detail) ? live.answer : null,
+            canSend: canSendReply(live, detail),
+          }
         : null,
     more: detail ? detailMenu(detail, ctx) : [],
     moreOpen: state.moreOpen && detail !== null,

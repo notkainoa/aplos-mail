@@ -134,7 +134,9 @@ function useEscapeLadder(dispatch: (action: CalendarAction) => boolean) {
       const active = document.activeElement;
       const inScreen =
         active === null || active === document.body || (root?.contains(active) ?? false);
-      if (!ladderTakesEscape(event, active, inScreen)) return;
+      // A ghost track exists only while a drag is under way (TimeGrid); Esc cancels it before the ladder.
+      const dragging = root?.querySelector('.ui-calendar-grid__drag') != null;
+      if (!ladderTakesEscape(event, active, inScreen, dragging)) return;
       if (!dispatch({ type: 'escape' })) return;
       event.preventDefault();
       event.stopImmediatePropagation();

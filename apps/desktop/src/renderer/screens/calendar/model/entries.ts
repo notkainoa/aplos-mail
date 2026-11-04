@@ -146,10 +146,11 @@ function guestsOf(e: Event): EventGuest[] {
 /** Events of a day or more are drawn in the all-day strip, as Google Calendar draws them; the grid shows a timed entry only on its first day. */
 export const STRIP_MINUTES = 24 * 60;
 
-/** One contract event as the grid's entry. */
+/** One contract event as the grid's entry. `locked` lifts the move cursor and the resize handles (TimeGrid/EventBlock). */
 export function eventData(
   e: Event,
   calendar: Pick<CalendarInfo, 'id' | 'name' | 'color'>,
+  locked = false,
 ): CalendarEventData {
   let start = isoOfTime(e.start);
   let end = isoOfTime(e.end);
@@ -190,6 +191,7 @@ export function eventData(
       : {}),
     ...(e.description ? { description: e.description } : {}),
     ...(e.recurring ? { recurring: true } : {}),
+    ...(locked ? { locked: true } : {}),
   };
 }
 
@@ -296,7 +298,8 @@ export function entriesFor(input: EntryInputs): CalendarEventData[] {
   for (const e of events) {
     const calendar = byId.get(e.calendarId);
     if (!calendar || !visible.has(calendar.id) || e.hidden || e.status === 'cancelled') continue;
-    out.push(eventData(e, ref(calendar)));
+    // No drag and no handles when the event can't move or the calendar is read-only (review1 3).
+    out.push(eventData(e, ref(calendar), !e.can.move || calendar.readOnly));
   }
   const planCalendar = planCalendarId ? byId.get(planCalendarId) : undefined;
   const planRef = planCalendar

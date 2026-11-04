@@ -78,15 +78,19 @@ export interface EscapeKeyInput {
 
 /**
  * Whether the calendar's Esc ladder may take this keydown: a bare Esc, not composing, not already taken, with focus on
- * the Calendar screen (or on nothing), and not inside a widget that closes itself on Esc.
+ * the Calendar screen (or on nothing), and not inside a widget that closes itself on Esc. While a grid drag is under
+ * way the ladder stays out: this listener was registered before TimeGrid's own Esc-cancel, so taking the key would
+ * close a rung and leave the drag going (review1 2). Esc cancels the drag first; a second Esc walks the ladder.
  */
 export function ladderTakesEscape(
   event: EscapeKeyInput,
   active: ElementLike | null,
   focusInScreen: boolean,
+  dragInProgress = false,
 ): boolean {
   if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return false;
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  if (dragInProgress) return false;
   if (!focusInScreen) return false;
   return active?.closest(ESCAPE_OWNERS) == null;
 }

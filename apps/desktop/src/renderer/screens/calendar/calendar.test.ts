@@ -45,7 +45,7 @@ import {
   type CalendarState,
 } from './calendar.model';
 import { runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
-import { takesInviteAnswerKey } from './keys';
+import { ladderTakesEscape, takesInviteAnswerKey } from './keys';
 import { demoWorld } from './CalendarStates';
 
 const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -301,6 +301,15 @@ test('review1: a non-time edit on the same occurrence still offers All events', 
 // Esc ladder and menus (review1 4b)
 // ---------------------------------------------------------------------------
 
+test('review1: the Esc ladder stays out while a grid drag is under way', () => {
+  const nothing = { closest: () => null, matches: () => false };
+  const esc = { key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+  // A rung open or not, Esc during a drag belongs to TimeGrid's cancel, never to the ladder.
+  assert.equal(ladderTakesEscape(esc, nothing, true, true), false);
+  assert.equal(ladderTakesEscape(esc, nothing, true, false), true);
+  assert.equal(ladderTakesEscape(esc, nothing, true), true);
+});
+
 test('Esc closes the scope question, the popover, the answer, the selection, then falls through', () => {
   const ctx = ctxFor();
   const s = S({
@@ -414,6 +423,39 @@ test('eventData maps contract times to grid entries: utc, all-day date, invite f
   assert.equal(day.allDay, true);
   assert.equal(day.start, '2026-11-05T00:00:00');
   assert.equal(day.end, '2026-11-08T00:00:00');
+});
+
+test('review1: entries lock a no-move event and anything on a read-only calendar', () => {
+  const ctx = ctxFor();
+  // Q4 review is an invite: can.move is false, so the grid draws it locked (no cursor, no handles).
+  assert.equal(ctx.entries.find(e => e.id === 'q4')?.locked, true);
+  assert.equal(ctx.entries.find(e => e.id === 'dental')?.locked, undefined);
+  const readOnlyCal = {
+    ...demoWorld.calendars.find(c => c.id === 'personal')!,
+    id: 'ro',
+    readOnly: true,
+  };
+  const onRo = { ...ctx.events.get('dental')!, id: 'ro1', calendarId: 'ro' };
+  const ctxRo = ctxFor([onRo], demoWorld.plans, [...demoWorld.calendars, readOnlyCal]);
+  assert.equal(ctxRo.entries.find(e => e.id === 'ro1')?.locked, true);
+});
+
+test('review1: Send reply stays disabled while the chosen answer is the one already sent', () => {
+  const answered = { ...ctxFor().events.get('q4')!, myResponse: 'accepted' as const };
+  const ctx = ctxFor([answered]);
+  const same = S({
+    selectedId: 'q4',
+    detailId: 'q4',
+    rsvp: { eventId: 'q4', answer: 'yes', changing: true },
+  });
+  // Re-picking the reply already sent leaves nothing to send: answer reads null, the button disables.
+  assert.equal(viewModel(same, ctx).reply?.answer, null);
+  const other = S({
+    selectedId: 'q4',
+    detailId: 'q4',
+    rsvp: { eventId: 'q4', answer: 'maybe', changing: true },
+  });
+  assert.equal(viewModel(other, ctx).reply?.answer, 'maybe');
 });
 
 // ---------------------------------------------------------------------------
