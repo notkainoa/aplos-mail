@@ -49,6 +49,7 @@ import {
   type LeaseRecord,
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
+import { attachmentBytes, originalRemote } from './host-read';
 import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
@@ -693,8 +694,11 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
   }
 
   async attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>> {
-    const entry = this.entry(account);
-    return entry.adapter.fetchAttachment(ref, entry.actor.context());
+    return attachmentBytes(this.entry(account), ref);
+  }
+
+  async original(account: AccountId, remoteMessageId: string): Promise<AsyncIterable<Uint8Array>> {
+    return originalRemote(this.entry(account), remoteMessageId);
   }
 
   // ---------------------------------------------------------------- DraftSyncPort
