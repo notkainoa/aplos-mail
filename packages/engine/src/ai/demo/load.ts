@@ -1,7 +1,6 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import type { State } from '@aplos/contract';
-import { StoreError, type StorePort } from '../../store/port';
-import { DEMO_ACCOUNTS, demoWrites } from './data';
+import { StoreError, type StorePort, type StoreWrite } from '../../store/port';
 
 /**
  * `Demo/load`, `Demo/reset` and `Demo/remove` against the store (ai-2). Demo accounts are the rows whose
@@ -12,7 +11,18 @@ import { DEMO_ACCOUNTS, demoWrites } from './data';
  * which cascades everything the account owns and nothing else.
  */
 
-export const DEMO_ACCOUNT_IDS: readonly string[] = DEMO_ACCOUNTS.map(a => a.id);
+/** The demo accounts' fixed ids, in `Demo/load`'s order; a test pins them to `DEMO_ACCOUNTS` in `data.ts`. */
+export const DEMO_ACCOUNT_IDS: readonly string[] = ['demo-work', 'demo-personal'];
+
+/** Builds the demo dataset's writes for `now`. */
+export type DemoWrites = (now: number) => StoreWrite[];
+
+/**
+ * The demo dataset (about 11 KB minified), loaded on first use: a mailbox that never asks for the demo never reads
+ * it, and a build that splits chunks keeps it out of the core bundle. Awaited BEFORE any commit, so `Demo/reset`'s two
+ * commits never wait on a load between them.
+ */
+export const lazyDemoWrites = async (): Promise<DemoWrites> => (await import('./data')).demoWrites;
 
 /**
  * The receipt opId of a call that committed nothing. `Receipt.opId` always names an applied commit, so a
@@ -42,7 +52,12 @@ export function demoAccountIds(store: StorePort): string[] {
 const state = (store: StorePort): State => ({ dbEpoch: store.dbEpoch, seq: store.seq() });
 
 /** `Demo/load`: the dataset commit, or none once every demo account is there (idempotent). */
-export function loadDemo(store: StorePort, opId: string, now: number): DemoApplied {
+export function loadDemo(
+  store: StorePort,
+  opId: string,
+  now: number,
+  writes: DemoWrites,
+): DemoApplied {
   const existing = demoAccountIds(store);
   if (DEMO_ACCOUNT_IDS.every(id => existing.includes(id)))
     return { accountIds: existing, opId: DEMO_LOAD_NOOP, state: state(store) };
@@ -60,7 +75,7 @@ export function loadDemo(store: StorePort, opId: string, now: number): DemoAppli
     });
   // A partial demo is not 'loaded': the survivors go first, then the whole set commits again.
   if (existing.length) removeDemo(store, `${opId}-remove`);
-  const result = store.commit({ opId, origin: 'local', writes: demoWrites(now) });
+  const result = store.commit({ opId, origin: 'local', writes: writes(now) });
   return {
     accountIds: [...DEMO_ACCOUNT_IDS],
     opId,
@@ -74,7 +89,12 @@ export function loadDemo(store: StorePort, opId: string, now: number): DemoAppli
  * between leaves no demo accounts: the reload is retried once, and a second failure throws `internal`
  * saying the demo is empty and `Demo/load` restores it.
  */
-export function resetDemo(store: StorePort, opId: string, now: number): DemoApplied {
+export function resetDemo(
+  store: StorePort,
+  opId: string,
+  now: number,
+  writes: DemoWrites,
+): DemoApplied {
   const sending = store.read(
     q =>
       q.get(
@@ -93,7 +113,7 @@ export function resetDemo(store: StorePort, opId: string, now: number): DemoAppl
   // second of reset's two commits; a failure after the remove leaves the demo empty, so it gets one retry.
   for (let attempt = 0; attempt < 2; attempt++)
     try {
-      return loadDemo(store, opId, now);
+      return loadDemo(store, opId, now, writes);
     } catch (error) {
       // Only a failed commit is worth a second try: a refusal loadDemo raises itself (a ContractError) or a
       // programming error stands, instead of being retried and masked as an empty demo.

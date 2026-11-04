@@ -14,7 +14,7 @@ export type { EngineServices };
 /**
  * Handler types for the F5 dispatch table. Only types come from the contract (plus its zod-free generated tables in
  * `dispatch`): the engine core bundles no zod, because transports validate arguments with the registry's `parseArgs`
- * at the host boundary before calling `dispatch` (ARCH 9.3), which keeps the neutral engine inside its 400,000-byte budget.
+ * at the host boundary before calling `dispatch` (ARCH 9.3), which keeps the neutral engine inside its bundle budget (packages/engine/tests/portability.test.ts).
  */
 
 /**
