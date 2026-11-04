@@ -19,6 +19,7 @@ import type {
   PaneHeaderProps,
   ToastData,
 } from '../../../apps/desktop/src/renderer/ui/props';
+import { AddAccountView } from '../../../apps/desktop/src/renderer/shell/AddAccountHost';
 import { AccountMenu } from '../../../apps/desktop/src/renderer/shell/AccountMenu';
 import { FatalHost, ShellLayout } from '../../../apps/desktop/src/renderer/shell/Shell';
 import { StatusView } from '../../../apps/desktop/src/renderer/shell/StatusHost';
@@ -453,6 +454,28 @@ function reconnectScene(
   };
 }
 
+function addAccountScene(): ReactElement {
+  return (
+    <Frame
+      overlay={
+        <AddAccountView
+          mode="choose"
+          address=""
+          notice={null}
+          failure={null}
+          onEdit={noop}
+          onSubmit={noop}
+          onConnect={noop}
+          onChooseGoogle={noop}
+          onCancel={noop}
+          onClear={noop}
+          onClose={noop}
+        />
+      }
+    />
+  );
+}
+
 /* ------------------------------ the sidebar slot (Calendar's MiniMonth and Calendars list) ------------------------------ */
 
 const SLOT_MONTH: MiniMonthProps = {
@@ -511,6 +534,7 @@ export const shellScenes: Record<string, () => ReactElement> = {
   'shell-empty-drafts': EmptyDrafts,
   'shell-fatal-screen': () => <FatalScene kind="unreachable" />,
   'shell-fatal-parked': () => <FatalScene kind="parked" />,
+  'shell-add-account-open': addAccountScene,
   'shell-reconnect-sheet': reconnectScene('waiting', 'reconnect'),
   'shell-reconnect-sheet-grant': reconnectScene('waiting', 'grant'),
   'shell-reconnect-sheet-failed': reconnectScene(

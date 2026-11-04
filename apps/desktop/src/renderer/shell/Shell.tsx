@@ -33,6 +33,7 @@ import {
   closeSheet,
   navigate,
   openCompose,
+  openAddAccount,
   openSheet,
   pushToast,
   setAccountScope,
@@ -197,7 +198,7 @@ function ShellFrame({ renderScreen }: ShellProps) {
       scope={scope ?? undefined}
       onScope={id => setAccountScope(id ?? null)}
       onReconnect={a => openSheet('reconnect', { accountId: a.id, mode: accountReconnectMode(a) })}
-      onAddAccount={() => navigate('settings')}
+      onAddAccount={openAddAccount}
     />
   );
   return (

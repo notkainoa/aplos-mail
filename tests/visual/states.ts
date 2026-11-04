@@ -498,6 +498,16 @@ export const STATES: readonly VisualState[] = [
     filled: 1,
   },
   {
+    id: 'shell-add-account-open',
+    frame: 'shell',
+    title: 'Add account: the dialog over the mail window, address field and Google',
+    components: ['Dialog', 'TextField', 'ChoiceRow'],
+    design: '7.1, 7.11',
+    mockup: 'onboarding-accounts.html (choose)',
+    filled: 0,
+  },
+
+  {
     id: 'home-full',
     frame: 'shell',
     title: 'Home screen: focus slot, sections and the Low importance band',
