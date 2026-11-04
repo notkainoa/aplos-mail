@@ -27,20 +27,23 @@
     // A letter that changes after load (a transition, an animation, an image) is looked at on every frame
     // until its SIZE has been still for QUIET ms: a new height or width, or a load, resize, toggle or font
     // event, extends the watch; an animation, transition or resize-observer event asks for one look and
-    // extends it only if that look finds a new size (a sub-pixel wiggle fires the observer forever at
-    // zero post cost, so it must never extend the watch on its own). A report is posted only when its
-    // height, width, readiness or marks differ from the last one (the background rides along but is not
-    // a reason to post: a colour animation costs nothing), at most LIMIT times a second, and at most
-    // LIFETIME times in all: the last of those carries the state of that moment and the reporter then
-    // stops for good - `live` gates the looks too, so a post-cap event does not even schedule one. The
-    // mail's marks cannot change (no script runs in it), so they are counted once, and an event does no
-    // measuring. A look is asked for on the next animation frame AND by a timer WAIT ms later, whichever
-    // comes first: Chromium pauses animation callbacks in a frame that is off screen, and a held-back
-    // report there must still arrive. Without a clock, `now` is -Infinity: a look never re-arms.
+    // extends it only if that look finds a new size - and once a look has found nothing those events ask
+    // for the timer only, not a frame, so a storm costs about 4 looks a second, never one per frame (a
+    // sub-pixel wiggle fires the observer forever at zero post cost). A report posts only when its
+    // height, width, readiness or marks differ (background is no reason to post: colour costs nothing),
+    // at most LIMIT a second, LIFETIME posts and LOOKS looks in all - the last post carrying the state
+    // of that moment. A host-set width restarts the post budget (a drag can post far more than 2,000
+    // honest reports; the letter cannot game its width). `live` gates the looks too: a dead
+    // reporter's events schedule nothing. The mail's marks cannot change (no script runs in it), so they
+    // are counted once, and an event does no measuring. A look is asked for on the next animation frame
+    // AND by a timer WAIT ms later, whichever comes first: a frame off screen pauses animation
+    // callbacks, and a held-back report must still arrive. Without a clock, `now` is -Infinity: the
+    // rate limiter steps aside and a look never re-arms.
     const QUIET = 3000;
     const WAIT = 250;
     const LIMIT = 20;
     const LIFETIME = 2000;
+    const LOOKS = 100000;
     let last = '';
     let form = '';
     let total = 0;
@@ -51,6 +54,9 @@
     let dirty = false;
     let sent = 0;
     let since = 0;
+    let calm = false;
+    let seen = 0;
+    let wide = -1;
     function now() {
       return clock && typeof clock.now === 'function' ? clock.now() : -Infinity;
     }
@@ -84,6 +90,7 @@
     }
     function report() {
       if (!live) return;
+      seen += 1;
       try {
         const width = w.innerWidth;
         if (!(typeof width === 'number' && width > 0)) return;
@@ -103,10 +110,11 @@
           marks: marks,
         };
         const key = [message.h, message.w, message.ready, message.marks].join('|');
+        calm = key === last;
         dirty = dirty && key !== last;
         if (key === last) return;
         const time = now();
-        if (time - since >= 1000) {
+        if (!w.isFinite(time) || time - since >= 1000) {
           since = time;
           sent = 0;
         }
@@ -115,6 +123,10 @@
           return;
         }
         sent += 1;
+        if (message.w !== wide) {
+          wide = message.w;
+          total = 0;
+        }
         total += 1;
         last = key;
         const shape = message.h + '|' + message.w;
@@ -132,31 +144,36 @@
       if (id !== ticket || !armed) return;
       armed = false;
       report();
+      if (seen >= LOOKS) live = false;
       if (live && (dirty || now() < until)) watch();
     }
-    function watch() {
+    function watch(frame) {
       if (!live || armed) return;
       armed = true;
       ticket += 1;
       const id = ticket;
       const go = () => step(id);
-      if (schedule) schedule.call(w, go);
+      if (frame !== false && schedule) schedule.call(w, go);
       if (later) later.call(w, go, WAIT);
     }
+    // One look, on the animation frame while real changes may still be landing, or on the timer alone
+    // once the last look found nothing: a hostile letter's observer storm then costs about 4 looks a
+    // second (and LOOKS bounds even that), never a forced layout per frame for as long as it is read.
+    const look = () => watch(!calm);
     function recheck() {
       until = now() + QUIET;
       watch();
     }
     listen.call(d, 'DOMContentLoaded', recheck);
     listen.call(d, 'toggle', recheck, true);
-    listen.call(d, 'animationend', watch, true);
-    listen.call(d, 'animationcancel', watch, true);
-    listen.call(d, 'transitionend', watch, true);
+    listen.call(d, 'animationend', look, true);
+    listen.call(d, 'animationcancel', look, true);
+    listen.call(d, 'transitionend', look, true);
     listen.call(w, 'load', recheck, true);
     listen.call(w, 'error', recheck, true);
     listen.call(w, 'resize', recheck);
     if (typeof w.ResizeObserver === 'function') {
-      const observer = new w.ResizeObserver(watch);
+      const observer = new w.ResizeObserver(look);
       observer.observe(rootOf.call(d));
       observer.observe(bodyOf.call(d));
     }

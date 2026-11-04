@@ -205,7 +205,7 @@ test.describe('the reporter lifetime and cost', () => {
     const document = withReporter(result.document);
     const old = variant(document, [
       [
-        "listen.call(d, 'animationend', watch, true);",
+        "listen.call(d, 'animationend', look, true);",
         "listen.call(d, 'animationend', () => { marks = size(findAll.call(d, 'mark.aplos-find').length, 100000); last = ''; report(); watch(); }, true);",
       ],
     ]);
