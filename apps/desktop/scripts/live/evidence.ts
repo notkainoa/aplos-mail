@@ -80,6 +80,8 @@ export const COUNT_KEYS: readonly string[] = [
   'bodyUnchanged',
   'bodyEdited',
   'probeDraftsExisting',
+  // Answers that were 200 with an empty body (a list with no items): ok, not an error.
+  'emptyAnswers',
 ];
 export const TIMING_KEYS: readonly string[] = [
   'profile',
@@ -96,6 +98,7 @@ export const ERROR_CLASSES: readonly string[] = [
   'not-found',
   'server',
   'network',
+  'bad-body',
   'guard',
   'other',
 ];

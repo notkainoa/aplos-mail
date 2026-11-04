@@ -4,7 +4,7 @@ import type { Migration } from '../migrate';
  * `mail.db` schema 0001: ARCH 3.2 plus the Providers review (port proposal section 7, S1-S11) and the change log keyed
  * for several rows per commit. Frozen with F4: never edit these statements after they ship; add 0002 instead (the
  * checksum row refuses an edited history). One line per table says who writes it; `SCHEMA.md` documents every coded
- * column (bits, enums, JSON shapes) and the provider each serves, kept out of the bundle's 400,000-byte budget.
+ * column (bits, enums, JSON shapes) and the provider each serves, kept out of the bundle's budget.
  *
  * Conventions: every table is STRICT; booleans are INTEGER 0/1; times are epoch ms; remote ids are TEXT so Gmail,
  * Graph, IMAP, JMAP and CalDAV ids all fit; internal rowids never leave the engine (contract ids are

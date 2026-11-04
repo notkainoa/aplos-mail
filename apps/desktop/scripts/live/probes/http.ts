@@ -38,12 +38,23 @@ function errorReason(json: unknown): string | undefined {
   return typeof reason === 'string' ? reason : undefined;
 }
 
+/**
+ * An answer that went through. `empty` is true when Gmail said 200 with nothing in the body (or JSON `null` or `{}`): with a
+ * `fields` mask and no matching items Gmail sends that, and a spare account with no drafts or mail is a normal state.
+ * `json` is then `{}`, so a caller reads "no items" without a special case.
+ */
+export interface JsonAnswer {
+  json: JsonBody;
+  ms: number;
+  empty: boolean;
+}
+
 /** GET JSON through the guarded fetch. Returns the body and how long it took. */
 export function getJson(
   ctx: ProbeContext,
   path: string,
   query: Record<string, string | string[]>,
-): Promise<{ json: JsonBody; ms: number }> {
+): Promise<JsonAnswer> {
   return requestJson(ctx, 'GET', path, query);
 }
 
@@ -54,7 +65,7 @@ export function sendJson(
   path: string,
   query: Record<string, string | string[]>,
   body: unknown,
-): Promise<{ json: JsonBody; ms: number }> {
+): Promise<JsonAnswer> {
   return requestJson(ctx, method, path, query, body);
 }
 
@@ -64,7 +75,7 @@ async function requestJson(
   path: string,
   query: Record<string, string | string[]>,
   body?: unknown,
-): Promise<{ json: JsonBody; ms: number }> {
+): Promise<JsonAnswer> {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query))
     for (const item of Array.isArray(value) ? value : [value]) params.append(key, item);
@@ -89,13 +100,21 @@ async function requestJson(
   }
   const text = await response.text();
   const ms = ctx.now() - started;
-  let json: JsonBody | undefined;
+  let json: unknown;
+  let parsed = true;
   try {
-    json = text ? (JSON.parse(text) as JsonBody) : undefined;
+    json = text.trim() ? JSON.parse(text) : undefined;
   } catch {
-    json = undefined;
+    parsed = false;
   }
-  if (!response.ok) throw new ProbeHttpError(errorClassOf(response.status, errorReason(json)));
-  if (json === undefined) throw new ProbeHttpError('other');
-  return { json, ms };
+  if (!response.ok)
+    throw new ProbeHttpError(errorClassOf(response.status, parsed ? errorReason(json) : undefined));
+  // Only a name, never any of the text: an unreadable or non-object body is its own class, not "other".
+  if (!parsed || (json !== undefined && json !== null && !isObject(json)))
+    throw new ProbeHttpError('bad-body');
+  if (!isObject(json)) return { json: {}, ms, empty: true };
+  return { json, ms, empty: Object.keys(json).length === 0 };
 }
+
+const isObject = (value: unknown): value is JsonBody =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);

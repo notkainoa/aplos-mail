@@ -244,6 +244,8 @@ async function bootRealEngine(options: { dataDir: string; noteExit(): boolean })
       broker.desktop(engineFrame('ready'));
     },
     onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    onKillFailed: error =>
+      console.error('Aplos Mail: could not stop the engine process:', (error as Error)?.name),
     timers,
   });
   await supervisor.start();
