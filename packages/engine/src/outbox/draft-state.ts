@@ -225,7 +225,10 @@ function asWritten(html: string) {
   const text = html.replace(/\r\n?/g, '\n');
   let end = text.length;
   while (end > 0 && text[end - 1] === '\n') end -= 1;
-  return end === text.length ? text : text.slice(0, end);
+  const body = end === text.length ? text : text.slice(0, end);
+  // An empty body comes back from adapters as trivially-empty markup (`<p></p>`, `<div><br></div>`): one empty
+  // content must hash the same, or our own copy never proves ours and shows as another device's draft.
+  return htmlToText(body).trim() ? body : '';
 }
 
 /** Nothing to keep: no recipient, subject, text or attachment. A new empty draft is not uploaded. */

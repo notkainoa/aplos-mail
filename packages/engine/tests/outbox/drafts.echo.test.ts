@@ -294,6 +294,19 @@ test('fingerprint: the same content as the writer produces it hashes the same (l
     fingerprintOf(fields({ html: '<p>a</p>' })),
   );
   assert.notEqual(fingerprintOf(fields({ subject: 'A' })), fingerprintOf(fields({ subject: 'B' })));
+  // An empty body and the trivially-empty markup adapters give it back as hash the same.
+  assert.equal(fingerprintOf(fields({ html: '' })), fingerprintOf(fields({ html: '<p></p>' })));
+  assert.equal(
+    fingerprintOf(fields({ html: '<p></p>' })),
+    fingerprintOf(fields({ html: '<div><br></div>' })),
+  );
+  // The same rule isEmpty uses: a non-breaking space is no content either.
+  assert.equal(
+    fingerprintOf(fields({ html: '<p>&nbsp;</p>' })),
+    fingerprintOf(fields({ html: '' })),
+  );
+  // A body with real content still differs from empty.
+  assert.notEqual(fingerprintOf(fields({ html: '<p>x</p>' })), fingerprintOf(fields({ html: '' })));
   // A long run of line breaks costs nothing.
   const start = performance.now();
   fingerprintOf(fields({ html: `x${'\r\n'.repeat(500_000)}y` }));
