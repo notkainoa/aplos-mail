@@ -23,6 +23,7 @@ import {
   type StorePort,
 } from '../ports';
 import type { Caller } from '../methods/types';
+import { LIVE_SQL } from '../outbox/draft-state';
 import type { StoreReader } from '../store/port';
 import { contractError } from './errors';
 import { isAbsent } from './engine';
@@ -179,16 +180,23 @@ function movable(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
 
 const quotaOf = (principal: string) => (principal === 'app' ? BLOB_QUOTAS.app : BLOB_QUOTAS.client);
 
-/** Every blob id a draft row names, and the ones a draft with a live submission names. */
+/**
+ * Every blob id a draft row names, and the ones a draft with a live submission names. A hidden row
+ * (`_sync.removing`: a discarded or sent draft kept until the provider confirms its copy is gone) does not
+ * hold its blobs unless a submission is still live; the bytes a dead send referenced may be swept while the
+ * row itself waits on the provider.
+ */
 function references(q: StoreReader): { held: Set<string>; live: Set<string> } {
   const held = new Set<string>();
   const live = new Set<string>();
   const rows = q.all<{ data: string; live: number }>(
     `SELECT d.data AS data, EXISTS(SELECT 1 FROM submissions s WHERE s.draft_id = d.id
-       AND s.state NOT IN ('sent', 'cancelled')) AS live FROM drafts d`,
+       AND s.state IN (${LIVE_SQL})) AS live FROM drafts d`,
   );
   for (const row of rows) {
-    for (const id of attachmentIds(row.data)) {
+    const { ids, removing } = attachmentsOf(row.data);
+    if (removing && !row.live) continue;
+    for (const id of ids) {
       held.add(id);
       if (row.live) live.add(id);
     }
@@ -196,18 +204,31 @@ function references(q: StoreReader): { held: Set<string>; live: Set<string> } {
   return { held, live };
 }
 
-function attachmentIds(data: string): string[] {
+/**
+ * The blob ids a draft row's attachments name, and whether it is hidden (`_sync.removing`). Read JS-side,
+ * never in SQL: a row whose `data` is not JSON must not abort the whole query (`parseData`'s rule — an
+ * unreadable row reads as empty and keeps holding), and a falsy-but-present `removing` is not hidden, the
+ * same truthiness `parseData` reports.
+ */
+function attachmentsOf(data: string): { ids: string[]; removing: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(data);
   } catch {
-    return [];
+    return { ids: [], removing: false };
   }
-  const list = (parsed as { attachments?: unknown } | null)?.attachments;
-  if (!Array.isArray(list)) return [];
-  return list
-    .map(a => (a as { blobId?: unknown } | null)?.blobId)
-    .filter((id): id is string => typeof id === 'string');
+  const draft = parsed as { attachments?: unknown; _sync?: unknown } | null;
+  const sync = typeof draft?._sync === 'object' ? draft._sync : null;
+  const list = draft?.attachments;
+  const ids = Array.isArray(list)
+    ? list
+        .map(a => (a as { blobId?: unknown } | null)?.blobId)
+        .filter((id): id is string => typeof id === 'string')
+    : [];
+  return {
+    ids,
+    removing: !!(sync as { removing?: unknown } | null)?.removing,
+  };
 }
 
 export function createBlobRuntime(deps: {

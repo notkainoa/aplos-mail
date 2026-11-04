@@ -109,8 +109,8 @@ async function world(memory: Memory | null = memoryFiles(), start = T0, withSend
     window,
     listener: (clientId = 'mcp-1') =>
       engine.connect({ kind: 'listener', via: 'mcp', clientId, scopes: ['read', 'draft'] }),
-    /** A draft row naming `blobIds`, with a submission in `state` when given. */
-    draft(blobIds: string[], state?: string) {
+    /** A draft row naming `blobIds`, with a submission in `state` when given; `removing` hides it. */
+    draft(blobIds: string[], state?: string, removing = false) {
       const id = `d${++drafts}`;
       const attachments = blobIds.map((blobId, n) => ({
         id: `a${n}`,
@@ -119,15 +119,23 @@ async function world(memory: Memory | null = memoryFiles(), start = T0, withSend
         size: 1,
         blobId,
       }));
+      const data = removing ? { attachments, _sync: { removing: { at: T0 } } } : { attachments };
       db.prepare(
         'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
-      ).run(id, accountWrite.id, JSON.stringify({ attachments }), T0);
+      ).run(id, accountWrite.id, JSON.stringify(data), T0);
       if (state)
         db.prepare(
           `INSERT INTO submissions(id, draft_id, account_id, internet_id, not_before, state) VALUES(?, ?, ?, ?, 1, ?)`,
         ).run(`s-${id}`, id, accountWrite.id, `<${id}@x>`, state);
       return id;
     },
+    /** A draft row whose `data` is exactly `text` — including text that is not JSON at all. */
+    rawDraft: (text: string) =>
+      void db
+        .prepare(
+          'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
+        )
+        .run(`r${++drafts}`, accountWrite.id, text, T0),
     removeDraft: (id: string) => void db.prepare('DELETE FROM drafts WHERE id = ?').run(id),
     async cleanup() {
       db.close();
@@ -405,6 +413,37 @@ test('the sweep: unheld uploads go 24 h after they were made, original handles 3
     assert.equal(w.memory.stored.has(loose.blobId), false, 'an unheld upload after 24 h');
     assert.equal(w.memory.stored.has(kept.blobId), true, 'a held upload stays');
     assert.equal((await get(w.window, kept.blobId)).size, 10);
+  }));
+
+test('a hidden draft holds its blobs only while a submission is still live', () =>
+  withWorld(async w => {
+    const blobs = w.engine.services.blobs;
+    const caller: Caller = { kind: 'window', scopes: ['read'] };
+    const dead = await put(w.window);
+    const sending = await put(w.window);
+    const kept = await put(w.window);
+    const stopped = await put(w.window);
+    w.draft([dead.blobId], undefined, true);
+    w.draft([sending.blobId], 'sending', true);
+    w.draft([kept.blobId], 'sent', true);
+    w.draft([stopped.blobId], 'cancelled', true);
+    // FR-7: a hidden row with a live submission cannot be released either.
+    await assert.rejects(blobs.release(caller, sending.blobId));
+    // A removing row with a live submission keeps its blob; 'sent'/'cancelled' do not.
+    await w.clock.advance(24 * HOUR + 60_000);
+    assert.equal(w.memory.stored.has(dead.blobId), false, 'hidden, nothing live');
+    assert.equal(w.memory.stored.has(sending.blobId), true, 'hidden but still sending');
+    assert.equal(w.memory.stored.has(kept.blobId), false, 'hidden, send settled');
+    assert.equal(w.memory.stored.has(stopped.blobId), false, 'hidden, send cancelled');
+  }));
+
+test('a draft row with unreadable data does not wedge the blob runtime', () =>
+  withWorld(async w => {
+    const loose = await put(w.window);
+    w.rawDraft('{not json');
+    // release runs references(): a malformed row is read as empty, not as a store error that
+    // would leave every Blob/* call answering `unavailable`.
+    assert.deepEqual(await release(w.window, loose.blobId), { ok: true });
   }));
 
 test('at start the index is rebuilt: held blobs stay, unheld originals go, unheld uploads go after 24 h', async () => {
