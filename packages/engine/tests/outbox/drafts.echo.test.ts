@@ -294,6 +294,36 @@ test('fingerprint: the same content as the writer produces it hashes the same (l
     fingerprintOf(fields({ html: '<p>a</p>' })),
   );
   assert.notEqual(fingerprintOf(fields({ subject: 'A' })), fingerprintOf(fields({ subject: 'B' })));
+  // An empty body and the trivially-empty markup adapters give it back as hash the same.
+  assert.equal(fingerprintOf(fields({ html: '' })), fingerprintOf(fields({ html: '<p></p>' })));
+  assert.equal(
+    fingerprintOf(fields({ html: '<p></p>' })),
+    fingerprintOf(fields({ html: '<div><br></div>' })),
+  );
+  // The same rule isEmpty uses: a non-breaking space is no content either.
+  assert.equal(
+    fingerprintOf(fields({ html: '<p>&nbsp;</p>' })),
+    fingerprintOf(fields({ html: '' })),
+  );
+  // A body with real content still differs from empty.
+  assert.notEqual(fingerprintOf(fields({ html: '<p>x</p>' })), fingerprintOf(fields({ html: '' })));
+  // And a body that is only text-less still differs: an image, a rule, a table is content an
+  // edit can add — never an empty body, or the proof would swallow it as our echo.
+  for (const markup of [
+    '<img src="https://x/y.png">',
+    '<p><img src="data:image/png;base64,AAAA"></p>',
+    '<hr>',
+    '<table><tr><td></td></tr></table>',
+    '<a href="https://x"></a>',
+    '<iframe src="https://x/doc"></iframe>',
+    '<input value="hunter2">',
+    '<video src="https://x/v.mp4"></video>',
+  ])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is content, not an empty body`,
+    );
   // A long run of line breaks costs nothing.
   const start = performance.now();
   fingerprintOf(fields({ html: `x${'\r\n'.repeat(500_000)}y` }));
