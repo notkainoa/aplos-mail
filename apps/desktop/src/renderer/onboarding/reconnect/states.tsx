@@ -193,15 +193,13 @@ export const reconnectStates: Record<string, StateEntry> = {
     title: 'Reconnect sheet: a missing permission (grant mode, waiting)',
     render: () => sheet(sheetAfter('grantPermissions', [])),
   },
-  /* The line in the mail window's proportions (hill-climb winner: candidate B — the sidebar aside the centred list
-     column, where the status slot lives; the sidebar's own contents belong to ui-shell). */
+  /* The block in the mail window's proportions (hill-climb winners: the sidebar aside the pane where the status
+     slot lives, and the centred 'settle' placement for the block itself; the sidebar's contents belong to ui-shell). */
   'zero-accounts': {
-    title: 'Main pane, no accounts: Add an account · Try demo mail',
+    title: 'Main pane, no accounts: the block with Add an account · Try demo mail',
     render: () => (
       <SlotBackdrop slot={<></>}>
-        <div className="onb-list-column">
-          <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
-        </div>
+        <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
       </SlotBackdrop>
     ),
   },
@@ -209,13 +207,11 @@ export const reconnectStates: Record<string, StateEntry> = {
     title: 'Main pane, no accounts: Add an account could not open the setup window (review1)',
     render: () => (
       <SlotBackdrop slot={<></>}>
-        <div className="onb-list-column">
-          <ZeroAccountsView
-            notice={WINDOW_COPY.setupWindowFailed}
-            onAddAccount={noop}
-            onTryDemo={noop}
-          />
-        </div>
+        <ZeroAccountsView
+          notice={WINDOW_COPY.setupWindowFailed}
+          onAddAccount={noop}
+          onTryDemo={noop}
+        />
       </SlotBackdrop>
     ),
   },

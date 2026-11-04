@@ -3,6 +3,8 @@
 // Run: cd apps/desktop && npx tsx --test tests/ui-onboard/demo.test.ts
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   REMOVE_DEMO_CONFIRM,
   ZERO_ACCOUNTS,
@@ -18,6 +20,10 @@ import {
   openOnboardingWindow,
   showWelcome,
 } from '../../src/renderer/onboarding/showWelcome';
+import { WELCOME_LEDE } from '../../src/renderer/onboarding/steps/Welcome';
+import { ZeroAccountsView } from '../../src/renderer/onboarding/ZeroAccounts';
+
+const noop = () => undefined;
 
 const REAL = { demo: false };
 const DEMO = { demo: true };
@@ -143,6 +149,43 @@ describe('empty-no-accounts: the zero-accounts state', () => {
     assert.equal(ZERO_ACCOUNTS.add, 'Add an account');
     assert.equal(ZERO_ACCOUNTS.tryDemo, 'Try demo mail');
     assert.equal(ZERO_ACCOUNTS.firstSync, 'Your first mail is on its way.');
+  });
+
+  test('the block carries one sentence on Aplos, three one-line rows and the privacy line', () => {
+    assert.equal(ZERO_ACCOUNTS.lede, WELCOME_LEDE, 'the same words Welcome uses');
+    assert.equal(ZERO_ACCOUNTS.rows.length, 3);
+    for (const row of ZERO_ACCOUNTS.rows) assert.match(row.text, /\.$/);
+    assert.ok(
+      ['tray', 'keyboard', 'lock'].every((icon, i) => ZERO_ACCOUNTS.rows[i]!.icon === icon),
+    );
+    assert.equal(
+      ZERO_ACCOUNTS.privacy,
+      'Sign-in is with Google in your browser; Aplos reads your mail on this Mac.',
+    );
+  });
+
+  test('the view draws the block, not a bare line: one filled button, the three rows, the small line', () => {
+    const markup = renderToStaticMarkup(
+      createElement(ZeroAccountsView, { onAddAccount: noop, onTryDemo: noop }),
+    );
+    assert.ok(markup.includes('onb-zero'));
+    assert.equal(markup.match(/data-variant="filled"/g)?.length, 1);
+    assert.equal(markup.match(/class="ui-choice-row"/g)?.length, 3);
+    for (const row of ZERO_ACCOUNTS.rows) assert.ok(markup.includes(row.text));
+    assert.ok(markup.includes(ZERO_ACCOUNTS.lede));
+    assert.ok(markup.includes(ZERO_ACCOUNTS.privacy));
+    // A first sync still swaps the block for the one line (§4.5 rows 8 and 10).
+    const syncing = renderToStaticMarkup(
+      createElement(ZeroAccountsView, {
+        firstSyncRunning: true,
+        detail: 'Reading your newest mail · 24 of 50',
+        onAddAccount: noop,
+        onTryDemo: noop,
+      }),
+    );
+    assert.ok(syncing.includes(ZERO_ACCOUNTS.firstSync));
+    assert.ok(syncing.includes('24 of 50'));
+    assert.ok(!syncing.includes('onb-zero'));
   });
 });
 

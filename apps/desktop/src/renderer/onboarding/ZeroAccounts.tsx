@@ -1,7 +1,9 @@
 /**
  * The mail window's empty state with no accounts (DESIGN 7.14 "No accounts"; plan 30 §4.5 row 8; empty.html
- * no-accounts): "Add an account to bring in your mail." with the filled "Add an account" and the text "Try demo mail".
- * Nothing else: no icon in a circle, no illustration.
+ * no-accounts). One calm block: the `display` line "Add an account to bring in your mail.", one sentence on what
+ * Aplos does, three quiet rows (newest mail first, every action on a key, your mail stays on this Mac), the one
+ * filled "Add an account" with the text "Try demo mail", and a small privacy line. No icon in a circle, no
+ * illustration.
  *
  * "Add an account" opens the onboarding window (`Window/openOnboarding`). "Try demo mail" calls `Demo/load` once, in
  * place, and says so in a toast; nothing loads until it is clicked. While a first sync runs this is never shown: the
@@ -13,7 +15,10 @@
 import { useRef, useState } from 'react';
 import { useSession, useSetupStatus } from '../data';
 import { pushToast } from '../shell';
-import { EmptyLine } from '../ui/list';
+import { EmptyLine, ErrorLine } from '../ui/list';
+import { Button } from '../ui/buttons-keys';
+import { ChoiceRow } from '../ui/onboarding';
+import { Text } from '../ui/surfaces';
 import {
   DEMO_NOTICE,
   ZERO_ACCOUNTS,
@@ -34,7 +39,7 @@ export interface ZeroAccountsViewProps {
   readonly firstSyncRunning?: boolean;
   /** The status reason under the first-sync line (the status slot's words), if any. */
   readonly detail?: string;
-  /** "Add an account" couldn't open the setup window: the line under the sentence says so. */
+  /** "Add an account" couldn't open the setup window: the error line under the actions says so. */
   readonly notice?: string;
   readonly onAddAccount: () => void;
   readonly onTryDemo: () => void;
@@ -51,17 +56,45 @@ export function ZeroAccountsView({
     return <EmptyLine text={ZERO_ACCOUNTS.firstSync} {...(detail ? { detail } : {})} />;
   }
   return (
-    <EmptyLine
-      text={ZERO_ACCOUNTS.text}
-      {...(notice ? { detail: notice } : {})}
-      action={{
-        label: ZERO_ACCOUNTS.add,
-        icon: 'plus',
-        emphasis: 'filled',
-        onSelect: onAddAccount,
-      }}
-      secondaryAction={{ label: ZERO_ACCOUNTS.tryDemo, onSelect: onTryDemo }}
-    />
+    <div className="onb-zero">
+      <div className="onb-zero__head">
+        <Text variant="display">{ZERO_ACCOUNTS.text}</Text>
+        <Text variant="lede">{ZERO_ACCOUNTS.lede}</Text>
+      </div>
+      <div className="onb-zero__rows">
+        {ZERO_ACCOUNTS.rows.map(row => (
+          <ChoiceRow
+            key={row.icon}
+            id={`onb-zero-${row.icon}`}
+            role="static"
+            icon={row.icon}
+            label={row.text}
+          />
+        ))}
+      </div>
+      <div className="onb-zero__actions">
+        <Button
+          variant="filled"
+          size="lg"
+          icon="plus"
+          label={ZERO_ACCOUNTS.add}
+          onPress={onAddAccount}
+        />
+        <Button variant="text" size="lg" label={ZERO_ACCOUNTS.tryDemo} onPress={onTryDemo} />
+      </div>
+      {notice ? (
+        <div className="onb-zero__notice">
+          <ErrorLine
+            kind="reason"
+            text={notice}
+            retryable={false}
+            placement="checklist"
+            onAction={() => {}}
+          />
+        </div>
+      ) : null}
+      <Text variant="small">{ZERO_ACCOUNTS.privacy}</Text>
+    </div>
   );
 }
 

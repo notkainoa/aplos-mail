@@ -79,12 +79,60 @@
 }
 
 /* The mail window's list column for the zero-accounts and first-mail preview states: min(720px, 100% − 2 gutters),
-   centred in the pane (DESIGN 4.3; the app's own rule lives in screens/screens.css, which the gallery does not load). */
+   centred in the pane (DESIGN 4.3; the app's own rule lives in screens/screens.css, which the gallery does not load).
+   It fills the pane body's height as a flex column, so a state can centre itself like inbox zero does. */
 .onb-list-column {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  min-height: 100%;
   margin: 0 auto;
   min-width: 0;
+}
+
+/* The zero-accounts block: the display line, one sentence on what Aplos does, three quiet rows, the one filled
+   "Add an account" with "Try demo mail" as a text button, and the small privacy line. It centres itself in the pane
+   inside a reading measure, like inbox zero (`safe` so a taller block anchors at the top and scrolls inside the
+   pane body instead of clipping its headline); with no height to fill it draws at its natural size. */
+.onb-zero {
+  flex: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  width: 100%;
+  max-width: 60ch;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4);
+  color: var(--ink);
+}
+
+.onb-zero__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 44ch;
+}
+
+.onb-zero__rows {
+  margin-top: var(--space-7);
+}
+
+.onb-zero__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+}
+
+.onb-zero__notice {
+  margin-top: var(--space-4);
+}
+
+.onb-zero > .ui-text[data-variant='small'] {
+  margin-top: var(--space-5);
 }
 
 /* Reduced motion: the indeterminate runner's animation is paused at its first keyframe, off the track, so the bar

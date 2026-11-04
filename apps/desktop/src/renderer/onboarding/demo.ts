@@ -138,6 +138,16 @@ export const ZERO_ACCOUNTS = {
   tryDemo: 'Try demo mail',
   /** Shown instead while a first sync runs (DESIGN 7.14; plan 30 §4.5 rows 8 and 10). */
   firstSync: 'Your first mail is on its way.',
+  /** What Aplos does, one sentence — Welcome's own words (DESIGN 7.11 step 1). */
+  lede: 'Aplos puts the email that needs you on top, sums each one up in a line, and keeps every action on a key.',
+  /** Three facts, one line each, drawn as quiet rows under the lede. */
+  rows: [
+    { icon: 'tray', text: 'Newest mail first, summed up in a line.' },
+    { icon: 'keyboard', text: 'Every action on a key.' },
+    { icon: 'lock', text: 'Your mail stays on this Mac.' },
+  ],
+  /** The quiet line under the actions: what signing in means, in Accounts' own words. */
+  privacy: 'Sign-in is with Google in your browser; Aplos reads your mail on this Mac.',
 } as const;
 
 /**
