@@ -813,6 +813,23 @@
 .ui-list-row[data-picked='true'] .ui-list-row__actions-fill {
   background-color: var(--accent-wash);
 }
+.ui-focus-letter[data-picked='true'] {
+  background-color: var(--accent-wash);
+}
+/* The same pick mark a row shows, in the card's left padding so nothing moves. */
+.ui-focus-letter__pick {
+  position: absolute;
+  top: var(--space-5);
+  left: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-xs);
+  background-color: var(--accent);
+  color: var(--accent-ink);
+}
 .ui-list-row[data-state='rejected'],
 .ui-list-row[data-state='rejected'] .ui-list-row__actions-fill {
   background-color: var(--stamp-tint);

@@ -38,13 +38,37 @@ export const CONFIRM_COPY = {
   },
 } as const;
 
+/** "1 email" or "3 emails". */
+function emailsOf(count: number): string {
+  return count === 1 ? '1 email' : `${count} emails`;
+}
+
+/** The words of a confirmation, naming how many when it was asked over several rows. */
+export function confirmCopyOf(confirmation: Confirmation) {
+  const count = confirmation.count ?? confirmation.ids.length;
+  if (confirmation.kind === 'trashPicked') {
+    return {
+      question: `Move ${emailsOf(count)} to Trash?`,
+      consequence: 'You can restore them from Trash.',
+      confirmLabel: 'Move to Trash',
+    };
+  }
+  const copy = CONFIRM_COPY[confirmation.kind];
+  if (count === 1) return copy;
+  const question =
+    confirmation.kind === 'deleteForever'
+      ? `Delete ${emailsOf(count)} forever?`
+      : `Discard ${count} drafts?`;
+  return { ...copy, question };
+}
+
 /** The destructive confirmation: Cancel is the default row, and confirming needs Shift Return. */
 export function ListConfirm(props: {
   readonly confirmation: Confirmation;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {
-  const copy = CONFIRM_COPY[props.confirmation.kind];
+  const copy = confirmCopyOf(props.confirmation);
   return (
     <Confirm
       {...copy}

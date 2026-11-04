@@ -202,6 +202,8 @@ export interface FocusLetterProps {
   demoted: boolean;
   /** Pane under 700 px: labels drop, the Space verb stays (DESIGN §7.2 Narrow). */
   narrow?: boolean;
+  /** Bulk-picked: the card takes `--accent-wash` like a picked row (DESIGN §7.4); the cursor row is the letter, so X must show on it. */
+  picked?: boolean;
   /** The write on this item was rejected: "Couldn't <op>." with Retry on the card (DESIGN §5 rule 11). */
   rejected?: RejectedWrite;
   /** Suggestion button. Buttons on the card are pointer duplicates of their keys inside the option (README Accessibility). */
