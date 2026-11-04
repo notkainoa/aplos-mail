@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { frameDocument, SRCDOC_SANDBOX, URL_SANDBOX } from './document';
 import { handleLinkClick } from './links';
 import { relayKey } from './keys';
-import { acceptReport, clampHeight, MAX_HEIGHT, parseBg } from './protocol';
+import { acceptReport, clampHeight, frameContentWidth, MAX_HEIGHT, parseBg } from './protocol';
 import { FRAME_PAPER } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
@@ -167,7 +167,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
         source: frame?.contentWindow ?? null,
         origins: ['null'],
         token: source.token,
-        width: frame?.clientWidth,
+        width: frame ? frameContentWidth(frame, getComputedStyle(frame)) : undefined,
       });
       if (report?.type === 'key') onKey.current(report);
       if (report?.type !== 'size') return;

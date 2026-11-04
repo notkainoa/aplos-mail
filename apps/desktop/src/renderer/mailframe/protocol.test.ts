@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  frameContentWidth,
   acceptReport,
   clampHeight,
   LIGHT_PAPER,
@@ -88,6 +89,40 @@ describe('acceptReport', () => {
       assert.equal(acceptReport(size({ w }), expect), null, String(w));
     }
     assert.ok(acceptReport(size({ w: 640.6 }), expect));
+  });
+
+  test('the slot width is the frame content width: padding (the sheet inset) is not part of it', () => {
+    const padded = (left: string, right: string) => ({ paddingLeft: left, paddingRight: right });
+    // Light: no inset. Dark: 16 px a side on a 672 px client box, so the document lays out at 640.
+    assert.equal(frameContentWidth({ clientWidth: 640 }, padded('0px', '0px')), 640);
+    assert.equal(frameContentWidth({ clientWidth: 672 }, padded('16px', '16px')), 640);
+    assert.equal(
+      frameContentWidth({ clientWidth: 10 }, padded('16px', '16px')),
+      0,
+      'never negative',
+    );
+    assert.equal(
+      frameContentWidth({ clientWidth: 640 }, padded('', 'auto')),
+      640,
+      'junk counts as 0',
+    );
+    for (const inset of ['0px', '16px']) {
+      const width = frameContentWidth(
+        { clientWidth: 640 + 2 * Number.parseFloat(inset) },
+        padded(inset, inset),
+      );
+      const slot = { ...expect, width };
+      assert.ok(
+        acceptReport(size({ w: 640 }), slot),
+        `a genuine report is accepted at inset ${inset}`,
+      );
+      assert.equal(
+        acceptReport(size({ w: 672 }), slot),
+        null,
+        'the padded client width is not the content width',
+      );
+      assert.equal(acceptReport(size({ w: 320 }), slot), null, 'a wrong width is still rejected');
+    }
   });
 
   test('a bg parse failure falls back to light paper, the report still counts', () => {

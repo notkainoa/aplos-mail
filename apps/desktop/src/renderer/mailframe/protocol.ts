@@ -8,6 +8,24 @@ import type { MailFrameKey } from './types';
 export const MAX_HEIGHT = 200_000;
 /** A reported width may differ from the slot by this many px (subpixel rounding). */
 const WIDTH_SLACK = 1;
+/** The pixels of a CSS length such as "16px"; 0 for anything else. */
+function pixels(length: string): number {
+  const value = Number.parseFloat(length);
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * The width the frame's document lays out at, which is what the reporter measures: the iframe's client box less its
+ * horizontal padding. A screen may pad the frame (`--sheet-inset`, the light sheet on a dark pane), and `clientWidth`
+ * includes that padding, so comparing a genuine report with it would be off by twice the inset and be rejected.
+ */
+export function frameContentWidth(
+  frame: { readonly clientWidth: number },
+  style: { readonly paddingLeft: string; readonly paddingRight: string },
+): number {
+  return Math.max(0, frame.clientWidth - pixels(style.paddingLeft) - pixels(style.paddingRight));
+}
+
 /** Keys the in-frame fallback relay may send (research section 7: never E, Space or R). */
 export const FALLBACK_KEYS = new Set([
   'j',

@@ -7,17 +7,17 @@ this before either side relies on it. Sources: plan 30 section 4.4, research
 
 ## Two sources behind one component
 
-| | `srcdoc` (stand-in engine, development only) | `aplos-mail://m/<token>` (final) |
-|---|---|---|
-| Sanitiser | `sanitise.ts` in the renderer, run on the stand-in's `MailFrame.srcdoc` | the engine's, served by main |
-| Mounted | Vite dev builds only (`import.meta.env.DEV`); elsewhere a `srcdoc` answer shows "Couldn't load this email." | always |
-| `sandbox` | `allow-same-origin` only, never `allow-scripts` | `allow-scripts allow-popups`, never `allow-same-origin` |
-| CSP | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP | response header (host CSP is not inherited) |
-| Scripts in the frame | none | one hash-pinned reporter |
-| Height and paper tint | read by the host from `contentDocument` | reporter `size` messages, validated below |
-| Keys with focus inside | host listener on the frame document | main's `before-input-event` (fallback: reporter `key` messages) |
-| Links | host click listener cancels, opens outside | `setWindowOpenHandler` in main, `will-frame-navigate` cancels |
-| Notices (flattened, truncated) | host DOM above the frame | host DOM above the frame (needs the flags from the engine) |
+|                                | `srcdoc` (stand-in engine, development only)                                                                | `aplos-mail://m/<token>` (final)                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Sanitiser                      | `sanitise.ts` in the renderer, run on the stand-in's `MailFrame.srcdoc`                                     | the engine's, served by main                                    |
+| Mounted                        | Vite dev builds only (`import.meta.env.DEV`); elsewhere a `srcdoc` answer shows "Couldn't load this email." | always                                                          |
+| `sandbox`                      | `allow-same-origin` only, never `allow-scripts`                                                             | `allow-scripts allow-popups`, never `allow-same-origin`         |
+| CSP                            | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP   | response header (host CSP is not inherited)                     |
+| Scripts in the frame           | none                                                                                                        | one hash-pinned reporter                                        |
+| Height and paper tint          | read by the host from `contentDocument`                                                                     | reporter `size` messages, validated below                       |
+| Keys with focus inside         | host listener on the frame document                                                                         | main's `before-input-event` (fallback: reporter `key` messages) |
+| Links                          | host click listener cancels, opens outside                                                                  | `setWindowOpenHandler` in main, `will-frame-navigate` cancels   |
+| Notices (flattened, truncated) | host DOM above the frame                                                                                    | host DOM above the frame (needs the flags from the engine)      |
 
 Both are mounted at the slot's final width, kept hidden until they report, and swapped in place (double buffer).
 
