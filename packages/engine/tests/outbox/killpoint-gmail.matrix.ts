@@ -22,7 +22,12 @@ import {
   type KillStep,
   type MoveName,
 } from './killpoint-harness';
-import { readCalls, startGmailServer, type GmailServer } from './killpoint-gmail-port';
+import {
+  readCalls,
+  startGmailServer,
+  type GmailServer,
+  type GmailServerOptions,
+} from './killpoint-gmail-port';
 
 /**
  * How `findSent` fares: `lags` is a search index that shows the delivery late while the SENT label listing (the
@@ -275,7 +280,9 @@ interface Run {
   result: Awaited<ReturnType<typeof runKillScenario>>;
 }
 
-async function runRow(row: Row): Promise<Run> {
+type SendIdentity = NonNullable<GmailServerOptions['sendIdentity']>;
+
+async function runRow(row: Row, sendIdentity?: SendIdentity): Promise<Run> {
   const dir = mkdtempSync(join(tmpdir(), 'aplos-kill-gmail-'));
   const lagMs = indexLag(row);
   const server = await startGmailServer({
@@ -283,6 +290,7 @@ async function runRow(row: Row): Promise<Run> {
     ...(row.find === 'misses' || row.indexLagMs ? { listingLagMs: lagMs } : {}),
     ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
     ...(row.draftTwin ? { draftTwin: true } : {}),
+    ...(sendIdentity ? { sendIdentity } : {}),
   });
   try {
     if (!row.deliver) server.faults.dropNext({ apiMethod: SEND });
@@ -312,6 +320,11 @@ async function runRow(row: Row): Promise<Run> {
         return server.deliveries(id);
       },
     });
+    // The rewritten run must really run against a server that rewrites: no delivery may keep the engine's Message-ID, so
+    // every one is found only by its token. A run that quietly fell back to `kept` would pass for the wrong reason.
+    if (sendIdentity) assert.equal(server.sendIdentity(), sendIdentity);
+    if (sendIdentity === 'rewritten')
+      assert.equal(server.sentUnderOwnId(internetId), 0, 'a delivery kept the engine Message-ID');
     // A bridge or emulator exception is not an injected fault: a row that passed through one passed for the wrong reason.
     assert.deepEqual(
       server.errors,
@@ -334,15 +347,15 @@ async function runRow(row: Row): Promise<Run> {
 const report: string[] = [];
 
 /** Part `part` (from 0) of `of` of the Gmail matrix: the rows are dealt out by index so the CI shards can spread them. */
-export function defineMatrix(part: number, of: number) {
+export function defineMatrix(part: number, of: number, sendIdentity?: SendIdentity) {
   describe(
-    'kill-point matrix on the Gmail adapter over the Gmail emulator',
+    `kill-point matrix on the Gmail adapter over the Gmail emulator${sendIdentity === 'rewritten' ? ' (messages.send rewrites the Message-ID)' : ''}`,
     { concurrency: 2 },
     () => {
       after(() => console.log(`\nkill-point matrix (gmail)\n${report.sort().join('\n')}`));
       for (const row of rows().filter((_, i) => i % of === part))
         it(label(row), async () => {
-          const run = await runRow(row);
+          const run = await runRow(row, sendIdentity);
           const r = { ...run.result, sendCalls: run.sendCalls, findCalls: run.findCalls };
           report.push(
             `${label(row).padEnd(90)} -> ${r.submission.state.padEnd(9)} deliveries ${r.deliveries}, send calls ${r.sendCalls}, findSent calls ${r.findCalls}`,

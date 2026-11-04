@@ -202,14 +202,24 @@ export interface GmailServerOptions {
   listingLagMs?: number;
   /** Plant a DRAFT carrying the outgoing Message-ID when the send request arrives (the "Sent only, never a draft" rule). */
   draftTwin?: boolean;
+  /**
+   * What `messages.send` does to the Message-ID the engine wrote: `kept` (the default) or `rewritten` (Gmail's live
+   * behaviour: the Message-ID becomes `<hex@mail.gmail.com>` and the custom `X-Aplos-Send` header survives). Set here, on
+   * the emulator, not through the environment: the emulator lives in the test process, so the children need no switch.
+   */
+  sendIdentity?: 'kept' | 'rewritten';
 }
 
 export interface GmailServer {
   emu: GmailEmulator;
   faults: FaultInjector;
   config: Omit<GmailPortConfig, 'logPath'>;
-  /** The emulator's own count of SENT messages carrying this Message-ID. */
+  /** The emulator's own count of SENT messages carrying this Message-ID (or, rewritten, its `X-Aplos-Send` token). */
   deliveries(internetId: string): number;
+  /** SENT messages that still carry the Message-ID the engine wrote. Zero in `rewritten` mode: that is what proves the rewrite ran. */
+  sentUnderOwnId(internetId: string): number;
+  /** The mode the emulator actually runs in (the environment may have switched the default). */
+  sendIdentity(): 'kept' | 'rewritten';
   /** Every exception the bridge or emulator threw that was NOT an injected drop (answered 500). A clean row has none. */
   errors: string[];
   /** The next request the server handles throws this instead of reaching the emulator (to prove it is surfaced). */
@@ -231,6 +241,7 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
     retryAfter: 'none',
     faults,
     latencyMs: 0,
+    ...(options.sendIdentity ? { sendIdentity: options.sendIdentity } : {}),
     users: [{ sub: 'kp-owner', email: OWNER, name: 'Owner' }],
   });
   emu.oauth.addClient(CLIENT_ID);
@@ -268,6 +279,12 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
             (m.messageId.toLowerCase() === bare(internetId) ||
               sendToken(emu.mailbox.rawOf(m.id)) === bare(internetId)),
         ).length,
+    sentUnderOwnId: internetId =>
+      emu.mailbox
+        .listMessages()
+        .filter(m => m.labelIds.includes('SENT') && m.messageId.toLowerCase() === bare(internetId))
+        .length,
+    sendIdentity: () => emu.settings.sendIdentity,
     errors: state.errors,
     breakNext: error => {
       state.breakNext = error;

@@ -9,8 +9,17 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { withSendToken } from '../../src/host/providers/google/send';
-import { ACCOUNT, classOf, sendWorld, submission, type SendWorld } from './send-rig';
+import { NotSentError } from '@aplos/engine/ports';
+import { MAX_SEND_BYTES, withSendToken } from '../../src/host/providers/google/send';
+import {
+  ACCOUNT,
+  classOf,
+  headerEndOf,
+  sendWorld,
+  submission,
+  withMime,
+  type SendWorld,
+} from './send-rig';
 
 const since = (world: SendWorld) => world.clock.now() - 60_000;
 
@@ -85,24 +94,106 @@ test("findSent: another submission's token is never ours", async () => {
   assert.equal(result.kind, 'absent');
 });
 
-test('findSent: our token on a DRAFT, or on a message without the SENT label, is never found', async () => {
+/** A message from the owner carrying `token` as its `X-Aplos-Send`, in `labelIds`. */
+function addTokened(world: SendWorld, token: string, labelIds: string[]) {
+  return world.emu.mailbox.addMessage({
+    from: world.address,
+    to: ['friend@example.test'],
+    labelIds,
+    headers: { 'X-Aplos-Send': token },
+  });
+}
+
+test('findSent: our token on a DRAFT (even one labelled SENT) is never found', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  addTokened(world, pinned.payload.internetId, ['SENT', 'DRAFT']);
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(result.kind, 'absent');
+});
+
+test('findSent: our token on a message WITHOUT the SENT label (an Inbox copy) is never found, by search or by listing', async () => {
   const world = await rewritingWorld();
   const pinned = submission(world);
   const token = pinned.payload.internetId;
-  world.emu.mailbox.addMessage({
-    from: world.address,
-    to: ['friend@example.test'],
-    labelIds: ['SENT', 'DRAFT'],
-    headers: { 'X-Aplos-Send': token },
-  });
+  addTokened(world, token, ['INBOX']);
+  // The search path: a search that lets the Inbox copy through (the labels on the metadata read must still refuse it).
+  world.bridge.rewriteQuery = () => 'in:inbox';
+  assert.equal((await world.port.findSent(ACCOUNT, token, since(world))).kind, 'absent');
+  // The newest-SENT listing path: a listing that names the Inbox copy.
+  world.bridge.rewriteQuery = undefined;
+  world.bridge.listLabel = 'INBOX';
+  assert.equal((await world.port.findSent(ACCOUNT, token, since(world))).kind, 'absent');
+  // The control: the same token WITH the SENT label is found (only the label differs).
+  world.bridge.listLabel = undefined;
+  const sent = addTokened(world, token, ['SENT']);
+  const found = await world.port.findSent(ACCOUNT, token, since(world));
+  assert.equal(found.kind, 'found');
+  assert.equal(found.kind === 'found' && found.remoteMessageId, sent.id);
+});
+
+test('findSent: an Inbox copy that kept our Message-ID (no token) is never found when the search lets it through', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
   world.emu.mailbox.addMessage({
     from: 'someone@example.test',
     to: [world.address],
+    messageId: pinned.payload.internetId.replace(/^<|>$/g, ''),
     labelIds: ['INBOX'],
-    headers: { 'X-Aplos-Send': token },
   });
-  const result = await world.port.findSent(ACCOUNT, token, since(world));
+  world.bridge.rewriteQuery = q => q.replace(' in:sent -in:drafts', ' in:inbox');
+  const result = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
   assert.equal(result.kind, 'absent');
+});
+
+test('findSent: the match is the exact token, never a prefix, a suffix or a substring of it', async () => {
+  const world = await rewritingWorld();
+  const pinned = submission(world);
+  const mine = pinned.payload.internetId;
+  const bare = mine.replace(/^<|>$/g, '');
+  const [local, domain] = bare.split('@');
+  const nearMisses = [
+    // Well-formed tokens of OTHER submissions: mine is a prefix of this one, this one a prefix of mine, mine inside this one.
+    `<${bare}.evil>`,
+    `<${local}@${domain.replace('.test', '')}>`,
+    `<x-${bare}>`,
+    `<${local}-2@${domain}>`,
+    // Values that merely start with, or contain, mine but are not one well-formed token.
+    `${mine} and more`,
+    `junk ${mine}`,
+    `${mine}${mine}`,
+  ];
+  for (const token of nearMisses) addTokened(world, token, ['SENT']);
+  const missed = await world.port.findSent(ACCOUNT, mine, since(world));
+  assert.equal(missed.kind, 'absent', 'a near miss was taken for our copy');
+  // The control: the exact token (padding and case aside), among the same near misses, is found and is the one named.
+  const exact = addTokened(world, ` ${mine.toUpperCase()} `, ['SENT']);
+  const found = await world.port.findSent(ACCOUNT, mine, since(world));
+  assert.equal(found.kind, 'found');
+  assert.equal(found.kind === 'found' && found.remoteMessageId, exact.id);
+});
+
+test('findSent: a kept Message-ID that merely extends or truncates ours is never a match', async () => {
+  const world = await sendWorld();
+  const pinned = submission(world);
+  const bare = pinned.payload.internetId.replace(/^<|>$/g, '');
+  for (const messageId of [`${bare}.evil`, bare.replace('.test', ''), `x-${bare}`])
+    world.emu.mailbox.addMessage({
+      from: world.address,
+      to: ['friend@example.test'],
+      messageId,
+      labelIds: ['SENT'],
+    });
+  const missed = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(missed.kind, 'absent');
+  const exact = world.emu.mailbox.addMessage({
+    from: world.address,
+    to: ['friend@example.test'],
+    messageId: bare,
+    labelIds: ['SENT'],
+  });
+  const found = await world.port.findSent(ACCOUNT, pinned.payload.internetId, since(world));
+  assert.equal(found.kind === 'found' && found.remoteMessageId, exact.id);
 });
 
 test('findSent: a message carrying our token twice (not one value) is not a match', async () => {
@@ -162,4 +253,69 @@ test('findSent: an error in the pass is thrown, never absent', async () => {
     .catch((e: unknown) => e);
   assert.ok(error instanceof Error);
   assert.ok(classOf(error), 'a classified provider error');
+});
+
+// ---- the engine's pinned bytes never carry the token; the adapter alone adds it ----
+
+/** The pinned MIME with `line` added to its header block, right after the Subject line. */
+function withHeaderLine(pinned: ReturnType<typeof submission>, line: string): Buffer {
+  const end = headerEndOf(pinned.mime);
+  const head = pinned.mime.subarray(0, end).toString('latin1');
+  const edited = head.replace(/^Subject: .*$/m, s => `${s}\r\n${line}`);
+  return Buffer.concat([Buffer.from(edited, 'latin1'), pinned.mime.subarray(end)]);
+}
+
+for (const [name, line] of [
+  ['the token of this very submission', (id: string) => `X-Aplos-Send: ${id}`],
+  ['another submission token', () => 'X-Aplos-Send: <someone-else@mail.example.test>'],
+  ['the header name in lower case', (id: string) => `x-aplos-send: ${id}`],
+  ['a draft token', (id: string) => `X-Aplos-Draft: ${id}`],
+] as const)
+  test(`send token: pinned bytes that already carry ${name} are refused, nothing leaves`, async () => {
+    const world = await rewritingWorld();
+    const pinned = submission(world);
+    const mime = withHeaderLine(pinned, line(pinned.payload.internetId));
+    const error = await world.adapter.send(withMime(pinned, mime), world.ctx()).catch(e => e);
+    assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+    assert.equal(error.error.reason, 'unexpectedHeader');
+    assert.equal(world.gmailRequests(), 0);
+    assert.equal(world.bridge.uploads.length, 0);
+    assert.equal(world.sentMessages().length, 0);
+  });
+
+// ---- the 35 MiB limit counts the token header the adapter adds ----
+
+/** The submission with its body padded so the pinned MIME is exactly `mimeLength` bytes. */
+function paddedTo(world: SendWorld, mimeLength: number) {
+  const pinned = submission(world);
+  const filler = mimeLength - pinned.mime.length;
+  assert.ok(filler > 0);
+  return { pinned, mime: Buffer.concat([pinned.mime, Buffer.alloc(filler, 0x41)]) };
+}
+
+test('send token: a MIME exactly at the 35 MiB limit minus the token header goes; one byte more is refused before any request', async () => {
+  const world = await rewritingWorld();
+  const probe = submission(world);
+  const tokenLength =
+    withSendToken(probe.mime, probe.payload.internetId).length - probe.mime.length;
+  assert.ok(tokenLength > 20, 'the token header has a length');
+
+  const fits = paddedTo(world, MAX_SEND_BYTES - tokenLength);
+  await world.adapter.send(withMime(fits.pinned, fits.mime), world.ctx());
+  assert.equal(
+    world.bridge.uploads[0].raw.length,
+    MAX_SEND_BYTES,
+    'the upload is exactly the limit',
+  );
+  assert.equal(world.sentMessages().length, 1);
+
+  const over = await rewritingWorld();
+  const tooBig = paddedTo(over, MAX_SEND_BYTES - tokenLength + 1);
+  const error = await over.adapter
+    .send(withMime(tooBig.pinned, tooBig.mime), over.ctx())
+    .catch(e => e);
+  assert.ok(error instanceof NotSentError, `got ${String(error)}`);
+  assert.equal(error.error.reason, 'messageTooLarge');
+  assert.equal(over.gmailRequests(), 0);
+  assert.equal(over.bridge.uploads.length, 0);
 });

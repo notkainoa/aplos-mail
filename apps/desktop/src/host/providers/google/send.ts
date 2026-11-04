@@ -670,6 +670,8 @@ export async function sendSubmission(
   options: SendOptions = {},
 ): Promise<SendReceipt> {
   const raw = withSendToken(pinnedMime(payload, ctx.account.address), payload.internetId);
+  // `pinnedMime` measured the bytes before the token header was added; the upload is what Gmail's limit counts.
+  if (raw.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   const route = await chooseRoute(deps, payload, ctx, options).catch((error: unknown) => {
     throw notSent(error, 'gmail.drafts.get');
   });
