@@ -1016,6 +1016,9 @@ export const api: DataApi = {
     openSettings: ((...args: unknown[]) =>
       forward('system', 'openSettings', args)) as DataApi['system']['openSettings'],
   },
+  shell: {
+    open: ((...args: unknown[]) => forward('shell', 'open', args)) as DataApi['shell']['open'],
+  },
   notification: {
     test: ((...args: unknown[]) =>
       forward('notification', 'test', args)) as DataApi['notification']['test'],
