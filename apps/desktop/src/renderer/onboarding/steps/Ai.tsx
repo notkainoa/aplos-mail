@@ -471,7 +471,8 @@ export function AiContainer({ chrome, bindKeys, onDone, ports: given }: AiContai
     if (s.writing) return;
     const choice = currentChoice(s, i);
     if (!choice) return;
-    // featuresFor always resolves (a missing voice keeps the stored or default one).
+    // Settings still loading: writing now would replace a stored voice choice with the default. Wait for them.
+    if (!i.features) return;
     const features = featuresFor(choice, i);
     dispatch({ type: 'writing' });
     try {
@@ -573,6 +574,7 @@ export function AiContainer({ chrome, bindKeys, onDone, ports: given }: AiContai
   const keys: StepKeys = {
     focusKey: vm.focusKey,
     focus: vm.focus,
+    keepUserFocus: true, // a late models or provider answer never pulls focus from where the owner went
     main: () => {
       const v = latest.current.vm;
       if (v.view === 'consent') void onAllow();
