@@ -201,6 +201,28 @@ export const reconnectStates: Record<string, StateEntry> = {
       </Backdrop>
     ),
   },
+  /* Hill-climb candidates (roadmap 5.1c): the line in the shell's proportions — sidebar plus the centred list
+     column — versus the column alone on a full-width pane. Scored, then removed. */
+  'zero-accounts-b': {
+    title: 'Zero accounts · candidate B (shell sidebar + list column)',
+    render: () => (
+      <SlotBackdrop slot={<></>}>
+        <div className="onb-list-column">
+          <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
+        </div>
+      </SlotBackdrop>
+    ),
+  },
+  'zero-accounts-c': {
+    title: 'Zero accounts · candidate C (list column, no sidebar)',
+    render: () => (
+      <Backdrop>
+        <div className="onb-list-column">
+          <ZeroAccountsView onAddAccount={noop} onTryDemo={noop} />
+        </div>
+      </Backdrop>
+    ),
+  },
   'zero-accounts-open-failed': {
     title: 'Main pane, no accounts: Add an account could not open the setup window (review1)',
     render: () => (
@@ -224,6 +246,44 @@ export const reconnectStates: Record<string, StateEntry> = {
           onAddAccount={noop}
           onTryDemo={noop}
         />
+      </Backdrop>
+    ),
+  },
+  'zero-accounts-first-sync-b': {
+    title: 'First mail line · candidate B (shell sidebar, the status slot carrying the same words)',
+    render: () => (
+      <SlotBackdrop
+        slot={
+          <StatusSlot
+            status={{ kind: 'syncing', firstWindow: { read: 24, of: 50 } }}
+            account={{ address: 'jordan.lee@example.com', color: 'sky' }}
+            onAction={noop}
+          />
+        }
+      >
+        <div className="onb-list-column">
+          <ZeroAccountsView
+            firstSyncRunning
+            detail="Reading your newest mail · 24 of 50"
+            onAddAccount={noop}
+            onTryDemo={noop}
+          />
+        </div>
+      </SlotBackdrop>
+    ),
+  },
+  'zero-accounts-first-sync-c': {
+    title: 'First mail line · candidate C (list column, no sidebar)',
+    render: () => (
+      <Backdrop>
+        <div className="onb-list-column">
+          <ZeroAccountsView
+            firstSyncRunning
+            detail="Reading your newest mail · 24 of 50"
+            onAddAccount={noop}
+            onTryDemo={noop}
+          />
+        </div>
       </Backdrop>
     ),
   },

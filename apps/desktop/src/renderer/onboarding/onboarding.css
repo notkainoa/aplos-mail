@@ -77,3 +77,53 @@
   width: 100%;
   min-width: 0;
 }
+
+/* The mail window's list column for the zero-accounts and first-mail preview states: min(720px, 100% − 2 gutters),
+   centred in the pane (DESIGN 4.3; the app's own rule lives in screens/screens.css, which the gallery does not load). */
+.onb-list-column {
+  box-sizing: border-box;
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  min-width: 0;
+}
+
+/* ---------- Hill-climb candidates (roadmap 5.1c; removed once scored) ---------- */
+
+.onb-cand-wrap {
+  display: contents;
+}
+
+/* accounts-waiting: under reduced motion the indeterminate runner is paused at its first keyframe, off the track,
+   so the bar reads empty. Candidate B rests the segment centred; candidate C rests it flush left. */
+@media (prefers-reduced-motion: reduce) {
+  .onb-cand-runner-b .ui-progress-segments__runner {
+    animation: none;
+    transform: translateX(117%);
+  }
+  .onb-cand-runner-c .ui-progress-segments__runner {
+    animation: none;
+    transform: translateX(0);
+  }
+}
+:root[data-motion='reduced'] {
+  .onb-cand-runner-b .ui-progress-segments__runner {
+    animation: none;
+    transform: translateX(117%);
+  }
+  .onb-cand-runner-c .ui-progress-segments__runner {
+    animation: none;
+    transform: translateX(0);
+  }
+}
+
+/* accounts-choose: candidate B pulls the provider group closer to the field; candidate C bounds the one-row stack
+   with hairlines above and below. */
+.onb-cand-tight .onb-group {
+  gap: var(--space-1);
+  margin-top: 0;
+}
+.onb-cand-bounded .onb-rows {
+  box-shadow:
+    0 calc(-1 * var(--hairline)) 0 var(--line),
+    0 var(--hairline) 0 var(--line);
+}
