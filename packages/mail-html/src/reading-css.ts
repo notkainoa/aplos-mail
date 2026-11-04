@@ -1,8 +1,29 @@
 // The frame's base reading style. It comes first, so the mail's own CSS still wins for layout;
 // only Aplos's own marks, quotes and image placeholders use classes the mail cannot rely on.
+// The exception is the measuring rules for `<html>` and `<body>`: `!important`, and the mail's CSS has every `!`
+// removed (css.ts), inline and in layers alike, so no mail rule outranks them. With them the root's box is the
+// letter's content height, which the reporter measures, and never the frame's height: a letter can shrink again.
+// The root never scrolls vertically (the host sizes the frame to the letter); a wide letter still scrolls sideways.
+
+const MEASURED = [
+  'display:block',
+  'position:static',
+  'float:none',
+  'height:auto',
+  'min-height:0',
+  'max-height:none',
+  'contain:none',
+  'content-visibility:visible',
+];
+
+function important(declarations: readonly string[]): string {
+  return declarations.map(declaration => `${declaration}!important`).join(';');
+}
 
 export const READING_CSS = [
   ':root{color-scheme:light}',
+  `html{${important([...MEASURED, 'overflow-y:hidden'])}}`,
+  `body{${important(MEASURED)}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',
   'pre{white-space:pre-wrap}',

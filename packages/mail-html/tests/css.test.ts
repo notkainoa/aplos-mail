@@ -335,3 +335,126 @@ describe('ids and declarations', () => {
     }
   });
 });
+
+describe('viewport units that follow the frame’s height become fixed lengths', () => {
+  // Each unit, written as the tokenizer can produce it, in each placement it can take.
+  const units: [string, string][] = [
+    ['100vh', '800px'],
+    ['100dvh', '800px'],
+    ['100svh', '800px'],
+    ['100lvh', '800px'],
+    ['100vb', '800px'],
+    ['100dvb', '800px'],
+    ['100svb', '800px'],
+    ['100lvb', '800px'],
+    ['100cqh', '800px'],
+    ['100cqb', '800px'],
+    ['150VH', '1200px'],
+    ['1.5Dvh', '12px'],
+    ['-50vh', '-400px'],
+    ['+50vh', '400px'],
+    ['.5vh', '4px'],
+    ['-.25svh', '-2px'],
+    ['1e2vh', '800px'],
+    ['1E2vh', '800px'],
+    ['1e+2lvh', '800px'],
+    ['5e-1vh', '4px'],
+    ['33.3vh', '266.4px'],
+    ['0vh', '0px'],
+    ['1e30vh', '8e+30px'],
+    ['10v\\68 ', '80px'],
+    ['10\\76 h', '80px'],
+    ['10vmin', 'calc(10*min(1vw,8px))'],
+    ['10VMIN', 'calc(10*min(1vw,8px))'],
+    ['-10vmin', 'calc(-10*min(1vw,8px))'],
+    ['10dvmin', 'calc(10*min(1dvw,8px))'],
+    ['10svmin', 'calc(10*min(1svw,8px))'],
+    ['10lvmin', 'calc(10*min(1lvw,8px))'],
+    ['10cqmin', 'calc(10*min(1cqi,8px))'],
+    ['2.5vmax', 'calc(2.5*max(1vw,8px))'],
+    ['10dvmax', 'calc(10*max(1dvw,8px))'],
+    ['10svmax', 'calc(10*max(1svw,8px))'],
+    ['10lvmax', 'calc(10*max(1lvw,8px))'],
+    ['10cqmax', 'calc(10*max(1cqi,8px))'],
+  ];
+  const placements: [string, (value: string) => string][] = [
+    ['a style block', value => `div{height:${value}}`],
+    ['a style attribute', value => `min-height:${value}`],
+    ['calc()', value => `div{height:calc(${value} - 10px)}`],
+    ['min()', value => `div{height:min(${value},2px)}`],
+    ['max()', value => `div{height:max(2px,${value})}`],
+    ['clamp()', value => `div{height:clamp(1px,${value},3px)}`],
+    ['a nested function', value => `div{height:calc(1px + min(${value}, max(2px, 3px)))}`],
+    ['a custom property', value => `div{--h:${value}}`],
+    ['@media', value => `@media (min-height:${value}){p{height:${value}}}`],
+    ['@keyframes', value => `@keyframes k{to{height:${value}}}`],
+    ['a shorthand', value => `div{margin:${value} 0 ${value}}`],
+  ];
+
+  for (const [placement, place] of placements) {
+    it(`rewrites every height-axis unit in ${placement}`, () => {
+      for (const [input, fixed] of units) {
+        const out = clean(place(input)).css;
+        assert.equal(out, place(fixed), `${input} in ${placement}`);
+      }
+    });
+  }
+
+  it('leaves width units, other units and non-dimensions alone', () => {
+    const kept = [
+      // The escape takes the space after it, so the unit here is `vh-`, as the browser reads it too.
+      'div{height:calc(10v\\68 - 10px)}',
+      'div{width:100vw;inline-size:50vi;height:10px;font-size:2em;line-height:1.5}',
+      'div{width:100dvw;width:10svw;width:1lvw;width:3cqw;width:3cqi;height:50%;height:2rem}',
+      'div{height:10vhx;height:10v;height:10hv;height:10vm}',
+      'p:nth-child(2n+1){x:1}',
+    ];
+    for (const css of kept) assert.equal(clean(css).css, css);
+  });
+
+  it('never rewrites inside strings, comments or URLs', () => {
+    assert.equal(clean('a{content:"100vh"}').css, 'a{content:"100vh"}');
+    assert.equal(clean('a{height:/* 100vh */1px}').css, 'a{height:/**/1px}');
+    assert.equal(
+      clean('a{background:url(cid:100vh)}', 'block', ['100vh']).css,
+      'a{background:url("cid/0")}',
+    );
+  });
+
+  it('drops a number that would not be finite once fixed', () => {
+    assert.equal(clean('a{height:1e400vh}').css, 'a{height: none }');
+    assert.equal(clean('a{height:1e308vh}').css, 'a{height: none }');
+    assert.equal(clean('a{height:1e400vw}').css, 'a{height:1e400vw}');
+  });
+
+  it('is idempotent on what it rewrote', () => {
+    for (const css of ['a{height:100vh;width:10vmin}', 'b{height:calc(1px + -2.5VMAX)}']) {
+      const once = clean(css).css;
+      assert.equal(clean(once).css, once, css);
+    }
+  });
+});
+
+describe('no mail declaration can outrank the frame’s measuring rules', () => {
+  it('removes every ! and the important after it, in any spelling', () => {
+    const cases: [string, string][] = [
+      ['html{height:100%!important}', 'html{height:100%/**/}'],
+      ['html{height:100% !important}', 'html{height:100% /**/}'],
+      ['html{height:100% ! IMPORTANT}', 'html{height:100% /**/}'],
+      ['html{height:100% !/**/important}', 'html{height:100% /**/}'],
+      ['html{height:100% !\\69mportant}', 'html{height:100% /**/}'],
+      ['html{height:100% !ie}', 'html{height:100% /**/ie}'],
+      ['@layer a{html{height:1px!important}}', '@layer a{html{height:1px/**/}}'],
+      ['a{b:c!d!important}', 'a{b:c/**/d/**/}'],
+      ['a{content:"!important"}', 'a{content:"!important"}'],
+    ];
+    for (const [css, out] of cases) assert.equal(clean(css).css, out, css);
+    assert.equal(clean('height:100vh !important').css, 'height:800px /**/');
+  });
+
+  it('keeps the declaration itself (only its importance goes)', () => {
+    const declarations = readDeclarations(clean('color: red !important; width: 2px').css);
+    assert.equal(declarations.get('color'), 'red');
+    assert.equal(declarations.get('width'), '2px');
+  });
+});

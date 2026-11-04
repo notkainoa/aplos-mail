@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import type { MailHtml, MailHtmlInput, MailHtmlResult } from '@aplos/engine/ports/content';
+import { parse, type DefaultTreeAdapterMap } from 'parse5';
 import { loadCorpus, type CorpusEntry } from '../corpus/index';
 import { MAIL_HTML_VERSION, mailHtml, render, sanitizeBody } from '../src/index';
 import { LIMITS, MAX_DEPTH } from '../src/sanitize';
@@ -248,17 +249,46 @@ describe('elements and attributes', () => {
     );
   });
 
-  it('keeps the rendering mode and body colours, drops body handlers', () => {
-    assert.match(html('<!DOCTYPE html><p>x</p>').document, /^<!DOCTYPE html><html>/);
-    assert.match(html('<p>x</p>').document, /^<html>/);
+  it('always lays out in standards mode (quirks would tie the height to the frame), keeps body colours, drops body handlers', () => {
     const legacy =
       '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">';
-    assert.ok(html(`${legacy}<p>x</p>`).document.startsWith(legacy));
+    const quirky = [
+      '<!DOCTYPE html><p>x</p>',
+      '<p>x</p>',
+      `${legacy}<p>x</p>`,
+      '<!DOCTYPE html SYSTEM "about:legacy-compat"><p>x</p>',
+      '<!doctype html public "-//w3c//dtd html 4.0 transitional//en"><p>x</p>',
+      '<!DOCTYPE><p>x</p>',
+      '<?xml version="1.0"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"><p>x</p>',
+      '<p>x</p><!DOCTYPE html>',
+    ];
+    for (const mail of quirky) {
+      const document = html(mail).document;
+      assert.match(document, /^<!DOCTYPE html><html><head>/, mail);
+      assert.equal(document.match(/<!doctype/gi)?.length, 1, mail);
+    }
     const result = html(
       '<html lang="fr" onload=x><body bgcolor="#f0f0f0" onload="alert(1)" style="margin:0" background="https://x.example/b.png"><p>x</p></body></html>',
     );
     assert.match(result.document, /<html lang="fr"><head>/);
     assert.match(result.document, /<body bgcolor="#f0f0f0" style="margin:0">/);
+  });
+
+  it('measures content: fixed viewport heights and no mail !important, in style blocks and attributes', () => {
+    const result = html(
+      '<html style="height:100vh"><body style="height:100vh !important;min-height:150VH"><style>html,body{height:100%!important}div{min-height:calc(50dvh + 1px)}</style><div style="height:10vmin">x</div></body></html>',
+    );
+    assert.match(result.document, /<body style="height:800px \/\*\*\/;min-height:1200px">/);
+    assert.match(
+      result.document,
+      /html,body\{height:100%\/\*\*\/\}div\{min-height:calc\(400px \+ 1px\)\}/,
+    );
+    assert.match(result.document, /<div style="height:calc\(10\*min\(1vw,8px\)\)">/);
+    assert.equal(bodyOf(result).includes('!'), false);
+    assert.match(
+      result.document,
+      /<style>[^<]*html\{[^}]*height:auto!important[^}]*overflow-y:hidden!important\}/,
+    );
   });
 
   it('escapes control characters, lone surrogates and NUL without breaking the output', () => {
@@ -273,10 +303,10 @@ describe('elements and attributes', () => {
     );
     assert.ok(result.document.indexOf('<meta charset="utf-8">') < 1_024 - 25);
     assert.equal(result.document.includes('\u001b'), false);
-    assert.match(result.document, /^<html><head><meta charset="utf-8">/);
+    assert.match(result.document, /^<!DOCTYPE html><html><head><meta charset="utf-8">/);
     assert.match(
       html('<html lang="pt-BR" dir="RTL"><p>x</p>').document,
-      /^<html lang="pt-BR" dir="RTL"><head>/,
+      /^<!DOCTYPE html><html lang="pt-BR" dir="RTL"><head>/,
     );
   });
 });
@@ -629,4 +659,97 @@ describe('the hostile corpus', () => {
       assert.equal(second.body, first.body, entry.id);
     }
   });
+});
+
+/** Every element of a document, as parse5 (the HTML standard's parser) builds the tree. */
+function elementsOf(document: string): DefaultTreeAdapterMap['element'][] {
+  const found: DefaultTreeAdapterMap['element'][] = [];
+  const stack: DefaultTreeAdapterMap['parentNode'][] = [parse(document)];
+  while (stack.length > 0) {
+    const node = stack.pop() as DefaultTreeAdapterMap['parentNode'];
+    if ('tagName' in node) found.push(node);
+    for (const child of node.childNodes) if ('childNodes' in child) stack.push(child);
+  }
+  return found;
+}
+
+describe('DOM clobbering: the corpus’s dom-clobbering entries, named', () => {
+  // Document named properties shadow built-ins (`<img name=body>` is `document.body`), and window named properties
+  // shadow what EventTarget gives the window. The reporter reads through prototypes it captures (reporter.ts), and
+  // the sanitizer is the first fence: these names never reach the frame as they were written.
+  const NAMED_ELEMENTS = new Set([
+    'img',
+    'form',
+    'embed',
+    'object',
+    'iframe',
+    'input',
+    'frame',
+    'frameset',
+  ]);
+  const VECTORS = [
+    'body',
+    'documentElement',
+    'addEventListener',
+    'ResizeObserver',
+    'fonts',
+    'location',
+    'parent',
+    'top',
+    'innerWidth',
+    'postMessage',
+    'ready',
+    'token',
+    'marks',
+    'document',
+    '__proto__',
+    'constructor',
+  ];
+  const entries = loadCorpus({ canaryOrigin: 'http://127.0.0.1:41999' }).filter(entry =>
+    entry.classes.includes('dom-clobbering'),
+  );
+
+  it('has the entries, and they really carry the vectors', () => {
+    assert.ok(entries.some(entry => entry.id === '064-dom-clobbering'));
+    const source = entries.map(entry => entry.html ?? '').join('\n');
+    for (const tag of ['img', 'form', 'embed', 'object', 'iframe'])
+      assert.match(source, new RegExp(`<${tag}[^>]* name="`), tag);
+  });
+
+  for (const imagePolicy of ['block', 'allow'] as const) {
+    it(`neutralises every name and id (images ${imagePolicy === 'block' ? 'off' : 'on'})`, () => {
+      for (const entry of entries) {
+        const result = render({ html: entry.html, cids: entry.cids, imagePolicy });
+        assert.equal(result.bodyKind, 'html', entry.id);
+        const elements = elementsOf(result.document ?? '');
+        for (const element of elements) {
+          const attributes = new Map(element.attrs.map(a => [a.name, a.value]));
+          const where = `${entry.id} <${element.tagName}>`;
+          assert.ok(
+            !['form', 'embed', 'object', 'iframe', 'input'].includes(element.tagName),
+            where,
+          );
+          const name = attributes.get('name');
+          if (name !== undefined) {
+            assert.equal(element.tagName, 'a', `${where} keeps a name`);
+            assert.ok(!NAMED_ELEMENTS.has(element.tagName), where);
+            assert.match(name, /^m-/, where);
+          }
+          const id = attributes.get('id');
+          if (id !== undefined) assert.match(id, /^m-/, where);
+          for (const vector of VECTORS) {
+            assert.notEqual(name, vector, where);
+            assert.notEqual(id, vector, where);
+          }
+        }
+        // Positive control: the clobbering ids are still there, moved (the unsized blocked image is dropped).
+        const moved = imagePolicy === 'allow' ? 'm-documentElement' : 'm-innerWidth';
+        if (entry.id === '064-dom-clobbering')
+          assert.ok(
+            elements.some(e => e.attrs.some(a => a.value === moved)),
+            moved,
+          );
+      }
+    });
+  }
 });

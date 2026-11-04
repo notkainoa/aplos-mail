@@ -5,6 +5,7 @@ import { ID_PREFIX, isOwnClass, scopeId } from './ids';
 import type { ImageBook } from './images';
 import { asciiLower } from './parse';
 import { urlCleanup } from './url';
+import { fixedViewportLength } from './viewport';
 
 // Mail CSS is tokenized by the CSS Syntax 3 tokenizer (the algorithm Chromium follows) and written
 // back token by token, so the browser re-reads the same tokens. Every URL, wherever it appears, is
@@ -14,7 +15,9 @@ import { urlCleanup } from './url';
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
 // position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
-// appears in the output.
+// appears in the output. Every `!` goes, with the `important` after it, so no mail declaration can outrank
+// the frame's own measuring rules (reading-css.ts), inline or in a layer; and the height-axis viewport units become
+// fixed lengths (viewport.ts), so a letter's height cannot follow its frame's.
 
 const KEPT_AT_RULES = new Set([
   'media',
@@ -164,6 +167,10 @@ class CssWriter {
         return this.atRule(token[4].value, token[1]);
       case TokenType.Function:
         return this.func(token[4].value, token[1]);
+      case TokenType.Dimension:
+        return this.emit(this.dimension(token[4].value, token[4].unit, token[1]));
+      case TokenType.Delim:
+        return token[4].value === '!' ? this.bang() : this.plain(token);
       default:
         return this.plain(token);
     }
@@ -209,6 +216,21 @@ class CssWriter {
     if (this.imageDepth > 0) return this.url(text);
     if (looksFetchable(text)) return '""';
     return moved === undefined ? raw.replaceAll('</', '<\\/') : cssString(moved);
+  }
+
+  /** A height-axis viewport unit as a fixed length (viewport.ts); any other dimension as written. */
+  private dimension(value: number, unit: string, raw: string): string {
+    const fixed = fixedViewportLength(value, unit);
+    if (fixed === null) return DROPPED;
+    return fixed ?? raw;
+  }
+
+  /** `!` (and the `important` it may start, through whitespace and comments) becomes an empty comment. */
+  private bang(): void {
+    const next = skipSpace(this.tokens, this.at + 1);
+    const word = this.tokens[next];
+    const important = word?.[0] === TokenType.Ident && asciiLower(word[4].value) === 'important';
+    this.emit(SEPARATOR, important ? next + 1 - this.at : 1);
   }
 
   private hash(token: CSSToken): string {
