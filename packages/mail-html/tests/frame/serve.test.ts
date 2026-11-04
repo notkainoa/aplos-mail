@@ -4,13 +4,14 @@ import { frameHeaders, notFound } from '../../src/frame/headers';
 import { reporterHash } from '../../src/frame/reporter';
 import { serveFrame, type ServeDeps } from '../../src/frame/serve';
 import { FrameTokens, MAX_TOKENS_PER_WINDOW, type FrameRenderInput } from '../../src/frame/tokens';
-import { render } from './fixtures';
+import { bytes, render, SAMPLES } from './fixtures';
 
 // `Mail/serve`'s response builder, and the work package's "token abuse" check: a reused,
 // guessed, expired or released token, a token from another window, path traversal under a
 // token, and more than 64 live must all get the one 404.
 
-const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+const PNG = SAMPLES.png;
+const GIF = SAMPLES.gif89;
 const NOT_FOUND = notFound();
 
 async function setup(extra: Partial<FrameRenderInput> = {}) {
@@ -22,11 +23,11 @@ async function setup(extra: Partial<FrameRenderInput> = {}) {
     reporterHash: await reporterHash(),
     imageBytes: (token, index, url) => {
       calls.push(`img ${token} ${index} ${url}`);
-      return { mime: 'image/png', bytes: PNG };
+      return { bytes: PNG };
     },
     cidBytes: async (record, index, cid) => {
       calls.push(`cid ${record.messageId} ${index} ${cid}`);
-      return { mime: 'image/gif', bytes: PNG };
+      return { bytes: GIF };
     },
   };
   const issued = tokens.issue(
@@ -87,25 +88,43 @@ describe('Mail/serve', () => {
     assert.deepEqual(calls, []);
   });
 
-  it('turns a non-raster answer into a download and a missing answer into the 404', async () => {
+  it('answers a non-raster or missing answer with the 404', async () => {
     const { tokens, deps, serve } = await setup({ imagePolicy: 'allow' });
     await serve('');
-    const svg = await serveFrame(
+    const foreign = await serveFrame(
       tokens,
       { windowId: 'w1', token: (await setup()).issued.token, path: 'img/0' },
       deps,
     );
-    assert.deepEqual(svg, NOT_FOUND, 'a token of another registry is unknown here');
-    deps.imageBytes = () => ({ mime: 'image/svg+xml', bytes: PNG });
-    const download = await serve('img/0');
-    assert.equal(download.headers['content-type'], 'application/octet-stream');
-    assert.equal(download.headers['content-disposition'], 'attachment');
+    assert.deepEqual(foreign, NOT_FOUND, 'a token of another registry is unknown here');
     deps.imageBytes = () => undefined;
     assert.deepEqual(await serve('img/0'), NOT_FOUND);
-    deps.imageBytes = () => ({ mime: 'image/png', bytes: 'not bytes' as unknown as Uint8Array });
+    deps.imageBytes = () => ({ bytes: 'not bytes' as unknown as Uint8Array });
     assert.deepEqual(await serve('img/0'), NOT_FOUND);
     deps.imageBytes = undefined;
     assert.deepEqual(await serve('img/0'), NOT_FOUND);
+  });
+
+  it('types a sub-resource by sniffing its bytes, never by the claimed mime', async () => {
+    const { deps, serve } = await setup({ imagePolicy: 'allow' });
+    await serve('');
+    const claimed = (mime: string, body: Uint8Array) => () => ({ mime, bytes: body }) as never;
+    deps.imageBytes = claimed('image/svg+xml', SAMPLES.webp);
+    const webp = await serve('img/0');
+    assert.equal(webp.status, 200);
+    assert.equal(webp.headers['content-type'], 'image/webp', 'the bytes win over the claim');
+    assert.equal(webp.headers['content-disposition'], 'inline');
+    const hostile = [
+      bytes('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+      bytes('<!doctype html><script>alert(1)</script>'),
+      bytes('MZ', 0x90, 0, 3, 0, 0, 0),
+    ];
+    for (const body of hostile) {
+      deps.imageBytes = claimed('image/png', body);
+      assert.deepEqual(await serve('img/0'), NOT_FOUND, 'img with an image mime');
+      deps.cidBytes = claimed('image/gif', body);
+      assert.deepEqual(await serve('cid/0'), NOT_FOUND, 'cid with an image mime');
+    }
   });
 
   it('answers a throwing or rejecting callback with the 404', async () => {
@@ -134,7 +153,7 @@ describe('Mail/serve liveness and window ids', () => {
     let finish: () => void = () => undefined;
     deps.imageBytes = () =>
       new Promise(resolve => {
-        finish = () => resolve({ mime: 'image/png', bytes: PNG });
+        finish = () => resolve({ bytes: PNG });
       });
     return () => finish();
   }
@@ -150,15 +169,22 @@ describe('Mail/serve liveness and window ids', () => {
     assert.deepEqual(await pending, NOT_FOUND);
   });
 
-  it('refuses an image whose token expires while it is being fetched', async () => {
-    const { serve, deps, clock } = await setup({ imagePolicy: 'allow' });
+  it('refuses an image whose window closes while it is being fetched', async () => {
+    const { serve, deps, tokens } = await setup({ imagePolicy: 'allow' });
     await serve('');
     const finish = slowImage(deps);
     const pending = serve('img/0');
     await Promise.resolve();
-    clock.now = 1_000;
+    tokens.releaseWindow('w1');
     finish();
     assert.deepEqual(await pending, NOT_FOUND);
+  });
+
+  it('keeps serving a served token past the unfetched deadline', async () => {
+    const { serve, clock } = await setup({ imagePolicy: 'allow' });
+    await serve('');
+    clock.now = 10_000_000;
+    assert.equal((await serve('img/0')).status, 200);
   });
 
   it('still serves a slow image whose token lives', async () => {
@@ -211,15 +237,12 @@ describe('token abuse', () => {
     }
   });
 
-  it('refuses an expired token, document and sub-resource', async () => {
-    const { serve, clock, issued } = await setup({ imagePolicy: 'allow' });
-    await serve('');
-    clock.now = 1_000;
-    assert.deepEqual(await serve('img/0'), NOT_FOUND);
-    const late = await setup();
+  it('refuses an expired (never fetched) token, document and sub-resource', async () => {
+    const late = await setup({ imagePolicy: 'allow' });
     late.clock.now = 1_000;
     assert.deepEqual(await late.serve(''), NOT_FOUND);
-    assert.ok(issued.expiresAt <= 1_000);
+    assert.deepEqual(await late.serve('img/0'), NOT_FOUND);
+    assert.ok(late.issued.expiresAt <= 1_000);
   });
 
   it('refuses a released token', async () => {

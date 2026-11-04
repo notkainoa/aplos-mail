@@ -1,5 +1,6 @@
 import { frameHeaders, notFound, resourceHeaders, type ServeResponse } from './headers';
 import { parseFramePath, type FrameRoute } from './paths';
+import { sniffRaster } from './sniff';
 import { isWindowId, type FrameRecord, type FrameTokens } from './tokens';
 
 // `Mail/serve`'s response builder, pure: main forwards `{token, path}` and adds nothing. Every
@@ -15,8 +16,11 @@ export interface ServeRequest {
 }
 
 export interface ServedBytes {
-  /** The type sniffed from the bytes by the caller, never the sender's claim. */
-  mime: string;
+  /**
+   * The bytes alone. Their type is sniffed here from the leading bytes (`sniffRaster`); a type the
+   * caller, the proxy or the sender claims is never read, and anything that is not PNG, JPEG, GIF
+   * or WebP is the 404.
+   */
   bytes: Uint8Array;
 }
 
@@ -109,6 +113,7 @@ function issued(list: readonly string[], index: number): string | undefined {
 }
 
 function toResponse(served: ServedBytes | undefined): ServeResponse {
-  if (!served || !(served.bytes instanceof Uint8Array)) return notFound();
-  return { status: 200, headers: resourceHeaders(served.mime), body: served.bytes };
+  const mime = sniffRaster(served?.bytes);
+  if (!served || !mime) return notFound();
+  return { status: 200, headers: resourceHeaders(mime), body: served.bytes };
 }
