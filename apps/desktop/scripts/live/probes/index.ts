@@ -1,4 +1,5 @@
 import type { LiveProvider, SmokeProbe, Tier } from '../types';
+import { adapterSendFind } from './gmail-adapter-send';
 import { authResultsShape } from './gmail-auth-results';
 import { draftMessageIdAfterEdit } from './gmail-draft-message-id';
 import { inboxWindowMetadata, profileAndLabels } from './gmail-r';
@@ -11,6 +12,7 @@ export const PROBES: readonly SmokeProbe[] = [
   authResultsShape,
   draftMessageIdAfterEdit,
   sendMessageId,
+  adapterSendFind,
 ];
 
 export function probesFor(

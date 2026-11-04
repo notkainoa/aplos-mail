@@ -112,6 +112,9 @@ export const COUNT_KEYS: readonly string[] = [
   'sentFoundByRfc822msgidGmails',
   'sentSearchTries',
   'probeMessagesExisting',
+  // gmail.adapter-send-find: the adapter's own send and findSent on real Gmail (0/1).
+  'sentHeaderTokenKept',
+  'findSentByToken',
   // Answers that were 200 with an empty body (a list with no items): ok, not an error.
   'emptyAnswers',
 ];
