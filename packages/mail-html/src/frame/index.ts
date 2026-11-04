@@ -14,7 +14,7 @@ export {
 export {
   FrameTokens,
   MAX_TOKENS_PER_WINDOW,
-  TOKEN_TTL_MS,
+  UNFETCHED_TTL_MS,
   type FrameImagePolicy,
   type FrameRecord,
   type FrameRenderInput,
@@ -34,4 +34,5 @@ export {
   type ServeResponse,
 } from './headers';
 export { REPORTER_SOURCE, reporterHash, reporterTag, withReporter } from './reporter';
+export { sniffRaster } from './sniff';
 export { serveFrame, type ServeDeps, type ServeRequest, type ServedBytes } from './serve';

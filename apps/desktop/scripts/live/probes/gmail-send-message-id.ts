@@ -41,7 +41,7 @@ function failed(error: unknown, result: ProbeResult): void {
   result.errorClasses[errorClass] = (result.errorClasses[errorClass] ?? 0) + 1;
 }
 
-function headersOf(json: Record<string, unknown>): Map<string, string> {
+export function headersOf(json: Record<string, unknown>): Map<string, string> {
   const out = new Map<string, string>();
   const list = (json.payload as { headers?: unknown } | undefined)?.headers;
   if (Array.isArray(list))
@@ -51,7 +51,7 @@ function headersOf(json: Record<string, unknown>): Map<string, string> {
   return out;
 }
 
-async function readMetadata(ctx: ProbeContext, id: string): Promise<Map<string, string>> {
+export async function readMetadata(ctx: ProbeContext, id: string): Promise<Map<string, string>> {
   const { json } = await getJson(ctx, `/messages/${id}`, {
     format: 'metadata',
     metadataHeaders: ['Subject', 'Message-ID', HEADER],
@@ -66,9 +66,14 @@ async function readMetadata(ctx: ProbeContext, id: string): Promise<Map<string, 
  * compared exactly) and the `rfc822msgid:` search for today's FIXED Message-ID. The larger count decides. Any error
  * here throws before the send (the duplicate check fails closed).
  */
-async function existingToday(ctx: ProbeContext, subject: string, ours: string): Promise<number> {
+export async function existingToday(
+  ctx: ProbeContext,
+  subject: string,
+  ours: string,
+  subjectQuery = 'subject:aplos-live-probe-send in:anywhere',
+): Promise<number> {
   const found = await getJson(ctx, '/messages', {
-    q: 'subject:aplos-live-probe-send in:anywhere',
+    q: subjectQuery,
     maxResults: '10',
     fields: 'messages(id)',
   });

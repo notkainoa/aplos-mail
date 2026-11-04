@@ -157,8 +157,10 @@ test('S-self needs --confirm-mutating; the evidence holds no address, id or text
 
 test('the probe is a tier S-self probe only, and its counts are on the evidence allowlist', () => {
   assert.deepEqual(
-    probesFor('gmail', 'S-self').map(p => p.id),
-    ['gmail.send-message-id'],
+    probesFor('gmail', 'S-self')
+      .map(p => p.id)
+      .sort(),
+    ['gmail.adapter-send-find', 'gmail.send-message-id'],
   );
   assert.ok(!probesFor('gmail', 'R').some(p => p.id === 'gmail.send-message-id'));
   assert.ok(!probesFor('gmail', 'M').some(p => p.id === 'gmail.send-message-id'));

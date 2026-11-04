@@ -23,6 +23,8 @@ export interface MailHtmlInput {
   /** `block` (the default, Decision 8) keeps sized placeholders; `allow` rewrites remote images to the relative `img/<n>`. */
   imagePolicy: 'block' | 'allow';
   findQuery?: string;
+  /** Quoted-history `<details>` start open (`Mail/frame.quotesOpen`, `Mail/toggleQuotes`); closed by default. */
+  quotesOpen?: boolean;
 }
 
 /**

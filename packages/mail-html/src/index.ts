@@ -46,7 +46,7 @@ function renderHtml(
   finder: Finder | undefined,
 ): MailHtmlResult {
   const images = new ImageBook({ cids: input.cids, policy: input.imagePolicy });
-  const walk = sanitizeHtml(html, images, finder);
+  const walk = sanitizeHtml(html, images, finder, false, input.quotesOpen === true);
   const document = [
     walk.doctype,
     `<html${walk.htmlAttributes}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,

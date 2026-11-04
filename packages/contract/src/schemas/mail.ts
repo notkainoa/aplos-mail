@@ -173,7 +173,11 @@ export const MessageBody = z.object({
 });
 export type MessageBody = z.infer<typeof MessageBody>;
 
-/** `Mail/frame`'s answer (plan 30 section 8.1 item 4): the token is the URL's path segment, `aplos-mail://m/<token>`. */
+/**
+ * `Mail/frame`'s answer (plan 30 section 8.1 item 4): the token is the URL's path segment, `aplos-mail://m/<token>/`
+ * (with the trailing slash, so the frame's relative `cid/<n>` and `img/<n>` resolve under the token). Plain-text mail
+ * (`bodyKind: 'text'`) has no frame: `url` is empty and the host shows `MessageBody/get`'s text in its own DOM.
+ */
 export const MailFrame = z.object({
   url: text(500),
   expiresAt: EpochMs,
