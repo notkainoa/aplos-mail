@@ -12,7 +12,9 @@ import {
 import { createLogger, type LogSink } from '@aplos/engine/diag/log';
 import { hashAddress } from '@aplos/engine/diag/redact';
 import {
+  BlobFilesError,
   ProviderError,
+  type BlobFiles,
   type Clock,
   type KeyProvider,
   type Logger,
@@ -28,6 +30,7 @@ import { disposeConnectSessions } from '@aplos/engine/sync/connect-sessions';
 import { Governor } from '@aplos/engine/sync/governor';
 import { ActorHost, type ActorHostOptions } from '@aplos/engine/sync/host';
 import { storeLookup } from '@aplos/engine/sync/lookup';
+import { openBlobFiles } from './blobs';
 import { createLogSink, logDir } from './logsink';
 import { runNotificationLoop, type PostNotification } from './notifications';
 import { watchPowerResume, type PowerSource, type WakeClock } from './power';
@@ -345,12 +348,32 @@ function buildActors(options: ComposeOptions, store: StorePort, log: Logger, loo
   return new ActorHost(deps, workflowOptions(options, store, log));
 }
 
+/**
+ * The blob folder, `<dataDir>/blobs` (plans/engine/blob-area.md decision 1), unless the caller injected its own. An unsafe
+ * folder (a link, not a directory, not ours) leaves the port out, so `Blob/*` answers `unavailable` and the rest of the
+ * host still starts; the log line carries the reason code only, never the path.
+ */
+export async function openBlobPort(
+  options: Pick<ComposeOptions, 'dataDir' | 'ports'>,
+  log: Logger,
+): Promise<BlobFiles | undefined> {
+  if (options.ports?.blobFiles) return options.ports.blobFiles;
+  try {
+    return await openBlobFiles({ dir: join(options.dataDir, 'blobs') });
+  } catch (error) {
+    const reason = error instanceof BlobFilesError ? error.reason : 'io';
+    log.event('rpc.failed', { method: 'Host/blobs', reason });
+    return undefined;
+  }
+}
+
 function engineOptions(
   options: ComposeOptions,
   store: StorePort,
   log: Logger,
   accounts: ActorHost,
   loop: TimerLoop,
+  blobFiles: BlobFiles | undefined,
 ): EngineOptions {
   return {
     store,
@@ -359,6 +382,7 @@ function engineOptions(
     validate: (method, args) => parseArgs(method as MethodName, args),
     ports: {
       ...options.ports,
+      ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,
       deadlines: loop,
@@ -413,7 +437,8 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   // Before the engine exists, so the first draft upload and the first sync find their actors.
   await starts.startAll();
   steps.push(() => loop.stop());
-  const engine = await createEngine(engineOptions(options, raw, log, accounts, loop));
+  const blobFiles = await openBlobPort(options, log);
+  const engine = await createEngine(engineOptions(options, raw, log, accounts, loop, blobFiles));
   steps.push(() => engine.close());
   // Runs just before the engine closes: the engine has no lane module that does it (connect-sessions.ts says it must).
   steps.push(() => disposeConnectSessions(engine.services));
