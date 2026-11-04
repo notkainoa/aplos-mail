@@ -86,6 +86,8 @@ export function CalendarGrid(props: CalendarGridProps) {
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    // The focused hours scroller keeps its arrows for scrolling.
+    if ((e.target as HTMLElement).dataset.scroller === 'true') return;
     const walking = e.key === 'ArrowUp' || e.key === 'ArrowDown';
     // Buttons inside keep Return and Space for themselves; only the walk is shared.
     if (e.target !== e.currentTarget && !walking) return;

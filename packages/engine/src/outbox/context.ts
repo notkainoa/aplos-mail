@@ -7,9 +7,12 @@ import type { EngineFrame } from '../runtime/frames';
 import type { CommitOrigin, CommitResult, StorePort } from '../store';
 import type { SubmissionState, SubmissionWrite } from './store';
 
-/** Attachment bytes by blob id (the runtime's blob store); `undefined` when the blob is gone. */
+/**
+ * Attachment bytes by blob id (the runtime's blob store, which reads host files); resolves `undefined` when the blob is
+ * gone and rejects when it could not be read. Read through `loadBlobs` (blob-read.ts).
+ */
 export interface BlobSource {
-  get(blobId: string): Uint8Array | undefined;
+  get(blobId: string): Promise<Uint8Array | undefined>;
 }
 
 export interface OutboxDeps {

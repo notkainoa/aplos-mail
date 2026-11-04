@@ -127,7 +127,7 @@ test('a send that is done but whose clean-up has not run still pins the draft: a
     // The hidden-row clean-up is held up, so the submission is `sent` at the current revision but the draft row remains.
     for (let i = 0; i < 20; i++)
       w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
-    w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    await w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
     await wait(w, 15 * SEC);
     const states = w.first.store.read(q =>
       q.all<{ state: string }>('SELECT state FROM submissions WHERE draft_id = ?', s.draft.id),
@@ -208,7 +208,7 @@ test('resurface: a held phone version of a draft that came from the phone gets i
     const id = `${ACCOUNT}:rd-p`;
     for (let i = 0; i < 20; i++)
       w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
-    w.send(w.first, id, { revision: read(w, id).revision });
+    await w.send(w.first, id, { revision: read(w, id).revision });
     await wait(w, 15 * SEC);
     fact(w, 'rd-p', 'pm-2', { ...PHONE, internetId: '<p1@phone.example>' });
     w.faults.length = 0;

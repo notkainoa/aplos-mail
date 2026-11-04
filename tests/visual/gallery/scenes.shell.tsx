@@ -13,7 +13,12 @@ import {
 import { ListBox, ListRow } from '../../../apps/desktop/src/renderer/ui/list';
 import { EmptyLine } from '../../../apps/desktop/src/renderer/ui/list';
 import { ReconnectSheet } from '../../../apps/desktop/src/renderer/ui/status';
-import type { PaneHeaderProps, ToastData } from '../../../apps/desktop/src/renderer/ui/props';
+import type {
+  CalendarListProps,
+  MiniMonthProps,
+  PaneHeaderProps,
+  ToastData,
+} from '../../../apps/desktop/src/renderer/ui/props';
 import { AccountMenu } from '../../../apps/desktop/src/renderer/shell/AccountMenu';
 import { FatalHost, ShellLayout } from '../../../apps/desktop/src/renderer/shell/Shell';
 import { StatusView } from '../../../apps/desktop/src/renderer/shell/StatusHost';
@@ -25,7 +30,11 @@ import {
   NoAccountsLine,
 } from '../../../apps/desktop/src/renderer/shell/states';
 import { placeCounts, type PlaceId } from '../../../apps/desktop/src/renderer/shell/nav';
-import type { Screen } from '../../../apps/desktop/src/renderer/shell';
+import {
+  useSidebarSlot,
+  type Screen,
+  type SidebarSlot,
+} from '../../../apps/desktop/src/renderer/shell';
 import { noop, row } from './scenes.shared';
 
 /* ------------------------------ demo data ------------------------------ */
@@ -444,6 +453,45 @@ function reconnectScene(
   };
 }
 
+/* ------------------------------ the sidebar slot (Calendar's MiniMonth and Calendars list) ------------------------------ */
+
+const SLOT_MONTH: MiniMonthProps = {
+  month: '2026-10',
+  today: '2026-10-29',
+  range: { start: '2026-10-25', end: '2026-10-31' },
+  weekStartsOn: 0,
+  onMonthChange: noop,
+  onPick: noop,
+  marks: ['2026-10-27', '2026-10-29', '2026-10-30'],
+};
+
+const SLOT_CALENDARS: CalendarListProps = {
+  calendars: [
+    { id: 'work', name: 'Work', color: 'sky', visible: true },
+    { id: 'personal', name: 'Personal', color: 'ember', visible: true },
+    { id: 'hollow', name: 'Hollow Creek', color: 'hill', visible: false },
+  ],
+  onToggle: noop,
+  onSolo: noop,
+};
+
+const SLOT: SidebarSlot = { miniMonth: SLOT_MONTH, calendars: SLOT_CALENDARS };
+
+/** A throwaway screen: it only mounts the slot a real Calendar screen would. */
+function SlotMount(): null {
+  useSidebarSlot(SLOT);
+  return null;
+}
+
+function SidebarCalendarSlot(): ReactElement {
+  return (
+    <Frame screen="calendar">
+      <SlotMount />
+      <HomeRows />
+    </Frame>
+  );
+}
+
 /** The shell's scenes by state id (tests/visual/states.ts, section `ui-shell`). */
 export const shellScenes: Record<string, () => ReactElement> = {
   'shell-sidebar-groups': SidebarGroups,
@@ -451,6 +499,7 @@ export const shellScenes: Record<string, () => ReactElement> = {
   'shell-account-switcher-open': AccountSwitcherOpen,
   'shell-pane-header': PaneHeaderScene,
   'shell-minimised-nav': MinimisedNavScene,
+  'shell-sidebar-calendar-slot': SidebarCalendarSlot,
   ...STATUS_SCENES,
   'shell-toast-undo': toastScene([DONE_TOAST]),
   'shell-toast-stack-three': toastScene(STACK_THREE),

@@ -8,11 +8,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMethod } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import type { Api as ClientApi } from '@aplos/contract/client';
 import { createHarness, type Harness } from './harness';
 import { CONTRACT_METHODS, HARNESS_NOW_MS, OperationFailedError } from './index';
+import type { CommandArgs, ContractMethodOf, DataApi } from './index';
 
 const DAY = 86_400_000;
 import { isNativeStubbed } from './native-stub';
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
+/** `api.event.hide` is the client's `Event/hide` call, with `opId` minted by the data layer when absent. */
+const eventHideSignature: [
+  Equals<ReturnType<DataApi['event']['hide']>, ReturnType<ClientApi['event']['hide']>>,
+  Equals<Parameters<DataApi['event']['hide']>[0], CommandArgs<'Event/hide'>>,
+  Equals<ContractMethodOf<'event.hide'>, 'Event/hide'>,
+] = [true, true, true];
+
+/** Compile-only: `Event/hide`'s input is `{ids, hidden}` plus an `opId` the data layer may mint; never run. */
+export function hideSignature(api: DataApi) {
+  void api.event.hide({ ids: ['e1', 'e2'], hidden: true });
+  void api.event.hide({ ids: ['e1'], hidden: false, opId: 'op-mine' });
+  // @ts-expect-error: `hidden` says hide or show again; it is required.
+  void api.event.hide({ ids: ['e1'] });
+  // @ts-expect-error: `ids` is required.
+  void api.event.hide({ hidden: true });
+}
 
 async function withHarness(run: (h: Harness) => Promise<void>) {
   const h = createHarness();
@@ -198,6 +220,51 @@ test('a calendar toggle, an RSVP and an event edit are operations too', async ()
       { kind: 'operation', id: '', opId: answered.opId },
       'the RSVP is next on the stack',
     );
+  });
+});
+
+test('event.hide mints its opId, forwards the input unchanged, and hides in Aplos only', async () => {
+  await withHarness(async h => {
+    const { api, operations, undoStack } = h.layer;
+    assert.ok(eventHideSignature.every(Boolean));
+    const window = await h.truth.api.view.query({
+      spec: { kind: 'events', from: HARNESS_NOW_MS - 7 * DAY, to: HARNESS_NOW_MS + 14 * DAY },
+    });
+    const id = window.ids[0];
+    assert.ok(id, 'the demo week has an event');
+    h.clearCalls();
+
+    const receipt = await api.event.hide({ ids: [id], hidden: true });
+    assert.equal(h.callsOf('Event/hide').length, 1);
+    const sent = h.callsOf('Event/hide')[0]!.args as {
+      opId: string;
+      ids: string[];
+      hidden: boolean;
+    };
+    assert.match(sent.opId, /^op-t\d+$/, 'the data layer minted the opId');
+    assert.deepEqual(
+      { ...sent, opId: '' },
+      { opId: '', ids: [id], hidden: true },
+      'the input went to the client unchanged but for the minted opId',
+    );
+    assert.equal(receipt.opId, sent.opId, "the contract output is the minted operation's receipt");
+    assert.equal(operations.view(sent.opId)?.state, 'confirmed');
+    assert.equal((await h.truth.api.event.get({ ids: [id] })).list[0]?.hidden, true);
+    assert.equal(undoStack.peek()?.kind, 'operation');
+
+    const shown = await api.event.hide({ ids: [id], hidden: false, opId: 'op-show' });
+    assert.equal(shown.opId, 'op-show', 'a caller-supplied opId is kept');
+    assert.equal((await h.truth.api.event.get({ ids: [id] })).list[0]?.hidden, undefined);
+
+    await assert.rejects(
+      () => api.event.hide({ ids: ['no-such-event'], hidden: true, opId: 'op-bad' }),
+      (error: unknown) =>
+        error instanceof OperationFailedError &&
+        error.opId === 'op-bad' &&
+        error.error.type === 'notFound' &&
+        error.error.message === 'This event is no longer available.',
+    );
+    assert.equal(operations.view('op-bad')?.state, 'failed');
   });
 });
 
