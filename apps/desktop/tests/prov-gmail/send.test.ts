@@ -46,6 +46,10 @@ const DRAFTS_ON = { useDraftsSend: true };
 
 // ---------------------------------------------------------------- pinned bytes
 
+/** What goes on the wire: the pinned bytes with the adapter's `X-Aplos-Send` token as the first header. */
+const onTheWire = (pinned: ReturnType<typeof submission>): Buffer =>
+  Buffer.concat([Buffer.from(`X-Aplos-Send: ${pinned.payload.internetId}\r\n`), pinned.mime]);
+
 test('send: the pinned MIME leaves byte for byte, with its thread and a receipt for the Sent copy', async () => {
   const world = await sendWorld();
   const pinned = submission(world);
@@ -63,9 +67,9 @@ test('send: the pinned MIME leaves byte for byte, with its thread and a receipt 
   assert.equal(upload.endpoint, 'messages');
   assert.equal(upload.uploadType, 'multipart');
   assert.deepEqual(upload.metadata, { threadId: thread.threadId });
-  assert.ok(upload.raw.equals(pinned.mime), 'the uploaded bytes are the pinned bytes');
+  assert.ok(upload.raw.equals(onTheWire(pinned)), 'the uploaded bytes are the pinned bytes');
   const [sent] = world.sentMessages();
-  assert.ok(sent.raw.equals(pinned.mime), 'Gmail stored the pinned bytes');
+  assert.ok(sent.raw.equals(onTheWire(pinned)), 'Gmail stored the pinned bytes');
   assert.equal(receipt.remoteMessageId, sent.id);
   assert.equal(receipt.remoteThreadId, thread.threadId);
   assert.equal(receipt.draftConsumed, undefined);
@@ -80,6 +84,7 @@ test('send: envelope-only recipients become one Bcc line before the blank line; 
   await world.adapter.send(pinned.payload, world.ctx());
   const end = headerEndOf(pinned.mime);
   const expected = Buffer.concat([
+    Buffer.from(`X-Aplos-Send: ${pinned.payload.internetId}\r\n`),
     pinned.mime.subarray(0, end),
     Buffer.from('\r\nBcc: hidden@example.test, quiet@example.test'),
     pinned.mime.subarray(end),
@@ -112,7 +117,7 @@ test('send: drafts.send for a draft that is provably the pinned revision, carryi
   assert.equal(receipt.draftConsumed, true);
   assert.equal(world.emu.mailbox.listDrafts().length, 0, 'the copy on other devices is gone');
   const [sent] = world.sentMessages();
-  assert.ok(sent.raw.equals(pinned.mime));
+  assert.ok(sent.raw.equals(onTheWire(pinned)));
   assert.equal(receipt.remoteMessageId, sent.id);
 });
 
@@ -136,7 +141,7 @@ test('send: a draft edited on another device is left in place and the pinned byt
     world.emu.mailbox.rawOf(kept.message.id).equals(phoneCopy),
     "the phone's edit survives",
   );
-  assert.ok(world.sentMessages()[0].raw.equals(pinned.mime));
+  assert.ok(world.sentMessages()[0].raw.equals(onTheWire(pinned)));
 });
 
 test('send: no precondition, no drafts.send (and no drafts.get either)', async () => {
@@ -163,7 +168,7 @@ test('send: a phone edit landing between the draft read and drafts.send still se
   );
   const [sent] = world.sentMessages();
   assert.ok(
-    sent.raw.equals(pinned.mime),
+    sent.raw.equals(onTheWire(pinned)),
     'the upload carries the pinned bytes, not the draft as it is now',
   );
 });
@@ -198,7 +203,7 @@ test('send: with drafts.send off (the default), even a provably pinned draft goe
   assert.equal(world.emu.log.filter(e => e.apiMethod === 'gmail.users.drafts.get').length, 0);
   assert.equal(receipt.draftConsumed, undefined, 'the engine removes the remote draft itself');
   assert.equal(world.emu.mailbox.listDrafts().length, 1);
-  assert.ok(world.sentMessages()[0].raw.equals(pinned.mime));
+  assert.ok(world.sentMessages()[0].raw.equals(onTheWire(pinned)));
 });
 
 test('send: with drafts.send off, a gone remote draft is not read either: the pinned MIME is sent once', async () => {
@@ -381,7 +386,7 @@ test('send: a 401 is refreshed once and re-sent once (it proved nothing left); o
   assert.equal(sent.length, 1);
   assert.equal(receipt.remoteMessageId, sent[0].id);
   assert.equal(world.bridge.uploads.length, 2);
-  assert.ok(world.bridge.uploads.every(u => u.raw.equals(pinned.mime)));
+  assert.ok(world.bridge.uploads.every(u => u.raw.equals(onTheWire(pinned))));
 });
 
 test('send: a second 401 after the refresh is NotSentError auth, with no third request', async () => {
@@ -574,8 +579,8 @@ test('send: above 5 MB the upload is resumable (session, then one PUT of the pin
   assert.ok(pinned.mime.length > RESUMABLE_ABOVE_BYTES);
   await world.adapter.send(pinned.payload, world.ctx());
   assert.equal(world.bridge.uploads[0].uploadType, 'resumable');
-  assert.ok(world.bridge.uploads[0].raw.equals(pinned.mime));
-  assert.ok(world.sentMessages()[0].raw.equals(pinned.mime));
+  assert.ok(world.bridge.uploads[0].raw.equals(onTheWire(pinned)));
+  assert.ok(world.sentMessages()[0].raw.equals(onTheWire(pinned)));
   assert.equal(world.sendRequests(), 1);
 });
 
@@ -736,7 +741,7 @@ test('send: real outbox MIME with folding, encoded words, a reply and attachment
   });
   assert.match(pinned.mime.toString('latin1'), /\r\n /, 'the writer folded a header');
   await world.adapter.send(pinned.payload, world.ctx());
-  assert.ok(world.bridge.uploads[0].raw.equals(pinned.mime));
+  assert.ok(world.bridge.uploads[0].raw.equals(onTheWire(pinned)));
 });
 
 // ---------------------------------------------------------------- findSent
