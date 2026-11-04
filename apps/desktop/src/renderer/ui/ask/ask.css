@@ -247,7 +247,12 @@
 .ui-ask-dock__input::placeholder {
   color: var(--dim);
 }
+/* The ring belongs to the rounded field card, not the bare textarea: it follows the container's
+   --radius-lg with the same focus tokens and no layout shift. */
 .ui-ask-dock__input:focus-visible {
+  outline: none;
+}
+.ui-ask-dock__field:has(.ui-ask-dock__input:focus-visible) {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
