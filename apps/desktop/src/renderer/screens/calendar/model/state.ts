@@ -32,6 +32,18 @@ export interface ScopeAsk {
   readonly action: 'move' | 'change' | 'delete' | 'reply';
   readonly entryId: string;
   readonly pending: PendingChange;
+  /**
+   * The change touches times and the series row isn't in the loaded window, so "All events" cannot be written
+   * safely (model/times.ts): the chooser offers "This event" only, with one line saying why.
+   */
+  readonly seriesAlone?: boolean;
+}
+
+/** Why "All events" isn't offered for a time change when the series row isn't in the window (model/times.ts). */
+export function seriesAloneLine(action: 'move' | 'change'): string {
+  return `The rest of this series isn't loaded, so only this event can ${
+    action === 'move' ? 'move' : 'be changed'
+  }.`;
 }
 
 export interface CalendarState {

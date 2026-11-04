@@ -39,6 +39,7 @@ import type {
   EmptyView,
   GridView,
 } from './calendar.model';
+import { seriesAloneLine } from './calendar.model';
 
 /** The one pane-header tool on Calendar (DESIGN 7.1): New event, N. Ask and the calendar button are the shell's. */
 export const CALENDAR_PANE_TOOLS: PaneTools = [
@@ -389,15 +390,76 @@ function Surfaces(props: {
         onClose={() => dispatch({ type: 'scopeCancel' })}
       >
         {vm.scope ? (
-          <ScopeChooser
-            action={vm.scope.action}
-            title={vm.scope.title}
-            onChoose={scope => dispatch({ type: 'scope', scope })}
-            onCancel={() => dispatch({ type: 'scopeCancel' })}
-          />
+          vm.scope.seriesAlone && (vm.scope.action === 'move' || vm.scope.action === 'change') ? (
+            <ScopeAlone
+              scope={{ action: vm.scope.action, title: vm.scope.title }}
+              dispatch={dispatch}
+            />
+          ) : (
+            <ScopeChooser
+              action={vm.scope.action}
+              title={vm.scope.title}
+              onChoose={scope => dispatch({ type: 'scope', scope })}
+              onCancel={() => dispatch({ type: 'scopeCancel' })}
+            />
+          )
         ) : null}
       </Popover>
     </>
+  );
+}
+
+const SCOPE_ALONE_QUESTION: Record<'move' | 'change', string> = {
+  move: 'Move this repeating event?',
+  change: 'Change this repeating event?',
+};
+
+/**
+ * A time change on a repeating event whose series row isn't in the window: "All events" can't be written
+ * (model/times.ts), so the question offers "This event" (Return) alone, with the one line saying why.
+ */
+function ScopeAlone({
+  scope,
+  dispatch,
+}: {
+  scope: { action: 'move' | 'change'; title: string };
+  dispatch: (action: CalendarAction) => void;
+}) {
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
+  return (
+    <div
+      className="cal-scope-alone"
+      role="group"
+      aria-label={`${SCOPE_ALONE_QUESTION[scope.action]} ${scope.title}`}
+    >
+      <Text variant="title" as="p">
+        {SCOPE_ALONE_QUESTION[scope.action]}
+      </Text>
+      <Text variant="small" as="p">
+        {seriesAloneLine(scope.action)}
+      </Text>
+      <div className="cal-scope-alone__rows">
+        <Button
+          ref={first}
+          variant="filled"
+          size="sm"
+          label="This event"
+          keys="Return"
+          keyHint="always"
+          onPress={() => dispatch({ type: 'scope', scope: 'occurrence' })}
+        />
+        <Button
+          variant="text"
+          size="sm"
+          label="Cancel"
+          keys="Esc"
+          onPress={() => dispatch({ type: 'scopeCancel' })}
+        />
+      </div>
+    </div>
   );
 }
 

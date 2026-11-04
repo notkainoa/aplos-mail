@@ -1,4 +1,5 @@
 /** The reducer's transitions that write (move, delete, reply, save) and their shared helpers. Internal to the model. */
+import type { EventChange } from '@aplos/contract';
 import { toIsoDateTime, type Event } from '../../../data';
 import type {
   CalendarEventData,
@@ -7,7 +8,7 @@ import type {
   IsoDateTime,
   RsvpAnswer,
 } from '../../../ui/props';
-import { draftChange, draftProblem, draftTimes } from './editor';
+import { draftChange, draftProblem, draftTimes, timesTouched, type EditorDraft } from './editor';
 import { isoOfTime } from './period';
 import { timeChange } from './times';
 import { canSendReply, lockedMessage, RESPONSE } from './rsvp';
@@ -17,6 +18,7 @@ import {
   entryById,
   liveRsvp,
   railEntry,
+  seriesAloneLine,
   type CalendarContext,
   type CalendarEffect,
   type CalendarState,
@@ -50,12 +52,18 @@ export function decideScope(
   entry: CalendarEventData,
   action: ScopeAsk['action'],
   pending: PendingChange,
+  opts: { readonly seriesAlone?: boolean } = {},
 ): CalendarState {
   return {
     ...state,
     moreOpen: false,
     stackIds: null,
-    scope: { action, entryId: entry.id, pending },
+    scope: {
+      action,
+      entryId: entry.id,
+      pending,
+      ...(opts.seriesAlone ? { seriesAlone: true } : {}),
+    },
   };
 }
 
@@ -80,16 +88,31 @@ export function moveTransition(
   if (!event.can.move || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
   if (event.recurring && !scope)
-    return done(decideScope(state, entry, 'move', { kind: 'move', start, end }));
+    return done(
+      decideScope(
+        state,
+        entry,
+        'move',
+        { kind: 'move', start, end },
+        {
+          seriesAlone: event.seriesId !== undefined && seriesOf(event, ctx) === undefined,
+        },
+      ),
+    );
   const startUtc = new Date(start).getTime();
   const endUtc = new Date(end).getTime();
   const scoped = scope ?? 'occurrence';
+  const series = seriesOf(event, ctx);
+  // "All events" on a time move needs the series row to shift it by the delta; without it there is no safe write
+  // (model/times.ts), so the chooser never offers it and a stale choice answers with why instead.
+  if (scoped === 'series' && event.seriesId && !series)
+    return done({ ...state, scope: null }, [{ kind: 'notice', message: seriesAloneLine('move') }]);
   // Times keep the event's own type and zone; "All events" shifts the series' own times (model/times.ts).
   const target = timeChange(
     event,
     { start: { type: 'utc', utc: startUtc }, end: { type: 'utc', utc: endUtc } },
     scoped,
-    seriesOf(event, ctx),
+    series,
   );
   if (Object.keys(target.fields).length === 0) return done({ ...state, scope: null });
   return done({ ...state, scope: null, selectedId: id }, [
@@ -197,6 +220,66 @@ export function sendReply(
   ]);
 }
 
+/** The scope ask a save on a repeating event opens, or null when the entry is gone. */
+function askEditScope(
+  state: CalendarState,
+  ctx: CalendarContext,
+  draft: EditorDraft,
+  original: Event,
+): Transition | null {
+  const entry = entryById(ctx, draft.eventId);
+  if (!entry) return null;
+  return done(
+    decideScope(
+      { ...state, editor: null },
+      entry,
+      'change',
+      { kind: 'edit', draft },
+      {
+        // "All events" stays for a title-or-place edit; only a time change needs the series row (review1 1).
+        seriesAlone:
+          original.seriesId !== undefined &&
+          seriesOf(original, ctx) === undefined &&
+          timesTouched(draft, original),
+      },
+    ),
+  );
+}
+
+/** A new event's optimistic entry and its create write: the temp id stands in until the receipt lands. */
+function createSave(
+  state: CalendarState,
+  ctx: CalendarContext,
+  draft: EditorDraft,
+  change: Extract<EventChange, { type: 'create' }>,
+): Transition {
+  const calendar = ctx.calendars.find(c => c.id === change.calendarId);
+  const times = draftTimes(draft);
+  const tempId = `new:${draft.date}:${draft.start}:${draft.title.trim()}`;
+  const entry: CalendarEventData = {
+    id: tempId,
+    title: draft.title.trim(),
+    start: isoOfTime(times.start),
+    end: isoOfTime(times.end),
+    ...(draft.allDay ? { allDay: true } : {}),
+    calendar: calendar
+      ? { id: calendar.id, name: calendar.name, color: tagFor(calendar, ctx.calendars) }
+      : { id: '', name: '', color: 'dusk' },
+    kind: 'event',
+    persisted: false,
+    isOrganizer: true,
+  };
+  return done({ ...state, selectedId: tempId, anchor: draft.date }, [
+    {
+      kind: 'eventSet',
+      change,
+      optimistic: { id: tempId, add: entry },
+      undoLabel: `Added ${entry.title}`,
+      failure: `Couldn't add ${entry.title}.`,
+    },
+  ]);
+}
+
 export function saveEditor(
   state: CalendarState,
   ctx: CalendarContext,
@@ -208,47 +291,19 @@ export function saveEditor(
   if (problem) return done({ ...state, editor: { ...draft, error: problem } });
   const original = draft.eventId ? ctx.events.get(draft.eventId) : undefined;
   if (draft.mode === 'edit' && original?.recurring && !scope) {
-    const entry = entryById(ctx, draft.eventId);
-    if (entry)
-      return done(
-        decideScope({ ...state, editor: null }, entry, 'change', { kind: 'edit', draft }),
-      );
+    const ask = askEditScope(state, ctx, draft, original);
+    if (ask) return ask;
   }
-  const change = draftChange(
-    draft,
-    original,
-    scope ?? 'occurrence',
-    original ? seriesOf(original, ctx) : undefined,
-  );
+  const scoped = scope ?? 'occurrence';
+  const series = original ? seriesOf(original, ctx) : undefined;
+  if (scoped === 'series' && original?.seriesId && !series && timesTouched(draft, original))
+    return done({ ...closed(state), editor: null }, [
+      { kind: 'notice', message: seriesAloneLine('change') },
+    ]);
+  const change = draftChange(draft, original, scoped, series);
   const next = { ...closed(state), editor: null };
   if (!change) return done(next);
-  if (change.type === 'create') {
-    const calendar = ctx.calendars.find(c => c.id === change.calendarId);
-    const times = draftTimes(draft);
-    const tempId = `new:${draft.date}:${draft.start}:${draft.title.trim()}`;
-    const entry: CalendarEventData = {
-      id: tempId,
-      title: draft.title.trim(),
-      start: isoOfTime(times.start),
-      end: isoOfTime(times.end),
-      ...(draft.allDay ? { allDay: true } : {}),
-      calendar: calendar
-        ? { id: calendar.id, name: calendar.name, color: tagFor(calendar, ctx.calendars) }
-        : { id: '', name: '', color: 'dusk' },
-      kind: 'event',
-      persisted: false,
-      isOrganizer: true,
-    };
-    return done({ ...next, selectedId: tempId, anchor: draft.date }, [
-      {
-        kind: 'eventSet',
-        change,
-        optimistic: { id: tempId, add: entry },
-        undoLabel: `Added ${entry.title}`,
-        failure: `Couldn't add ${entry.title}.`,
-      },
-    ]);
-  }
+  if (change.type === 'create') return createSave(next, ctx, draft, change);
   const entry = entryById(ctx, draft.eventId);
   const title = draft.title.trim();
   const times = draftTimes(draft);

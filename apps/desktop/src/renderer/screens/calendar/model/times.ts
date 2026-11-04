@@ -8,8 +8,8 @@
  * `series` carries the series' own fields, as Google's events.patch on the recurring event does. Sending this
  * occurrence's absolute times would move the series' first start to this day. So when the series row (`seriesId`) is
  * in hand, the change targets it with its own start and end shifted by the same amount the occurrence moved; when it is
- * not, the occurrence's new times go out on the occurrence's id and the engine is trusted to shift the series by the
- * difference (the only form a window of occurrences can produce).
+ * not, no write goes out: an occurrence id under `series` scope with absolute times is the one form the engine
+ * cannot read as a shift (transitions.ts keeps "All events" off the chooser then).
  */
 import type { EventFields } from '@aplos/contract';
 import type { EpochMs, Event, EventTime } from '../../../data';
@@ -90,6 +90,9 @@ export function timeChange(
   const fields: Pick<Partial<EventFields>, 'start' | 'end'> = {};
   const startMoved = !sameInstant(next.start, event.start);
   const endMoved = !sameInstant(next.end, event.end);
+  // An occurrence whose series row isn't in hand cannot be written under `series` scope: its absolute times would
+  // pin the series' first start to this day. Empty fields make the callers no-op instead (review1 1).
+  if (scope === 'series' && event.seriesId && series === undefined) return { id: event.id, fields };
   if (scope === 'series' && series && series.id !== event.id) {
     if (startMoved) fields.start = shiftTime(series.start, msOf(next.start) - msOf(event.start));
     if (endMoved) fields.end = shiftTime(series.end, msOf(next.end) - msOf(event.end));

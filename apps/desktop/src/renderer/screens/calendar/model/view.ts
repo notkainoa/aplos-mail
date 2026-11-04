@@ -95,7 +95,13 @@ export interface CalendarViewModel {
   readonly more: readonly MenuEntry[];
   readonly moreOpen: boolean;
   readonly stack: { ids: readonly string[]; label: string; entries: readonly MenuEntry[] } | null;
-  readonly scope: { action: ScopeAsk['action']; title: string; entryId: string } | null;
+  readonly scope: {
+    action: ScopeAsk['action'];
+    title: string;
+    entryId: string;
+    /** A time change without the series row in the window: "This event" only, with the reason (ScopeAlone). */
+    seriesAlone: boolean;
+  } | null;
   readonly editor: EditorView | null;
   /** DESIGN 7.14: "Nothing scheduled." with New event · N, on an empty day. */
   readonly emptyAction: boolean;
@@ -217,7 +223,12 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
         : null,
     scope:
       state.scope && scopeEntry
-        ? { action: state.scope.action, title: scopeEntry.title, entryId: scopeEntry.id }
+        ? {
+            action: state.scope.action,
+            title: scopeEntry.title,
+            entryId: scopeEntry.id,
+            seriesAlone: state.scope.seriesAlone === true,
+          }
         : null,
     editor: state.editor ? editorView(state.editor, ctx) : null,
     emptyAction: shown === 'day' || shown === 'agenda',

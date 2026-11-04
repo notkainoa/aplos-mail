@@ -232,7 +232,7 @@ export function draftTimes(d: EditorDraft): Pick<EventFields, 'start' | 'end' | 
 }
 
 /** The day, times or all-day flag differ from the draft the event opened as: only then does a save write times. */
-function timesTouched(d: EditorDraft, original: Event): boolean {
+export function timesTouched(d: EditorDraft, original: Event): boolean {
   const before = draftFromEvent(original);
   return (
     d.date !== before.date ||

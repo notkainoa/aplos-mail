@@ -210,7 +210,9 @@ test('Delete runs only on persisted events, never on a plan or an unsaved draft'
 });
 
 test('a repeating event asks This event or All events and passes the scope through', () => {
-  const ctx = ctxFor();
+  // A context that also holds the series row ('standup'), so "All events" can be written safely (review1 1).
+  const occ0 = demoWorld.events.find(e => e.seriesId === 'standup')!;
+  const ctx = ctxFor([...demoWorld.events, { ...occ0, id: 'standup', seriesId: undefined }]);
   const standup = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
   const ask = update(
     S({ selectedId: standup.id }),
@@ -223,7 +225,10 @@ test('a repeating event asks This event or All events and passes the scope throu
   const fx = chosen.effects.find(f => f.kind === 'eventSet');
   assert.ok(fx && fx.kind === 'eventSet');
   assert.equal(fx.change.type, 'update');
-  if (fx.change.type === 'update') assert.equal(fx.change.scope, 'series');
+  if (fx.change.type === 'update') {
+    assert.equal(fx.change.scope, 'series');
+    assert.equal(fx.change.id, 'standup');
+  }
 });
 
 test('all-events on a move shifts the series by the delta, not the occurrence times', () => {
@@ -241,6 +246,55 @@ test('all-events on a move shifts the series by the delta, not the occurrence ti
   );
   assert.equal(target.id, 'standup');
   assert.ok(target.fields.start && msOf(target.fields.start) === msOf(occ.start) + 3_600_000);
+});
+
+test('review1: a time move on a repeating event whose series row is not loaded offers This event only', () => {
+  const ctx = ctxFor();
+  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
+  // The events window holds occurrences only (seriesId 'standup', no master row), like the real window.
+  assert.ok(occ.seriesId !== undefined && !ctx.events.has(occ.seriesId));
+  const ask = update(
+    S({ selectedId: occ.id }),
+    { type: 'move', id: occ.id, start: '2026-10-28T12:00:00', end: '2026-10-28T12:15:00' },
+    ctx,
+  );
+  assert.equal(ask.state.scope?.action, 'move');
+  assert.equal(ask.state.scope?.seriesAlone, true);
+  assert.equal(viewModel(ask.state, ctx).scope?.seriesAlone, true);
+  // A stale "All events" choice answers with why; no write goes out with this day's absolute times.
+  const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
+  assert.equal(
+    chosen.effects.some(fx => fx.kind === 'eventSet'),
+    false,
+  );
+  assert.ok(chosen.effects.some(fx => fx.kind === 'notice' && fx.message.includes('series')));
+  // And the primitive itself never emits absolute occurrence times under series scope.
+  const target = timeChange(
+    occ,
+    {
+      start: { type: 'utc', utc: msOf(occ.start) + 3_600_000 },
+      end: { type: 'utc', utc: msOf(occ.end) + 3_600_000 },
+    },
+    'series',
+    undefined,
+  );
+  assert.deepEqual(target.fields, {});
+});
+
+test('review1: a non-time edit on the same occurrence still offers All events', () => {
+  const ctx = ctxFor();
+  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
+  const draft = { ...draftFromEvent(occ), title: 'Standup renamed' };
+  const ask = update(S({ editor: draft, selectedId: occ.id }), { type: 'editorSave' }, ctx);
+  assert.equal(ask.state.scope?.action, 'change');
+  assert.notEqual(ask.state.scope?.seriesAlone, true);
+  const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
+  const fx = chosen.effects.find(f => f.kind === 'eventSet');
+  assert.ok(fx && fx.kind === 'eventSet' && fx.change.type === 'update');
+  if (fx.kind === 'eventSet' && fx.change.type === 'update') {
+    assert.equal(fx.change.scope, 'series');
+    assert.deepEqual(fx.change.fields, { title: 'Standup renamed' });
+  }
 });
 
 // ---------------------------------------------------------------------------
