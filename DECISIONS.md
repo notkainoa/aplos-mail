@@ -1291,3 +1291,7 @@ Pure, unwired code in `packages/mail-html/src/frame/` (exported as `@aplos/mail-
   - (d) Map the contract's `imagePolicy: 'load'` and the sender allow-list to `'allow'` in ONE whitelist function, and key the cache on the resolved policy.
   - (e) Call `withReporter` on every issue, outside the cache.
   - (f) Fix the `MailFrame.url` contract comment: the issued URL ends with a slash.
+
+## 2026-11-05 prov-emu: #233 test gap (each duplicate-check question failed alone)
+
+- The old fail-closed test failed EVERY `messages.list`, and the probe's four list questions (the subject search, the search for today's Message-ID, the adapter's own `findSent` search and its listing of the newest Sent) each hid the others. Now each is failed ALONE (chosen by its query) and the run must end `fail` with zero uploads and no probe message. Each is red when only that question is made to fail open (a `.catch` returning "no hits" on it): subject search, Message-ID search, and the `findSent` check (which covers the search and the listing).
