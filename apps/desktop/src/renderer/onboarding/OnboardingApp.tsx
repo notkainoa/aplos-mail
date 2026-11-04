@@ -33,6 +33,7 @@ import {
 } from 'react';
 import { api, useAccounts, useSettings } from '../data';
 import type { Account, Input, Output } from '../data';
+import { activeFocus, focusTarget, showTop } from './focusTarget';
 import { createAppRegistry, focusKindOf } from '../commands';
 import type { CommandContext } from '../commands';
 import { WINDOW_COPY } from './copy';
@@ -65,10 +66,8 @@ import {
   reduceFlow,
   sessionSetupId,
   shouldMoveFocus,
-  type ActiveFocus,
   type FlowEffect,
   type FlowEvent,
-  type FocusTarget,
   type StepChrome,
   type StepId,
   type StepKeys,
@@ -137,54 +136,7 @@ export interface OnboardingAppProps {
 
 /* ---------- Focus (F12) ---------- */
 
-/** A button's visible label: its text without keycaps. */
-export function buttonLabel(button: Element): string {
-  let text = '';
-  button.childNodes.forEach(node => {
-    if (node.nodeName === 'KBD') return;
-    text += node.textContent ?? '';
-  });
-  return text.trim();
-}
-
-/**
- * Moves focus to a step's main action. Returns false when the target is not on screen or cannot take focus.
- * `keepTop` (a new step) focuses without scrolling and shows the step from its top, so a long step at 640 × 520
- * opens on its title, never part-way down (F13); within a step, focus scrolls the control into view.
- */
-export function focusTarget(
-  root: HTMLElement | null,
-  target: FocusTarget,
-  keepTop = false,
-): boolean {
-  if (!root) return false;
-  let el: HTMLElement | null = null;
-  if (target.kind === 'field') {
-    el = root.querySelector<HTMLElement>(`#${CSS.escape(target.id)}`);
-  } else {
-    const buttons = Array.from(
-      root.querySelectorAll<HTMLButtonElement>('main button, footer button'),
-    );
-    el = buttons.find(b => !b.disabled && buttonLabel(b) === target.label) ?? null;
-  }
-  if (!el || (el as HTMLButtonElement | HTMLInputElement).disabled) return false;
-  el.focus(keepTop ? { preventScroll: true } : undefined);
-  if (keepTop) showTop(root);
-  return document.activeElement === el;
-}
-
-/** Where focus is, for `shouldMoveFocus`: nowhere, on the step's footer, or on a control the owner chose. */
-export function activeFocus(root: HTMLElement | null): ActiveFocus {
-  const active = document.activeElement;
-  if (!active || active === document.body || !active.isConnected) return 'none';
-  return root?.querySelector('footer')?.contains(active) ? 'footer' : 'elsewhere';
-}
-
-/** Scrolls the step's body back to its top. */
-export function showTop(root: HTMLElement | null): void {
-  const body = root?.querySelector('main');
-  if (body) body.scrollTop = 0;
-}
+export { activeFocus, buttonLabel, focusTarget, showTop } from './focusTarget';
 
 /* ---------- The root ---------- */
 
