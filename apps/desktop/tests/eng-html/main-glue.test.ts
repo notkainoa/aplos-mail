@@ -182,7 +182,9 @@ test('the handler names only a window’s own live contents: hosted views, webvi
   }
   // (The request's own signal rides along; this fake request has none.)
   assert.deepEqual(
-    asked.map(({ token, path, windowId }) => ({ token, path, windowId })),
+    (asked as { token: string; path: string; windowId: string }[]).map(
+      ({ token, path, windowId }) => ({ token, path, windowId }),
+    ),
     [{ token: TOKEN, path: '', windowId: '2' }],
   );
 });
