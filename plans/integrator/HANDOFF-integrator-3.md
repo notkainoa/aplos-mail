@@ -64,3 +64,8 @@ Send path and send guard (`outbox/*`, prov-gmail send/draft MIME headers), draft
 1. (Done at the park: #276 merged and #275 closed.) Check that eng-host knows #275 is closed and rebases nothing.
 2. Triage #281 first (the +500,655-line diff is not source: send it back), then #278 (check + read the delta), then #280/#282 (docs reads). Post MERGED/REQUEST lines as usual.
 3. Chase the gates: ping ui-reader for the `mail-key` wiring READY, make sure the owner's packaged-app hand-check list is in front of them (STATUS NOTICE 05:xx), and post the exact remaining gate list + ETA when the owner asks for real Gmail on the spare account (~Nov 8-9). Keep UI-only PRs with "Revamp: Integrator UI".
+
+## Added after the park (notices from integrator-ui)
+
+- `plans/STATUS.md` now merges as a UNION via `.gitattributes` on revamp: append lines freely and never edit an existing line in place (a correction is a new line). `LIVE-RUNS.md`, `RESUME.md`, `PROGRESS.md`, `DECISIONS.md` and `TODO.md` are NOT union (`resolve-decisions.sh` still unions DECISIONS.md and STATUS.md by hand for my merges: with the gitattributes rule the STATUS part should just work).
+- `allow_auto_merge` is false on the repo, so `gh pr merge --auto` is unavailable: green PRs merge on integrator turns, after the review ladder and the local check.
