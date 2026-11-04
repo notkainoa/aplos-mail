@@ -55,7 +55,10 @@ async function world(opts: { withOriginal?: boolean } = {}) {
   const calls: string[] = [];
   let stalls = 0;
   let gate: { promise: Promise<void>; open: () => void } | undefined;
-  const streams = new Map<string, () => AsyncIterable<Uint8Array>>();
+  const streams = new Map<
+    string,
+    () => AsyncIterable<Uint8Array> | Promise<AsyncIterable<Uint8Array>>
+  >();
   const bytes = (s: string) =>
     async function* () {
       yield enc(s.slice(0, 4));
@@ -94,6 +97,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
     clock,
     calls,
     streams,
+    blobs,
     stalled: () => stalls,
     setHeld: () => {
       gate = { promise: undefined as unknown as Promise<void>, open: () => undefined };
@@ -198,6 +202,42 @@ test('exactly 25 MB streams through; a missing subject falls back to message.eml
   assert.equal(got.size, 25 * 1024 * 1024);
   const named = await orig(w, 'nosubj');
   assert.equal(named.name, 'message.eml');
+  await w.close();
+});
+
+test('an open call that never settles dies on the total deadline', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'never', origin: 'sync', writes: [msg('never', 'tv', 4)] });
+  w.streams.set('never', () => new Promise<AsyncIterable<Uint8Array>>(() => undefined));
+  const pending = orig(w, 'never').then(
+    () => assert.fail('expected cancellation'),
+    (e: unknown) => e,
+  );
+  for (let i = 0; i < 100 && w.calls.length === 0; i++) await new Promise(r => setImmediate(r));
+  assert.equal(w.calls.length, 1, 'the provider call never settled');
+  w.clock.advance(120_000);
+  const error = await pending;
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  await w.close();
+});
+
+test('a 255-code-point subject still fits line(500) and keeps .eml stored and returned', async () => {
+  const w = await world();
+  w.store.commit({
+    opId: 'longname',
+    origin: 'sync',
+    writes: [msg('emoji', 'te', 5, { subject: '😀'.repeat(255) })],
+  });
+  w.streams.set('emoji', async function* () {
+    yield enc('x');
+  });
+  const got = await orig(w, 'emoji');
+  assert.ok(got.name.length <= 500, `contract bound, got ${got.name.length} units`);
+  assert.ok(got.name.endsWith('.eml'));
+  const stored = w.blobs.stored.get(got.blobId)!;
+  assert.equal(stored.header.name, got.name, 'stored name is the returned name');
+  assert.equal(stored.header.kind, 'original');
   await w.close();
 });
 

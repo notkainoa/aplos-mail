@@ -88,7 +88,13 @@ export async function messageOriginal(
     const subject = services.store.read(q =>
       q.get<{ subject: string | null }>('SELECT subject FROM messages WHERE id = ?', ref.rowId),
     )?.subject;
-    const name = `${cleanName(subject) ?? 'message'}.eml`;
+    // `line(500)` counts UTF-16 units and `put` re-cleans names to 255 code points: bound both, so
+    // the returned name is exactly the stored one and always keeps the `.eml`.
+    let base = cleanName(subject) ?? 'message';
+    const cps = [...base].slice(0, 251);
+    while (cps.join('').length > 496) cps.pop();
+    base = cps.join('');
+    const name = `${base}.eml`;
     const { blobId, size } = await services.blobs.put({
       caller: ctx.caller,
       connectionId: ctx.connectionId,
