@@ -12,35 +12,23 @@ import type { ChipProps, SummaryContent } from './list';
 
 /* ───────────────────────── reader ───────────────────────── */
 
-/** The reader's sender, with hover details (DESIGN §7.5 item 1). */
-export interface SenderInfo {
-  /** Name in `title`. */
-  name: string;
-  /** Address, shown on hover. */
-  address: string;
-  /** Receiving account, shown on hover. */
-  accountLabel: string;
-  /** History with this sender, labelled as history, e.g. "14 emails both ways since March". */
-  history?: string;
-}
-
-/** The reader's top: sender line, the big serif summary, one action row; no monogram, no card (DESIGN §6 ReaderHead, §7.5 items 1–3). Mockups: reader.html, reply.html, errors.html (send-failed). Plain + refines: ui-foundation; used by ui-reader. */
+/** The reader's top: the big serif summary with its due chip, then a hairline (owner review 2026-11-03: the sender line moved into the message cards, the actions into the pinned `ReaderActions` bar). DESIGN §6 ReaderHead, §7.5. Mockups: reader.html, reply.html, errors.html (send-failed). Plain + refines: ui-foundation; used by ui-reader. */
 export interface ReaderHeadProps {
-  /** Sender and hover details. */
-  sender: SenderInfo;
-  /** `--dim` recipients phrase, e.g. "to you and Mina Cho". */
-  recipientsLabel: string;
-  /** Due chip on the right, sentence format. */
+  /** Due chip under the summary, sentence format. */
   due?: DueInfo;
-  /** Time on the right. */
-  date: IsoDateTime;
   /** Summary slot; never clamped here. */
   summary: SummaryContent;
-  /** The filled suggestion with Space, then Later and Done. */
+  /** Element ref for the reader-column flight ghost (DESIGN §4.9). */
+  ref?: Ref<HTMLElement>;
+}
+
+/** The reader's action bar, pinned to the bottom of the pane and centred: the suggestion as the filled button with Space, then Later and Done as text buttons (DESIGN §6, §7.5 item 3; owner review 2026-11-03). */
+export interface ReaderActionsProps {
+  /** The filled suggestion with Space. */
   suggestion: SuggestedAction;
   /** Registry ids for the three controls; ⋯ lives in the pane header. */
   commands: ReaderTriageCommands;
-  /** The inline reply or another top surface owns the filled button (DESIGN §7.6). */
+  /** The inline reply or another top surface owns the filled button (DESIGN §7.6): the suggestion is a text button and the bar rests in the flow under the reply instead of floating. */
   demoted: boolean;
   /** Suggestion button. */
   onSuggestion: () => void;
@@ -48,40 +36,6 @@ export interface ReaderHeadProps {
   onLater: (anchor: HTMLElement) => void;
   /** Done button. */
   onDone: () => void;
-  /** Element ref for the reader-column flight ghost (DESIGN §4.9). */
-  ref?: Ref<HTMLElement>;
-}
-
-/** An earlier message as a 36 px one-liner. */
-export interface CollapsedMessage {
-  /** Message id. */
-  id: string;
-  /** Sender name, or "You". */
-  from: string;
-  /** First line of the message. */
-  preview: string;
-  /** Sent time. */
-  date: IsoDateTime;
-}
-
-/** One collapsed line for earlier messages ("3 earlier messages from Jordan, you and Mina"); O expands into 36 px one-liners with a 2 px accent rail on the cursor (DESIGN §6 EarlierMessages, §7.5 item 4). Mockups: reader.html (earlier). Plain + refines: ui-foundation; used by ui-reader. */
-export interface EarlierMessagesProps {
-  /** Number of earlier messages. */
-  count: number;
-  /** First names in thread order, "you" for the owner; joined by the component. */
-  participants: readonly string[];
-  /** Expanded into one-liners. */
-  expanded: boolean;
-  /** The one-liners shown when expanded. */
-  messages: readonly CollapsedMessage[];
-  /** The thread cursor: the one message id the ↑/↓ rail is on, shared with ThreadMessage (`cursor` = this id). */
-  cursorId?: string;
-  /** Registry id for O. */
-  commandId: CommandId;
-  /** Expand or collapse. */
-  onToggle: () => void;
-  /** Open one message. */
-  onOpenMessage: (id: string) => void;
 }
 
 /** A remote-images notice on a message (DESIGN §7.5 HTML mail). */
@@ -102,16 +56,20 @@ export interface ThreadMessageProps {
   toLabel: string;
   /** Sent time. */
   date: IsoDateTime;
-  /** Holds the thread cursor (the one cursor id shared with EarlierMessages): the accent rail shows. */
+  /** Holds the thread cursor (the one thread cursor id): the accent rail shows. */
   cursor: boolean;
-  /** The message body from `renderer/mailframe` (sandboxed iframe or plain text). */
-  body: ReactNode;
+  /** The message body from `renderer/mailframe` (sandboxed iframe or plain text); absent while the card is compact. */
+  body?: ReactNode;
+  /** An earlier message the card can fold: the head is a button (`aria-expanded`), a click or O opens or closes it. Absent: always open (the latest message). */
+  fold?: { open: boolean; onToggle: () => void; onFocus?: () => void; commandId: CommandId };
+  /** Compact (folded) card: the plain-text first sentence or two, already ending in "…". Shown under the head while `fold.open` is false; an empty string reads "No preview" in dim text. */
+  excerpt?: string;
   /** Attachment chips under the body. */
   attachments?: readonly Extract<ChipProps, { kind: 'attachment' }>[];
   /** Remote images notice, when the mail has any. */
   remoteImages?: RemoteImages;
-  /** Quoted text toggle (O also shows quoted text). */
-  quoted?: { shown: boolean; onToggle: () => void; commandId: CommandId };
+  /** Quoted text toggle. `commandId` (O) only where O really toggles quoted text: on the latest message, never on a card O folds. */
+  quoted?: { shown: boolean; onToggle: () => void; commandId?: CommandId };
   /** The undo-send line under a message you just sent (placement 'thread'). */
   undoTray?: Omit<UndoTrayProps, 'placement'>;
   /** Element ref for `arrive` and scrolling the cursor into view. */
@@ -161,7 +119,7 @@ export type UndoTrayState =
       totalSeconds: number;
     }
   | {
-      /** "We could not confirm this was sent. Check Sent, or Send anyway." */
+      /** "Couldn’t confirm this was sent. Check Sent, or Send anyway." */
       kind: 'uncertain';
     }
   | {

@@ -15,7 +15,7 @@ import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import { harnessClock } from '../../data/clock';
 import { api, setClock, undoStack, type ThreadRow } from '../../data';
-import { dismissToast, pushToast, runToastAction } from '../../shell';
+import { dismissToast, navigate, pushToast, runToastAction } from '../../shell';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { DoneScreen } from '../done';
 import { commandsForDone } from '../done/doneCommands';
@@ -42,6 +42,10 @@ import { setFormatClock } from '../../ui/list/internal/format';
 import { ListScreen } from './ListScreen';
 import { ListEmpty, ListFailed } from './ListStates';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
+import { getComposeRequest } from '../../shell/store-compose';
+import { getScreen } from '../../shell/store-route';
+import { getOpenThread, getOpenThreadContext, setOpenThread } from '../../shell/store-thread';
+import { listOpener } from '../../App';
 
 const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
@@ -95,6 +99,7 @@ function depsOver(world: World, config: ListConfig, start: string | null = null)
     acts: 0,
     held: 0,
     opened: [] as string[],
+    listIds: [] as (readonly string[] | undefined)[],
     destroyed: [] as string[],
     deleted: [] as (readonly string[])[],
     acted: [] as Parameters<typeof api.thread.act>[0][],
@@ -153,7 +158,10 @@ function depsOver(world: World, config: ListConfig, start: string | null = null)
     push: pushToast,
     dismiss: dismissToast,
     hold: { extend: () => void state.held++ },
-    open: (id, kind) => void state.opened.push(`${kind}:${id}`),
+    open: (id, kind, listIds) => {
+      state.opened.push(`${kind}:${id}`);
+      state.listIds.push(listIds);
+    },
     confirmation: () => state.confirmation,
     setConfirmation: next => {
       state.confirmation = next;
@@ -319,6 +327,11 @@ test('arrows on All mail move the cursor and archive nothing', async () => {
     assert.equal(getToasts().length, 0, 'and nothing was announced');
     actions.open();
     assert.deepEqual(state.opened, [`thread:${before[2]}`], 'Return opens through onOpen');
+    assert.deepEqual(
+      state.listIds,
+      [before],
+      'and hands over the ids the list shows, in order, for J and K',
+    );
   } finally {
     world.connection.close();
   }
@@ -779,4 +792,40 @@ test('picked rows carry the pick state, and the list draws it without a new row 
   assert.equal(picked.picked, true);
   assert.equal(picked.picking, true);
   assert.match(renderToStaticMarkup(createElement(ListRow, picked)), /data-picked="true"/);
+});
+
+test('Enter on a draft opens it in the compose page, coming from Drafts', async () => {
+  const world = await boot();
+  try {
+    const { deps, state } = depsOver(world, DRAFTS_CONFIG);
+    navigate('drafts');
+    const open = listOpener('drafts');
+    createListActions({ ...deps, open }).open();
+    assert.deepEqual(state.opened, [], 'the opener of the screen got it, not the test double');
+    assert.deepEqual(getScreen(), { label: 'compose' });
+    const request = getComposeRequest();
+    assert.ok(request?.draftId, 'the draft row is the one opened');
+    assert.equal(request?.from, 'drafts');
+  } finally {
+    navigate('home');
+    world.connection.close();
+  }
+});
+
+test('a list opens a thread in the reader with its own ids, so J and K walk that list and the crumb counts it', () => {
+  const open = listOpener('later');
+  open('t2', 'thread', ['t1', 't2', 't3']);
+  assert.equal(getOpenThread(), 't2');
+  assert.deepEqual(getOpenThreadContext().listIds, ['t1', 't2', 't3']);
+  assert.equal(getOpenThreadContext().from, 'later');
+  setOpenThread(null);
+  navigate('later');
+  open('t9', 'thread');
+  assert.equal(
+    getOpenThreadContext().listIds,
+    null,
+    'without ids the reader falls back to Home order',
+  );
+  setOpenThread(null);
+  navigate('home');
 });

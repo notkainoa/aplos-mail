@@ -500,7 +500,7 @@ describe('ToastStack', () => {
           />,
         ),
       ),
-      /We could not confirm this was sent\. Check Sent Send anyway/,
+      /Couldn’t confirm this was sent\. Check Sent Send anyway/,
     );
     assert.match(
       textOf(

@@ -30,8 +30,8 @@ Run the tests with `cd apps/desktop && npx tsx --test 'src/renderer/shell/*.test
 
 ## Where the rest lives
 
-| Need | Home |
-|---|---|
+| Need                                                                | Home                                                                 |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | Keys, contexts, the palette's entries, Settings rows in the palette | `renderer/commands` (`registerSetting`, `commandsForPalette`, `run`) |
-| Streams, the clock, the shared undo stack, consent | `renderer/data` (`useFrames`, `useNow`, `undoStack`, `useConsent`) |
-| Component props | `renderer/ui/props.ts` |
+| Streams, the clock, the shared undo stack, consent                  | `renderer/data` (`useFrames`, `useNow`, `undoStack`, `useConsent`)   |
+| Component props                                                     | `renderer/ui/props.ts`                                               |

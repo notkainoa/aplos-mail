@@ -19,10 +19,14 @@ import { EmptyLine, LowBand, SectionHeader } from './ui/list';
 import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus, api } from './data';
 import { statusCopy } from './ui/status';
 import {
+  closeCompose,
   navigate,
+  openCompose,
   openThread,
   useAccountScope,
+  useComposeRequest,
   useHomeShellProps,
+  usePaneHeaderPart,
   type HomeShellProps,
   type Screen,
 } from './shell';
@@ -30,6 +34,9 @@ import { HomeScreen as HomeRoute, OneByOneScreen } from './screens/home';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
+import { ComposeScreen, composeHeader } from './screens/compose';
+import { ReaderScreen } from './screens/reader';
+import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
 import { FirstSyncLine, NoAccountsLine } from './shell/states';
@@ -268,6 +275,16 @@ function HomeSlot() {
   return <HomeRoute {...useHomeShellProps()} />;
 }
 
+/** What opening a list row does: a thread opens in the reader, a draft in the compose page, a submission nothing. */
+export function listOpener(
+  from: Screen,
+): (id: string, kind: OpenKind, listIds?: readonly string[]) => void {
+  return (id, kind, listIds) => {
+    if (kind === 'thread') openThread(id, listIds ? { from, listIds } : { from });
+    if (kind === 'draft') openCompose({ draftId: id });
+  };
+}
+
 /** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
 function OneByOneSlot() {
   const { accountId, onOpen } = useHomeShellProps();
@@ -281,33 +298,55 @@ function OneByOneSlot() {
   );
 }
 
-/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
-function useListProps() {
+/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader, drafts in the compose page; submissions have no opener. */
+function useListProps(from: Screen) {
   const scope = useAccountScope();
+  const place = typeof from === 'string' ? from : from.label;
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: (id: string, kind: OpenKind) => (kind === 'thread' ? openThread(id) : undefined),
+      onOpen: listOpener(from),
     }),
-    [scope],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `from` is a new object every render; `place` is its value
+    [scope, place],
   );
 }
 
 function LaterSlot() {
-  return <LaterScreen {...useListProps()} />;
+  return <LaterScreen {...useListProps('later')} />;
 }
 
 function DoneSlot() {
-  return <DoneScreen {...useListProps()} />;
+  return <DoneScreen {...useListProps('done')} />;
 }
 
 function ListSlot({ which }: { readonly which: ListWhich }) {
   // Keyed by place, so Trash -> Spam -> All mail never carries an open Confirm or a cursor across.
-  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps()} />;
+  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps(which)} />;
 }
 
-/** Labels other lanes open as placeholders (the reader, search, help, compose); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['thread', 'Search', 'Help', 'New message'];
+/** The compose page: C, the sidebar's New message, a Drafts row and the inline reply's Pop out land here. Esc and × keep the draft and go back. */
+function ComposeSlot() {
+  const request = useComposeRequest();
+  const runCommand = useRunCommand();
+  const part = useMemo(
+    () => composeHeader({ close: () => runCommand('compose.close'), saved: false }),
+    [runCommand],
+  );
+  usePaneHeaderPart(part);
+  if (!request) return null;
+  return (
+    <ComposeScreen
+      key={request.seq}
+      draftId={request.draftId}
+      replyTo={request.replyTo}
+      onClose={closeCompose}
+    />
+  );
+}
+
+/** Labels other lanes open as placeholders (search, help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['Search', 'Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -315,8 +354,10 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s; nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
+  if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
+  if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
   if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (

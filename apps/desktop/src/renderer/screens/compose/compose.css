@@ -1,0 +1,116 @@
+/* The composer screens (DESIGN 7.6): the body editor with its dim suggestion, and the sent message's text above the
+   undo tray. The cards, fields, footer and tray are the components' (ui/compose/compose.css, ui/reader/reader.css).
+   Tokens only. Imported once by screens.css (REQUEST). */
+
+/* The editor grows with its text: the mirror and the textarea share one grid cell, and the mirror sets the height. */
+.aplos-compose-editor {
+  display: grid;
+  min-height: inherit;
+}
+
+.aplos-compose-editor__mirror,
+.aplos-compose-editor__input {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  min-height: inherit;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The mirror only shows the suggestion; the typed text in it is a transparent spacer under the real one. */
+.aplos-compose-editor__mirror {
+  color: transparent;
+  pointer-events: none;
+}
+
+/* Words Aplos wrote are in the serif, dim until Tab keeps them (DESIGN 4.3, 9 rule 6). */
+.aplos-compose-editor__suggestion {
+  color: var(--dim);
+  font-family: var(--font-serif);
+}
+
+.aplos-compose-editor__input {
+  overflow: hidden;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+  outline: none;
+}
+
+.aplos-compose-editor__input::placeholder {
+  color: var(--dim);
+}
+
+.aplos-compose-sent__body {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The compose page fills the pane, so its hairline and Send sit at the pane's bottom (DESIGN 7.6; mockups/compose.html)
+   however short the text, and a long text scrolls inside the page above them. `.aplos-compose` is the page's root; it
+   carries the card option on trial (`data-cards`), and draws nothing itself. */
+.aplos-screen:has(> .aplos-compose),
+.aplos-compose {
+  height: 100%;
+}
+
+/* ---------- Cards (data-cards='a'; 'off' is DESIGN 7.6 as written) ----------
+   Owner review 2026-11-03: the card is the default. To, Cc, Subject and the text are one card on the page, with a
+   hairline under To and under Subject; the footer stays pinned under its hairline. The card is --paper with --elev-pane
+   (--raised and the sheen in dark), radius-lg, never --elev-card: that stays the inline reply's, the thing in hand.
+   The page keeps its 640 px width, so the card is the column. */
+.aplos-compose:not([data-cards='off']) .ui-composer__page {
+  box-sizing: border-box;
+  /* Its own block formatting context, so the text's bottom margin stays inside the card. */
+  display: flow-root;
+  margin-block: var(--space-7) var(--space-8);
+  padding: 0;
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-pane);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__page > * {
+  margin-inline: var(--space-6);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__to {
+  padding-top: var(--space-3);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject {
+  width: calc(100% - 2 * var(--space-6));
+  margin-top: 0;
+  padding-block: var(--space-3);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__editor {
+  min-height: calc(var(--space-10) * 4);
+  margin-block: var(--space-6);
+}
+.aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
+.aplos-compose[data-cards='a'] .ui-composer__subject:not(:focus-visible) {
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject {
+  margin-top: var(--space-1);
+}
+/* The footer's Send and icons sit on the card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+.aplos-compose:not([data-cards='off']) .ui-composer__foot .ui-compose-footer {
+  box-sizing: border-box;
+  padding-inline: var(--space-6) var(--space-5);
+}
+/* The draft strip hangs off the card's bottom edge: the card keeps its corners and gives up its gap below. */
+.aplos-compose:not([data-cards='off']) .ui-composer__page:has(+ .ui-suggestion) {
+  margin-bottom: 0;
+}
+
+:root[data-theme='dark'] .aplos-compose:not([data-cards='off']) .ui-composer__page {
+  background: var(--raised);
+}

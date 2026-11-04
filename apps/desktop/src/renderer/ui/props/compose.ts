@@ -3,8 +3,8 @@ import type { CommandId, DictationState } from './shared';
 
 /* ───────────────────────── compose ───────────────────────── */
 
-/** Draft save state, one line (DESIGN §7.6 Draft state). */
-export type DraftStateKind = 'saving' | 'saved' | 'failed';
+/** Draft save state, one line (DESIGN §7.6 Draft state). 'none': nothing saved yet (an untouched new message), no line. */
+export type DraftStateKind = 'saving' | 'saved' | 'failed' | 'none';
 
 /** "This draft changed on another device." with Keep mine · Take theirs · Keep both (plan 30 §4.5 #5). */
 export interface DraftConflict {

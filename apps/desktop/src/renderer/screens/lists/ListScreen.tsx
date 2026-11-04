@@ -18,7 +18,7 @@ export interface ListScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
   /** Open a thread (reader), a draft (composer) or a submission. */
-  readonly onOpen?: (id: string, kind: OpenKind) => void;
+  readonly onOpen?: (id: string, kind: OpenKind, listIds?: readonly string[]) => void;
   /** Permanent deletion for Trash and Spam; absent until the contract has it. */
   readonly deleteForever?: (ids: readonly string[]) => Promise<unknown>;
 }

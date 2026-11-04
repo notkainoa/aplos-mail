@@ -39,10 +39,16 @@ import type { PaneHeaderPart } from './store-pane';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
+  getOpenThreadContext,
+  leaveOpenThread,
   OPEN_THREAD_SCREEN,
   setOpenThread,
   subscribeOpenThread,
+  subscribeOpenThreadContext,
 } from './store-thread';
+import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import { getComposeRequest, subscribeComposeRequest } from './store-compose';
+import type { ComposeRequest } from './store-compose';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
@@ -250,6 +256,7 @@ export function navigate(screen: Screen): void {
 }
 
 export { consumeRoute } from './store-route';
+export { screenLabel } from './nav';
 export type { RouteTarget, Screen } from './store-route';
 
 // ---------------------------------------------------------------------------
@@ -279,12 +286,12 @@ export function useShellKeyLayer(layer: KeyLayer): void {
 }
 
 // ---------------------------------------------------------------------------
-// The pane header's screen parts (additive): back and crumb, and the bulk bar
+// The pane header's screen parts (additive): back and crumb, tools, and the bulk bar
 // ---------------------------------------------------------------------------
 
 export type { PaneHeaderPart } from './store-pane';
 
-/** Sets the header's lead, crumb or bulk bar while the calling screen is mounted. Pass a memoised object: it compares by reference. Null clears it. */
+/** Sets the header's lead, crumb, tools or bulk bar while the calling screen is mounted. Pass a memoised object: it compares by reference. Null clears it. */
 export function usePaneHeaderPart(part: PaneHeaderPart | null): void {
   useEffect(() => (part ? addPaneHeaderPart(part) : undefined), [part]);
 }
@@ -312,21 +319,50 @@ export function setAccountScope(accountId: AccountId | null): void {
 // The open thread (additive): the reader lane renders it on the `{ label: 'thread' }` screen
 // ---------------------------------------------------------------------------
 
-/** Records `id` as the open thread and shows the `{ label: 'thread' }` screen (a placeholder until the reader lane renders it). */
-export function openThread(id: ThreadId): void {
-  setOpenThread(id);
+/**
+ * Records `id` as the open thread and shows the `{ label: 'thread' }` screen. `options` (additive) says where the
+ * thread was opened from (`from`: Esc goes back there) and the ids of the list it was opened in (`listIds`: J and K
+ * walk them). Opening again from the reader itself (J, K) without options keeps the earlier place and list.
+ */
+export function openThread(id: ThreadId, options?: OpenThreadOptions): void {
+  setOpenThread(id, options);
   setScreen(OPEN_THREAD_SCREEN);
 }
 
-/** Clears the open thread; the reader calls it when it closes. Does not navigate. */
+/** Clears the open thread and, when the thread screen is showing, goes back to the screen it was opened from (Home when none was recorded). */
 export function closeThread(): void {
-  setOpenThread(null);
+  leaveOpenThread();
 }
 
 /** The open thread's id, live; null when none. */
 export function useOpenThread(): ThreadId | null {
   return useSyncExternalStore(subscribeOpenThread, getOpenThread, getOpenThread);
 }
+
+/** Where the open thread came from and the list it was opened in, live; null fields when `openThread` was given none. Additive. */
+export function useOpenThreadContext(): OpenThreadContext {
+  return useSyncExternalStore(
+    subscribeOpenThreadContext,
+    getOpenThreadContext,
+    getOpenThreadContext,
+  );
+}
+
+export type { OpenThreadContext, OpenThreadOptions };
+
+// ---------------------------------------------------------------------------
+// The compose route (additive): the composer lane renders it on the `{ label: 'compose' }` screen
+// ---------------------------------------------------------------------------
+
+/** Shows the compose page (new message, a draft, or a reply popped out of the reader); `closeCompose` goes back. */
+export { openCompose, closeCompose } from './store-compose';
+
+/** What the compose page was asked to open on, live; null when it is not showing. */
+export function useComposeRequest(): ComposeRequest | null {
+  return useSyncExternalStore(subscribeComposeRequest, getComposeRequest, getComposeRequest);
+}
+
+export type { ComposeRequest, ComposeTarget } from './store-compose';
 
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {
@@ -343,7 +379,7 @@ export function useHomeShellProps(): HomeShellProps {
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: openThread,
+      onOpen: id => openThread(id, { from: 'home' }),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

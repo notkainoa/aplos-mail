@@ -44,7 +44,14 @@ import type { WhyTarget } from './WhyHost';
 import type { HomeActions, HomeSnapshot, OpenHow } from './homeActions';
 import type { HomeBulkDeps } from './homeBulk';
 import { homeBarActions, homeRunContext } from './homeCommands';
-import { buildItems, orderLayout, pickableIds, type HomeItem, type HomeLayout } from './homeModel';
+import {
+  buildItems,
+  layoutOf,
+  orderLayout,
+  pickableIds,
+  type HomeItem,
+  type HomeLayout,
+} from './homeModel';
 import { densityOf, senderOf, subjectOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
 import { useHomeDatePicker } from './useHomeDatePicker';
@@ -69,18 +76,6 @@ function ignore(): void {
 }
 
 type HomeData = ReturnType<typeof useHome>;
-
-function layoutOf(home: HomeData): HomeLayout {
-  const bySection = (key: 'do' | 'update' | 'follow') =>
-    home.sections.find(section => section.key === key);
-  return {
-    do: bySection('do')?.ids ?? [],
-    fromLater: bySection('do')?.fromLater?.ids ?? [],
-    update: bySection('update')?.ids ?? [],
-    follow: bySection('follow')?.ids ?? [],
-    lowCount: home.low.count,
-  };
-}
 
 function hasRows(layout: HomeLayout): boolean {
   return (

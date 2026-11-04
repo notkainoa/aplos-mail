@@ -20,19 +20,19 @@ Run from the repo root. The npm script names (`test:visual`) are plat-ci's to wi
 
 ## What is where
 
-| File | Role |
-|---|---|
-| `states.ts` | The named states: id, title, components, DESIGN section, mockup, golden or not, expected filled buttons, summary kind |
-| `gallery/scenes.tsx` | One scene per state: the component tree with original demo data and no-op handlers |
-| `gallery/main.tsx`, `index.html`, `stage.css` | The entry Vite serves. It loads `ui/styles.css`, sets `data-theme` and `data-contrast` from the URL, and marks the page ready once fonts are in |
-| `playwright.config.ts` | Extends `tests/e2e/base.config.ts`. Headless Chromium, scale 1, en-US, Los Angeles time, two projects (`1440x900`, `1100x760`), its own Vite server on port 4427 (`APLOS_VISUAL_PORT`) |
-| `visual.spec.ts` | Screenshot compare, light and dark |
-| `hover.spec.ts` | Hover never changes layout (DESIGN 5 rule 17) |
-| `dom.spec.ts` | DOM assertions (DESIGN 12.5) |
-| `axe.spec.ts` | axe-core accessibility check, every state, both themes and sizes |
-| `known-defects.ts` | Component defects found by the harness that belong to another lane, each with its reason (`KNOWN_DEFECTS` as expected failures, `axeKnownDefects` for axe) |
-| `__golden__/1440x900/` | The committed golden set |
-| `support/` | The gallery opener, the ΔE comparison and shared paths |
+| File                                          | Role                                                                                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `states.ts`                                   | The named states: id, title, components, DESIGN section, mockup, golden or not, expected filled buttons, summary kind                                                                  |
+| `gallery/scenes.tsx`                          | One scene per state: the component tree with original demo data and no-op handlers                                                                                                     |
+| `gallery/main.tsx`, `index.html`, `stage.css` | The entry Vite serves. It loads `ui/styles.css`, sets `data-theme` and `data-contrast` from the URL, and marks the page ready once fonts are in                                        |
+| `playwright.config.ts`                        | Extends `tests/e2e/base.config.ts`. Headless Chromium, scale 1, en-US, Los Angeles time, two projects (`1440x900`, `1100x760`), its own Vite server on port 4427 (`APLOS_VISUAL_PORT`) |
+| `visual.spec.ts`                              | Screenshot compare, light and dark                                                                                                                                                     |
+| `hover.spec.ts`                               | Hover never changes layout (DESIGN 5 rule 17)                                                                                                                                          |
+| `dom.spec.ts`                                 | DOM assertions (DESIGN 12.5)                                                                                                                                                           |
+| `axe.spec.ts`                                 | axe-core accessibility check, every state, both themes and sizes                                                                                                                       |
+| `known-defects.ts`                            | Component defects found by the harness that belong to another lane, each with its reason (`KNOWN_DEFECTS` as expected failures, `axeKnownDefects` for axe)                             |
+| `__golden__/1440x900/`                        | The committed golden set                                                                                                                                                               |
+| `support/`                                    | The gallery opener, the ΔE comparison and shared paths                                                                                                                                 |
 
 The gallery URL is `/tests/visual/gallery/index.html?state=<id>&theme=light|dark[&contrast=more]`.
 
@@ -76,6 +76,7 @@ needed. A failure attaches a diff overlay: the expected image faded, changed pix
 
   Without `VISUAL_BASE_DIR` those states are only captured, and the test says so in its annotations.
   The golden states are compared in the same run either way.
+
 - Increase Contrast (`data-contrast="more"`) is captured for the states with `contrastMore`, as A/B.
 
 ### Updating the golden set
