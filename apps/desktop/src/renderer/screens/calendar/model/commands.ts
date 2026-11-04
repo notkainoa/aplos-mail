@@ -5,7 +5,6 @@ import { planIdOf } from './entries';
 import {
   entryById,
   inviteOpen,
-  railEntry,
   type CalendarAction,
   type CalendarContext,
   type CalendarState,
@@ -69,7 +68,8 @@ export function commandEnabled(
   ctx: CalendarContext,
 ): boolean {
   if (state.editor) return false;
-  const selected = entryById(ctx, state.detailId ?? state.selectedId) ?? railEntry(state, ctx);
+  // Explicit targets only: the day rail's passive first entry is never one (review2 1).
+  const selected = entryById(ctx, state.detailId ?? state.selectedId);
   switch (id) {
     case 'calendar.open':
       return selected !== undefined || inviteOpen(state, ctx);

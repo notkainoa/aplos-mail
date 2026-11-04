@@ -8,7 +8,6 @@ import {
   detailEntry,
   entryById,
   liveRsvp,
-  railEntry,
   shownView,
   type CalendarAction,
   type CalendarContext,
@@ -133,7 +132,7 @@ function onMenu(state: CalendarState, action: ActionOf<'menu'>, ctx: CalendarCon
   if (!entry) return unhandled(state);
   const s = { ...state, moreOpen: false };
   const items: Record<DetailMenuId, () => Transition> = {
-    edit: () => onEdit(s, { type: 'edit' }, ctx),
+    edit: () => onEdit({ ...s, selectedId: entry.id }, { type: 'edit' }, ctx),
     delete: () => deleteTransition({ ...s, selectedId: entry.id }, ctx),
     changeReply: () =>
       done({ ...s, rsvp: { eventId: entry.id, answer: entry.myReply ?? null, changing: true } }),
@@ -189,7 +188,8 @@ function onNewEvent(
 }
 
 function onEdit(state: CalendarState, _action: ActionOf<'edit'>, ctx: CalendarContext): Transition {
-  const target = entryById(ctx, state.detailId ?? state.selectedId) ?? railEntry(state, ctx);
+  // Explicit targets only: the day rail's passive first entry is never one (review2 1).
+  const target = entryById(ctx, state.detailId ?? state.selectedId);
   const event = target ? ctx.events.get(target.id) : undefined;
   if (!target || target.kind !== 'event' || !event) return unhandled(state);
   const calendar = ctx.calendars.find(c => c.id === event.calendarId);

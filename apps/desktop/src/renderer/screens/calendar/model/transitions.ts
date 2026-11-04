@@ -17,7 +17,6 @@ import {
   detailEntry,
   entryById,
   liveRsvp,
-  railEntry,
   seriesAloneLine,
   type CalendarContext,
   type CalendarEffect,
@@ -138,12 +137,8 @@ export function deleteTransition(
   ctx: CalendarContext,
   scope?: EventScope,
 ): Transition {
-  const id =
-    state.scope?.entryId ??
-    state.editor?.eventId ??
-    state.detailId ??
-    state.selectedId ??
-    railEntry(state, ctx)?.id;
+  // Explicit targets only: the day rail's passive first entry is never one (review2 1).
+  const id = state.scope?.entryId ?? state.editor?.eventId ?? state.detailId ?? state.selectedId;
   const entry = entryById(ctx, id);
   const event = id ? ctx.events.get(id) : undefined;
   // Never on an unsaved event or a plan (acceptance 6).

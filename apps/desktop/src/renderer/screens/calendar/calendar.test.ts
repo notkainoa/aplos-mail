@@ -136,6 +136,33 @@ test('Delete runs only on persisted events, never on a plan or an unsaved draft'
   assert.equal(fx.toast?.message, 'Event deleted');
 });
 
+test('review2: Delete and E act only on an explicit selection, never the rail’s passive entry', () => {
+  const ctx = ctxFor();
+  const day = S({ view: 'day', anchor: THU });
+  // The rail shows Thursday’s first event (dental) by itself, yet nothing is selected.
+  assert.equal(commandEnabled('calendar.delete', day, ctx), false);
+  assert.equal(commandEnabled('calendar.edit', day, ctx), false);
+  assert.equal(commandEnabled('calendar.open', day, ctx), false);
+  const del = update(day, { type: 'delete' }, ctx);
+  assert.equal(del.handled, false);
+  assert.equal(
+    del.effects.some(fx => fx.kind === 'eventSet'),
+    false,
+  );
+  const edit = update(day, { type: 'edit' }, ctx);
+  assert.equal(edit.handled, false);
+  assert.equal(edit.state.editor, null);
+  // Selected, the same keys work.
+  const picked = S({ view: 'day', anchor: THU, selectedId: 'dental' });
+  assert.equal(commandEnabled('calendar.delete', picked, ctx), true);
+  const gone = update(picked, { type: 'delete' }, ctx);
+  assert.ok(gone.effects.some(fx => fx.kind === 'eventSet' && fx.change.type === 'destroy'));
+  // The rail’s own ⋯ menu still acts on the entry it was opened on.
+  const menu = update(day, { type: 'menu', item: 'edit' }, ctx);
+  assert.equal(menu.state.editor?.mode, 'edit');
+  assert.equal(menu.state.editor?.eventId, 'dental');
+});
+
 test('a repeating event asks This event or All events and passes the scope through', () => {
   // A context that also holds the series row ('standup'), so "All events" can be written safely (review1 1).
   const occ0 = demoWorld.events.find(e => e.seriesId === 'standup')!;
