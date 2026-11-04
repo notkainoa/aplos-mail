@@ -1130,6 +1130,11 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **`--phase` selects phased probes only.** `SmokeProbe.phased` marks a probe that runs in steps; with `--phase` the runner runs only those, so `--phase inspect --confirm-mutating` cannot authorise any other tier M probe. Without `--phase` nothing changes.
 - **Tests.** Create-stop and two-draft no-verdict, inspect sends only GETs and leaves every draft unchanged, the phase filter (each red under its mutation).
 
+## 2026-11-04 prov-emu: an empty 200 is "no items", not an error (live tier M probe)
+
+- **Bug.** `requestJson` (scripts/live/probes/http.ts) threw class `other` on a 200 with an empty body. Gmail answers a masked `drafts.list` with no drafts (the normal state of the spare account) with exactly that, so the first live tier M run failed before any write on its `drafts.list` pre-check.
+- **Fix.** A 200 with an empty body, JSON `null` or `{}` returns `{}` with `empty: true`, and the probes report it as `emptyAnswers=1` (new count name), so the evidence tells ok-empty from a failure. A 200 whose body is not JSON, or is JSON but not an object, now fails with its own class `bad-body` (new class name) instead of `other`; no body text reaches the error or the evidence.
+- **Tests.** The draft probe's `create` reaches the write against an empty body, `{}` and `null` with zero drafts (and `inspect` reports `draftFound=0`); non-JSON text and a JSON list are `bad-body`, nothing is created and no body text is in the evidence. All red on the old http.ts.
 ## 2026-11-03 — eng-contract: the engine bundle budget is 450,000 bytes; the demo dataset is a lazy chunk
 
 - **Decision (owner, via the orchestrator and the Integrator's STATUS DECIDED of 2026-11-04 20:00):** the neutral engine bundle budget rises from 400,000 to 450,000 bytes **minified**. `BUDGET_BYTES` in `packages/engine/tests/portability.test.ts` and the `size.engine-bundle` row of `budgets.json` say 450,000; plan 10's engine-bundle paragraph and the lane plan carry a dated note; older text (the 2026-10-28 freeze entries, risk tables, historical acceptance lines) is left as written. Small and reversible; **450,000 is the last raise without a new decision.** It stays a budget, not a licence: measure each addition and stop at it.

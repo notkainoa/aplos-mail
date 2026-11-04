@@ -102,6 +102,7 @@ function idsOf(json: Record<string, unknown>): { draftId?: string; messageId?: s
 async function createPhase(ctx: ProbeContext, result: ProbeResult): Promise<void> {
   // One probe draft at a time: an older one would be judged in place of the new one by `inspect`.
   const existing = await findProbeDrafts(ctx);
+  result.counts.emptyAnswers = existing.empty ? 1 : 0;
   result.counts.probeDraftsExisting = existing.matches.length;
   if (existing.matches.length > 0) {
     result.status = 'fail';
@@ -160,7 +161,7 @@ function plainBody(part: unknown): string | undefined {
 /** The probe drafts among the newest `SCAN` drafts, newest first, and how many drafts were looked at. */
 async function findProbeDrafts(
   ctx: ProbeContext,
-): Promise<{ matches: { id: string; read: DraftRead }[]; scanned: number }> {
+): Promise<{ matches: { id: string; read: DraftRead }[]; scanned: number; empty: boolean }> {
   const list = await getJson(ctx, '/drafts', {
     maxResults: String(SCAN),
     fields: 'drafts(id)',
@@ -174,11 +175,12 @@ async function findProbeDrafts(
     const read = await readHeaders(ctx, id);
     if (SUBJECT.test(read.headers.get('subject') ?? '')) matches.push({ id, read });
   }
-  return { matches, scanned: ids.length };
+  return { matches, scanned: ids.length, empty: list.empty };
 }
 
 async function inspectPhase(ctx: ProbeContext, result: ProbeResult): Promise<void> {
-  const { matches, scanned } = await findProbeDrafts(ctx);
+  const { matches, scanned, empty } = await findProbeDrafts(ctx);
+  result.counts.emptyAnswers = empty ? 1 : 0;
   result.counts.draftsScanned = scanned;
   result.counts.draftsMatching = matches.length;
   result.counts.draftFound = matches.length > 0 ? 1 : 0;
