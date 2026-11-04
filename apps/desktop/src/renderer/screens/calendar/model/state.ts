@@ -107,8 +107,6 @@ export interface CalendarContext {
   readonly loadedThrough: EpochMs;
   /** Where new events and confirmed plans go. */
   readonly defaultCalendarId: string | null;
-  /** True when `Event/hide` is on the data surface (today it is not; the ⋯ menu's Hide waits on a REQUEST to ui-shell). */
-  readonly canHide: boolean;
 }
 
 export type CalendarAction =
@@ -284,8 +282,7 @@ export function detailMenu(entry: CalendarEventData, ctx: CalendarContext): Menu
     items.push({ kind: 'item', id: 'changeReply', label: 'Change your reply' });
   if (event && (event.conference?.url || event.htmlLink))
     items.push({ kind: 'item', id: 'copyLink', label: 'Copy link' });
-  if (entry.persisted && ctx.canHide)
-    items.push({ kind: 'item', id: 'hide', label: 'Hide in Aplos' });
+  if (entry.persisted) items.push({ kind: 'item', id: 'hide', label: 'Hide in Aplos' });
   // Delete only on a stored event you may delete (DESIGN 7.8 Fixes; acceptance 6).
   if (entry.persisted && (event ? event.can.delete && !calendar?.readOnly : editable)) {
     items.push({ kind: 'separator' });

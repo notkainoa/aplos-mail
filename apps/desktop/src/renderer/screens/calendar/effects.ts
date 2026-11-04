@@ -38,7 +38,7 @@ export interface EffectPorts {
     readonly calendarId?: string;
   }): Promise<{ readonly receipt: Receipt }>;
   planDismiss(args: { readonly opId: string; readonly ids: string[] }): Promise<Receipt>;
-  eventHide?(args: {
+  eventHide(args: {
     readonly opId: string;
     readonly ids: string[];
     readonly hidden: boolean;
@@ -255,11 +255,9 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           opId,
           entryId: fx.id,
           call: () =>
-            ports.eventHide
-              ? ports
-                  .eventHide({ opId, ids: [fx.id], hidden: true })
-                  .then(receipt => receipt.appliedState)
-              : Promise.resolve(null),
+            ports
+              .eventHide({ opId, ids: [fx.id], hidden: true })
+              .then(receipt => receipt.appliedState),
           failure: 'Couldn’t hide it.',
         },
         ui,
@@ -294,12 +292,7 @@ export function livePorts(): EffectPorts {
     calendarSet: args => api.calendar.set(args),
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
-    ...(typeof (api.event as { hide?: unknown }).hide === 'function'
-      ? {
-          eventHide: (args: { opId: string; ids: string[]; hidden: boolean }) =>
-            (api.event as unknown as { hide: (a: typeof args) => Promise<Receipt> }).hide(args),
-        }
-      : {}),
+    eventHide: args => api.event.hide(args),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
     // REQUEST: a shell/engine port for opening a meeting link in the browser (`System/open` or similar). Until
     // then the link opens in a new window where the platform allows it.
@@ -311,9 +304,4 @@ export function livePorts(): EffectPorts {
       void navigator.clipboard?.writeText(text).catch(() => undefined);
     },
   };
-}
-
-/** True when `Event/hide` is on the data surface (the ⋯ menu's Hide shows only then). */
-export function hideAvailable(): boolean {
-  return typeof (api.event as { hide?: unknown }).hide === 'function';
 }

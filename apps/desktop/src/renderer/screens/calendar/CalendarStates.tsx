@@ -6,8 +6,8 @@
  * that zone. `loading` is the opening moment (no spinner for a local read, DESIGN 5 rule 12) and `error` the
  * failed events window.
  *
- * REQUEST: the sidebar block (MiniMonth + Calendars list) has no shell slot yet; the states draw it in a plain
- * aside so shots show the whole screen as DESIGN 7.8 intends.
+ * The shell's sidebar slot draws the MiniMonth and Calendars list at runtime; the states are standalone, so they draw
+ * the same `calendarSidebar` props in a plain aside for the shots to show the whole screen as DESIGN 7.8 intends.
  */
 import { useMemo, useRef, useState, type JSX } from 'react';
 import {
@@ -376,7 +376,6 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     calendars,
     loadedThrough: eventsRange({ from: periodFrom, to: periodTo }, now).to,
     defaultCalendarId: defaultId,
-    canHide: true,
     calendarsReady: true,
     windowReady: true,
   };
@@ -414,7 +413,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
         aria-label="Sidebar (drawn by ui-shell; the calendar block is this lane's data)"
       >
         <MiniMonth {...sidebar.miniMonth} />
-        <CalendarList {...sidebar.calendarList} />
+        <CalendarList {...sidebar.calendars} />
       </aside>
       <Pane
         kind="main"

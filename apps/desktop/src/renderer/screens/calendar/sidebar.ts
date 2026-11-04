@@ -1,10 +1,12 @@
 /**
  * The sidebar's Calendar block as plain data (DESIGN 7.1, 7.8): `ui-shell` places `MiniMonth` and `CalendarList` under
- * the groups while Calendar is the route, and this lane supplies their props. The handlers dispatch into the screen's
- * reducer, so a pick in the mini month and a click in the legend go through the same path as the keys.
+ * the groups while Calendar is the route, and this lane supplies their props in the `SidebarSlot` the shell draws. The
+ * handlers dispatch into the screen's reducer, so a pick in the mini month and a click in the legend go through the
+ * same path as the keys.
  */
 import type { Calendar } from '../../data';
-import type { CalendarListProps, IsoDate, MiniMonthProps } from '../../ui/props';
+import type { SidebarSlot } from '../../shell/store-sidebar';
+import type { IsoDate } from '../../ui/props';
 import { yearMonthOf } from '../../ui/calendar/dates';
 import {
   busyDays,
@@ -16,10 +18,8 @@ import {
 } from './calendar.model';
 import type { CalendarEventData } from '../../ui/props';
 
-export interface CalendarSidebar {
-  readonly miniMonth: MiniMonthProps;
-  readonly calendarList: CalendarListProps;
-}
+/** A `SidebarSlot` with both parts always present, so the gallery and the slot itself can draw without a check. */
+export type CalendarSidebar = Required<Pick<SidebarSlot, 'miniMonth' | 'calendars'>>;
 
 export interface SidebarInputs {
   readonly state: CalendarState;
@@ -59,7 +59,7 @@ export function calendarSidebar({
       onPick: date => dispatch({ type: 'pick', date }),
       marks: busyDays(entries),
     },
-    calendarList: {
+    calendars: {
       calendars: calendarInfos(calendars, state.solo),
       onToggle: id => dispatch({ type: 'toggleCalendar', id }),
       onSolo: id => dispatch({ type: 'soloCalendar', id }),

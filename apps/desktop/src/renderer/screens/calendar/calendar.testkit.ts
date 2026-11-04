@@ -43,7 +43,6 @@ export function ctxFor(
     calendars,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
-    canHide: true,
     calendarsReady: true,
     windowReady: true,
   };
@@ -73,7 +72,6 @@ export function ctxAt(
     calendars,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
-    canHide: true,
     calendarsReady: true,
     windowReady: true,
   };
@@ -172,6 +170,7 @@ export function ports(): EffectPorts {
     calendarSet: args => api.calendar.set(args),
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
+    eventHide: args => api.event.hide(args),
     openThread: () => undefined,
     openUrl: () => undefined,
     copyText: () => undefined,

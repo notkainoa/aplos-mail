@@ -13,32 +13,9 @@ export const KNOWN_DEFECTS = {
  * state is let through, in both themes and sizes; no rule is ever disabled for the whole run. Delete
  * the entry when the cause is fixed.
  */
-/** The ui/calendar defect behind the calendar states' mismatches (REQUEST for ui-foundation). */
-const LABEL_MISMATCH =
-  'ui/calendar eventLabel (EventBlock, AgendaView): the accessible name joins title, time and calendar with ", " while the entry draws "title time", so the visible text is not a substring of the name (WCAG 2.5.3). Clears when the name carries the drawn words verbatim.';
-
-/** The ui/calendar defect the empty panel unmasked (REQUEST for ui-calendar). */
-const SCROLL_KEYBOARD =
-  "ui/calendar TimeGrid: the hour scroller (.ui-calendar-grid__scroll) has overflow:auto but no tabindex and no key scrolling, so a bare grid gives the keyboard no way to scroll. The in-track empty line's button used to be the one focusable node; the screen's empty panel (cal-screen__empty) replaced it because the line was clipped above the visible window. Clears when the scroller is itself focusable or the grid root's keys scroll.";
-
 export const axeKnownDefects: Record<string, Record<string, string>> = {
   'list-rows': {
     'nested-interactive':
       'ui/list ListRow (rejected): the row is role=option and holds the Retry button. Retry has no registry key yet, so it must stay Tab-reachable and cannot become a hidden pointer duplicate. Clears when a retry command (key) exists and ErrorLine passes duplicate for it. REQUEST for commands + ui-home.',
-  },
-  'day-empty': {
-    'scrollable-region-focusable': SCROLL_KEYBOARD,
-  },
-  'week-empty': {
-    'scrollable-region-focusable': SCROLL_KEYBOARD,
-  },
-  'agenda-narrow': {
-    'label-content-name-mismatch': LABEL_MISMATCH,
-  },
-  'day-default': {
-    'label-content-name-mismatch': LABEL_MISMATCH,
-  },
-  'worst-case-day': {
-    'label-content-name-mismatch': LABEL_MISMATCH,
   },
 };

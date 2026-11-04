@@ -5,9 +5,9 @@
  * registry. Every key, click and drag goes through `update` first (state on keydown, DESIGN 5 rule 1); the contract
  * call runs next.
  *
- * REQUESTs to other lanes (see the lane report): a sidebar slot for the MiniMonth and Calendars list
- * (`calendarSidebar` produces their props; `CalendarSidebar` in `CalendarStates.tsx` draws them for shots), the
- * screen mount in `App.tsx`'s `renderScreen`, `api.event.hide` on the data surface, and a shell open-url port.
+ * The screen publishes its sidebar block through the shell's `useSidebarSlot` (`calendarSidebar` produces the props)
+ * and hides events through `api.event.hide`. REQUEST still open: a shell open-url port for meeting links (effects.ts
+ * falls back to `window.open`).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommandContext } from '../../commands';
@@ -28,6 +28,7 @@ import {
   usePaneHeaderPart,
   useRegisterCommands,
   useShellKeyLayer,
+  useSidebarSlot,
   type CommandHandlerTable,
 } from '../../shell';
 import { Reopenable } from '../lists/Reopenable';
@@ -74,22 +75,14 @@ import {
   takesInviteAnswerKey,
   type ElementLike,
 } from './keys';
-import {
-  hideAvailable,
-  livePorts,
-  runCalendarEffect,
-  type EffectPorts,
-  type EffectUi,
-} from './effects';
-import { calendarSidebar, type CalendarSidebar } from './sidebar';
+import { livePorts, runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
+import { calendarSidebar } from './sidebar';
 
 export interface CalendarScreenProps {
   /** One account, or absent for all accounts (the account scope). */
   readonly accountId?: AccountId;
   /** The shell's polite live region. */
   readonly announce?: Announce;
-  /** The sidebar's MiniMonth and Calendars list, until the shell grows a slot for them (REQUEST). */
-  readonly renderSidebar?: (sidebar: CalendarSidebar) => void;
 }
 
 /** An overlay entry stays until a window frame reaches the write's state (ARCH 9.2), or until it fails or is undone. */
@@ -172,7 +165,7 @@ function useInviteAnswerKeys(dispatch: (action: CalendarAction) => boolean) {
   }, [dispatch]);
 }
 
-function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProps) {
+function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const now = useNow({ granularity: 'minute' });
   const settings = useSettings();
   const [state, setState] = useState<CalendarState>(() => initialState(toIsoDate(now)));
@@ -247,7 +240,6 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       calendars,
       loadedThrough: range.to,
       defaultCalendarId: defaultId,
-      canHide: hideAvailable(),
       calendarsReady: loaded !== undefined,
       // Same conditions the render gates use below: while the pane draws nothing, no command may run.
       windowReady:
@@ -380,9 +372,11 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
     [events, plans, calendars, state.solo, range.from, range.to, defaultId, overlay],
   );
   const today = toIsoDate(now);
+  // The shell's sidebar slot (PR #271): MiniMonth and the Calendars list under the place groups. Null while the pane
+  // draws nothing (opening, or the failed window), and the hook clears it when the screen unmounts.
   const sidebar = useMemo(
     () =>
-      renderSidebar
+      ctx.windowReady
         ? calendarSidebar({
             state,
             calendars,
@@ -392,11 +386,9 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
             dispatch,
           })
         : null,
-    [renderSidebar, state, calendars, windowEntries, today, weekStartsOn, dispatch],
+    [ctx.windowReady, state, calendars, windowEntries, today, weekStartsOn, dispatch],
   );
-  useEffect(() => {
-    if (sidebar) renderSidebar?.(sidebar);
-  }, [sidebar, renderSidebar]);
+  useSidebarSlot(sidebar);
 
   if (eventsWindow.status === 'failed') return <ListFailed />;
   if (eventsWindow.status === 'opening' && events.length === 0) return null;
