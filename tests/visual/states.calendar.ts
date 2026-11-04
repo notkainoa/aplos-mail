@@ -49,11 +49,20 @@ export const calendarStates: readonly VisualState[] = [
   {
     id: 'day-empty',
     frame: 'shell',
-    title: 'Calendar: the empty Sunday (DST day): Nothing scheduled, New event N',
+    title: 'Calendar: the empty Sunday (DST day): Nothing on Sunday, what comes next, New event N',
     components: [...GRID, 'EmptyLine'],
     design: '7.8, 7.14',
     mockup: 'empty.html (default)',
-    filled: 0,
+    filled: 1,
+  },
+  {
+    id: 'week-empty',
+    frame: 'shell',
+    title: 'Calendar: a clear week, the calm panel with what comes next and New event N',
+    components: [...GRID, 'EmptyLine'],
+    design: '7.8, 7.14',
+    mockup: 'empty.html (default)',
+    filled: 1,
   },
   {
     id: 'month',

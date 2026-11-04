@@ -41,6 +41,7 @@ import {
   defaultCalendarId,
   EMPTY_OVERLAY,
   entriesFor,
+  eventsRange,
   initialState,
   inviteOpen,
   overlayWith,
@@ -182,7 +183,10 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
   const period = periodOf(shownView(state), state.anchor, weekStartsOn);
   const { from: periodFrom, to: periodTo } = period;
 
-  const eventsWindow = useView({ kind: 'events', from: periodFrom, to: periodTo });
+  // The window reaches today plus the two-week lookahead, so an empty period can still say what comes next
+  // (DESIGN 7.14) without a second watch; `eventsRange` falls back to the plain period past the 62-day cap.
+  const range = eventsRange(period, now);
+  const eventsWindow = useView({ kind: 'events', from: range.from, to: range.to });
   const plansWindow = useView(plansSpec(period));
   const touched = eventsWindow.state
     ? `${eventsWindow.state.dbEpoch}:${eventsWindow.state.seq}`
@@ -230,10 +234,11 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       events: new Map(events.map(e => [e.id, e])),
       plans: new Map(plans.map(p => [p.id, p])),
       calendars,
+      loadedThrough: range.to,
       defaultCalendarId: defaultId,
       canHide: hideAvailable(),
     }),
-    [now, weekStartsOn, entries, events, plans, calendars, defaultId],
+    [now, weekStartsOn, entries, events, plans, calendars, range.to, defaultId],
   );
 
   // Drop overlay entries once the events window has caught up with their writes.

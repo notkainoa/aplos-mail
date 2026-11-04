@@ -26,6 +26,39 @@
   min-height: 0;
   min-width: 0;
   display: flex;
+  position: relative;
+}
+
+/* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window. Pointer events
+   pass through except on the button, so a click-drag on the grid still creates an event. */
+.cal-screen__empty {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cal-screen__empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: var(--dock-w);
+  text-align: center;
+}
+
+.cal-screen__empty-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.cal-screen__empty button {
+  pointer-events: auto;
 }
 
 /* Day view: one wide column and the detail rail (calendar-day.html). */

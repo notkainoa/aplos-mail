@@ -1,5 +1,11 @@
 /** Views, periods, the top row's labels, and contract `EventTime` to the grid's ISO strings. */
-import { toIsoDateTime, type EpochMs, type EventTime, type ViewSpecOf } from '../../../data';
+import {
+  toIsoDate,
+  toIsoDateTime,
+  type EpochMs,
+  type EventTime,
+  type ViewSpecOf,
+} from '../../../data';
 import type { CalendarView, IsoDate, IsoDateTime } from '../../../ui/props';
 import {
   addDays,
@@ -108,6 +114,27 @@ export function eventsSpec(period: Period, calendarIds: readonly string[]): View
 /** The `plans` window over the same range: the grid's dashed "From mail" outlines. */
 export function plansSpec(period: Period): ViewSpecOf<'plans'> {
   return { kind: 'plans', from: period.from, to: period.to };
+}
+
+/** How far ahead an empty day or week looks for its "Next:" line (DESIGN 7.14). */
+export const LOOKAHEAD_DAYS = 14;
+
+/** Local midnight `LOOKAHEAD_DAYS` after `ms`: the horizon the "next two weeks" line is honest about. */
+export function lookaheadEnd(ms: EpochMs): EpochMs {
+  return dateOf(addDays(toIsoDate(ms), LOOKAHEAD_DAYS)).getTime();
+}
+
+/**
+ * The events window the screen watches: the period plus [today, the lookahead horizon], so an empty period can
+ * still say what comes next (DESIGN 7.14). The plain period when the union would pass the 62-day cap.
+ */
+export function eventsRange(
+  period: Pick<Period, 'from' | 'to'>,
+  now: EpochMs,
+): Pick<Period, 'from' | 'to'> {
+  const from = Math.min(period.from, dateOf(toIsoDate(now)).getTime());
+  const to = Math.max(period.to, lookaheadEnd(now), lookaheadEnd(period.from));
+  return to - from <= MAX_RANGE_DAYS * DAY_MS ? { from, to } : period;
 }
 
 /** J/→ and K/←: one day, week or month (the day of the month kept, or the month's last day). */

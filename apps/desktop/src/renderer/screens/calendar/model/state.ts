@@ -83,6 +83,8 @@ export interface CalendarContext {
   readonly events: ReadonlyMap<string, Event>;
   readonly plans: ReadonlyMap<string, Plan>;
   readonly calendars: readonly Calendar[];
+  /** The watched events window's `to` (`eventsRange`): the empty panel's "next" line stays honest inside it. */
+  readonly loadedThrough: EpochMs;
   /** Where new events and confirmed plans go. */
   readonly defaultCalendarId: string | null;
   /** True when `Event/hide` is on the data surface (today it is not; the ⋯ menu's Hide waits on a REQUEST to ui-shell). */

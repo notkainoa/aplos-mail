@@ -10,7 +10,17 @@ import type {
   RsvpAnswer,
   TagColor,
 } from '../../../ui/props';
-import { dayTitle, formatClock, rangeOf, timeOf, yearMonthOf } from '../../../ui/calendar/dates';
+import {
+  dateOf,
+  dayOf,
+  dayTitle,
+  formatClock,
+  longDay,
+  rangeOf,
+  timeOf,
+  WEEKDAYS,
+  yearMonthOf,
+} from '../../../ui/calendar/dates';
 import {
   daysBetween,
   editorShowsDelete,
@@ -18,8 +28,17 @@ import {
   startChoices,
   type EditorDraft,
 } from './editor';
-import { entriesOnDay, monthEventCount, tagFor, writableCalendars } from './entries';
-import { gridLabel, periodOf, periodWord, topLabel, type GridView, type Period } from './period';
+import { entriesFor, entriesOnDay, monthEventCount, tagFor, writableCalendars } from './entries';
+import {
+  gridLabel,
+  lookaheadEnd,
+  periodOf,
+  periodWord,
+  topLabel,
+  type GridView,
+  type Period,
+} from './period';
+import { DAY_MS } from './units';
 import { canSendReply } from './rsvp';
 import {
   detailMenu,
@@ -80,6 +99,60 @@ export interface CalendarViewModel {
   readonly editor: EditorView | null;
   /** DESIGN 7.14: "Nothing scheduled." with New event · N, on an empty day. */
   readonly emptyAction: boolean;
+  /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
+  readonly empty: EmptyView | null;
+}
+
+/** What an empty day or week says: one plain sentence, then what comes next from the loaded events. */
+export interface EmptyView {
+  /** "Nothing on Sunday, November 1." / "A clear week." */
+  readonly sentence: string;
+  /** "Next: Q4 review, Thursday at 11:00 AM", or the honest fallback. */
+  readonly next: string;
+}
+
+/** The soonest upcoming entry in the watched window: `from` is now, or the period's start when it is ahead. */
+function nextUpcoming(state: CalendarState, ctx: CalendarContext, period: Period): string {
+  const from = Math.max(ctx.now, period.from);
+  const limit = lookaheadEnd(from);
+  const horizon = Math.min(limit, ctx.loadedThrough);
+  const next = entriesFor({
+    events: [...ctx.events.values()],
+    plans: [],
+    calendars: ctx.calendars,
+    solo: state.solo,
+    period: { from, to: horizon },
+    planCalendarId: ctx.defaultCalendarId,
+  }).find(e => new Date(e.start).getTime() >= from);
+  if (!next) {
+    return ctx.loadedThrough >= limit
+      ? 'Nothing coming up in the next two weeks.'
+      : 'Nothing coming up.';
+  }
+  const day = dayOf(next.start);
+  const soon = new Date(next.start).getTime() - from < 7 * DAY_MS;
+  const when = soon ? WEEKDAYS[dateOf(day).getDay()] : longDay(day);
+  return next.allDay
+    ? `Next: ${next.title}, ${when}`
+    : `Next: ${next.title}, ${when} at ${timeOf(next.start)}`;
+}
+
+/** The panel's copy for a bare grid, or null: a plan alone still counts as something on the day or week. */
+function emptyView(
+  shown: CalendarView,
+  state: CalendarState,
+  ctx: CalendarContext,
+  period: Period,
+  entries: readonly CalendarEventData[],
+  dayCount: number,
+): EmptyView | null {
+  const sentence =
+    shown === 'day' && dayCount === 0
+      ? `Nothing on ${longDay(state.anchor)}.`
+      : shown === 'week' && entries.length === 0
+        ? 'A clear week.'
+        : null;
+  return sentence === null ? null : { sentence, next: nextUpcoming(state, ctx, period) };
 }
 
 export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarViewModel {
@@ -148,6 +221,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
         : null,
     editor: state.editor ? editorView(state.editor, ctx) : null,
     emptyAction: shown === 'day' || shown === 'agenda',
+    empty: emptyView(shown, state, ctx, period, entries, dayCount),
   };
 }
 

@@ -36,6 +36,7 @@ import type {
   CalendarViewModel,
   DetailMenuId,
   EditorView,
+  EmptyView,
   GridView,
 } from './calendar.model';
 
@@ -316,7 +317,9 @@ function Grid(props: {
         dispatch({ type: 'openStack', ids });
       }}
       emptyAction={
-        vm.emptyAction
+        // The empty panel replaces the grid's own empty line on day and week, so the message sits in the
+        // visible window instead of the clipped track and is announced once.
+        vm.emptyAction && vm.empty === null
           ? {
               label: 'New event',
               commandId: 'calendar.newEvent',
@@ -398,6 +401,41 @@ function Surfaces(props: {
   );
 }
 
+/**
+ * The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window, one plain
+ * sentence, what comes next, and the one action. Pointer events pass through except on the button, so a
+ * click-drag on the grid still creates an event.
+ */
+function EmptyPanel({
+  empty,
+  dispatch,
+}: {
+  empty: EmptyView;
+  dispatch: (action: CalendarAction) => void;
+}) {
+  return (
+    <div className="cal-screen__empty">
+      <div className="cal-screen__empty-box">
+        <div role="status" className="cal-screen__empty-lines">
+          <Text variant="title" as="p">
+            {empty.sentence}
+          </Text>
+          <Text variant="small" as="p">
+            {empty.next}
+          </Text>
+        </div>
+        <Button
+          variant="filled"
+          label="New event"
+          commandId="calendar.newEvent"
+          keyHint="always"
+          onPress={() => dispatch({ type: 'newEvent' })}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
@@ -435,9 +473,13 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
               <EventDetail {...detailProps} presentation="rail" />
             </aside>
           ) : null}
+          {vm.empty ? <EmptyPanel empty={vm.empty} dispatch={dispatch} /> : null}
         </div>
       ) : (
-        <div className="cal-screen__body">{grid}</div>
+        <div className="cal-screen__body">
+          {grid}
+          {vm.empty ? <EmptyPanel empty={vm.empty} dispatch={dispatch} /> : null}
+        </div>
       )}
 
       <Surfaces

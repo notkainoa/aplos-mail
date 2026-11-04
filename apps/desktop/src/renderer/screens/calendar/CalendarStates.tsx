@@ -27,6 +27,7 @@ import {
   draftFromEvent,
   EMPTY_OVERLAY,
   entriesFor,
+  eventsRange,
   initialState,
   localMs,
   newDraft,
@@ -373,6 +374,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    loadedThrough: eventsRange({ from: periodFrom, to: periodTo }, now).to,
     defaultCalendarId: defaultId,
     canHide: true,
   };
@@ -469,8 +471,13 @@ const FIXTURES: Record<string, Fixture> = {
     state: { view: 'day', anchor: THU, selectedId: 'design' },
   },
   'day-empty': {
-    title: 'Sunday, November 1 (the DST day): Nothing scheduled. New event N',
+    title:
+      'Sunday, November 1 (the DST day): Nothing on Sunday, November 1. Next: Standup, Monday. New event N',
     state: { view: 'day', anchor: '2026-11-01' },
+  },
+  'week-empty': {
+    title: 'The week of December 6, nothing on it: A clear week. New event N',
+    state: { view: 'week', anchor: '2026-12-09' },
   },
   month: {
     title: 'October 2026: six weeks, "2 more" on busy days, the event count beside the label',

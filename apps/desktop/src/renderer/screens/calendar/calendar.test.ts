@@ -26,6 +26,7 @@ import {
   draftFromEvent,
   entriesFor,
   eventData,
+  eventsRange,
   initialState,
   inviteOpen,
   liveRsvp,
@@ -72,6 +73,35 @@ function ctxFor(
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    loadedThrough: eventsRange(period, NOW).to,
+    defaultCalendarId: 'work',
+    canHide: true,
+  };
+}
+
+/** A context built for the state's own period, as the container builds it. */
+function ctxAt(
+  state: CalendarState,
+  events: readonly Event[] = demoWorld.events,
+  calendars = demoWorld.calendars,
+): CalendarContext {
+  const period = periodOf(shownView(state), state.anchor, 0);
+  const entries = entriesFor({
+    events,
+    plans: [],
+    calendars,
+    solo: state.solo,
+    period,
+    planCalendarId: 'work',
+  });
+  return {
+    now: NOW,
+    weekStartsOn: 0,
+    entries,
+    events: new Map(events.map(e => [e.id, e])),
+    plans: new Map(),
+    calendars,
+    loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
     canHide: true,
   };
@@ -350,6 +380,42 @@ test('the empty day offers New event · N; a calendar toggle and solo change the
   assert.equal(vm.emptyAction, true);
   const solo = ctxFor(undefined, undefined, undefined, S({ solo: 'work' }));
   assert.ok(solo.entries.every(e => e.calendar.id === 'work'));
+});
+
+// ---------------------------------------------------------------------------
+// The empty panel (DESIGN 7.14)
+// ---------------------------------------------------------------------------
+
+test('an empty day shows the panel, its sentence and the next event from the loaded window', () => {
+  const state = S({ view: 'day', anchor: '2026-11-01' });
+  const vm = viewModel(state, ctxAt(state));
+  assert.equal(vm.empty?.sentence, 'Nothing on Sunday, November 1.');
+  assert.equal(vm.empty?.next, 'Next: Standup, Monday at 11:00 AM');
+  // A day with events shows no panel.
+  const busy = S({ view: 'day', anchor: THU });
+  assert.equal(viewModel(busy, ctxAt(busy)).empty, null);
+});
+
+test('an empty week reads "A clear week."; with nothing ahead the line stays honest', () => {
+  const clear = S({ view: 'week', anchor: '2026-12-09' });
+  const vm = viewModel(clear, ctxAt(clear));
+  assert.equal(vm.empty?.sentence, 'A clear week.');
+  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks.');
+  // A week with events shows no panel.
+  assert.equal(viewModel(S(), ctxAt(S())).empty, null);
+});
+
+test('with no events at all the day falls back to "Nothing coming up in the next two weeks."', () => {
+  const state = S({ view: 'day', anchor: '2026-11-01' });
+  const vm = viewModel(state, ctxAt(state, []));
+  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks.');
+});
+
+test('New event from the panel opens the editor', () => {
+  const state = S({ view: 'day', anchor: '2026-11-01' });
+  const t = update(state, { type: 'newEvent' }, ctxAt(state));
+  assert.ok(t.state.editor);
+  assert.equal(t.state.editor?.mode, 'new');
 });
 
 // ---------------------------------------------------------------------------
