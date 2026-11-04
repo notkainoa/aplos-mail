@@ -374,7 +374,8 @@ export interface EngineLink {
   readonly ready: Promise<{ dbEpoch: string; seq: number }>;
   readonly exited: boolean;
   /** A control-connection call; `controlMethods` only, rejected after `timeoutMs` or when the engine stops. */
-  call(method: string, args?: unknown, timeoutMs?: number): Promise<unknown>;
+  /** `signal`: the caller gave up; the call rejects at once and a late engine answer is dropped (the engine's work is not cancelled). */
+  call(method: string, args?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown>;
   attach(windowId: number, port: unknown): void;
   detach(windowId: number): void;
   power(event: PowerEvent): void;
@@ -482,16 +483,22 @@ export function createEngineLink(
     get exited() {
       return exited;
     },
-    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
+    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS, signal) {
       if (!controlMethods.has(method))
         return Promise.reject(
           new LinkError({ type: 'forbidden', message: 'Not a control method.' }),
         );
       if (exited) return Promise.reject(unavailable());
+      if (signal?.aborted) return Promise.reject(unavailable('The request was cancelled.'));
       const id = ++counter;
       return new Promise((resolve, reject) => {
         const timer = timers.set(() => finish(id, { error: unavailable() }), timeoutMs);
         pending.set(id, { resolve, reject, timer });
+        signal?.addEventListener(
+          'abort',
+          () => finish(id, { error: unavailable('The request was cancelled.') }),
+          { once: true },
+        );
         child.post({ kind: 'call', id, method, args });
       });
     },

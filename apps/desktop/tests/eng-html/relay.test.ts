@@ -5,6 +5,8 @@ import {
   ENGINE_HEADERS,
   MAIL_PRIVILEGES,
   MAX_RELAY_IN_FLIGHT,
+  MAX_RELAY_PER_WINDOW,
+  MAX_SERVE_BODY_BYTES,
   limitInFlight,
   WINDOW_HEADER,
   backstopCancels,
@@ -24,11 +26,15 @@ const DOC = `aplos-mail://m/${TOKEN}/`;
 const HASH = 'A'.repeat(43) + '=';
 
 /** What the handler reads of a `Request`: method, the raw URL text, and headers (fakes keep the URL exactly). */
-function request(url: string, options: { method?: string; headers?: Record<string, string> } = {}) {
+function request(
+  url: string,
+  options: { method?: string; headers?: Record<string, string>; signal?: AbortSignal } = {},
+) {
   return {
     method: options.method ?? 'GET',
     url,
     headers: new Headers(options.headers ?? { [WINDOW_HEADER]: '7' }),
+    signal: options.signal ?? new AbortController().signal,
   } as unknown as Request;
 }
 
@@ -77,7 +83,10 @@ test('a GET reaches the engine with the raw token, the raw path and the stamped 
   const { handler, calls } = relay();
   const response = await handler(request(`${DOC}cid/3`));
   assert.equal(response.status, 200);
-  assert.deepEqual(calls, [{ token: TOKEN, path: 'cid/3', windowId: '3' }]);
+  assert.equal(calls.length, 1);
+  const { signal, ...rest } = calls[0];
+  assert.deepEqual(rest, { token: TOKEN, path: 'cid/3', windowId: '3' });
+  assert.ok(signal instanceof AbortSignal, 'with the request’s own signal');
 });
 
 test('the response is exactly the engine’s: status, every header and the bytes, nothing added', async () => {
@@ -167,10 +176,15 @@ test(
     assert.equal(MAX_RELAY_IN_FLIGHT, 64);
     const pending: { resolve(value: unknown): void; reject(error: unknown): void }[] = [];
     let calls = 0;
-    const serve = limitInFlight(() => {
-      calls++;
-      return new Promise((resolve, reject) => pending.push({ resolve, reject }));
-    });
+    // Per-window cap off for this test (the global pool is what it checks); the per-window cap has its own test below.
+    const serve = limitInFlight(
+      () => {
+        calls++;
+        return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+      },
+      MAX_RELAY_IN_FLIGHT,
+      MAX_RELAY_IN_FLIGHT,
+    );
     const handler = createMailHandler({ serve, windowOf: () => 3 });
     const open = Array.from({ length: 64 }, () => handler(request(DOC)));
     await new Promise(resolve => setImmediate(resolve));
@@ -355,4 +369,70 @@ test('the subframe document check is the exact issued form, nothing else', () =>
     undefined,
   ];
   for (const url of refused) assert.equal(isMailDocumentUrl(url), false, String(url));
+});
+
+test('the protocol request’s own signal reaches the engine call', async () => {
+  const gone = new AbortController();
+  const { handler, calls } = relay();
+  await handler(request(DOC, { signal: gone.signal }));
+  assert.equal(calls[0].signal, gone.signal);
+});
+
+test('an aborted request frees its slot at once, and only once; the late answer changes nothing', async () => {
+  const pending: ((value: unknown) => void)[] = [];
+  const serve = limitInFlight(() => new Promise<unknown>(resolve => pending.push(resolve)), 2, 2);
+  const abort = new AbortController();
+  const args = (signal?: AbortSignal): ServeArgs => ({
+    token: 't',
+    path: '',
+    windowId: '1',
+    ...(signal ? { signal } : {}),
+  });
+  const first = serve(args(abort.signal));
+  const second = serve(args());
+  await assert.rejects(serve(args()), /Too many/, 'full');
+  abort.abort();
+  await assert.rejects(first, /cancelled/);
+  const third = serve(args());
+  await assert.rejects(serve(args()), /Too many/, 'the freed slot is taken again, not two');
+  pending[0](okDocument());
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(
+    serve(args()),
+    /Too many/,
+    'the late answer of the aborted call freed nothing more',
+  );
+  for (const resolve of pending.slice(1)) resolve(okDocument());
+  await Promise.all([second, third]);
+  await new Promise(resolve => setImmediate(resolve));
+  const last = serve(args());
+  assert.equal(pending.length, 4, 'both slots were free again');
+  pending[3](okDocument());
+  await last;
+});
+
+test('one window cannot take the whole pool: its per-window cap is the 404 while another window still gets served', async () => {
+  assert.equal(MAX_RELAY_PER_WINDOW < MAX_RELAY_IN_FLIGHT, true);
+  const pending: ((value: unknown) => void)[] = [];
+  const serve = limitInFlight(() => new Promise<unknown>(resolve => pending.push(resolve)), 10, 2);
+  const a = [
+    serve({ token: 't', path: '', windowId: 'A' }),
+    serve({ token: 't', path: '', windowId: 'A' }),
+  ];
+  await assert.rejects(serve({ token: 't', path: '', windowId: 'A' }), /Too many/);
+  const b = serve({ token: 't', path: '', windowId: 'B' });
+  assert.equal(pending.length, 3, 'window B was served');
+  pending[0](okDocument());
+  await a[0];
+  const again = serve({ token: 't', path: '', windowId: 'A' });
+  assert.equal(pending.length, 4, 'A has a slot again once one of its calls ended');
+  for (const resolve of pending.slice(1)) resolve(okDocument());
+  await Promise.all([a[1], b, again]);
+});
+
+test('a response body above the cap is the 404; exactly at the cap passes', () => {
+  const answer = (size: number) => ({ ...okDocument(), body: new Uint8Array(size) });
+  assert.ok(servedResponse(answer(MAX_SERVE_BODY_BYTES)));
+  // A boolean, not a deepEqual: a failing comparison of a 10 MB body would take a minute to print.
+  assert.ok(servedResponse(answer(MAX_SERVE_BODY_BYTES + 1)) === undefined);
 });

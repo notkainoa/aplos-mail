@@ -57,8 +57,18 @@ async function proxiedImage(
   url: string,
   signal: AbortSignal,
 ): Promise<ServedBytes | undefined> {
-  const image = await services.images.fetch(url, { token, signal });
-  return image.kind === 'image' ? { bytes: image.bytes } : undefined;
+  // Defence in depth: the port's contract already forbids both an unbounded wait and an answer past the byte cap, but a
+  // host proxy that hangs or overshoots must not hang `Mail/serve` or push 50 MB through the utility IPC and main.
+  const limit = deadline(services.clock, IMAGE_PROXY_LIMITS.timeoutMs, signal);
+  try {
+    const image = await within(services.images.fetch(url, { token, signal }), limit);
+    if (!image || image.kind !== 'image') return undefined;
+    return image.bytes.byteLength <= IMAGE_PROXY_LIMITS.maxBytes
+      ? { bytes: image.bytes }
+      : undefined;
+  } finally {
+    limit.end();
+  }
 }
 
 /** The token's own message's inline part named by Content-ID, through the provider; at most the proxy's byte cap. */
