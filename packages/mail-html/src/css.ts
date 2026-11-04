@@ -14,7 +14,9 @@ import { urlCleanup } from './url';
 // empty comments so removing their text can never join two tokens into a new one; `#id` selectors
 // follow the id rewrite (ids.ts); `aplos-` class names follow the class rewrite in every selector
 // position (`.aplos-x`, `[class^=aplos-]`, inside `:is()` and the like, class-selectors.ts). Inside `<style>` only `</` can end the element, so it never
-// appears in the output.
+// appears in the output. A viewport or container-query unit (`100vh`, `50dvw`, `100cqh`, inside `calc()` too) becomes a length in px
+// against a fixed reading viewport (`viewportLength`): the frame is sized to the letter, so a letter
+// sized by its own viewport would grow the frame, which grows the letter, without end.
 
 const KEPT_AT_RULES = new Set([
   'media',
@@ -34,6 +36,15 @@ const NO_IMAGE_FUNCTIONS = new Set(['var', 'env', 'attr']);
 const FETCHABLE = /^(?:[a-z][a-z0-9+.-]*:|[\\/]{2})/i;
 const DROPPED = ' none ';
 const SEPARATOR = '/**/';
+/**
+ * `vw`, `vh`, `vi`, `vb`, `vmin`, `vmax` with their `s`, `l` and `d` forms, and the container-query units
+ * `cqw` ... `cqmax`: with no container the latter resolve against the small viewport, exactly like `vh`, and
+ * the mail can declare no container we could rely on. Units compare in lowercase.
+ */
+const VIEWPORT_UNIT = /^(?:[sld]?v|cq)(?:w|h|i|b|min|max)$/;
+/** The viewport a letter's viewport units are measured against, in px: roughly the reading pane. */
+const READING_VIEWPORT = { width: 640, height: 600 };
+const MAX_LENGTH_PX = 100_000;
 
 const enum Structure {
   None = 0,
@@ -101,6 +112,27 @@ export function cssIdent(value: string): string {
   return out;
 }
 
+/**
+ * A viewport or container-query length as fixed px, or undefined for any other unit. 1vh is a hundredth of
+ * `READING_VIEWPORT`'s height and so on; `vmin` and `vmax` take the smaller and larger side.
+ */
+export function viewportLength(value: number, unit: string): string | undefined {
+  const lower = asciiLower(unit);
+  if (!VIEWPORT_UNIT.test(lower)) return undefined;
+  const axis = lower.startsWith('cq') ? lower.slice(2) : lower.slice(lower.lastIndexOf('v') + 1);
+  const px = (value * viewportSide(axis)) / 100;
+  const bounded = Math.max(-MAX_LENGTH_PX, Math.min(MAX_LENGTH_PX, px));
+  return `${Math.round(bounded * 100) / 100}px`;
+}
+
+/** The side a unit's last letters name: `w`/`i` the width, `h`/`b` the height, `min` and `max` the smaller and larger. */
+function viewportSide(axis: string): number {
+  const { width, height } = READING_VIEWPORT;
+  if (axis === 'w' || axis === 'i') return width;
+  if (axis === 'h' || axis === 'b') return height;
+  return axis === 'min' ? Math.min(width, height) : Math.max(width, height);
+}
+
 function looksFetchable(value: string): boolean {
   return FETCHABLE.test(urlCleanup(value));
 }
@@ -164,6 +196,8 @@ class CssWriter {
         return this.atRule(token[4].value, token[1]);
       case TokenType.Function:
         return this.func(token[4].value, token[1]);
+      case TokenType.Dimension:
+        return this.emit(viewportLength(token[4].value, token[4].unit) ?? token[1]);
       default:
         return this.plain(token);
     }
