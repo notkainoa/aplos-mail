@@ -50,6 +50,7 @@ const aiPorts: Partial<AiPorts> = {
       { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', tools: true },
       { id: 'whisper-large-v3', label: 'Whisper Large v3', stt: true },
     ],
+    live: true,
   }),
 };
 
@@ -62,7 +63,7 @@ function MailAfterOnboarding(): JSX.Element {
   const row = setup?.accounts[0];
   const status = {
     kind: 'syncing',
-    firstWindow: { read: row?.read ?? 0, of: row?.total ?? 50 },
+    firstWindow: { read: row?.firstWindow.read ?? 0, of: row?.firstWindow.total ?? 50 },
   } as const;
   const copy = statusCopy(status);
   return (
@@ -129,8 +130,10 @@ function ReconnectScene(): JSX.Element {
         />
       }
     >
-      {open ? <ReconnectFlow accountId={account.id} onClose={() => setOpen(false)} /> : null}
-      <ToastStack toasts={toasts} onAction={runToastAction} onDismiss={dismissToast} />
+      <>
+        {open ? <ReconnectFlow accountId={account.id} onClose={() => setOpen(false)} /> : null}
+        <ToastStack toasts={toasts} onAction={runToastAction} onDismiss={dismissToast} />
+      </>
     </SlotBackdrop>
   );
 }
