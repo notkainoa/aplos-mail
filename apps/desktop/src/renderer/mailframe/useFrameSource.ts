@@ -31,7 +31,10 @@ export function isDevBuild(): boolean {
   return import.meta.env?.DEV === true;
 }
 
-/** Build the source for one `Mail/frame` answer; null for a `srcdoc` answer outside a dev build. */
+/**
+ * Build the source for one `Mail/frame` answer; null for a `srcdoc` answer outside a dev build and for a URL that is
+ * not an `aplos-mail://m/<token>/` document.
+ */
 export function sourceOfFrame(
   request: string,
   frame: { url: string; srcdoc?: string; trackersRemoved: number },
@@ -44,7 +47,9 @@ export function sourceOfFrame(
     const key = `${request}|${frame.url}`;
     return { kind: 'srcdoc', key, html: frame.srcdoc, imagePolicy, findQuery, url: frame.url };
   }
+  // A URL outside the engine's grammar has no token the reporter could echo: fail now, not after the deadline.
   const token = tokenOf(frame.url);
+  if (!token) return null;
   return {
     kind: 'url',
     key: `${request}|${frame.url}`,
