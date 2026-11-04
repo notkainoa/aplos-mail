@@ -1,7 +1,7 @@
 /**
  * The palette's "Ask about “x”" row hands its question to the Ask dock through here (DESIGN §7.9). The dock is the
- * other half of this lane (`screens/ask`); until it subscribes the question also opens the dock through the
- * `ask.open` command, so the row is never dead.
+ * other half of this lane (`screens/ask`); while nobody subscribes, `PaletteHost` falls back to `askStore.ask`,
+ * which carries the same question and bumps the dock's open tick, so the row is never dead.
  */
 const listeners = new Set<(question: string) => void>();
 

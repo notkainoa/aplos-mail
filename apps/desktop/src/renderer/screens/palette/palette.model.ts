@@ -336,7 +336,8 @@ function pageSection(
 }
 
 function firstOpenSections(input: PaletteInput, targets: Map<string, RunTarget>): PaletteSection[] {
-  const suggested = input.entries.filter(e => e.suggested);
+  // At most nine rows: 1–9 must reach every row, so Suggested is capped before Go to fills what is left.
+  const suggested = input.entries.filter(e => e.suggested).slice(0, 9);
   const room = Math.max(0, 9 - suggested.length);
   const places = input.entries
     .filter(e => e.group === 'Go to' && FIRST_OPEN_PLACES.includes(e.id) && !e.suggested)

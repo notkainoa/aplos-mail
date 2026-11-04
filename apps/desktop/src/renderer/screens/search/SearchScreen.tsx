@@ -3,22 +3,26 @@
  * `Search/remote` on Return only, exactly once (U7 acceptance 7). The one call site of `api.search.remote` is the
  * `remote` effect of `submit`; no effect hook, re-render or window `reset` can reach it. The shell mounts this for
  * the `{ label: 'Search' }` screen (REQUESTS.md in ../palette); it is props-in so the harness can draw it too.
+ *
+ * `SearchScreen` keeps the field's state and wraps `SearchBody` in `Reopenable`, so the failed window's "Try again"
+ * remounts the view without losing the query. The field takes focus on mount: with it unfocused the list layer's
+ * single keys (e, x, #) would act on real threads instead of typing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { api, useAccounts, useFrames, useSettings, useView } from '../../data';
 import type { Account, AccountId, ErrorBody, ThreadId } from '../../data';
-import type { CommandId, TagColor } from '../../ui/props';
+import type { CommandId } from '../../ui/props';
 import {
-  openThread,
-  pushToast,
   useAccountScope,
   useCommandTarget,
   useRegisterCommands,
   useShellKeyLayer,
 } from '../../shell';
-import { densityOf } from '../home/homeRows';
+import { accountMark, densityOf } from '../home/homeRows';
 import { requestPaletteOpen } from '../palette';
+import { Reopenable, useReopen } from '../lists/Reopenable';
 import { useIdCursor } from '../lists/useIdCursor';
+import { ACT_DEPS, actOnRow, openResult, type RowAction } from './searchActions';
 import {
   BUSY_DELAY_MS,
   currentQuery,
@@ -57,11 +61,6 @@ function errorBody(error: unknown): ErrorBody {
   );
 }
 
-function accountTag(account: Account | undefined): { label: string; color: TagColor } | undefined {
-  if (!account) return undefined;
-  return { label: account.name, color: (account.colorTag ?? 'sky') as TagColor };
-}
-
 /** Who Return's remote search may ask, for the current scope. */
 function remoteFacts(
   accounts: readonly Account[],
@@ -87,20 +86,46 @@ interface CursorRow {
   readonly id: string;
   readonly sender: string;
   readonly subject: string;
+  readonly unread: boolean;
+  readonly bookmarked: boolean;
+}
+
+interface SearchBodyProps extends SearchScreenProps {
+  readonly state: SearchState;
+  readonly onState: (next: SearchState) => void;
 }
 
 export function SearchScreen(props: SearchScreenProps): ReactElement {
+  const [state, setState] = useState<SearchState>(initialSearch);
+  return (
+    <Reopenable>
+      <SearchBody {...props} state={state} onState={setState} />
+    </Reopenable>
+  );
+}
+
+function SearchBody(props: SearchBodyProps): ReactElement {
+  const { state, onState } = props;
+  const reopen = useReopen();
   const scope = useAccountScope();
   const accountId = props.accountId !== undefined ? props.accountId : (scope ?? undefined);
-  const openInReader = useCallback((id: ThreadId) => openThread(id, { from: SEARCH_SCREEN }), []);
+  const listIds = useRef<readonly string[]>([]);
+  const openInReader = useCallback(
+    (id: ThreadId) => openResult(SEARCH_SCREEN, id, listIds.current),
+    [],
+  );
   const open = props.onOpen ?? openInReader;
 
-  const [state, setState] = useState<SearchState>(initialSearch);
   const stateRef = useRef(state);
   stateRef.current = state;
   const [, tick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLElement>(null);
+
+  // The field owns the keystrokes: mounted unfocused, the list layer's single keys would act on real threads.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const accounts = useAccounts();
   const density = densityOf(useSettings()?.ui.density);
@@ -111,7 +136,7 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
 
   function commit(next: SearchState) {
     stateRef.current = next;
-    setState(next);
+    onState(next);
   }
 
   function perform(stepped: SearchStep) {
@@ -121,6 +146,9 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
   // The command table calls perform through a ref, so the memoised table never re-registers for it.
   const performRef = useRef(perform);
   performRef.current = perform;
+  // The frames effect reaches commit the same way.
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
 
   function runEffect(effect: SearchEffect) {
     if (effect.kind === 'openPalette') {
@@ -132,14 +160,15 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
       .remote({ query: effect.query, accountId })
       .then(out => commit(remoteStarted(stateRef.current, effect.key, out.runId)))
       .catch((error: unknown) =>
-        commit(remoteRejected(stateRef.current, effect.key, errorBody(error))),
+        commit(remoteRejected(stateRef.current, effect.key, errorBody(error), Date.now())),
       );
   }
 
   useEffect(() => {
     let next = stateRef.current;
-    for (const frame of frames) next = remoteFrame(next, frame);
-    if (next !== stateRef.current) commit(next);
+    const at = Date.now();
+    for (const frame of frames) next = remoteFrame(next, frame, at);
+    if (next !== stateRef.current) commitRef.current(next);
   }, [frames]);
 
   // "Searching Google…" waits 150 ms (DESIGN §5 rule 12): one re-render when that time comes.
@@ -166,20 +195,27 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
           thread,
           model.query,
           remote,
-          showAccountDot ? accountTag(accounts.find(a => a.id === thread.accountId)) : undefined,
+          showAccountDot ? accountMark(thread.accountId, accounts) : undefined,
         )
       : null;
   };
   const localRows = model.localIds.map(id => rowFor(id, false)).filter(r => r !== null);
   const remoteRows = model.remoteIds.map(id => rowFor(id, true)).filter(r => r !== null);
   const all = useMemo(() => [...localRows, ...remoteRows], [localRows, remoteRows]);
+  listIds.current = all.map(r => r.threadId);
 
   const cursor = useIdCursor(all.map(r => r.threadId));
   const cursorRow = all.find(r => r.threadId === cursor.key);
   const live = useRef<{ row: CursorRow | undefined }>({ row: undefined });
   live.current = {
     row: cursorRow
-      ? { id: cursorRow.threadId, sender: cursorRow.sender, subject: cursorRow.primary }
+      ? {
+          id: cursorRow.threadId,
+          sender: cursorRow.sender,
+          subject: cursorRow.primary,
+          unread: cursorRow.unread,
+          bookmarked: cursorRow.marks.bookmarked === true,
+        }
       : undefined,
   };
 
@@ -195,10 +231,13 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
   );
   useShellKeyLayer({ contexts: ['search', 'list'] });
 
-  function act(threadId: string, action: { type: string }, message: string): void {
-    const { opId, receipt } = api.thread.act({ ids: [threadId], action: action as never });
-    receipt.catch(() => undefined);
-    pushToast({ id: opId, kind: 'info', message, undoable: true });
+  function act(
+    threadId: string,
+    action: RowAction,
+    kind: 'done' | 'later' | 'trash' | 'bookmark' | 'info',
+    message: string,
+  ): void {
+    actOnRow(ACT_DEPS, threadId, action, { kind, message });
   }
 
   const commands = useMemo(
@@ -222,19 +261,50 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
           if (live.current.row) open(live.current.row.id);
         },
       },
+      'mail.suggested': {
+        run: () => {
+          if (live.current.row) open(live.current.row.id);
+        },
+      },
       'mail.done': {
         run: () => {
-          if (live.current.row) act(live.current.row.id, { type: 'done' }, 'Done');
+          if (live.current.row) act(live.current.row.id, { type: 'done' }, 'done', 'Done');
         },
       },
       'mail.later': {
         run: () => {
-          if (live.current.row) act(live.current.row.id, { type: 'later' }, 'Moved to Later');
+          if (live.current.row)
+            act(live.current.row.id, { type: 'later' }, 'later', 'Moved to Later');
         },
       },
       'mail.trash': {
         run: () => {
-          if (live.current.row) act(live.current.row.id, { type: 'trash' }, 'Moved to Trash');
+          if (live.current.row)
+            act(live.current.row.id, { type: 'trash' }, 'trash', 'Moved to Trash');
+        },
+      },
+      'mail.bookmark': {
+        run: () => {
+          const row = live.current.row;
+          if (row)
+            act(
+              row.id,
+              { type: 'bookmark', on: !row.bookmarked },
+              'bookmark',
+              row.bookmarked ? 'Bookmark removed' : 'Bookmarked',
+            );
+        },
+      },
+      'mail.toggleRead': {
+        run: () => {
+          const row = live.current.row;
+          if (row)
+            act(
+              row.id,
+              { type: row.unread ? 'read' : 'unread' },
+              'info',
+              row.unread ? 'Marked read' : 'Marked unread',
+            );
         },
       },
       'search.remote': {
@@ -269,6 +339,7 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
     onChange: (text: string) => perform(typeField(stateRef.current, text)),
     onRemoveToken: (index: number) => perform(removeToken(stateRef.current, index)),
     onSubmit: remoteSubmit,
+    onRetryResults: reopen,
     onLeaveToList: (edge: 'first' | 'last') => {
       const row = edge === 'first' ? all[0] : all[all.length - 1];
       if (!row) return;
@@ -278,9 +349,11 @@ export function SearchScreen(props: SearchScreenProps): ReactElement {
     onSelectRow: (threadId: string) => cursor.setCursor(threadId),
     onOpenRow: (threadId: string) => open(threadId),
     onRowAction: (threadId: string, commandId: CommandId) => {
-      if (commandId === 'mail.done') act(threadId, { type: 'done' }, 'Done');
-      else if (commandId === 'mail.later') act(threadId, { type: 'later' }, 'Moved to Later');
-      else if (commandId === 'mail.trash') act(threadId, { type: 'trash' }, 'Moved to Trash');
+      if (commandId === 'mail.done') act(threadId, { type: 'done' }, 'done', 'Done');
+      else if (commandId === 'mail.later')
+        act(threadId, { type: 'later' }, 'later', 'Moved to Later');
+      else if (commandId === 'mail.trash')
+        act(threadId, { type: 'trash' }, 'trash', 'Moved to Trash');
     },
   };
 

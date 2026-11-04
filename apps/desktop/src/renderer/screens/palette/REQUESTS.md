@@ -15,7 +15,31 @@ Additive asks, in priority order. Until each lands the screens mount in their ow
   (`nav.search`, `/`). The screen sets its own `search` + `list` key layer, cursor target and scope.
 - **Stylesheet**: add `@import url('./search/search.css');` to `screens/screens.css` (Search's page layout wrappers).
 - **Ask dock wiring** (with ui-ask): `onAskRequest(question => …)` in `screens/palette/askRequests.ts` is the
-  palette's "Ask about “x”" row handoff; the dock host should subscribe and ask it.
+  palette's "Ask about “x”" row handoff; the dock host should subscribe and ask it. Until then the host falls back
+  to `askStore.ask(question)`, which carries the question and opens the dock itself.
+- **`ctx.trigger` for `palette.pickNumber`**: `palette.pickNumber` (1–9) is declared in `commands/catalog/controls.ts`
+  and the host registers every other `palette.*` control, but a digit handler cannot learn which digit ran it:
+  `shellKeyContext` never sets `CommandContext.trigger`, so `run(ctx)` has no chord. Either the dispatch passes
+  `resolution.chord` into the run context (the `CommandContext.trigger` field already exists for menus' digits) or
+  the key stays with the component's own `onKeyDown`, which has it. Registered: next, previous, choose,
+  confirmDestructive, back — no double-fire, because the panel's keydown `preventDefault`s every key it handles and
+  the dispatcher skips prevented events.
+
+## ui-home
+
+- **Search's list layer keeps dead keys advertised**: `useShellKeyLayer({ contexts: ['search', 'list'] })` activates
+  every `list` binding, but Search registers only down/up, open, suggested (Space → open), done, later, trash,
+  bookmark and toggleRead plus `search.remote`. Skipped on purpose and now dead on the results list: reply (r),
+  reply all (⇧R), forward (f) — compose lane; set a date (d) — the date picker; why (i), ⌥↓/⌥↑ — Home concepts;
+  x/⇧X/⌘A/./clearSelection — the bulk pick; Tab/⇧Tab — section jumps (the results have two groups and could adopt
+  them later); s — one by one is a Home concept. Narrowing the layer to a subset of `list` commands needs either a
+  per-screen `disabledIn` or a smaller context in the catalog.
+
+## data
+
+- **Search windows collide**: `data/optimistic.ts`'s `specKey` drops the nested `search` query, so two different
+  searches share one window and local results do not update as you type (already REQUESTed). `search.test.ts`
+  carries a `test.todo` documenting the expected behaviour; remove it when the data lane lands the fix.
 
 ## ui-foundation
 

@@ -41,8 +41,13 @@ export type RemoteState =
       readonly runId: string;
       readonly localIds: readonly string[];
     }
-  /** Google asked us to slow down; `resumeAt` when known. */
-  | { readonly phase: 'paused'; readonly key: string; readonly resumeAt?: number }
+  /** Google asked us to slow down; `resumeAt` when known, `at` when the pause was recorded. */
+  | {
+      readonly phase: 'paused';
+      readonly key: string;
+      readonly resumeAt?: number;
+      readonly at?: number;
+    }
   | {
       readonly phase: 'failed';
       readonly key: string;
@@ -107,11 +112,18 @@ export function removeToken(state: SearchState, index: number): SearchStep {
   return { state: { ...state, tokens: state.tokens.filter((_, i) => i !== index) }, effects: [] };
 }
 
+/** Return may retry a pause that named no resume time once this much time has passed. */
+export const PAUSE_GRACE_MS = 60_000;
+
 /** True when this query already went to Google and needs nothing more from Return. */
 function alreadyAsked(remote: RemoteState, key: string, now: number): boolean {
   if (remote.phase === 'idle' || !('key' in remote) || remote.key !== key) return false;
   if (remote.phase === 'failed') return remote.reason !== 'error' && remote.reason !== 'offline';
-  if (remote.phase === 'paused') return remote.resumeAt === undefined || remote.resumeAt > now;
+  if (remote.phase === 'paused') {
+    if (remote.resumeAt !== undefined) return remote.resumeAt > now;
+    // No resume time: block a short grace after the refusal, then let Return retry (it no longer blocks forever).
+    return remote.at !== undefined && now - remote.at < PAUSE_GRACE_MS;
+  }
   return true;
 }
 
@@ -121,7 +133,7 @@ export function submit(state: SearchState, ctx: RemoteContext): SearchStep {
   if (empty || !ctx.supported) return { state, effects: [] };
   if (ctx.pausedUntil !== undefined && ctx.pausedUntil > ctx.now) {
     return {
-      state: { ...state, remote: { phase: 'paused', key, resumeAt: ctx.pausedUntil } },
+      state: { ...state, remote: { phase: 'paused', key, resumeAt: ctx.pausedUntil, at: ctx.now } },
       effects: [],
     };
   }
@@ -142,14 +154,15 @@ export function remoteStarted(state: SearchState, key: string, runId: string): S
   return { ...state, remote: { ...remote, phase: 'running', runId } };
 }
 
-/** Maps a refusal to the line the page shows; never the provider's text. */
+/** Maps a refusal to the line the page shows; never the provider's text. `at` is when the refusal landed. */
 function refusal(
   key: string,
   error: Pick<ErrorBody, 'type' | 'reasonCode' | 'resumeAt'>,
+  at?: number,
 ): RemoteState {
   const code = error.reasonCode ?? '';
   if (error.type === 'paused' || code.startsWith('rate.') || code.startsWith('quota.')) {
-    return { phase: 'paused', key, resumeAt: error.resumeAt };
+    return { phase: 'paused', key, resumeAt: error.resumeAt, at };
   }
   if (code === 'net.offline') return { phase: 'failed', key, reason: 'offline' };
   if (error.type === 'needsReauth' || error.type === 'permission' || code.startsWith('auth.')) {
@@ -165,15 +178,20 @@ function refusal(
   return { phase: 'failed', key, reason: 'error' };
 }
 
-/** `Search/remote` was refused. */
-export function remoteRejected(state: SearchState, key: string, error: ErrorBody): SearchState {
+/** `Search/remote` was refused. `now` stamps a resume-less pause so Return can retry after a grace. */
+export function remoteRejected(
+  state: SearchState,
+  key: string,
+  error: ErrorBody,
+  now?: number,
+): SearchState {
   const remote = state.remote;
   if (remote.phase !== 'starting' || remote.key !== key) return state;
-  return { ...state, remote: refusal(key, error) };
+  return { ...state, remote: refusal(key, error, now) };
 }
 
-/** A `progress` frame of the remote run. */
-export function remoteFrame(state: SearchState, frame: ProgressFrame): SearchState {
+/** A `progress` frame of the remote run. `now` stamps a resume-less pause, as in `remoteRejected`. */
+export function remoteFrame(state: SearchState, frame: ProgressFrame, now?: number): SearchState {
   const remote = state.remote;
   if ((remote.phase !== 'running' && remote.phase !== 'starting') || remote.runId !== frame.runId)
     return state;
@@ -185,7 +203,11 @@ export function remoteFrame(state: SearchState, frame: ProgressFrame): SearchSta
   if (frame.kind === 'error') {
     return {
       ...state,
-      remote: refusal(remote.key, { type: 'providerError', reasonCode: frame.problem?.reasonCode }),
+      remote: refusal(
+        remote.key,
+        { type: 'providerError', reasonCode: frame.problem?.reasonCode },
+        now,
+      ),
     };
   }
   return state;
@@ -223,6 +245,8 @@ export interface SearchPageModel {
   readonly noMatch: string | null;
   /** The no-match line carries "Search all mail on Google · Return" itself (DESIGN §7.14). */
   readonly noMatchOffer: boolean;
+  /** The local window failed: the page draws the error line (DESIGN §7.15), not "No mail matches". */
+  readonly localFailed: boolean;
   readonly remoteLine: RemoteLine | null;
   /** The polite live region's sentence. */
   readonly announce: string;
@@ -317,8 +341,10 @@ export function searchPage(
   const remoteLine =
     !empty && supported ? pageRemoteLine(local, remote, key, now, remoteIds.length) : null;
 
-  const settled = local.status === 'live' || local.status === 'reset' || local.status === 'failed';
-  const nothing = settled && localCount === 0 && remoteIds.length === 0;
+  const localFailed = local.status === 'failed';
+  const settled = local.status === 'live' || local.status === 'reset' || localFailed;
+  // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
+  const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
   const shown = formatSearch(currentSearch(state.field, state.tokens).tokens, query.text);
   const noMatch = !empty && nothing ? `No mail matches ‘${shown}’.` : null;
   // The no-match line carries the offer itself (EmptyLine's action), so the separate offer row hides.
@@ -334,8 +360,9 @@ export function searchPage(
     remoteIds,
     noMatch,
     noMatchOffer: noMatch !== null && remoteLine?.kind === 'offer',
+    localFailed,
     remoteLine: line,
-    announce: announceText(settled, empty, localCount),
+    announce: announceText(settled && !localFailed, empty, localCount),
   };
 }
 

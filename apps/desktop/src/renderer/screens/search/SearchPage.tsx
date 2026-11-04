@@ -25,6 +25,8 @@ export interface SearchPageHandlers {
   onRemoveToken: (index: number) => void;
   /** Return in the field: search all mail on Google (only Return does). */
   onSubmit: () => void;
+  /** Try again on a failed local window: the screen remounts the view (`Reopenable`). */
+  onRetryResults: () => void;
   onLeaveToList: (edge: 'first' | 'last') => void;
   onSelectRow: (threadId: string) => void;
   onOpenRow: (threadId: string) => void;
@@ -96,6 +98,9 @@ export function SearchPage(props: SearchPageProps) {
   const showList = localRows.length > 0 || remoteRows.length > 0;
   return (
     <div className="search-screen">
+      <span className="ui-sr-only" role="status">
+        {model.announce}
+      </span>
       <PageHead lead={{ kind: 'field', field }} />
       <div className="search-screen__column">
         {showList ? (
@@ -132,6 +137,9 @@ export function SearchPage(props: SearchPageProps) {
               </ListGroup>
             ) : null}
           </ListBox>
+        ) : null}
+        {model.localFailed ? (
+          <ErrorLine kind="listFailed" placement="column" onAction={handlers.onRetryResults} />
         ) : null}
         {model.noMatch ? (
           <EmptyLine

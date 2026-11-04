@@ -118,6 +118,16 @@ test('first open shows Suggested then Go to, at most nine rows', () => {
   assert.equal(view.order.length, 9);
 });
 
+test('Suggested is capped so first open never exceeds nine rows', () => {
+  const entries = Array.from({ length: 12 }, (_, i) =>
+    entry(`cmd.${i}`, { label: `Command ${i}`, suggested: true }),
+  );
+  const view = paletteView(openPalette(), input(entries));
+  assert.equal(view.order.length, 9);
+  assert.equal(view.sections.length, 1);
+  assert.equal(view.sections[0].items.length, 9);
+});
+
 test('typing lists every entry plus the Ask row; a digit is then text, not a pick', () => {
   const entries = [entry('mail.done', { label: 'Done' }), entry('mail.later', { label: 'Later' })];
   const view = paletteView(setQuery(openPalette(), 'do'), input(entries));

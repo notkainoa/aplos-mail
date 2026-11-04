@@ -6,7 +6,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { ProgressFrame } from '../../data';
+import type { PushedToast } from '../../shell';
+import { getOpenThreadContext } from '../../shell/store-thread';
 import {
   absorbTokens,
   currentSearch,
@@ -15,9 +19,12 @@ import {
   parseSearch,
   toSearchQuery,
 } from './parse';
+import { actOnRow, openResult, type ActDeps } from './searchActions';
+import { SearchPage } from './SearchPage';
 import {
   highlightTerms,
   initialSearch,
+  PAUSE_GRACE_MS,
   remoteFrame,
   remoteRejected,
   remoteStarted,
@@ -222,6 +229,125 @@ test('remote hits join under "From Google"; ids that were already local stay put
   const model = searchPage(state, LOCAL(['a', 'b']), 1_000);
   assert.deepEqual(model.localIds, ['a']);
   assert.deepEqual(model.remoteIds, ['b']);
+});
+
+test('a failed local window draws the error line, not "No mail matches"', () => {
+  const model = searchPage(
+    { ...initialSearch, field: 'dentist' },
+    { status: 'failed', ids: [], total: 0, error: { type: 'internal' } },
+    1_000,
+  );
+  assert.equal(model.localFailed, true);
+  assert.equal(model.noMatch, null);
+  assert.equal(model.announce, '');
+});
+
+test('the polite region counts the results once the window settles', () => {
+  const state = { ...initialSearch, field: 'invoice' };
+  assert.equal(searchPage(state, LOCAL(['a', 'b']), 1_000).announce, '2 results in your mail.');
+  assert.equal(searchPage(state, LOCAL(['a']), 1_000).announce, '1 result in your mail.');
+  assert.equal(searchPage(state, LOCAL([]), 1_000).announce, 'No results.');
+  // Opening and failed say nothing here: the field's own states and the error line speak instead.
+  assert.equal(searchPage(state, { status: 'opening', ids: [], total: 0 }, 1_000).announce, '');
+});
+
+test('the page renders the announce sentence in a hidden live region', () => {
+  const model = searchPage({ ...initialSearch, field: 'invoice' }, LOCAL(['a']), 1_000);
+  const markup = renderToStaticMarkup(
+    createElement(SearchPage, {
+      model,
+      localRows: [],
+      remoteRows: [],
+      density: 'comfortable',
+      showAccountDot: false,
+      scopeLabel: 'All accounts',
+      handlers: {
+        onChange: () => undefined,
+        onRemoveToken: () => undefined,
+        onSubmit: () => undefined,
+        onRetryResults: () => undefined,
+        onLeaveToList: () => undefined,
+        onSelectRow: () => undefined,
+        onOpenRow: () => undefined,
+        onRowAction: () => undefined,
+      },
+    }),
+  );
+  assert.match(markup, /ui-sr-only[^>]*role="status"|role="status"[^>]*ui-sr-only/);
+  assert.ok(markup.includes('1 result in your mail.'));
+});
+
+test('a pause without a resume time blocks only a grace, then Return retries', () => {
+  let state = submit({ ...initialSearch, field: 'hi' }, CTX({ now: 1_000 })).state;
+  state = remoteRejected(state, 'hi', { type: 'paused', message: 'x' }, 1_000);
+  assert.equal(state.remote.phase, 'paused');
+  // Inside the grace Return asks nothing; past it Return asks again.
+  assert.deepEqual(submit(state, CTX({ now: 1_000 + PAUSE_GRACE_MS - 1 })).effects, []);
+  assert.deepEqual(
+    submit(state, CTX({ now: 1_000 + PAUSE_GRACE_MS })).effects.map(e => e.kind),
+    ['remote'],
+  );
+  // A pause with no timestamp (a state built before the stamp existed) is retryable, never stuck.
+  const unstamped: SearchState = {
+    ...initialSearch,
+    field: 'hi',
+    remote: { phase: 'paused', key: 'hi' },
+  };
+  assert.deepEqual(
+    submit(unstamped, CTX()).effects.map(e => e.kind),
+    ['remote'],
+  );
+});
+
+test('a row write toasts with its own Undo and drops the toast when refused', async () => {
+  const pushed: PushedToast[] = [];
+  const dismissed: string[] = [];
+  let refuse!: (error: unknown) => void;
+  const deps: ActDeps = {
+    act: () => ({
+      opId: 'op-1',
+      receipt: new Promise((_resolve, reject) => {
+        refuse = reject;
+      }),
+    }),
+    push: toast => {
+      pushed.push(toast);
+      return toast.id;
+    },
+    dismiss: id => {
+      dismissed.push(id);
+    },
+  };
+  actOnRow(deps, 't1', { type: 'done' }, { kind: 'done', message: 'Done' });
+  assert.equal(pushed.length, 1);
+  assert.equal(pushed[0].id, 'op-1');
+  assert.equal(pushed[0].undoable, true);
+  assert.deepEqual(
+    pushed[0].actions?.map(a => a.id),
+    ['undo'],
+  );
+  assert.equal(typeof pushed[0].onAction, 'function');
+  refuse(new Error('refused'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(dismissed, ['op-1']);
+});
+
+test('openResult hands the reader the visible result ids for J and K', () => {
+  openResult({ label: 'Search' }, 't2', ['t1', 't2', 't3']);
+  const ctx = getOpenThreadContext();
+  assert.deepEqual(ctx.listIds, ['t1', 't2', 't3']);
+  assert.equal(typeof ctx.from === 'object' && ctx.from?.label, 'Search');
+});
+
+// TODO(data lane): `data/optimistic.ts`'s specKey drops the nested `search` query, so two searches share one
+// window and local results do not update as you type (REQUEST filed). Once the data lane lands it, two different
+// queries are two distinct windows with their own ids — turn this sketch into the real assertion and remove the
+// todo flag.
+test('the local window follows the query as you type', { todo: true }, () => {
+  const first = searchPage({ ...initialSearch, field: 'one' }, LOCAL(['a']), 1_000);
+  const second = searchPage({ ...initialSearch, field: 'two' }, LOCAL(['b']), 1_000);
+  assert.deepEqual(first.localIds, ['a']);
+  assert.deepEqual(second.localIds, ['b']);
 });
 
 test('free terms bold in subjects and snippets; quoted phrases stay whole', () => {
