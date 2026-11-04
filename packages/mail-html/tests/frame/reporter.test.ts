@@ -530,6 +530,54 @@ describe('reporter: behaviour in a fake DOM', () => {
       'the last carries the state at the cap',
     );
     assert.equal(fake.queue.length, 0, 'no frame is asked for any more');
+    // Post-cap events do not even schedule a look: `live` gates `watch`.
+    const frames = fake.queue.length;
+    const timers = fake.timers.length;
+    fake.fire('window:load');
+    fake.observers.forEach(callback => callback());
+    assert.equal(fake.queue.length, frames, 'no frame after the cap');
+    assert.equal(fake.timers.length, timers, 'no timer after the cap');
+    assert.equal(fake.posted.length, 2_000);
+  });
+
+  it('lets the resize observer ask for a look, but never extend the watch on its own', () => {
+    const fake = fakeWindow();
+    run(fake);
+    fake.clock.now = 4_000;
+    fake.runFrame(); // the watch ends after 3 quiet seconds
+    fake.runFrame();
+    assert.equal(fake.queue.length, 0);
+    // A sub-pixel wiggle fires the observer for ever at zero post cost: each event buys one look,
+    // and a look that finds nothing new lets the loop sleep (it must not push `until` forward).
+    for (let step = 0; step < 10; step++) {
+      fake.clock.now += 100;
+      fake.observers.forEach(callback => callback());
+      assert.equal(fake.queue.length, 1, 'one look per observer event');
+      fake.runFrame();
+      assert.equal(fake.queue.length, 0, 'nothing new: the watch stays off');
+      fake.runTimers();
+    }
+    assert.equal(fake.posted.length, 1, 'all those looks never posted');
+    // A real size change through the observer re-arms the watch through the posted shape.
+    fake.root.box += 300;
+    fake.observers.forEach(callback => callback());
+    fake.runFrame();
+    assert.equal(fake.posted.length, 2);
+    fake.clock.now += 1_000;
+    fake.runFrame();
+    assert.equal(fake.queue.length, 1, 'the watch is on again after a real change');
+  });
+
+  it('without a clock a look never re-arms: one report, then quiet', () => {
+    const fake = fakeWindow();
+    delete (fake.window as { performance?: unknown }).performance;
+    run(fake);
+    assert.equal(fake.posted.length, 1, 'the first report still posts');
+    for (const name of Object.keys(fake.listeners)) fake.fire(name);
+    fake.runFrame();
+    fake.runTimers();
+    assert.equal(fake.queue.length, 0, 'no re-arm without a clock');
+    assert.equal(fake.posted.length, 1);
   });
 
   it('keeps no frame running in a page without frames, timers or a clock', () => {

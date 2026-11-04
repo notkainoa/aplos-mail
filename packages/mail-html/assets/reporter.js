@@ -26,15 +26,17 @@
     if (!/^[0-9a-f]{32}$/.test(token)) return;
     // A letter that changes after load (a transition, an animation, an image) is looked at on every frame
     // until its SIZE has been still for QUIET ms: a new height or width, or a load, resize, toggle or font
-    // event, extends the watch; an animation or transition event asks for one look and extends it only if
-    // that look finds a new size. A report is posted only when its height, width, readiness or marks differ
-    // from the last one (the background rides along but is not a reason to post: a colour animation costs
-    // nothing), at most LIMIT times a second, and at most LIFETIME times in all: the last of those carries
-    // the state of that moment and the reporter then stops for good (the host keeps that size). The mail's
-    // marks cannot change (no script runs in it), so they are counted once, and an event does no
+    // event, extends the watch; an animation, transition or resize-observer event asks for one look and
+    // extends it only if that look finds a new size (a sub-pixel wiggle fires the observer forever at
+    // zero post cost, so it must never extend the watch on its own). A report is posted only when its
+    // height, width, readiness or marks differ from the last one (the background rides along but is not
+    // a reason to post: a colour animation costs nothing), at most LIMIT times a second, and at most
+    // LIFETIME times in all: the last of those carries the state of that moment and the reporter then
+    // stops for good - `live` gates the looks too, so a post-cap event does not even schedule one. The
+    // mail's marks cannot change (no script runs in it), so they are counted once, and an event does no
     // measuring. A look is asked for on the next animation frame AND by a timer WAIT ms later, whichever
-    // comes first: Chromium pauses animation callbacks in a frame that is off screen, and a held-back report
-    // there must still arrive.
+    // comes first: Chromium pauses animation callbacks in a frame that is off screen, and a held-back
+    // report there must still arrive. Without a clock, `now` is -Infinity: a look never re-arms.
     const QUIET = 3000;
     const WAIT = 250;
     const LIMIT = 20;
@@ -50,7 +52,7 @@
     let sent = 0;
     let since = 0;
     function now() {
-      return clock && typeof clock.now === 'function' ? clock.now() : 0;
+      return clock && typeof clock.now === 'function' ? clock.now() : -Infinity;
     }
     function size(value, max) {
       return typeof value === 'number' && w.isFinite(value)
@@ -133,7 +135,7 @@
       if (live && (dirty || now() < until)) watch();
     }
     function watch() {
-      if (armed) return;
+      if (!live || armed) return;
       armed = true;
       ticket += 1;
       const id = ticket;
@@ -154,7 +156,7 @@
     listen.call(w, 'error', recheck, true);
     listen.call(w, 'resize', recheck);
     if (typeof w.ResizeObserver === 'function') {
-      const observer = new w.ResizeObserver(recheck);
+      const observer = new w.ResizeObserver(watch);
       observer.observe(rootOf.call(d));
       observer.observe(bodyOf.call(d));
     }
