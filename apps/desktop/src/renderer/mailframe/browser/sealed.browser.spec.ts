@@ -77,7 +77,7 @@ class SealedServer {
     const random = pinned
       ? (bytes: Uint8Array) => bytes.set(Buffer.from(pinned, 'hex'))
       : undefined;
-    this.registry = new FrameTokens({ random });
+    this.registry = new FrameTokens({ insecureTestRandom: random });
   }
 
   /** Issue a token for a finished frame document (reporter included or not). */
