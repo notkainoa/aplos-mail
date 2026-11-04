@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ErrorLine } from '../ui/list';
 import { LoadingLine } from '../ui/reader';
 import { createFrameDeadline, FRAME_TIMEOUT_MS, type FrameDeadline } from './deadline';
+import { createMeasuredHandler } from './measured';
 import { SrcdocSlot, TextSlot, UrlSlot, type SlotProps } from './slots';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
 
@@ -145,17 +146,17 @@ export function MailFrameView({
   const failure = failed ?? (timedOut ? { retry: retryTimedOut } : null);
   const slow = useSlow(!failure && (source === null || pending !== null));
 
-  const onMeasured = useCallback(
-    (measured: FrameSource, ready: MailFrameReady) => {
-      const previous = shownRef.current;
-      // Ignore a report from a letter that is no longer the one asked for, or one already shown.
-      if (latest.current.source?.key !== measured.key || previous?.key === measured.key) return;
-      // A report after the deadline is refused: the failed state stays until Try again.
-      if (!deadline.settle(measured.key)) return;
-      shownRef.current = measured;
-      setShown(measured);
-      latest.current.onReady(ready);
-    },
+  const onMeasured = useMemo(
+    () =>
+      createMeasuredHandler({
+        deadline,
+        latest: () => latest.current,
+        shownKey: () => shownRef.current?.key ?? null,
+        show: measured => {
+          shownRef.current = measured;
+          setShown(measured);
+        },
+      }),
     [deadline],
   );
 
