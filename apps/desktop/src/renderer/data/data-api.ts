@@ -246,6 +246,11 @@ export interface DataApi {
     /** `System/openSettings {pane}`: open the System Settings pane for a permission Aplos needs. */
     readonly openSettings: ClientApi['system']['openSettings'];
   };
+  /** Links, served by main (through its `external()` gate: http, https or mailto, no credentials; anything else is refused). */
+  readonly shell: {
+    /** `Shell/open {url}`: open a link outside Aplos, such as an event's meeting link. */
+    readonly open: ClientApi['shell']['open'];
+  };
   /** Notifications, served by main. */
   readonly notification: {
     /** `Notification/test`: post a test notification. */

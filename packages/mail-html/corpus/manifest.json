@@ -1716,5 +1716,25 @@
       "mustKeepText": ["Nothing moves until the frame loop has gone quiet"],
       "notes": "From the independent review of #255 (the clipped-content measurement). The frame loop stops after 3 s without a change; a box that starts moving later is reported when its animation ends (the animationend event, captured on the document). A late move with no end event, a long or infinite animation that starts after the quiet period, is not seen and is recorded in DECISIONS."
     }
+  },
+  {
+    "id": "174-background-colour-animation",
+    "title": "A body whose background colour animates for ever",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/174-background-colour-animation.html",
+    "expect": {
+      "mustKeepText": ["Only the colour changes"],
+      "notes": "From the Integrator's review of #257 and the old Engine thread's re-check (reporter lifetime). A letter that changes only colour posted a report for as long as it was open (about 23 a second, 40 in 5 s at a 2 s cycle): the background rode in the change key and every post extended the watch, and the host's freeze counts only growth. The background is no longer a reason to post (it still rides in every message) and only a new height or width extends the watch, so this letter posts its first report and its readiness and then nothing."
+    }
+  },
+  {
+    "id": "175-height-animation-for-ever",
+    "title": "A box whose height animates for ever",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/175-height-animation-for-ever.html",
+    "expect": {
+      "mustKeepText": ["A height that never settles"],
+      "notes": "From the Integrator's review of #257 and the old Engine thread's re-check (reporter lifetime). A size that changes for the life of the letter is limited to 20 reports a second and, after 2,000 reports in all, the reporter posts the state of that moment and stops for good (the host keeps that size). The browser check shortens the cap to 60 in a copy of the script to see it in seconds."
+    }
   }
 ]

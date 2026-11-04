@@ -433,6 +433,12 @@ export const CONTRACT_METHODS = {
     gaps: [],
     notes: '',
   },
+  'shell.open': {
+    method: 'Shell/open',
+    kind: 'native',
+    gaps: [],
+    notes: 'main opens it through its external() gate: http, https or mailto, no credentials',
+  },
   'notification.test': {
     method: 'Notification/test',
     kind: 'native',
