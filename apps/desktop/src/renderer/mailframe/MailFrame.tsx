@@ -16,7 +16,7 @@ export function MailFrame({
   onReady,
   onKey,
 }: MailFrameProps) {
-  const { source, failed } = useFrameSource(messageId, imagePolicy, findQuery);
+  const { source, failed, reload } = useFrameSource(messageId, imagePolicy, findQuery);
   return (
     <MailFrameView
       source={source}
@@ -27,6 +27,7 @@ export function MailFrame({
       onReady={onReady}
       onKey={onKey}
       onRetire={releaseSource}
+      reload={reload}
     />
   );
 }

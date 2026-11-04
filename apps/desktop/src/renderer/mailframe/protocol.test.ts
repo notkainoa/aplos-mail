@@ -147,6 +147,46 @@ describe('acceptReport', () => {
     }
   });
 
+  test('rejects prototype-pollution shapes: own __proto__, constructor or prototype keys, extra keys', () => {
+    const polluted = [
+      JSON.parse(`{"t":"size","token":"${TOKEN}","h":900,"w":640,"bg":"#000","__proto__":{"x":1}}`),
+      { ...(size().data as object), constructor: { prototype: { polluted: true } } },
+      { ...(size().data as object), prototype: {} },
+      { ...(size().data as object), extra: 1 },
+      JSON.parse(`{"t":"key","token":"${TOKEN}","key":"j","__proto__":{"key":"r"}}`),
+    ];
+    for (const data of polluted) {
+      assert.equal(acceptReport({ source: frame, origin: 'null', data }, expect), null);
+    }
+    assert.equal(({} as { polluted?: unknown }).polluted, undefined);
+  });
+
+  test('reads own fields only: a polluted Object.prototype cannot fill in a missing one', () => {
+    const proto = Object.prototype as Record<string, unknown>;
+    proto.w = 640;
+    try {
+      const data = { t: 'size', token: TOKEN, h: 900, bg: '#000' };
+      assert.equal(acceptReport({ source: frame, origin: 'null', data }, expect), null);
+    } finally {
+      delete proto.w;
+    }
+  });
+
+  test('rejects class instances and objects with a foreign prototype', () => {
+    const base = size().data as object;
+    const inherited = Object.assign(Object.create({ t: 'size' }) as object, base);
+    class Report {
+      t = 'size';
+      token = TOKEN;
+      h = 900;
+      w = 640;
+      bg = '#000';
+    }
+    for (const data of [inherited, new Report()]) {
+      assert.equal(acceptReport({ source: frame, origin: 'null', data }, expect), null);
+    }
+  });
+
   test('key reports pass only the non-destructive fallback keys', () => {
     const key = (k: string) =>
       acceptReport(

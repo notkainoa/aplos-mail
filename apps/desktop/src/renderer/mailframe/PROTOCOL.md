@@ -15,8 +15,9 @@ this before either side relies on it. Sources: plan 30 section 4.4, research
 | CSP                            | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP   | response header (host CSP is not inherited)                     |
 | Scripts in the frame           | none                                                                                                        | one hash-pinned reporter                                        |
 | Height and paper tint          | read by the host from `contentDocument`                                                                     | reporter `size` messages, validated below                       |
-| Keys with focus inside         | host listener on the frame document                                                                         | main's `before-input-event` (fallback: reporter `key` messages) |
+| Keys with focus inside         | host listener on the frame document, short key list only                                                    | main's `before-input-event` (fallback: reporter `key` messages) |
 | Links                          | host click listener cancels, opens outside                                                                  | `setWindowOpenHandler` in main, `will-frame-navigate` cancels   |
+| No report within 10 s          | "Couldn't load this email." with Try again (`deadline.ts`)                                                  | the same                                                        |
 | Notices (flattened, truncated) | host DOM above the frame                                                                                    | host DOM above the frame (needs the flags from the engine)      |
 
 Both are mounted at the slot's final width, kept hidden until they report, and swapped in place (double buffer).
@@ -67,7 +68,11 @@ leaves candidates over 2,000 characters as text. With images loading, an https `
 
 ## Messages from the reporter (`aplos-mail` source)
 
-The host listens on `window` for `message` events. Every message is an object with a string `t` and a string `token`.
+The host listens on `window` for `message` events. Every message is a plain object (prototype `Object.prototype` or
+null) with a string `t`, a string `token` and only the fields its type lists below: any other own key (`__proto__`,
+`constructor`, `prototype`, anything extra), a symbol key, a getter, more than six fields, a string, an array or a
+class instance rejects it. Fields are read as own data properties only, so a polluted `Object.prototype` cannot fill
+in a missing one.
 
 ```ts
 { t: 'size', token, h: number, w: number, bg: string, ready?: boolean } // after layout, resize, load, fonts, <details>
@@ -86,8 +91,24 @@ The host accepts a message only when all of these hold (`protocol.ts` `acceptRep
 5. for `key`: `key` is one of the non-destructive fallback keys (J, K, arrows, Page Up/Down, Home, End, Escape),
    never E, Space, R or L.
 
+The Playwright spec forges every case against a scripted stand-in sealed frame: a sibling frame and a child frame of
+the email with the right shape and token (wrong source), the frame itself with a wrong or empty token, an oversized,
+NaN, infinite, negative or string height, a wrong width, `__proto__` and `constructor` shapes, a string or array
+payload, unlisted keys (R, E, Space), and host-realm events with the frame's window as source but the wrong origin.
+Before and after the genuine report, none of them changes the height, the reported paper or the keys.
+
 The first accepted `size` swaps the letter in and fires `onReady({height, bg, blocked})`; later ones only resize.
-Heights are applied instantly and never animated. Changing the policy or the find query asks `Mail/frame` again and
+Heights are applied instantly and never animated.
+
+## Deadline
+
+A frame that has not reported within `timeoutMs` (default `FRAME_TIMEOUT_MS`, 10 s; `deadline.ts`) shows the failed
+state, "Couldn't load this email." with Try again, in place of the loading line and of the frame: the silent frame is
+unmounted, and a report that still reaches the host after the deadline is refused. The clock starts when a frame
+letter becomes pending (sealed or srcdoc, which can also stay silent if its document never loads), restarts for each
+new letter, stops at the first accepted report and is cancelled on unmount. Try again asks `Mail/frame` again (a new
+token) and starts a fresh wait. Plain text measures synchronously and has no deadline. The fetch before a source exists
+(`MessageBody/get`, `Mail/frame`) is not covered: those fail through the data layer. Changing the policy or the find query asks `Mail/frame` again and
 goes through the same buffer with a new token.
 
 ## What the host promises the frame
@@ -100,9 +121,13 @@ goes through the same buffer with a new token.
 
 ## Keys
 
-`onKey` receives `{key, shift, alt}` for unmodified keys only (no Ctrl or Cmd, not composing, not a bare modifier).
-Keydown events do not cross frame boundaries, so the frame's relay is the only delivery: the Playwright spec presses
-J inside the frame and sees exactly one relayed key and no host keydown. When `onKey` returns true the host cancels
+`onKey` receives `{key, shift, alt}` only for the short key list both frames share (`FALLBACK_KEYS`: J, K, arrows,
+Page Up/Down, Home, End, Escape), unmodified (no Ctrl or Cmd, not composing). R, E, Space and every other letter stay in
+the frame, so nothing typed or tapped in a letter reaches an app command, and a tap of R there can never start or leave
+the hold-R dictation (the srcdoc relay sends keydowns only and never a keyup; no listed key is a hold key). Keydown
+events do not cross frame boundaries, so the frame's relay is the only delivery: the Playwright spec presses J inside
+the frame and sees exactly one relayed key and no host keydown, and presses R, E, Space and letters (and holds R past
+the hold threshold) and sees nothing relayed. When `onKey` returns true the host cancels
 the key in the frame. In the `aplos-mail` source, main's `before-input-event` relay and the reporter's fallback must
 never both be on in one build, or a key would arrive twice; whether `before-input-event` fires with focus inside an
 out-of-process frame is still unknown (live check on a Mac).
@@ -124,7 +149,10 @@ Requirements on the sealed path (main, the engine and the reporter), none of whi
    `form-action 'none'`, `base-uri 'none'`.
 3. DNS prefetch off (`X-DNS-Prefetch-Control: off` header, and the `<meta>` in the document).
 4. Main denies every navigation of the frame away from `aplos-mail:` (`will-frame-navigate`, `will-navigate`,
-   `setWindowOpenHandler` opening outside only).
+   `setWindowOpenHandler` opening outside only), and allows the `aplos-mail:` document itself as a subframe
+   (`SUBFRAME_DOCUMENTS` in `src/main/security.ts` lists only `about:blank` and `about:srcdoc` today; REQUEST to
+   `eng-host`). mailto links go to `shell.openExternal` today (the system mail handler); routing them to Compose is a
+   main change for html-4.
 5. The frame runs in a separate process from the renderer that holds the IPC bridge.
 6. Never both main's `before-input-event` relay and the reporter's `key` fallback in one build.
 7. The engine sanitiser carries the cost fences above (linear CSS, style caps, span clamp and weighted cell count),

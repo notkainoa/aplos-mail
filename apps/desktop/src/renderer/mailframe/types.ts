@@ -24,9 +24,9 @@ export interface MailFrameReady {
   trackers?: number;
 }
 
-/** One unmodified key pressed while focus is inside the letter (no Ctrl or Cmd, not composing). */
+/** One unmodified key from the frames' short list pressed while focus is inside the letter (PROTOCOL.md "Keys"). */
 export interface MailFrameKey {
-  /** `KeyboardEvent.key`, e.g. `j`, `J`, ` `, `Escape`, `ArrowDown`. */
+  /** `KeyboardEvent.key`, one of `FALLBACK_KEYS`: e.g. `j`, `J`, `Escape`, `ArrowDown`, `End`. Never R, E or Space. */
   key: string;
   /** Shift was held. */
   shift: boolean;
@@ -49,8 +49,9 @@ export interface MailFrameProps {
   /** The new letter is measured and on screen. */
   onReady: (ready: MailFrameReady) => void;
   /**
-   * A key pressed with focus inside the letter, relayed once to the shell's shortcut registry. Return true when the
-   * shell handled it: the host then prevents the frame's default (Space would otherwise scroll nothing).
+   * A key from the short list (J/K, arrows, Page Up/Down, Home, End, Esc) pressed with focus inside the letter, relayed
+   * once to the shell's shortcut registry. Return true when the shell handled it: the host then prevents the frame's
+   * default.
    */
   onKey: (key: MailFrameKey) => boolean | void;
 }

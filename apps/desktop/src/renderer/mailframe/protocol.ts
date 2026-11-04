@@ -26,7 +26,10 @@ export function frameContentWidth(
   return Math.max(0, frame.clientWidth - pixels(style.paddingLeft) - pixels(style.paddingRight));
 }
 
-/** Keys the in-frame fallback relay may send (research section 7: never E, Space or R). */
+/**
+ * The only keys either frame relays to the shell: the sealed reporter's fallback `key` messages and the srcdoc frame's
+ * keydown relay (keys.ts). Non-destructive and never a hold key (research section 7: never E, Space or R).
+ */
 export const FALLBACK_KEYS = new Set([
   'j',
   'k',
@@ -127,8 +130,37 @@ export function clampHeight(value: unknown): number | null {
   return Math.min(MAX_HEIGHT, Math.max(1, Math.ceil(value)));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The fields each message type may carry; any other own key (`__proto__`, `constructor`, …) rejects the message. */
+const FIELDS = new Map<string, ReadonlySet<string>>([
+  ['size', new Set(['t', 'token', 'h', 'w', 'bg', 'ready'])],
+  ['key', new Set(['t', 'token', 'key', 'shift', 'alt'])],
+]);
+const MAX_FIELDS = 6;
+
+function isPlainObject(value: unknown): value is object {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * A plain object's own data fields copied into a null-prototype record, so nothing is read through a prototype (a
+ * polluted `Object.prototype` cannot fill a missing field) and no getter runs. Null for anything else, for symbol
+ * keys, and for a field the message type does not define.
+ */
+function ownFields(value: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) return null;
+  const names = Object.getOwnPropertyNames(value);
+  if (names.length > MAX_FIELDS) return null;
+  const fields = Object.create(null) as Record<string, unknown>;
+  for (const name of names) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, name);
+    if (!descriptor || !('value' in descriptor)) return null;
+    fields[name] = descriptor.value;
+  }
+  const allowed = typeof fields.t === 'string' ? FIELDS.get(fields.t) : undefined;
+  if (!allowed || names.some(name => !allowed.has(name))) return null;
+  return fields;
 }
 
 function sizeReport(data: Record<string, unknown>, width: number | undefined): SizeReport | null {
@@ -149,7 +181,8 @@ function keyReport(data: Record<string, unknown>): KeyReport | null {
 
 /**
  * Accept a `message` event only from this frame instance: the source is its `contentWindow`, the origin is expected,
- * the token matches, and the payload is well formed. Returns null for anything else.
+ * the token matches, and the payload is a plain object with exactly its type's fields, well formed. Returns null for
+ * anything else.
  */
 export function acceptReport(
   event: ReportEvent,
@@ -159,8 +192,8 @@ export function acceptReport(
     return null;
   }
   if (!expect.origins.includes(event.origin)) return null;
-  const data = event.data;
-  if (!isRecord(data) || typeof data.token !== 'string' || !expect.token) return null;
+  const data = ownFields(event.data);
+  if (!data || typeof data.token !== 'string' || !expect.token) return null;
   if (data.token !== expect.token) return null;
   if (data.t === 'size') return sizeReport(data, expect.width);
   if (data.t === 'key') return keyReport(data);

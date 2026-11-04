@@ -1,6 +1,7 @@
 // Links in a letter never navigate the frame or the app. A click is cancelled and, when the URL passes
-// safeExternalUrl, handed to `window.open` with noopener: in Electron, main's setWindowOpenHandler opens it in the
-// default browser (or routes mailto to Compose) and denies the window (research section 7 "Navigation").
+// safeExternalUrl, handed to `window.open` with noopener: in Electron, main's setWindowOpenHandler denies the window
+// and passes the URL to `shell.openExternal` (research section 7 "Navigation"). That includes mailto: today it opens
+// the system mail handler, not Aplos Compose; routing mailto to Compose is a later change in main when html-4 lands.
 
 import { safeExternalUrl } from './urls';
 

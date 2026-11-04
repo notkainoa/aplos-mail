@@ -4,7 +4,7 @@
 // same-origin with the renderer, so it is mounted in a Vite dev build only; elsewhere a `srcdoc` answer shows the
 // body-failed state (PROTOCOL.md "Why the srcdoc frame is same-origin").
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, useMessageBody } from '../data';
 import { tokenOf } from './protocol';
 import { quotedRangesFor } from './quoted';
@@ -16,6 +16,8 @@ export interface FrameSourceState {
   source: FrameSource | null;
   /** Set when the body or frame could not load. */
   failed: { retry: () => void } | null;
+  /** Ask `Mail/frame` again (a new token): Try again after the frame timed out. */
+  reload: () => void;
 }
 
 interface FrameAnswer {
@@ -65,6 +67,10 @@ export function useFrameSource(
   const [attempt, setAttempt] = useState(0);
   const ready = body.status === 'ready' ? body.body : undefined;
   const html = ready?.messageId === messageId && ready.bodyKind === 'html';
+  const reload = useCallback(() => {
+    setAnswer(null);
+    setAttempt(n => n + 1);
+  }, []);
 
   useEffect(() => {
     if (!html) return;
@@ -90,17 +96,11 @@ export function useFrameSource(
     return { kind: 'text', key: `${messageId}|text`, text: plain, quoted };
   }, [messageId, plain, engineQuoted]);
 
-  if (body.status === 'failed') return { source: null, failed: { retry: body.retry } };
-  if (text) return { source: text, failed: null };
-  if (!html || answer?.request !== request) return { source: null, failed: null };
-  if (answer.failed) {
-    const retry = () => {
-      setAnswer(null);
-      setAttempt(n => n + 1);
-    };
-    return { source: null, failed: { retry } };
-  }
-  return { source: answer.source, failed: null };
+  if (body.status === 'failed') return { source: null, failed: { retry: body.retry }, reload };
+  if (text) return { source: text, failed: null, reload };
+  if (!html || answer?.request !== request) return { source: null, failed: null, reload };
+  if (answer.failed) return { source: null, failed: { retry: reload }, reload };
+  return { source: answer.source, failed: null, reload };
 }
 
 /** Free a frame token when its letter leaves (`Mail/release`). Plain text has none. */

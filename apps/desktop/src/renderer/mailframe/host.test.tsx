@@ -111,13 +111,46 @@ function keyEvent(over: Partial<RelayableKeyEvent> = {}) {
 describe('relayKey', () => {
   test('relays an unmodified key once and cancels it in the frame when handled', () => {
     const seen: MailFrameKey[] = [];
-    const { event, calls } = keyEvent({ key: ' ' });
+    const { event, calls } = keyEvent({ key: 'j' });
     assert.equal(
       relayKey(event, k => (seen.push(k), true)),
       true,
     );
-    assert.deepEqual(seen, [{ key: ' ', shift: false, alt: false }]);
+    assert.deepEqual(seen, [{ key: 'j', shift: false, alt: false }]);
     assert.deepEqual(calls, { prevented: 1, stopped: 1 });
+  });
+
+  test('only the sealed frame short list is relayed: J/K, arrows, Page Up/Down, Home, End, Esc', () => {
+    const relayed = (key: string, over: Partial<RelayableKeyEvent> = {}) => {
+      const seen: MailFrameKey[] = [];
+      relayKey(keyEvent({ key, ...over }).event, k => void seen.push(k));
+      return seen.length;
+    };
+    for (const key of ['j', 'k', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
+      assert.equal(relayed(key), 1, key);
+    assert.equal(relayed('Escape'), 1);
+    assert.equal(relayed('J', { shiftKey: true }), 1);
+    assert.equal(relayed('K', { shiftKey: true }), 1);
+    for (const key of ['r', 'R', 'e', 'E', ' ', 'l', 'z', 's', 'a', '#', '/', 'Enter', 'Tab']) {
+      assert.equal(relayed(key), 0, key);
+      assert.equal(relayed(key, { shiftKey: true }), 0, `shift ${key}`);
+    }
+  });
+
+  test('a tap of R in the frame cannot start or leave a hold: no keydown or keyup reaches the shell', () => {
+    // The shell's hold (R, Space) starts only from a keydown on the window; the relay is the frame's only way there.
+    const shell: MailFrameKey[] = [];
+    for (const key of ['r', 'r', 'R']) {
+      const down = keyEvent({ key, shiftKey: key === 'R' });
+      assert.equal(
+        relayKey(down.event, k => (shell.push(k), true)),
+        false,
+      );
+      assert.deepEqual(down.calls, { prevented: 0, stopped: 0 });
+    }
+    const space = keyEvent({ key: ' ' });
+    relayKey(space.event, k => void shell.push(k));
+    assert.deepEqual(shell, []);
   });
 
   test('an unhandled key keeps its default in the frame', () => {
@@ -137,7 +170,7 @@ describe('relayKey', () => {
       { defaultPrevented: true },
     ]) {
       let called = 0;
-      relayKey(keyEvent({ key: 'c', ...over }).event, () => void called++);
+      relayKey(keyEvent({ key: 'j', ...over }).event, () => void called++);
       assert.equal(called, 0, JSON.stringify(over));
     }
   });
