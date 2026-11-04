@@ -40,7 +40,7 @@ describe('reporter: the shipped file and its hash', () => {
   });
 
   it('is tiny, ASCII, and cannot end its own script element', () => {
-    assert.ok(REPORTER_SOURCE.length < 2_048, `${REPORTER_SOURCE.length} bytes`);
+    assert.ok(REPORTER_SOURCE.length < 4_096, `${REPORTER_SOURCE.length} bytes`);
     assert.match(REPORTER_SOURCE, /^[\x20-\x7e\n]*$/);
     assert.equal(/<\/script|<!--/i.test(REPORTER_SOURCE), false);
   });
@@ -100,38 +100,92 @@ interface Posted {
 interface FakeOptions {
   innerWidth?: number;
   pathname?: string;
-  scrollHeight?: number;
+  /** The root element's box height (the content), and the frame-sized scroll height the old code read. */
+  box?: number;
+  rootScroll?: number;
+  bodyScroll?: number;
   resizeObserver?: 'ok' | 'throws' | 'missing';
   marks?: number;
-  background?: string;
+  bodyPaint?: string;
+  rootPaint?: string;
 }
 
-/** A window with just enough DOM for the script, recording posts and listeners. */
+class FakeTarget {
+  kind = 'window';
+  constructor(readonly listeners: Record<string, (() => void)[]>) {}
+  addEventListener(type: string, fn: () => void): void {
+    (this.listeners[`${this.kind}:${type}`] ??= []).push(fn);
+  }
+}
+
+class FakeElement {
+  constructor(
+    readonly scroll: number,
+    readonly box: number,
+    readonly paint: string,
+  ) {}
+  get scrollHeight(): number {
+    return this.scroll;
+  }
+  getBoundingClientRect(): { height: number } {
+    return { height: this.box };
+  }
+}
+
+class FakeDocument extends FakeTarget {
+  readyStateValue = 'interactive';
+  fontsDone: (() => void) | undefined;
+  constructor(
+    listeners: Record<string, (() => void)[]>,
+    readonly rootElement: FakeElement,
+    readonly bodyElement: FakeElement,
+    readonly markCount: number,
+  ) {
+    super(listeners);
+    this.kind = 'document';
+  }
+  get documentElement(): FakeElement {
+    return this.rootElement;
+  }
+  get body(): FakeElement {
+    return this.bodyElement;
+  }
+  get readyState(): string {
+    return this.readyStateValue;
+  }
+  get fonts() {
+    return { ready: { then: (ok: () => void) => (this.fontsDone = ok) } };
+  }
+  querySelectorAll(selector: string): { length: number } {
+    assert.equal(selector, 'mark.aplos-find');
+    return { length: this.markCount };
+  }
+}
+
+/** A window with just enough DOM for the script: members live on prototypes, as in a browser. */
 function fakeWindow(options: FakeOptions = {}) {
   const posted: Posted[] = [];
   const listeners: Record<string, (() => void)[]> = {};
   const observers: (() => void)[] = [];
-  let fontsDone: (() => void) | undefined;
-  const listen = (prefix: string) => (type: string, fn: () => void) => {
-    (listeners[prefix + type] ??= []).push(fn);
-  };
-  const root = { scrollHeight: options.scrollHeight ?? 500 };
-  const body = { scrollHeight: 300 };
-  const document = {
-    documentElement: root,
-    body,
-    readyState: 'interactive',
-    fonts: { ready: { then: (ok: () => void) => (fontsDone = ok) } },
-    addEventListener: listen('document:'),
-    querySelectorAll: (selector: string) => {
-      assert.equal(selector, 'mark.aplos-find');
-      return { length: options.marks ?? 0 };
-    },
-  };
-  const window: Record<string, unknown> = {
+  const root = new FakeElement(
+    options.rootScroll ?? 900,
+    options.box ?? 500,
+    options.rootPaint ?? 'rgba(0, 0, 0, 0)',
+  );
+  const body = new FakeElement(
+    options.bodyScroll ?? 300,
+    0,
+    options.bodyPaint ?? 'rgb(255, 255, 255)',
+  );
+  const document = new FakeDocument(listeners, root, body, options.marks ?? 0);
+  const window = Object.assign(new FakeTarget(listeners), {
     document,
+    Object,
     Math,
     isFinite,
+    Document: FakeDocument,
+    Element: FakeElement,
+    EventTarget: FakeTarget,
     innerWidth: options.innerWidth ?? 640,
     location: { pathname: options.pathname ?? `/${TOKEN}/` },
     parent: {
@@ -139,9 +193,9 @@ function fakeWindow(options: FakeOptions = {}) {
         posted.push({ message, target });
       },
     },
-    getComputedStyle: () => ({ backgroundColor: options.background ?? 'rgb(255, 255, 255)' }),
-    addEventListener: listen('window:'),
-  };
+    getComputedStyle: (element: FakeElement) => ({ backgroundColor: element.paint }),
+    ResizeObserver: undefined as unknown,
+  });
   if (options.resizeObserver !== 'missing') {
     window.ResizeObserver = function (callback: () => void) {
       if (options.resizeObserver === 'throws') throw new Error('no observer');
@@ -150,7 +204,7 @@ function fakeWindow(options: FakeOptions = {}) {
     };
   }
   const fire = (name: string) => listeners[name]?.forEach(fn => fn());
-  return { window, document, root, posted, listeners, observers, fire, fonts: () => fontsDone?.() };
+  return { window, document, root, body, posted, listeners, observers, fire };
 }
 
 function run(fake: ReturnType<typeof fakeWindow>): void {
@@ -187,7 +241,7 @@ describe('reporter: behaviour in a fake DOM', () => {
   it('reports again on every listed event', () => {
     const fake = fakeWindow();
     run(fake);
-    fake.document.readyState = 'complete';
+    fake.document.readyStateValue = 'complete';
     for (const name of [
       'document:DOMContentLoaded',
       'document:toggle',
@@ -196,9 +250,28 @@ describe('reporter: behaviour in a fake DOM', () => {
     ])
       fake.fire(name);
     fake.observers.forEach(callback => callback());
-    fake.fonts();
+    fake.document.fontsDone?.();
     assert.equal(fake.posted.length, 7);
     assert.equal(fake.posted.at(-1)?.message.ready, true);
+  });
+
+  it('measures the content, never the root scroll height (which is at least the frame)', () => {
+    // A frame sized 900 for a letter that is now 120 tall: the old reading said 900 for ever.
+    const fake = fakeWindow({ box: 120, rootScroll: 900, bodyScroll: 90 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 120);
+  });
+
+  it('counts content that spills past the root box', () => {
+    const fake = fakeWindow({ box: 120, bodyScroll: 400 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 400);
+  });
+
+  it('rounds a fractional height up, so the last line is never cut', () => {
+    const fake = fakeWindow({ box: 120.2, bodyScroll: 10 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 121);
   });
 
   it('posts nothing while innerWidth is 0', () => {
@@ -212,7 +285,7 @@ describe('reporter: behaviour in a fake DOM', () => {
   });
 
   it('clamps height, width, marks and background', () => {
-    const fake = fakeWindow({ scrollHeight: 1e12, marks: 1e9, background: 'x'.repeat(500) });
+    const fake = fakeWindow({ box: 1e12, marks: 1e9, bodyPaint: 'x'.repeat(500) });
     fake.window.innerWidth = 1e9;
     run(fake);
     const message = fake.posted[0].message;
@@ -223,9 +296,8 @@ describe('reporter: behaviour in a fake DOM', () => {
   });
 
   it('turns a non-finite height into 0', () => {
-    for (const scrollHeight of [Number.NaN, Number.POSITIVE_INFINITY]) {
-      const fake = fakeWindow({ scrollHeight });
-      fake.document.body.scrollHeight = Number.NaN;
+    for (const box of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const fake = fakeWindow({ box, bodyScroll: Number.NaN });
       run(fake);
       assert.equal(fake.posted[0].message.h, 0);
     }
@@ -254,14 +326,12 @@ describe('reporter: behaviour in a fake DOM', () => {
     assert.equal(fake.posted.length, 1);
   });
 
-  it('posts nothing when reading the page throws', () => {
+  it('posts nothing more, and does not throw, when reading the page throws', () => {
     const fake = fakeWindow();
     run(fake);
-    Object.defineProperty(fake.document, 'body', {
-      get() {
-        throw new Error('boom');
-      },
-    });
+    fake.window.getComputedStyle = () => {
+      throw new Error('boom');
+    };
     assert.doesNotThrow(() => fake.fire('window:resize'));
     assert.equal(fake.posted.length, 1, 'only the first report');
   });
@@ -276,5 +346,86 @@ describe('reporter: behaviour in a fake DOM', () => {
     const builtIns =
       /(?<![.\w])(Math|isFinite|isNaN|String|Number|JSON|Object|Array|Promise|parseInt|parseFloat|globalThis|self|frames)\b/;
     assert.equal(builtIns.exec(REPORTER_SOURCE)?.[0], undefined);
+  });
+});
+
+describe('reporter: the paper colour', () => {
+  const report = (options: FakeOptions) => {
+    const fake = fakeWindow(options);
+    run(fake);
+    return fake.posted[0].message.bg;
+  };
+
+  it('falls back to the root when the body has none', () => {
+    const root = 'rgb(240, 240, 232)';
+    const clear = [
+      'rgba(0, 0, 0, 0)',
+      'transparent',
+      '',
+      'rgba(12, 34, 56, 0)',
+      'oklch(0.5 0.2 30 / 0)',
+      'color(srgb 1 0 0 / 0)',
+      'color(srgb 1 0 0 / 0%)',
+      'color(srgb 1 0 0 / 0.0)',
+      'lab(50 20 30 /0)',
+    ];
+    for (const bodyPaint of clear) {
+      assert.equal(report({ bodyPaint, rootPaint: root }), root, bodyPaint);
+    }
+  });
+
+  it('prefers the body over a root colour, and keeps a half-clear body', () => {
+    const rootPaint = 'rgb(9, 9, 9)';
+    assert.equal(report({ bodyPaint: 'rgb(1, 2, 3)', rootPaint }), 'rgb(1, 2, 3)');
+    assert.equal(report({ bodyPaint: 'rgba(1, 2, 3, 0.5)', rootPaint }), 'rgba(1, 2, 3, 0.5)');
+    assert.equal(report({ bodyPaint: 'rgb(1, 2, 30)', rootPaint }), 'rgb(1, 2, 30)');
+    // Opaque colours that happen to end in a 0 channel are colours, not see-through.
+    for (const bodyPaint of [
+      'rgb(255, 255, 0)',
+      'rgb(0, 0, 0)',
+      'oklch(0.5 0.2 30 / 0.5)',
+      'color(srgb 1 0 0 / 10%)',
+      'color(srgb 1 0 0 / 0.05)',
+      'color(srgb 1 0 0)',
+    ]) {
+      assert.equal(report({ bodyPaint, rootPaint }), bodyPaint, bodyPaint);
+    }
+  });
+
+  it('reports the body when neither has a colour', () => {
+    assert.equal(report({ bodyPaint: 'rgba(0, 0, 0, 0)' }), 'rgba(0, 0, 0, 0)');
+  });
+});
+
+describe('reporter: DOM clobbering (a named element shadows a member of document or window)', () => {
+  // A decoy on every member the script could read by name, as `<img name=body>` and the like would
+  // put on `document`, and as `<a id=addEventListener>` puts on `window`. The script must have
+  // taken the real ones from the prototypes before the mail could matter.
+  function clobbered(options: FakeOptions) {
+    const fake = fakeWindow(options);
+    const decoy = new FakeElement(7777, 7777, 'rgb(6, 6, 6)');
+    const boom = () => {
+      throw new Error('clobbered');
+    };
+    const shadow = (target: object, names: string[], value: unknown) => {
+      for (const name of names) Object.defineProperty(target, name, { value });
+    };
+    shadow(fake.document, ['body', 'documentElement', 'readyState', 'fonts', 'children'], decoy);
+    shadow(fake.document, ['addEventListener', 'querySelectorAll', 'getElementById'], boom);
+    shadow(fake.window, ['addEventListener'], boom);
+    return fake;
+  }
+
+  it('reports the same values and listens through the prototype', () => {
+    const plain = fakeWindow({ box: 321, marks: 2 });
+    run(plain);
+    const shadowed = clobbered({ box: 321, marks: 2 });
+    run(shadowed);
+    assert.deepEqual({ ...shadowed.posted[0].message }, { ...plain.posted[0].message });
+    assert.equal(shadowed.posted[0].message.h, 321);
+    assert.equal(shadowed.posted[0].message.marks, 2);
+    for (const name of ['document:toggle', 'document:DOMContentLoaded', 'window:load']) {
+      assert.equal(shadowed.listeners[name]?.length, 1, name);
+    }
   });
 });

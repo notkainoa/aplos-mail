@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { ContractError } from '@aplos/contract/contract-error';
 import { notFound } from '@aplos/mail-html/frame';
 import { IMAGE_PROXY_LIMITS } from '../../src/ports';
-import { EXE, frameOf, HTML, IDS, mailWorld, PNG, serve, SVG, type World } from './harness';
+import { EXE, frameOf, HTML, IDS, mailWorld, PNG, serve, SVG, text, type World } from './harness';
 
 // `Mail/serve`: main's relay only, the window id it passes or the 404, and bytes typed by sniffing alone.
 
@@ -29,6 +29,16 @@ describe('Mail/serve', () => {
       assert.deepEqual(await serve(w, frame.url, ''), notFound(), 'absent');
       assert.deepEqual(await serve(w, frame.url, '', ''), notFound(), 'empty');
       assert.equal((await serve(w, frame.url, '', w.ids.windowA)).status, 200, 'still unspent');
+    }));
+
+  it('serves the document in standards mode: <!DOCTYPE html> first, then the reporter last', () =>
+    withWorld(async w => {
+      const frame = await frameOf(w.windowA, { messageId: IDS.rich, imagePolicy: 'block' });
+      const served = await serve(w, frame.url, '', w.ids.windowA);
+      const document = text(served.body);
+      assert.ok(document.startsWith('<!DOCTYPE html><html>'), document.slice(0, 40));
+      assert.equal(document.match(/<!doctype/gi)?.length, 1);
+      assert.ok(/<script>[^]*<\/script><\/body><\/html>$/.test(document), 'the reporter is last');
     }));
 
   it('never throws, for any token or path', () =>

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { frameHeaders, notFound } from '../../src/frame/headers';
-import { reporterHash } from '../../src/frame/reporter';
+import { reporterHash, withReporter } from '../../src/frame/reporter';
+import { render as renderMail } from '../../src/index';
 import { serveFrame, type ServeDeps } from '../../src/frame/serve';
 import { FrameTokens, MAX_TOKENS_PER_WINDOW, type FrameRenderInput } from '../../src/frame/tokens';
 import { bytes, render, SAMPLES } from './fixtures';
@@ -52,6 +53,28 @@ describe('Mail/serve', () => {
     assert.deepEqual(first.headers, frameHeaders(deps.reporterHash));
     assert.equal(new TextDecoder().decode(first.body), '<html><body>héllo</body></html>');
     assert.deepEqual(await serve(''), NOT_FOUND);
+  });
+
+  it('serves a document that starts with <!doctype html>, whatever the mail declared', async () => {
+    const legacy = '<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">';
+    const inputs = [
+      '<p>x</p>',
+      `${legacy}<p>x</p>`,
+      '<!-- c -->\ufeff<p>x</p>',
+      '<![CDATA[x]]><p>x</p>',
+    ];
+    inputs.push('<?xml version="1.0"?><!DOCTYPE html SYSTEM "about:legacy-compat"><p>x</p>');
+    for (const html of inputs) {
+      const result = renderMail({ html, cids: [], imagePolicy: 'block' });
+      assert.equal(result.bodyKind, 'html');
+      const document = withReporter(result.bodyKind === 'html' ? result.document : '');
+      const { serve } = await setup({ document });
+      const served = new TextDecoder().decode((await serve('')).body);
+      assert.ok(/^<!doctype html><html[ >]/i.test(served), `${html} -> ${served.slice(0, 60)}`);
+      // The two things that bring quirks mode back: anything before the doctype, a second doctype.
+      assert.equal(served.match(/<!doctype/gi)?.length, 1, html);
+      assert.equal(served.charCodeAt(0), 0x3c, 'no BOM or space first');
+    }
   });
 
   it('serves an issued cid and an allowed image after the document', async () => {
