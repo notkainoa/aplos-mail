@@ -47,7 +47,7 @@ export function createModule(services: EngineServices): LaneModule {
       // Abort every in-flight fetch, then wait for their `absent` reverts to land while the store is
       // still open — a fetch killed after the store closes leaves its row stuck `fetching`.
       mailFrames.aborter.abort();
-      await Promise.allSettled([...mailFrames.parts.values()]);
+      await Promise.allSettled([...mailFrames.parts.values(), ...mailFrames.originals.values()]);
     },
     // A closed window's tokens (and any document not yet served) go with it.
     onConnectionClose: connectionId => mailFrames.tokens.releaseWindow(connectionId),
