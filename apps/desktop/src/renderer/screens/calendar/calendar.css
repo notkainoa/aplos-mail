@@ -29,8 +29,9 @@
   position: relative;
 }
 
-/* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window. Pointer events
-   pass through except on the button, so a click-drag on the grid still creates an event. */
+/* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window on a quiet card
+   (--paper, the --line ring of --elev-pane, --radius-lg), so the message never sits on the hour lines. Pointer
+   events pass through except on the card, so a click-drag on the grid around it still creates an event. */
 .cal-screen__empty {
   position: absolute;
   inset: 0;
@@ -42,12 +43,18 @@
 }
 
 .cal-screen__empty-box {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-4);
   max-width: var(--dock-w);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-pane);
   text-align: center;
+  pointer-events: auto;
 }
 
 .cal-screen__empty-lines {
@@ -55,10 +62,6 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-}
-
-.cal-screen__empty button {
-  pointer-events: auto;
 }
 
 /* Day view: one wide column and the detail rail (calendar-day.html). */

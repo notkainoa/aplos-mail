@@ -402,9 +402,9 @@ function Surfaces(props: {
 }
 
 /**
- * The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window, one plain
- * sentence, what comes next, and the one action. Pointer events pass through except on the button, so a
- * click-drag on the grid still creates an event.
+ * The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window on a quiet card,
+ * one plain sentence, what comes next, and the one action. Pointer events pass through except on the card, so a
+ * click-drag on the grid around it still creates an event.
  */
 function EmptyPanel({
   empty,
