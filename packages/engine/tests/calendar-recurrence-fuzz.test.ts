@@ -32,6 +32,7 @@ import {
   rfcWeekNumbers,
   weekNoDefectOfA,
 } from './calendar-recurrence-oracle-defects';
+import { oracleAUnavailable } from './calendar-recurrence-oracle-env';
 
 const PYTHON = process.env.APLOS_ORACLE_PYTHON ?? '/tmp/aplos-rrule-oracle/bin/python';
 const ORACLE_A = join(import.meta.dirname, '..', 'scripts', 'recurrence-oracle', 'oracle_a.py');
@@ -447,7 +448,7 @@ type OracleOk = {
 };
 type OracleResult = OracleOk | { id: string; status: 'refused'; error: string };
 
-const haveA = existsSync(PYTHON) && existsSync(ORACLE_A);
+const oracleAProblem = oracleAUnavailable(PYTHON, ORACLE_A);
 
 function runA(jobs: Job[], dir: string, name: string): Map<string, OracleResult> {
   const input = join(dir, `${name}-jobs.json`);
@@ -504,7 +505,7 @@ function diff(expected: Expected[], actual: Expected[]): string {
 
 test(
   `seeded random series over ten years match oracle A (seed ${SEED}, ${N} series)`,
-  { skip: !haveA && 'oracle A venv missing' },
+  { skip: oracleAProblem ?? false },
   async () => {
     const dir = mkdtempSync(join(tmpdir(), 'aplos-rrule-fuzz-'));
     try {

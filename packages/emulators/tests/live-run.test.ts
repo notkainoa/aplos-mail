@@ -172,7 +172,7 @@ test('tier R run on a generated mailbox: probes pass, only reads are sent, and t
   assert.equal(outcome.exitCode, 0, JSON.stringify(outcome.results));
   assert.deepEqual(
     outcome.results.map(r => r.status),
-    ['pass', 'pass'],
+    ['pass', 'pass', 'pass'],
   );
 
   const sent = f.emu.log.slice(logBefore);
@@ -255,7 +255,7 @@ test('dry run prints the plan, reads no secret and makes no request', async () =
   assert.equal(f.fetchCalls, 0);
   assert.match(
     f.lines.join('\n'),
-    /Probes: gmail\.profile-and-labels, gmail\.inbox-window-metadata/,
+    /Probes: gmail\.profile-and-labels, gmail\.inbox-window-metadata, gmail\.auth-results-shape/,
   );
   assert.match(f.lines.join('\n'), /reconnect by 2026-11-03/);
   assert.deepEqual(await readdir(f.evidence), []);
@@ -273,7 +273,7 @@ test('an expired test account is a skip with a plain message, its own result and
   assert.equal(outcome.skipped, 'token-expiry');
   assert.deepEqual(
     outcome.results.map(r => r.status),
-    ['skip', 'skip'],
+    ['skip', 'skip', 'skip'],
   );
   assert.equal(f.fetchCalls, 0, 'zero requests');
   assert.deepEqual(f.lines, ['test account agent expires 2026-11-03, reconnect it first']);

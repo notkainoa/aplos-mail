@@ -1,0 +1,17 @@
+<style>
+  :root { --bg: url({{CANARY}}/{{ID}}/root-variable); --str: "{{CANARY}}/{{ID}}/string-variable"; }
+  @property --reg { syntax: "<url>"; inherits: false; initial-value: url({{CANARY}}/{{ID}}/registered-initial); }
+  .a { background: var(--bg); }
+  .b { background-image: image-set(var(--str) 1x); }
+  .c { --x: url({{CANARY}}/{{ID}}/local-variable); background: var(--x); }
+  .d { background: var(--missing, url({{CANARY}}/{{ID}}/fallback)); }
+  .e { background: attr(data-bg url); }
+  .f { background: attr(data-bg type(<url>)); }
+  .g { content: attr(data-src); }
+  .h { background: var(--reg); }
+  .i { background: url(var(--str)); }
+  .j { --chain: var(--bg); background: var(--chain); }
+  .k { --w: url(; background: var(--w){{CANARY}}/{{ID}}/split-variable); }
+</style>
+<p>Volunteer rota for November: please check your slot.</p>
+<div class="a b c d e f g h i j k" data-bg="{{CANARY}}/{{ID}}/data-bg" data-src="{{CANARY}}/{{ID}}/data-src">variables</div>

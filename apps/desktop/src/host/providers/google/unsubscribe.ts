@@ -14,14 +14,10 @@ import { pinTarget, systemResolver, type PinnedTarget, type Resolver } from '../
  * the recipient, subject and body all come from the sender). Else an https page to open. The headers come from the
  * sender, so every value here is hostile until checked.
  *
- * TODO(contract): RFC 8058 section 4 says a receiver should POST only when the message has a valid DKIM signature that
- * covers List-Unsubscribe and List-Unsubscribe-Post. The engine stores no authentication result, so this executor cannot
- * check it. The missing piece is an `authenticated` fact on the message (derived from Authentication-Results or the
- * provider's own verdict) carried in `ListHeaders`. Exposure until then: a spoofed message can make the app POST to an
- * attacker's URL on the owner's explicit click, which leaks their IP address and confirms the address is read. The POST
- * carries no cookie or credential and nothing from the mail beyond the URL itself. The target is the newest inbound
- * message of the thread that carries List-Unsubscribe (`methods/unsubscribe.ts`), so a spoofed message dropped into a
- * real newsletter thread swaps the URL the owner's click goes to; the same authenticated fact must gate that choice.
+ * RFC 8058 section 4: a POST only for a message whose DKIM signature covers List-Unsubscribe and List-Unsubscribe-Post
+ * and aligns with From. `facts.ts` derives that as `ListHeaders.authenticated` (`list-auth.ts`) and the engine strips
+ * List-Unsubscribe-Post from any other message (`methods/unsubscribe.ts`); the plan also requires the strict boolean
+ * `true`, as defence in depth.
  *
  * Known limit: the composer sends a mailto from the receiving account's primary address, not from the alias the list
  * wrote to, so a list that matches the subscriber by the alias address may not recognise the request.
@@ -253,13 +249,17 @@ function firstMailto(uris: readonly string[]): UnsubscribeMail | undefined {
   return undefined;
 }
 
-/** Decision 5's order: one-click (both headers), else mailto, else an https page to open, else nothing. Pure. */
+/**
+ * Decision 5's order: one-click (both headers on an authenticated message), else mailto, else an https page to open,
+ * else nothing. Pure.
+ */
 export function planUnsubscribe(
-  headers: Pick<ListHeaders, 'listUnsubscribe' | 'listUnsubscribePost'>,
+  headers: Pick<ListHeaders, 'listUnsubscribe' | 'listUnsubscribePost' | 'authenticated'>,
 ): UnsubscribePlan {
   const uris = listUris(headers.listUnsubscribe);
   const page = firstHttps(uris);
-  if (page && oneClickOffered(headers.listUnsubscribePost)) return { kind: 'oneClick', url: page };
+  const oneClick = headers.authenticated === true && oneClickOffered(headers.listUnsubscribePost);
+  if (page && oneClick) return { kind: 'oneClick', url: page };
   const mail = firstMailto(uris);
   if (mail) return { kind: 'mailto', mail, url: mailtoUrl(mail) };
   if (page) return { kind: 'open', url: page.href };

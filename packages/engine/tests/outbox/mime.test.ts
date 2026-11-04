@@ -102,6 +102,29 @@ test('header injection: CR and LF in the subject or in names never start a heade
   );
 });
 
+test('a subject or a name that looks like an encoded word is encoded, so a reader shows the characters typed', () => {
+  const lookalike = '=?UTF-8?B?SGk=?=';
+  const bytes = buildMime(
+    input({
+      subject: lookalike,
+      to: [{ address: 'jordan@mail.example', name: lookalike }],
+      from: { address: 'owner@mail.example', name: 'a =?us-ascii?q?b?= c' },
+    }),
+  );
+  const { headers, head } = parse(bytes);
+  assert.ok(!head.includes(lookalike), 'the look-alike is never written raw');
+  const subject = named(headers, 'Subject')[0].value;
+  assert.equal(decodeWords(subject), lookalike, 'and decodes back to what was typed');
+  assert.equal(decodeWords(named(headers, 'To')[0].value), `${lookalike} <jordan@mail.example>`);
+  assert.equal(
+    decodeWords(named(headers, 'From')[0].value),
+    'a =?us-ascii?q?b?= c <owner@mail.example>',
+  );
+  // An ordinary subject with an equals sign or a question mark is still written plain.
+  const plain = parse(buildMime(input({ subject: 'Is x=1 ok?' })));
+  assert.equal(named(plain.headers, 'Subject')[0].value, 'Is x=1 ok?');
+});
+
 test('header injection: other line breaks and control characters are encoded, never written raw', () => {
   const subject = 'a\u2028Bcc: x@evil.example\u0085b\u000bc\u0000d';
   const { head, headers } = parse(buildMime(input({ subject })));

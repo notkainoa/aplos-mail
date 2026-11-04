@@ -111,8 +111,14 @@ const DECLARATIONS = [
   'let hook',
 ];
 
+/**
+ * Whole declarations only: the store's `let hooks` (store/ingest.ts) is not the kill-point `let hook`. A number suffix
+ * still counts (`let hook2`, `function killpoint2`): esbuild renames a declaration that way when two modules clash.
+ */
 function declared(code: string): string[] {
-  return DECLARATIONS.filter(d => code.includes(d));
+  const whole = (d: string) =>
+    new RegExp(`${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d*(?![\\w$])`);
+  return DECLARATIONS.filter(d => whole(d).test(code));
 }
 
 function present(code: string): string[] {
@@ -238,4 +244,13 @@ test('the kill-point names are what the grep looks for: distinct and not words t
   assert.equal(new Set(KILL_POINTS).size, KILL_POINTS.length);
   assert.ok(KILL_POINTS.length >= 4);
   for (const p of KILL_POINTS) assert.match(p, /^(before|after|during)-[a-z-]+$/);
+});
+
+test('a declaration counts whole or with esbuild’s number suffix, never as a longer name', () => {
+  assert.deepEqual(declared('let hooks = new Set();'), []);
+  assert.deepEqual(declared('let hook2;\nfunction killpoint3(name) {}'), [
+    'function killpoint',
+    'let hook',
+  ]);
+  assert.deepEqual(declared('let hook;'), ['let hook']);
 });

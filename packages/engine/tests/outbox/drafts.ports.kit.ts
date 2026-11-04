@@ -68,7 +68,7 @@ export interface Fact {
   to?: { address: string; name?: string }[];
   snippet?: string;
   hasAttachments?: boolean;
-  from?: { address: string };
+  from?: { address: string; name?: string };
   /** The Bcc the copy shows (default: none, shown). */
   bcc?: { address: string }[];
   /** A provider that cannot show a draft's Bcc: the copy carries no `bcc` at all. */
@@ -105,7 +105,7 @@ export function fact(w: World, remoteDraftId: string, messageId: string, f: Fact
           internalDate: w.clock.now(),
           flags: { seen: true, flagged: false, draft: true, fromMe: true },
           ...(f.messageHtml !== undefined ? { html: f.messageHtml } : {}),
-          ...(f.hasAttachments !== undefined ? { hasAttachments: f.hasAttachments } : {}),
+          hasAttachments: f.hasAttachments ?? false,
         },
       },
     ],

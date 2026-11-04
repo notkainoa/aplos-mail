@@ -536,15 +536,20 @@ test('ADV-11 no format=full or raw request during sync (window, Sent, backfill, 
   });
   await r.clock.advance(60_000);
   await historyPass(r);
+  // The one exception: the bounded body read of a foreign draft (draft-body.ts), one `drafts.get` per draft.
   const full = r.emu.log.filter(e => e.service === 'gmail' && e.units >= 60);
   assert.deepEqual(
     full.map(e => e.apiMethod),
-    [],
+    ['gmail.users.drafts.get'],
     'full-priced calls during sync',
   );
+  // Exactly the allowed read: one format=full `drafts.get`, for the one foreign draft.
+  const bodyReads = r.fetches.filter(f => /\/drafts\/[^/]+$/.test(f.path));
+  assert.equal(bodyReads.length, 1);
+  assert.equal(bodyReads[0].query.get('format'), 'full');
   for (const f of r.fetches.filter(f => f.path.startsWith('/gmail/'))) {
     assert.ok(
-      !['full', 'raw'].includes(f.query.get('format') ?? ''),
+      !['full', 'raw'].includes(f.query.get('format') ?? '') || f === bodyReads[0],
       `${f.path} format ${f.query.get('format')}`,
     );
     assert.ok(f.query.has('fields'), `${f.path} has no fields mask`);

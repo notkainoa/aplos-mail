@@ -1,0 +1,12 @@
+<p>Recording of the lecture is attached below.</p>
+<video src="{{CANARY}}/{{ID}}/video-src.mp4" controls preload="auto" autoplay muted loop width="320" height="180"></video>
+<video controls preload="metadata" poster="{{CANARY}}/{{ID}}/video-poster.jpg"><source src="{{CANARY}}/{{ID}}/source-one.mp4" type="video/mp4"><source src="{{CANARY}}/{{ID}}/source-two.webm" type="video/webm"><track kind="subtitles" src="{{CANARY}}/{{ID}}/track-subtitles.vtt" srclang="en" default><track kind="metadata" src="{{CANARY}}/{{ID}}/track-metadata.vtt" default>fallback <img src="{{CANARY}}/{{ID}}/video-fallback-img"></video>
+<audio src="{{CANARY}}/{{ID}}/audio-src.mp3" controls preload="auto" autoplay></audio>
+<audio controls><source src="{{CANARY}}/{{ID}}/audio-source.ogg" type="audio/ogg"><source src="{{CANARY}}/{{ID}}/audio-source.mp3"></audio>
+<video src="//{{CANARY_HOST}}/video-protocol-relative.mp4" preload="auto"></video>
+<video src="data:video/mp4;base64,AAAA" controls></video>
+<audio src="javascript:fetch('{{CANARY}}/{{ID}}/audio-js')" controls></audio>
+<video crossorigin="use-credentials" src="{{CANARY}}/{{ID}}/video-credentials.mp4" preload="auto"></video>
+<video src="{{CANARY}}/{{ID}}/video-pip.mp4" disablepictureinpicture controlslist="nodownload"></video>
+<source src="{{CANARY}}/{{ID}}/orphan-source.mp4"><track src="{{CANARY}}/{{ID}}/orphan-track.vtt">
+<video><source src="{{CANARY}}/{{ID}}/sourceless.mp4" srcset="{{CANARY}}/{{ID}}/source-srcset.mp4"></video>

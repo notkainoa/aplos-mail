@@ -1,0 +1,27 @@
+<p>Please wait for the page to load.</p>
+<script>
+  window.open('{{CANARY}}/{{ID}}/window-open');
+  window.open('javascript:fetch("{{CANARY}}/{{ID}}/window-open-js")');
+  window.open('data:text/html,<script>fetch("{{CANARY}}/{{ID}}/window-open-data")<\/script>');
+  window.open('{{CANARY}}/{{ID}}/window-open-blank', '_blank', 'noopener=no');
+  top.location = '{{CANARY}}/{{ID}}/top-location';
+  top.location.href = '{{CANARY}}/{{ID}}/top-location-href';
+  parent.location.replace('{{CANARY}}/{{ID}}/parent-replace');
+  window.parent.location.assign('{{CANARY}}/{{ID}}/parent-assign');
+  window.opener && (window.opener.location = '{{CANARY}}/{{ID}}/opener-location');
+  window.opener && window.opener.postMessage('x', '*');
+  location.href = '{{CANARY}}/{{ID}}/self-location';
+  location.replace('{{CANARY}}/{{ID}}/self-replace');
+  document.location = '{{CANARY}}/{{ID}}/document-location';
+  history.go(-1);
+  window.close();
+  parent.document.body.innerHTML = 'owned';
+  parent.frames[0].document.write('x');
+  frameElement && (frameElement.src = '{{CANARY}}/{{ID}}/frame-element-src');
+  document.querySelector('a').click();
+  window.name = 'x'; open('{{CANARY}}/{{ID}}/named-window', 'x');
+  showModalDialog && showModalDialog('{{CANARY}}/{{ID}}/modal');
+  alert(1); confirm(1); prompt(1);
+  navigation && navigation.navigate('{{CANARY}}/{{ID}}/navigation-api');
+</script>
+<a href="{{CANARY}}/{{ID}}/auto-clicked">link clicked by script</a>

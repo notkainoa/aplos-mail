@@ -13,6 +13,15 @@ import {
   type SyncState,
 } from '@aplos/engine/ports';
 import { GmailClient, isStop } from './client';
+import {
+  deliverBodies,
+  pendingJson,
+  BODY_FETCHES,
+  PENDING_KEY,
+  READS_KEY,
+  readPending,
+  type PendingBodies,
+} from './draft-body';
 import { FLAG_LABELS, folderFacts, type GmailLabel } from './facts';
 import { isQuarantined, passWrites, readSchedule, settleFailures } from './failures';
 import {
@@ -267,6 +276,16 @@ function headWrites(
   return { [HEAD_AT_KEY]: String(state.updatedAt) };
 }
 
+/** The `READS_KEY` write after a page: the pass's body reads so far while it goes on, cleared once it reaches the head. */
+function readsWrite(
+  next: SyncState,
+  memory: ReadonlyMap<string, string>,
+  total: number,
+): Record<string, string | null> {
+  if (atHead(next)) return memory.has(READS_KEY) ? { [READS_KEY]: null } : {};
+  return String(total) === memory.get(READS_KEY) ? {} : { [READS_KEY]: String(total) };
+}
+
 /**
  * After the baseline a reset remembers when history last reached the head, for `missedArrivals`; before it, nothing.
  * Never a later time: mail that a stalled pass had not fetched yet must still count as missed.
@@ -304,6 +323,9 @@ function readDraftMap(memory: ReadonlyMap<string, string>): Map<string, string> 
   }
 }
 
+/** A message whose labels are unknown or include DRAFT may be a draft (Google's history refs often carry no labels). */
+const mayBeDraft = (m: HistoryRef): boolean => !m.labelIds || m.labelIds.includes('DRAFT');
+
 /** What one history page says, in record order. */
 interface PageChanges {
   labels: Map<string, Pending>;
@@ -311,6 +333,8 @@ interface PageChanges {
   inboxGained: HistoryRef[];
   /** Messages that lost DRAFT without being deleted: a draft sent with `drafts.send` keeps its id and becomes mail. */
   undrafted: HistoryRef[];
+  /** Draft candidates that left Trash: a restored draft is news again (it was reported `removed` while trashed). */
+  untrashed: HistoryRef[];
   deleted: Set<string>;
   /** Inbox entries and exits in record order, for the running Inbox round's sweep (REGAINED_KEY). */
   inboxMoves: [string, boolean][];
@@ -345,10 +369,11 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
     added: [],
     inboxGained: [],
     undrafted: [],
+    untrashed: [],
     deleted: new Set(),
     inboxMoves: [],
   };
-  const { labels, added, inboxGained, undrafted, deleted, inboxMoves } = changes;
+  const { labels, added, inboxGained, undrafted, untrashed, deleted, inboxMoves } = changes;
   for (const record of records) {
     for (const { message } of record.messagesAdded ?? []) {
       rt.memo.changed(message.id, record.id);
@@ -373,6 +398,8 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
       rt.memo.changed(entry.message.id, record.id);
       changeLabels(labels, entry.message, entry.labelIds, false);
       if (entry.labelIds?.includes('DRAFT')) undrafted.push(entry.message);
+      if (entry.labelIds?.includes('TRASH') && mayBeDraft(entry.message))
+        untrashed.push(entry.message);
       if (entry.labelIds?.includes('INBOX')) inboxMoves.push([entry.message.id, false]);
     }
   }
@@ -382,15 +409,31 @@ function collectChanges(rt: SyncRuntime, records: readonly HistoryRecord[]): Pag
 /**
  * Drafts (D9). Google documents history messages as "typically" carrying only id and threadId (proto-google D17), so a
  * message without labelIds may be a draft; one `drafts.list` (5 units) settles every such message, finds the drafts
- * deleted or sent elsewhere, and maps message ids to draft ids. It runs only when the page touches a draft.
+ * deleted or sent elsewhere, and maps message ids to draft ids. It runs only when the page touches a draft. The list is
+ * paged to its end (`DRAFT_LIST_PAGES`); a draft is reported `removed` only when the listing is complete AND a
+ * `drafts.get` answers 404 for it (`retainedDrafts`; a draft in Trash counts as gone, `drafts.list` hides it): a partial or racing listing never deletes
+ * a draft that exists.
  */
 function needsDrafts(changes: PageChanges, draftMap: ReadonlyMap<string, string>): boolean {
-  const { added, undrafted, deleted } = changes;
+  const { added, undrafted, untrashed, deleted } = changes;
   return (
-    added.some(m => !deleted.has(m.id) && (!m.labelIds || m.labelIds.includes('DRAFT'))) ||
+    [...added, ...untrashed].some(m => !deleted.has(m.id) && mayBeDraft(m)) ||
     undrafted.length > 0 ||
     [...deleted].some(id => draftMap.has(id))
   );
+}
+
+/**
+ * The message ids this adapter reported or saw for `draftId` earlier that are not `messageId`: Gmail gives a draft a new
+ * message id on every update, so these are the versions the fact replaces. Only ids this adapter itself recorded for the
+ * same draft id (`DRAFTS_KEY`) are named; nothing is guessed from the page's deleted messages.
+ */
+function previousMessages(
+  draftMap: ReadonlyMap<string, string>,
+  draftId: string,
+  messageId: string,
+): string[] {
+  return [...draftMap].filter(([id, d]) => d === draftId && id !== messageId).map(([id]) => id);
 }
 
 /** The drafts facts and the next message id -> draft id map, given the drafts Gmail has now (`current`). */
@@ -399,17 +442,22 @@ async function settleDrafts(
   changes: PageChanges,
   draftMap: Map<string, string>,
   current: Map<string, string>,
+  { retained, rotate }: Retained,
   now: number,
 ): Promise<{ drafts: RemoteDraftFact[]; nextDraftMap: Map<string, string> }> {
-  const { added, deleted } = changes;
+  const { deleted } = changes;
   const live = (m: HistoryRef) => !deleted.has(m.id);
+  // New messages and restored-from-Trash ones, each once.
+  const added = [...new Map([...changes.added, ...changes.untrashed].map(m => [m.id, m])).values()];
   const drafts: RemoteDraftFact[] = [];
   const currentIds = new Set(current.values());
   const nextDraftMap = new Map<string, string>();
   const draftOf = new Map([...current].map(([messageId, draftId]) => [draftId, messageId]));
   for (const [messageId, draftId] of draftMap) {
     if (currentIds.has(draftId)) nextDraftMap.set(draftOf.get(draftId)!, draftId);
-    // Deleted or sent elsewhere: it leaves Drafts.
+    // Not on the listing, but the listing is partial or the draft still answers: it stays tracked, never `removed`.
+    else if (retained.has(draftId)) nextDraftMap.set(messageId, draftId);
+    // Deleted or sent elsewhere (a 404 confirmed it): it leaves Drafts.
     else
       drafts.push({
         remoteDraftId: draftId,
@@ -417,6 +465,12 @@ async function settleDrafts(
         changedAt: now,
         removed: true,
       });
+  }
+  // A draft just confirmed alive goes to the back of the line, so the next pass checks the others first.
+  for (const [messageId, draftId] of [...nextDraftMap]) {
+    if (!rotate.has(draftId)) continue;
+    nextDraftMap.delete(messageId);
+    nextDraftMap.set(messageId, draftId);
   }
   // A draft copy this device wrote (`drafts.remote_message_id`) is Aplos's own save, not news; any other message id on
   // a draft is a phone draft or an edit made elsewhere, which the engine reconciles (ARCH 7.4, FR-26).
@@ -429,11 +483,13 @@ async function settleDrafts(
     if (!draftId || !live(m)) continue;
     nextDraftMap.set(m.id, draftId);
     if (own.has(m.id)) continue;
+    const supersedes = previousMessages(draftMap, draftId, m.id);
     drafts.push({
       remoteDraftId: draftId,
       remoteMessageId: m.id,
       remoteThreadId: m.threadId,
       changedAt: now,
+      ...(supersedes.length ? { supersedes } : {}),
     });
   }
   return { drafts, nextDraftMap };
@@ -529,11 +585,14 @@ function pageExtras(
   ctx: AdapterContext,
   drafts: RemoteDraftFact[],
   nextDraftMap: ReadonlyMap<string, string>,
+  pending: PendingBodies,
   inboxMoves: readonly [string, boolean][],
 ): Pick<StepResult, 'drafts' | 'memory'> {
   const memory: Record<string, string | null> = {};
   const draftsJson = nextDraftMap.size ? JSON.stringify(Object.fromEntries(nextDraftMap)) : null;
   if (draftsJson !== (ctx.memory.get(DRAFTS_KEY) ?? null)) memory[DRAFTS_KEY] = draftsJson;
+  const waiting = pendingJson(pending);
+  if (waiting !== (ctx.memory.get(PENDING_KEY) ?? null)) memory[PENDING_KEY] = waiting;
   const regained = regainedList(ctx.memory, inboxMoves);
   if (regained !== undefined) memory[REGAINED_KEY] = regained;
   return {
@@ -572,6 +631,33 @@ function nextHistoryState(
         : {}),
     ...(pending.length ? { pending } : {}),
   };
+}
+
+/**
+ * Bodies for the foreign drafts of this page (`draft-body.ts`). The bound is per pass (all its pages), not per page: the
+ * pages of a pass that is not at its head count together, and a page of a pass that used its reads makes none.
+ */
+async function bodiesFor(
+  client: GmailClient,
+  step: PlannedStep,
+  state: SyncState,
+  ctx: AdapterContext,
+  drafts: RemoteDraftFact[],
+  now: number,
+) {
+  const priorReads = atHead(state) ? 0 : Number(ctx.memory.get(READS_KEY)) || 0;
+  const budget = Math.max(0, BODY_FETCHES - priorReads);
+  const delivered = await deliverBodies(
+    client,
+    step.lane,
+    ctx.log,
+    drafts,
+    readPending(ctx.memory),
+    now,
+    ctx.account.address,
+    budget,
+  );
+  return { ...delivered, priorReads };
 }
 
 export async function historyStep(
@@ -615,15 +701,23 @@ export async function historyStep(
 
   const draftMap = readDraftMap(ctx.memory);
   let current: Map<string, string> | undefined; // message id -> draft id, as Gmail has them now
+  let retained: Retained = { retained: new Set(), rotate: new Set() };
   try {
-    if (needsDrafts(changes, draftMap)) current = await listDrafts(client, step);
+    if (needsDrafts(changes, draftMap)) {
+      const listing = await listDrafts(client, step);
+      current = listing.current;
+      retained = await retainedDrafts(client, step, draftMap, listing, changes.deleted);
+    }
   } catch (error) {
     if (isStop(error)) return untouched(state, client.spent);
     throw error;
   }
-  const { drafts, nextDraftMap } = current
-    ? await settleDrafts(ctx, changes, draftMap, current, now)
+  const settled = current
+    ? await settleDrafts(ctx, changes, draftMap, current, retained, now)
     : { drafts: [], nextDraftMap: draftMap };
+  const { nextDraftMap } = settled;
+  const delivered = await bodiesFor(client, step, state, ctx, settled.drafts, now);
+  const { drafts } = delivered;
 
   const candidates = await fetchCandidates(ctx, changes, current);
   // Without labelIds, Inbox membership of mail in an unknown thread comes from one Inbox list page (5 units): new mail
@@ -647,7 +741,7 @@ export async function historyStep(
   const removals: Removal[] = [...changes.deleted]
     .filter(id => !draftMessages.has(id))
     .map(remoteId => ({ remoteId }));
-  const extras = pageExtras(ctx, drafts, nextDraftMap, changes.inboxMoves);
+  const extras = pageExtras(ctx, drafts, nextDraftMap, delivered.pending, changes.inboxMoves);
 
   if (passFetches > CHANGE_CAP) {
     // Keep the free part of this page (deltas, removals, drafts); the resync fetches what the Inbox now holds.
@@ -675,6 +769,7 @@ export async function historyStep(
   const upserted = new Set(fetched.facts.map(f => f.remoteId));
   const next = nextHistoryState(state, page, records, fetched, passFetches, now);
   Object.assign(memory, headWrites(state, next, ctx.memory));
+  Object.assign(memory, readsWrite(next, ctx.memory, delivered.priorReads + delivered.reads));
   return {
     ...pageDeltas(changes, upserted),
     ...(fetched.facts.length ? { upserts: fetched.facts } : {}),
@@ -708,16 +803,113 @@ function regainedList(
   return after === before ? undefined : after;
 }
 
-/** The account's drafts now, message id -> draft id (one `drafts.list` page, 5 units; the body stays lazy). */
-async function listDrafts(client: GmailClient, step: PlannedStep): Promise<Map<string, string>> {
-  const list = await client.call<{ drafts?: { id: string; message?: { id: string } }[] }>({
-    method: 'gmail.drafts.list',
-    path: '/drafts',
-    query: { maxResults: 500 },
-    fields: 'drafts(id,message(id))',
-    lane: step.lane,
-  });
-  return new Map((list.drafts ?? []).filter(d => d.message).map(d => [d.message!.id, d.id]));
+/** At most this many `drafts.list` pages (500 drafts each, 5 units each) are read in one pass. */
+export const DRAFT_LIST_PAGES = 20;
+/** At most this many missing drafts are checked with a `drafts.get` in one pass; the rest stay tracked. */
+export const DRAFT_CONFIRMS = 10;
+/** Missing drafts whose message this very page deleted are checked first and have their own, larger bound. */
+export const DRAFT_DELETED_CONFIRMS = 50;
+
+interface DraftListing {
+  /** message id -> draft id, as Gmail has them now. */
+  current: Map<string, string>;
+  /** True only when the last page carried no `nextPageToken`: every draft was seen. */
+  complete: boolean;
+}
+
+/**
+ * The account's drafts now, paged through every `nextPageToken` (bounded by `DRAFT_LIST_PAGES`; the body stays lazy).
+ * A repeated token or the page bound leaves `complete` false, and nothing may then be concluded from an absence.
+ */
+async function listDrafts(client: GmailClient, step: PlannedStep): Promise<DraftListing> {
+  const current = new Map<string, string>();
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  for (let page = 0; page < DRAFT_LIST_PAGES; page++) {
+    const list = await client.call<{
+      drafts?: { id: string; message?: { id: string } }[];
+      nextPageToken?: string;
+    }>({
+      method: 'gmail.drafts.list',
+      path: '/drafts',
+      query: { maxResults: 500, ...(pageToken ? { pageToken } : {}) },
+      fields: 'drafts(id,message(id)),nextPageToken',
+      lane: step.lane,
+    });
+    for (const d of list.drafts ?? []) if (d.message) current.set(d.message.id, d.id);
+    pageToken = list.nextPageToken;
+    if (!pageToken) return { current, complete: true };
+    if (seenTokens.has(pageToken)) break;
+    seenTokens.add(pageToken);
+  }
+  return { current, complete: false };
+}
+
+/** The drafts that stay tracked this pass (`retained`) and the ones just seen alive (`rotate`, moved to the back). */
+interface Retained {
+  retained: ReadonlySet<string>;
+  rotate: ReadonlySet<string>;
+}
+
+/**
+ * The tracked drafts that must NOT be reported `removed` this pass: all of them when the listing is incomplete, and,
+ * for a complete one, every missing draft that still answers `drafts.get` as a live draft (a listing can skip an item
+ * when drafts change while it is paged) or that is past the bounds (`DRAFT_DELETED_CONFIRMS` for those this page deleted, `DRAFT_CONFIRMS` for the rest). Gone is: a 404 with Gmail's
+ * `notFound` reason, or a draft that is in Trash, sent or no longer a draft (`drafts.list` hides trashed drafts, but
+ * `drafts.get` still answers 200 for them). Missing drafts whose message this page deleted are checked first, then the
+ * least recently checked (a draft seen alive or unknown moves to the back of the tracked map), so every draft gets its turn. Any
+ * other failure keeps the draft tracked and a pause (429) stops the step.
+ */
+async function retainedDrafts(
+  client: GmailClient,
+  step: PlannedStep,
+  draftMap: ReadonlyMap<string, string>,
+  { current, complete }: DraftListing,
+  deleted: ReadonlySet<string>,
+): Promise<Retained> {
+  const listed = new Set(current.values());
+  const hot = new Set<string>();
+  for (const [messageId, draftId] of draftMap) if (deleted.has(messageId)) hot.add(draftId);
+  const missing = [...new Set(draftMap.values())].filter(id => !listed.has(id));
+  if (!complete) return { retained: new Set(missing), rotate: new Set() };
+  const order = [
+    ...missing.filter(id => hot.has(id)).slice(0, DRAFT_DELETED_CONFIRMS),
+    ...missing.filter(id => !hot.has(id)).slice(0, DRAFT_CONFIRMS),
+  ];
+  const retained = new Set(missing.filter(id => !order.includes(id)));
+  const rotate = new Set<string>();
+  for (const draftId of order) {
+    const verdict = await draftVerdict(client, step, draftId);
+    if (verdict === 'gone') continue;
+    retained.add(draftId);
+    rotate.add(draftId); // alive or unknown: either way it goes to the back, so it cannot hold the front
+  }
+  return { retained, rotate };
+}
+
+/** What `drafts.get` says about a draft: gone (proved), alive (a live draft) or unknown (an error that proves nothing). */
+async function draftVerdict(
+  client: GmailClient,
+  step: PlannedStep,
+  draftId: string,
+): Promise<'gone' | 'alive' | 'unknown'> {
+  try {
+    const reply = await client.call<{ message?: { labelIds?: string[] } }>({
+      method: 'gmail.drafts.get',
+      path: `/drafts/${encodeURIComponent(draftId)}`,
+      fields: 'id,message(labelIds)',
+      lane: step.lane,
+      item: draftId,
+    });
+    const labels = reply.message?.labelIds;
+    if (!Array.isArray(labels)) return 'unknown';
+    const live = labels.includes('DRAFT') && !labels.includes('TRASH') && !labels.includes('SENT');
+    return live ? 'alive' : 'gone';
+  } catch (error) {
+    if (isStop(error)) throw error;
+    const proved = error instanceof ProviderError && error.error.status === 404;
+    return proved && error.error.reason === 'notFound' ? 'gone' : 'unknown';
+  }
 }
 
 /** Ids on the newest Inbox page (one `messages.list`, 5 units). */

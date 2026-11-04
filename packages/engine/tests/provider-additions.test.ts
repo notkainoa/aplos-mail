@@ -340,6 +340,61 @@ test('stepWrites carries a remote draft body up to the draft limit and cuts one 
   assert.equal(byId.get('over')!.text?.length, 1_000_001);
 });
 
+test('stepWrites marks a remote draft copy with an inline part as having parts the engine cannot carry', () => {
+  const account = { id: 'acct-1', provider: 'google', address: 'a@b.test' } as AdapterAccount;
+  const message = (
+    remoteId: string,
+    attachments: { part: string; inline: boolean }[] | undefined,
+  ) => ({
+    remoteId,
+    remoteThreadId: 't',
+    to: [],
+    cc: [],
+    date: 1,
+    internalDate: 1,
+    flags: { seen: true, flagged: false, draft: true, fromMe: true },
+    placements: [],
+    list: {},
+    partial: false,
+    ...(attachments ? { attachments } : {}),
+  });
+  const draft = (id: string, attachments: { part: string; inline: boolean }[] | undefined) => ({
+    remoteDraftId: id,
+    remoteMessageId: `m-${id}`,
+    changedAt: 1,
+    html: '<p>x</p>',
+    message: message(`m-${id}`, attachments),
+  });
+  const result = {
+    nextStates: [],
+    done: false,
+    costUnits: 0,
+    drafts: [
+      draft('inline', [{ part: '1', inline: true }]),
+      draft('file', [{ part: '2', inline: false }]),
+      draft('none', []),
+      draft('unknown', undefined),
+    ],
+  } as unknown as StepResult;
+  const writes = stepWrites(result, {
+    account,
+    step: { scope: 'window:inbox', lane: 'incremental', origin: 'incremental', trigger: 'poll' },
+    state: { scope: 'window:inbox', generation: 1, updatedAt: 0 },
+    now: 0,
+    failures: new Map(),
+    baselineDone: true,
+  });
+  const has = new Map(
+    writes.flatMap(w =>
+      w.kind === 'remoteDraft' ? [[w.remoteDraftId, w.message?.hasAttachments]] : [],
+    ),
+  );
+  assert.equal(has.get('inline'), true, 'an inline image counts');
+  assert.equal(has.get('file'), true);
+  assert.equal(has.get('none'), false);
+  assert.equal(has.get('unknown'), undefined, 'a provider that does not say stays unsaid');
+});
+
 test('a failed factory discard is logged once, with the kind and no ref, and still rejects', async () => {
   const lines: LogLine[] = [];
   const host = hostWith(

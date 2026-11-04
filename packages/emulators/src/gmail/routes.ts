@@ -185,9 +185,20 @@ const listThreads = (ctx: RouteContext): Reply => {
   });
 };
 
+/**
+ * Like Gmail, `drafts.list` hides a draft that is in Trash unless `includeSpamTrash=true` (`drafts.get` still finds it),
+ * and `q` narrows it with the same query language as `messages.list` (`rfc822msgid:`, `subject:`, ...).
+ */
 const listDrafts = (ctx: RouteContext): Reply => {
+  const withTrash = ctx.query.get('includeSpamTrash') === 'true';
+  const q = ctx.query.get('q') ?? '';
+  const matching = q
+    ? new Set(ctx.mailbox.select({ q, includeSpamTrash: withTrash }).map(h => h.id))
+    : undefined;
   const drafts = ctx.mailbox
     .listDrafts()
+    .filter(d => withTrash || !d.message.labelIds.includes('TRASH'))
+    .filter(d => !matching || matching.has(d.message.id))
     .map(d => ({ date: d.message.internalDate, id: d.id, message: d.message }))
     .sort(compareKeyed);
   const paged = page(drafts, ctx.query);

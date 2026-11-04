@@ -106,7 +106,7 @@ apps/desktop/src/renderer/legacy/   today's renderer, read-only until Phase 2
 ```
 
 **Package locations (settled).** ARCH ADR-19 names three packages (`contract`, `engine`, `mail-html`). This plan adds two test-support packages and decides where adapters live, as an amendment to ADR-19 (recorded in ARCH's amendments section on 2026-10-27, and in DECISIONS.md in Phase 0). Plan 20 section 3.1 uses the same paths:
-- `packages/contract-fixture`: added because the UI thread and CI share it and its demo data must stay out of the 400 KB core budget (4.1).
+- `packages/contract-fixture`: added because the UI thread and CI share it and its demo data must stay out of the 450 KB core budget (4.1; raised from 400 KB, see the dated note in 4.1).
 - **Provider adapters stay in the app**, at `apps/desktop/src/host/providers/<name>/` (plan 20 proposed `packages/providers`; rejected for now). Adapters need Node (`imapflow`, `net`, `fetch`), so they cannot sit in the neutral `packages/engine`, and ARCH names no fourth shipping package. Their dependencies are declared in `apps/desktop/package.json`, which is the only manifest electron-builder reads, so keeping them there avoids a packaging break. Actors, governor, lanes and the status machine are neutral and live in `packages/engine/src/sync/**`, reaching adapters only through the ports in `packages/engine/src/ports.ts`. Promotion to a `packages/providers` workspace is a later mechanical move, allowed only when a second consumer (a CLI, or A1's SEA engine) needs the adapters.
 - Phase 0 creates the empty `host/providers/` folder and its lint boundary. The existing adapters (`google.ts`, `imap*.ts`, `jmap.ts`, `microsoft.ts`, `caldav.ts`, `ical.ts`) stay in `src/main/`, so the restructure moves no provider code. Each `prov-*` lane moves its adapters inside its own rewrite, and Phase 2 deletes the old files.
 - `packages/emulators` is shared by plans 10, 20 and 40, is test-only and is never bundled into the app. It does not count against ADR-19's "shared code" rule because nothing ships from it.
@@ -125,7 +125,7 @@ apps/desktop/src/renderer/legacy/   today's renderer, read-only until Phase 2
 | `renderer/**` | the move to `renderer/legacy/` in Phase 0 step 1 only | none | owns | none |
 | `PROGRESS.md`, `DECISIONS.md`, `TODO.md` | append per milestone | append | append | append |
 
-**Engine-bundle budget.** The neutral engine stays under 400,000 bytes. No report measured zod plus the engine [I]; the freeze review does. If over: `zod/mini` and tree-shaking; validate at the host boundary only; then a measured, recorded budget increase. A failing portability test is never silenced.
+**Engine-bundle budget.** The neutral engine stays under 400,000 bytes. No report measured zod plus the engine [I]; the freeze review does. If over: `zod/mini` and tree-shaking; validate at the host boundary only; then a measured, recorded budget increase. A failing portability test is never silenced. **Update 2026-11-03:** the owner raised the budget to 450,000 bytes minified (DECISIONS.md 2026-11-03; STATUS DECIDED 2026-11-04 20:00), and the demo dataset (`ai/demo/data.ts`, 11 KB) is a lazy chunk the budget does not count. 450,000 is the last raise without a new decision.
 
 > **What this means:** Each folder has one owner, and the places where plans meet are named in advance. The engine core stays portable so a phone version remains possible.
 

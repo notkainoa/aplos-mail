@@ -15,7 +15,7 @@ import { NotSentError, PausedError } from '../../src/ports/base';
 import type { DraftSyncPort, SendPort, SubmissionPayload } from '../../src/ports';
 import type { DraftSaveResult, DraftUpload } from '../../src/ports/provider';
 import type { EngineFrame } from '../../src/runtime/frames';
-import { openStore, type CommitInput, type StorePort } from '../../src/store';
+import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
 
 export { ACCOUNT };
@@ -166,6 +166,7 @@ export interface DraftStep {
     | 'lost'
     | 'landedLost'
     | 'conflictBare'
+    | 'gone'
     | 'conflictExisting'
     | 'conflictForeign'
     | 'conflictUnproven'
@@ -177,6 +178,8 @@ export interface DraftStep {
   wait?: Promise<void>;
   /** A `conflict*` step leaves the copy's message id out (an adapter that cannot read it). */
   omitMessageId?: true;
+  /** The save is answered with this remote draft id (a provider whose update makes a new draft: JMAP, IMAP). */
+  renameTo?: string;
 }
 
 /**
@@ -199,7 +202,7 @@ export function fakeDrafts(server: CountingSend) {
   const removeExpected: (string | undefined)[] = [];
   /** Calls the guard turned into a no-op: the draft held another message id. */
   const removeGuarded: string[] = [];
-  const state = { ignoreExpected: false };
+  const state = { ignoreExpected: false, honourSupersedes: false };
   const script: DraftStep[] = [];
   /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
   const removeScript: DraftStep[] = [];
@@ -246,6 +249,8 @@ export function fakeDrafts(server: CountingSend) {
       if (step.result === 'notSent')
         throw new NotSentError(classified(step.notSentClass ?? 'permanent'));
       if (step.result === 'lost') throw new Error('socket hang up');
+      // The copy is gone (deleted or sent elsewhere), whatever the upload was.
+      if (step.result === 'gone') return { kind: 'gone' };
       // A conflict that names no remote message id (an adapter that cannot read it).
       if (step.result === 'conflictBare') return { kind: 'conflict' };
       const conflict = scriptedConflict(step, upload);
@@ -254,7 +259,13 @@ export function fakeDrafts(server: CountingSend) {
       if (upload.remoteDraftId && !known) return { kind: 'gone' };
       if (known && upload.baseRemoteMessageId && known.messageId !== upload.baseRemoteMessageId)
         return { kind: 'conflict', remoteMessageId: known.messageId };
-      const remoteDraftId = upload.remoteDraftId ?? `rd${++counter}`;
+      // A create that names earlier Message-IDs replaces the copy carrying one (a provider that honours `supersedes`).
+      const replaced = upload.remoteDraftId
+        ? undefined
+        : state.honourSupersedes
+          ? [...remote.entries()].find(([, r]) => upload.supersedes?.includes(r.internetId))?.[0]
+          : undefined;
+      const remoteDraftId = step.renameTo ?? upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
       const messageId = `msg${++counter}`;
       remote.set(remoteDraftId, {
         messageId,
@@ -595,4 +606,41 @@ export function assertIdsPerRevision(w: World, draftId: string) {
     );
     owner.set(r.internet_id, r.revision);
   }
+}
+
+/**
+ * What history reports for the copy of THIS device's upload (default content of `fields()`): the body and every field a
+ * copy has to show, so the engine can prove the copy is its own.
+ */
+export function copyWrite(f: {
+  remoteDraftId: string;
+  remoteMessageId: string;
+  internetId: string;
+  changedAt: number;
+  content?: DraftFields;
+}): StoreWrite {
+  const c = f.content ?? fields();
+  return {
+    kind: 'remoteDraft',
+    accountId: ACCOUNT,
+    remoteDraftId: f.remoteDraftId,
+    remoteMessageId: f.remoteMessageId,
+    internetId: f.internetId,
+    changedAt: f.changedAt,
+    html: c.html,
+    message: {
+      remoteId: f.remoteMessageId,
+      remoteThreadId: 'copy-thread',
+      from: { address: 'owner@mail.example' },
+      to: c.to,
+      cc: c.cc,
+      bcc: c.bcc,
+      subject: c.subject,
+      snippet: 'copy',
+      hasAttachments: false,
+      date: f.changedAt,
+      internalDate: f.changedAt,
+      flags: { seen: true, flagged: false, draft: true, fromMe: true },
+    },
+  } as StoreWrite;
 }

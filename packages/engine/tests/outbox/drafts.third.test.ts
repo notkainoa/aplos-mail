@@ -5,7 +5,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { handlers } from '../../src/methods/draft';
 import type { Caller, MethodContext } from '../../src/methods/types';
 import type { CommitInput } from '../../src/store';
-import { ACCOUNT, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
+import { ACCOUNT, copyWrite, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
 
 /**
  * Time-3 third review round: a conflicted draft cannot be sent, a gone copy is forgotten before it is hidden, a late
@@ -438,7 +438,7 @@ test('7: a Bcc-only change is still saved and uploaded', () =>
 
 // ---------------------------------------------------------------- 8: an unanswered create, then an edit
 
-test('8: a create that got no answer, then an edit: the first copy is still recognised as ours', () =>
+test('8: a create that got no answer, then an edit: the first copy is recognised as ours when its content is, shown otherwise', () =>
   world(async w => {
     w.remoteDrafts.script.push({ result: 'landedLost' });
     const d = create(w);
@@ -449,12 +449,37 @@ test('8: a create that got no answer, then an edit: the first copy is still reco
     await wait(w, 6 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 2, 'the edit uploaded before history reported');
     const [remoteDraftId, copy] = [...w.remoteDrafts.remote.entries()][0];
-    phone(w, remoteDraftId, copy.messageId, { subject: 'echo', internetId: firstId });
+    // The report carries the first revision's content: it is our own first copy, nothing to show.
+    w.first.store.commit({
+      opId: 'third-own-first-copy',
+      origin: 'sync',
+      writes: [
+        copyWrite({
+          remoteDraftId,
+          remoteMessageId: copy.messageId,
+          internetId: firstId,
+          changedAt: w.clock.now(),
+        }),
+      ],
+    });
     assert.equal(
       service(w).get([`${ACCOUNT}:${remoteDraftId}`]).notFound.length,
       1,
       'no phantom draft from our own first copy',
     );
+  }));
+
+test('8: the same report with no body cannot be proven ours, so it is shown (never hidden, never replaced)', () =>
+  world(async w => {
+    w.remoteDrafts.script.push({ result: 'landedLost' });
+    const d = create(w);
+    await wait(w, 5 * SEC);
+    const firstId = w.remoteDrafts.saves[0].internetId;
+    edit(w, d, fields({ subject: 'Edited' }));
+    await wait(w, 6 * SEC);
+    const [remoteDraftId, copy] = [...w.remoteDrafts.remote.entries()][0];
+    phone(w, remoteDraftId, copy.messageId, { subject: 'echo', internetId: firstId });
+    assert.equal(service(w).get([`${ACCOUNT}:${remoteDraftId}`]).notFound.length, 0, 'shown');
   }));
 
 // ---------------------------------------------------------------- 9: keep mine after a conflict that named no copy

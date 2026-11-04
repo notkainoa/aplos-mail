@@ -219,8 +219,10 @@ export {
  * deletes ONLY IF the draft still holds that message id; if it holds another (the draft was edited or replaced on
  * another device since, or it became a sent message) it does nothing and resolves, so a discard here never destroys a
  * newer version made elsewhere or a sent mail. A draft that is already gone is success. Without `expectedMessageId`
- * (the engine knows none) the delete is unguarded, as before. Optional and additive: an adapter that ignores the
- * parameter keeps working, only without the guard.
+ * (the engine knows none) the call is the old two-argument one and cannot be guarded; an adapter may then leave the copy
+ * alone rather than delete blind (Gmail does: the copy stays and history reports it as another device's draft, an
+ * orphan and never a loss). Optional and additive: an adapter that ignores the parameter keeps working, only without
+ * the guard.
  */
 export interface DraftSyncPort {
   save(account: AccountId, draft: DraftUpload): Promise<DraftSaveResult>;

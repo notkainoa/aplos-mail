@@ -1,5 +1,5 @@
 import type { RemoteDraftWrite } from '../store';
-import { REMOTE_BODY_MAX } from './draft-state';
+import { hasInlineRef, REMOTE_BODY_MAX } from './draft-state';
 
 /**
  * The body a remote draft fact delivers: which of its sources counts, the size limit, and whether it makes the draft
@@ -20,24 +20,18 @@ function paragraphs(text: string) {
 interface Candidate {
   html: string;
   blank: boolean;
-  /** Over the limit: not escaped or kept, only remembered so that it still counts as the body on offer. */
-  over?: boolean;
-}
-
-/** Escaping only grows a text, so a source already over the limit is dropped before any work is done on it. */
-function candidate(body: string, build: (body: string) => string = b => b): Candidate {
-  if (body.length > REMOTE_BODY_MAX) return { html: '', blank: false, over: true };
-  return { html: build(body), blank: body === '' };
 }
 
 /** The bodies the fact offers, best first: top-level `html`, then `text`, then an `html` on the message. */
 function candidates(w: RemoteDraftWrite): Candidate[] {
-  const found: Candidate[] = [];
-  if (w.html !== undefined) found.push(candidate(w.html));
-  if (w.text !== undefined) found.push(candidate(w.text, paragraphs));
-  const inMessage = (w.message as MessageWithBody | undefined)?.html;
-  if (inMessage !== undefined) found.push(candidate(inMessage));
-  return found;
+  const sources: [string | undefined, (body: string) => string][] = [
+    [w.html, b => b],
+    [w.text, paragraphs],
+    [(w.message as MessageWithBody | undefined)?.html, b => b],
+  ];
+  return sources.flatMap(([body, build]) =>
+    body === undefined ? [] : [{ html: build(body), blank: body === '' }],
+  );
 }
 
 const bodies = new WeakMap<RemoteDraftWrite, string | undefined>();
@@ -49,20 +43,26 @@ const bodies = new WeakMap<RemoteDraftWrite, string | undefined>();
  * save may. Worked out once per fact: it is asked for several times.
  */
 export function bodyOf(w: RemoteDraftWrite): string | undefined {
-  if (bodies.has(w)) return bodies.get(w);
-  const found = candidates(w);
-  // A source over the limit means the provider's real body is too big to keep: never settle for another source then.
-  if (found.some(c => c.over)) return void bodies.set(w, undefined);
-  const snippet = w.message?.snippet;
-  const body = found.find(c => !c.blank) ?? (snippet ? undefined : found[0]);
-  const html = body && !body.over && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
-  bodies.set(w, html);
-  return html;
+  if (!bodies.has(w)) bodies.set(w, pick(w));
+  return bodies.get(w);
 }
 
-/** Does this fact make the draft complete: a usable body and no attachments (those are not delivered)? */
+function pick(w: RemoteDraftWrite): string | undefined {
+  // A source over the limit means the provider's real body is too big to keep: never settle for another source then.
+  // Escaping only grows a text, so it is checked before any work is done on it.
+  const offered = [w.html, w.text, (w.message as MessageWithBody | undefined)?.html];
+  if (offered.some(body => (body?.length ?? 0) > REMOTE_BODY_MAX)) return undefined;
+  const found = candidates(w);
+  const snippet = w.message?.snippet;
+  const body = found.find(c => !c.blank) ?? (snippet ? undefined : found[0]);
+  // Escaping and wrapping can grow a text past the limit, so the stored body is measured too.
+  return body && body.html.length <= REMOTE_BODY_MAX ? body.html : undefined;
+}
+
+/** Does this fact make the draft complete: a usable body, no attachments and no inline parts (those are not delivered)? */
 export function completes(w: RemoteDraftWrite) {
-  return bodyOf(w) !== undefined && w.message?.hasAttachments !== true;
+  const body = bodyOf(w);
+  return body !== undefined && w.message?.hasAttachments !== true && !hasInlineRef(body);
 }
 
 /** The write's metadata in the shape `theirsFields` reads, with the usable body when there is one. */

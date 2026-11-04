@@ -1,9 +1,10 @@
 import type { State, Submission, SubmissionAction } from '@aplos/contract';
+import { isAbsent } from '../runtime/engine';
 import type { EngineServices, LaneModule } from '../runtime/services';
 import type { CommitExtension } from '../store/port';
 import { STOP_GRACE_MS } from '../clock/loop';
 import type { DeadlineRegistry } from '../ports/time';
-import type { OutboxCtx, OutboxDeps } from './context';
+import { fail, type OutboxCtx, type OutboxDeps } from './context';
 import { sentChanged, touchDue } from './draft-due';
 import { onDraftAnnounced } from './draft-state';
 import {
@@ -182,14 +183,27 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
       return { state, ...getSubmissions(ctx, ids) };
     },
-    set: (opId, action) => setSubmission(ctx, opId, action),
+    set: (opId, action) => {
+      // No send port was given (the real engine path before sending is wired): a queued message would lock its draft for
+      // minutes and then never leave, so a new send is refused up front.
+      if (action.type === 'send' && isAbsent(deps.send))
+        fail('unavailable', 'Sending is not available yet.');
+      return setSubmission(ctx, opId, action);
+    },
     pending: () => pendingOf(ctx),
   };
   return {
     service,
     extension: outboxExtension,
     notifications: notes.service,
-    ...(draftsCtx ? { drafts: createDraftService(draftsCtx, service) } : {}),
+    // A discard cancels the send itself and must not first apply the copy held under it: the discard decides its fate.
+    ...(draftsCtx
+      ? {
+          drafts: createDraftService(draftsCtx, {
+            set: (opId, action) => setSubmission(ctx, opId, action, false),
+          }),
+        }
+      : {}),
     start() {
       applyStartRule(ctx);
       recheckUncertain(ctx);

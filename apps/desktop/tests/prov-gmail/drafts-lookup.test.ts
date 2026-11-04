@@ -64,7 +64,12 @@ for (const [name, blind] of [
     const phone = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
     s.bridge.blindSearch = blind;
     const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
-    assert.deepEqual(result, { kind: 'conflict', remoteMessageId: phone.message.id });
+    assert.deepEqual(result, {
+      kind: 'conflict',
+      remoteMessageId: phone.message.id,
+      remoteDraftId: s.remoteDrafts()[0].id,
+      remoteInternetId: upload.internetId,
+    });
     assert.equal(s.bridge.uploads.length, 1, 'nothing was written');
     assert.equal(s.remoteDrafts().length, 1);
     assert.match(s.remoteDrafts()[0].text, /Phone text\./);
@@ -78,7 +83,12 @@ test('prov-gmail-drafts known limit: a hit that differs by a harmless rewrite (w
   const padded = Buffer.from(Buffer.from(upload.mime).toString('latin1') + ' ', 'latin1');
   const edited = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, padded);
   const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
-  assert.deepEqual(result, { kind: 'conflict', remoteMessageId: edited.message.id });
+  assert.deepEqual(result, {
+    kind: 'conflict',
+    remoteMessageId: edited.message.id,
+    remoteDraftId: s.remoteDrafts()[0].id,
+    remoteInternetId: upload.internetId,
+  });
   assert.equal(s.bridge.uploads.length, 1);
 });
 
@@ -242,6 +252,8 @@ for (const [name, change] of [
     assert.deepEqual(await s.r.adapter.saveDraft(retry, s.r.ctx()), {
       kind: 'conflict',
       remoteMessageId: phone.message.id,
+      remoteDraftId: s.remoteDrafts()[0].id,
+      remoteInternetId: id,
     });
     assert.equal(s.bridge.uploads.length, 1);
   });
@@ -298,17 +310,36 @@ test('prov-gmail-drafts boundary blanking: a delimiter on its own line is blanke
   }
 });
 
-// ---- PORT GAP 4: a conflict on the create path names no draft ----
+// ---- PORT GAP 4 (closed by #153): a conflict on the create path names the copy and its Message-ID ----
 
-test('prov-gmail-drafts PORT GAP 4: a conflict on the create path carries no remoteDraftId (pinned until the port moves)', async () => {
+test("prov-gmail-drafts PORT GAP 4: a create-path conflict names remoteDraftId, remoteMessageId and the copy's Message-ID", async () => {
   const faults = createFaultInjector();
   const s = await setup({ emulator: { faults } });
   const upload = await uncertainCreate(s, faults);
   const { mime } = mimeOf(s.r.account.address, { id: upload.internetId, body: 'Phone text.' });
-  s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
+  const phone = s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, mime);
+  const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
+  assert.deepEqual(result, {
+    kind: 'conflict',
+    remoteMessageId: phone.message.id,
+    remoteDraftId: s.remoteDrafts()[0].id,
+    remoteInternetId: upload.internetId,
+  });
+  assert.equal(s.remoteDrafts().length, 1, 'the copy is neither deleted nor overwritten');
+  assert.match(s.remoteDrafts()[0].text, /Phone text\./);
+});
+
+test('prov-gmail-drafts PORT GAP 4: the Message-ID is the one the copy carries, read from its own header (folded, other case)', async () => {
+  const faults = createFaultInjector();
+  const s = await setup({ emulator: { faults } });
+  const upload = await uncertainCreate(s, faults);
+  const raw = Buffer.from(upload.mime)
+    .toString('latin1')
+    .replace('Message-ID: ', 'message-id:\r\n ')
+    .replace('Landed.', 'Phone text.');
+  s.r.emu.mailbox.updateDraft(s.remoteDrafts()[0].id, Buffer.from(raw, 'latin1'));
   const result = await s.r.adapter.saveDraft(upload, s.r.ctx());
   assert.equal(result.kind, 'conflict');
-  // The remote draft exists, but the result cannot name it: the engine would create a second one under a new Message-ID.
-  assert.deepEqual(Object.keys(result).sort(), ['kind', 'remoteMessageId']);
-  assert.equal(s.remoteDrafts().length, 1);
+  if (result.kind !== 'conflict') return;
+  assert.equal(result.remoteInternetId, upload.internetId);
 });

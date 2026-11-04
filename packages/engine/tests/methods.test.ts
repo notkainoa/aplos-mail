@@ -137,7 +137,7 @@ test('every engine method is refused to a caller that holds no scope', async () 
 type Executor = EngineServices['unsubscribe'];
 type RunRequest = Parameters<Executor['run']>[0];
 
-/** A real store with one thread: an older inbound list message, a newer one, and the owner's own reply on top. */
+/** A real store with one thread: an older inbound list message, a newer authenticated one, and the owner's own reply on top. */
 async function withUnsubStore(fn: (store: StorePort) => Promise<void>) {
   const file = tempDb();
   const store = openStore(file.open());
@@ -154,6 +154,7 @@ async function withUnsubStore(fn: (store: StorePort) => Promise<void>) {
             urls: ['mailto:leave@list.example', 'https://list.example/u'],
             oneClick: true,
           },
+          listAuthenticated: true,
         }),
         msg('m3', 't1', 9, { flags: own, listUnsubscribe: { urls: ['https://mine.example/u'] } }),
         msg('m4', 't2', 1),

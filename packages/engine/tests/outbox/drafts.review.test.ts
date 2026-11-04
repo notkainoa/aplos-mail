@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Draft, DraftFields } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { ACCOUNT, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
+import { ACCOUNT, copyWrite, fields, gate, inWorld, MIN, SEC, type World } from './helpers';
 
 /**
  * Time-3 review fixes: what a resolved conflict leaves in the row, the removal of a discarded draft's copy, the upload
@@ -232,7 +232,9 @@ test('an incomplete other version: take theirs and keep both are refused, nothin
     service(w).resolve(next(), s.draft.id, 'keepMine');
     await w.settle();
     assert.equal(read(w, s.draft.id).conflict, undefined);
-    assert.equal(w.remoteDrafts.saves.at(-1)?.baseRemoteMessageId, s.theirId);
+    // Their version never arrived whole, so keep mine makes a new copy instead of replacing it.
+    assert.equal(w.remoteDrafts.saves.at(-1)?.remoteDraftId, undefined);
+    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId, s.theirId);
   }));
 
 test('a silent replace by their complete version takes their Message-ID, or forgets ours when it is unknown', () =>
@@ -369,14 +371,12 @@ test('a discarded draft with a lost first upload takes the copy that history rep
       opId: `review-echo-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
+        copyWrite({
           remoteDraftId: 'rd1',
           remoteMessageId: 'msg2',
-          internetId,
+          internetId: internetId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(service(w).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');
@@ -487,11 +487,14 @@ test('a lost reply after the owner put the content back clears the synced mark s
     service(w).resolve(next(), a.id, 'keepMine');
     await w.settle();
     assert.equal(read(w, a.id).sync, 'synced');
+    // B's version never arrived whole, so keeping ours makes a new copy and leaves B's where it is.
+    const last = w.remoteDrafts.saves.at(-1)!;
+    assert.equal(last.remoteDraftId, undefined);
     assert.equal(
       w.remoteDrafts.remote.get(s.remoteDraftId)?.internetId,
-      w.remoteDrafts.saves.at(-1)!.internetId,
+      w.remoteDrafts.saves[1].internetId,
     );
-    assert.equal(header(w.remoteDrafts.saves.at(-1)!.mime, 'Subject'), 'Lunch');
+    assert.equal(header(last.mime, 'Subject'), 'Lunch');
   }));
 
 // ---------------------------------------------------------------- mutations the first tests missed
@@ -729,13 +732,15 @@ test('an old upload that lands after keep mine does not undo it: the draft still
     assert.equal(r.synced_revision, null, 'the old ack did not mark the revision synced');
     assert.equal(
       r.remote_message_id,
-      'pm-x',
-      'and the copy is still theirs, to be replaced knowingly',
+      null,
+      'their version was never shown whole: the copy is forgotten',
     );
+    assert.equal(r.remote_draft_id, null);
     assert.equal(r.remote_internet_id, null);
     assert.notEqual(read(w, s.draft.id).sync, 'synced');
     assert.equal(w.remoteDrafts.saves.length, first + 2, 'the keep-mine upload started');
-    // Their write landed after ours: the provider's copy is theirs again, and the keep-mine upload replaces it.
+    // Their write landed after ours: the provider's copy is theirs again, and was never shown whole, so the keep-mine
+    // upload makes a NEW copy (it is a create) and leaves theirs alone.
     const copy = w.remoteDrafts.remote.get(s.remoteDraftId)!;
     w.remoteDrafts.remote.set(s.remoteDraftId, { ...copy, messageId: 'pm-x' });
     gMine.open();
@@ -743,10 +748,10 @@ test('an old upload that lands after keep mine does not undo it: the draft still
     assert.equal(w.remoteDrafts.saves.length, first + 2, 'exactly one keep-mine upload');
     const mine = w.remoteDrafts.saves.at(-1)!;
     assert.equal(header(mine.mime, 'Subject'), 'Mine');
-    assert.equal(mine.baseRemoteMessageId, 'pm-x');
+    assert.equal(mine.remoteDraftId, undefined, 'a create');
     assert.equal(read(w, s.draft.id).sync, 'synced');
     assert.equal(row(w, s.draft.id)!.remote_internet_id, mine.internetId);
-    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.internetId, mine.internetId);
+    assert.equal(w.remoteDrafts.remote.get(s.remoteDraftId)?.messageId, 'pm-x', 'theirs is intact');
   }));
 
 test('an upload that settles after close raises no unhandled rejection', () =>
@@ -823,14 +828,12 @@ test('a first create that timed out, then an edit: the old Message-ID still name
       opId: `review-late-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
-          remoteDraftId,
+        copyWrite({
+          remoteDraftId: remoteDraftId,
           remoteMessageId: copy.messageId,
           internetId: firstId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(
@@ -870,14 +873,12 @@ test('a discard while the first upload runs, then a restart: history reports the
       opId: `review-restart-${++ops}`,
       origin: 'sync',
       writes: [
-        {
-          kind: 'remoteDraft',
-          accountId: ACCOUNT,
+        copyWrite({
           remoteDraftId: 'rd1',
           remoteMessageId: 'msg2',
-          internetId,
+          internetId: internetId,
           changedAt: w.clock.now(),
-        },
+        }),
       ],
     });
     assert.equal(service(w, second).get([`${ACCOUNT}:rd1`]).notFound.length, 1, 'no phantom draft');

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LogRecord } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import { DEMO_ACCOUNTS } from '../../src/ai/demo/data';
 import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
@@ -220,6 +221,27 @@ test('a fresh store has zero accounts and no demo data, and nothing loads by its
     const gone = (await t.window().call('Demo/remove', {})) as { opId: string };
     assert.equal(gone.opId, 'demo-remove-noop', 'removing an absent demo commits nothing');
     assert.equal(t.store.seq(), 0, 'no commit was written');
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('the fixed demo ids in load.ts match the dataset, which is only read when Demo/load runs', async () => {
+  assert.deepEqual(
+    DEMO_ACCOUNTS.map(account => account.id),
+    [...DEMO_ACCOUNT_IDS],
+    'load.ts keeps the ids so the dataset module can stay lazy',
+  );
+  // A first run: the lazily loaded dataset still shows the whole demo mailbox.
+  const t = await demoEngine();
+  try {
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM threads'), 0);
+    await t.window().call('Demo/load', {});
+    assert.ok(
+      count(t.store, 'SELECT count(*) AS n FROM threads') >= 18,
+      'the demo mailbox is there',
+    );
+    assert.equal(count(t.store, "SELECT count(*) AS n FROM accounts WHERE provider = 'demo'"), 2);
   } finally {
     await t.cleanup();
   }

@@ -5,7 +5,7 @@ import {
   type DraftUpload,
 } from '@aplos/engine/ports';
 import { GmailClient, type GmailDeps } from './client';
-import { sameDraftBytes } from './draft-compare';
+import { DraftAttempts, rawMessageId, sameDraftBytes } from './draft-compare';
 import { checkDraftMime } from './draft-mime';
 import { uploadDraft, type DraftResource } from './draft-upload';
 
@@ -31,13 +31,11 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * are compared with `draft.mime` (`draft-compare.ts`: line endings normalised and the multipart boundaries blanked,
  * because the engine rebuilds the MIME on every attempt with fresh random boundaries; otherwise byte for byte). Equal: `saved` with its CURRENT
  * message id. Different (the owner edited the copy on another device and Gmail kept our Message-ID): `{kind:'conflict'}`
- * with its message id and nothing is written, so the retry never adopts a phone edit as its base. PORT GAP 4: that
- * conflict carries no `remoteDraftId` (`DraftSaveResult` conflict has only `remoteMessageId`), and on the create path the
- * engine records no Message-ID in `wrote` for it, so the next upload is a create under a NEW Message-ID: a second Gmail
- * draft, and history later reports the first as another device's draft (take theirs and keep both then have nothing to
- * open: noTheirs). Needed: an additive `remoteDraftId?` on the conflict result (through eng-contract) that the engine
- * stores, or the Message-ID added to `wrote`. TODO(live): none can be tried before the port moves; provider draft sync
- * stays OFF until it does. A raw read that fails,
+ * with its message id and nothing is written, so the retry never adopts a phone edit as its base. PORT GAP 4 (closed by
+ * #153): that create-path conflict names the copy: `remoteDraftId`, `remoteMessageId` and `remoteInternetId`, the
+ * Message-ID header the copy carries, read from the raw bytes just compared (left out when the raw has none). The engine
+ * adopts the copy only when that equals the upload's Message-ID, and it stays "theirs": nothing here deletes or
+ * overwrites it. TODO(live): try it on a real account before provider draft sync is switched on. A raw read that fails,
  * a draft that vanished or stopped being a draft between the two reads: thrown (transient), never `saved`. A message id
  * that changed between the reads is a conflict. TODO(live): Gmail may rewrite headers or line wrapping of an uploaded
  * draft; then the bytes differ for our own copy, and the retry yields a conflict about our own text (safe, "keep mine"
@@ -58,9 +56,14 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * governor may re-send after a transient failure: a lost reply followed by a re-send can therefore overwrite a phone
  * edit made in those few seconds (the re-send does not repeat the `get`). With no `baseRemoteMessageId` the replace is
  * unconditional; the engine sets that only for "keep mine".
- * deleteDraft: OFF unless `GoogleProviderOptions.deleteDrafts` is true (see PORT GAP 3); the adapter then resolves
- * without a request. When on: idempotent; `drafts.get` first; absent is success; a message that is no longer a draft
- * (sent, trashed) is left alone; otherwise `drafts.delete`.
+ * deleteDraft (PORT GAP 3, closed by #153): `deleteDraft(remoteDraftId, ctx, expectedMessageId?)`. WITHOUT an expected
+ * message id nothing is deleted and no request goes out (a caller that cannot prove which copy it holds never deletes;
+ * there is no unguarded delete any more). With one: idempotent; `drafts.get` first (metadata); absent is success; a
+ * message that is no longer a draft (sent, trashed) is left alone; a draft whose CURRENT message id differs from the
+ * expected one (another device edited it, Gmail gave it a new message id) is left alone and the call resolves; only a
+ * draft that still holds the expected message id gets `drafts.delete`. Gmail has no precondition on the delete, so an
+ * edit made in the milliseconds between the `get` and the `delete` is still lost (the same window as the replace).
+ * `GoogleProviderOptions.deleteDrafts` defaults to true (guarded removal); false turns every removal off.
  *
  * Bytes: `DraftUpload.mime` goes up as it is, after `checkDraftMime` (size cap, header allow-list, no Bcc, Message-ID
  * is the per-revision one). Threading: `remoteThreadId` becomes the upload's `threadId`; In-Reply-To and References
@@ -75,29 +78,46 @@ import { uploadDraft, type DraftResource } from './draft-upload';
  * `KnownLookup.draftsByMessageId` as a `RemoteDraftFact` (id, message id, thread, no body, no fetch), which is the
  * engine's conflict candidate (`drafts.remote_message_id` differs). The ports cannot deliver more, and "take theirs" /
  * "keep both" need more:
- *   - PORT GAP 1: `RemoteDraftFact.message` is `MessageFacts`, which has no body (text or html) and no attachments'
- *     bytes, and `ProviderAdapter` has no `fetchDraft(remoteDraftId)`. So a conflict can show the metadata (subject,
- *     recipients, snippet) but the engine cannot obtain the other device's text to keep or merge it. Needed: either
- *     `RemoteDraftFact.body?: { text?: string; html?: string }` or `ProviderAdapter.openDraft?(remoteDraftId, ctx)`
- *     returning the parsed message (the adapter already has `bodies.ts` to parse a `format=full` message).
- *   - PORT GAP 2: `DraftUpload` carries only this revision's Message-ID. The engine keeps the Message-IDs of earlier,
- *     unanswered creates (`meta.wrote`), but a create of revision N+1 cannot tell the adapter to look for revision N's
- *     copy first, so an uncertain create followed by an edit can leave two remote copies (a duplicate, not a loss).
- *     Needed: `DraftUpload.supersedes?: string[]` (earlier `internetId`s) that the create looks up and, when found,
- *     replaces instead of creating.
- *   - PORT GAP 3: `DraftSyncPort.remove(account, remoteDraftId)` / `ProviderAdapter.deleteDraft(remoteDraftId, ctx)`
- *     carry no expected message id, so a delete reads the draft's current message id and removes whatever is there: a
- *     phone edit made after the last history poll is destroyed when the owner discards or Aplos sends the pinned MIME.
- *     Needed: `deleteDraft(remoteDraftId, expectedRemoteMessageId, ctx)` (additive, through eng-contract), refusing
- *     (keeping the copy) on a mismatch.
+ *   - Body delivery (history.ts, `RemoteDraftFact.html`/`text`): for a foreign draft the history pass reads the draft with
+ *     `drafts.get` format=full (60 units, at most `BODY_FETCHES` = 5 per history pass across its pages, the rest on the next pass) and delivers
+ *     the decoded text/html parts when it has no attachment (any part, leaf or container, with a filename, an
+ *     attachment or inline disposition, or a type that is not text/* or multipart/*, such as message/rfc822; inline
+ *     images count), the body sits in the message (not by attachment id), is not empty and not over 1,000,000
+ *     characters; otherwise it is reported without a body (snippet only). The same read sets the fact's `internetId`
+ *     from the draft's Message-ID header and `message` (from, to, cc, bcc, subject, snippet, attachments); html/text are never
+ *     delivered without `message`, nor from an unknown or invalid charset. A transient read failure is retried on later passes (3 reads in all), then
+ *     dropped; a 404 or a non-draft drops it at once. Attachments are NOT delivered (PORT GAP 1 remainder): such a
+ *     draft stays incomplete in the engine. Content is never logged.
+ *   - `supersedes` (history.ts): the previous message ids of the same draft id, from this adapter's own message-to-draft
+ *     map; the engine decides whether the fact is our echo (it needs its own proof).
+ *   - PORT GAP 2 (CLOSED on the Gmail side by `DraftUpload.supersedes`, #157): an uncertain create of revision N may
+ *     have landed, and revision N+1 (a new Message-ID) must not make a second copy. When the lookups above find nothing
+ *     for this upload's own Message-ID, the create looks up each Message-ID in `supersedes` (at most the last five,
+ *     never its own; the search per id, the newest drafts once, then all mail). A draft found by one of them is
+ *     REPLACED (`drafts.update`, the result names its draftId) only with proof it is our own earlier upload, all of:
+ *     it is still a DRAFT (not SENT or TRASH) with the message id the search showed, its raw Message-ID header is one
+ *     of `supersedes`, its thread is the upload's `remoteThreadId` when that is set, and its raw bytes canonicalise
+ *     (`draft-compare.ts`) to an upload this adapter recorded for this local draft under that same Message-ID
+ *     (`DraftAttempts`: the last five per draft, recorded BEFORE every create request and every replace of an earlier copy goes out). Otherwise
+ *     (a phone edit of that copy, a copy from before a restart, a Gmail rewrite) the answer is `{kind:'conflict'}` with
+ *     remoteDraftId, remoteMessageId and remoteInternetId, and nothing is written. A SENT or TRASH message holding a
+ *     listed Message-ID (and no draft found) is `{kind:'gone'}`, never recreated; a DRAFT-only hit that the lookups missed
+ *     is index lag, thrown. A draft with any other Message-ID is never read as ours, replaced or deleted. Nothing is
+ *     ever deleted here. LIMIT: `saveDraft` has no channel to `provider_memory` (only a sync step's result writes it), so
+ *     the record lives in process memory; after a restart no copy is provable, the create answers `conflict` (the
+ *     owner's "keep mine" recovers) and never replaces. Absent or empty `supersedes`: exactly the lookups above.
+ *     Pacing: each listed id adds a search (5) plus the reads of its hits (20 each), and one raw read (60) and an update
+ *     (15) when a copy is replaced. The replace has the same millisecond window as any update (no etag).
  * RULE: a create-lookup hit whose bytes differ from `draft.mime` is a conflict, never `saved` (the comparison is exact apart
- * from line endings and boundaries, so a harmless rewrite by Gmail also shows as a conflict: known limit, tested). Provider draft sync stays OFF (no Gmail draft removal, `deleteDrafts` false) until PORT GAP 3 is closed, and
- * must not be switched on for real accounts until PORT GAP 2 (`supersedes`, so orphans are removed) and PORT GAP 4 (a
- * create-path conflict names no draft) are closed too.
+ * from line endings and boundaries, so a harmless rewrite by Gmail also shows as a conflict: known limit, tested). A
+ * delete never removes a draft it cannot prove is the copy the caller holds (expected message id). A create offered
+ * `supersedes` replaces a found copy only with the proof above (PORT GAP 2); a duplicate copy that is not provably ours
+ * is left alone.
  * The upload session URI must be https on `googleapis.com` or a subdomain (deliberate: the bytes and the token go there).
  * Search lags the index: lookup (b) above reads the newest drafts without `q` to cover it. A duplicate that still gets
- * made is NOT cleaned up by the engine yet (`adoptCopy` returns early when the row already has a remote draft id, and
- * DECISIONS says the orphan is not deleted): a duplicate remote draft stays until the owner removes it.
+ * made (a copy found by neither lookup, or a second earlier copy beyond the one replaced) is NOT cleaned up by the engine
+ * yet (`adoptCopy` returns early when the row already has a remote draft id, and DECISIONS says the orphan is not
+ * deleted): a duplicate remote draft stays until the owner removes it.
  */
 
 const DRAFT = 'DRAFT';
@@ -210,17 +230,29 @@ async function listDraftIds(
   return { ids, more: Boolean(page.nextPageToken) };
 }
 
-/** The first of `ids` that is a draft holding `internetId`; a hit that vanished before it could be read is reported. */
+/**
+ * The drafts one create has already read (`drafts.get`, metadata), by draft id. A later lookup of the same create
+ * checks these copies against its own Message-IDs instead of reading them again; nothing is kept between creates.
+ */
+type DraftReads = Map<string, RemoteCopy>;
+
+/**
+ * The first of `ids` that is a draft holding one of `internetIds`; a hit that vanished before it could be read is
+ * reported. A draft in `reads` is not read again (its copy is checked); a copy read here is added to it.
+ */
 async function verifyDrafts(
   client: GmailClient,
   ids: string[],
-  internetId: string,
+  internetIds: string | string[],
+  reads: DraftReads = new Map(),
 ): Promise<{ found?: RemoteCopy; vanished: boolean }> {
+  const wanted = new Set([internetIds].flat().map(bareId));
   let vanished = false;
   for (const id of ids) {
-    const copy = await readCopy(client, id);
+    const copy = reads.get(id) ?? (await readCopy(client, id));
+    if (copy) reads.set(id, copy);
     if (!copy) vanished = true;
-    else if (copy.isDraft && copy.internetId && bareId(copy.internetId) === bareId(internetId))
+    else if (copy.isDraft && copy.internetId && wanted.has(bareId(copy.internetId)))
       return { found: copy, vanished };
   }
   return { vanished };
@@ -334,17 +366,21 @@ async function verifiedHit(
   draft: DraftUpload,
 ): Promise<Lookup> {
   const current = await readRaw(client, found.draftId);
-  if (current.messageId !== found.messageId)
-    return { kind: 'conflict', messageId: current.messageId };
-  if (!sameDraftBytes(current.raw, draft.mime))
-    return { kind: 'conflict', messageId: current.messageId };
-  return { kind: 'draft', copy: found };
+  const differs = current.messageId !== found.messageId || !sameDraftBytes(current.raw, draft.mime);
+  if (!differs) return { kind: 'draft', copy: found };
+  const internetId = rawMessageId(current.raw);
+  return {
+    kind: 'conflict',
+    draftId: found.draftId,
+    messageId: current.messageId,
+    ...(internetId ? { internetId } : {}),
+  };
 }
 
 /** What the lookups before a create found: our copy, proof that it was sent or deleted elsewhere, or nothing. */
 type Lookup =
   | { kind: 'draft'; copy: RemoteCopy }
-  | { kind: 'conflict'; messageId: string }
+  | { kind: 'conflict'; draftId: string; messageId: string; internetId?: string }
   | { kind: 'gone' }
   | undefined;
 
@@ -353,23 +389,122 @@ type Lookup =
  * mail. A hit in (a) or (b) is compared with our bytes (`verifiedHit`). An answer that is not complete (more hits than one page of the search, a hit that vanished before it could be
  * checked) is thrown, never reported as absent.
  */
-async function findByInternetId(client: GmailClient, draft: DraftUpload): Promise<Lookup> {
+async function findByInternetId(
+  client: GmailClient,
+  draft: DraftUpload,
+  reads: DraftReads = new Map(),
+): Promise<Lookup> {
   const internetId = draft.internetId;
   const searched = await listDraftIds(client, searchQuery(internetId));
-  const first = await verifyDrafts(client, searched.ids, internetId);
+  const first = await verifyDrafts(client, searched.ids, internetId, reads);
   if (first.found) return verifiedHit(client, first.found, draft);
   if (first.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
   // The search lags the index: the newest drafts, read without it, cover a copy made a moment ago.
   const newest = await listDraftIds(client);
   const fresh = newest.ids.filter(id => !searched.ids.includes(id));
-  const second = await verifyDrafts(client, fresh, internetId);
+  const second = await verifyDrafts(client, fresh, internetId, reads);
   if (second.found) return verifiedHit(client, second.found, draft);
   if (second.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
   const verdict = await allMailVerdict(client, internetId);
   if (verdict === 'gone') return { kind: 'gone' };
   if (verdict === 'indexLag') throw incomplete('gmail.drafts.list', 'draftIndexLag');
   return undefined;
+}
+
+/** What the lookup for `supersedes` found: as `Lookup`, or one of our own earlier copies, proven, to be replaced. */
+type EarlierLookup = Lookup | { kind: 'earlier'; copy: RemoteCopy };
+
+/** At most this many earlier Message-IDs are looked up (the engine offers its last five). */
+const EARLIER = 5;
+
+/** The earlier Message-IDs worth a lookup: unique, not this upload's own, searchable; the newest `EARLIER`. */
+function earlierIds(draft: DraftUpload): string[] {
+  const own = bareId(draft.internetId);
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const id of draft.supersedes ?? []) {
+    const key = bareId(id);
+    if (key === own || seen.has(key) || !SEARCHABLE_ID.test(id.trim())) continue;
+    seen.add(key);
+    ids.push(id.trim());
+  }
+  return ids.slice(-EARLIER);
+}
+
+/**
+ * Where an earlier, unanswered create of this draft may have landed (`DraftUpload.supersedes`): the same three lookups as
+ * `findByInternetId` for each listed Message-ID, the drafts search per id and the newest drafts once. A draft carrying
+ * one of them is `earlier` only after `verifiedEarlier`; a SENT or TRASH message holding one (and no draft found) is
+ * `gone`. Nothing else is matched: an unrelated draft is never read as ours. `reads` holds the drafts `findByInternetId`
+ * of the same create already read: they are matched against `supersedes` from those reads, not read a second time.
+ */
+async function findEarlier(
+  client: GmailClient,
+  draft: DraftUpload,
+  attempts: DraftAttempts,
+  reads: DraftReads,
+): Promise<EarlierLookup> {
+  const ids = earlierIds(draft);
+  if (ids.length === 0) return undefined;
+  const searchedIds: string[] = [];
+  for (const id of ids) {
+    const searched = await listDraftIds(client, searchQuery(id));
+    const hit = await verifyDrafts(client, searched.ids, id, reads);
+    if (hit.found) return verifiedEarlier(client, hit.found, draft, attempts, ids);
+    if (hit.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
+    if (searched.more) throw incomplete('gmail.drafts.list', 'draftSearchPartial');
+    searchedIds.push(...searched.ids);
+  }
+  const newest = await listDraftIds(client);
+  const hit = await verifyDrafts(
+    client,
+    newest.ids.filter(id => !searchedIds.includes(id)),
+    ids,
+    reads,
+  );
+  if (hit.found) return verifiedEarlier(client, hit.found, draft, attempts, ids);
+  if (hit.vanished) throw incomplete('gmail.drafts.list', 'draftHitVanished');
+  let lagging = false;
+  for (const id of ids) {
+    const verdict = await allMailVerdict(client, id);
+    if (verdict === 'gone') return { kind: 'gone' };
+    lagging ||= verdict === 'indexLag';
+  }
+  if (lagging) throw incomplete('gmail.drafts.list', 'draftIndexLag');
+  return undefined;
+}
+
+/**
+ * A draft found by an earlier Message-ID is replaced only when it is provably the copy of our own earlier upload: it
+ * is still a draft with the message id the search showed, its raw Message-ID is one of `supersedes`, its thread is the
+ * upload's when the upload names one, and its raw bytes canonicalise to an upload this adapter recorded for this draft
+ * under that same Message-ID (`DraftAttempts`). Anything else (a phone edit, a copy from before a restart, a Gmail
+ * rewrite) is a conflict that names the copy, and nothing is written.
+ */
+async function verifiedEarlier(
+  client: GmailClient,
+  found: RemoteCopy,
+  draft: DraftUpload,
+  attempts: DraftAttempts,
+  ids: string[],
+): Promise<EarlierLookup> {
+  const current = await readRaw(client, found.draftId);
+  const internetId = rawMessageId(current.raw);
+  const listed = internetId !== undefined && ids.some(id => bareId(id) === bareId(internetId));
+  const sameThread = !draft.remoteThreadId || found.threadId === draft.remoteThreadId;
+  const ours =
+    listed &&
+    sameThread &&
+    current.messageId === found.messageId &&
+    attempts.wrote(draft.draftId, internetId, current.raw);
+  if (ours) return { kind: 'earlier', copy: found };
+  return {
+    kind: 'conflict',
+    draftId: found.draftId,
+    messageId: current.messageId,
+    ...(internetId ? { internetId } : {}),
+  };
 }
 
 function saved(draft: { draftId: string; messageId: string }, revision: number): DraftSaveResult {
@@ -389,7 +524,14 @@ const fromResource = (resource: DraftResource): { draftId: string; messageId: st
 /** A lookup's answer as the save result: our copy, a conflict (the copy holds other bytes), or `gone` (sent or deleted elsewhere). */
 function answered(found: NonNullable<Lookup>, draft: DraftUpload): DraftSaveResult {
   if (found.kind === 'gone') return { kind: 'gone' };
-  if (found.kind === 'conflict') return { kind: 'conflict', remoteMessageId: found.messageId };
+  if (found.kind === 'conflict') {
+    return {
+      kind: 'conflict',
+      remoteMessageId: found.messageId,
+      remoteDraftId: found.draftId,
+      ...(found.internetId ? { remoteInternetId: found.internetId } : {}),
+    };
+  }
   return saved(found.copy, draft.revision);
 }
 
@@ -410,14 +552,30 @@ async function recheck(
   throw failure;
 }
 
+/** What this adapter wrote per draft, for the proof an earlier copy needs (`DraftAttempts`); one per adapter. */
+const attemptsOf = new WeakMap<GmailDeps, DraftAttempts>();
+
+function attemptsFor(deps: GmailDeps): DraftAttempts {
+  const known = attemptsOf.get(deps) ?? new DraftAttempts();
+  attemptsOf.set(deps, known);
+  return known;
+}
+
 async function createCopy(
   deps: GmailDeps,
   draft: DraftUpload,
   ctx: AdapterContext,
   client: GmailClient,
 ): Promise<DraftSaveResult> {
-  const existing = await findByInternetId(client, draft);
+  const reads: DraftReads = new Map();
+  const existing = await findByInternetId(client, draft, reads);
   if (existing) return answered(existing, draft);
+  const attempts = attemptsFor(deps);
+  const earlier = await findEarlier(client, draft, attempts, reads);
+  if (earlier?.kind === 'earlier') return replaceEarlier(deps, draft, ctx, client, earlier.copy);
+  if (earlier) return answered(earlier, draft);
+  // Remembered before the request goes out: a reply lost after the copy landed still leaves the proof for the next revision.
+  attempts.record(draft.draftId, draft.internetId, draft.mime);
   try {
     const created = await uploadDraft(deps, ctx, {
       method: 'gmail.drafts.create',
@@ -475,6 +633,16 @@ async function replaceCopy(
   if (!current?.isDraft) return { kind: 'gone' };
   const refused = precondition(draft, current);
   if (refused) return refused;
+  return writeUpdate(deps, draft, remoteDraftId, ctx, client);
+}
+
+async function writeUpdate(
+  deps: GmailDeps,
+  draft: DraftUpload,
+  remoteDraftId: string,
+  ctx: AdapterContext,
+  client: GmailClient,
+): Promise<DraftSaveResult> {
   try {
     const updated = await uploadDraft(deps, ctx, {
       method: 'gmail.drafts.update',
@@ -487,6 +655,19 @@ async function replaceCopy(
     if (is404(error)) return confirmGone(client, remoteDraftId, error);
     throw error;
   }
+}
+
+/** The create found our own earlier copy (proven in `verifiedEarlier`): this revision replaces it, no second draft. */
+function replaceEarlier(
+  deps: GmailDeps,
+  draft: DraftUpload,
+  ctx: AdapterContext,
+  client: GmailClient,
+  copy: RemoteCopy,
+): Promise<DraftSaveResult> {
+  // Remembered before the request goes out, so a revision after a lost reply can again prove the copy holds ours.
+  attemptsFor(deps).record(draft.draftId, draft.internetId, draft.mime);
+  return writeUpdate(deps, draft, copy.draftId, ctx, client);
 }
 
 /** `ProviderAdapter.saveDraft` for Gmail. `ctx` is the paced context; see the file header for the rules. */
@@ -503,15 +684,22 @@ export async function saveDraftCopy(
     : replaceCopy(deps, draft, draft.remoteDraftId!, ctx, client);
 }
 
-/** `ProviderAdapter.deleteDraft` for Gmail: idempotent, and a message that is no longer a draft is never touched. */
+/**
+ * `ProviderAdapter.deleteDraft` for Gmail: idempotent, guarded by the expected message id, and a message that is no
+ * longer a draft is never touched. Without an expected id nothing happens.
+ */
 export async function deleteDraftCopy(
   deps: GmailDeps,
   remoteDraftId: string,
   ctx: AdapterContext,
+  expectedMessageId?: string,
 ): Promise<void> {
+  if (expectedMessageId === undefined) return;
   const client = new GmailClient(deps, ctx);
   const current = await readCopy(client, remoteDraftId);
   if (!current?.isDraft) return;
+  // Another device edited the draft (or replaced it): that version is theirs, the discard must not destroy it.
+  if (current.messageId !== expectedMessageId) return;
   try {
     await client.call<void>({
       method: 'gmail.drafts.delete',

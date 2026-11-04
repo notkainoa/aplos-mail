@@ -10,7 +10,8 @@ import {
   UNRETRYABLE_CODES,
   type OutboxCtx,
 } from './context';
-import { INCOMPLETE_SENTENCE, parseData } from './draft-state';
+import { DraftConflict, INCOMPLETE_SENTENCE, parseData } from './draft-state';
+import { sendPins } from './draft-proof';
 import {
   buildEnvelope,
   buildMime,
@@ -126,6 +127,7 @@ interface DraftRow {
   display_name: string | null;
   remote_internet_id: string | null;
   synced_revision: number | null;
+  remote_draft_id: string | null;
   provider: string;
   [k: string]: string | number | null;
 }
@@ -133,7 +135,7 @@ interface DraftRow {
 function readDraft(q: StoreReader, id: string) {
   return q.get<DraftRow>(
     `SELECT d.id, d.account_id, d.thread_id, d.revision, d.data, d.remote_internet_id, d.synced_revision,
-            a.address, a.display_name, a.provider
+            d.remote_draft_id, a.address, a.display_name, a.provider
      FROM drafts d JOIN accounts a ON a.id = d.account_id
      WHERE d.id = ? AND json_extract(d.data, '$._sync.removing') IS NULL`,
     id,
@@ -277,6 +279,40 @@ function undoSeconds(ctx: OutboxCtx) {
   return typeof value === 'number' && value >= 0 && value <= 60 ? value : DEFAULT_UNDO_SEND_SECONDS;
 }
 
+/**
+ * A newer copy of the draft that was held while a send pinned it (`changedElsewhere`) is applied once nothing pins the
+ * draft, as if it had just been reported: a clean phone draft takes it, an edited one is asked. It runs when a send ends
+ * without going out (undo, cancel) and before a new send is checked, so the owner never sends over a version they have not
+ * seen. The flag is cleared in the same commit (the report puts it back if a send pins the draft again meanwhile).
+ */
+export function releaseHeld(ctx: OutboxCtx, draftId: string) {
+  const found = ctx.store.read(q => {
+    const d = readDraft(q, draftId);
+    const copy = d && parseData(d.data).meta.changedElsewhere;
+    return d && typeof copy === 'object' && !sendPins(q, d) ? { d, copy } : undefined;
+  });
+  if (!found) return;
+  const { d, copy } = found;
+  // Only a report of this very draft is replayed: another account's, or one of a copy this row no longer names (its id
+  // changed, or it was forgotten), would insert a stale draft of its own. Those are kept as plain `true`.
+  const ours = copy.accountId === d.account_id && d.remote_draft_id === copy.remoteDraftId;
+  const clear = {
+    kind: 'draft',
+    op: 'meta',
+    id: draftId,
+    patch: { changedElsewhere: ours ? null : true },
+  };
+  try {
+    ctx.store.commit({
+      opId: `held:${draftId}:${copy.remoteMessageId}:${ctx.clock.now()}`,
+      origin: 'system',
+      writes: (ours ? [clear, { ...copy, kind: 'remoteDraft' }] : [clear]) as never,
+    });
+  } catch (error) {
+    if (!(error instanceof DraftConflict)) throw error;
+  }
+}
+
 /** Everything about the new row except the commit: reads the draft and writes the pinned MIME. */
 function prepareSend(
   ctx: OutboxCtx,
@@ -284,6 +320,7 @@ function prepareSend(
   action: Extract<SubmissionAction, { type: 'send' }>,
 ): NewSubmission {
   const now = ctx.clock.now();
+  releaseHeld(ctx, action.draftId);
   const { draft, live, thread, reply } = ctx.store.read(q => {
     const d = readDraft(q, action.draftId);
     if (!d) return fail('notFound', 'This draft no longer exists.');
@@ -444,7 +481,7 @@ function checkProblem(action: RowAction, row: SubmissionRow) {
     fail('stateMismatch', NO_RETRY_COPY);
 }
 
-function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
+function act(ctx: OutboxCtx, opId: string, action: RowAction, release: boolean): SetResult {
   const row = ctx.store.read(q => readSubmission(q, action.submissionId));
   if (!row) return fail('notFound', NOT_IN_OUTBOX);
   if (!ALLOWED[action.type].includes(row.state)) wrongState(row.state);
@@ -471,15 +508,27 @@ function act(ctx: OutboxCtx, opId: string, action: RowAction): SetResult {
       return conflictSentence(error, action.type === 'cancel' ? STILL_CHECKING_CANCEL : undefined);
     throw error;
   }
+  if (to === 'cancelled' && release) {
+    try {
+      releaseHeld(ctx, row.draft_id);
+    } catch {
+      // The undo is done and must answer; the held copy is applied by the next send check instead.
+    }
+  }
   ctx.deadlines.changed('outbox');
   return answer(ctx, opId, seq, row.id);
 }
 
 /** `Submission/set`. Throws `ContractError` with the sentence the UI shows. */
-export function setSubmission(ctx: OutboxCtx, opId: string, action: SubmissionAction): SetResult {
+export function setSubmission(
+  ctx: OutboxCtx,
+  opId: string,
+  action: SubmissionAction,
+  release = true,
+): SetResult {
   const prior = replayed(ctx, opId, action);
   if (prior) return prior;
-  return action.type === 'send' ? send(ctx, opId, action) : act(ctx, opId, action);
+  return action.type === 'send' ? send(ctx, opId, action) : act(ctx, opId, action, release);
 }
 
 /** `Submission/get`: unknown ids come back in `notFound`. */
