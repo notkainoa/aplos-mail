@@ -162,3 +162,17 @@ export function zeroAccountsMode(input: {
   if (input.accountCount > 0) return 'none';
   return input.firstSyncRunning ? 'firstSync' : 'zero';
 }
+
+/**
+ * Whether "no accounts" is proven: the session's own word when `Session/get` has answered, else the caller's —
+ * an account list that loaded and came back empty. While neither has answered nothing is proven, so the pane
+ * stays blank rather than guess (a slow or failed `Session/get` must not blank it either).
+ */
+export function zeroAccountsProven(input: {
+  hasAccounts: boolean | undefined;
+  accountsLoaded: boolean;
+  accountCount: number;
+}): boolean {
+  if (input.hasAccounts !== undefined) return !input.hasAccounts;
+  return input.accountsLoaded && input.accountCount === 0;
+}

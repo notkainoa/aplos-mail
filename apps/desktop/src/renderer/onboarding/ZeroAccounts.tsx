@@ -13,8 +13,7 @@
  * `ZeroAccountsView` draws and `ZeroAccounts` is the container that reads `renderer/data`.
  */
 import { useRef, useState } from 'react';
-import { useSession, useSetupStatus } from '../data';
-import { frameEvent, initialAccounts, reduceAccounts, useConnectFrames } from './connect';
+import { useAccounts, useAccountsLoaded, useSession, useSetupStatus } from '../data';
 import { pushToast } from '../shell';
 import { EmptyLine, ErrorLine } from '../ui/list';
 import { Button } from '../ui/buttons-keys';
@@ -26,6 +25,7 @@ import {
   defaultDemoPorts,
   loadDemo,
   zeroAccountsMode,
+  zeroAccountsProven,
   type DemoPorts,
 } from './demo';
 import {
@@ -106,26 +106,11 @@ export interface ZeroAccountsProps {
   readonly ports?: Partial<WelcomePorts & DemoPorts>;
 }
 
-/**
- * The Add account host (`connect.ts`), mounted inline so it works anywhere the pane draws it — the
- * zero-accounts state today, Settings → Accounts later (plan 30: "Add account" from Settings uses the
- * same component inline and never gates anything). It is the same listener the onboarding window mounts
- * for its Accounts step: every new-account `connect` frame is recorded through `reduceAccounts`, once
- * each and in order, so a connect started from the pane or from Settings is tracked like the window
- * tracks it — an answer that arrives after the owner moved on is recorded and never navigates, and the
- * account list updates in place. It draws nothing.
- */
-export function AddAccountHost() {
-  const acc = useRef(initialAccounts());
-  useConnectFrames(frame => {
-    acc.current = reduceAccounts(acc.current, frameEvent(frame)).state;
-  });
-  return null;
-}
-
 /** Draws nothing when accounts exist (the pane has mail, or demo mail, to show). */
 export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAccountsProps) {
   const session = useSession();
+  const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
   const setup = useSetupStatus();
   const ports = useRef({ ...defaultWelcomePorts, ...defaultDemoPorts, ...given }).current;
   const [loading, setLoading] = useState(false);
@@ -133,10 +118,14 @@ export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAcc
 
   const running =
     firstSyncRunning ?? (setup !== undefined && setup.accounts.length > 0 && !setup.done);
-  const mode = zeroAccountsMode({
-    accountCount: session?.hasAccounts === false ? 0 : 1,
-    firstSyncRunning: running,
+  // The caller mounts this only once "no accounts" is proven; `Session/get` may lag or fail, so the loaded
+  // account list is proof enough — but while the list is still out the pane stays blank.
+  const proven = zeroAccountsProven({
+    hasAccounts: session?.hasAccounts,
+    accountsLoaded,
+    accountCount: accounts.length,
   });
+  const mode = zeroAccountsMode({ accountCount: proven ? 0 : 1, firstSyncRunning: running });
   if (mode === 'none') return null;
 
   const tryDemo = () => {
@@ -154,20 +143,17 @@ export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAcc
   };
 
   return (
-    <>
-      <AddAccountHost />
-      <ZeroAccountsView
-        firstSyncRunning={mode === 'firstSync'}
-        {...(detail ? { detail } : {})}
-        {...(notice ? { notice } : {})}
-        onAddAccount={() => {
-          setNotice(undefined);
-          void openOnboardingWindow('first', ports).then(result =>
-            setNotice(welcomeFailureLine(result)),
-          );
-        }}
-        onTryDemo={tryDemo}
-      />
-    </>
+    <ZeroAccountsView
+      firstSyncRunning={mode === 'firstSync'}
+      {...(detail ? { detail } : {})}
+      {...(notice ? { notice } : {})}
+      onAddAccount={() => {
+        setNotice(undefined);
+        void openOnboardingWindow('first', ports).then(result =>
+          setNotice(welcomeFailureLine(result)),
+        );
+      }}
+      onTryDemo={tryDemo}
+    />
   );
 }
