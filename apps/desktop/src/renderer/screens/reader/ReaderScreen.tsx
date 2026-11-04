@@ -56,7 +56,7 @@ import { useHomeOrder, useReaderList } from './useReaderList';
 export const LOADING_COPY = 'Loading this email…';
 export const NO_THREAD_COPY = 'No email is open.';
 
-/** How the letter is grouped: 'off' is DESIGN 7.5's one column with no card; 'a' and 'b' are two card options on trial. */
+/** How the letter is grouped: 'a' is a card per message (the default); 'off' is DESIGN 7.5's one column with no card. */
 export type ReaderCardStyle = CardStyle;
 
 /** Props for `ReaderScreen`. */
@@ -67,7 +67,7 @@ export interface ReaderScreenProps {
   readonly backTo?: Screen;
   /** Any suggestion that is neither a reply nor Done ("View invoice", "Add to calendar"); a later slice's. */
   readonly onSuggested?: (threadId: string, action: SuggestedAction) => void;
-  /** The card option on trial: 'a' letter cards, 'b' sectioned cards. Absent: `CardStyleContext`'s, else 'off'. */
+  /** 'a' a card per message (the default), 'off' no card. Absent: `CardStyleContext`'s, else 'a'. */
   readonly cardStyle?: ReaderCardStyle;
 }
 

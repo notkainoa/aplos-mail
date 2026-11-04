@@ -2,6 +2,8 @@
 // One message as an `article` landmark: the header (who in `ui` 600, the dim "to" phrase, the time right),
 // "Load images from this sender" when remote images are blocked, the `read` body at 64ch, quoted text on O,
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
+// An earlier message is a compact card (owner review 2026-11-03): its head is one button (`aria-expanded`) that holds the
+// who, the time and, while folded, the plain-text first sentence or two; a click or O opens it to the full message.
 
 import type { Ref } from 'react';
 import type { ThreadMessageProps } from '../props';
@@ -19,6 +21,8 @@ export function ThreadMessage({
   date,
   cursor,
   body,
+  fold,
+  excerpt,
   attachments,
   remoteImages,
   quoted,
@@ -26,15 +30,10 @@ export function ThreadMessage({
   ref,
 }: ThreadMessageProps) {
   const fromId = `${id}-from`;
-  return (
-    <article
-      ref={ref as Ref<HTMLElement>}
-      id={id}
-      className="ui-thread-message"
-      data-cursor={cursor ? 'true' : undefined}
-      aria-labelledby={fromId}
-    >
-      <header className="ui-thread-message__head">
+  const folded = fold !== undefined && !fold.open;
+  const headLine = (
+    <>
+      <span className="ui-thread-message__line">
         <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
         </span>
@@ -42,6 +41,41 @@ export function ThreadMessage({
         <time className="ui-thread-message__when" dateTime={date} title={formatFull(date)}>
           {formatMessageTime(date)}
         </time>
+      </span>
+      {folded && excerpt ? (
+        <span className="ui-thread-message__excerpt" dir="auto">
+          {excerpt}
+        </span>
+      ) : null}
+    </>
+  );
+  return (
+    <article
+      ref={ref as Ref<HTMLElement>}
+      id={id}
+      className="ui-thread-message"
+      data-cursor={cursor ? 'true' : undefined}
+      data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
+      aria-labelledby={fromId}
+    >
+      <header className="ui-thread-message__head">
+        {fold ? (
+          <button
+            type="button"
+            className="ui-thread-message__toggle"
+            aria-expanded={fold.open}
+            aria-controls={`${id}-content`}
+            title={tooltipText(
+              fold.open ? 'Fold this message' : 'Open this message',
+              fold.commandId,
+            )}
+            onClick={fold.onToggle}
+          >
+            {headLine}
+          </button>
+        ) : (
+          headLine
+        )}
       </header>
 
       {remoteImages?.blocked ? (
@@ -56,7 +90,11 @@ export function ThreadMessage({
         </div>
       ) : null}
 
-      <div className="ui-thread-message__body">{body}</div>
+      {folded ? null : (
+        <div className="ui-thread-message__body" id={`${id}-content`}>
+          {body}
+        </div>
+      )}
 
       {quoted ? (
         <div className="ui-thread-message__quoted">

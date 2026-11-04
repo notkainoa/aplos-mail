@@ -7,11 +7,9 @@ import assert from 'node:assert/strict';
 import type { Message } from '../../data';
 import {
   attachmentChips,
-  collapsedOf,
+  excerptOf,
   fromName,
   joinRecipients,
-  participantsOf,
-  recipientsLabel,
   replyName,
   toLabel,
   trackersLine,
@@ -45,12 +43,11 @@ const jordan = { address: 'jordan@park.example', name: 'Jordan Park' };
 const mina = { address: 'mina@park.example', name: 'Mina Cho' };
 const alex = { address: 'alex@home.example', name: 'Alex Morgan' };
 
-test('the sender line says "to you and Mina Cho", the owner first', () => {
+test('a message header says "to you, Mina Cho", the owner first', () => {
   const m = message({ id: 'm1', from: jordan, to: [mina, alex] });
-  assert.equal(recipientsLabel(m, ME), 'to you and Mina Cho');
   assert.equal(toLabel(m, ME), 'to you, Mina Cho');
-  assert.equal(recipientsLabel(message({ id: 'm2', from: jordan, to: [alex] }), ME), 'to you');
-  assert.equal(recipientsLabel(message({ id: 'm3', from: jordan }), ME), 'to no one');
+  assert.equal(toLabel(message({ id: 'm2', from: jordan, to: [alex] }), ME), 'to you');
+  assert.equal(toLabel(message({ id: 'm3', from: jordan }), ME), 'to no one');
 });
 
 test('long recipient lists name three and count the rest', () => {
@@ -70,17 +67,19 @@ test('"Reply to Jordan…" names the sender, or whom the owner last wrote to', (
   assert.equal(replyName(message({ id: 'c' }), ME), 'sender');
 });
 
-test('earlier messages: first names once each in thread order, one-liners with trimmed previews', () => {
-  const earlier = [
-    message({ id: 'e1', from: jordan }),
-    message({ id: 'e2', from: alex, fromMe: true }),
-    message({ id: 'e3', from: jordan }),
-    message({ id: 'e4', from: mina }),
-  ];
-  assert.deepEqual(participantsOf(earlier, ME), ['Jordan', 'you', 'Mina']);
-  const line = collapsedOf(earlier[0]!, ME);
-  assert.equal(line.preview, 'Hi Alex,');
-  assert.equal(line.from, 'Jordan Park');
+test('a compact card shows the first sentence or two of the snippet and ends in an ellipsis', () => {
+  const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
+  assert.equal(excerpt('Hi Alex,'), 'Hi Alex…');
+  assert.equal(
+    excerpt('Kicking off. Here is the brief we agreed on Friday. Please read it before Monday.'),
+    'Kicking off. Here is the brief we agreed on Friday…',
+  );
+  assert.equal(excerpt('Sounds   good\n to me!  Ship it.'), 'Sounds good to me! Ship it…');
+  assert.equal(excerpt('Thanks… and more'), 'Thanks… and more…');
+  assert.equal(excerpt(''), '…');
+  const long = excerpt(`${'word '.repeat(60)}end.`);
+  assert.ok(long.endsWith('…') && long.length <= 151, 'a long first sentence is cut at a word');
+  assert.doesNotMatch(long, / …$/, 'no dangling space before the ellipsis');
 });
 
 test('trackers: nothing when none, singular and plural otherwise', () => {

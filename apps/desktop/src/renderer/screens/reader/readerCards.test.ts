@@ -1,7 +1,7 @@
 /**
- * The card options on trial (owner review 2026-10-31): `cardStyle` only sets `data-cards` on the reader's root, the
- * default stays 'off' (DESIGN 7.5 as written), and the letter carries the one layout hook the options style
- * (`aplos-reader__messages`, the messages without the reply). The looks are reader.css's; nothing else changes.
+ * The card treatment (owner review 2026-11-03): `cardStyle` only sets `data-cards` on the reader's root, the default
+ * is 'a' (each message its own card; 'off' is DESIGN 7.5 as first written, option B is gone), and the letter carries the
+ * one layout hook the cards style (`aplos-reader__messages`, the messages without the reply). The looks are reader.css's.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,14 +49,13 @@ function screenWith(cardStyle?: ReaderCardStyle): string {
   return renderToStaticMarkup(createElement(ReaderScreen, cardStyle ? { cardStyle } : {}));
 }
 
-test('the reader root carries the card option; absent, it is off', async () => {
+test('the reader root carries the card option; absent, it is a', async () => {
   const world = await boot();
   try {
     setOpenThread(world.threadId);
-    assert.match(screenWith(), /class="aplos-reader"[^>]*data-cards="off"/, 'the default is off');
+    assert.match(screenWith(), /class="aplos-reader"[^>]*data-cards="a"/, 'the default is a');
     assert.match(screenWith('off'), /class="aplos-reader"[^>]*data-cards="off"/);
     assert.match(screenWith('a'), /class="aplos-reader"[^>]*data-cards="a"/);
-    assert.match(screenWith('b'), /class="aplos-reader"[^>]*data-cards="b"/);
     setOpenThread(null);
   } finally {
     world.connection.close();
@@ -85,7 +84,6 @@ test('the letter wraps its messages, not the reply, in the layout hook the optio
     const order = [
       'aplos-reader__thread',
       'aplos-reader__messages',
-      'aplos-reader__subject',
       'ui-thread-message',
       'ui-reply-stub',
     ].map(part => html.indexOf(part));
@@ -108,11 +106,10 @@ test('the letter wraps its messages, not the reply, in the layout hook the optio
   }
 });
 
-test('reader.css styles only the two options; off draws what DESIGN 7.5 draws', () => {
+test('reader.css styles option a only; off draws what DESIGN 7.5 first drew', () => {
   const css = readFileSync(new URL('./reader.css', import.meta.url), 'utf8');
   assert.match(css, /\[data-cards='a'\] \.ui-thread-message \{/, 'A: each message is a card');
-  assert.match(css, /\[data-cards='b'\] \.ui-reader-head,/, 'B: the head is a card');
-  assert.match(css, /\[data-cards='b'\] \.aplos-reader__messages \{/, 'B: the thread is one card');
+  assert.doesNotMatch(css, /data-cards='b'/, 'option B is gone');
   assert.doesNotMatch(css, /\[data-cards='off'\] /, 'no rule targets off');
   assert.doesNotMatch(
     css,

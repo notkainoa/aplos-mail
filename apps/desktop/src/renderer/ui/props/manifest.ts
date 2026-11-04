@@ -32,6 +32,7 @@ import type {
 import type {
   EarlierMessagesProps,
   LoadingLineProps,
+  ReaderActionsProps,
   ReaderHeadProps,
   ReplyStubProps,
   ThreadMessageProps,
@@ -193,6 +194,11 @@ export const COMPONENTS = [
     name: 'ReaderHead',
     family: 'reader',
     file: 'apps/desktop/src/renderer/ui/reader/ReaderHead.tsx',
+  },
+  {
+    name: 'ReaderActions',
+    family: 'reader',
+    file: 'apps/desktop/src/renderer/ui/reader/ReaderActions.tsx',
   },
   {
     name: 'EarlierMessages',
@@ -421,6 +427,7 @@ export interface ComponentPropsMap {
   EmptyLine: EmptyLineProps;
   ErrorLine: ErrorLineProps;
   ReaderHead: ReaderHeadProps;
+  ReaderActions: ReaderActionsProps;
   EarlierMessages: EarlierMessagesProps;
   ThreadMessage: ThreadMessageProps;
   LoadingLine: LoadingLineProps;

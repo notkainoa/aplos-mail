@@ -17,7 +17,7 @@ import {
 } from './readerModel';
 import { focusDecision, placeOf } from './readerFocus';
 import { readerHeader } from './readerHeader';
-import { freshUi, reduceFor, reduceUi, uiFor, walkableIds } from './readerUi';
+import { expandEvent, freshUi, reduceFor, reduceUi, uiFor, walkableIds } from './readerUi';
 
 const IDS = ['a', 'b', 'c', 'd'];
 
@@ -105,20 +105,57 @@ test('the message rail stops at the ends', () => {
   assert.equal(stepMessage([], null, 'next'), null);
 });
 
-test('O walks the earlier messages only while they are expanded', () => {
-  assert.deepEqual(walkableIds(['m1', 'm2'], false, 'm3'), ['m3']);
-  assert.deepEqual(walkableIds(['m1', 'm2'], true, 'm3'), ['m1', 'm2', 'm3']);
-  assert.deepEqual(walkableIds([], true, null), []);
+test('the arrow keys walk every message, oldest first: the earlier ones are compact cards, always there', () => {
+  assert.deepEqual(walkableIds(['m1', 'm2'], 'm3'), ['m1', 'm2', 'm3']);
+  assert.deepEqual(walkableIds([], 'm1'), ['m1']);
+  assert.deepEqual(walkableIds([], null), []);
 });
 
-test('the letter state: expand, open, find, images, and a new thread starts untouched', () => {
+test('O folds or opens the earlier card the cursor is on; on the latest message it shows the quoted text', () => {
+  const earlier = ['m1', 'm2'];
+  assert.deepEqual(expandEvent('m2', earlier), { type: 'toggleMessage', id: 'm2' });
+  assert.deepEqual(expandEvent('m3', earlier), { type: 'toggleExpanded' }, 'the latest message');
+  assert.deepEqual(
+    expandEvent(null, earlier),
+    { type: 'toggleExpanded' },
+    'no cursor yet: the latest',
+  );
+  assert.deepEqual(expandEvent(null, []), { type: 'toggleExpanded' }, 'a one-message thread');
+  let ui = reduceUi(freshUi('t1'), {
+    type: 'moveCursor',
+    ids: ['m1', 'm2', 'm3'],
+    dir: 'previous',
+  });
+  assert.equal(
+    ui.cursor,
+    'm2',
+    'ArrowUp from the start (the latest holds the rail) lands on the card above',
+  );
+  ui = reduceUi(ui, expandEvent(ui.cursor, earlier));
+  assert.deepEqual(ui.opened, ['m2'], 'O opens the focused card');
+  ui = reduceUi(ui, expandEvent(ui.cursor, earlier));
+  assert.deepEqual(ui.opened, [], 'O again folds it');
+  const down = reduceUi(freshUi('t1'), {
+    type: 'moveCursor',
+    ids: ['m1', 'm2', 'm3'],
+    dir: 'next',
+  });
+  assert.equal(down.cursor, 'm3', 'ArrowDown from the start stays on the latest');
+});
+
+test('the letter state: quoted text, opening and folding a card, find, images, and a new thread starts untouched', () => {
   let ui = freshUi('t1');
   ui = reduceUi(ui, { type: 'toggleExpanded' });
   assert.equal(ui.expanded, true);
-  ui = reduceUi(ui, { type: 'openMessage', id: 'm1' });
-  ui = reduceUi(ui, { type: 'openMessage', id: 'm1' });
-  assert.deepEqual(ui.opened, ['m1']);
+  ui = reduceUi(ui, { type: 'toggleMessage', id: 'm1' });
+  assert.deepEqual(ui.opened, ['m1'], 'a click opens the compact card');
   assert.equal(ui.cursor, 'm1');
+  ui = reduceUi(ui, { type: 'toggleMessage', id: 'm2' });
+  ui = reduceUi(ui, { type: 'toggleMessage', id: 'm1' });
+  assert.deepEqual(ui.opened, ['m2'], 'a second click on the same card folds it again');
+  assert.equal(ui.cursor, 'm1');
+  ui = reduceUi(ui, { type: 'toggleMessage', id: 'm2' });
+  assert.deepEqual(ui.opened, []);
   ui = reduceUi(ui, { type: 'openFind' });
   assert.equal(ui.find, '');
   ui = reduceUi(ui, { type: 'setFind', query: 'invoice' });

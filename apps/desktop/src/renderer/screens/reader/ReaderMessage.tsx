@@ -1,5 +1,6 @@
 /**
- * One message of the thread: `ThreadMessage` around the `MailFrame` body, with the dim "N trackers removed" line, the
+ * One message of the thread: `ThreadMessage` around the `MailFrame` body (an earlier message is a compact card with
+ * its first sentence or two until it is opened; a click or O opens and folds it), with the dim "N trackers removed" line, the
  * blocked-images notice and the attachment chips (DESIGN 7.5). An invite email shows its invitation above the body; a
  * plain-text body keeps its quoted history behind "Show quoted text" (O shows it too). The frame reports its height
  * and tracker count once per letter; the latest message's report tells the reader its letter is laid out.
@@ -16,7 +17,14 @@ import { ThreadMessage } from '../../ui/reader';
 import type { InviteView } from './invite';
 import { InviteCard } from './InviteCard';
 import { allowImagesFrom, fetchAttachment } from './readerEffects';
-import { attachmentChips, fromName, toLabel, trackersLine, type DownloadState } from './readerRows';
+import {
+  attachmentChips,
+  excerptOf,
+  fromName,
+  toLabel,
+  trackersLine,
+  type DownloadState,
+} from './readerRows';
 
 /** Props for `ReaderMessage`. */
 export interface ReaderMessageProps {
@@ -29,8 +37,10 @@ export interface ReaderMessageProps {
   readonly findQuery?: string;
   /** The frame's loading line: "Loading <subject>…". */
   readonly loadingLabel?: string;
-  /** O is on: earlier messages and quoted text are shown. */
+  /** O is on (the cursor on the latest message): quoted text is shown. */
   readonly expanded?: boolean;
+  /** An earlier message: a compact card that opens and folds. Absent: the latest message, always open. */
+  readonly fold?: { readonly open: boolean; readonly onToggle: () => void };
   /** The invitation this message carries (an invite email). */
   readonly invite?: InviteView;
   /** The frame is laid out and measured. */
@@ -65,7 +75,25 @@ function useQuoted(body: MessageBody | undefined, expanded: boolean) {
   };
 }
 
-export function ReaderMessage(props: ReaderMessageProps) {
+const FOLD_COMMAND = 'reader.expand' as const;
+
+/** A folded earlier message: who, when and the first sentence or two, from the message's snippet (no body is loaded). */
+function FoldedMessage({ message, me, cursor, fold }: ReaderMessageProps) {
+  return (
+    <ThreadMessage
+      id={message.id}
+      from={fromName(message, me)}
+      toLabel={toLabel(message, me)}
+      date={toIsoDateTime(message.date)}
+      cursor={cursor}
+      fold={fold ? { ...fold, commandId: FOLD_COMMAND } : undefined}
+      excerpt={excerptOf(message)}
+    />
+  );
+}
+
+/** The message in full (the latest one, or an earlier one that was opened). */
+function FullMessage(props: ReaderMessageProps) {
   const { message, me, imagesLoaded, onFrame } = props;
   const body = useMessageBody(message.id);
   const [trackers, setTrackers] = useState<number | undefined>(undefined);
@@ -99,6 +127,7 @@ export function ReaderMessage(props: ReaderMessageProps) {
       toLabel={toLabel(message, me)}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
+      fold={props.fold ? { ...props.fold, commandId: FOLD_COMMAND } : undefined}
       body={frame}
       quoted={quoted.toggle}
       attachments={chips}
@@ -111,4 +140,10 @@ export function ReaderMessage(props: ReaderMessageProps) {
       }}
     />
   );
+}
+
+/** One message of the thread: open in full, or (an earlier one) a compact card until it is opened. */
+export function ReaderMessage(props: ReaderMessageProps) {
+  if (props.fold && !props.fold.open) return <FoldedMessage {...props} />;
+  return <FullMessage {...props} />;
 }

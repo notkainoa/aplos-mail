@@ -50,69 +50,57 @@
   white-space: nowrap;
 }
 
-/* ---------- Reader head: sender line, summary, one action row ---------- */
+/* ---------- Reader head: the summary, its due chip and a hairline ---------- */
 
 .ui-reader-head {
   position: relative;
   min-width: 0;
 }
-.ui-reader-head__from {
+.ui-reader-head__due {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  min-height: var(--control-xs);
-}
-.ui-reader-head__name {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font: var(--type-title);
-  letter-spacing: var(--track-title);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-reader-head__to {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ui-reader-head__when {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-2);
-  margin-left: auto;
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.ui-reader-head__summary {
   margin-top: var(--space-3);
 }
-.ui-reader-head__actions {
+.ui-reader-head__rule {
+  height: var(--hairline);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 0;
+  background-color: var(--line);
+}
+
+/* ---------- Reader actions: the pinned bar ----------
+   In the flow at the end of the letter, so nothing hides behind it; it sticks to the pane's bottom (16 px up) while the
+   letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the letter is short.
+   The wrapper takes no pointer events, only the bar does. Keycap badges overlay the buttons' corners and take no space. */
+
+.ui-reader-actions {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding-top: var(--space-6);
+  pointer-events: none;
+}
+.ui-reader-actions__bar {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  min-width: 0;
-  margin-top: var(--space-5);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+  box-shadow: var(--elev-float);
+  pointer-events: auto;
 }
-.ui-reader-head__suggest {
-  display: inline-flex;
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-right: var(--space-2);
+/* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
+.ui-reader-actions[data-demoted='true'] {
+  position: relative;
+  bottom: auto;
 }
-.ui-reader-head__suggest .ui-list-btn {
-  flex: 0 1 auto;
+.ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {
+  box-shadow: var(--elev-pane);
 }
 
 /* ---------- Earlier messages ---------- */
@@ -228,11 +216,14 @@
   background-color: var(--accent);
 }
 .ui-thread-message__head {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+}
+.ui-thread-message__line {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
-  margin-bottom: var(--space-4);
 }
 .ui-thread-message__from {
   flex: 0 1 auto;
@@ -263,6 +254,37 @@
   letter-spacing: var(--track-small);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* A folded earlier message: one button holds who, when and the excerpt; the whole card is its target. */
+.ui-thread-message[data-fold='folded'] .ui-thread-message__head {
+  margin-bottom: 0;
+}
+.ui-thread-message__toggle {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: default;
+}
+.ui-thread-message__excerpt {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+  overflow-wrap: anywhere;
+}
+.ui-thread-message__toggle:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
 }
 .ui-thread-message__images,
 .ui-thread-message__quoted {
@@ -469,6 +491,9 @@
 }
 
 @media (hover: hover) {
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from {
+    color: var(--ink);
+  }
   .ui-earlier-messages__toggle:hover {
     background-color: var(--hover);
     color: var(--ink-2);

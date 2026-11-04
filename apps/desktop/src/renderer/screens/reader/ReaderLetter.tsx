@@ -1,43 +1,29 @@
 /**
- * One letter of the reader (DESIGN 7.5): the thread's four parts in order inside one 640 px column with no card and
- * nothing beside it: the sender line, the big summary, the one action row, then the thread (the dim subject line,
- * the earlier messages in one line, the messages, the Reply stub). A letter is mounted either on paper or off it: the
+ * One letter of the reader (DESIGN 7.5): the thread's parts in order inside one 640 px column with nothing beside it:
+ * the big summary and its hairline, then the thread (every message its own card, the earlier ones compact, the Reply
+ * stub), then the pinned action bar (Reply, Later, Done; owner review 2026-11-03). A letter is mounted either on paper or off it: the
  * wanted letter lays itself out off paper and tells the reader when it is measured, and only then does it replace the
  * letter on paper (the no-blank-sheet double buffer, `letterController`).
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import {
-  api,
-  toIsoDateTime,
-  useAccounts,
-  useMessageBody,
-  useRow,
-  type Account,
-  type Message,
-  type ThreadRow,
-} from '../../data';
+import { api, useAccounts, useMessageBody, useRow, type Message, type ThreadRow } from '../../data';
 import type { MailFrameKey, MailFrameReady } from '../../mailframe';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
-import { EarlierMessages, ReaderHead, ReplyStub } from '../../ui/reader';
+import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
 import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
 import { inviteOf, type InviteView } from './invite';
 import { ReaderMessage } from './ReaderMessage';
 import {
-  collapsedOf,
   dueOf,
   loadingLabel,
   myAddresses,
-  participantsOf,
-  recipientsLabel,
   replyName,
-  senderInfo,
-  subjectLine,
   suggestionFor,
   summaryFor,
 } from './readerRows';
-import { walkableIds, type ReaderUi, type UiEvent } from './readerUi';
+import { expandEvent, walkableIds, type ReaderUi, type UiEvent } from './readerUi';
 import { useLetterData, type LetterData } from './useLetterData';
 
 export const GONE_COPY = 'This email is no longer here.';
@@ -84,11 +70,6 @@ function countLabel(count: number): string {
   return `${count} ${count === 1 ? 'message' : 'messages'}`;
 }
 
-function accountLabelOf(accounts: readonly Account[], accountId: string): string {
-  const account = accounts.find(a => a.id === accountId);
-  return account?.name || account?.address || '';
-}
-
 const NO_HANDLERS: CommandHandlerTable = {};
 const ID_SEPARATOR = '\u0000';
 
@@ -96,31 +77,35 @@ function run(action: () => void) {
   return { run: () => action() };
 }
 
-/** O, ⌘F and ↑/↓: the keys of the letter on paper; an off-paper letter registers none. */
+/**
+ * O, ⌘F and ↑/↓: the keys of the letter on paper; an off-paper letter registers none. O folds or opens the card the
+ * cursor is on when that is an earlier message; on the latest message (the cursor's home) it shows the quoted text.
+ */
 function useMessageKeys(
   paper: boolean,
   messages: readonly Message[],
   ui: ReaderUi,
   dispatch: (event: UiEvent) => void,
 ): void {
-  const earlierIds = messages.slice(0, -1).map(m => m.id);
+  const earlierKey = messages
+    .slice(0, -1)
+    .map(m => m.id)
+    .join(ID_SEPARATOR);
   const latestId = messages[messages.length - 1]?.id ?? null;
-  const walk = walkableIds(earlierIds, ui.expanded, latestId).join(ID_SEPARATOR);
-  const hasEarlier = earlierIds.length > 0;
+  const cursor = ui.cursor;
   const table = useMemo<CommandHandlerTable>(() => {
     if (!paper) return NO_HANDLERS;
-    const ids = walk ? walk.split(ID_SEPARATOR) : [];
+    const earlierIds = earlierKey ? earlierKey.split(ID_SEPARATOR) : [];
+    const ids = walkableIds(earlierIds, latestId);
     const move = (dir: 'next' | 'previous') => dispatch({ type: 'moveCursor', ids, dir });
-    const expand = () => {
-      if (hasEarlier) dispatch({ type: 'toggleExpanded' });
-    };
+    const expand = () => dispatch(expandEvent(cursor, earlierIds));
     return {
       'reader.expand': run(expand),
       'reader.find': run(() => dispatch({ type: 'openFind' })),
       'reader.nextMessage': run(() => move('next')),
       'reader.previousMessage': run(() => move('previous')),
     };
-  }, [paper, dispatch, walk, hasEarlier]);
+  }, [paper, dispatch, earlierKey, latestId, cursor]);
   useRegisterCommands(table);
 }
 
@@ -220,6 +205,14 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       me={me}
       cursor={cursor}
       expanded={ui.expanded}
+      fold={
+        m.id === latest.id
+          ? undefined
+          : {
+              open: ui.opened.includes(m.id),
+              onToggle: () => dispatch({ type: 'toggleMessage', id: m.id }),
+            }
+      }
       invite={invite?.messageId === m.id ? invite.view : undefined}
       imagesLoaded={ui.imagesLoaded.includes(m.id)}
       findQuery={props.paper ? (ui.find ?? undefined) : undefined}
@@ -227,21 +220,6 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
       onFrame={props.onFrame}
       onLoadImages={id => dispatch({ type: 'loadImages', id })}
       onKey={controls.relayKey}
-    />
-  );
-  const head = (
-    <ReaderHead
-      sender={senderInfo(latest, me, accountLabelOf(accounts, row.accountId))}
-      recipientsLabel={recipientsLabel(latest, me)}
-      due={dueOf(row)}
-      date={toIsoDateTime(latest.date)}
-      summary={summaryFor(row)}
-      suggestion={suggestionFor(row)}
-      commands={TRIAGE_COMMANDS}
-      demoted={ui.replyOpen}
-      onSuggestion={controls.suggest}
-      onLater={controls.later}
-      onDone={controls.done}
     />
   );
   return (
@@ -254,22 +232,11 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
           onClose={() => dispatch({ type: 'closeFind' })}
         />
       ) : null}
-      {head}
+      <ReaderHead due={dueOf(row)} summary={summaryFor(row)} />
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
-        {/* The messages without the reply: a layout hook for the card options (reader.css `data-cards`). */}
+        {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
-          <h2 className="aplos-reader__subject">{subjectLine(row, data.messages.length)}</h2>
-          <EarlierMessages
-            count={earlier.length}
-            participants={participantsOf(earlier, me)}
-            expanded={ui.expanded}
-            messages={earlier.map(m => collapsedOf(m, me))}
-            cursorId={ui.cursor ?? undefined}
-            commandId="reader.expand"
-            onToggle={() => dispatch({ type: 'toggleExpanded' })}
-            onOpenMessage={id => dispatch({ type: 'openMessage', id })}
-          />
-          {earlier.filter(m => ui.opened.includes(m.id)).map(m => message(m, ui.cursor === m.id))}
+          {earlier.map(m => message(m, ui.cursor === m.id))}
           {message(latest, ui.cursor === null || ui.cursor === latest.id)}
         </div>
         <ReplyArea
@@ -287,6 +254,16 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
           }
         />
       </section>
+      {props.paper ? (
+        <ReaderActions
+          suggestion={suggestionFor(row)}
+          commands={TRIAGE_COMMANDS}
+          demoted={ui.replyOpen}
+          onSuggestion={controls.suggest}
+          onLater={controls.later}
+          onDone={controls.done}
+        />
+      ) : null}
     </>
   );
 }

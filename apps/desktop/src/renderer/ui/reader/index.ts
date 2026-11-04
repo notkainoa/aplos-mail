@@ -2,6 +2,7 @@
 // error line, button, keycap and icon parts).
 export { EarlierMessages } from './EarlierMessages';
 export { LoadingLine } from './LoadingLine';
+export { ReaderActions } from './ReaderActions';
 export { ReaderHead } from './ReaderHead';
 export { ReplyStub } from './ReplyStub';
 export { Summary } from './Summary';

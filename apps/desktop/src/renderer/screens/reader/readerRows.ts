@@ -1,23 +1,11 @@
 /**
  * Thread and message rows as the reader's components want them (DESIGN 7.5): the pure mapping from a `ThreadRow`, its
- * `Message`s and the owner's addresses to the props of `ReaderHead`, `EarlierMessages` and `ThreadMessage`. Nothing here
+ * `Message`s and the owner's addresses to the props of `ReaderHead`, `ReaderActions` and `ThreadMessage`. Nothing here
  * reads the engine or draws; the screen adds the handlers.
  */
-import {
-  toIsoDateTime,
-  type Account,
-  type Address,
-  type Message,
-  type ThreadRow,
-} from '../../data';
-import type {
-  ChipProps,
-  CollapsedMessage,
-  SenderInfo,
-  SuggestedAction,
-  SummaryContent,
-} from '../../ui/props';
-import { dueOf, subjectOf, suggestionOf, summaryOf } from '../home/homeRows';
+import { type Account, type Address, type Message, type ThreadRow } from '../../data';
+import type { ChipProps, SuggestedAction, SummaryContent } from '../../ui/props';
+import { dueOf, suggestionOf, summaryOf } from '../home/homeRows';
 import type { SectionKey } from '../home/homeModel';
 import { attachmentIcon } from './attachmentIcon';
 
@@ -69,11 +57,6 @@ function orderedNames(message: Message, me: ReadonlySet<string>): string[] {
   return [...names.filter(n => n === 'you'), ...names.filter(n => n !== 'you')];
 }
 
-/** The sender line's dim phrase: "to you and Mina Cho". */
-export function recipientsLabel(message: Message, me: ReadonlySet<string>): string {
-  return `to ${joinRecipients(orderedNames(message, me))}`;
-}
-
 /** A message header's dim phrase: "to you, Mina Cho". */
 export function toLabel(message: Message, me: ReadonlySet<string>): string {
   const names = orderedNames(message, me);
@@ -86,19 +69,6 @@ export function fromName(message: Message, me: ReadonlySet<string>): string {
   return message.from ? nameOf(message.from) : 'No sender';
 }
 
-/** The sender line's name and the details hover (address, account). */
-export function senderInfo(
-  message: Message,
-  me: ReadonlySet<string>,
-  accountLabel: string,
-): SenderInfo {
-  return {
-    name: fromName(message, me),
-    address: message.from?.address ?? '',
-    accountLabel,
-  };
-}
-
 /** The first name in "Reply to Jordan…": the sender, or whom the owner last wrote to; never empty. */
 export function replyName(message: Message, me: ReadonlySet<string>): string {
   const other = message.fromMe
@@ -107,28 +77,29 @@ export function replyName(message: Message, me: ReadonlySet<string>): string {
   return other ? firstNameOf(nameOf(other)) : 'sender';
 }
 
-/** One earlier message as a one-liner. */
-export function collapsedOf(message: Message, me: ReadonlySet<string>): CollapsedMessage {
-  return {
-    id: message.id,
-    from: fromName(message, me),
-    preview: message.snippet.trim(),
-    date: toIsoDateTime(message.date),
-  };
-}
+/** The excerpt a folded card shows: at most this many characters before it is cut at a word. */
+const EXCERPT_LIMIT = 150;
 
-/** First names in thread order, "you" for the owner, once each. */
-export function participantsOf(
-  messages: readonly Message[],
-  me: ReadonlySet<string>,
-): readonly string[] {
-  const names: string[] = [];
-  for (const message of messages) {
-    const name = fromName(message, me);
-    const short = name === 'You' ? 'you' : firstNameOf(name);
-    if (!names.includes(short)) names.push(short);
+/** Where a sentence ends: terminal punctuation (with any closing quote) followed by a space. */
+const SENTENCE_END = /[.!?]["')\]]*(?=\s|$)/g;
+
+/**
+ * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message,
+ * whitespace collapsed, cut at a word when it runs long, and always ending in "…". Taken from the message's own
+ * snippet, so a folded card never loads its body.
+ */
+export function excerptOf(message: Pick<Message, 'snippet'>): string {
+  const text = message.snippet.replace(/\s+/g, ' ').trim();
+  const ends = [...text.matchAll(SENTENCE_END)].map(m => (m.index ?? 0) + m[0].length);
+  let end = ends[0] ?? text.length;
+  const second = ends[1];
+  if (second !== undefined && second <= EXCERPT_LIMIT) end = second;
+  let excerpt = text.slice(0, end);
+  if (excerpt.length > EXCERPT_LIMIT) {
+    const room = excerpt.slice(0, EXCERPT_LIMIT);
+    excerpt = room.slice(0, Math.max(room.lastIndexOf(' '), 1));
   }
-  return names;
+  return `${excerpt.replace(/[\s.…,;:]+$/u, '')}…`;
 }
 
 /** The section DESIGN 7.2 would file the thread under, for its suggestion (Home's rule). */
@@ -145,12 +116,6 @@ export function summaryFor(row: ThreadRow): SummaryContent {
 /** The filled suggestion. */
 export function suggestionFor(row: ThreadRow): SuggestedAction {
   return suggestionOf(row, sectionOf(row));
-}
-
-/** The dim line above the thread: "A quieter home for the site · 4 messages". */
-export function subjectLine(row: ThreadRow, count: number): string {
-  const noun = count === 1 ? 'message' : 'messages';
-  return `${subjectOf(row)} · ${count} ${noun}`;
 }
 
 /**

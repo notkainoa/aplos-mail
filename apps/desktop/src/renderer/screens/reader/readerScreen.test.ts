@@ -26,7 +26,7 @@ import { takeFocus } from './FindBar';
 import { commandsForReader } from './readerCommands';
 import { ReaderLetter, GONE_COPY } from './ReaderLetter';
 import { ReaderScreen, NO_THREAD_COPY } from './ReaderScreen';
-import { PLAIN_REPLY, freshUi, reduceUi, type ReplyRequest } from './readerUi';
+import { PLAIN_REPLY, freshUi, reduceUi, type ReaderUi, type ReplyRequest } from './readerUi';
 
 const NO_CONTROLS = {
   suggest: () => undefined,
@@ -45,8 +45,33 @@ async function settle(flush: () => void) {
   }
 }
 
-async function boot() {
+/** Two earlier messages (a day apart) in front of a demo thread's one message, for the compact cards. */
+function seedEarlier(engine: ReturnType<typeof createFixtureEngine>, threadId: string): void {
+  const fx = engine.fixture;
+  const last = fx.store.get('Message', `${threadId}.m1`);
+  if (!last) return;
+  const bodies = [
+    'Kicking off: here is the brief we agreed on Friday. Please read it before Monday and tell me what is missing from it.',
+    'Thanks, that helps. Two things to keep in mind before we start.',
+  ];
+  bodies.forEach((body, index) => {
+    fx.write({ kind: 'Fixture/control' }, tx => {
+      tx.put('Message', {
+        ...last,
+        id: `${threadId}.e${index + 1}`,
+        rev: 0,
+        snippet: body,
+        date: last.date - (bodies.length - index) * 86_400_000,
+        seen: true,
+        attachments: [],
+      });
+    });
+  });
+}
+
+async function boot(seed?: string) {
   const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
+  if (seed) seedEarlier(engine, seed);
   const scheduler = createManualScheduler();
   const connection = connectDataLayer({
     session: engine.connect(),
@@ -127,36 +152,55 @@ function depsOver(world: World, start: string, readyOnGo = true) {
   return { deps, state, controller };
 }
 
-test('the letter shows its four parts in order inside one column, with no margin rail', async () => {
+const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
+  renderToStaticMarkup(
+    createElement(ReaderLetter, {
+      threadId: id,
+      paper,
+      ui: { ...freshUi(id), ...over },
+      dispatch: () => undefined,
+      controls: NO_CONTROLS,
+      onReady: () => undefined,
+    }),
+  );
+
+test('the letter shows its parts in order inside one column: summary, thread, stub, then the pinned bar; no sender line on top', async () => {
   const world = await boot();
   try {
     const id = world.doIds()[0]!;
     await world.threadWindow(id);
-    const html = renderToStaticMarkup(
-      createElement(ReaderLetter, {
-        threadId: id,
-        paper: true,
-        ui: freshUi(id),
-        dispatch: () => undefined,
-        controls: NO_CONTROLS,
-        onReady: () => undefined,
-      }),
-    );
+    const html = renderLetter(id);
     const parts = [
-      'ui-reader-head__from',
       'ui-reader-head__summary',
-      'ui-reader-head__actions',
+      'ui-reader-head__rule',
       'aplos-reader__thread',
+      'ui-thread-message__head',
       'ui-reply-stub',
+      'ui-reader-actions',
     ].map(part => html.indexOf(part));
     assert.ok(
       parts.every(p => p >= 0),
-      `all five present: ${parts}`,
+      `all present: ${parts}`,
     );
     assert.deepEqual(
       [...parts].sort((a, b) => a - b),
       parts,
-      'sender, summary, actions, thread, stub',
+      'summary, hairline, thread, stub, actions',
+    );
+    assert.doesNotMatch(
+      html.slice(0, html.indexOf('aplos-reader__thread')),
+      /ui-reader-head__(from|name|to|when)|<time/,
+      'no sender or time above the thread: they live in the message cards',
+    );
+    assert.doesNotMatch(
+      html,
+      /aplos-reader__subject|[0-9] messages?<\/h2>/,
+      'no subject and count line',
+    );
+    assert.equal(
+      html.match(/class="ui-reader-actions"/g)?.length,
+      1,
+      'the action bar is there once',
     );
     assert.match(html, /data-paper="true"/);
     assert.doesNotMatch(html, /margin-rail|ui-rail|inert/);
@@ -170,6 +214,49 @@ test('the letter shows its four parts in order inside one column, with no margin
     assert.match(text(html), /Later/);
     assert.match(text(html), /Done|Reply/);
     assert.match(text(html), /Reply to \w+…/);
+    assert.doesNotMatch(
+      renderLetter(id, {}, false),
+      /ui-reader-actions/,
+      'an off-paper letter draws no bar, so there is never a second one',
+    );
+    assert.match(
+      renderLetter(id, { replyOpen: true }),
+      /ui-reader-actions" data-demoted="true"/,
+      'while the reply is open the bar rests under it',
+    );
+  } finally {
+    world.connection.close();
+  }
+});
+
+const EARLIER_THREAD = 'demo-work:design';
+
+test('earlier messages are compact cards: head and an excerpt ending in an ellipsis; a click or O opens one, aria-expanded says so', async () => {
+  const world = await boot(EARLIER_THREAD);
+  try {
+    const id = EARLIER_THREAD;
+    await world.threadWindow(id);
+    const ids = [...renderLetter(id).matchAll(/<article id="([^"]+)"/g)].map(m => m[1]!);
+    assert.equal(ids.length, 3, 'two earlier messages and the latest');
+    const compact = renderLetter(id);
+    const first = ids[0]!;
+    const card = (html: string, mid: string) =>
+      html.slice(html.indexOf(`<article id="${mid}"`)).split('</article>')[0]!;
+    assert.match(card(compact, first), /data-fold="folded"/);
+    assert.match(card(compact, first), /class="ui-thread-message__toggle" aria-expanded="false"/);
+    assert.match(card(compact, first), /ui-thread-message__excerpt" dir="auto">[^<]+…</);
+    assert.doesNotMatch(card(compact, first), /ui-thread-message__body|<iframe/);
+    assert.doesNotMatch(
+      card(compact, ids.at(-1)!),
+      /data-fold|ui-thread-message__toggle/,
+      'the latest is always open',
+    );
+    const opened = renderLetter(id, { opened: [first], cursor: first });
+    assert.match(card(opened, first), /data-fold="open"/);
+    assert.match(card(opened, first), /aria-expanded="true"/);
+    assert.doesNotMatch(card(opened, first), /ui-thread-message__excerpt/);
+    assert.match(card(opened, first), /ui-thread-message__body/);
+    assert.match(card(opened, first), /data-cursor="true"/);
   } finally {
     world.connection.close();
   }
@@ -574,22 +661,12 @@ test('find is a bar above the thread that carries its query, only on the letter 
   try {
     const id = world.doIds()[0]!;
     await world.threadWindow(id);
-    const render = (paper: boolean, find: string | null) =>
-      renderToStaticMarkup(
-        createElement(ReaderLetter, {
-          threadId: id,
-          paper,
-          ui: { ...freshUi(id), find },
-          dispatch: () => undefined,
-          controls: NO_CONTROLS,
-          onReady: () => undefined,
-        }),
-      );
+    const render = (paper: boolean, find: string | null) => renderLetter(id, { find }, paper);
     const open = render(true, 'invoice');
     assert.match(open, /aplos-reader__find/);
     assert.match(open, /value="invoice"/);
     assert.ok(
-      open.indexOf('aplos-reader__find') < open.indexOf('ui-reader-head__from'),
+      open.indexOf('aplos-reader__find') < open.indexOf('ui-reader-head__summary'),
       'above the letter',
     );
     assert.doesNotMatch(render(true, null), /aplos-reader__find/);

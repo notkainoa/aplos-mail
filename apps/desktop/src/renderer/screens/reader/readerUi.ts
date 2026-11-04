@@ -1,6 +1,6 @@
 /**
- * The state of the letter on paper that the keys and buttons change (DESIGN 7.5): earlier messages expanded or not,
- * the earlier messages opened one by one, the ↑/↓ message cursor, the remote images chosen for this reading, and
+ * The state of the letter on paper that the keys and buttons change (DESIGN 7.5): quoted text shown or not, the
+ * earlier messages (compact cards) opened one by one, the ↑/↓ message cursor, the remote images chosen for this reading, and
  * find. It belongs to one thread: a different thread starts from `freshUi`. Pure, so the keys can be tested.
  */
 import type { CursorDirection } from './model/threadCursor';
@@ -22,9 +22,9 @@ export const PLAIN_REPLY: ReplyRequest = { replyAll: false, dictate: false };
 /** The letter's interface state. */
 export interface ReaderUi {
   readonly threadId: string | null;
-  /** O has expanded the earlier messages into one-liners. */
+  /** O (with the cursor on the latest message) shows the quoted text. */
   readonly expanded: boolean;
-  /** Earlier messages opened to full messages. */
+  /** Earlier messages opened from their compact card to the full message (a click, or O on the focused card). */
   readonly opened: readonly string[];
   /** The message the ↑/↓ rail is on; null until a key moves it (the latest message holds it). */
   readonly cursor: string | null;
@@ -58,7 +58,7 @@ export function freshUi(threadId: string | null): ReaderUi {
 /** What can change it. */
 export type UiEvent =
   | { readonly type: 'toggleExpanded' }
-  | { readonly type: 'openMessage'; readonly id: string }
+  | { readonly type: 'toggleMessage'; readonly id: string }
   | { readonly type: 'moveCursor'; readonly ids: readonly string[]; readonly dir: CursorDirection }
   | { readonly type: 'loadImages'; readonly id: string }
   | { readonly type: 'openFind' }
@@ -72,15 +72,23 @@ function withId(list: readonly string[], id: string): readonly string[] {
   return list.includes(id) ? list : [...list, id];
 }
 
+function toggled(list: readonly string[], id: string): readonly string[] {
+  return list.includes(id) ? list.filter(other => other !== id) : [...list, id];
+}
+
 /** One event. */
 export function reduceUi(state: ReaderUi, event: UiEvent): ReaderUi {
   switch (event.type) {
     case 'toggleExpanded':
       return { ...state, expanded: !state.expanded };
-    case 'openMessage':
-      return { ...state, opened: withId(state.opened, event.id), cursor: event.id };
+    case 'toggleMessage':
+      return { ...state, opened: toggled(state.opened, event.id), cursor: event.id };
     case 'moveCursor':
-      return { ...state, cursor: stepMessage(event.ids, state.cursor, event.dir) };
+      // No cursor yet means the latest message holds it, which is the last id the keys walk.
+      return {
+        ...state,
+        cursor: stepMessage(event.ids, state.cursor ?? event.ids.at(-1) ?? null, event.dir),
+      };
     case 'loadImages':
       return { ...state, imagesLoaded: withId(state.imagesLoaded, event.id) };
     case 'openFind':
@@ -98,15 +106,22 @@ export function reduceUi(state: ReaderUi, event: UiEvent): ReaderUi {
   }
 }
 
-/** The ids ↑/↓ walks: the earlier messages while they are expanded, then the latest. */
+/** The ids ↑/↓ walks: every message, oldest first (the earlier ones are compact cards, the latest is open). */
 export function walkableIds(
   earlierIds: readonly string[],
-  expanded: boolean,
   latestId: string | null,
 ): readonly string[] {
-  const ids = expanded ? [...earlierIds] : [];
-  if (latestId !== null) ids.push(latestId);
-  return ids;
+  return latestId === null ? [...earlierIds] : [...earlierIds, latestId];
+}
+
+/**
+ * What O does: on an earlier message's compact card it opens or folds that card; on the latest message (where the
+ * cursor starts) it shows or hides the quoted text.
+ */
+export function expandEvent(cursor: string | null, earlierIds: readonly string[]): UiEvent {
+  return cursor !== null && earlierIds.includes(cursor)
+    ? { type: 'toggleMessage', id: cursor }
+    : { type: 'toggleExpanded' };
 }
 
 /** An event for one thread's state: a state for any other thread starts afresh first. */
