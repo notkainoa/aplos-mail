@@ -36,6 +36,7 @@ import {
   type MetaPatch,
 } from './draft-state';
 import type { DraftWrite } from './draft-writes';
+import { blobIdsOf, loadBlobs } from './blob-read';
 import { attachmentsOf, domainOf, replyHeaders, senderOf } from './submissions';
 import { buildMime, checkAddress, MimeError, newMessageId, type MimeAddress } from './mime';
 
@@ -192,12 +193,16 @@ interface DraftCopy {
  * `drafts.send`) would put the header on the wire for every recipient to read, so a draft with Bcc recipients leaves as
  * the pinned MIME with the envelope instead (`prepareSend` gives it a Message-ID of its own).
  */
-function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internetId: string) {
+function draftMime(
+  ctx: DraftsCtx,
+  row: UploadRow,
+  fields: DraftFields,
+  internetId: string,
+  bytes: ReadonlyMap<string, Uint8Array>,
+) {
   const reply = ctx.store.read(q => replyHeaders(q, row, fields));
   // A draft copy keeps the attachments it can read; one whose bytes are gone stays listed in the local draft.
-  const readable = fields.attachments.filter(
-    a => a.blobId !== undefined && ctx.blobs?.get(a.blobId),
-  );
+  const readable = fields.attachments.filter(a => a.blobId !== undefined && bytes.has(a.blobId));
   const mime = buildMime({
     from: senderOf(row, fields),
     to: writable(fields.to),
@@ -207,10 +212,25 @@ function draftMime(ctx: DraftsCtx, row: UploadRow, fields: DraftFields, internet
     messageId: internetId,
     date: row.updated_at,
     ...reply,
-    attachments: attachmentsOf(ctx, { ...fields, attachments: readable }),
+    attachments: attachmentsOf(bytes, { ...fields, attachments: readable }),
     randomBytes: ctx.random,
   });
   return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
+}
+
+/**
+ * The draft's attachment bytes, read before anything is built (none read: no await). `undefined` when the draft row
+ * changed during the read, or a send now pins it: this upload is dropped and the deadline source runs the draft again
+ * from its new row, so the MIME, revision and fingerprint of an upload always come from the one read the bytes were
+ * loaded for.
+ */
+async function bytesFor(ctx: DraftsCtx, row: UploadRow, fields: DraftFields) {
+  const ids = blobIdsOf(fields);
+  if (!ids.length) return new Map<string, Uint8Array>();
+  const bytes = await loadBlobs(ctx.blobs, ids);
+  const now = readUploadRow(ctx, row.id);
+  const same = now?.revision === row.revision && now.data === row.data;
+  return same && withoutLiveSend(ctx, [row.id]).size ? bytes : undefined;
 }
 
 /** The fingerprint of the content an upload of this draft sends. */
@@ -365,9 +385,22 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
     meta.uploading?.revision === row.revision
       ? meta.uploading.internetId
       : newMessageId(ctx.random, domainOf(row.address));
+  let bytes: Map<string, Uint8Array> | undefined;
+  try {
+    bytes = await bytesFor(ctx, row, fields);
+  } catch {
+    // The bytes could not be read this time: ask again later, never a lasting problem on the draft.
+    return void setMeta(
+      ctx,
+      id,
+      { dueAt: ctx.clock.now() + DRAFT_RETRY_MS },
+      { ifRevision: row.revision },
+    );
+  }
+  if (!bytes) return;
   let copy: DraftCopy;
   try {
-    copy = draftMime(ctx, row, fields, internetId);
+    copy = draftMime(ctx, row, fields, internetId, bytes);
   } catch (error) {
     const known = error instanceof MimeError || error instanceof ContractError;
     return problemFor(ctx, row, known ? error.message : PROBLEM_COPY);

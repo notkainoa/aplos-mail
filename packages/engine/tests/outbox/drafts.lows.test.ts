@@ -94,7 +94,7 @@ test('an early row whose send is done is not "the same copy" as the upload that 
     // The owner sends that row. Its hidden-row clean-up is held up, so the row is `sent` but not yet removing.
     for (let i = 0; i < 20; i++)
       w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
-    w.send(w.first, REMOTE, { revision: read(w, REMOTE).revision });
+    await w.send(w.first, REMOTE, { revision: read(w, REMOTE).revision });
     await wait(w, 15 * SEC);
     const states = w.first.store.read(q =>
       q.all<{ state: string }>('SELECT state FROM submissions WHERE draft_id = ?', REMOTE),
@@ -242,7 +242,7 @@ test('a late-found parent is not added while a send of the phone reply is queued
   world(async w => {
     phoneReply(w, 'pm-1');
     assert.equal(read(w, REPLY).mode, 'new', 'the parent is not stored yet');
-    const sub = w.send(w.first, REPLY, { revision: read(w, REPLY).revision });
+    const sub = await w.send(w.first, REPLY, { revision: read(w, REPLY).revision });
     const queued = read(w, REPLY).revision;
     // The parent syncs and history reports the same version again while the send waits.
     parent(w, 'orig-1', 't-1');

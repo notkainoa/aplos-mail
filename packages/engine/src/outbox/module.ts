@@ -43,7 +43,8 @@ export interface OutboxPending {
 /** What the `submission` and `outbox` handlers call (`EngineServices.outbox`). */
 export interface OutboxService {
   get(ids: readonly string[]): { state: State; list: Submission[]; notFound: string[] };
-  set(opId: string, action: SubmissionAction): SetResult;
+  /** Resolves at once for every action but a send of a draft whose attachment bytes must be read first. */
+  set(opId: string, action: SubmissionAction): Promise<SetResult>;
   pending(): OutboxPending;
 }
 
@@ -183,7 +184,7 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
       return { state, ...getSubmissions(ctx, ids) };
     },
-    set: (opId, action) => {
+    set: async (opId, action) => {
       // No send port was given (the real engine path before sending is wired): a queued message would lock its draft for
       // minutes and then never leave, so a new send is refused up front.
       if (action.type === 'send' && isAbsent(deps.send))
