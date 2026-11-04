@@ -358,15 +358,21 @@ describe('viewport units', () => {
       ['a{height:calc(100vh*2 + 10vw)}', 'a{height:calc(600px*2 + 64px)}'],
       ['a{height:min(100vh,max(50vh,10vw))}', 'a{height:min(600px,max(300px,64px))}'],
       ['a{--h:100vh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
-      ['@media (min-height:100vh){a{b:c}}', '@media (min-height:600px){a{b:c}}'],
+      ['@media (min-height:100vh){a{b:c}}', '@media (--m-min-height:600px){a{b:c}}'],
       ['a{height:100vh!important}', 'a{height:600px!important}'],
+      ['a{height:calc(1px+100vh)}', 'a{height:calc(1px+600px)}'],
+      ['a{height:calc(1px+100cqh)}', 'a{height:calc(1px+600px)}'],
+      ['a{top:+5vmin;left:-5vmax;width:+.5vw}', 'a{top:+30px;left:-32px;width:+3.2px}'],
+      ['a{height:calc(+10vh)}', 'a{height:calc(+60px)}'],
+      ['a{height:calc(100vh/2 - 5vw*2)}', 'a{height:calc(600px/2 - 32px*2)}'],
+      ['a{height:calc(-1*10vh)}', 'a{height:calc(-1*60px)}'],
       ['a{height:100cqh;width:100cqw}', 'a{height:600px;width:640px}'],
       ['a{height:10cqb;width:10cqi}', 'a{height:60px;width:64px}'],
       ['a{height:10cqmin;width:10cqmax}', 'a{height:60px;width:64px}'],
       ['a{min-height:100CQB;height:100\\63 qh}', 'a{min-height:600px;height:600px}'],
       ['a{height:calc(100cqh - 1cqw)}', 'a{height:calc(600px - 6.4px)}'],
       ['a{--h:100cqh;height:var(--h)}', 'a{--h:600px;height:var(--h)}'],
-      ['@container (min-height:100cqh){a{b:c}}', '@container (min-height:600px){a{b:c}}'],
+      ['@container (min-height:100cqh){a{b:c}}', '@container (--m-min-height:600px){a{b:c}}'],
     ];
     for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
   });
@@ -406,5 +412,186 @@ describe('viewport units', () => {
     assert.equal(viewportLength(100, 'px'), undefined);
     assert.equal(viewportLength(100, 'vhh'), undefined);
     assert.equal(viewportLength(100, 'xvh'), undefined);
+  });
+});
+
+describe('@layer names', () => {
+  it('moves every layer name into the m- namespace, so no mail layer is the reading layer', () => {
+    const cases: [string, string][] = [
+      ['@layer aplos-reading{a{b:c}}', '@layer m-aplos-reading{a{b:c}}'],
+      ['@layer \\61 plos-reading{a{b:c}}', '@layer m-aplos-reading{a{b:c}}'],
+      ['@layer APLOS-reading{a{b:c}}', '@layer m-APLOS-reading{a{b:c}}'],
+      ['@LAYER aplos-reading.x.y{a{b:c}}', '@LAYER m-aplos-reading.m-x.m-y{a{b:c}}'],
+      ['@layer a,aplos-reading ,b;', '@layer m-a,m-aplos-reading ,m-b;'],
+      ['@layer/**/aplos-reading/**/{a{b:c}}', '@layer/**/m-aplos-reading/**/{a{b:c}}'],
+      ['@layer{a{b:c}}', '@layer{a{b:c}}'],
+      ['@media x{@layer aplos-reading{a{b:c}}}', '@media x{@layer m-aplos-reading{a{b:c}}}'],
+      ['@layer m-x{a{b:c}}', '@layer m-x{a{b:c}}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+
+  it('leaves identifiers after the prelude alone', () => {
+    assert.equal(clean('@layer x{aplos-reading{b:c}}').css, '@layer m-x{aplos-reading{b:c}}');
+    assert.equal(clean('@layer x;a{b:aplos-reading}').css, '@layer m-x;a{b:aplos-reading}');
+  });
+
+  it('is idempotent on its own output', () => {
+    const once = sanitizeCss(
+      '@layer a.b,c;@layer a{x{y:z}}',
+      new ImageBook({ cids: [], policy: 'block' }),
+    );
+    const twice = sanitizeCss(once, new ImageBook({ cids: [], policy: 'block', ownOutput: true }));
+    assert.equal(twice, once);
+  });
+});
+
+describe('height-following media features and writing modes', () => {
+  it('makes a height, shape or orientation feature in @media and @container an unknown name', () => {
+    const cases: [string, string][] = [
+      ['@media (max-height:300px){a{b:c}}', '@media (--m-max-height:300px){a{b:c}}'],
+      ['@MEDIA (MIN-HEIGHT:1px){a{b:c}}', '@MEDIA (--m-min-height:1px){a{b:c}}'],
+      [
+        '@media screen and (min-height:1px) and (orientation:landscape),print{a{b:c}}',
+        '@media screen and (--m-min-height:1px) and (--m-orientation:landscape),print{a{b:c}}',
+      ],
+      ['@media (height >= 300px){a{b:c}}', '@media (--m-height >= 300px){a{b:c}}'],
+      ['@media (300px<height<600px){a{b:c}}', '@media (300px<--m-height<600px){a{b:c}}'],
+      ['@media (min-\\68 eight:1px){a{b:c}}', '@media (--m-min-height:1px){a{b:c}}'],
+      ['@media (aspect-ratio:1/1){a{b:c}}', '@media (--m-aspect-ratio:1/1){a{b:c}}'],
+      ['@media (max-device-height:9px){a{b:c}}', '@media (--m-max-device-height:9px){a{b:c}}'],
+      [
+        '@media not (device-aspect-ratio:4/3){a{b:c}}',
+        '@media not (--m-device-aspect-ratio:4/3){a{b:c}}',
+      ],
+      ['@container card (min-height:5px){a{b:c}}', '@container card (--m-min-height:5px){a{b:c}}'],
+      ['@container (block-size > 5px){a{b:c}}', '@container (--m-block-size > 5px){a{b:c}}'],
+      [
+        '@media x{@media (orientation:portrait){a{b:c}}}',
+        '@media x{@media (--m-orientation:portrait){a{b:c}}}',
+      ],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+  });
+
+  it('leaves width features, other at-rules and every declaration alone', () => {
+    const same = [
+      '@media (min-width:300px) and (max-width:100px){a{height:1px}}',
+      '@media (min-resolution:2dppx),(prefers-color-scheme:dark){a{b:c}}',
+      '@media screen{a{min-height:1px;orientation:x;height:2px}}',
+      '@supports (height:1px){a{b:c}}',
+      '@container (min-width:5px){a{height:1px}}',
+      'a{height:1px;max-height:2px;aspect-ratio:1/2}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('turns writing-mode into a custom property name, in any spelling, before a colon only', () => {
+    const cases: [string, string][] = [
+      ['a{writing-mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
+      ['a{-webkit-writing-mode:vertical-lr}', 'a{--m--webkit-writing-mode:vertical-lr}'],
+      ['a{-epub-writing-mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
+      ['a{-EPUB-Writing-Mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
+      [
+        'a{-moz-writing-mode:vertical-rl;x-writing-mode:y}',
+        'a{--m--moz-writing-mode:vertical-rl;--m-x-writing-mode:y}',
+      ],
+      ['a{\\2d epub-writing-mode:vertical-rl}', 'a{--m--epub-writing-mode:vertical-rl}'],
+      ['a{WRITING-MODE : vertical-rl !important}', 'a{--m-writing-mode : vertical-rl !important}'],
+      ['a{writing\\2d mode:vertical-rl}', 'a{--m-writing-mode:vertical-rl}'],
+      ['a{writing-mode/**/:vertical-rl}', 'a{--m-writing-mode/**/:vertical-rl}'],
+      ['html{writing-mode:horizontal-tb}', 'html{--m-writing-mode:horizontal-tb}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    const same = [
+      'a{transition-property:writing-mode}',
+      'a{writing-mode}',
+      'a{will-change:writing-mode,height}',
+      'a{b:writing-mode}',
+      'a{--writing-mode:vertical-rl}',
+      'a{text-orientation:upright;text-combine-upright:all}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('rewrites a style attribute too', () => {
+    const images = new ImageBook({ cids: [], policy: 'block' });
+    assert.equal(
+      sanitizeCss('writing-mode:vertical-rl;color:red', images),
+      '--m-writing-mode:vertical-rl;color:red',
+    );
+  });
+});
+
+describe('@layer prelude ends', () => {
+  it('ends a prelude at a closing brace too, so the next rule is not renamed', () => {
+    assert.equal(clean('@media x{@layer a} .foo{b:c}').css, '@media x{@layer m-a} .foo{b:c}');
+    assert.equal(clean('@media x{@layer a.b}.foo{b:c}').css, '@media x{@layer m-a.m-b}.foo{b:c}');
+  });
+});
+
+describe('functions and properties that follow the frame', () => {
+  it('drops if(), scroll() and view() wherever they stand, so the declaration is ignored', () => {
+    const cases: [string, string][] = [
+      ['a{height:if(media(max-height:300px):532px;else:132px)}', 'a{height:""}'],
+      ['a{height:IF(media(orientation:landscape):1px;else:2px)}', 'a{height:""}'],
+      ['a{height:\\69 f(media(height > 3px):1px;else:2px)}', 'a{height:""}'],
+      [
+        'a{padding:calc(1px + if(media(min-aspect-ratio:1/1):9px;else:0px))}',
+        'a{padding:calc(1px + "")}',
+      ],
+      ['a{margin:var(--x,if(media(max-height:1px):1px;else:2px))}', 'a{margin:var(--x,"")}'],
+      ['a{animation-timeline:scroll(root)}', 'a{--m-animation-timeline:""}'],
+      ['a{b:view(block 10px 20px)}', 'a{b:""}'],
+      ['a{b:if(supports(display:grid):1px;else:2px)}', 'a{b:""}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    // A word that is not a function call is left alone.
+    for (const input of [
+      'a{b:if}',
+      'a{b:scroll;view:1}',
+      'a{scroll-behavior:smooth;overflow:scroll}',
+    ]) {
+      assert.equal(clean(input).css, input, input);
+    }
+  });
+
+  it('turns the scroll-driven animation properties into custom properties', () => {
+    const cases: [string, string][] = [
+      ['a{animation-timeline:view()}', 'a{--m-animation-timeline:""}'],
+      ['a{animation-range:entry 10% exit 90%}', 'a{--m-animation-range:entry 10% exit 90%}'],
+      [
+        'a{animation-range-start:10%;animation-range-end:90%}',
+        'a{--m-animation-range-start:10%;--m-animation-range-end:90%}',
+      ],
+      [
+        'a{scroll-timeline-name:--t;scroll-timeline-axis:y;scroll-timeline:--t y}',
+        'a{--m-scroll-timeline-name:--t;--m-scroll-timeline-axis:y;--m-scroll-timeline:--t y}',
+      ],
+      [
+        'a{view-timeline:--v;view-timeline-inset:1px;view-timeline-name:--v}',
+        'a{--m-view-timeline:--v;--m-view-timeline-inset:1px;--m-view-timeline-name:--v}',
+      ],
+      ['a{timeline-scope:--t}', 'a{--m-timeline-scope:--t}'],
+      ['a{-webkit-animation-timeline:x}', 'a{--m--webkit-animation-timeline:x}'],
+      ['a{ANIMATION-TIMELINE :x}', 'a{--m-animation-timeline :x}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
+    // Ordinary animations and transitions are untouched.
+    const same = [
+      'a{animation:spin 1s linear infinite;animation-name:x;animation-delay:1s}',
+      'a{transition:height 1s}',
+    ];
+    for (const input of same) assert.equal(clean(input).css, input, input);
+  });
+
+  it('renames the logical and aspect features in container and media queries', () => {
+    const cases: [string, string][] = [
+      ['@container (min-block-size:5px){a{b:c}}', '@container (--m-min-block-size:5px){a{b:c}}'],
+      ['@container (max-block-size:5px){a{b:c}}', '@container (--m-max-block-size:5px){a{b:c}}'],
+      ['@media (max-aspect-ratio:1/1){a{b:c}}', '@media (--m-max-aspect-ratio:1/1){a{b:c}}'],
+      ['@media (min-aspect-ratio:1/1){a{b:c}}', '@media (--m-min-aspect-ratio:1/1){a{b:c}}'],
+    ];
+    for (const [input, expected] of cases) assert.equal(clean(input).css, expected, input);
   });
 });

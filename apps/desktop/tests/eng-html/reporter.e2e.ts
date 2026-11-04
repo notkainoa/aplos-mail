@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { loadCorpus } from '../../../../packages/mail-html/corpus/index';
-import { withReporter } from '../../../../packages/mail-html/src/frame/reporter';
+import { REPORTER_SOURCE, withReporter } from '../../../../packages/mail-html/src/frame/reporter';
 import { render } from '../../../../packages/mail-html/src/index';
-import { launchBed, FOLLOW_CAP, type Bed, type Opened } from './support/reporter-bed';
+import { launchBed, type Bed, type Opened } from './support/reporter-bed';
 
 // THE FRAME REPORTER IN REAL CHROMIUM (ui-core REQUEST, html-5 slice 2). The real reporter, the real sanitizer and
 // the engine's real headers, in a sandboxed iframe in a hidden Electron, with a host page that follows the reported
@@ -358,7 +358,8 @@ test.describe('viewport units cannot grow the frame', () => {
         headers: 'none',
       });
       await opened.page.waitForTimeout(5_000);
-      expect(await opened.capped(), unit).toBe(true);
+      // Growing 32 px a report at up to 20 reports a second, 5 s is a frame of thousands of px.
+      expect((await opened.capped()) || (await opened.frameHeight()) > 2_000, unit).toBe(true);
       await opened.page.close();
     }
   });
@@ -371,14 +372,453 @@ test.describe('viewport units cannot grow the frame', () => {
     await opened.page.close();
   });
 
+  test('a zoomed body cannot inflate the reported height either', async () => {
+    const html = '<style>body{zoom:1000}</style><p>short</p>';
+    const opened = await bed.open({ document: frameDocument(html), height: 2000, follow: false });
+    expect((await last(opened)).h).toBeLessThan(120);
+    await opened.page.close();
+  });
+
   test('control: an unsanitized 100vh block grows without end', async () => {
     const opened = await bed.open({
       document: rawDocument('<div style="height:100vh;padding:16px">x</div>', 'real'),
       headers: 'none',
     });
     await opened.page.waitForTimeout(5_000);
-    expect(await opened.capped()).toBe(true);
-    expect((await opened.reports()).length).toBeGreaterThanOrEqual(FOLLOW_CAP);
+    expect((await opened.capped()) || (await opened.frameHeight()) > 2_000).toBe(true);
+    await opened.page.close();
+  });
+});
+
+test.describe('the reading rules cannot be overridden by the mail', () => {
+  /** The root and body reading rules before the layer: unlayered, without position, inset or writing mode. */
+  const BEFORE =
+    'html:root{display:flow-root!important;height:auto!important;min-height:0!important;max-height:none!important;transform:none!important;scale:none!important;rotate:none!important;translate:none!important;zoom:1!important}' +
+    'html:root>body{height:auto!important;min-height:0!important;max-height:none!important}';
+
+  function withoutLayer(document: string): string {
+    const layer = /@layer aplos-reading\{.*?\}\}/;
+    expect(layer.test(document), 'the reading layer is in the document').toBe(true);
+    return document.replace(layer, () => BEFORE);
+  }
+
+  /** Grown, or still moving after many reports: the signs of a frame that follows its letter. */
+  async function runsAway(opened: Opened): Promise<boolean> {
+    return (
+      (await opened.capped()) ||
+      (await opened.frameHeight()) > 2_000 ||
+      (await opened.reports()).length >= 25
+    );
+  }
+
+  const vectors = [
+    ['141', 'html positioned with a negative bottom, with and without !important'],
+    ['142', 'body positioned with a negative bottom, with and without !important'],
+    ['144', 'layered !important rules (named, ordered, anonymous)'],
+    ['146', 'mail layers named like the reading layer'],
+  ] as const;
+
+  for (const [id, title] of vectors) {
+    test(`${id}: ${title}: the frame settles`, async () => {
+      const opened = await bed.open({ document: frameDocument(entry(id).html ?? '') });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      const final = reports[reports.length - 1].h;
+      expect(final).toBeGreaterThan(0);
+      expect(final).toBeLessThan(400);
+      expect(await opened.frameHeight()).toBe(final);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: with the reading rules as they were, the frame grows without end`, async () => {
+      const opened = await bed.open({
+        document: withoutLayer(frameDocument(entry(id).html ?? '')),
+      });
+      await opened.page.waitForTimeout(5_000);
+      // Growing 50 px a report, a frame of a few thousand px in 5 s is not a letter of 100 px.
+      expect(await runsAway(opened)).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  test('143: a sideways root is sized by its content, so a tall frame shrinks to the letter', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('143').html ?? ''),
+      height: 1_500,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeLessThan(400);
+    await opened.page.close();
+  });
+
+  test('control 143: with the root scroll height, a sideways root reports the frame', async () => {
+    const opened = await bed.open({
+      ...rootScrollOnly(withoutLayer(frameDocument(entry('143').html ?? ''))),
+      height: 1_500,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeGreaterThanOrEqual(1_500);
+    await opened.page.close();
+  });
+
+  test('the usual inline body style (colour, margin, padding) still shows', async () => {
+    const html = '<body style="margin:0;padding:0;background-color:#336699"><p>x</p></body>';
+    const opened = await bed.open({ document: frameDocument(html) });
+    const report = await last(opened);
+    expect(report.bg).toBe('rgb(51, 102, 153)');
+    expect(report.h).toBeLessThan(80);
+    await opened.page.close();
+  });
+
+  test('an empty letter still has a size', async () => {
+    const opened = await bed.open({
+      document: frameDocument('<body style="margin:0;padding:0"></body>'),
+      height: 300,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeGreaterThanOrEqual(1);
+    await opened.page.close();
+  });
+
+  // An element's own style attribute outranks every cascade layer, !important or not. The frame body's keeps
+  // only colours, margins, padding and type; the control writes the mail's original style back onto the body.
+  const inline = [
+    [
+      '145',
+      'position:fixed!important;top:0!important;bottom:-50px!important;margin:0;background:#f4f1ea',
+    ],
+    ['148', 'zoom:1000 !important;margin:0;background:#eef2f7'],
+    ['149', 'writing-mode:vertical-lr!important;margin-bottom:-50px;color:#222'],
+    // The same text on a div before the body: the body must not be handed that element's unfiltered style.
+    ['164', 'position:fixed!important;top:0!important;bottom:-50px!important'],
+  ] as const;
+
+  for (const [id, style] of inline) {
+    test(`${id}: an inline body style that sizes the body cannot reach the frame body`, async () => {
+      const document = frameDocument(entry(id).html ?? '');
+      const style = document.match(/<body style="([^"]*)"/)?.[1] ?? '';
+      for (const declaration of style.split(';').filter(Boolean)) {
+        const name = declaration.split(':')[0].trim();
+        expect(name, style).toMatch(
+          /^(?:background|color|margin|padding|font|text-align|line-height)/,
+        );
+      }
+      const opened = await bed.open({ document });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      expect(reports[reports.length - 1].h).toBeLessThan(400);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: with the mail's own body style written back, the frame body is sized by it`, async () => {
+      const document = frameDocument(entry(id).html ?? '').replace(
+        /<body[^>]*>/,
+        () => `<body style="${style}">`,
+      );
+      const opened = await bed.open({ document });
+      await opened.page.waitForTimeout(5_000);
+      const reports = await opened.reports();
+      const inflated = reports.some(report => report.h > 5_000);
+      expect((await runsAway(opened)) || inflated).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  test('166: type sizes past the bound never reach the frame body, and a huge font would inflate it', async () => {
+    const document = frameDocument(entry('166').html ?? '');
+    expect(document).not.toMatch(/<body[^>]*font/);
+    const opened = await bed.open({ document });
+    const reports = await opened.settled(5_000);
+    expect(reports[reports.length - 1].h).toBeLessThan(400);
+    await opened.page.close();
+    const huge = document.replace(
+      /<body[^>]*>/,
+      () => '<body style="font:900px/100 Arial;margin:0">',
+    );
+    const control = await bed.open({ document: huge });
+    const inflated = await control.settled(5_000);
+    expect(inflated[inflated.length - 1].h).toBeGreaterThan(5_000);
+    await control.page.close();
+  });
+
+  // Item 1: what the root's box leaves out. The body is positioned, so its scroll height takes in positioned and
+  // transformed content; the control reports the root's box alone.
+  const clipped = [
+    ['150', 'absolute content 1,200 px down', 1_200],
+    ['151', 'a tall absolute child of a relative box', 900],
+    ['152', 'a dropdown at top:100% of a relative item', 300],
+    ['153', 'a block translated 800 px down', 800],
+    ['154', 'a body translated 500 px down', 500],
+    ['155', 'a body with a negative bottom margin', 150],
+  ] as const;
+
+  /** The document with the reporter's measuring line replaced: the controls for what the reporter reads. */
+  function measuring(document: string, expression: string): { document: string; headers: 'none' } {
+    const same = 'M.max(M.ceil(boxOf.call(root).height), below(body))';
+    expect(REPORTER_SOURCE.includes(same), 'the measuring line is where this control expects').toBe(
+      true,
+    );
+    const script = REPORTER_SOURCE.replace(same, () => expression);
+    return { document: document.replace(REPORTER_SOURCE, () => script), headers: 'none' };
+  }
+
+  /** The reporter of the first version: the root's box alone. */
+  const rootBoxOnly = (document: string) => measuring(document, 'M.ceil(boxOf.call(root).height)');
+
+  /** The reporter of the first version before that: the root's scroll height, at least the frame's. */
+  const rootScrollOnly = (document: string) => measuring(document, 'scrollOf.call(root)');
+
+  for (const [id, title, least] of clipped) {
+    test(`${id}: ${title}: the report reaches the content`, async () => {
+      const opened = await bed.open({
+        document: frameDocument(entry(id).html ?? ''),
+        height: 100,
+        follow: false,
+      });
+      const report = await last(opened);
+      expect(report.h).toBeGreaterThanOrEqual(least);
+      expect(report.h).toBeLessThan(least + 400);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: the root's box alone misses it`, async () => {
+      const opened = await bed.open({
+        ...rootBoxOnly(frameDocument(entry(id).html ?? '')),
+        height: 100,
+        follow: false,
+      });
+      expect((await last(opened)).h).toBeLessThan(least);
+      await opened.page.close();
+    });
+  }
+
+  // Item 2: properties that stop the root or the body from being measured.
+  const measured = [
+    ['156', 'a zero-width root on an offset path', 60, 2_000],
+    ['157', 'a root moved up an offset path', 60, 400],
+    ['158', 'size containers on the root and body', 800, 1_100],
+    ['163', 'a root with content-visibility:hidden', 60, 400],
+  ] as const;
+
+  async function placed(opened: Opened) {
+    const reports = await opened.settled(4_000);
+    const top = (await opened.frame
+      .evaluate("document.querySelector('p').getBoundingClientRect().top")
+      .catch(() => -1e9)) as number;
+    return { h: reports.length ? reports[reports.length - 1].h : -1, top };
+  }
+
+  for (const [id, title, least, most] of measured) {
+    test(`${id}: ${title}: the letter is measured and in view`, async () => {
+      const opened = await bed.open({ document: frameDocument(entry(id).html ?? '') });
+      const { h, top } = await placed(opened);
+      expect(h).toBeGreaterThanOrEqual(least);
+      expect(h).toBeLessThanOrEqual(most);
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top).toBeLessThan(300);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: with the previous rules and the root box alone, it is not`, async () => {
+      const opened = await bed.open({
+        ...rootBoxOnly(withoutLayer(frameDocument(entry(id).html ?? ''))),
+      });
+      const { h, top } = await placed(opened);
+      const fine = h >= least && h <= most && top >= 0 && top < 300;
+      expect(fine).toBe(false);
+      await opened.page.close();
+    });
+  }
+
+  // Item 4: orthogonal writing modes and height-following media queries. The control writes the original
+  // property and feature names back.
+  const feedback = [
+    ['159', 'vertical text in a block'],
+    ['160', 'a max-height media query'],
+    ['161', 'an orientation media query'],
+    ['162', 'a staircase of min-height media rules'],
+    ['165', 'vendor-prefixed writing-mode aliases'],
+  ] as const;
+
+  const original = (document: string) =>
+    document.replace(
+      /--m-([a-z-]*writing-mode|[a-z-]*height|orientation|aspect-ratio)/g,
+      (_all, name: string) => name,
+    );
+
+  for (const [id, title] of feedback) {
+    test(`${id}: ${title}: the frame settles`, async () => {
+      const opened = await bed.open({ document: frameDocument(entry(id).html ?? '') });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      expect(reports[reports.length - 1].h).toBeLessThan(3_000);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: with the original names, the frame follows its letter without end`, async () => {
+      const document = frameDocument(entry(id).html ?? '');
+      expect(original(document)).not.toBe(document);
+      const opened = await bed.open({ document: original(document) });
+      await opened.page.waitForTimeout(6_000);
+      expect(await runsAway(opened)).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  // CSS if(media()) and scroll-driven animations follow the frame. The control puts the original message in a
+  // raw document (no sanitizer), which the browser then runs as written.
+  const following = [
+    ['167', 'if(media()) conditions on height, orientation and aspect ratio'],
+    ['168', 'if(media()) in the allowlisted body margin and padding'],
+    ['169', 'scroll-driven animation timelines'],
+  ] as const;
+
+  for (const [id, title] of following) {
+    test(`${id}: ${title}: the frame settles`, async () => {
+      const document = frameDocument(entry(id).html ?? '');
+      expect(document).not.toMatch(/\bif\(|(?<![-\w])animation-timeline\s*:/);
+      const opened = await bed.open({ document });
+      const reports = await opened.settled(6_000);
+      expect(await opened.capped()).toBe(false);
+      expect(reports.length).toBeLessThan(20);
+      // The 1000 px keyframes of 169 apply without a timeline (two blocks, 2086 px), once and steadily.
+      expect(reports[reports.length - 1].h).toBeLessThan(id === '169' ? 3_000 : 400);
+      await opened.page.close();
+    });
+
+    test(`control ${id}: written as the mail wrote it, the frame follows its letter without end`, async () => {
+      const opened = await bed.open({
+        document: rawDocument(entry(id).html ?? '', 'real'),
+        headers: 'none',
+      });
+      await opened.page.waitForTimeout(5_000);
+      expect(await runsAway(opened)).toBe(true);
+      await opened.page.close();
+    });
+  }
+
+  test('170: a body with display:contents still has a box, so the report reaches the content', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('170').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 170: with the previous body rule, display:contents hides the content', async () => {
+    const opened = await bed.open({
+      document: withoutLayer(frameDocument(entry('170').html ?? '')),
+      height: 100,
+      follow: false,
+    });
+    expect((await last(opened)).h).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  /** The reporter without its frame loop, or without its animation events, or without both. */
+  function without(
+    document: string,
+    parts: { loop?: boolean; events?: boolean },
+  ): { document: string; headers: 'none' } {
+    const line = "typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame : null";
+    expect(REPORTER_SOURCE.includes(line), 'the frame line is where this control expects').toBe(
+      true,
+    );
+    let script = REPORTER_SOURCE;
+    if (parts.loop) script = script.replace(line, () => 'null');
+    if (parts.events) {
+      script = script
+        .replace("listen.call(d, 'animationend', recheck, true);", () => '')
+        .replace("listen.call(d, 'transitionend', recheck, true);", () => '');
+    }
+    expect(script === REPORTER_SOURCE, 'the control changed the script').toBe(false);
+    return { document: document.replace(REPORTER_SOURCE, () => script), headers: 'none' };
+  }
+
+  async function lastAfter(opened: Opened, ms: number) {
+    await opened.page.waitForTimeout(ms);
+    const reports = await opened.reports();
+    return reports[reports.length - 1].h;
+  }
+
+  test('171: a box that moves down after load is reported at its new place', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('171').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    await opened.page.waitForTimeout(3_500);
+    const reports = await opened.reports();
+    expect(reports[reports.length - 1].h).toBeGreaterThanOrEqual(1_200);
+    expect(reports.length).toBeLessThan(30);
+    await opened.page.close();
+  });
+
+  test('control 171: without the frame loop and its events the move goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('171').html ?? ''), { loop: true, events: true }),
+      height: 100,
+      follow: false,
+    });
+    await opened.page.waitForTimeout(3_500);
+    const reports = await opened.reports();
+    expect(reports[reports.length - 1].h).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('172: a jump with no end event is seen by the frame loop', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('172').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 3_500)).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 172: without the frame loop (the events never come) the jump goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('172').html ?? ''), { loop: true }),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 3_500)).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('173: a move after the quiet period is reported when its animation ends', async () => {
+    const opened = await bed.open({
+      document: frameDocument(entry('173').html ?? ''),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 6_500)).toBeGreaterThanOrEqual(1_200);
+    await opened.page.close();
+  });
+
+  test('control 173: without the animation events the late move goes unseen', async () => {
+    const opened = await bed.open({
+      ...without(frameDocument(entry('173').html ?? ''), { events: true }),
+      height: 100,
+      follow: false,
+    });
+    expect(await lastAfter(opened, 6_500)).toBeLessThan(1_200);
+    await opened.page.close();
+  });
+
+  test('an animated height posts at most 20 reports a second, not one per frame', async () => {
+    const html =
+      '<style>.a { animation: a 1s linear infinite } @keyframes a { from { height: 100px } to { height: 600px } }</style><div class="a">x</div>';
+    const opened = await bed.open({ document: frameDocument(html), height: 100, follow: false });
+    await opened.page.waitForTimeout(3_000);
+    const count = (await opened.reports()).length;
+    expect(count).toBeGreaterThan(10);
+    expect(count).toBeLessThanOrEqual(3 * 20 + 25);
     await opened.page.close();
   });
 });

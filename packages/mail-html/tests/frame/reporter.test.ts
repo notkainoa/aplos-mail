@@ -40,7 +40,7 @@ describe('reporter: the shipped file and its hash', () => {
   });
 
   it('is tiny, ASCII, and cannot end its own script element', () => {
-    assert.ok(REPORTER_SOURCE.length < 4_096, `${REPORTER_SOURCE.length} bytes`);
+    assert.ok(REPORTER_SOURCE.length < 8_192, `${REPORTER_SOURCE.length} bytes`);
     assert.match(REPORTER_SOURCE, /^[\x20-\x7e\n]*$/);
     assert.equal(/<\/script|<!--/i.test(REPORTER_SOURCE), false);
   });
@@ -104,7 +104,12 @@ interface FakeOptions {
   box?: number;
   rootScroll?: number;
   bodyScroll?: number;
+  /** The body's top edge in the viewport, and how far the frame is scrolled. */
+  bodyTop?: number;
+  scrollY?: number;
   resizeObserver?: 'ok' | 'throws' | 'missing';
+  /** A clock and a frame queue, as a page has. */
+  frames?: boolean;
   marks?: number;
   bodyPaint?: string;
   rootPaint?: string;
@@ -121,14 +126,15 @@ class FakeTarget {
 class FakeElement {
   constructor(
     readonly scroll: number,
-    readonly box: number,
+    public box: number,
     readonly paint: string,
+    readonly top = 0,
   ) {}
   get scrollHeight(): number {
     return this.scroll;
   }
-  getBoundingClientRect(): { height: number } {
-    return { height: this.box };
+  getBoundingClientRect(): { height: number; top: number } {
+    return { height: this.box, top: this.top };
   }
 }
 
@@ -167,6 +173,7 @@ function fakeWindow(options: FakeOptions = {}) {
   const posted: Posted[] = [];
   const listeners: Record<string, (() => void)[]> = {};
   const observers: (() => void)[] = [];
+  const observed: unknown[] = [];
   const root = new FakeElement(
     options.rootScroll ?? 900,
     options.box ?? 500,
@@ -176,6 +183,7 @@ function fakeWindow(options: FakeOptions = {}) {
     options.bodyScroll ?? 300,
     0,
     options.bodyPaint ?? 'rgb(255, 255, 255)',
+    options.bodyTop ?? 0,
   );
   const document = new FakeDocument(listeners, root, body, options.marks ?? 0);
   const window = Object.assign(new FakeTarget(listeners), {
@@ -187,6 +195,7 @@ function fakeWindow(options: FakeOptions = {}) {
     Element: FakeElement,
     EventTarget: FakeTarget,
     innerWidth: options.innerWidth ?? 640,
+    scrollY: options.scrollY ?? 0,
     location: { pathname: options.pathname ?? `/${TOKEN}/` },
     parent: {
       postMessage: (message: Record<string, unknown>, target: string) => {
@@ -200,11 +209,33 @@ function fakeWindow(options: FakeOptions = {}) {
     window.ResizeObserver = function (callback: () => void) {
       if (options.resizeObserver === 'throws') throw new Error('no observer');
       observers.push(callback);
-      return { observe: () => undefined };
+      return { observe: (element: unknown) => observed.push(element) };
     };
   }
+  const clock = { now: 0 };
+  const queue: (() => void)[] = [];
+  if (options.frames) {
+    Object.assign(window, {
+      performance: { now: () => clock.now },
+      requestAnimationFrame: (callback: () => void) => queue.push(callback),
+    });
+  }
+  const runFrame = () => queue.splice(0).forEach(callback => callback());
   const fire = (name: string) => listeners[name]?.forEach(fn => fn());
-  return { window, document, root, body, posted, listeners, observers, fire };
+  return {
+    window,
+    document,
+    root,
+    body,
+    posted,
+    listeners,
+    observers,
+    observed,
+    fire,
+    clock,
+    queue,
+    runFrame,
+  };
 }
 
 function run(fake: ReturnType<typeof fakeWindow>): void {
@@ -238,21 +269,103 @@ describe('reporter: behaviour in a fake DOM', () => {
     assert.equal(fake.posted[0].target, '*');
   });
 
-  it('reports again on every listed event', () => {
+  it('reports again on every listed event, when something changed', () => {
     const fake = fakeWindow();
     run(fake);
     fake.document.readyStateValue = 'complete';
+    let expected = 1;
+    const change = () => {
+      fake.root.box += 1;
+      expected += 1;
+    };
     for (const name of [
       'document:DOMContentLoaded',
       'document:toggle',
+      'document:animationend',
+      'document:animationcancel',
+      'document:transitionend',
       'window:load',
+      'window:error',
       'window:resize',
-    ])
-      fake.fire(name);
+    ]) {
+      change();
+      fake.listeners[name]?.forEach(fn => fn());
+      assert.equal(fake.posted.length, expected, name);
+    }
+    change();
+    fake.observers.forEach(callback => callback());
+    change();
+    fake.document.fontsDone?.();
+    assert.equal(fake.posted.length, expected);
+    assert.equal(fake.posted.at(-1)?.message.ready, true);
+  });
+
+  it('listens in the capture phase for the events that do not bubble', () => {
+    const fake = fakeWindow();
+    run(fake);
+    for (const name of [
+      'window:load',
+      'window:error',
+      'document:animationend',
+      'document:transitionend',
+    ]) {
+      assert.equal(fake.listeners[name]?.length, 1, name);
+    }
+  });
+
+  it('watches the root and the body for a change of size', () => {
+    const fake = fakeWindow();
+    run(fake);
+    assert.deepEqual(fake.observed, [fake.root, fake.body]);
+  });
+
+  it('posts nothing when nothing changed', () => {
+    const fake = fakeWindow();
+    run(fake);
+    for (const name of Object.keys(fake.listeners)) fake.fire(name);
     fake.observers.forEach(callback => callback());
     fake.document.fontsDone?.();
-    assert.equal(fake.posted.length, 7);
-    assert.equal(fake.posted.at(-1)?.message.ready, true);
+    assert.equal(fake.posted.length, 1);
+  });
+
+  it('posts at most 20 times a second, then the last state in the next second', () => {
+    const fake = fakeWindow({ frames: true });
+    run(fake);
+    for (let step = 1; step <= 40; step++) {
+      fake.root.box = 400 + step;
+      fake.fire('window:resize');
+    }
+    assert.equal(fake.posted.length, 20, 'the first report and 19 more');
+    assert.equal(fake.queue.length, 1, 'one frame is waiting to post the rest');
+    fake.clock.now = 1001;
+    fake.runFrame();
+    assert.equal(fake.posted.length, 21);
+    assert.equal(fake.posted.at(-1)?.message.h, 440);
+  });
+
+  it('looks at every frame for 3 s after a change, then stops', () => {
+    const fake = fakeWindow({ frames: true });
+    run(fake);
+    assert.equal(fake.queue.length, 1, 'watching from the first report');
+    fake.clock.now = 1500;
+    fake.root.box = 900; // a post-load animation moved something, no event fired
+    fake.runFrame();
+    assert.equal(fake.posted.length, 2);
+    assert.equal(fake.posted[1].message.h, 900);
+    fake.clock.now = 4400; // 2.9 s after that change
+    fake.runFrame();
+    assert.equal(fake.queue.length, 1, 'still watching');
+    fake.clock.now = 4501; // 3 s still, nothing changed
+    fake.runFrame();
+    assert.equal(fake.queue.length, 0, 'quiet: no more frames');
+    assert.equal(fake.posted.length, 2);
+  });
+
+  it('keeps no frame running in a page without frames, and survives a missing clock', () => {
+    const fake = fakeWindow();
+    run(fake);
+    assert.equal(fake.posted.length, 1);
+    assert.equal(fake.queue.length, 0);
   });
 
   it('measures the content, never the root scroll height (which is at least the frame)', () => {
@@ -260,6 +373,26 @@ describe('reporter: behaviour in a fake DOM', () => {
     const fake = fakeWindow({ box: 120, rootScroll: 900, bodyScroll: 90 });
     run(fake);
     assert.equal(fake.posted[0].message.h, 120);
+  });
+
+  it('adds the body top and the scroll offset to the body scroll height', () => {
+    // A body that starts 40 px down, in a frame scrolled 25 px: its content ends at 40 + 25 + 400.
+    const fake = fakeWindow({ box: 120, bodyScroll: 400, bodyTop: 40, scrollY: 25 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 465);
+    const above = fakeWindow({ box: 120, bodyScroll: 400, bodyTop: -300 });
+    run(above);
+    assert.equal(above.posted[0].message.h, 120, 'a body above the viewport never lowers the root');
+  });
+
+  it('rounds the body term up and ignores a scroll offset that is not a number', () => {
+    const fake = fakeWindow({ box: 10, bodyScroll: 100.2, bodyTop: 0.4 });
+    run(fake);
+    assert.equal(fake.posted[0].message.h, 101);
+    const odd = fakeWindow({ box: 10, bodyScroll: 100 });
+    Object.assign(odd.window, { scrollY: 'x' });
+    run(odd);
+    assert.equal(odd.posted[0].message.h, 100);
   });
 
   it('counts content that spills past the root box', () => {
