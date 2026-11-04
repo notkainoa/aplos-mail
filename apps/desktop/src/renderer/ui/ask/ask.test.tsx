@@ -22,6 +22,7 @@ import {
   StepLog,
 } from './index';
 import { openCitation } from './Citation';
+import { announcesAnswered } from './AskTurn';
 import { formatRecent, formatSource, setFormatClock } from './format';
 import { nextActiveId } from './palette-nav';
 
@@ -226,15 +227,19 @@ test('AskTurn: every answer cites or says "No source in your mail"; unreferenced
   assert.doesNotMatch(loose, /No source in your mail/);
 });
 
-test('AskTurn announces "Answered" to screen readers when an answer lands, hidden', () => {
+test('AskTurn announces "Answered" only after this mount saw the turn unfinished', () => {
+  // A reopened conversation mounts every turn 'answered': none may announce, or reopening queues one status each.
   const answered = html(turn());
-  assert.match(answered, /class="ui-sr-only" role="status">\s*Answered\s*<\/span>/);
+  assert.doesNotMatch(answered, /role="status">\s*Answered/);
   assert.doesNotMatch(
     answered,
     /ui-ask-turn__answer[^>]*role="status"/,
     'the prose stays out of aria-live',
   );
+  assert.equal(announcesAnswered(true, 'answered'), true, 'a live transition announces');
+  assert.equal(announcesAnswered(false, 'answered'), false, 'mounted answered stays quiet');
   for (const state of ['working', 'streaming', 'stopped', 'failed', 'paused'] as const) {
+    assert.equal(announcesAnswered(true, state), false);
     assert.doesNotMatch(
       html(turn({ state, answer: undefined, citations: [] })),
       /Answered/,

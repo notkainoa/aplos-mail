@@ -45,7 +45,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * var(--space-1));
+  /* Inside the pane's edge: the dock pane clips overflow, so a handle straddling the edge loses half its grab. */
+  left: 0;
   z-index: var(--z-sticky);
   width: var(--space-2);
   cursor: col-resize;

@@ -1,9 +1,18 @@
+import { useEffect, useRef } from 'react';
 import type { AskTurnProps, CitationData } from '../props';
 import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
 import { Citation } from './Citation';
 import { ProposalCard } from './ProposalCard';
 import { StepLog } from './StepLog';
+
+/**
+ * Whether the "Answered" status announces: only when this mount saw the turn unfinished first. A turn that mounts
+ * already answered (a reopened conversation) stays quiet instead of queueing one status per turn.
+ */
+export function announcesAnswered(sawUnfinished: boolean, state: AskTurnProps['state']): boolean {
+  return sawUnfinished && state === 'answered';
+}
 
 /**
  * One question and its answer (DESIGN §6 AskTurn, §7.7). The question is a `base` 500 line with no bubble and no rule.
@@ -28,6 +37,11 @@ export function AskTurn(props: AskTurnProps) {
     onUseAnotherProvider,
   } = props;
   const questionId = `${id}-question`;
+  // Any non-answered state this mount committed counts: the transition into 'answered' announces, a reopen does not.
+  const sawUnfinished = useRef(state !== 'answered');
+  useEffect(() => {
+    if (state !== 'answered') sawUnfinished.current = true;
+  }, [state]);
   const byIndex = new Map<number, CitationData>(citations.map(c => [c.index, c]));
   const referenced = new Set<number>();
   const hasAnswer = Boolean(answer && answer.length > 0);
@@ -47,7 +61,7 @@ export function AskTurn(props: AskTurnProps) {
       <p className="ui-ask-turn__question" id={questionId} dir="auto">
         {question}
       </p>
-      {state === 'answered' ? (
+      {announcesAnswered(sawUnfinished.current, state) ? (
         <span className="ui-sr-only" role="status">
           Answered
         </span>
