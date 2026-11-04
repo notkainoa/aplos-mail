@@ -139,6 +139,23 @@ export function bundleSections(bundle: BundleInfo): readonly BundleSection[] {
   return sections.filter(s => s.rows.length > 0);
 }
 
+/**
+ * A queue action, then a reload of the inspector's rows. The reload is best-effort: it failing must never report
+ * the action itself as failed ("Couldn't retry that item" when the retry worked). The action's error still
+ * propagates, so Retry means the write, not the reload.
+ */
+export async function actThenList(
+  act: () => Promise<void>,
+  list: () => Promise<readonly QueueEntry[]>,
+): Promise<readonly QueueEntry[] | undefined> {
+  await act();
+  try {
+    return await list();
+  } catch {
+    return undefined;
+  }
+}
+
 /** The diagnostics note above the preview: what it holds and what it never does. */
 export const DIAGNOSTICS_NOTE =
-  'This report holds versions, counts and error codes. It holds no mail, no addresses and no keys, and it is never uploaded. You choose where to save it.';
+  'This report holds versions, counts and error codes. It holds no mail, no addresses and no keys, and it is never uploaded. Copy report puts it on your clipboard.';

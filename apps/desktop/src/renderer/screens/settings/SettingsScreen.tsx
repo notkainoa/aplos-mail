@@ -53,6 +53,29 @@ export function scrollWithoutTarget(
   return previous === next ? 'stay' : 'top';
 }
 
+/**
+ * What the deep-link effect may move, and when it may move it: a fresh section/anchor navigation, the moment a
+ * conditional row is drawn (`wasMissing`), or a recording starting on a different row. A `recordingId` change on
+ * its own never re-runs the anchor's scroll and focus, so finishing a recording does not jump the tall
+ * 'shortcuts' anchor mid-list or steal the recorder's restored focus.
+ */
+export function anchorScroll(input: {
+  /** A KeyRecorder row is recording a chord. */
+  readonly recording: boolean;
+  /** The recorded command changed since the last run. */
+  readonly recordingChanged: boolean;
+  /** The deep-linked row is drawn right now. */
+  readonly linked: boolean;
+  /** The deep-linked row was not drawn on the last run. */
+  readonly wasMissing: boolean;
+  /** The section or the anchor changed since the last run. */
+  readonly freshNav: boolean;
+}): 'recording' | 'linked' | 'top' | 'none' {
+  if (input.recording) return input.recordingChanged ? 'recording' : 'none';
+  if (input.linked) return input.freshNav || input.wasMissing ? 'linked' : 'none';
+  return input.freshNav ? 'top' : 'none';
+}
+
 export function SettingsScreen({
   section,
   onSection,
@@ -64,8 +87,22 @@ export function SettingsScreen({
   const View = SECTION_VIEWS[section];
   const recordingId = rest.view.recording?.commandId;
   const label = SETTING_SECTIONS.find(s => s.id === section)?.label ?? 'Settings';
-  const previousSection = useRef<SettingSection | null>(null);
   const [missingAnchor, setMissingAnchor] = useState<string | null>(null);
+  const previous = useRef<{
+    section: SettingSection | null;
+    anchor: string | undefined;
+    recordingId: string | undefined;
+    missing: string | null;
+  }>({ section: null, anchor: undefined, recordingId: undefined, missing: null });
+
+  // A conditional row can appear after the link landed (providers still loading): this cheap identity signal
+  // re-runs the resolution so the row is scrolled to and focused once it is drawn.
+  const { data } = rest;
+  const dataVersion = [
+    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
+    data.accounts.map(a => a.id).join(','),
+    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
+  ].join('|');
 
   // A deep link lands on its row; a plain section switch starts at the top. Anything else keeps its place.
   useEffect(() => {
@@ -79,24 +116,33 @@ export function SettingsScreen({
       !recording && anchor
         ? el.querySelector<HTMLElement>(`[data-setting-anchor="${CSS.escape(anchor)}"]`)
         : null;
-    const target = recording ?? linked;
     // A conditional row may not be drawn in this state: say so rather than landing silently at the top.
-    setMissingAnchor(!recording && anchor && !linked ? anchor : null);
-    if (target) {
-      target.scrollIntoView({ block: 'center' });
-      if (!recording) {
-        const control = target.querySelector<HTMLElement>(FOCUSABLE);
-        if (control) control.focus({ preventScroll: true });
-        else {
-          if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-          target.focus({ preventScroll: true });
-        }
+    const missing = !recording && anchor && !linked ? anchor : null;
+    setMissingAnchor(missing);
+    const p = previous.current;
+    const move = anchorScroll({
+      recording: recording !== null,
+      recordingChanged: p.recordingId !== recordingId,
+      linked: linked !== null,
+      wasMissing: p.missing === anchor,
+      freshNav: p.section !== section || p.anchor !== anchor,
+    });
+    if (move === 'recording' && recording) {
+      recording.scrollIntoView({ block: 'nearest' });
+    } else if (move === 'linked' && linked) {
+      // 'start', not 'center': a tall anchor (every shortcut group) must not land mid-list.
+      linked.scrollIntoView({ block: 'start' });
+      const control = linked.querySelector<HTMLElement>(FOCUSABLE);
+      if (control) control.focus({ preventScroll: true });
+      else {
+        if (!linked.hasAttribute('tabindex')) linked.setAttribute('tabindex', '-1');
+        linked.focus({ preventScroll: true });
       }
-    } else if (scrollWithoutTarget(previousSection.current, section) === 'top') {
+    } else if (move === 'top') {
       (el.closest('.ui-pane__body') ?? document.scrollingElement)?.scrollTo?.(0, 0);
     }
-    previousSection.current = section;
-  }, [section, anchor, recordingId]);
+    previous.current = { section, anchor, recordingId, missing };
+  }, [section, anchor, recordingId, dataVersion]);
 
   // Arrow keys rove the nav (a navigation Puck keeps Tab order but does not rove on its own).
   const onNavKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

@@ -515,7 +515,7 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
 
   // covered: model.test.ts: "Version 0.3.0 · macOS"
 
-  test('help.diagnostics.preview – the dialog shows sections; a canary subject, address and token seeded in mail are absent; Save calls the save path', async () => {
+  test('help.diagnostics.preview – the dialog shows sections; a canary subject, address and token seeded in mail are absent; Copy calls the copy path', async () => {
     const sections = bundleSections(bundle());
     assert.deepEqual(
       sections.map(s => s.title),
@@ -525,9 +525,10 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
     assert.match(text, /a1b2c3d4/);
     assert.doesNotMatch(text, /@example\.com|gsk_/);
     const calls: string[] = [];
-    const h = harness({ ports: { diagnosticsSave: async () => void calls.push('save') } });
-    await h.actions.saveDiagnostics();
-    assert.deepEqual(calls, ['save']);
+    const h = harness({ ports: { diagnosticsCopy: async () => void calls.push('copy') } });
+    await h.actions.copyDiagnostics();
+    assert.deepEqual(calls, ['copy']);
+    assert.equal(h.view().diagnosticsCopied, true, 'the quiet "Copied." line shows');
   });
 
   test('help.queue.retryDiscard – queue-errors lists three kinds; Retry and Discard call Queue/*; discarding a submission asks first', async () => {
@@ -725,20 +726,20 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
     assert.equal(h.failures.at(-1), null, 'leaving the section clears it');
   });
 
-  test('help.diagnostics.save – busy blocks a second Save; a failed save stays inside the open dialog', async () => {
+  test('help.diagnostics.copy – busy blocks a second Copy; a failed copy stays inside the open dialog', async () => {
     const resolvers: (() => void)[] = [];
     let calls = 0;
     const h = harness({
       ports: {
-        diagnosticsSave: () => {
+        diagnosticsCopy: () => {
           calls += 1;
           return new Promise<void>(r => resolvers.push(r));
         },
       },
     });
-    const first = h.actions.saveDiagnostics();
+    const first = h.actions.copyDiagnostics();
     assert.equal(h.view().busy.diagnostics, true);
-    assert.equal(await h.actions.saveDiagnostics(), false, 'a second Save does nothing');
+    assert.equal(await h.actions.copyDiagnostics(), false, 'a second Copy does nothing');
     resolvers[0]();
     await first;
     assert.equal(calls, 1);
@@ -747,16 +748,17 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
     const bad = harness({
       ports: {
         diagnosticsPreview: async () => bundle(),
-        diagnosticsSave: async () => {
-          throw new Error('disk full');
+        diagnosticsCopy: async () => {
+          throw new Error('clipboard busy');
         },
       },
     });
     await bad.actions.openDiagnostics();
     assert.equal(bad.view().diagnostics, true);
-    await bad.actions.saveDiagnostics();
+    await bad.actions.copyDiagnostics();
     assert.equal(bad.view().diagnostics, true, 'the dialog stays open so its own line can show');
-    assert.equal(bad.failures.at(-1)?.op, 'save the report');
+    assert.equal(bad.view().diagnosticsCopied, false);
+    assert.equal(bad.failures.at(-1)?.op, 'copy the report');
   });
 
   // covered: screens.test.tsx: every capability that is off reads "Not available yet" with no dead control

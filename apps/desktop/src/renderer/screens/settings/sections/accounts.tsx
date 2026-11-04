@@ -31,7 +31,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             descriptionTone={r.tone}
             control={
               <>
-                {r.reconnect ? (
+                {r.reconnect && host.renderReconnect ? (
                   <Button
                     variant={r.reconnect.filled ? 'filled' : 'text'}
                     label={r.reconnect.label}

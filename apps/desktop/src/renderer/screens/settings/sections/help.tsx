@@ -62,7 +62,7 @@ export function Help(props: SectionProps) {
           <Row
             section="help"
             anchor="diagnostics"
-            description="A report with no mail in it. You see it before it is saved."
+            description="A report with no mail in it. You see it before it is copied."
             control={
               <Button
                 variant="text"

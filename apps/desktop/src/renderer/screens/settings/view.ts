@@ -30,6 +30,8 @@ export interface SettingsView {
   readonly addAccount: boolean;
   /** The diagnostics preview dialog is open. */
   readonly diagnostics: boolean;
+  /** The report was just copied; the dialog says "Copied." until it is closed. */
+  readonly diagnosticsCopied: boolean;
   /** Help shows the queue inspector instead of its rows. */
   readonly queue: boolean;
   /** Local server addresses as typed, before they are saved. */
@@ -50,6 +52,7 @@ export const INITIAL_VIEW: SettingsView = {
   reconnect: null,
   addAccount: false,
   diagnostics: false,
+  diagnosticsCopied: false,
   queue: false,
   addressDraft: {},
   addressError: {},

@@ -108,7 +108,16 @@ export function createController(deps: ControllerDeps) {
   /** `Settings/set` with the optimistic overlay: the control moves at once and goes back if the write is refused. */
   async function set(patch: SettingsPatch, op = 'save that setting'): Promise<boolean> {
     const id = pushOverlay(patch);
-    const ok = await guard(op, () => ports.settingsSet(patch));
+    let ok: boolean;
+    try {
+      await ports.settingsSet(patch);
+      deps.fail(null);
+      ok = true;
+    } catch {
+      // Retry is the same write again, overlay and all — the control moves at once on Retry too.
+      deps.fail({ op, retry: () => void set(patch, op), dismiss: () => deps.fail(null) });
+      ok = false;
+    }
     dropOverlay(id);
     return ok;
   }
@@ -317,6 +326,8 @@ export function createController(deps: ControllerDeps) {
      * runs right after, as the row's status.
      */
     async submitKey(provider: ProviderId, key: string) {
+      // Leaving the page while the save is in flight cancels the refresh and the test that follow it.
+      const generation = testGeneration;
       deps.setView({ addKey: null });
       let ok: boolean;
       try {
@@ -332,7 +343,7 @@ export function createController(deps: ControllerDeps) {
           dismiss: () => deps.fail(null),
         });
       }
-      if (ok) {
+      if (ok && generation === testGeneration) {
         await refreshProviders();
         await self.testProvider(provider);
       }
@@ -466,7 +477,7 @@ export function createController(deps: ControllerDeps) {
       });
     },
     async openDiagnostics() {
-      deps.setView({ diagnostics: true });
+      deps.setView({ diagnostics: true, diagnosticsCopied: false });
       busy('diagnostics', true);
       try {
         deps.setData({ bundle: await ports.diagnosticsPreview() });
@@ -481,17 +492,17 @@ export function createController(deps: ControllerDeps) {
       busy('diagnostics', false);
     },
     closeDiagnostics() {
-      deps.setView({ diagnostics: false });
+      deps.setView({ diagnostics: false, diagnosticsCopied: false });
       deps.setData({ bundle: undefined });
     },
-    saveDiagnostics() {
+    copyDiagnostics() {
       if (view().busy.diagnostics) return Promise.resolve(false);
       busy('diagnostics', true);
       // A failure stays inside the open dialog (the page line is behind it), so the dialog stays up on a miss.
-      return guard('save the report', async () => {
-        await ports.diagnosticsSave();
-        deps.setView({ diagnostics: false });
-        deps.setData({ bundle: undefined });
+      return guard('copy the report', async () => {
+        await ports.diagnosticsCopy();
+        deps.setView({ diagnosticsCopied: true });
+        host.announce?.('Copied.');
       }).finally(() => busy('diagnostics', false));
     },
     openQueue() {

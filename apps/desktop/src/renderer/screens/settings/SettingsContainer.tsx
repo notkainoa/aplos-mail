@@ -5,58 +5,59 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, useAccounts, useConsent, useNow, useSession, useSettings } from '../../data';
-import type { Api as ClientApi } from '@aplos/contract/client';
 import { parseSettingRoute, type SettingRoute, type SettingSection } from '../../commands';
+import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
 import './paletteEntries';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import { SettingsScreen } from './SettingsScreen';
-import { mergePatch, type AiModelInfo } from './settings.model';
+import { actThenList, mergePatch, type AiModelInfo } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import type { SettingsPatch } from '../../data';
 
 /**
- * The contract methods Settings calls, through the client surface `api` is. `DataApi` lists only some of them
- * today (REQUEST to ui-shell), so this reaches the rest by the contract's own names.
+ * The contract methods Settings calls, straight off the data layer's `api` (`DataApi` declares them all). The AI
+ * and consent inputs take the contract's closed provider enum; the port's `string` is narrowed to `ProviderId`
+ * once here — Settings only ever passes provider ids it got from `Ai/providers` or the pickers.
  */
 export function dataPorts(): SettingsApiPort {
-  const c = api as unknown as ClientApi;
+  const providerId = (id: string) => id as ProviderId;
   return {
     settingsSet: async patch => void (await api.settings.set({ patch })),
     accountSet: async (accountId, patch) => void (await api.account.set({ accountId, ...patch })),
-    accountDisconnect: async accountId =>
-      void (await c.account.disconnect({ opId: crypto.randomUUID(), accountId })),
-    accountLease: async (accountId, pin) => void (await c.account.lease({ accountId, pin })),
+    accountDisconnect: async accountId => void (await api.account.disconnect({ accountId })),
+    accountLease: async (accountId, pin) => void (await api.account.lease({ accountId, pin })),
     demoLoad: async () => void (await api.demo.load({})),
     demoReset: async () => void (await api.demo.reset({})),
     demoRemove: async () => void (await api.demo.remove({})),
-    aiModels: async provider => (await c.ai.models({ provider: provider as never })).list,
+    aiModels: async provider => (await api.ai.models({ provider: providerId(provider) })).list,
     aiSetKey: async (provider, key) =>
-      void (await c.ai.setKey({ provider: provider as never, key })),
-    aiRemoveKey: async provider => void (await c.ai.removeKey({ provider: provider as never })),
+      void (await api.ai.setKey({ provider: providerId(provider), key })),
+    aiRemoveKey: async provider =>
+      void (await api.ai.removeKey({ provider: providerId(provider) })),
     aiTestKey: async provider => {
-      const r = await c.ai.testKey({ provider: provider as never });
+      const r = await api.ai.testKey({ provider: providerId(provider) });
       return { ok: r.ok, ms: r.ms, reasonCode: r.reasonCode };
     },
     consentGrant: async ({ version, provider, model }) =>
       void (await api.consent.grant({
         scope: 'background',
         version,
-        provider: provider as never,
+        provider: providerId(provider),
         model,
       })),
     consentRevoke: async () => void (await api.consent.revoke({ scope: 'background' })),
-    listenerSet: async enabled => void (await c.listener.set({ enabled })),
-    clientsRevoke: async id => void (await c.clients.revoke({ id })),
+    listenerSet: async enabled => void (await api.listener.set({ enabled })),
+    clientsRevoke: async id => void (await api.clients.revoke({ id })),
     diagnosticsPreview: () => api.diagnostics.preview({}),
-    diagnosticsSave: async () => void (await api.diagnostics.copy({})),
-    queueRetry: async id => void (await c.queue.retry({ id })),
-    queueDiscard: async id => void (await c.queue.discard({ id })),
-    aiProviders: async () => (await c.ai.providers({})).list,
-    aiUsage: () => c.ai.usage({}),
-    listenerGet: () => c.listener.get({}),
-    clientsList: async () => (await c.clients.list({})).list,
-    queueList: async () => (await c.queue.list({})).list,
+    diagnosticsCopy: async () => void (await api.diagnostics.copy({})),
+    queueRetry: async id => void (await api.queue.retry({ id })),
+    queueDiscard: async id => void (await api.queue.discard({ id })),
+    aiProviders: async () => (await api.ai.providers({})).list,
+    aiUsage: () => api.ai.usage({}),
+    listenerGet: () => api.listener.get({}),
+    clientsList: async () => (await api.clients.list({})).list,
+    queueList: async () => (await api.queue.list({})).list,
   };
 }
 
@@ -170,12 +171,18 @@ export function useSettingsState(
           ...ports,
           loadProviders: () => setProvidersFrom(ports),
           queueRetry: async id => {
-            await ports.queueRetry(id);
-            await ports.queueList().then(queue => keepData({ queue }));
+            const queue = await actThenList(
+              () => ports.queueRetry(id),
+              () => ports.queueList(),
+            );
+            if (queue) keepData({ queue });
           },
           queueDiscard: async id => {
-            await ports.queueDiscard(id);
-            await ports.queueList().then(queue => keepData({ queue }));
+            const queue = await actThenList(
+              () => ports.queueDiscard(id),
+              () => ports.queueList(),
+            );
+            if (queue) keepData({ queue });
           },
         },
         host,

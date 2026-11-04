@@ -4,9 +4,8 @@
  * fill them with stand-ins.
  *
  * REQUESTS (also in the lane report):
- * - ui-shell: `renderer/data`'s `api` has no `ai.providers|models|setKey|removeKey|testKey|status|usage`,
- *   `account.disconnect|lease`, `listener.*`, `clients.*`, `diagnostics.export` or `queue.*`. They are contract
- *   methods; `defaultDataPorts` reaches them through the client until `DataApi` grows them.
+ * - ui-shell: a real save path for the report — `Diagnostics/export` plus main's save dialog (`File/save`) — is in
+ *   the contract but not on `DataApi`, so `diagnosticsCopy` is the only way out today and the dialog says so.
  * - ui-onboard: `renderReconnect` is `<ReconnectFlow accountId mode onClose>` and `showWelcome` is
  *   `renderer/onboarding/showWelcome`; both are supplied by whoever mounts Settings.
  */
@@ -63,7 +62,8 @@ export interface SettingsApiPort {
   listenerSet(enabled: boolean): Promise<void>;
   clientsRevoke(id: string): Promise<void>;
   diagnosticsPreview(): Promise<BundleInfo>;
-  diagnosticsSave(): Promise<void>;
+  /** Copies the report to the clipboard (there is no save-to-file port yet). */
+  diagnosticsCopy(): Promise<void>;
   queueRetry(id: string): Promise<void>;
   queueDiscard(id: string): Promise<void>;
   /** Reads for the sections that need them; each is asked for only when its section is open. */

@@ -97,7 +97,7 @@ export function standInPorts(
     async diagnosticsPreview() {
       return get().bundle!;
     },
-    async diagnosticsSave() {},
+    async diagnosticsCopy() {},
     async queueRetry(id) {
       set({ queue: get().queue?.filter(q => q.id !== id) });
     },

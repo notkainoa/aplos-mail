@@ -339,6 +339,12 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ bundle: bundle() }),
     view: { diagnostics: true },
   },
+  'diagnostics-copied': {
+    title: 'Help, diagnostics preview after the copy',
+    section: 'help',
+    data: dataOf({ bundle: bundle() }),
+    view: { diagnostics: true, diagnosticsCopied: true },
+  },
   'queue-inspector': {
     title: 'Help, the queue inspector',
     section: 'help',

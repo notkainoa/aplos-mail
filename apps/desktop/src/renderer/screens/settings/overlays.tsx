@@ -187,7 +187,7 @@ function ConfirmDialog({
   );
 }
 
-/** The content-free report, shown whole before anything is saved. Never uploaded. */
+/** The content-free report, shown whole before anything is copied. Never uploaded. */
 function DiagnosticsDialog({
   data,
   view,
@@ -206,25 +206,30 @@ function DiagnosticsDialog({
         <>
           <Button
             variant="text"
-            label="Cancel"
+            label={view.diagnosticsCopied ? 'Close' : 'Cancel'}
             keys="Esc"
             keyHint="always"
             onPress={() => actions.closeDiagnostics()}
           />
           <Button
             variant="filled"
-            label="Save report"
+            label="Copy report"
             keys="Return"
             keyHint="always"
             disabled={!data.bundle}
             busy={view.busy.diagnostics === true}
-            onPress={() => void actions.saveDiagnostics()}
+            onPress={() => void actions.copyDiagnostics()}
           />
         </>
       }
     >
       <div className="settings-report">
         {failure ? <FailureLine failure={failure} /> : null}
+        {view.diagnosticsCopied ? (
+          <Text variant="small" tone="dim">
+            Copied.
+          </Text>
+        ) : null}
         {!data.bundle ? <Text variant="small">Preparing the report.</Text> : null}
         {sections.map(s => (
           <section key={s.title} className="settings-report__section">

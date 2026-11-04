@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SETTING_SECTIONS, createAppRegistry, settingId } from '../../commands';
 import { APP_SETTINGS, copyProblem } from '../../commands/internal';
 import { createController } from './controller';
-import { scrollWithoutTarget } from './SettingsScreen';
+import { anchorScroll, scrollWithoutTarget } from './SettingsScreen';
 import { SETTING_ROWS } from './paletteEntries';
 import type { SettingsApiPort } from './ports';
 import { AddKeyDialog } from './overlays';
@@ -122,6 +122,9 @@ describe('secrets never reach the screen (U7 acceptance 3)', () => {
     }
     const dialog = render('diagnostics-preview');
     assert.match(dialog, /Export diagnostics/);
+    assert.match(dialog, />Copy report</);
+    assert.match(dialog, /puts it on your clipboard/);
+    assert.doesNotMatch(dialog, /where to save it|>Save report</);
     assert.match(dialog, /a1b2c3d4/); // the salted hash, short
     assert.doesNotMatch(dialog, /alex\.moreno@example\.com/);
   });
@@ -343,6 +346,18 @@ describe('states, copy and design rules', () => {
     assert.match(render('accounts-permission'), /Aplos needs permission to read your Gmail\./);
   });
 
+  test('Reconnect without renderReconnect: the row still says why, and there is no dead button', () => {
+    const noSheet = renderToStaticMarkup(
+      staticScreen(STATES['accounts-reconnect'], { ...HOST, renderReconnect: undefined }),
+    );
+    assert.match(noSheet, /Google needs you to sign in again\./);
+    assert.doesNotMatch(noSheet, />Reconnect( now)?</);
+    const noSheetDue = renderToStaticMarkup(
+      staticScreen(STATES['accounts-reconnect-due'], { ...HOST, renderReconnect: undefined }),
+    );
+    assert.doesNotMatch(noSheetDue, />Reconnect( now)?</);
+  });
+
   test('accounts: demo row has Reset and Remove, Help has no Load; the opposite without one', () => {
     const demo = render('accounts-demo');
     assert.match(demo, />Reset</);
@@ -425,6 +440,10 @@ describe('states, copy and design rules', () => {
     assert.match(q, />Discard</);
     assert.match(render('queue-discard-confirm'), /Discard “Message to 1 person”\?/);
     assert.match(render('diagnostics-preview'), /It holds no mail, no addresses and no keys/);
+    const copied = render('diagnostics-copied');
+    assert.match(copied, />Copied\.</);
+    assert.match(copied, />Close</);
+    assert.doesNotMatch(copied, />Cancel</);
   });
 
   test('Tools: the switch, the connected list with Revoke; off shows nothing to revoke', () => {
@@ -541,5 +560,33 @@ describe('accessibility in markup', () => {
     assert.equal(scrollWithoutTarget(null, 'general'), 'top');
     assert.equal(scrollWithoutTarget('general', 'mail'), 'top');
     assert.equal(scrollWithoutTarget('general', 'general'), 'stay');
+  });
+
+  test('the anchor effect moves only on a fresh navigation, a recording, or a row arriving', () => {
+    const base = {
+      recording: false,
+      recordingChanged: false,
+      linked: false,
+      wasMissing: false,
+      freshNav: false,
+    };
+    // A deep link on a drawn row scrolls and focuses it.
+    assert.equal(anchorScroll({ ...base, linked: true, freshNav: true }), 'linked');
+    // A conditional row appearing after the link landed resolves the miss and is scrolled to.
+    assert.equal(anchorScroll({ ...base, linked: true, wasMissing: true }), 'linked');
+    // A recording starting scrolls its own row only.
+    assert.equal(
+      anchorScroll({ ...base, recording: true, recordingChanged: true, linked: true }),
+      'recording',
+    );
+    // A recording ending while an anchor stays set re-runs neither scroll nor focus.
+    assert.equal(anchorScroll({ ...base, recordingChanged: true, linked: true }), 'none');
+    // A data refresh under an already-drawn anchor keeps the pane and focus where they are.
+    assert.equal(anchorScroll({ ...base, linked: true }), 'none');
+    // A still-missing row never scrolls, whether the navigation is fresh or not.
+    assert.equal(anchorScroll({ ...base, freshNav: true }), 'top');
+    assert.equal(anchorScroll({ ...base, wasMissing: true }), 'none');
+    // A plain re-render keeps everything still.
+    assert.equal(anchorScroll(base), 'none');
   });
 });
