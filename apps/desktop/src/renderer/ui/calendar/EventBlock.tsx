@@ -46,7 +46,7 @@ export function EventBlock(props: EventBlockProps) {
   const showPlace = placement.wide && !!event.place && density === 'full';
   const detail = showPlace ? `${time} · ${event.place}` : time;
   // The name holds every visible word: when the place is drawn, it is in the label too (WCAG 2.5.3).
-  const label = showPlace ? `${eventLabel(event)}, ${event.place}` : eventLabel(event);
+  const label = eventLabel(event, { place: showPlace });
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
     if (e.nativeEvent.isComposing) return;
