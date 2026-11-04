@@ -418,6 +418,31 @@
       "count": 2
     }
   },
+  "apps/desktop/src/renderer/onboarding/connect.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/firstSync/model.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/flow.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/reconnect/reconnect.model.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/steps/ai.model.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
   "apps/desktop/tests/accounts.test.ts": {
     "aplos/boundaries": {
       "count": 2
@@ -619,6 +644,11 @@
   "apps/desktop/tests/sync-safety.test.ts": {
     "aplos/boundaries": {
       "count": 2
+    }
+  },
+  "apps/desktop/tests/ui-onboard/firstSync.helpers.ts": {
+    "complexity": {
+      "count": 1
     }
   },
   "apps/desktop/tests/updates.test.ts": {
