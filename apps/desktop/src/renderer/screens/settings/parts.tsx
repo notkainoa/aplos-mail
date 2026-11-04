@@ -183,7 +183,11 @@ export function Select({
   );
 }
 
-/** A rejected write: the Retry line plus a way to put it away; it must not follow the owner around. */
+/**
+ * A rejected write: one tinted line holding the ErrorLine's words and Retry plus Dismiss; it must not follow the
+ * owner around. On the page it sits above the nav and the column (`.settings-failure-row` keeps it level with the
+ * column); inside the diagnostics dialog it is one report row.
+ */
 export function FailureLine({ failure }: { failure: WriteFailure }) {
   return (
     <div className="settings-failure">
@@ -193,7 +197,7 @@ export function FailureLine({ failure }: { failure: WriteFailure }) {
         placement="settings"
         onAction={action => (action === 'retry' ? failure.retry() : failure.dismiss())}
       />
-      <Button variant="text" label="Dismiss" onPress={() => failure.dismiss()} />
+      <Button variant="text" size="sm" label="Dismiss" onPress={() => failure.dismiss()} />
     </div>
   );
 }

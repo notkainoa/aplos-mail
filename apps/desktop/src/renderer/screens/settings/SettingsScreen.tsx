@@ -118,6 +118,11 @@ export function SettingsScreen({
 
   return (
     <div className="settings-screen" ref={root} data-section={section}>
+      {failure && !rest.view.diagnostics ? (
+        <div className="settings-failure-row">
+          <FailureLine failure={failure} />
+        </div>
+      ) : null}
       <div className="settings-layout">
         <div className="settings-nav" onKeyDown={onNavKeyDown}>
           <Puck
@@ -130,7 +135,6 @@ export function SettingsScreen({
           />
         </div>
         <div className="settings-content" role="region" aria-label={label}>
-          {failure && !rest.view.diagnostics ? <FailureLine failure={failure} /> : null}
           {missingAnchor ? <MissingAnchor section={section} anchor={missingAnchor} /> : null}
           <View {...rest} />
         </div>
