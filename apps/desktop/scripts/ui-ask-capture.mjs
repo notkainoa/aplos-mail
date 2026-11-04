@@ -322,19 +322,57 @@ async function shellScenes(browser, theme) {
       )
         break;
     }
-    // 7. Search: '/' opens it, 'dentist' shows the no-match + Google offer, an in:done pill plus a term.
+    // 7. Search: '/' opens it, 'project' matches three demo threads, an in:done pill plus a term one
+    //    done thread really matches ('coffee' is the done "Coffee and the next chapter" thread).
     await page.keyboard.press('/');
     await page.waitForSelector('.search-screen', { timeout: 10_000 });
     await settle(page);
     await shot(page, t('search-empty'));
-    await page.keyboard.type('dentist', { delay: 25 });
+    await page.keyboard.type('project', { delay: 25 });
     await settle(page, 500);
-    await shot(page, t('search-dentist'));
+    await shot(page, t('search-query'));
     await page.keyboard.press('Meta+a');
-    await page.keyboard.type('in:done invoice', { delay: 25 });
+    await page.keyboard.type('in:done coffee', { delay: 25 });
     await page.waitForSelector('.ui-operator-token', { timeout: 10_000 });
     await settle(page, 400);
     await shot(page, t('search-indone'));
+    // 8. The consent hold, for real: the page's own data api revokes the stand-in's consent record,
+    //    the dock reopens on Ask, a typed question's Return is held by the consent line — not run.
+    const revoked = await page
+      .evaluate(async () => {
+        try {
+          const data = await import('/apps/desktop/src/renderer/data/index.ts');
+          await data.api.consent.revoke({ scope: 'background' });
+          return true;
+        } catch (e) {
+          return String(e?.message ?? e);
+        }
+      })
+      .catch(e => String(e?.message ?? e));
+    if (revoked !== true) note(`shell ${theme}`, `Consent/revoke via page api failed: ${revoked}`);
+    await page.keyboard.press('Meta+j');
+    await page.waitForSelector('section.ui-pane[data-kind="dock"]', { timeout: 10_000 });
+    let consentUp = await page
+      .waitForSelector('.ask-screen__consent', { timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!consentUp) {
+      // The dock may have reopened on the Today tab; the consent line only draws on Ask.
+      await page.click('.ui-ask-dock__tab >> text=Ask').catch(() => undefined);
+      consentUp = await page
+        .waitForSelector('.ask-screen__consent', { timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false);
+    }
+    if (!consentUp) note(`shell ${theme}`, 'consent line never showed after Consent/revoke');
+    // A fresh chat so the held state is not crowded by the earlier answered turn.
+    await page.keyboard.press('Meta+n');
+    // The tab click moved focus; put it back in the field before typing.
+    await page.click('.ui-ask-dock__input').catch(() => undefined);
+    await page.keyboard.type('What needs my reply today?', { delay: 20 });
+    await page.keyboard.press('Enter');
+    await settle(page, 400);
+    await shot(page, t('ask-consent'));
   } finally {
     await ctx.close();
   }
@@ -398,15 +436,10 @@ async function walkthrough(browser) {
   );
   await step("'/'", '/ pressed: expected the Search page.', () => page.keyboard.press('/'));
   await expect('.search-screen', 'the Search page after /');
-  await step("'invoice' typed", 'Typed invoice: local results as ordinary rows.', async () => {
-    await page.keyboard.type('invoice', { delay: 30 });
+  await step("'project' typed", 'Typed project: local results as ordinary rows.', async () => {
+    await page.keyboard.type('project', { delay: 30 });
     await wait(500);
   });
-  await step('Return', 'Return: remote (Google) search starts under the local hits.', () =>
-    page.keyboard.press('Enter'),
-  );
-  await wait(900);
-  await frame('After Return: whatever state the remote run reached.');
   const whereAmI = async () => {
     const on = await page.evaluate(() => ({
       screen:
@@ -426,40 +459,16 @@ async function walkthrough(browser) {
     async () => `Esc on Search: afterwards ${await whereAmI()}.`,
     () => page.keyboard.press('Escape'),
   );
-  await step(
-    'Esc again',
-    async () => `Second Esc: afterwards ${await whereAmI()}.`,
-    () => page.keyboard.press('Escape'),
-  );
   walkNotes.push({
     n: null,
     what:
-      'Bare keys (Space, a) cannot leave the search field — it owns the keystrokes by design — ' +
-      'so ⌃1 (nav.home, a modified key) returns Home before the Space test.',
+      'Bare keys cannot leave the search field — it owns the keystrokes by design — so ⌘J ' +
+      '(a modified key) opens the Ask dock here, never a bare a.',
   });
-  await step('⌃1', 'Ctrl+1: Home (recovery before the Space test).', () =>
-    page.keyboard.press('Control+1'),
+  await step('⌘J', '⌘J pressed: expected the Ask dock over Search.', () =>
+    page.keyboard.press('Meta+j'),
   );
-  await expect('[data-screen="home"]', 'Home after Ctrl+1');
-  await step(
-    'Space',
-    async () => `Space on Home: afterwards ${await whereAmI()}.`,
-    () => page.keyboard.press(' '),
-  );
-  await step(
-    'Esc',
-    async () => `Esc after Space: afterwards ${await whereAmI()}.`,
-    () => page.keyboard.press('Escape'),
-  );
-  const dockOpen = (await page.$('section.ui-pane[data-kind="dock"]')) !== null;
-  if (!dockOpen) {
-    walkNotes.push({
-      n: null,
-      what: 'Space did not open the Ask dock — pressed a (the ask.open key) so the question step could run.',
-    });
-    await step("'a'", "'a' pressed: the dock opened on Ask.", () => page.keyboard.press('a'));
-    await expect('section.ui-pane[data-kind="dock"]', 'the dock after a');
-  }
+  await expect('section.ui-pane[data-kind="dock"]', 'the Ask dock after ⌘J');
   await step('question typed', 'A question typed into the Ask field.', async () => {
     await page.keyboard.type('What needs my reply today?', { delay: 20 });
     await wait(200);
@@ -526,7 +535,7 @@ try {
     }
     if (ONLY_RUN.includes('shell')) {
       for (const theme of ['light', 'dark']) await shellScenes(browser, theme);
-      console.log('shell: 20 captures');
+      console.log('shell: 22 captures');
     }
     if (ONLY_RUN.includes('walk')) {
       await walkthrough(browser);
