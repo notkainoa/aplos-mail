@@ -53,6 +53,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
   store.commit({ opId: 'seed', origin: 'sync', writes: seed });
   const blobs = memoryBlobs();
   const calls: string[] = [];
+  let stalls = 0;
   let gate: { promise: Promise<void>; open: () => void } | undefined;
   const streams = new Map<string, () => AsyncIterable<Uint8Array>>();
   const bytes = (s: string) =>
@@ -66,6 +67,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
     yield enc('x');
   });
   const held = async function* () {
+    stalls++;
     await gate!.promise;
     yield enc('late');
   };
@@ -92,6 +94,7 @@ async function world(opts: { withOriginal?: boolean } = {}) {
     clock,
     calls,
     streams,
+    stalled: () => stalls,
     setHeld: () => {
       gate = { promise: undefined as unknown as Promise<void>, open: () => undefined };
       gate.promise = new Promise<void>(r => {
@@ -167,10 +170,47 @@ test('a stalled fetch dies on the deadline, not on the caller', async () => {
     () => assert.fail('expected cancellation'),
     (e: unknown) => e,
   );
-  for (let i = 0; i < 100 && w.calls.length === 0; i++) await new Promise(r => setImmediate(r));
-  assert.equal(w.calls.length, 1, 'the provider was called');
-  w.clock.advance(120_000);
+  // Dispatch is asynchronous: wait until the fetch is actually suspended inside the stream — the
+  // idle deadline is armed by then — before the clock moves.
+  for (let i = 0; i < 100 && w.stalled() === 0; i++) await new Promise(r => setImmediate(r));
+  assert.equal(w.stalled(), 1, 'the fetch stalled inside the stream');
+  w.clock.advance(31_000);
   const error = await pending;
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.type, 'unavailable');
+  await w.close();
+});
+
+test('exactly 25 MB streams through; a missing subject falls back to message.eml', async () => {
+  const w = await world();
+  w.store.commit({
+    opId: 'edge',
+    origin: 'sync',
+    writes: [msg('exact', 'tx', 1), msg('nosubj', 'tn', 2, { subject: '' })],
+  });
+  w.streams.set('exact', async function* () {
+    yield new Uint8Array(25 * 1024 * 1024);
+  });
+  w.streams.set('nosubj', async function* () {
+    yield enc('Subject: none');
+  });
+  const got = await orig(w, 'exact');
+  assert.equal(got.size, 25 * 1024 * 1024);
+  const named = await orig(w, 'nosubj');
+  assert.equal(named.name, 'message.eml');
+  await w.close();
+});
+
+test('a non-Uint8Array chunk is unavailable, not stored', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'weird', origin: 'sync', writes: [msg('weird', 'tw', 3)] });
+  w.streams.set('weird', async function* () {
+    yield 'not bytes' as unknown as Uint8Array;
+  });
+  const error = await orig(w, 'weird').then(
+    () => assert.fail('expected unavailable'),
+    (e: unknown) => e,
+  );
   assert.ok(error instanceof ContractError);
   assert.equal(error.type, 'unavailable');
   await w.close();
