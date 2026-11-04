@@ -25,6 +25,7 @@ export function createEngine(options: EngineOptions): Promise<Engine> {
 
 export { isAbsent, windowCaller } from './runtime/engine';
 export type { Engine, EngineOptions, HostPorts } from './runtime/engine';
+export type { ConnectedSession } from './runtime/connection';
 export type { EngineServices, LaneModule, LaneModuleSource } from './runtime/services';
 export { STATE_COALESCE_MS } from './runtime/frames';
 export type { EngineFrame, FrameBus, ResetReason } from './runtime/frames';

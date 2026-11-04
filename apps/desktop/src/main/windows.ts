@@ -17,6 +17,7 @@ import {
 } from '../host/lifecycle';
 import { releaseBuild } from './oauth-config';
 import { engineWindowArguments } from '../host/transports/port';
+import { isMailDocumentUrl } from '../host/protocol/relay';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
@@ -103,12 +104,13 @@ const webPreferences = () => ({
   // Only the real engine path's windows get `window.aplosEngine` (preload checks this argument).
   additionalArguments: engineWindowArguments(realPath),
 });
-/** A subframe the app's own page points at a mail view (`aplos-mail://m/<token>`), or an empty or inline document. */
+/**
+ * A subframe the app's own page points at a mail document (exactly `aplos-mail://m/<token>/`, html-5's strict form), or
+ * an empty or inline document. security.ts applies the same rule, and only once the real path registered the scheme.
+ */
 function mailFrameURL(event: { url: string; initiator?: { url: string } | null }) {
   if (/^about:(blank|srcdoc)$/.test(event.url)) return true;
-  return (
-    event.url.startsWith('aplos-mail://m/') && !!event.initiator && trustedURL(event.initiator.url)
-  );
+  return isMailDocumentUrl(event.url) && !!event.initiator && trustedURL(event.initiator.url);
 }
 /** ARCH 10: links leave Aplos or open Compose, and nothing but the app's own page ever loads in any frame. */
 function lockNavigation(win: BrowserWindow) {

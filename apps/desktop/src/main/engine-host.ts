@@ -22,9 +22,13 @@ import { dataDirOverride } from './test-mode';
 import { realEngineRequested } from '../host/transports/port';
 import { releaseBuild } from './oauth-config';
 import { bootRealEngine, realEngine } from './engine-real';
+import { registerMailScheme } from './mail-protocol';
 
 /** `APLOS_ENGINE=real` (never in a release build): the new engine in its utility process, no state mirror in main. */
 const realPath = realEngineRequested(process.env, releaseBuild);
+// The sealed mail frame's scheme (html-5): registered at import, before app ready as Electron requires, and only on the
+// real path. The legacy path registers no scheme, so Chromium does not know `aplos-mail:` there.
+if (realPath) registerMailScheme();
 
 const methods = new Set<string>(legacyEngineMethods);
 type Engine = ReturnType<typeof connectEngine>;

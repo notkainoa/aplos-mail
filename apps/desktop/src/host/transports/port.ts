@@ -146,6 +146,14 @@ export interface ServeOptions {
 export interface ServedPort {
   close(): void;
   readonly closed: boolean;
+  /** The engine connection serving this window (`ConnectedSession.connectionId`), if the session names one. */
+  readonly connectionId: string | undefined;
+}
+
+/** The `connectionId` an engine session names, or undefined (a fake or a foreign session names none). */
+function connectionIdOf(session: EngineSession): string | undefined {
+  const id = (session as { connectionId?: unknown }).connectionId;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
 
 /** A frame too large to send becomes a `reset` at the same position: the window re-reads instead of missing it. */
@@ -234,6 +242,7 @@ export function serveWindowPort(
     get closed() {
       return closed;
     },
+    connectionId: connectionIdOf(session),
   };
 }
 
@@ -258,7 +267,36 @@ export function createPortHost(open: () => EngineSession, options: ServeOptions)
       for (const id of [...served.keys()]) detach(id);
     },
     windows: () => [...served.keys()],
+    /** The engine connection of the window's open port, or undefined when it has none (never attached, detached, closed). */
+    connectionOf(windowId: number): string | undefined {
+      const port = served.get(windowId);
+      return port && !port.closed ? port.connectionId : undefined;
+    },
   };
+}
+
+/** An Electron window id as main sends it in `Mail/serve`'s `windowId`: a positive safe integer, or its decimal text. */
+function electronWindowId(raw: unknown): number | undefined {
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) && raw > 0 ? raw : undefined;
+  if (typeof raw !== 'string' || !/^[1-9][0-9]{0,15}$/.test(raw)) return undefined;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : undefined;
+}
+
+/**
+ * `Mail/serve`'s arguments as the engine must see them (html-5). Main knows only the Electron window id of the frame
+ * that asked; the engine binds tokens to window connection ids, made in this process. So the window id is replaced by
+ * that window's connection id, or by `''` (the engine's uniform 404) when the id is malformed or the window has no
+ * open port. Main's value is never passed through, and only `token`, `path` and `windowId` are kept.
+ */
+export function hostServeArgs(
+  args: unknown,
+  connectionOf: (windowId: number) => string | undefined,
+): { token: unknown; path: unknown; windowId: string } {
+  const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const window = electronWindowId(input.windowId);
+  const windowId = window === undefined ? '' : (connectionOf(window) ?? '');
+  return { token: input.token, path: input.path, windowId };
 }
 
 // ---- main <-> utility process -------------------------------------------------------------------------------------
@@ -272,12 +310,16 @@ export interface UtilityInit {
   keyError?: string;
 }
 
-/** Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`). */
+/**
+ * Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`).
+ * `Mail/serve` is the `aplos-mail://` relay (html-5); the utility rewrites its `windowId` with `hostServeArgs`.
+ */
 export const controlMethods: ReadonlySet<string> = new Set([
   'Draft/get',
   'Outbox/pending',
   'Session/get',
   'Counts/get',
+  'Mail/serve',
 ]);
 
 export type PowerEvent = 'resume' | 'unlock-screen';

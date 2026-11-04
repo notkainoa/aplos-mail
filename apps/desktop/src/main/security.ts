@@ -14,6 +14,7 @@ import { url as inspectorURL } from 'node:inspector';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { releaseBuild } from './oauth-config';
+import { isMailDocumentUrl } from '../host/protocol/relay';
 
 /**
  * Exit code of a release build started with a debugging switch (ADR 40-6); EX_CONFIG in sysexits.h.
@@ -209,11 +210,32 @@ function hardenSession(ses: Session) {
   });
 }
 
-// Inert documents a subframe may hold (about:srcdoc for srcdoc frames). A future mail frame scheme
-// (aplos-mail:, ARCHITECTURE 12.1) is added here when it is registered.
+// Inert documents a subframe may hold (about:srcdoc for srcdoc frames).
 const SUBFRAME_DOCUMENTS = new Set(['about:blank', 'about:srcdoc']);
 function navigationAllowed(url: string, mainFrame: boolean): boolean {
   return trustedURL(url) || (!mainFrame && SUBFRAME_DOCUMENTS.has(url));
+}
+// The sealed mail frame's document (html-5, ARCH 10): only once the real engine path registered `aplos-mail:`, only in a
+// subframe, only the exact issued form `aplos-mail://m/<32 lowercase hex>/` (slice 1's grammar, imported), and only
+// when the app's own page started the navigation. A mail frame navigating itself (script or link) to another
+// well-formed token is refused, and so is a redirect into one. Its `cid/<n>` and `img/<n>` are sub-resources, never
+// documents; a main frame never shows `aplos-mail:`.
+let mailFrames = false;
+/** Called once by the real engine path after it installed the `aplos-mail://` relay (engine-real.ts). */
+function allowMailFrames(): void {
+  mailFrames = true;
+}
+/** The navigation's initiating frame URL; Electron gives null, or throws, once that frame has gone. */
+function initiatorURL(event: { initiator?: { url: string } | null }): string | undefined {
+  try {
+    return event.initiator?.url;
+  } catch {
+    return undefined;
+  }
+}
+function mailFrameAllowed(event: { url: string; initiator?: { url: string } | null }): boolean {
+  const initiator = initiatorURL(event);
+  return mailFrames && isMailDocumentUrl(event.url) && !!initiator && trustedURL(initiator);
 }
 /**
  * Lockdown for every webContents (windows, pop-outs, print views, future mail-frame views, webviews):
@@ -229,7 +251,8 @@ function guardContents(contents: WebContents) {
   // prevented, so judging main frames here would hide the navigation from windows.ts's will-navigate (the
   // link would vanish instead of opening in the browser); will-navigate above blocks them instead.
   contents.on('will-frame-navigate', event => {
-    if (!event.isMainFrame && !navigationAllowed(event.url, false)) event.preventDefault();
+    if (event.isMainFrame || navigationAllowed(event.url, false) || mailFrameAllowed(event)) return;
+    event.preventDefault();
   });
   contents.on('will-redirect', event => {
     if (!navigationAllowed(event.url, event.isMainFrame)) event.preventDefault();
@@ -267,6 +290,7 @@ export {
   text,
   external,
   installPermissionHandlers,
+  allowMailFrames,
   DEBUG_GUARD_EXIT_CODE,
   debugSwitch,
   refuseDebugging,
