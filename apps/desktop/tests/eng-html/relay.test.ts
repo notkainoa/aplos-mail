@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { render } from '@aplos/mail-html';
 import { frameHeaders, notFound, resourceHeaders } from '@aplos/mail-html/frame';
 import {
   ENGINE_HEADERS,
@@ -378,61 +379,90 @@ test('the protocol request’s own signal reaches the engine call', async () => 
   assert.equal(calls[0].signal, gone.signal);
 });
 
-test('an aborted request frees its slot at once, and only once; the late answer changes nothing', async () => {
-  const pending: ((value: unknown) => void)[] = [];
-  const serve = limitInFlight(() => new Promise<unknown>(resolve => pending.push(resolve)), 2, 2);
-  const abort = new AbortController();
-  const args = (signal?: AbortSignal): ServeArgs => ({
-    token: 't',
-    path: '',
-    windowId: '1',
-    ...(signal ? { signal } : {}),
-  });
-  const first = serve(args(abort.signal));
-  const second = serve(args());
-  await assert.rejects(serve(args()), /Too many/, 'full');
-  abort.abort();
-  await assert.rejects(first, /cancelled/);
-  const third = serve(args());
-  await assert.rejects(serve(args()), /Too many/, 'the freed slot is taken again, not two');
-  pending[0](okDocument());
-  await new Promise(resolve => setImmediate(resolve));
-  await assert.rejects(
-    serve(args()),
-    /Too many/,
-    'the late answer of the aborted call freed nothing more',
-  );
-  for (const resolve of pending.slice(1)) resolve(okDocument());
-  await Promise.all([second, third]);
-  await new Promise(resolve => setImmediate(resolve));
-  const last = serve(args());
-  assert.equal(pending.length, 4, 'both slots were free again');
-  pending[3](okDocument());
-  await last;
-});
+test(
+  'an aborted request frees its slot at once, and only once; the late answer changes nothing',
+  { timeout: 5000 },
+  async () => {
+    const pending: ((value: unknown) => void)[] = [];
+    const serve = limitInFlight(() => new Promise<unknown>(resolve => pending.push(resolve)), 2, 2);
+    const abort = new AbortController();
+    const args = (signal?: AbortSignal): ServeArgs => ({
+      token: 't',
+      path: '',
+      windowId: '1',
+      ...(signal ? { signal } : {}),
+    });
+    const first = serve(args(abort.signal));
+    const second = serve(args());
+    await assert.rejects(serve(args()), /Too many/, 'full');
+    abort.abort();
+    await assert.rejects(first, /cancelled/);
+    const third = serve(args());
+    await assert.rejects(serve(args()), /Too many/, 'the freed slot is taken again, not two');
+    pending[0](okDocument());
+    await new Promise(resolve => setImmediate(resolve));
+    await assert.rejects(
+      serve(args()),
+      /Too many/,
+      'the late answer of the aborted call freed nothing more',
+    );
+    for (const resolve of pending.slice(1)) resolve(okDocument());
+    await Promise.all([second, third]);
+    await new Promise(resolve => setImmediate(resolve));
+    const last = serve(args());
+    assert.equal(pending.length, 4, 'both slots were free again');
+    pending[3](okDocument());
+    await last;
+  },
+);
 
-test('one window cannot take the whole pool: its per-window cap is the 404 while another window still gets served', async () => {
-  assert.equal(MAX_RELAY_PER_WINDOW < MAX_RELAY_IN_FLIGHT, true);
-  const pending: ((value: unknown) => void)[] = [];
-  const serve = limitInFlight(() => new Promise<unknown>(resolve => pending.push(resolve)), 10, 2);
-  const a = [
-    serve({ token: 't', path: '', windowId: 'A' }),
-    serve({ token: 't', path: '', windowId: 'A' }),
-  ];
-  await assert.rejects(serve({ token: 't', path: '', windowId: 'A' }), /Too many/);
-  const b = serve({ token: 't', path: '', windowId: 'B' });
-  assert.equal(pending.length, 3, 'window B was served');
-  pending[0](okDocument());
-  await a[0];
-  const again = serve({ token: 't', path: '', windowId: 'A' });
-  assert.equal(pending.length, 4, 'A has a slot again once one of its calls ended');
-  for (const resolve of pending.slice(1)) resolve(okDocument());
-  await Promise.all([a[1], b, again]);
-});
+test(
+  'one window cannot take the whole pool: its per-window cap is the 404 while another window still gets served',
+  { timeout: 5000 },
+  async () => {
+    assert.equal(MAX_RELAY_PER_WINDOW < MAX_RELAY_IN_FLIGHT, true);
+    const pending: ((value: unknown) => void)[] = [];
+    const serve = limitInFlight(
+      () => new Promise<unknown>(resolve => pending.push(resolve)),
+      10,
+      2,
+    );
+    const a = [
+      serve({ token: 't', path: '', windowId: 'A' }),
+      serve({ token: 't', path: '', windowId: 'A' }),
+    ];
+    await assert.rejects(serve({ token: 't', path: '', windowId: 'A' }), /Too many/);
+    const b = serve({ token: 't', path: '', windowId: 'B' });
+    assert.equal(pending.length, 3, 'window B was served');
+    pending[0](okDocument());
+    await a[0];
+    const again = serve({ token: 't', path: '', windowId: 'A' });
+    assert.equal(pending.length, 4, 'A has a slot again once one of its calls ended');
+    for (const resolve of pending.slice(1)) resolve(okDocument());
+    await Promise.all([a[1], b, again]);
+  },
+);
 
 test('a response body above the cap is the 404; exactly at the cap passes', () => {
   const answer = (size: number) => ({ ...okDocument(), body: new Uint8Array(size) });
   assert.ok(servedResponse(answer(MAX_SERVE_BODY_BYTES)));
   // A boolean, not a deepEqual: a failing comparison of a 10 MB body would take a minute to print.
   assert.ok(servedResponse(answer(MAX_SERVE_BODY_BYTES + 1)) === undefined);
+});
+
+test('a hostile document at the sanitizer limits stays far under the body cap, data: images included', () => {
+  // The relay cap (10 MiB) is for cid parts and proxied images; the document is bounded by the sanitizer's own markup cap.
+  const dataUrl = `data:image/png;base64,${'A'.repeat(500_000)}`;
+  const worst = `<img src="${dataUrl}">` + '&'.repeat(10_000);
+  const hostile = [
+    worst,
+    '<p>"</p>'.repeat(60_000),
+    '<img src="data:image/gif;base64,AAAA" alt="&&&&">'.repeat(9_000),
+  ];
+  for (const html of hostile) {
+    const out = render({ html, cids: [], imagePolicy: 'block' });
+    assert.equal(out.bodyKind, 'html');
+    if (out.bodyKind === 'html')
+      assert.ok(out.document.length < MAX_SERVE_BODY_BYTES / 2, `${out.document.length}`);
+  }
 });

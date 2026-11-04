@@ -400,7 +400,13 @@ const unavailable = (message = 'The mailbox is restarting. Try again in a moment
 
 const CALL_TIMEOUT_MS = 10_000;
 
-type Pending = { resolve(value: unknown): void; reject(error: unknown): void; timer: unknown };
+type Pending = {
+  resolve(value: unknown): void;
+  reject(error: unknown): void;
+  timer: unknown;
+  /** Runs once when the call settles by any route: drops the caller's abort listener. */
+  done?: () => void;
+};
 
 function isUtilityMessage(message: unknown): message is FromUtility {
   return (
@@ -434,6 +440,7 @@ export function createEngineLink(
     if (!call) return;
     pending.delete(id);
     timers.clear(call.timer);
+    call.done?.();
     if ('result' in outcome) call.resolve(outcome.result);
     else call.reject(outcome.error);
   };
@@ -493,12 +500,14 @@ export function createEngineLink(
       const id = ++counter;
       return new Promise((resolve, reject) => {
         const timer = timers.set(() => finish(id, { error: unavailable() }), timeoutMs);
-        pending.set(id, { resolve, reject, timer });
-        signal?.addEventListener(
-          'abort',
-          () => finish(id, { error: unavailable('The request was cancelled.') }),
-          { once: true },
-        );
+        const abort = () => finish(id, { error: unavailable('The request was cancelled.') });
+        pending.set(id, {
+          resolve,
+          reject,
+          timer,
+          done: () => signal?.removeEventListener('abort', abort),
+        });
+        signal?.addEventListener('abort', abort, { once: true });
         child.post({ kind: 'call', id, method, args });
       });
     },
