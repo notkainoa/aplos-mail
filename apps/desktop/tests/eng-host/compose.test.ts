@@ -1,12 +1,13 @@
 import test, { mock, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Frame, NotificationItem } from '@aplos/contract';
 import type { LogRecord } from '@aplos/contract/log/events';
 import { FakeClock as EmulatorClock, createGmailEmulator } from '@aplos/emulators';
+import { isAbsent } from '@aplos/engine';
 import { hashAddress } from '@aplos/engine/diag/redact';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { connectSessionsOf } from '@aplos/engine/sync/connect-sessions';
@@ -477,6 +478,36 @@ test('a stored account that cannot start is logged by salted id and class only, 
   } finally {
     await host.close();
   }
+});
+
+test('the engine gets a blob store in <dataDir>/blobs (0700)', async t => {
+  const w = world(t);
+  await withHost(w, async host => {
+    assert.equal(isAbsent(host.engine.services.blobFiles), false);
+    assert.equal(statSync(join(w.dir, 'blobs')).mode & 0o777, 0o700);
+    assert.equal(await host.engine.services.blobFiles.usage(), 0);
+  });
+});
+
+test('an unsafe blob folder leaves Blob/* unavailable, logs a reason code only, and the host still starts', async t => {
+  const w = world(t);
+  const elsewhere = join(w.dir, 'elsewhere');
+  mkdirSync(elsewhere);
+  symlinkSync(elsewhere, join(w.dir, 'blobs'));
+  const records: LogRecord[] = [];
+  await withHost(
+    w,
+    async host => {
+      assert.equal(isAbsent(host.engine.services.blobFiles), true);
+      const out = (await host.engine.connect().call('Account/get', {})) as { list: unknown[] };
+      assert.deepEqual(out.list, []);
+      const line = records.find(r => r.event === 'rpc.failed');
+      assert.deepEqual(line?.data, { method: 'Host/blobs', reason: 'io' });
+      assert.equal(JSON.stringify(records).includes(w.dir), false, 'no path in the log');
+      assert.deepEqual(readdirSync(elsewhere), []);
+    },
+    { logSink: { write: record => void records.push(record) } },
+  );
 });
 
 test('an account that starts normally leaves startFailures empty', async t => {
