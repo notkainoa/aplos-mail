@@ -5,6 +5,9 @@
 - **F4 APPROVED by the owner (round 3); PR #222 open** (`rv/ui-reader/reader`, head 0ab29af2 + revamp merge; worktree `~/.t3/worktrees/aplos-mail/rv-ui-reader`). Deep passes done (see PR body). Waiting on the Integrator: lane-approved labels (ui-foundation, ui-shell, ui-home), OWNERS.md rows for `screens/cardStyle.ts` and `tests/compose-undo-engine.test.ts`, DESIGN.md update (3 Cards, 7.5, 7.6, 10), `reader.expand` label in commands/catalog. Watch #222 (and #209/#210 for F3b) for checks and comments; on a merge go the §12.3 g way (re-run capture at PR head vs snapshot `~/.local/share/aplos-mail-review/ui-reader/6fd6c5f1/`). Later idea (not built): AI edits a draft on any email.
 - Other open: #122/#130 scorers PRs (check merged); known gaps below.
 
+## Review ladder (owner GO 2026-11-04, STATUS 09:47)
+Every PR: two independent SWE-2 review passes (delegate_task acpRegistry_devin swe-2-high, two different reviewers, real bugs only), author fixes, then for UI-only and docs PRs one Sonnet pass and NO Opus; Opus is the Integrator's alone (security, auth, store commit, send paths, contract). Claude stays lean; bulk coding, tests, check runs and first-pass reviews go to SWE-2. UI-core 2 has no open PR now (F3b merged; #222 and #245 belong to the ui-core thread).
+
 ## Things to know
 - This worktree is `rv-thread-ui-core-2` (branch `rv/thread/ui-core-2`); `node_modules` here are symlinks into a sibling worktree (untracked).
 - Models: Sonnet for UI and reviews; SWE-2 (delegate_task acpRegistry_devin swe-2-high) did the pure models for F3b and was reviewed; Opus only for composer/send/security.
