@@ -21,7 +21,9 @@ import {
 } from './parse';
 import { actOnRow, openResult, type ActDeps } from './searchActions';
 import { SearchPage } from './SearchPage';
+import { specKey } from '../../data/optimistic';
 import {
+  currentQuery,
   highlightTerms,
   initialSearch,
   PAUSE_GRACE_MS,
@@ -339,11 +341,21 @@ test('openResult hands the reader the visible result ids for J and K', () => {
   assert.equal(typeof ctx.from === 'object' && ctx.from?.label, 'Search');
 });
 
-// TODO(data lane): `data/optimistic.ts`'s specKey drops the nested `search` query, so two searches share one
-// window and local results do not update as you type (REQUEST filed). Once the data lane lands it, two different
-// queries are two distinct windows with their own ids — turn this sketch into the real assertion and remove the
-// todo flag.
-test('the local window follows the query as you type', { todo: true }, () => {
+test('the local window follows the query as you type', () => {
+  // `SearchScreen` opens `{ kind: 'search', query }` per typed query and `specKey` is the window key, so two
+  // different queries must key two different windows for local results to update (the specKey collision this
+  // used to hit). `currentQuery` builds the same `SearchQuery` the screen passes to `useView`.
+  const spec = (state: SearchState) =>
+    ({ kind: 'search', query: currentQuery(state).query }) as const;
+  const one = spec(typing(initialSearch, 'one'));
+  const two = spec(typing(initialSearch, 'two'));
+  assert.notEqual(specKey(one), specKey(two));
+  // Key order and object identity are irrelevant: the same query reuses the one window.
+  assert.equal(specKey({ query: one.query, kind: 'search' }), specKey(one));
+  // A token is part of the query, so `in:done` plus a word differs from the word alone.
+  const bare = spec(typing(initialSearch, 'invoice'));
+  const filtered = spec(typing(initialSearch, 'in:done invoice'));
+  assert.notEqual(specKey(bare), specKey(filtered));
   const first = searchPage({ ...initialSearch, field: 'one' }, LOCAL(['a']), 1_000);
   const second = searchPage({ ...initialSearch, field: 'two' }, LOCAL(['b']), 1_000);
   assert.deepEqual(first.localIds, ['a']);
