@@ -76,10 +76,12 @@ type Kind = BlobHeader['kind'];
 
 interface Entry {
   principal: string;
-  kind: Kind;
+  kind: Kind | 'attachment';
   mime: string;
   name?: string;
   size: number;
+  /** `attachment` handles only: the `AttachmentFiles` path the bytes are read from (never copied into BlobFiles). */
+  path?: string;
   createdAt: number;
   lastReadAt: number;
   /** The connection that made it, while it is open; none for a blob found at start. */
@@ -95,6 +97,17 @@ export interface BlobPut {
   name?: string;
   /** The caller's signal: a put that finishes after its connection closed is undone. */
   signal?: AbortSignal;
+}
+
+export interface BlobAttach {
+  caller: Caller;
+  connectionId: string;
+  /** The `AttachmentFiles`-relative path the handle reads through. */
+  path: string;
+  /** Cleaned with `cleanMime`/`cleanName` by the caller. */
+  mime: string;
+  name?: string;
+  size: number;
 }
 
 export interface BlobRuntime {
@@ -114,6 +127,12 @@ export interface BlobRuntime {
    * A missing blob is left out of the map. Each value is a fresh buffer.
    */
   load(blobIds: readonly string[]): Promise<Map<string, Uint8Array>>;
+  /**
+   * A read handle onto an attachment already in the store's file cache (`Attachment/get`, package 6): in memory
+   * only, never a second copy in `BlobFiles`. Lives like an `original` handle (30 min after its last read) and
+   * `Blob/get` resolves its bytes through `AttachmentFiles`; an evicted file reads as `notFound`.
+   */
+  attach(input: BlobAttach): { blobId: string };
   /** The timer loop's sweep source; registered by the module. */
   readonly source: DeadlineSource;
   /** Drops the unheld blobs `connectionId` made. Never throws. */
@@ -237,6 +256,8 @@ export function createBlobRuntime(deps: {
   clock: { now(): number };
   log: Logger;
   randomBytes(n: number): Uint8Array;
+  /** The attachment cache `attachment` handles read through; absent, `attach` is `unavailable`. */
+  attachment?: { read(path: string): Promise<Uint8Array | undefined> };
 }): BlobRuntime {
   const { files, store, clock, log } = deps;
   const index = new Map<string, Entry>();
@@ -256,15 +277,19 @@ export function createBlobRuntime(deps: {
   };
   /** Takes it out of the index now; the file goes after (a failed delete is the next start's job). */
   const drop = (id: string, reason: string) => {
+    const entry = index.get(id);
     index.delete(id);
-    files.remove(id).catch(() => log.event('rpc.failed', { method: 'Blob/remove', reason }));
+    if (entry?.kind !== 'attachment')
+      files.remove(id).catch(() => log.event('rpc.failed', { method: 'Blob/remove', reason }));
   };
 
   function usage(principal: string) {
     let bytes = pending.get(principal)?.bytes ?? 0;
     let count = pending.get(principal)?.count ?? 0;
     for (const entry of index.values()) {
-      if (entry.principal !== principal) continue;
+      // An `attachment` handle owns no BlobFiles bytes — it reads through the shared cache — so it
+      // does not spend the caller's upload quota (Blob/get on it is bounded by the file cap).
+      if (entry.principal !== principal || entry.kind === 'attachment') continue;
       bytes += entry.size;
       count += 1;
     }
@@ -345,19 +370,59 @@ export function createBlobRuntime(deps: {
     };
   }
 
+  /** An attachment handle's bytes: through the file cache, never a copy of its own. */
+  const attachmentBytes = (entry: Entry) =>
+    deps.attachment && entry.path !== undefined ? deps.attachment.read(entry.path) : undefined;
+
+  function attach(input: BlobAttach) {
+    if (!ready || !deps.attachment) throw unavailable();
+    const principal = principalOf(input.caller);
+    // The same principal asking for the same cached file gets the live handle back — a
+    // `Blob/get` reads the path's current bytes either way — and a per-principal cap keeps a loop
+    // from minting one fresh handle per call (they live 30 min and own no bytes, so bytes exempt
+    // is not enough).
+    let held = 0;
+    for (const [id, entry] of index) {
+      if (entry.kind !== 'attachment' || entry.principal !== principal) continue;
+      if (entry.path === input.path) {
+        entry.lastReadAt = clock.now();
+        return { blobId: id };
+      }
+      held += 1;
+    }
+    if (held >= 200) throw busy();
+    const now = clock.now();
+    const id = mintId(deps.randomBytes);
+    index.set(id, {
+      principal,
+      kind: 'attachment',
+      path: input.path,
+      mime: input.mime,
+      name: input.name,
+      size: input.size,
+      createdAt: now,
+      lastReadAt: now,
+      creator: input.connectionId,
+    });
+    return { blobId: id };
+  }
+
   async function get(caller: Caller, blobId: string) {
     if (!ready) throw unavailable();
     const found = own(caller, blobId);
     if (!found) throw notFound();
     const done = readSlot(found.principal, found.size);
     try {
-      const read = await files.get(blobId);
+      const read =
+        found.kind === 'attachment'
+          ? await attachmentBytes(found)
+          : (await files.get(blobId))?.bytes;
       const entry = own(caller, blobId);
       // Released (or swept) while the file was read, or unreadable on the disk: not available, in both cases. The
       // index keeps an unreadable one (the host may read it again later); its lifecycle ends it.
       if (!entry || !read) throw notFound();
       entry.lastReadAt = clock.now();
-      const bytes = movable(read.bytes);
+      const bytes = movable(read);
       const out = { bytes, mime: entry.mime, size: bytes.byteLength };
       return entry.name === undefined ? out : { ...out, name: entry.name };
     } finally {
@@ -367,14 +432,17 @@ export function createBlobRuntime(deps: {
 
   async function release(caller: Caller, blobId: string) {
     if (!ready) throw unavailable();
-    if (!own(caller, blobId)) throw notFound();
+    const entry = own(caller, blobId);
+    if (!entry) throw notFound();
     if (refs().live.has(blobId))
       throw contractError({ type: 'stateMismatch', message: BLOB_SENTENCES.waiting });
     index.delete(blobId);
-    // Released already: a failed delete is logged, never reported (the next start cleans the file).
-    await files
-      .remove(blobId)
-      .catch(() => log.event('rpc.failed', { method: 'Blob/remove', reason: 'release' }));
+    // An attachment handle owns no file of its own; the cache's lifecycle ends it.
+    if (entry.kind !== 'attachment')
+      // Released already: a failed delete is logged, never reported (the next start cleans the file).
+      await files
+        .remove(blobId)
+        .catch(() => log.event('rpc.failed', { method: 'Blob/remove', reason: 'release' }));
   }
 
   /** Unheld blobs past their time: uploads 24 h after they were made, handles 30 min after their last read. */
@@ -435,16 +503,18 @@ export function createBlobRuntime(deps: {
   async function load(blobIds: readonly string[]) {
     const out = new Map<string, Uint8Array>();
     for (const id of new Set(blobIds)) {
-      if (!index.has(id)) continue;
-      const read = await files.get(id);
-      if (read && index.has(id)) out.set(id, read.bytes);
+      const entry = index.get(id);
+      if (!entry) continue;
+      const read =
+        entry.kind === 'attachment' ? await attachmentBytes(entry) : (await files.get(id))?.bytes;
+      if (read && index.has(id)) out.set(id, read);
     }
     return out;
   }
 
   const owns = (caller: Caller, blobId: string) => ready && own(caller, blobId) !== undefined;
 
-  return { put, get, release, owns, load, source, connectionClosed, start };
+  return { put, get, release, owns, load, attach, source, connectionClosed, start };
 }
 
 /** Seam 1: the blob runtime as a module of the composition root, after `clock` (it registers the sweep source). */
@@ -459,6 +529,7 @@ export function createModule(services: EngineServices): LaneModule {
     clock: services.clock,
     log: services.log,
     randomBytes: n => services.randomBytes(n),
+    attachment: services.attachmentFiles,
   });
   const unregister = absent ? undefined : services.deadlines.register(blobs.source);
   return {
