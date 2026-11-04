@@ -22,10 +22,22 @@ export function navigationCommands(actions: ListActions): CommandHandlerTable {
   };
 }
 
+/** X, ⇧X, ⌘A and Esc: the bulk pick. Arrows never add to it (decision 7). */
+export function selectionCommands(actions: ListActions): CommandHandlerTable {
+  return {
+    'list.select': run(() => actions.select()),
+    'list.selectRange': run(() => actions.selectRange()),
+    'list.selectAll': run(() => actions.selectAll()),
+    'list.clearSelection': run(() => actions.clearSelection()),
+    'list.more': run(() => actions.more()),
+  };
+}
+
 /** All mail, Drafts, Sent, Trash, Spam, labels and Bookmarks. A verb a list does not own does nothing there. */
 export function commandsForList(actions: ListActions): CommandHandlerTable {
   return {
     ...navigationCommands(actions),
+    ...selectionCommands(actions),
     'mail.done': run(() => actions.done()),
     'mail.later': run(() => actions.later()),
     'mail.bookmark': run(() => actions.bookmark()),

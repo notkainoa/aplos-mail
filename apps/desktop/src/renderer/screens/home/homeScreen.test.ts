@@ -344,6 +344,7 @@ test("the registry runs Home's commands: E is Done, Tab jumps a section, Z undoe
       commandsForHome(createHomeActions(deps), {
         oneByOne: () => undefined,
         more: () => undefined,
+        why: () => undefined,
         undo: () => void undoStack.undoLast(),
       }),
     );
@@ -454,7 +455,12 @@ test('Later offers Set a date for its own thread, and D opens the picker for the
     );
     const registry = createAppRegistry();
     const detach = shellRegistryFor(registry).register(
-      commandsForHome(actions, { oneByOne: () => {}, more: () => {}, undo: () => {} }),
+      commandsForHome(actions, {
+        oneByOne: () => {},
+        more: () => {},
+        why: () => {},
+        undo: () => {},
+      }),
     );
     const context: CommandContext = {
       stack: ['global', 'list', 'home'],
