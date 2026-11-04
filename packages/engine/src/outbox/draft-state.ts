@@ -276,7 +276,7 @@ export function isEmpty(fields: DraftFields): boolean {
     !fields.bcc.length &&
     !fields.attachments.length &&
     !fields.subject.trim() &&
-    !htmlToText(fields.html).trim()
+    emptyMarkup(fields.html)
   );
 }
 
