@@ -276,13 +276,20 @@ interface Run {
 }
 
 /**
- * `npm run test:engine:gmail-rewritten` switches the emulator to Gmail's real behaviour (`messages.send` replaces the
- * Message-ID) through the environment. A run that quietly fell back to the kept mode would pass for the wrong reason: so
- * when the environment asks for rewritten, the server must say it ran rewritten and no Sent copy may keep the engine's id.
+ * The mode the whole matrix runs in. Gmail's real behaviour is `rewritten` (`messages.send` replaces the Message-ID and
+ * keeps the custom `X-Aplos-Send` header), so that is the DEFAULT; `npm run test:engine:gmail-kept` (the old emulator
+ * behaviour, still true of other providers that keep the Message-ID) sets `APLOS_KILLPOINT_GMAIL_MODE=kept`.
  */
-function assertRewrittenRan(server: GmailServer, internetId: string) {
-  if (process.env.APLOS_EMU_SEND_IDENTITY !== 'rewritten') return;
-  assert.equal(server.sendIdentity(), 'rewritten', 'the emulator did not run in rewritten mode');
+const MODE: 'kept' | 'rewritten' =
+  process.env.APLOS_KILLPOINT_GMAIL_MODE === 'kept' ? 'kept' : 'rewritten';
+
+/**
+ * A run that quietly fell back to the other mode would pass for the wrong reason: the emulator must say it ran in `MODE`
+ * and, rewritten, no Sent copy may keep the engine's Message-ID (every delivery is then found only by its token).
+ */
+function assertModeRan(server: GmailServer, internetId: string) {
+  assert.equal(server.sendIdentity(), MODE, `the emulator did not run in ${MODE} mode`);
+  if (MODE !== 'rewritten') return;
   assert.ok(internetId, 'the row never counted a delivery, so nothing proves the rewrite ran');
   assert.equal(server.sentUnderOwnId(internetId), 0, 'a Sent copy kept the engine Message-ID');
 }
@@ -295,6 +302,7 @@ async function runRow(row: Row): Promise<Run> {
     ...(row.find === 'misses' || row.indexLagMs ? { listingLagMs: lagMs } : {}),
     ...(row.serverClockOffsetMs ? { serverClockOffsetMs: row.serverClockOffsetMs } : {}),
     ...(row.draftTwin ? { draftTwin: true } : {}),
+    sendIdentity: MODE,
   });
   try {
     if (!row.deliver) server.faults.dropNext({ apiMethod: SEND });
@@ -330,7 +338,7 @@ async function runRow(row: Row): Promise<Run> {
       [],
       'the server answered an exception that was not an injected drop',
     );
-    assertRewrittenRan(server, internetId);
+    assertModeRan(server, internetId);
     const calls = readCalls(logPath).filter(c => !internetId || c.internetId === internetId);
     return {
       result,
@@ -349,7 +357,7 @@ const report: string[] = [];
 /** Part `part` (from 0) of `of` of the Gmail matrix: the rows are dealt out by index so the CI shards can spread them. */
 export function defineMatrix(part: number, of: number) {
   describe(
-    'kill-point matrix on the Gmail adapter over the Gmail emulator',
+    `kill-point matrix on the Gmail adapter over the Gmail emulator (${MODE === 'rewritten' ? 'messages.send rewrites the Message-ID' : 'Message-ID kept'})`,
     { concurrency: 2 },
     () => {
       after(() => console.log(`\nkill-point matrix (gmail)\n${report.sort().join('\n')}`));

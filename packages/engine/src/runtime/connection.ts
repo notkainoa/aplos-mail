@@ -8,6 +8,12 @@ import type { EngineServices } from './services';
 /** Runs one validated call; the engine passes the F5 table's `dispatch`. */
 export type Dispatch = (method: string, args: unknown, ctx: MethodContext) => Promise<unknown>;
 
+/**
+ * An `EngineSession` that also names its `connectionId` (`MethodContext.connectionId`). The utility process's port host
+ * reads it to map an Electron window to its engine connection for `Mail/serve` (html-5); nothing else needs it.
+ */
+export type ConnectedSession = EngineSession & { readonly connectionId: string };
+
 export interface ConnectionDeps {
   services: EngineServices;
   hub: FrameHub;
@@ -24,7 +30,7 @@ export interface ConnectionDeps {
  * included) goes through the same default-deny `dispatch`. Arguments and results are copied, so neither side shares
  * objects. Closing the session aborts its calls: they answer `unavailable`, and a handler can start nothing more.
  */
-export function openConnection(deps: ConnectionDeps, caller: Caller): EngineSession {
+export function openConnection(deps: ConnectionDeps, caller: Caller): ConnectedSession {
   const who = freezeCaller(caller);
   const listeners = new Set<(frame: Frame) => void>();
   const running = new Set<AbortController>();
@@ -64,6 +70,7 @@ export function openConnection(deps: ConnectionDeps, caller: Caller): EngineSess
   };
 
   return {
+    connectionId: deps.connectionId,
     async call(method, args) {
       if (closed) throw closedError();
       const controller = new AbortController();
