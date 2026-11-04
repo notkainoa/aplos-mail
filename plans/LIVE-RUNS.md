@@ -64,3 +64,16 @@ The probe draft stays in Drafts: the guard refuses every draft delete in every t
 
 - `emptyAnswers=1` means a list call (the draft probe's `drafts.list`, the auth probe's `messages.list`) came back 200 with nothing in the body (empty, `null` or `{}`): the account has no such items. That is a normal state of the spare account, not an error.
 - Error class `bad-body` means a 200 whose body was not readable JSON or not a JSON object. It is a real error of its own, named without any of the body text.
+
+## Probe `gmail.draft-message-id-after-edit`, version 2 (after the live finding that Gmail does not keep our Message-ID)
+
+Never compares with our value alone. Each read records a short salted hash of the Message-ID header (never the value) and its shape, and the probe adds a custom `X-Aplos-Probe` header and read-only `rfc822msgid:` searches. Owner steps, in plain words: (1) discard the old `aplos-live-probe <date>` draft in the agent account's Drafts (the probe refuses to start while one exists); the integrator runs `--phase create`; (2) the owner opens the NEW `aplos-live-probe <date>` draft in Gmail on the phone, types one word and lets it save; (3) the integrator runs `--phase inspect`.
+
+- **State file.** `create` writes `gmail.draft-message-id-after-edit.json` under `~/Library/Application Support/Aplos Mail Review/live/state/` (folder 0700, file 0600): a random salt, hashes and shape words only, from an allowlist in `scripts/live/state.ts` (an address, Message-ID or text is refused, naming the field). `inspect` compares with it; without it `stateMissing=1` and no stability flag is reported.
+- **Shape codes** (`messageIdShapeCreate`, `messageIdShapeSave`, `messageIdShapePhone`): 0 absent, 1 ours, 2 Gmail-style `<...@mail.gmail.com>`, 3 other.
+- **Flags (0/1):** `messageIdStableAcrossApiSave` (hash after create equals hash after our API save), `messageIdStableAcrossPhoneEdit` (hash now equals the one after the save), `customHeaderKeptAfterCreate` / `...AfterApiSave` / `...AfterPhoneEdit` (our `X-Aplos-Probe` token is still there; the phone step compares its hash).
+- **Search counts** (`create` after the save, `inspect` after the phone edit; no ids): `searchDraftsOursCreate`, `searchDraftsReportedCreate`, `searchMessagesOursCreate`, `searchMessagesReportedCreate`, and the same four with `Phone`: how many drafts / messages `q=rfc822msgid:<ours>` and `q=rfc822msgid:<the Message-ID Gmail reports>` return (0 = not found). Gmail's search index lags, so a 0 right after `create` may become 1 by `inspect`.
+
+## Running the emulator as real Gmail behaves
+
+`APLOS_EMU_DRAFT_IDENTITY=rewritten` (any test that creates a Gmail emulator) makes every `drafts.create` / `drafts.update` replace the draft's Message-ID with `<hex@mail.gmail.com>`; `APLOS_EMU_DROP_DRAFT_HEADERS=X-Aplos-Probe,X-Other` also drops those headers. The same are the `draftIdentity` and `dropDraftHeaders` options of `createGmailEmulator`. The emulator's `drafts.list` now also honours `q=`.

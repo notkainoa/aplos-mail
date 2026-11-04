@@ -1,3 +1,5 @@
+import type { ProbeState } from './state';
+
 /**
  * Shared types of the live-provider runner (plan 20 section 5.4). A probe is one check against a
  * real provider account; its result is content-free by construction: numbers and fixed names only.
@@ -51,6 +53,8 @@ export interface ProbeContext {
   runId: string;
   /** The `--phase` the operator named for a probe that runs in steps across runs (tier M draft probe); else undefined. */
   phase?: string;
+  /** The probe's own small content-free state file, for a probe whose phases run in separate runs (state.ts). */
+  state?: ProbeState;
 }
 
 /** Plan 40's SmokeProbe interface; tier R probes of plan 20 satisfy it directly. */

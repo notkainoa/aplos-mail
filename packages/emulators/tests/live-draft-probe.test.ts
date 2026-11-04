@@ -4,34 +4,47 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGmailEmulator, FakeClock, type GmailEmulator } from '../src/index';
+import {
+  createGmailEmulator,
+  FakeClock,
+  type GmailEmulator,
+  type GmailEmulatorOptions,
+} from '../src/index';
 import { parseArgs, runLive, type RunDeps } from '../../../apps/desktop/scripts/live/run';
 import { signIn } from '../../../apps/desktop/scripts/live/signin';
 import { PROBES } from '../../../apps/desktop/scripts/live/probes';
 import { COUNT_KEYS } from '../../../apps/desktop/scripts/live/evidence';
 import { emptyResult, type SmokeProbe } from '../../../apps/desktop/scripts/live/types';
+import { createProbeState } from '../../../apps/desktop/scripts/live/state';
 import { probeNames } from '../../../apps/desktop/scripts/live/probes/gmail-draft-message-id';
 
 const CLIENT = { clientId: 'live-client', clientSecret: 'live-secret' };
 
 interface Rig {
   emu: GmailEmulator;
+  /** Where the probe's state file goes (a temp folder). */
+  stateDir: string;
   run(
     phase?: string,
     confirm?: boolean,
   ): Promise<{ counts: Record<string, number>; text: string; status: string }>;
 }
 
-async function rig(extraProbes: SmokeProbe[] = [], listAnswer?: () => Response): Promise<Rig> {
+async function rig(
+  extraProbes: SmokeProbe[] = [],
+  listAnswer?: () => Response,
+  emulator: Partial<GmailEmulatorOptions> = {},
+): Promise<Rig> {
   const clock = new FakeClock();
-  const emu = createGmailEmulator({ clock, latencyMs: 0 });
+  const emu = createGmailEmulator({ clock, latencyMs: 0, ...emulator });
   emu.oauth.addClient(CLIENT.clientId, CLIENT.clientSecret);
   emu.seedMailbox({ threads: 10, seed: 3 });
   const vault = await mkdtemp(join(tmpdir(), 'aplos-live-vault-'));
   const evidence = await mkdtemp(join(tmpdir(), 'aplos-live-evidence-'));
+  const stateDir = join(await mkdtemp(join(tmpdir(), 'aplos-live-state-')), 'state');
   const secrets = new Map<string, string>();
   const readSecret = async (service: string) => secrets.get(service)!;
   await signIn(
@@ -66,10 +79,12 @@ async function rig(extraProbes: SmokeProbe[] = [], listAnswer?: () => Response):
     sleep: ms => clock.advance(ms),
     log: () => undefined,
     evidenceDir: evidence,
+    stateDir,
     probes: [...extraProbes, ...PROBES.filter(p => p.id === 'gmail.draft-message-id-after-edit')],
   };
   return {
     emu,
+    stateDir,
     async run(phase, confirm = true) {
       const outcome = await runLive(
         {
@@ -304,6 +319,137 @@ for (const [name, body] of [
   });
 }
 
+const STATE_FILE = 'gmail.draft-message-id-after-edit.json';
+
+test('v2 kept identity: shapes ours, stable across the API save, custom header kept; the state file is content-free and mode 0600', async () => {
+  const r = await rig();
+  const out = await r.run('create');
+  assert.equal(out.status, 'pass');
+  const c = out.counts;
+  assert.deepEqual(
+    [c.messageIdShapeCreate, c.messageIdShapeSave, c.messageIdStableAcrossApiSave],
+    [1, 1, 1],
+  );
+  assert.deepEqual([c.customHeaderKeptAfterCreate, c.customHeaderKeptAfterApiSave], [1, 1]);
+  assert.equal(c.searchDraftsOursCreate, 1);
+  assert.equal(c.searchMessagesOursCreate, 1);
+  const file = join(r.stateDir, STATE_FILE);
+  const text = await readFile(file, 'utf8');
+  const state = JSON.parse(text) as Record<string, string>;
+  assert.deepEqual(Object.keys(state).sort(), [
+    'afterCreateHash',
+    'afterCreateShape',
+    'afterSaveHash',
+    'afterSaveShape',
+    'salt',
+    'tokenHash',
+  ]);
+  for (const [key, value] of Object.entries(state))
+    assert.ok(
+      /^[0-9a-f]{16,64}$/.test(value) || ['ours', 'gmail', 'other', 'absent'].includes(value),
+      key,
+    );
+  assert.ok(!/[@<>]|aplos|invalid/i.test(text), 'no Message-ID or text in the state file');
+  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  assert.equal((await stat(r.stateDir)).mode & 0o777, 0o700);
+});
+
+test('v2 kept identity: a phone edit that keeps both ids is stable across the phone edit; one that drops the custom header is not', async () => {
+  const r = await rig();
+  await r.run('create');
+  const draft = probeDraft(r.emu);
+  const ours = probeNames(new Date()).messageId;
+  const same = await r.run('inspect');
+  assert.deepEqual(
+    [
+      same.counts.messageIdStableAcrossPhoneEdit,
+      same.counts.customHeaderKeptAfterPhoneEdit,
+      same.counts.stateMissing,
+    ],
+    [1, 1, 0],
+  );
+  r.emu.mailbox.updateDraft(draft.id, edited([`Message-ID: ${ours}`], 'Edited on the phone.'));
+  const phone = await r.run('inspect');
+  assert.equal(phone.counts.messageIdStableAcrossPhoneEdit, 1);
+  assert.equal(phone.counts.customHeaderKeptAfterPhoneEdit, 0, 'the phone dropped our header');
+  assert.equal(phone.counts.searchDraftsOursPhone, 1);
+});
+
+test('v2 Gmail-like identity: the Message-ID is rewritten on every save and our custom header dropped, and the report says so', async () => {
+  const r = await rig([], undefined, {
+    draftIdentity: 'rewritten',
+    dropDraftHeaders: ['X-Aplos-Probe'],
+  });
+  const out = await r.run('create');
+  assert.equal(out.status, 'pass');
+  const c = out.counts;
+  assert.deepEqual(
+    [
+      c.messageIdShapeCreate,
+      c.messageIdShapeSave,
+      c.createKeptMessageId,
+      c.updatedKeptMessageIdHeader,
+    ],
+    [2, 2, 0, 0],
+  );
+  assert.equal(c.messageIdStableAcrossApiSave, 0, 'every save gives a new Message-ID');
+  assert.deepEqual([c.customHeaderKeptAfterCreate, c.customHeaderKeptAfterApiSave], [0, 0]);
+  assert.equal(c.searchDraftsOursCreate, 0, 'our Message-ID finds nothing');
+  assert.equal(c.searchMessagesOursCreate, 0);
+  assert.equal(c.searchDraftsReportedCreate, 1, 'the id Gmail reports finds the draft');
+  assert.equal(c.searchMessagesReportedCreate, 1);
+  r.emu.mailbox.updateDraft(probeDraft(r.emu).id, edited([], 'Edited on the phone.'));
+  const phone = await r.run('inspect');
+  assert.deepEqual(
+    [
+      phone.counts.messageIdShapePhone,
+      phone.counts.messageIdStableAcrossPhoneEdit,
+      phone.counts.customHeaderKeptAfterPhoneEdit,
+      phone.counts.messageIdIsOurs,
+    ],
+    [2, 0, 0, 0],
+  );
+  assert.equal(phone.counts.searchDraftsReportedPhone, 1);
+});
+
+test('v2 inspect without a state file says so and reports no stability flag; the evidence names no id', async () => {
+  const r = await rig();
+  await r.run('create');
+  await rm(join(r.stateDir, STATE_FILE));
+  const out = await r.run('inspect');
+  assert.equal(out.counts.stateMissing, 1);
+  assert.equal(out.counts.messageIdStableAcrossPhoneEdit, undefined);
+  assert.equal(out.counts.customHeaderKeptAfterPhoneEdit, undefined);
+  assert.equal(out.counts.messageIdShapePhone, 1);
+  assert.ok(
+    !/@|aplos-live-probe|invalid/.test(out.text.replace(/gmail\.draft-message-id-after-edit/g, '')),
+  );
+});
+
+test('state.ts: only allowlisted keys and hex or shape values are stored; a rejection names the field, never the value', async () => {
+  const dir = join(await mkdtemp(join(tmpdir(), 'aplos-state-unit-')), 's');
+  const state = createProbeState(dir, 'some.probe');
+  assert.equal(await state.load(), undefined);
+  await state.save({ salt: 'a'.repeat(32), afterSaveShape: 'gmail' });
+  assert.deepEqual(await state.load(), { salt: 'a'.repeat(32), afterSaveShape: 'gmail' });
+  await assert.rejects(
+    state.save({ messageId: 'abcdef0123456789' }),
+    /key is not on the allowlist/,
+  );
+  await assert.rejects(state.save({ salt: '<CA1234@mail.gmail.com>' }), err => {
+    assert.match(String(err), /the value of salt is not allowed/);
+    assert.ok(!/CA1234|gmail/.test(String(err)), 'the value is not repeated');
+    return true;
+  });
+  await assert.rejects(
+    state.save({ afterSaveShape: 'someone@example.test' }),
+    /afterSaveShape is not allowed/,
+  );
+  assert.throws(() => createProbeState(dir, '../escape'), /probe id/);
+  await writeFile(join(dir, 'some.probe.json'), '{"salt":"not allowed value"}');
+  assert.equal(await state.load(), undefined, 'a tampered file is treated as no state');
+});
+
 test('command line: --phase takes a short lowercase word only; the counts are on the evidence allowlist', () => {
   const base = ['--provider', 'gmail', '--tier', 'M', '--account', 'agent', '--dry-run'];
   assert.equal(parseArgs([...base, '--phase', 'create']).phase, 'create');
@@ -324,6 +470,23 @@ test('command line: --phase takes a short lowercase word only; the counts are on
     'bodyEdited',
     'probeDraftsExisting',
     'emptyAnswers',
+    'messageIdShapeCreate',
+    'messageIdShapeSave',
+    'messageIdShapePhone',
+    'messageIdStableAcrossApiSave',
+    'messageIdStableAcrossPhoneEdit',
+    'customHeaderKeptAfterCreate',
+    'customHeaderKeptAfterApiSave',
+    'customHeaderKeptAfterPhoneEdit',
+    'stateMissing',
+    'searchDraftsOursCreate',
+    'searchDraftsReportedCreate',
+    'searchMessagesOursCreate',
+    'searchMessagesReportedCreate',
+    'searchDraftsOursPhone',
+    'searchDraftsReportedPhone',
+    'searchMessagesOursPhone',
+    'searchMessagesReportedPhone',
   ])
     assert.ok(COUNT_KEYS.includes(key), key);
 });
