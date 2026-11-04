@@ -1,0 +1,157 @@
+/* The Calendar screen's own wrappers (DESIGN 7.8; mockups cal.css). Layout only, tokens only: every control, event,
+   grid line and surface is styled by its component in ui/. */
+
+.cal-screen {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-6);
+}
+
+.cal-screen > .ui-page-head {
+  flex: none;
+}
+
+/* D | W | M sits a little apart from Today and the arrows, as in the mockup. */
+.cal-screen__views {
+  display: inline-flex;
+  margin-left: var(--space-2);
+}
+
+.cal-screen__body,
+.cal-screen__day {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  position: relative;
+}
+
+/* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window on a quiet card
+   (--paper, the --line ring of --elev-pane, --radius-lg), so the message never sits on the hour lines. Pointer
+   events pass through except on the card, so a click-drag on the grid around it still creates an event. */
+.cal-screen__empty {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cal-screen__empty-box {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: var(--dock-w);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-pane);
+  text-align: center;
+  pointer-events: auto;
+}
+
+.cal-screen__empty-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Day view: one wide column and the detail rail (calendar-day.html). */
+.cal-screen__day {
+  gap: var(--space-6);
+}
+
+.cal-screen__rail {
+  flex: none;
+  width: var(--dock-w);
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  padding: var(--space-2) 0 var(--space-6) var(--space-6);
+  box-shadow: inset var(--hairline) 0 0 var(--line);
+}
+
+/* The event popover's content (calendar-event.html: 360 px wide overall; Popover adds its own 16 px inset). */
+.cal-screen__popover {
+  width: calc(var(--dock-w) - var(--space-4) * 2);
+  max-width: calc(100vw - var(--space-10));
+}
+
+/* The scope question's "This event"-only form, when "All events" can't be written (seriesAlone). */
+.cal-scope-alone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.cal-scope-alone__rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- The editor (N, E, a drag on an empty hour) ---------- */
+
+.cal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.cal-editor__rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.cal-editor__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.cal-editor__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.cal-editor__spacer {
+  flex: 1;
+}
+
+.cal-editor__month {
+  padding: var(--space-3) var(--space-2);
+}
+
+/* The harness states' stand-in window and sidebar (CalendarStates): the real sidebar is ui-shell's. */
+.calp-window {
+  height: 100%;
+  display: flex;
+  background: var(--shell);
+}
+
+.calp-sidebar {
+  flex: none;
+  width: var(--sidebar-w);
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}

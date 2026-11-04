@@ -1,5 +1,6 @@
 import * as ai from './ai/module';
 import * as clock from './clock/module';
+import * as host from './host/module';
 import * as html from './mail/module';
 import * as outbox from './outbox/module';
 import * as views from './views/module';
@@ -13,7 +14,7 @@ import type { LaneModuleSource } from './runtime/services';
  * others register deadline sources with the timer loop it provides; `blobModule` before `outbox`, so the outbox can
  * take `services.blobs` when it is created.
  */
-const modules: readonly LaneModuleSource[] = [clock, blobModule, views, outbox, ai, html];
+const modules: readonly LaneModuleSource[] = [clock, blobModule, views, outbox, ai, html, host];
 
 /** Every lane's commit extensions, for the host's `openStore({extensions})` (seam 2). */
 export function laneExtensions(): CommitExtension[] {

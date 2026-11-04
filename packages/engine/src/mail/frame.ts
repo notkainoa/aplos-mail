@@ -2,7 +2,7 @@ import type { Input, Output } from '@aplos/contract';
 import { tokenOf } from '@aplos/mail-html/frame';
 import type { MethodContext } from '../methods/types';
 import { messageGone, requireMessage } from './message';
-import { readAllowList, requestedOf, resolveImagePolicy } from './policy';
+import { readAllowList, readRemoteImages, requestedOf, resolveImagePolicy } from './policy';
 import { issueFrame, renderMessage, type RenderRequest } from './render';
 
 // `Mail/frame`, `Mail/release` and `Mail/toggleQuotes` (html-4). The window is the calling connection
@@ -17,12 +17,13 @@ export async function mailFrame(args: Input<'Mail/frame'>, ctx: MethodContext): 
   const { services } = ctx;
   const ref = requireMessage(services, args.messageId);
   const allowList = services.store.read(readAllowList);
+  const global = services.store.read(readRemoteImages);
   const findQuery = emptyToUndefined(args.findQuery);
   const requested = requestedOf(args.imagePolicy);
   const request: RenderRequest = {
     messageId: ref.id,
     requested,
-    policy: resolveImagePolicy(requested, ref.fromAddr, allowList),
+    policy: resolveImagePolicy(requested, ref.fromAddr, allowList, global),
     ...(findQuery !== undefined ? { findQuery } : {}),
     quotesOpen: args.quotesOpen === true,
   };
@@ -53,10 +54,11 @@ export async function toggleQuotes(
   // The request is resolved again: a sender taken off the allow-list since the first render is blocked now.
   const requested = requestedOf(record.requestedPolicy);
   const allowList = services.store.read(readAllowList);
+  const global = services.store.read(readRemoteImages);
   const request: RenderRequest = {
     messageId: record.messageId,
     requested,
-    policy: resolveImagePolicy(requested, ref.fromAddr, allowList),
+    policy: resolveImagePolicy(requested, ref.fromAddr, allowList, global),
     ...(record.findQuery !== undefined ? { findQuery: record.findQuery } : {}),
     quotesOpen: args.open === true,
   };

@@ -3,6 +3,7 @@
 // draws it, with original demo data. Screens add their states later by adding one entry here and one
 // scene there.
 
+import { calendarStates } from './states.calendar';
 import { readerStates } from './states.reader';
 
 export type Theme = 'light' | 'dark';
@@ -768,6 +769,8 @@ export const STATES: readonly VisualState[] = [
   },
   // ui-reader
   ...readerStates,
+  // ui-calendar
+  ...calendarStates,
 ];
 
 export const THEMES: readonly Theme[] = ['light', 'dark'];

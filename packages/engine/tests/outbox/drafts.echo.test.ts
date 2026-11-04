@@ -272,7 +272,7 @@ test('echo: a REAL conflict survives an ack that names another copy; only an ack
   }));
 
 test('fingerprint: the same content as the writer produces it hashes the same (line breaks, subject spacing)', async () => {
-  const { fingerprintOf } = await import('../../src/outbox/draft-state');
+  const { fingerprintOf, isEmpty } = await import('../../src/outbox/draft-state');
   const base = fields({ subject: 'Lunch  at noon ', html: '<p>a</p>\n<p>b</p>\n' });
   const back = fields({ subject: 'Lunch at noon', html: '<p>a</p>\r\n<p>b</p>\r\n' });
   assert.equal(fingerprintOf(base), fingerprintOf(back));
@@ -324,6 +324,54 @@ test('fingerprint: the same content as the writer produces it hashes the same (l
       fingerprintOf(fields({ html: '' })),
       `${markup} is content, not an empty body`,
     );
+  // Entity text and zero-width marks are content, not empty markup.
+  for (const markup of ['<p>&amp;</p>', '<p>&lt;</p>', '<p>\u200b</p>', '<p><b>&gt;</b></p>'])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is content, not an empty body`,
+    );
+  // Decorative attributes are ignored: a styled-but-empty p is still empty.
+  assert.equal(
+    fingerprintOf(fields({ html: '<p style="color:red"></p>' })),
+    fingerprintOf(fields({ html: '' })),
+  );
+  // But a reference attribute is content wherever it sits.
+  for (const markup of [
+    '<div style="background-image:url(cid:x.png)"></div>',
+    '<body background="cid:logo.png"></body>',
+    '<span style="display:block;background:url(http://t/p.gif)"></span>',
+    '<p poster="x.png"></p>',
+  ])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} references content`,
+    );
+  // Emptied-editor containers suppress like <p></p>.
+  for (const markup of [
+    '<blockquote><br></blockquote>',
+    '<h2><br></h2>',
+    '<pre></pre>',
+    '<section></section>',
+    '<dl><dt></dt><dd></dd></dl>',
+  ])
+    assert.equal(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is trivially empty`,
+    );
+  // isEmpty shares the rule: an image-only draft is content and does upload.
+  assert.equal(
+    isEmpty(
+      fields({ to: [], cc: [], bcc: [], attachments: [], subject: '', html: '<img src="x">' }),
+    ),
+    false,
+  );
+  assert.equal(
+    isEmpty(fields({ to: [], cc: [], bcc: [], attachments: [], subject: '', html: '<p></p>' })),
+    true,
+  );
   // A long run of line breaks costs nothing.
   const start = performance.now();
   fingerprintOf(fields({ html: `x${'\r\n'.repeat(500_000)}y` }));

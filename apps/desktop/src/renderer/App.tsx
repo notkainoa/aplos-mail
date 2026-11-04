@@ -2,7 +2,7 @@
  * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
  * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
- * (Later and the lists are `ui-home`'s, Settings and Calendar `ui-screens`'). The boot proof reads Home's section
+ * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-screens'`). The boot proof reads Home's section
  * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
  * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
  * `useHome()` yet.
@@ -31,6 +31,7 @@ import {
   type Screen,
 } from './shell';
 import { HomeScreen as HomeRoute, OneByOneScreen } from './screens/home';
+import { CalendarScreen } from './screens/calendar';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
@@ -312,6 +313,12 @@ function useListProps(from: Screen) {
   );
 }
 
+/** The calendar, keyed on the account scope like One by one so a scope change restarts its period and surfaces. */
+function CalendarSlot() {
+  const scope = useAccountScope();
+  return <CalendarScreen key={scope ?? 'all'} accountId={scope ?? undefined} />;
+}
+
 function LaterSlot() {
   return <LaterScreen {...useListProps('later')} />;
 }
@@ -364,6 +371,7 @@ export function renderScreen(_client: AppClient, screen: Screen) {
       <ListSlot which={{ label: screen.label }} />
     );
   if (screen === 'home') return <HomeSlot />;
+  if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;
   if (screen === 'done') return <DoneSlot />;
   return isListPlace(screen) ? <ListSlot which={screen} /> : undefined;
