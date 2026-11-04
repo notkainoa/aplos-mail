@@ -1176,6 +1176,14 @@ From the Integrator's review of #189 (REQUEST 11:31). The real path stays defaul
 - **Safety bounds.** One send per day (a same-day probe message makes the run fail without sending), no retries of the send, the message stays (no deletes), fixed subject and one-line body.
 - **What each answer means.** `sentKeptMessageId = 1`: `findSent` by our Message-ID is sound and the MIME send path needs no change (rows 8 and 9 of the engine table stay safe). `0` with `sentFoundByRfc822msgidGmails = 1`: Gmail rewrites on send too; `findSent` must search by the id the send answer reveals (the send response carries Gmail's message id, from which the Message-ID can be read) or by subject/time with content proof; an uncertain send stays uncertain until then. `sentHeaderKept = 1` means an `X-Aplos-Draft` token could identify the Sent copy.
 - **Emulator.** New `sendIdentity: 'rewritten'` option (env `APLOS_EMU_SEND_IDENTITY`), default kept.
+
+## 2026-11-05 prov-emu: #214 LOWs (state written first and tied to the draft, stricter state values and file handling)
+
+- **False 0s from an old state.** `create` now saves its state right after the API save and header reads, BEFORE the searches, and stores a salted hash of the draft id (`draftIdHash`). `inspect` treats a state file whose draft-id hash does not match the draft it found as missing (`stateMissing=1`, no stability flag), so a create that died before saving can no longer make `messageIdStableAcrossPhoneEdit` read 0 against the previous run's hashes. A state file from before this field (the one a live run may already hold) has none to compare and is used as it was.
+- **`state.ts`.** The folder is forced to 0700 (`mkdir` leaves an existing one alone); the temp file is removed first and created with `wx` so a planted symlink is never written through; values are checked per key (salt exactly 32 hex, `...Hash` exactly 16, `...Shape` a shape word), so a 16-hex Gmail message id fits only a hash key and is refused anywhere it could be mistaken for one by name.
+- **Doc.** A Message-ID absent on both reads counts as stable (read the flag with the shape code).
+- **Tests.** The failed-search create, the stale-state inspect, the existing-folder / symlink / per-key value rules; each red under its mutation (state saved after the searches, no stale check, no chmod, symlink followed, loose hash).
+
 ## 2026-11-03 — eng-contract: draft identity without the Message-ID (items 1 and 2 of plans/engine/draft-identity.md)
 
 - **Why:** real Gmail shows its own Message-ID for a draft and changes it with every save, while the draft id stays (live probe, Integrator NOTICE 2026-11-04 23:01). Integrator GO 23:51 for the two engine-side items.
