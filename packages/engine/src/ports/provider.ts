@@ -600,6 +600,13 @@ export type DraftSaveResult =
       remoteMessageId: string;
       revision: number;
       changeKey?: string;
+      /**
+       * The Message-ID the provider now shows for the copy it just stored, when it is not `DraftUpload.internetId` (Gmail
+       * assigns its own to a draft; one `drafts.get` metadata read). The engine remembers it next to the upload's, so
+       * history reporting the copy under it with the content of this upload is recognised as the echo of our own write.
+       * Optional and additive: an adapter that keeps our Message-ID, or did not read it, leaves it out.
+       */
+      copyInternetId?: string;
     }
   /** The remote draft no longer exists (deleted or sent from another device): the engine decides, never recreates blindly. */
   | { kind: 'gone' }

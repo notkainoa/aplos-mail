@@ -22,7 +22,32 @@ import {
  * `draft-writes.ts` (the line limit); nothing here writes.
  */
 
-/** Is this copy the one this row's upload under `w.internetId` made: same content, and it shows every field? */
+/**
+ * The fact is about the very draft this row already holds a copy of. The provider's draft id survives edits (Gmail keeps
+ * it across saves while the message id and the Message-ID change), so it names the copy whatever Message-ID the copy now
+ * shows. It says WHICH draft, never whose content: every use below still needs the content proof.
+ */
+export const sameDraft = (row: DraftRow, w: RemoteDraftWrite) =>
+  row.remote_draft_id !== null && w.remoteDraftId === row.remote_draft_id;
+
+/** A Message-ID this row's uploads used, or that the provider told us a copy of theirs shows (`copyInternetId`). */
+const known = (meta: DraftMeta, id: string | undefined) =>
+  id !== undefined && ((meta.wrote ?? []).includes(id) || meta.uploading?.internetId === id);
+
+/**
+ * The draft id alone names the copy (and any recent upload's content may prove it) only when the copy shows a Message-ID
+ * this row never used: a provider that keeps ours shows the very one the attempt used, which names that attempt, so
+ * a phone edit that restores older content of ours is still another device's edit there.
+ */
+export const namedByDraftId = (row: DraftRow, meta: DraftMeta, w: RemoteDraftWrite) =>
+  sameDraft(row, w) && !known(meta, w.internetId);
+
+/**
+ * Is this copy one this row's uploads made: same content, and it shows every field? Named by the Message-ID the copy
+ * shows (`w.internetId`) when an upload was made under it (or the provider told us it shows it, `copyInternetId`); and,
+ * for the draft this row already holds, by the draft id, in which case the content may be that of the running upload or
+ * of any recent attempt (the provider rewrote the Message-ID, so the attempt cannot be told by it).
+ */
 export function provenOurs(
   tx: CommitExtensionTx,
   row: DraftRow,
@@ -31,9 +56,13 @@ export function provenOurs(
   w: RemoteDraftWrite,
 ) {
   const id = w.internetId ?? '';
-  const print = meta.uploading?.internetId === id ? meta.uploading.fingerprint : meta.prints?.[id];
+  const byId = meta.uploading?.internetId === id ? meta.uploading.fingerprint : meta.prints?.[id];
   const own = accountAddress(tx, row.account_id);
-  return own !== undefined && hasFingerprint(w, row, fields, print, own);
+  if (own === undefined) return false;
+  const prints = namedByDraftId(row, meta, w)
+    ? [byId, meta.uploading?.fingerprint, ...Object.values(meta.prints ?? {})]
+    : [byId];
+  return prints.some(print => hasFingerprint(w, row, fields, print, own));
 }
 
 /**
@@ -90,7 +119,7 @@ function hasFingerprint(
 }
 
 /**
- * The running (or unanswered) upload's echo: the same Message-ID and content that hashes to what the upload sends. The
+ * The running (or unanswered) upload's echo: the same Message-ID (or draft id) and content that hashes to what the upload sends. The
  * Message-ID alone proves nothing (a phone edit can keep it, and a retry of the same revision reuses it), so there is
  * no "one move per attempt" rule to get wrong: a fact whose content differs, or that delivers no body, is never
  * explained by the upload and goes the ordinary way (a conflict is the safe direction).
@@ -103,7 +132,10 @@ export function explainedByAttempt(
   own: string,
 ) {
   const attempt = meta.uploading;
-  if (!attempt || attempt.internetId !== w.internetId) return false;
+  // The running upload's copy: by its Message-ID, or, for a draft that already has a copy, by the draft id (a provider
+  // that rewrites the Message-ID shows another one). The content must still be the upload's.
+  if (!attempt || !(attempt.internetId === w.internetId || namedByDraftId(row, meta, w)))
+    return false;
   return hasFingerprint(w, row, base, attempt.fingerprint, own);
 }
 
