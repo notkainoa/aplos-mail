@@ -44,6 +44,7 @@ const CTX = (over: Partial<RemoteContext> = {}): RemoteContext => ({
   now: 1_000,
   supported: true,
   localIds: [],
+  scope: 'all',
   ...over,
 });
 
@@ -162,7 +163,7 @@ test('a paused account shows the pause line and asks nothing', () => {
 
 test('the run id arrives, done settles it, and a second Return still asks nothing', () => {
   let state = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
-  state = remoteStarted(state, 'hi', 'run-1');
+  state = remoteStarted(state, 'all|hi', 'run-1');
   assert.equal(state.remote.phase, 'running');
   state = remoteFrame(state, {
     frame: 'progress',
@@ -176,10 +177,10 @@ test('the run id arrives, done settles it, and a second Return still asks nothin
 
 test('a refused start maps to the page line, never the provider text', () => {
   let state = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
-  state = remoteRejected(state, 'hi', { type: 'paused', message: 'x', resumeAt: 12_000 });
+  state = remoteRejected(state, 'all|hi', { type: 'paused', message: 'x', resumeAt: 12_000 });
   assert.equal(state.remote.phase, 'paused');
   state = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
-  state = remoteRejected(state, 'hi', { type: 'needsReauth', message: 'x' });
+  state = remoteRejected(state, 'all|hi', { type: 'needsReauth', message: 'x' });
   assert.equal(state.remote.phase, 'failed');
   const model = searchPage(state, { status: 'live', ids: [], total: 0 }, 1_000);
   assert.equal(model.remoteLine?.kind, 'failed');
@@ -187,13 +188,13 @@ test('a refused start maps to the page line, never the provider text', () => {
 
 test('a failed start may be retried; a paused one may not until it resumes', () => {
   let failed = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
-  failed = remoteRejected(failed, 'hi', { type: 'internal', message: 'x' });
+  failed = remoteRejected(failed, 'all|hi', { type: 'internal', message: 'x' });
   assert.deepEqual(
     submit(failed, CTX()).effects.map(e => e.kind),
     ['remote'],
   );
   let paused = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
-  paused = remoteRejected(paused, 'hi', { type: 'paused', message: 'x', resumeAt: 12_000 });
+  paused = remoteRejected(paused, 'all|hi', { type: 'paused', message: 'x', resumeAt: 12_000 });
   assert.deepEqual(submit(paused, CTX({ now: 1_000 })).effects, []);
   assert.deepEqual(
     submit(paused, CTX({ now: 13_000 })).effects.map(e => e.kind),
@@ -219,9 +220,39 @@ test('the offer row sits under local results; a no-match carries the offer itsel
   assert.equal(miss.remoteLine, null);
 });
 
+test('the same query under another account scope is a different remote search', () => {
+  let state = submit(
+    { ...initialSearch, field: 'invoice' },
+    CTX({ scope: 'acct-1', localIds: ['a'] }),
+  ).state;
+  state = remoteStarted(state, 'acct-1|invoice', 'r1');
+  state = remoteFrame(state, {
+    frame: 'progress',
+    runId: 'r1',
+    source: 'search',
+    kind: 'done',
+  } as ProgressFrame);
+  // The scope switched: Return asks again, and the old window's ids no longer split local from remote.
+  const asked = submit(state, CTX({ scope: 'acct-2', localIds: ['x', 'y'] }));
+  assert.deepEqual(
+    asked.effects.map(e => e.kind),
+    ['remote'],
+  );
+  const other = searchPage(asked.state, LOCAL(['x', 'y']), 1_000, true, 'acct-2');
+  assert.deepEqual(other.remoteIds, []);
+  assert.deepEqual(other.localIds, ['x', 'y']);
+  // …while the finished scope still reports "asked" and keeps its own local/remote split.
+  assert.deepEqual(submit(state, CTX({ scope: 'acct-1' })).effects, []);
+  const first = searchPage(state, LOCAL(['a', 'b']), 1_000, true, 'acct-1');
+  assert.deepEqual(first.localIds, ['a']);
+  assert.deepEqual(first.remoteIds, ['b']);
+  // A late answer for the old scope's key settles nothing in the new pending remote.
+  assert.equal(remoteStarted(asked.state, 'acct-1|invoice', 'r2').remote.phase, 'starting');
+});
+
 test('remote hits join under "From Google"; ids that were already local stay put', () => {
   let state = submit({ ...initialSearch, field: 'hi' }, CTX({ localIds: ['a'] })).state;
-  state = remoteStarted(state, 'hi', 'r1');
+  state = remoteStarted(state, 'all|hi', 'r1');
   state = remoteFrame(state, {
     frame: 'progress',
     runId: 'r1',
@@ -281,7 +312,7 @@ test('the page renders the announce sentence in a hidden live region', () => {
 
 test('a pause without a resume time blocks only a grace, then Return retries', () => {
   let state = submit({ ...initialSearch, field: 'hi' }, CTX({ now: 1_000 })).state;
-  state = remoteRejected(state, 'hi', { type: 'paused', message: 'x' }, 1_000);
+  state = remoteRejected(state, 'all|hi', { type: 'paused', message: 'x' }, 1_000);
   assert.equal(state.remote.phase, 'paused');
   // Inside the grace Return asks nothing; past it Return asks again.
   assert.deepEqual(submit(state, CTX({ now: 1_000 + PAUSE_GRACE_MS - 1 })).effects, []);

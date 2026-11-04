@@ -82,12 +82,20 @@ export function matchLabel(query: string, label: string): LabelMatch | null {
       return { tier: 2, indices: unique(span(at, q.length)) };
     }
   }
+  // Subsequence, the loosest tier: at least four letters, each either starting a word or following the
+  // previous match within one — never scattered single letters across a label ("sett" finds "Settings",
+  // not "Send the question").
+  if (q.length < 4) return null;
   const picked: number[] = [];
   let at = 0;
+  let prev = -1;
   for (const char of q) {
     while (at < chars.length && chars[at] !== char) at += 1;
     if (at === chars.length) return null;
+    const wordStart = at === 0 || !WORDISH.test(chars[at - 1]);
+    if (at !== prev + 1 && !wordStart) return null;
     picked.push(from[at]);
+    prev = at;
     at += 1;
   }
   return { tier: 1, indices: unique(picked) };

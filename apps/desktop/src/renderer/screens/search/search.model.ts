@@ -83,6 +83,13 @@ export interface RemoteContext {
   readonly pausedUntil?: number;
   /** The local window's ids at this moment. */
   readonly localIds: readonly string[];
+  /** The account scope this remote search belongs to ('all' for every account): folded into the remote key. */
+  readonly scope: string;
+}
+
+/** The remote key for a query in one account scope: the same query under another scope is a different remote search. */
+export function remoteKey(scope: string, queryKey: string): string {
+  return `${scope}|${queryKey}`;
 }
 
 /** The query the page searches for right now, and its key (the canonical text; equal keys are the same search). */
@@ -131,19 +138,23 @@ function alreadyAsked(remote: RemoteState, key: string, now: number): boolean {
 export function submit(state: SearchState, ctx: RemoteContext): SearchStep {
   const { query, key, empty } = currentQuery(state);
   if (empty || !ctx.supported) return { state, effects: [] };
+  const scoped = remoteKey(ctx.scope, key);
   if (ctx.pausedUntil !== undefined && ctx.pausedUntil > ctx.now) {
     return {
-      state: { ...state, remote: { phase: 'paused', key, resumeAt: ctx.pausedUntil, at: ctx.now } },
+      state: {
+        ...state,
+        remote: { phase: 'paused', key: scoped, resumeAt: ctx.pausedUntil, at: ctx.now },
+      },
       effects: [],
     };
   }
-  if (alreadyAsked(state.remote, key, ctx.now)) return { state, effects: [] };
+  if (alreadyAsked(state.remote, scoped, ctx.now)) return { state, effects: [] };
   return {
     state: {
       ...state,
-      remote: { phase: 'starting', key, at: ctx.now, localIds: [...ctx.localIds] },
+      remote: { phase: 'starting', key: scoped, at: ctx.now, localIds: [...ctx.localIds] },
     },
-    effects: [{ kind: 'remote', query, key }],
+    effects: [{ kind: 'remote', query, key: scoped }],
   };
 }
 
@@ -320,16 +331,21 @@ function announceText(settled: boolean, empty: boolean, localCount: number): str
     : `${localCount} ${localCount === 1 ? 'result' : 'results'} in your mail.`;
 }
 
-/** The page's view of the state, the local window and the clock. */
+/** The remote state for this query in this scope, or idle when it belongs to another scope or query. */
+function scopedRemote(remote: RemoteState, scoped: string): RemoteState {
+  return 'key' in remote && remote.key === scoped ? remote : { phase: 'idle' };
+}
+
+/** The page's view of the state, the local window and the clock. `scope` is the account scope the page shows. */
 export function searchPage(
   state: SearchState,
   local: LocalResults,
   now: number,
   supported = true,
+  scope = 'all',
 ): SearchPageModel {
   const { query, key, empty } = currentQuery(state);
-  const remote: RemoteState =
-    'key' in state.remote && state.remote.key === key ? state.remote : { phase: 'idle' };
+  const remote = scopedRemote(state.remote, remoteKey(scope, key));
   const before =
     remote.phase === 'running' || remote.phase === 'starting' || remote.phase === 'done'
       ? new Set(remote.localIds)

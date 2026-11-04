@@ -36,6 +36,8 @@ import {
   advance,
   arrow,
   askKeyLayer,
+  consentDropped,
+  consentGranted,
   decide,
   decided,
   dockView,
@@ -237,6 +239,11 @@ export function AskDockHost(props: AskDockHostProps) {
     accountNames,
     suggestions: sources.suggestions.length > 0 ? sources.suggestions : FALLBACK_SUGGESTIONS,
     recents,
+    // The gate submits against, wider than the line's display rule (no tab or working check).
+    consentNeeded:
+      sources.loaded &&
+      sources.status.model !== undefined &&
+      consentNeeded(consent, dock.consentDismissed),
   };
   const view = dockView(dock.ask, inputs);
   const viewRef = useRef(view);
@@ -386,6 +393,15 @@ export function AskDockHost(props: AskDockHostProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dock.pendingQuestion]);
 
+  // Hold-A while the dock was closed: the shell's `ask.dictate` fallback opened it and left a pending
+  // dictation; start listening now (the key's release reaches this host's handler once attached).
+  useEffect(() => {
+    if (!dock.pendingDictation) return;
+    askStore.update(s => ({ ...s, pendingDictation: undefined }));
+    dictation.controller.start('A');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.pendingDictation]);
+
   // A, ⌘J and ⇧A move focus to the field.
   useEffect(() => {
     if (tab === 'ask') fieldRef.current?.focus();
@@ -442,10 +458,15 @@ export function AskDockHost(props: AskDockHostProps) {
             provider: askModel.provider as ProviderId,
             model: askModel.model,
           })
+          .then(() => perform(consentGranted(cur())))
           .catch(() => undefined);
       }}
       onNotNow={() =>
-        askStore.update(s => ({ ...s, consentDismissed: consent?.currentVersion ?? 0 }))
+        askStore.update(s => ({
+          ...s,
+          consentDismissed: consent?.currentVersion ?? 0,
+          ask: consentDropped(s.ask),
+        }))
       }
     />
   ) : undefined;

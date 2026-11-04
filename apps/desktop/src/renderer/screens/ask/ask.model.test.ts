@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import type { Citation, Conversation, ProgressFrame, Proposal } from '../../data';
 import {
   advance,
+  consentDropped,
+  consentGranted,
   decide,
   dockView,
   escape,
@@ -15,6 +17,7 @@ import {
   initialAsk,
   newChat,
   openConversation,
+  pickCursor,
   providerLabel,
   runRefused,
   runStarted,
@@ -428,4 +431,46 @@ test('foldFrames ignores other runs and stops folding after a terminal frame', (
   );
   assert.equal(folded.terminal, 'done');
   assert.equal(folded.text, '');
+});
+
+test('before consent a submit is held, Allow sends it, "Not now" keeps the text', () => {
+  const gate = inputs({ consentNeeded: true });
+  const held = submit(setField(initialAsk, 'what next?'), dockView(initialAsk, gate), 'ask');
+  assert.deepEqual(held.effects, []);
+  assert.deepEqual(held.state.consentHeld, { question: 'what next?', searchAll: false });
+  assert.equal(held.state.field, 'what next?', 'the text stays in the field while held');
+  // Allow: the grant landed, so the held question runs and the field clears.
+  const sent = consentGranted(held.state);
+  assert.deepEqual(
+    sent.effects.map(e => e.kind),
+    ['run'],
+  );
+  assert.equal(sent.state.consentHeld, undefined);
+  assert.equal(sent.state.field, '');
+  assert.equal(sent.state.run?.question, 'what next?');
+  // "Not now": the hold drops, the text stays.
+  const dropped = consentDropped(held.state);
+  assert.equal(dropped.consentHeld, undefined);
+  assert.equal(dropped.field, 'what next?');
+  assert.equal(dropped.run, undefined);
+  // No hold and Allow is a no-op.
+  assert.equal(consentGranted(initialAsk).state, initialAsk);
+  assert.equal(consentDropped(initialAsk), initialAsk);
+});
+
+test('a queued send-now and a cursor pick hold for consent the same way', () => {
+  const gate = inputs({ consentNeeded: true });
+  const working: AskState = {
+    ...running(),
+    queued: [{ id: 'q1', text: 'follow up?', searchAll: true }],
+  };
+  const held = sendNow(working, dockView(working, gate), 'q1');
+  assert.deepEqual(held.effects, []);
+  assert.deepEqual(held.state.consentHeld, { question: 'follow up?', searchAll: true });
+  assert.deepEqual(held.state.queued, []);
+  // Return on an empty view's suggestion holds too.
+  const emptyGate = { ...initialAsk, cursor: 0 };
+  const picked = pickCursor(emptyGate, dockView(emptyGate, gate));
+  assert.deepEqual(picked.effects, []);
+  assert.deepEqual(picked.state.consentHeld, { question: 'a?', searchAll: false });
 });

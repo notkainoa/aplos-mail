@@ -104,6 +104,8 @@ export interface AskState {
   /** ↑ in an empty field inside a conversation: how far back in its questions. */
   readonly history?: number;
   readonly seq: number;
+  /** A question held for consent: the consent line's Allow sends it, "Not now" drops the hold and keeps the text. */
+  readonly consentHeld?: { readonly question: string; readonly searchAll: boolean };
 }
 
 export const initialAsk: AskState = {
@@ -203,6 +205,8 @@ export interface AskInputs {
   readonly accountNames?: ReadonlyMap<string, string>;
   readonly suggestions: readonly string[];
   readonly recents: readonly { id: string; title: string; updatedAt: number }[];
+  /** The consent record still needs an Allow; a submitted question is held, not run. */
+  readonly consentNeeded?: boolean;
 }
 
 function excludedNote(
@@ -347,6 +351,8 @@ export interface DockView {
   readonly field: string;
   /** The newest open proposal, the one Return and Esc act on. */
   readonly pendingProposal?: ProposalView;
+  /** A submitted question waits for the consent line's Allow rather than running at once. */
+  readonly consentNeeded: boolean;
 }
 
 /** The turns the dock draws, oldest first: stored turns, earlier runs still on the wire, then the live run. */
@@ -419,6 +425,7 @@ export function dockView(state: AskState, inputs: AskInputs): DockView {
     queued: state.queued.map(({ id, text }) => ({ id, text })),
     field: state.field,
     pendingProposal,
+    consentNeeded: inputs.consentNeeded === true,
   };
 }
 
@@ -510,6 +517,10 @@ export function submit(state: AskState, view: DockView, mode: 'ask' | 'searchAll
     // ⌘Return while streaming sends the queue now (decision 8).
     return mode === 'searchAll' ? sendNow(queued, view, queued.queued[0].id) : step(queued);
   }
+  // Before consent the question is held, not run: Allow sends it, "Not now" keeps the text in the field.
+  if (view.consentNeeded) {
+    return step({ ...state, consentHeld: { question: text, searchAll: mode === 'searchAll' } });
+  }
   return startRun({ ...state, field: '' }, text, mode === 'searchAll');
 }
 
@@ -524,6 +535,12 @@ export function sendNow(state: AskState, view: DockView, id: string): AskStep {
   if (!card) return step(state);
   const rest = { ...state, queued: state.queued.filter(q => q.id !== id) };
   if (card.text.trim() === '') return step(rest);
+  if (view.consentNeeded) {
+    return step({
+      ...rest,
+      consentHeld: { question: card.text.trim(), searchAll: card.searchAll },
+    });
+  }
   const effects: AskEffect[] = [];
   let base = rest;
   if (view.working && state.run) {
@@ -709,7 +726,13 @@ export function arrow(state: AskState, view: DockView, dir: 1 | -1): AskState {
 export function pickCursor(state: AskState, view: DockView): AskStep {
   if (!view.empty || state.cursor === undefined) return step(state);
   const { suggestions, recents } = view.empty;
-  if (state.cursor < suggestions.length) return startRun(state, suggestions[state.cursor], false);
+  if (state.cursor < suggestions.length) {
+    const question = suggestions[state.cursor];
+    if (view.consentNeeded) {
+      return step({ ...state, consentHeld: { question, searchAll: false } });
+    }
+    return startRun(state, question, false);
+  }
   const recent = recents[state.cursor - suggestions.length];
   return recent ? openConversation(state, recent.id) : step(state);
 }
@@ -726,7 +749,33 @@ export function toggleSteps(state: AskState, turnId: string): AskState {
 export function retry(state: AskState, view: DockView, turnId: string): AskStep {
   const turn = view.turns.find(t => t.id === turnId);
   if (!turn || turn.state !== 'failed' || view.working) return step(state);
+  if (view.consentNeeded) {
+    return step({
+      ...state,
+      consentHeld: { question: turn.question, searchAll: state.run?.searchAll ?? false },
+    });
+  }
   return startRun(state, turn.question, state.run?.searchAll ?? false);
+}
+
+/** The consent line's Allow (the grant already landed): the held question runs now. */
+export function consentGranted(state: AskState): AskStep {
+  const held = state.consentHeld;
+  if (!held) return step(state);
+  return startRun(
+    {
+      ...state,
+      consentHeld: undefined,
+      field: state.field === held.question ? '' : state.field,
+    },
+    held.question,
+    held.searchAll,
+  );
+}
+
+/** "Not now" drops the hold; the question's text stays in the field. */
+export function consentDropped(state: AskState): AskState {
+  return state.consentHeld ? { ...state, consentHeld: undefined } : state;
 }
 
 /** Static suggestions when `Ask/suggestions` has none; plain questions, no name the owner did not give. */

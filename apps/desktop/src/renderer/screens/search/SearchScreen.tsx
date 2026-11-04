@@ -66,7 +66,7 @@ function remoteFacts(
   accounts: readonly Account[],
   accountId: AccountId | undefined,
   now: number,
-): Pick<RemoteContext, 'supported' | 'pausedUntil'> {
+): Pick<RemoteContext, 'supported' | 'pausedUntil' | 'scope'> {
   const scoped = accountId ? accounts.filter(a => a.id === accountId) : accounts;
   const searchable = scoped.filter(a => a.capabilities.serverSearch);
   const supported = searchable.length > 0;
@@ -78,8 +78,12 @@ function remoteFacts(
   return {
     supported,
     pausedUntil: supported && pauses.length === searchable.length ? Math.min(...pauses) : undefined,
+    scope: accountId ?? 'all',
   };
 }
+
+/** An unused slot's filter: contract run ids are non-empty, so this `runId` matches nothing. */
+const NO_REMOTE_RUN = '';
 
 /** The thread-id cursor's row facts for keys and the target line. */
 interface CursorRow {
@@ -132,7 +136,8 @@ function SearchBody(props: SearchBodyProps): ReactElement {
   const { query } = currentQuery(state);
   const local = useView({ kind: 'search', query, accountId });
   const runId = 'runId' in state.remote ? state.remote.runId : undefined;
-  const frames = useFrames('progress', { runId }).frames;
+  // `runId: undefined` would match every progress frame on the bus; the sentinel matches none.
+  const frames = useFrames('progress', { runId: runId ?? NO_REMOTE_RUN }).frames;
 
   function commit(next: SearchState) {
     stateRef.current = next;
@@ -185,6 +190,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     { status: local.status, ids: local.ids, total: local.total, error: local.error },
     now,
     remoteFacts(accounts, accountId, now).supported,
+    accountId ?? 'all',
   );
 
   const showAccountDot = accounts.length >= 2;
@@ -240,20 +246,20 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     actOnRow(ACT_DEPS, threadId, action, { kind, message });
   }
 
+  // The cursor object is fresh each render; its parts are stable, so the table stays attached between keystrokes.
+  const { key: cursorKey, ids: cursorIds, setCursor } = cursor;
   const commands = useMemo(
     () => ({
       'list.down': {
         run: () => {
-          const ids = cursor.ids;
-          const at = cursor.key === null ? -1 : ids.indexOf(cursor.key);
-          if (at < ids.length - 1) cursor.setCursor(ids[at + 1]);
+          const at = cursorKey === null ? -1 : cursorIds.indexOf(cursorKey);
+          if (at < cursorIds.length - 1) setCursor(cursorIds[at + 1]);
         },
       },
       'list.up': {
         run: () => {
-          const ids = cursor.ids;
-          const at = cursor.key === null ? ids.length : ids.indexOf(cursor.key);
-          if (at > 0) cursor.setCursor(ids[at - 1]);
+          const at = cursorKey === null ? cursorIds.length : cursorIds.indexOf(cursorKey);
+          if (at > 0) setCursor(cursorIds[at - 1]);
         },
       },
       'mail.open': {
@@ -320,7 +326,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
         },
       },
     }),
-    [cursor, accounts, accountId, local.ids, open],
+    [cursorKey, cursorIds, setCursor, accounts, accountId, local.ids, open],
   );
   useRegisterCommands(commands);
 

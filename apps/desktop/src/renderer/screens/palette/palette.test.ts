@@ -74,6 +74,49 @@ test('scoring order: exact, prefix, word boundary, then subsequence', () => {
   assert.equal(ranked[3].tier, 1);
 });
 
+test('subsequence needs four letters, each starting a word or following the last match', () => {
+  // "sett": scattered letters across "Send the question" and friends are out; "Settings" still wins.
+  assert.equal(matchLabel('sett', 'Send the question'), null);
+  assert.equal(matchLabel('sett', 'Run the suggested action'), null);
+  assert.equal(matchLabel('sett', 'Set a date'), null);
+  assert.equal(matchLabel('sett', 'Open Settings')?.tier, 2);
+  // Under four letters there is no subsequence tier at all; a run spanning words is fine.
+  assert.equal(matchLabel('thr', 'This red apple'), null);
+  assert.equal(matchLabel('thread', 'This red apple has dents')?.tier, 1);
+  // Word starts and continuing letters are the only scattered picks allowed.
+  assert.equal(matchLabel('mtl', 'Move to label…'), null);
+  assert.equal(matchLabel('mtla', 'Move to label…')?.tier, 1);
+  assert.equal(matchLabel('mtlb', 'Move to label…'), null);
+  assert.equal(matchLabel('open', 'Open Settings')?.tier, 3);
+});
+
+test("typing 'sett' puts Open Settings first and none of the scattered-letter rows", () => {
+  const registry = createAppRegistry();
+  for (const spec of registry.list())
+    registry.attach(spec.id, {
+      run: () => undefined,
+      ...(spec.page ? { children: () => [] } : {}),
+    });
+  const entries = registry.commandsForPalette({
+    ...CTX,
+    stack: ['global', 'list', 'ask'],
+    conditions: { askText: true },
+  });
+  const ranked = rank('sett', entries);
+  assert.equal(ranked[0]?.candidate.id, 'app.settings');
+  for (const id of ['mail.suggested', 'mail.setDate', 'ask.submit'])
+    assert.ok(!ranked.some(r => r.candidate.id === id), id);
+  // The gate: 'Send the question' lists only while the dock field has text.
+  const noText = registry.commandsForPalette({
+    ...CTX,
+    stack: ['global', 'list', 'ask'],
+    conditions: {},
+  });
+  assert.ok(!noText.some(e => e.id === 'ask.submit'));
+  assert.ok(!noText.some(e => e.id === 'ask.searchAllMail'));
+  assert.ok(entries.some(e => e.id === 'ask.submit'));
+});
+
 test('a keyword hit counts as a word-boundary match and bolds nothing', () => {
   const ranked = rank('archive', [{ id: 'done', label: 'Done', keywords: ['archive', 'finish'] }]);
   assert.equal(ranked.length, 1);

@@ -17,6 +17,8 @@ export interface DockState {
   readonly ask: AskState;
   /** A question another surface asked for (the palette's "Ask about “x”"), waiting for the host to run it. */
   readonly pendingQuestion?: string;
+  /** Hold-A asked for dictation while the dock was closed; the host starts listening when it mounts. */
+  readonly pendingDictation?: boolean;
   /** Bumped to move focus to the field (A, ⌘J). */
   readonly focusTick: number;
   /** The consent record version "Not now" dismissed; the line stays hidden until the record's version passes it. */
