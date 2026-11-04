@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RunnerError } from './errors';
 import { applicationSupportDir } from './vault';
@@ -17,12 +17,15 @@ export const STATE_KEYS: readonly string[] = [
   'draftTokenHash',
   'afterCreateHash',
   'afterSaveHash',
+  'draftIdHash',
   'afterCreateShape',
   'afterSaveShape',
 ];
 /** The words a shape value may take. */
 export const SHAPE_WORDS: readonly string[] = ['ours', 'gmail', 'other', 'absent'];
-const HEX = /^[0-9a-f]{16,64}$/;
+/** A salted hash is exactly 16 hex characters and a salt exactly 32: a 16-hex Gmail message id fits no other key. */
+const HASH = /^[0-9a-f]{16}$/;
+const SALT = /^[0-9a-f]{32}$/;
 
 export interface ProbeState {
   /** What the earlier phase saved, or undefined when nothing (or nothing valid) is there. */
@@ -33,6 +36,14 @@ export interface ProbeState {
 
 const ID = /^[a-z][a-z0-9.-]{0,60}$/;
 
+/** Each key has its own kind of value: `salt` 32 hex, a `...Hash` 16 hex, a `...Shape` one of the shape words. */
+function allowedValue(key: string, value: string): boolean {
+  if (key === 'salt') return SALT.test(value);
+  if (key.endsWith('Hash')) return HASH.test(value);
+  if (key.endsWith('Shape')) return SHAPE_WORDS.includes(value);
+  return false;
+}
+
 function checked(values: unknown): Record<string, string> {
   if (typeof values !== 'object' || values === null || Array.isArray(values))
     throw new RunnerError('State rejected: not an object');
@@ -40,7 +51,7 @@ function checked(values: unknown): Record<string, string> {
   for (const [key, value] of Object.entries(values)) {
     if (!STATE_KEYS.includes(key))
       throw new RunnerError('State rejected: a key is not on the allowlist');
-    if (typeof value !== 'string' || !(HEX.test(value) || SHAPE_WORDS.includes(value)))
+    if (typeof value !== 'string' || !allowedValue(key, value))
       throw new RunnerError(`State rejected: the value of ${key} is not allowed`);
     out[key] = value;
   }
@@ -72,8 +83,13 @@ export function createProbeState(dir: string, probeId: string): ProbeState {
     async save(values) {
       const body = checked(values);
       await mkdir(dir, { recursive: true, mode: 0o700 });
+      // `mkdir` leaves an existing folder as it is.
+      await chmod(dir, 0o700);
       const temp = `${file}.tmp`;
-      await writeFile(temp, `${JSON.stringify(body)}\n`, { mode: 0o600 });
+      // Whatever sits at the temp name (a leftover, a planted symlink) is removed, and the file is created exclusively
+      // (`wx`: O_EXCL, which does not follow a symlink), so this never writes through a link.
+      await rm(temp, { force: true });
+      await writeFile(temp, `${JSON.stringify(body)}\n`, { mode: 0o600, flag: 'wx' });
       await chmod(temp, 0o600);
       await rename(temp, file);
     },
