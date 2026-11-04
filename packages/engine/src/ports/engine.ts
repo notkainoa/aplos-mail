@@ -50,6 +50,13 @@ export interface ProviderPort {
     query: ServerSearch,
   ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }>;
   attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>>;
+  /**
+   * The message's raw RFC822 for "Show original" and `.eml` export (`Message/original`, plans/engine/blob-area.md
+   * decision 13), fetched live and never cached: Gmail `messages.get format=raw`, priced as `full`, base64url decoded
+   * in the adapter. The caller caps it at 25 MB. Optional and additive: until `prov-gov` routes it to an adapter that has
+   * it, `Message/original` answers `unavailable`.
+   */
+  original?(account: AccountId, remoteMessageId: string): Promise<AsyncIterable<Uint8Array>>;
 }
 
 /** Engine-side facts per account, beyond the F1 wire `AccountHealth`; `Setup/status` and `Account/*` read from here. */

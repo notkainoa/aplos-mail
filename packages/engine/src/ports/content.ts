@@ -197,3 +197,76 @@ export interface UnsubscribePort {
     signal: AbortSignal;
   }): Promise<{ kind: UnsubscribeKind; message: string; url?: string }>;
 }
+
+// ---- blobs (plans/engine/blob-area.md, decisions 1, 3 and 4) ----
+
+/** A blob id: `b_` and 32 lowercase hex digits (128 random bits). The engine and the host each check it. */
+export const BLOB_ID_PATTERN = /^b_[0-9a-f]{32}$/;
+
+/** The caps a `BlobFiles` enforces, frozen as upper bounds: an implementation may tighten them, never loosen them. */
+export const BLOB_FILE_LIMITS = {
+  /** Bytes of one blob (`Blob/put`'s 25 MB; the transport's 26 MB is this plus the envelope). */
+  maxBytes: 25 * 1024 * 1024,
+  /** The JSON header line of one stored blob. */
+  maxHeaderBytes: 2048,
+  /** Every blob together. */
+  folderBytes: 2 * 1024 * 1024 * 1024,
+  /** A put is refused while the disk has less free space than this. */
+  freeDiskFloor: 1024 * 1024 * 1024,
+} as const;
+
+/**
+ * What the engine keeps beside a blob's bytes. `upload`: `Blob/put` (an attachment, a dictation). `original`: a
+ * message's raw RFC822 (`Message/original`). Received attachments are not stored here (they live in the store's
+ * attachment cache, decision 2).
+ */
+export interface BlobHeader {
+  /** `principalOf(caller)` of the caller that made it: `app` or `client:<id>`. */
+  principal: string;
+  kind: 'upload' | 'original';
+  /** Already cleaned by the engine to a `type/subtype` token. */
+  mime: string;
+  /** Already cleaned by the engine (no `/`, `\`, NUL or control characters, at most 255). */
+  name?: string;
+  /** The number of bytes. */
+  size: number;
+  /** Epoch ms on the engine's clock. */
+  createdAt: number;
+}
+
+/** Why a `BlobFiles.put` was refused. A reason code only: never a path, a folder name or an OS error text. */
+export type BlobRefusal =
+  'id' | 'header' | 'tooLarge' | 'folderFull' | 'diskFull' | 'exists' | 'io';
+
+/** The one error a `BlobFiles` throws; `reason` is safe to log. */
+export class BlobFilesError extends Error {
+  constructor(readonly reason: BlobRefusal) {
+    super(`blob store refused: ${reason}`);
+    this.name = 'BlobFilesError';
+  }
+}
+
+/**
+ * Durable blob bytes (decision 1): one private file per blob, so a draft's attachments survive an engine restart.
+ * Implemented by `eng-host` (`apps/desktop/src/host/blobs.ts`, Node only, under `<dataDir>/blobs/`) and injected as
+ * `HostPorts.blobFiles`; absent, every `Blob/*` answers `unavailable`. Called only by the engine's blob runtime
+ * (`runtime/blobs.ts`), which keeps the index, the principals, the per-principal quotas and the lifecycle.
+ * Rules:
+ * - The engine never passes or receives a path. Every method checks `id` against `BLOB_ID_PATTERN` again before it
+ *   forms a path: a bad id is `BlobFilesError('id')` from `put`, `undefined` from `get`, and nothing from `remove`.
+ * - `put` is atomic (header and bytes appear together or not at all) and refuses an id that exists (`exists`), bytes
+ *   over `BLOB_FILE_LIMITS.maxBytes` (`tooLarge`), a header that does not describe the bytes (`header`), a folder that
+ *   would pass `folderBytes` (`folderFull`) and a disk under `freeDiskFloor` (`diskFull`).
+ * - `get` hands out a fresh buffer on every call, which the caller may transfer (detach). A missing, unreadable,
+ *   symlinked or oversized file is `undefined`, never an error.
+ * - `remove` is idempotent. `list` names every stored blob with its header; `usage` is the bytes of every blob.
+ * - A mobile host without a file system may supply an in-memory implementation with the same contract (drafts then
+ *   lose their attachments on restart, which that host must say).
+ */
+export interface BlobFiles {
+  put(id: string, header: BlobHeader, bytes: Uint8Array): Promise<void>;
+  get(id: string): Promise<{ header: BlobHeader; bytes: Uint8Array } | undefined>;
+  remove(id: string): Promise<void>;
+  list(): Promise<{ id: string; header: BlobHeader; mtimeMs: number }[]>;
+  usage(): Promise<number>;
+}
