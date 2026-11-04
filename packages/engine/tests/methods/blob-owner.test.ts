@@ -390,3 +390,24 @@ test('a listener client sends a draft with its OWN file: the outbox reads it who
     undefined,
     true,
   ));
+
+test('Draft/set: a replayed create is refused for NOTHING released since — it answers with the draft it made', () =>
+  withWorld(async w => {
+    const { blobId } = await put(w.window);
+    const opId = `blob4-replay-${++opCounter}`;
+    const fields = fieldsWith([blobId]);
+    const first = (await w.window.call('Draft/set', { opId, fields })) as {
+      draft: { id: string; revision: number };
+    };
+    assert.equal(first.draft.revision, 1);
+    // The caller releases the blob outright. A live send would still refuse, but a replayed create
+    // must not re-check ownership — the stored row already names the id.
+    await w.window.call('Blob/release', { blobId });
+    const replay = (await w.window.call('Draft/set', { opId, fields })) as {
+      draft: { id: string; revision: number };
+    };
+    assert.equal(replay.draft.id, first.draft.id, 'the replay returns the draft it made');
+    assert.equal(replay.draft.revision, 1);
+    // And a create with a FRESH opId naming a released blob is still refused.
+    assert.deepEqual(await refused(setDraft(w.window, fieldsWith([blobId]))), ATTACH_AGAIN);
+  }));

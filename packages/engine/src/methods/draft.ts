@@ -12,7 +12,7 @@ export const handlers: AreaHandlers<'draft'> = {
   'Draft/get': (args, { services }) => services.draftBox.get(args.ids),
   'Draft/set': (args, { services, caller }) => {
     // The ownership check and the commit share this turn: nothing awaits between them.
-    assertOwnedAttachments(services, caller, args.id, args.fields.attachments);
+    assertOwnedAttachments(services, caller, args.opId, args.id, args.fields.attachments);
     return services.draftBox.set(args.opId, {
       ...(args.id !== undefined ? { id: args.id } : {}),
       ...(args.baseRevision !== undefined ? { baseRevision: args.baseRevision } : {}),
