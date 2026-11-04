@@ -772,10 +772,16 @@ async function createCopy(
       ...(draft.remoteThreadId ? { threadId: draft.remoteThreadId } : {}),
     });
   } catch (error) {
-    // Only an uncertain end leaves a copy that may exist: a definite refusal (429, 503 before anything landed) keeps
-    // the retry on the cheap lookups. Anything that is not a classified refusal is treated as uncertain.
+    // Only an uncertain end leaves a copy that may exist: a definite refusal (a 429, a 4xx, a pause before the request)
+    // keeps the retry on the cheap lookups. A 5xx is never definite, whatever reason it carries (a 503 with
+    // `rateLimitExceeded` is classified `throttle` but the server may have stored the copy). Anything that is not a
+    // classified refusal is treated as uncertain.
+    const status = error instanceof ProviderError ? error.error.status : undefined;
     const definite =
-      error instanceof PausedError || (error instanceof ProviderError && !error.error.uncertain);
+      error instanceof PausedError ||
+      (error instanceof ProviderError &&
+        !error.error.uncertain &&
+        !(status !== undefined && status >= 500));
     if (!definite) attempts.markMayHaveLanded(draft.draftId, draft.internetId);
     if (error instanceof ProviderError) return recheck(client, draft, error, attempts);
     throw error;
