@@ -968,6 +968,7 @@ export const api: DataApi = {
   },
   event: {
     set: ((...args: unknown[]) => forward('event', 'set', args)) as DataApi['event']['set'],
+    hide: ((...args: unknown[]) => forward('event', 'hide', args)) as DataApi['event']['hide'],
     rsvp: ((...args: unknown[]) => forward('event', 'rsvp', args)) as DataApi['event']['rsvp'],
   },
   calendar: {

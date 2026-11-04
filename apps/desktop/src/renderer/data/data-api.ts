@@ -187,6 +187,8 @@ export interface DataApi {
   readonly event: {
     /** `Event/set {change, notify?}`: create, edit or delete an event, for one occurrence, the series or the following ones. May email guests, so the engine holds it briefly: the receipt's `undoUntil` says until when Operation/undo cancels it. Joins the undo stack. */
     readonly set: Command<'Event/set'>;
+    /** `Event/hide {ids, hidden}`: hide events in Aplos only (the event detail's Hide), or show them again; never written to the provider, so nobody is told. Joins the undo stack. */
+    readonly hide: Command<'Event/hide'>;
     /** `Event/rsvp {id, response, scope, notify?}`: answer an invitation for one occurrence or the series. Joins the undo stack. */
     readonly rsvp: Command<'Event/rsvp'>;
   };
