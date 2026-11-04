@@ -30,17 +30,20 @@ import {
 export const sameDraft = (row: DraftRow, w: RemoteDraftWrite) =>
   row.remote_draft_id !== null && w.remoteDraftId === row.remote_draft_id;
 
-/** A Message-ID this row's uploads used, or that the provider told us a copy of theirs shows (`copyInternetId`). */
-const known = (meta: DraftMeta, id: string | undefined) =>
-  id !== undefined && ((meta.wrote ?? []).includes(id) || meta.uploading?.internetId === id);
+/** A Message-ID this row's uploads used, or that the provider told us a copy of ours shows (`copyInternetId`). */
+const known = (row: DraftRow, meta: DraftMeta, id: string | undefined) =>
+  id !== undefined &&
+  ((meta.wrote ?? []).includes(id) ||
+    meta.uploading?.internetId === id ||
+    row.remote_internet_id === id);
 
 /**
- * The draft id alone names the copy (and any recent upload's content may prove it) only when the copy shows a Message-ID
- * this row never used: a provider that keeps ours shows the very one the attempt used, which names that attempt, so
- * a phone edit that restores older content of ours is still another device's edit there.
+ * The draft id alone names the copy (and an upload's content may prove it) only when the copy shows a Message-ID this
+ * row never used: a provider that keeps ours shows the very one the attempt used, which names that attempt, so a phone
+ * edit that restores older content of ours is still another device's edit there.
  */
 export const namedByDraftId = (row: DraftRow, meta: DraftMeta, w: RemoteDraftWrite) =>
-  sameDraft(row, w) && !known(meta, w.internetId);
+  sameDraft(row, w) && !known(row, meta, w.internetId);
 
 /**
  * Is this copy one this row's uploads made: same content, and it shows every field? Named by the Message-ID the copy
@@ -59,9 +62,14 @@ export function provenOurs(
   const byId = meta.uploading?.internetId === id ? meta.uploading.fingerprint : meta.prints?.[id];
   const own = accountAddress(tx, row.account_id);
   if (own === undefined) return false;
-  const prints = namedByDraftId(row, meta, w)
-    ? [byId, meta.uploading?.fingerprint, ...Object.values(meta.prints ?? {})]
-    : [byId];
+  // By the draft id the content of the running upload proves the copy, and so does that of an attempt set aside while
+  // it runs. Once no upload is running, an older attempt's content is nothing a phone edit could not also restore.
+  const byDraft = namedByDraftId(row, meta, w);
+  const prints = !byDraft
+    ? [byId]
+    : meta.uploading === undefined
+      ? []
+      : [meta.uploading.fingerprint, ...Object.values(meta.prints ?? {})];
   return prints.some(print => hasFingerprint(w, row, fields, print, own));
 }
 

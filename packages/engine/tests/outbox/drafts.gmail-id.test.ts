@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fields, gate, SEC } from './helpers';
+import { ACCOUNT, fields, gate, SEC } from './helpers';
+import type { CommitExtensionTx, RemoteDraftWrite } from '../../src/store';
+import { provenOurs } from '../../src/outbox/draft-proof';
+import {
+  fingerprintOf,
+  theirsFields,
+  type DraftMeta,
+  type DraftRow,
+} from '../../src/outbox/draft-state';
+import { messageOf } from '../../src/outbox/draft-body';
 import { edit, fact, read, row, syncOf, synced, wait, world, type Fact } from './drafts.ports.kit';
 
 /**
@@ -149,3 +158,60 @@ test('gmail ids: without copyInternetId a bare report with a new message id and 
       'it went the ordinary way, not dropped as an echo',
     );
   }));
+
+test('gmail ids: by the draft id alone only a RUNNING upload lets an older attempt’s content prove a copy (unit)', () => {
+  const own = 'owner@mail.example';
+  const base = fields({ subject: 'Mine' });
+  const tx = { get: () => ({ address: own }) } as unknown as CommitExtensionTx;
+  const w = {
+    kind: 'remoteDraft',
+    accountId: ACCOUNT,
+    remoteDraftId: 'rd1',
+    remoteMessageId: 'm9',
+    changedAt: 1,
+    internetId: '<CAstale@mail.gmail.com>',
+    html: '<p>Lunch at noon?</p>',
+    message: {
+      remoteId: 'm9',
+      to: [{ address: 'jordan@mail.example', name: 'Jordan' }],
+      from: { address: own },
+      cc: [],
+      bcc: [],
+      subject: 'Mine',
+      snippet: 's',
+      date: 1,
+      internalDate: 1,
+      flags: { seen: true, flagged: false, draft: true, fromMe: true },
+      hasAttachments: false,
+    },
+  } as unknown as RemoteDraftWrite;
+  const print = fingerprintOf(theirsFields(ACCOUNT, messageOf(w), base, own).fields);
+  const row = { account_id: ACCOUNT, remote_draft_id: 'rd1', remote_internet_id: null } as DraftRow;
+  const old: DraftMeta = { rev: 1, prints: { '<attemptA@mail.example>': print } };
+  assert.equal(
+    provenOurs(tx, row, old, base, w),
+    false,
+    'no upload running: an older attempt’s content proves nothing',
+  );
+  const running: DraftMeta = {
+    ...old,
+    uploading: { internetId: '<attemptB@mail.example>', revision: 3 },
+  };
+  assert.equal(
+    provenOurs(tx, row, running, base, w),
+    true,
+    'while an upload runs, an attempt set aside does',
+  );
+  const keeps: DraftMeta = { ...running, wrote: ['<CAstale@mail.gmail.com>'] };
+  assert.equal(
+    provenOurs(tx, row, keeps, base, w),
+    false,
+    'a Message-ID this row used is keyed by its own attempt',
+  );
+  const bound = { ...row, remote_internet_id: '<CAstale@mail.gmail.com>' } as DraftRow;
+  assert.equal(
+    provenOurs(tx, bound, running, base, w),
+    false,
+    'the id the row is synced under counts as used',
+  );
+});

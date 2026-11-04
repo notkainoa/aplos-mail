@@ -298,8 +298,6 @@ function synced(tx: CommitExtensionTx, w: Synced) {
     problem: null,
     earlier: null,
     wrote: remembered(meta, ...ours(w)),
-    // Not touched unless the copy shows another Message-ID: an ordinary save must not push older attempts out.
-    ...(copyPrint(w).length ? { prints: withPrints(meta, ...copyPrint(w)) } : {}),
     changedElsewhere: null,
     dueAt: idle ? null : (meta.dueAt ?? w.at),
     // A discarded draft's upload landed: the copy it made is the one to delete, now.
