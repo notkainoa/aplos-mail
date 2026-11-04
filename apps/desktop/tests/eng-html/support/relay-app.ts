@@ -1,12 +1,13 @@
-// The Electron main of relay.e2e.ts, bundled by the test with esbuild (electron external). It is not the Aplos app: it
-// wires the REAL relay (main/mail-protocol.ts: the handler, the window stamp, the backstop) to a stand-in engine that
-// does what the utility and the engine do (hostServeArgs, then slice 1's FrameTokens and serveFrame), opens hidden
-// windows, and prints one `RELAY-RESULT <json>` line. Nothing is shown, no Dock item, no network beyond the loopback
-// canary the test passes in APLOS_RELAY_CANARY.
+// The Electron main of relay.e2e.ts, bundled by the test with esbuild (electron external) to `<tmp>/main/main.cjs`. It
+// is not the Aplos app: it wires the REAL relay (main/mail-protocol.ts: the handler, the window stamp, the backstop)
+// and the REAL navigation guards (main/security.ts, with the host page written where its `trustedURL` expects the
+// renderer: `<tmp>/renderer/index.html`) to a stand-in engine that does what the utility and the engine do
+// (hostServeArgs, then slice 1's FrameTokens and serveFrame), opens hidden windows, and prints one `RELAY-RESULT <json>`
+// line. Nothing is shown, no Dock item, no network beyond the loopback canary the test passes in APLOS_RELAY_CANARY.
+// Each window replaces security.ts's window-open handler with a recording deny, so no link ever reaches the browser.
 import { app, BrowserWindow, protocol, WebContentsView } from 'electron';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mailHtml } from '@aplos/mail-html';
 import {
@@ -18,6 +19,7 @@ import {
   type ServeResponse,
 } from '@aplos/mail-html/frame';
 import { installMailProtocol } from '../../../src/main/mail-protocol';
+import { allowMailFrames, installPermissionHandlers } from '../../../src/main/security';
 import { hostServeArgs } from '../../../src/host/transports/port';
 import type { ServeArgs } from '../../../src/host/protocol/relay';
 
@@ -126,6 +128,14 @@ window.addImage = src => new Promise(resolve => {
 });
 </script></body>`;
 
+/** security.ts's window-open handler opens http(s) in the browser; tests record and deny instead. */
+function recordOpens(contents: Electron.WebContents): void {
+  contents.setWindowOpenHandler(details => {
+    popups.push({ contents: contents.id, url: details.url });
+    return { action: 'deny' };
+  });
+}
+
 async function hostWindow(file: string): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     show: false,
@@ -133,10 +143,7 @@ async function hostWindow(file: string): Promise<BrowserWindow> {
     height: 600,
     webPreferences: { backgroundThrottling: false },
   });
-  win.webContents.setWindowOpenHandler(details => {
-    popups.push({ contents: win.webContents.id, url: details.url });
-    return { action: 'deny' };
-  });
+  recordOpens(win.webContents);
   await win.loadURL(pathToFileURL(file).href);
   attached.set(win.id, `conn-${win.id}`);
   return win;
@@ -188,19 +195,24 @@ window.done = (async () => {
 </script></body>`;
 }
 
+/** Links for the DNS-prefetch measurement: never clicked or hovered; the test reads the net log for the names. */
+const DNS_LINKS = (name: string) =>
+  `<p><a href="https://${name}/a">a</a> <a href="http://${name}/b">b</a></p>`;
+
 async function scenario() {
   hash = await reporterHash();
+  installPermissionHandlers();
   installMailProtocol(standInServe);
+  allowMailFrames();
   // A webContents with no window first, so webContentsId and BrowserWindow id differ: the stamp's id is translated.
   const spare = new WebContentsView();
-  const dir = mkdtempSync(join(tmpdir(), 'aplos-relay-host-'));
-  const file = join(dir, 'host.html');
+  recordOpens(spare.webContents);
+  // Where security.ts's trustedURL expects the renderer (resolve(__dirname, '../renderer/index.html')); the test
+  // removes the whole temp directory afterwards.
+  const file = resolve(__dirname, '../renderer/index.html');
+  mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, HOST_PAGE);
-  try {
-    return await run(file, spare);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  return run(file, spare);
 }
 
 async function run(file: string, spare: WebContentsView) {
@@ -224,8 +236,12 @@ async function run(file: string, spare: WebContentsView) {
   await inPage(a, `addFrame(${JSON.stringify(urlBackstop)})`);
   await inPage(b, `addFrame(${JSON.stringify(urlB1)})`);
   await inPage(b, `addFrame(${JSON.stringify(urlA3)})`);
-  await inPage(b, `addFrame(${JSON.stringify(`${urlA1}cid/0`)})`);
+  await inPage(b, `addImage(${JSON.stringify(`${urlA1}cid/0`)})`);
   await inPage(a, `addFrame(${JSON.stringify(urlA3)})`);
+  const urlDnsEngine = issue(connA, withReporter(DNS_LINKS('dns-engine.example')));
+  const urlDnsBare = rawDocument(connA, DNS_LINKS('dns-bare.example'), "default-src 'none'");
+  await inPage(a, `addFrame(${JSON.stringify(urlDnsEngine)})`);
+  await inPage(a, `addFrame(${JSON.stringify(urlDnsBare)})`);
   await wait(500);
 
   // Links in the frame (target=_blank from the sanitizer) arrive as window-open requests of the embedding contents.
@@ -236,6 +252,8 @@ async function run(file: string, spare: WebContentsView) {
   const mailProcess = frameA1.processId;
   const hostProcess = a.webContents.mainFrame.processId;
   const keys = await keyProbe(a, frameA1);
+  const escape = await frameEscape(a, frameA1, connA);
+  const hosted = await hostedView(a, file, connA);
 
   // A window whose own page is an aplos-mail document forges the header and tries other methods.
   const forger = await hostWindow(file);
@@ -270,8 +288,67 @@ async function run(file: string, spare: WebContentsView) {
     frameUrls,
     processes: { mail: mailProcess, host: hostProcess },
     keys,
+    escape,
+    hosted,
+    hostUrl: a.webContents.getURL(),
   };
   return result;
+}
+
+/**
+ * The work package's "frame escape" items, from inside a served mail frame, against the real security.ts guards: the
+ * frame navigating itself (script and a target=_self link) to another well-formed document, target=_top, a form
+ * post, window.open of a javascript: URL. Each target is a fresh token issued to the same window, so a navigation that
+ * got through would show up in the serve log as a 200.
+ */
+async function frameEscape(win: BrowserWindow, frame: Electron.WebFrameMain, connection: string) {
+  const doc = () => issue(connection, withReporter('<p>escape target</p>'));
+  const urls = { script: doc(), link: doc(), top: doc(), form: doc() };
+  const opens = popups.length;
+  const js = (code: string) => frame.executeJavaScript(code, true).catch(() => 'threw');
+  await js(`location.href = ${JSON.stringify(urls.script)}; 1`);
+  await wait(300);
+  await js(
+    `(() => { const a = document.createElement('a'); a.href = ${JSON.stringify(urls.link)}; a.target = '_self'; document.body.append(a); a.click(); return 1; })()`,
+  );
+  await wait(300);
+  await js(
+    `(() => { const a = document.createElement('a'); a.href = ${JSON.stringify(urls.top)}; a.target = '_top'; document.body.append(a); a.click(); return 1; })()`,
+  );
+  await js(
+    `(() => { const f = document.createElement('form'); f.method = 'post'; f.action = ${JSON.stringify(urls.form)}; document.body.append(f); f.submit(); return 1; })()`,
+  );
+  const opened = await js(
+    `String(window.open('javascript:parent.postMessage({pwned:"open"},"*")'))`,
+  );
+  const opener = await js('String(window.opener)');
+  await wait(400);
+  return {
+    urls,
+    frameUrl: frame.url,
+    hostUrl: win.webContents.getURL(),
+    opened,
+    opener,
+    popups: popups.slice(opens).map(p => p.url),
+  };
+}
+
+/**
+ * A WebContentsView hosted in window A: its contents is not A's own, so its aplos-mail request must not be stamped as
+ * A. A document issued to A's connection, framed by the view, must be the 404.
+ */
+async function hostedView(win: BrowserWindow, file: string, connection: string) {
+  const view = new WebContentsView({ webPreferences: { backgroundThrottling: false } });
+  recordOpens(view.webContents);
+  win.contentView.addChildView(view);
+  await view.webContents.loadURL(pathToFileURL(file).href);
+  const url = issue(connection, withReporter('<p>for window A only</p>'));
+  await view.webContents.executeJavaScript(`addFrame(${JSON.stringify(url)})`);
+  await wait(200);
+  const facts = { url, type: view.webContents.getType(), contents: view.webContents.id };
+  win.contentView.removeChildView(view);
+  view.webContents.close();
+  return facts;
 }
 
 interface KeySeen {
@@ -316,5 +393,6 @@ void app.whenReady().then(async () => {
     process.stdout.write(`RELAY-ERROR ${String((error as Error)?.stack ?? error)}\n`);
   }
   for (const win of BrowserWindow.getAllWindows()) win.destroy();
-  app.exit(0);
+  // A normal quit, so Chromium finishes the net log the test reads.
+  app.quit();
 });

@@ -1,17 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { startCanary, type Canary } from './canary';
 
-// html-5 in a real Chromium: the app's own relay (main/mail-protocol.ts) in a hidden Electron, wired to a stand-in
-// engine (support/relay-app.ts). Run: npx tsx --test apps/desktop/tests/eng-html/relay.e2e.ts (about 5 s; not part of
-// `npm test`, which runs no Electron). Hidden windows only, no Dock item, a temp user-data dir, ELECTRON_RUN_AS_NODE
-// removed, loopback canary only.
+// html-5 in a real Chromium: the app's own relay (main/mail-protocol.ts) and navigation guards (main/security.ts) in a
+// hidden Electron, wired to a stand-in engine (support/relay-app.ts). Run:
+// npx tsx --test apps/desktop/tests/eng-html/relay.e2e.ts (a few seconds; not part of `npm test`, which runs no
+// Electron). Hidden windows only, no Dock item, a temp user-data dir, ELECTRON_RUN_AS_NODE removed, every host name
+// except loopback resolving to "not found", loopback canary only.
 
 const nodeRequire = createRequire(import.meta.url);
 const electronBinary = nodeRequire('electron') as unknown as string;
@@ -35,12 +36,28 @@ interface Result {
   frameUrls: { url: string; origin: string }[];
   processes: { mail: number; host: number };
   keys: { type: string; key: string; focused: string | null }[];
+  escape: {
+    urls: Record<'script' | 'link' | 'top' | 'form', string>;
+    frameUrl: string;
+    hostUrl: string;
+    opened: string;
+    opener: string;
+    popups: string[];
+  };
+  hosted: { url: string; type: string; contents: number };
+  hostUrl: string;
+  /** Lines of the Chromium net log naming the DNS-prefetch probe hosts. */
+  dnsNames: string[];
+  /** The net log is complete and saw the positive control's request to the canary. */
+  netLogSawCanary: boolean;
 }
 
 function safeEnv(canary: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key !== 'ELECTRON_RUN_AS_NODE' && !/_API_KEY$/.test(key)) env[key] = value;
+    // APLOS_RENDERER_URL would make security.ts trust a dev server instead of the test's host page.
+    const dropped = key === 'ELECTRON_RUN_AS_NODE' || key === 'APLOS_RENDERER_URL';
+    if (!dropped && !/_API_KEY$/.test(key)) env[key] = value;
   }
   return { ...env, APLOS_RELAY_CANARY: canary, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' };
 }
@@ -48,7 +65,9 @@ function safeEnv(canary: string): NodeJS.ProcessEnv {
 async function runApp(canary: Canary): Promise<Result> {
   const dir = await mkdtemp(join(tmpdir(), 'aplos-relay-'));
   try {
-    const main = join(dir, 'main.cjs');
+    // security.ts trusts `<bundle dir>/../renderer/index.html`; relay-app writes its host page there.
+    const main = join(dir, 'main', 'main.cjs');
+    const netLog = join(dir, 'net-log.json');
     await build({
       entryPoints: [join(import.meta.dirname, 'support', 'relay-app.ts')],
       outfile: main,
@@ -57,9 +76,16 @@ async function runApp(canary: Canary): Promise<Result> {
       format: 'cjs',
       target: 'node22',
       external: ['electron'],
+      define: { __APLOS_RELEASE_BUILD__: 'false' },
       logLevel: 'silent',
     });
-    const args = [main, `--user-data-dir=${join(dir, 'user-data')}`, '--no-proxy-server'];
+    const args = [
+      main,
+      `--user-data-dir=${join(dir, 'user-data')}`,
+      '--no-proxy-server',
+      `--log-net-log=${netLog}`,
+      '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost',
+    ];
     const child = spawn(electronBinary, args, {
       env: safeEnv(canary.origin),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -73,7 +99,12 @@ async function runApp(canary: Canary): Promise<Result> {
     clearTimeout(timer);
     const line = out.split('\n').find(l => l.startsWith('RELAY-RESULT '));
     if (!line) throw new Error(`no result\n${out}\n${err.slice(-2000)}`);
-    return JSON.parse(line.slice('RELAY-RESULT '.length)) as Result;
+    const result = JSON.parse(line.slice('RELAY-RESULT '.length)) as Result;
+    const log = await readFile(netLog, 'utf8');
+    result.dnsNames = log.split('\n').filter(l => /dns-(?:engine|bare)\.example/.test(l));
+    result.netLogSawCanary =
+      log.trimEnd().endsWith('}') && log.includes(`127.0.0.1:${canary.port}`);
+    return result;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -116,26 +147,29 @@ test(
       },
     );
 
-    await t.test('window B cannot obtain window A’s token document or sub-resources', () => {
-      assert.deepEqual(
-        served(r.urls.a3, '').map(e => [e.window, e.status]),
-        [
-          [B, 404],
-          [A, 200],
-        ],
-        'B’s attempt is the 404 and spends nothing; A then gets its document',
-      );
-      assert.deepEqual(
-        served(r.urls.a1, 'cid/0')
-          .filter(e => e.window !== A)
-          .map(e => [e.window, e.status]),
-        [
-          [B, 404],
-          [F, 404],
-        ],
-      );
-      assert.equal(served(r.urls.b1, '')[0].status, 200);
-    });
+    await t.test(
+      'window B cannot obtain window A’s token document or sub-resources (img from B’s page, fetch from F)',
+      () => {
+        assert.deepEqual(
+          served(r.urls.a3, '').map(e => [e.window, e.status]),
+          [
+            [B, 404],
+            [A, 200],
+          ],
+          'B’s attempt is the 404 and spends nothing; A then gets its document',
+        );
+        assert.deepEqual(
+          served(r.urls.a1, 'cid/0')
+            .filter(e => e.window !== A)
+            .map(e => [e.window, e.status]),
+          [
+            [B, 404],
+            [F, 404],
+          ],
+        );
+        assert.equal(served(r.urls.b1, '')[0].status, 200);
+      },
+    );
 
     await t.test('a page-forged X-Aplos-Window is overwritten by the stamp', () => {
       assert.equal(r.forged.forgedGet, 404);
@@ -228,6 +262,51 @@ test(
           { type: 'keyDown', key: 'j', focused: r.urls.a1 },
           { type: 'keyUp', key: 'j', focused: r.urls.a1 },
         ]);
+      },
+    );
+
+    await t.test(
+      'a WebContentsView hosted in window A is not window A: its request is the 404',
+      () => {
+        assert.equal(r.hosted.type, 'window', 'Electron reports a hosted view as type window');
+        assert.deepEqual(
+          served(r.hosted.url, ''),
+          [],
+          'no window is named, so the engine is never asked',
+        );
+      },
+    );
+
+    await t.test(
+      'frame escape against the real guards: no navigation, form, top or javascript: gets out',
+      () => {
+        const e = r.escape;
+        for (const [name, url] of Object.entries(e.urls))
+          assert.deepEqual(served(url, ''), [], `${name}: the target document was never requested`);
+        assert.equal(e.frameUrl, r.urls.a1, 'the mail frame still shows its own document');
+        assert.equal(e.hostUrl, r.hostUrl, 'the top frame did not move');
+        assert.ok(e.hostUrl.endsWith('/renderer/index.html'));
+        assert.equal(e.opener, 'null', 'a mail frame has no opener');
+        assert.equal(e.opened, 'null', 'window.open returned nothing');
+        assert.deepEqual(
+          e.popups,
+          [],
+          'window.open of a javascript: URL never reached the open handler',
+        );
+        assert.equal(r.gotA.filter(m => 'pwned' in m.data).length, 0);
+      },
+    );
+
+    await t.test(
+      'DNS prefetch: no lookup for links in a mail frame, with or without the header',
+      () => {
+        assert.ok(r.frameUrls.length >= 6, 'both probe frames were mounted');
+        assert.ok(r.netLogSawCanary, 'the net log is finished and records network events');
+        assert.deepEqual(
+          r.dnsNames,
+          [],
+          'the net log never names dns-engine.example or dns-bare.example',
+        );
       },
     );
   },

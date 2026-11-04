@@ -34,7 +34,7 @@ import { KeyringError, loadDataKey } from './keyring';
 import { invokeNative, nativeMethods, notify } from './native-methods';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
-import { SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
+import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
 import { popout } from './windows';
 
@@ -260,7 +260,8 @@ async function bootRealEngine(options: { dataDir: string; noteExit(): boolean })
   await supervisor.start();
   watchWindows();
   // The sealed mail frame (html-5): the `aplos-mail://` relay, its window stamp and backstop, and the subframe rule.
-  installMailProtocol(serveMail);
+  // At most MAX_RELAY_IN_FLIGHT relays open at once: a page cannot queue unbounded engine work through main.
+  installMailProtocol(limitInFlight(serveMail));
   allowMailFrames();
   ipcMain.handle('aplos:engine-connect', connectWindow);
   ipcMain.handle('aplos:desktop', desktopMethod);

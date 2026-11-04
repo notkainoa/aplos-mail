@@ -67,11 +67,15 @@ export function installWebRequestGuards(ses: Session): boolean {
   return true;
 }
 
-/** The Electron window id of an app window's webContents; undefined for anything else (DevTools, a gone window). */
+/**
+ * The Electron window id of a window's OWN webContents; undefined for anything else (DevTools, a gone window, and a
+ * WebContentsView hosted in a window, which Electron reports as type `window` and maps to its host window).
+ */
 function windowOf(contentsId: number): number | undefined {
   const contents = webContents.fromId(contentsId);
   if (!contents || contents.isDestroyed() || contents.getType() !== 'window') return undefined;
-  return BrowserWindow.fromWebContents(contents)?.id;
+  const win = BrowserWindow.fromWebContents(contents);
+  return win && win.webContents === contents ? win.id : undefined;
 }
 
 let installed = false;

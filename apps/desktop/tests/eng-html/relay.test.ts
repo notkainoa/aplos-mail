@@ -4,6 +4,8 @@ import { frameHeaders, notFound, resourceHeaders } from '@aplos/mail-html/frame'
 import {
   ENGINE_HEADERS,
   MAIL_PRIVILEGES,
+  MAX_RELAY_IN_FLIGHT,
+  limitInFlight,
   WINDOW_HEADER,
   backstopCancels,
   createMailHandler,
@@ -129,7 +131,13 @@ test('host exactly m, no port, no userinfo, a slash after the token: anything el
 });
 
 test('fail closed on the window: no stamp, a malformed one, or one that is no app window is the 404, no engine call', async () => {
-  const { handler, calls } = relay();
+  // windowOf answers for EVERY id, so only the stamp check can refuse here; it must never even be asked.
+  const calls: ServeArgs[] = [];
+  const asked: number[] = [];
+  const handler = createMailHandler({
+    serve: async args => (calls.push(args), okDocument()),
+    windowOf: id => (asked.push(id), 3),
+  });
   const stamps: (Record<string, string> | undefined)[] = [
     {},
     { [WINDOW_HEADER]: '' },
@@ -139,14 +147,58 @@ test('fail closed on the window: no stamp, a malformed one, or one that is no ap
     { [WINDOW_HEADER]: '7.0' },
     { [WINDOW_HEADER]: '7 x' },
     { [WINDOW_HEADER]: '7, 7' },
-    { [WINDOW_HEADER]: '8' },
     { [WINDOW_HEADER]: '99999999999999999999' },
     { 'X-Aplos-Win': '7' },
   ];
   for (const headers of stamps)
     await assertUniform404(await handler(request(DOC, { headers })), JSON.stringify(headers));
+  assert.deepEqual(asked, [], 'windowOf is never asked without a valid stamp');
   assert.equal(calls.length, 0);
+  // A valid stamp that names no app window.
+  const { handler: noWindow, calls: none } = relay();
+  await assertUniform404(await noWindow(request(DOC, { headers: { [WINDOW_HEADER]: '8' } })), '8');
+  assert.equal(none.length, 0);
 });
+
+test(
+  'at most MAX_RELAY_IN_FLIGHT relays open: the next is the 404 with no engine call; every exit frees a slot',
+  { timeout: 5000 },
+  async () => {
+    assert.equal(MAX_RELAY_IN_FLIGHT, 64);
+    const pending: { resolve(value: unknown): void; reject(error: unknown): void }[] = [];
+    let calls = 0;
+    const serve = limitInFlight(() => {
+      calls++;
+      return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+    });
+    const handler = createMailHandler({ serve, windowOf: () => 3 });
+    const open = Array.from({ length: 64 }, () => handler(request(DOC)));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 64);
+    await assertUniform404(await handler(request(DOC)), 'the 65th');
+    assert.equal(calls, 64, 'the 65th never reached the engine');
+
+    pending[0].resolve(okDocument());
+    pending[1].reject(new Error('timeout'));
+    assert.equal((await open[0]).status, 200);
+    await assertUniform404(await open[1], 'a timed-out call');
+    const next = [handler(request(DOC)), handler(request(DOC))];
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 66, 'an answer and a rejection each freed a slot');
+    await assertUniform404(await handler(request(DOC)), 'full again');
+    for (const call of pending.slice(2)) call.resolve(okDocument());
+    await Promise.all([...open, ...next]);
+
+    let throws = 0;
+    const throwing = limitInFlight(() => {
+      throws++;
+      throw new Error('sync');
+    }, 1);
+    await assert.rejects(throwing({ token: 't', path: '', windowId: '1' }));
+    await assert.rejects(throwing({ token: 't', path: '', windowId: '1' }), /sync/);
+    assert.equal(throws, 2, 'a throw frees its slot too');
+  },
+);
 
 test('any engine failure or an answer of another shape is the same uniform 404', async () => {
   const bad: unknown[] = [

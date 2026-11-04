@@ -31,6 +31,9 @@ const MAX_PATH = 2_000;
 /** How long main waits for `Mail/serve` (the engine bounds a `cid` or `img` fetch at 10 s itself). */
 export const SERVE_TIMEOUT_MS = 15_000;
 
+/** How many `Mail/serve` relays main keeps open at once; the next one is the uniform 404 with no engine call. */
+export const MAX_RELAY_IN_FLIGHT = 64;
+
 /** Every header name the engine's `Mail/serve` writes (`@aplos/mail-html/frame` headers.ts). Nothing else passes. */
 export const ENGINE_HEADERS: ReadonlySet<string> = new Set([
   'content-security-policy',
@@ -190,6 +193,27 @@ export function createMailHandler(deps: RelayDeps): (request: Request) => Promis
       return await answer(request, deps);
     } catch {
       return refused();
+    }
+  };
+}
+
+/**
+ * `serve` with at most `max` calls open at once. One more is refused (a rejection, so the handler answers the uniform
+ * 404) without calling `serve`. The count drops on every exit: an answer, a rejection (the link's timeout included) or
+ * a throw.
+ */
+export function limitInFlight(
+  serve: RelayDeps['serve'],
+  max: number = MAX_RELAY_IN_FLIGHT,
+): RelayDeps['serve'] {
+  let open = 0;
+  return async args => {
+    if (open >= max) throw new Error('Too many mail requests at once.');
+    open++;
+    try {
+      return await serve(args);
+    } finally {
+      open--;
     }
   };
 }

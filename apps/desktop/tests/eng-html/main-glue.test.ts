@@ -51,12 +51,24 @@ function fakeMailElectron() {
   const registered: unknown[] = [];
   const handled: { scheme: string; handler: Listener }[] = [];
   const listeners = { headers: [] as Listener[], request: [] as Listener[] };
-  const contents = new Map<number, { type: string; window?: number; destroyed?: boolean }>([
-    [4, { type: 'window', window: 2 }],
+  // `own`: the window's own webContents. 10 is a WebContentsView hosted in window 2: type `window`, maps to 2, not own.
+  const contents = new Map<
+    number,
+    { type: string; window?: number; destroyed?: boolean; own?: boolean }
+  >([
+    [4, { type: 'window', window: 2, own: true }],
+    [10, { type: 'window', window: 2 }],
     [5, { type: 'webview', window: 3 }],
     [6, { type: 'window', window: 9, destroyed: true }],
     [7, { type: 'window' }],
   ]);
+  const made = new Map<number, unknown>();
+  /** One fake webContents object per id, so identity comparisons work as with Electron. */
+  const byId = (id: number, entry: { type: string; destroyed?: boolean }) => {
+    if (!made.has(id))
+      made.set(id, { id, getType: () => entry.type, isDestroyed: () => !!entry.destroyed, entry });
+    return made.get(id);
+  };
   const defaultSession = {
     webRequest: {
       onBeforeSendHeaders: (fn: Listener) => void listeners.headers.push(fn),
@@ -73,12 +85,15 @@ function fakeMailElectron() {
       fromId: (id: number) => {
         const entry = contents.get(id);
         if (!entry) return undefined;
-        return { id, getType: () => entry.type, isDestroyed: () => !!entry.destroyed, entry };
+        return byId(id, entry);
       },
     },
     BrowserWindow: {
-      fromWebContents: (c: { entry: { window?: number } }) =>
-        c.entry.window === undefined ? null : { id: c.entry.window },
+      fromWebContents: (c: { entry: { window?: number; own?: boolean } }) => {
+        if (c.entry.window === undefined) return null;
+        const own = [...contents].find(([, e]) => e.window === c.entry.window && e.own);
+        return { id: c.entry.window, webContents: own ? byId(own[0], own[1]) : undefined };
+      },
     },
   };
   return { electron, registered, handled, listeners, defaultSession };
@@ -144,7 +159,7 @@ test('the installed listeners stamp the window and run the backstop', async () =
   assert.equal(cancel(gone), false, 'a frame that is gone is read as none, never a throw');
 });
 
-test('the handler names only a live app window: webviews, destroyed or windowless contents are the 404', async () => {
+test('the handler names only a window’s own live contents: hosted views, webviews, destroyed or windowless are the 404', async () => {
   const fake = fakeMailElectron();
   const mail = run<MailProtocol>(await mailBundle, fake.electron);
   const asked: unknown[] = [];
@@ -157,7 +172,7 @@ test('the handler names only a live app window: webviews, destroyed or windowles
     };
   });
   const handler = fake.handled[0].handler as (request: unknown) => Promise<Response>;
-  for (const stamp of ['4', '5', '6', '7', '8']) {
+  for (const stamp of ['4', '5', '6', '7', '8', '10']) {
     const response = await handler({
       method: 'GET',
       url: DOC,
@@ -182,6 +197,7 @@ class Emitter {
 }
 
 function fakeSecurityElectron() {
+  const opened: string[] = [];
   const session = Object.assign(new Emitter(), {
     setPermissionCheckHandler() {},
     setPermissionRequestHandler() {},
@@ -195,11 +211,11 @@ function fakeSecurityElectron() {
   const electron = {
     app,
     session: { defaultSession: session },
-    shell: { openExternal: async () => undefined },
+    shell: { openExternal: async (url: string) => void opened.push(url) },
     systemPreferences: {},
     BrowserWindow: { fromWebContents: () => ({}) },
   };
-  return { electron, app, session };
+  return { electron, app, session, opened };
 }
 
 const event = (fields: Record<string, unknown>) => ({
@@ -217,10 +233,13 @@ async function guardedContents() {
     fake.electron,
   );
   security.installPermissionHandlers();
+  let openHandler: ((details: { url: string }) => { action: string }) | undefined;
   const contents = Object.assign(new Emitter(), {
     session: fake.session,
     getURL: () => RENDERER,
-    setWindowOpenHandler() {},
+    setWindowOpenHandler(fn: typeof openHandler) {
+      openHandler = fn;
+    },
   });
   fake.app.emit('web-contents-created', event({}), contents);
   const blocked = (name: string, fields: Record<string, unknown>) => {
@@ -228,20 +247,27 @@ async function guardedContents() {
     contents.emit(name, e);
     return e.defaultPrevented;
   };
-  return { security, blocked };
+  return { security, blocked, open: (url: string) => openHandler!({ url }), opened: fake.opened };
 }
+
+/** A subframe navigation started by the app's own page (the reader setting the iframe's src). */
+const fromApp = (url: string) => ({ url, isMainFrame: false, initiator: { url: RENDERER } });
 
 test('security.ts: no aplos-mail frame before the real path allows it (the legacy path never does)', async () => {
   const { blocked } = await guardedContents();
-  assert.equal(blocked('will-frame-navigate', { url: DOC, isMainFrame: false }), true);
-  assert.equal(blocked('will-frame-navigate', { url: 'about:srcdoc', isMainFrame: false }), false);
+  assert.equal(blocked('will-frame-navigate', fromApp(DOC)), true);
+  assert.equal(blocked('will-frame-navigate', fromApp('about:srcdoc')), false);
 });
 
 test('security.ts: once allowed, only the exact document form, only in a subframe', async () => {
   const { security, blocked } = await guardedContents();
   security.allowMailFrames();
-  assert.equal(blocked('will-frame-navigate', { url: DOC, isMainFrame: false }), false);
-  assert.equal(blocked('will-redirect', { url: DOC, isMainFrame: false }), false);
+  assert.equal(blocked('will-frame-navigate', fromApp(DOC)), false);
+  assert.equal(
+    blocked('will-redirect', { url: DOC, isMainFrame: false }),
+    true,
+    'no redirect into one',
+  );
   const refused = [
     `${DOC}cid/0`,
     `${DOC}img/0`,
@@ -254,7 +280,7 @@ test('security.ts: once allowed, only the exact document form, only in a subfram
     'javascript:alert(1)',
   ];
   for (const url of refused) {
-    assert.equal(blocked('will-frame-navigate', { url, isMainFrame: false }), true, url);
+    assert.equal(blocked('will-frame-navigate', fromApp(url)), true, url);
     assert.equal(blocked('will-redirect', { url, isMainFrame: false }), true, url);
   }
   assert.equal(blocked('will-navigate', { url: DOC }), true, 'main frame: never');
@@ -263,6 +289,56 @@ test('security.ts: once allowed, only the exact document form, only in a subfram
     true,
     'main frame redirect: never',
   );
+});
+
+test('security.ts: a mail document only when the app’s own page starts the navigation', async () => {
+  const { security, blocked } = await guardedContents();
+  security.allowMailFrames();
+  const other = `aplos-mail://m/${'ef'.repeat(16)}/`;
+  const initiators: [string, unknown][] = [
+    ['the mail frame itself (script or link)', { url: DOC }],
+    ['another mail frame', { url: other }],
+    ['a web page', { url: 'https://example.com/' }],
+    ['an opaque frame', { url: 'about:srcdoc' }],
+    ['no initiator', null],
+    ['an absent initiator', undefined],
+    [
+      'a frame that is gone',
+      {
+        get url(): string {
+          throw new Error('gone');
+        },
+      },
+    ],
+  ];
+  for (const [what, initiator] of initiators)
+    assert.equal(
+      blocked('will-frame-navigate', { url: other, isMainFrame: false, initiator }),
+      true,
+      what,
+    );
+  assert.equal(blocked('will-frame-navigate', fromApp(other)), false, 'the app page may');
+});
+
+test('security.ts: every window-open is denied; only http, https and mailto go to the system', async () => {
+  const { open, opened } = await guardedContents();
+  const urls = [
+    'https://example.com/x',
+    'http://example.com/y',
+    'mailto:ada@example.com',
+    'javascript:alert(1)',
+    DOC,
+    'file:///etc/passwd',
+    'https://user:pw@example.com/',
+    'data:text/html,x',
+  ];
+  for (const url of urls) assert.deepEqual(open(url), { action: 'deny' }, url);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(opened, [
+    'https://example.com/x',
+    'http://example.com/y',
+    'mailto:ada@example.com',
+  ]);
 });
 
 // ---- source pins -------------------------------------------------------------------------------------------------
@@ -307,7 +383,7 @@ test('real path only: the scheme is registered under `if (realPath)` and the rel
   assert.deepEqual(filesWith(/allowMailFrames\(\)/), ['main/engine-real.ts', 'main/security.ts']);
   const real = all.find(s => s.file === 'main/engine-real.ts')!.text;
   const boot = /async function bootRealEngine[\s\S]*?\n}\n/.exec(real)?.[0] ?? '';
-  assert.match(boot, /installMailProtocol\(serveMail\);\s*allowMailFrames\(\);/);
+  assert.match(boot, /installMailProtocol\(limitInFlight\(serveMail\)\);\s*allowMailFrames\(\);/);
 });
 
 test('main never loosens the frame sandbox: no allow-same-origin, no sandbox attribute written', () => {
