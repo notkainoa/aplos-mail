@@ -145,7 +145,8 @@ Requirements on the sealed path (main, the engine and the reporter), none of whi
 
 1. The frame's sandbox never contains `allow-same-origin` (and the host never adds it).
 2. CSP as a response header on every `aplos-mail://` response: `default-src 'none'`, `script-src` pinned to the
-   reporter's hash only, `img-src data:` (plus `https:` when loading), `style-src 'unsafe-inline'`,
+   reporter's hash only, `img-src aplos-mail: data:` (never `https:`: loaded images come through the engine's proxy
+   as `img/<n>`, ARCH 10), `style-src 'unsafe-inline'`,
    `form-action 'none'`, `base-uri 'none'`.
 3. DNS prefetch off (`X-DNS-Prefetch-Control: off` header, and the `<meta>` in the document).
 4. Main denies every navigation of the frame away from `aplos-mail:` (`will-frame-navigate`, `will-navigate`,
