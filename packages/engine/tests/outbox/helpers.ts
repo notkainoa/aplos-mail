@@ -15,6 +15,7 @@ import type { Admission } from '../../src/ports/base';
 import { NotSentError, PausedError } from '../../src/ports/base';
 import type { DraftSyncPort, SendPort, SubmissionPayload } from '../../src/ports';
 import type { DraftSaveResult, DraftUpload } from '../../src/ports/provider';
+import type { DeadlineSource } from '../../src/ports/time';
 import type { EngineFrame } from '../../src/runtime/frames';
 import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
@@ -353,6 +354,8 @@ export interface Instance {
   store: StorePort;
   loop: TimerLoop;
   outbox: OutboxModule;
+  /** The deadline sources this instance's modules registered, by id. */
+  sources: Map<string, DeadlineSource>;
   /** Simulates the process dying: the loop stops and nothing of this instance runs again (its hung send stays hung). */
   kill(): void;
 }
@@ -454,11 +457,19 @@ export function outboxWorld(
       }
     };
     const loop = createTimerLoop({ clock, log });
+    const sources = new Map<string, DeadlineSource>();
     const outbox = createOutboxModule({
       store,
       send: options.send ?? server.port,
       clock,
-      deadlines: loop,
+      // The loop, with every registered source kept so a test can ask one for its next deadline.
+      deadlines: {
+        register: source => {
+          sources.set(source.id, source);
+          return loop.register(source);
+        },
+        changed: id => loop.changed(id),
+      },
       log,
       blobs: blobSource,
       settings: options.settings,
@@ -470,6 +481,7 @@ export function outboxWorld(
       store,
       loop,
       outbox,
+      sources,
       kill() {
         loop.stop();
         void outbox.close();

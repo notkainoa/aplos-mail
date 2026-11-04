@@ -654,3 +654,157 @@ for (const order of ['upload first', 'send first'] as const)
       },
       { drafts: true },
     ));
+
+// ---------------------------------------------------------------- review round 2: a failing read of a draft that went away
+
+const syncMeta = (w: World, id: string) => {
+  const row = w.first.store.read(q =>
+    q.get<{ data: string }>('SELECT data FROM drafts WHERE id = ?', id),
+  );
+  return row && (JSON.parse(row.data) as { _sync: Record<string, unknown> })._sync;
+};
+
+const rawData = (w: World, id: string) =>
+  w.first.store.read(q => q.get<{ data: string }>('SELECT data FROM drafts WHERE id = ?', id))
+    ?.data;
+
+/** A synced draft edited here, its upload's read held open (and failing once released, or hanging until the limit). */
+async function failingUpload(w: World, how: 'rejects' | 'hangs') {
+  const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+  await attempt(w, 5 * SEC);
+  assert.equal(w.remoteDrafts.saves.length, 1, 'the first copy is up');
+  const edited = drafts(w).set(next(), {
+    id: d.id,
+    baseRevision: d.revision,
+    fields: withFile(w, { subject: 'Edited' }),
+  }).draft;
+  const g = gate();
+  w.blobReads.hold = g.wait;
+  if (how === 'rejects') w.blobReads.fail = new Error('EIO');
+  await w.clock.advance(5 * SEC);
+  w.blobReads.hold = undefined;
+  assert.equal(w.blobReads.calls.length, 2, 'the second upload is reading');
+  /** Ends the read: released to fail, or left hanging past the limit. */
+  const finish = async () => {
+    if (how === 'rejects') g.open();
+    else await w.clock.advance(BLOB_READ_LIMIT_MS);
+    await w.settle();
+    w.blobReads.fail = undefined;
+  };
+  return { draft: edited, finish };
+}
+
+/** A normal draft created afterwards syncs: the drafts timer is not held by the one that went away. */
+async function anotherSyncs(w: World) {
+  const before = w.remoteDrafts.saves.length;
+  const other = drafts(w).set(next(), { fields: fields({ subject: 'Another' }) }).draft;
+  await attempt(w, 5 * SEC);
+  assert.equal(w.remoteDrafts.saves.length, before + 1, 'another draft uploads');
+  assert.equal(draftRow(w, other.id).synced_revision, other.revision);
+}
+
+for (const how of ['rejects', 'hangs'] as const)
+  test(`a draft discarded while its read fails (${how}): nothing is written on the hidden row, the discard completes`, () =>
+    inWorld(
+      async w => {
+        const { draft, finish } = await failingUpload(w, how);
+        const removal = gate();
+        w.remoteDrafts.removeScript.push({ wait: removal.wait });
+        drafts(w).destroy(next(), draft.id);
+        const hidden = rawData(w, draft.id);
+        assert.equal(syncMeta(w, draft.id)?.removing, true, 'hidden while its copy is removed');
+        await finish();
+        assert.equal(rawData(w, draft.id), hidden, 'the failed read wrote nothing');
+        assert.equal(syncMeta(w, draft.id)?.dueAt, undefined);
+        assert.equal(syncMeta(w, draft.id)?.readFails, undefined);
+        assert.equal(w.events('draft.sync_failed').length, 1, 'the failure is still logged');
+        // Past the retry wait a failed read would have asked for: the timer has nothing stale to fire.
+        await attempt(w, 31 * SEC);
+        const due = await w.first.sources.get('drafts')!.next();
+        assert.ok(
+          due === undefined || due > w.clock.now(),
+          `the drafts timer is not held (${due})`,
+        );
+        removal.open();
+        await attempt(w, 1);
+        assert.equal(rawData(w, draft.id), undefined, 'the discard completed');
+        await anotherSyncs(w);
+      },
+      { drafts: true },
+    ));
+
+test('the copy removed on another device while the read fails: the failed read writes nothing', () =>
+  inWorld(
+    async w => {
+      const { draft, finish } = await failingUpload(w, 'rejects');
+      const r = w.first.store.read(q =>
+        q.get<{ remote_draft_id: string; remote_message_id: string; remote_internet_id: string }>(
+          'SELECT remote_draft_id, remote_message_id, remote_internet_id FROM drafts WHERE id = ?',
+          draft.id,
+        ),
+      )!;
+      w.first.store.commit({
+        opId: next(),
+        origin: 'sync',
+        writes: [
+          {
+            ...copyWrite({
+              remoteDraftId: r.remote_draft_id,
+              remoteMessageId: 'gone-msg',
+              internetId: r.remote_internet_id,
+              changedAt: w.clock.now(),
+            }),
+            removed: true,
+          } as never,
+        ],
+      });
+      const after = rawData(w, draft.id);
+      await finish();
+      assert.equal(rawData(w, draft.id), after, 'the failed read wrote nothing');
+      assert.equal(syncMeta(w, draft.id)?.readFails, undefined);
+      await anotherSyncs(w);
+    },
+    { drafts: true },
+  ));
+
+test('a draft a send pins while its upload read fails: the failed read writes nothing', () =>
+  inWorld(
+    async w => {
+      const { draft, finish } = await failingUpload(w, 'rejects');
+      // The upload's read took its failure when it started; the send's own read works.
+      w.blobReads.fail = undefined;
+      const sent = await w.send(w.first, draft.id, { revision: draft.revision });
+      const pinned = rawData(w, draft.id);
+      await finish();
+      assert.equal(rawData(w, draft.id), pinned, 'the failed read wrote nothing');
+      assert.equal(syncMeta(w, draft.id)?.readFails, undefined);
+      assert.equal(w.get(sent.id).state, 'queued');
+      await anotherSyncs(w);
+    },
+    { drafts: true },
+  ));
+
+test('backstop: a meta write never gives a hidden (removing) draft a due time or a failed-read count', () =>
+  inWorld(
+    async w => {
+      const d = drafts(w).set(next(), { fields: fields() }).draft;
+      await attempt(w, 5 * SEC);
+      const removal = gate();
+      w.remoteDrafts.removeScript.push({ wait: removal.wait });
+      drafts(w).destroy(next(), d.id);
+      const hidden = rawData(w, d.id);
+      assert.equal(syncMeta(w, d.id)?.removing, true);
+      for (const patch of [{ dueAt: w.clock.now() }, { readFails: 1 }])
+        assert.throws(() =>
+          w.first.store.commit({
+            opId: next(),
+            origin: 'system',
+            writes: [{ kind: 'draft', op: 'meta', id: d.id, patch } as never],
+          }),
+        );
+      assert.equal(rawData(w, d.id), hidden);
+      removal.open();
+      await attempt(w, 1);
+    },
+    { drafts: true },
+  ));

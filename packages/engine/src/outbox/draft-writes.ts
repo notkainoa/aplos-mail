@@ -399,6 +399,9 @@ function setMeta(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'meta' }>) 
   const { fields, meta } = parseData(row.data);
   if (w.ifUploading !== undefined && meta.uploading?.internetId !== w.ifUploading)
     throw new DraftConflict('stale');
+  // Backstop: a hidden row only waits for its copy's removal; an upload's due time or read count on it would be stale.
+  if (meta.removing && (w.patch.dueAt != null || w.patch.readFails != null))
+    throw new DraftConflict('missing');
   const base = w.announce ? { ...meta, announce: tx.seq } : meta;
   writeRow(tx, w.id, {}, fields, patched(base, w.patch));
   if (w.announce) announce(w.id);

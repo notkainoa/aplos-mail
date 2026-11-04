@@ -244,9 +244,14 @@ const UNREADABLE_BLOB = {
   reason: 'blobUnreadable',
 };
 
-/** A read that failed or ran out of time: retried later, until the fifth in a row shows the problem on the draft. */
+/**
+ * A read that failed or ran out of time: retried later, until the fifth in a row shows the problem on the draft. A draft
+ * that changed during the read (discarded, removed elsewhere, edited) or that a send now pins gets nothing written: its
+ * new state decides what comes next, and a hidden row must never be given a due time.
+ */
 function readFailed(ctx: DraftsCtx, row: UploadRow, meta: DraftMeta) {
   ctx.log.event('draft.sync_failed', { draft: row.id, error: UNREADABLE_BLOB });
+  if (!stillCurrent(ctx, row)) return;
   const readFails = (meta.readFails ?? 0) + 1;
   if (readFails >= MAX_READ_FAILS) return problemFor(ctx, row, PROBLEM_COPY);
   const dueAt = ctx.clock.now() + DRAFT_RETRY_MS;
