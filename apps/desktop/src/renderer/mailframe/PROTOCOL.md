@@ -156,9 +156,15 @@ the hold threshold) and sees nothing relayed. When `onKey` returns true the host
 The sealed frame relays **no** keys: the real reporter has no key message (ARCHITECTURE 10: it posts its six fields
 "and nothing else"), so the host no longer accepts the draft `{t:'key'}` fallback at all. `sealed.browser.spec.ts`
 presses every listed key, R, a held R, E, Space and Enter inside the real frame and sees nothing relayed and no host
-keydown. With focus inside a sealed letter, J/K and Esc therefore do nothing until main relays them from
-`before-input-event`, filtered to `FALLBACK_KEYS` (REQUEST to `eng-host`); whether `before-input-event` fires with
-focus inside an out-of-process frame is still unknown (live check on a Mac).
+keydown. The sealed frame's keys come from main instead (eng-host, `host/protocol/frame-keys.ts`): `before-input-event`
+fires for the out-of-process frame's keys (measured), and main sends the embedding window's renderer one message on
+`aplos:mail-key`, `{ key }`, only when the focused frame is the sealed `aplos-mail://m/<token>/` document, only for a
+listed key (`shared/mail-keys.ts` `MAIL_KEYS`, which `FALLBACK_KEYS` is built from), keydown only, **no** Ctrl, Cmd or Alt
+and Shift only for J and K, **no** auto-repeat. Main validates the message before it sends and preload before it
+delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued).
+Main does not cancel the key, so an arrow or Page Down still scrolls the letter; the shell decides what it handles.
+Whoever consumes the event (`MailFrame` / the shell, lane ui-reader) maps it to the same `onKey` path and must not also
+listen to the frame (the srcdoc listener never runs for a sealed frame, and main never relays a srcdoc frame's keys).
 
 ## Observed
 
@@ -222,8 +228,8 @@ Requirements on the sealed path. Done means verified by a test; the rest is owed
    The browser spec's frame is cross-site yet shares the host's process there, so it proves nothing about isolation.
 6. **Owed (engine slice 2 + eng-host).** `Mail/serve` answers GET only and binds the requesting window from main, never
    from the URL; the registry refuses another window's token (engine tests cover `serveFrame`).
-7. **Done (host).** The reporter relays no keys, so the "never both relays" rule holds; main's `before-input-event`
-   relay is owed (Keys).
+7. **Done (host + main).** The reporter relays no keys, so the "never both relays" rule holds; main's
+   `before-input-event` relay is built (Keys). The host still has to consume the `mail-key` event.
 8. **Engine sanitiser (eng-html).** The cost fences above (linear CSS, style caps, span clamp, weighted cell count),
    `!important` and `@layer` stripped, gesture-only `url()` and style-sized pixels dropped, and the flattened and
    truncated flags returned with the frame so the host shows the notices outside it. Not checked here.

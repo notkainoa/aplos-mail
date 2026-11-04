@@ -172,6 +172,29 @@ test('real path: a control call whose signal aborts rejects at once and its late
   assert.ok(await link.call('Counts/get', {}));
 });
 
+test('real path: a control call that settles removes its abort listener (a long-lived signal does not collect them)', async t => {
+  const main = mainSide(t);
+  const link = await main.supervisor.start();
+  await link.ready;
+  let added = 0;
+  let removed = 0;
+  const live = new AbortController();
+  const signal = live.signal;
+  const add = signal.addEventListener.bind(signal);
+  const remove = signal.removeEventListener.bind(signal);
+  signal.addEventListener = ((...args: Parameters<typeof add>) => (
+    added++,
+    add(...args)
+  )) as typeof add;
+  signal.removeEventListener = ((...args: Parameters<typeof remove>) => (
+    removed++,
+    remove(...args)
+  )) as typeof remove;
+  for (let i = 0; i < 5; i++) await link.call('Counts/get', {}, 5000, signal);
+  assert.equal(added, 5);
+  assert.equal(removed, 5, 'every settled call took its listener off the signal');
+});
+
 test('real path: killing the engine reconnects windows on the same dbEpoch with no re-snapshot', async t => {
   const main = mainSide(t);
   const first = await (await main.supervisor.start()).ready;
