@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { api, useAccounts, useAccountsLoaded, useConsent, useSettings } from '../data';
 import { ReconnectFlow } from '../onboarding/reconnect/ReconnectFlow';
+import { callForSheetMode } from '../onboarding/reconnect/reconnect.model';
 import { ConsentCard } from '../ui/onboarding';
 import { Dialog } from '../ui/surfaces';
 import { RECONNECT_FAILED_COPY, SAVE_FAILED_COPY } from './failure-copy';
@@ -87,7 +88,14 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
   useEffect(() => {
     if (gone) closeSheet();
   }, [gone]);
-  return <ReconnectFlow accountId={args.accountId} onClose={() => closeSheet()} />;
+  // The entry point's mode wins (`openSheet('reconnect', {mode: 'grant'})` grants even on a healthy account).
+  return (
+    <ReconnectFlow
+      accountId={args.accountId}
+      call={callForSheetMode(args.mode)}
+      onClose={() => closeSheet()}
+    />
+  );
 }
 
 const PROVIDER_NAMES = {
