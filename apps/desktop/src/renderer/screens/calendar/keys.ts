@@ -17,6 +17,8 @@
 export interface ElementLike {
   closest(selector: string): ElementLike | null;
   matches(selector: string): boolean;
+  /** A DOM Element's descendant lookup; the popover shell needs it to be claimed as ours. */
+  querySelector?(selector: string): ElementLike | null;
 }
 
 /** Widgets that move with ←/→ themselves (WAI-ARIA radio group, grid, tabs, menu, listbox, slider). */
@@ -48,21 +50,69 @@ const TEXT_FIELD_OWNERS =
   'input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="password"], input[type="number"], textarea, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="combobox"]';
 
 /**
+ * The calendar's own portaled surfaces: the detail popover, the scope question and the editor's pickers carry the
+ * screen's own classes; its menus carry a `cal-menu-` DOM id. Any other dialog, sheet, palette or menu in the app
+ * is NOT ours — an open shortcut sheet over an invite must not answer it on y/m/n (review1 11).
+ */
+const CAL_OWN_CONTENT =
+  '.cal-screen__popover, .cal-screen__rail, .cal-editor, .ui-scope-chooser, .cal-editor__month';
+const CAL_OWN_MENU = '.ui-menu[id^="cal-menu-"]';
+const CAL_POPOVER = '.ui-popover';
+
+/** Focus is inside one of the calendar's own surfaces: its rail/popover content, its scope question or its menus. */
+export function inCalendarSurface(active: ElementLike | null): boolean {
+  if (active == null) return false;
+  if (active.closest(CAL_OWN_CONTENT) != null || active.closest(CAL_OWN_MENU) != null) return true;
+  const popover = active.closest(CAL_POPOVER);
+  return (
+    typeof popover?.querySelector === 'function' && popover.querySelector(CAL_OWN_CONTENT) != null
+  );
+}
+
+/**
  * Whether the screen's answer-key listener may take this keydown: a bare y, m or n, not composing, not already taken,
- * and never while typing in a field. Focus may sit on the screen or inside one of its portaled surfaces — the detail
- * popover's role=dialog is a modal context, so the registry's y/m/n end there before they reach `calendar` and the
- * screen answers from a capture listener instead (the same gap the Esc ladder covers).
+ * never while typing in a field, and only while focus is on the screen or one of its own surfaces (`withinCalendar`,
+ * computed by the container as `inScreen || inCalendarSurface`). The detail popover's role=dialog is a modal
+ * context, so the registry's y/m/n end there and the screen answers from a capture listener instead.
  */
 export function takesInviteAnswerKey(
   event: EscapeKeyInput,
   active: ElementLike | null,
-  focusInScreen: boolean,
+  withinCalendar: boolean,
 ): boolean {
   if (INVITE_ANSWER_KEYS[event.key] === undefined) return false;
   if (event.isComposing || event.defaultPrevented) return false;
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
   if (active?.closest(TEXT_FIELD_OWNERS)) return false;
-  return focusInScreen || active?.closest(ESCAPE_OWNERS) != null;
+  return withinCalendar;
+}
+
+/** Widgets that keep Return for themselves: every button and link, the grid's entries and "+N" stacks included. */
+export const RETURN_OWNERS =
+  'button, [role="button"], [role="menuitem"], [role="option"], [role="radio"], [role="tab"], [role="switch"], a[href]';
+
+/** True when the focused element activates itself on Return, so the registry's calendar.open must defer (review1 13). */
+export function ownsReturn(active: ElementLike | null | undefined): boolean {
+  return active?.closest(RETURN_OWNERS) != null;
+}
+
+/** The DOM-id encoder `ui/calendar/eventText` keeps private: anything outside letters, digits and "-" becomes `_<hex>_`. */
+const safeDomId = (id: string): string =>
+  id.replace(/[^A-Za-z0-9-]/g, c => `_${(c.codePointAt(0) ?? 0).toString(16)}_`);
+
+/**
+ * The DOM id the "+N" stack button for `ids` renders, found among the stack ids present: `ui-stack-<first id>`
+ * (day, week, agenda), or the month cell's `ui-stack-<day>:<first id>` form (review1 9).
+ */
+export function stackDomMatch(
+  ids: readonly string[],
+  candidates: readonly string[],
+): string | null {
+  const first = ids[0];
+  if (first === undefined) return null;
+  const direct = `ui-stack-${safeDomId(first)}`;
+  const monthTail = `_3a_${safeDomId(first)}`;
+  return candidates.find(c => c === direct || c.endsWith(monthTail)) ?? null;
 }
 
 /** The parts of a keydown the Esc guard reads (a DOM KeyboardEvent satisfies it). */

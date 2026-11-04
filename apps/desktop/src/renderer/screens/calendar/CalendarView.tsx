@@ -20,7 +20,7 @@ import {
 import { Button } from '../../ui/buttons-keys';
 import { CalendarGrid, EventDetail, MiniMonth, ScopeChooser } from '../../ui/calendar';
 import { formatClock, yearMonthOf } from '../../ui/calendar/dates';
-import { eventDomId, stackDomId } from '../../ui/calendar/eventText';
+import { eventDomId } from '../../ui/calendar/eventText';
 import { TextField } from '../../ui/controls';
 import type {
   Anchor,
@@ -40,6 +40,7 @@ import type {
   GridView,
 } from './calendar.model';
 import { seriesAloneLine } from './calendar.model';
+import { stackDomMatch } from './keys';
 
 /** The one pane-header tool on Calendar (DESIGN 7.1): New event, N. Ask and the calendar button are the shell's. */
 export const CALENDAR_PANE_TOOLS: PaneTools = [
@@ -75,6 +76,7 @@ export interface CalendarViewProps {
 
 /** A Menu with its own keyboard cursor (Menu is controlled). */
 function ScreenMenu(props: {
+  id?: string;
   open: boolean;
   anchor: Anchor;
   label: string;
@@ -96,6 +98,7 @@ function ScreenMenu(props: {
   }, [open, checkedId, firstId]);
   return (
     <Menu
+      id={props.id}
       open={open}
       anchor={props.anchor}
       label={props.label}
@@ -154,7 +157,15 @@ function useAnchors(vm: CalendarViewModel, refs: AnchorRefs): Anchors {
     let stackEl: HTMLElement | null = null;
     if (stackKey) {
       const held = refs.stack.current?.isConnected ? refs.stack.current : null;
-      stackEl = held ?? document.getElementById(stackDomId(stackKey.split(STACK_KEY_SEP)));
+      const ids = stackKey.split(STACK_KEY_SEP);
+      // Month renders its "+N" as `day:firstId`, so a programmatic open also tries that form (review1 9).
+      const match = held
+        ? null
+        : stackDomMatch(
+            ids,
+            [...document.querySelectorAll('[id^="ui-stack-"]')].map(el => el.id),
+          );
+      stackEl = held ?? (match ? document.getElementById(match) : null);
     }
     if (stackEl) refs.stack.current = stackEl;
     setAnchors({
@@ -364,6 +375,7 @@ function Surfaces(props: {
       </Popover>
 
       <ScreenMenu
+        id="cal-menu-more"
         open={vm.moreOpen && moreAnchor !== null}
         anchor={moreAnchor}
         label="More"
@@ -373,6 +385,7 @@ function Surfaces(props: {
       />
 
       <ScreenMenu
+        id="cal-menu-stack"
         open={vm.stack !== null && anchors.stack !== null}
         anchor={anchors.stack}
         label={vm.stack?.label ?? 'More events'}
@@ -726,6 +739,7 @@ function EventEditor({
         </div>
       </Popover>
       <ScreenMenu
+        id="cal-menu-start"
         open={picker === 'start'}
         anchor={startRef.current}
         label="Start"
@@ -735,6 +749,7 @@ function EventEditor({
         onClose={() => setPicker(null)}
       />
       <ScreenMenu
+        id="cal-menu-end"
         open={picker === 'end'}
         anchor={endRef.current}
         label="End"
@@ -749,6 +764,7 @@ function EventEditor({
         onClose={() => setPicker(null)}
       />
       <ScreenMenu
+        id="cal-menu-calendar"
         open={picker === 'calendar'}
         anchor={calendarRef.current}
         label="Calendar"

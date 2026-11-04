@@ -96,6 +96,8 @@ export interface CalendarContext {
   readonly events: ReadonlyMap<string, Event>;
   readonly plans: ReadonlyMap<string, Plan>;
   readonly calendars: readonly Calendar[];
+  /** `Calendar/get` has answered at least once. Until then the grid is loading, never empty (review1 12). */
+  readonly calendarsReady: boolean;
   /** The watched events window's `to` (`eventsRange`): the empty panel's "next" line stays honest inside it. */
   readonly loadedThrough: EpochMs;
   /** Where new events and confirmed plans go. */

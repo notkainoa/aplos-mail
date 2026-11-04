@@ -377,6 +377,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     loadedThrough: eventsRange({ from: periodFrom, to: periodTo }, now).to,
     defaultCalendarId: defaultId,
     canHide: true,
+    calendarsReady: true,
   };
   const stateRef = useRef(state);
   const ctxRef = useRef(ctx);

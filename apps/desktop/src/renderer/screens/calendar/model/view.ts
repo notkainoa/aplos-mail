@@ -156,6 +156,8 @@ function emptyView(
   entries: readonly CalendarEventData[],
   dayCount: number,
 ): EmptyView | null {
+  // No calendars yet means loading, not empty: the panel and its status line wait for the first get (review1 12).
+  if (!ctx.calendarsReady) return null;
   const sentence =
     shown === 'day' && dayCount === 0
       ? `Nothing on ${longDay(state.anchor)}.`
@@ -238,7 +240,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
           }
         : null,
     editor: state.editor ? editorView(state.editor, ctx) : null,
-    emptyAction: shown === 'day' || shown === 'agenda',
+    emptyAction: ctx.calendarsReady && (shown === 'day' || shown === 'agenda'),
     empty: emptyView(shown, state, ctx, period, entries, dayCount),
   };
 }

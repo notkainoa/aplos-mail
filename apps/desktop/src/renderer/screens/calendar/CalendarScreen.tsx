@@ -66,8 +66,10 @@ import {
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
 import {
   createTurnGate,
+  inCalendarSurface,
   INVITE_ANSWER_KEYS,
   ladderTakesEscape,
+  ownsReturn,
   ownsSideArrows,
   takesInviteAnswerKey,
   type ElementLike,
@@ -158,7 +160,8 @@ function useInviteAnswerKeys(dispatch: (action: CalendarAction) => boolean) {
       const active = document.activeElement;
       const inScreen =
         active === null || active === document.body || (root?.contains(active) ?? false);
-      if (!takesInviteAnswerKey(event, active, inScreen)) return;
+      // Only the screen or its own popover/menus — never another dialog, sheet or palette (review1 11).
+      if (!takesInviteAnswerKey(event, active, inScreen || inCalendarSurface(active))) return;
       const answer = INVITE_ANSWER_KEYS[event.key];
       if (!answer || !dispatch({ type: 'answer', answer })) return;
       event.preventDefault();
@@ -245,8 +248,9 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
       loadedThrough: range.to,
       defaultCalendarId: defaultId,
       canHide: hideAvailable(),
+      calendarsReady: loaded !== undefined,
     }),
-    [now, weekStartsOn, entries, events, plans, calendars, range.to, defaultId],
+    [now, weekStartsOn, entries, events, plans, calendars, range.to, defaultId, loaded],
   );
 
   // Drop overlay entries once the events window has caught up with their writes.
@@ -324,7 +328,11 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
               commandEnabled(id, stateRef.current, ctxRef.current) &&
               !(PERIOD_COMMANDS.has(id) && ownsSideArrows(focused())),
             run: (command: CommandContext) => {
-              if (id === 'calendar.open' && command.trigger && !returnGate.claim()) return;
+              // Return on a focused "+N" or any button activates the button itself; the command defers (review1 13).
+              if (id === 'calendar.open' && command.trigger) {
+                if (ownsReturn(focused())) return;
+                if (!returnGate.claim()) return;
+              }
               apply(actionForCommand(id));
             },
           },
@@ -340,11 +348,40 @@ function CalendarBody({ accountId, announce, renderSidebar }: CalendarScreenProp
   useCommandTarget(commandTarget(state, ctx));
   const headerPart = useMemo(() => ({ tools: CALENDAR_PANE_TOOLS }), []);
   usePaneHeaderPart(headerPart);
+
+  // The sidebar's busy marks read the whole loaded events window on the visible calendars, not the drawn
+  // period (review1 7); the props are memoized so the slot re-renders only when they change (review1 14).
+  const windowEntries = useMemo(
+    () =>
+      entriesFor({
+        events,
+        plans,
+        calendars,
+        solo: state.solo,
+        period: { from: range.from, to: range.to },
+        planCalendarId: defaultId,
+        overlay,
+      }),
+    [events, plans, calendars, state.solo, range.from, range.to, defaultId, overlay],
+  );
+  const today = toIsoDate(now);
+  const sidebar = useMemo(
+    () =>
+      renderSidebar
+        ? calendarSidebar({
+            state,
+            calendars,
+            entries: windowEntries,
+            today,
+            weekStartsOn,
+            dispatch,
+          })
+        : null,
+    [renderSidebar, state, calendars, windowEntries, today, weekStartsOn, dispatch],
+  );
   useEffect(() => {
-    renderSidebar?.(
-      calendarSidebar({ state, calendars, entries, today: toIsoDate(now), weekStartsOn, dispatch }),
-    );
-  });
+    if (sidebar) renderSidebar?.(sidebar);
+  }, [sidebar, renderSidebar]);
 
   if (eventsWindow.status === 'failed') return <ListFailed />;
   if (eventsWindow.status === 'opening' && events.length === 0) return null;

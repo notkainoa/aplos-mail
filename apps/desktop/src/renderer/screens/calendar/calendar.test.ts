@@ -6,11 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
-import { connectDataLayer } from '../../data/connect';
-import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { api, setClock, type Event } from '../../data';
-import { harnessClock } from '../../data/clock';
+import { api, type Event } from '../../data';
 import {
   getToasts,
   resetToasts,
@@ -24,10 +20,7 @@ import {
   detailMenu,
   draftChange,
   draftFromEvent,
-  entriesFor,
   eventData,
-  eventsRange,
-  initialState,
   inviteOpen,
   liveRsvp,
   localMs,
@@ -36,85 +29,16 @@ import {
   nextFreeSlot,
   periodOf,
   planEntryId,
-  reached,
-  reconcileShown,
   shownView,
   stepAnchor,
   timeChange,
   update,
   viewModel,
-  type CalendarContext,
-  type CalendarState,
-  type ShownOverride,
 } from './calendar.model';
-import { runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
-import { ladderTakesEscape, takesInviteAnswerKey } from './keys';
+import { runCalendarEffect } from './effects';
+import { takesInviteAnswerKey } from './keys';
 import { demoWorld } from './CalendarStates';
-
-const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
-const THU = '2026-10-29';
-
-function ctxFor(
-  events = demoWorld.events,
-  plans = demoWorld.plans,
-  calendars = demoWorld.calendars,
-  state?: CalendarState,
-): CalendarContext {
-  const period = periodOf('week', THU, 0);
-  const entries = entriesFor({
-    events,
-    plans,
-    calendars,
-    solo: state?.solo ?? null,
-    period,
-    planCalendarId: 'work',
-  });
-  return {
-    now: NOW,
-    weekStartsOn: 0,
-    entries,
-    events: new Map(events.map(e => [e.id, e])),
-    plans: new Map(plans.map(p => [p.id, p])),
-    calendars,
-    loadedThrough: eventsRange(period, NOW).to,
-    defaultCalendarId: 'work',
-    canHide: true,
-  };
-}
-
-/** A context built for the state's own period, as the container builds it. */
-function ctxAt(
-  state: CalendarState,
-  events: readonly Event[] = demoWorld.events,
-  calendars = demoWorld.calendars,
-): CalendarContext {
-  const period = periodOf(shownView(state), state.anchor, 0);
-  const entries = entriesFor({
-    events,
-    plans: [],
-    calendars,
-    solo: state.solo,
-    period,
-    planCalendarId: 'work',
-  });
-  return {
-    now: NOW,
-    weekStartsOn: 0,
-    entries,
-    events: new Map(events.map(e => [e.id, e])),
-    plans: new Map(),
-    calendars,
-    loadedThrough: eventsRange(period, NOW).to,
-    defaultCalendarId: 'work',
-    canHide: true,
-  };
-}
-
-const S = (patch: Partial<CalendarState> = {}): CalendarState => ({
-  ...initialState(THU),
-  ...patch,
-});
-
+import { boot, calRef, ctxAt, ctxFor, newEvent, ports, S, testUi, THU } from './calendar.testkit';
 // ---------------------------------------------------------------------------
 // Views, periods and labels
 // ---------------------------------------------------------------------------
@@ -251,80 +175,22 @@ test('all-events on a move shifts the series by the delta, not the occurrence ti
   assert.ok(target.fields.start && msOf(target.fields.start) === msOf(occ.start) + 3_600_000);
 });
 
-test('review1: a time move on a repeating event whose series row is not loaded offers This event only', () => {
-  const ctx = ctxFor();
-  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
-  // The events window holds occurrences only (seriesId 'standup', no master row), like the real window.
-  assert.ok(occ.seriesId !== undefined && !ctx.events.has(occ.seriesId));
-  const ask = update(
-    S({ selectedId: occ.id }),
-    { type: 'move', id: occ.id, start: '2026-10-28T12:00:00', end: '2026-10-28T12:15:00' },
-    ctx,
-  );
-  assert.equal(ask.state.scope?.action, 'move');
-  assert.equal(ask.state.scope?.seriesAlone, true);
-  assert.equal(viewModel(ask.state, ctx).scope?.seriesAlone, true);
-  // A stale "All events" choice answers with why; no write goes out with this day's absolute times.
-  const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
-  assert.equal(
-    chosen.effects.some(fx => fx.kind === 'eventSet'),
-    false,
-  );
-  assert.ok(chosen.effects.some(fx => fx.kind === 'notice' && fx.message.includes('series')));
-  // And the primitive itself never emits absolute occurrence times under series scope.
-  const target = timeChange(
-    occ,
-    {
-      start: { type: 'utc', utc: msOf(occ.start) + 3_600_000 },
-      end: { type: 'utc', utc: msOf(occ.end) + 3_600_000 },
-    },
-    'series',
-    undefined,
-  );
-  assert.deepEqual(target.fields, {});
-});
-
-test('review1: a non-time edit on the same occurrence still offers All events', () => {
-  const ctx = ctxFor();
-  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
-  const draft = { ...draftFromEvent(occ), title: 'Standup renamed' };
-  const ask = update(S({ editor: draft, selectedId: occ.id }), { type: 'editorSave' }, ctx);
-  assert.equal(ask.state.scope?.action, 'change');
-  assert.notEqual(ask.state.scope?.seriesAlone, true);
-  const chosen = update(ask.state, { type: 'scope', scope: 'series' }, ctx);
-  const fx = chosen.effects.find(f => f.kind === 'eventSet');
-  assert.ok(fx && fx.kind === 'eventSet' && fx.change.type === 'update');
-  if (fx.kind === 'eventSet' && fx.change.type === 'update') {
-    assert.equal(fx.change.scope, 'series');
-    assert.deepEqual(fx.change.fields, { title: 'Standup renamed' });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Esc ladder and menus (review1 4b)
 // ---------------------------------------------------------------------------
 
-test('review1: the Esc ladder stays out while a grid drag is under way', () => {
-  const nothing = { closest: () => null, matches: () => false };
-  const esc = { key: 'Escape', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
-  // A rung open or not, Esc during a drag belongs to TimeGrid's cancel, never to the ladder.
-  assert.equal(ladderTakesEscape(esc, nothing, true, true), false);
-  assert.equal(ladderTakesEscape(esc, nothing, true, false), true);
-  assert.equal(ladderTakesEscape(esc, nothing, true), true);
-});
-
-test('Esc closes the scope question, the popover, the answer, the selection, then falls through', () => {
+test('Esc closes the scope question, the popover (its answer with it), the selection, then falls through', () => {
   const ctx = ctxFor();
   const s = S({
     selectedId: 'q4',
     detailId: 'q4',
     rsvp: { eventId: 'q4', answer: 'yes', changing: false },
   });
+  // The popover rung clears the popover and the chosen answer inside it at once.
   let t = update(s, { type: 'escape' }, ctx);
   assert.equal(t.handled, true);
-  assert.equal(t.state.rsvp, null);
-  t = update(t.state, { type: 'escape' }, ctx);
   assert.equal(t.state.detailId, null);
+  assert.equal(t.state.rsvp, null);
   t = update(t.state, { type: 'escape' }, ctx);
   assert.equal(t.state.selectedId, null);
   t = update(t.state, { type: 'escape' }, ctx);
@@ -343,39 +209,6 @@ test('Esc closes the scope question, the popover, the answer, the selection, the
   const cancelled = update(asking, { type: 'escape' }, ctx);
   assert.equal(cancelled.handled, true);
   assert.equal(cancelled.state.scope, null);
-});
-
-test('review1: cancelling the scope question returns to the editor with the draft intact', () => {
-  const ctx = ctxFor();
-  const occ = ctx.events.get(`standup@${localMs('2026-10-28', '11:00')}`)!;
-  const draft = { ...draftFromEvent(occ), title: 'Renamed standup' };
-  const ask = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
-  assert.equal(ask.state.scope?.action, 'change');
-  assert.equal(ask.state.editor, null);
-  for (const cancel of [{ type: 'scopeCancel' } as const, { type: 'escape' } as const]) {
-    const back = update(ask.state, cancel, ctx);
-    assert.equal(back.state.scope, null);
-    assert.equal(back.state.editor?.title, 'Renamed standup');
-  }
-});
-
-test('review1: two identical pending creates get distinct temp ids', () => {
-  const ctx = ctxFor();
-  const draft = { ...newDraft(THU, NOW, [], 'work'), title: 'Focus' };
-  const first = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
-  const second = update(S({ editor: draft }), { type: 'editorSave' }, ctx);
-  const idOf = (t: typeof first) =>
-    t.effects.find((f): f is Extract<typeof f, { kind: 'eventSet' }> => f.kind === 'eventSet')
-      ?.optimistic.id;
-  assert.ok(idOf(first));
-  assert.notEqual(idOf(first), idOf(second));
-});
-
-test('review1: switching view re-syncs the sidebar month to the anchor', () => {
-  const ctx = ctxFor();
-  const paged = S({ view: 'week', miniMonth: '2026-12' });
-  const t = update(paged, actionForCommand('calendar.monthView'), ctx);
-  assert.equal(t.state.miniMonth, null);
 });
 
 test('the ⋯ menu offers edit and delete on yours, change your reply on an answered invite, no delete on a plan', () => {
@@ -461,75 +294,6 @@ test('eventData maps contract times to grid entries: utc, all-day date, invite f
   assert.equal(day.end, '2026-11-08T00:00:00');
 });
 
-test('review1: entries lock a no-move event and anything on a read-only calendar', () => {
-  const ctx = ctxFor();
-  // Q4 review is an invite: can.move is false, so the grid draws it locked (no cursor, no handles).
-  assert.equal(ctx.entries.find(e => e.id === 'q4')?.locked, true);
-  assert.equal(ctx.entries.find(e => e.id === 'dental')?.locked, undefined);
-  const readOnlyCal = {
-    ...demoWorld.calendars.find(c => c.id === 'personal')!,
-    id: 'ro',
-    readOnly: true,
-  };
-  const onRo = { ...ctx.events.get('dental')!, id: 'ro1', calendarId: 'ro' };
-  const ctxRo = ctxFor([onRo], demoWorld.plans, [...demoWorld.calendars, readOnlyCal]);
-  assert.equal(ctxRo.entries.find(e => e.id === 'ro1')?.locked, true);
-});
-
-test('review1: a calendar toggle plans its write with one Undo toast', () => {
-  const ctx = ctxFor();
-  const t = update(S(), { type: 'toggleCalendar', id: 'personal' }, ctx);
-  const fx = t.effects.find(f => f.kind === 'calendarSet');
-  assert.ok(fx && fx.kind === 'calendarSet');
-  assert.equal(fx.shown, false);
-  assert.equal(fx.toast?.undoable, true);
-  assert.equal(fx.toast?.message, 'Personal hidden');
-});
-
-test('review1: an overlay entry settles when the window reaches it or the epoch resets', () => {
-  const at = { dbEpoch: 'one', seq: 5 };
-  assert.equal(reached(null, at), false);
-  assert.equal(reached({ dbEpoch: 'one', seq: 4 }, at), false);
-  assert.equal(reached({ dbEpoch: 'one', seq: 5 }, at), true);
-  // After an engine reset the epoch differs: the write's old seq is meaningless, so the overlay drops.
-  assert.equal(reached({ dbEpoch: 'two', seq: 0 }, at), true);
-});
-
-test('review1: a shown override clears once Calendar/get reflects it or the write settled', () => {
-  const work = demoWorld.calendars[0];
-  const pending: ReadonlyMap<string, ShownOverride> = new Map([
-    [work.id, { shown: false, settled: false }],
-  ]);
-  // A get that still shows the old value while the write is in flight keeps the override.
-  assert.equal(reconcileShown(pending, demoWorld.calendars).get(work.id)?.shown, false);
-  // One that reflects it clears it.
-  const hidden = demoWorld.calendars.map(c => (c.id === work.id ? { ...c, shown: false } : c));
-  assert.equal(reconcileShown(pending, hidden).size, 0);
-  // After the write settled the get is authoritative, so an engine-side change comes through.
-  const settled: ReadonlyMap<string, ShownOverride> = new Map([
-    [work.id, { shown: false, settled: true }],
-  ]);
-  assert.equal(reconcileShown(settled, demoWorld.calendars).size, 0);
-});
-
-test('review1: Send reply stays disabled while the chosen answer is the one already sent', () => {
-  const answered = { ...ctxFor().events.get('q4')!, myResponse: 'accepted' as const };
-  const ctx = ctxFor([answered]);
-  const same = S({
-    selectedId: 'q4',
-    detailId: 'q4',
-    rsvp: { eventId: 'q4', answer: 'yes', changing: true },
-  });
-  // Re-picking the reply already sent leaves nothing to send: answer reads null, the button disables.
-  assert.equal(viewModel(same, ctx).reply?.answer, null);
-  const other = S({
-    selectedId: 'q4',
-    detailId: 'q4',
-    rsvp: { eventId: 'q4', answer: 'maybe', changing: true },
-  });
-  assert.equal(viewModel(other, ctx).reply?.answer, 'maybe');
-});
-
 // ---------------------------------------------------------------------------
 // The screen's other decisions
 // ---------------------------------------------------------------------------
@@ -585,101 +349,6 @@ test('New event from the panel opens the editor', () => {
   assert.ok(t.state.editor);
   assert.equal(t.state.editor?.mode, 'new');
 });
-
-// ---------------------------------------------------------------------------
-// Writes against the real data layer: opIds, Undo and refusals
-// ---------------------------------------------------------------------------
-
-const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
-
-async function boot() {
-  const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
-  const scheduler = createManualScheduler();
-  const connection = connectDataLayer({
-    session: engine.connect(),
-    scheduler,
-    timers: createManualTimers(defaultNow),
-  });
-  setClock(harnessClock);
-  await settle(scheduler.flush);
-  const flush = async () => settle(scheduler.flush);
-  return { connection, flush };
-}
-
-async function settle(flush: () => void) {
-  for (let i = 0; i < 20; i++) {
-    await nextTask();
-    flush();
-  }
-}
-
-const calRef = (c: { id: string; name: string }) => ({
-  id: c.id,
-  name: c.name,
-  color: 'sky' as const,
-});
-const newEvent = (id: string, calendarId: string): Event =>
-  ({
-    id,
-    rev: 1,
-    accountId: 'acct',
-    calendarId,
-    recurring: false,
-    exception: false,
-    title: id,
-    start: { type: 'date', date: '2026-10-30' },
-    end: { type: 'date', date: '2026-10-31' },
-    allDay: true,
-    attendees: [],
-    status: 'confirmed',
-    can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true },
-    sync: 'synced',
-  }) as Event;
-
-function testUi(): EffectUi & {
-  applied: string[];
-  dropped: string[];
-  overrides: Map<string, boolean>;
-  settled: string[];
-  failed: string[];
-} {
-  const applied: string[] = [];
-  const dropped: string[] = [];
-  const overrides = new Map<string, boolean>();
-  const settled: string[] = [];
-  const failed: string[] = [];
-  return {
-    applied,
-    dropped,
-    overrides,
-    settled,
-    failed,
-    optimistic: () => undefined,
-    settle: id => applied.push(id),
-    rollback: id => dropped.push(id),
-    shown: (id, shown) => void overrides.set(id, shown),
-    shownSettled: id => settled.push(id),
-    shownFailed: id => {
-      overrides.delete(id);
-      failed.push(id);
-    },
-    focus: () => undefined,
-  };
-}
-
-function ports(): EffectPorts {
-  return {
-    eventSet: args => api.event.set(args),
-    eventRsvp: args => api.event.rsvp(args),
-    calendarSet: args => api.calendar.set(args),
-    planConfirm: args => api.plan.confirm(args),
-    planDismiss: args => api.plan.dismiss(args),
-    openThread: () => undefined,
-    openUrl: () => undefined,
-    copyText: () => undefined,
-  };
-}
-
 test('one write is one Undo toast, undone by its own opId, not the newest', async () => {
   const { flush } = await boot();
   resetToasts();
@@ -744,38 +413,7 @@ test('one write is one Undo toast, undone by its own opId, not the newest', asyn
   }
 });
 
-test('review1: a calendar toggle pushes its Undo toast and settles the override', async () => {
-  const { flush } = await boot();
-  resetToasts();
-  try {
-    const ui = testUi();
-    const cal = (await api.calendar.get({})).list[0];
-    runCalendarEffect(
-      {
-        kind: 'calendarSet',
-        id: cal.id,
-        shown: !cal.shown,
-        toast: {
-          kind: 'info',
-          message: `${cal.name} ${cal.shown ? 'hidden' : 'shown'}`,
-          undoable: true,
-        },
-      },
-      ports(),
-      ui,
-    );
-    assert.equal(ui.overrides.get(cal.id), !cal.shown);
-    await flush();
-    assert.ok(ui.settled.includes(cal.id));
-    assert.equal(ui.failed.length, 0);
-    const toast = getToasts().find(t => t.undoable);
-    assert.ok(toast && toast.actions?.[0]?.commandId === 'app.undo');
-  } finally {
-    resetToasts();
-  }
-});
-
-test('RSVP sends the scope and words the toast while held, then sent', async () => {
+test('a refused RSVP rolls back the overlay and shows the failure toast', async () => {
   const { flush } = await boot();
   resetToasts();
   try {
@@ -805,10 +443,6 @@ test('RSVP sends the scope and words the toast while held, then sent', async () 
 
 test('the answer-key guard takes bare y/m/n on the screen or in its overlays, never while typing', () => {
   const nothing = { closest: () => null, matches: () => false };
-  const inDialog = {
-    closest: (s: string) => (s.includes('dialog') ? nothing : null),
-    matches: () => false,
-  };
   const inField = {
     closest: (s: string) => (s.includes('textarea') ? nothing : null),
     matches: () => false,
@@ -821,9 +455,8 @@ test('the answer-key guard takes bare y/m/n on the screen or in its overlays, ne
     shiftKey: false,
     ...extra,
   });
-  // On the screen, in its portaled popover or a menu: the key is the screen's.
+  // On the screen or one of its own surfaces: the key is the screen's.
   assert.equal(takesInviteAnswerKey(key('y'), nothing, true), true);
-  assert.equal(takesInviteAnswerKey(key('n'), inDialog, false), true);
   assert.equal(takesInviteAnswerKey(key('m'), nothing, true), true);
   // Elsewhere, typing, chorded or already claimed: it is not.
   assert.equal(takesInviteAnswerKey(key('y'), nothing, false), false);
