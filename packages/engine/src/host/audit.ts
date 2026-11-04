@@ -23,8 +23,11 @@ declare module '../store/port' {
   }
 }
 
-/** The longest method name or target stored; longer is refused, not cut, so a row never names something else. */
-const MAX_FIELD = 500;
+/**
+ * The longest client id, method name or target stored: the contract's `Id` bound, so no id the contract accepts can fail
+ * an audited call. Longer is refused, not cut, so a row never names something else.
+ */
+const MAX_FIELD = 1_000;
 
 /**
  * The audit writes for one call: one row for a listener client, none for a window or main. Spread it into the
