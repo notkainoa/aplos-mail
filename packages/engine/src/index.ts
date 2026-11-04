@@ -4,14 +4,16 @@ import * as html from './mail/module';
 import * as outbox from './outbox/module';
 import * as views from './views/module';
 import type { CommitExtension } from './store/port';
+import { blobModule } from './runtime/blobs';
 import { buildEngine, type Engine, type EngineOptions } from './runtime/engine';
 import type { LaneModuleSource } from './runtime/services';
 
 /**
  * The composition root (seam 1): the only file that names the lane modules. Order matters: `clock` first, because the
- * others register deadline sources with the timer loop it provides.
+ * others register deadline sources with the timer loop it provides; `blobModule` before `outbox`, so the outbox can
+ * take `services.blobs` when it is created.
  */
-const modules: readonly LaneModuleSource[] = [clock, views, outbox, ai, html];
+const modules: readonly LaneModuleSource[] = [clock, blobModule, views, outbox, ai, html];
 
 /** Every lane's commit extensions, for the host's `openStore({extensions})` (seam 2). */
 export function laneExtensions(): CommitExtension[] {
