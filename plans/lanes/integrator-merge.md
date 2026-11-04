@@ -41,6 +41,10 @@ Squash merge; merge revamp into the next waiting branch after each merge. If `re
 - Every feature MERGED entry has an earlier READY-FOR-OWNER and APPROVED; otherwise revert.
 - Daily digest (08:00, at most 10 plain sentences, one `python3 plans/tools/token-report.py` line). If Opus is above 25% of calls or average context above 120,000 tokens, tighten routing that day.
 
+## STATUS.md merges as union
+
+`plans/STATUS.md` is append-only: a correction is a new line, and existing lines are never edited in place. The root `.gitattributes` marks it `merge=union`, so two branches that both append merge with both sides kept and no conflict. If a plain merge ever conflicts on it anyway, keep both sides.
+
 ## Commands
 
 `sh plans/tools/watch.sh`; `gh pr list --base revamp --state open`; `npm run owners:check`; `npm run check`; `node scripts/audit/owners-check.mjs`. STATUS.md and OWNERS.md commits go straight to `revamp` (`git pull --no-rebase` first). Commits are authored as Kainoa Newton <k@kainoa.me> and end with the Co-Authored-By line.
