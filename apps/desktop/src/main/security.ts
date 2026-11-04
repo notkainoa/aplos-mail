@@ -14,6 +14,7 @@ import { url as inspectorURL } from 'node:inspector';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { releaseBuild } from './oauth-config';
+import { isMailDocumentUrl } from '../host/protocol/relay';
 
 /**
  * Exit code of a release build started with a debugging switch (ADR 40-6); EX_CONFIG in sysexits.h.
@@ -209,11 +210,21 @@ function hardenSession(ses: Session) {
   });
 }
 
-// Inert documents a subframe may hold (about:srcdoc for srcdoc frames). A future mail frame scheme
-// (aplos-mail:, ARCHITECTURE 12.1) is added here when it is registered.
+// Inert documents a subframe may hold (about:srcdoc for srcdoc frames).
 const SUBFRAME_DOCUMENTS = new Set(['about:blank', 'about:srcdoc']);
+// The sealed mail frame's document (html-5, ARCH 10): only once the real engine path registered `aplos-mail:`, only in a
+// subframe, and only the exact issued form `aplos-mail://m/<32 lowercase hex>/` (slice 1's grammar, imported). Its
+// `cid/<n>` and `img/<n>` are sub-resources, never documents; a main frame never shows `aplos-mail:`.
+let mailFrames = false;
+/** Called once by the real engine path after it installed the `aplos-mail://` relay (engine-real.ts). */
+function allowMailFrames(): void {
+  mailFrames = true;
+}
+function subframeDocument(url: string): boolean {
+  return SUBFRAME_DOCUMENTS.has(url) || (mailFrames && isMailDocumentUrl(url));
+}
 function navigationAllowed(url: string, mainFrame: boolean): boolean {
-  return trustedURL(url) || (!mainFrame && SUBFRAME_DOCUMENTS.has(url));
+  return trustedURL(url) || (!mainFrame && subframeDocument(url));
 }
 /**
  * Lockdown for every webContents (windows, pop-outs, print views, future mail-frame views, webviews):
@@ -267,6 +278,7 @@ export {
   text,
   external,
   installPermissionHandlers,
+  allowMailFrames,
   DEBUG_GUARD_EXIT_CODE,
   debugSwitch,
   refuseDebugging,
