@@ -28,7 +28,14 @@ import {
   startChoices,
   type EditorDraft,
 } from './editor';
-import { entriesFor, entriesOnDay, monthEventCount, tagFor, writableCalendars } from './entries';
+import {
+  entriesFor,
+  entriesOnDay,
+  monthEventCount,
+  tagFor,
+  visibleCalendarIds,
+  writableCalendars,
+} from './entries';
 import {
   gridLabel,
   lookaheadEnd,
@@ -158,6 +165,12 @@ function emptyView(
 ): EmptyView | null {
   // No calendars yet means loading, not empty: the panel and its status line wait for the first get (review1 12).
   if (!ctx.calendarsReady) return null;
+  // Every calendar hidden draws a bare grid that is not a clear week: say what is really true (review2 7).
+  if (ctx.calendars.length > 0 && visibleCalendarIds(ctx.calendars, state.solo).length === 0)
+    return {
+      sentence: 'All your calendars are hidden.',
+      next: 'Turn one back on to see your events.',
+    };
   const sentence =
     shown === 'day' && dayCount === 0
       ? `Nothing on ${longDay(state.anchor)}.`

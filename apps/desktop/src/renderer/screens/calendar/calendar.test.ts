@@ -437,6 +437,20 @@ test('with no events at all the day falls back to "Nothing coming up in the next
   assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks.');
 });
 
+test('review2: a bare grid with every calendar hidden says so, not "A clear week."', () => {
+  const allHidden = demoWorld.calendars.map(c => ({ ...c, shown: false }));
+  const week = S({ view: 'week', anchor: '2026-12-09' });
+  assert.equal(
+    viewModel(week, ctxAt(week, [], allHidden)).empty?.sentence,
+    'All your calendars are hidden.',
+  );
+  const day = S({ view: 'day', anchor: '2026-11-01' });
+  assert.equal(
+    viewModel(day, ctxAt(day, [], allHidden)).empty?.sentence,
+    'All your calendars are hidden.',
+  );
+});
+
 test('New event from the panel opens the editor', () => {
   const state = S({ view: 'day', anchor: '2026-11-01' });
   const t = update(state, { type: 'newEvent' }, ctxAt(state));
