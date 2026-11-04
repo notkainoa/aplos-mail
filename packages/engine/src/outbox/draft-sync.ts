@@ -338,6 +338,7 @@ function recordSaved(
     remoteDraftId: saved.remoteDraftId,
     remoteMessageId: saved.remoteMessageId,
     internetId: upload.internetId,
+    ...(saved.copyInternetId !== undefined ? { copyInternetId: saved.copyInternetId } : {}),
     ...(saved.changeKey !== undefined ? { changeKey: saved.changeKey } : {}),
     ...(partial ? { partial: true as const } : {}),
     at: ctx.clock.now(),
