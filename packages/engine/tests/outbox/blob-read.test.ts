@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Draft, DraftFields, SubmissionAction } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { loadBlobs } from '../../src/outbox/blob-read';
+import { fakeClock } from '../../src/clock/module';
+import { BLOB_READ_LIMIT_MS, loadBlobs } from '../../src/outbox/blob-read';
 import { buildMime } from '../../src/outbox/mime';
 import { copyWrite, fields, gate, inWorld, SEC, syncBlobSource, type World } from './helpers';
 
@@ -11,6 +12,9 @@ import { copyWrite, fields, gate, inWorld, SEC, syncBlobSource, type World } fro
  * stale draft, never queue twice, never queue a message missing an attachment, and must leave every other command
  * exactly as it was. The draft upload must upload only the content its bytes were read for.
  */
+
+/** A clock for the unit tests that never moves: no read there reaches the limit. */
+const still = fakeClock(0);
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -86,33 +90,34 @@ test('loadBlobs reads each distinct id once, concurrently, and leaves a missing 
       return id === 'gone' ? undefined : enc(id);
     },
   };
-  const load = loadBlobs(source, ['a', 'b', 'a', 'gone']);
+  const load = loadBlobs(source, ['a', 'b', 'a', 'gone'], still);
   await Promise.resolve();
   assert.deepEqual(started, ['a', 'b', 'gone'], 'every read started before any finished');
   g.open();
   const map = await load;
   assert.deepEqual([...map.keys()], ['a', 'b']);
-  assert.notEqual(await loadBlobs(source, ['a']), map, 'a fresh map per load');
+  assert.notEqual(await loadBlobs(source, ['a'], still), map, 'a fresh map per load');
 });
 
 test('loadBlobs: a read that rejects or throws fails the whole load as unavailable', async () => {
   const rejects = {
     get: async (id: string) => (id === 'bad' ? Promise.reject(new Error('EIO')) : enc(id)),
   };
-  assert.equal(await rejected(loadBlobs(rejects, ['ok', 'bad']), 'unavailable'), UNREADABLE);
+  assert.equal(await rejected(loadBlobs(rejects, ['ok', 'bad'], still), 'unavailable'), UNREADABLE);
   const throws = {
     get: (id: string): Promise<Uint8Array | undefined> => {
       if (id === 'bad') throw new Error('EBADF');
       return Promise.resolve(enc(id));
     },
   };
-  assert.equal(await rejected(loadBlobs(throws, ['bad']), 'unavailable'), UNREADABLE);
-  assert.equal((await loadBlobs(undefined, ['a'])).size, 0, 'no source: every blob is gone');
+  assert.equal(await rejected(loadBlobs(throws, ['bad'], still), 'unavailable'), UNREADABLE);
+  assert.equal((await loadBlobs(undefined, ['a'], still)).size, 0, 'no source: every blob is gone');
   assert.equal(
     (
       await loadBlobs(
         syncBlobSource(() => enc('x')),
         ['a'],
+        still,
       )
     ).get('a')?.length,
     1,
@@ -484,3 +489,168 @@ test('viii: a draft sent while its copy loads bytes is not uploaded under the se
     },
     { drafts: true },
   ));
+
+// ---------------------------------------------------------------- review round: the read's time limit
+
+test('loadBlobs: a read still running at the limit fails as unavailable; one done just before it works', async () => {
+  const clock = fakeClock(0);
+  const hung = { get: () => new Promise<Uint8Array | undefined>(() => {}) };
+  const load = rejected(loadBlobs(hung, ['a'], clock), 'unavailable');
+  await clock.advance(BLOB_READ_LIMIT_MS);
+  assert.equal(await load, UNREADABLE);
+  const slow = {
+    get: (id: string) => clock.sleep(BLOB_READ_LIMIT_MS - 1).then(() => enc(id)),
+  };
+  const ok = loadBlobs(slow, ['b'], clock);
+  await clock.advance(BLOB_READ_LIMIT_MS - 1);
+  assert.equal(text((await ok).get('b')!), 'b');
+});
+
+test('a send whose read hangs is unavailable at the limit; a late answer queues nothing; a later send works', () =>
+  inWorld(async w => {
+    w.draft('d1', withFile(w));
+    const held = heldSend(w, 'd1');
+    const outcome = rejected(held.pending, 'unavailable');
+    await w.clock.advance(BLOB_READ_LIMIT_MS);
+    assert.equal(await outcome, UNREADABLE);
+    held.open();
+    await w.settle();
+    assert.equal(submissions(w).length, 0, 'the late answer changes nothing');
+    assert.equal((await w.send(w.first, 'd1')).state, 'queued');
+    assert.equal(submissions(w).length, 1);
+  }));
+
+test('a draft upload whose read hangs is not stuck: it ends at the limit, a late answer uploads nothing, it retries', () =>
+  inWorld(
+    async w => {
+      const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+      const g = gate();
+      w.blobReads.hold = g.wait;
+      await w.clock.advance(5 * SEC);
+      w.blobReads.hold = undefined;
+      await w.clock.advance(BLOB_READ_LIMIT_MS);
+      let idle = false;
+      void w.first.outbox.idle().then(() => {
+        idle = true;
+      });
+      await w.settle();
+      assert.ok(idle, 'no upload is left running');
+      g.open();
+      await w.settle();
+      assert.equal(w.remoteDrafts.saves.length, 0, 'the late answer uploads nothing');
+      await w.clock.advance(30 * SEC);
+      await w.settle();
+      assert.equal(w.remoteDrafts.saves.length, 1, 'the retry reads again and uploads');
+      assert.equal(draftRow(w, d.id).synced_revision, d.revision);
+    },
+    { drafts: true },
+  ));
+
+// ---------------------------------------------------------------- review round: an unreadable blob stops retrying
+
+const readFails = (w: World, id: string) =>
+  (JSON.parse(draftRow(w, id).data) as { _sync: { readFails?: number; problem?: unknown } })._sync;
+
+/** One more upload attempt: waits out the retry delay (the first one, the 5 s edit wait). */
+async function attempt(w: World, ms = 30 * SEC) {
+  await w.clock.advance(ms);
+  await w.settle();
+}
+
+test('an unreadable blob retries four times, then the fifth failure shows the problem and retries stop', () =>
+  inWorld(
+    async w => {
+      const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+      w.blobReads.fail = new Error('EIO');
+      await attempt(w, 5 * SEC);
+      for (let i = 2; i <= 4; i++) await attempt(w);
+      assert.equal(readFails(w, d.id).readFails, 4);
+      assert.equal(readFails(w, d.id).problem, undefined, 'still retrying');
+      assert.equal(w.events('draft.sync_failed').length, 4, 'every failure is logged');
+      await attempt(w);
+      assert.equal(w.blobReads.calls.length, 5);
+      assert.equal(drafts(w).get([d.id]).list[0].sync, 'failed', 'the visible problem');
+      await attempt(w);
+      await attempt(w, 10 * 60 * SEC);
+      assert.equal(w.blobReads.calls.length, 5, 'no more retries');
+      assert.equal(w.remoteDrafts.saves.length, 0);
+    },
+    { drafts: true },
+  ));
+
+test('a successful read resets the failed-read count', () =>
+  inWorld(
+    async w => {
+      const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+      w.blobReads.fail = new Error('EIO');
+      await attempt(w, 5 * SEC);
+      await attempt(w);
+      assert.equal(readFails(w, d.id).readFails, 2);
+      w.blobReads.fail = undefined;
+      await attempt(w);
+      assert.equal(w.remoteDrafts.saves.length, 1);
+      assert.equal(readFails(w, d.id).readFails, undefined);
+    },
+    { drafts: true },
+  ));
+
+test('an edit resets the failed-read count', () =>
+  inWorld(
+    async w => {
+      const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+      w.blobReads.fail = new Error('EIO');
+      await attempt(w, 5 * SEC);
+      await attempt(w);
+      assert.equal(readFails(w, d.id).readFails, 2);
+      drafts(w).set(next(), {
+        id: d.id,
+        baseRevision: d.revision,
+        fields: withFile(w, { subject: 'Edited' }),
+      });
+      assert.equal(readFails(w, d.id).readFails, undefined);
+    },
+    { drafts: true },
+  ));
+
+// ---------------------------------------------------------------- review round: no gap before the upload's mark
+
+/** Records whether the upload's mark (`uploading`) was ever committed while a send pinned the draft. */
+function watchMarks(w: World) {
+  const seen = { marks: 0, whileLive: 0 };
+  w.faults.push(input => {
+    const marks = input.writes.some(
+      x => x.kind === 'draft' && 'patch' in x && !!(x.patch as { uploading?: unknown }).uploading,
+    );
+    if (!marks) return false;
+    seen.marks++;
+    const live = w.first.store.read(q =>
+      q.get("SELECT 1 FROM submissions WHERE state NOT IN ('sent', 'cancelled')"),
+    );
+    if (live) seen.whileLive++;
+    return false;
+  });
+  return seen;
+}
+
+for (const order of ['upload first', 'send first'] as const)
+  test(`reads ending in the same tick (${order}): the upload is never marked while a send pins the draft`, () =>
+    inWorld(
+      async w => {
+        const d = drafts(w).set(next(), { fields: withFile(w) }).draft;
+        const g = gate();
+        w.blobReads.hold = g.wait;
+        const send = () => w.first.outbox.service.set(next(), sendAction(d.id, d.revision));
+        const early = order === 'send first' ? send() : undefined;
+        await w.clock.advance(5 * SEC);
+        const sending = early ?? send();
+        assert.equal(w.blobReads.calls.length, 2, 'both are reading');
+        w.blobReads.hold = undefined;
+        const seen = watchMarks(w);
+        g.open();
+        assert.equal((await sending).submission.state, 'queued');
+        await w.settle();
+        assert.equal(seen.whileLive, 0, 'no mark under a live send');
+        assert.equal(w.remoteDrafts.saves.length, seen.marks, 'every upload was marked first');
+      },
+      { drafts: true },
+    ));

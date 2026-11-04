@@ -1,5 +1,6 @@
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { inspect } from 'node:util';
 import { ContractError } from '@aplos/contract/contract-error';
 import { OVERDUE_GRACE_MS } from '@aplos/contract/rules';
 import { SubmissionConflict } from '../../src/outbox/module';
@@ -29,14 +30,31 @@ const isMove = (to: string) => (input: CommitInput) =>
   writesOf(input).some(x => x.op === 'move' && x.to === to);
 const isCreate = (input: CommitInput) => writesOf(input).some(x => x.op === 'create');
 
+/** Races that did not race: reported by the hook and failed by `afterEach`, whichever call the hook ran inside. */
+const raceErrors: string[] = [];
+afterEach(() => assert.deepEqual(raceErrors.splice(0), [], 'every raceOnce raced'));
+
+/**
+ * A racing call must have done its work inside the hook: a promise still pending there awaits something first (a blob
+ * read, say) and lands after the commit it was meant to beat, so it fails the test. Its outcome is the test's to check
+ * through the store; a rejection is handled here, never left floating.
+ */
+function settledNow(out: unknown) {
+  if (!(out instanceof Promise)) return;
+  out.catch(() => {});
+  if (inspect(out).includes('<pending>')) {
+    raceErrors.push('the racing call was still pending inside the hook: it did not race');
+    throw new Error(raceErrors.at(-1));
+  }
+}
+
 /** Runs `before` once, right before the first commit `match` accepts (the other engine wins the race). */
 function raceOnce(w: World, match: (input: CommitInput) => boolean, before: () => unknown) {
   let done = false;
   w.faults.push(input => {
     if (!done && match(input)) {
       done = true;
-      // An async `set` runs its commit synchronously up to its first await, so the other engine still wins here.
-      void before();
+      settledNow(before());
     }
     return false;
   });
@@ -201,7 +219,7 @@ test('two engines sending the same draft revision at once create one submission'
   inWorld(async w => {
     w.draft('d1');
     const second = w.open(false);
-    raceOnce(w, isCreate, () => w.send(second, 'd1'));
+    raceOnce(w, isCreate, () => w.act(second, { type: 'send', draftId: 'd1', revision: 1 }));
     await rejected(
       () => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }),
       'stateMismatch',
@@ -210,6 +228,29 @@ test('two engines sending the same draft revision at once create one submission'
       q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
     );
     assert.equal(n?.n, 1, 'the loser of the race created nothing');
+  }));
+
+test('a draft edited elsewhere right before the send commits: the commit compares the revision, no row', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    raceOnce(w, isCreate, () => w.draft('d1', fields({ subject: 'Edited' }), { revision: 2 }));
+    const sentence = await rejected(
+      () => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }),
+      'stateMismatch',
+    );
+    assert.equal(sentence, 'This draft changed in another window. Reopen it before sending.');
+    const n = w.first.store.read(q =>
+      q.get<{ n: number }>('SELECT count(*) AS n FROM submissions'),
+    );
+    assert.equal(n?.n, 0, 'no row');
+  }));
+
+test('raceOnce fails a race whose call is still pending inside the hook', () =>
+  inWorld(async w => {
+    w.draft('d1');
+    raceOnce(w, isCreate, () => new Promise(() => {}));
+    await assert.rejects(() => w.act(w.first, { type: 'send', draftId: 'd1', revision: 1 }));
+    assert.equal(raceErrors.splice(0).length, 1, 'the race was reported');
   }));
 
 /** An attempt that outlives its engine, a newer attempt by another engine, then the old one settles. */

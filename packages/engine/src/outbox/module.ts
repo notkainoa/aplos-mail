@@ -184,12 +184,18 @@ export function createOutboxModule(deps: OutboxDeps): OutboxModule {
       const state = { dbEpoch: ctx.store.dbEpoch, seq: ctx.store.seq() };
       return { state, ...getSubmissions(ctx, ids) };
     },
-    set: async (opId, action) => {
-      // No send port was given (the real engine path before sending is wired): a queued message would lock its draft for
-      // minutes and then never leave, so a new send is refused up front.
-      if (action.type === 'send' && isAbsent(deps.send))
-        fail('unavailable', 'Sending is not available yet.');
-      return setSubmission(ctx, opId, action);
+    set: (opId, action) => {
+      // Not `async`: a call that did all its work within the call (every action but a send that reads bytes) returns a
+      // promise that is already settled, not one that adopts the send's own promise a few microtasks later.
+      try {
+        // No send port was given (the real engine path before sending is wired): a queued message would lock its draft
+        // for minutes and then never leave, so a new send is refused up front.
+        if (action.type === 'send' && isAbsent(deps.send))
+          fail('unavailable', 'Sending is not available yet.');
+        return Promise.resolve(setSubmission(ctx, opId, action));
+      } catch (error) {
+        return Promise.reject(error);
+      }
     },
     pending: () => pendingOf(ctx),
   };

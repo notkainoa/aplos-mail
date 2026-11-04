@@ -105,6 +105,8 @@ export interface DraftMeta {
   removeAt?: number;
   /** Refusals so far, for the backoff. */
   removeTries?: number;
+  /** Consecutive failed reads of the attachment bytes (blob-read.ts); cleared by a good read and by an edit. */
+  readFails?: number;
 }
 
 /** The meta keys a `meta` write may set; `null` clears. */

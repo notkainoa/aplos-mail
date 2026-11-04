@@ -200,7 +200,7 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
   const live = liveOf(tx, row.id);
   if (live) throw new DraftConflict('live', live.state);
   const hasRemote = row.remote_draft_id !== null;
-  const next = patched(meta, { cur: w.fingerprint, problem: null });
+  const next = patched(meta, { cur: w.fingerprint, problem: null, readFails: null });
   const due = dueAfter(w.fields, next, hasRemote, w.at, w.close === true);
   // The same content again is not a new revision (other windows would see a change that is not one), but a close still
   // asks for the upload now.

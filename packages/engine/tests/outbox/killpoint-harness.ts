@@ -208,8 +208,9 @@ function ownerOf(
     atPoint(name: KillPoint) {
       for (const spec of pending.filter(a => a.when === name)) {
         pending.splice(pending.indexOf(spec), 1);
-        // The hook is synchronous (it runs inside the engine). The action's commit runs before `set` first awaits, so it
-        // lands here as it always did; only its journal line follows a microtask later.
+        // The hook is synchronous (it runs inside the engine). The action does all its work inside the call, so it lands
+        // here as it always did; only its journal line follows a microtask later, which is why `driveEngine` refuses an
+        // action at the very point this life dies (its outcome would be journaled as a death inside the call).
         void issue(spec);
       }
     },
@@ -225,6 +226,17 @@ function ownerOf(
       }
     },
   };
+}
+
+/**
+ * An action set at the point where this life dies would be journaled as having died inside its call even when it was
+ * answered: `Submission/set` answers through a promise, a microtask after the kill. No scenario does that; one that did
+ * would not mean what it says, so it is refused.
+ */
+function refuseActionAtDeath(run: RunSpec, point: KillPoint | undefined) {
+  const clash = point !== undefined && (run.actions ?? []).some(a => a.when === point);
+  if (clash)
+    throw new Error(`an owner action at the kill point ${point} cannot be journaled exactly`);
 }
 
 /**
@@ -266,6 +278,7 @@ export async function driveEngine(run: RunSpec, point?: KillPoint): Promise<Subm
       LIFE_BUDGET_MS,
     );
   });
+  refuseActionAtDeath(run, point);
   const owner = ownerOf(run, clock, outbox, store);
   installKillHook((name, detail) => {
     owner.atPoint(name);

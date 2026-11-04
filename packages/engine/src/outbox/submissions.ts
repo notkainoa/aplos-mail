@@ -448,7 +448,7 @@ async function send(ctx: OutboxCtx, opId: string, action: SendAction): Promise<S
   let bytes = new Map<string, Uint8Array>();
   const ids = blobIdsOf(draft.fields);
   if (ids.length) {
-    bytes = await loadBlobs(ctx.blobs, ids);
+    bytes = await loadBlobs(ctx.blobs, ids, ctx.clock);
     const prior = replayed(ctx, opId, action);
     if (prior) return prior;
     draft = checkedDraft(ctx, action);

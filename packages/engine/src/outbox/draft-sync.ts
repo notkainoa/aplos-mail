@@ -218,19 +218,39 @@ function draftMime(
   return { mime, partial: readable.length < fields.attachments.length } satisfies DraftCopy;
 }
 
-/**
- * The draft's attachment bytes, read before anything is built (none read: no await). `undefined` when the draft row
- * changed during the read, or a send now pins it: this upload is dropped and the deadline source runs the draft again
- * from its new row, so the MIME, revision and fingerprint of an upload always come from the one read the bytes were
- * loaded for.
- */
-async function bytesFor(ctx: DraftsCtx, row: UploadRow, fields: DraftFields) {
+/** The draft's attachment bytes; `undefined` when it names none (nothing is read). */
+function bytesFor(ctx: DraftsCtx, fields: DraftFields) {
   const ids = blobIdsOf(fields);
-  if (!ids.length) return new Map<string, Uint8Array>();
-  const bytes = await loadBlobs(ctx.blobs, ids);
+  return ids.length ? loadBlobs(ctx.blobs, ids, ctx.clock) : undefined;
+}
+
+/**
+ * After a read: the row is still the one the bytes were read for and no send pins the draft. Otherwise the upload is
+ * dropped and the deadline source runs the draft again from its new row, so an upload's MIME, revision and fingerprint
+ * always come from the one read its bytes were loaded for. Called with nothing awaited between it and the upload's mark.
+ */
+function stillCurrent(ctx: DraftsCtx, row: UploadRow) {
   const now = readUploadRow(ctx, row.id);
   const same = now?.revision === row.revision && now.data === row.data;
-  return same && withoutLiveSend(ctx, [row.id]).size ? bytes : undefined;
+  return same && withoutLiveSend(ctx, [row.id]).size > 0;
+}
+
+/** Consecutive failed reads of a draft's attachment bytes before it shows the problem and stops retrying. */
+const MAX_READ_FAILS = 5;
+const UNREADABLE_BLOB = {
+  class: 'transient',
+  provider: 'engine',
+  method: 'blob.read',
+  reason: 'blobUnreadable',
+};
+
+/** A read that failed or ran out of time: retried later, until the fifth in a row shows the problem on the draft. */
+function readFailed(ctx: DraftsCtx, row: UploadRow, meta: DraftMeta) {
+  ctx.log.event('draft.sync_failed', { draft: row.id, error: UNREADABLE_BLOB });
+  const readFails = (meta.readFails ?? 0) + 1;
+  if (readFails >= MAX_READ_FAILS) return problemFor(ctx, row, PROBLEM_COPY);
+  const dueAt = ctx.clock.now() + DRAFT_RETRY_MS;
+  setMeta(ctx, row.id, { dueAt, readFails }, { ifRevision: row.revision });
 }
 
 /** The fingerprint of the content an upload of this draft sends. */
@@ -387,20 +407,13 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
       : newMessageId(ctx.random, domainOf(row.address));
   let bytes: Map<string, Uint8Array> | undefined;
   try {
-    bytes = await bytesFor(ctx, row, fields);
+    bytes = await bytesFor(ctx, fields);
   } catch {
-    // The bytes could not be read this time: ask again later, never a lasting problem on the draft.
-    return void setMeta(
-      ctx,
-      id,
-      { dueAt: ctx.clock.now() + DRAFT_RETRY_MS },
-      { ifRevision: row.revision },
-    );
+    return readFailed(ctx, row, meta);
   }
-  if (!bytes) return;
   let copy: DraftCopy;
   try {
-    copy = draftMime(ctx, row, fields, internetId, bytes);
+    copy = draftMime(ctx, row, fields, internetId, bytes ?? new Map());
   } catch (error) {
     const known = error instanceof MimeError || error instanceof ContractError;
     return problemFor(ctx, row, known ? error.message : PROBLEM_COPY);
@@ -411,6 +424,8 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
   // A create that nobody answered may still have landed: the next create offers its Message-ID as `supersedes`.
   const given = abandoned(meta, row.remote_draft_id, ...old);
   const earlier = row.remote_draft_id === null ? (given.earlier ?? meta.earlier ?? []) : [];
+  // Nothing awaits between this check and the mark: a send or a change made during the read drops this upload.
+  if (bytes && !stillCurrent(ctx, row)) return;
   const marked = setMeta(
     ctx,
     id,
@@ -421,6 +436,7 @@ async function syncDraft(ctx: DraftsCtx, id: string) {
         fingerprint: uploadFingerprint(meta, fields),
       },
       ...given,
+      readFails: null,
     },
     { ifRevision: row.revision },
   );
