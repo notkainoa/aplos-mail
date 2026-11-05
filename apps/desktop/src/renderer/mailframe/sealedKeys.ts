@@ -31,7 +31,7 @@ export interface BridgeEvent {
   readonly payload?: unknown;
 }
 
-/** `window.aplos.subscribe`: returns the unsubscribe. */
+/** `window.aplos.subscribe` for mail keys only: returns the unsubscribe. */
 export type MailKeySubscribe = (listener: (event: BridgeEvent) => void) => () => void;
 
 /** What a key is checked against, read when it arrives. */
@@ -91,7 +91,8 @@ export function sealedMailKey(event: unknown, gate: SealedKeyGate): MailFrameKey
 export function bridgeSubscribe(): MailKeySubscribe | null {
   const bridge = typeof window === 'undefined' ? undefined : window.aplos;
   if (!bridge || typeof bridge.subscribe !== 'function') return null;
-  return listener => bridge.subscribe(listener);
+  // `only`: this listener never takes the app's queued deep-link, command and prepare-close events (preload's event hub).
+  return listener => bridge.subscribe(listener, { only: ['mail-key'] });
 }
 
 /** Subscribes one slot: each accepted key goes to `onKey` once. Returns the unsubscribe. */
