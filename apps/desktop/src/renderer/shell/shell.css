@@ -94,3 +94,9 @@
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
 }
+/* The body's provider group carries the step's own margin and tighter gap; in the dialog the block's rhythm
+   rules, as the copy it replaced did. */
+.aplos-add-account__block > .onb-group {
+  margin-top: 0;
+  gap: var(--space-3);
+}
