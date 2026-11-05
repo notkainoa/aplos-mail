@@ -5,6 +5,7 @@
  * Presentational: the window root owns the state (`connect.ts`) because a connect can answer after the owner left
  * this step, and that answer must still reach the window without navigating (F9).
  */
+import { useEffect, type ReactNode } from 'react';
 import type { AccountsMode, ChooseNotice } from '../connect';
 import { ACCOUNTS_LABELS, ADDRESS_FIELD_ID } from '../connect';
 import { connectSentence } from '../copy';
@@ -28,16 +29,17 @@ export interface AccountRowData {
 }
 
 /**
- * The connect flow's content with no frame around it, so a host that draws its own frame — the shell's
- * Add account `Dialog` (`shell/AddAccountHost.tsx`) can show the same body the Accounts step does without
- * `OnboardingStep`'s title, lede, actions row, footer and step dashes. (The dialog still draws its own copy of
- * this body today; adopting `AccountsBody` there is the shell's follow-up.)
+ * The connect flow's content with no frame around it, so hosts that draw their own frame — `OnboardingStep`
+ * in this step, the shell's Add account `Dialog` (`shell/AddAccountHost.tsx`) — show the same body without
+ * the other's title, lede, actions row, footer or step dashes.
  *
  * The host owns the state (`reduceAccounts` in `../connect.ts`) and provides: the connected `accounts`, the
  * connect state (`mode`, `address`, `notice`, `failure`), the field callbacks `onEdit`/`onSubmit` and the
  * provider row's `onChooseGoogle`. A state's action buttons (Continue with Google, Try again, Cancel,
  * "Use a different address") belong to the host's own frame — `OnboardingStep`'s `actions` in the step, the
  * dialog's footer in the dialog — and focus stays with the host too: the body autofocuses nothing.
+ * Announcements belong to the frame as well: the step's `phaseStatus` already speaks, while the dialog passes
+ * `liveLineId` so the body's own line is its one live region.
  */
 export interface AccountsBodyProps {
   /** The state to draw (`shownMode`). */
@@ -58,6 +60,13 @@ export interface AccountsBodyProps {
   readonly onChooseGoogle: () => void;
   /** A window-level failure line (a failed demo load or handoff) drawn under the body; hosts without one omit it. */
   readonly windowNotice?: WindowNotice;
+  /**
+   * The id of the one line under the field, for a host whose frame has no status line of its own (the Add
+   * account `Dialog`): the notice or failed-connect line gets `role="status"` and this id, the field is
+   * pointed at it, and an `invalid` notice is the field's own error instead of a second line — still exactly
+   * one live region. The step omits it; `OnboardingStep`'s `phaseStatus` already announces.
+   */
+  readonly liveLineId?: string;
 }
 
 export interface AccountsStepProps extends Omit<AccountsBodyProps, 'windowNotice'> {
@@ -95,14 +104,43 @@ const filled = (label: string, onSelect: () => void): StepButton => ({
   onSelect,
 });
 
+/** Points the field at the live line under it, so the one status describes the address it belongs to. */
+function useFieldDescribedBy(id: string | undefined) {
+  useEffect(() => {
+    if (!id) return undefined;
+    const input = document.getElementById(ADDRESS_FIELD_ID);
+    input?.setAttribute('aria-describedby', id);
+    return () => {
+      if (input?.getAttribute('aria-describedby') === id) {
+        input.removeAttribute('aria-describedby');
+      }
+    };
+  }, [id]);
+}
+
 function AddressField(
-  props: Pick<AccountsStepProps, 'address' | 'onEdit' | 'onSubmit'> & {
+  props: Pick<AccountsBodyProps, 'address' | 'onEdit' | 'onSubmit' | 'liveLineId'> & {
     keycap: boolean;
     notice?: string;
     /** A failed connect's sentence: the error icon in `--stamp-ink`, the words in ink (DESIGN 7.15). */
     failure?: string;
+    /** The refused address's sentence as the field's own error (its own status and ring). */
+    error?: string;
   },
 ) {
+  const lineId =
+    props.liveLineId !== undefined && (props.notice !== undefined || props.failure !== undefined)
+      ? props.liveLineId
+      : undefined;
+  useFieldDescribedBy(lineId);
+  const live = (line: ReactNode) =>
+    lineId ? (
+      <div id={lineId} role="status">
+        {line}
+      </div>
+    ) : (
+      line
+    );
   return (
     <div className="onb-field-block">
       <TextField
@@ -116,21 +154,26 @@ function AddressField(
         size="lg"
         icon="mail"
         {...(props.keycap ? { trailingKeys: 'Return' as const } : {})}
+        {...(props.error ? { error: props.error } : {})}
       />
-      {props.notice ? (
-        <Text variant="small" tone="ink-2">
-          {props.notice}
-        </Text>
-      ) : null}
-      {props.failure ? (
-        <ErrorLine
-          kind="reason"
-          text={props.failure}
-          retryable={false}
-          placement="checklist"
-          onAction={() => {}}
-        />
-      ) : null}
+      {props.notice
+        ? live(
+            <Text variant="small" tone="ink-2">
+              {props.notice}
+            </Text>,
+          )
+        : null}
+      {props.failure
+        ? live(
+            <ErrorLine
+              kind="reason"
+              text={props.failure}
+              retryable={false}
+              placement="checklist"
+              onAction={() => {}}
+            />,
+          )
+        : null}
     </div>
   );
 }
@@ -198,6 +241,7 @@ export function AccountsBody(props: AccountsBodyProps) {
           onEdit={props.onEdit}
           onSubmit={props.onSubmit}
           keycap={false}
+          liveLineId={props.liveLineId}
         />
         <div className="onb-rows">
           <ChoiceRow
@@ -226,14 +270,17 @@ export function AccountsBody(props: AccountsBodyProps) {
           onSubmit={props.onSubmit}
           keycap={false}
           failure={sentence}
+          liveLineId={props.liveLineId}
         />
         {windowNotice}
       </>
     );
   }
 
-  // choose and discovering share the field; a notice explains an address Aplos can't use yet.
+  // choose and discovering share the field; a notice explains an address Aplos can't use yet. Where the body's
+  // own line is the one status (`liveLineId`), a refused address is the field's own error instead.
   const notice = props.notice ? noticeSentence(props.notice) : undefined;
+  const refusal = props.liveLineId !== undefined && props.notice === 'invalid' ? notice : undefined;
   return (
     <>
       <AddressField
@@ -241,7 +288,9 @@ export function AccountsBody(props: AccountsBodyProps) {
         onEdit={props.onEdit}
         onSubmit={props.onSubmit}
         keycap
-        {...(notice ? { notice } : {})}
+        liveLineId={props.liveLineId}
+        {...(notice && refusal === undefined ? { notice } : {})}
+        {...(refusal ? { error: refusal } : {})}
       />
       <GoogleChoice onChooseGoogle={props.onChooseGoogle} />
       {windowNotice}
