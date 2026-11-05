@@ -182,12 +182,20 @@ describe('bridgeSubscribe', () => {
   });
 
   test("subscribes through the bridge's own subscribe and hands back its unsubscribe", () => {
-    const calls: unknown[] = [];
+    const calls: unknown[][] = [];
     const stop = () => undefined;
-    view.window = { aplos: { subscribe: (listener: unknown) => (calls.push(listener), stop) } };
+    view.window = {
+      aplos: {
+        subscribe: (...args: unknown[]) => {
+          calls.push(args);
+          return stop;
+        },
+      },
+    };
     const listener = () => undefined;
     assert.equal(bridgeSubscribe()?.(listener), stop);
-    assert.deepEqual(calls, [listener]);
+    // `only` keeps this hook off the queue of deep-link / command events held for the app's first general subscriber (#293).
+    assert.deepEqual(calls, [[listener, { only: ['mail-key'] }]]);
   });
 });
 

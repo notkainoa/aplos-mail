@@ -79,6 +79,15 @@ export interface WindowPort {
 
 export type OnboardingMode = 'first' | 'review';
 
+/** Where the mail window opens after the handoff instead of Home (`Window/finishOnboarding { to }`). */
+export type FinishDestination = 'settings.ai';
+
+/** `finish`'s options from a raw `Window/finishOnboarding` payload: the one named destination, or none (Home). */
+export function finishOptionsOf(payload: unknown): { to?: FinishDestination } {
+  const to = (payload as { to?: unknown } | null | undefined)?.to;
+  return to === 'settings.ai' ? { to } : {};
+}
+
 export interface OnboardingDeps {
   /** A hidden onboarding window. It shows itself on its own `ready-to-show` (never in test mode). */
   createOnboarding(mode: OnboardingMode): WindowPort;
@@ -89,6 +98,8 @@ export interface OnboardingDeps {
   endSetup(): Promise<unknown>;
   /** The `desktop` frame's `shown` event: the window is up, the renderer may run its entrance. */
   announceShown(win: WindowPort): void;
+  /** Tell the mail window to open `to` (the renderer's `navigate` event). Called once, after the window is shown. */
+  navigate?(win: WindowPort, to: FinishDestination): void;
   isQuitting(): boolean;
   /** Test mode never shows or focuses a window. */
   testMode: boolean;
@@ -100,8 +111,11 @@ export interface OnboardingController {
   start(facts: SessionFacts, launch: { atLogin: boolean }): WindowChoice;
   activate(facts: SessionFacts): Activation;
   open(mode: OnboardingMode): void;
-  /** Resolves when the mail window is up and the onboarding window is gone (or the handoff was abandoned). */
-  finish(): Promise<void>;
+  /**
+   * Resolves when the mail window is up and the onboarding window is gone (or the handoff was abandoned). `to` opens
+   * the mail window on that screen instead of Home; a second call while a handoff runs joins it and its `to` is ignored.
+   */
+  finish(options?: { to?: FinishDestination }): Promise<void>;
   /**
    * The renderer ended setup itself, so main's own call on close is skipped. Not called yet: the renderer's `Setup/end`
    * goes straight to the engine (`engine-host.ts`), so main still sends its own, which the engine treats as idempotent.
@@ -146,10 +160,17 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     created.onClosed(() => onboardingClosed(created));
   }
 
-  function reveal(mail: WindowPort, done: () => void) {
+  function reveal(mail: WindowPort, done: () => void, to?: FinishDestination) {
     if (deps.isQuitting()) return done();
     bring(mail);
     deps.announceShown(mail);
+    if (to) {
+      try {
+        deps.navigate?.(mail, to);
+      } catch {
+        // The mail window cannot take the request (it went away): the handoff still completes, on Home.
+      }
+    }
     const onboarding = win;
     win = undefined;
     if (alive(onboarding)) fadeAndClose(onboarding, done);
@@ -192,23 +213,26 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     step();
   }
 
-  function finish(): Promise<void> {
+  function finish(options?: { to?: FinishDestination }): Promise<void> {
     if (handoff) return handoff;
-    handoff = new Promise<void>(resolve => {
+    const to = options?.to;
+    let finished = false;
+    const promise = new Promise<void>(resolve => {
       const done = () => {
+        finished = true;
         handoff = undefined;
         resolve();
       };
       if (deps.isQuitting() || !alive(win)) return done();
       const existing = deps.currentMail();
-      if (up(existing)) return reveal(existing, done);
+      if (up(existing)) return reveal(existing, done, to);
       const mail = alive(existing) ? existing : deps.createMail();
       let settled = false;
       const settle = () => {
         if (settled) return;
         settled = true;
         deps.clearTimer(timer);
-        reveal(mail, done);
+        reveal(mail, done, to);
       };
       const timer = deps.setTimer(settle, READY_TIMEOUT_MS);
       mail.onReadyToShow(settle);
@@ -222,7 +246,9 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
         done();
       });
     });
-    return handoff;
+    // A handoff that was over before this line (nothing to hand over) must not stay registered as running.
+    if (!finished) handoff = promise;
+    return promise;
   }
 
   return {

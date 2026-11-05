@@ -69,3 +69,7 @@ Send path and send guard (`outbox/*`, prov-gmail send/draft MIME headers), draft
 
 - `plans/STATUS.md` now merges as a UNION via `.gitattributes` on revamp: append lines freely and never edit an existing line in place (a correction is a new line). `LIVE-RUNS.md`, `RESUME.md`, `PROGRESS.md`, `DECISIONS.md` and `TODO.md` are NOT union (`resolve-decisions.sh` still unions DECISIONS.md and STATUS.md by hand for my merges: with the gitattributes rule the STATUS part should just work).
 - `allow_auto_merge` is false on the repo, so `gh pr merge --auto` is unavailable: green PRs merge on integrator turns, after the review ladder and the local check.
+
+## Local CI (from Platform 3, 2026-11-04; the owner will not pay for GitHub Actions)
+
+`scripts/local-ci.sh <ref> [--package] [--no-e2e] [--no-web] [--keep]` runs every ci.yml job in a scratch worktree (usage in `plans/integrator/LOCAL-CI.md`). Owner rule: run it on the head of every Opus-gated or engine PR before merging, and once per day on `origin/revamp`. Roughly 17 minutes. First daily run: `origin/revamp` at dd63b32b was all green. Do not wait on or re-run GitHub CI; the `plat-ci` label is not a merge gate.

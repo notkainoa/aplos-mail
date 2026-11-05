@@ -15,6 +15,8 @@ Branch `rv/eng-html/css-if-media` @ c068b153 is already merged as #257.
 
 ## Next 5 work packages (in order)
 
+(Before any READY: `scripts/local-ci.sh <ref> [--package] [--no-e2e] [--no-web] [--keep]` runs every ci.yml job in a scratch worktree without touching your checkout, about 17.5 min; usage in `plans/integrator/LOCAL-CI.md`.)
+
 (Every engine READY line reports the lane's bundle size: `node scripts/audit/measure-budgets.mjs --only size.engine-bundle` (budget 450,000 B; the core chunk was 437,522 B on 2026-11-06).)
 
 (Reminder from the Integrator's 10:00 NOTICE to the old thread for #254 / package 4, in case #254 changes hands: `Draft/set` must check `services.blobs.owns(caller, id)` for EVERY new blobId (ids are not secret; test: a `client:<id>` caller attaching an `app` blob gets `notFound` "Attach it again"), and DECISIONS must say the per-client quota assumes stable owner-granted client ids: a fresh clientId per session would let a listener fill the host's 2 GB folder: a requirement on the listener transport when it is wired.)

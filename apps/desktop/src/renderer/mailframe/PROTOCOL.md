@@ -193,6 +193,8 @@ when the key arrives:
    or Ask on the shell's key layers or open sheet, an open overlay in the host DOM (role `dialog`, `alertdialog` or `menu`,
    `aria-modal="true"`, `data-keyctx`, as the shell's `overlayContexts` reads them), or a host layer marked `data-keylayer`
    (the reader's find bar). A key relayed from inside an email can never close or cancel anything above the letter.
+   Every new overlay MUST carry at least one of those markers (role `dialog`/`alertdialog`/`menu`, `aria-modal`, `data-keyctx`
+   or `data-keylayer`): the check reads only the markers, so an overlay with none of them is invisible to it and the check fails open.
 
 4. **Reader allowlist.** Main validates the full shared list (`isMailKey`), then the sealed path hands on only
    `SEALED_READER_KEYS`: j, k, J, K and Escape. Main relays without cancelling (it cannot cancel a key from an

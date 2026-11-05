@@ -200,3 +200,65 @@ test('a typed listener cannot change the event held for the app; one removed mid
   hub2.emit({ type: 'state' });
   assert.deepEqual(second.heard, [], 'removed by the first listener in the same pass: not called');
 });
+
+test('a navigate event waits for a listener that names it, and plain listeners never take it', () => {
+  const hub = createEventHub();
+  const nav = { type: 'navigate', payload: { to: 'settings.ai' } };
+  hub.emit(nav);
+  const app = collect();
+  hub.subscribe(app.listener);
+  assert.deepEqual(app.heard, [], "the app's plain subscribe does not take it");
+  const keys = collect();
+  hub.subscribe(keys.listener, { only: ['mail-key'] });
+  assert.deepEqual(keys.heard, [], 'a listener naming other types does not take it');
+  const router = collect();
+  hub.subscribe(router.listener, { only: ['navigate'] });
+  assert.deepEqual(router.heard, [nav]);
+  const later = collect();
+  hub.subscribe(later.listener, { only: ['navigate'] });
+  assert.deepEqual(later.heard, [], 'taken once');
+});
+
+test('a navigate event is heard live by plain and naming listeners, and not held once someone names it', () => {
+  const hub = createEventHub();
+  const router = collect();
+  const app = collect();
+  hub.subscribe(router.listener, { only: ['navigate'] });
+  hub.subscribe(app.listener);
+  const nav = { type: 'navigate', payload: { to: 'settings.ai' } };
+  hub.emit(nav);
+  assert.deepEqual([router.heard, app.heard], [[nav], [nav]]);
+  const late = collect();
+  hub.subscribe(late.listener, { only: ['navigate'] });
+  assert.deepEqual(late.heard, [], 'it was delivered live, not held');
+});
+
+test('held navigate events are bounded, and a throwing replay hands the rest back', () => {
+  const hub = createEventHub();
+  for (let n = 0; n < 15; n += 1) hub.emit({ type: 'navigate', payload: n });
+  let seen = 0;
+  assert.throws(() =>
+    hub.subscribe(
+      () => {
+        seen += 1;
+        if (seen === 2) throw new Error('boom');
+      },
+      { only: ['navigate'] },
+    ),
+  );
+  const next = collect();
+  hub.subscribe(next.listener, { only: ['navigate'] });
+  assert.equal(next.heard.length, 8, '10 held, 2 delivered to the one that threw');
+});
+
+test('the boot order: the app subscribes plain first, navigate arrives, then the router names it and gets it', () => {
+  const hub = createEventHub();
+  const app = collect();
+  hub.subscribe(app.listener);
+  const nav = { type: 'navigate', payload: { to: 'settings.ai' } };
+  hub.emit(nav);
+  assert.deepEqual(app.heard, [nav], 'heard live');
+  const router = collect();
+  hub.subscribe(router.listener, { only: ['navigate'] });
+  assert.deepEqual(router.heard, [nav], 'and still held for the one that names it');
+});

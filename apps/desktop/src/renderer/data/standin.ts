@@ -2,7 +2,7 @@
  * The stand-in engine (F6, `@aplos/contract-fixture`) in-process, behind the F2 typed client: what the new renderer
  * boots on in development and what the data tests read windows from. Development and tests only. It is never part of
  * a release (plan 30 4.1 release rule): `renderer/main.tsx` reaches it only in a development build, and the real
- * transports (a MessagePort in Electron, tokenised HTTP and SSE in the browser preview) arrive with `bridge.ts` in U2.
+ * transports (`../bridge.ts`'s MessagePort in Electron, tokenised HTTP and SSE in the browser preview) sit beside it.
  *
  * Kept apart from `./index.ts` so the data surface itself never pulls the fixture or zod into a bundle.
  */

@@ -126,7 +126,17 @@ async function stop() {
   for (const ws of sockets) ws.close();
   if (child && child.exitCode === null) {
     child.kill('SIGTERM');
-    await until(() => child.exitCode !== null, 'desktop exit');
+    // A graceful quit (quit warning, window save-before-close, engine drain) can run past 30 s
+    // on a heavily loaded Mac; the SIGKILL floor below still bounds it.
+    const exited = until(() => child.exitCode !== null, 'desktop exit', 60000).then(
+      () => true,
+      () => false,
+    );
+    if (!(await exited)) {
+      console.error('verify-release: app ignored SIGTERM for 60 s; killing it');
+      child.kill('SIGKILL');
+      await until(() => child.exitCode !== null, 'desktop kill', 10000);
+    }
   }
 }
 async function check(name, fn) {
@@ -135,6 +145,7 @@ async function check(name, fn) {
   console.log('PASS ' + name);
 }
 let client;
+let failure;
 try {
   client = await launch();
   const initial = await client.invoke('state.get');
@@ -449,6 +460,17 @@ try {
     child.unref();
     child = undefined;
   }
-} finally {
-  await stop();
+} catch (error) {
+  failure = error;
 }
+let stopError;
+try {
+  await stop();
+} catch (error) {
+  // A stop() failure must not hide the check failure it runs after.
+  stopError = error;
+}
+if (stopError && failure)
+  console.error('verify-release: cleanup also failed:', stopError?.message ?? stopError);
+if (failure) throw failure;
+if (stopError) throw stopError;
