@@ -609,7 +609,7 @@ describe('review1 finding 6: Reconnect and Open Settings', () => {
     const { each } = replay(atFirstSync(), [
       { type: 'openSettings' },
       { type: 'handoffFailed' },
-      { type: 'next' },
+      { type: 'retryHandoff' },
     ]);
     assert.deepEqual(each[0], [
       { type: 'setupEnd', reason: 'finished' },
