@@ -8,7 +8,9 @@ import type {
   ViewPlan,
   ViewRow,
 } from '../views/specs';
-import { expand, type Override } from './recurrence';
+import { expand } from './recurrence/expand';
+import type { Override } from './recurrence/types';
+import { registerViewKind } from '../views/registry';
 import {
   eventFromRow,
   fromWire,
@@ -250,3 +252,8 @@ export const plansPlan: ViewCompiler = (): ViewPlan => ({
   locate: () => undefined,
   statements: () => [],
 });
+
+// Self-register at this module's import time — the lazy chunk runs this once (import caching), so
+// registerViewKind's double-registration guard is still honored.
+registerViewKind('events', eventsPlan);
+registerViewKind('plans', plansPlan);

@@ -15,8 +15,20 @@ import {
 } from '../calendar/project';
 import type { EventFields } from '@aplos/contract';
 import type { EventFields as PortFields } from '../ports/calendar';
-import { expand } from '../calendar/recurrence';
 import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './types';
+
+/** The recurrence expander lives in the calendar chunk (the bundle budget's seam): `Event/get` loads it only
+ * for an occurrence id that has no stored override row, and a missing chunk answers `unavailable`, not a throw. */
+async function lazyExpand(): Promise<typeof import('../calendar/recurrence/expand').expand> {
+  try {
+    return (await import('../calendar/recurrence/expand')).expand;
+  } catch {
+    throw new ContractError({
+      type: 'unavailable',
+      message: 'This part of the calendar cannot load right now.',
+    });
+  }
+}
 
 /**
  * The `event` area, owned by lane `prov-cal`. Reads come from `calendars`, `events` and `event_hidden`; writes to the
@@ -145,7 +157,7 @@ function eventRow(
   );
 }
 
-function readEvent(ctx: MethodContext, id: string): Event | undefined {
+async function readEvent(ctx: MethodContext, id: string): Promise<Event | undefined> {
   const ref = parseEventIdIn(id, accountIds(ctx));
   const hidden = hiddenSet(ctx);
   const z = zone(ctx, ref.accountId, ref.calRemote);
@@ -172,7 +184,7 @@ function readEvent(ctx: MethodContext, id: string): Event | undefined {
   // Bound the expansion to a day around the occurrence's original start (its id carries the key).
   const at = instant(recurrenceIdToTime(ref.recurrenceId), z);
   const day = 86_400_000;
-  const expanded = expand({
+  const expanded = (await lazyExpand())({
     start: fromWire(base.start),
     end: fromWire(base.end),
     allDay: base.allDay,
@@ -191,13 +203,16 @@ function readEvent(ctx: MethodContext, id: string): Event | undefined {
   return occurrenceEvent(base, occ, occ.overridden, isHidden);
 }
 
-function getEvents(args: Input<'Event/get'>, ctx: MethodContext): Output<'Event/get'> {
+async function getEvents(
+  args: Input<'Event/get'>,
+  ctx: MethodContext,
+): Promise<Output<'Event/get'>> {
   const list: Event[] = [];
   const notFound: string[] = [];
   for (const id of args.ids) {
     let event;
     try {
-      event = readEvent(ctx, id);
+      event = await readEvent(ctx, id);
     } catch (error) {
       if (error instanceof ContractError && error.type === 'notFound') event = undefined;
       else throw error;
@@ -316,7 +331,7 @@ async function savedEvent(
   const id = first
     ? `${accountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`
     : undefined;
-  const event = id ? readEvent(ctx, id) : undefined;
+  const event = id ? await readEvent(ctx, id) : undefined;
   return { ...(event ? { event } : {}), receipt: receipt(ctx, opId) };
 }
 
