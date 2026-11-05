@@ -599,11 +599,14 @@ test('with the timer loop injected, the views module is one deadline source and 
 test('a repeated query joins the running search; a throttled account cools down before it is asked again', async () => {
   const world = makeWorld(5, BIG_NOW, 60);
   const calls: string[] = [];
-  let gate: (() => void) | undefined;
+  // The first provider call holds its round open on a real gate, so the second Return must join it.
+  let release!: () => void;
+  const blocker = new Promise<void>(resolve => (release = resolve));
+  let asked = 0;
   const accounts = {
     search: async (account: string, query: { text: string }) => {
       calls.push(`${account}:${query.text}`);
-      if (gate) await new Promise<void>(resolve => (gate = resolve));
+      if (asked++ === 0) await blocker;
       return { remoteThreadIds: [] };
     },
   } as unknown as AccountActorHost;
@@ -614,7 +617,7 @@ test('a repeated query joins the running search; a throttled account cools down 
     const b = t.call('Search/remote', { opId: 'c2', query: { text: 'garden' } });
     const [ra, rb] = await Promise.all([a, b]);
     await t.advance(10);
-    gate?.();
+    release();
     await t.advance(10);
     assert.deepEqual(
       calls.sort(),
@@ -660,6 +663,41 @@ test('a throttled search answer cools the account; the next search fails fast lo
       calls.filter(c => c === 'imap:2:garden'),
       ['imap:2:garden'],
     );
+    // A healthy account answered: the run is `done`, the window keeps the results it had.
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(last?.kind, 'done');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('every account cooled down: the whole run fails fast as paused, nothing asked', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      // Project scope (Gmail's daily limit) cools every account at once.
+      throw new ProviderError(
+        {
+          class: 'throttle',
+          reason: 'rateLimitExceeded',
+          retryAfterMs: 60_000,
+        } as never,
+        'project',
+      );
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'q1', query: { text: 'garden' } });
+    await t.advance(10);
+    const asked = calls.length;
+    await t.call('Search/remote', { opId: 'q2', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.equal(calls.length, asked, 'all accounts cooled: nothing is re-asked');
     const last = t.frames.filter(f => f.frame === 'progress').at(-1);
     assert.equal(last?.kind, 'error');
     assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');

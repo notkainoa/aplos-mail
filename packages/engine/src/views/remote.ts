@@ -62,15 +62,23 @@ export function searchRemote(services: EngineServices, args: Args, connectionId:
   return result;
 }
 
-/** The provider's own "wait until" from whatever it threw, or a short breath for a hint-less throttle. */
-function resumeHint(error: unknown, now: number): number | undefined {
-  if (error instanceof PausedError) return error.until ?? now + DEFAULT_PAUSE_MS;
+/** The provider's own "wait until" from whatever it threw, or a short breath for a hint-less throttle;
+ * `synthetic` means we guessed (no provider hint) and the number should not go on the wire. */
+function resumeHint(
+  error: unknown,
+  now: number,
+): { until: number; synthetic: boolean } | undefined {
+  if (error instanceof PausedError)
+    return error.until === undefined
+      ? { until: now + DEFAULT_PAUSE_MS, synthetic: true }
+      : { until: error.until, synthetic: false };
   if (error instanceof ProviderError) {
     const e = error.error;
-    if (typeof e.resumeAt === 'number') return e.resumeAt;
-    if (typeof e.retryAfterMs === 'number') return now + e.retryAfterMs;
+    if (typeof e.resumeAt === 'number') return { until: e.resumeAt, synthetic: false };
+    if (typeof e.retryAfterMs === 'number')
+      return { until: now + e.retryAfterMs, synthetic: false };
     return ['throttle', 'quota', 'daily', 'concurrency'].includes(e.class ?? '') || e.concurrency
-      ? now + DEFAULT_PAUSE_MS
+      ? { until: now + DEFAULT_PAUSE_MS, synthetic: true }
       : undefined;
   }
   return undefined;
@@ -99,6 +107,7 @@ async function runSearch(
     body = await shareSearch(services, args);
   } catch {
     // A shared run that rejects rather than resolves a body still answers each joiner.
+    services.log.event('rpc.failed', { method: 'Search/remote', reason: 'shared-run rejected' });
     body = { type: 'internal', message: 'Something went wrong. Try again.' };
   }
   if (body === undefined) progress('done');
@@ -134,13 +143,14 @@ function shareSearch(services: EngineServices, args: Args): Promise<ErrorBody | 
 }
 
 /** The actual provider round: one serial pass over the accounts, skipping any in cool-down — one paused
- * account never starves the rest; the run reports `paused` only when EVERY account was cooled down. */
+ * account never starves the rest; a FAILING account still ends the run (first-error-wins, as before). */
 async function askProvider(services: EngineServices, args: Args): Promise<ErrorBody | undefined> {
   const accounts = args.accountId ? [args.accountId] : services.store.read(q => accountIds(q));
   const pauseMap = pauses.get(services.views) ?? new Map<string, number>();
   pauses.set(services.views, pauseMap);
   const now = () => services.clock.now();
   let pausedUntil: number | undefined;
+  let asked = 0;
   for (const account of accounts) {
     const until = pauseMap.get(account);
     if (until !== undefined && until > now()) {
@@ -148,23 +158,27 @@ async function askProvider(services: EngineServices, args: Args): Promise<ErrorB
       continue;
     }
     try {
+      asked += 1;
       await services.accounts.search(account, { text: args.query.text, limit: REMOTE_LIMIT });
       pauseMap.delete(account);
     } catch (error) {
       const resume = resumeHint(error, now());
       if (resume !== undefined) {
-        // A project-scoped refusal (Gmail's daily limit) cools every account on the project.
+        // A project-scoped refusal (Gmail's daily limit) cools every account on the project — the
+        // engine can't see project membership, so non-Google accounts get the same pause too.
         const project = error instanceof ProviderError && error.scope === 'project';
-        for (const a of project ? accounts : [account]) pauseMap.set(a, resume);
+        for (const a of project ? accounts : [account]) pauseMap.set(a, resume.until);
       }
       const body = toContractError(error, 'Search/remote', services.log).body;
-      return resume === undefined || body.resumeAt !== undefined
+      // A synthesized breath (hint-less PausedError) is not put on the wire — the client would trust it.
+      return resume === undefined || resume.synthetic || body.resumeAt !== undefined
         ? body
-        : { ...body, resumeAt: resume };
+        : { ...body, resumeAt: resume.until };
     }
   }
-  // Every account was cooled down: the run pauses until the earliest can be asked again.
-  if (accounts.length > 0 && pausedUntil !== undefined)
+  // `paused` only when no account was asked at all: a skipped account's absence is honest while
+  // the healthy ones' results still join the window (stopping it would hide them).
+  if (asked === 0 && pausedUntil !== undefined)
     return {
       type: 'paused',
       message: 'Aplos is waiting before it tries this again.',
