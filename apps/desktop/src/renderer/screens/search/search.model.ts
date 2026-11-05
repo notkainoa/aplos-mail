@@ -119,6 +119,16 @@ export function removeToken(state: SearchState, index: number): SearchStep {
   return { state: { ...state, tokens: state.tokens.filter((_, i) => i !== index) }, effects: [] };
 }
 
+/**
+ * Esc in the field: the text and every token clear at once, so a second Esc on the empty field can go back
+ * (`nav.back`). Never a remote effect; a remote search that is still running keeps its keyed state, so typing the
+ * same query again finds it as it was.
+ */
+export function clearField(state: SearchState): SearchStep {
+  if (state.field === '' && state.tokens.length === 0) return { state, effects: [] };
+  return { state: { ...state, field: '', tokens: [] }, effects: [] };
+}
+
 /** Return may retry a pause that named no resume time once this much time has passed. */
 export const PAUSE_GRACE_MS = 60_000;
 

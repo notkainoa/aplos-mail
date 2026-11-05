@@ -23,6 +23,8 @@ import { actOnRow, openResult, type ActDeps } from './searchActions';
 import { SearchPage } from './SearchPage';
 import { specKey } from '../../data/optimistic';
 import {
+  BUSY_DELAY_MS,
+  clearField,
   currentQuery,
   highlightTerms,
   initialSearch,
@@ -143,6 +145,35 @@ test('typing never asks Google; Return asks exactly once per query', () => {
   );
   // Removing a token never asks, either.
   assert.deepEqual(removeToken(state, 0).effects, []);
+});
+
+test('Esc in the field clears the text and the tokens at once', () => {
+  const state = typing(initialSearch, 'from:jordan invoice');
+  assert.equal(state.tokens.length, 1);
+  assert.equal(state.field, 'invoice');
+  const step = clearField(state);
+  assert.equal(step.state.field, '');
+  assert.deepEqual(step.state.tokens, []);
+  assert.deepEqual(step.effects, []);
+  // Tokens alone clear too: the field is "already empty" only with none of either left.
+  const pillOnly = clearField({ ...initialSearch, tokens: [{ operator: 'in', value: 'done' }] });
+  assert.deepEqual(pillOnly.state.tokens, []);
+});
+
+test('Esc on an already empty field clears nothing, so the next Esc can go back', () => {
+  const step = clearField(initialSearch);
+  assert.equal(step.state, initialSearch);
+  assert.deepEqual(step.effects, []);
+});
+
+test('clearing the field leaves a running remote search where it is, keyed to its query', () => {
+  let state = submit({ ...initialSearch, field: 'hi' }, CTX()).state;
+  state = remoteStarted(state, 'all|hi', 'run-1');
+  const cleared = clearField(state).state;
+  assert.equal(cleared.remote.phase, 'running');
+  // Retyping the same query finds the remote state again rather than asking twice.
+  const model = searchPage({ ...cleared, field: 'hi' }, LOCAL([]), 1_000 + BUSY_DELAY_MS);
+  assert.equal(model.remoteLine?.kind, 'busy');
 });
 
 test('an empty query or an unsupported account asks nothing', () => {

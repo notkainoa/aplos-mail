@@ -8,11 +8,20 @@
  * remounts the view without losing the query. The field takes focus on mount: with it unfocused the list layer's
  * single keys (e, x, #) would act on real threads instead of typing.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react';
 import { api, useAccounts, useFrames, useSettings, useView } from '../../data';
 import type { Account, AccountId, ErrorBody, ThreadId } from '../../data';
 import type { CommandId } from '../../ui/props';
 import {
+  navigate,
   useAccountScope,
   useCommandTarget,
   useRegisterCommands,
@@ -25,6 +34,7 @@ import { useIdCursor } from '../lists/useIdCursor';
 import { ACT_DEPS, actOnRow, openResult, type RowAction } from './searchActions';
 import {
   BUSY_DELAY_MS,
+  clearField,
   currentQuery,
   initialSearch,
   remoteFrame,
@@ -325,6 +335,12 @@ function SearchBody(props: SearchBodyProps): ReactElement {
           );
         },
       },
+      // The last rung of the field's Esc ladder (the mockup's data-esc): Esc leaves for Home once the field is empty.
+      'nav.back': {
+        run: () => {
+          navigate('home');
+        },
+      },
     }),
     [cursorKey, cursorIds, setCursor, accounts, accountId, local.ids, open],
   );
@@ -363,9 +379,21 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     },
   };
 
+  // Esc in the field clears the text and the tokens before the key reaches the registry; the `preventDefault`
+  // keeps that Esc from running `nav.back`, so only the next one, on the empty field, goes back (DESIGN §8 ladder).
+  function onScreenKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('.ui-search-field') === null) return;
+    const current = stateRef.current;
+    if (current.field === '' && current.tokens.length === 0) return;
+    event.preventDefault();
+    perform(clearField(current));
+  }
+
   const scoped = accountId ? accounts.find(a => a.id === accountId) : undefined;
   return (
-    <div className="aplos-screen-fill" data-keyctx="search,list">
+    <div className="aplos-screen-fill" data-keyctx="search,list" onKeyDown={onScreenKeyDown}>
       <SearchPage
         model={model}
         localRows={localRows}
