@@ -372,7 +372,7 @@ export function searchPage(
   // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
   const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
   const shown = formatSearch(currentSearch(state.field, state.tokens).tokens, query.text);
-  const noMatch = !empty && nothing ? `No mail matches ‘${shown}’.` : null;
+  const noMatch = !empty && nothing ? `No mail matches ‘${shown}’` : null;
   // The no-match line carries the offer itself (EmptyLine's action), so the separate offer row hides.
   const line = noMatch && remoteLine?.kind === 'offer' ? null : remoteLine;
 

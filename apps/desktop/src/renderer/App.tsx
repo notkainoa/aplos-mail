@@ -114,9 +114,9 @@ export function homeLines(window: WindowBody): HomeLine[] {
   return lines;
 }
 
-/** Inbox zero's line: "You handled 12 emails." (DESIGN 7.14). */
+/** Inbox zero's line: "You handled 12 emails" (DESIGN 7.14; no trailing period, owner override 2026-11-05). */
 export function handledLine(handledToday: number): string {
-  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}.`;
+  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}`;
 }
 
 /**
@@ -207,10 +207,10 @@ export function failedText(error: Pick<ErrorBody, 'type'>): string {
 /** The Pane's contents for one `HomeState`: nothing while opening, the error sentence, inbox zero, or the lines. */
 export function HomeContent({ home }: HomeContentProps) {
   if (home.status === 'opening') return null;
-  if (home.status === 'failed') return <EmptyLine text={failedText(home.error)} />;
+  if (home.status === 'failed') return <EmptyLine placement="pane" text={failedText(home.error)} />;
   const lines = homeLines(home.window);
   if (lines.every(line => line.count === 0))
-    return <EmptyLine size="display" text={handledLine(home.handledToday)} />;
+    return <EmptyLine placement="pane" size="display" text={handledLine(home.handledToday)} />;
   return (
     <>
       {lines.map(line =>

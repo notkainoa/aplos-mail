@@ -8,9 +8,9 @@ import { FirstSyncLine } from '../../shell/states';
 import { EmptyLine } from '../../ui/list';
 import { ZeroAccounts } from '../../onboarding/ZeroAccounts';
 
-/** "You handled 12 emails." (DESIGN 7.14). */
+/** "You handled 12 emails" (DESIGN 7.14; no trailing period, owner override 2026-11-05). */
 export function handledLine(handledToday: number): string {
-  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}.`;
+  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}`;
 }
 
 /**
@@ -52,6 +52,7 @@ export function HomeEmpty({
   if (settling) return <FirstSyncLine reason={reason} />;
   return (
     <EmptyLine
+      placement="pane"
       size="display"
       text={handledLine(handledToday)}
       action={

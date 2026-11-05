@@ -11,7 +11,7 @@ import {
   PartIcon,
   PartKeys,
   SrOnly,
-  keysFor,
+  useKeysFor,
   lowerFirst,
   useDismiss,
   useFloating,
@@ -53,6 +53,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
     onClose,
   } = props;
   const baseId = useId();
+  const keysOf = useKeysFor();
   const { mounted, leaving } = usePresence(open, motions.reveal.durations.out);
   const { ref, style, placed } = useFloating(mounted, anchor, 'below-start');
   useDismiss(open, ref, anchor, onClose);
@@ -170,7 +171,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
         const detailId = entry.detail ? `${domId(entry.id)}-detail` : undefined;
         const hintId = entry.inlineAction ? `${domId(entry.id)}-hint` : undefined;
         const asideId = entry.aside ? `${domId(entry.id)}-aside` : undefined;
-        const chords = keysFor(entry.commandId);
+        const chords = keysOf(entry.commandId);
         const keysId = chords.length > 0 ? `${domId(entry.id)}-keys` : undefined;
         // The name holds every visible word (label, detail, aside, keys), so it contains the visible text (WCAG 2.5.3).
         const nameIds = [labelId, detailId, asideId, keysId].filter(Boolean).join(' ');

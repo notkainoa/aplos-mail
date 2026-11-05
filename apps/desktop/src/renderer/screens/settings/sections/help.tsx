@@ -128,7 +128,7 @@ function QueueInspector({ data, actions }: SectionProps) {
           />
         </div>
         {rows.length === 0 ? (
-          <EmptyLine text="Nothing is waiting." />
+          <EmptyLine text="Nothing is waiting" />
         ) : (
           rows.map(r => (
             <Row

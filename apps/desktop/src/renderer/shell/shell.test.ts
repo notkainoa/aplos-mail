@@ -206,9 +206,9 @@ test('the toast stack renders what was pushed, as the one ToastStack', async () 
 test('other screens show a plain placeholder line, not another lane’s content', async () => {
   await boot('demo');
   navigate('later');
-  assert.match(render(), /Nothing set aside for later\./);
+  assert.match(render(), /Nothing set aside for later/);
   navigate({ label: 'Search' });
-  assert.match(render(), /Search isn’t in this build yet\./);
+  assert.match(render(), /Search isn’t in this build yet/);
 });
 
 test('the open reconnect sheet is hosted over the shell', async () => {
