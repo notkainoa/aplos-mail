@@ -107,12 +107,11 @@ function TodayAgenda(props: CalendarGridProps) {
   // The now-line stays between the running event and the next one; with nothing timed left there is no between.
   if (current.length + upcoming.length > 0)
     parts.push(<NowLine key="now" now={now} variant="agenda" />);
+  // A gap starts at the latest end so far — an earlier event still running inside a longer one does
+  // not shorten it (the same running `free` cursor the Today model uses).
+  let free = Math.max(nowMs, ...current.map(c => new Date(c.end).getTime()));
   ahead.forEach((e, i) => {
-    const before = i === 0 ? undefined : ahead[i - 1];
-    const from = before
-      ? new Date(before.end).getTime()
-      : Math.max(nowMs, ...current.map(c => new Date(c.end).getTime()));
-    const gap = Math.round((new Date(e.start).getTime() - from) / 60000);
+    const gap = Math.round((new Date(e.start).getTime() - free) / 60000);
     if (gap >= 30) {
       parts.push(
         <p key={`gap-${e.id}`} className="ui-calendar-grid__gap">
@@ -122,6 +121,7 @@ function TodayAgenda(props: CalendarGridProps) {
       );
     }
     parts.push(row(props, e, detail(e, i === 0 ? 'Next' : undefined), i === 0 ? 'next' : 'later'));
+    free = Math.max(free, new Date(e.end).getTime());
   });
 
   return (

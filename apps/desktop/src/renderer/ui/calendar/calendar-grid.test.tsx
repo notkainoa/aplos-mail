@@ -237,6 +237,28 @@ test('CalendarGrid agenda today: header, now-line, next event, following gaps', 
   assertCleanCopy(out);
 });
 
+test('CalendarGrid agenda today: a gap is measured from the running end, not the last shown event', () => {
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        agenda: 'today',
+        now: '2026-10-29T09:30:00',
+        label: 'Today',
+        events: [
+          ev('a', 'Offsite', '2026-10-29T10:00:00', '2026-10-29T13:00:00'),
+          ev('b', 'Standup', '2026-10-29T11:00:00', '2026-10-29T11:30:00'),
+          ev('c', 'Design review', '2026-10-29T14:00:00', '2026-10-29T15:00:00'),
+        ],
+      })}
+    />,
+  );
+  // B ends inside A: C's free stretch starts at A's 13:00 end — one hour, not 2 h 30 min.
+  assert.match(out, /Free for 30 min</);
+  assert.match(out, /Free for 1 h</);
+  assert.doesNotMatch(out, /Free for 2 h 30 min/);
+});
+
 test('CalendarGrid agenda today: finished events fold into one "N earlier" line', () => {
   const out = html(
     <CalendarGrid
