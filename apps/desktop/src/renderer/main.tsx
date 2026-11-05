@@ -8,8 +8,9 @@
  * on the same stand-in switch and the same data layer, never a separate engine.
  * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1`
  * loads `./legacy/main` instead, and so does every production build, because no release ships stand-in data (plan 30
- * 4.1 release rule). The real transports (a MessagePort in Electron, tokenised HTTP and SSE in the browser preview)
- * replace the in-process stand-in in U2, and the switch to the real engine is WP5.6.
+ * 4.1 release rule). When preload exposes `window.aplosEngine` (main's real-engine path) the new roots connect over
+ * `bridge.ts` instead of the stand-in, still in a development build only; the browser preview's tokenised HTTP and
+ * SSE transport is still to come.
  *
  * `entry.ts` holds the rule. In a development build the onboarding window (`?window=onboarding&mode=first|review`, as
  * main loads it) boots `OnboardingApp` on a fresh install (the `empty` scenario) with `onboarding.css` after the one
@@ -20,19 +21,46 @@
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { chooseEntry, onboardingMode } from './entry';
+import { chooseEntry, onboardingMode, transportOf, type EntryInput } from './entry';
 import { scenarioParam } from './onboarding/route';
+import type { Client } from '@aplos/contract/client';
+import type { DataConnection } from './data/connect';
 import type { StandInOptions } from './data/standin';
 
 const hook = (globalThis as { __aplosWindowKind?: string }).__aplosWindowKind;
-const entry = chooseEntry({
+const input: EntryInput = {
   search: window.location.search,
   dev: import.meta.env.DEV,
   legacyEnv: import.meta.env.VITE_APLOS_LEGACY === '1',
   ...(hook ? { hook } : {}),
-});
+};
+const entry = chooseEntry(input);
 
 const scenario = scenarioParam(window.location.search) as StandInOptions['scenario'];
+
+/**
+ * The data layer on the real engine, when `entry.ts`'s rule allows it and the preload exposed
+ * `window.aplosEngine`: one bridge session for the layer and a second for `App`'s client, as the stand-in path's
+ * second `engine.connect()` gives it. `bridge.ts` loads only on this path, so the legacy renderer never sees it,
+ * and a null answer (no bridge, or `createEngineBridge` refused) sends the caller back to the stand-in.
+ */
+async function connectEngine(): Promise<{ layer: DataConnection; client: Client } | null> {
+  const [{ createEngineBridge, hasEngineBridge }, { connectDataLayer }, { createClient }] =
+    await Promise.all([
+      import('./bridge'),
+      import('./data/connect'),
+      import('@aplos/contract/client'),
+    ]);
+  if (transportOf({ ...input, bridge: hasEngineBridge() }) !== 'engine') return null;
+  const session = createEngineBridge();
+  const second = session ? createEngineBridge() : null;
+  if (!session || !second) {
+    session?.close();
+    second?.close();
+    return null;
+  }
+  return { layer: connectDataLayer({ session }), client: createClient(second) };
+}
 
 async function boot(): Promise<void> {
   const [{ App }, { connectStandInDataLayer }, { createClient }] = await Promise.all([
@@ -46,6 +74,15 @@ async function boot(): Promise<void> {
   // The mail window hosts lane pieces now (the zero-accounts pane): the lane's own wrappers come after
   // the one stylesheet, the same order the onboarding window and the preview gallery keep.
   await import('./onboarding/onboarding.css');
+  const engine = await connectEngine();
+  if (engine) {
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <App client={engine.client} />
+      </StrictMode>,
+    );
+    return;
+  }
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario });
   const client = createClient(layer.engine.connect());
@@ -65,7 +102,9 @@ async function bootOnboarding(): Promise<void> {
     import('./data/standin-layer'),
     import('./onboardingPorts'),
   ]);
-  connectStandInDataLayer({ scenario: scenario ?? 'empty' });
+  // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
+  const engine = await connectEngine();
+  if (!engine) connectStandInDataLayer({ scenario: scenario ?? 'empty' });
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <OnboardingApp

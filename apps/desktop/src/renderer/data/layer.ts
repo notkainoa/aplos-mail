@@ -41,7 +41,7 @@ import type { CachedRowType, ThreadListSelector } from './ui-types';
 import { cachedType, WindowManager } from './windows';
 
 export interface DataLayerOptions {
-  /** The transport: an `EngineSession` (the stand-in in-process today; MessagePort or HTTP from `bridge.ts`). */
+  /** The transport: an `EngineSession` (the stand-in in-process, or `../bridge.ts`'s MessagePort session). */
   readonly session: EngineSession;
   /** When queued frames apply. Default: the next animation frame. */
   readonly scheduler?: FrameScheduler;
