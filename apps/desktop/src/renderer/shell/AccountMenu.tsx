@@ -91,8 +91,10 @@ export function AccountMenu({
   };
   const select = (id: string) => {
     close();
-    if (id === ADD_ID) onAddAccount();
-    else onScope(id === ALL_ID ? undefined : id);
+    if (id === ADD_ID) {
+      setSheetOpener(anchor);
+      onAddAccount();
+    } else onScope(id === ALL_ID ? undefined : id);
   };
   return (
     <>

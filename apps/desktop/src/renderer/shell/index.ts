@@ -101,6 +101,11 @@ export interface SheetArgs {
    * `Settings.ai.features`; Allow sends `api.consent.grant` with `Consent.currentVersion`.
    */
   consent: { readonly provider?: AiProviderId; readonly model?: string };
+  /**
+   * Add an account in place (additive): the onboarding lane's Accounts connect flow in a Dialog, so a second account is
+   * connected without the setup window. Open it with `openAddAccount()`; it takes no arguments.
+   */
+  addAccount: Record<string, never>;
 }
 
 /** A sheet name. */
@@ -126,6 +131,15 @@ export function openSheet<K extends SheetName>(name: K, ...args: SheetArgsParam<
   showSheet({ name, args: args[0] ?? {} } as OpenSheet);
 }
 
+/**
+ * Opens the Add account dialog (additive; the account switcher's "Add an account" and the empty state's button call
+ * it). It is the `addAccount` sheet: one at a time, Esc steps back and then closes, and focus returns to the opener.
+ * Opening it again while it is open keeps it.
+ */
+export function openAddAccount(): void {
+  openSheet('addAccount');
+}
+
 /** Closes the open sheet (Cancel, Esc, or the flow finished: "Reconnected" toast); a no-op when none is open. */
 export function closeSheet(): void {
   hideSheet();
@@ -134,6 +148,11 @@ export function closeSheet(): void {
 /** The open sheet, live; null when none. The shell's sheet slot renders ui-onboard's sheet for it. */
 export function useSheet(): OpenSheet | null {
   return useSyncExternalStore(subscribeSheet, getSheet, getSheet);
+}
+
+/** True while the Add account dialog is the open sheet. Additive. */
+export function useAddAccount(): boolean {
+  return useSheet()?.name === 'addAccount';
 }
 
 /** True while a sheet is open: the shell adds the modal `sheet` context to its key stack (`buildStack`) then. Additive. */

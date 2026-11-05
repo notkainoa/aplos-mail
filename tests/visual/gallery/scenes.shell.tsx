@@ -2,7 +2,7 @@
 // screens) drawn from the shell's presentational pieces with fixed demo data. No engine and no data layer boot:
 // the status rows go through the shell's own mapping (StatusView -> toSyncStatus -> StatusSlot).
 
-import { useEffect, type ReactElement, type ReactNode } from 'react';
+import { useEffect, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import {
   HARNESS_NOW_MS,
@@ -19,6 +19,7 @@ import type {
   PaneHeaderProps,
   ToastData,
 } from '../../../apps/desktop/src/renderer/ui/props';
+import { AddAccountView } from '../../../apps/desktop/src/renderer/shell/AddAccountHost';
 import { AccountMenu } from '../../../apps/desktop/src/renderer/shell/AccountMenu';
 import { FatalHost, ShellLayout } from '../../../apps/desktop/src/renderer/shell/Shell';
 import { StatusView } from '../../../apps/desktop/src/renderer/shell/StatusHost';
@@ -453,6 +454,33 @@ function reconnectScene(
   };
 }
 
+function addAccountScene(
+  over: Partial<ComponentProps<typeof AddAccountView>> = {},
+): () => ReactElement {
+  return function AddAccountScene(): ReactElement {
+    return (
+      <Frame
+        overlay={
+          <AddAccountView
+            mode="choose"
+            address=""
+            notice={null}
+            failure={null}
+            onEdit={noop}
+            onSubmit={noop}
+            onConnect={noop}
+            onChooseGoogle={noop}
+            onCancel={noop}
+            onClear={noop}
+            onClose={noop}
+            {...over}
+          />
+        }
+      />
+    );
+  };
+}
+
 /* ------------------------------ the sidebar slot (Calendar's MiniMonth and Calendars list) ------------------------------ */
 
 const SLOT_MONTH: MiniMonthProps = {
@@ -511,6 +539,17 @@ export const shellScenes: Record<string, () => ReactElement> = {
   'shell-empty-drafts': EmptyDrafts,
   'shell-fatal-screen': () => <FatalScene kind="unreachable" />,
   'shell-fatal-parked': () => <FatalScene kind="parked" />,
+  'shell-add-account-open': addAccountScene(),
+  'shell-add-account-typed': addAccountScene({ mode: 'typed', address: 'noor@studio.example' }),
+  'shell-add-account-waiting': addAccountScene({
+    mode: 'waiting',
+    address: 'noor@studio.example',
+  }),
+  'shell-add-account-failed': addAccountScene({
+    mode: 'failed',
+    address: 'noor@studio.example',
+    failure: 'auth.denied',
+  }),
   'shell-reconnect-sheet': reconnectScene('waiting', 'reconnect'),
   'shell-reconnect-sheet-grant': reconnectScene('waiting', 'grant'),
   'shell-reconnect-sheet-failed': reconnectScene(

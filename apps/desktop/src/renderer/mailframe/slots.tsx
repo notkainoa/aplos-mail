@@ -11,6 +11,7 @@ import { createReportListener } from './reports';
 import { FRAME_PAPER } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
+import { useSealedMailKeys } from './useSealedMailKeys';
 
 /** What every slot receives. */
 export interface SlotProps<S extends FrameSource> {
@@ -157,13 +158,14 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
 
 /**
  * The sealed path: an opaque `aplos-mail://` frame sized only by validated reporter messages. The reporter relays no
- * keys (PROTOCOL.md "Keys"), so `onKey` is not wired here.
+ * keys (PROTOCOL.md "Keys"): `onKey` hears main's relayed keys through `useSealedMailKeys`, never a keydown listener.
  */
 export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>) {
   const { source, hidden } = props;
   const [height, setHeight] = useState(1);
   const ref = useRef<HTMLIFrameElement>(null);
   const onMeasured = useLatest(props.onMeasured);
+  useSealedMailKeys(ref, { shown: !hidden, onKey: props.onKey });
 
   useEffect(() => {
     const listener = createReportListener({
