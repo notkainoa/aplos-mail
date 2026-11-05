@@ -8,14 +8,20 @@ import { sanitizeHtml, type WalkOutput } from './sanitize';
 // change: it is part of each rendered body's cache key, so a fix reaches mail already stored.
 // A message over the size limits (sanitize.ts LIMITS) is cut, and the frame says so at the cut.
 
-export const MAIL_HTML_VERSION = 'mail-html/6';
+export const MAIL_HTML_VERSION = 'mail-html/7';
 
 /**
- * Always the standards-mode doctype, whatever the mail declared. In quirks mode `body.scrollHeight` follows
- * the viewport, heights and percentages resolve differently, and a frame sized to its letter can neither
- * be measured nor shrink. Nothing may come before it (a comment or a BOM would bring quirks back).
+ * Always this doctype, whatever the mail declared: HTML 4.01 Transitional WITH its system identifier, which Chromium
+ * treats as almost-standards mode (`document.compatMode` still reads `CSS1Compat`). It keeps everything the
+ * standards-mode doctype gave, which a frame sized to its letter needs: `body.scrollHeight` follows the content
+ * (quirks follows the viewport), heights and percentages resolve the standards way, and the frame can be measured and
+ * can shrink. The one thing it takes back is the table-cell rule newsletters were written against: an image alone in a
+ * cell sits in a line box with no strut, so the 8 px baseline strip under sliced images is gone (measured in Chromium:
+ * cell 120 beside a 120 px image, 124 with `<!DOCTYPE html>`). Nothing may come before it (a comment or a BOM would
+ * bring quirks back). The system identifier is only a mode switch: nothing ever fetches it.
  */
-export const STANDARDS_DOCTYPE = '<!DOCTYPE html>';
+export const READING_DOCTYPE =
+  '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">';
 
 const CLIPPED_NOTE =
   '<p class="aplos-clipped"><em>This message is very long, so Aplos shows only its beginning.</em></p>';
@@ -55,7 +61,7 @@ function renderHtml(
   const images = new ImageBook({ cids: input.cids, policy: input.imagePolicy });
   const walk = sanitizeHtml(html, images, finder, false, input.quotesOpen === true);
   const document = [
-    STANDARDS_DOCTYPE,
+    READING_DOCTYPE,
     `<html${walk.htmlAttributes}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,
     `<body${walk.bodyAttributes}>${walk.body}${walk.clipped ? CLIPPED_NOTE : ''}</body></html>`,
   ].join('');
