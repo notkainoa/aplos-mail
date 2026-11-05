@@ -215,8 +215,14 @@ export async function fetchOriginal(
   deps: GmailDeps,
   remoteMessageId: string,
   ctx: AdapterContext,
+  opts?: { signal?: AbortSignal },
 ): Promise<AsyncIterable<Uint8Array>> {
-  const client = new GmailClient(deps, ctx);
+  // The caller's view of the deadline (a lane stop or `Message/original`'s 120 s total) joins the account's own
+  // abort set, so the HTTP read really stops instead of only the caller's wait.
+  const client = new GmailClient(
+    deps,
+    opts?.signal ? { ...ctx, signal: AbortSignal.any([ctx.signal, opts.signal]) } : ctx,
+  );
   const reply = await client.call<{ raw?: string }>({
     method: 'gmail.messages.get',
     path: `/messages/${remoteMessageId}`,

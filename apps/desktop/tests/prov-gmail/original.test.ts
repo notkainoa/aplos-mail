@@ -22,7 +22,8 @@ test('prov-gmail original: returns the stored raw bytes, one get priced as full 
   );
   const m = r.emu.mailbox.addRaw(raw, { labelIds: ['INBOX'] });
   const since = r.fetches.length;
-  const bytes = await collected(await r.adapter.original!(m.id, r.ctx()));
+  const live = new AbortController();
+  const bytes = await collected(await r.adapter.original!(m.id, r.ctx(), { signal: live.signal }));
   assert.deepEqual(bytes, raw);
   const calls = r.fetches.slice(since);
   assert.equal(calls.length, 1);
@@ -90,4 +91,12 @@ test('prov-gmail original: a malformed raw refuses malformedOriginal, never garb
       error.error.class === 'permanent' &&
       error.error.reason === 'malformedOriginal',
   );
+});
+
+test('prov-gmail original: the caller signal aborts before any request', async () => {
+  const r = await rig();
+  const m = r.emu.mailbox.addRaw(Buffer.from('a\r\n\r\nb'), { labelIds: ['INBOX'] });
+  const since = r.fetches.length;
+  await assert.rejects(() => r.adapter.original!(m.id, r.ctx(), { signal: AbortSignal.abort() }));
+  assert.equal(r.fetches.slice(since).length, 0);
 });
