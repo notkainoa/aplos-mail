@@ -13,7 +13,7 @@
  * `ZeroAccountsView` draws and `ZeroAccounts` is the container that reads `renderer/data`.
  */
 import { useRef, useState } from 'react';
-import { useSession, useSetupStatus } from '../data';
+import { useAccounts, useAccountsLoaded, useSession, useSetupStatus } from '../data';
 import { pushToast } from '../shell';
 import { EmptyLine, ErrorLine } from '../ui/list';
 import { Button } from '../ui/buttons-keys';
@@ -25,6 +25,7 @@ import {
   defaultDemoPorts,
   loadDemo,
   zeroAccountsMode,
+  zeroAccountsProven,
   type DemoPorts,
 } from './demo';
 import {
@@ -108,6 +109,8 @@ export interface ZeroAccountsProps {
 /** Draws nothing when accounts exist (the pane has mail, or demo mail, to show). */
 export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAccountsProps) {
   const session = useSession();
+  const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
   const setup = useSetupStatus();
   const ports = useRef({ ...defaultWelcomePorts, ...defaultDemoPorts, ...given }).current;
   const [loading, setLoading] = useState(false);
@@ -115,10 +118,14 @@ export function ZeroAccounts({ firstSyncRunning, detail, ports: given }: ZeroAcc
 
   const running =
     firstSyncRunning ?? (setup !== undefined && setup.accounts.length > 0 && !setup.done);
-  const mode = zeroAccountsMode({
-    accountCount: session?.hasAccounts === false ? 0 : 1,
-    firstSyncRunning: running,
+  // The caller mounts this only once "no accounts" is proven; `Session/get` may lag or fail, so the loaded
+  // account list is proof enough — but while the list is still out the pane stays blank.
+  const proven = zeroAccountsProven({
+    hasAccounts: session?.hasAccounts,
+    accountsLoaded,
+    accountCount: accounts.length,
   });
+  const mode = zeroAccountsMode({ accountCount: proven ? 0 : 1, firstSyncRunning: running });
   if (mode === 'none') return null;
 
   const tryDemo = () => {
