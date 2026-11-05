@@ -153,6 +153,7 @@ describe('secrets never reach the screen (U7 acceptance 3)', () => {
         states.push(JSON.stringify(data));
       },
       overlay: () => {},
+      accountOverlay: () => {},
       fail: () => {},
     });
     actions.openAddKey('anthropic');
@@ -185,6 +186,7 @@ describe('secrets never reach the screen (U7 acceptance 3)', () => {
       setView: patch => void (view = { ...view, ...patch }),
       setData: () => {},
       overlay: () => {},
+      accountOverlay: () => {},
       fail: f => void (failure = f),
     });
     const ok = await actions.submitKey('anthropic', CANARY);
@@ -214,6 +216,7 @@ describe('write failure and destructive steps', () => {
       setView: () => {},
       setData: () => {},
       overlay: o => void overlays.push(o),
+      accountOverlay: () => {},
       fail: f => void (failure = f),
     });
     assert.equal(await actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send'), false);
@@ -239,6 +242,7 @@ describe('write failure and destructive steps', () => {
       setView: patch => void (view = { ...view, ...patch }),
       setData: () => {},
       overlay: () => {},
+      accountOverlay: () => {},
       fail: () => {},
     });
     actions.askRemoveAccount(ALEX.id);
@@ -264,6 +268,7 @@ describe('write failure and destructive steps', () => {
       setView: () => {},
       setData: () => {},
       overlay: () => {},
+      accountOverlay: () => {},
       fail: () => {},
     });
     await actions.commitRemap('mail.done', 'meta+shift+9');

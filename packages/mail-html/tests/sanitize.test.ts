@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import type { MailHtml, MailHtmlInput, MailHtmlResult } from '@aplos/engine/ports/content';
 import { loadCorpus, type CorpusEntry } from '../corpus/index';
-import { MAIL_HTML_VERSION, mailHtml, render, sanitizeBody } from '../src/index';
+import { MAIL_HTML_VERSION, mailHtml, READING_DOCTYPE, render, sanitizeBody } from '../src/index';
 import { LIMITS, MAX_DEPTH } from '../src/sanitize';
 import { loadableValues, unsafeParts } from './oracle';
 
@@ -256,7 +256,7 @@ describe('elements and attributes', () => {
     inputs.push('<!doctype html public "-//IETF//DTD HTML 2.0//EN"><p>x</p>', '<!--c--><p>x</p>');
     inputs.push('\ufeff<!DOCTYPE html SYSTEM "about:legacy-compat"><p>x</p>', '<![CDATA[x]]>');
     for (const input of inputs) {
-      assert.ok(html(input).document.startsWith('<!DOCTYPE html><html>'), input);
+      assert.ok(html(input).document.startsWith(`${READING_DOCTYPE}<html>`), input);
       assert.equal(html(input).document.match(/<!doctype/gi)?.length, 1, input);
     }
   });
@@ -419,10 +419,10 @@ describe('elements and attributes', () => {
     );
     assert.ok(result.document.indexOf('<meta charset="utf-8">') < 1_024 - 25);
     assert.equal(result.document.includes('\u001b'), false);
-    assert.match(result.document, /^<!DOCTYPE html><html><head><meta charset="utf-8">/);
+    assert.ok(result.document.startsWith(`${READING_DOCTYPE}<html><head><meta charset="utf-8">`));
     assert.match(
       html('<html lang="pt-BR" dir="RTL"><p>x</p>').document,
-      /^<!DOCTYPE html><html lang="pt-BR" dir="RTL"><head>/,
+      /^<!DOCTYPE HTML PUBLIC "-\/\/W3C\/\/DTD HTML 4\.01 Transitional\/\/EN" "[^"]+"><html lang="pt-BR" dir="RTL"><head>/,
     );
   });
 });
@@ -831,5 +831,15 @@ describe('what the rewrite writes is capped too', () => {
     assert.ok(root.includes('position:static!important') && root.includes('display:flow-root'));
     assert.ok(body.includes('position:relative!important') && body.includes('min-height:0'));
     assert.ok(body.includes('display:block!important'), 'the body keeps a box');
+  });
+});
+
+describe('the reading doctype', () => {
+  it('is HTML 4.01 Transitional with its system identifier, the almost-standards switch', () => {
+    // The e2e pins the behaviour (no strip, content-sized report); this pins the string a behaviour check cannot see.
+    assert.equal(
+      READING_DOCTYPE,
+      '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">',
+    );
   });
 });

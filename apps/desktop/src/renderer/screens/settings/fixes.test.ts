@@ -59,6 +59,7 @@ function harness(
       data = { ...data, ...patch };
     },
     overlay: patch => void overlays.push(patch),
+    accountOverlay: () => {},
     fail: failure => void failures.push(failure),
   });
   return { actions, view: () => view, data: () => data, overlays, failures };

@@ -118,8 +118,8 @@ export function FirstSyncContainer({
   const prefs = keyPrefsFor(settings?.ui);
 
   // Keys come through the registry; the handlers read the latest view and drill at key time.
-  const latest = useRef({ view, drill, open, drillKey, prefs, keysSuspended });
-  latest.current = { view, drill, open, drillKey, prefs, keysSuspended };
+  const latest = useRef({ view, drill, open, drillKey, prefs, keysSuspended, notice });
+  latest.current = { view, drill, open, drillKey, prefs, keysSuspended, notice };
   // Without the window's registry the screen still owns Esc [F8]: it resolves keys through a registry of its
   // own, so a missing wiring can never leave Esc stuck — and the drill's keycaps read the same remaps.
   const own = useMemo(
@@ -136,6 +136,7 @@ export function FirstSyncContainer({
     const handlers = firstSyncCommands({
       view: () => latest.current.view,
       drillOpen: () => latest.current.drill !== null,
+      notice: () => latest.current.notice,
       onOpen: () => latest.current.open(),
       onDrill: key => latest.current.drillKey(key),
       onLeaveDrill: () => setDrill(null),

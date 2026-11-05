@@ -25,7 +25,7 @@ import {
   reasonSentence,
   type AnyReasonCode,
 } from '../copy';
-import type { FocusTarget } from '../flow';
+import type { FocusTarget, WindowNotice } from '../flow';
 import { DRILL_LIST_ID } from './drill.model';
 
 /* ───────────────────────── inputs ───────────────────────── */
@@ -889,6 +889,13 @@ export interface FirstSyncKeyCallbacks {
   readonly view: () => FirstSyncView;
   /** Whether the drill is showing. */
   readonly drillOpen: () => boolean;
+  /**
+   * The window's failed handoff, while the screen draws it (the slot's `notice`). Return on it is
+   * the notice's Try again — it retries the handoff the failed one asked for — so the screen's
+   * `onboarding.continue` stays disabled and the key falls through to the window's own listener.
+   * Esc is unaffected: it always opens plainly.
+   */
+  readonly notice: () => WindowNotice | undefined;
   readonly onOpen: () => void;
   readonly onDrill: (key: 'next' | 'previous' | 'suggested' | 'done' | 'ask' | 'undo') => void;
   readonly onLeaveDrill: () => void;
@@ -896,14 +903,16 @@ export interface FirstSyncKeyCallbacks {
 
 /**
  * Handlers for the catalog's first-sync and drill commands, for the window's registry to `attach` (the screen binds no
- * keys itself). Esc (`onboarding.openAplos`) is always enabled, in every state and inside the drill [F8].
+ * keys itself). Esc (`onboarding.openAplos`) is always enabled, in every state and inside the drill [F8]. While the
+ * window's failed handoff is on screen (`notice`), Return is the notice's Try again: `onboarding.continue` resolves
+ * to nothing, so nothing calls preventDefault and the window's own listener retries with the failed destination.
  */
 export function firstSyncCommands(cb: FirstSyncKeyCallbacks): Record<CommandId, CommandHandlers> {
   const inDrill = () => cb.drillOpen();
   return {
     'onboarding.openAplos': { run: () => cb.onOpen() },
     'onboarding.continue': {
-      when: () => !inDrill() && keyIntent(cb.view(), 'Enter') === 'open',
+      when: () => !inDrill() && !cb.notice() && keyIntent(cb.view(), 'Enter') === 'open',
       run: () => cb.onOpen(),
     },
     'drill.next': { when: inDrill, run: () => cb.onDrill('next') },
