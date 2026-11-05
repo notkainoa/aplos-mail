@@ -245,14 +245,13 @@ export function timesTouched(d: EditorDraft, original: Event): boolean {
 
 /**
  * The `Event/set` change a save makes: a create with every field, or an update with only what changed. `null` when
- * nothing changed. `scope` matters only for a repeating event; `series` is the series' own row when it is in hand
- * (model/times.ts says how "All events" writes times).
+ * nothing changed. `scope` matters only for a repeating event; under `series` the fields stay this occurrence's
+ * own — the engine maps them to a wall-clock shift of the master (DECISIONS 2026-11-04, model/times.ts).
  */
 export function draftChange(
   d: EditorDraft,
   original: Event | undefined,
   scope: EventScope,
-  series?: Event,
 ): EventChange | null {
   const times = draftTimes(d);
   if (d.mode === 'new') {
@@ -267,7 +266,7 @@ export function draftChange(
   if (!original || !d.eventId) return null;
   const fields: Partial<EventFields> = {};
   if (d.title.trim() !== original.title) fields.title = d.title.trim();
-  const target = timeChange(original, times, scope, series);
+  const target = timeChange(original, times);
   if (timesTouched(d, original)) {
     Object.assign(fields, target.fields);
     if (times.allDay !== original.allDay) fields.allDay = times.allDay;
