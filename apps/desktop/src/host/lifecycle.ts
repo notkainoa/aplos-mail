@@ -146,6 +146,47 @@ const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.
 const up = (win: WindowPort | undefined): win is WindowPort =>
   alive(win) && (win.isVisible() || win.hasPainted());
 
+/**
+ * The focus half of `aplos://oauth-return`: resolves the one live window `oauthReturnTarget` picked
+ * and raises the app behind it — in that order. `raiseApp` runs only once a window actually took the
+ * focus: a welcome window that died between `onboardingOpen` and `focusOnboarding` resolves 'none',
+ * and the app stays where it was. Never opens a window.
+ */
+export function focusOauthReturnWindow(
+  purpose: 'onboarding' | 'mail',
+  deps: {
+    /** `onboarding.isOpen()`, sampled now. */
+    onboardingOpen(): boolean;
+    /** Raises the open welcome window; false when it is gone. Never opens one. */
+    focusOnboarding(): boolean;
+    /** The live mail window, when one exists. */
+    mail(): WindowPort | undefined;
+    /** Brings the app itself forward (macOS `app.focus`); runs only after a window took focus. */
+    raiseApp(): void;
+    /** Test mode never shows or focuses a window; the resolution is still reported. */
+    testMode: boolean;
+  },
+): 'onboarding' | 'mail' | 'none' {
+  const mail = deps.mail();
+  const target = oauthReturnTarget(purpose, {
+    onboarding: deps.onboardingOpen(),
+    mail: alive(mail),
+  });
+  let focused: 'onboarding' | 'mail' | 'none' = 'none';
+  if (target === 'onboarding' && deps.focusOnboarding()) {
+    focused = 'onboarding';
+  } else if (target === 'mail' && alive(mail)) {
+    if (mail.isMinimized()) mail.restore();
+    if (!deps.testMode) {
+      mail.show();
+      mail.focus();
+    }
+    focused = 'mail';
+  }
+  if (focused !== 'none') deps.raiseApp();
+  return focused;
+}
+
 export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   let win: WindowPort | undefined;
   let ended = false;

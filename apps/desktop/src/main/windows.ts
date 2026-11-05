@@ -9,7 +9,7 @@ import { closing, quitting, finishQuit } from './lifecycle';
 import { isTest, dataDirOverride } from './test-mode';
 import {
   createOnboarding,
-  oauthReturnTarget,
+  focusOauthReturnWindow,
   type Activation,
   type OnboardingMode,
   type SessionFacts,
@@ -130,22 +130,19 @@ const consumedNonces = new Set<string>();
 /**
  * Raises the one existing window a completed sign-in started in, resolved by `oauthReturnTarget`.
  * Never creates a window, never takes an action in test mode besides the record (`bring`/focus stay off).
+ * The app itself is raised only once a live window took the focus (host/lifecycle orders it so): a
+ * window that died between the open check and the focus must not pull Aplos forward over nothing.
  */
 function focusOauthReturn(purpose: OauthReturnPurpose): 'onboarding' | 'mail' | 'none' {
-  const target = oauthReturnTarget(purpose, {
-    onboarding: onboarding.isOpen(),
-    mail: !!main && !main.isDestroyed(),
+  return focusOauthReturnWindow(purpose, {
+    onboardingOpen: () => onboarding.isOpen(),
+    focusOnboarding: () => onboarding.focusOpen(),
+    mail: () => (main && !main.isDestroyed() ? portOf(main) : undefined),
+    raiseApp: () => {
+      if (!isTest && process.platform === 'darwin') app.focus({ steal: true });
+    },
+    testMode: isTest,
   });
-  if (target === 'none') return 'none';
-  if (!isTest && process.platform === 'darwin') app.focus({ steal: true });
-  if (target === 'onboarding') return onboarding.focusOpen() ? 'onboarding' : 'none';
-  const win = main!;
-  if (win.isMinimized()) win.restore();
-  if (!isTest) {
-    win.show();
-    win.focus();
-  }
-  return 'mail';
 }
 
 /**
