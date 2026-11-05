@@ -287,10 +287,12 @@ export async function runAuthorization(
     })
       ? oauthReturnLink(nonce)
       : undefined;
-  const loopback = await openCallback(state, deps, ctx, link);
-  // Whether a page carrying the link was served: only then may the nonce outlive the flow.
+  // Whether a page carrying the link was served: only then may the nonce outlive the flow. The
+  // whole rest of the run sits inside the try so an `openLoopback` failure revokes too.
   let served = false;
+  let loopback: Loopback | undefined;
   try {
+    loopback = await openCallback(state, deps, ctx, link);
     const base = googleAuthUrl;
     const redirectUri = loopback.redirectUri;
     await launch(deps, consentUrl({ base, request, redirectUri, state, pkce }), ctx.signal);
@@ -302,7 +304,7 @@ export async function runAuthorization(
   } catch (error) {
     throw asConnect(error);
   } finally {
-    loopback.close();
+    loopback?.close();
     if (nonce && !served) deps.returns?.revoke(nonce);
   }
 }

@@ -11,8 +11,12 @@ import {
   isOauthReturnLink,
   oauthReturnLink,
   oauthReturnNonce,
+  type OauthReturns,
 } from '../../src/host/providers/oauth/returns';
 import { openLoopback } from '../../src/host/providers/oauth/loopback';
+import { runAuthorization } from '../../src/host/providers/oauth/flow';
+import { countingRandom, recordingGovernor } from './flow-rig';
+import type { Clock } from '@aplos/engine/ports';
 
 const nonce = 'a'.repeat(32);
 const nonce2 = 'b'.repeat(32);
@@ -178,6 +182,46 @@ test('a refused delete still spends the nonce: consume and revoke leave a tombst
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a sign-in whose loopback never opens still revokes the return nonce it registered', async () => {
+  const abort = new AbortController();
+  const seen: { registered?: string; revoked: string[] } = { revoked: [] };
+  const returns: OauthReturns = {
+    register: ({ nonce: n }) => {
+      seen.registered = n;
+      // The loopback dies right after the nonce was registered (before any page could serve it).
+      abort.abort();
+      return true;
+    },
+    revoke: n => {
+      seen.revoked.push(n);
+    },
+  };
+  // With the signal already aborted, `openLoopback` closes its listener, then this clock's throw
+  // makes it reject — the one exit path that skipped the flow's revoke.
+  const clock = {
+    now: () => 0,
+    sleep: () => {
+      throw new Error('listener gone');
+    },
+    timer: () => assert.fail('the sign-in flow arms no timer'),
+  } as Clock;
+  const recorder = recordingGovernor();
+  await assert.rejects(
+    runAuthorization(
+      {
+        http: { request: () => assert.fail('no token call is reached') },
+        openExternal: () => assert.fail('no browser opens'),
+        random: countingRandom().random,
+        returns,
+      },
+      { client: { clientId: 'flow-client' }, scopes: ['scope'], params: {}, returnTo: 'mail' },
+      { governor: recorder.governor, clock, signal: abort.signal },
+    ),
+  );
+  assert.ok(seen.registered);
+  assert.deepEqual(seen.revoked, [seen.registered]);
 });
 
 test('a symlinked entry file is never followed', () => {
