@@ -29,16 +29,27 @@ export function keycapFor(
   return binding ? formatChord(binding.chord) : '';
 }
 
-/**
- * The keycap as `keycapFor`, from the registry the shell mounted when it is reachable. The context's `describe`
- * is closed over the current context stack, so the cap names a key that works here (→ on Home, E in a plain
- * list), follows remaps and follows the swipe direction. Without a provider the default registry answers.
- */
-export function useKeycapFor(id: CommandId | undefined): string {
-  const describe = useContext(CommandKeysContext);
+/** The cap from a `describe` closed over the current stack, or the default registry's where there is none. */
+function capFrom(describe: ((id: CommandId) => string) | null, id: CommandId | undefined): string {
   if (!id) return '';
   if (describe) return parseKeyText(describe(id)).find(c => !c.hold)?.chord ?? '';
   return keycapFor(id);
+}
+
+/**
+ * The keycap as `keycapFor`, from the registry the shell mounted when it is reachable. The context's `describe`
+ * is closed over the current context stack, so the cap names a key that works here (→ on Home, E in a plain
+ * list), follows remaps and follows the swipe direction, and is empty for a command the stack turns off (Done in
+ * a reader opened from Done). Without a provider the default registry answers.
+ */
+export function useKeycapFor(id: CommandId | undefined): string {
+  return capFrom(useContext(CommandKeysContext), id);
+}
+
+/** `useKeycapFor` as a function, for a component that needs caps in a loop or a branch. */
+export function useKeycapOf(): (id: CommandId | undefined) => string {
+  const describe = useContext(CommandKeysContext);
+  return id => capFrom(describe, id);
 }
 
 /** The keycap DESIGN requires literally (Return, ⇧Return, Esc, Tab). */
@@ -46,8 +57,20 @@ export function literalKeycap(key: LiteralKey): string {
   return key;
 }
 
-/** Tooltip text: label plus its key, e.g. "Done · →". */
-export function tooltipText(label: string, id?: CommandId, literal?: LiteralKey): string {
-  const key = literal ? literalKeycap(literal) : keycapFor(id);
+function withKey(label: string, key: string): string {
   return key ? `${label} · ${key}` : label;
+}
+
+/** Tooltip text from the default registry: label plus its key, e.g. "Done · →". Prefer `useTooltipText` in a component. */
+export function tooltipText(label: string, id?: CommandId, literal?: LiteralKey): string {
+  return withKey(label, literal ? literalKeycap(literal) : keycapFor(id));
+}
+
+/**
+ * `tooltipText` from the same source as `useKeycapFor`: the shell's registry in the current stack (remaps, the swipe
+ * swap, no key where it is inert), the default registry where none is mounted.
+ */
+export function useTooltipText(): (label: string, id?: CommandId, literal?: LiteralKey) => string {
+  const capOf = useKeycapOf();
+  return (label, id, literal) => withKey(label, literal ? literalKeycap(literal) : capOf(id));
 }

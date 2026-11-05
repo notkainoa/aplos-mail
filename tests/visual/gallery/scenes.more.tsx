@@ -58,6 +58,7 @@ export function EmptyScene(): ReactElement {
       <EmptyLine
         text="You handled 12 emails"
         size="display"
+        placement="pane"
         detail="Nothing else needs you today"
         action={{ label: 'Go to Later', commandId: 'nav.later', emphasis: 'text', onSelect: noop }}
       />

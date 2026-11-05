@@ -11,7 +11,7 @@ import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { Icon } from './internal/Icon';
 import { formatFull, formatListDate } from './internal/format';
-import { tooltipText, useKeycapFor } from './internal/keys';
+import { useKeycapFor, useTooltipText } from './internal/keys';
 
 /** The Home focus letter, the selected option of the Home listbox. */
 export function FocusLetter({
@@ -35,6 +35,7 @@ export function FocusLetter({
   const later = useKeycapFor(commands.later);
   const done = useKeycapFor(commands.done);
   const more = useKeycapFor(commands.more);
+  const tip = useTooltipText();
   return (
     <div
       id={id}
@@ -80,7 +81,7 @@ export function FocusLetter({
             label={suggestion.verb}
             icon={suggestion.icon}
             keycap={demoted ? undefined : space}
-            tooltip={tooltipText(suggestion.verb, commands.suggest)}
+            tooltip={tip(suggestion.verb, commands.suggest)}
             duplicate
             onPress={() => onSuggestion()}
           />
@@ -91,8 +92,8 @@ export function FocusLetter({
           label="Later"
           icon="clock"
           labelHidden={narrow}
-          tooltip={tooltipText('Later', commands.later)}
-          keycap={later}
+          tooltip={tip('Later', commands.later)}
+          keycap={demoted ? undefined : later}
           duplicate
           onPress={anchor => onLater(anchor)}
         />
@@ -103,8 +104,8 @@ export function FocusLetter({
             label="Done"
             icon="check"
             labelHidden={narrow}
-            tooltip={tooltipText('Done', commands.done)}
-            keycap={done}
+            tooltip={tip('Done', commands.done)}
+            keycap={demoted ? undefined : done}
             duplicate
             onPress={() => onDone()}
           />
@@ -114,7 +115,7 @@ export function FocusLetter({
           size="md"
           label="More"
           icon="more"
-          tooltip={tooltipText('More: bookmark, trash, why it’s here', commands.more)}
+          tooltip={tip('More: bookmark, trash, why it’s here', commands.more)}
           hintKey={more}
           duplicate
           onPress={anchor => onMore(anchor)}

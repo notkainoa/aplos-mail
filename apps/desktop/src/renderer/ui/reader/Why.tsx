@@ -5,11 +5,13 @@
 import { useId } from 'react';
 import type { WhyProps } from '../props';
 import { Action } from '../list/internal/Action';
-import { keycapFor, tooltipText } from '../list/internal/keys';
+import { useKeycapOf, useTooltipText } from '../list/internal/keys';
 
 /** The reason a thread sits in its lane, with the two corrections. */
 export function Why({ reason, quote, lane, commands, onMove }: WhyProps) {
   const titleId = useId();
+  const capOf = useKeycapOf();
+  const tip = useTooltipText();
   return (
     <div className="ui-why" role="group" aria-labelledby={titleId} data-lane={lane}>
       <p id={titleId} className="ui-why__title">
@@ -23,8 +25,8 @@ export function Why({ reason, quote, lane, commands, onMove }: WhyProps) {
           size="sm"
           icon="chevron-up"
           label="Move up a lane"
-          keycap={keycapFor(commands.up)}
-          tooltip={tooltipText('Move up a lane', commands.up)}
+          keycap={capOf(commands.up)}
+          tooltip={tip('Move up a lane', commands.up)}
           disabled={lane === 'do'}
           onPress={() => onMove('up')}
         />
@@ -33,8 +35,8 @@ export function Why({ reason, quote, lane, commands, onMove }: WhyProps) {
           size="sm"
           icon="chevron-down"
           label="Move down a lane"
-          keycap={keycapFor(commands.down)}
-          tooltip={tooltipText('Move down a lane', commands.down)}
+          keycap={capOf(commands.down)}
+          tooltip={tip('Move down a lane', commands.down)}
           disabled={lane === 'low'}
           onPress={() => onMove('down')}
         />

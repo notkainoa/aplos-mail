@@ -6,7 +6,7 @@ import type { SectionHeaderProps } from '../props';
 import { Action, useInListbox } from './internal/Action';
 import { formatCount } from './internal/format';
 import { Icon } from './internal/Icon';
-import { keycapFor, literalKeycap, tooltipText } from './internal/keys';
+import { literalKeycap, useKeycapOf, useTooltipText } from './internal/keys';
 
 /** A section, sub or date label with its count and quiet action. */
 export function SectionHeader({
@@ -21,10 +21,12 @@ export function SectionHeader({
   dropTarget,
 }: SectionHeaderProps) {
   const inListbox = useInListbox();
+  const capOf = useKeycapOf();
+  const tip = useTooltipText();
   const actionKey = action
     ? action.keys
       ? literalKeycap(action.keys)
-      : keycapFor(action.commandId)
+      : capOf(action.commandId)
     : '';
   const content = (
     <>
@@ -48,7 +50,7 @@ export function SectionHeader({
             size="sm"
             label={action.label}
             icon={action.icon}
-            tooltip={tooltipText(action.label, action.commandId, action.keys)}
+            tooltip={tip(action.label, action.commandId, action.keys)}
             hintKey={actionKey}
             // A pointer duplicate when a key or a registry command (⌘K) does the same; otherwise (a screen's own
             // action, such as Unsubscribe) it stays reachable.

@@ -28,7 +28,7 @@ export interface HomeOverlaysProps {
 }
 
 /** Runs a ⋯ menu choice on the row under the cursor. */
-function choose(id: HomeMenuChoice, props: HomeOverlaysProps): void {
+export function chooseFromHomeMenu(id: HomeMenuChoice, props: HomeOverlaysProps): void {
   // The menu belongs to the row under the cursor, so it acts on that row even while others are picked.
   const key = props.cursorKey ?? undefined;
   switch (id) {
@@ -68,7 +68,7 @@ export function HomeOverlays(props: HomeOverlaysProps) {
         suggestion={props.suggestion}
         onSelect={id => {
           onCloseMenu();
-          choose(id, props);
+          chooseFromHomeMenu(id, props);
         }}
         onClose={onCloseMenu}
       />

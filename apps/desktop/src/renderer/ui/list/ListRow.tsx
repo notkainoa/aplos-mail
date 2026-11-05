@@ -11,7 +11,7 @@ import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { formatDoneStamp, formatFull, formatListDate } from './internal/format';
 import { Icon } from './internal/Icon';
-import { tooltipText, useKeycapFor } from './internal/keys';
+import { useKeycapFor, useTooltipText } from './internal/keys';
 
 const COMMIT_WORD: Record<CommitKind, string> = { done: 'Done', later: 'Later', trash: 'Trash' };
 const COMMIT_ICON: Record<CommitKind, IconName> = { done: 'check', later: 'clock', trash: 'trash' };
@@ -150,14 +150,16 @@ function HoverAction({
   action: RowProps['hoverActions'][number];
   onAction: NonNullable<RowProps['onAction']>;
 }) {
+  const tip = useTooltipText();
+  const key = useKeycapFor(action.commandId);
   return (
     <Action
       variant="icon"
       size="sm"
       label={action.label}
       icon={action.icon}
-      tooltip={tooltipText(action.label, action.commandId)}
-      hintKey={useKeycapFor(action.commandId)}
+      tooltip={tip(action.label, action.commandId)}
+      hintKey={key}
       duplicate
       onPress={anchor => onAction(action.commandId, anchor)}
     />

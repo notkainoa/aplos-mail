@@ -112,7 +112,7 @@ export interface CalendarViewModel {
     entryId: string;
   } | null;
   readonly editor: EditorView | null;
-  /** DESIGN 7.14: "Nothing scheduled." with New event · N, on an empty day. */
+  /** DESIGN 7.14: "Nothing scheduled" with New event · N, on an empty day. */
   readonly emptyAction: boolean;
   /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
   readonly empty: EmptyView | null;

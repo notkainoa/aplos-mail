@@ -6,7 +6,7 @@
 import type { EmptyLineProps } from '../props';
 import { Action } from './internal/Action';
 import { Icon } from './internal/Icon';
-import { keycapFor, literalKeycap, tooltipText } from './internal/keys';
+import { literalKeycap, useKeycapOf, useTooltipText } from './internal/keys';
 
 /** An empty state: a compact line in flow, or a line centred in the pane (the calm centred inbox-zero block). */
 export function EmptyLine({
@@ -18,11 +18,9 @@ export function EmptyLine({
   action,
   secondaryAction,
 }: EmptyLineProps) {
-  const key = action
-    ? action.keys
-      ? literalKeycap(action.keys)
-      : keycapFor(action.commandId)
-    : '';
+  const capOf = useKeycapOf();
+  const tip = useTooltipText();
+  const key = action ? (action.keys ? literalKeycap(action.keys) : capOf(action.commandId)) : '';
   return (
     <div className="ui-empty-line" data-size={size} data-placement={placement} role="status">
       <div className="ui-empty-line__copy">
@@ -38,7 +36,7 @@ export function EmptyLine({
             label={action.label}
             icon={action.icon}
             keycap={key}
-            tooltip={tooltipText(action.label, action.commandId, action.keys)}
+            tooltip={tip(action.label, action.commandId, action.keys)}
             onPress={() => action.onSelect()}
           />
           {secondaryAction ? (
@@ -47,11 +45,7 @@ export function EmptyLine({
               size="md"
               label={secondaryAction.label}
               icon={secondaryAction.icon}
-              tooltip={tooltipText(
-                secondaryAction.label,
-                secondaryAction.commandId,
-                secondaryAction.keys,
-              )}
+              tooltip={tip(secondaryAction.label, secondaryAction.commandId, secondaryAction.keys)}
               onPress={() => secondaryAction.onSelect()}
             />
           ) : null}

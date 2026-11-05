@@ -339,7 +339,7 @@ export type ChipProps =
 export interface EmptyLineProps {
   /** The sentence, e.g. "No drafts", "Your first mail is on its way", "You handled 12 emails". No trailing period. */
   text: string;
-  /** 'line' = one line in the column; 'display' = the calm centred inbox-zero block in `display` type. Default 'line'. */
+  /** 'line' = one line in the column; 'display' = the `display` type size of inbox zero; it does not centre (that is `placement='pane'`). Default 'line'. */
   size?: 'line' | 'display';
   /** 'pane' = fills the pane body and centres the line both ways (list and screen empties); 'inline' = a compact line in flow (sheets, settings rows, under a field). Default 'inline'. */
   placement?: 'inline' | 'pane';

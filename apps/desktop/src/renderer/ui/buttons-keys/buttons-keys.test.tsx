@@ -289,13 +289,13 @@ test('Button: keyHint always shows the registry key inline, hint only in "all", 
     <Button variant="text" label="Done" commandId="mail.done" keyHint="hint" onPress={noop} />
   );
   assert.doesNotMatch(inMode('tooltips', hint), /<kbd/);
-  assert.match(inMode('all', hint), /<kbd class="ui-kbd" data-reveal="always">E<\/kbd>/);
+  assert.match(inMode('all', hint), /<kbd class="ui-kbd" data-reveal="always">→<\/kbd>/);
 
   const plain = <Button variant="text" label="Done" commandId="mail.done" onPress={noop} />;
   assert.doesNotMatch(inMode('tooltips', plain), /<kbd/);
   const held = inMode('held', plain);
   assert.match(held, /ui-button-badge/);
-  assert.match(held, /data-reveal="badge">E<\/kbd>/);
+  assert.match(held, /data-reveal="badge">→<\/kbd>/);
   // a button with no key shows no badge while held
   assert.doesNotMatch(
     inMode('held', <Button variant="text" label="Cancel" onPress={noop} />),
@@ -436,7 +436,7 @@ test('TooltipBubble: label, then keycaps from the registry, then the detail line
   assert.match(markup, /role="tooltip"/);
   assert.match(markup, /id="tip"/);
   assert.match(markup, /class="ui-tooltip-label">Done</);
-  assert.match(markup, /<kbd class="ui-kbd" data-reveal="always">E<\/kbd>/);
+  assert.match(markup, /<kbd class="ui-kbd" data-reveal="always">→<\/kbd>/);
   assert.match(markup, /class="ui-tooltip-detail">Moves this conversation out of Home\.</);
   assert.match(markup, /data-placement="below"/);
   assert.match(markup, /data-state="measuring"/);
@@ -591,9 +591,9 @@ test('Key hints: CommandKeysProvider closes over the current context stack, so t
         </CommandKeysProvider>,
       ),
     );
-  assert.equal(render(), 'E|→', 'without a stack every context is listed');
+  assert.equal(render(), '→|E', 'without a stack every context is listed');
   assert.equal(render(['global', 'list']), 'E', 'the All mail list has no arrow triage');
-  assert.equal(render(['global', 'list', 'home']), 'E|→', 'Home does');
+  assert.equal(render(['global', 'list', 'home']), '→|E', 'Home does');
   assert.deepEqual(calls, [undefined, ['global', 'list'], ['global', 'list', 'home']]);
 });
 

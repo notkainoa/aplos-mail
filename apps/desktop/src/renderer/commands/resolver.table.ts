@@ -5,7 +5,9 @@ import type { ContextName, FocusKind, KeyInput, KeyPrefs } from './types';
 export const HOME: ContextName[] = ['global', 'list', 'home'];
 export const ALL_MAIL: ContextName[] = ['global', 'list'];
 export const READER: ContextName[] = ['global', 'list', 'reader'];
-export const ONE_BY_ONE: ContextName[] = ['global', 'list', 'reader', 'oneByOne'];
+// The runtime stack of "Go one by one": the screen has no key context of its own and `useOneByOne` puts `home` on
+// the shell's key layer, so it is Home's stack (the `oneByOne` context is only what a binding can name).
+export const ONE_BY_ONE: ContextName[] = ['global', 'list', 'home'];
 export const DONE: ContextName[] = ['global', 'list', 'done'];
 export const CALENDAR: ContextName[] = ['global', 'calendar'];
 export const INLINE_REPLY: ContextName[] = ['global', 'list', 'reader', 'compose'];

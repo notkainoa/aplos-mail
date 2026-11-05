@@ -16,7 +16,7 @@ import { WhyHost } from './WhyHost';
 export type { OneByOneScreenProps } from './useOneByOne';
 
 /** The ⋯ menu's choices, on the thread showing. */
-function chooseFromMenu(view: OneByOne, id: HomeMenuChoice): void {
+export function chooseFromMenu(view: OneByOne, id: HomeMenuChoice): void {
   switch (id) {
     case 'suggested':
       return view.actions.suggested();

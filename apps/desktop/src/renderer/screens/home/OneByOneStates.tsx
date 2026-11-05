@@ -1,6 +1,6 @@
 /**
  * The one-by-one view's finish: one calm line in the pane, in sans `display` like Home's inbox zero, with a quiet
- * button back. The same view says "Nothing to go through." when Do now held nothing to begin with.
+ * button back. The same view says "Nothing to go through" when Do now held nothing to begin with.
  */
 import { EmptyLine } from '../../ui/list';
 
