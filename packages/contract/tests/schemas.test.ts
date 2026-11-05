@@ -276,3 +276,11 @@ test("Settings.ui holds UI-core's frozen fields with their documented shapes", (
   assert.throws(() => SettingsPatch.parse({ ui: { calendar: { weekStart: 7 } } }));
   assert.equal(Settings.parse(f.settings).ui.holdMs, 250);
 });
+
+test('Window/finishOnboarding takes an optional destination, additive: no input still parses, only settings.ai is named', () => {
+  assert.deepEqual(parseArgs('Window/finishOnboarding', {}), {});
+  assert.deepEqual(parseArgs('Window/finishOnboarding', { to: 'settings.ai' }), {
+    to: 'settings.ai',
+  });
+  assert.throws(() => parseArgs('Window/finishOnboarding', { to: 'inbox' }));
+});
