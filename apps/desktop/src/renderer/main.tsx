@@ -23,6 +23,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
+import { answerPrepareClose } from './shell/closeHandshake';
 import { scenarioParam } from './onboarding/route';
 import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
@@ -73,24 +74,38 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
   }
 }
 
+/** Stops the close answer; a fallback to the legacy renderer, which answers `prepare-close` itself, calls it. */
+let stopCloseAnswer: () => void = () => undefined;
+
 /**
- * What a window on the real engine owes main once its root is up: answer `prepare-close` (main keeps the window
- * disabled until it hears `Window/closeReady`) and, for the mail window, open the screen main asks for (first sync's
- * "Open Settings"). Both listeners are typed, so neither takes the deep-link and command events held for the app's
- * own first plain subscribe. Errors never reach the page: a window that cannot answer is the lesser harm.
+ * Answers main's `prepare-close` (main keeps the window disabled until it hears `Window/closeReady`). Installed the
+ * moment the engine connects, before any chunk loads, so a window that is still loading or shows the fatal screen
+ * can be closed. The listener is typed (`only: ['prepare-close']`), so it never takes the deep-link and command events
+ * held for the app's own first plain subscribe, and it comes from a static import: the chunks it needs load when a
+ * close comes, and a chunk that fails there is an unsaved answer, not a window left disabled.
  */
-async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
-  const [{ answerPrepareClose }, { api }, { flushComposeSessions }] = await Promise.all([
-    import('./shell/closeHandshake'),
-    import('./data'),
-    import('./screens/compose/runtime/useComposeSession'),
-  ]);
-  answerPrepareClose(window.aplos, {
-    save: kind === 'mail' ? () => flushComposeSessions() : async () => undefined,
-    ready: () => api.window.closeReady(),
-    cancel: () => api.window.closeCancel(),
+function serveClose(kind: 'mail' | 'onboarding'): void {
+  const data = () => import('./data');
+  stopCloseAnswer = answerPrepareClose(window.aplos, {
+    save:
+      kind === 'mail'
+        ? async () =>
+            (await import('./screens/compose/runtime/useComposeSession')).flushComposeSessions()
+        : async () => 'saved',
+    ready: async () => (await data()).api.window.closeReady(),
+    cancel: async () => (await data()).api.window.closeCancel(),
+    notify: message => {
+      void import('./shell')
+        .then(({ pushToast }) =>
+          pushToast({ id: 'close-held', kind: 'info', message, undoable: false }),
+        )
+        .catch(() => undefined);
+    },
   });
-  if (kind !== 'mail') return;
+}
+
+/** Main may ask the mail window to open a screen (first sync's "Open Settings"); typed, so it never takes held app events. */
+async function serveNavigate(): Promise<void> {
   const [{ listenMainNavigate }, { openRoute }] = await Promise.all([
     import('./shell/mainNavigate'),
     import('./shell'),
@@ -98,9 +113,9 @@ async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
   listenMainNavigate(window.aplos, openRoute);
 }
 
-async function boot(): Promise<void> {
-  const [{ App }] = await Promise.all([
-    import('./App'),
+/** The mail window's stylesheets: the one sheet, the shell, the screens, then the zero-accounts pane's wrappers. */
+async function loadMailStyles(): Promise<void> {
+  await Promise.all([
     import('./ui/styles.css'),
     import('./shell/shell.css'),
     import('./screens/screens.css'),
@@ -108,17 +123,23 @@ async function boot(): Promise<void> {
   // The mail window hosts lane pieces now (the zero-accounts pane): the lane's own wrappers come after
   // the one stylesheet, the same order the onboarding window and the preview gallery keep.
   await import('./onboarding/onboarding.css');
+}
+
+async function boot(): Promise<void> {
+  // Connect first: a production build that falls back to the legacy renderer must not have loaded the new stylesheets.
   const engine = await connectEngine();
+  // Stand-in data is a development build's alone: a release never fetches the fixture.
+  if (!engine && !import.meta.env.DEV) return bootLegacy(true);
+  if (engine) serveClose('mail');
+  const [{ App }] = await Promise.all([import('./App'), loadMailStyles()]);
   if (engine) {
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
         <App client={engine.client} />
       </StrictMode>,
     );
-    return serveMain('mail').catch(() => undefined);
+    return serveNavigate().catch(() => undefined);
   }
-  // Stand-in data is a development build's alone: a release never fetches the fixture.
-  if (!import.meta.env.DEV) return bootLegacy();
   const [{ connectStandInDataLayer }, { createClient }] = await Promise.all([
     import('./data/standin-layer'),
     import('@aplos/contract/client'),
@@ -131,15 +152,14 @@ async function boot(): Promise<void> {
       <App client={client} />
     </StrictMode>,
   );
-  // Main may ask this window to open a screen (first sync's "Open Settings"); typed, so it never takes held app events.
-  const [{ listenMainNavigate }, { openRoute }] = await Promise.all([
-    import('./shell/mainNavigate'),
-    import('./shell'),
-  ]);
-  listenMainNavigate(window.aplos, openRoute);
+  return serveNavigate();
 }
 
 async function bootOnboarding(): Promise<void> {
+  // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
+  const engine = await connectEngine();
+  if (!engine && !import.meta.env.DEV) return bootLegacy(true);
+  if (engine) serveClose('onboarding');
   // One stylesheet first, then the onboarding window's layout file: the later one wins, so the order is the rule.
   await import('./ui/styles.css');
   await import('./onboarding/onboarding.css');
@@ -147,10 +167,7 @@ async function bootOnboarding(): Promise<void> {
     import('./onboarding/OnboardingApp'),
     import('./onboardingPorts'),
   ]);
-  // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
-  const engine = await connectEngine();
   if (!engine) {
-    if (!import.meta.env.DEV) return bootLegacy();
     const { connectStandInDataLayer } = await import('./data/standin-layer');
     connectStandInDataLayer({ scenario: scenario ?? 'empty' });
   }
@@ -163,11 +180,16 @@ async function bootOnboarding(): Promise<void> {
       />
     </StrictMode>,
   );
-  if (engine) return serveMain('onboarding').catch(() => undefined);
 }
 
-/** The legacy renderer: the entry is the one place allowed to reach it (its path until the legacy folders go). */
-async function bootLegacy(): Promise<void> {
+/**
+ * The legacy renderer: the entry is the one place allowed to reach it (its path until the legacy folders go). Reached
+ * as a fallback (the real engine's bridge failed, or the new root could not start) it says so in the window title, so
+ * the owner can tell which renderer is running.
+ */
+async function bootLegacy(fallback = false): Promise<void> {
+  stopCloseAnswer();
+  if (fallback) document.title = 'Aplos Mail (legacy view)';
   // eslint-disable-next-line aplos/boundaries
   await import('./legacy/main');
 }
@@ -177,7 +199,7 @@ async function bootLegacy(): Promise<void> {
  * not a development build that window goes to the legacy renderer instead, as a bridge that fails to connect does.
  */
 function bootFailed(): Promise<void> {
-  return import.meta.env.DEV ? Promise.resolve() : bootLegacy();
+  return import.meta.env.DEV ? Promise.resolve() : bootLegacy(true);
 }
 
 if (entry === 'legacy') void bootLegacy().catch(() => undefined);
