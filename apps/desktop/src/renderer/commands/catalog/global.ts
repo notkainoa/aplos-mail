@@ -81,7 +81,7 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'app.sidebar',
     label: 'Show or hide the sidebar',
-    keys: ['['],
+    keys: ['[', 'meta+s'],
     contexts: ['global'],
     group: 'Actions',
     keywords: ['menu'],

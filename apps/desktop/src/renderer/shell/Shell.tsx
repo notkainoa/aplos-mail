@@ -27,10 +27,13 @@ import {
 import { askStore } from '../screens/ask/askStore';
 import { onPaletteOpenRequest, PaletteHost } from '../screens/palette';
 import { FatalScreen } from '../ui/status';
+import { Button } from '../ui/buttons-keys';
 import { Pane } from '../ui/surfaces';
 import type { CommandId } from '../commands';
 import type { PaneHeaderProps } from '../ui/props';
 import { AccountMenu } from './AccountMenu';
+import { listenFullscreen, macChrome, toggleCollapsed, useChrome } from './chrome';
+import { focusRegion, type RegionRoot } from './regions';
 import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
 import { SheetHost } from './SheetHost';
@@ -75,14 +78,16 @@ export interface ShellProps {
 /** Which dock tab the pane header's Ask and Today buttons show as pressed; `closed` mounts no dock pane. */
 export type DockTab = 'closed' | 'ask' | 'today';
 
-/** The commands the shell answers itself: the dock and palette toggles. A mounted host's own registration shadows these. */
+/** The commands the shell answers itself: the dock, palette and sidebar toggles. A mounted host's own registration shadows these. */
 export function shellCommands(actions: {
   readonly openTab: (tab: 'ask' | 'today') => void;
   readonly toggleDock: () => void;
   readonly togglePalette: () => void;
+  readonly toggleSidebar: () => void;
 }): CommandHandlerTable {
   return {
     'app.palette': { run: () => actions.togglePalette() },
+    'app.sidebar': { run: () => actions.toggleSidebar() },
     'ask.open': { run: () => actions.openTab('ask') },
     'nav.today': { run: () => actions.openTab('today') },
     'ask.toggleDock': { run: () => actions.toggleDock() },
@@ -111,12 +116,31 @@ export function dockFocusOrphaned(): boolean {
   return active.closest('.ui-pane[data-kind="dock"]') !== null;
 }
 
+/**
+ * Focus follow-up for the collapse toggle: collapsing while the sidebar held focus leaves the page
+ * shell focused once the aside unmounts, so the strip's toggle takes it; expanding back leaves the
+ * page shell focused the same way, and the sidebar's remembered (or roving) row takes it. Focus
+ * anywhere else — a list row, a field — keeps its place.
+ */
+export function sidebarCollapseFocus(collapsed: boolean): void {
+  if (typeof document === 'undefined') return;
+  const active = document.activeElement as HTMLElement | null;
+  if (active && active !== document.body && active !== document.documentElement) return;
+  if (collapsed) {
+    document
+      .querySelector<HTMLElement>('.aplos-shell__strip button')
+      ?.focus({ preventScroll: true });
+    return;
+  }
+  focusRegion(document as unknown as RegionRoot, 'sidebar');
+}
+
 /** Attaches the shell's own command table; sits inside KeysProviders so the shared registry exists. */
 function ShellCommands(props: Parameters<typeof shellCommands>[0]) {
-  const { openTab, toggleDock, togglePalette } = props;
+  const { openTab, toggleDock, togglePalette, toggleSidebar } = props;
   const handlers = useMemo(
-    () => shellCommands({ openTab, toggleDock, togglePalette }),
-    [openTab, toggleDock, togglePalette],
+    () => shellCommands({ openTab, toggleDock, togglePalette, toggleSidebar }),
+    [openTab, toggleDock, togglePalette, toggleSidebar],
   );
   useRegisterCommands(handlers);
   return null;
@@ -235,8 +259,14 @@ export interface ShellLayoutProps {
   readonly screen: Screen;
   readonly counts: Readonly<Partial<Record<PlaceId, number>>>;
   readonly minimised: boolean;
+  /** Window chrome: fullscreen collapses the sidebar's top to one row; collapsed removes the sidebar for a top strip. */
+  readonly chrome: { readonly fullscreen: boolean; readonly collapsed: boolean };
+  /** macOS reserves the traffic-light strip while windowed. */
+  readonly mac: boolean;
   readonly onNavigate: (screen: Screen) => void;
   readonly onCompose: () => void;
+  /** The sidebar toggle was pressed (`app.sidebar`). */
+  readonly onToggleSidebar: () => void;
   readonly accountSwitcher: ReactNode;
   readonly status: ReactNode;
   readonly header: PaneHeaderProps;
@@ -254,10 +284,29 @@ export interface ShellLayoutProps {
 
 /** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
 export function ShellLayout(props: ShellLayoutProps) {
-  const { screen, counts, minimised, onNavigate, children } = props;
+  const { screen, counts, minimised, onNavigate, children, chrome } = props;
+  // A collapsed sidebar leaves a thin strip with just the toggle; minimised ignores the flag (its ☰ owns the menu).
+  const collapsed = chrome.collapsed && !minimised;
   return (
-    <div className="aplos-shell" data-minimised={minimised ? 'true' : undefined}>
-      {minimised ? (
+    <div
+      className="aplos-shell"
+      data-minimised={minimised ? 'true' : undefined}
+      data-collapsed={collapsed ? 'true' : undefined}
+      data-fullscreen={chrome.fullscreen ? 'true' : undefined}
+      data-mac={props.mac ? 'true' : undefined}
+    >
+      {collapsed ? (
+        <div className="aplos-shell__strip" data-region="sidebar">
+          <Button
+            variant="icon"
+            size="sm"
+            icon="sidebar"
+            label="Show or hide the sidebar"
+            commandId="app.sidebar"
+            onPress={props.onToggleSidebar}
+          />
+        </div>
+      ) : minimised ? (
         <MinimisedNav screen={screen} counts={counts} onNavigate={onNavigate} />
       ) : (
         <Sidebar
@@ -265,19 +314,22 @@ export function ShellLayout(props: ShellLayoutProps) {
           counts={counts}
           onNavigate={onNavigate}
           onCompose={props.onCompose}
+          onToggleSidebar={props.onToggleSidebar}
           accountSwitcher={props.accountSwitcher}
           status={props.status}
         />
       )}
-      <Pane kind="main" label={screenLabel(screen)} header={props.header}>
-        <div className="aplos-screen">{children}</div>
-        {props.toasts}
-      </Pane>
-      {props.dock ? (
-        <Pane kind="dock" label={props.dockLabel ?? 'Ask'}>
-          {props.dock}
+      <div className="aplos-shell__row">
+        <Pane kind="main" label={screenLabel(screen)} header={props.header}>
+          <div className="aplos-screen">{children}</div>
+          {props.toasts}
         </Pane>
-      ) : null}
+        {props.dock ? (
+          <Pane kind="dock" label={props.dockLabel ?? 'Ask'}>
+            {props.dock}
+          </Pane>
+        ) : null}
+      </div>
       {props.overlay}
     </div>
   );
@@ -309,6 +361,9 @@ function FramedLayout({ dock, setDock, dockPane, ...layout }: FramedProps) {
 
 function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const screen = useAppRoute();
+  const chrome = useChrome();
+  const mac = useMemo(macChrome, []);
+  useEffect(() => listenFullscreen(window.aplos), []);
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
   const scope = useAccountScope();
@@ -321,6 +376,14 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const minimised = settings?.ui.sidebarMinimised === true;
+  // The sidebar↔strip swap drops the focused element's home: hand focus to the surviving landmark.
+  const sidebarCollapsed = chrome.collapsed && !minimised;
+  const lastCollapsed = useRef(sidebarCollapsed);
+  useEffect(() => {
+    const was = lastCollapsed.current;
+    lastCollapsed.current = sidebarCollapsed;
+    if (was !== sidebarCollapsed) sidebarCollapseFocus(sidebarCollapsed);
+  }, [sidebarCollapsed]);
   const [dock, setDockState] = useState<DockTab>('closed');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const sheetOpen = useSheetContextActive();
@@ -387,6 +450,11 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const closeDock = useCallback(() => setDock('closed'), [setDock]);
   const togglePalette = useCallback(() => setPaletteOpen(open => !open), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
+  // The minimised rail owns the menu: the sidebar toggle is a no-op while the setting is on.
+  const toggleSidebar = useCallback(() => {
+    if (settingsRef.current?.ui.sidebarMinimised === true) return;
+    toggleCollapsed();
+  }, []);
   const dockPane =
     renderDock && dock !== 'closed' ? renderDock(dock, openTab, closeDock) : undefined;
   const account = (
@@ -400,7 +468,12 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   );
   return (
     <KeysProviders screen={screen} sheetOpen={sheetOpen}>
-      <ShellCommands openTab={openTab} toggleDock={toggleDock} togglePalette={togglePalette} />
+      <ShellCommands
+        openTab={openTab}
+        toggleDock={toggleDock}
+        togglePalette={togglePalette}
+        toggleSidebar={toggleSidebar}
+      />
       <FramedLayout
         dock={dock}
         setDock={setDock}
@@ -408,7 +481,10 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
         screen={screen}
         counts={placeCounts(counts.counts, counts.hidden)}
         minimised={minimised}
+        chrome={chrome}
+        mac={mac}
         onNavigate={navigate}
+        onToggleSidebar={toggleSidebar}
         onCompose={() => openCompose({})}
         accountSwitcher={account}
         status={<StatusHost />}

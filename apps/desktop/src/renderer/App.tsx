@@ -362,9 +362,6 @@ function loadAskDockModule(): Promise<typeof import('./screens/ask')> {
   return (askDockModule ??= import('./screens/ask'));
 }
 
-/** Labels other lanes open as placeholders (help); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['Help'];
-
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
 function isListPlace(screen: string): screen is Exclude<ListWhich, { label: string }> {
@@ -377,10 +374,7 @@ export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
   if (typeof screen !== 'string' && screen.label === 'Search') return <SearchScreen />;
   if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
-  if (typeof screen !== 'string')
-    return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
-      <ListSlot which={{ label: screen.label }} />
-    );
+  if (typeof screen !== 'string') return <ListSlot which={{ label: screen.label }} />;
   if (screen === 'home') return <HomeSlot />;
   if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;
