@@ -11,6 +11,7 @@ import { callForSheetMode } from '../onboarding/reconnect/reconnect.model';
 import { ConsentCard } from '../ui/onboarding';
 import { Dialog } from '../ui/surfaces';
 import { RECONNECT_FAILED_COPY, SAVE_FAILED_COPY } from './failure-copy';
+import { AddAccountHost } from './AddAccountHost';
 import { closeSheet, pushToast, useRegisterCommands, useSheet, type SheetArgs } from './index';
 
 /** Plain words for a failed connect, from the frame's reason code. */
@@ -194,5 +195,6 @@ function OpenSheetView({ sheet }: { readonly sheet: NonNullable<ReturnType<typeo
   if (sheet.name === 'reconnect') {
     return <ReconnectHost key={reconnectKey(sheet.args)} args={sheet.args} />;
   }
+  if (sheet.name === 'addAccount') return <AddAccountHost />;
   return <ConsentHost args={sheet.args} />;
 }
