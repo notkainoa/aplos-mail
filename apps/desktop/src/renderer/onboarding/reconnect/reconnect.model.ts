@@ -18,6 +18,7 @@
  * - A failure is a sentence from `copy.ts`; the wrong Google account names the address to choose.
  */
 import { isAdminBlock, reasonSentence } from '../copy';
+import { reasonOf } from '../reason';
 
 /** Google asks again after seven days; the offer starts a day before (DESIGN 7.1 table). */
 export const DAY_MS = 86_400_000;
@@ -352,14 +353,6 @@ export interface ReconnectPorts {
   grantPermissions(input: { accountId: string }): Promise<{ connectId: string }>;
   /** `Account/cancelConnect {connectId}`: idempotent. */
   cancelConnect(input: { connectId: string }): Promise<unknown>;
-}
-
-function reasonOf(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'reasonCode' in error) {
-    const code = (error as { reasonCode?: unknown }).reasonCode;
-    return typeof code === 'string' ? code : undefined;
-  }
-  return undefined;
 }
 
 /** Runs a `start` or `cancelConnect` effect against the ports and feeds the answer back. `close` is the caller's. */
