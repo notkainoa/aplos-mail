@@ -160,3 +160,39 @@ test('Queue/list shows a stored op with namespaced id', async () => {
   await w.call('Queue/discard', { id: 'op:op-1' });
   assert.equal((await w.call('Queue/list', {})).list.length, 0);
 });
+
+test('Clients: a stored client lists; revoke stamps revokedAt and repeats fine', async () => {
+  const w = await world();
+  // No write kind creates a client yet (the listener transport will): seed the row on a second handle.
+  const db = w.file.open();
+  db.prepare(
+    "INSERT INTO clients(id, name, kind, scopes, token_hash, created_at, last_seen_at, revoked_at) VALUES('cl-1', 'iPad', 'listener', '[\"read\"]', 'x', 1000, NULL, NULL)",
+  ).run();
+  db.close();
+  const { list } = await w.call('Clients/list', {});
+  assert.equal(list.length, 1);
+  assert.equal(list[0]!.id, 'cl-1');
+  await w.call('Clients/revoke', { id: 'cl-1' });
+  const after = await w.call('Clients/list', {});
+  assert.ok(after.list[0]!.revokedAt !== undefined);
+  await w.call('Clients/revoke', { id: 'cl-1' }); // a second revoke does not replay a commit
+});
+
+test('Consent: changing a provider endpoint forces reconsent (fingerprint covers origin+path)', async () => {
+  const w = await world();
+  const grant = await w.call('Consent/grant', {
+    scope: 'background',
+    version: 1,
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+  });
+  assert.equal(grant.granted, true);
+  // Move the provider's address: the fingerprint drifts -> needsReconsent + a newer currentVersion.
+  await w.call('Settings/set', {
+    opId: 'addr1',
+    patch: { ai: { providers: { groq: { address: 'https://other.example/v1' } } } },
+  });
+  const drifted = await w.call('Consent/get', {});
+  assert.equal(drifted.needsReconsent, true);
+  assert.ok(drifted.currentVersion > (drifted.version ?? 0));
+});

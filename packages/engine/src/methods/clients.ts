@@ -1,7 +1,7 @@
 import type { Client, Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
-import { notImplemented, type AreaHandlers, type MethodContext } from './types';
+import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `clients` area, owned by lane `eng-host`. `Clients/list` and `Clients/audit` read `clients` and `audit_log`;
@@ -83,7 +83,7 @@ function revoke(args: Input<'Clients/revoke'>, ctx: MethodContext): Output<'Clie
   if (!known)
     throw new ContractError({ type: 'notFound', message: 'This tool is no longer allowed.' });
   ctx.services.store.commit({
-    opId: `client-revoke-${args.id}`,
+    opId: `client-revoke-${args.id}-${nonce(ctx)}`,
     origin: 'local',
     writes: [
       { kind: 'client', id: args.id, revokedAt: ctx.services.clock.now() },

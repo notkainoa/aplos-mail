@@ -20,7 +20,7 @@ const keyOf = (ctx: MethodContext) =>
       'SELECT value FROM meta WHERE key = ?',
       CONSENT_KEY_META,
     )?.value;
-    return { current: consentKey(withDefaults(doc).ai), stored };
+    return { ai: withDefaults(doc).ai, current: consentKey(withDefaults(doc).ai), stored };
   });
 
 function readConsent(ctx: MethodContext): Consent {
@@ -61,7 +61,18 @@ function grant(args: Input<'Consent/grant'>, ctx: MethodContext): Output<'Consen
       type: 'stateMismatch',
       message: 'The consent text changed. Read it again before agreeing.',
     });
-  const { current } = keyOf(ctx);
+  const { ai, current } = keyOf(ctx);
+  // The consent text named the live background picks; a grant binds to what the card showed, not to a
+  // provider/model typed in afterwards — mismatch means the consent text changed.
+  const bound = ['summaries', 'plans', 'drafts'] as const;
+  const matches = bound.some(
+    f => ai.features[f].provider === args.provider && ai.features[f].model === args.model,
+  );
+  if (!matches)
+    throw new ContractError({
+      type: 'stateMismatch',
+      message: 'The consent text changed. Read it again before agreeing.',
+    });
   ctx.services.store.commit({
     opId: `consent-grant-${args.scope}-${nonce(ctx)}`,
     origin: 'local',

@@ -12,19 +12,23 @@ import { StoreError } from '../store/port';
 /** The features background jobs run on: summaries, plans, and drafts for follow-ups (R2B-4). */
 const backgroundFeatures = ['summaries', 'plans', 'drafts'] as const;
 
-/** What a grant covers: each background feature's provider, model and that provider's address host. */
+/** What a grant covers: each background feature's provider, model and that provider's address ORIGIN+path
+ * (a scheme flip on one host, or a different path on a shared gateway, re-asks). */
 export function consentKey(ai: Settings['ai']): string {
   return backgroundFeatures
     .map(feature => {
       const { provider, model } = ai.features[feature];
       const address = ai.providers[provider]?.address;
-      let host = '';
+      let where = '';
       try {
-        host = address ? new URL(address).host : '';
+        if (address) {
+          const u = new URL(address);
+          where = `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
+        }
       } catch {
         /* an empty or malformed address */
       }
-      return `${provider}\u0000${model}\u0000${host}`;
+      return `${provider}\u0000${model}\u0000${where}`;
     })
     .join('\u0001');
 }
