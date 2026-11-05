@@ -29,8 +29,9 @@ export interface AccountRowData {
 
 /**
  * The connect flow's content with no frame around it, so a host that draws its own frame — the shell's
- * Add account `Dialog` (`shell/AddAccountHost.tsx`) — shows the same body the Accounts step does without
- * `OnboardingStep`'s title, lede, actions row, footer and step dashes.
+ * Add account `Dialog` (`shell/AddAccountHost.tsx`) can show the same body the Accounts step does without
+ * `OnboardingStep`'s title, lede, actions row, footer and step dashes. (The dialog still draws its own copy of
+ * this body today; adopting `AccountsBody` there is the shell's follow-up.)
  *
  * The host owns the state (`reduceAccounts` in `../connect.ts`) and provides: the connected `accounts`, the
  * connect state (`mode`, `address`, `notice`, `failure`), the field callbacks `onEdit`/`onSubmit` and the

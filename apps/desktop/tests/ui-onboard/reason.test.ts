@@ -53,6 +53,26 @@ describe('reasonOf reads the contract error body', () => {
   });
 });
 
+describe("reasonOf never throws from inside a flow's catch", () => {
+  test('a throwing getter or a throwing proxy reads as no reason', () => {
+    const getter = {
+      get body(): never {
+        throw new Error('boom');
+      },
+    };
+    const proxy = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('trap');
+        },
+      },
+    );
+    assert.equal(reasonOf(getter), undefined);
+    assert.equal(reasonOf(proxy), undefined);
+  });
+});
+
 describe('a refused call surfaces its own sentence, not the generic one', () => {
   test('Accounts step: Account/connect refused keeps the code through runAccountsEffect + reduceAccounts', async () => {
     let state: AccountsState = initialAccounts();
