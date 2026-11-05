@@ -31,8 +31,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, useAccounts, useSettings } from '../data';
-import type { Account, Input, Output } from '../data';
+import { useAccounts, useSettings } from '../data';
+import type { Account } from '../data';
 import { activeFocus, focusTarget, showTop } from './focusTarget';
 import { createAppRegistry, focusKindOf } from '../commands';
 import type { CommandContext } from '../commands';
@@ -96,28 +96,8 @@ export interface FirstSyncSlotProps {
   readonly keysSuspended?: boolean;
 }
 
-/** The window-level calls. Defaults come from `renderer/data`; the preview and tests pass their own. */
-export interface WindowPorts {
-  setupBegin(input: Input<'Setup/begin'>): Promise<Output<'Setup/begin'>>;
-  setupEnd(input: Input<'Setup/end'>): Promise<unknown>;
-  demoLoad(): Promise<unknown>;
-  /**
-   * `Window/finishOnboarding`: main shows the mail window on `ready-to-show` and closes this one (F4). `to` asks the
-   * mail window to open Settings → AI (first sync's "Open Settings").
-   */
-  finish(input?: { readonly to?: 'settings.ai' }): Promise<unknown>;
-}
-
-// `Window/finishOnboarding` (and `Window/openOnboarding` for "Show welcome") are desktop methods main
-// serves; `renderer/data`'s api exposes them (granted). REQUEST contract stands: `Window/finishOnboarding`
-// takes an optional `{ to: 'settings.ai' }` so the mail window opens on Settings → AI — until the contract
-// carries it, `to` is dropped here and the mail window opens on its default screen.
-export const defaultWindowPorts: WindowPorts = {
-  setupBegin: async input => api.setup.begin(input),
-  setupEnd: async input => api.setup.end(input),
-  demoLoad: async () => api.demo.load(),
-  finish: async () => api.window.finishOnboarding({}),
-};
+export { defaultWindowPorts, type WindowPorts } from './windowPorts';
+import { defaultWindowPorts } from './windowPorts';
 
 export interface OnboardingAppProps {
   /** 'first' = first run; 'review' = "Show welcome" from Settings beside the mail window. */
