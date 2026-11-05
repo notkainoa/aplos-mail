@@ -1,8 +1,13 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-05 from `revamp` `5237de1b`):
+The app to check (built 2026-11-05 from `revamp` `93c21b85`, includes the go-live flip, the
+Session/Settings engine stubs and the close-handshake fix):
 
 `~/Applications-test/Aplos Mail (revamp).app`
+
+Verified before this list: the real-engine launch opens the new renderer's "Add an account to
+bring in your mail" screen (screenshot: `~/Applications-test/first-window-93c21b85.png`), the
+engine is up, no `aplos:invoke` refusals.
 
 It is ad-hoc signed for this Mac — double-click to open; if macOS refuses, right-click → Open.
 It was never downloaded, so no quarantine warning is expected.
@@ -93,7 +98,7 @@ doesn't and where it stopped.
 
 ---
 
-## Known gaps today (agent run, 2026-11-05, build at 5237de1b)
+## Known gaps today (agent run, 2026-11-05, build at 93c21b85)
 
 - Packaging: `npm run package` produced the app above (395 MB, ad-hoc signed, verify-hardening
   10/10 PASS). Caveat seen twice: `npm ci --ignore-scripts` leaves `node_modules/electron/dist`
