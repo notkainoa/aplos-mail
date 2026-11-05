@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chooseEntry, onboardingMode, transportOf, windowKind, wantsLegacy } from './entry';
+import {
+  chooseEntry,
+  hasBridgeShape,
+  onboardingMode,
+  transportOf,
+  windowKind,
+  wantsLegacy,
+} from './entry';
 
 test('windowKind reads ?window=, then the test hook, and defaults to the mail window', () => {
   assert.equal(windowKind(''), 'mail');
@@ -23,7 +30,7 @@ test('a development build boots OnboardingApp for the onboarding window and App 
   assert.equal(chooseEntry({ search: '', dev: true, hook: 'onboarding' }), 'onboarding');
 });
 
-test('the legacy switch and every production build keep the legacy renderer, onboarding window included', () => {
+test('the legacy switch and every production build without the bridge keep the legacy renderer, onboarding window included', () => {
   assert.equal(chooseEntry({ search: '?legacy=1', dev: true }), 'legacy');
   assert.equal(chooseEntry({ search: '?window=onboarding&legacy=1', dev: true }), 'legacy');
   assert.equal(chooseEntry({ search: '', dev: true, legacyEnv: true }), 'legacy');
@@ -32,18 +39,25 @@ test('the legacy switch and every production build keep the legacy renderer, onb
   assert.equal(wantsLegacy({ search: '?legacy=0', dev: true }), false);
 });
 
-test('transportOf picks the real engine only on a non-legacy development build with a bridge', () => {
+test('transportOf picks the real engine whenever the window has the bridge and the legacy switch is off', () => {
   assert.equal(transportOf({ search: '', dev: true, bridge: true }), 'engine');
   assert.equal(transportOf({ search: '', dev: true }), 'standin');
   assert.equal(transportOf({ search: '', dev: true, bridge: false }), 'standin');
-  assert.equal(transportOf({ search: '', dev: false, bridge: true }), 'standin');
+  assert.equal(transportOf({ search: '', dev: false, bridge: true }), 'engine');
+  assert.equal(transportOf({ search: '', dev: false }), 'standin');
   assert.equal(transportOf({ search: '?legacy=1', dev: true, bridge: true }), 'standin');
   assert.equal(transportOf({ search: '', dev: true, legacyEnv: true, bridge: true }), 'standin');
   assert.equal(transportOf({ search: '?window=onboarding', dev: true, bridge: true }), 'engine');
 });
 
-test('a bridge never changes the entry: the legacy switch and every production build still boot legacy', () => {
-  assert.equal(chooseEntry({ search: '', dev: false, bridge: true }), 'legacy');
+test('the bridge decides a production build: with it the new roots boot, without it legacy; the legacy switch wins either way', () => {
+  assert.equal(chooseEntry({ search: '', dev: false, bridge: true }), 'app');
+  assert.equal(
+    chooseEntry({ search: '?window=onboarding', dev: false, bridge: true }),
+    'onboarding',
+  );
+  assert.equal(chooseEntry({ search: '?legacy=1', dev: false, bridge: true }), 'legacy');
+  assert.equal(chooseEntry({ search: '', dev: false, bridge: false }), 'legacy');
   assert.equal(chooseEntry({ search: '?legacy=1', dev: true, bridge: true }), 'legacy');
   assert.equal(chooseEntry({ search: '', dev: true, legacyEnv: true, bridge: true }), 'legacy');
   assert.equal(chooseEntry({ search: '', dev: true, bridge: true }), 'app');
@@ -51,4 +65,19 @@ test('a bridge never changes the entry: the legacy switch and every production b
     chooseEntry({ search: '?window=onboarding', dev: true, bridge: true }),
     'onboarding',
   );
+});
+
+test('hasBridgeShape needs an object with call and subscribe functions and never throws', () => {
+  const call = () => undefined;
+  assert.equal(hasBridgeShape({ aplosEngine: { call, subscribe: call } }), true);
+  assert.equal(hasBridgeShape({ aplosEngine: { call } }), false);
+  assert.equal(hasBridgeShape({ aplosEngine: 'yes' }), false);
+  assert.equal(hasBridgeShape({}), false);
+  assert.equal(hasBridgeShape(null), false);
+  const hostile = {
+    get aplosEngine(): never {
+      throw new Error('getter');
+    },
+  };
+  assert.equal(hasBridgeShape(hostile), false);
 });

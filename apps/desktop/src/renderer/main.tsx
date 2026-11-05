@@ -6,22 +6,23 @@
  * stylesheet and the shell's layout. With `?window=onboarding` — the query main gives the welcome window, and
  * the browser-preview route "Try demo mail" and "Show welcome" navigate to — it mounts `onboarding/OnboardingApp`
  * on the same stand-in switch and the same data layer, never a separate engine.
- * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1`
- * loads `./legacy/main` instead, and so does every production build, because no release ships stand-in data (plan 30
- * 4.1 release rule). When preload exposes `window.aplosEngine` (main's real-engine path) the new roots connect over
- * `bridge.ts` instead of the stand-in, still in a development build only; the browser preview's tokenised HTTP and
- * SSE transport is still to come.
+ * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1` loads `./legacy/main` instead, and so does a
+ * production build without the real engine's bridge, because no release ships stand-in data (plan 30 4.1 release
+ * rule). When preload exposes `window.aplosEngine` (main's real-engine path, `APLOS_ENGINE=real`, never in a release
+ * build) the new roots connect over `bridge.ts` in any build; only a development build without it uses the in-process
+ * stand-in. A production build whose bridge fails to connect falls back to the legacy renderer, never to stand-in
+ * data. The browser preview's tokenised HTTP and SSE transport is still to come.
  *
- * `entry.ts` holds the rule. In a development build the onboarding window (`?window=onboarding&mode=first|review`, as
- * main loads it) boots `OnboardingApp` on a fresh install (the `empty` scenario) with `onboarding.css` after the one
- * stylesheet; every other window boots `App`. Production builds and the legacy switch still load the legacy renderer.
+ * `entry.ts` holds the rule: the onboarding window (`?window=onboarding&mode=first|review`, as main loads it) boots
+ * `OnboardingApp` (on a fresh install, the `empty` scenario, when it runs on the stand-in) with `onboarding.css` after
+ * the one stylesheet; every other window boots `App`.
  *
  * Everything the new app needs is imported on its own path, so the legacy path loads none of it (no new stylesheet,
  * no fixture, no zod) and the mail window loads none of the onboarding window's.
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { chooseEntry, onboardingMode, transportOf, type EntryInput } from './entry';
+import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
 import { scenarioParam } from './onboarding/route';
 import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
@@ -32,6 +33,7 @@ const input: EntryInput = {
   search: window.location.search,
   dev: import.meta.env.DEV,
   legacyEnv: import.meta.env.VITE_APLOS_LEGACY === '1',
+  bridge: hasBridgeShape(),
   ...(hook ? { hook } : {}),
 };
 const entry = chooseEntry(input);
@@ -92,6 +94,7 @@ async function boot(): Promise<void> {
     );
     return;
   }
+  if (!import.meta.env.DEV) return bootLegacy();
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario });
   const client = createClient(layer.engine.connect());
@@ -119,7 +122,10 @@ async function bootOnboarding(): Promise<void> {
   ]);
   // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
   const engine = await connectEngine();
-  if (!engine) connectStandInDataLayer({ scenario: scenario ?? 'empty' });
+  if (!engine) {
+    if (!import.meta.env.DEV) return bootLegacy();
+    connectStandInDataLayer({ scenario: scenario ?? 'empty' });
+  }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <OnboardingApp
@@ -131,8 +137,12 @@ async function bootOnboarding(): Promise<void> {
   );
 }
 
-// The entry is the one place allowed to reach the legacy renderer (its production path until WP5.6).
-// eslint-disable-next-line aplos/boundaries
-if (entry === 'legacy') void import('./legacy/main').catch(() => undefined);
+/** The legacy renderer: the entry is the one place allowed to reach it (its path until the legacy folders go). */
+async function bootLegacy(): Promise<void> {
+  // eslint-disable-next-line aplos/boundaries
+  await import('./legacy/main');
+}
+
+if (entry === 'legacy') void bootLegacy().catch(() => undefined);
 else if (entry === 'onboarding') void bootOnboarding().catch(() => undefined);
 else void boot().catch(() => undefined);
