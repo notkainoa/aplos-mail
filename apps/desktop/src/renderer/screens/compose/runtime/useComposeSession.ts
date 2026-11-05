@@ -14,7 +14,13 @@ import type { ComposeNotice } from '../model/composeState';
 import { scheduledLabel } from '../model/schedule';
 import { isLiveSubmission, SEND_COPY } from '../model/sendState';
 import { dataComposeApi } from './composeApi';
-import { keepUntilSaved, recoveryKey, releaseKeptFor } from './recovery';
+import {
+  holdsUnsavedText,
+  keepUntilSaved,
+  keptSessions,
+  recoveryKey,
+  releaseKeptFor,
+} from './recovery';
 import { releaseSend } from './sendHandoff';
 import { dropUnconfirmedSend, pushRefusedSend, pushUnconfirmedSend } from './sendNotices';
 import { createComposeSession, type ComposeSession, type SendAnswer } from './session';
@@ -68,13 +74,17 @@ function newSession(initial: ComposeState): ComposeSession {
 /** The sessions of the composers mounted now, so the window can save them all before it closes. */
 const liveSessions = new Set<ComposeSession>();
 
+/** Whether a closing window may go: every composer's text is in the engine, or some of it is still only here. */
+export type SaveResult = 'saved' | 'unsaved';
+
 /**
- * Saves every mounted composer's unsaved text and waits for the engine to answer, for at most `limitMs`. Used when
- * main asks the window to close: a slow engine must not hold the window open, and text the engine never took stays
- * kept (`closeSession`).
+ * Saves every mounted and every kept composer's unsaved text and waits for the engine to answer, for at most `limitMs`,
+ * then says whether any of it is still only in memory. Used when main asks the window to close: a slow engine must not
+ * hold the window open for long, but the text is in memory only (`recovery.ts`) and dies with the window, so the caller
+ * must not close on `'unsaved'`. `settled()` resolves even when a save failed, so the answer comes from the state.
  */
-export async function flushComposeSessions(limitMs = 2000): Promise<void> {
-  const all = [...liveSessions];
+export async function flushComposeSessions(limitMs = 2000): Promise<SaveResult> {
+  const all = [...liveSessions, ...keptSessions()];
   for (const session of all) session.dispatch({ type: 'flush' });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<void>(resolve => {
@@ -85,6 +95,9 @@ export async function flushComposeSessions(limitMs = 2000): Promise<void> {
   } finally {
     clearTimeout(timer);
   }
+  return [...liveSessions, ...keptSessions()].some(session => holdsUnsavedText(session.getState()))
+    ? 'unsaved'
+    : 'saved';
 }
 
 /** One session for the composer's lifetime, created when `initial` first becomes known. */
