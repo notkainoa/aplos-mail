@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   MessageChannelMain,
   nativeTheme,
@@ -10,6 +11,7 @@ import {
   type IpcMainInvokeEvent,
   type MessagePortMain,
 } from 'electron';
+import os from 'node:os';
 import { join } from 'node:path';
 import { HostEvent, NotificationItem, parseArgs, type MethodName } from '@aplos/contract';
 import type { PendingWork } from '../host/lifecycle';
@@ -31,7 +33,15 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
-import { invokeNative, nativeMethods, notify } from './native-methods';
+import {
+  fileNameOf,
+  invokeNative,
+  nativeMethods,
+  notify,
+  openBytes,
+  saveBytes,
+} from './native-methods';
+import { desktopFailure } from '../shared/desktop-error';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
@@ -180,20 +190,91 @@ const legacyNames: Record<string, string> = {
   'Window/thread': 'window.thread',
   'Window/closeReady': 'window.closeReady',
   'Window/closeCancel': 'window.closeCancel',
+  'Window/claim': 'window.claim',
+  'Window/release': 'window.release',
   'Window/openOnboarding': 'Window/openOnboarding',
   'Window/finishOnboarding': 'Window/finishOnboarding',
+  'Shell/open': 'shell.open',
+  'Notification/test': 'notification.test',
+  'Update/status': 'update.status',
+  'Update/check': 'update.check',
+  'Update/later': 'update.later',
+  'Update/restart': 'update.restart',
   'System/openSettings': 'System/openSettings',
+  'System/login': 'System/login',
+  'System/notifications': 'System/notifications',
+  'System/defaultMail': 'system.defaultMail',
+  'System/microphone': 'system.microphone',
 };
 
+/** What a plain-`true` legacy answer becomes under the v1 contract, per method (most answer `{ ok: true }`). */
+function v1Result(method: string, result: unknown): unknown {
+  if (method === 'Window/claim') return { claimed: result === true };
+  return result === true ? ok : result;
+}
+
+/** Main's host-only diagnostics: content-free facts about this install, for when the engine cannot give its own bundle. */
+function hostBundle(): Record<string, unknown> {
+  return {
+    source: 'host',
+    at: new Date().toISOString(),
+    app: { name: app.getName(), version: app.getVersion() },
+    runtime: {
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+    },
+    system: { platform: process.platform, arch: process.arch, release: os.release() },
+    engine: { running: Boolean(link() && !link()!.exited) },
+  };
+}
+
+/** `Diagnostics/copy`: the content-free bundle to the clipboard. Today the host-only one (the engine's bundle is not on main's control connection). */
+function copyDiagnostics() {
+  // Test mode never writes the shared clipboard.
+  if (!isTest) clipboard.writeText(JSON.stringify(hostBundle(), null, 2));
+  return { source: 'host' as const };
+}
+
+/** The bytes of a blob, read through main's own control connection (`Blob/get`), never through a renderer. */
+async function blobBytes(blobId: string): Promise<Buffer> {
+  const current = link();
+  if (!current) throw new Error('The mailbox is restarting. Try again in a moment.');
+  const blob = (await current.call('Blob/get', { blobId }, 30_000)) as { bytes?: unknown };
+  if (!(blob.bytes instanceof Uint8Array)) throw new Error('That file is no longer available.');
+  return Buffer.from(blob.bytes);
+}
+
 async function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
+  // A caller that is not the app's own page gets a plain rejection and no reason (it is not told why).
   assertCaller(event);
+  try {
+    return await desktopMethodFor(event, method, input);
+  } catch (error) {
+    // Answered, not thrown: `ipcRenderer.invoke` would flatten a rejection to one wrapper sentence.
+    return desktopFailure(error);
+  }
+}
+
+async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
   if (typeof method !== 'string') throw new Error('Unsupported application method.');
   const args = parseArgs(method as MethodName, input ?? {}) as Record<string, unknown>;
   if (method === 'Window/compose') return composeWindow(event, String(args.draftId));
+  if (method === 'Engine/restart') {
+    if (!supervisor) throw new Error('The mailbox engine is not running on this build.');
+    await supervisor.restart();
+    return ok;
+  }
+  if (method === 'Diagnostics/copy') return copyDiagnostics();
+  if (method === 'File/save' || method === 'File/open') {
+    const name = fileNameOf(args.name);
+    const data = await blobBytes(String(args.blobId));
+    const win = BrowserWindow.fromWebContents(event.sender)!;
+    return method === 'File/save' ? saveBytes(win, name, data) : (await openBytes(name, data), ok);
+  }
   const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
   if (!name) throw new Error('This is not available on the new engine yet.');
-  const result = await invokeNative(event, name, args);
-  return result === true ? ok : result;
+  return v1Result(method, await invokeNative(event, name, args));
 }
 
 /**

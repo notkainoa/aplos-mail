@@ -524,3 +524,68 @@ test('source shape: finishQuit hands the REAL close to closeThenRelease, and sta
   assert.ok(guard >= 0, 'the start-up catch returns while a quit is in progress');
   assert.ok(guard < startup.indexOf('showErrorBox'), '... before it shows the dialog');
 });
+
+function restartWorld() {
+  const timers = manualTimers();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  const downs: boolean[] = [];
+  const ups: boolean[] = [];
+  let stops = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => ++stops >= 3,
+    onUp: (_link, restarted) => void ups.push(restarted),
+    onDown: parked => void downs.push(parked),
+    timers,
+    restartDelayMs: 10,
+    quitMs: 100,
+  });
+  return { supervisor, links, downs, ups, timers, stops: () => stops };
+}
+
+test('Engine/restart: a running engine is asked to quit and the next starts at once, without counting toward the park', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  for (let i = 0; i < 5; i++) {
+    await w.supervisor.restart();
+    await until(() => w.links.length === i + 2, 'the next engine');
+  }
+  assert.equal(w.stops(), 0, 'an asked restart never reaches noteExit');
+  assert.deepEqual(w.downs, [false, false, false, false, false]);
+  assert.equal(w.ups.at(-1), true);
+  assert.equal(w.links.length, 6);
+});
+
+test('Engine/restart: an engine that ignores the quit is killed after quitMs, then replaced', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  // This engine ignores quit: only the kill ends it.
+  const stubborn = w.links[0].link;
+  stubborn.quit = () => undefined;
+  await w.supervisor.restart();
+  assert.equal(w.links.length, 1, 'nothing replaces it while it runs');
+  w.timers.advance(100);
+  assert.equal(w.links[0].kills(), 1);
+  await until(() => w.links.length === 2, 'the next engine');
+});
+
+test('Engine/restart: a parked app starts an engine now, and a closed supervisor refuses', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  for (let i = 0; i < 3; i++) {
+    w.links[i].exit();
+    w.timers.advance(10);
+    await until(() => w.links.length === Math.min(i + 2, 3), 'the next engine');
+  }
+  assert.equal(w.downs.at(-1), true, 'three stops park it');
+  const before = w.links.length;
+  await w.supervisor.restart();
+  await until(() => w.links.length === before + 1, 'the next engine');
+  assert.equal(w.ups.at(-1), true);
+  await w.supervisor.close();
+  await assert.rejects(w.supervisor.restart());
+});

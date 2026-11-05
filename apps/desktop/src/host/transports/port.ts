@@ -10,6 +10,7 @@
  * comes in as a small interface, so all of it runs under node:test with fakes.
  */
 import type { DesktopEvent, ErrorBody, Frame } from '@aplos/contract';
+import { failureOf } from '../../shared/desktop-error';
 import type { EngineSession } from '@aplos/contract/client';
 import {
   desktopMethods,
@@ -598,12 +599,20 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   let closing = false;
   let everUp = false;
   let restart: unknown;
+  /** The engine the owner asked to restart: its exit starts the next one at once and does not count toward the park. */
+  let asked: EngineLink | undefined;
 
   function down(link: EngineLink) {
     if (current !== link) return;
     current = undefined;
     // A first start that fails is the caller's error (startup shows it); only a running engine restarts.
     if (closing || !everUp) return;
+    if (asked === link) {
+      asked = undefined;
+      options.onDown(false);
+      up(true).catch(() => undefined);
+      return;
+    }
     const parked = options.noteExit();
     options.onDown(parked);
     if (parked) return;
@@ -636,6 +645,32 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   return {
     start: () => up(false),
     current: () => current,
+    /**
+     * "Try again": a running engine is asked to quit (killed after `quitMs`) and the next one starts as soon as it is
+     * gone; a parked or waiting-to-restart app starts one now. Neither counts toward the park. Resolves once the
+     * restart is under way, not when the new engine is ready (`onUp` says that).
+     */
+    restart(): Promise<void> {
+      if (closing) return Promise.reject(unavailable());
+      if (restart !== undefined) {
+        options.timers.clear(restart);
+        restart = undefined;
+      }
+      const link = current;
+      if (link && !link.exited) {
+        if (asked) return Promise.resolve();
+        asked = link;
+        const killer = options.timers.set(
+          () => stop(link, options.onKillFailed),
+          options.quitMs ?? ENGINE_QUIT_MS,
+        );
+        link.onExit(() => options.timers.clear(killer));
+        link.quit();
+        return Promise.resolve();
+      }
+      if (!current) up(true).catch(() => undefined);
+      return Promise.resolve();
+    },
     /**
      * Stops restarting, asks the engine to quit, kills it after `quitMs`, and says how it ended: `'exited'` when the
      * process is gone (a quit that was heard, or one that died after the kill), `'stuck'` when it is still running
@@ -678,32 +713,7 @@ export interface PortWindow {
   desktop(frame: DesktopFrame): void;
 }
 
-/** The parts of an IPC event the caller check reads (Electron's `IpcMainInvokeEvent`). */
-export interface CallerEvent {
-  senderFrame: { url: string; detached?: boolean } | null | undefined;
-  sender: { mainFrame: unknown; isDestroyed(): boolean; getType?(): string };
-}
-
-/**
- * The window whose trusted main frame sent `event`, or undefined. Refused: no frame or a detached one, a subframe
- * (a mail frame, any iframe), a page other than the app's own renderer (another origin, `devtools://`), a webContents
- * that is not a window's (DevTools, a webview), or one with no window.
- */
-export function trustedCaller<W>(
-  event: CallerEvent,
-  deps: {
-    trustedURL(url: string): boolean;
-    windowOf(sender: CallerEvent['sender']): W | undefined;
-  },
-): W | undefined {
-  const frame = event.senderFrame;
-  const sender = event.sender;
-  if (!frame || frame.detached || frame !== sender.mainFrame || sender.isDestroyed())
-    return undefined;
-  if (sender.getType && sender.getType() !== 'window') return undefined;
-  if (!deps.trustedURL(frame.url)) return undefined;
-  return deps.windowOf(sender);
-}
+export { trustedCaller, type CallerEvent } from './caller';
 
 export interface BrokerDeps {
   /** A new `MessageChannelMain`: one end for the engine, one for the window. */
@@ -1037,7 +1047,16 @@ export function exposeEngineBridge(electron: PreloadElectron, argv: readonly str
   contextBridge.exposeInMainWorld('aplosEngine', {
     call: (method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> => {
       if (typeof method === 'string' && isDesktopMethod(method))
-        return ipcRenderer.invoke('aplos:desktop', method, args);
+        // A failure comes back as an envelope (main answers it, so its reason survives); the page gets the plain error
+        // body, as from any other failed call. A rejection here is main refusing the caller, which has no reason to give.
+        return ipcRenderer.invoke('aplos:desktop', method, args).then(
+          result => {
+            const failure = failureOf(result);
+            if (failure) return Promise.reject(failure);
+            return result;
+          },
+          () => Promise.reject({ type: 'unavailable', message: 'That did not work. Try again.' }),
+        );
       // A refused name never even asks for a port.
       if (typeof method === 'string' && portMethods.has(method)) connect();
       return engine.call(method, args, transfer);
