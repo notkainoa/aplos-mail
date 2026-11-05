@@ -99,7 +99,7 @@ const lazyModules = [join(src, 'ai', 'demo', 'data.ts')];
 // files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06
 // (owner decision, DECISIONS.md); the last raise without a new decision.
 const BUDGET_BYTES = 465_000;
-test('the new engine (contract types and zod-free tables only, no zod) stays under 450,000 minified bytes and never imports legacy code', async () => {
+test('the new engine (contract types and zod-free tables only, no zod) stays under 465,000 minified bytes and never imports legacy code', async () => {
   const { chunks, inputs } = await bundleNeutral(
     src,
     f => f.startsWith(legacy) || lazyModules.includes(f),

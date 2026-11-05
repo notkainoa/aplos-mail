@@ -196,3 +196,23 @@ test('Consent: changing a provider endpoint forces reconsent (fingerprint covers
   assert.equal(drifted.needsReconsent, true);
   assert.ok(drifted.currentVersion > (drifted.version ?? 0));
 });
+
+test('Consent: a provider URL with credentials keys the same fingerprint as the bare origin', async () => {
+  const w = await world();
+  // URL userinfo and query are dropped by URL parsing — the fingerprint sees origin + path only, so
+  // adding credentials never leaks them nor forces a needless re-consent.
+  await w.call('Settings/set', {
+    opId: 'addr2',
+    patch: {
+      ai: { providers: { groq: { address: 'https://api.groq.com/openai/v1?key=leak' } } },
+    },
+  });
+  await w.call('Settings/set', {
+    opId: 'addr3',
+    patch: {
+      ai: { providers: { groq: { address: 'https://user:pass@api.groq.com/openai/v1' } } },
+    },
+  });
+  const same = await w.call('Consent/get', {});
+  assert.equal(same.needsReconsent, false, 'URL userinfo/query never reach the fingerprint');
+});

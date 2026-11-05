@@ -69,7 +69,7 @@ function list(args: Input<'Queue/list'>, ctx: MethodContext): Output<'Queue/list
         `SELECT o.op_id, o.account_id, o.kind, o.target, o.state, o.attempts, o.next_at, o.last_error, o.scope,
                 (SELECT MIN(c.at) FROM commits c WHERE c.seq = o.created_seq) AS created_at
          FROM ops o WHERE o.state IN ('queued','inflight','failed','conflict')
-         ORDER BY o.created_seq, o.op_id`,
+         ORDER BY o.created_seq, o.op_id LIMIT 500`,
       )) {
         const problem_ = problem(r.last_error);
         out.push({
@@ -98,7 +98,7 @@ function list(args: Input<'Queue/list'>, ctx: MethodContext): Output<'Queue/list
         last_error: string | null;
       }>(
         `SELECT id, kind, state, attempts, next_at, last_error FROM jobs
-         WHERE state IN ('queued','running','failed','dead') ORDER BY next_at, id`,
+         WHERE state IN ('queued','running','failed','dead') ORDER BY next_at, id LIMIT 500`,
       )) {
         const problem_ = problem(r.last_error);
         out.push({
@@ -127,7 +127,7 @@ function list(args: Input<'Queue/list'>, ctx: MethodContext): Output<'Queue/list
       }>(
         `SELECT id, account_id, state, not_before, attempt_at, error FROM submissions
          WHERE state IN ('queued','scheduled','sending','uncertain','suspended','failed')
-         ORDER BY not_before, id`,
+         ORDER BY not_before, id LIMIT 500`,
       )) {
         const problem_ = problem(r.error);
         out.push({
@@ -186,8 +186,12 @@ async function retry(
   } else if (id.startsWith('job:')) {
     needScope(ctx, 'ai');
     const jobId = Number(id.slice(4));
-    if (!Number.isInteger(jobId) || !exists(ctx, 'SELECT 1 AS one FROM jobs WHERE id = ?', jobId))
-      throw notFound();
+    const jobState = ctx.services.store.read(
+      q => q.get<{ state: string }>('SELECT state FROM jobs WHERE id = ?', jobId)?.state,
+    );
+    if (!Number.isInteger(jobId) || !jobState) throw notFound();
+    if (jobState !== 'failed' && jobState !== 'dead')
+      throw new ContractError({ type: 'conflict', message: 'That job is not waiting to retry.' });
     ctx.services.store.commit({
       opId: `queue-retry-${nonce(ctx)}`,
       origin: 'local',
@@ -209,6 +213,15 @@ async function discard(
   const id = args.id;
   if (id.startsWith('op:')) {
     opScope(ctx, id.slice(3));
+    const opState = ctx.services.store.read(
+      q => q.get<{ state: string }>('SELECT state FROM ops WHERE op_id = ?', id.slice(3))?.state,
+    );
+    if (!opState) throw notFound();
+    if (opState === 'inflight')
+      throw new ContractError({
+        type: 'conflict',
+        message: 'That change is already on its way to the server.',
+      });
     ctx.services.store.commit({
       opId: `queue-discard-${nonce(ctx)}`,
       origin: 'local',
@@ -237,8 +250,12 @@ async function discard(
   } else if (id.startsWith('job:')) {
     needScope(ctx, 'ai');
     const jobId = Number(id.slice(4));
-    if (!Number.isInteger(jobId) || !exists(ctx, 'SELECT 1 AS one FROM jobs WHERE id = ?', jobId))
-      throw notFound();
+    const jobState = ctx.services.store.read(
+      q => q.get<{ state: string }>('SELECT state FROM jobs WHERE id = ?', jobId)?.state,
+    );
+    if (!Number.isInteger(jobId) || !jobState) throw notFound();
+    if (jobState === 'running')
+      throw new ContractError({ type: 'conflict', message: 'That job is already running.' });
     ctx.services.store.commit({
       opId: `queue-discard-${nonce(ctx)}`,
       origin: 'local',
