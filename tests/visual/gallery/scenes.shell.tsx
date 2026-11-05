@@ -3,7 +3,9 @@
 // the status rows go through the shell's own mapping (StatusView -> toSyncStatus -> StatusSlot).
 
 import { useEffect, type ComponentProps, type ReactElement, type ReactNode } from 'react';
+import { createClient } from '@aplos/contract/client';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
+import '../../../apps/desktop/src/renderer/screens/screens.css';
 import {
   HARNESS_NOW_MS,
   toIsoDateTime,
@@ -32,10 +34,13 @@ import {
 } from '../../../apps/desktop/src/renderer/shell/states';
 import { placeCounts, type PlaceId } from '../../../apps/desktop/src/renderer/shell/nav';
 import {
+  navigate,
   useSidebarSlot,
   type Screen,
   type SidebarSlot,
 } from '../../../apps/desktop/src/renderer/shell';
+import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
+import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { noop, row } from './scenes.shared';
 
 /* ------------------------------ demo data ------------------------------ */
@@ -557,4 +562,41 @@ export const shellScenes: Record<string, () => ReactElement> = {
     'reconnect',
     failureReason('auth.wrongAccount'),
   ),
+  'shell-settings-mounted': SettingsMountedScene,
 };
+
+/* ------------------------------ Settings mounted in the real app ------------------------------ */
+
+let settingsClient: AppClient | null = null;
+
+/** One stand-in per page load: the real app on the `demo` scenario at the Settings screen. */
+function settingsApp(): AppClient {
+  if (!settingsClient) {
+    const layer = connectStandInDataLayer({ scenario: 'demo', clock: 'real' });
+    settingsClient = createClient(layer.engine.connect());
+  }
+  return settingsClient;
+}
+
+const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+/** The real Settings screen in the real shell, held back for the screenshot until the screen has drawn. */
+function SettingsMountedScene(): ReactElement {
+  const client = settingsApp();
+  navigate('settings');
+  useEffect(() => {
+    void (async () => {
+      for (let i = 0; i < 400 && !document.querySelector('.settings-screen'); i += 1)
+        await nextFrame();
+      for (let i = 0; i < 8; i += 1) await nextFrame();
+      await new Promise(resolve => setTimeout(resolve, 400));
+      document.querySelector('[data-gallery-pending]')?.removeAttribute('data-gallery-pending');
+    })();
+  }, []);
+  return (
+    <>
+      <App client={client} />
+      <div hidden data-gallery-pending="" />
+    </>
+  );
+}
