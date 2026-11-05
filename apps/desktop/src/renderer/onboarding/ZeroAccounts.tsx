@@ -54,7 +54,9 @@ export function ZeroAccountsView({
   onTryDemo,
 }: ZeroAccountsViewProps) {
   if (zeroAccountsMode({ accountCount: 0, firstSyncRunning }) === 'firstSync') {
-    return <EmptyLine text={ZERO_ACCOUNTS.firstSync} {...(detail ? { detail } : {})} />;
+    return (
+      <EmptyLine placement="pane" text={ZERO_ACCOUNTS.firstSync} {...(detail ? { detail } : {})} />
+    );
   }
   return (
     <div className="onb-zero">

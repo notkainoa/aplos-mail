@@ -54,7 +54,7 @@ import { useHomeOrder, useReaderList } from './useReaderList';
 
 /** The loading line's words when the thread has no subject or sender to name yet (DESIGN 5 rule 10 names what it loads). */
 export const LOADING_COPY = 'Loading this email…';
-export const NO_THREAD_COPY = 'No email is open.';
+export const NO_THREAD_COPY = 'No email is open';
 
 /** How the letter is grouped: 'a' is a card per message (the default); 'off' is DESIGN 7.5's one column with no card. */
 export type ReaderCardStyle = CardStyle;
@@ -297,7 +297,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
 export function ReaderScreen(props: ReaderScreenProps) {
   const open = useOpenThread();
   const context = useOpenThreadContext();
-  if (open === null) return <EmptyLine text={NO_THREAD_COPY} />;
+  if (open === null) return <EmptyLine placement="pane" icon="mail" text={NO_THREAD_COPY} />;
   const listIds = props.listIds ?? context.listIds;
   if (listIds) return <OpenReader {...props} open={open} source={listIds} />;
   return <ReaderOverHome {...props} open={open} />;

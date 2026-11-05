@@ -412,10 +412,13 @@ export function createController(deps: ControllerDeps) {
     async allowBackground() {
       const d = data();
       const s = d.settings.ai.features.summaries;
+      const consent = d.consent;
+      // No consent record, no version to agree to — the card only opens with one anyway.
+      if (!consent) return;
       deps.setView({ consentCard: false });
       const ok = await guard('save your choice', () =>
         ports.consentGrant({
-          version: d.consent.currentVersion,
+          version: consent.currentVersion,
           provider: s.provider,
           model: s.model,
         }),

@@ -6,9 +6,9 @@
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { createAppRegistry, type CommandHandlers, type Registry } from '../commands';
 import { undoStack } from '../data';
-import { ALL_PLACES, placeScreen } from './nav';
+import { ALL_PLACES, placeRoute, placeScreen } from './nav';
 import { openCompose } from './store-compose';
-import { setScreen } from './store-route';
+import { setRoute, setScreen } from './store-route';
 
 /** Handlers keyed by command id. */
 export type CommandHandlerTable = Readonly<Record<string, CommandHandlers>>;
@@ -20,14 +20,16 @@ export interface ShellRegistry {
   register(handlers: CommandHandlerTable): () => void;
 }
 
-/** One handler per sidebar place, keyed by the place's command (nav.home, nav.later, ..., app.settings): it opens the screen the sidebar row opens. */
+/** One handler per sidebar place, keyed by the place's command (nav.home, nav.later, ..., app.settings): it opens the screen the sidebar row opens — a place with a Settings route (Help's `app.shortcuts`) deep-links it instead. */
 export function placeHandlers(): CommandHandlerTable {
   return Object.fromEntries(
     ALL_PLACES.map(place => [
       place.commandId,
       {
         run: () => {
-          setScreen(placeScreen(place.id));
+          const route = placeRoute(place.id);
+          if (route) setRoute(route);
+          else setScreen(placeScreen(place.id));
         },
       },
     ]),

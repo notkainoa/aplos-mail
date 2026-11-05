@@ -128,10 +128,10 @@ test('three finished and two left says "2 left today"; a singular earlier keeps 
   );
 });
 
-test('a day where everything ended says "Nothing left today."', () => {
+test('a day where everything ended says "Nothing left today"', () => {
   const model = todayModel([event('over', at(8), at(9))], calendars, NOW);
   assert.equal(model.earlier, 1);
-  assert.equal(model.headline, 'Nothing left today.');
+  assert.equal(model.headline, 'Nothing left today');
 });
 
 test('instant reads utc, date and floating times; formatWhen merges the meridiem', () => {

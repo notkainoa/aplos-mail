@@ -114,9 +114,9 @@ export function homeLines(window: WindowBody): HomeLine[] {
   return lines;
 }
 
-/** Inbox zero's line: "You handled 12 emails." (DESIGN 7.14). */
+/** Inbox zero's line: "You handled 12 emails" (DESIGN 7.14; no trailing period, owner override 2026-11-05). */
 export function handledLine(handledToday: number): string {
-  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}.`;
+  return `You handled ${handledToday} ${handledToday === 1 ? 'email' : 'emails'}`;
 }
 
 /**
@@ -207,10 +207,10 @@ export function failedText(error: Pick<ErrorBody, 'type'>): string {
 /** The Pane's contents for one `HomeState`: nothing while opening, the error sentence, inbox zero, or the lines. */
 export function HomeContent({ home }: HomeContentProps) {
   if (home.status === 'opening') return null;
-  if (home.status === 'failed') return <EmptyLine text={failedText(home.error)} />;
+  if (home.status === 'failed') return <EmptyLine placement="pane" text={failedText(home.error)} />;
   const lines = homeLines(home.window);
   if (lines.every(line => line.count === 0))
-    return <EmptyLine size="display" text={handledLine(home.handledToday)} />;
+    return <EmptyLine placement="pane" size="display" text={handledLine(home.handledToday)} />;
   return (
     <>
       {lines.map(line =>
@@ -362,9 +362,6 @@ function loadAskDockModule(): Promise<typeof import('./screens/ask')> {
   return (askDockModule ??= import('./screens/ask'));
 }
 
-/** Labels other lanes open as placeholders (help); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['Help'];
-
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
 function isListPlace(screen: string): screen is Exclude<ListWhich, { label: string }> {
@@ -377,10 +374,7 @@ export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
   if (typeof screen !== 'string' && screen.label === 'Search') return <SearchScreen />;
   if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
-  if (typeof screen !== 'string')
-    return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
-      <ListSlot which={{ label: screen.label }} />
-    );
+  if (typeof screen !== 'string') return <ListSlot which={{ label: screen.label }} />;
   if (screen === 'home') return <HomeSlot />;
   if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;

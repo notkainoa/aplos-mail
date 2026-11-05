@@ -4,13 +4,21 @@
  * names, empty subjects, emoji, 500 rows). Run: `cd apps/desktop && npx tsx --test 'src/renderer/screens/lists/*.test.ts*'`.
  */
 import test from 'node:test';
+import { emptyText } from '../../shell/states';
+import { handledLine } from '../../App';
+import { ZERO_ACCOUNTS } from '../../onboarding/demo';
+import { GONE_COPY } from '../reader/ReaderLetter';
+import { NO_THREAD_COPY } from '../reader/ReaderScreen';
 import assert from 'node:assert/strict';
 import type { Draft, Submission, ThreadRow } from '../../data';
 import {
   ALL_CONFIG,
+  BOOKMARKS_CONFIG,
   DONE_CONFIG,
   DRAFTS_CONFIG,
   SENT_CONFIG,
+  SPAM_CONFIG,
+  TRASH_CONFIG,
   configFor,
   labelConfig,
   viewSpecOf,
@@ -190,12 +198,12 @@ test('configFor and viewSpecOf name the right views', () => {
       DONE_CONFIG,
     ].map(config => config.empty),
     [
-      'No mail here yet.',
-      'No drafts.',
-      'Nothing sent yet.',
-      'Trash is empty.',
-      'Spam is empty.',
-      'Nothing done yet.',
+      'No mail here yet',
+      'No drafts',
+      'Nothing sent yet',
+      'Trash is empty',
+      'Spam is empty',
+      'Nothing done yet',
     ],
   );
   assert.deepEqual(
@@ -357,4 +365,23 @@ test('a confirmation is stale once none of its threads is in the list', () => {
   assert.equal(confirmationIsStale({ ids: ['a'] }, []), true, 'the list emptied');
   assert.equal(confirmationIsStale({ ids: ['a', 'b'] }, ['b', 'c']), false);
   assert.equal(confirmationIsStale({ ids: ['a'] }, ['b']), true);
+});
+
+test('no empty-state string ends with a period (owner override 2026-11-05)', () => {
+  const copies: readonly (string | undefined)[] = [
+    ...[ALL_CONFIG, DRAFTS_CONFIG, SENT_CONFIG, TRASH_CONFIG, SPAM_CONFIG, DONE_CONFIG].flatMap(
+      c => [c.empty, c.emptyDetail],
+    ),
+    BOOKMARKS_CONFIG.empty,
+    BOOKMARKS_CONFIG.emptyDetail,
+    ...(['later', 'all', 'done', 'drafts', 'sent', 'trash', 'spam'] as const).map(emptyText),
+    handledLine(1),
+    handledLine(12),
+    ZERO_ACCOUNTS.text,
+    ZERO_ACCOUNTS.firstSync,
+    GONE_COPY,
+    NO_THREAD_COPY,
+  ];
+  for (const copy of copies)
+    if (copy !== undefined) assert.doesNotMatch(copy, /\.\s*$/, `trailing period: ${copy}`);
 });

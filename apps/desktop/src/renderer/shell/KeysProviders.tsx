@@ -106,9 +106,9 @@ export function KeysProviders({ screen, sheetOpen, children }: KeysProvidersProp
   // One registry for the app's life: screens attach handlers to it, so a settings change reconfigures it, never replaces it.
   const [shell] = useState(() => shellRegistryFor(createAppRegistry(prefs)));
   const { registry } = shell;
-  useEffect(() => {
-    registry.configure(prefs ?? DEFAULT_KEY_PREFS);
-  }, [registry, prefs]);
+  // Configured while rendering, not in an effect: the key caps below are described from this render's registry, so an
+  // effect would leave them one render behind a settings change. `configure` is idempotent for the same prefs.
+  useMemo(() => registry.configure(prefs ?? DEFAULT_KEY_PREFS), [registry, prefs]);
   const layers = useSyncExternalStore(subscribeKeyLayers, getKeyLayers, getKeyLayers);
   const context = screenContext(screen);
   const stack = useMemo(() => shellStack(context, sheetOpen, layers), [context, sheetOpen, layers]);

@@ -333,7 +333,7 @@ function readerExample(
   const lines: string[] = [];
 
   if (threadState.status === 'notFound' || view.status === 'failed') {
-    lines.push('This email is no longer here.');
+    lines.push('This email is no longer here');
   }
   if (thread) {
     lines.push(primaryLine(thread));

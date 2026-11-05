@@ -124,7 +124,7 @@ function LaterBody(props: LaterScreenProps) {
     commandId === 'mail.setDate' ? openPicker(id) : runRowAction(list.actions, commandId, id);
 
   if (view.status === 'live' && view.total === 0 && groups.length === 0)
-    return <ListEmpty text={LATER_CONFIG.empty} state={list.empty} />;
+    return <ListEmpty text={LATER_CONFIG.empty} icon={LATER_CONFIG.emptyIcon} state={list.empty} />;
   return (
     <div
       data-screen="later"

@@ -10,3 +10,36 @@
 .search-screen__remote {
   margin-top: var(--space-3);
 }
+
+/* No results: the line centres in what is left of the pane under the field (owner review 2026-11-05), the same
+   calm centred line as every other empty state. The slot, its fill wrapper and the page become one flex column. */
+.aplos-screen:has(.search-screen__column > .ui-empty-line) {
+  display: flex;
+  flex-direction: column;
+}
+.aplos-screen:has(.search-screen__column > .ui-empty-line) > .aplos-screen-fill {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.search-screen:has(> .search-screen__column > .ui-empty-line) {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.search-screen:has(> .search-screen__column > .ui-empty-line) > .search-screen__column {
+  flex: 1 0 auto;
+}
+.search-screen__column > .ui-empty-line {
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: var(--space-10);
+  text-align: center;
+}
+.search-screen__column > .ui-empty-line .ui-empty-line__copy {
+  align-items: center;
+}
+.search-screen__column > .ui-empty-line .ui-empty-line__actions {
+  justify-content: center;
+}

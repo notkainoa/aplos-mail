@@ -145,10 +145,10 @@ describe('empty-no-accounts: the zero-accounts state', () => {
   });
 
   test("DESIGN 7.14's copy", () => {
-    assert.equal(ZERO_ACCOUNTS.text, 'Add an account to bring in your mail.');
+    assert.equal(ZERO_ACCOUNTS.text, 'Add an account to bring in your mail');
     assert.equal(ZERO_ACCOUNTS.add, 'Add an account');
     assert.equal(ZERO_ACCOUNTS.tryDemo, 'Try demo mail');
-    assert.equal(ZERO_ACCOUNTS.firstSync, 'Your first mail is on its way.');
+    assert.equal(ZERO_ACCOUNTS.firstSync, 'Your first mail is on its way');
   });
 
   test('the block carries one sentence on Aplos, three one-line rows and the privacy line', () => {

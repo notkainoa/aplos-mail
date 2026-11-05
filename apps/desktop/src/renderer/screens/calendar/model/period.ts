@@ -184,7 +184,7 @@ export function topLabel(
 
 /**
  * The grid's accessible name, which CalendarGrid also announces when it changes: a day title with the comma and the
- * count ("Sunday, November 1, 2026. Nothing scheduled."), "Week of Sunday, October 25, 2026", "October 2026".
+ * count ("Sunday, November 1, 2026. Nothing scheduled"), "Week of Sunday, October 25, 2026", "October 2026".
  */
 export function gridLabel(
   view: CalendarView,
@@ -193,7 +193,7 @@ export function gridLabel(
   dayCount: number,
 ): string {
   if (view === 'day')
-    return `${dayTitle(anchor)}. ${dayCount === 0 ? 'Nothing scheduled.' : `${eventCount(dayCount)}.`}`;
+    return `${dayTitle(anchor)}. ${dayCount === 0 ? 'Nothing scheduled' : `${eventCount(dayCount)}.`}`;
   if (view === 'month') return monthTitle(yearMonthOf(anchor));
   return `Week of ${dayTitle(period.days[0])}`;
 }

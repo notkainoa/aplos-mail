@@ -410,39 +410,39 @@ test('the empty day offers New event · N; a calendar toggle and solo change the
 test('an empty day shows the panel, its sentence and the next event from the loaded window', () => {
   const state = S({ view: 'day', anchor: '2026-11-01' });
   const vm = viewModel(state, ctxAt(state));
-  assert.equal(vm.empty?.sentence, 'Nothing on Sunday, November 1.');
+  assert.equal(vm.empty?.sentence, 'Nothing on Sunday, November 1');
   assert.equal(vm.empty?.next, 'Next: Standup, Monday at 11:00 AM');
   // A day with events shows no panel.
   const busy = S({ view: 'day', anchor: THU });
   assert.equal(viewModel(busy, ctxAt(busy)).empty, null);
 });
 
-test('an empty week reads "A clear week."; with nothing ahead the line stays honest', () => {
+test('an empty week reads "A clear week"; with nothing ahead the line stays honest', () => {
   const clear = S({ view: 'week', anchor: '2026-12-09' });
   const vm = viewModel(clear, ctxAt(clear));
-  assert.equal(vm.empty?.sentence, 'A clear week.');
-  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks.');
+  assert.equal(vm.empty?.sentence, 'A clear week');
+  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks');
   // A week with events shows no panel.
   assert.equal(viewModel(S(), ctxAt(S())).empty, null);
 });
 
-test('with no events at all the day falls back to "Nothing coming up in the next two weeks."', () => {
+test('with no events at all the day falls back to "Nothing coming up in the next two weeks"', () => {
   const state = S({ view: 'day', anchor: '2026-11-01' });
   const vm = viewModel(state, ctxAt(state, []));
-  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks.');
+  assert.equal(vm.empty?.next, 'Nothing coming up in the next two weeks');
 });
 
-test('review2: a bare grid with every calendar hidden says so, not "A clear week."', () => {
+test('review2: a bare grid with every calendar hidden says so, not "A clear week"', () => {
   const allHidden = demoWorld.calendars.map(c => ({ ...c, shown: false }));
   const week = S({ view: 'week', anchor: '2026-12-09' });
   assert.equal(
     viewModel(week, ctxAt(week, [], allHidden)).empty?.sentence,
-    'All your calendars are hidden.',
+    'All your calendars are hidden',
   );
   const day = S({ view: 'day', anchor: '2026-11-01' });
   assert.equal(
     viewModel(day, ctxAt(day, [], allHidden)).empty?.sentence,
-    'All your calendars are hidden.',
+    'All your calendars are hidden',
   );
 });
 
