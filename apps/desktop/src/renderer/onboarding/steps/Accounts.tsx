@@ -8,7 +8,7 @@
 import type { AccountsMode, ChooseNotice } from '../connect';
 import { ACCOUNTS_LABELS, ADDRESS_FIELD_ID } from '../connect';
 import { connectSentence } from '../copy';
-import { backFooter, type StepChrome } from '../flow';
+import { backFooter, type StepChrome, type WindowNotice } from '../flow';
 import { WindowNoticeLine } from '../WindowNotice';
 import { ChoiceRow, OnboardingStep } from '../../ui/onboarding';
 import { TextField } from '../../ui/controls';
@@ -27,22 +27,42 @@ export interface AccountRowData {
   readonly color?: TagColor;
 }
 
-export interface AccountsStepProps {
-  readonly chrome: StepChrome;
+/**
+ * The connect flow's content with no frame around it, so a host that draws its own frame — the shell's
+ * Add account `Dialog` (`shell/AddAccountHost.tsx`) — shows the same body the Accounts step does without
+ * `OnboardingStep`'s title, lede, actions row, footer and step dashes.
+ *
+ * The host owns the state (`reduceAccounts` in `../connect.ts`) and provides: the connected `accounts`, the
+ * connect state (`mode`, `address`, `notice`, `failure`), the field callbacks `onEdit`/`onSubmit` and the
+ * provider row's `onChooseGoogle`. A state's action buttons (Continue with Google, Try again, Cancel,
+ * "Use a different address") belong to the host's own frame — `OnboardingStep`'s `actions` in the step, the
+ * dialog's footer in the dialog — and focus stays with the host too: the body autofocuses nothing.
+ */
+export interface AccountsBodyProps {
   /** The state to draw (`shownMode`). */
   readonly mode: AccountsMode;
+  /** The address field's text. */
   readonly address: string;
+  /** The choose state's notice for an address Aplos can't use yet. */
   readonly notice: ChooseNotice | null;
   /** The failed connect's reason code. */
   readonly failure: string | null;
+  /** The connected accounts the connected state lists. */
   readonly accounts: readonly AccountRowData[];
+  /** The address field's text changed. */
   readonly onEdit: (address: string) => void;
   /** Return in the address field: discover the provider. */
   readonly onSubmit: () => void;
-  /** "Continue with Google" or Try again, with the typed address as `login_hint`. */
-  readonly onConnect: () => void;
   /** The Google row: sign in without an address. */
   readonly onChooseGoogle: () => void;
+  /** A window-level failure line (a failed demo load or handoff) drawn under the body; hosts without one omit it. */
+  readonly windowNotice?: WindowNotice;
+}
+
+export interface AccountsStepProps extends Omit<AccountsBodyProps, 'windowNotice'> {
+  readonly chrome: StepChrome;
+  /** "Continue with Google" or Try again, with the typed address as `login_hint`. */
+  readonly onConnect: () => void;
   readonly onCancel: () => void;
   /** "Use a different address". */
   readonly onClear: () => void;
@@ -131,16 +151,111 @@ function GoogleChoice({ onChooseGoogle }: Pick<AccountsStepProps, 'onChooseGoogl
   );
 }
 
+/** Every state's content, with no frame: what `AccountsStep` puts inside `OnboardingStep` (the props tell why). */
+export function AccountsBody(props: AccountsBodyProps) {
+  // A failed demo load or handoff, in every state of the step.
+  const windowNotice = <WindowNoticeLine notice={props.windowNotice} />;
+
+  if (props.mode === 'waiting') {
+    return (
+      <>
+        <div className="onb-wide">
+          <ProgressSegments variant="waiting" label="Waiting for sign-in" />
+        </div>
+        {windowNotice}
+      </>
+    );
+  }
+
+  if (props.mode === 'connected') {
+    const several = props.accounts.length > 1;
+    return (
+      <>
+        <div className="onb-rows" role="group" aria-label="Connected accounts">
+          {props.accounts.map(account => (
+            <ChoiceRow
+              key={account.id}
+              id={`onb-account-${account.id}`}
+              role="static"
+              label={account.address}
+              detail={account.demo ? 'Demo mail' : 'Google'}
+              status={{ text: 'Connected', tone: 'ok' }}
+              {...(several && account.color ? { mark: account.color } : {})}
+            />
+          ))}
+        </div>
+        {windowNotice}
+      </>
+    );
+  }
+
+  if (props.mode === 'typed') {
+    return (
+      <>
+        <AddressField
+          address={props.address}
+          onEdit={props.onEdit}
+          onSubmit={props.onSubmit}
+          keycap={false}
+        />
+        <div className="onb-rows">
+          <ChoiceRow
+            id="onb-found-google"
+            role="static"
+            label="Google"
+            icon="mail"
+            detail="You sign in on Google's own page in your browser. Aplos never sees your password."
+            status={{ text: 'Found', tone: 'ok' }}
+          />
+        </div>
+        {windowNotice}
+      </>
+    );
+  }
+
+  if (props.mode === 'failed') {
+    const sentence = connectSentence(props.failure ?? undefined, {
+      address: props.address || undefined,
+    });
+    return (
+      <>
+        <AddressField
+          address={props.address}
+          onEdit={props.onEdit}
+          onSubmit={props.onSubmit}
+          keycap={false}
+          failure={sentence}
+        />
+        {windowNotice}
+      </>
+    );
+  }
+
+  // choose and discovering share the field; a notice explains an address Aplos can't use yet.
+  const notice = props.notice ? noticeSentence(props.notice) : undefined;
+  return (
+    <>
+      <AddressField
+        address={props.address}
+        onEdit={props.onEdit}
+        onSubmit={props.onSubmit}
+        keycap
+        {...(notice ? { notice } : {})}
+      />
+      <GoogleChoice onChooseGoogle={props.onChooseGoogle} />
+      {windowNotice}
+    </>
+  );
+}
+
 export function AccountsStep(props: AccountsStepProps) {
   const { chrome, mode } = props;
-  const footer = backFooter(chrome);
-  // A failed demo load or handoff, in every state of the step.
-  const windowNotice = <WindowNoticeLine notice={chrome.notice} />;
   const common = {
     titleId: 'onb-title',
-    footer,
+    footer: backFooter(chrome),
     ...(chrome.onTryDemo ? { onTryDemo: chrome.onTryDemo } : {}),
   };
+  const body = <AccountsBody {...props} windowNotice={chrome.notice} />;
 
   if (mode === 'waiting') {
     return (
@@ -160,16 +275,12 @@ export function AccountsStep(props: AccountsStepProps) {
         ]}
         phaseStatus={chrome.status ?? 'Waiting for Google in your browser.'}
       >
-        <div className="onb-wide">
-          <ProgressSegments variant="waiting" label="Waiting for sign-in" />
-        </div>
-        {windowNotice}
+        {body}
       </OnboardingStep>
     );
   }
 
   if (mode === 'connected') {
-    const several = props.accounts.length > 1;
     return (
       <OnboardingStep
         {...common}
@@ -187,20 +298,7 @@ export function AccountsStep(props: AccountsStepProps) {
         ]}
         {...(chrome.status ? { phaseStatus: chrome.status } : {})}
       >
-        <div className="onb-rows" role="group" aria-label="Connected accounts">
-          {props.accounts.map(account => (
-            <ChoiceRow
-              key={account.id}
-              id={`onb-account-${account.id}`}
-              role="static"
-              label={account.address}
-              detail={account.demo ? 'Demo mail' : 'Google'}
-              status={{ text: 'Connected', tone: 'ok' }}
-              {...(several && account.color ? { mark: account.color } : {})}
-            />
-          ))}
-        </div>
-        {windowNotice}
+        {body}
       </OnboardingStep>
     );
   }
@@ -218,23 +316,7 @@ export function AccountsStep(props: AccountsStepProps) {
         ]}
         phaseStatus={chrome.status ?? 'Found Google.'}
       >
-        <AddressField
-          address={props.address}
-          onEdit={props.onEdit}
-          onSubmit={props.onSubmit}
-          keycap={false}
-        />
-        <div className="onb-rows">
-          <ChoiceRow
-            id="onb-found-google"
-            role="static"
-            label="Google"
-            icon="mail"
-            detail="You sign in on Google's own page in your browser. Aplos never sees your password."
-            status={{ text: 'Found', tone: 'ok' }}
-          />
-        </div>
-        {windowNotice}
+        {body}
       </OnboardingStep>
     );
   }
@@ -255,19 +337,11 @@ export function AccountsStep(props: AccountsStepProps) {
         ]}
         phaseStatus={chrome.status ?? sentence}
       >
-        <AddressField
-          address={props.address}
-          onEdit={props.onEdit}
-          onSubmit={props.onSubmit}
-          keycap={false}
-          failure={sentence}
-        />
-        {windowNotice}
+        {body}
       </OnboardingStep>
     );
   }
 
-  // choose and discovering share the field; a notice explains an address Aplos can't use yet.
   const notice = props.notice ? noticeSentence(props.notice) : undefined;
   return (
     <OnboardingStep
@@ -277,15 +351,7 @@ export function AccountsStep(props: AccountsStepProps) {
       lede={LEDE}
       {...(chrome.status || notice ? { phaseStatus: chrome.status ?? notice } : {})}
     >
-      <AddressField
-        address={props.address}
-        onEdit={props.onEdit}
-        onSubmit={props.onSubmit}
-        keycap
-        {...(notice ? { notice } : {})}
-      />
-      <GoogleChoice onChooseGoogle={props.onChooseGoogle} />
-      {windowNotice}
+      {body}
     </OnboardingStep>
   );
 }
