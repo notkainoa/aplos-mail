@@ -266,4 +266,17 @@ describe('finishTo keys: Return while the window’s handoff failed', () => {
       'the window’s Try again must dispatch retryHandoff',
     );
   });
+  test('the container feeds the key table the window’s failed-handoff notice, and the screen announces it', () => {
+    assert.match(
+      source('firstSync/FirstSyncContainer.tsx'),
+      /notice: \(\) => latest\.current\.notice/,
+      'without the notice callback the first-sync Return claims the key and drops the destination',
+    );
+    const screen = source('firstSync/FirstSync.tsx');
+    assert.equal(
+      (screen.match(/phaseStatus=\{props\.notice\?\.text \?\? view\.announcement\}/g) ?? []).length,
+      2,
+      'a refused handoff is spoken once through the screen’s one live region, in both layouts',
+    );
+  });
 });
