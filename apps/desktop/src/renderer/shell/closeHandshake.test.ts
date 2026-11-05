@@ -32,6 +32,8 @@ test('prepare-close saves, then answers closeReady once; other events are ignore
   const calls: string[] = [];
   answerPrepareClose(fake.bridge, {
     save: async () => void calls.push('save'),
+    stillUnsaved: () => false,
+    onUnsaved: () => void calls.push('unsaved'),
     ready: async () => void calls.push('ready'),
     cancel: async () => void calls.push('cancel'),
   });
@@ -52,6 +54,8 @@ test('a failing save still answers ready; a failing ready answers cancel so the 
       calls.push('save');
       throw new Error('engine down');
     },
+    stillUnsaved: () => false,
+    onUnsaved: () => void calls.push('unsaved'),
     ready: async () => {
       calls.push('ready');
       if (failReady) throw new Error('main refused');
@@ -71,6 +75,8 @@ test('a failing save still answers ready; a failing ready answers cancel so the 
 test('no bridge subscribes nothing, and the returned function unsubscribes', () => {
   const none = answerPrepareClose(undefined, {
     save: async () => undefined,
+    stillUnsaved: () => false,
+    onUnsaved: () => undefined,
     ready: async () => undefined,
     cancel: async () => undefined,
   });
@@ -78,10 +84,45 @@ test('no bridge subscribes nothing, and the returned function unsubscribes', () 
   const fake = fakeBridge();
   const stop = answerPrepareClose(fake.bridge, {
     save: async () => undefined,
+    stillUnsaved: () => false,
+    onUnsaved: () => undefined,
     ready: async () => undefined,
     cancel: async () => undefined,
   });
   assert.equal(fake.count(), 1);
   stop();
   assert.equal(fake.count(), 0);
+});
+
+test('still-unsaved text after save cancels the close with a toast, never ready', async () => {
+  const fake = fakeBridge();
+  const calls: string[] = [];
+  answerPrepareClose(fake.bridge, {
+    save: async () => void calls.push('save'),
+    stillUnsaved: () => true,
+    onUnsaved: () => void calls.push('unsaved'),
+    ready: async () => void calls.push('ready'),
+    cancel: async () => void calls.push('cancel'),
+  });
+  fake.send('prepare-close');
+  await tick();
+  assert.deepEqual(calls, ['save', 'unsaved', 'cancel']);
+});
+
+test('a failing cancel after still-unsaved never reaches ready and never throws', async () => {
+  const fake = fakeBridge();
+  const calls: string[] = [];
+  answerPrepareClose(fake.bridge, {
+    save: async () => void calls.push('save'),
+    stillUnsaved: () => true,
+    onUnsaved: () => void calls.push('unsaved'),
+    ready: async () => void calls.push('ready'),
+    cancel: async () => {
+      calls.push('cancel');
+      throw new Error('main refused');
+    },
+  });
+  fake.send('prepare-close');
+  await tick();
+  assert.deepEqual(calls, ['save', 'unsaved', 'cancel']);
 });

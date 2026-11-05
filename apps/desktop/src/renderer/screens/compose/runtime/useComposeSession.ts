@@ -14,7 +14,13 @@ import type { ComposeNotice } from '../model/composeState';
 import { scheduledLabel } from '../model/schedule';
 import { isLiveSubmission, SEND_COPY } from '../model/sendState';
 import { dataComposeApi } from './composeApi';
-import { keepUntilSaved, recoveryKey, releaseKeptFor } from './recovery';
+import {
+  anyKeptUnsaved,
+  holdsUnsavedText,
+  keepUntilSaved,
+  recoveryKey,
+  releaseKeptFor,
+} from './recovery';
 import { releaseSend } from './sendHandoff';
 import { dropUnconfirmedSend, pushRefusedSend, pushUnconfirmedSend } from './sendNotices';
 import { createComposeSession, type ComposeSession, type SendAnswer } from './session';
@@ -85,6 +91,12 @@ export async function flushComposeSessions(limitMs = 2000): Promise<void> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** True while any live session or kept recovery entry still holds text the engine has not confirmed. */
+export function unsavedComposeText(): boolean {
+  for (const session of liveSessions) if (holdsUnsavedText(session.getState())) return true;
+  return anyKeptUnsaved();
 }
 
 /** One session for the composer's lifetime, created when `initial` first becomes known. */

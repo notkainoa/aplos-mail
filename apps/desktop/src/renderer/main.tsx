@@ -23,6 +23,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
+import { answerPrepareClose } from './shell/closeHandshake';
 import { scenarioParam } from './onboarding/route';
 import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
@@ -80,13 +81,21 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
  * own first plain subscribe. Errors never reach the page: a window that cannot answer is the lesser harm.
  */
 async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
-  const [{ answerPrepareClose }, { api }, { flushComposeSessions }] = await Promise.all([
-    import('./shell/closeHandshake'),
+  const [{ api }, { flushComposeSessions, unsavedComposeText }, { pushToast }] = await Promise.all([
     import('./data'),
     import('./screens/compose/runtime/useComposeSession'),
+    import('./shell'),
   ]);
   answerPrepareClose(window.aplos, {
     save: kind === 'mail' ? () => flushComposeSessions() : async () => undefined,
+    stillUnsaved: kind === 'mail' ? () => unsavedComposeText() : () => false,
+    onUnsaved: () =>
+      pushToast({
+        id: `close-unsaved-${Date.now()}`,
+        kind: 'info',
+        message: 'Couldn’t save before closing — the window stays open.',
+        undoable: false,
+      }),
     ready: () => api.window.closeReady(),
     cancel: () => api.window.closeCancel(),
   });
@@ -99,6 +108,9 @@ async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
 }
 
 async function boot(): Promise<void> {
+  // The engine question first: a production build that cannot connect goes to the legacy renderer without paying
+  // for the new root's chunks.
+  const engine = await connectEngine();
   const [{ App }] = await Promise.all([
     import('./App'),
     import('./ui/styles.css'),
@@ -108,7 +120,6 @@ async function boot(): Promise<void> {
   // The mail window hosts lane pieces now (the zero-accounts pane): the lane's own wrappers come after
   // the one stylesheet, the same order the onboarding window and the preview gallery keep.
   await import('./onboarding/onboarding.css');
-  const engine = await connectEngine();
   if (engine) {
     createRoot(document.getElementById('root')!).render(
       <StrictMode>

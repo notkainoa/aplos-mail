@@ -47,6 +47,12 @@ export function keepUntilSaved(session: ComposeSession): void {
   kept.set(key, { session, stop });
 }
 
+/** True while any kept entry still holds text the engine has not confirmed. */
+export function anyKeptUnsaved(): boolean {
+  for (const entry of kept.values()) if (holdsUnsavedText(entry.session.getState())) return true;
+  return false;
+}
+
 /** The kept entry a composer opening under any of `keys` should take (its key then, or the key it has now). */
 function findKept(keys: readonly string[]): string | null {
   for (const [key, entry] of kept) {

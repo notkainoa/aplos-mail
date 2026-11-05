@@ -13,16 +13,21 @@ export interface CloseBridge {
 
 /** What the answer does: save what is unsaved, then tell main. */
 export interface CloseDeps {
-  /** Saves unsaved work; resolves when it is safe to close (it may give up on a slow engine). */
+  /** Saves unsaved work; resolves when it is safe to check (it may give up on a slow engine). */
   readonly save: () => Promise<void>;
+  /** True while anything still holds unsaved text after `save` — the window must NOT close (kept entries live only in this window's memory). */
+  readonly stillUnsaved: () => boolean;
+  /** Fires the "kept open" toast when `stillUnsaved` cancels the close. */
+  readonly onUnsaved: () => void;
   readonly ready: () => Promise<unknown>;
   readonly cancel: () => Promise<unknown>;
 }
 
 /**
- * Answers each `prepare-close`: save, then `ready`. If saving throws the window still closes (what the engine never
- * took stays kept). If `ready` fails, `cancel` re-enables the window so it is never left disabled. One answer at a
- * time: a second event while one is running is the same close. Returns the unsubscribe.
+ * Answers each `prepare-close`: save, then decide. Unsaved text that survives `save` (a failed or slow write stays
+ * only in this window's memory — `recovery.ts`) cancels the close with a toast instead of being lost; otherwise
+ * `ready`. If `ready` fails, `cancel` re-enables the window so it is never left disabled. One answer at a time: a
+ * second event while one is running is the same close. Returns the unsubscribe.
  */
 export function answerPrepareClose(bridge: CloseBridge | undefined, deps: CloseDeps): () => void {
   if (!bridge || typeof bridge.subscribe !== 'function') return () => undefined;
@@ -34,7 +39,11 @@ export function answerPrepareClose(bridge: CloseBridge | undefined, deps: CloseD
       void deps
         .save()
         .catch(() => undefined)
-        .then(() => deps.ready())
+        .then(() => {
+          if (!deps.stillUnsaved()) return deps.ready();
+          deps.onUnsaved();
+          return deps.cancel().catch(() => undefined);
+        })
         .catch(() => deps.cancel().catch(() => undefined))
         .finally(() => {
           answering = false;
