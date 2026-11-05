@@ -81,12 +81,12 @@ test('Calendar/get lists stored calendars; Calendar/set toggles shown', async ()
 test('Event/get projects a Google data row; hidden rows carry hidden', async () => {
   const w = await world();
   seed(w);
-  const { list } = await w.call('Event/get', { ids: ['acct-1:primary:ev1'] });
+  const { list } = await w.call('Event/get', { ids: ['acct-1:primary/ev1'] });
   assert.equal(list.length, 1);
   assert.equal(list[0]!.title, 'Standup');
   assert.equal(list[0]!.sync, 'synced');
-  await w.call('Event/hide', { opId: 'h1', ids: ['acct-1:primary:ev1'], hidden: true });
-  const after = await w.call('Event/get', { ids: ['acct-1:primary:ev1'] });
+  await w.call('Event/hide', { opId: 'h1', ids: ['acct-1:primary/ev1'], hidden: true });
+  const after = await w.call('Event/get', { ids: ['acct-1:primary/ev1'] });
   assert.equal(after.list[0]!.hidden, true);
 });
 
@@ -97,8 +97,8 @@ test('events view: stored singles appear in range; hidden drops out; plans is em
     spec: { kind: 'events', from: Date.UTC(2026, 9, 26), to: Date.UTC(2026, 9, 29) },
   });
   assert.deepEqual(win.rowType, 'Event');
-  assert.deepEqual(win.ids, ['acct-1:primary:ev1']);
-  await w.call('Event/hide', { opId: 'h2', ids: ['acct-1:primary:ev1'], hidden: true });
+  assert.deepEqual(win.ids, ['acct-1:primary/ev1']);
+  await w.call('Event/hide', { opId: 'h2', ids: ['acct-1:primary/ev1'], hidden: true });
   const win2 = await w.call('View/watch', {
     spec: { kind: 'events', from: Date.UTC(2026, 9, 26), to: Date.UTC(2026, 9, 29) },
   });
@@ -109,4 +109,86 @@ test('events view: stored singles appear in range; hidden drops out; plans is em
     w.call('View/watch', { spec: { kind: 'events', from: 0, to: 86_400_000 * 70 } }),
     /62 days/,
   );
+});
+
+const GMASTER = JSON.stringify({
+  summary: 'Weekly sync',
+  start: { dateTime: '2026-10-27T10:00:00-07:00', timeZone: 'America/Los_Angeles' },
+  end: { dateTime: '2026-10-27T11:00:00-07:00', timeZone: 'America/Los_Angeles' },
+  status: 'confirmed',
+});
+const GOVERRIDE = JSON.stringify({
+  summary: 'Weekly sync (moved)',
+  start: { dateTime: '2026-11-03T14:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  end: { dateTime: '2026-11-03T15:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  status: 'confirmed',
+});
+
+test('master + override: view emits master@recId; Event/get round-trips the override row', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'a', origin: 'local', writes: [{ ...accountWrite }] });
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'Personal',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+        selected: true,
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev2',
+        rows: [
+          {
+            status: 'confirmed',
+            recurrence: { rrule: ['RRULE:FREQ=WEEKLY'] },
+            startUtc: Date.UTC(2026, 9, 27, 17, 0),
+            endUtc: Date.UTC(2026, 9, 27, 18, 0),
+            allDay: false,
+            data: GMASTER,
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev2_20261103T180000Z',
+        rows: [
+          {
+            recurrenceId: '20261103T180000Z',
+            masterRemoteId: 'ev2',
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 10, 3, 22, 0),
+            endUtc: Date.UTC(2026, 10, 3, 23, 0),
+            allDay: false,
+            data: GOVERRIDE,
+          },
+        ],
+      },
+    ],
+  });
+  const win = await w.call('View/watch', {
+    spec: { kind: 'events', from: Date.UTC(2026, 10, 1), to: Date.UTC(2026, 10, 8) },
+  });
+  const occId = 'acct-1:primary/ev2@20261103T180000Z';
+  assert.deepEqual(win.ids, [occId]);
+  // The override row projects its own fields (moved title + start), originalStart is the key.
+  const { list } = await w.call('Event/get', { ids: [occId] });
+  assert.equal(list.length, 1);
+  assert.equal(list[0]!.title, 'Weekly sync (moved)');
+  assert.equal(list[0]!.seriesId, 'acct-1:primary/ev2');
+  assert.equal(list[0]!.exception, true);
+  // Event/hide on the occurrence id lands on the resource (master) remote.
+  await w.call('Event/hide', { opId: 'h9', ids: [occId], hidden: true });
+  const after = await w.call('Event/get', { ids: [occId] });
+  assert.equal(after.list[0]!.hidden, true);
 });

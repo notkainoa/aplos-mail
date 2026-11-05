@@ -8,11 +8,15 @@ import {
   occurrenceEvent,
   parseCalendarId,
   parseEventId,
+  recurrenceIdToTime,
+  instant,
   type CalRow,
   type EvtRow,
 } from '../calendar/project';
+import type { EventFields } from '@aplos/contract';
+import type { EventFields as PortFields } from '../ports/calendar';
 import { expand } from '../calendar/recurrence';
-import { notImplemented, type AreaHandlers, type MethodContext } from './types';
+import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `event` area, owned by lane `prov-cal`. Reads come from `calendars`, `events` and `event_hidden`; writes to the
@@ -89,8 +93,9 @@ function setCalendar(args: Input<'Calendar/set'>, ctx: MethodContext): Output<'C
         readOnly: row.read_only === 1,
         ...(row.is_primary === 1 ? { primary: true } : {}),
         ...(row.time_zone ? { timeZone: row.time_zone } : {}),
+        // An omitted field keeps the stored value — the upsert writes absent fields as NULL.
+        color: args.colorTag ?? row.color ?? undefined,
         ...(args.shown === undefined ? {} : { selected: args.shown }),
-        ...(args.colorTag === undefined ? {} : { color: args.colorTag }),
       },
       ...auditWrites(ctx.caller, 'Calendar/set', args.id),
     ],
@@ -99,11 +104,12 @@ function setCalendar(args: Input<'Calendar/set'>, ctx: MethodContext): Output<'C
   return { calendar: calendarFromRow(after), receipt: receipt(ctx, args.opId) };
 }
 
-const zone = (ctx: MethodContext) =>
+const zone = (ctx: MethodContext, accountId: string) =>
   ctx.services.store.read(
     q =>
       q.get<{ time_zone: string }>(
-        'SELECT time_zone FROM calendars WHERE is_primary = 1 AND time_zone IS NOT NULL LIMIT 1',
+        'SELECT time_zone FROM calendars WHERE account_id = ? AND is_primary = 1 AND time_zone IS NOT NULL LIMIT 1',
+        accountId,
       )?.time_zone ?? 'UTC',
   );
 
@@ -115,16 +121,21 @@ function eventRow(
   remote: string,
   recId?: string,
 ) {
+  // An occurrence's contract id names the RESOURCE's remote id (the master); a Google override row carries the
+  // instance remote_id and master_remote_id, a CalDAV one shares the master's remote_id — match either column.
+  const on = recId
+    ? '(e.remote_id = ? OR e.master_remote_id = ?) AND e.recurrence_id = ?'
+    : "e.remote_id = ? AND e.master_remote_id IS NULL AND e.recurrence_id = ''";
+  const params: (string | number)[] = recId ? [remote, remote, recId] : [remote];
   return ctx.services.store.read(q =>
     q.get<EvtRow & { cal_row: number }>(
       `SELECT e.id, e.calendar_id, e.remote_id, e.recurrence_id, e.master_remote_id, e.status,
               e.recurrence, e.start_utc, e.end_utc, e.all_day, e.data, c.id AS cal_row
        FROM events e JOIN calendars c ON c.id = e.calendar_id
-       WHERE c.account_id = ? AND c.remote_id = ? AND e.remote_id = ? AND e.recurrence_id = ?`,
+       WHERE c.account_id = ? AND c.remote_id = ? AND ${on}`,
       accountId,
       calRemote,
-      remote,
-      recId ?? '',
+      ...params,
     ),
   );
 }
@@ -132,7 +143,7 @@ function eventRow(
 function readEvent(ctx: MethodContext, id: string): Event | undefined {
   const ref = parseEventId(id);
   const hidden = hiddenSet(ctx);
-  const z = zone(ctx);
+  const z = zone(ctx, ref.accountId);
   if (!ref.recurrenceId) {
     const row = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
     if (!row) return undefined;
@@ -147,11 +158,15 @@ function readEvent(ctx: MethodContext, id: string): Event | undefined {
   const master = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
   if (!master || !master.recurrence) return undefined;
   const base = eventFromRow(cal, master, hidden);
-  const rec = JSON.parse(master.recurrence) as {
-    rrule?: string[];
-    rdate?: string[];
-    exdate?: string[];
-  };
+  let rec: { rrule?: string[]; rdate?: string[]; exdate?: string[] };
+  try {
+    rec = JSON.parse(master.recurrence) as typeof rec;
+  } catch {
+    return undefined;
+  }
+  // Bound the expansion to a day around the occurrence's original start (its id carries the key).
+  const at = instant(recurrenceIdToTime(ref.recurrenceId), z);
+  const day = 86_400_000;
   const expanded = expand({
     start: fromWire(base.start),
     end: fromWire(base.end),
@@ -161,14 +176,14 @@ function readEvent(ctx: MethodContext, id: string): Event | undefined {
     rdate: rec.rdate,
     exdate: rec.exdate,
     overrides: [],
-    range: { from: 0, to: 2 ** 42 },
+    range: { from: at - day, to: at + day },
     floatingZone: z,
-    limit: 20_000,
+    limit: 5_000,
   });
   const occ = expanded.occurrences.find(o => o.recurrenceId === ref.recurrenceId);
   if (!occ) return undefined;
   const isHidden = hidden.has(`${master.calendar_id}|${ref.remote}|${ref.recurrenceId}`);
-  return occurrenceEvent(base, occ, true, isHidden);
+  return occurrenceEvent(base, occ, occ.overridden, isHidden);
 }
 
 function getEvents(args: Input<'Event/get'>, ctx: MethodContext): Output<'Event/get'> {
@@ -188,19 +203,45 @@ function getEvents(args: Input<'Event/get'>, ctx: MethodContext): Output<'Event/
   return { state: stateOf(ctx), list, notFound };
 }
 
+/** The wire `EventFields` to the port's: `title` is `summary`, times go to the engine union, attendees take
+ * the port's required response/organizer/self (the provider fills the truth back in on save). */
+function toPortFields(f: Partial<EventFields>): Partial<PortFields> {
+  const out: Partial<PortFields> = {};
+  if (f.title !== undefined) out.summary = f.title;
+  if (f.start !== undefined) out.start = f.start;
+  if (f.end !== undefined) out.end = f.end;
+  if (f.allDay !== undefined) out.allDay = f.allDay;
+  if (f.location !== undefined) out.location = f.location;
+  if (f.description !== undefined) out.description = f.description;
+  if (f.attendees !== undefined)
+    out.attendees = f.attendees.map(a => ({
+      address: a.address,
+      ...(a.name ? { name: a.name } : {}),
+      response: 'needsAction',
+      organizer: false,
+      self: false,
+      ...(a.optional ? { optional: true } : {}),
+    }));
+  return out;
+}
+
+/** `audit: true` methods whose commit lives in the port still get a listener audit row, under a nonce opId. */
+const auditCall = (ctx: MethodContext, method: string, target?: string) => {
+  const writes = auditWrites(ctx.caller, method, target);
+  if (writes.length) ctx.services.store.commit({ opId: nonce(ctx), origin: 'local', writes });
+};
+
 function hideEvents(args: Input<'Event/hide'>, ctx: MethodContext): Output<'Event/hide'> {
-  const writes = args.ids.flatMap(id => {
+  const writes = args.ids.map(id => {
     const ref = parseEventId(id);
-    return [
-      {
-        kind: 'eventHidden' as const,
-        accountId: ref.accountId,
-        calendarRemoteId: ref.calRemote,
-        remoteId: ref.remote,
-        ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
-        hidden: args.hidden,
-      },
-    ];
+    return {
+      kind: 'eventHidden' as const,
+      accountId: ref.accountId,
+      calendarRemoteId: ref.calRemote,
+      remoteId: ref.remote,
+      ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+      hidden: args.hidden,
+    };
   });
   ctx.services.store.commit({
     opId: args.opId,
@@ -221,9 +262,10 @@ async function setEvent(
     const result = await ctx.services.calendar.put(cal.accountId, {
       calendarRemoteId: cal.remoteId,
       scope: 'occurrence',
-      fields: change.fields as Output<'Event/set'> extends never ? never : never,
+      fields: toPortFields(change.fields),
       notify,
-    } as never);
+    });
+    auditCall(ctx, 'Event/set', args.opId);
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }
   const ref = parseEventId(change.id);
@@ -237,6 +279,7 @@ async function setEvent(
     });
     if (result.kind === 'conflict')
       throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+    auditCall(ctx, 'Event/set', args.opId);
     return { receipt: receipt(ctx, args.opId) };
   }
   const result = await ctx.services.calendar.put(ref.accountId, {
@@ -244,9 +287,10 @@ async function setEvent(
     remoteId: ref.remote,
     ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
     scope: change.scope,
-    fields: change.fields as never,
+    fields: toPortFields(change.fields),
     notify,
   });
+  auditCall(ctx, 'Event/set', args.opId);
   return savedEvent(ctx, args.opId, result, ref.accountId, ref.calRemote);
 }
 
@@ -259,9 +303,13 @@ async function savedEvent(
 ): Promise<Output<'Event/set'>> {
   if (result.kind === 'conflict')
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
-  // The port committed the saved facts; read the first upsert back for the response.
+  // The port committed the saved facts; read the first upsert back for the response. A saved override's
+  // contract id names its master plus the recurrence key (`masterRemoteId ?? remoteId`, then `@recId`).
   const first = result.upserts[0];
-  const event = first ? readEvent(ctx, `${accountId}:${calRemote}:${first.remoteId}`) : undefined;
+  const id = first
+    ? `${accountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`
+    : undefined;
+  const event = id ? readEvent(ctx, id) : undefined;
   return { ...(event ? { event } : {}), receipt: receipt(ctx, opId) };
 }
 
@@ -280,6 +328,7 @@ async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Outp
   );
   if (result.kind === 'conflict')
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  auditCall(ctx, 'Event/rsvp', args.opId);
   return receipt(ctx, args.opId);
 }
 

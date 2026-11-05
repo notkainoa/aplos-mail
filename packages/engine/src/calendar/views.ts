@@ -14,7 +14,7 @@ import {
   fromWire,
   instant,
   occurrenceEvent,
-  parseCalendarId,
+  recurrenceIdToTime,
   toWire,
   type CalRow,
   type EvtRow,
@@ -72,6 +72,7 @@ const toCal = (r: Joined): CalRow => ({
   time_zone: r.time_zone,
 });
 
+// `EvtRow.id` is the events-table PK — unused in projection; the join column `cal_id` feeds grouping.
 const toEvt = (r: Joined): EvtRow => ({
   id: r.cal_id,
   calendar_id: r.cal_id,
@@ -121,14 +122,13 @@ function rangeCheck(from: number, to: number) {
 function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materialized[] {
   const rows = q.all<Joined>(SELECT);
   const hidden = hiddenSet(q);
-  const wanted = spec.calendarIds
-    ? new Set(spec.calendarIds.map(id => parseCalendarId(id).remoteId))
-    : undefined;
+  // The pair, not just remote_id: `primary` (and the owner's email) repeat across accounts.
+  const wanted = spec.calendarIds ? new Set(spec.calendarIds) : undefined;
   const out: Materialized[] = [];
   // Overrides travel with their master (grouped per calendar+remote).
   const groups = new Map<string, { master?: Joined; single?: Joined; overrides: Joined[] }>();
   for (const r of rows) {
-    if (wanted ? !wanted.has(r.cal_remote) : r.selected !== 1) continue;
+    if (wanted ? !wanted.has(`${r.account_id}:${r.cal_remote}`) : r.selected !== 1) continue;
     const key = `${r.cal_id}|${r.master_remote_id ?? r.remote_id}`;
     const g = groups.get(key) ?? { overrides: [] };
     if (r.recurrence_id === '') {
@@ -138,6 +138,7 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
     groups.set(key, g);
   }
   for (const { master, single, overrides } of groups.values()) {
+    // An override can arrive before its master (F3): a group of only override rows stays out until the master syncs.
     const resource = master ?? single;
     if (!resource) continue;
     const cal = toCal(resource);
@@ -184,7 +185,7 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
             ...eventFromRow(cal, toEvt(oRow), hidden),
             id: `${base.id}@${occ.recurrenceId}`,
             seriesId: base.id,
-            originalStart: toWire(occ.start),
+            originalStart: recurrenceIdToTime(occ.recurrenceId),
           }
         : occurrenceEvent(base, occ, false, occHidden);
       out.push({ id: event.id, event, at: instant(toWire(occ.start), env.zone) });
@@ -228,7 +229,10 @@ export const eventsPlan: ViewCompiler = (spec, env): ViewPlan => {
       const r = load(q)[index]!;
       return { index, at: { part: 0, key: [r.at, r.id] } };
     },
-    statements: (_q): Statement[] => [{ sql: SELECT, params: [] }],
+    statements: (_q): Statement[] => [
+      { sql: SELECT, params: [] },
+      { sql: 'SELECT calendar_id, remote_id, recurrence_id FROM event_hidden', params: [] },
+    ],
   };
 };
 

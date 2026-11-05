@@ -29,7 +29,7 @@ export const fromWire = (t: EventTime): EngineTime =>
 export const calendarContractId = (accountId: string, remoteId: string): string =>
   `${accountId}:${remoteId}`;
 export const eventContractId = (accountId: string, calRemote: string, remote: string): string =>
-  `${accountId}:${calRemote}:${remote}`;
+  `${accountId}:${calRemote}/${remote}`;
 
 export function parseCalendarId(id: string): { accountId: string; remoteId: string } {
   const i = id.indexOf(':');
@@ -44,15 +44,17 @@ export function parseEventId(id: string): {
   remote: string;
   recurrenceId?: string;
 } {
-  const [head, recId] = id.split('@', 2) as [string, string?];
-  const parts = head.split(':');
-  if (parts.length < 3 || parts[0] === '')
+  const at = id.indexOf('@');
+  const head = at < 0 ? id : id.slice(0, at);
+  const recId = at < 0 ? undefined : id.slice(at + 1);
+  const colon = head.indexOf(':');
+  const slash = head.indexOf('/', colon);
+  if (colon <= 0 || slash <= colon + 1 || slash === head.length - 1)
     throw new ContractError({ type: 'notFound', message: 'This event is no longer available.' });
-  const [accountId, calRemote, ...rest] = parts as [string, string, ...string[]];
   return {
-    accountId,
-    calRemote,
-    remote: rest.join(':'),
+    accountId: head.slice(0, colon),
+    calRemote: head.slice(colon + 1, slash),
+    remote: head.slice(slash + 1),
     ...(recId ? { recurrenceId: recId } : {}),
   };
 }
@@ -209,10 +211,13 @@ export function eventFromRow(cal: CalRow, row: EvtRow, hiddenSet: Set<string>): 
         }
       : undefined;
   const isOverride = row.recurrence_id !== '';
-  const baseId = eventContractId(cal.account_id, cal.remote_id, row.remote_id);
+  // Contract ids and hidden keys name the RESOURCE's remote id — a Google override's own remote_id is its
+  // instance id, so `master_remote_id ?? remote_id` everywhere an id is built or a hidden key is checked.
+  const resourceRemote = row.master_remote_id ?? row.remote_id;
+  const baseId = eventContractId(cal.account_id, cal.remote_id, resourceRemote);
   const hidden =
-    hiddenSet.has(`${row.calendar_id}|${row.remote_id}|${row.recurrence_id}`) ||
-    hiddenSet.has(`${row.calendar_id}|${row.remote_id}|`);
+    hiddenSet.has(`${row.calendar_id}|${resourceRemote}|${row.recurrence_id}`) ||
+    hiddenSet.has(`${row.calendar_id}|${resourceRemote}|`);
   const conference = conferenceOf(g);
   const tz = str(rec(g.start).timeZone);
   const transparency = str(g.transparency);
@@ -223,11 +228,7 @@ export function eventFromRow(cal: CalRow, row: EvtRow, hiddenSet: Set<string>): 
     calendarId: calendarContractId(cal.account_id, cal.remote_id),
     ...(isOverride
       ? {
-          seriesId: eventContractId(
-            cal.account_id,
-            cal.remote_id,
-            row.master_remote_id ?? row.remote_id,
-          ),
+          seriesId: baseId,
           originalStart: recurrenceIdToTime(row.recurrence_id),
         }
       : {}),
