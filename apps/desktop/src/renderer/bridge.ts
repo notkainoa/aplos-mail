@@ -37,6 +37,31 @@ const MAX_MESSAGE_CHARS = 500;
 const noop = () => {};
 
 /**
+ * Attaches a swallowing catch to a foreign thenable — the unsubscribe value `subscribe` hands back or the value
+ * the unsubscribe call returns — so its rejection can never surface as an unhandled rejection. Non-thenables and
+ * an object whose `then` getter throws are left alone.
+ */
+function swallowRejection(value: unknown): void {
+  try {
+    if (
+      value !== null &&
+      (typeof value === 'object' || typeof value === 'function') &&
+      typeof (value as { then?: unknown }).then === 'function'
+    )
+      void Promise.resolve(value).catch(noop);
+  } catch {
+    // A hostile object whose `then` getter throws was never chained, so there is nothing to swallow.
+  }
+}
+
+/** `message` capped at MAX_MESSAGE_CHARS code points, so a cap never leaves a lone surrogate. */
+function capMessage(message: string): string {
+  return message.length > MAX_MESSAGE_CHARS
+    ? Array.from(message).slice(0, MAX_MESSAGE_CHARS).join('')
+    : message;
+}
+
+/**
  * `host`'s `aplosEngine` when it is an object whose `call` and `subscribe` are functions, else null. Never throws:
  * a non-object, missing members or a getter that throws all read as "no bridge".
  */
@@ -65,22 +90,29 @@ function innerBody(reason: unknown): unknown {
 }
 
 /**
- * The validated `ErrorBody` inside a rejection — the value itself or its `body` — with the message capped. Anything
+ * The validated `ErrorBody` inside a rejection: its `body` first — a real `ContractError` carries `reasonCode`,
+ * `resumeAt`, `path` and `retryAfterMs` only there, and a cloned one may keep only `body` — then the rejection
+ * itself, with the message capped. A `body` getter that throws forfeits only the inner candidate, and a candidate
  * that does not parse against `ErrorBodySchema` (a string, null, an object without `type` and `message`, a value
- * whose getters throw) yields undefined.
+ * whose getters break the parser) is skipped; when neither parses the answer is undefined.
  */
 function errorBody(reason: unknown): ErrorBody | undefined {
+  let inner: unknown;
   try {
-    for (const candidate of [reason, innerBody(reason)]) {
+    inner = innerBody(reason);
+  } catch {
+    inner = undefined;
+  }
+  for (const candidate of [inner, reason]) {
+    try {
       if (candidate === null || typeof candidate !== 'object') continue;
       const parsed = ErrorBodySchema.safeParse(candidate);
-      if (parsed.success)
-        return { ...parsed.data, message: parsed.data.message.slice(0, MAX_MESSAGE_CHARS) };
+      if (parsed.success) return { ...parsed.data, message: capMessage(parsed.data.message) };
+    } catch {
+      // A candidate whose getters break the parser drops like any invalid body.
     }
-    return undefined;
-  } catch {
-    return undefined;
   }
+  return undefined;
 }
 
 /** A rejection as the `ContractError` the data layer understands: the engine's body, else the transport failure. */
@@ -104,6 +136,7 @@ export function createEngineBridge(host: unknown = globalThis): EngineSession | 
   const listeners = new Set<(frame: Frame) => void>();
   let bridge: EngineBridge | null = api;
   let closed = false;
+  let upstreamFailed = false;
   let stopUpstream: (() => void) | null = null;
 
   const deliver = (raw: unknown) => {
@@ -118,6 +151,8 @@ export function createEngineBridge(host: unknown = globalThis): EngineSession | 
     }
     if (frame === undefined) return;
     for (const listener of [...listeners]) {
+      // A listener that closed the session stops the rest of this frame.
+      if (closed) return;
       try {
         listener(frame);
       } catch {
@@ -127,15 +162,18 @@ export function createEngineBridge(host: unknown = globalThis): EngineSession | 
   };
 
   const openUpstream = () => {
-    if (stopUpstream || closed || !bridge) return;
+    if (stopUpstream || upstreamFailed || closed || !bridge) return;
     let stop: unknown;
     try {
       stop = bridge.subscribe(deliver);
     } catch {
-      // A bridge that throws on subscribe is retried by the next listener.
+      // Never retried: the bridge may have registered `deliver` before throwing, so a second
+      // `subscribe` on the next listener could deliver every frame twice.
+      upstreamFailed = true;
       return;
     }
     stopUpstream = typeof stop === 'function' ? (stop as () => void) : noop;
+    swallowRejection(stop);
   };
 
   return {
@@ -145,14 +183,14 @@ export function createEngineBridge(host: unknown = globalThis): EngineSession | 
         return Promise.reject(
           new ContractError({ type: 'unavailable', message: UNREACHABLE_MESSAGE }),
         );
-      // A transfer list passes through only whole: an array of ArrayBuffers, exactly as given.
-      const transfer = options?.transfer;
-      const buffers =
-        Array.isArray(transfer) && transfer.every(item => item instanceof ArrayBuffer)
-          ? transfer
-          : undefined;
       let sent: Promise<unknown>;
       try {
+        // A transfer list passes through only whole: an array of ArrayBuffers, exactly as given.
+        const transfer = options?.transfer;
+        const buffers =
+          Array.isArray(transfer) && transfer.every(item => item instanceof ArrayBuffer)
+            ? transfer
+            : undefined;
         sent = Promise.resolve(api.call(method, args, buffers));
       } catch (reason) {
         sent = Promise.reject(reason);
@@ -178,7 +216,7 @@ export function createEngineBridge(host: unknown = globalThis): EngineSession | 
       bridge = null;
       listeners.clear();
       try {
-        stop?.();
+        swallowRejection(stop?.());
       } catch {
         // A foreign unsubscribe that throws changes nothing: the session is closed either way.
       }

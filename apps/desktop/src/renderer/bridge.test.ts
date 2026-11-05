@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ContractError, Frame } from '@aplos/contract';
+import { ContractError, Frame, type ErrorBody } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 import { UNREACHABLE_MESSAGE } from './data/client';
 import { createEngineBridge, hasEngineBridge } from './bridge';
@@ -14,7 +14,7 @@ type Upstream = (frame: unknown) => void;
 type CallImpl = (method: unknown, args: unknown, transfer: unknown) => unknown;
 
 /** A fake `window.aplosEngine` with its members and every use of them recorded. */
-function fakeBridge(call?: CallImpl) {
+function fakeBridge(call?: CallImpl, subscribe?: (listener: Upstream) => unknown) {
   const calls: { method: unknown; args: unknown; transfer: unknown }[] = [];
   const upstream = new Set<Upstream>();
   const stats = { unbinds: 0, positionCalls: 0, otherCalls: 0 };
@@ -25,6 +25,7 @@ function fakeBridge(call?: CallImpl) {
     },
     subscribe(listener: Upstream) {
       upstream.add(listener);
+      if (subscribe) return subscribe(listener);
       return () => {
         stats.unbinds++;
         upstream.delete(listener);
@@ -209,6 +210,79 @@ test('an error message is carried only capped', async () => {
   assert.ok(error.body.message.startsWith('ok '));
 });
 
+test('an error message is capped at 500 code points, never ending in a lone surrogate', async () => {
+  const fake = fakeBridge(() =>
+    Promise.reject({ type: 'internal', message: `${'x'.repeat(499)}💥tail` }),
+  );
+  const error = await rejection(sessionOf(fake));
+  assert.equal(error.body.type, 'internal');
+  assert.equal(error.body.message, `${'x'.repeat(499)}💥`);
+  assert.equal(Array.from(error.body.message).length, 500);
+});
+
+test('a ContractError rejection keeps its body whole: reasonCode, resumeAt, path and retryAfterMs', async () => {
+  const body: ErrorBody = {
+    type: 'paused',
+    message: 'This account is paused.',
+    reasonCode: 'auth',
+    resumeAt: 1_700_000_000_000,
+    retryAfterMs: 60_000,
+    path: ['patch', 'mail'],
+  };
+  const fake = fakeBridge(() => Promise.reject(new ContractError(body)));
+  const error = await rejection(sessionOf(fake));
+  assert.deepEqual(error.body, body);
+});
+
+test('a rejection whose body getter throws still yields a valid outer body', async () => {
+  const hostile = Object.defineProperty(
+    { type: 'paused', message: 'The outer body still parses.' },
+    'body',
+    {
+      enumerable: true,
+      get() {
+        throw new Error('hostile body');
+      },
+    },
+  );
+  const fake = fakeBridge(() => Promise.reject(hostile));
+  const error = await rejection(sessionOf(fake));
+  assert.equal(error.body.type, 'paused');
+  assert.equal(error.body.message, 'The outer body still parses.');
+});
+
+test('a throwing transfer getter never makes call throw synchronously: it rejects unavailable', async () => {
+  const fake = fakeBridge(() => Promise.resolve({ ok: true }));
+  const session = sessionOf(fake);
+  const options = Object.defineProperty({}, 'transfer', {
+    enumerable: true,
+    get() {
+      throw new Error('hostile transfer');
+    },
+  }) as { transfer?: ArrayBuffer[] };
+  const error = await session.call('Blob/put', {}, options).then(
+    () => assert.fail('the call resolved'),
+    reason => reason,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.body.type, 'unavailable');
+  assert.equal(error.body.message, UNREACHABLE_MESSAGE);
+  assert.equal(fake.calls.length, 0);
+});
+
+test('a revoked proxy in the transfer list never makes call throw synchronously', async () => {
+  const fake = fakeBridge(() => Promise.resolve({ ok: true }));
+  const session = sessionOf(fake);
+  const { proxy, revoke } = Proxy.revocable(new ArrayBuffer(1), {});
+  revoke();
+  const error = await session.call('Blob/put', {}, { transfer: [proxy as ArrayBuffer] }).then(
+    () => assert.fail('the call resolved'),
+    reason => reason,
+  );
+  assert.ok(error instanceof ContractError);
+  assert.equal(error.body.type, 'unavailable');
+});
+
 // ---- frames ---------------------------------------------------------------------------------------------------
 
 test('subscribe delivers valid frames in order and drops invalid ones without reaching listeners', () => {
@@ -281,6 +355,82 @@ test('unsubscribe stops delivery for that listener only, upstream stays until cl
   assert.equal(fake.stats.unbinds, 0);
   session.close();
   assert.equal(fake.stats.unbinds, 1);
+});
+
+test('a listener that closes the session stops the remaining listeners of that frame', () => {
+  const fake = fakeBridge();
+  const session = sessionOf(fake);
+  const received: Frame[] = [];
+  session.subscribe(() => session.close());
+  session.subscribe(frame => received.push(frame));
+  fake.emit(VALID_STATE);
+  assert.deepEqual(received, []);
+});
+
+test('a subscribe that throws after registering is never retried, so no frame is delivered twice', async () => {
+  const upstreams: Upstream[] = [];
+  let subscribes = 0;
+  const api = {
+    call: () => Promise.resolve({ answer: 2 }),
+    subscribe: (listener: Upstream) => {
+      subscribes++;
+      upstreams.push(listener);
+      throw new Error('refused after registering');
+    },
+  };
+  const session = createEngineBridge({ aplosEngine: api });
+  assert.ok(session);
+  const received: Frame[] = [];
+  session.subscribe(frame => received.push(frame));
+  session.subscribe(frame => received.push(frame));
+  assert.equal(subscribes, 1);
+  for (const upstream of upstreams) upstream(VALID_STATE);
+  assert.deepEqual(received, [VALID_STATE, VALID_STATE]);
+  assert.deepEqual(await session.call('Counts/get', {}), { answer: 2 });
+  session.close();
+});
+
+test('a thenable the foreign subscribe returns is chained and swallowed, never unhandled', async () => {
+  let thenCalls = 0;
+  const fake = fakeBridge(undefined, () => ({
+    then(_resolve: unknown, reject: (reason: unknown) => void) {
+      thenCalls++;
+      reject(new Error('foreign subscribe'));
+    },
+  }));
+  const session = sessionOf(fake);
+  const received: Frame[] = [];
+  session.subscribe(frame => received.push(frame));
+  fake.emit(VALID_STATE);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(thenCalls, 1);
+  assert.deepEqual(received, [VALID_STATE]);
+});
+
+test('a rejected promise the foreign subscribe returns is swallowed, and frames still flow', async () => {
+  const fake = fakeBridge(undefined, () => Promise.reject(new Error('foreign subscribe')));
+  const session = sessionOf(fake);
+  const received: Frame[] = [];
+  session.subscribe(frame => received.push(frame));
+  fake.emit(VALID_STATE);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(received, [VALID_STATE]);
+  session.close();
+});
+
+test('a thenable the foreign unsubscribe returns is chained and swallowed on close', async () => {
+  let thenCalls = 0;
+  const fake = fakeBridge(undefined, () => () => ({
+    then(_resolve: unknown, reject: (reason: unknown) => void) {
+      thenCalls++;
+      reject(new Error('foreign unsubscribe'));
+    },
+  }));
+  const session = sessionOf(fake);
+  session.subscribe(() => {});
+  session.close();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(thenCalls, 1);
 });
 
 // ---- close ----------------------------------------------------------------------------------------------------

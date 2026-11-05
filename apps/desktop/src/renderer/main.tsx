@@ -23,7 +23,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, onboardingMode, transportOf, type EntryInput } from './entry';
 import { scenarioParam } from './onboarding/route';
-import type { Client } from '@aplos/contract/client';
+import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
 import type { StandInOptions } from './data/standin';
 
@@ -41,25 +41,34 @@ const scenario = scenarioParam(window.location.search) as StandInOptions['scenar
 /**
  * The data layer on the real engine, when `entry.ts`'s rule allows it and the preload exposed
  * `window.aplosEngine`: one bridge session for the layer and a second for `App`'s client, as the stand-in path's
- * second `engine.connect()` gives it. `bridge.ts` loads only on this path, so the legacy renderer never sees it,
- * and a null answer (no bridge, or `createEngineBridge` refused) sends the caller back to the stand-in.
+ * second `engine.connect()` gives it. `bridge.ts` loads only on this path, so the legacy renderer never sees it.
+ * Any failure — a missing chunk, a refused bridge, a throwing `connectDataLayer` — answers null after closing
+ * every session it opened, so the caller still falls back to the stand-in.
  */
 async function connectEngine(): Promise<{ layer: DataConnection; client: Client } | null> {
-  const [{ createEngineBridge, hasEngineBridge }, { connectDataLayer }, { createClient }] =
-    await Promise.all([
-      import('./bridge'),
-      import('./data/connect'),
-      import('@aplos/contract/client'),
-    ]);
-  if (transportOf({ ...input, bridge: hasEngineBridge() }) !== 'engine') return null;
-  const session = createEngineBridge();
-  const second = session ? createEngineBridge() : null;
-  if (!session || !second) {
-    session?.close();
-    second?.close();
+  const opened: EngineSession[] = [];
+  try {
+    const [{ createEngineBridge, hasEngineBridge }, { connectDataLayer }, { createClient }] =
+      await Promise.all([
+        import('./bridge'),
+        import('./data/connect'),
+        import('@aplos/contract/client'),
+      ]);
+    if (transportOf({ ...input, bridge: hasEngineBridge() }) !== 'engine') return null;
+    const session = createEngineBridge();
+    if (!session) return null;
+    opened.push(session);
+    const second = createEngineBridge();
+    if (!second) return null;
+    opened.push(second);
+    const engine = { layer: connectDataLayer({ session }), client: createClient(second) };
+    opened.length = 0; // The caller owns the sessions now; the finally must not close them.
+    return engine;
+  } catch {
     return null;
+  } finally {
+    for (const session of opened) session.close();
   }
-  return { layer: connectDataLayer({ session }), client: createClient(second) };
 }
 
 async function boot(): Promise<void> {
@@ -118,6 +127,6 @@ async function bootOnboarding(): Promise<void> {
 
 // The entry is the one place allowed to reach the legacy renderer (its production path until WP5.6).
 // eslint-disable-next-line aplos/boundaries
-if (entry === 'legacy') void import('./legacy/main');
-else if (entry === 'onboarding') void bootOnboarding();
-else void boot();
+if (entry === 'legacy') void import('./legacy/main').catch(() => undefined);
+else if (entry === 'onboarding') void bootOnboarding().catch(() => undefined);
+else void boot().catch(() => undefined);
