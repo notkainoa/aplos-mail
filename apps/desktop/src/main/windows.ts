@@ -4,11 +4,15 @@ import { DraftOwnership } from './desktop-policy';
 import type { AppState, Listener } from '@aplos/contract/legacy/types';
 import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
-import { latestState, realPath, service } from './engine-host';
-import { closing, quitting, finishQuit } from './lifecycle';
+import { latestState, realPath, realEngine, service } from './engine-host';
+import { closing, quitting, finishQuit, failedStart } from './lifecycle';
 import { isTest } from './test-mode';
 import {
   createOnboarding,
+  mailForActivation,
+  onboardingEnabledFor,
+  readSessionFacts,
+  windowFallback,
   type Activation,
   type OnboardingMode,
   type SessionFacts,
@@ -34,23 +38,47 @@ function command(value: string) {
   const win = BrowserWindow.getFocusedWindow() || main;
   win?.webContents.send('aplos:event', { type: 'command', payload: value });
 }
-/** What `Session/get.hasAccounts` and `.setup` will say; until the engine serves them, today's state answers. */
-function sessionFacts(): SessionFacts {
-  return {
+/**
+ * What `Session/get.hasAccounts` and `.setup` say: on the real-engine path main's control connection asks the engine
+ * (the legacy mirror is empty there); today's path reads its state mirror. The last good answer serves a read that
+ * fails while the engine restarts, so a Dock click then can never reopen onboarding for a finished setup.
+ */
+let lastFacts: SessionFacts | undefined;
+async function sessionFacts(): Promise<SessionFacts> {
+  if (realPath) {
+    lastFacts = await readSessionFacts(() => realEngine.session(), lastFacts);
+    return lastFacts;
+  }
+  lastFacts = {
     hasAccounts: !!latestState?.accounts.length,
     setup: latestState?.settings.onboardingDone ? { completedAt: 1 } : {},
   };
+  return lastFacts;
 }
-function focusMain() {
+const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+function focusMain(): Promise<BrowserWindow | undefined> {
   // Dock, second launch, links and notifications all land here. An open welcome window answers them: never a second window.
-  const decision = activateWindows();
-  if (isTest || decision === 'focus-onboarding' || decision === 'open-onboarding') return;
-  if (!main || main.isDestroyed()) main = createWindow();
-  // A window still waiting for its first paint shows itself then (F4: never a blank flash).
-  if (!painted.has(main)) return;
-  if (main.isMinimized()) main.restore();
-  main.show();
-  main.focus();
+  return activateWindows()
+    .then(decision => {
+      if (isTest) return undefined;
+      const win = mailForActivation(decision, ensureMain);
+      if (win === undefined) return undefined;
+      // A window still waiting for its first paint shows itself then (F4: never a blank flash).
+      if (!painted.has(win)) return win;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      return win;
+    })
+    .catch(error => {
+      windowFallback(error, {
+        report: failure =>
+          console.error('Aplos Mail: could not answer an activation:', describe(failure)),
+        ensureMail: () => void ensureMain(),
+        fatal: failedStart,
+      });
+      return main && !main.isDestroyed() ? main : undefined;
+    });
 }
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
@@ -262,13 +290,30 @@ function popout(kind: 'draft' | 'thread', id: string, fromWindowId: number) {
     emit({ type: 'draft-owner', payload: { draftId: id, windowId: win.id } });
   }
 }
+/**
+ * The one mail window (F3): the startup choice and every activation share this guard, so whichever answer lands
+ * second never makes a second window; a destroyed one is replaced.
+ */
+function ensureMain(): BrowserWindow {
+  if (!main || main.isDestroyed()) main = createWindow();
+  return main;
+}
 function setMain(win: BrowserWindow) {
   main = win;
 }
+/** A page still loading has no preload yet and would drop the event: send it when it has loaded. */
+function sendWhenReady(win: BrowserWindow, event: { type: string; payload?: unknown }) {
+  const send = () => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed())
+      win.webContents.send('aplos:event', event);
+  };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+  else send();
+}
 
-// The welcome window (DESIGN 7.11). Opt-in until `ui-onboard`'s renderer route exists: today's renderer shows its own
-// welcome inside the mail window, and loading it in a small separate window would show the whole app there.
-const onboardingEnabled = process.env.APLOS_ONBOARDING_WINDOW === '1';
+// The welcome window (DESIGN 7.11) is the default first-run path. `APLOS_ONBOARDING_WINDOW=0` opts out for tests
+// and debugging, which keeps the legacy behaviour (the mail window shows its own zero-accounts intro).
+const onboardingEnabled = onboardingEnabledFor(process.env, realPath);
 const welcome = { width: 640, height: 600, minHeight: 520 };
 function portOf(win: BrowserWindow): WindowPort {
   return {
@@ -320,7 +365,7 @@ function createWelcomeWindow(mode: OnboardingMode): WindowPort {
 }
 const onboarding = createOnboarding({
   createOnboarding: createWelcomeWindow,
-  createMail: () => portOf((main = createWindow())),
+  createMail: () => portOf(ensureMain()),
   currentMail: () => (main && !main.isDestroyed() ? portOf(main) : undefined),
   endSetup: async () => service?.invoke('Setup/end', { reason: 'closed' }),
   announceShown: port => {
@@ -329,13 +374,7 @@ const onboarding = createOnboarding({
   navigate: (port, to) => {
     for (const win of windows) {
       if (win.id !== port.id || win.isDestroyed() || win.webContents.isDestroyed()) continue;
-      const send = () => {
-        if (!win.isDestroyed() && !win.webContents.isDestroyed())
-          win.webContents.send('aplos:event', { type: 'navigate', payload: { to } });
-      };
-      // A page still loading has no preload yet and would drop the event: send it when it has loaded.
-      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
-      else send();
+      sendWhenReady(win, { type: 'navigate', payload: { to } });
     }
   },
 
@@ -344,14 +383,15 @@ const onboarding = createOnboarding({
   setTimer: (run, ms) => setTimeout(run, ms),
   clearTimer: handle => clearTimeout(handle as NodeJS.Timeout),
 });
-/** Startup: which window to open. Without the welcome window enabled it is the mail window, except at login. */
-function startWindows(atLogin: boolean): WindowChoice {
+/** Startup: which window to open. First run opens the onboarding window alone; the mail window waits for the handoff. */
+async function startWindows(atLogin: boolean): Promise<WindowChoice> {
   // A login launch is resident: no window until the Dock or the menu-bar item asks for one (host-2).
   if (atLogin) return 'none';
-  return onboardingEnabled ? onboarding.start(sessionFacts(), { atLogin }) : 'mail';
+  if (!onboardingEnabled) return 'mail';
+  return onboarding.start(await sessionFacts(), { atLogin });
 }
-function activateWindows(): Activation {
-  if (onboardingEnabled || onboarding.isOpen()) return onboarding.activate(sessionFacts());
+async function activateWindows(): Promise<Activation> {
+  if (onboardingEnabled || onboarding.isOpen()) return onboarding.activate(await sessionFacts());
   return main && !main.isDestroyed() ? 'focus-mail' : 'open-mail';
 }
 
@@ -370,6 +410,8 @@ export {
   createWindow,
   popout,
   setMain,
+  ensureMain,
+  sendWhenReady,
   onboarding,
   sessionFacts,
   startWindows,
