@@ -4,7 +4,11 @@
  * outside the field (the reader's back command closes find before it leaves), and another ⌘F refocuses the field.
  */
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { KEY_LAYER_ATTRIBUTE } from '../../mailframe';
 import { TextField } from '../../ui/controls';
+
+/** While open, the find bar is a layer above the reader: a key relayed from a sealed letter never reaches it. */
+const KEY_LAYER = { [KEY_LAYER_ATTRIBUTE]: 'find' };
 
 /** Props for `FindBar`. */
 export interface FindBarProps {
@@ -33,7 +37,12 @@ export function FindBar({ query, onChange, onClose, focusKey }: FindBarProps) {
     onClose();
   };
   return (
-    <div className="aplos-reader__find" data-focus-key={focusKey} onKeyDown={onKeyDown}>
+    <div
+      className="aplos-reader__find"
+      data-focus-key={focusKey}
+      {...KEY_LAYER}
+      onKeyDown={onKeyDown}
+    >
       <TextField
         id="reader-find"
         label="Find in this email"
