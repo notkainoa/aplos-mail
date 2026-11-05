@@ -24,8 +24,12 @@ export const DRAFT_REMOVE_PERMANENT_MS = 86_400_000;
 const EARLIER_KEEP = 5;
 /** The longest body a remote draft may bring: the local save's own limit (`text(1_000_000)`), counted on the stored body. */
 export const REMOTE_BODY_MAX = 1_000_000;
-/** Message ids and remote ids this device wrote, kept to recognise their echo in history. */
-const WROTE_KEEP = 20;
+/**
+ * Message ids, remote ids and Message-IDs this device wrote, kept to recognise their echo in history. A save answered
+ * with `copyInternetId` adds three (the upload's Message-ID, the message id, the copy's Message-ID), so 30 still covers
+ * about ten saves.
+ */
+const WROTE_KEEP = 30;
 
 export interface DraftConflictState {
   theirsRevision: number;
@@ -101,6 +105,8 @@ export interface DraftMeta {
   removeAt?: number;
   /** Refusals so far, for the backoff. */
   removeTries?: number;
+  /** Consecutive failed reads of the attachment bytes (blob-read.ts); cleared by a good read and by an edit. */
+  readFails?: number;
 }
 
 /** The meta keys a `meta` write may set; `null` clears. */
@@ -219,7 +225,102 @@ function asWritten(html: string) {
   const text = html.replace(/\r\n?/g, '\n');
   let end = text.length;
   while (end > 0 && text[end - 1] === '\n') end -= 1;
-  return end === text.length ? text : text.slice(0, end);
+  const body = end === text.length ? text : text.slice(0, end);
+  // An empty body comes back from adapters as trivially-empty markup (`<p></p>`, `<div><br></div>`): one empty
+  // content must hash the same, or our own copy never proves ours and shows as another device's draft. Only the
+  // container markup an editor emits for an empty body is interchangeable — an `<img>`, `<hr>` or `<table>` is
+  // content an edit can add, never an empty body, or the proof would swallow it. The check stays cheap: a real
+  // empty body is a few bytes, so anything larger keeps its hash without the htmlToText pass (the safe
+  // direction — a textless body that big is content anyway).
+  return body.length < 8192 && emptyMarkup(body) ? '' : body;
+}
+
+/** The element names an empty body may contain: containers and inline formatting, nothing that carries content. */
+const EMPTY_TAGS = new Set([
+  'html',
+  'head',
+  'body',
+  'p',
+  'div',
+  'br',
+  'span',
+  'o:p',
+  'wbr',
+  'nobr',
+  'b',
+  'i',
+  'em',
+  'strong',
+  'u',
+  's',
+  'strike',
+  'sub',
+  'sup',
+  'small',
+  'mark',
+  'font',
+  // Structure and flow containers an editor emits around nothing: emptied quotes, headings and
+  // section blocks suppress the same as `<p></p>` (a lone <ul><li> is NOT here — its bullet is text).
+  'blockquote',
+  'pre',
+  'code',
+  'kbd',
+  'samp',
+  'var',
+  'q',
+  'cite',
+  'abbr',
+  'address',
+  'dfn',
+  'del',
+  'ins',
+  'section',
+  'article',
+  'header',
+  'footer',
+  'nav',
+  'main',
+  'aside',
+  'figure',
+  'figcaption',
+  'dl',
+  'dt',
+  'dd',
+  'form',
+  'label',
+  'fieldset',
+  'legend',
+  'caption',
+  'colgroup',
+  'details',
+  'summary',
+  'center',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'rp',
+  'rt',
+  'rtc',
+  'ruby',
+  'bdi',
+  'bdo',
+  'time',
+  'data',
+]);
+
+/** An attribute that references or embeds anything is content wherever it sits: `background`,
+ * `src`/`href`/`poster`/`action`, a `style` carrying `url(` or `content:`, any `cid:` or `url(`. */
+const CONTENT_ATTR = /\b(?:background|src|href|poster|action)\s*=|url\s*\(|cid:/i;
+
+/** True when the markup has no text AND no element outside the empty-body containers — the `<p></p>` family. */
+function emptyMarkup(html: string): boolean {
+  if (CONTENT_ATTR.test(html)) return false;
+  for (const match of html.matchAll(/<\/?\s*([a-zA-Z][\w:-]*)/g))
+    if (!EMPTY_TAGS.has(match[1].toLowerCase())) return false;
+  return !htmlToText(html).trim();
 }
 
 /** Nothing to keep: no recipient, subject, text or attachment. A new empty draft is not uploaded. */
@@ -230,7 +331,7 @@ export function isEmpty(fields: DraftFields): boolean {
     !fields.bcc.length &&
     !fields.attachments.length &&
     !fields.subject.trim() &&
-    !htmlToText(fields.html).trim()
+    emptyMarkup(fields.html)
   );
 }
 

@@ -4,7 +4,7 @@
  *
  * The cursor is a key (a thread id, or the Low band's), never an index, so a row arriving above it can not move it.
  */
-import type { ThreadId, ThreadRow, ViewRange } from '../../data';
+import type { HomeView, ThreadId, ThreadRow, ViewRange } from '../../data';
 import { absoluteIndex, LIST_WINDOW, rangeAround } from '../lists/listModel';
 
 /** A section of rows as the engine keys them; `fromLater` is Back from Later, the bottom block of Do now. */
@@ -28,6 +28,19 @@ export interface HomeLayout {
   readonly update: readonly ThreadId[];
   readonly follow: readonly ThreadId[];
   readonly lowCount: number;
+}
+
+/** The layout of a live Home view: each section's ids and the Low band's count. */
+export function layoutOf(home: Pick<HomeView, 'sections' | 'low'>): HomeLayout {
+  const bySection = (key: 'do' | 'update' | 'follow') =>
+    home.sections.find(section => section.key === key);
+  return {
+    do: bySection('do')?.ids ?? [],
+    fromLater: bySection('do')?.fromLater?.ids ?? [],
+    update: bySection('update')?.ids ?? [],
+    follow: bySection('follow')?.ids ?? [],
+    lowCount: home.low.count,
+  };
 }
 
 /** A row lookup; a row the cache has not fetched yet is undefined. */
@@ -214,6 +227,9 @@ function nextSection(
   return present[0] ?? 'do';
 }
 
+/** Radius of rows pinned around the cursor while a burst lasts. */
+export const HOLD_RADIUS = 3;
+
 /** Ids of the rows around the cursor, for `hold`: the neighbours a re-rank must not move. */
 export function neighbourIds(
   items: readonly HomeItem[],
@@ -227,6 +243,28 @@ export function neighbourIds(
     if (item.kind === 'row') ids.push(item.id);
   }
   return ids;
+}
+
+// ---------------------------------------------------------------------------
+// The bulk pick
+// ---------------------------------------------------------------------------
+
+/**
+ * The ids X, ⇧X and ⌘A can pick, in list order: the ordinary rows of every section. The Low importance band is a
+ * cursor stop but not a thread, so it is never pickable and a ⇧X run steps over it.
+ */
+export function pickableIds(items: readonly HomeItem[]): ThreadId[] {
+  const ids: ThreadId[] = [];
+  for (const item of items) {
+    if (item.kind === 'row') ids.push(item.id);
+  }
+  return ids;
+}
+
+/** The cursor key when it is on a row X can pick, else null (the Low band, an empty list). */
+export function pickableKey(items: readonly HomeItem[], key: string | null): ThreadId | null {
+  const item = items.find(candidate => keyOf(candidate) === key);
+  return item?.kind === 'row' ? item.id : null;
 }
 
 // ---------------------------------------------------------------------------

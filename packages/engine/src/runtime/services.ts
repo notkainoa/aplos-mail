@@ -1,5 +1,6 @@
 import type {
   AccountActorHost,
+  BlobFiles,
   CalendarPort,
   Clock,
   DeadlineRegistry,
@@ -14,7 +15,7 @@ import type {
   StorePort,
   UnsubscribePort,
 } from '../ports';
-import type { CommitExtension } from '../store/port';
+import type { AttachmentFiles, CommitExtension } from '../store/port';
 import type { FrameBus } from './frames';
 
 /**
@@ -48,6 +49,10 @@ export interface EngineServices {
   unsubscribe: UnsubscribePort;
   /** The data key that seals credentials, unwrapped by the host (`eng-host`). */
   keys: KeyProvider;
+  /** Durable blob bytes (`host/blobs.ts`, `eng-host`); only the blob runtime calls it. Absent: `Blob/*` is `unavailable`. */
+  blobFiles: BlobFiles;
+  /** The attachment file cache (`host/files.ts`, eng-store); `Attachment/get` and `attachment` blob handles call it. Absent: `Attachment/get` is `unavailable`. */
+  attachmentFiles: AttachmentFiles;
   /** Frames out to connections, stamped with `{dbEpoch, seq}`. */
   frames: FrameBus;
   /** Cryptographic randomness (Web Crypto by default; a phone host may supply its own). */
@@ -62,6 +67,8 @@ export interface LaneModule {
   start?(): void | Promise<void>;
   /** On `Engine.close`, in reverse order. */
   stop?(): void | Promise<void>;
+  /** A connection closed (a window went away): drop what the lane holds for that `connectionId`. Must not throw. */
+  onConnectionClose?(connectionId: string): void;
 }
 
 /**

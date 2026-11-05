@@ -21,6 +21,12 @@ function utf8Length(text: string): number {
 /** At most this many values are visited to measure one message; a message with more counts as infinite. */
 export const MAX_MEASURED_NODES = 1_000_000;
 
+/**
+ * The same bound for what a WINDOW sends: a legitimate call has hundreds of values, and a million empty objects
+ * (3 MB on the wire) took about 0.5 s to measure, enough for a hostile renderer to stall an engine that serves every window.
+ */
+export const MAX_WINDOW_NODES = 100_000;
+
 /** JSON leaves these out of an object and writes `null` for them in an array. */
 const dropped = (value: unknown) =>
   value === undefined || typeof value === 'function' || typeof value === 'symbol';
@@ -80,11 +86,23 @@ function ownKeys(object: object, room: number, keep: (key: string) => boolean) {
   return keys;
 }
 
-/** Each key JSON would write, with its value: the key's text, a colon and a comma, and the value as a child. */
-function keyedContents(object: Record<string, unknown>, keys: string[], into: Contents) {
+/**
+ * Each key JSON would write, with its value: the key's text, a colon and a comma, and the value as a child. A key longer
+ * than the bytes still allowed is refused (undefined) before it is stringified, so a huge key costs nothing.
+ */
+function keyedContents(
+  object: Record<string, unknown>,
+  keys: string[],
+  into: Contents,
+  bytesLeft: number,
+) {
+  let left = bytesLeft;
   for (const key of keys) {
     if (dropped(object[key])) continue;
-    into.bytes += utf8Length(JSON.stringify(key)) + 2;
+    if (key.length > left) return undefined;
+    const bytes = utf8Length(JSON.stringify(key)) + 2;
+    left -= bytes;
+    into.bytes += bytes;
     into.children.push({ value: object[key], inArray: false });
   }
   return into;
@@ -98,19 +116,35 @@ function listContents(list: ArrayLike<unknown>, room: number): Contents | undefi
   return { bytes: listText(list.length), children };
 }
 
-/** An array's slots plus any named own property (JSON drops those; the structured clone copies them). */
-function arrayContents(list: unknown[], room: number): Contents | undefined {
-  const slots = listContents(list, room);
-  if (!slots) return undefined;
-  const named = ownKeys(list, room - list.length, key => !isIndex(key));
-  return named && keyedContents(list as unknown as Record<string, unknown>, named, slots);
+/**
+ * An array's slots plus any named own property (JSON drops those; the structured clone copies them). Only the slots
+ * that exist are listed and visited, by key, so a sparse array costs what it holds: a hole is JSON's `null` (4 bytes,
+ * counted from the length) with no entry, and `a[99_990] = 0` is one entry, not 100,000. A length past the
+ * room left (or `MAX_MEASURED_NODES`) is refused before any key is read.
+ */
+function arrayContents(list: unknown[], room: number, bytesLeft: number): Contents | undefined {
+  // The room is checked on the length first: a longer array is refused before any key is built (`for...in` builds every index key of a dense array).
+  if (list.length > Math.min(room, MAX_MEASURED_NODES)) return undefined;
+  const keys = ownKeys(list, room, () => true);
+  if (!keys) return undefined;
+  const slots = keys.filter(isIndex);
+  const holes = list.length - slots.length;
+  const children = slots.map(key => ({ value: list[Number(key)], inArray: true }));
+  const contents: Contents = { bytes: listText(list.length) + 4 * holes, children };
+  const named = keys.filter(key => !isIndex(key));
+  return keyedContents(list as unknown as Record<string, unknown>, named, contents, bytesLeft);
 }
 
 /** A plain object's contents: every own enumerable key JSON would write, with its value. */
-function objectContents(object: Record<string, unknown>, room: number): Contents | undefined {
+function objectContents(
+  object: Record<string, unknown>,
+  room: number,
+  bytesLeft: number,
+): Contents | undefined {
   const keys = ownKeys(object, room, () => true);
   if (!keys) return undefined;
-  const contents = keyedContents(object, keys, { bytes: 0, children: [] });
+  const contents = keyedContents(object, keys, { bytes: 0, children: [] }, bytesLeft);
+  if (!contents) return undefined;
   // `{` and `}` with one comma fewer than keys (keyedContents counted one per key).
   contents.bytes += contents.children.length ? 1 : 2;
   return contents;
@@ -130,14 +164,14 @@ function mapContents(map: Map<unknown, unknown>, room: number): Contents | undef
  * and a Set as `[...]` (JSON alone writes both as `{}`), a RegExp as `[source, flags]`, an Error as its name, message,
  * stack and cause. Undefined when it has more than `room` children.
  */
-function contents(value: object, room: number): Contents | undefined {
+function contents(value: object, room: number, bytesLeft: number): Contents | undefined {
   if (value instanceof Map) return mapContents(value, room);
   if (value instanceof Set) return value.size > room ? undefined : listContents([...value], room);
   if (value instanceof RegExp) return listContents([value.source, value.flags], room);
   if (value instanceof Error)
     return listContents([value.name, value.message, value.stack, value.cause], room);
-  if (Array.isArray(value)) return arrayContents(value, room);
-  return objectContents(value as Record<string, unknown>, room);
+  if (Array.isArray(value)) return arrayContents(value, room, bytesLeft);
+  return objectContents(value as Record<string, unknown>, room, bytesLeft);
 }
 
 type Visit = Child | { leave: object };
@@ -153,15 +187,16 @@ function lowerBound(value: unknown): number {
 
 /**
  * Walks `root` with an explicit stack (no recursion, so no stack overflow) and stops as soon as the total passes
- * `limit` or more than `MAX_MEASURED_NODES` values were seen. Each object and each binary buffer counts once, like the
- * structured clone copies a shared one once; a later reference counts one byte. A cycle counts as infinite (no
- * JSON-shaped message has one).
+ * `limit`, the total WITHOUT binary payloads passes `textLimit`, or more than `maxNodes` values (default
+ * `MAX_MEASURED_NODES`) were seen. Each object and each binary buffer counts once, like the structured clone copies a
+ * shared one once; a later reference counts one byte. A cycle counts as infinite (no JSON-shaped message has one).
  */
-function measure(root: unknown, limit: number): number {
+function measure(root: unknown, limit: number, maxNodes: number, textLimit: number): number {
   const counted = new Set<object>();
   const ancestors = new Set<object>();
   const stack: Visit[] = [{ value: root, inArray: false }];
   let total = 0;
+  let binary = 0;
   let nodes = 1;
   while (stack.length) {
     const visit = stack.pop()!;
@@ -170,13 +205,18 @@ function measure(root: unknown, limit: number): number {
       continue;
     }
     if (total + lowerBound(visit.value) > limit) return Number.POSITIVE_INFINITY;
-    const leaf = leafBytes(visit.value, visit.inArray) ?? binaryBytes(visit.value, counted);
+    if (total - binary + lowerBound(visit.value) > textLimit) return Number.POSITIVE_INFINITY;
+    const text = leafBytes(visit.value, visit.inArray);
+    const bytes = text ?? binaryBytes(visit.value, counted);
     const object = visit.value as object;
-    if (leaf !== undefined) total += leaf;
-    else if (ancestors.has(object)) return Number.POSITIVE_INFINITY;
+    if (bytes !== undefined) {
+      total += bytes;
+      if (text === undefined) binary += bytes - 1;
+    } else if (ancestors.has(object)) return Number.POSITIVE_INFINITY;
     else if (counted.has(object)) total += 1;
     else {
-      const inner = contents(object, MAX_MEASURED_NODES - nodes);
+      const left = Math.min(limit - total, textLimit - (total - binary));
+      const inner = contents(object, maxNodes - nodes, left);
       if (!inner) return Number.POSITIVE_INFINITY;
       counted.add(object);
       ancestors.add(object);
@@ -185,7 +225,7 @@ function measure(root: unknown, limit: number): number {
       stack.push({ leave: object });
       for (let i = inner.children.length - 1; i >= 0; i--) stack.push(inner.children[i]);
     }
-    if (total > limit) return Number.POSITIVE_INFINITY;
+    if (total > limit || total - binary > textLimit) return Number.POSITIVE_INFINITY;
   }
   return total;
 }
@@ -194,11 +234,17 @@ function measure(root: unknown, limit: number): number {
  * About what a message costs on the wire: its JSON text in UTF-8 plus every binary payload's bytes, measured on what
  * the structured clone really carries (a Map's and a Set's entries, a Buffer's bytes; never a `toJSON` view). Anything
  * that cannot be measured (a cycle, a BigInt, more than `MAX_MEASURED_NODES` values) or that passes `limit` counts as
- * infinite, so it never leaves. Never throws, never recurses.
+ * infinite, so it never leaves. `textLimit` (default `limit`) caps everything except binary payloads, so an upload
+ * route's big allowance is for its bytes and never for text. Never throws, never recurses.
  */
-export function messageBytes(value: unknown, limit = Number.POSITIVE_INFINITY): number {
+export function messageBytes(
+  value: unknown,
+  limit = Number.POSITIVE_INFINITY,
+  maxNodes = MAX_MEASURED_NODES,
+  textLimit = limit,
+): number {
   try {
-    return measure(value, limit);
+    return measure(value, limit, maxNodes, textLimit);
   } catch {
     return Number.POSITIVE_INFINITY;
   }

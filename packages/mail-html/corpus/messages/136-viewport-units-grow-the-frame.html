@@ -1,0 +1,20 @@
+<style>
+  html, body { height: 100vh; min-height: 100dvh; margin: 0 }
+  .hero { min-height: 100vh; height: calc(100vh + 20px); background: #eef3ea }
+  .wide { width: 100vw; max-width: 100dvw; min-width: calc(100svw - 40px) }
+  .tall { height: 150lvh; padding-top: 10vmin; padding-bottom: 10VMAX; margin-bottom: -5vb }
+  .escaped { height: 100\76 h; min-height: 100v\68; width: 100\56 W }
+  .clamped { height: min(100vh, max(80vh, 300px)); margin: clamp(10vh, 5vw, 30vi) auto }
+  .variable { --screen: 100vh; --scale: 1vh; height: var(--screen); min-height: calc(var(--scale) * 90) }
+  .important { height: 100vh !important; min-height: 100dvh !important }
+  @media (min-height: 100vh) { .hero { height: 200vh } }
+  @supports (height: 100dvh) { .tall { height: 100dvh } }
+</style>
+<div class="hero" style="height:100vh;min-height:100svh;line-height:50vh">
+  <p>Viewport units sized this letter to its own frame.</p>
+</div>
+<div class="wide tall escaped clamped variable important">
+  <p class="clamped">Each of these lengths follows the viewport, and the frame follows the letter.</p>
+</div>
+<table style="height:100vh;width:100vw"><tr style="height:100vh"><td style="height:100vh">cell</td></tr></table>
+<div style="height:99999999vh;width:1e400vw;margin-top:-99999999dvh">Absurd values stay bounded.</div>

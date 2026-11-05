@@ -34,9 +34,10 @@ const wait = async (w: World, ms: number) => {
   await w.settle();
 };
 
-function refused(fn: () => unknown, type: string): string {
+/** Asserts a `Submission/set` refusal (a rejected promise) by contract error type, and returns its sentence. */
+async function rejected(fn: () => Promise<unknown>, type: string): Promise<string> {
   try {
-    fn();
+    await fn();
   } catch (error) {
     assert.ok(error instanceof ContractError, `a ContractError, got ${String(error)}`);
     assert.equal(error.type, type, error.message);
@@ -195,7 +196,7 @@ test('3: keep mine on a gone copy makes a fresh remote draft', () =>
 test('2: a draft with a version from another device waiting is not sent', () =>
   world(async w => {
     const s = await conflicted(w, { html: '<p>Their body</p>', internetId: THEIRS_ID });
-    const sentence = refused(
+    const sentence = await rejected(
       () => w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision }),
       'stateMismatch',
     );
@@ -205,7 +206,7 @@ test('2: a draft with a version from another device waiting is not sent', () =>
     assert.ok(w.remoteDrafts.remote.has(s.remoteDraftId));
     // After the choice the send goes.
     service(w).resolve(next(), s.draft.id, 'keepMine');
-    w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    await w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
   }));
 
 test('2: a conflict that lands between the send check and its commit stops the send', () =>
@@ -220,7 +221,7 @@ test('2: a conflict that lands between the send check and its commit stops the s
       phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', html: '<p>Their body</p>' });
       return false;
     });
-    refused(() => w.send(w.first, s.draft.id, { revision: mine.revision }), 'stateMismatch');
+    await rejected(() => w.send(w.first, s.draft.id, { revision: mine.revision }), 'stateMismatch');
     assert.ok(fired, 'the conflict arrived inside the window');
     assert.equal(w.server.payloads.length, 0);
     assert.ok(read(w, s.draft.id).conflict);
@@ -234,7 +235,7 @@ test('1: a draft written on another device without its text is not sent until th
     const id = `${ACCOUNT}:phone-1`;
     const d = read(w, id);
     assert.equal(syncOf(w, id).incomplete, true);
-    refused(() => w.send(w.first, id, { revision: d.revision }), 'unavailable');
+    await rejected(() => w.send(w.first, id, { revision: d.revision }), 'unavailable');
     await wait(w, 30 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 0, 'nothing of the snippet was uploaded');
     // The text arrives (the same copy, now with its body).
@@ -254,7 +255,7 @@ test('1: a newer phone version that arrives without its text makes the draft inc
     phone(w, 'phone-1', 'pm-2', { subject: 'Two' });
     assert.equal(syncOf(w, id).incomplete, true);
     const d = read(w, id);
-    refused(() => w.send(w.first, id, { revision: d.revision }), 'unavailable');
+    await rejected(() => w.send(w.first, id, { revision: d.revision }), 'unavailable');
   }));
 
 // ---------------------------------------------------------------- 4: a late upload result cannot undo a choice
@@ -339,7 +340,7 @@ const destroyAs = (w: World, who: Caller, id: string) =>
 test('5: a caller with only draft cannot cancel the owner’s queued send by discarding the draft', () =>
   world(async w => {
     const d = create(w);
-    const sub = w.send(w.first, d.id, { revision: d.revision });
+    const sub = await w.send(w.first, d.id, { revision: d.revision });
     try {
       destroyAs(w, caller(['draft']), d.id);
       assert.fail('expected forbidden');
@@ -418,7 +419,7 @@ test('7: the draft copy carries no Bcc, and a draft with Bcc is sent as the pinn
     const bcc = [{ address: 'quiet@mail.example' }];
     const s = await synced(w, fields({ bcc }));
     assert.equal(header(w.remoteDrafts.saves[0].mime, 'Bcc'), undefined, 'no Bcc in the copy');
-    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: s.draft.revision });
     await wait(w, 15 * SEC);
     assert.equal(w.get(sub.id).state, 'sent');
     const payload = w.server.payloads[0];
@@ -512,7 +513,7 @@ test('10: a draft discarded between the send check and its commit is not sent', 
       service(w).destroy(next(), s.draft.id);
       return false;
     });
-    refused(() => w.send(w.first, s.draft.id, { revision: s.draft.revision }), 'notFound');
+    await rejected(() => w.send(w.first, s.draft.id, { revision: s.draft.revision }), 'notFound');
     assert.ok(fired);
     assert.equal(w.server.payloads.length, 0);
   }));

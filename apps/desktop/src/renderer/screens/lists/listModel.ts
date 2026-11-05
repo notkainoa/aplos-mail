@@ -44,6 +44,29 @@ export function settleKey(
   return after[Math.min(was, after.length - 1)] ?? null;
 }
 
+/**
+ * Where the cursor goes when `leaving` rows are about to go (a bulk action): it stays when its row survives, else it
+ * lands on the nearest surviving row below, then the nearest above. Null when nothing survives.
+ */
+export function survivorKey(
+  ids: readonly string[],
+  key: string | null,
+  leaving: readonly string[],
+): string | null {
+  const gone = new Set(leaving);
+  if (key !== null && ids.includes(key) && !gone.has(key)) return key;
+  const at = Math.max(0, indexOfKey(ids, key));
+  const below = ids.slice(at).find(id => !gone.has(id));
+  return (
+    below ??
+    ids
+      .slice(0, at)
+      .reverse()
+      .find(id => !gone.has(id)) ??
+    null
+  );
+}
+
 /** The ids within `radius` rows of the cursor: what a re-rank must not move. */
 export function neighbourKeys(
   ids: readonly string[],

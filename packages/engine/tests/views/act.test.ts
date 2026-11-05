@@ -318,6 +318,24 @@ test('Thread/get marks a thread built from one metadata message as partial', asy
   }
 });
 
+test('Thread/why for a Do now thread with a to-do says the sender asked something, never "waiting on you"', async () => {
+  const t = await worldEngine(5);
+  try {
+    const id = await pickInbox(t);
+    const [account, remote] = [id.slice(0, id.indexOf(':')), id.slice(id.indexOf(':') + 1)];
+    t.world.db
+      .prepare(
+        "UPDATE thread_workflow SET lane = 'do', rank_source = 'heuristic', todo = 'Pick a layout' WHERE thread_id = (SELECT id FROM threads WHERE account_id = ? AND remote_id = ?)",
+      )
+      .run(account, remote);
+    const why = await t.call('Thread/why', { threadId: id });
+    assert.match(why.sentence, / asked you something: pick a layout\.$/);
+    assert.doesNotMatch(why.sentence, /waiting on you/i, 'DESIGN section 10 bans the phrase');
+  } finally {
+    await t.close();
+  }
+});
+
 test('Thread/why names the lane, who placed it and quotes the newest incoming message', async () => {
   const t = await worldEngine(5);
   try {

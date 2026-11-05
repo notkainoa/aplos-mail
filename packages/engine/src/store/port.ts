@@ -35,6 +35,8 @@ export interface StorePort {
 }
 
 export interface StoreReader {
+  /** The codec the store was opened with, for reads that must undo what commits wrote (bodies). */
+  readonly bodyCodec?: BodyCodec;
   get<R extends SqlRow = SqlRow>(sql: string, ...params: SqlValue[]): R | undefined;
   all<R extends SqlRow = SqlRow>(sql: string, ...params: SqlValue[]): R[];
   iterate<R extends SqlRow = SqlRow>(sql: string, ...params: SqlValue[]): IterableIterator<R>;

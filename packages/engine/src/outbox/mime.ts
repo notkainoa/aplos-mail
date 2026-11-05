@@ -335,15 +335,183 @@ const ENTITIES: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: ' ',
+  // The common named entities of received mail (a draft's own html never needs them; a synced
+  // letter's text does): curly quotes, dashes, ellipsis, Latin-1 letters and symbols.
+  lsquo: '\u2018',
+  rsquo: '\u2019',
+  sbquo: '\u201a',
+  ldquo: '\u201c',
+  rdquo: '\u201d',
+  bdquo: '\u201e',
+  dagger: '\u2020',
+  ddagger: '\u2021',
+  permil: '\u2030',
+  lsaquo: '\u2039',
+  rsaquo: '\u203a',
+  euro: '\u20ac',
+  bull: '\u2022',
+  hellip: '\u2026',
+  prime: '\u2032',
+  oline: '\u203e',
+  frasl: '\u2044',
+  weierp: '\u2118',
+  image: '\u2111',
+  real: '\u211c',
+  trade: '\u2122',
+  alefsym: '\u2135',
+  larr: '\u2190',
+  uarr: '\u2191',
+  rarr: '\u2192',
+  darr: '\u2193',
+  harr: '\u2194',
+  crarr: '\u21b5',
+  ndash: '\u2013',
+  mdash: '\u2014',
+  minus: '\u2212',
+  lowast: '\u2217',
+  radic: '\u221a',
+  prop: '\u221d',
+  infin: '\u221e',
+  ang: '\u2220',
+  and: '\u2227',
+  or: '\u2228',
+  cap: '\u2229',
+  cup: '\u222a',
+  int: '\u222b',
+  there4: '\u2234',
+  sim: '\u223c',
+  cong: '\u2245',
+  asymp: '\u2248',
+  ne: '\u2260',
+  equiv: '\u2261',
+  le: '\u2264',
+  ge: '\u2265',
+  sub: '\u2282',
+  sup: '\u2283',
+  nsub: '\u2284',
+  sube: '\u2286',
+  supe: '\u2287',
+  oplus: '\u2295',
+  otimes: '\u2297',
+  perp: '\u22a5',
+  sdot: '\u22c5',
+  lceil: '\u2308',
+  rceil: '\u2309',
+  lfloor: '\u230a',
+  rfloor: '\u230b',
+  lang: '\u27e8',
+  rang: '\u27e9',
+  loz: '\u25ca',
+  spades: '\u2660',
+  clubs: '\u2663',
+  hearts: '\u2665',
+  diams: '\u2666',
+  sect: '\u00a7',
+  copy: '\u00a9',
+  reg: '\u00ae',
+  deg: '\u00b0',
+  plusmn: '\u00b1',
+  para: '\u00b6',
+  middot: '\u00b7',
+  curren: '\u00a4',
+  pound: '\u00a3',
+  yen: '\u00a5',
+  cent: '\u00a2',
+  times: '\u00d7',
+  divide: '\u00f7',
+  sup1: '\u00b9',
+  sup2: '\u00b2',
+  sup3: '\u00b3',
+  frac12: '\u00bd',
+  frac14: '\u00bc',
+  frac34: '\u00be',
+  iexcl: '\u00a1',
+  iquest: '\u00bf',
+  laquo: '\u00ab',
+  raquo: '\u00bb',
+  not: '\u00ac',
+  shy: '\u00ad',
+  ordm: '\u00ba',
+  ordf: '\u00aa',
+  micro: '\u00b5',
+  cedil: '\u00b8',
+  macr: '\u00af',
+  acute: '\u00b4',
+  uml: '\u00a8',
+  aacute: '\u00e1',
+  eacute: '\u00e9',
+  iacute: '\u00ed',
+  oacute: '\u00f3',
+  uacute: '\u00fa',
+  agrave: '\u00e0',
+  egrave: '\u00e8',
+  igrave: '\u00ec',
+  ograve: '\u00f2',
+  ugrave: '\u00f9',
+  acirc: '\u00e2',
+  ecirc: '\u00ea',
+  icirc: '\u00ee',
+  ocirc: '\u00f4',
+  ucirc: '\u00fb',
+  atilde: '\u00e3',
+  ntilde: '\u00f1',
+  otilde: '\u00f5',
+  auml: '\u00e4',
+  euml: '\u00eb',
+  iuml: '\u00ef',
+  ouml: '\u00f6',
+  uuml: '\u00fc',
+  ccedil: '\u00e7',
+  szlig: '\u00df',
+  aring: '\u00e5',
+  aelig: '\u00e6',
+  oslash: '\u00f8',
+  eth: '\u00f0',
+  thorn: '\u00fe',
+  yuml: '\u00ff',
+  // Capital Latin-1 names are distinct entities, not case folds of the lowercase ones.
+  Aacute: '\u00c1',
+  Eacute: '\u00c9',
+  Iacute: '\u00cd',
+  Oacute: '\u00d3',
+  Uacute: '\u00da',
+  Yacute: '\u00dd',
+  Agrave: '\u00c0',
+  Egrave: '\u00c8',
+  Igrave: '\u00cc',
+  Ograve: '\u00d2',
+  Ugrave: '\u00d9',
+  Acirc: '\u00c2',
+  Ecirc: '\u00ca',
+  Icirc: '\u00ce',
+  Ocirc: '\u00d4',
+  Ucirc: '\u00db',
+  Atilde: '\u00c3',
+  Ntilde: '\u00d1',
+  Otilde: '\u00d5',
+  Auml: '\u00c4',
+  Euml: '\u00cb',
+  Iuml: '\u00cf',
+  Ouml: '\u00d6',
+  Uuml: '\u00dc',
+  Ccedil: '\u00c7',
+  Aring: '\u00c5',
+  AElig: '\u00c6',
+  Oslash: '\u00d8',
+  ETH: '\u00d0',
+  THORN: '\u00de',
 };
 
 function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (whole, body: string) => {
-    if (body[0] !== '#') return ENTITIES[body.toLowerCase()] ?? whole;
-    const code =
-      body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
-    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-  });
+  return text.replace(
+    /&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,7});/gi,
+    (whole, body: string) => {
+      if (body[0] !== '#') return ENTITIES[body] ?? whole;
+      const code =
+        body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
 }
 
 /** Lower-cases ASCII only, so an index in the result is an index in the input (`toLowerCase` can change a length). */
@@ -352,8 +520,23 @@ function asciiLower(text: string): string {
 }
 
 /** Block elements whose end leaves a blank line, and those that only end the line. */
-const PARAGRAPHS = new Set(['p', 'blockquote', 'pre', 'table', 'ul', 'ol']);
-const LINES = new Set(['div', 'li', 'tr']);
+const PARAGRAPHS = new Set([
+  'p',
+  'blockquote',
+  'pre',
+  'table',
+  'ul',
+  'ol',
+  'section',
+  'article',
+  'header',
+  'footer',
+  'figure',
+  'figcaption',
+  'caption',
+  'dl',
+]);
+const LINES = new Set(['div', 'li', 'tr', 'td', 'th', 'dt', 'dd']);
 const HEADING = /^h[1-6]$/;
 const TAG = /^(\/?)([a-z][a-z0-9]*)/;
 const TAG_START = /[A-Za-z/!?]/;
@@ -374,7 +557,11 @@ function tagText(inner: string, atLineStart: boolean): string {
   return paragraph || LINES.has(name) ? lineBreak : '';
 }
 
-/** Where the text continues after a `<script>` or `<style>` element that starts at `from`: past its end tag. */
+/** Elements whose content is never part of a text/plain part: code and document metadata, forms, embeds. */
+const SKIP_CONTENT =
+  /^(script|style|head|title|noscript|textarea|iframe|object|template|select|svg)\b/;
+
+/** Where the text continues after a skipped element that starts at `from`: past its end tag. */
 function afterElement(lower: string, name: string, from: number): number {
   const close = lower.indexOf(`</${name}`, from);
   if (close < 0) return lower.length;
@@ -414,9 +601,11 @@ export function htmlToText(html: string): string {
       at = html.length;
       break;
     }
-    const name = /^(script|style)\b/.exec(lower.slice(open + 1, open + 8))?.[1];
-    at = name ? afterElement(lower, name, close) : close + 1;
-    if (!name) add(tagText(html.slice(open + 1, close), atLineStart));
+    const name = SKIP_CONTENT.exec(lower.slice(open + 1, open + 10))?.[1];
+    // A self-closing skipped tag (`<script src="x"/>`) swallows only itself — a real one swallows
+    // to its close tag (or the end when unclosed, matching a browser's raw-text read).
+    at = name && html[close - 1] !== '/' ? afterElement(lower, name, close) : close + 1;
+    if (!name || html[close - 1] === '/') add(tagText(html.slice(open + 1, close), atLineStart));
   }
   if (at < html.length) add(html.slice(at));
   return trimLineEnds(decodeEntities(normalizeBreaks(out)))

@@ -4,7 +4,7 @@ import type { EngineMethodName } from '@aplos/contract';
 import { dispatchWith, handlers as table } from '../methods/index';
 import type { Caller, EngineHandlers } from '../methods/types';
 import type { Clock, Logger, StorePort } from '../ports';
-import { openConnection } from './connection';
+import { openConnection, type ConnectedSession } from './connection';
 import { contractError } from './errors';
 import { createFrameHub, observeCommits } from './frames';
 import type { EngineServices, LaneModule, LaneModuleSource } from './services';
@@ -24,6 +24,8 @@ export type HostPorts = Partial<
     | 'images'
     | 'unsubscribe'
     | 'keys'
+    | 'blobFiles'
+    | 'attachmentFiles'
   >
 >;
 
@@ -43,7 +45,7 @@ export interface EngineOptions {
 /** The running engine: an `EngineConnection` (what the stand-in implements), its services, and shutdown. */
 export interface Engine extends EngineConnection {
   /** A session as an Electron window (every scope), or as `caller`: main, or a listener client with its grant. */
-  connect(caller?: Caller): EngineSession;
+  connect(caller?: Caller): ConnectedSession;
   readonly services: EngineServices;
   /**
    * The host's power-resume (or network, or clock-change) hook: re-reads every deadline now instead of at the next
@@ -95,6 +97,8 @@ const HOST_PORTS = [
   'images',
   'unsubscribe',
   'keys',
+  'blobFiles',
+  'attachmentFiles',
 ] as const satisfies readonly (keyof HostPorts)[];
 
 /**
@@ -127,14 +131,18 @@ export async function buildEngine(
           type: 'forbidden',
           message: 'This connection is not allowed in Aplos.',
         });
+      const connectionId = `c${++counter}`;
       const session = openConnection(
         {
           services,
           hub,
           dispatch,
           validate: options.validate,
-          connectionId: `c${++counter}`,
-          onClose: () => open.delete(session),
+          connectionId,
+          onClose: () => {
+            open.delete(session);
+            connectionClosed(started, connectionId);
+          },
         },
         caller,
       );
@@ -198,6 +206,17 @@ function readOnly(services: EngineServices): EngineServices {
     deleteProperty: refuse,
   };
   return new Proxy(services, traps);
+}
+
+/** Tells every lane a connection closed; one lane's failure never stops the others or the close. */
+function connectionClosed(lanes: readonly LaneModule[], connectionId: string) {
+  for (const lane of lanes) {
+    try {
+      lane.onConnectionClose?.(connectionId);
+    } catch {
+      // A lane's cleanup bug must not keep the connection open.
+    }
+  }
 }
 
 /** Runs each lane's `createModule` in order. A lane may fill a stand-in port, never replace a real one or another lane's. */

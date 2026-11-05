@@ -42,6 +42,25 @@ export interface GmailEmulatorOptions {
   historyRetentionMs?: number;
   /** Sends per Pacific day before 429 "Mail sending". Default 2000. */
   sendLimitPerDay?: number;
+  /**
+   * What Gmail does to the identity of a draft the API saves. 'kept' (default): the Message-ID the client wrote is kept.
+   * 'rewritten': like real Gmail (live finding 2026-11-04) every `drafts.create` and `drafts.update` replaces it with
+   * `<hex@mail.gmail.com>`; no header the client wrote is dropped unless `dropDraftHeaders` names it.
+   */
+  draftIdentity?: 'kept' | 'rewritten';
+  /**
+   * What `messages.send` does to the Message-ID the client wrote. 'kept' (default), or 'rewritten' to `<hex@mail.gmail.com>`
+   * (unmeasured on real Gmail until the live probe `gmail.send-message-id` runs).
+   */
+  sendIdentity?: 'kept' | 'rewritten';
+  /**
+   * Gmail's search index lags a send (live 2026-11-05: the sent copy showed on the 4th search, a few seconds later). A
+   * message that `messages.send` just created stays out of every `messages.list` result (by `q` or by label) for this
+   * many ms of the emulator's clock; `messages.get` finds it at once. Default 0 (no lag).
+   */
+  searchLagMs?: number;
+  /** Header names (any case) Gmail drops from a draft the API saves, e.g. `['X-Aplos-Probe']`. Default none. */
+  dropDraftHeaders?: readonly string[];
   /** Test users to start with. By default one user, test.user@example.test. Pass [] for none. */
   users?: TestUserInput[];
   /** Google Calendar settings (requests per minute, throttle shape, sync-token horizon, ...). */
@@ -59,6 +78,10 @@ export interface GmailSettings {
   retryAfter: RetryAfterMode;
   historyRetentionMs: number;
   sendLimitPerDay: number;
+  draftIdentity: 'kept' | 'rewritten';
+  sendIdentity: 'kept' | 'rewritten';
+  searchLagMs: number;
+  dropDraftHeaders: readonly string[];
 }
 
 export interface MeterHelpers {

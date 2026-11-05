@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { windowCaller } from '@aplos/engine';
 import type { ComposedHost } from '../../src/host/compose';
-import { createProcessState } from '../../src/host/lifecycle';
+import { closeThenRelease, createProcessState, QUIT_DRAIN_MS } from '../../src/host/lifecycle';
 import {
+  ENGINE_EXIT_AFTER_KILL_MS,
+  ENGINE_QUIT_MS,
   createEngineLink,
   createEngineSupervisor,
   createPortBroker,
@@ -154,6 +156,45 @@ test('real path: a window gets its own port, Session/get answers, main validates
   assert.deepEqual(main.broker.holders(), [2]);
 });
 
+test('real path: a control call whose signal aborts rejects at once and its late answer is dropped', async t => {
+  const main = mainSide(t);
+  const link = await main.supervisor.start();
+  await link.ready;
+  const args = { token: 'f'.repeat(32), path: '', windowId: '' };
+  const before = new AbortController();
+  before.abort();
+  await assert.rejects(link.call('Mail/serve', args, 5000, before.signal), /cancelled/);
+  const during = new AbortController();
+  const call = link.call('Mail/serve', args, 5000, during.signal);
+  during.abort();
+  await assert.rejects(call, /cancelled/);
+  // The link still works, and the dropped answer did not confuse it.
+  assert.ok(await link.call('Counts/get', {}));
+});
+
+test('real path: a control call that settles removes its abort listener (a long-lived signal does not collect them)', async t => {
+  const main = mainSide(t);
+  const link = await main.supervisor.start();
+  await link.ready;
+  let added = 0;
+  let removed = 0;
+  const live = new AbortController();
+  const signal = live.signal;
+  const add = signal.addEventListener.bind(signal);
+  const remove = signal.removeEventListener.bind(signal);
+  signal.addEventListener = ((...args: Parameters<typeof add>) => (
+    added++,
+    add(...args)
+  )) as typeof add;
+  signal.removeEventListener = ((...args: Parameters<typeof remove>) => (
+    removed++,
+    remove(...args)
+  )) as typeof remove;
+  for (let i = 0; i < 5; i++) await link.call('Counts/get', {}, 5000, signal);
+  assert.equal(added, 5);
+  assert.equal(removed, 5, 'every settled call took its listener off the signal');
+});
+
 test('real path: killing the engine reconnects windows on the same dbEpoch with no re-snapshot', async t => {
   const main = mainSide(t);
   const first = await (await main.supervisor.start()).ready;
@@ -234,9 +275,15 @@ function manualTimers() {
     },
     clear: (handle: unknown) => void due.delete(handle as number),
     advance(ms: number) {
-      now += ms;
-      for (const [id, timer] of [...due].sort((a, b) => a[1].at - b[1].at))
-        if (timer.at <= now && due.delete(id)) timer.run();
+      const target = now + ms;
+      for (;;) {
+        const first = [...due].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!first || first[1].at > target) break;
+        due.delete(first[0]);
+        now = Math.max(now, first[1].at);
+        first[1].run();
+      }
+      now = target;
     },
   };
 }
@@ -312,4 +359,168 @@ test('an engine that never answers ready is killed after the ready timeout, and 
   assert.deepEqual(downs, [false, false, true], 'the third stop parks');
   assert.equal(links.length, 3);
   assert.equal(supervisor.current(), undefined);
+});
+
+// ---------------------------------------------------------------- the data lock and a stuck engine (#203)
+
+/** An engine that ignores quit and kill until the test lets it exit. */
+function stuckLink(options: { killThrows?: boolean } = {}) {
+  const exits: (() => void)[] = [];
+  let exited = false;
+  let kills = 0;
+  let quits = 0;
+  const link: EngineLink = {
+    ready: Promise.resolve({ dbEpoch: 'e1', seq: 0 }),
+    get exited() {
+      return exited;
+    },
+    call: async () => ({}),
+    attach: () => undefined,
+    detach: () => undefined,
+    power: () => undefined,
+    quit: () => void quits++,
+    kill: () => {
+      kills++;
+      if (options.killThrows) throw new Error('kill EPERM');
+    },
+    onExit: handler => (exited ? handler() : void exits.push(handler)),
+  };
+  const exit = () => {
+    if (exited) return;
+    exited = true;
+    exits.splice(0).forEach(handler => handler());
+  };
+  return { link, exit, kills: () => kills, quits: () => quits };
+}
+
+/** The supervisor wired into `closeThenRelease` exactly as `finishQuit` does it (main/lifecycle.ts, main/engine-real.ts). */
+async function quitWith(engine: ReturnType<typeof stuckLink>, whenExits?: number) {
+  const timers = manualTimers();
+  const supervisor = createEngineSupervisor({
+    spawn: () => engine.link,
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers,
+  });
+  await supervisor.start();
+  let released = 0;
+  const closed = supervisor.close().then(result => {
+    if (result !== 'exited') throw new Error('The mailbox engine did not stop.');
+  });
+  const outcome = closeThenRelease(closed, QUIT_DRAIN_MS, timers, () => void released++);
+  if (whenExits !== undefined) {
+    timers.advance(whenExits);
+    engine.exit();
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  timers.advance(ENGINE_QUIT_MS + ENGINE_EXIT_AFTER_KILL_MS + 1);
+  await new Promise(resolve => setImmediate(resolve));
+  timers.advance(QUIT_DRAIN_MS);
+  const result = await outcome;
+  return { result, released };
+}
+
+test('quit with a stuck engine: the data lock stays held, even after the supervisor killed it', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine);
+  assert.equal(result, false);
+  assert.equal(released, 0, 'the engine never exited: the lock is not let go');
+  assert.equal(engine.quits(), 1);
+  assert.equal(engine.kills(), 1, 'it was killed after the quit wait');
+});
+
+test('quit with an engine that exits just after the kill: the lock is released', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine, ENGINE_QUIT_MS + 500);
+  assert.equal(engine.kills(), 1);
+  assert.equal(result, true);
+  assert.equal(released, 1);
+});
+
+test('quit with an engine that exits when asked: the lock is released at once', async () => {
+  const engine = stuckLink();
+  const { result, released } = await quitWith(engine, 1);
+  assert.equal(engine.kills(), 0);
+  assert.equal(result, true);
+  assert.equal(released, 1);
+});
+
+test('the quit drain outlasts the supervisor wait, so a late exit is still seen', () => {
+  assert.ok(QUIT_DRAIN_MS > ENGINE_QUIT_MS + ENGINE_EXIT_AFTER_KILL_MS);
+});
+
+test('once the quit has begun, the supervisor starts no engine', async () => {
+  const engine = stuckLink();
+  let spawned = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => (spawned++, engine.link),
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers: manualTimers(),
+  });
+  await supervisor.close();
+  await assert.rejects(supervisor.start());
+  assert.equal(spawned, 0);
+});
+
+// ---------------------------------------------------------------- the #203 LOWs (kill throws, source shape, quit during start-up)
+
+test('quit with an engine whose kill throws: no uncaught error, the exit wait still runs, a late exit releases', async () => {
+  const stuck = stuckLink({ killThrows: true });
+  const first = await quitWith(stuck);
+  assert.equal(first.result, false, 'still running after the kill: the lock stays held');
+  assert.equal(first.released, 0);
+  assert.equal(stuck.kills(), 1, 'the kill was tried');
+  const dying = stuckLink({ killThrows: true });
+  const second = await quitWith(dying, ENGINE_QUIT_MS + 500);
+  assert.equal(second.result, true, 'it exited anyway, within the wait after the kill');
+  assert.equal(second.released, 1);
+});
+
+test('an engine that never answers ready and whose kill throws is not an uncaught error either', async () => {
+  const engine = stuckLink({ killThrows: true });
+  const timers = manualTimers();
+  const failures: unknown[] = [];
+  const supervisor = createEngineSupervisor({
+    spawn: () => ({ ...engine.link, ready: new Promise(() => undefined) }),
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    timers,
+    readyTimeoutMs: 1000,
+    onKillFailed: error => void failures.push(error),
+  });
+  void supervisor.start().catch(() => undefined);
+  timers.advance(1000);
+  assert.equal(engine.kills(), 1, 'killed at the timeout, and the throw did not escape the timer');
+  assert.equal(failures.length, 1, 'the failed kill was reported, not swallowed silently');
+});
+
+/** The source of a main-process module, for the guards that cannot run Electron here. */
+const sourceOf = (path: string) =>
+  readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+
+test('source shape: realEngine.close() sets closeRequested and rejects unless the engine exited', () => {
+  const source = sourceOf('../../src/main/engine-real.ts');
+  const close = /close: async \(\): Promise<void> => \{([\s\S]*?)\n {2}\},/.exec(source)?.[1] ?? '';
+  assert.match(close, /closeRequested = true;/, 'the quit is recorded before the engine is asked');
+  assert.match(close, /await supervisor\?\.close\(\)/);
+  assert.match(close, /if \(result !== 'exited'\) throw new Error\(/, 'a stuck engine rejects');
+  // No engine starts once the quit began, wherever the start-up had got to.
+  const boot = /async function bootRealEngine[\s\S]*?supervisor = createEngineSupervisor/.exec(
+    source,
+  );
+  assert.match(boot?.[0] ?? '', /if \(closeRequested\) return;/);
+});
+
+test('source shape: finishQuit hands the REAL close to closeThenRelease, and start-up shows no error during a quit', () => {
+  const source = sourceOf('../../src/main/lifecycle.ts');
+  assert.match(source, /realPath \? realEngine\.close\(\) : service\?\.close\(\)/);
+  assert.match(source, /closeThenRelease\(Promise\.resolve\(engineClosed\), QUIT_DRAIN_MS/);
+  const startup = /\.catch\(error => \{([\s\S]*?)\n {4}\}\);/.exec(source)?.[1] ?? '';
+  const guard = startup.indexOf('if (closing) return;');
+  assert.ok(guard >= 0, 'the start-up catch returns while a quit is in progress');
+  assert.ok(guard < startup.indexOf('showErrorBox'), '... before it shows the dialog');
 });

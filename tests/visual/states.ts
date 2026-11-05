@@ -3,6 +3,9 @@
 // draws it, with original demo data. Screens add their states later by adding one entry here and one
 // scene there.
 
+import { calendarStates } from './states.calendar';
+import { readerStates } from './states.reader';
+
 export type Theme = 'light' | 'dark';
 
 export interface VisualState {
@@ -67,8 +70,8 @@ export const STATES: readonly VisualState[] = [
   },
   {
     id: 'reader-head',
-    title: 'Reader head: sender, serif summary and the suggested action',
-    components: ['ReaderHead', 'Summary'],
+    title: 'Reader head: serif summary, hairline, and the action bar',
+    components: ['ReaderHead', 'ReaderActions', 'Summary'],
     design: '7.5',
     mockup: 'reader.html (default)',
     golden: true,
@@ -80,7 +83,7 @@ export const STATES: readonly VisualState[] = [
     id: 'reader-head-pending',
     golden: true,
     title: 'Reader head: summary still pending, subject in the sans',
-    components: ['ReaderHead', 'Summary'],
+    components: ['ReaderHead', 'ReaderActions', 'Summary'],
     design: '7.5, 9',
     mockup: 'reader.html (pending)',
     filled: 1,
@@ -496,6 +499,43 @@ export const STATES: readonly VisualState[] = [
     filled: 1,
   },
   {
+    id: 'shell-add-account-open',
+    frame: 'shell',
+    title: 'Add account: the dialog over the mail window, address field and Google',
+    components: ['Dialog', 'TextField', 'ChoiceRow'],
+    design: '7.1, 7.11',
+    mockup: 'onboarding-accounts.html (choose)',
+    filled: 0,
+  },
+  {
+    id: 'shell-add-account-typed',
+    frame: 'shell',
+    title: 'Add account: a Google address found, Continue with Google',
+    components: ['Dialog', 'TextField', 'ChoiceRow', 'Button'],
+    design: '7.1, 7.11',
+    mockup: 'onboarding-accounts.html (typed)',
+    filled: 1,
+  },
+  {
+    id: 'shell-add-account-waiting',
+    frame: 'shell',
+    title: 'Add account: waiting for Google in the browser',
+    components: ['Dialog', 'ProgressSegments', 'Button'],
+    design: '7.1, 7.11',
+    mockup: 'onboarding-accounts.html (waiting)',
+    filled: 0,
+  },
+  {
+    id: 'shell-add-account-failed',
+    frame: 'shell',
+    title: 'Add account: sign-in declined, one failure line under a valid field',
+    components: ['Dialog', 'TextField', 'ErrorLine', 'Button'],
+    design: '7.1, 7.11, 7.15',
+    mockup: 'onboarding-accounts.html (failed)',
+    filled: 1,
+  },
+
+  {
     id: 'home-full',
     frame: 'shell',
     title: 'Home screen: focus slot, sections and the Low importance band',
@@ -563,6 +603,73 @@ export const STATES: readonly VisualState[] = [
     summary: 'ready',
   },
   {
+    id: 'home-bulk',
+    frame: 'shell',
+    title: 'Home screen: three rows picked, the bulk bar in the pane header',
+    components: ['FocusSlot', 'FocusLetter', 'ListRow', 'SectionHeader', 'LowBand', 'BulkBar'],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 1,
+    summary: 'ready',
+  },
+  {
+    id: 'home-bulk-trash-confirm',
+    frame: 'shell',
+    title: 'Home screen: three picked, Trash asks first',
+    components: [
+      'FocusSlot',
+      'FocusLetter',
+      'ListRow',
+      'SectionHeader',
+      'LowBand',
+      'BulkBar',
+      'ConfirmRow',
+    ],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 1,
+    summary: 'ready',
+  },
+  {
+    id: 'one-by-one',
+    frame: 'shell',
+    title: 'One by one: the first thread as the focus letter',
+    components: ['FocusLetter', 'PageHead'],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 1,
+    summary: 'ready',
+  },
+  {
+    id: 'one-by-one-middle',
+    frame: 'shell',
+    title: 'One by one: the third thread',
+    components: ['FocusLetter', 'PageHead'],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 1,
+    summary: 'ready',
+  },
+  {
+    id: 'one-by-one-done',
+    frame: 'shell',
+    title: 'One by one: the walk is finished',
+    components: ['EmptyLine'],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 0,
+  },
+  {
+    id: 'home-why',
+    frame: 'shell',
+    title: 'Home screen: Why it is here popover open',
+    components: ['FocusSlot', 'FocusLetter', 'ListRow', 'SectionHeader', 'LowBand', 'Popover'],
+    design: '7.2, 7.4',
+    mockup: 'home.html (default)',
+    filled: 1,
+    summary: 'ready',
+  },
+  {
     id: 'later-groups',
     frame: 'shell',
     title: 'Later: Overdue, Today, This week and Someday',
@@ -596,6 +703,24 @@ export const STATES: readonly VisualState[] = [
     components: ['ListBox', 'ListRow', 'SectionHeader'],
     design: '7.4',
     mockup: 'inbox.html (default)',
+    filled: 0,
+  },
+  {
+    id: 'list-all-bulk',
+    frame: 'shell',
+    title: 'All mail: every loaded row picked, the bulk bar in the pane header',
+    components: ['ListBox', 'ListRow', 'SectionHeader', 'BulkBar'],
+    design: '7.4',
+    mockup: 'inbox.html (bulk)',
+    filled: 0,
+  },
+  {
+    id: 'list-all-bulk-range',
+    frame: 'shell',
+    title: 'All mail: a range of four picked with shift+X',
+    components: ['ListBox', 'ListRow', 'SectionHeader', 'BulkBar'],
+    design: '7.4',
+    mockup: 'inbox.html (bulk)',
     filled: 0,
   },
   {
@@ -670,6 +795,19 @@ export const STATES: readonly VisualState[] = [
     mockup: 'empty.html (default)',
     filled: 0,
   },
+  {
+    id: 'shell-sidebar-calendar-slot',
+    frame: 'shell',
+    title: 'Shell: the sidebar slot holds the MiniMonth and the Calendars list under the places',
+    components: ['Sidebar', 'MiniMonth', 'CalendarList'],
+    design: '7.1, 7.8',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
+  // ui-reader
+  ...readerStates,
+  // ui-calendar
+  ...calendarStates,
 ];
 
 export const THEMES: readonly Theme[] = ['light', 'dark'];

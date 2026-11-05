@@ -4,7 +4,7 @@
  * also mounts the singletons: the one ToastStack, the sheet host, the key-hint providers and, when the engine cannot be
  * reached, the FatalScreen in place of everything.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   api,
   useAccounts,
@@ -15,14 +15,16 @@ import {
 } from '../data';
 import { FatalScreen } from '../ui/status';
 import { Pane } from '../ui/surfaces';
+import type { CommandId } from '../commands';
 import type { PaneHeaderProps } from '../ui/props';
 import { AccountMenu } from './AccountMenu';
-import { KeysProviders } from './KeysProviders';
+import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
 import { SheetHost } from './SheetHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
 import { ToastHost } from './ToastHost';
+import { mergePaneHeaderPart } from './store-pane';
 import { placeCounts, screenLabel, type PlaceId } from './nav';
 import { DIAGNOSTICS_FAILED_COPY, RESTART_FAILED_COPY } from './failure-copy';
 import { PlaceholderScreen } from './states';
@@ -30,12 +32,16 @@ import { accountReconnectMode } from './status-map';
 import {
   closeSheet,
   navigate,
+  openCompose,
+  openAddAccount,
   openSheet,
   pushToast,
   setAccountScope,
   useAccountScope,
   useAppRoute,
+  usePaneHeaderParts,
   useSheetContextActive,
+  type PaneHeaderPart,
   type Screen,
 } from './index';
 
@@ -48,18 +54,27 @@ export interface ShellProps {
 /** Which dock tab the pane header's Ask and Today buttons show as pressed. No dock is mounted yet; ui-ask owns it. */
 type DockTab = 'closed' | 'ask' | 'today';
 
-function paneHeader(dock: DockTab, setDock: (tab: DockTab) => void): PaneHeaderProps {
-  return {
-    ask: {
-      pressed: dock === 'ask',
-      scope: 'mail',
-      onPress: () => setDock(dock === 'ask' ? 'closed' : 'ask'),
+function paneHeader(
+  dock: DockTab,
+  setDock: (tab: DockTab) => void,
+  part: PaneHeaderPart,
+  run: (commandId: CommandId) => void,
+): PaneHeaderProps {
+  return mergePaneHeaderPart(
+    {
+      ask: {
+        pressed: dock === 'ask',
+        scope: 'mail',
+        onPress: () => setDock(dock === 'ask' ? 'closed' : 'ask'),
+      },
+      today: {
+        pressed: dock === 'today',
+        onPress: () => setDock(dock === 'today' ? 'closed' : 'today'),
+      },
     },
-    today: {
-      pressed: dock === 'today',
-      onPress: () => setDock(dock === 'today' ? 'closed' : 'today'),
-    },
-  };
+    part,
+    run,
+  );
 }
 
 function notify(id: string, message: string): void {
@@ -151,6 +166,19 @@ export function scopeIsStale(
   return loaded && scope !== null && !accounts.some(a => a.id === scope);
 }
 
+type FramedProps = Omit<ShellLayoutProps, 'header'> & {
+  readonly dock: DockTab;
+  readonly setDock: (tab: DockTab) => void;
+};
+
+/** The layout with the pane header the mounted screen's part asks for (`usePaneHeaderPart`) plus Ask and Today; sits inside the key providers so a tool press can run a command. */
+function FramedLayout({ dock, setDock, ...layout }: FramedProps) {
+  const part = usePaneHeaderParts();
+  const run = useRunCommand();
+  const header = useMemo(() => paneHeader(dock, setDock, part, run), [dock, setDock, part, run]);
+  return <ShellLayout {...layout} header={header} />;
+}
+
 function ShellFrame({ renderScreen }: ShellProps) {
   const screen = useAppRoute();
   const accounts = useAccounts();
@@ -170,25 +198,26 @@ function ShellFrame({ renderScreen }: ShellProps) {
       scope={scope ?? undefined}
       onScope={id => setAccountScope(id ?? null)}
       onReconnect={a => openSheet('reconnect', { accountId: a.id, mode: accountReconnectMode(a) })}
-      onAddAccount={() => navigate('settings')}
+      onAddAccount={openAddAccount}
     />
   );
   return (
     <KeysProviders screen={screen} sheetOpen={sheetOpen}>
-      <ShellLayout
+      <FramedLayout
+        dock={dock}
+        setDock={setDock}
         screen={screen}
         counts={placeCounts(counts.counts, counts.hidden)}
         minimised={minimised}
         onNavigate={navigate}
-        onCompose={() => navigate({ label: 'New message' })}
+        onCompose={() => openCompose({})}
         accountSwitcher={account}
         status={<StatusHost />}
-        header={paneHeader(dock, setDock)}
         toasts={<ToastHost />}
         overlay={<SheetHost />}
       >
         {renderScreen?.(screen) ?? <PlaceholderScreen screen={screen} />}
-      </ShellLayout>
+      </FramedLayout>
     </KeysProviders>
   );
 }

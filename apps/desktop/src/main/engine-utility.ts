@@ -11,6 +11,7 @@ import type { GoogleTokenBundle } from '../host/providers/oauth/token-source';
 import {
   controlMethods,
   createPortHost,
+  hostServeArgs,
   type EnginePortEnd,
   type FromUtility,
   type ToUtility,
@@ -139,15 +140,27 @@ function createBridge(parent: UtilityParent) {
   return { bridge, answer };
 }
 
-/** Main's control calls: `controlMethods` only, answered with the contract's error body on failure. */
-function serveControl(parent: UtilityParent, control: EngineSession, message: ToUtility) {
+/** A window's engine connection id by its Electron window id (the port host's), for `Mail/serve`. */
+type ConnectionOf = (windowId: number) => string | undefined;
+
+/**
+ * Main's control calls: `controlMethods` only, answered with the contract's error body on failure. `Mail/serve` names
+ * the Electron window main stamped; it is translated to that window's connection id here, never passed through.
+ */
+function serveControl(
+  parent: UtilityParent,
+  control: EngineSession,
+  message: ToUtility,
+  connectionOf: ConnectionOf,
+) {
   if (message.kind !== 'call') return;
   const { id, method } = message;
   if (!controlMethods.has(method)) {
     const error = { type: 'forbidden', message: 'Not a control method.' };
     return parent.post({ kind: 'reply', id, ok: false, error });
   }
-  control.call(method, message.args ?? {}).then(
+  const args = method === 'Mail/serve' ? hostServeArgs(message.args, connectionOf) : message.args;
+  control.call(method, args ?? {}).then(
     result => parent.post({ kind: 'reply', id, ok: true, result }),
     error => {
       const body = (error as { body?: { type?: unknown; message?: unknown } }).body;
@@ -212,7 +225,8 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
     if (message.kind === 'answer') return answer(message);
     if (message.kind === 'power') return void bridge.power.emit(message.event);
     if (message.kind === 'quit') return void quit();
-    if (message.kind === 'call' && control) serveControl(parent, control, message);
+    if (message.kind === 'call' && control)
+      serveControl(parent, control, message, windowId => ports?.connectionOf(windowId));
   }
 
   parent.onMessage((data, transferred) => {
@@ -252,6 +266,8 @@ export function startEngineUtility(): void {
       wrapPort: raw => {
         const port = raw as MainPort;
         const end: EnginePortEnd = {
+          // `MessagePortMain.postMessage` moves only ports (a buffer in its list throws), so a blob reply's
+          // `transfer` is left out here: the bytes are cloned across the process boundary once.
           post: message => port.postMessage(message),
           onMessage: handler => void port.on('message', event => handler(event.data)),
           onClose: handler => void port.on('close', handler),

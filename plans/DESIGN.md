@@ -1024,7 +1024,7 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 | Diagnostics | "Diagnostics copied" / "Diagnostics copied. They hold no mail." / "Diagnostics exported" / "Couldn’t get the diagnostics." |
 | Reconnect sheet failures | "That was a different account. Sign in with the same one.", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
 | Confirms | "Delete this email forever?" (button "Delete forever"); "Discard this draft?" (button "Discard") |
-| Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home" |
+| Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home", "Account added" (after Add an account connects) |
 | Spam quick action | "Not spam" (this replaces "Restore" for Spam) |
 | Fallbacks | "No sender", "No recipient", "No subject", "No mail here yet." |
 | Later row action | "Change date" |
@@ -1046,7 +1046,7 @@ A wording change to any of these is a visible change: re-show the owner.
    - Toasts are polite and never steal focus. Progress announces phases only (§7.12).
    - Icon-only buttons have labels and tooltips.
 4. **Keys.** Every pointer path has a key. Single-key shortcuts can be switched off (WCAG 2.1.4), and every key can be remapped. Dictation always has a typed equivalent. The IME rules are in §5 rule 16.
-5. **Motion.** Reduced motion uses the "Reduced" column in §4.8 (opacity at most 120 ms, no travel; spinners stay). Nothing flashes more than 3 times a second. Hover never moves layout (§5 rule 17).
+5. **Motion.** Reduced motion uses the "Reduced" column in §4.8 (opacity at most 120 ms, no travel; spinners stay). (Reading the two together: the `status` runner, the 30 % segment sliding in its track, goes static under reduced motion and rests as a centred 30 % bar; the small `Spinner` glyph keeps turning, because it is the only sign that work is running and it travels nowhere.) Nothing flashes more than 3 times a second. Hover never moves layout (§5 rule 17).
 6. **Size.** Everything is in `rem`, and 200 % zoom works down to the 900 px minimum window. Nothing is under 11 px. Targets are at least 24 px (28 px default).
 7. **Checks.** An axe scan of every harness state in both themes, a keyboard-only walkthrough of ten core tasks, and manual VoiceOver passes for Home, the reader, compose, Ask, the calendar and onboarding. Japanese and Chinese IME tests.
 

@@ -335,6 +335,11 @@ describe('FocusSlot and FocusLetter', () => {
     assert.equal((m.match(/>Done</g) ?? []).length, 1);
   });
 
+  test('picked: the card carries data-picked for the accent wash', () => {
+    assert.match(render(<FocusLetter {...letter({ picked: true })} />), /data-picked="true"/);
+    assert.doesNotMatch(render(<FocusLetter {...letter()} />), /data-picked/);
+  });
+
   test('demoted: the suggestion becomes a text button without its keycap', () => {
     const m = render(<FocusLetter {...letter({ demoted: true })} />);
     assert.match(m, /data-demoted="true"/);

@@ -26,11 +26,12 @@ function deps() {
 
 const registry: DeadlineRegistry = { register: () => () => {}, changed: () => {} };
 
-test('the root composes the four stub modules; ports the host left out answer unavailable', async () => {
-  // eng-views registers the sender-rule writer and eng-time the submission writer; eng-ai's module is still empty.
+test('the root composes the lane modules; ports the host left out answer unavailable', async () => {
+  // eng-views registers the sender-rule writer, eng-time the submission writer, eng-html the image allow-list
+  // writer and eng-host the audit-log writer; eng-ai's module is still empty.
   assert.deepEqual(
     laneExtensions().map(extension => extension.lane),
-    ['eng-views', 'eng-time'],
+    ['eng-views', 'eng-time', 'eng-html', 'eng-host'],
   );
   const t = await testEngine();
   try {

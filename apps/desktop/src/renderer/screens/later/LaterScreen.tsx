@@ -10,6 +10,7 @@ import { dismissToast, pushToast } from '../../shell';
 import { ListBox, ListGroup } from '../../ui/list';
 import type { ListboxBinding } from '../../ui/props';
 import { PageHead, Puck } from '../../ui/surfaces';
+import { CommitTemplates } from '../CommitTemplates';
 import { BOOKMARKS_CONFIG, LATER_CONFIG } from '../lists/listKinds';
 import { useListKeys } from '../lists/listCommands';
 import type { OpenKind } from '../lists/listRows';
@@ -38,7 +39,7 @@ export interface LaterScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
   /** Open a thread in the reader (the reader lane owns it; absent until it lands). */
-  readonly onOpen?: (id: string, kind: OpenKind) => void;
+  readonly onOpen?: (id: string, kind: OpenKind, listIds?: readonly string[]) => void;
 }
 
 type Which = 'later' | 'bookmarks';
@@ -144,6 +145,7 @@ function LaterBody(props: LaterScreenProps) {
         drag={{ drag, targets }}
         onAction={rowAction}
       />
+      <CommitTemplates forwardedRef={list.templates} />
       <LaterPicker
         state={picker}
         dispatch={dispatch}

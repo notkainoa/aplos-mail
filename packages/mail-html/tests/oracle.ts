@@ -35,6 +35,8 @@ const KEPT_AT_RULES = new Set([
   'layer',
   'container',
 ]);
+/** A length that follows the viewport, or a container query unit that falls back to it (the frame is sized to the letter, so it would chase its own tail). */
+const VIEWPORT_LENGTH = /^(?:[sld]?v|cq)(?:w|h|i|b|min|max)$/i;
 const IMAGE_ROUTE = /^(?:cid|img)\/\d+$/;
 const RASTER_DATA = /^data:image\/(?:png|jpe?g|gif|webp)[;,]/i;
 const SAFE_HREF = /^(?:https?:\/\/|mailto:|tel:|#)/i;
@@ -110,6 +112,7 @@ function checkAttribute(
   if (name === 'href' && element === 'a') return checkHref(value, problems);
   if (name === 'src' && element === 'img') return checkImage(value, true, options, problems);
   if (name === 'background') return checkImage(value, false, options, problems);
+  if (name === 'style' && element === 'body') problems.push(...bodyStyleProblems(value));
   if (name === 'style') return checkCss(value, options, problems, true);
   if (name === 'target' && value === '_blank') return;
   if (name === 'rel' && value === 'noopener noreferrer') return;
@@ -204,7 +207,58 @@ function checkCss(
     depth = trackDepth(token, depth, imageSets);
     checkCssToken(token, tokens, index, imageSets.length > 0, options, problems);
     if (fromMail) problems.push(...ownClassSelectors(token, tokens, index));
+    if (fromMail) problems.push(...unscopedLayerNames(token, tokens, index));
   }
+}
+
+/**
+ * A mail's `@layer` names must all be in the `m-` namespace: the reading layer's !important rules
+ * keep the frame's height only while the mail cannot add rules to that layer. The prelude runs to
+ * the next `{`, `;` or `}`, and any identifier in it is a layer name.
+ */
+function unscopedLayerNames(token: CSSToken, tokens: CSSToken[], index: number): string[] {
+  if (token[0] !== TokenType.AtKeyword || token[4].value.toLowerCase() !== 'layer') return [];
+  const problems: string[] = [];
+  for (let at = index + 1; at < tokens.length; at++) {
+    const next = tokens[at];
+    if (
+      next[0] === TokenType.OpenCurly ||
+      next[0] === TokenType.Semicolon ||
+      next[0] === TokenType.CloseCurly
+    )
+      break;
+    if (next[0] === TokenType.Ident && !next[4].value.startsWith('m-'))
+      problems.push(`layer name ${next[4].value} outside the m- namespace`);
+  }
+  return problems;
+}
+
+/**
+ * The frame body's style attribute outranks every cascade layer, so it may set only colours, margins,
+ * padding and type. Any other property name at the top level of the attribute is a finding.
+ */
+const BODY_STYLE_OK = new RegExp(
+  '^(?:background(?:-(?:color|image|repeat|position|size|attachment|origin|clip))?' +
+    '|color|(?:margin|padding)(?:-(?:top|right|bottom|left|block|block-start|block-end|inline|inline-start|inline-end))?' +
+    '|font(?:-(?:family|size|style|weight|variant))?|line-height|text-align)$',
+);
+
+function bodyStyleProblems(css: string): string[] {
+  const tokens = tokenize({ css }, { onParseError: () => undefined });
+  const problems: string[] = [];
+  let depth = 0;
+  let expectName = true;
+  for (const token of tokens) {
+    if (token[0] === TokenType.Whitespace || token[0] === TokenType.Comment) continue;
+    if (depth === 0 && expectName && token[0] !== TokenType.Semicolon) {
+      const name = token[0] === TokenType.Ident ? token[4].value.toLowerCase() : '';
+      if (!BODY_STYLE_OK.test(name)) problems.push(`body style property "${name || token[1]}"`);
+    }
+    expectName = token[0] === TokenType.Semicolon && depth === 0;
+    if (token[0] === TokenType.Function || token[0] === TokenType.OpenParen) depth++;
+    else if (token[0] === TokenType.CloseParen) depth = Math.max(0, depth - 1);
+  }
+  return problems;
 }
 
 function trackDepth(token: CSSToken, depth: number, imageSets: number[]): number {
@@ -234,6 +288,8 @@ function checkCssToken(
 ): void {
   if (token[0] === TokenType.URL) checkImage(token[4].value, false, options, problems);
   if (token[0] === TokenType.BadURL) problems.push('css bad url');
+  if (token[0] === TokenType.Dimension && VIEWPORT_LENGTH.test(token[4].unit))
+    problems.push(`css viewport unit ${token[1]}`);
   if (token[0] === TokenType.AtKeyword && !KEPT_AT_RULES.has(token[4].value.toLowerCase())) {
     problems.push(`at-rule @${token[4].value}`);
   }

@@ -281,7 +281,16 @@ export const mail = area('mail', {
       "Main's protocol relay: build the whole response, headers included, for an `aplos-mail://m/<token>/<path>` request.",
     kind: 'query',
     scope: 'host',
-    input: z.object({ token: line(64), path: line(2_000) }),
+    input: z.object({
+      token: line(64),
+      path: line(2_000),
+      /**
+       * The requesting frame's window: the `connectionId` of the window connection that called `Mail/frame` (main maps
+       * each window to its connection). Optional only so v1 stays additive; the engine fails closed and answers the
+       * uniform 404 when it is absent or empty, because a token is served only to the window it was issued to.
+       */
+      windowId: z.optional(line(64)),
+    }),
     output: z.object({ status: z.int(), headers: z.record(z.string(), z.string()), body: Bytes }),
   },
   'Attachment/get': {

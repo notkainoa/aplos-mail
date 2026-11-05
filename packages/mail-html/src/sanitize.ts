@@ -1,5 +1,6 @@
 import type { CSSToken } from '@csstools/css-tokenizer';
-import { cssTokens, readDeclarations, sanitizeCss } from './css';
+import { keepsBodyDeclaration } from './body-style';
+import { cssTokens, keepDeclarations, readDeclarations, sanitizeCss } from './css';
 import { escapeAttribute } from './escape';
 import { markText, type Finder } from './find';
 import { ID_LIST_ATTRIBUTES, scopeClassList, scopeId, scopeIdList } from './ids';
@@ -36,6 +37,7 @@ const ATTRIBUTE_NAME = /^[a-z][a-z0-9-]*$/;
 const TRANSPARENT_GIF =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 const QUOTE_OPEN = `<details class="${QUOTE_CLASS}"><summary>${QUOTE_SUMMARY}</summary>`;
+const QUOTE_OPEN_EXPANDED = `<details class="${QUOTE_CLASS}" open><summary>${QUOTE_SUMMARY}</summary>`;
 const NO_CLASS = new Set(['class']);
 
 interface Context {
@@ -76,7 +78,6 @@ interface Frame {
 }
 
 export interface WalkOutput {
-  doctype: string;
   htmlAttributes: string;
   bodyAttributes: string;
   body: string;
@@ -100,11 +101,12 @@ export function sanitizeHtml(
   images: ImageBook,
   finder: Finder | undefined,
   ownOutput = false,
+  quotesOpen = false,
 ): WalkOutput {
   const parsed = parseMail(html, LIMITS);
-  const walker = new Walker(images, finder, ownOutput);
+  const walker = new Walker(images, finder, ownOutput, quotesOpen);
   const output = walker.run(parsed.root);
-  return { ...output, doctype: doctypeFor(parsed.doctype), clipped: parsed.clipped };
+  return { ...output, clipped: parsed.clipped };
 }
 
 class Walker {
@@ -121,15 +123,20 @@ class Walker {
   private readonly hidingStyles = new Map<string, boolean>();
   /** What every `<noframes>` re-parse together may still build. */
   private fallbackElements = LIMITS.maxElements;
+  /** Style text written so far: the rewrite can lengthen CSS, so the caps judge the output too. */
+  private styleBlockChars = 0;
+  private styleAttributeChars = 0;
 
   constructor(
     private readonly images: ImageBook,
     private readonly finder: Finder | undefined,
     /** Re-reading Aplos's own output: its `aplos-` classes stay (the idempotence check). */
     private readonly ownOutput: boolean,
+    /** Quoted history starts open (`Mail/frame.quotesOpen`). */
+    private readonly quotesOpen: boolean,
   ) {}
 
-  run(root: ElementNode): Omit<WalkOutput, 'doctype' | 'clipped'> {
+  run(root: ElementNode): Omit<WalkOutput, 'clipped'> {
     this.pushFrame(root.children, contextOf(false, false, false), undefined);
     while (this.frames.length > 0) this.step(this.frames[this.frames.length - 1]);
     return {
@@ -207,7 +214,7 @@ class Walker {
   private openQuote(entry: Written): void {
     if (this.depth() + 2 > MAX_DEPTH) return;
     this.impliedClose('details');
-    this.out.push(QUOTE_OPEN);
+    this.out.push(this.quotesOpen ? QUOTE_OPEN_EXPANDED : QUOTE_OPEN);
     entry.open = true;
     this.written.push(entry);
     this.quotedCount++;
@@ -245,7 +252,7 @@ class Walker {
       if (!allowed.has(name) || !rootValueOk(name, value)) continue;
       parts.push(attribute(name, name === 'class' ? this.classValue(value) : value));
     }
-    if (element.name === 'body') parts.push(...this.urlAttributes(element));
+    if (element.name === 'body') parts.push(...this.urlAttributes(element, true));
     return parts.join('');
   }
 
@@ -288,7 +295,9 @@ class Walker {
     if (element.truncated) return;
     const css = textOf(element);
     const clean = sanitizeCss(css, this.images).trim();
-    if (clean) this.out.push(`<style>${clean}</style>`);
+    if (!clean || this.styleBlockChars + clean.length > LIMITS.maxStyleChars) return;
+    this.styleBlockChars += clean.length;
+    this.out.push(`<style>${clean}</style>`);
   }
 
   private attributes(element: ElementNode, exclude?: Set<string>): string {
@@ -304,11 +313,20 @@ class Walker {
     return parts.join('');
   }
 
-  /** `style` and `background`, both of which can name images. */
-  private urlAttributes(element: ElementNode): string[] {
+  /**
+   * `style` and `background`, both of which can name images. The frame body's `style` keeps only the
+   * properties of `body-style.ts` (`body` true): an element's own style attribute outranks every
+   * cascade layer, `!important` or not, so nothing in it may touch what the reading layer guards.
+   */
+  private urlAttributes(element: ElementNode, body = false): string[] {
     const parts: string[] = [];
-    const clean = this.cleanStyle(element.attrs.get('style'));
-    if (clean) parts.push(attribute('style', clean));
+    const clean = body
+      ? this.bodyStyle(element.attrs.get('style'))
+      : this.cleanStyle(element.attrs.get('style'));
+    if (clean && this.styleAttributeChars + clean.length <= LIMITS.maxChars) {
+      this.styleAttributeChars += clean.length;
+      parts.push(attribute('style', clean));
+    }
     const background = element.attrs.get('background');
     if (background !== undefined && BACKGROUND.has(element.name)) {
       const source = this.images.source(background, 'css');
@@ -328,7 +346,19 @@ class Walker {
       clean = sanitizeCss(style, this.images, this.tokensOf(style)).trim();
       this.cleanStyles.set(style, clean);
     }
-    return clean;
+    return clean.length > MAX_STYLE_ATTRIBUTE ? '' : clean;
+  }
+
+  /**
+   * The frame body's style: the allowed declarations only (`keepsBodyDeclaration`). Not cached, and
+   * never through `cleanStyles`: that map is keyed by the style text, so a shared key would hand the body
+   * another element's unfiltered result for the same text.
+   */
+  private bodyStyle(style: string | undefined): string {
+    if (style === undefined || style.length > MAX_STYLE_ATTRIBUTE) return '';
+    const text = keepDeclarations(style, keepsBodyDeclaration, this.tokensOf(style));
+    const clean = sanitizeCss(text, this.images).trim();
+    return clean.length > MAX_STYLE_ATTRIBUTE ? '' : clean;
   }
 
   /** The element's `hidden` attribute or `style` hides it (and so any image inside). */
@@ -419,16 +449,4 @@ function linkAttributes(href: string | undefined): string {
   if (link.kind === 'none') return '';
   if (link.kind === 'fragment') return attribute('href', link.href);
   return `${attribute('href', link.href)} target="_blank" rel="noopener noreferrer"`;
-}
-
-const XHTML_TRANSITIONAL =
-  '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">';
-
-/** Keeps the mail's rendering mode: standards, limited quirks (XHTML transitional) or quirks. */
-function doctypeFor(doctype: string): string {
-  const data = doctype.slice(0, 300).trim();
-  if (/^!?doctype\s{1,20}html$/i.test(data)) return '<!DOCTYPE html>';
-  if (/transitional|frameset/i.test(data) && /\.dtd/i.test(data)) return XHTML_TRANSITIONAL;
-  if (/strict/i.test(data)) return '<!DOCTYPE html>';
-  return '';
 }

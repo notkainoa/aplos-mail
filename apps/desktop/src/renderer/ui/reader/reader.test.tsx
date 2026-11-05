@@ -3,11 +3,11 @@
 
 import assert from 'node:assert/strict';
 import { before, describe, test } from 'node:test';
-import type { ReaderHeadProps, UndoTrayProps } from '../props';
+import type { ReaderActionsProps, ReaderHeadProps, UndoTrayProps } from '../props';
 import { bannedIn, freezeClock, html, text, WORST } from '../list/testkit.test';
 import {
-  EarlierMessages,
   LoadingLine,
+  ReaderActions,
   ReaderHead,
   ReplyStub,
   Summary,
@@ -15,7 +15,6 @@ import {
   UndoTray,
   Why,
 } from './index';
-import { earlierLine } from './EarlierMessages';
 
 const noop = () => {};
 const collected: string[] = [];
@@ -27,21 +26,19 @@ function render(element: Parameters<typeof html>[0]): string {
 
 function head(over: Partial<ReaderHeadProps> = {}): ReaderHeadProps {
   return {
-    sender: {
-      name: 'Jordan Park',
-      address: 'jordan@parkandpine.test',
-      accountLabel: 'alex.moreno@example.test',
-      history: '14 emails both ways since March',
-    },
-    recipientsLabel: 'to you and Mina Cho',
     due: { at: '2026-10-30T00:00:00-07:00', overdue: false, source: 'ai' },
-    date: '2026-10-29T10:00:00-07:00',
     summary: {
       state: 'ready',
       text: 'Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.',
       subject: 'A quieter home for the Hollow Creek site',
       provenance: { provider: 'Groq', local: false },
     },
+    ...over,
+  };
+}
+
+function actions(over: Partial<ReaderActionsProps> = {}): ReaderActionsProps {
+  return {
     suggestion: { verb: 'Reply', icon: 'reply', isDone: false },
     commands: { suggest: 'mail.suggested', later: 'mail.later', done: 'mail.done' },
     demoted: false,
@@ -111,22 +108,38 @@ describe('Summary', () => {
 });
 
 describe('ReaderHead', () => {
-  test('sender line, summary landmark, filled Reply with Space then Later and Done; no monogram', () => {
+  test('the summary landmark and a hairline; no sender line, no time, no buttons', () => {
     const m = render(<ReaderHead {...head()} />);
-    assert.match(
-      m,
-      /ui-reader-head__name" dir="auto" title="jordan@parkandpine.test · alex.moreno@example.test · 14 emails both ways since March">Jordan Park</,
-    );
-    assert.match(m, /ui-reader-head__to">to you and Mina Cho</);
     assert.match(m, /data-kind="due" data-source="ai" title="[^"]+ · from the email"/);
-    assert.match(text(m), /Due tomorrow 10:00 AM/);
+    assert.match(text(m), /Due tomorrow$/);
     assert.match(
       m,
       /<section class="ui-reader-head__summary" aria-label="Summary"><p class="ui-summary" dir="auto" data-state="ready" data-clamp="none"/,
     );
+    assert.match(m, /<hr class="ui-reader-head__rule"\/?>/, 'a hairline under the summary');
+    assert.doesNotMatch(m, /ui-reader-head__(from|name|to|when|actions)/, 'no sender line');
+    assert.doesNotMatch(m, /<button|<time|<kbd/);
+  });
+
+  test('pending and absent summaries keep the subject in SF, without a due chip', () => {
+    const pending = render(
+      <ReaderHead
+        {...head({ summary: { state: 'pending', subject: 'A quieter home' }, due: undefined })}
+      />,
+    );
+    assert.match(pending, /data-state="pending"/);
+    assert.doesNotMatch(pending, /data-kind="due"/);
+  });
+});
+
+describe('ReaderActions', () => {
+  test('one pinned bar: filled Reply with Space, then Later and Done; no monogram', () => {
+    const m = render(<ReaderActions {...actions()} />);
+    assert.equal((m.match(/class="ui-reader-actions"/g) ?? []).length, 1);
+    assert.match(m, /role="group" aria-label="Actions"/);
     assert.match(
       m,
-      /data-variant="filled" data-size="md" title="Reply · Space">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
+      /data-variant="filled" data-size="md" title="Reply · Space\. Hold R to dictate a reply">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
     );
     assert.match(m, /title="Later · L"/);
     assert.match(m, /title="Done · E"/);
@@ -136,127 +149,34 @@ describe('ReaderHead', () => {
 
   test('Add to calendar suggestion; Done omitted when the suggestion is Done; demoted while replying', () => {
     const cal = render(
-      <ReaderHead
-        {...head({ suggestion: { verb: 'Add to calendar', icon: 'calendar', isDone: false } })}
+      <ReaderActions
+        {...actions({ suggestion: { verb: 'Add to calendar', icon: 'calendar', isDone: false } })}
       />,
     );
     assert.match(cal, /data-icon="calendar"/);
+    assert.doesNotMatch(
+      cal,
+      /Hold R to dictate/,
+      'only a reply suggestion carries the dictation hint',
+    );
     const done = render(
-      <ReaderHead {...head({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />,
+      <ReaderActions {...actions({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />,
     );
     assert.equal((text(done).match(/Done/g) ?? []).length, 1);
-    const demoted = render(<ReaderHead {...head({ demoted: true })} />);
+    const demoted = render(<ReaderActions {...actions({ demoted: true })} />);
     assert.doesNotMatch(demoted, /data-variant="filled"|<kbd/);
-  });
-
-  test('pending, absent and worst-case sender data', () => {
-    const pending = render(
-      <ReaderHead
-        {...head({ summary: { state: 'pending', subject: 'A quieter home' }, due: undefined })}
-      />,
-    );
-    assert.match(pending, /data-state="pending"/);
-    assert.doesNotMatch(pending, /data-kind="due"/);
-    const worst = render(
-      <ReaderHead
-        {...head({
-          sender: { name: WORST.arabic, address: WORST.email, accountLabel: WORST.cjk },
-          recipientsLabel: `to you and ${WORST.emoji}`,
-          date: '2025-12-24T16:12:00-08:00',
+    assert.match(demoted, /data-demoted="true"/, 'the bar rests in the flow under the open reply');
+    assert.match(text(demoted), /Replying/, 'the reply button says so while the reply is open');
+    assert.match(demoted, /aria-pressed="true"/);
+    const calDemoted = render(
+      <ReaderActions
+        {...actions({
+          demoted: true,
+          suggestion: { verb: 'Add to calendar', icon: 'calendar', isDone: false },
         })}
       />,
     );
-    assert.ok(text(worst).includes(WORST.arabic));
-    assert.match(text(worst), /Dec 24, 2025, 4:12 PM/);
-  });
-});
-
-describe('EarlierMessages', () => {
-  const messages = [
-    {
-      id: 'm1',
-      from: 'Jordan Park',
-      preview: 'Kicking off: here is the brief we agreed on Friday.',
-      date: '2026-10-20T09:00:00-07:00',
-    },
-    {
-      id: 'm2',
-      from: 'You',
-      preview: 'Love the brief. Two things to keep.',
-      date: '2026-10-21T09:00:00-07:00',
-    },
-    {
-      id: 'm3',
-      from: 'Mina Cho',
-      preview: 'Early sketches before Jordan sends the full set.',
-      date: '2026-10-27T09:00:00-07:00',
-    },
-  ];
-
-  test('collapsed: one line with the O keycap', () => {
-    const m = render(
-      <EarlierMessages
-        count={3}
-        participants={['Jordan', 'you', 'Mina']}
-        expanded={false}
-        messages={messages}
-        commandId="reader.expand"
-        onToggle={noop}
-        onOpenMessage={noop}
-      />,
-    );
-    assert.match(m, /data-state="collapsed"/);
-    assert.match(m, /aria-expanded="false"/);
-    assert.match(text(m), /^3 earlier messages from Jordan, you and Mina O$/);
-    assert.match(m, /title="Show earlier messages · O"/);
-    assert.match(m, /hidden=""/);
-  });
-
-  test('expanded: 36 px one-liners, the cursor rail on one', () => {
-    const m = render(
-      <EarlierMessages
-        count={3}
-        participants={['Jordan', 'you', 'Mina']}
-        expanded
-        messages={messages}
-        cursorId="m2"
-        commandId="reader.expand"
-        onToggle={noop}
-        onOpenMessage={noop}
-      />,
-    );
-    assert.match(m, /data-state="expanded"/);
-    assert.equal((m.match(/class="ui-earlier-messages__message"/g) ?? []).length, 3);
-    assert.match(
-      m,
-      /id="m2" class="ui-earlier-messages__message" data-cursor="true" aria-current="true"/,
-    );
-    assert.match(
-      text(m),
-      /Jordan Park Kicking off.* Oct 20 You Love the brief.* Oct 21 Mina Cho Early sketches.* Tuesday/,
-    );
-  });
-
-  test('singular, zero, many participants', () => {
-    assert.equal(earlierLine(1, ['Jordan']), '1 earlier message from Jordan');
-    assert.equal(
-      earlierLine(9999, ['Jordan', 'you', 'Mina', 'Q', 'Owen']),
-      '9,999 earlier messages from Jordan, you, Mina and 2 others',
-    );
-    assert.equal(
-      render(
-        <EarlierMessages
-          count={0}
-          participants={[]}
-          expanded={false}
-          messages={[]}
-          commandId="reader.expand"
-          onToggle={noop}
-          onOpenMessage={noop}
-        />,
-      ),
-      '',
-    );
+    assert.doesNotMatch(text(calDemoted), /Replying/, 'only a reply suggestion becomes Replying');
   });
 });
 
@@ -307,6 +227,118 @@ describe('ThreadMessage', () => {
     );
   });
 
+  test('an earlier message is a compact card: one button with the excerpt, aria-expanded, no body', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const folded = render(
+      <ThreadMessage
+        id="e1"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={fold}
+        excerpt="Kicking off: here is the brief we agreed on Friday…"
+      />,
+    );
+    assert.match(folded, /data-fold="folded"/);
+    assert.match(
+      folded,
+      /<button type="button" class="ui-thread-message__toggle" aria-expanded="false"/,
+    );
+    assert.match(
+      text(folded),
+      /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday…$/,
+    );
+    assert.doesNotMatch(folded, /ui-thread-message__body/, 'a folded card loads and draws no body');
+    const open = render(
+      <ThreadMessage
+        id="e1"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={{ ...fold, open: true }}
+        excerpt="never shown while open…"
+        body={<p>The whole brief.</p>}
+      />,
+    );
+    assert.match(open, /data-fold="open"/);
+    assert.match(open, /aria-expanded="true"/);
+    assert.doesNotMatch(text(open), /never shown/);
+    assert.match(text(open), /The whole brief\./);
+  });
+
+  test('a card with no text says "No preview" in dim text; a card never promises O for quoted text', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const empty = render(
+      <ThreadMessage
+        id="e2"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={fold}
+        excerpt=""
+      />,
+    );
+    assert.match(empty, /ui-thread-message__excerpt" dir="auto" data-empty="true">No preview</);
+    assert.doesNotMatch(empty, /!|…/);
+    const open = render(
+      <ThreadMessage
+        id="e3"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={{ ...fold, open: true }}
+        body={<p>The brief.</p>}
+        quoted={{ shown: false, onToggle: noop }}
+      />,
+    );
+    assert.match(open, /title="Fold this message · O"/, 'O folds the card');
+    assert.match(open, /title="Show quoted text"/, "the card's quoted button names no key");
+    const latest = render(
+      <ThreadMessage
+        id="e4"
+        from="Jordan Park"
+        toLabel="to you"
+        date="2026-10-20T09:00:00-07:00"
+        cursor
+        body={<p>The latest.</p>}
+        quoted={{ shown: false, onToggle: noop, commandId: 'reader.expand' }}
+      />,
+    );
+    assert.match(
+      latest,
+      /title="Show quoted text · O"/,
+      'on the latest message O does show quoted text',
+    );
+  });
+
+  test('the toggle is the same button, first in the head, folded or open (focus survives a fold)', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const card = (open: boolean) =>
+      render(
+        <ThreadMessage
+          id="e5"
+          from="Jordan Park"
+          toLabel="to you"
+          date="2026-10-20T09:00:00-07:00"
+          cursor={false}
+          fold={{ ...fold, open }}
+          excerpt="First words…"
+          body={<p>All of it.</p>}
+        />,
+      );
+    const head = (markup: string) =>
+      markup.slice(markup.indexOf('<header'), markup.indexOf('<button') + 7);
+    assert.equal(head(card(false)), head(card(true)), 'one button at one place in the tree');
+    assert.match(
+      card(false),
+      /<header[^>]*><button type="button" class="ui-thread-message__toggle"/,
+    );
+  });
+
   test('a message you just sent carries the undo tray in place', () => {
     const m = render(
       <ThreadMessage
@@ -336,7 +368,10 @@ describe('LoadingLine and ReplyStub', () => {
 
   test('"Reply to Jordan…" with its R keycap always shown', () => {
     const m = render(<ReplyStub recipientName="Jordan" commandId="mail.reply" onOpen={noop} />);
-    assert.match(m, /^<button type="button" class="ui-reply-stub" title="Reply · R">/);
+    assert.match(
+      m,
+      /^<button type="button" class="ui-reply-stub" title="Reply · R\. Hold R to dictate a reply">/,
+    );
     assert.equal(text(m), 'Reply to Jordan… R');
     assert.equal(
       text(
@@ -437,7 +472,7 @@ describe('UndoTray', () => {
       <UndoTray {...tray({ state: { kind: 'uncertain' }, placement: 'toast' })} />,
     );
     assert.match(uncertain, /data-placement="toast" role="status"/);
-    assert.equal(text(uncertain), 'We could not confirm this was sent. Check Sent Send anyway');
+    assert.equal(text(uncertain), 'Couldn’t confirm this was sent. Check Sent Send anyway');
     assert.equal(
       text(render(<UndoTray {...tray({ state: { kind: 'suspended' } })} />)),
       'Missed its time while your Mac was off. Send now Reschedule',

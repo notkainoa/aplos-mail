@@ -152,7 +152,7 @@ test('keep mine then an immediate send: the send is our content under a new id, 
     assert.equal(r.synced_revision, null, 'our content is not what the copy holds');
     assert.equal(r.remote_internet_id, null, 'and our old Message-ID no longer names it');
     assert.equal(r.remote_message_id, s.theirId, 'the upload will replace their copy knowingly');
-    const sub = w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
     assert.notEqual(sub.internetId, s.internetId, 'findSent looks for the id that really leaves');
     await wait(w, 15 * SEC);
     const payload = w.server.payloads[0];
@@ -170,7 +170,7 @@ test('a snippet-only phone edit of a clean draft, keep mine, send: nothing of th
     phone(w, s.remoteDraftId, theirId, { subject: 'Theirs', internetId: THEIRS_ID });
     assert.equal(syncOf(w, s.draft.id).conflict?.complete, false);
     service(w).resolve(next(), s.draft.id, 'keepMine');
-    const sub = w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
     await wait(w, 15 * SEC);
     const payload = w.server.payloads[0];
     assert.equal(payload.internetId, sub.internetId);
@@ -191,7 +191,7 @@ test('take theirs with their Message-ID known: the copy is theirs and a send lea
     assert.equal(r.remote_internet_id, THEIRS_ID, 'not our old id');
     assert.equal(r.synced_revision, r.revision);
     assert.equal(r.remote_message_id, s.theirId);
-    const sub = w.send(w.first, s.draft.id, { revision: r.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: r.revision });
     assert.equal(sub.internetId, THEIRS_ID);
     await wait(w, 15 * SEC);
     const payload = w.server.payloads[0];
@@ -209,7 +209,7 @@ test('take theirs without their Message-ID: nothing claims our old id, and the s
     assert.equal(r.synced_revision, null);
     await wait(w, 30 * SEC);
     assert.equal(w.remoteDrafts.saves.length, 1, 'nothing to upload');
-    const sub = w.send(w.first, s.draft.id, { revision: r.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: r.revision });
     assert.notEqual(sub.internetId, s.internetId);
     await wait(w, 15 * SEC);
     assert.equal(w.server.payloads[0].remoteDraftId, undefined);
@@ -401,7 +401,10 @@ test('a discarded draft is not sent, resolved or saved', () =>
     );
     refused(() => service(w).resolve(next(), s.draft.id, 'keepMine'), 'notFound');
     refused(() => service(w).destroy(next(), s.draft.id), 'notFound');
-    refused(() => w.send(w.first, s.draft.id, { revision: 1 }), 'notFound');
+    await assert.rejects(
+      () => w.send(w.first, s.draft.id, { revision: 1 }),
+      error => error instanceof ContractError && error.type === 'notFound',
+    );
   }));
 
 // ---------------------------------------------------------------- the schedule around conflicts and lost replies
@@ -520,7 +523,7 @@ test('an edit made while an upload runs is uploaded after it (the ack marks only
 test('a remote change to a draft with a live send is left alone', () =>
   world(async w => {
     const s = await synced(w);
-    w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    await w.send(w.first, s.draft.id, { revision: s.draft.revision });
     phone(w, s.remoteDraftId, 'pm-live', { subject: 'Phone', html: '<p>Phone</p>' });
     const kept = read(w, s.draft.id);
     assert.equal(kept.subject, 'Lunch');
@@ -778,7 +781,7 @@ test('an upload that settles after close raises no unhandled rejection', () =>
 test('a send that consumed the remote draft does not delete it afterwards; the hidden row just goes', () =>
   world(async w => {
     const s = await synced(w);
-    const sub = w.send(w.first, s.draft.id, { revision: s.draft.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: s.draft.revision });
     await wait(w, 15 * SEC);
     assert.equal(w.server.payloads[0].remoteDraftId, s.remoteDraftId, 'the draft itself is sent');
     assert.deepEqual(w.server.consumed, [s.remoteDraftId]);
@@ -797,7 +800,7 @@ test('a send of the pinned MIME leaves the remote draft in place, and it is dele
     const s = await synced(w);
     // Edited and sent before the edit synced: the copy is an older revision, so the pinned MIME leaves instead.
     const edited = edit(w, s.draft, fields({ subject: 'Edited' }));
-    const sub = w.send(w.first, s.draft.id, { revision: edited.revision });
+    const sub = await w.send(w.first, s.draft.id, { revision: edited.revision });
     await wait(w, 15 * SEC);
     assert.equal(w.get(sub.id).state, 'sent');
     assert.equal(w.server.payloads[0].remoteDraftId, undefined, 'the copy is not what is sent');

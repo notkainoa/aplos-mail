@@ -41,6 +41,7 @@ import {
   dropHeld,
   holdsOurContent,
   markChangedElsewhere,
+  namedByDraftId,
   provenOurs,
   repliedTo,
   sameCopy,
@@ -86,6 +87,8 @@ export type DraftWrite =
       remoteDraftId: string;
       remoteMessageId: string;
       internetId: string;
+      /** The Message-ID the provider shows for the copy when it is not `internetId`: remembered as ours too. */
+      copyInternetId?: string;
       changeKey?: string;
       /** The copy left something out (an attachment it could not read): it is the draft's copy, but not this revision. */
       partial?: true;
@@ -197,7 +200,7 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
   const live = liveOf(tx, row.id);
   if (live) throw new DraftConflict('live', live.state);
   const hasRemote = row.remote_draft_id !== null;
-  const next = patched(meta, { cur: w.fingerprint, problem: null });
+  const next = patched(meta, { cur: w.fingerprint, problem: null, readFails: null });
   const due = dueAfter(w.fields, next, hasRemote, w.at, w.close === true);
   // The same content again is not a new revision (other windows would see a change that is not one), but a close still
   // asks for the upload now.
@@ -221,7 +224,24 @@ function save(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'save' }>) {
 
 // ---------------------------------------------------------------- sync results
 
-function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>) {
+type Synced = Extract<DraftWrite, { op: 'synced' }>;
+
+/** The ids an upload's answer makes ours: its Message-ID, the copy's message id and the Message-ID the copy shows. */
+const ours = (w: Synced) => [
+  w.internetId,
+  w.remoteMessageId,
+  ...(w.copyInternetId !== undefined && w.copyInternetId !== w.internetId
+    ? [w.copyInternetId]
+    : []),
+];
+
+/** The Message-ID the copy shows when it is not the upload's, with the upload's content: what proves its echo later. */
+const copyPrint = (w: Synced) =>
+  w.copyInternetId !== undefined && w.copyInternetId !== w.internetId
+    ? [{ internetId: w.copyInternetId, fingerprint: w.fingerprint }]
+    : [];
+
+function synced(tx: CommitExtensionTx, w: Synced) {
   const row = readRow(tx, w.id);
   const { fields, meta: stored } = parseData(row.data);
   // History may report our own update's copy (no body yet) before this ack and open a conflict about it. The ack names
@@ -233,8 +253,12 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
   // An ack for an upload this row no longer expects (a conflict, a choice or a newer attempt cleared `uploading`) says
   // what the provider now holds, not what this draft is: only its ids are kept, to recognise their echo in history.
   if (meta.uploading?.internetId !== w.internetId && !ownReport) {
-    const wrote = remembered(meta, w.internetId, w.remoteMessageId);
-    const prints = withPrints(meta, { internetId: w.internetId, fingerprint: w.fingerprint });
+    const wrote = remembered(meta, ...ours(w));
+    const prints = withPrints(
+      meta,
+      { internetId: w.internetId, fingerprint: w.fingerprint },
+      ...copyPrint(w),
+    );
     return writeRow(tx, w.id, {}, fields, patched(meta, { wrote, prints }));
   }
   // The reply names a remote draft that another row already shows (history was faster, and could not prove the copy
@@ -273,7 +297,7 @@ function synced(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'synced' }>)
     uploading: null,
     problem: null,
     earlier: null,
-    wrote: remembered(meta, w.internetId, w.remoteMessageId),
+    wrote: remembered(meta, ...ours(w)),
     changedElsewhere: null,
     dueAt: idle ? null : (meta.dueAt ?? w.at),
     // A discarded draft's upload landed: the copy it made is the one to delete, now.
@@ -375,6 +399,9 @@ function setMeta(tx: CommitExtensionTx, w: Extract<DraftWrite, { op: 'meta' }>) 
   const { fields, meta } = parseData(row.data);
   if (w.ifUploading !== undefined && meta.uploading?.internetId !== w.ifUploading)
     throw new DraftConflict('stale');
+  // Backstop: a hidden row only waits for its copy's removal; an upload's due time or read count on it would be stale.
+  if (meta.removing && (w.patch.dueAt != null || w.patch.readFails != null))
+    throw new DraftConflict('missing');
   const base = w.announce ? { ...meta, announce: tx.seq } : meta;
   writeRow(tx, w.id, {}, fields, patched(base, w.patch));
   if (w.announce) announce(w.id);
@@ -672,12 +699,13 @@ function isEcho(
   // phone edit (Gmail is believed to), and dropping that edit as an echo hides it for good. It is ours only with the
   // content of an upload this engine made (the running one, a superseded attempt, or the last synced one).
   const id = w.internetId;
-  if (id === undefined || !(wrote.includes(id) || meta.uploading?.internetId === id)) return false;
   const own = accountAddress(tx, row.account_id);
-  return (
-    own !== undefined &&
-    (provenOurs(tx, row, meta, fields, w) || holdsOurContent(w, row, meta, fields, own))
-  );
+  if (own === undefined) return false;
+  if (id !== undefined && (wrote.includes(id) || meta.uploading?.internetId === id))
+    return provenOurs(tx, row, meta, fields, w) || holdsOurContent(w, row, meta, fields, own);
+  // A provider that rewrites the Message-ID (Gmail) shows none of ours: the draft id names the copy, and only the content
+  // of an upload of ours proves it (never "unchanged", which a touch from another device would also be).
+  return namedByDraftId(row, meta, w) && provenOurs(tx, row, meta, fields, w);
 }
 
 /**
@@ -701,7 +729,9 @@ function supersedesOwn(
   const own = accountAddress(tx, row.account_id);
   if (own === undefined) return false;
   return (
-    explainedByAttempt(w, row, meta, fields, own) || holdsOurContent(w, row, meta, fields, own)
+    explainedByAttempt(w, row, meta, fields, own) ||
+    holdsOurContent(w, row, meta, fields, own) ||
+    (namedByDraftId(row, meta, w) && provenOurs(tx, row, meta, fields, w))
   );
 }
 

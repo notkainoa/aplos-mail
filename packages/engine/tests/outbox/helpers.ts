@@ -8,12 +8,14 @@ import {
   createOutboxModule,
   outboxExtension,
   SubmissionConflict,
+  type BlobSource,
   type OutboxModule,
 } from '../../src/outbox/module';
 import type { Admission } from '../../src/ports/base';
 import { NotSentError, PausedError } from '../../src/ports/base';
 import type { DraftSyncPort, SendPort, SubmissionPayload } from '../../src/ports';
 import type { DraftSaveResult, DraftUpload } from '../../src/ports/provider';
+import type { DeadlineSource } from '../../src/ports/time';
 import type { EngineFrame } from '../../src/runtime/frames';
 import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../../src/store';
 import { ACCOUNT, accountWrite, tempDb } from '../store/helpers';
@@ -202,7 +204,21 @@ export function fakeDrafts(server: CountingSend) {
   const removeExpected: (string | undefined)[] = [];
   /** Calls the guard turned into a no-op: the draft held another message id. */
   const removeGuarded: string[] = [];
-  const state = { ignoreExpected: false, honourSupersedes: false };
+  /**
+   * `gmailIds`: the provider shows its own Message-ID for every copy it stores (Gmail's draft id survives saves, the
+   * Message-ID does not); `reportCopy` also names it in the `saved` answer (`copyInternetId`).
+   */
+  const state = {
+    ignoreExpected: false,
+    honourSupersedes: false,
+    gmailIds: false,
+    reportCopy: false,
+  };
+  /** The Message-ID the provider shows for a copy stored under `uploaded`: its own (Gmail) or the upload's. */
+  const shownId = (uploaded: string) =>
+    state.gmailIds ? `<gmail-${++counter}@mail.gmail.com>` : uploaded;
+  const copyField = (shown: string) =>
+    state.gmailIds && state.reportCopy ? { copyInternetId: shown } : {};
   const script: DraftStep[] = [];
   /** What each `remove` call does (the same steps as `script`; `ok` is the default). */
   const removeScript: DraftStep[] = [];
@@ -267,11 +283,8 @@ export function fakeDrafts(server: CountingSend) {
           : undefined;
       const remoteDraftId = step.renameTo ?? upload.remoteDraftId ?? replaced ?? `rd${++counter}`;
       const messageId = `msg${++counter}`;
-      remote.set(remoteDraftId, {
-        messageId,
-        internetId: upload.internetId,
-        revision: upload.revision,
-      });
+      const shown = shownId(upload.internetId);
+      remote.set(remoteDraftId, { messageId, internetId: shown, revision: upload.revision });
       server.uploadDraft(upload.internetId, remoteDraftId);
       if (step.result === 'landedLost') throw new Error('socket hang up');
       return {
@@ -279,6 +292,7 @@ export function fakeDrafts(server: CountingSend) {
         remoteDraftId,
         remoteMessageId: messageId,
         revision: upload.revision,
+        ...copyField(shown),
       };
     },
     async remove(account, remoteDraftId, expectedMessageId) {
@@ -340,6 +354,8 @@ export interface Instance {
   store: StorePort;
   loop: TimerLoop;
   outbox: OutboxModule;
+  /** The deadline sources this instance's modules registered, by id. */
+  sources: Map<string, DeadlineSource>;
   /** Simulates the process dying: the loop stops and nothing of this instance runs again (its hung send stays hung). */
   kill(): void;
 }
@@ -366,6 +382,8 @@ export function outboxWorld(
     provider?: string;
     /** Wire a `DraftSyncPort` fake (and its frames): the module then has local drafts. */
     drafts?: boolean;
+    /** A real adapter's `SendPort` in place of the counting fake (`world.server` then sees nothing). */
+    send?: SendPort;
   } = {},
 ) {
   const file = tempDb();
@@ -394,6 +412,25 @@ export function outboxWorld(
   /** Every `Draft/changed` frame the modules sent. */
   const frames: EngineFrame[] = [];
   const blobs = new Map<string, Uint8Array>();
+  /**
+   * The blob source every instance reads through: `blobs` behind the sync adapter, with a log of the ids asked for, an
+   * optional gate the read waits on (`hold`) and an optional failure it rejects with (`fail`), both read at call time.
+   */
+  const blobReads = {
+    calls: [] as string[],
+    hold: undefined as Promise<void> | undefined,
+    fail: undefined as Error | undefined,
+  };
+  const syncBlobs = syncBlobSource(blobs);
+  const blobSource = {
+    async get(id: string) {
+      blobReads.calls.push(id);
+      const { hold, fail } = blobReads;
+      if (hold) await hold;
+      if (fail) throw fail;
+      return syncBlobs.get(id);
+    },
+  };
   const instances: Instance[] = [];
   let opSeq = 0;
 
@@ -420,13 +457,21 @@ export function outboxWorld(
       }
     };
     const loop = createTimerLoop({ clock, log });
+    const sources = new Map<string, DeadlineSource>();
     const outbox = createOutboxModule({
       store,
-      send: server.port,
+      send: options.send ?? server.port,
       clock,
-      deadlines: loop,
+      // The loop, with every registered source kept so a test can ask one for its next deadline.
+      deadlines: {
+        register: source => {
+          sources.set(source.id, source);
+          return loop.register(source);
+        },
+        changed: id => loop.changed(id),
+      },
       log,
-      blobs: { get: id => blobs.get(id) },
+      blobs: blobSource,
       settings: options.settings,
       ...(options.drafts
         ? { drafts: remoteDrafts.port, frames: { emit: f => frames.push(f) } }
@@ -436,6 +481,7 @@ export function outboxWorld(
       store,
       loop,
       outbox,
+      sources,
       kill() {
         loop.stop();
         void outbox.close();
@@ -498,17 +544,19 @@ export function outboxWorld(
   const act = (instance: Instance, action: SubmissionAction, opId = `op-${++opSeq}`) =>
     instance.outbox.service.set(opId, action);
 
-  const send = (
+  const send = async (
     instance: Instance,
     draftId: string,
     extra: { notBefore?: number; revision?: number } = {},
   ) =>
-    act(instance, {
-      type: 'send',
-      draftId,
-      revision: extra.revision ?? 1,
-      ...(extra.notBefore !== undefined ? { notBefore: extra.notBefore } : {}),
-    }).submission;
+    (
+      await act(instance, {
+        type: 'send',
+        draftId,
+        revision: extra.revision ?? 1,
+        ...(extra.notBefore !== undefined ? { notBefore: extra.notBefore } : {}),
+      })
+    ).submission;
 
   const get = (id: string, instance: Instance = first) => {
     const s = instance.outbox.service.get([id]).list[0];
@@ -558,6 +606,7 @@ export function outboxWorld(
     frames,
     skew,
     blobs,
+    blobReads,
     records,
     events,
     conflicts,
@@ -643,4 +692,12 @@ export function copyWrite(f: {
       flags: { seen: true, flagged: false, draft: true, fromMe: true },
     },
   } as StoreWrite;
+}
+
+/** A `BlobSource` over bytes held in memory, or a synchronous lookup: the old synchronous reads behind the async shape. */
+export function syncBlobSource(
+  from: ReadonlyMap<string, Uint8Array> | ((blobId: string) => Uint8Array | undefined),
+): BlobSource {
+  const lookup = typeof from === 'function' ? from : (id: string) => from.get(id);
+  return { get: async id => lookup(id) };
 }

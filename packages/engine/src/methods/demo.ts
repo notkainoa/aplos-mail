@@ -1,5 +1,5 @@
 import type { State } from '@aplos/contract';
-import { loadDemo, removeDemo, resetDemo } from '../ai/demo/load';
+import { lazyDemoWrites, loadDemo, removeDemo, resetDemo } from '../ai/demo/load';
 import type { AreaHandlers, EngineServices } from './types';
 
 /**
@@ -16,15 +16,17 @@ function opId(services: EngineServices, verb: string): string {
 const receipt = (op: string, appliedState: State) => ({ opId: op, appliedState, undoable: false });
 
 export const handlers: AreaHandlers<'demo'> = {
-  'Demo/load': (_args, ctx) => {
+  'Demo/load': async (_args, ctx) => {
+    const writes = await lazyDemoWrites();
     const id = opId(ctx.services, 'load');
-    const applied = loadDemo(ctx.services.store, id, ctx.services.clock.now());
+    const applied = loadDemo(ctx.services.store, id, ctx.services.clock.now(), writes);
     // `applied.opId` is the commit's own opId, or 'demo-load-noop' when nothing was committed.
     return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
-  'Demo/reset': (_args, ctx) => {
+  'Demo/reset': async (_args, ctx) => {
+    const writes = await lazyDemoWrites();
     const id = opId(ctx.services, 'reset');
-    const applied = resetDemo(ctx.services.store, id, ctx.services.clock.now());
+    const applied = resetDemo(ctx.services.store, id, ctx.services.clock.now(), writes);
     return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
   'Demo/remove': (_args, ctx) => {

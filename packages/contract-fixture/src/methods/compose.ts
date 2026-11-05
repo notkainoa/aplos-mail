@@ -3,6 +3,7 @@ import type { Fixture } from '../engine';
 import type { Tx } from '../store';
 import { addDays, atLocal, localDay } from '../time';
 import { instant } from '../views';
+import { seriesPatches, type SeriesPatch } from '../series';
 import { actOn } from './mail';
 import { ownBlob } from './core';
 import { requireScope } from '@aplos/contract/access';
@@ -512,29 +513,48 @@ export function compose(fx: Fixture) {
         };
       }
       if (!event.can.edit) fail('unsupported', 'Only the organizer can change this event.');
-      const merged = eventFrom(
-        event.accountId,
-        event.calendarId,
-        {
-          title: event.title,
-          start: event.start,
-          end: event.end,
-          allDay: event.allDay,
-          timeZone: event.timeZone,
-          location: event.location,
-          description: event.description,
-          attendees: event.attendees
-            .filter(a => !a.self)
-            .map(a => clean({ address: a.address, name: a.name, optional: a.optional })),
-          threadId: event.threadId,
-          ...change.fields,
-        },
-        event.id,
-      );
-      const undoUntil = notifies(merged) ? fx.now + 10_000 : undefined;
+      const zone = event.timeZone ?? fx.zone;
+      // A series write named by an occurrence moves the whole series (the 2026-11-04 rule); anything else is this row.
+      const targets: SeriesPatch[] =
+        change.scope === 'series' && (event.recurring || event.seriesId)
+          ? seriesPatches(fx.store.all('Event'), event, change.fields, zone)
+          : [{ row: event, fields: change.fields }];
+      const merge = ({ row, fields, originalStart }: SeriesPatch): Event => {
+        const merged = eventFrom(
+          row.accountId,
+          row.calendarId,
+          {
+            title: row.title,
+            start: row.start,
+            end: row.end,
+            allDay: row.allDay,
+            timeZone: row.timeZone,
+            location: row.location,
+            description: row.description,
+            attendees: row.attendees
+              .filter(a => !a.self)
+              .map(a => clean({ address: a.address, name: a.name, optional: a.optional })),
+            threadId: row.threadId,
+            ...fields,
+          },
+          row.id,
+        );
+        // `eventFrom` builds a plain event; a row of a series keeps what makes it one.
+        return clean({
+          ...merged,
+          recurring: row.recurring,
+          seriesId: row.seriesId,
+          originalStart: originalStart ?? row.originalStart,
+          exception: row.exception || (row.recurring && change.scope === 'occurrence'),
+          rev: row.rev,
+        });
+      };
+      const rows = targets.map(merge);
+      const edited = rows.find(r => r.id === event.id)!;
+      const undoUntil = notifies(edited) ? fx.now + 10_000 : undefined;
       const { value, receipt } = fx.write(
         { opId, kind: 'Event/set', provider: true, undoUntil },
-        tx => tx.put('Event', { ...merged, rev: event.rev }),
+        tx => rows.map(r => tx.put('Event', r)).find(r => r.id === event.id)!,
       );
       return { event: value, receipt };
     },

@@ -12,6 +12,8 @@ import {
   type SubmissionPayload,
 } from '@aplos/engine/ports';
 import { googleError } from './classify';
+import { isDraftToken } from './draft-token';
+import { headerEnd, headerFields, singleFields } from './mime-headers';
 import { GmailClient, type GmailDeps } from './client';
 import { gmailCost } from './costs';
 
@@ -92,61 +94,6 @@ const PINNED_HEADERS: ReadonlySet<string> = new Set([
 /** A plain `local@domain`, as the outbox writes it (`checkAddress`): no space, quote, comma, angle bracket or CR/LF. */
 const ADDRESS =
   /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
-
-interface HeaderField {
-  name: string;
-  value: string;
-}
-
-/** Offset of the CRLF CRLF that ends the header block, or -1. */
-function headerEnd(mime: Uint8Array): number {
-  for (let i = 0; i + 3 < mime.length; i++) {
-    if (mime[i] === 13 && mime[i + 1] === 10 && mime[i + 2] === 13 && mime[i + 3] === 10) return i;
-  }
-  return -1;
-}
-
-/** Every line ends in CRLF; a lone CR or LF, NUL or another control byte is a header the writer never made. */
-function checkHeaderBytes(head: string): void {
-  const joined = head.replace(/\r\n/g, '');
-  if (/[\r\n]/.test(joined)) throw refuse('bareLineBreak');
-  if ([...joined].some(isControl)) throw refuse('controlCharacter');
-}
-
-/** C0 controls and DEL, except the tab a folded line may start with. */
-function isControl(c: string): boolean {
-  const code = c.charCodeAt(0);
-  return (code < 0x20 && code !== 0x09) || code === 0x7f;
-}
-
-/** Unfolds the header block into fields; a line that is neither `Name: value` nor a continuation is refused. */
-function headerFields(head: string): HeaderField[] {
-  checkHeaderBytes(head);
-  const fields: HeaderField[] = [];
-  for (const line of head.split('\r\n')) {
-    const last = fields[fields.length - 1];
-    if (/^[ \t]/.test(line)) {
-      if (!last) throw refuse('malformedHeader');
-      last.value += line;
-      continue;
-    }
-    const match = /^([\x21-\x39\x3b-\x7e]+):(.*)$/.exec(line);
-    if (!match) throw refuse('malformedHeader');
-    fields.push({ name: match[1].toLowerCase(), value: match[2] });
-  }
-  return fields;
-}
-
-/** Each pinned header at most once (RFC 5322 3.6): a second `To:` or `From:` is an injected one. */
-function singleFields(fields: HeaderField[]): Map<string, string> {
-  const byName = new Map<string, string>();
-  for (const field of fields) {
-    if (!PINNED_HEADERS.has(field.name)) throw refuse('unexpectedHeader');
-    if (byName.has(field.name)) throw refuse('duplicateHeader');
-    byName.set(field.name, field.value.trim());
-  }
-  return byName;
-}
 
 /** Splits an address list at commas outside quotes and angle brackets; groups and comments are not the writer's. */
 function addressElements(value: string): string[] {
@@ -239,13 +186,29 @@ export function pinnedMime(payload: SubmissionPayload, account: string): Uint8Ar
   if (mime.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   const end = headerEnd(mime);
   if (end < 0) throw refuse('noHeaderBlock');
-  const byName = singleFields(headerFields(Buffer.from(mime.subarray(0, end)).toString('latin1')));
+  const head = Buffer.from(mime.subarray(0, end)).toString('latin1');
+  const byName = singleFields(headerFields(head, refuse), PINNED_HEADERS, refuse);
   const rcpt = envelopeOf(payload, account);
   const named = checkHeaders(byName, payload, account);
   const bcc = rcpt.filter(r => !named.has(r.toLowerCase()));
   const out = withBcc(mime, end, bcc);
   if (out.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   return out;
+}
+
+/** The header the adapter adds to what it uploads, so a Sent copy can be found by it (plans/providers/findsent-token.md). */
+export const SEND_TOKEN_HEADER = 'X-Aplos-Send';
+
+/**
+ * Gmail replaces the Message-ID of a message it sends (live finding 2026-11-05) but keeps a custom header. The upload
+ * carries `X-Aplos-Send: <internetId>` as its first header: the submission's own Message-ID value, random and stable per
+ * submission, so a retry of one submission has the same token and two submissions never share one. The engine's pinned
+ * bytes are not changed (`pinnedMime` still refuses this header inside them); this is added to what goes on the wire.
+ * An `internetId` that is not a well-formed token is not written (it could never be read back as one).
+ */
+export function withSendToken(raw: Uint8Array, internetId: string): Uint8Array {
+  if (!isDraftToken(internetId)) return raw;
+  return Buffer.concat([Buffer.from(`${SEND_TOKEN_HEADER}: ${internetId}\r\n`, 'latin1'), raw]);
 }
 
 // ---------------------------------------------------------------- errors by proof
@@ -598,9 +561,18 @@ export interface SendOptions {
    * after `sent` (no `draftConsumed`). True turns on the `drafts.send` route below.
    *
    * TODO(live): switch on only after the live gate proves, on real Gmail, that (1) `drafts.send` with uploaded
-   * `message/rfc822` media sends exactly those bytes, not the stored draft; (2) Gmail keeps the client's Message-ID on
-   * `drafts.send` and `messages.send` (`rfc822msgid:` finds the sent copy under `internetId`); (3) Gmail strips the
+   * `message/rfc822` media sends exactly those bytes, not the stored draft; (2) MEASURED 2026-11-05: Gmail REPLACES the
+   * Message-ID on `messages.send` (a custom header survives), so `findSent` finds a sent copy by the `X-Aplos-Send` token
+   * (`withSendToken`, `isSentCopy`); whether `drafts.send` does the same is still unmeasured; (3) Gmail strips the
    * `Bcc:` header from delivered copies. The emulator does not model the upload protocol (the test rig bridges it).
+   *
+   * The `X-Aplos-Draft` token (drafts.ts IDENTITY): the stored draft copy carries it, the pinned bytes never do (the
+   * engine's MIME has no such header and `checkHeaders` here does not allow it). Both routes upload the pinned bytes as
+   * the media, so the token does not leave in sent mail, provided (1) above holds. If the live gate shows that
+   * `drafts.send` sends the STORED draft instead, the token would leave with it: then do not switch this on (strip
+   * would mean rewriting the stored copy first). Also note for (2): on Gmail a draft copy shows Gmail's own Message-ID,
+   * so the Sent lookup of a gone draft below (`sentCopy` by `rfc822msgid:`) cannot find a copy a phone sent; that case
+   * stays uncertain (`DRAFT_GONE`, nothing sent twice).
    */
   useDraftsSend?: boolean;
 }
@@ -644,7 +616,10 @@ export async function sendSubmission(
   ctx: AdapterContext,
   options: SendOptions = {},
 ): Promise<SendReceipt> {
-  const raw = pinnedMime(payload, ctx.account.address);
+  const pinned = pinnedMime(payload, ctx.account.address);
+  const raw = withSendToken(pinned, payload.internetId);
+  // The token is a few dozen bytes on top of what `pinnedMime` already measured: the limit holds for what goes up.
+  if (raw.length > MAX_SEND_BYTES) throw refuse('messageTooLarge');
   const route = await chooseRoute(deps, payload, ctx, options).catch((error: unknown) => {
     throw notSent(error, 'gmail.drafts.get');
   });
@@ -686,7 +661,7 @@ interface SentHit {
   threadId?: string;
 }
 
-interface Candidate {
+export interface Candidate {
   id?: unknown;
   threadId?: unknown;
   labelIds?: unknown;
@@ -695,14 +670,31 @@ interface Candidate {
   payload?: { headers?: { name?: unknown; value?: unknown }[] };
 }
 
-/** Whether the message's own labels and header say it is this mail, sent: SENT, never DRAFT, the same Message-ID. */
-function isSentCopy(m: Candidate, internetId: string): boolean {
+/** A header's trimmed value, or undefined; a header that appears twice is not one value and is ignored. */
+function headerValue(m: Candidate, name: string): string | undefined {
+  const wanted = name.toLowerCase();
+  const found = (m.payload?.headers ?? []).filter(
+    h => typeof h.name === 'string' && h.name.toLowerCase() === wanted,
+  );
+  return found.length === 1 && typeof found[0].value === 'string'
+    ? found[0].value.trim()
+    : undefined;
+}
+
+/**
+ * Whether the message's own labels and headers say it is this mail, sent: SENT, never DRAFT, and either the
+ * `X-Aplos-Send` token we wrote equals `internetId` (Gmail replaces the Message-ID of a send but keeps the header) or,
+ * on an account that kept it, the Message-ID does. The token FINDS and names the copy; the labels and the caller's time
+ * window prove it is a sent message of this submission.
+ */
+export function isSentCopy(m: Candidate, internetId: string): boolean {
   const labels = Array.isArray(m.labelIds) ? m.labelIds : [];
   if (!labels.includes('SENT') || labels.includes('DRAFT')) return false;
-  const header = m.payload?.headers?.find(
-    h => typeof h.name === 'string' && h.name.toLowerCase() === 'message-id',
-  );
-  return typeof header?.value === 'string' && bareId(header.value) === bareId(internetId);
+  const token = headerValue(m, SEND_TOKEN_HEADER);
+  if (token !== undefined && isDraftToken(token) && bareId(token) === bareId(internetId))
+    return true;
+  const id = headerValue(m, 'Message-ID');
+  return id !== undefined && bareId(id) === bareId(internetId);
 }
 
 /** One hit's metadata (20 units), or 'gone' when it disappeared between the search and the read. */
@@ -716,7 +708,7 @@ async function candidate(
       method: 'gmail.messages.get',
       path: `/messages/${encodeURIComponent(id)}`,
       format: 'metadata',
-      query: { metadataHeaders: ['Message-ID'] },
+      query: { metadataHeaders: ['Message-ID', SEND_TOKEN_HEADER] },
       fields: `id,threadId,labelIds,${withDate ? 'internalDate,' : ''}payload/headers`,
       lane: 'interactive',
       item: id,
@@ -836,7 +828,13 @@ async function recentSentCopy(
   throw incomplete('sentListingPartial');
 }
 
-/** `ProviderAdapter.findSent` for Gmail: `found` only for a SENT, non-DRAFT message with this exact Message-ID. */
+/**
+ * `ProviderAdapter.findSent` for Gmail: `found` only for a SENT, non-DRAFT message carrying our `X-Aplos-Send` token
+ * (or, where Gmail kept it, our Message-ID), found by the search or the newest-SENT listing. One pass: Gmail's index
+ * shows a send a few seconds late (live: the 4th try, about 3 s apart), and the engine asks again after 60 s before it
+ * asks the owner, which covers that lag without holding this call (and the engine's dispatch) for seconds. An error in
+ * the pass is thrown, never "absent" (an answer that is not complete is never "absent").
+ */
 export async function findSentCopy(
   deps: GmailDeps,
   internetId: string,

@@ -18,6 +18,7 @@ import {
   type GuardedFetch,
 } from './guard';
 import { createPacedFetch, UnitPacer } from './pacer';
+import { createProbeState, defaultStateDir } from './state';
 import { PROBES, probesFor } from './probes';
 import { gitRevision, type Revision } from './revision';
 import { acquireRunLock } from './run-lock';
@@ -54,6 +55,7 @@ import {
 /** Every tier runs only on the agent test account, never on another vault label. */
 const AGENT_ACCOUNT = 'agent';
 const FULL_SHA = /^[0-9a-f]{40}$/;
+const PHASE_NAME = /^[a-z]{1,20}$/;
 /** A generous guess per probe plus slack; a token that would expire inside this window is skipped. */
 const EXPECTED_MS_PER_PROBE = 2 * 60_000;
 const EXPECTED_SLACK_MS = 60_000;
@@ -67,6 +69,8 @@ export interface RunArgs {
   confirmMutating: boolean;
   /** The commit the run must be made from; the command line requires it for every real run. */
   expectSha?: string;
+  /** `--phase <name>`: a fixed word for a probe that runs in steps across runs (never free text). */
+  phase?: string;
 }
 
 export interface RunDeps {
@@ -80,6 +84,8 @@ export interface RunDeps {
   log(line: string): void;
   /** Where the evidence file goes. Default: `defaultEvidenceDir(<date>)`, outside the repository. */
   evidenceDir?: string;
+  /** Where phased probes keep their state. Default: `defaultStateDir()`, outside the repository. */
+  stateDir?: string;
   probes: readonly SmokeProbe[];
   /** HEAD and whether the working tree is clean; needed when `expectSha` is set. */
   revision?(): Promise<Revision>;
@@ -112,6 +118,9 @@ export function parseArgs(argv: string[]): RunArgs {
     throw new RunnerError('--expect-sha must be the full 40-character commit SHA');
   if (!dryRun && expectSha === undefined)
     throw new RunnerError('--expect-sha <commit> is required: a live run names the code it runs');
+  const phase = value('--phase');
+  if (phase !== undefined && !PHASE_NAME.test(phase))
+    throw new RunnerError('--phase must be a short lowercase word');
   return {
     provider,
     tier: tier as Tier,
@@ -119,6 +128,7 @@ export function parseArgs(argv: string[]): RunArgs {
     dryRun,
     confirmMutating: argv.includes('--confirm-mutating'),
     ...(expectSha ? { expectSha } : {}),
+    ...(phase ? { phase } : {}),
   };
 }
 
@@ -273,7 +283,10 @@ export async function runLive(args: RunArgs, deps: RunDeps): Promise<RunOutcome>
   const account = await accountFor(args, deps.env);
   requireAccountCheck(account, args.account, args.tier);
 
-  const probes = probesFor(args.provider, args.tier, deps.probes);
+  // `--phase` names a step of a probe that has phases; it must not also authorise the tier's other probes.
+  const probes = probesFor(args.provider, args.tier, deps.probes).filter(
+    probe => args.phase === undefined || probe.phased === true,
+  );
   const expectedRunMs = probes.length * EXPECTED_MS_PER_PROBE + EXPECTED_SLACK_MS;
   const started = deps.now();
   const check = preflight(account, args.account, expectedRunMs, started);
@@ -359,11 +372,22 @@ async function runLocked(plan: RunPlan): Promise<RunOutcome> {
 
   const clock = deps.clock ?? (() => performance.now());
   // Frozen: one probe cannot swap the fetch (or anything else) the probes after it get.
-  const ctx: ProbeContext = Object.freeze({ fetch: guard, tier: args.tier, now: clock, runId });
+  const contextFor = (probe: SmokeProbe): ProbeContext =>
+    Object.freeze({
+      fetch: guard,
+      tier: args.tier,
+      now: clock,
+      runId,
+      ...(args.phase ? { phase: args.phase } : {}),
+      // Only a probe that runs in phases gets a state file, and only its own.
+      ...(probe.phased
+        ? { state: createProbeState(deps.stateDir ?? defaultStateDir(), probe.id) }
+        : {}),
+    });
   const results: EvidenceResult[] = [];
   for (const probe of probes) {
     const sentBefore = mergeRequests(...guards.map(g => g.requests()));
-    results.push(await runOneProbe(probe, ctx, pacer, guards, sentBefore));
+    results.push(await runOneProbe(probe, contextFor(probe), pacer, guards, sentBefore));
   }
 
   // Defence in depth for tier R: even if the guard had a hole, a write in the log fails the run.

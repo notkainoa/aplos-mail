@@ -202,6 +202,12 @@ export interface GmailServerOptions {
   listingLagMs?: number;
   /** Plant a DRAFT carrying the outgoing Message-ID when the send request arrives (the "Sent only, never a draft" rule). */
   draftTwin?: boolean;
+  /**
+   * What `messages.send` and a draft save do to the Message-ID the engine wrote: `rewritten` is Gmail's live behaviour (the
+   * Message-ID becomes `<hex@mail.gmail.com>`, the custom `X-Aplos-Send` / `X-Aplos-Draft` headers survive), `kept` is the
+   * old emulator default. Set on the emulator itself (it lives in the test process), not through the environment.
+   */
+  sendIdentity?: 'kept' | 'rewritten';
 }
 
 export interface GmailServer {
@@ -210,6 +216,10 @@ export interface GmailServer {
   config: Omit<GmailPortConfig, 'logPath'>;
   /** The emulator's own count of SENT messages carrying this Message-ID. */
   deliveries(internetId: string): number;
+  /** SENT messages that still carry the Message-ID the engine wrote. Zero when `messages.send` rewrites it (Gmail's live behaviour). */
+  sentUnderOwnId(internetId: string): number;
+  /** The mode the emulator actually runs in (the environment may have switched the default). */
+  sendIdentity(): 'kept' | 'rewritten';
   /** Every exception the bridge or emulator threw that was NOT an injected drop (answered 500). A clean row has none. */
   errors: string[];
   /** The next request the server handles throws this instead of reaching the emulator (to prove it is surfaced). */
@@ -231,6 +241,9 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
     retryAfter: 'none',
     faults,
     latencyMs: 0,
+    ...(options.sendIdentity
+      ? { sendIdentity: options.sendIdentity, draftIdentity: options.sendIdentity }
+      : {}),
     users: [{ sub: 'kp-owner', email: OWNER, name: 'Owner' }],
   });
   emu.oauth.addClient(CLIENT_ID);
@@ -257,17 +270,36 @@ export async function startGmailServer(options: GmailServerOptions = {}): Promis
       refreshToken: session.refreshToken!,
       accessToken: session.accessToken,
     },
+    // A delivery carries the submission's id as its Message-ID (Gmail keeps ours) or, when Gmail rewrites it, as the
+    // `X-Aplos-Send` token the adapter adds at transmit (`APLOS_EMU_SEND_IDENTITY=rewritten`).
     deliveries: internetId =>
+      emu.mailbox
+        .listMessages()
+        .filter(
+          m =>
+            m.labelIds.includes('SENT') &&
+            (m.messageId.toLowerCase() === bare(internetId) ||
+              sendToken(emu.mailbox.rawOf(m.id)) === bare(internetId)),
+        ).length,
+    sentUnderOwnId: internetId =>
       emu.mailbox
         .listMessages()
         .filter(m => m.labelIds.includes('SENT') && m.messageId.toLowerCase() === bare(internetId))
         .length,
+    sendIdentity: () => emu.settings.sendIdentity,
     errors: state.errors,
     breakNext: error => {
       state.breakNext = error;
     },
     close: () => stop(server),
   };
+}
+
+/** The `X-Aplos-Send` token in a message's header block, or undefined (lower-cased, without the angle brackets). */
+function sendToken(raw: Buffer): string | undefined {
+  const head = raw.toString('latin1').split(/\r?\n\r?\n/, 1)[0];
+  const match = /^X-Aplos-Send:[ \t]*<?([^>\r\n]*?)>?[ \t]*$/im.exec(head);
+  return match?.[1].toLowerCase();
 }
 
 interface ServerState {

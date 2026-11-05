@@ -29,6 +29,7 @@ import { calendarAbuseError, calendarThrottleError } from '../gcal/errors';
 import { CalendarHub } from '../gcal/hub';
 import { calendarShapeOf, CAL_SCOPES_FOR, matchCalendarRoute } from '../gcal/routes';
 import { generateInto, type GenerateOptions } from './generate';
+import { SearchLag } from './search-lag';
 import { Mailbox } from './mailbox';
 import { UnitMeter } from './meter';
 import { OAuthServer, type TestUser, type TestUserInput } from './oauth';
@@ -159,6 +160,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
   readonly clock: Clock;
   readonly log: RequestLogEntry[] = [];
   readonly settings: GmailSettings;
+  private readonly lag = new SearchLag(() => this.settings.searchLagMs);
   readonly blockedOrigins: string[] = [];
   readonly oauth: OAuthServer;
   readonly meter: MeterHelpers;
@@ -187,6 +189,18 @@ export class GmailEmulatorImpl implements GmailEmulator {
       retryAfter: options.retryAfter ?? 'none',
       historyRetentionMs: options.historyRetentionMs ?? 7 * 86400_000,
       sendLimitPerDay: options.sendLimitPerDay ?? 2000,
+      // The environment is a switch for running any existing test suite as real Gmail behaves:
+      // APLOS_EMU_DRAFT_IDENTITY=rewritten, APLOS_EMU_DROP_DRAFT_HEADERS=X-Aplos-Probe,X-Other (comma separated).
+      draftIdentity:
+        options.draftIdentity ??
+        (process.env.APLOS_EMU_DRAFT_IDENTITY === 'rewritten' ? 'rewritten' : 'kept'),
+      sendIdentity:
+        options.sendIdentity ??
+        (process.env.APLOS_EMU_SEND_IDENTITY === 'rewritten' ? 'rewritten' : 'kept'),
+      searchLagMs: options.searchLagMs ?? 0,
+      dropDraftHeaders:
+        options.dropDraftHeaders ??
+        (process.env.APLOS_EMU_DROP_DRAFT_HEADERS ?? '').split(',').filter(Boolean),
     };
     this.oauth = new OAuthServer(this.clock, new Random(mixSeed(this.seed, 1)), {
       testingMode: options.testingMode ?? true,
@@ -221,6 +235,11 @@ export class GmailEmulatorImpl implements GmailEmulator {
         emailAddress: user.email,
         seed: mixSeed(this.seed, 100 + this.mailboxes.size),
         historyRetentionMs: () => this.settings.historyRetentionMs,
+        rewriteSentMessageId: () => this.settings.sendIdentity === 'rewritten',
+        draftIdentity: () => ({
+          rewriteMessageId: this.settings.draftIdentity === 'rewritten',
+          dropHeaders: this.settings.dropDraftHeaders,
+        }),
       }),
     );
     return user;
@@ -656,6 +675,7 @@ export class GmailEmulatorImpl implements GmailEmulator {
       try {
         const ctx: RouteContext = {
           mailbox: this.mailboxFor(user.sub),
+          lag: this.lag,
           query: req.url.searchParams,
           params,
           body: req.body,

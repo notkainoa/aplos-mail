@@ -86,7 +86,7 @@ function UndoSendNotice({
       verbs = [verb('undo', 'Undo', true), verb('sendNow', 'Send now')];
       break;
     case 'uncertain':
-      message = 'We could not confirm this was sent.';
+      message = 'Couldn’t confirm this was sent.';
       verbs = [verb('checkSent', 'Check Sent'), verb('sendAnyway', 'Send anyway')];
       break;
     case 'suspended':

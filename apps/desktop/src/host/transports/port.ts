@@ -17,7 +17,7 @@ import {
   hostMethods,
   rendererMethods,
 } from '@aplos/contract/allowlists';
-import { messageBytes } from '@aplos/contract/measure';
+import { MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 
@@ -92,11 +92,22 @@ const refusal = (id: number, type: string, message: string): PortMessage => ({
   error: { type, message },
 });
 
-export { MAX_MEASURED_NODES, messageBytes } from '@aplos/contract/measure';
+export { MAX_MEASURED_NODES, MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
 
 /** The largest arguments a window's call to `method` may carry: an upload route's bytes, or `MAX_ARGS_BYTES`. */
 const argsLimit = (method: string) =>
   uploadRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_ARGS_BYTES;
+
+/**
+ * How many bytes of a call's arguments, binary payloads aside, are allowed. An upload route's big allowance is for its
+ * bytes only: text (a string, a key) in its arguments stays at `MAX_ARGS_BYTES`, where it costs 4 ms to decode.
+ */
+const ARGS_TEXT_BYTES = MAX_ARGS_BYTES;
+
+/** What the arguments of a window's call to `method` cost, or infinity when too many values or too many bytes. */
+function argsBytes(method: string, args: unknown): number {
+  return messageBytes(args ?? {}, argsLimit(method), MAX_WINDOW_NODES, ARGS_TEXT_BYTES);
+}
 
 function errorBody(error: unknown): PortError {
   const body = (error as { body?: unknown } | null)?.body as Partial<PortError> | undefined;
@@ -118,7 +129,12 @@ function parseCall(data: unknown): PortCall | undefined {
 
 /** The engine's end of one window's channel (Electron's `MessagePortMain` in the utility process). */
 export interface EnginePortEnd {
-  post(message: PortMessage): void;
+  /**
+   * `transfer` lists a blob reply's buffer, moved instead of copied where the port can move it (a DOM or Node
+   * `MessagePort`). Electron's `MessagePortMain` moves only ports, so the utility process's end ignores it and the
+   * reply is cloned across the process boundary as before.
+   */
+  post(message: PortMessage, transfer?: ArrayBuffer[]): void;
   onMessage(handler: (data: unknown) => void): void;
   /** May be called more than once; every handler runs when the other end goes away. */
   onClose(handler: () => void): void;
@@ -135,6 +151,26 @@ export interface ServeOptions {
 export interface ServedPort {
   close(): void;
   readonly closed: boolean;
+  /** The engine connection serving this window (`ConnectedSession.connectionId`), if the session names one. */
+  readonly connectionId: string | undefined;
+}
+
+/** The `connectionId` an engine session names, or undefined (a fake or a foreign session names none). */
+function connectionIdOf(session: EngineSession): string | undefined {
+  const id = (session as { connectionId?: unknown }).connectionId;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
+}
+
+/**
+ * The buffer a blob route's reply may move instead of copy: its `bytes` when they are a whole, unshared `ArrayBuffer`
+ * (a view onto part of a larger buffer is copied, so a transfer never takes bytes the reply does not carry). The engine
+ * hands out a fresh buffer per call (`BlobFiles.get`), so moving it can never detach one the engine still holds.
+ */
+export function replyTransfer(result: unknown): ArrayBuffer[] {
+  const bytes = (result as { bytes?: unknown } | null)?.bytes;
+  if (!(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)) return [];
+  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+  return whole && bytes.byteLength > 0 ? [bytes.buffer] : [];
 }
 
 /** A frame too large to send becomes a `reset` at the same position: the window re-reads instead of missing it. */
@@ -156,15 +192,20 @@ export function serveWindowPort(
 ): ServedPort {
   const session = open();
   let closed = false;
-  const send = (message: PortMessage, limit: number) => {
+  const send = (message: PortMessage, limit: number, transfer?: ArrayBuffer[]) => {
     if (closed) return true;
     if (messageBytes(message, limit) > limit) return false;
-    end.post(message);
+    if (transfer?.length) end.post(message, transfer);
+    else end.post(message);
     return true;
   };
   const answer = (method: string, message: PortMessage & { kind: 'reply' }) => {
-    const limit = blobRoutes.has(method) ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
-    if (send(message, limit)) return;
+    const blob = blobRoutes.has(method);
+    const limit = blob ? MAX_BLOB_MESSAGE_BYTES : MAX_WINDOW_MESSAGE_BYTES;
+    // A blob reply's buffer is listed for transfer. Only a DOM or Node `MessagePort` end moves it; on the real path
+    // the utility process's `MessagePortMain` ignores the list and the reply is cloned once across the process boundary.
+    const transfer = blob && message.ok ? replyTransfer(message.result) : undefined;
+    if (send(message, limit, transfer)) return;
     options.onDrop?.('tooLarge', method);
     const sentence = 'This answer is too large to send to the window.';
     send(refusal(message.id, 'tooLarge', sentence), MAX_WINDOW_MESSAGE_BYTES);
@@ -176,7 +217,7 @@ export function serveWindowPort(
   const dispatch = (call: PortCall) => {
     if (!portMethods.has(call.method))
       return refuse(call, 'unsupported', 'Unsupported application method.');
-    const size = messageBytes(call.args ?? {}, argsLimit(call.method));
+    const size = argsBytes(call.method, call.args);
     if (size > argsLimit(call.method))
       return refuse(call, 'tooLarge', 'This request is too large to send.');
     if (inFlight >= MAX_IN_FLIGHT || inFlightBytes + size > MAX_IN_FLIGHT_BYTES)
@@ -223,6 +264,7 @@ export function serveWindowPort(
     get closed() {
       return closed;
     },
+    connectionId: connectionIdOf(session),
   };
 }
 
@@ -247,7 +289,36 @@ export function createPortHost(open: () => EngineSession, options: ServeOptions)
       for (const id of [...served.keys()]) detach(id);
     },
     windows: () => [...served.keys()],
+    /** The engine connection of the window's open port, or undefined when it has none (never attached, detached, closed). */
+    connectionOf(windowId: number): string | undefined {
+      const port = served.get(windowId);
+      return port && !port.closed ? port.connectionId : undefined;
+    },
   };
+}
+
+/** An Electron window id as main sends it in `Mail/serve`'s `windowId`: a positive safe integer, or its decimal text. */
+function electronWindowId(raw: unknown): number | undefined {
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) && raw > 0 ? raw : undefined;
+  if (typeof raw !== 'string' || !/^[1-9][0-9]{0,15}$/.test(raw)) return undefined;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : undefined;
+}
+
+/**
+ * `Mail/serve`'s arguments as the engine must see them (html-5). Main knows only the Electron window id of the frame
+ * that asked; the engine binds tokens to window connection ids, made in this process. So the window id is replaced by
+ * that window's connection id, or by `''` (the engine's uniform 404) when the id is malformed or the window has no
+ * open port. Main's value is never passed through, and only `token`, `path` and `windowId` are kept.
+ */
+export function hostServeArgs(
+  args: unknown,
+  connectionOf: (windowId: number) => string | undefined,
+): { token: unknown; path: unknown; windowId: string } {
+  const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  const window = electronWindowId(input.windowId);
+  const windowId = window === undefined ? '' : (connectionOf(window) ?? '');
+  return { token: input.token, path: input.path, windowId };
 }
 
 // ---- main <-> utility process -------------------------------------------------------------------------------------
@@ -261,12 +332,19 @@ export interface UtilityInit {
   keyError?: string;
 }
 
-/** Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`). */
+/**
+ * Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`).
+ * `Mail/serve` is the `aplos-mail://` relay (html-5); the utility rewrites its `windowId` with `hostServeArgs`.
+ * `Blob/get` is main's `File/save`/`File/open` (plans/engine/blob-area.md decision 6): main reads the bytes itself, so
+ * 25 MB never has to sit in a renderer to be saved. Main is the `app` principal, as every window is.
+ */
 export const controlMethods: ReadonlySet<string> = new Set([
   'Draft/get',
   'Outbox/pending',
   'Session/get',
   'Counts/get',
+  'Mail/serve',
+  'Blob/get',
 ]);
 
 export type PowerEvent = 'resume' | 'unlock-screen';
@@ -321,7 +399,8 @@ export interface EngineLink {
   readonly ready: Promise<{ dbEpoch: string; seq: number }>;
   readonly exited: boolean;
   /** A control-connection call; `controlMethods` only, rejected after `timeoutMs` or when the engine stops. */
-  call(method: string, args?: unknown, timeoutMs?: number): Promise<unknown>;
+  /** `signal`: the caller gave up; the call rejects at once and a late engine answer is dropped (the engine's work is not cancelled). */
+  call(method: string, args?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown>;
   attach(windowId: number, port: unknown): void;
   detach(windowId: number): void;
   power(event: PowerEvent): void;
@@ -346,7 +425,13 @@ const unavailable = (message = 'The mailbox is restarting. Try again in a moment
 
 const CALL_TIMEOUT_MS = 10_000;
 
-type Pending = { resolve(value: unknown): void; reject(error: unknown): void; timer: unknown };
+type Pending = {
+  resolve(value: unknown): void;
+  reject(error: unknown): void;
+  timer: unknown;
+  /** Runs once when the call settles by any route: drops the caller's abort listener. */
+  done?: () => void;
+};
 
 function isUtilityMessage(message: unknown): message is FromUtility {
   return (
@@ -380,6 +465,7 @@ export function createEngineLink(
     if (!call) return;
     pending.delete(id);
     timers.clear(call.timer);
+    call.done?.();
     if ('result' in outcome) call.resolve(outcome.result);
     else call.reject(outcome.error);
   };
@@ -429,16 +515,24 @@ export function createEngineLink(
     get exited() {
       return exited;
     },
-    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
+    call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS, signal) {
       if (!controlMethods.has(method))
         return Promise.reject(
           new LinkError({ type: 'forbidden', message: 'Not a control method.' }),
         );
       if (exited) return Promise.reject(unavailable());
+      if (signal?.aborted) return Promise.reject(unavailable('The request was cancelled.'));
       const id = ++counter;
       return new Promise((resolve, reject) => {
         const timer = timers.set(() => finish(id, { error: unavailable() }), timeoutMs);
-        pending.set(id, { resolve, reject, timer });
+        const abort = () => finish(id, { error: unavailable('The request was cancelled.') });
+        pending.set(id, {
+          resolve,
+          reject,
+          timer,
+          done: () => signal?.removeEventListener('abort', abort),
+        });
+        signal?.addEventListener('abort', abort, { once: true });
         child.post({ kind: 'call', id, method, args });
       });
     },
@@ -452,6 +546,14 @@ export function createEngineLink(
 }
 
 // ---- the restart policy -------------------------------------------------------------------------------------------
+
+/** `close` asks the engine to quit and waits this long, then kills it (host/lifecycle.ts's `QUIT_DRAIN_MS` is longer). */
+export const ENGINE_QUIT_MS = 3000;
+/** After the kill, `close` waits this long for the exit event before it reports the engine as stuck. */
+export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
+
+/** How `close` ended: the engine exited (asked or after the kill), or it is still running after the kill. */
+export type CloseResult = 'exited' | 'stuck';
 
 export interface SupervisorOptions {
   spawn(): EngineLink;
@@ -467,13 +569,27 @@ export interface SupervisorOptions {
   timers: Timers;
   /** Default 500 ms, so a crash loop cannot spin. */
   restartDelayMs?: number;
-  /** How long `close` waits for the engine to exit before killing it. Default 3 s (host/lifecycle's `QUIT_DRAIN_MS`). */
+  /** How long `close` waits for the engine to exit before killing it. Default `ENGINE_QUIT_MS`. */
   quitMs?: number;
+  /** How long `close` waits for the exit AFTER killing it. Default `ENGINE_EXIT_AFTER_KILL_MS`. */
+  exitAfterKillMs?: number;
   /**
    * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
    * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
    */
   readyTimeoutMs?: number;
+  /** A kill threw (the OS refused): tell someone, since an engine that never becomes ready then leaves `start` waiting. */
+  onKillFailed?(error: unknown): void;
+}
+
+/** Kills an engine; a kill that throws is no uncaught error in main: the exit wait that follows still decides. */
+function stop(link: EngineLink, onKillFailed?: (error: unknown) => void): void {
+  try {
+    link.kill();
+  } catch (error) {
+    // The process may already be gone, or the OS refused; the caller waits for the exit event either way.
+    onKillFailed?.(error);
+  }
 }
 
 /** Keeps one engine process running: restarts it after an unexpected stop until `noteExit` parks, never after `close`. */
@@ -502,7 +618,10 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    const timer = options.timers.set(() => link.kill(), options.readyTimeoutMs ?? 60_000);
+    const timer = options.timers.set(
+      () => stop(link, options.onKillFailed),
+      options.readyTimeoutMs ?? 60_000,
+    );
     try {
       await link.ready;
     } finally {
@@ -517,21 +636,29 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   return {
     start: () => up(false),
     current: () => current,
-    /** Stops restarting, asks the engine to quit and resolves when it exited (killed after `quitMs`). */
-    close(): Promise<void> {
+    /**
+     * Stops restarting, asks the engine to quit, kills it after `quitMs`, and says how it ended: `'exited'` when the
+     * process is gone (a quit that was heard, or one that died after the kill), `'stuck'` when it is still running
+     * `exitAfterKillMs` after the kill. Nothing running (never started, or already gone) counts as exited.
+     */
+    close(): Promise<CloseResult> {
       closing = true;
       if (restart !== undefined) options.timers.clear(restart);
       const link = current;
-      if (!link || link.exited) return Promise.resolve();
-      return new Promise<void>(resolve => {
-        const timer = options.timers.set(() => {
-          link.kill();
-          resolve();
-        }, options.quitMs ?? 3000);
+      if (!link || link.exited) return Promise.resolve('exited');
+      return new Promise<CloseResult>(resolve => {
+        let timer: unknown;
         link.onExit(() => {
           options.timers.clear(timer);
-          resolve();
+          resolve('exited');
         });
+        timer = options.timers.set(() => {
+          stop(link, options.onKillFailed);
+          timer = options.timers.set(
+            () => resolve('stuck'),
+            options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,
+          );
+        }, options.quitMs ?? ENGINE_QUIT_MS);
         link.quit();
       });
     },
@@ -583,12 +710,30 @@ export interface BrokerDeps {
   channel(): { engineEnd: unknown; windowEnd: unknown };
   /** The running engine, if any. */
   link(): EngineLink | undefined;
+  /** The clock for the connect limit (default `Date.now`). */
+  now?(): number;
 }
+
+/** A window may ask for a port this often: a reload asks once, so a loop of asks is not a page of ours. */
+export const CONNECT_LIMIT = { count: 5, windowMs: 10_000 } as const;
 
 /** One channel per window, re-issued after an engine restart, revoked when the window closes or navigates. */
 export function createPortBroker(deps: BrokerDeps) {
   const holders = new Map<number, PortWindow>();
+  const asked = new Map<number, number[]>();
   let generation = 0;
+
+  /** Records an ask; false when the window has asked `CONNECT_LIMIT.count` times in the last `windowMs`. */
+  const allowAsk = (windowId: number) => {
+    const now = (deps.now ?? Date.now)();
+    const recent = (asked.get(windowId) ?? []).filter(at => now - at < CONNECT_LIMIT.windowMs);
+    if (recent.length >= CONNECT_LIMIT.count) {
+      asked.set(windowId, recent);
+      return false;
+    }
+    asked.set(windowId, [...recent, now]);
+    return true;
+  };
 
   const revoke = (windowId: number) => {
     if (!holders.delete(windowId)) return;
@@ -607,6 +752,7 @@ export function createPortBroker(deps: BrokerDeps) {
       const link = deps.link();
       if (!link || link.exited) throw unavailable();
       if (win.isDestroyed() || !win.trusted()) throw new Error('Untrusted application window.');
+      if (!allowAsk(win.id)) throw unavailable();
       revoke(win.id);
       issue(win, link);
     },
@@ -786,7 +932,7 @@ export function createPortClient(
       if (typeof method !== 'string' || !allow.has(method))
         return Promise.reject({ type: 'unsupported', message: 'Unsupported application method.' });
       // The engine refuses these too, but only after the port has copied them into its process: refuse them here.
-      if (messageBytes(args ?? {}, argsLimit(method)) > argsLimit(method))
+      if (argsBytes(method, args) > argsLimit(method))
         return Promise.reject({ type: 'tooLarge', message: 'This request is too large to send.' });
       // Only ArrayBuffers move; a port or anything else in the list is dropped (the structured clone then copies or refuses).
       const buffers = Array.isArray(transfer)

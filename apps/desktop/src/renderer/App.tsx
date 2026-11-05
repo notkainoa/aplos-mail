@@ -2,7 +2,7 @@
  * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
  * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
- * (Later and the lists are `ui-home`'s, Settings and Calendar `ui-screens`'). The boot proof reads Home's section
+ * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-screens'`). The boot proof reads Home's section
  * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
  * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
  * `useHome()` yet.
@@ -16,23 +16,32 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
-import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus, api } from './data';
+import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus } from './data';
 import { statusCopy } from './ui/status';
 import {
+  closeCompose,
   navigate,
+  openCompose,
   openThread,
   useAccountScope,
+  useComposeRequest,
   useHomeShellProps,
+  usePaneHeaderPart,
   type HomeShellProps,
   type Screen,
 } from './shell';
-import { HomeScreen as HomeRoute } from './screens/home';
+import { HomeScreen as HomeRoute, OneByOneScreen } from './screens/home';
+import { CalendarScreen } from './screens/calendar';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
+import { ComposeScreen, composeHeader } from './screens/compose';
+import { ReaderScreen } from './screens/reader';
+import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
-import { FirstSyncLine, NoAccountsLine } from './shell/states';
+import { FirstSyncLine } from './shell/states';
+import { ZeroAccounts } from './onboarding/ZeroAccounts';
 import { toSyncStatus } from './shell/status-map';
 
 /** The typed client the app reads from (the stand-in's today; the real engine's after the switch). */
@@ -247,12 +256,7 @@ export function HomeScreen({ client, accountId }: AppProps & Partial<HomeShellPr
   if (accounts.length === 0) {
     // Nothing (the neutral state) until it is a fact there are no accounts: not while they load or the engine connects.
     if (!noAccountsKnown(accountsLoaded, connection.state)) return null;
-    return (
-      <NoAccountsLine
-        onAddAccount={() => navigate('settings')}
-        onTryDemo={() => void api.demo.load({}).catch(() => undefined)}
-      />
-    );
+    return <ZeroAccounts />;
   }
   const empty = home.status === 'live' && homeLines(home.window).every(line => line.count === 0);
   const settling = counts.hidden || SETTLING_STATES.includes(status?.status.state ?? '');
@@ -268,39 +272,84 @@ function HomeSlot() {
   return <HomeRoute {...useHomeShellProps()} />;
 }
 
-/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader; drafts and submissions wait for the composer lane (no-op until it lands). */
-function useListProps() {
-  const scope = useAccountScope();
-  return useMemo(
-    () => ({
-      accountId: scope ?? undefined,
-      onOpen: (id: string, kind: OpenKind) => (kind === 'thread' ? openThread(id) : undefined),
-    }),
-    [scope],
+/** What opening a list row does: a thread opens in the reader, a draft in the compose page, a submission nothing. */
+export function listOpener(
+  from: Screen,
+): (id: string, kind: OpenKind, listIds?: readonly string[]) => void {
+  return (id, kind, listIds) => {
+    if (kind === 'thread') openThread(id, listIds ? { from, listIds } : { from });
+    if (kind === 'draft') openCompose({ draftId: id });
+  };
+}
+
+/** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
+function OneByOneSlot() {
+  const { accountId, onOpen } = useHomeShellProps();
+  return (
+    <OneByOneScreen
+      key={accountId ?? 'all'}
+      accountId={accountId}
+      onExit={() => navigate('home')}
+      onOpen={onOpen}
+    />
   );
 }
 
+/** The scope's account (undefined for All accounts) and the opener every list shares: threads open in the reader, drafts in the compose page; submissions have no opener. */
+function useListProps(from: Screen) {
+  const scope = useAccountScope();
+  const place = typeof from === 'string' ? from : from.label;
+  return useMemo(
+    () => ({
+      accountId: scope ?? undefined,
+      onOpen: listOpener(from),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `from` is a new object every render; `place` is its value
+    [scope, place],
+  );
+}
+
+/** The calendar, keyed on the account scope like One by one so a scope change restarts its period and surfaces. */
+function CalendarSlot() {
+  const scope = useAccountScope();
+  return <CalendarScreen key={scope ?? 'all'} accountId={scope ?? undefined} />;
+}
+
 function LaterSlot() {
-  return <LaterScreen {...useListProps()} />;
+  return <LaterScreen {...useListProps('later')} />;
 }
 
 function DoneSlot() {
-  return <DoneScreen {...useListProps()} />;
+  return <DoneScreen {...useListProps('done')} />;
 }
 
 function ListSlot({ which }: { readonly which: ListWhich }) {
   // Keyed by place, so Trash -> Spam -> All mail never carries an open Confirm or a cursor across.
-  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps()} />;
+  return <ListScreen key={JSON.stringify(which)} which={which} {...useListProps(which)} />;
 }
 
-/** Labels other lanes open as placeholders (the reader, one by one, search, help, compose); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = [
-  'thread',
-  'one by one',
-  'Search',
-  'Help',
-  'New message',
-];
+/** The compose page: C, the sidebar's New message, a Drafts row and the inline reply's Pop out land here. Esc and × keep the draft and go back. */
+function ComposeSlot() {
+  const request = useComposeRequest();
+  const runCommand = useRunCommand();
+  const part = useMemo(
+    () => composeHeader({ close: () => runCommand('compose.close'), saved: false }),
+    [runCommand],
+  );
+  usePaneHeaderPart(part);
+  if (!request) return null;
+  return (
+    <ComposeScreen
+      key={request.seq}
+      draftId={request.draftId}
+      replyTo={request.replyTo}
+      onClose={closeCompose}
+    />
+  );
+}
+
+/** Labels other lanes open as placeholders (search, help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['Search', 'Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -308,13 +357,17 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s; nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
+  if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
+  if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
+  if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
       <ListSlot which={{ label: screen.label }} />
     );
   if (screen === 'home') return <HomeSlot />;
+  if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;
   if (screen === 'done') return <DoneSlot />;
   return isListPlace(screen) ? <ListSlot which={screen} /> : undefined;

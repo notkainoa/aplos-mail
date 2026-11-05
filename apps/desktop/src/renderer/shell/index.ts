@@ -34,13 +34,23 @@ import {
 import type { Screen } from './store-route';
 import type { RouteTarget } from './store-route';
 import { addKeyLayer, type KeyLayer } from './store-keys';
+import { addPaneHeaderPart, getPaneHeaderPart, subscribePaneHeaderPart } from './store-pane';
+import type { PaneHeaderPart } from './store-pane';
+import { getSidebarSlot, setSidebarSlot, subscribeSidebarSlot } from './store-sidebar';
+import type { SidebarSlot } from './store-sidebar';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
+  getOpenThreadContext,
+  leaveOpenThread,
   OPEN_THREAD_SCREEN,
   setOpenThread,
   subscribeOpenThread,
+  subscribeOpenThreadContext,
 } from './store-thread';
+import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import { getComposeRequest, subscribeComposeRequest } from './store-compose';
+import type { ComposeRequest } from './store-compose';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
@@ -91,6 +101,11 @@ export interface SheetArgs {
    * `Settings.ai.features`; Allow sends `api.consent.grant` with `Consent.currentVersion`.
    */
   consent: { readonly provider?: AiProviderId; readonly model?: string };
+  /**
+   * Add an account in place (additive): the onboarding lane's Accounts connect flow in a Dialog, so a second account is
+   * connected without the setup window. Open it with `openAddAccount()`; it takes no arguments.
+   */
+  addAccount: Record<string, never>;
 }
 
 /** A sheet name. */
@@ -116,6 +131,15 @@ export function openSheet<K extends SheetName>(name: K, ...args: SheetArgsParam<
   showSheet({ name, args: args[0] ?? {} } as OpenSheet);
 }
 
+/**
+ * Opens the Add account dialog (additive; the account switcher's "Add an account" and the empty state's button call
+ * it). It is the `addAccount` sheet: one at a time, Esc steps back and then closes, and focus returns to the opener.
+ * Opening it again while it is open keeps it.
+ */
+export function openAddAccount(): void {
+  openSheet('addAccount');
+}
+
 /** Closes the open sheet (Cancel, Esc, or the flow finished: "Reconnected" toast); a no-op when none is open. */
 export function closeSheet(): void {
   hideSheet();
@@ -124,6 +148,11 @@ export function closeSheet(): void {
 /** The open sheet, live; null when none. The shell's sheet slot renders ui-onboard's sheet for it. */
 export function useSheet(): OpenSheet | null {
   return useSyncExternalStore(subscribeSheet, getSheet, getSheet);
+}
+
+/** True while the Add account dialog is the open sheet. Additive. */
+export function useAddAccount(): boolean {
+  return useSheet()?.name === 'addAccount';
 }
 
 /** True while a sheet is open: the shell adds the modal `sheet` context to its key stack (`buildStack`) then. Additive. */
@@ -248,6 +277,7 @@ export function navigate(screen: Screen): void {
 }
 
 export { consumeRoute } from './store-route';
+export { screenLabel } from './nav';
 export type { RouteTarget, Screen } from './store-route';
 
 // ---------------------------------------------------------------------------
@@ -277,6 +307,49 @@ export function useShellKeyLayer(layer: KeyLayer): void {
 }
 
 // ---------------------------------------------------------------------------
+// The pane header's screen parts (additive): back and crumb, tools, and the bulk bar
+// ---------------------------------------------------------------------------
+
+export type { PaneHeaderPart } from './store-pane';
+
+/** Sets the header's lead, crumb, tools or bulk bar while the calling screen is mounted. Pass a memoised object: it compares by reference. Null clears it. */
+export function usePaneHeaderPart(part: PaneHeaderPart | null): void {
+  useEffect(() => (part ? addPaneHeaderPart(part) : undefined), [part]);
+}
+
+/** The latest mounted screen's header parts, live. */
+export function usePaneHeaderParts(): PaneHeaderPart {
+  return useSyncExternalStore(subscribePaneHeaderPart, getPaneHeaderPart, getPaneHeaderPart);
+}
+
+// ---------------------------------------------------------------------------
+// The sidebar slot (additive): a screen's MiniMonth and Calendars list under the place groups
+// ---------------------------------------------------------------------------
+
+export type { SidebarSlot } from './store-sidebar';
+
+/**
+ * Shows `slot` under the sidebar's place groups while the calling screen is mounted (null shows nothing). The latest
+ * mounted slot wins whole and the earlier one returns when it goes. The shell draws `miniMonth` and `calendars` with
+ * the ui components in the sidebar's quiet spacing; the minimised nav does not show the slot. A screen that updates
+ * its slot keeps its place in the stack. Compared by reference, so memoise it (`useMemo`). Passing `null` clears the
+ * slot like an unmount, so a later non-null slot enters on top again: keep the entry (an empty slot) to hold a place.
+ */
+export function useSidebarSlot(slot: SidebarSlot | null): void {
+  const owner = useRef({}).current;
+  // Updates replace the slot in place (its place in the stack is kept); only unmounting removes it.
+  useEffect(() => {
+    setSidebarSlot(owner, slot);
+  }, [owner, slot]);
+  useEffect(() => () => setSidebarSlot(owner, null), [owner]);
+}
+
+/** The slot the sidebar draws, live; null when no screen set one. The shell's Sidebar reads it. */
+export function useSidebarSlotValue(): SidebarSlot | null {
+  return useSyncExternalStore(subscribeSidebarSlot, getSidebarSlot, getSidebarSlot);
+}
+
+// ---------------------------------------------------------------------------
 // The account scope (additive): what the sidebar's switcher selects
 // ---------------------------------------------------------------------------
 
@@ -294,21 +367,50 @@ export function setAccountScope(accountId: AccountId | null): void {
 // The open thread (additive): the reader lane renders it on the `{ label: 'thread' }` screen
 // ---------------------------------------------------------------------------
 
-/** Records `id` as the open thread and shows the `{ label: 'thread' }` screen (a placeholder until the reader lane renders it). */
-export function openThread(id: ThreadId): void {
-  setOpenThread(id);
+/**
+ * Records `id` as the open thread and shows the `{ label: 'thread' }` screen. `options` (additive) says where the
+ * thread was opened from (`from`: Esc goes back there) and the ids of the list it was opened in (`listIds`: J and K
+ * walk them). Opening again from the reader itself (J, K) without options keeps the earlier place and list.
+ */
+export function openThread(id: ThreadId, options?: OpenThreadOptions): void {
+  setOpenThread(id, options);
   setScreen(OPEN_THREAD_SCREEN);
 }
 
-/** Clears the open thread; the reader calls it when it closes. Does not navigate. */
+/** Clears the open thread and, when the thread screen is showing, goes back to the screen it was opened from (Home when none was recorded). */
 export function closeThread(): void {
-  setOpenThread(null);
+  leaveOpenThread();
 }
 
 /** The open thread's id, live; null when none. */
 export function useOpenThread(): ThreadId | null {
   return useSyncExternalStore(subscribeOpenThread, getOpenThread, getOpenThread);
 }
+
+/** Where the open thread came from and the list it was opened in, live; null fields when `openThread` was given none. Additive. */
+export function useOpenThreadContext(): OpenThreadContext {
+  return useSyncExternalStore(
+    subscribeOpenThreadContext,
+    getOpenThreadContext,
+    getOpenThreadContext,
+  );
+}
+
+export type { OpenThreadContext, OpenThreadOptions };
+
+// ---------------------------------------------------------------------------
+// The compose route (additive): the composer lane renders it on the `{ label: 'compose' }` screen
+// ---------------------------------------------------------------------------
+
+/** Shows the compose page (new message, a draft, or a reply popped out of the reader); `closeCompose` goes back. */
+export { openCompose, closeCompose } from './store-compose';
+
+/** What the compose page was asked to open on, live; null when it is not showing. */
+export function useComposeRequest(): ComposeRequest | null {
+  return useSyncExternalStore(subscribeComposeRequest, getComposeRequest, getComposeRequest);
+}
+
+export type { ComposeRequest, ComposeTarget } from './store-compose';
 
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {
@@ -325,7 +427,7 @@ export function useHomeShellProps(): HomeShellProps {
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: openThread,
+      onOpen: id => openThread(id, { from: 'home' }),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

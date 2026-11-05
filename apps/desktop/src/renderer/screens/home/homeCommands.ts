@@ -12,6 +12,7 @@ import {
   type TargetSummary,
 } from '../../commands';
 import type { CommandHandlerTable } from '../../shell';
+import type { CommandAction } from '../../ui/props';
 import type { HomeActions } from './homeActions';
 
 function run(action: () => void): CommandHandlers {
@@ -23,6 +24,10 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
   return {
     'list.down': run(() => actions.move(1)),
     'list.up': run(() => actions.move(-1)),
+    'list.select': run(() => actions.select()),
+    'list.selectRange': run(() => actions.selectRange()),
+    'list.selectAll': run(() => actions.selectAll()),
+    'list.clearSelection': run(() => actions.clearSelection()),
     'list.nextSection': run(() => actions.jump(1)),
     'list.previousSection': run(() => actions.jump(-1)),
     'mail.done': run(() => actions.done()),
@@ -32,6 +37,7 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.laneUp': run(() => actions.lane('up')),
     'mail.trash': run(() => actions.trash()),
     'mail.bookmark': run(() => actions.bookmark()),
+    'mail.why': run(extra.why),
     'mail.suggested': run(() => actions.suggested()),
     'mail.open': run(() => actions.open()),
     'home.clearFromHome': run(() => actions.clearFromHome()),
@@ -42,10 +48,21 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
   };
 }
 
+/** The pane header's bulk bar on Home (DESIGN 7.4): Done, Later, Trash; the keycaps come from the registry. */
+export function homeBarActions(actions: HomeActions): readonly CommandAction[] {
+  return [
+    { label: 'Done', commandId: 'mail.done', onSelect: () => actions.done() },
+    { label: 'Later', commandId: 'mail.later', onSelect: () => actions.later() },
+    { label: 'Trash', commandId: 'mail.trash', onSelect: () => actions.trash() },
+  ];
+}
+
 /** Commands that need no engine call and are not part of `HomeActions`. */
 export interface HomeExtras {
   readonly oneByOne: () => void;
   readonly more: () => void;
+  /** I: "Why it's here" for the row under the cursor. */
+  readonly why: () => void;
   readonly undo: () => void;
 }
 

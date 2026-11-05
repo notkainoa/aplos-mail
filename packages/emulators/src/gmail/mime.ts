@@ -307,3 +307,28 @@ export function withDefaultHeaders(raw: Buffer, defaults: Record<string, string>
     raw,
   ]);
 }
+
+/** The message without the named top-level headers (case-insensitive), folded continuation lines included. */
+export function withoutHeaders(raw: Buffer, names: readonly string[]): Buffer {
+  const text = raw.toString('latin1');
+  const { head, rest } = splitHeadBodyKeepingSeparator(text);
+  const drop = new Set(names.map(n => n.toLowerCase()));
+  const kept: string[] = [];
+  let dropping = false;
+  for (const line of head.split(/(?<=\n)/)) {
+    if (/^[ \t]/.test(line)) {
+      if (!dropping) kept.push(line);
+      continue;
+    }
+    dropping = drop.has(line.slice(0, Math.max(0, line.indexOf(':'))).toLowerCase());
+    if (!dropping) kept.push(line);
+  }
+  return Buffer.from(kept.join('') + rest, 'latin1');
+}
+
+function splitHeadBodyKeepingSeparator(text: string): { head: string; rest: string } {
+  const at = text.search(/\r?\n\r?\n/);
+  if (at === -1) return { head: text, rest: '' };
+  const lineEnd = text.indexOf('\n', at) + 1;
+  return { head: text.slice(0, lineEnd), rest: text.slice(lineEnd) };
+}

@@ -6,6 +6,8 @@ import type { Frame } from '@aplos/contract';
 import type { EngineSession } from '@aplos/contract/client';
 import { hostMethods, secretMethods } from '@aplos/contract/allowlists';
 import {
+  CONNECT_LIMIT,
+  controlMethods,
   createPortBroker,
   createPortClient,
   createPortHost,
@@ -284,6 +286,71 @@ test('binary moves as a transferred ArrayBuffer, never base64', async t => {
   assert.equal(reply.args.bytes[0], 7);
 });
 
+/** A session whose every call answers `result()`, a fresh value per call unless the test shares one. */
+function answering(result: () => unknown): EngineSession {
+  return {
+    call: async () => result(),
+    subscribe: () => () => undefined,
+    close: () => undefined,
+  };
+}
+
+/** One window over a real Node channel, served by `session`. */
+function servedClient(t: TestContext, session: EngineSession) {
+  const { port1, port2 } = new MessageChannel();
+  t.after(() => {
+    port1.close();
+    port2.close();
+  });
+  serveWindowPort(() => session, engineEndOf(port1), { position });
+  const client = createPortClient();
+  client.attach(windowEndOf(port2));
+  return client;
+}
+
+test('a Blob/get reply moves its buffer to the window instead of copying it', async t => {
+  const handed: Uint8Array[] = [];
+  const client = servedClient(
+    t,
+    answering(() => {
+      const bytes = new Uint8Array(4096).fill(9);
+      handed.push(bytes);
+      return { bytes, mime: 'application/pdf', size: bytes.byteLength };
+    }),
+  );
+  const reply = (await client.call('Blob/get', { blobId: 'b_x' })) as { bytes: Uint8Array };
+  assert.equal(reply.bytes.byteLength, 4096);
+  assert.equal(reply.bytes[4095], 9);
+  assert.equal(handed[0].byteLength, 0, 'the engine’s buffer moved (detached), it was not copied');
+});
+
+test('a blob reply never moves a buffer it does not wholly own, and other replies never move one', async t => {
+  const shared = new Uint8Array(1024).fill(3);
+  const view = shared.subarray(16, 32);
+  const client = servedClient(
+    t,
+    answering(() => ({ bytes: view, mime: 'text/plain', size: view.byteLength })),
+  );
+  const reply = (await client.call('Blob/get', { blobId: 'b_x' })) as { bytes: Uint8Array };
+  assert.equal(reply.bytes.byteLength, 16);
+  assert.equal(shared.byteLength, 1024, 'a view onto a larger buffer is copied, never moved');
+  assert.equal(view.byteLength, 16);
+
+  const kept = new Uint8Array(64).fill(5);
+  const other = servedClient(
+    t,
+    answering(() => ({ bytes: kept })),
+  );
+  await other.call('Counts/get', {});
+  assert.equal(kept.byteLength, 64, 'a non-blob route’s reply is never moved');
+});
+
+test('main may read a blob on its control connection, and nothing else of the blob area', () => {
+  assert.ok(controlMethods.has('Blob/get'));
+  assert.equal(controlMethods.has('Blob/put'), false);
+  assert.equal(controlMethods.has('Blob/release'), false);
+});
+
 test('the engine may only ask main to open a provider sign-in page', () => {
   assert.equal(
     signInURL('https://accounts.google.com/o/oauth2/v2/auth?client_id=x'),
@@ -517,4 +584,30 @@ test('port hijack: an engine restart re-issues no port to a window that no longe
   assert.equal(one.state.deliveries, 1, 'the untrusted window got no new port');
   assert.equal(two.state.deliveries, 2, 'the trusted window did');
   assert.deepEqual(broker.holders(), [2]);
+});
+
+test('a window may ask for a port CONNECT_LIMIT.count times in CONNECT_LIMIT.windowMs: a loop of asks is refused, and a reload later is not', async t => {
+  const engine = fakeSession();
+  const host = createPortHost(() => engine.session, { position });
+  const ports = portTracker(t);
+  const link = directLink(host);
+  let now = 1_000;
+  const broker = createPortBroker({ channel: ports.channel, link: () => link, now: () => now });
+  const one = fakeWindow(1);
+  const other = fakeWindow(2);
+  for (let i = 0; i < CONNECT_LIMIT.count; i++) {
+    broker.connect(one.win);
+    now += 100;
+  }
+  assert.throws(() => broker.connect(one.win), /./, 'the next ask is refused');
+  assert.equal(one.state.deliveries, CONNECT_LIMIT.count, 'and issues no new port');
+  broker.connect(other.win);
+  assert.equal(other.state.deliveries, 1, 'another window has its own allowance');
+  now += CONNECT_LIMIT.windowMs;
+  broker.connect(one.win);
+  assert.equal(
+    one.state.deliveries,
+    CONNECT_LIMIT.count + 1,
+    'after the window passes it may ask again',
+  );
 });

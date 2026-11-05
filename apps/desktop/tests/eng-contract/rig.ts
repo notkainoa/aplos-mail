@@ -27,7 +27,7 @@ export const T0 = Date.UTC(2026, 9, 31, 9, 0, 0);
 /** The engine's end of a Node port, as the utility process wraps Electron's `MessagePortMain`. */
 export function engineEndOf(port: MessagePort): EnginePortEnd {
   return {
-    post: message => port.postMessage(message),
+    post: (message, transfer) => port.postMessage(message, transfer),
     onMessage: handler => void port.on('message', handler),
     onClose: handler => void port.on('close', handler),
     close: () => port.close(),

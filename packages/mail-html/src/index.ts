@@ -8,7 +8,14 @@ import { sanitizeHtml, type WalkOutput } from './sanitize';
 // change: it is part of each rendered body's cache key, so a fix reaches mail already stored.
 // A message over the size limits (sanitize.ts LIMITS) is cut, and the frame says so at the cut.
 
-export const MAIL_HTML_VERSION = 'mail-html/1';
+export const MAIL_HTML_VERSION = 'mail-html/6';
+
+/**
+ * Always the standards-mode doctype, whatever the mail declared. In quirks mode `body.scrollHeight` follows
+ * the viewport, heights and percentages resolve differently, and a frame sized to its letter can neither
+ * be measured nor shrink. Nothing may come before it (a comment or a BOM would bring quirks back).
+ */
+export const STANDARDS_DOCTYPE = '<!DOCTYPE html>';
 
 const CLIPPED_NOTE =
   '<p class="aplos-clipped"><em>This message is very long, so Aplos shows only its beginning.</em></p>';
@@ -46,9 +53,9 @@ function renderHtml(
   finder: Finder | undefined,
 ): MailHtmlResult {
   const images = new ImageBook({ cids: input.cids, policy: input.imagePolicy });
-  const walk = sanitizeHtml(html, images, finder);
+  const walk = sanitizeHtml(html, images, finder, false, input.quotesOpen === true);
   const document = [
-    walk.doctype,
+    STANDARDS_DOCTYPE,
     `<html${walk.htmlAttributes}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,
     `<body${walk.bodyAttributes}>${walk.body}${walk.clipped ? CLIPPED_NOTE : ''}</body></html>`,
   ].join('');

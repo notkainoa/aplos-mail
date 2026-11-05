@@ -32,7 +32,9 @@ import {
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
 import { invokeNative, nativeMethods, notify } from './native-methods';
-import { assertCaller, trustedURL } from './security';
+import { allowMailFrames, assertCaller, trustedURL } from './security';
+import { installMailProtocol } from './mail-protocol';
+import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
 import { popout } from './windows';
 
@@ -228,9 +230,21 @@ function watchWindows() {
   });
 }
 
+/** `Mail/serve` over main's control connection; no engine means the relay's uniform 404. */
+function serveMail({ signal, ...args }: ServeArgs): Promise<unknown> {
+  const current = link();
+  if (!current) return Promise.reject(new Error('The mailbox is restarting.'));
+  return current.call('Mail/serve', args, SERVE_TIMEOUT_MS, signal);
+}
+
+/** Set by the quit: from then on no engine is started, whatever stage the start-up had reached. */
+let closeRequested = false;
+
 /** Starts the new engine and the IPC that reaches it. `noteExit` is lifecycle's park counter (3 stops in 60 s). */
 async function bootRealEngine(options: { dataDir: string; noteExit(): boolean }): Promise<void> {
   const init = await engineInit(options.dataDir);
+  // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
+  if (closeRequested) return;
   supervisor = createEngineSupervisor({
     spawn: () => spawn(init),
     noteExit: options.noteExit,
@@ -239,10 +253,16 @@ async function bootRealEngine(options: { dataDir: string; noteExit(): boolean })
       broker.desktop(engineFrame('ready'));
     },
     onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    onKillFailed: error =>
+      console.error('Aplos Mail: could not stop the engine process:', (error as Error)?.name),
     timers,
   });
   await supervisor.start();
   watchWindows();
+  // The sealed mail frame (html-5): the `aplos-mail://` relay, its window stamp and backstop, and the subframe rule.
+  // At most MAX_RELAY_IN_FLIGHT relays open at once: a page cannot queue unbounded engine work through main.
+  installMailProtocol(limitInFlight(serveMail));
+  allowMailFrames();
   ipcMain.handle('aplos:engine-connect', connectWindow);
   ipcMain.handle('aplos:desktop', desktopMethod);
   ipcMain.handle('aplos:invoke', legacyInvoke);
@@ -258,7 +278,12 @@ const realEngine = {
     if (!current) throw new Error('The mailbox is restarting.');
     return (await current.call('Outbox/pending', {}, 3000)) as PendingWork;
   },
-  close: () => supervisor?.close() ?? Promise.resolve(),
+  /** Rejects unless the engine really exited, so the data lock is never released over a running engine. */
+  close: async (): Promise<void> => {
+    closeRequested = true;
+    const result = (await supervisor?.close()) ?? 'exited';
+    if (result !== 'exited') throw new Error('The mailbox engine did not stop.');
+  },
 };
 
 export { bootRealEngine, realEngine };

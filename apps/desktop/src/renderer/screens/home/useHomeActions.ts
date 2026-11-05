@@ -23,6 +23,7 @@ import {
   type OpenHow,
   type RunStatus,
 } from './homeActions';
+import type { HomeBulkDeps } from './homeBulk';
 import { commandsForHome } from './homeCommands';
 
 /** The screen's inputs to its actions. */
@@ -31,6 +32,8 @@ export interface HomeActionInputs {
   /** The command context a command run from here (Space on a reply) gets. */
   readonly context: () => CommandContext;
   readonly hold: HoldController;
+  /** The bulk pick and its confirmation; absent where the screen cannot pick (the one-by-one view). */
+  readonly bulk?: HomeBulkDeps;
   readonly setCursor: (key: string | null) => void;
   /** Draws a commit on the row that is leaving (the one acted on, not necessarily under the cursor) and extends the hold. */
   readonly commit: (kind: CommitKind, holdIds: readonly string[], rowId: ThreadId) => void;
@@ -38,8 +41,15 @@ export interface HomeActionInputs {
   readonly openLow: () => void;
   readonly oneByOne: () => void;
   readonly openMore: () => void;
+  /** Opens the bulk bar's More menu (`.` while rows are picked). */
+  readonly openBulkMore?: () => void;
   /** Opens the Later date presets for this thread. */
   readonly openDatePicker: (id: ThreadId) => void;
+}
+
+/** Home's inputs, and the ⋯ menu's "Why it's here" (I). */
+export interface HomeKeyInputs extends HomeActionInputs {
+  readonly why: () => void;
 }
 
 /** What the screen reads back: the thread a Remind toast is offering (so R is live), and the actions. */
@@ -71,8 +81,11 @@ function undoLabelOf(registry: Registry, commandId: string, fallback: string): s
   return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
 }
 
-/** The actions for one mounted Home, attached to `registry` until it unmounts. */
-export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
+/**
+ * The actions for one mounted screen and the Remind offer they raise, with no keys attached: Home attaches its own
+ * table (`useHomeActions`), the one-by-one view another (`commandsForOneByOne`).
+ */
+export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
   const { registry } = useShellRegistry();
   const latest = useRef(inputs);
   useEffect(() => {
@@ -92,8 +105,19 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
     setCurrent(null);
   }, [current, toasts]);
 
+  const canPick = inputs.bulk !== undefined;
   const actions = useMemo(() => {
     const now = () => latest.current;
+    const bulk: HomeBulkDeps = {
+      selection: {
+        toggle: id => now().bulk?.selection.toggle(id),
+        extendTo: id => now().bulk?.selection.extendTo(id),
+        selectAll: () => now().bulk?.selection.selectAll(),
+        clear: () => now().bulk?.selection.clear(),
+      },
+      confirmation: () => now().bulk?.confirmation() ?? null,
+      setConfirmation: next => now().bulk?.setConfirmation(next),
+    };
     const deps: HomeDeps = {
       snapshot: () => now().snapshot.current ?? EMPTY,
       setCursor: key => now().setCursor(key),
@@ -101,6 +125,7 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
       push: pushToast,
       dismiss: dismissToast,
       hold: { extend: ids => now().hold.extend(ids) },
+      bulk: canPick ? bulk : undefined,
       commit: (kind, ids, rowId) => now().commit(kind, ids, rowId),
       offerReminder: (id, opId) => {
         offer.current = id;
@@ -113,24 +138,38 @@ export function useHomeActions(inputs: HomeActionInputs): HomeActionState {
       openLow: () => now().openLow(),
       oneByOne: () => now().oneByOne(),
       openMore: () => now().openMore(),
+      openBulkMore: () => now().openBulkMore?.(),
       undoLabel: (commandId, fallback) => undoLabelOf(registry, commandId, fallback),
     };
     return createHomeActions(deps);
-  }, [registry]);
+  }, [registry, canPick]);
 
-  const { oneByOne, openMore } = inputs;
+  return { actions, remindOffer };
+}
+
+/** The actions for one mounted Home, with Home's keys attached to the registry until it unmounts. */
+export function useHomeActions(inputs: HomeKeyInputs): HomeActionState {
+  const state = useHomeActionState(inputs);
+  const { actions } = state;
+  const { oneByOne, why } = inputs;
   const table = useMemo(
-    () => commandsForHome(actions, { oneByOne, more: openMore, undo: () => undoLast(actions) }),
-    [actions, oneByOne, openMore],
+    () =>
+      commandsForHome(actions, {
+        oneByOne,
+        more: () => actions.more(),
+        why,
+        undo: () => undoLast(actions),
+      }),
+    [actions, oneByOne, why],
   );
   useRegisterCommands(table);
-  return { actions, remindOffer };
+  return state;
 }
 
 const EMPTY: HomeSnapshot = { items: [], key: null, rowOf: () => undefined, state: null };
 
 /** Z: undoes the newest change; if it was the operation behind the live reminder offer, the offer ends with it. */
-function undoLast(actions: HomeActions): void {
+export function undoLast(actions: HomeActions): void {
   const outcome = undoStack.undoLast();
   if (outcome?.kind === 'operation') actions.undone(outcome.opId);
 }

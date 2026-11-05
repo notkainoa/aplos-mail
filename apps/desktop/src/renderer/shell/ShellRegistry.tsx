@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { createAppRegistry, type CommandHandlers, type Registry } from '../commands';
 import { undoStack } from '../data';
 import { ALL_PLACES, placeScreen } from './nav';
+import { openCompose } from './store-compose';
 import { setScreen } from './store-route';
 
 /** Handlers keyed by command id. */
@@ -36,6 +37,12 @@ export function placeHandlers(): CommandHandlerTable {
 /** Handlers the shell attaches first, so the command works on every screen; a screen's own registration shadows it. */
 export const DEFAULT_HANDLERS: CommandHandlerTable = {
   ...placeHandlers(),
+  // C: a new message, on every screen.
+  'mail.compose': {
+    run: () => {
+      openCompose({});
+    },
+  },
   // Z: the newest change of either kind (an engine operation or a local one). A toast's Undo undoes its own operation instead.
   'app.undo': {
     run: () => {

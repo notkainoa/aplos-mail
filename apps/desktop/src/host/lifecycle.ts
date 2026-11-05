@@ -48,6 +48,15 @@ export function activation(
 
 /** The longest the handoff waits for the mail window's first paint before showing it anyway. */
 export const READY_TIMEOUT_MS = 10_000;
+/** The handoff's fade (DESIGN 7.11): the welcome window thins out over `FADE_MS` in `FADE_STEPS` steps, and closes by `FORCE_CLOSE_MS` whatever happens. */
+export const FADE_MS = 120;
+export const FADE_STEPS = 8;
+export const FORCE_CLOSE_MS = 300;
+
+/** The opacities of the fade: 1 first, strictly decreasing, ending at 0. */
+export function fadeOpacities(steps: number = FADE_STEPS): number[] {
+  return Array.from({ length: steps + 1 }, (_, i) => Number((1 - i / steps).toFixed(4)));
+}
 
 /** The part of a window this module drives. `main/windows.ts` adapts a real `BrowserWindow`. */
 export interface WindowPort {
@@ -61,6 +70,8 @@ export interface WindowPort {
   show(): void;
   focus(): void;
   close(): void;
+  /** `BrowserWindow.setOpacity`; a port without it closes without a fade. */
+  setOpacity?(value: number): void;
   /** Electron's `ready-to-show`, once. A listener added after it fired is never called. */
   onReadyToShow(listener: () => void): void;
   onClosed(listener: () => void): void;
@@ -141,8 +152,44 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     deps.announceShown(mail);
     const onboarding = win;
     win = undefined;
-    if (alive(onboarding)) onboarding.close();
-    done();
+    if (alive(onboarding)) fadeAndClose(onboarding, done);
+    else done();
+  }
+
+  /** The mail window is already on screen, so the fade has no blank frame under it (F4). Test mode and a port without opacity close at once. */
+  function fadeAndClose(target: WindowPort, done: () => void) {
+    const setOpacity = target.setOpacity?.bind(target);
+    if (deps.testMode || !setOpacity) {
+      target.close();
+      return done();
+    }
+    const opacities = fadeOpacities();
+    const gap = FADE_MS / (opacities.length - 1);
+    let index = 0;
+    let finished = false;
+    let stepTimer: unknown;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (stepTimer !== undefined) deps.clearTimer(stepTimer);
+      deps.clearTimer(forceTimer);
+      if (alive(target)) target.close();
+      done();
+    };
+    const forceTimer = deps.setTimer(finish, FORCE_CLOSE_MS);
+    const step = () => {
+      if (finished) return;
+      try {
+        if (!alive(target)) return finish();
+        setOpacity(opacities[index]!);
+      } catch {
+        return finish();
+      }
+      if (index === opacities.length - 1) return finish();
+      index += 1;
+      stepTimer = deps.setTimer(step, gap);
+    };
+    step();
   }
 
   function finish(): Promise<void> {
@@ -341,8 +388,12 @@ export function createProcessState(): ProcessState {
   };
 }
 
-/** The most `finishQuit` waits for the engine to close before quitting anyway. */
-export const QUIT_DRAIN_MS = 3000;
+/**
+ * The most `finishQuit` waits for the engine to close before quitting anyway. It must outlast the supervisor's own wait
+ * (`ENGINE_QUIT_MS` to ask, `ENGINE_EXIT_AFTER_KILL_MS` to see the kill take) with room to spare, so an engine that
+ * exits just after the kill still releases the lock, and one that does not is reported stuck first.
+ */
+export const QUIT_DRAIN_MS = 6000;
 
 /** Resolves when `work` settles or after `ms`, whichever is first. Never rejects. */
 export function drain(
@@ -358,6 +409,31 @@ export function drain(
     };
     work.then(done, done);
   });
+}
+
+/**
+ * Closes the engine, then lets go of the data lock, but ONLY if the engine confirmed it closed within `ms`. A second
+ * instance that takes the lock must not open the database while this one's engine may still be writing it; a lock that
+ * is not released names this process and is reclaimed as stale the moment the process is gone. Resolves true when the
+ * engine closed in time (and the lock was released). A close that fails or times out leaves the lock held.
+ */
+export async function closeThenRelease(
+  work: Promise<unknown>,
+  ms: number,
+  timers: { set(run: () => void, ms: number): unknown; clear(handle: unknown): void },
+  release: () => void,
+): Promise<boolean> {
+  let closed = false;
+  await drain(
+    work.then(
+      () => void (closed = true),
+      () => undefined,
+    ),
+    ms,
+    timers,
+  );
+  if (closed) release();
+  return closed;
 }
 
 /**

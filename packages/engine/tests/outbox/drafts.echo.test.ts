@@ -127,7 +127,7 @@ test('a send that is done but whose clean-up has not run still pins the draft: a
     // The hidden-row clean-up is held up, so the submission is `sent` at the current revision but the draft row remains.
     for (let i = 0; i < 20; i++)
       w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
-    w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
+    await w.send(w.first, s.draft.id, { revision: read(w, s.draft.id).revision });
     await wait(w, 15 * SEC);
     const states = w.first.store.read(q =>
       q.all<{ state: string }>('SELECT state FROM submissions WHERE draft_id = ?', s.draft.id),
@@ -208,7 +208,7 @@ test('resurface: a held phone version of a draft that came from the phone gets i
     const id = `${ACCOUNT}:rd-p`;
     for (let i = 0; i < 20; i++)
       w.faults.push((input: CommitInput) => input.writes[0]?.kind === 'draftDelete');
-    w.send(w.first, id, { revision: read(w, id).revision });
+    await w.send(w.first, id, { revision: read(w, id).revision });
     await wait(w, 15 * SEC);
     fact(w, 'rd-p', 'pm-2', { ...PHONE, internetId: '<p1@phone.example>' });
     w.faults.length = 0;
@@ -272,7 +272,7 @@ test('echo: a REAL conflict survives an ack that names another copy; only an ack
   }));
 
 test('fingerprint: the same content as the writer produces it hashes the same (line breaks, subject spacing)', async () => {
-  const { fingerprintOf } = await import('../../src/outbox/draft-state');
+  const { fingerprintOf, isEmpty } = await import('../../src/outbox/draft-state');
   const base = fields({ subject: 'Lunch  at noon ', html: '<p>a</p>\n<p>b</p>\n' });
   const back = fields({ subject: 'Lunch at noon', html: '<p>a</p>\r\n<p>b</p>\r\n' });
   assert.equal(fingerprintOf(base), fingerprintOf(back));
@@ -294,6 +294,84 @@ test('fingerprint: the same content as the writer produces it hashes the same (l
     fingerprintOf(fields({ html: '<p>a</p>' })),
   );
   assert.notEqual(fingerprintOf(fields({ subject: 'A' })), fingerprintOf(fields({ subject: 'B' })));
+  // An empty body and the trivially-empty markup adapters give it back as hash the same.
+  assert.equal(fingerprintOf(fields({ html: '' })), fingerprintOf(fields({ html: '<p></p>' })));
+  assert.equal(
+    fingerprintOf(fields({ html: '<p></p>' })),
+    fingerprintOf(fields({ html: '<div><br></div>' })),
+  );
+  // The same rule isEmpty uses: a non-breaking space is no content either.
+  assert.equal(
+    fingerprintOf(fields({ html: '<p>&nbsp;</p>' })),
+    fingerprintOf(fields({ html: '' })),
+  );
+  // A body with real content still differs from empty.
+  assert.notEqual(fingerprintOf(fields({ html: '<p>x</p>' })), fingerprintOf(fields({ html: '' })));
+  // And a body that is only text-less still differs: an image, a rule, a table is content an
+  // edit can add — never an empty body, or the proof would swallow it as our echo.
+  for (const markup of [
+    '<img src="https://x/y.png">',
+    '<p><img src="data:image/png;base64,AAAA"></p>',
+    '<hr>',
+    '<table><tr><td></td></tr></table>',
+    '<a href="https://x"></a>',
+    '<iframe src="https://x/doc"></iframe>',
+    '<input value="hunter2">',
+    '<video src="https://x/v.mp4"></video>',
+  ])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is content, not an empty body`,
+    );
+  // Entity text and zero-width marks are content, not empty markup.
+  for (const markup of ['<p>&amp;</p>', '<p>&lt;</p>', '<p>\u200b</p>', '<p><b>&gt;</b></p>'])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is content, not an empty body`,
+    );
+  // Decorative attributes are ignored: a styled-but-empty p is still empty.
+  assert.equal(
+    fingerprintOf(fields({ html: '<p style="color:red"></p>' })),
+    fingerprintOf(fields({ html: '' })),
+  );
+  // But a reference attribute is content wherever it sits.
+  for (const markup of [
+    '<div style="background-image:url(cid:x.png)"></div>',
+    '<body background="cid:logo.png"></body>',
+    '<span style="display:block;background:url(http://t/p.gif)"></span>',
+    '<p poster="x.png"></p>',
+  ])
+    assert.notEqual(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} references content`,
+    );
+  // Emptied-editor containers suppress like <p></p>.
+  for (const markup of [
+    '<blockquote><br></blockquote>',
+    '<h2><br></h2>',
+    '<pre></pre>',
+    '<section></section>',
+    '<dl><dt></dt><dd></dd></dl>',
+  ])
+    assert.equal(
+      fingerprintOf(fields({ html: markup })),
+      fingerprintOf(fields({ html: '' })),
+      `${markup} is trivially empty`,
+    );
+  // isEmpty shares the rule: an image-only draft is content and does upload.
+  assert.equal(
+    isEmpty(
+      fields({ to: [], cc: [], bcc: [], attachments: [], subject: '', html: '<img src="x">' }),
+    ),
+    false,
+  );
+  assert.equal(
+    isEmpty(fields({ to: [], cc: [], bcc: [], attachments: [], subject: '', html: '<p></p>' })),
+    true,
+  );
   // A long run of line breaks costs nothing.
   const start = performance.now();
   fingerprintOf(fields({ html: `x${'\r\n'.repeat(500_000)}y` }));

@@ -29,7 +29,7 @@ import type {
   WorkflowChannel,
 } from '@aplos/engine/ports';
 import type { GoogleConnect } from '../oauth/connect';
-import { fetchAttachment, openThread } from './bodies';
+import { fetchAttachment, fetchOriginal, openThread } from './bodies';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
 import { deleteDraftCopy, saveDraftCopy } from './drafts';
@@ -264,6 +264,14 @@ export class GmailAdapter implements ProviderAdapter {
 
   fetchAttachment(ref: AttachmentRef, ctx: AdapterContext): Promise<AsyncIterable<Uint8Array>> {
     return fetchAttachment(this.rt.deps, ref, this.paced(ctx));
+  }
+
+  original(
+    remoteMessageId: string,
+    ctx: AdapterContext,
+    opts?: { signal?: AbortSignal },
+  ): Promise<AsyncIterable<Uint8Array>> {
+    return fetchOriginal(this.rt.deps, remoteMessageId, this.paced(ctx), opts);
   }
 
   search(query: ServerSearch, ctx: AdapterContext): Promise<SearchResult> {

@@ -9,6 +9,7 @@ import {
 } from './mailbox';
 import { SCOPE } from './oauth';
 import { emptyReply, jsonReply, type Reply } from './reply';
+import type { SearchLag } from './search-lag';
 import { RESPONSE, type Shape } from './schema';
 
 /**
@@ -29,6 +30,8 @@ export const SCOPES_FOR: Record<ScopeClass, string[]> = {
 
 export interface RouteContext {
   mailbox: Mailbox;
+  /** The search index lag after a send (`GmailEmulatorOptions.searchLagMs`). */
+  lag: SearchLag;
   query: URLSearchParams;
   params: Record<string, string>;
   body: Buffer;
@@ -160,7 +163,7 @@ function listFilter(query: URLSearchParams): {
 // ---------- handlers ----------
 
 const listMessages = (ctx: RouteContext): Reply => {
-  const hits = ctx.mailbox.select(listFilter(ctx.query));
+  const hits = ctx.mailbox.select(listFilter(ctx.query)).filter(h => ctx.lag.shows(h.id, ctx.now));
   const paged = page(hits, ctx.query);
   return jsonReply({
     ...(paged.items.length
@@ -185,12 +188,20 @@ const listThreads = (ctx: RouteContext): Reply => {
   });
 };
 
-/** Like Gmail, `drafts.list` hides a draft that is in Trash unless `includeSpamTrash=true`; `drafts.get` still finds it. */
+/**
+ * Like Gmail, `drafts.list` hides a draft that is in Trash unless `includeSpamTrash=true` (`drafts.get` still finds it),
+ * and `q` narrows it with the same query language as `messages.list` (`rfc822msgid:`, `subject:`, ...).
+ */
 const listDrafts = (ctx: RouteContext): Reply => {
   const withTrash = ctx.query.get('includeSpamTrash') === 'true';
+  const q = ctx.query.get('q') ?? '';
+  const matching = q
+    ? new Set(ctx.mailbox.select({ q, includeSpamTrash: withTrash }).map(h => h.id))
+    : undefined;
   const drafts = ctx.mailbox
     .listDrafts()
     .filter(d => withTrash || !d.message.labelIds.includes('TRASH'))
+    .filter(d => !matching || matching.has(d.message.id))
     .map(d => ({ date: d.message.internalDate, id: d.id, message: d.message }))
     .sort(compareKeyed);
   const paged = page(drafts, ctx.query);
@@ -258,6 +269,7 @@ function sendJson(ctx: RouteContext): Reply {
     decodeRaw(body.raw),
     typeof body.threadId === 'string' ? body.threadId : undefined,
   );
+  ctx.lag.sent(message.id, ctx.now);
   return jsonReply(labelsOut(message));
 }
 
@@ -268,7 +280,9 @@ function sendUpload(ctx: RouteContext): Reply {
       `Unsupported uploadType "${uploadType ?? ''}"; the emulator accepts uploadType=media with message/rfc822`,
     );
   if (!ctx.body.length) throw badRequest('Empty upload');
-  return jsonReply(labelsOut(ctx.mailbox.sendRaw(ctx.body)));
+  const message = ctx.mailbox.sendRaw(ctx.body);
+  ctx.lag.sent(message.id, ctx.now);
+  return jsonReply(labelsOut(message));
 }
 
 function draftMessageRaw(ctx: RouteContext): { raw: Buffer; threadId?: string } {

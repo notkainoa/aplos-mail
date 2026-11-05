@@ -16,7 +16,7 @@ export interface DoneScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
   /** Open a thread in the reader (the reader lane owns it; absent until it lands). */
-  readonly onOpen?: (id: string, kind: OpenKind) => void;
+  readonly onOpen?: (id: string, kind: OpenKind, listIds?: readonly string[]) => void;
 }
 
 function DoneBody(props: DoneScreenProps) {

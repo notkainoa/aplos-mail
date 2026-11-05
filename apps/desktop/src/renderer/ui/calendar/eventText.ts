@@ -41,12 +41,33 @@ export function whenOf(event: CalendarEventData): string {
   return event.allDay ? 'all day' : rangeOf(event.start, event.end);
 }
 
-/** Accessible name of an entry: title, time, then its calendar or its status. A plan says "from mail" right after the
- * title, in the order the outline draws it, so the name holds the visible text (WCAG 2.5.3). */
-export function eventLabel(event: CalendarEventData): string {
+/** What a grid block draws beyond its title and time, so the name can say the same words in the same order. */
+export interface LabelDrawn {
+  /** The place is drawn after the time (a wide, full-height block). */
+  readonly place?: boolean;
+}
+
+/** Accessible name of an entry. It begins with the words the block draws, in the order it draws them (title, time,
+ * then the place when it is drawn), and only then adds what is not drawn: its calendar and its status. So the name
+ * always holds the visible text (WCAG 2.5.3). A plan says "from mail" right after the title, as the outline does. */
+export function eventLabel(event: CalendarEventData, drawn: LabelDrawn = {}): string {
   if (event.kind === 'plan')
     return [event.title, 'from mail', whenOf(event), 'not added yet'].join(', ');
-  const parts = [event.title, whenOf(event), event.calendar.name];
+  const place = drawn.place && event.place ? [event.place] : [];
+  const parts = [event.title, whenOf(event), ...place, event.calendar.name];
+  if (event.unanswered) parts.push('invitation, not answered yet');
+  return parts.join(', ');
+}
+
+/** Accessible name of an agenda row. The row draws the start time, the title, then `sub`, so the name starts with
+ * those three, then says what the row does not: when it ends, that a plan is from mail and not added yet, and an
+ * invitation that is still unanswered. */
+export function agendaLabel(event: CalendarEventData, sub?: string): string {
+  const lead = event.allDay ? 'All day' : timeOf(event.start);
+  const parts = [lead, event.title];
+  if (sub) parts.push(sub);
+  if (!event.allDay) parts.push(`ends ${timeOf(event.end)}`);
+  if (event.kind === 'plan') parts.push('from mail, not added yet');
   if (event.unanswered) parts.push('invitation, not answered yet');
   return parts.join(', ');
 }

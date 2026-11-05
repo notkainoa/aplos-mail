@@ -23,7 +23,7 @@ import {
   activationPolicy,
   createProcessState,
   createQuitGate,
-  drain,
+  closeThenRelease,
   pendingWork,
   quitWarning,
   quitWarningButtons,
@@ -178,8 +178,10 @@ function finishQuit() {
     clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
   };
   const engineClosed = realPath ? realEngine.close() : service?.close();
-  void drain(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers).finally(() => {
-    lock?.release();
+  // The data lock is let go only when the engine confirmed it closed: otherwise it stays held until this process is gone.
+  void closeThenRelease(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers, () =>
+    lock?.release(),
+  ).finally(() => {
     updates?.stop();
     if (!(installUpdate && updates?.install())) app.quit();
   });
@@ -302,6 +304,8 @@ else {
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })
     .catch(error => {
+      // A quit that landed during the start-up is finishing on its own (finishQuit): no dialog, no second quit.
+      if (closing) return;
       dialog.showErrorBox(
         'Aplos Mail could not start',
         error instanceof Error ? error.message : 'An unknown startup error occurred.',

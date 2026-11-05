@@ -231,7 +231,7 @@ export const CONTRACT_METHODS = {
     method: 'Account/lease',
     kind: 'call',
     gaps: [],
-    notes: 'every account when accountId is absent',
+    notes: 'a plain call ({leases}, not a receipt); every account when accountId is absent',
   },
   'ai.providers': {
     method: 'Ai/providers',
@@ -261,19 +261,20 @@ export const CONTRACT_METHODS = {
     method: 'Ai/setKey',
     kind: 'call',
     gaps: [],
-    notes: 'secret: never logged or echoed',
+    notes:
+      'secret: a plain call so the layer keeps none of the key (no operation, no undo entry); never logged or echoed',
   },
   'ai.removeKey': {
     method: 'Ai/removeKey',
     kind: 'call',
     gaps: [],
-    notes: 'secret; refused for a key from the backend environment',
+    notes: 'a plain call like setKey; refused for a key from the backend environment',
   },
   'ai.testKey': {
     method: 'Ai/testKey',
     kind: 'call',
     gaps: [],
-    notes: 'no mail is sent',
+    notes: 'a plain call ({ok, ms?}, not a receipt); no mail is sent',
   },
   'ask.decide': {
     method: 'Ask/decide',
@@ -299,6 +300,13 @@ export const CONTRACT_METHODS = {
     gaps: [],
     notes:
       'opId minted; receipt joins operations and the undo stack; undoUntil is the hold before guests are told',
+  },
+  'event.hide': {
+    method: 'Event/hide',
+    kind: 'call',
+    gaps: [],
+    notes:
+      'opId minted; receipt joins operations and the undo stack; Aplos-side only, never written to the provider',
   },
   'event.rsvp': {
     method: 'Event/rsvp',
@@ -340,7 +348,7 @@ export const CONTRACT_METHODS = {
     method: 'Listener/set',
     kind: 'call',
     gaps: [],
-    notes: 'UI-only method',
+    notes: 'UI-only method; a plain call (its output is the ListenerState, not a receipt)',
   },
   'clients.list': {
     method: 'Clients/list',
@@ -352,13 +360,14 @@ export const CONTRACT_METHODS = {
     method: 'Clients/grant',
     kind: 'call',
     gaps: [],
-    notes: 'UI-only method; the token never crosses the contract',
+    notes:
+      'UI-only method; a plain call ({client}, not a receipt); the token never crosses the contract',
   },
   'clients.revoke': {
     method: 'Clients/revoke',
     kind: 'call',
     gaps: [],
-    notes: 'UI-only method',
+    notes: 'UI-only method; a plain call (Ok, not a receipt)',
   },
   'clients.audit': {
     method: 'Clients/audit',
@@ -376,13 +385,13 @@ export const CONTRACT_METHODS = {
     method: 'Queue/retry',
     kind: 'call',
     gaps: [],
-    notes: '',
+    notes: 'a plain call (Ok, not a receipt); the inspector re-lists',
   },
   'queue.discard': {
     method: 'Queue/discard',
     kind: 'call',
     gaps: [],
-    notes: '',
+    notes: 'a plain call (Ok, not a receipt); the inspector re-lists',
   },
   'window.openOnboarding': {
     method: 'Window/openOnboarding',
@@ -425,6 +434,12 @@ export const CONTRACT_METHODS = {
     kind: 'native',
     gaps: [],
     notes: '',
+  },
+  'shell.open': {
+    method: 'Shell/open',
+    kind: 'native',
+    gaps: [],
+    notes: 'main opens it through its external() gate: http, https or mailto, no credentials',
   },
   'notification.test': {
     method: 'Notification/test',

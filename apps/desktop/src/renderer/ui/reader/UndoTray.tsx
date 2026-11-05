@@ -27,7 +27,7 @@ function copyFor(state: UndoTrayState): TrayCopy {
       };
     case 'uncertain':
       return {
-        text: 'We could not confirm this was sent.',
+        text: 'Couldn’t confirm this was sent.',
         actions: [
           { action: 'checkSent', label: 'Check Sent' },
           { action: 'sendAnyway', label: 'Send anyway' },

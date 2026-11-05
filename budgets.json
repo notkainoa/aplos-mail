@@ -420,12 +420,12 @@
       "environment": "every merge (CI summary and local runs)",
       "gate": "tighten-only",
       "calibration": "set",
-      "value": 400000,
+      "value": 450000,
       "unit": "bytes",
-      "notes": "Asserted by tests/portability.test.ts; a failing test is never silenced. The limit only tightens.",
+      "notes": "Asserted by tests/portability.test.ts; a failing test is never silenced. Raised from 400000 by owner decision (DECISIONS.md 2026-11-03; STATUS DECIDED 2026-11-04 20:00); the last raise without a new decision. The test counts the core chunk; measure:budgets still counts the whole minified bundle including the lazy demo data (11 KB), so it reads higher.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": 30,
-      "lastMeasured": "2026-10-28",
+      "lastMeasured": "2026-11-03",
       "dueBy": "2026-11-07"
     },
     {
@@ -470,7 +470,7 @@
       "notes": "Q3 acceptance. The limit only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": 30,
-      "lastMeasured": "2026-11-03",
+      "lastMeasured": "2026-11-04",
       "dueBy": "2026-11-07"
     },
     {
