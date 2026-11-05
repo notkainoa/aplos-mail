@@ -422,6 +422,9 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     isOpen: () => alive(win),
     focusOpen() {
       if (!alive(win)) return false;
+      // A window still waiting for its first paint is not raised (bring declines it): say so, so the caller does not
+      // pull the app forward over a window nobody can see yet.
+      if (!deps.testMode && !win.hasPainted()) return false;
       bring(win);
       return true;
     },
@@ -643,6 +646,29 @@ export function createQuitGate(confirm: () => Promise<boolean>, begin: () => voi
             // Nothing safe to report from here; the next quit request asks again.
           }
         });
+    },
+  };
+}
+
+/**
+ * Holds `aplos://oauth-return` links until the first window choice has been applied. A link that arrives while
+ * `startWindows` is still deciding (cold start, `open-url` or argv) would otherwise be answered with no window to
+ * focus and its one-time nonce burned. `hold` says whether the link was held back (bounded; the rest are dropped,
+ * which is the safe direction: a dropped link is a no-op and the page keeps its visible fallback link).
+ */
+export function createLinkGate(cap: number) {
+  let open = false;
+  const held: string[] = [];
+  return {
+    hold(link: string): boolean {
+      if (open) return false;
+      if (held.length < cap) held.push(link);
+      return true;
+    },
+    /** Opens the gate and returns what was held, oldest first. */
+    release(): string[] {
+      open = true;
+      return held.splice(0);
     },
   };
 }

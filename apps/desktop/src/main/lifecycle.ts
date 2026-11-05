@@ -31,6 +31,7 @@ import { service, bootEngine, latestState, realPath, realEngine } from './engine
 import {
   activationPolicy,
   applyWindowChoice,
+  createLinkGate,
   createProcessState,
   createQuitGate,
   closeThenRelease,
@@ -73,13 +74,12 @@ let stopPower: (() => void) | undefined;
  * they are queued, bounded, and answered after `startWindows` — the nonce's own TTL still applies at
  * consume time, so a stale one is a silent no-op either way.
  */
-const queuedOauthReturns: string[] = [];
+// Held until the first window choice has been applied (not just until `started`): startup is async now, so a link
+// answered earlier would find no window to focus and burn its one-time nonce.
+const oauthGate = createLinkGate(8);
 function routeLink(raw: string) {
   if (isOauthReturnLink(raw)) {
-    if (!started) {
-      if (queuedOauthReturns.length < 8) queuedOauthReturns.push(raw);
-      return;
-    }
+    if (oauthGate.hold(raw)) return;
     handleOauthReturn(raw);
     return;
   }
@@ -328,7 +328,7 @@ else {
       if (atLogin) setPolicy('accessory');
       // The choice is applied through the same guards as every activation, so whichever answer lands
       // second never makes a second window (F3); a failure falls back to the mail window (M3).
-      void startWindows(atLogin)
+      const windowsSettled = startWindows(atLogin)
         .then(choice =>
           applyWindowChoice(choice, {
             onboardingOpen: () => onboarding.isOpen(),
@@ -347,8 +347,11 @@ else {
           }),
         );
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
-      for (const link of queuedOauthReturns.splice(0)) handleOauthReturn(link);
-      for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
+      // Links that arrived while the window was being chosen (and the cold-start argv) are answered once it exists.
+      void windowsSettled.finally(() => {
+        for (const link of oauthGate.release()) handleOauthReturn(link);
+        for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
+      });
     })
     .catch(failedStart);
 }

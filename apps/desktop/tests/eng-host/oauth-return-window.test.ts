@@ -2,10 +2,13 @@
 // later add can never surface (or create) the setup window.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   createOnboarding,
   focusOauthReturnWindow,
   oauthReturnTarget,
+  createLinkGate,
 } from '../../src/host/lifecycle';
 import type { WindowPort } from '../../src/host/lifecycle';
 
@@ -79,8 +82,9 @@ test('focusOpen raises the open welcome window and never creates one', () => {
   assert.equal(onboarding.focusOpen(), false);
   onboarding.open('first');
   assert.ok(welcome);
-  // A window still waiting for its first paint is not shown early (F4, #316's bring): the focus is a no-op until it paints.
-  assert.equal(onboarding.focusOpen(), true);
+  // A window still waiting for its first paint is not shown early (F4, #316's bring): the focus is declined, so a
+  // deep link never raises the app over a window nobody can see yet.
+  assert.equal(onboarding.focusOpen(), false);
   assert.equal(welcome.focused, false);
   welcome.painted = true;
   assert.equal(onboarding.focusOpen(), true);
@@ -143,4 +147,39 @@ test('focusOauthReturnWindow raises the app only after a live window took the fo
   });
   assert.equal(none, 'none');
   assert.equal(raised2, 0);
+});
+
+test('a link gate holds oauth-return links until the first window choice is applied', () => {
+  const gate = createLinkGate(2);
+  assert.equal(
+    gate.hold('aplos://oauth-return?n=a'),
+    true,
+    'held while the window is being chosen',
+  );
+  assert.equal(gate.hold('aplos://oauth-return?n=b'), true);
+  assert.equal(
+    gate.hold('aplos://oauth-return?n=c'),
+    true,
+    'over the cap: still held back, but dropped',
+  );
+  assert.deepEqual(
+    gate.release(),
+    ['aplos://oauth-return?n=a', 'aplos://oauth-return?n=b'],
+    'oldest first, bounded',
+  );
+  assert.equal(gate.hold('aplos://oauth-return?n=d'), false, 'after the choice it answers at once');
+  assert.deepEqual(gate.release(), [], 'released once');
+});
+
+test('startup releases the held links only after the window choice was applied (source order)', () => {
+  const src = readFileSync(join(import.meta.dirname, '../../src/main/lifecycle.ts'), 'utf8');
+  const chain = src.indexOf('const windowsSettled = startWindows(atLogin)');
+  const release = src.indexOf('oauthGate.release()');
+  assert.ok(chain > 0 && release > chain, 'the drain sits after the startWindows chain');
+  assert.match(
+    src,
+    /windowsSettled\.finally\(\(\) => \{[\s\S]*oauthGate\.release\(\)/,
+    'drained from the settled chain',
+  );
+  assert.doesNotMatch(src, /queuedOauthReturns/, 'the started-only queue is gone');
 });
