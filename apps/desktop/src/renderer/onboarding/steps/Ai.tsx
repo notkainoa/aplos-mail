@@ -10,6 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState }
 import { api, useConsent, useSettings } from '../../data';
 import type { AiProvider, Input, Output } from '../../data';
 import { backFooter, missingMethod, type StepChrome, type StepKeys } from '../flow';
+import { reasonOf } from '../reason';
 import { ChoiceRow, ConsentCard, OnboardingStep } from '../../ui/onboarding';
 import { Button } from '../../ui/buttons-keys';
 import { TextField } from '../../ui/controls';
@@ -388,14 +389,6 @@ export const defaultAiPorts: AiPorts = {
   setSettings: async patch => api.settings.set({ patch }),
   grantConsent: async input => api.consent.grant(input),
 };
-
-function reasonOf(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'reasonCode' in error) {
-    const code = (error as { reasonCode?: unknown }).reasonCode;
-    return typeof code === 'string' ? code : undefined;
-  }
-  return undefined;
-}
 
 export interface AiContainerProps {
   readonly chrome: StepChrome;
