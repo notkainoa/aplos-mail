@@ -97,6 +97,7 @@ function harness(
       data = { ...data, ...patch };
     },
     overlay: patch => void overlays.push(patch),
+    accountOverlay: () => {},
     fail: failure => void failures.push(failure),
     ...(over.schedule ? { schedule: over.schedule } : {}),
   });
@@ -613,6 +614,7 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
       },
       setData: () => {},
       overlay: () => {},
+      accountOverlay: () => {},
       fail: f => {
         failure = f;
       },
