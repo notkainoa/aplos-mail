@@ -713,7 +713,7 @@ export interface PortWindow {
   desktop(frame: DesktopFrame): void;
 }
 
-export { trustedCaller, type CallerEvent } from './caller';
+export { trustedCaller, type CallerEvent } from '../../shared/trusted-caller';
 
 export interface BrokerDeps {
   /** A new `MessageChannelMain`: one end for the engine, one for the window. */
