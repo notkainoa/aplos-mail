@@ -2,7 +2,7 @@
    internal button, keycap and dialog. Progress is neutral: done --ink-2, paused --dusk, failed --stamp. Loops use
    --dur-status. Under reduced motion the Spinner glyph KEEPS turning (DESIGN 11.5: "spinners stay"), while the
    indeterminate runner is static (DESIGN 4.8 `status` Reduced column): a centred 30 % bar inside its track. DESIGN 4.8
-   and 11.5 disagree about spinners; 11.5 is followed for the Spinner, 4.8 for the runner and the checklist marker. */
+   and 11.5 read together (clarified in DESIGN 11.5): 4.8 for the runner and the checklist marker, 11.5 for the Spinner. */
 
 /* ───────────── Spinner (only after 150 ms) ───────────── */
 
