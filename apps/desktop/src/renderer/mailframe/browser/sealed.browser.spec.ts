@@ -315,6 +315,11 @@ function forgery(h: number): string {
   return `parent.postMessage({token:'${PINNED}',h:${h},w:innerWidth,bg:'${DARK}',ready:true,marks:0},'*')`;
 }
 
+/** The reporter's one post, exactly as `REPORTER_SOURCE` spells it (`host` is its `w.parent`). */
+const REPORTER_POST = "host.postMessage(message, '*')";
+/** A copy of the real reporter with its post swapped for a forgery: same code, a different hash. */
+const FORGED_REPORTER = REPORTER_SOURCE.replace(REPORTER_POST, forgery(4326));
+
 /**
  * Unsanitised on purpose (the sanitiser strips all of these): every way an email might run script, each posting a
  * perfect forgery with the right token, plus a copy of the reporter with its post swapped for a forgery.
@@ -327,9 +332,17 @@ const HOSTILE = [
   `<svg onload="${forgery(4323)}"></svg>`,
   `<script src="data:text/javascript,${encodeURIComponent(forgery(4324))}"></script>`,
   `<iframe srcdoc="<script>${forgery(4325).replace('parent', 'parent.parent')}</script>"></iframe>`,
-  `<script>${REPORTER_SOURCE.replace("w.parent.postMessage(message, '*')", forgery(4326))}</script>`,
+  `<script>${FORGED_REPORTER}</script>`,
   '</body></html>',
 ].join('');
+
+test('the forged reporter copy is a forgery, never an exact copy of the reporter', () => {
+  // An exact copy would carry the reporter's hash, so the CSP would run it and the case would prove nothing.
+  expect(REPORTER_SOURCE.split(REPORTER_POST)).toHaveLength(2);
+  expect(FORGED_REPORTER).not.toBe(REPORTER_SOURCE);
+  expect(FORGED_REPORTER).toContain(forgery(4326));
+  expect(FORGED_REPORTER).not.toContain(REPORTER_POST);
+});
 
 function forgedHeights(posted: unknown[]): unknown[] {
   return posted
@@ -365,6 +378,10 @@ test('positive control: without the CSP header the same email forges its size an
   const traffic = await openHost(page, server, `real/${PINNED}`);
   await page.waitForFunction(() =>
     window.__mailframe.posted.some(p => (p as { h?: unknown }).h === 4321),
+  );
+  // The reporter copy forges too (its swapped post runs once it measures), so the CSP case above refuses a real forgery.
+  await page.waitForFunction(() =>
+    window.__mailframe.posted.some(p => (p as { h?: unknown }).h === 4326),
   );
   const state = await hostState(page);
   // The harness sees a load from inside the out-of-process frame, so the zero counts elsewhere are not blind.
