@@ -2,7 +2,7 @@
  * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
  * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
- * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-screens'`). The boot proof reads Home's section
+ * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-settings`'s). The boot proof reads Home's section
  * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
  * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
  * `useHome()` yet.
@@ -37,6 +37,7 @@ import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
 import { ComposeScreen, composeHeader } from './screens/compose';
 import { ReaderScreen } from './screens/reader';
+import { SettingsMount } from './shell/settingsHost';
 import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
@@ -357,7 +358,7 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded), Settings is `ui-settings`' mounted by `shell/settingsHost`; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
@@ -370,6 +371,7 @@ export function renderScreen(_client: AppClient, screen: Screen) {
   if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;
   if (screen === 'done') return <DoneSlot />;
+  if (screen === 'settings') return <SettingsMount />;
   return isListPlace(screen) ? <ListSlot which={screen} /> : undefined;
 }
 

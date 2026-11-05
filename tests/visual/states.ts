@@ -5,6 +5,7 @@
 
 import { calendarStates } from './states.calendar';
 import { readerStates } from './states.reader';
+import { shellSettingsStates } from './states.shell';
 
 export type Theme = 'light' | 'dark';
 
@@ -808,6 +809,8 @@ export const STATES: readonly VisualState[] = [
   ...readerStates,
   // ui-calendar
   ...calendarStates,
+  // ui-shell: Settings mounted in the real app
+  ...shellSettingsStates,
 ];
 
 export const THEMES: readonly Theme[] = ['light', 'dark'];
