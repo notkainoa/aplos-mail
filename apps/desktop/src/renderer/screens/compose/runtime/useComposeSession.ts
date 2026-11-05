@@ -65,6 +65,28 @@ function newSession(initial: ComposeState): ComposeSession {
   return session;
 }
 
+/** The sessions of the composers mounted now, so the window can save them all before it closes. */
+const liveSessions = new Set<ComposeSession>();
+
+/**
+ * Saves every mounted composer's unsaved text and waits for the engine to answer, for at most `limitMs`. Used when
+ * main asks the window to close: a slow engine must not hold the window open, and text the engine never took stays
+ * kept (`closeSession`).
+ */
+export async function flushComposeSessions(limitMs = 2000): Promise<void> {
+  const all = [...liveSessions];
+  for (const session of all) session.dispatch({ type: 'flush' });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<void>(resolve => {
+    timer = setTimeout(resolve, limitMs);
+  });
+  try {
+    await Promise.race([Promise.all(all.map(session => session.settled())), limit]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** One session for the composer's lifetime, created when `initial` first becomes known. */
 function useSessionFor(initial: ComposeState | null): ComposeSession | null {
   const [session, setSession] = useState<ComposeSession | null>(null);
@@ -75,8 +97,10 @@ function useSessionFor(initial: ComposeState | null): ComposeSession | null {
     const created = newSession(initial);
     releaseKeptFor(initial);
     setSession(created);
+    liveSessions.add(created);
     const stopFlushing = flushOnHide(created);
     return () => {
+      liveSessions.delete(created);
       stopFlushing();
       closeSession(created);
     };

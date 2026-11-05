@@ -32,6 +32,8 @@ const production = {
   'media-src': ["'self'", 'blob:'],
   'connect-src': ["'self'"],
   'font-src': ["'self'", 'data:'],
+  // Only the app's own sealed mail scheme may be framed (ARCH 9.3).
+  'frame-src': ['aplos-mail:'],
   'object-src': ["'none'"],
   'base-uri': ["'none'"],
   'form-action': ["'none'"],
@@ -55,7 +57,12 @@ const scriptDirectives = [
 function scriptLoosening(policy: string): string[] {
   return [...parse(policy)]
     .filter(([name]) => scriptDirectives.includes(name))
-    .filter(([, sources]) => !(sources.length === 1 && ["'self'", "'none'"].includes(sources[0])))
+    .filter(
+      ([name, sources]) =>
+        !(sources.length === 1 && ["'self'", "'none'"].includes(sources[0])) &&
+        // The one extra source: the app's own sealed mail scheme, as a frame source only.
+        !(name === 'frame-src' && sources.length === 1 && sources[0] === 'aplos-mail:'),
+    )
     .map(([name, sources]) => `${name} ${sources.join(' ')}`);
 }
 
@@ -107,7 +114,8 @@ test('rendererCsp("production") is the pinned policy', () => {
 
 test('the script-directive guard catches CSP3 overrides that re-allow inline or remote script', () => {
   const loosened = [
-    rendererCsp('production'),
+    "default-src 'self'",
+    "script-src 'self'",
     "script-src-elem 'self' 'unsafe-inline' https:",
     "script-src-attr 'unsafe-inline' 'unsafe-hashes'",
     'worker-src blob: data: https:',
@@ -115,6 +123,9 @@ test('the script-directive guard catches CSP3 overrides that re-allow inline or 
   ].join('; ');
   assert.equal(scriptLoosening(loosened).length, 4);
   assert.equal(scriptLoosening("script-src 'self' 'nonce-x'").length, 1);
+  assert.equal(scriptLoosening('frame-src aplos-mail:').length, 0);
+  assert.equal(scriptLoosening('script-src aplos-mail:').length, 1);
+  assert.equal(scriptLoosening('frame-src aplos-mail: https:').length, 1);
 });
 
 test('the dev policy allows the preview its own ports', () => {

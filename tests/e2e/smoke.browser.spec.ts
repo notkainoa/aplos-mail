@@ -11,12 +11,17 @@ test('browser preview renders the app shell and stays on loopback', async ({ pag
   await page.goto('/');
 
   await expect(page).toHaveTitle('Aplos Mail');
-  const mailboxes = page.getByRole('navigation', { name: 'Mailboxes' });
-  await expect(mailboxes).toBeVisible();
-  for (const name of ['Home', 'Later', 'All mail', 'Drafts', 'Sent']) {
-    await expect(mailboxes.getByRole('button', { name: new RegExp(`^${name}`) })).toBeVisible();
+  const places = page.getByRole('navigation', { name: 'Places' });
+  await expect(places).toBeVisible();
+  for (const name of ['Search', 'Home', 'Later', 'Calendar']) {
+    await expect(places.getByRole('button', { name: new RegExp(`^${name}`) })).toBeVisible();
   }
-  await expect(page.getByRole('button', { name: 'Compose' })).toBeVisible();
+  const mail = page.getByRole('navigation', { name: 'Mail' });
+  await expect(mail).toBeVisible();
+  for (const name of ['All mail', 'Done', 'Drafts', 'Sent']) {
+    await expect(mail.getByRole('button', { name: new RegExp(`^${name}`) })).toBeVisible();
+  }
+  await expect(page.getByRole('button', { name: 'New message' })).toBeVisible();
 
   // Let late fetches (state load, event stream) happen before judging the network.
   await page.waitForLoadState('networkidle');

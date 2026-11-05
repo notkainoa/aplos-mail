@@ -4,13 +4,15 @@
  * `loadRenderer`); every other window carries no `window` parameter and is the mail window.
  *
  * Order of the rule:
- * 1. The legacy switch wins (`VITE_APLOS_LEGACY=1` or `?legacy=1`), and so does every production build: no release
- *    ships stand-in data, so the new roots cannot boot there yet.
- * 2. In a development build the onboarding window boots `OnboardingApp`, any other window boots `App`.
+ * 1. The legacy switch wins (`VITE_APLOS_LEGACY=1` or `?legacy=1`). So does a build without the real engine's bridge
+ *    that is not a development build: no release ships stand-in data, so the new roots boot outside development only
+ *    on the real engine.
+ * 2. Otherwise the onboarding window boots `OnboardingApp`, any other window boots `App`.
  *
  * `transportOf` then picks the session a new root connects: `window.aplosEngine` (the real engine, `bridge.ts`)
- * when the preload exposed it, the in-process stand-in otherwise. A release never reaches it — rule 1 sends every
- * non-development build to the legacy renderer first — so the bridge can never boot there.
+ * when the preload exposed it, the in-process stand-in otherwise (a development build without the bridge: previews,
+ * tests, the demo). Preload exposes the bridge only on main's real-engine path (`APLOS_ENGINE=real`, never in a
+ * release build), so a release still boots the legacy renderer.
  *
  * The test hook `globalThis.__aplosWindowKind` (a browser test sets it before the entry runs) names the window kind
  * when the URL does not.
@@ -53,9 +55,36 @@ export function onboardingMode(search: string): OnboardingMode {
   return new URLSearchParams(search).get('mode') === 'review' ? 'review' : 'first';
 }
 
-/** True when the legacy renderer must boot: the env switch, `?legacy=1`, or a build that is not a development build. */
-export function wantsLegacy({ search, dev, legacyEnv }: EntryInput): boolean {
-  return legacyEnv === true || new URLSearchParams(search).get('legacy') === '1' || !dev;
+/** True when the legacy renderer must boot: the env switch, `?legacy=1`, or a production build without the real engine. */
+export function wantsLegacy({ search, dev, legacyEnv, bridge }: EntryInput): boolean {
+  const params = new URLSearchParams(search);
+  return (
+    legacyEnv === true ||
+    params.get('legacy') === '1' ||
+    // A pop-out (`?draft=<id>` or `?thread=<id>`, main's `popout()`) is the legacy renderer's until the new one has them.
+    params.has('draft') ||
+    params.has('thread') ||
+    (!dev && bridge !== true)
+  );
+}
+
+/**
+ * Whether `host` carries the preload's engine bridge (`window.aplosEngine` with `call` and `subscribe`), read without
+ * loading `bridge.ts`. Never throws. `bridge.ts` validates it again before a session is made.
+ */
+export function hasBridgeShape(host: unknown = globalThis): boolean {
+  try {
+    const api = (host as { aplosEngine?: { call?: unknown; subscribe?: unknown } } | null)
+      ?.aplosEngine;
+    return (
+      api !== null &&
+      typeof api === 'object' &&
+      typeof api.call === 'function' &&
+      typeof api.subscribe === 'function'
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** The root to mount. */
@@ -65,9 +94,9 @@ export function chooseEntry(input: EntryInput): EntryKind {
 }
 
 /**
- * The transport a new root connects: the real engine over `bridge.ts` only when the window carries the preload
- * bridge and is not on the legacy path (`wantsLegacy` stays authoritative, so a development build without the
- * legacy switch is the one place `engine` comes back).
+ * The transport a new root connects: the real engine over `bridge.ts` when the window carries the preload bridge and is
+ * not on the legacy path (`wantsLegacy` stays authoritative); the stand-in otherwise, which only a development build
+ * reaches.
  */
 export function transportOf(input: EntryInput): Transport {
   return input.bridge === true && !wantsLegacy(input) ? 'engine' : 'standin';

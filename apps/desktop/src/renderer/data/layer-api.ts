@@ -159,6 +159,8 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
     window: {
       openOnboarding: args => c.window.openOnboarding(args),
       finishOnboarding: args => c.window.finishOnboarding(args),
+      closeReady: args => c.window.closeReady(args),
+      closeCancel: args => c.window.closeCancel(args),
     },
     system: {
       login: args => c.system.login(args),

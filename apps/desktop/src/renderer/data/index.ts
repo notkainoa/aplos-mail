@@ -1005,6 +1005,10 @@ export const api: DataApi = {
       forward('window', 'openOnboarding', args)) as DataApi['window']['openOnboarding'],
     finishOnboarding: ((...args: unknown[]) =>
       forward('window', 'finishOnboarding', args)) as DataApi['window']['finishOnboarding'],
+    closeReady: ((...args: unknown[]) =>
+      forward('window', 'closeReady', args)) as DataApi['window']['closeReady'],
+    closeCancel: ((...args: unknown[]) =>
+      forward('window', 'closeCancel', args)) as DataApi['window']['closeCancel'],
   },
   system: {
     login: ((...args: unknown[]) => forward('system', 'login', args)) as DataApi['system']['login'],

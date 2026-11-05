@@ -6,22 +6,23 @@
  * stylesheet and the shell's layout. With `?window=onboarding` — the query main gives the welcome window, and
  * the browser-preview route "Try demo mail" and "Show welcome" navigate to — it mounts `onboarding/OnboardingApp`
  * on the same stand-in switch and the same data layer, never a separate engine.
- * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1`
- * loads `./legacy/main` instead, and so does every production build, because no release ships stand-in data (plan 30
- * 4.1 release rule). When preload exposes `window.aplosEngine` (main's real-engine path) the new roots connect over
- * `bridge.ts` instead of the stand-in, still in a development build only; the browser preview's tokenised HTTP and
- * SSE transport is still to come.
+ * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1` loads `./legacy/main` instead, and so does a
+ * production build without the real engine's bridge, because no release ships stand-in data (plan 30 4.1 release
+ * rule). When preload exposes `window.aplosEngine` (main's real-engine path, `APLOS_ENGINE=real`, never in a release
+ * build) the new roots connect over `bridge.ts` in any build; only a development build without it uses the in-process
+ * stand-in. A production build whose bridge fails to connect falls back to the legacy renderer, never to stand-in
+ * data. The browser preview's tokenised HTTP and SSE transport is still to come.
  *
- * `entry.ts` holds the rule. In a development build the onboarding window (`?window=onboarding&mode=first|review`, as
- * main loads it) boots `OnboardingApp` on a fresh install (the `empty` scenario) with `onboarding.css` after the one
- * stylesheet; every other window boots `App`. Production builds and the legacy switch still load the legacy renderer.
+ * `entry.ts` holds the rule: the onboarding window (`?window=onboarding&mode=first|review`, as main loads it) boots
+ * `OnboardingApp` (on a fresh install, the `empty` scenario, when it runs on the stand-in) with `onboarding.css` after
+ * the one stylesheet; every other window boots `App`.
  *
  * Everything the new app needs is imported on its own path, so the legacy path loads none of it (no new stylesheet,
  * no fixture, no zod) and the mail window loads none of the onboarding window's.
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { chooseEntry, onboardingMode, transportOf, type EntryInput } from './entry';
+import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
 import { scenarioParam } from './onboarding/route';
 import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
@@ -32,6 +33,7 @@ const input: EntryInput = {
   search: window.location.search,
   dev: import.meta.env.DEV,
   legacyEnv: import.meta.env.VITE_APLOS_LEGACY === '1',
+  bridge: hasBridgeShape(),
   ...(hook ? { hook } : {}),
 };
 const entry = chooseEntry(input);
@@ -71,11 +73,34 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
   }
 }
 
+/**
+ * What a window on the real engine owes main once its root is up: answer `prepare-close` (main keeps the window
+ * disabled until it hears `Window/closeReady`) and, for the mail window, open the screen main asks for (first sync's
+ * "Open Settings"). Both listeners are typed, so neither takes the deep-link and command events held for the app's
+ * own first plain subscribe. Errors never reach the page: a window that cannot answer is the lesser harm.
+ */
+async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
+  const [{ answerPrepareClose }, { api }, { flushComposeSessions }] = await Promise.all([
+    import('./shell/closeHandshake'),
+    import('./data'),
+    import('./screens/compose/runtime/useComposeSession'),
+  ]);
+  answerPrepareClose(window.aplos, {
+    save: kind === 'mail' ? () => flushComposeSessions() : async () => undefined,
+    ready: () => api.window.closeReady(),
+    cancel: () => api.window.closeCancel(),
+  });
+  if (kind !== 'mail') return;
+  const [{ listenMainNavigate }, { openRoute }] = await Promise.all([
+    import('./shell/mainNavigate'),
+    import('./shell'),
+  ]);
+  listenMainNavigate(window.aplos, openRoute);
+}
+
 async function boot(): Promise<void> {
-  const [{ App }, { connectStandInDataLayer }, { createClient }] = await Promise.all([
+  const [{ App }] = await Promise.all([
     import('./App'),
-    import('./data/standin-layer'),
-    import('@aplos/contract/client'),
     import('./ui/styles.css'),
     import('./shell/shell.css'),
     import('./screens/screens.css'),
@@ -90,8 +115,14 @@ async function boot(): Promise<void> {
         <App client={engine.client} />
       </StrictMode>,
     );
-    return;
+    return serveMain('mail').catch(() => undefined);
   }
+  // Stand-in data is a development build's alone: a release never fetches the fixture.
+  if (!import.meta.env.DEV) return bootLegacy();
+  const [{ connectStandInDataLayer }, { createClient }] = await Promise.all([
+    import('./data/standin-layer'),
+    import('@aplos/contract/client'),
+  ]);
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario });
   const client = createClient(layer.engine.connect());
@@ -112,14 +143,17 @@ async function bootOnboarding(): Promise<void> {
   // One stylesheet first, then the onboarding window's layout file: the later one wins, so the order is the rule.
   await import('./ui/styles.css');
   await import('./onboarding/onboarding.css');
-  const [{ OnboardingApp }, { connectStandInDataLayer }, ports] = await Promise.all([
+  const [{ OnboardingApp }, ports] = await Promise.all([
     import('./onboarding/OnboardingApp'),
-    import('./data/standin-layer'),
     import('./onboardingPorts'),
   ]);
   // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
   const engine = await connectEngine();
-  if (!engine) connectStandInDataLayer({ scenario: scenario ?? 'empty' });
+  if (!engine) {
+    if (!import.meta.env.DEV) return bootLegacy();
+    const { connectStandInDataLayer } = await import('./data/standin-layer');
+    connectStandInDataLayer({ scenario: scenario ?? 'empty' });
+  }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <OnboardingApp
@@ -129,10 +163,29 @@ async function bootOnboarding(): Promise<void> {
       />
     </StrictMode>,
   );
+  if (engine) return serveMain('onboarding').catch(() => undefined);
 }
 
-// The entry is the one place allowed to reach the legacy renderer (its production path until WP5.6).
-// eslint-disable-next-line aplos/boundaries
-if (entry === 'legacy') void import('./legacy/main').catch(() => undefined);
-else if (entry === 'onboarding') void bootOnboarding().catch(() => undefined);
-else void boot().catch(() => undefined);
+/** The legacy renderer: the entry is the one place allowed to reach it (its path until the legacy folders go). */
+async function bootLegacy(): Promise<void> {
+  // eslint-disable-next-line aplos/boundaries
+  await import('./legacy/main');
+}
+
+/**
+ * A new root that fails to start (a missing chunk, a throw while booting) leaves a blank window. In a build that is
+ * not a development build that window goes to the legacy renderer instead, as a bridge that fails to connect does.
+ */
+function bootFailed(): Promise<void> {
+  return import.meta.env.DEV ? Promise.resolve() : bootLegacy();
+}
+
+if (entry === 'legacy') void bootLegacy().catch(() => undefined);
+else if (entry === 'onboarding')
+  void bootOnboarding()
+    .catch(bootFailed)
+    .catch(() => undefined);
+else
+  void boot()
+    .catch(bootFailed)
+    .catch(() => undefined);

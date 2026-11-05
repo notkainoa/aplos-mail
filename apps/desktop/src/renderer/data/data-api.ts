@@ -232,6 +232,10 @@ export interface DataApi {
     readonly openOnboarding: ClientApi['window']['openOnboarding'];
     /** `Window/finishOnboarding`: hand over from onboarding to the mail window. */
     readonly finishOnboarding: ClientApi['window']['finishOnboarding'];
+    /** `Window/closeReady`: answers main's `prepare-close` once unsaved work is saved; main then closes the window. */
+    readonly closeReady: ClientApi['window']['closeReady'];
+    /** `Window/closeCancel`: tells main the close could not be prepared, so it re-enables the window. */
+    readonly closeCancel: ClientApi['window']['closeCancel'];
   };
   /** macOS facts and permissions, served by main. */
   readonly system: {
