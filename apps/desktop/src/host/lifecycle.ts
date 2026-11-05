@@ -61,6 +61,18 @@ export function onboardingOptedOut(env: { APLOS_ONBOARDING_WINDOW?: string }): b
 }
 
 /**
+ * The small first-run window is the default only on the real-engine path: it needs the new renderer route and the
+ * engine's `Setup/*`, and the legacy engine (every release build until the switch) would load today's whole mail app
+ * into the 640 x 600 window. `APLOS_ONBOARDING_WINDOW=0` still opts out on the real path.
+ */
+export function onboardingEnabledFor(
+  env: { APLOS_ONBOARDING_WINDOW?: string },
+  realPath: boolean,
+): boolean {
+  return realPath && !onboardingOptedOut(env);
+}
+
+/**
  * A login launch (`wasOpenedAtLogin`) stays windowless, with or without accounts, until the Dock or the menu-bar item
  * is clicked (host-2: Aplos at login is a menu-bar app and must not throw a window at the owner after a restart).
  */

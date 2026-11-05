@@ -131,7 +131,11 @@ function end(args: Input<'Setup/end'>, ctx: MethodContext): Output<'Setup/end'> 
   const { store, clock, randomBytes } = ctx.services;
   // An end naming an earlier session is an idempotent ok that changes nothing: it must not clear the
   // live session's id or stamp `setup.*` while a new run is in progress.
-  if (args.setupId !== undefined && args.setupId !== setupId) return { ok: true };
+  // A stale end (a previous session's close) is ignored only while the engine holds a DIFFERENT live id. After an engine
+  // restart the live id is gone, and the window's own end must still land (the meta write is first-write-wins).
+  if (args.setupId !== undefined && setupId !== undefined && args.setupId !== setupId) {
+    return { ok: true };
+  }
   const key =
     args.reason === 'skipped'
       ? 'setup.skippedAt'

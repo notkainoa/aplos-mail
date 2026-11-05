@@ -251,6 +251,26 @@ test('Setup/end: an end naming a stale session changes nothing; its own session 
   }
 });
 
+test("Setup/end: after an engine restart (no live id) the window's own end still lands", async () => {
+  const w = await world(fakeAccounts({}));
+  try {
+    // No Setup/begin in this engine: the renderer\'s session began before the restart, so its id is unknown here.
+    assert.deepEqual(
+      await w.call('Setup/end', { setupId: 'setup-before-restart', reason: 'skipped' }),
+      {
+        ok: true,
+      },
+    );
+    assert.notEqual(
+      (await w.call('Session/get', {})).setup.skippedAt,
+      undefined,
+      'a zero-account install must not reopen onboarding on the next launch',
+    );
+  } finally {
+    await w.cleanup();
+  }
+});
+
 test('Setup/end: with no setupId it still applies (main calls it with only a reason)', async () => {
   const w = await world(fakeAccounts({}));
   try {

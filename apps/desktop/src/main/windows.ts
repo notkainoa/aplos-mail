@@ -10,7 +10,7 @@ import { isTest } from './test-mode';
 import {
   createOnboarding,
   mailForActivation,
-  onboardingOptedOut,
+  onboardingEnabledFor,
   readSessionFacts,
   windowFallback,
   type Activation,
@@ -302,7 +302,7 @@ function sendWhenReady(win: BrowserWindow, event: { type: string; payload?: unkn
 
 // The welcome window (DESIGN 7.11) is the default first-run path. `APLOS_ONBOARDING_WINDOW=0` opts out for tests
 // and debugging, which keeps the legacy behaviour (the mail window shows its own zero-accounts intro).
-const onboardingEnabled = !onboardingOptedOut(process.env);
+const onboardingEnabled = onboardingEnabledFor(process.env, realPath);
 const welcome = { width: 640, height: 600, minHeight: 520 };
 function portOf(win: BrowserWindow): WindowPort {
   return {
