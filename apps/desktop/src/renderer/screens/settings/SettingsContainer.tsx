@@ -4,14 +4,29 @@
  * It cannot run until `ui-shell` implements the data layer (every hook is a stub today); it must typecheck.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, useAccounts, useConsent, useNow, useSession, useSettings } from '../../data';
+import {
+  api,
+  useAccounts,
+  useAccountsLoaded,
+  useConsent,
+  useNow,
+  useSession,
+  useSettings,
+} from '../../data';
 import { parseSettingRoute, type SettingRoute, type SettingSection } from '../../commands';
 import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
 import './paletteEntries';
+import { clearAvailability, publishAvailability } from './availability';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import { SettingsScreen } from './SettingsScreen';
-import { actThenList, mergePatch, type AiModelInfo } from './settings.model';
+import {
+  actThenList,
+  mergeAccounts,
+  mergePatch,
+  type AccountWrite,
+  type AiModelInfo,
+} from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import type { SettingsPatch } from '../../data';
 
@@ -74,13 +89,14 @@ export interface SettingsContainerProps {
 export function SettingsContainer({ route, onRoute, host = {}, ports }: SettingsContainerProps) {
   const settings = useSettings();
   const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
   const consent = useConsent();
   const session = useSession();
   const now = useNow({ granularity: 'minute' });
   if (!settings || !consent || !session) return null;
   return (
     <Loaded
-      {...{ route, onRoute, host, ports }}
+      {...{ route, onRoute, host, ports, accountsLoaded }}
       base={{ settings, accounts, consent, session, now }}
     />
   );
@@ -94,14 +110,21 @@ function Loaded({
   host,
   ports,
   base,
-}: SettingsContainerProps & { host: SettingsHost; base: Base }) {
+  accountsLoaded,
+}: SettingsContainerProps & { host: SettingsHost; base: Base; accountsLoaded: boolean }) {
   const parsed = route ? parseSettingRoute(route) : null;
   const [section, setSection] = useState<SettingSection>(parsed?.section ?? 'general');
   const routeSection = parsed?.section;
   const routeRow = parsed?.row;
 
   const resolved = useMemo(() => ports ?? dataPorts(), [ports]);
-  const { data, view, actions, failure } = useSettingsState(base, host, resolved, section);
+  const { data, view, actions, failure } = useSettingsState(
+    base,
+    host,
+    resolved,
+    section,
+    accountsLoaded,
+  );
 
   // A route-driven section change (a deep link, back/forward) leaves like the nav does: drafts and failures drop.
   useEffect(() => {
@@ -138,6 +161,7 @@ export function useSettingsState(
   host: SettingsHost,
   ports: SettingsApiPort,
   section: SettingSection,
+  accountsLoaded: boolean,
 ): {
   data: SettingsData;
   view: SettingsView;
@@ -147,6 +171,7 @@ export function useSettingsState(
   const [view, setViewState] = useState<SettingsView>(INITIAL_VIEW);
   const [loaded, setLoaded] = useState<Partial<SettingsData>>({});
   const [overlay, setOverlay] = useState<SettingsPatch | null>(null);
+  const [accountsOverlay, setAccountsOverlay] = useState<Record<string, AccountWrite> | null>(null);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const viewRef = useRef(view);
   const loadedRef = useRef(loaded);
@@ -156,6 +181,7 @@ export function useSettingsState(
     ...base,
     ...loaded,
     settings: overlay ? mergePatch(base.settings, overlay) : base.settings,
+    accounts: mergeAccounts(loaded.accounts ?? base.accounts, accountsOverlay),
   };
   dataRef.current = data;
 
@@ -197,6 +223,7 @@ export function useSettingsState(
           setLoaded(loadedRef.current);
         },
         overlay: patch => setOverlay(patch),
+        accountOverlay: patch => setAccountsOverlay(patch ? { ...patch } : null),
         fail: setFailure,
       }),
     // The ports and host are stable for the life of the screen.
@@ -235,6 +262,14 @@ export function useSettingsState(
   }, [section, view.queue, actions, keepData]);
 
   useEffect(() => () => actions.leave(), [actions]);
+
+  // The palette's conditional rows read the live data while Settings is mounted; it goes back to optimistic on
+  // unmount so a row is hidden only once its state was actually seen.
+  const { accounts, providers, session } = data;
+  useEffect(() => {
+    publishAvailability({ accounts, providers, session, accountsLoaded });
+    return clearAvailability;
+  }, [accounts, providers, session, accountsLoaded]);
 
   return { data, view, actions, failure };
 }

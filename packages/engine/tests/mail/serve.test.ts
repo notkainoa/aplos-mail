@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ContractError } from '@aplos/contract/contract-error';
 import { notFound } from '@aplos/mail-html/frame';
+import { READING_DOCTYPE } from '@aplos/mail-html';
 import { IMAGE_PROXY_LIMITS } from '../../src/ports';
 import { EXE, frameOf, HTML, IDS, mailWorld, PNG, serve, SVG, text, type World } from './harness';
 
@@ -36,7 +37,7 @@ describe('Mail/serve', () => {
       const frame = await frameOf(w.windowA, { messageId: IDS.rich, imagePolicy: 'block' });
       const served = await serve(w, frame.url, '', w.ids.windowA);
       const document = text(served.body);
-      assert.ok(document.startsWith('<!DOCTYPE html><html>'), document.slice(0, 40));
+      assert.ok(document.startsWith(`${READING_DOCTYPE}<html>`), document.slice(0, 40));
       assert.equal(document.match(/<!doctype/gi)?.length, 1);
       assert.ok(/<script>[^]*<\/script><\/body><\/html>$/.test(document), 'the reporter is last');
     }));
