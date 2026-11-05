@@ -157,11 +157,16 @@ else
   if [ "$DO_E2E" = 1 ]; then
     if (cd "$TREE" && npx playwright install chromium >"$LOGS/playwright-install.log" 2>&1); then
       E2E_PORT=$(free_e2e_port) || E2E_PORT=""
+      case "$E2E_PORT" in
+        '' | *[!0-9]*) E2E_PORT="" ;;
+      esac
       if [ -n "$E2E_PORT" ]; then
         echo "local-ci: e2e preview on port $E2E_PORT (API $((E2E_PORT + 1)))"
         run "e2e browser" env APLOS_E2E_PORT="$E2E_PORT" npm run test:e2e:browser
       else
-        run "e2e browser" npm run test:e2e:browser
+        # Never fall back to the shared default port: that is the collision this step avoids.
+        echo "local-ci: could not pick a free e2e port" >&2
+        record "e2e browser" 1 0
       fi
     else
       skip "e2e browser" "playwright chromium install failed ($LOGS/playwright-install.log)"
