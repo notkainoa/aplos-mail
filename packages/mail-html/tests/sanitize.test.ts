@@ -833,3 +833,13 @@ describe('what the rewrite writes is capped too', () => {
     assert.ok(body.includes('display:block!important'), 'the body keeps a box');
   });
 });
+
+describe('the reading doctype', () => {
+  it('is HTML 4.01 Transitional with its system identifier, the almost-standards switch', () => {
+    // The e2e pins the behaviour (no strip, content-sized report); this pins the string a behaviour check cannot see.
+    assert.equal(
+      READING_DOCTYPE,
+      '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">',
+    );
+  });
+});

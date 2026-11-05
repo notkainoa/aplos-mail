@@ -301,10 +301,10 @@ prototypes, viewport and container units rewritten to bounded px); they stay her
    `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its letter),
    table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air); with the plain
    `<!DOCTYPE html>` the classic image gap also showed (an image alone in a table cell sat on the text baseline, a strip
-   of the cell's background under every sliced-image row, 4 px measured in Chromium, 8 px with other line heights). The
+   of the cell's background under every sliced-image row, 6 px at the reading CSS in Chromium, font-dependent). The
    almost-standards rule removes exactly that strip: cell 120 beside a 120 px image. Pinned in real Chromium by
    `reporter.e2e.ts` ("an image alone in a table cell leaves no baseline strip", with a control that shows the strip
-   under `<!DOCTYPE html>`). The system identifier is a mode switch only; nothing fetches it.
+   under `<!DOCTYPE html>`). The system identifier is a mode switch only; nothing fetches it. The development-only srcdoc frame (`document.ts`, scriptless, stand-in engine) still writes `<!doctype html>`, so a sliced-image letter shows the strip there and not in the sealed frame; ui-reader may adopt the same doctype when it next touches that file.
 5. **Viewport units.** Rewrite `vh`, `vw`, `vmin`, `vmax` (and the `dvh`/`svh`/`lvh` family) to fixed lengths in
    the sanitiser, or lay the frame out at a fixed viewport height, so a letter's height cannot depend on its frame's
    ("Runaway growth"; the host's fence is the backstop, not the fix).

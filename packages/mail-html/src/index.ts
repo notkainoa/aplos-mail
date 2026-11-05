@@ -16,8 +16,8 @@ export const MAIL_HTML_VERSION = 'mail-html/7';
  * standards-mode doctype gave, which a frame sized to its letter needs: `body.scrollHeight` follows the content
  * (quirks follows the viewport), heights and percentages resolve the standards way, and the frame can be measured and
  * can shrink. The one thing it takes back is the table-cell rule newsletters were written against: an image alone in a
- * cell sits in a line box with no strut, so the 8 px baseline strip under sliced images is gone (measured in Chromium:
- * cell 120 beside a 120 px image, 124 with `<!DOCTYPE html>`). Nothing may come before it (a comment or a BOM would
+ * cell sits in a line box with no strut, so the baseline strip under sliced images is gone (measured in Chromium with the reading CSS:
+ * cell 120 beside a 120 px image, about 126 with `<!DOCTYPE html>`; the strip is a few px and depends on the font). Nothing may come before it (a comment or a BOM would
  * bring quirks back). The system identifier is only a mode switch: nothing ever fetches it.
  */
 export const READING_DOCTYPE =
