@@ -139,6 +139,10 @@ export function event(s: WriteScope, w: EventWrite) {
     eventChangeKey(w.calendarRemoteId, w.remoteId),
     w.rows.length ? 'u' : 'd',
   );
+  // A Google override's remote_id is the instance id; the events window shows `master@recId`, so the
+  // master's resource id is marked too (a client-facing change log names resources, not instances).
+  for (const m of new Set(w.rows.map(r => r.masterRemoteId).filter((m): m is string => !!m)))
+    s.mark('Event', w.accountId, eventChangeKey(w.calendarRemoteId, m), 'u');
 }
 
 export function eventDelete(s: WriteScope, w: EventDeleteWrite) {
@@ -177,8 +181,10 @@ export function eventHidden(s: WriteScope, w: EventHiddenWrite) {
   const stored =
     cal !== undefined &&
     s
-      .q('SELECT 1 FROM events WHERE calendar_id = ? AND remote_id = ? LIMIT 1')
-      .get(cal, w.remoteId);
+      .q(
+        'SELECT 1 FROM events WHERE calendar_id = ? AND (remote_id = ? OR master_remote_id = ?) LIMIT 1',
+      )
+      .get(cal, w.remoteId, w.remoteId);
   if (!stored) return s.missing(`Event ${w.calendarRemoteId}/${w.remoteId}`);
   const changed = w.hidden
     ? s

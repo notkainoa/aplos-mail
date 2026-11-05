@@ -6,8 +6,8 @@ import {
   eventFromRow,
   fromWire,
   occurrenceEvent,
-  parseCalendarId,
-  parseEventId,
+  parseCalendarIdIn,
+  parseEventIdIn,
   recurrenceIdToTime,
   instant,
   type CalRow,
@@ -52,10 +52,13 @@ const hiddenSet = (ctx: MethodContext) =>
       .map(r => `${r.calendar_id}|${r.remote_id}|${r.recurrence_id}`),
   );
 
+const accountIds = (ctx: MethodContext) =>
+  ctx.services.store.read(q => q.all<{ id: string }>('SELECT id FROM accounts').map(r => r.id));
+
 function calRow(ctx: MethodContext, accountId: string, remoteId: string): CalRow | undefined {
   return ctx.services.store.read(q =>
     q.get<CalRow>(
-      'SELECT id, account_id, remote_id, name, color, is_primary, hidden, read_only, selected, time_zone FROM calendars WHERE account_id = ? AND remote_id = ?',
+      'SELECT id, account_id, remote_id, name, color, is_primary, hidden, read_only, selected, time_zone, change_tag FROM calendars WHERE account_id = ? AND remote_id = ?',
       accountId,
       remoteId,
     ),
@@ -77,7 +80,7 @@ function getCalendars(args: Input<'Calendar/get'>, ctx: MethodContext): Output<'
 }
 
 function setCalendar(args: Input<'Calendar/set'>, ctx: MethodContext): Output<'Calendar/set'> {
-  const ref = parseCalendarId(args.id);
+  const ref = parseCalendarIdIn(args.id, accountIds(ctx));
   const row = calRow(ctx, ref.accountId, ref.remoteId);
   if (!row) throw notFoundCal();
   ctx.services.store.commit({
@@ -95,6 +98,7 @@ function setCalendar(args: Input<'Calendar/set'>, ctx: MethodContext): Output<'C
         ...(row.time_zone ? { timeZone: row.time_zone } : {}),
         // An omitted field keeps the stored value — the upsert writes absent fields as NULL.
         color: args.colorTag ?? row.color ?? undefined,
+        ...(row.change_tag ? { changeTag: row.change_tag } : {}),
         ...(args.shown === undefined ? {} : { selected: args.shown }),
       },
       ...auditWrites(ctx.caller, 'Calendar/set', args.id),
@@ -104,12 +108,13 @@ function setCalendar(args: Input<'Calendar/set'>, ctx: MethodContext): Output<'C
   return { calendar: calendarFromRow(after), receipt: receipt(ctx, args.opId) };
 }
 
-const zone = (ctx: MethodContext, accountId: string) =>
+const zone = (ctx: MethodContext, accountId: string, calRemote: string) =>
   ctx.services.store.read(
     q =>
       q.get<{ time_zone: string }>(
-        'SELECT time_zone FROM calendars WHERE account_id = ? AND is_primary = 1 AND time_zone IS NOT NULL LIMIT 1',
+        'SELECT time_zone FROM calendars WHERE account_id = ? AND remote_id = ?',
         accountId,
+        calRemote,
       )?.time_zone ?? 'UTC',
   );
 
@@ -141,9 +146,9 @@ function eventRow(
 }
 
 function readEvent(ctx: MethodContext, id: string): Event | undefined {
-  const ref = parseEventId(id);
+  const ref = parseEventIdIn(id, accountIds(ctx));
   const hidden = hiddenSet(ctx);
-  const z = zone(ctx, ref.accountId);
+  const z = zone(ctx, ref.accountId, ref.calRemote);
   if (!ref.recurrenceId) {
     const row = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
     if (!row) return undefined;
@@ -207,9 +212,12 @@ function getEvents(args: Input<'Event/get'>, ctx: MethodContext): Output<'Event/
  * the port's required response/organizer/self (the provider fills the truth back in on save). */
 function toPortFields(f: Partial<EventFields>): Partial<PortFields> {
   const out: Partial<PortFields> = {};
+  // `threadId` (link the event to its mail) has no port field in this round and is dropped on purpose.
+  const withZone = (t: EventFields['start'] | undefined) =>
+    t && t.type === 'floating' && !t.timeZone && f.timeZone ? { ...t, timeZone: f.timeZone } : t;
   if (f.title !== undefined) out.summary = f.title;
-  if (f.start !== undefined) out.start = f.start;
-  if (f.end !== undefined) out.end = f.end;
+  if (f.start !== undefined) out.start = withZone(f.start) ?? f.start;
+  if (f.end !== undefined) out.end = withZone(f.end) ?? f.end;
   if (f.allDay !== undefined) out.allDay = f.allDay;
   if (f.location !== undefined) out.location = f.location;
   if (f.description !== undefined) out.description = f.description;
@@ -233,7 +241,7 @@ const auditCall = (ctx: MethodContext, method: string, target?: string) => {
 
 function hideEvents(args: Input<'Event/hide'>, ctx: MethodContext): Output<'Event/hide'> {
   const writes = args.ids.map(id => {
-    const ref = parseEventId(id);
+    const ref = parseEventIdIn(id, accountIds(ctx));
     return {
       kind: 'eventHidden' as const,
       accountId: ref.accountId,
@@ -258,17 +266,16 @@ async function setEvent(
   const { change } = args;
   const notify = args.notify;
   if (change.type === 'create') {
-    const cal = parseCalendarId(change.calendarId);
+    const cal = parseCalendarIdIn(change.calendarId, accountIds(ctx));
     const result = await ctx.services.calendar.put(cal.accountId, {
       calendarRemoteId: cal.remoteId,
       scope: 'occurrence',
       fields: toPortFields(change.fields),
       notify,
     });
-    auditCall(ctx, 'Event/set', args.opId);
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }
-  const ref = parseEventId(change.id);
+  const ref = parseEventIdIn(change.id, accountIds(ctx));
   if (change.type === 'destroy') {
     const result = await ctx.services.calendar.remove(ref.accountId, {
       calendarRemoteId: ref.calRemote,
@@ -290,7 +297,6 @@ async function setEvent(
     fields: toPortFields(change.fields),
     notify,
   });
-  auditCall(ctx, 'Event/set', args.opId);
   return savedEvent(ctx, args.opId, result, ref.accountId, ref.calRemote);
 }
 
@@ -303,6 +309,7 @@ async function savedEvent(
 ): Promise<Output<'Event/set'>> {
   if (result.kind === 'conflict')
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  auditCall(ctx, 'Event/set', opId);
   // The port committed the saved facts; read the first upsert back for the response. A saved override's
   // contract id names its master plus the recurrence key (`masterRemoteId ?? remoteId`, then `@recId`).
   const first = result.upserts[0];
@@ -314,7 +321,7 @@ async function savedEvent(
 }
 
 async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Output<'Event/rsvp'>> {
-  const ref = parseEventId(args.id);
+  const ref = parseEventIdIn(args.id, accountIds(ctx));
   const result = await ctx.services.calendar.rsvp(
     ref.accountId,
     {

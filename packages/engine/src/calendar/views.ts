@@ -70,6 +70,8 @@ const toCal = (r: Joined): CalRow => ({
   read_only: r.read_only,
   selected: r.selected,
   time_zone: r.time_zone,
+  // Not joined (unused here): Calendar/set's passthrough reads it in methods/event.ts.
+  change_tag: null,
 });
 
 // `EvtRow.id` is the events-table PK — unused in projection; the join column `cal_id` feeds grouping.
@@ -156,7 +158,9 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
       const og = eventFromRow(cal, toEvt(o), hidden);
       return {
         recurrenceId: o.recurrence_id,
-        ...(o.status === 'cancelled' ? { cancelled: true } : { start: og.start, end: og.end }),
+        ...(o.status === 'cancelled'
+          ? { cancelled: true }
+          : { start: fromWire(og.start), end: fromWire(og.end) }),
       };
     });
     const rec = resource.recurrence
@@ -211,14 +215,16 @@ export const eventsPlan: ViewCompiler = (spec, env): ViewPlan => {
     layout: (q): ViewLayout => ({ total: load(q).length, sections: [] }),
     rows: (q, after, limit): ViewRow[] => {
       const list = load(q);
-      const startAt = after
+      const found = after
         ? list.findIndex(
             r =>
               r.at > (after.key[0] as number) ||
               (r.at === after.key[0] && r.id > String(after.key[1])),
           )
         : 0;
-      return list.slice(Math.max(0, startAt), Math.max(0, startAt) + limit).map(r => ({
+      // -1 means the cursor is past the end — serve [], never page 1 again.
+      const startAt = found < 0 ? (after ? list.length : 0) : found;
+      return list.slice(startAt, startAt + limit).map(r => ({
         id: r.id,
         at: { part: 0, key: [r.at, r.id] },
       }));

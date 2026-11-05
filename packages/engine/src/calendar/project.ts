@@ -1,7 +1,8 @@
 import type { Calendar, Event, EventTime } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { EventTime as EngineTime } from './recurrence/types';
-import { fromWall } from './recurrence/zone';
+import { RECURRENCE_ID_FORMAT } from '../ports/calendar';
+import { fromWall, isKnownZone } from './recurrence/zone';
 
 /** Engine (`recurrence`) time to the wire's discriminated union. */
 export const toWire = (t: EngineTime): EventTime =>
@@ -38,17 +39,66 @@ export function parseCalendarId(id: string): { accountId: string; remoteId: stri
   return { accountId: id.slice(0, i), remoteId: id.slice(i + 1) };
 }
 
+/** The `accountId:` prefix of a contract id, longest-match against the stored accounts — ids like
+ * `google:me@example.com` hold colons, so a plain first-colon split mis-reads them. */
+export function accountPrefix(id: string, accountIds: string[]): string {
+  const match = accountIds
+    .filter(a => id.startsWith(`${a}:`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!match)
+    throw new ContractError({ type: 'notFound', message: 'This item is no longer available.' });
+  return match;
+}
+
+/** `parseEventId` with account ids resolved against the store (colon-safe). */
+export function parseEventIdIn(
+  id: string,
+  accountIds: string[],
+): { accountId: string; calRemote: string; remote: string; recurrenceId?: string } {
+  const accountId = accountPrefix(id, accountIds);
+  const rest = id.slice(accountId.length + 1);
+  const at = rest.lastIndexOf('@');
+  const tail = at < 0 ? '' : rest.slice(at + 1);
+  const hasRec = at > 0 && RECURRENCE_ID_FORMAT.test(tail);
+  const head = hasRec ? rest.slice(0, at) : rest;
+  const slash = head.lastIndexOf('/');
+  if (slash <= 0 || slash === head.length - 1)
+    throw new ContractError({ type: 'notFound', message: 'This event is no longer available.' });
+  return {
+    accountId,
+    calRemote: head.slice(0, slash),
+    remote: head.slice(slash + 1),
+    ...(hasRec ? { recurrenceId: tail } : {}),
+  };
+}
+
+/** `parseCalendarId` with account ids resolved against the store (colon-safe). */
+export function parseCalendarIdIn(
+  id: string,
+  accountIds: string[],
+): { accountId: string; remoteId: string } {
+  const accountId = accountPrefix(id, accountIds);
+  const remoteId = id.slice(accountId.length + 1);
+  if (!remoteId || remoteId.includes('/'))
+    throw new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
+  return { accountId, remoteId };
+}
+
 export function parseEventId(id: string): {
   accountId: string;
   calRemote: string;
   remote: string;
   recurrenceId?: string;
 } {
-  const at = id.indexOf('@');
-  const head = at < 0 ? id : id.slice(0, at);
-  const recId = at < 0 ? undefined : id.slice(at + 1);
+  // The `@` is a recurrence separator only when the tail is a canonical key — Google calendar ids are
+  // emails (`…@gmail.com`, `…@group.calendar.google.com`) and stay inside `head`.
+  const at = id.lastIndexOf('@');
+  const tail = at < 0 ? '' : id.slice(at + 1);
+  const hasRec = at > 0 && RECURRENCE_ID_FORMAT.test(tail);
+  const head = hasRec ? id.slice(0, at) : id;
+  const recId = hasRec ? tail : undefined;
   const colon = head.indexOf(':');
-  const slash = head.indexOf('/', colon);
+  const slash = head.lastIndexOf('/');
   if (colon <= 0 || slash <= colon + 1 || slash === head.length - 1)
     throw new ContractError({ type: 'notFound', message: 'This event is no longer available.' });
   return {
@@ -66,7 +116,8 @@ export function instant(t: EventTime, zone: string): number {
     const [y = 1970, m = 1, d = 1] = t.date.split('-').map(Number);
     return fromWall(Date.UTC(y, m - 1, d), zone);
   }
-  return fromWall(Date.parse(`${t.local}Z`), t.timeZone ?? zone);
+  const tz = t.timeZone && isKnownZone(t.timeZone) ? t.timeZone : zone;
+  return fromWall(Date.parse(`${t.local}Z`), tz);
 }
 
 /** The canonical `recurrence_id` back to an `EventTime` (the occurrence's original start). */
@@ -137,6 +188,7 @@ export interface CalRow {
   read_only: number | null;
   selected: number;
   time_zone: string | null;
+  change_tag: string | null;
 }
 export interface EvtRow {
   [k: string]: string | number | null;
