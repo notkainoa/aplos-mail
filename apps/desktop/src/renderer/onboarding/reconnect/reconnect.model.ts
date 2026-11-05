@@ -38,6 +38,11 @@ export const FRAME_MODE: Readonly<Record<ReconnectCall, 'reconnect' | 'grantPerm
 export const sheetMode = (call: ReconnectCall): SheetMode =>
   call === 'grantPermissions' ? 'grant' : 'reconnect';
 
+/** The engine call behind a `SheetMode`: a caller's 'grant' is `Account/grantPermissions`. */
+export function callForSheetMode(mode: SheetMode): ReconnectCall {
+  return mode === 'grant' ? 'grantPermissions' : 'reconnect';
+}
+
 /** The account facts the decision reads; the contract's `Account` is assignable to it. */
 export interface ReconnectAccount {
   readonly demo?: boolean;
@@ -111,13 +116,18 @@ export function openReconnect(current: string | null, accountId: string): string
 }
 
 /**
- * How long the flow waits for an account it can't find before it closes with `failed`. The list may simply not have
- * arrived; a list that arrived without the account closes at once, and an empty one never leaves a sheet waiting.
+ * How long the flow waits for an account it can't find before it closes with `failed`. Only a list that has
+ * answered counts: while `Account/get` is still out an empty list is "not arrived yet", never "gone". A list that
+ * arrived without the account closes at once, and an answered empty one never leaves a sheet waiting.
  */
 export const MISSING_ACCOUNT_WAIT_MS = 3_000;
 
-/** When a flow whose account isn't in the list closes: now (the list has accounts, not this one) or after the wait. */
-export function missingAccountClose(accountCount: number): 'now' | 'afterWait' {
+/** When a flow whose account isn't in the list closes: never while the list hasn't answered ('wait'), at once once it has ('now' with accounts in it), or after the wait when the answered list is empty. */
+export function missingAccountClose(
+  loaded: boolean,
+  accountCount: number,
+): 'wait' | 'now' | 'afterWait' {
+  if (!loaded) return 'wait';
   return accountCount > 0 ? 'now' : 'afterWait';
 }
 
@@ -328,7 +338,7 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
   }
 }
 
-/** What `ReconnectSheet` is given for a state: open while waiting or failed. */
+/** What `ReconnectSheet` is given for a state: open until closed — idle draws as waiting, so the sheet never flashes shut before the open effect lands (or in a render with no effects at all). */
 export function sheetView(state: ReconnectState): {
   open: boolean;
   state: 'waiting' | 'failed';
@@ -337,7 +347,7 @@ export function sheetView(state: ReconnectState): {
   reason?: string;
 } {
   return {
-    open: state.phase === 'waiting' || state.phase === 'failed',
+    open: state.phase !== 'closed',
     state: state.phase === 'failed' ? 'failed' : 'waiting',
     mode: sheetMode(state.call),
     address: state.address,

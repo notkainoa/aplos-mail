@@ -13,14 +13,18 @@ import { ACCOUNT, FakeAdapter, disk, world, type World } from './sync-actor-help
 const OTHER = 'acct-2';
 
 class OriginalAdapter extends FakeAdapter {
-  readonly seen: { id: string; ctx: AdapterContext }[] = [];
+  readonly seen: { id: string; ctx: AdapterContext; signal?: AbortSignal }[] = [];
 
   constructor() {
     super(() => [], {});
   }
 
-  async original(remoteMessageId: string, ctx: AdapterContext): Promise<AsyncIterable<Uint8Array>> {
-    this.seen.push({ id: remoteMessageId, ctx });
+  async original(
+    remoteMessageId: string,
+    ctx: AdapterContext,
+    opts?: { signal?: AbortSignal },
+  ): Promise<AsyncIterable<Uint8Array>> {
+    this.seen.push({ id: remoteMessageId, ctx, signal: opts?.signal });
     return (async function* () {
       yield new Uint8Array([82, 70, 67]);
     })();
@@ -70,12 +74,14 @@ test('original routes to the named account adapter under that account’s actor 
   try {
     await w.host.start(ACCOUNT);
     await w.host.start(OTHER);
-    const bytes = await collected(await w.host.original(OTHER, 'm-9'));
+    const deadline = new AbortController();
+    const bytes = await collected(await w.host.original(OTHER, 'm-9', { signal: deadline.signal }));
     assert.deepEqual([...bytes], [82, 70, 67]);
     assert.equal(a.seen.length, 0, 'the other account was never asked');
     assert.equal(b.seen.length, 1);
     assert.equal(b.seen[0].id, 'm-9');
     assert.equal(b.seen[0].ctx.account.id, OTHER);
+    assert.equal(b.seen[0].signal, deadline.signal, 'the caller signal reaches the adapter');
     await w.host.original(ACCOUNT, 'm-3');
     assert.equal(a.seen.length, 1);
     assert.equal(a.seen[0].ctx.account.id, ACCOUNT);

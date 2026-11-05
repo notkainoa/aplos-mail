@@ -12,7 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { api, useFrames } from '../data';
 import type { ConnectFrame, Input, Output } from '../data';
-import { missingMethod, type FocusTarget } from './flow';
+import type { FocusTarget } from './flow';
 import { reasonOf } from './reason';
 
 /** The Accounts step's states (onboarding-accounts.html: choose, typed, waiting, connected; plus failed). */
@@ -351,10 +351,7 @@ export interface ConnectPorts {
 }
 
 export const defaultConnectPorts: ConnectPorts = {
-  // REQUEST ui-shell: `api.account.discover` (contract `Account/discover`) is not on the data surface yet.
-  discover: async () => {
-    throw missingMethod('Account/discover');
-  },
+  discover: async input => api.account.discover(input),
   connect: async input => api.account.connect(input),
   cancelConnect: async input => api.account.cancelConnect(input),
 };
