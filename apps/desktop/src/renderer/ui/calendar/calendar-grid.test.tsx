@@ -148,7 +148,7 @@ test('CalendarGrid: the selected entry is the active descendant and is pressed',
   assert.match(out, /id="ui-event-q4"[^>]*data-selected="true"/);
 });
 
-test('CalendarGrid day: wide columns, an empty day says "Nothing scheduled." with New event and its key', () => {
+test('CalendarGrid day: wide columns, an empty day says "Nothing scheduled" with New event and its key', () => {
   const empty = html(
     <CalendarGrid
       {...gridProps({
@@ -160,7 +160,7 @@ test('CalendarGrid day: wide columns, an empty day says "Nothing scheduled." wit
       })}
     />,
   );
-  assert.match(empty, /Nothing scheduled\./);
+  assert.match(empty, /Nothing scheduled(?!\.)/);
   assert.match(empty, />New event</);
   assert.match(empty, /<kbd class="ui-cal-kbd">N<\/kbd>/);
   assert.equal((empty.match(/role="columnheader"/g) ?? []).length, 1);
@@ -318,7 +318,7 @@ test('CalendarGrid agenda today: nothing left says so and keeps the earlier coun
       })}
     />,
   );
-  assert.match(later, /Nothing left today\./);
+  assert.match(later, /Nothing left today(?!\.)/);
   // All four events are over: no rows, one "4 earlier" line instead.
   assert.equal((later.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 0);
   assert.match(later, /4 earlier/);
@@ -334,8 +334,8 @@ test('CalendarGrid agenda today: nothing left says so and keeps the earlier coun
       })}
     />,
   );
-  assert.match(empty, /Nothing left today\./);
-  assert.match(empty, /Nothing scheduled\./);
+  assert.match(empty, /Nothing left today(?!\.)/);
+  assert.match(empty, /Nothing scheduled(?!\.)/);
   assert.doesNotMatch(empty, /ui-calendar-grid__earlier/);
 });
 

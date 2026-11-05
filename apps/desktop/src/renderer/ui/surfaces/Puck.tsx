@@ -15,7 +15,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { ComponentPropsMap, PuckItem } from '../props';
-import { PartIcon, PartTip, formatCount, keysFor } from './parts';
+import { PartIcon, PartTip, formatCount, useKeysFor } from './parts';
 
 interface Thumb {
   x: number;
@@ -41,7 +41,7 @@ function PuckCell({
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const tipId = useId();
-  const chords = keysFor(item.commandId);
+  const chords = useKeysFor()(item.commandId);
   const hasTip = chords.length > 0 || item.tooltip !== undefined || item.shortLabel !== undefined;
   const roleAttr = role === 'tabs' ? 'tab' : role === 'radio' ? 'radio' : undefined;
   return (

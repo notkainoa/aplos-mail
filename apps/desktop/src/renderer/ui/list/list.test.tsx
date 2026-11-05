@@ -20,8 +20,8 @@ describe('ListRow', () => {
     assert.doesNotMatch(m, /data-unread/);
     assert.match(m, /Tuesday<\/time>/);
     assert.match(m, /class="ui-list-row__actions"/);
-    assert.match(m, /aria-label="Later" title="Later · L" aria-hidden="true"/);
-    assert.match(m, /aria-label="Done" title="Done · E" aria-hidden="true"/);
+    assert.match(m, /aria-label="Later" title="Later · ←" aria-hidden="true"/);
+    assert.match(m, /aria-label="Done" title="Done · →" aria-hidden="true"/);
     assert.doesNotMatch(m, /ui-list-row__account/, 'one account: no dot');
   });
 
@@ -321,8 +321,8 @@ describe('FocusSlot and FocusLetter', () => {
       m,
       /data-variant="filled" data-size="md" title="Reply · Space" aria-hidden="true">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
     );
-    assert.match(m, /title="Later · L"/);
-    assert.match(m, /title="Done · E"/);
+    assert.match(m, /title="Later · ←"/);
+    assert.match(m, /title="Done · →"/);
     assert.match(m, /aria-label="More" title="More: bookmark, trash, why it’s here · \."/);
     assert.equal((m.match(/data-variant="filled"/g) ?? []).length, 1, 'one filled button');
     assert.doesNotMatch(m, /data-icon="bookmark"/, 'no bookmark icon on the card');
@@ -344,7 +344,7 @@ describe('FocusSlot and FocusLetter', () => {
     const m = render(<FocusLetter {...letter({ demoted: true })} />);
     assert.match(m, /data-demoted="true"/);
     assert.doesNotMatch(m, /data-variant="filled"/);
-    assert.doesNotMatch(m, /<kbd/);
+    assert.doesNotMatch(m, />Space<\/kbd>/);
   });
 
   test('pending and absent summaries show the subject in SF; narrow drops labels but keeps the verb', () => {
@@ -367,7 +367,7 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(absent, /Summary by/);
   });
 
-  test('key hints: ⌘ held shows badges on Later, Done and More; the default shows none', () => {
+  test('key hints: ⌘ held shows a badge on More; Later and Done show their caps always', () => {
     const plain = render(<FocusLetter {...letter()} />);
     assert.doesNotMatch(plain, /data-reveal/);
     const held = render(
@@ -380,7 +380,7 @@ describe('FocusSlot and FocusLetter', () => {
         /<kbd class="ui-list-kbd" data-reveal="badge" aria-hidden="true">([^<]+)<\/kbd>/g,
       ),
     ].map(x => x[1]);
-    assert.equal(badges.length, 3, held);
+    assert.deepEqual(badges, ['.'], held);
     assert.match(held, /class="ui-focus-letter__sender" dir="auto"/);
   });
 

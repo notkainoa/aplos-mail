@@ -4,6 +4,7 @@
 // scene there.
 
 import { calendarStates } from './states.calendar';
+import { emptyStates } from './states.empty';
 import { readerStates } from './states.reader';
 import { shellSettingsStates } from './states.shell';
 
@@ -446,15 +447,6 @@ export const STATES: readonly VisualState[] = [
     filled: 1,
   },
   {
-    id: 'shell-empty-drafts',
-    frame: 'shell',
-    title: 'Empty: no drafts',
-    components: ['EmptyLine'],
-    design: '7.14',
-    mockup: 'empty.html (default)',
-    filled: 0,
-  },
-  {
     id: 'shell-fatal-screen',
     frame: 'shell',
     title: 'Fatal: the engine cannot be reached',
@@ -582,6 +574,15 @@ export const STATES: readonly VisualState[] = [
     design: '7.2',
     mockup: 'home.html (low sheet)',
     filled: 0,
+  },
+  {
+    id: 'home-menu',
+    frame: 'shell',
+    title: 'Home screen: the focus letter’s ⋯ menu open with every action and its keys',
+    components: ['Menu', 'FocusLetter'],
+    design: '6 Menu, 7.2',
+    mockup: 'home.html (default)',
+    filled: 1,
   },
   {
     id: 'home-do-now-from-later',
@@ -770,15 +771,6 @@ export const STATES: readonly VisualState[] = [
     filled: 0,
   },
   {
-    id: 'list-empty',
-    frame: 'shell',
-    title: 'An empty list',
-    components: ['EmptyLine'],
-    design: '7.4, 7.14',
-    mockup: 'empty.html (default)',
-    filled: 0,
-  },
-  {
     id: 'done-screen-rows',
     frame: 'shell',
     title: 'Done screen: rows with the stamp column',
@@ -806,6 +798,7 @@ export const STATES: readonly VisualState[] = [
     filled: 0,
   },
   // ui-reader
+  ...emptyStates,
   ...readerStates,
   // ui-calendar
   ...calendarStates,

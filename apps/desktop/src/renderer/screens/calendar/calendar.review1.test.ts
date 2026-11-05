@@ -350,5 +350,5 @@ test('review1: calendars still loading is never an empty calendar', () => {
   assert.equal(vm.empty, null);
   assert.equal(vm.emptyAction, false);
   const ready = viewModel(state, ctxAt(state));
-  assert.equal(ready.empty?.sentence, 'Nothing on Sunday, November 1.');
+  assert.equal(ready.empty?.sentence, 'Nothing on Sunday, November 1');
 });

@@ -232,7 +232,7 @@ export function todayModel(
     shownGaps: gaps.filter(g => shownIds.has(g.beforeId)),
     headline:
       left === 0
-        ? 'Nothing left today.'
+        ? 'Nothing left today'
         : `${left} left today${next ? ` · next at ${clock(next.start)}` : ''}`,
     empty: entries.length === 0,
   };

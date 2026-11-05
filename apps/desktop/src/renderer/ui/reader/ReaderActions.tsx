@@ -7,7 +7,7 @@
 
 import type { ReaderActionsProps } from '../props';
 import { Action } from '../list/internal/Action';
-import { keycapFor, tooltipText } from '../list/internal/keys';
+import { useKeycapFor, useTooltipText } from '../list/internal/keys';
 import { HOLD_R } from './ReplyStub';
 
 /** The pinned Reply / Later / Done bar. */
@@ -20,8 +20,12 @@ export function ReaderActions({
   onDone,
 }: ReaderActionsProps) {
   const replying = demoted && suggestion.icon === 'reply';
-  const base = tooltipText(suggestion.verb, commands.suggest);
+  const tip = useTooltipText();
+  const base = tip(suggestion.verb, commands.suggest);
   const suggestionTooltip = suggestion.icon === 'reply' ? `${base}. ${HOLD_R}` : base;
+  const space = useKeycapFor(commands.suggest);
+  const later = useKeycapFor(commands.later);
+  const done = useKeycapFor(commands.done);
   return (
     <div className="ui-reader-actions" data-demoted={demoted ? 'true' : undefined}>
       <div className="ui-reader-actions__bar" role="group" aria-label="Actions">
@@ -30,7 +34,7 @@ export function ReaderActions({
           size="md"
           label={replying ? 'Replying' : suggestion.verb}
           icon={suggestion.icon}
-          keycap={demoted ? undefined : keycapFor(commands.suggest)}
+          keycap={demoted ? undefined : space}
           pressed={replying ? true : undefined}
           tooltip={suggestionTooltip}
           onPress={() => onSuggestion()}
@@ -40,8 +44,8 @@ export function ReaderActions({
           size="md"
           label="Later"
           icon="clock"
-          tooltip={tooltipText('Later', commands.later)}
-          hintKey={keycapFor(commands.later)}
+          tooltip={tip('Later', commands.later)}
+          keycap={demoted ? undefined : later}
           onPress={anchor => onLater(anchor)}
         />
         {suggestion.isDone ? null : (
@@ -50,8 +54,8 @@ export function ReaderActions({
             size="md"
             label="Done"
             icon="check"
-            tooltip={tooltipText('Done', commands.done)}
-            hintKey={keycapFor(commands.done)}
+            tooltip={tip('Done', commands.done)}
+            keycap={demoted ? undefined : done}
             onPress={() => onDone()}
           />
         )}

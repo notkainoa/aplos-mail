@@ -8,7 +8,7 @@ import { motions } from '../generated/motion';
 import type { UndoTrayAction, UndoTrayProps, UndoTrayState } from '../props';
 import { Action } from '../list/internal/Action';
 import { formatReaderTime } from '../list/internal/format';
-import { keycapFor, tooltipText } from '../list/internal/keys';
+import { useKeycapFor, useTooltipText } from '../list/internal/keys';
 
 interface TrayCopy {
   text: string;
@@ -67,7 +67,8 @@ export function UndoTray({
   onAction,
   announce,
 }: UndoTrayProps) {
-  const undoKey = keycapFor(undoCommandId);
+  const undoKey = useKeycapFor(undoCommandId);
+  const tip = useTooltipText();
   const { text, actions } = copyFor(state);
 
   // The drain is laid out once per send from the undo window and the time already gone; React never
@@ -112,7 +113,7 @@ export function UndoTray({
                 size="sm"
                 label={label}
                 keycap={action === 'undo' ? undoKey : undefined}
-                tooltip={action === 'undo' ? tooltipText('Undo send', undoCommandId) : label}
+                tooltip={action === 'undo' ? tip('Undo send', undoCommandId) : label}
                 onPress={() => onAction(action)}
               />
             ))}

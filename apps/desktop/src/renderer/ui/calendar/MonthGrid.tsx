@@ -145,7 +145,7 @@ export function MonthGrid({
       ))}
       {empty && emptyAction ? (
         <div className="ui-calendar-grid__empty" data-view="month" role="status">
-          <span>Nothing scheduled.</span>
+          <span>Nothing scheduled</span>
           <GridAction action={emptyAction} />
         </div>
       ) : null}
