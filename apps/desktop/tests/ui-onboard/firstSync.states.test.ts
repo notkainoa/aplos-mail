@@ -59,6 +59,7 @@ describe('first sync: Esc always opens Aplos [F8]', () => {
     const handlers = firstSyncCommands({
       view: () => v,
       drillOpen: () => current !== null,
+      notice: () => undefined,
       onOpen: () => calls.push('open'),
       onDrill: k => {
         calls.push(`drill:${k}`);

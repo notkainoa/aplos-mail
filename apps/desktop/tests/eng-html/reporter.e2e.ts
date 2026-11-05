@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { loadCorpus } from '../../../../packages/mail-html/corpus/index';
 import { REPORTER_SOURCE, withReporter } from '../../../../packages/mail-html/src/frame/reporter';
-import { render } from '../../../../packages/mail-html/src/index';
+import { READING_DOCTYPE, render } from '../../../../packages/mail-html/src/index';
 import { launchBed, type Bed, type Opened } from './support/reporter-bed';
 
 // THE FRAME REPORTER IN REAL CHROMIUM (ui-core REQUEST, html-5 slice 2). The real reporter, the real sanitizer and
@@ -309,6 +309,43 @@ test.describe('standards mode', () => {
       await opened.page.close();
     });
   }
+
+  // Sliced-image newsletters were written against the table-cell rule: the cell is as tall as its image. The bed
+  // serves no sub-resources, so the image's rewritten address is swapped for a data URI and the page is served bare.
+  const GIF = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  function slicedLetter(doctype: string): string {
+    const sliced =
+      '<table cellspacing="0" cellpadding="0"><tr><td><img src="https://img.example/a.gif" width="120" height="120"></td></tr></table>';
+    const result = render({ html: sliced, cids: [], imagePolicy: 'allow' });
+    if (result.bodyKind !== 'html') throw new Error('not html');
+    const swapped = result.document
+      .replace(READING_DOCTYPE, doctype)
+      .replace(/src="[^"]*"/, `src="${GIF}"`);
+    expect(swapped).toContain(GIF);
+    return withReporter(swapped);
+  }
+  const cellGap = (frame: { evaluate(script: string): Promise<unknown> }) =>
+    frame.evaluate(
+      "document.querySelector('td').getBoundingClientRect().height - document.querySelector('img').getBoundingClientRect().height",
+    );
+
+  test('an image alone in a table cell leaves no baseline strip, and the frame is still measured by its content', async () => {
+    const opened = await bed.open({ document: slicedLetter(READING_DOCTYPE), headers: 'none' });
+    const report = await last(opened);
+    expect(await cellGap(opened.frame)).toBe(0);
+    // Standards-style measuring: the report follows the letter, not the viewport (quirks reports the window's height).
+    expect(report.h).toBeGreaterThanOrEqual(120);
+    expect(report.h).toBeLessThan(200);
+    expect(await opened.frame.evaluate('document.compatMode')).toBe('CSS1Compat');
+    await opened.page.close();
+  });
+
+  test('control: with the plain standards doctype the same cell is taller than its image', async () => {
+    const opened = await bed.open({ document: slicedLetter('<!DOCTYPE html>'), headers: 'none' });
+    await last(opened);
+    expect(await cellGap(opened.frame)).toBeGreaterThan(0);
+    await opened.page.close();
+  });
 
   test('control: a document with no doctype is quirks mode', async () => {
     const page = '<html><body><p>x</p></body></html>';

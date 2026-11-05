@@ -13,7 +13,9 @@
  *   mail), `closed` (the window closed at any moment) (F1, F2). After that nothing navigates. The handoff to the mail
  *   window is asked for once at a time: while it is in flight nothing asks again; once it failed, the step's main
  *   action, Esc, Open Aplos, Skip setup or the notice's Try again asks again, so a failed handoff never leaves the
- *   owner stuck. A closed window asks for nothing.
+ *   owner stuck. A closed window asks for nothing. The requested destination rides along: Try again repeats the
+ *   destination the failed handoff asked for; a different way of going on asks for its own (first sync's "Open
+ *   Settings" alone asks for Settings → AI), so a stale destination never reaches a plain handoff.
  * - Once a real account connected in this session, "Try demo mail" hides: demo mail would skip that account's first
  *   sync.
  * - Esc goes back a step; on Welcome it is "Skip setup"; on first sync it opens Aplos (F8).
@@ -45,7 +47,7 @@ export interface FlowState {
   readonly ended: EndReason | null;
   /** The handoff to the mail window: not asked yet (or done), in flight, or failed and waiting for a retry. */
   readonly handoff: HandoffPhase;
-  /** The handoff should open Settings → AI in the mail window (first sync's "Open Settings"). */
+  /** The destination the in-flight or failed handoff asks for; absent is the mail window's default screen. */
   readonly handoffTo?: 'settings.ai';
 }
 
@@ -168,7 +170,9 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
 
   // The handoff's answer. A closed window's state no longer matters; it is kept as it is.
   if (event.type === 'handoffDone') {
-    return state.handoff === 'pending' ? same({ ...state, handoff: 'idle' }) : same(state);
+    return state.handoff === 'pending'
+      ? same({ ...state, handoff: 'idle', handoffTo: undefined })
+      : same(state);
   }
   if (event.type === 'handoffFailed') {
     return state.handoff === 'pending' && state.ended !== 'closed'
@@ -186,11 +190,16 @@ export function reduceFlow(state: FlowState, event: FlowEvent): FlowResult {
     // handoff must not strand the owner); while one is in flight nothing asks twice; a closed window asks for nothing.
     if (state.ended === 'closed' || state.handoff !== 'failed' || !RETRIES.has(event.type))
       return same(state);
-    const next: FlowState = {
-      ...state,
-      handoff: 'pending',
-      ...(event.type === 'openSettings' ? { handoffTo: 'settings.ai' as const } : {}),
-    };
+    // The retry asks again: Try again repeats the failed handoff's destination, "Open Settings" asks for
+    // Settings → AI, and every other way of going on asks plainly — a stale `to` never rides into a handoff the
+    // owner did not ask it on.
+    const handoffTo =
+      event.type === 'openSettings'
+        ? ('settings.ai' as const)
+        : event.type === 'retryHandoff'
+          ? state.handoffTo
+          : undefined;
+    const next: FlowState = { ...state, handoff: 'pending', handoffTo };
     return { state: next, effects: [handoffEffect(next)] };
   }
 
