@@ -8,6 +8,9 @@
 ## Review ladder (owner GO 2026-11-04, STATUS 09:47)
 Every PR: two independent SWE-2 review passes (delegate_task acpRegistry_devin swe-2-high, two different reviewers, real bugs only), author fixes, then for UI-only and docs PRs one Sonnet pass and NO Opus; Opus is the Integrator's alone (security, auth, store commit, send paths, contract). Claude stays lean; bulk coding, tests, check runs and first-pass reviews go to SWE-2. UI-core 2 has no open PR now (F3b merged; #222 and #245 belong to the ui-core thread).
 
+## State 2026-11-05 evening (UI-core 2)
+F3b (#209/#210), F4 (#222) and the bridge (#302) are merged; the go-live flip (#307) is merged with its own close handshake; the close-handshake data-loss fix and the FatalScreen prepare-close gap are in #309 (`rv/ui-shell/close-handshake-fix`), owned by the ui-core thread (DECIDED 13:10: no new PR from UI-core 2); my duplicate #311 is closed. Nothing open in UI-core 2's queue. Remaining owner-visible follow-ups: Why copy ('waiting on you', eng-ai), a merged Undo toast for fast one-by-one walks (owner's call), the Mac key checks.
+
 ## Things to know
 - This worktree is `rv-thread-ui-core-2` (branch `rv/thread/ui-core-2`); `node_modules` here are symlinks into a sibling worktree (untracked).
 - Models: Sonnet for UI and reviews; SWE-2 (delegate_task acpRegistry_devin swe-2-high) did the pure models for F3b and was reviewed; Opus only for composer/send/security.
