@@ -16,9 +16,9 @@
  *
  * The state machine and its effects are `reconnect.model.ts`; this file only wires them to `renderer/data`.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api, getNow, useAccounts, useFrames } from '../../data';
-import { pushToast } from '../../shell';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { api, getNow, useAccounts, useAccountsLoaded, useFrames } from '../../data';
+import { pushToast, useRegisterCommands } from '../../shell';
 import { ReconnectSheet } from '../../ui/status/ReconnectSheet';
 import {
   callFor,
@@ -48,6 +48,11 @@ export interface ReconnectFlowProps {
   readonly onClose: (outcome: ReconnectOutcome) => void;
   /** The calls; the defaults come from `renderer/data`. The preview and tests pass their own. */
   readonly ports?: Partial<ReconnectPorts>;
+  /**
+   * The caller's pick (`Account/reconnect` or `Account/grantPermissions`), when it named one — the shell's sheet
+   * args carry the mode the entry point asked for, and that wins over what the account's health would re-derive.
+   */
+  readonly call?: ReconnectCall;
 }
 
 /** What the flow knows about the account when it opens; later health changes never restart it. */
@@ -68,38 +73,44 @@ export function restoreFocus(opener: Element | null): boolean {
 
 const noop = () => {};
 
-export function ReconnectFlow({ accountId, onClose, ports: given }: ReconnectFlowProps) {
+export function ReconnectFlow({ accountId, onClose, ports: given, call }: ReconnectFlowProps) {
   const accounts = useAccounts();
+  const loaded = useAccountsLoaded();
   const factsRef = useRef<Facts | null>(null);
   if (!factsRef.current) {
     const account = accounts.find(a => a.id === accountId);
-    if (account) factsRef.current = { address: account.address, call: callFor(account, getNow()) };
+    if (account)
+      factsRef.current = { address: account.address, call: call ?? callFor(account, getNow()) };
   }
   const facts = factsRef.current;
   // The account is not here (removed, or the list has not arrived): nothing to reconnect.
-  if (!facts) return <Missing onClose={onClose} accounts={accounts.length} />;
+  if (!facts) return <Missing onClose={onClose} loaded={loaded} accounts={accounts.length} />;
   return <Run accountId={accountId} facts={facts} onClose={onClose} ports={given} />;
 }
 
-/** The account is gone: report it once, draw nothing. */
+/** The account is gone: report it once, draw nothing. While `Account/get` is still out, an empty list means "not arrived yet", so the flow waits instead of closing on a slow boot. */
 function Missing({
   onClose,
+  loaded,
   accounts,
 }: {
   onClose: ReconnectFlowProps['onClose'];
+  loaded: boolean;
   accounts: number;
 }) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
-    // An empty list may just not have arrived: wait a moment for it, but never leave the flow waiting for good.
-    if (missingAccountClose(accounts) === 'now') {
+    const when = missingAccountClose(loaded, accounts);
+    if (when === 'now') {
       close.current('failed');
       return;
     }
+    // The list may simply not have arrived: wait a moment for it, but never leave the flow waiting for good.
+    if (when === 'wait') return;
     const timer = setTimeout(() => close.current('failed'), MISSING_ACCOUNT_WAIT_MS);
     return () => clearTimeout(timer);
-  }, [accounts]);
+  }, [loaded, accounts]);
   return null;
 }
 
@@ -115,8 +126,11 @@ function Run({
   ports: Partial<ReconnectPorts> | undefined;
 }) {
   const ports = useRef({ ...defaultReconnectPorts, ...given }).current;
-  // Read before any effect runs: this is the control that had focus when the sheet opened.
-  const [opener] = useState<Element | null>(() => document.activeElement);
+  // Read before any effect runs: this is the control that had focus when the sheet opened. A render with no DOM
+  // (a static render under test) has no opener to return to.
+  const [opener] = useState<Element | null>(() =>
+    typeof document === 'undefined' ? null : document.activeElement,
+  );
 
   const [state, setState] = useState<ReconnectState>(() =>
     initialReconnect({ accountId, address: facts.address, call: facts.call }),
@@ -163,6 +177,14 @@ function Run({
     [finish, ports],
   );
   dispatchRef.current = dispatch;
+
+  // Return in the sheet is Try again on a failed reconnect (shell/README.md `sheet.default`); the machine
+  // ignores `retry` in every other phase, so the handler can stay registered for the sheet's whole life.
+  const sheetDefault = useMemo(
+    () => ({ 'sheet.default': { run: () => dispatchRef.current({ type: 'retry' }) } }),
+    [],
+  );
+  useRegisterCommands(sheetDefault);
 
   // One click starts the flow. `open` only acts on an idle sheet, so a StrictMode remount cannot start a second one.
   useEffect(() => {
