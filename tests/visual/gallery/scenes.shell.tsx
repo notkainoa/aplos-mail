@@ -583,8 +583,8 @@ const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() =>
 /** The real Settings screen in the real shell, held back for the screenshot until the screen has drawn. */
 function SettingsMountedScene(): ReactElement {
   const client = settingsApp();
-  navigate('settings');
   useEffect(() => {
+    navigate('settings');
     void (async () => {
       for (let i = 0; i < 400 && !document.querySelector('.settings-screen'); i += 1)
         await nextFrame();

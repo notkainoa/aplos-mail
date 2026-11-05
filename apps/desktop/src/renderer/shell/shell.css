@@ -71,6 +71,15 @@
   min-height: 100%;
 }
 
+/* Settings' mount: a focus landing for plain arrival (⌘, or the sidebar row), so focus is not lost to the page. It is
+   a region, not a control, so it draws no ring. */
+.aplos-settings-mount {
+  min-height: 100%;
+}
+.aplos-settings-mount:focus {
+  outline: none;
+}
+
 /* The Add account dialog's body (shell/AddAccountHost): the field and the one line that belongs to it, or the wait. */
 .aplos-add-account__block {
   display: flex;
