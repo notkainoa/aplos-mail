@@ -578,6 +578,19 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - **Verified.** Each new regression test fails on the pre-fix code (eng-host's by import — the ordering was inside Electron-bound `windows.ts`, which is why it moved); `npx tsx --test` on the three named suites 20/20, `tests/eng-host + tests/prov-gov` 288/288, `npm run lint`, `npm run typecheck`, `cd apps/desktop && npx tsc --noEmit`, `npx prettier --check` all clean; owners-check OK (Lane-Approved trailers: prov-gov on the three oauth commits, eng-host on the window commit).
 - **Known/skipped.** `setupId` is not validated against the live setup session before binding 'onboarding' (setup.ts is another PR's area; the mail fallback is the safe direction), and a reconnect/grant after the welcome window was reopened from Help still binds 'mail'.
 
+
+## 2026-11-05 — first-run window + first-sync progress (fix-onboard)
+
+- Onboarding window is the default first-run path: the `APLOS_ONBOARDING_WINDOW=1` gate is removed (opt-out `=0`). `sessionFacts` reads `Session/get` on the real-engine path with a last-good cache; `startWindows`/`activateWindows` are async. Files: `apps/desktop/src/{main/windows.ts,main/lifecycle.ts,main/engine-real.ts,host/lifecycle.ts}`.
+- First-sync "no progress" root cause: the real engine's `Setup/*` were `notImplemented` stubs — nothing to do with skipping the AI step. `packages/engine/src/methods/setup.ts` now maps `AccountRuntime` facts to `Setup/status` (mail checkpoints only; the `ai` block is omitted so Sort is omitted, never failed); `Setup/end` writes `setup.completedAt`/`setup.skippedAt` meta; data layer re-reads `Setup/status` on Account/Thread/Message state frames (`src/renderer/data/session.ts`).
+- Evidence: `tests/eng-host/windows.test.ts` (+5 tests), `tests/ui-onboard/setup-progress.test.ts` (new), headless Electron run + gallery shots in `~/.local/share/aplos-mail-review/fix-onboard/696e7478/` (commits e232dd53, 696e7478).
+
+## 2026-11-05 — first-run window review fixes (E1-E5, M1-M5 on rv/ui-onboard/first-run-window)
+
+- Engine `Setup/*`: a ready row no longer emits the backfill's pausedUntil/reasonCode (U8 4a); `setupStateOf` answers from stored health when no actor runs (never finding); `Setup/retry` is notFound for unknown accounts and surfaces a refused admission as a ContractError with the catalogue reasonCode + resumeAt; `Setup/end` ignores a stale setupId. Tests: `packages/engine/tests/methods/setup.test.ts` (8).
+- Main: `Session/get` retried once and `UNKNOWN_FACTS` falls back to mail, never onboarding over a finished setup; `ensureMain`/`applyWindowChoice`/`mailForActivation`/`windowFallback` make one window in either resolution order and never leave the app silently windowless; `bring` gates on first paint; a notification click delivers its command to the window the activation answers with. Tests: `tests/eng-host/window-flow.test.ts` (10).
+- Known skip: the in-memory-firstWindow-across-restart LOW stays open (a restarted engine re-reads the first window from store, not memory); the one-shot AI backfill is marked at `Setup/end` and lands with the AI pass (PR #21 F1/F2/F5/F6).
+- Evidence: `npm run lint`, `npm run typecheck`, `npx tsc --noEmit`, `npm run test:engine` (1914/0), eng-host+ui-onboard tsx suite (454/0), `npm test` (3739 pass/0 fail), prettier + design lint clean.
 ## 2026-11-05 — ui-shell: shell chrome fixes (owner hand-check findings 1-7)
 
 - **Done.** Windowed account row below the traffic lights, sidebar toggle with ⌘S and a remembered collapse, window dragging, no launch tooltip, no container focus rings, Tab between regions with a roving sidebar, Help opens Settings → Help & about. See DECISIONS 2026-11-05 ui-shell.

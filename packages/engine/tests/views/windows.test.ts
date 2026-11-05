@@ -595,3 +595,114 @@ test('with the timer loop injected, the views module is one deadline source and 
     world.cleanup();
   }
 });
+
+test('a repeated query joins the running search; a throttled account cools down before it is asked again', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  // The first provider call holds its round open on a real gate, so the second Return must join it.
+  let release!: () => void;
+  const blocker = new Promise<void>(resolve => (release = resolve));
+  let asked = 0;
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (asked++ === 0) await blocker;
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    // Two Returns on the same query while the first runs: the second joins, not fans out.
+    const a = t.call('Search/remote', { opId: 'c1', query: { text: 'garden' } });
+    const b = t.call('Search/remote', { opId: 'c2', query: { text: 'garden' } });
+    const [ra, rb] = await Promise.all([a, b]);
+    await t.advance(10);
+    release();
+    await t.advance(10);
+    assert.deepEqual(
+      calls.sort(),
+      ['acct-1:garden', 'imap:2:garden'],
+      'two Enters, one provider round',
+    );
+    assert.notEqual(ra.runId, rb.runId, 'each caller still gets its own run');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('a throttled search answer cools the account; the next search fails fast locally', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (account === 'acct-1')
+        throw new ProviderError({
+          class: 'throttle',
+          reason: 'rateLimitExceeded',
+          retryAfterMs: 60_000,
+        } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'p1', query: { text: 'garden' } });
+    await t.advance(10);
+    // Inside the pause: the cooled account is skipped, but a healthy one is still asked.
+    await t.call('Search/remote', { opId: 'p2', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.deepEqual(
+      calls.filter(c => c === 'acct-1:garden'),
+      ['acct-1:garden'],
+      'the paused account is not re-asked',
+    );
+    assert.deepEqual(
+      calls.filter(c => c === 'imap:2:garden'),
+      ['imap:2:garden'],
+    );
+    // A healthy account answered: the run is `done`, the window keeps the results it had.
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(last?.kind, 'done');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('every account cooled down: the whole run fails fast as paused, nothing asked', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      // Project scope (Gmail's daily limit) cools every account at once.
+      throw new ProviderError(
+        {
+          class: 'throttle',
+          reason: 'rateLimitExceeded',
+          retryAfterMs: 60_000,
+        } as never,
+        'project',
+      );
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'q1', query: { text: 'garden' } });
+    await t.advance(10);
+    const asked = calls.length;
+    await t.call('Search/remote', { opId: 'q2', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.equal(calls.length, asked, 'all accounts cooled: nothing is re-asked');
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(last?.kind, 'error');
+    assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});

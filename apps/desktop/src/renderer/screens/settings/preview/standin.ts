@@ -76,17 +76,21 @@ export function standInPorts(
       return { ok: true, ms: 420 };
     },
     async consentGrant() {
+      const consent = get().consent;
+      if (!consent) return;
       set({
         consent: {
-          ...get().consent,
+          ...consent,
           granted: true,
           needsReconsent: false,
-          version: get().consent.currentVersion,
+          version: consent.currentVersion,
         },
       });
     },
     async consentRevoke() {
-      set({ consent: { ...get().consent, granted: false } });
+      const consent = get().consent;
+      if (!consent) return;
+      set({ consent: { ...consent, granted: false } });
     },
     async listenerSet(enabled) {
       set({ listener: { enabled } });
