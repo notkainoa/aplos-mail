@@ -1,6 +1,6 @@
 import type { Input, Output } from '@aplos/contract';
 import { auditWrites } from '../host/audit';
-import type { AreaHandlers, MethodContext } from './types';
+import { nonce, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `listener` area, owned by lane `eng-host`. The on/off choice persists as `meta.listener_enabled`; the socket
@@ -18,8 +18,9 @@ const enabled = (ctx: MethodContext) =>
 export const handlers: AreaHandlers<'listener'> = {
   'Listener/get': (_args, ctx): Output<'Listener/get'> => ({ enabled: enabled(ctx) }),
   'Listener/set': (args: Input<'Listener/set'>, ctx): Output<'Listener/set'> => {
+    if (enabled(ctx) === args.enabled) return { enabled: args.enabled };
     ctx.services.store.commit({
-      opId: `listener-${args.enabled ? 'on' : 'off'}`,
+      opId: `listener-set-${nonce(ctx)}`,
       origin: 'local',
       writes: [
         { kind: 'meta', key: KEY, value: args.enabled ? '1' : '0' },

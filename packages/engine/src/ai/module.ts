@@ -1,7 +1,6 @@
 import type { CommitExtension } from '../store/port';
 import type { EngineServices, LaneModule } from '../runtime/services';
 import { consentExtension } from './consent';
-import { jobExtension } from './jobs';
 
 /**
  * Seam 1: lane `eng-ai`'s module, imported by the composition root (`src/index.ts`) from this fixed path. It will hold
@@ -14,7 +13,7 @@ import { jobExtension } from './jobs';
 export const lane = 'eng-ai';
 
 /** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
-export const extensions: readonly CommitExtension[] = [consentExtension, jobExtension];
+export const extensions: readonly CommitExtension[] = [consentExtension];
 
 /** Builds the lane's services once the core services exist; runs once, in the root's fixed order. */
 export function createModule(_services: EngineServices): LaneModule {

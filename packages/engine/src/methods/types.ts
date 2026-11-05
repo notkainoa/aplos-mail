@@ -62,6 +62,11 @@ export type AreaHandlers<A extends EngineArea> = {
 
 export type EngineHandlers = { [M in EngineMethodName]: Handler<M> };
 
+/** A unique idempotency key fragment: a repeated call is a new change, never a commit replay. */
+export function nonce(ctx: MethodContext): string {
+  return Array.from(ctx.services.randomBytes(8), b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** The stub every handler starts as: throws the contract's `notImplemented` error until its lane fills it. */
 export function notImplemented<M extends EngineMethodName>(method: M): Handler<M> {
   return () => {

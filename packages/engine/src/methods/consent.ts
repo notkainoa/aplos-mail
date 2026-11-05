@@ -3,7 +3,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
 import { CONSENT_KEY_META, consentKey, type ConsentRow } from '../ai/consent';
 import { parseStored, withDefaults } from '../runtime/settings';
-import type { AreaHandlers, MethodContext } from './types';
+import { nonce, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `consent` area, owned by lane `eng-ai`. The record lives in `consent`; the fingerprint it was granted against
@@ -39,7 +39,8 @@ function readConsent(ctx: MethodContext): Consent {
       currentVersion: 1,
       needsReconsent: false,
     };
-  const drift = stored !== undefined && stored !== current;
+  // Fail closed: a consent row without its fingerprint (imported or pre-upgrade store) still re-asks.
+  const drift = stored !== current;
   const out: Consent = {
     scope: 'background',
     granted: true,
@@ -62,7 +63,7 @@ function grant(args: Input<'Consent/grant'>, ctx: MethodContext): Output<'Consen
     });
   const { current } = keyOf(ctx);
   ctx.services.store.commit({
-    opId: `consent-grant-${args.scope}`,
+    opId: `consent-grant-${args.scope}-${nonce(ctx)}`,
     origin: 'local',
     writes: [
       {
@@ -82,7 +83,7 @@ function grant(args: Input<'Consent/grant'>, ctx: MethodContext): Output<'Consen
 
 function revoke(args: Input<'Consent/revoke'>, ctx: MethodContext): Output<'Consent/revoke'> {
   ctx.services.store.commit({
-    opId: `consent-revoke-${args.scope}`,
+    opId: `consent-revoke-${args.scope}-${nonce(ctx)}`,
     origin: 'local',
     writes: [
       { kind: 'consent', scope: args.scope, remove: true },

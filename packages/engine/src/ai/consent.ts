@@ -24,9 +24,9 @@ export function consentKey(ai: Settings['ai']): string {
       } catch {
         /* an empty or malformed address */
       }
-      return `${provider}${model}${host}`;
+      return `${provider}\u0000${model}\u0000${host}`;
     })
-    .join('');
+    .join('\u0001');
 }
 
 export const CONSENT_KEY_META = 'consent_key';
