@@ -143,14 +143,14 @@ describe('mount-review 2: sheet.default retries a failed reconnect only', () => 
 describe('mount-review 3: boot() imports onboarding.css', () => {
   test('the dev mail boot loads the lane’s wrappers after the one stylesheet', () => {
     const entry = source('main.tsx');
-    const bootBody = entry.slice(
-      entry.indexOf('async function boot()'),
+    const stylesBody = entry.slice(
+      entry.indexOf('function loadMailStyles'),
       entry.indexOf('async function bootOnboarding'),
     );
-    const styles = bootBody.indexOf("import('./ui/styles.css')");
-    const lane = bootBody.indexOf("import('./onboarding/onboarding.css')");
-    assert.ok(styles > 0, 'boot() still loads ui/styles.css');
-    assert.ok(lane > styles, 'onboarding.css loads after the one stylesheet in boot()');
+    const styles = stylesBody.indexOf("import('./ui/styles.css')");
+    const lane = stylesBody.indexOf("import('./onboarding/onboarding.css')");
+    assert.ok(styles > 0, 'loadMailStyles() still loads ui/styles.css');
+    assert.ok(lane > styles, 'onboarding.css loads after the one stylesheet for the mail window');
   });
 });
 
