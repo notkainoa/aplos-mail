@@ -16,6 +16,8 @@ const ok = () => ({ ok: true as const });
 const STUBS: Readonly<Record<string, Stub>> = {
   'Window/openOnboarding': ok,
   'Window/finishOnboarding': ok,
+  'Window/closeReady': ok,
+  'Window/closeCancel': ok,
   'Notification/test': ok,
   'System/openSettings': ok,
   'Shell/open': ok,

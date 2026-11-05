@@ -39,6 +39,9 @@ export function rendererCsp(mode: 'production' | { vitePort: number; apiPort: nu
     "media-src 'self' blob:",
     `connect-src 'self'${loopback}`,
     "font-src 'self' data:",
+    // The sealed mail frame (`aplos-mail://m/<token>/`, ARCH 9.3): without this the page's `default-src 'self'` would
+    // block the frame. Script inside it runs under its own header policy, in an opaque origin (no allow-same-origin).
+    'frame-src aplos-mail:',
     ...(dev ? [] : ["object-src 'none'", "base-uri 'none'", "form-action 'none'"]),
   ].join('; ');
 }

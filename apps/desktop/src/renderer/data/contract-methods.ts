@@ -405,6 +405,18 @@ export const CONTRACT_METHODS = {
     gaps: [],
     notes: 'main also ends the setup session itself on any close',
   },
+  'window.closeReady': {
+    method: 'Window/closeReady',
+    kind: 'native',
+    gaps: [],
+    notes: "answers main's prepare-close once unsaved work is saved; main then closes the window",
+  },
+  'window.closeCancel': {
+    method: 'Window/closeCancel',
+    kind: 'native',
+    gaps: [],
+    notes: 'tells main the close failed, so it re-enables the window',
+  },
   'system.login': {
     method: 'System/login',
     kind: 'native',
