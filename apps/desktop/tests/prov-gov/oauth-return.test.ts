@@ -2,7 +2,7 @@
 // and the strict link parsing that decides what main may do with it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -147,6 +147,34 @@ test('the registry is bounded: past the cap, register refuses and the page gets 
     assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 1e5 }), true);
     assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 1e5 }), true);
     assert.equal(returns.register({ nonce: 'c'.repeat(32), purpose: 'mail', ttlMs: 1e5 }), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a refused delete still spends the nonce: consume and revoke leave a tombstone the sweep removes', () => {
+  const dir = tmp();
+  try {
+    const returns = createOauthReturns({ dir });
+    assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 60_000 }), true);
+    assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 60_000 }), true);
+    // A directory the process cannot delete from: the unlink fails, the file itself stays writable.
+    chmodSync(dir, 0o500);
+    try {
+      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), 'mail');
+      // A fresh consumed set (as after a restart) still reads the nonce as spent, and so does a
+      // revoked one — the failed unlink left a tombstone, not a live entry.
+      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), undefined);
+      assert.equal(readFileSync(join(dir, `${nonce}.json`), 'utf8'), '');
+      returns.revoke(nonce2);
+      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce2), undefined);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+    // The next register's sweep deletes both tombstones.
+    assert.equal(returns.register({ nonce: 'c'.repeat(32), purpose: 'mail', ttlMs: 60_000 }), true);
+    assert.throws(() => readFileSync(join(dir, `${nonce}.json`), 'utf8'));
+    assert.throws(() => readFileSync(join(dir, `${nonce2}.json`), 'utf8'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

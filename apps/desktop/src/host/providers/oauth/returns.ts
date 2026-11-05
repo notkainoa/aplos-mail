@@ -22,6 +22,8 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  truncateSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -133,9 +135,29 @@ function readEntry(file: string): OauthReturnEntry | undefined {
 }
 
 /**
- * The file-backed registry. `register` sweeps expired or malformed files first, then refuses past
- * `maxEntries`; the write is a tmp file renamed into place so a reader never sees a partial entry.
- * Every filesystem error is swallowed: the deep link is a convenience, never a reason a sign-in fails.
+ * Best-effort removal of a spent or revoked entry: the file is unlinked, or — when the directory
+ * refuses the unlink — truncated to an empty tombstone a reader still treats as spent and the next
+ * sweep deletes. Never throws; a file that stays live anyway is still bounded by its `exp`.
+ */
+function removeEntryFile(file: string): void {
+  try {
+    unlinkSync(file);
+    return;
+  } catch {
+    /* the directory refused: leave the file dead rather than live */
+  }
+  try {
+    truncateSync(file, 0);
+  } catch {
+    /* still on disk: `exp` and any in-memory consumed set bound it */
+  }
+}
+
+/**
+ * The file-backed registry. `register` sweeps expired or malformed files (a truncated tombstone
+ * reads as malformed) first, then refuses past `maxEntries`; the write is a tmp file renamed into
+ * place so a reader never sees a partial entry. Every filesystem error is swallowed: the deep link
+ * is a convenience, never a reason a sign-in fails.
  */
 export function createOauthReturns(options: {
   dir: string;
@@ -179,7 +201,7 @@ export function createOauthReturns(options: {
     },
     revoke(nonce) {
       try {
-        if (noncePattern.test(nonce)) rmSync(join(dir, `${nonce}${fileSuffix}`));
+        if (noncePattern.test(nonce)) removeEntryFile(join(dir, `${nonce}${fileSuffix}`));
       } catch {
         /* nothing registered, or already consumed */
       }
@@ -189,7 +211,8 @@ export function createOauthReturns(options: {
 
 /**
  * The main-process side: a link's nonce counts only while its file is a live, unexpired regular
- * file. Consuming deletes the file (single use); `consumed` additionally remembers every nonce ever
+ * file. Consuming deletes the file (single use), tombstoning it when the delete is refused;
+ * `consumed` additionally remembers every nonce ever
  * accepted so a replay or a re-created file cannot focus twice. Never throws.
  */
 export function consumeOauthReturn(
@@ -202,10 +225,6 @@ export function consumeOauthReturn(
   const entry = readEntry(file);
   if (!entry) return undefined;
   options.consumed?.add(nonce);
-  try {
-    rmSync(file);
-  } catch {
-    /* the in-memory set still makes it single use */
-  }
+  removeEntryFile(file);
   return entry.exp > now() ? entry.purpose : undefined;
 }
