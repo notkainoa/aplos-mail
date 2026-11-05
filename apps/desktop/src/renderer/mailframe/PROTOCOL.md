@@ -161,7 +161,7 @@ fires for the out-of-process frame's keys (measured), and main sends the embeddi
 `aplos:mail-key`, `{ key }`, only when the focused frame is the sealed `aplos-mail://m/<token>/` document, only for a
 listed key (`shared/mail-keys.ts` `MAIL_KEYS`, which `FALLBACK_KEYS` is built from), keydown only, **no** Ctrl, Cmd or Alt
 and Shift only for J and K, **no** auto-repeat. Main validates the message before it sends and preload before it
-delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued).
+delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued). The key hook subscribes with `window.aplos.subscribe(listener, { only: ['mail-key'] })`: a listener that names its types neither receives nor consumes the deep-link, command and prepare-close events that wait for the app's own first subscribe.
 Main does not cancel the key, so an arrow or Page Down still scrolls the letter; the shell decides what it handles.
 Whoever consumes the event (`MailFrame` / the shell, lane ui-reader) maps it to the same `onKey` path and must not also
 listen to the frame (the srcdoc listener never runs for a sealed frame, and main never relays a srcdoc frame's keys).

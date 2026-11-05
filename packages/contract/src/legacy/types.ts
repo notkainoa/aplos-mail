@@ -249,7 +249,8 @@ export interface UpdateInfo {
 export type Listener = (event: { type: string; payload?: unknown }) => void;
 export interface Bridge {
   invoke<T = unknown>(method: string, payload?: unknown): Promise<T>;
-  subscribe(listener: Listener): () => void;
+  /** `options.only` names the event types this listener wants; it then neither receives nor consumes any other. */
+  subscribe(listener: Listener, options?: { only?: readonly string[] }): () => void;
 }
 declare global {
   interface Window {
