@@ -60,6 +60,26 @@ trap 'rmdir "$LOCK" 2>/dev/null; cleanup' EXIT
 # Terminal agents export this for themselves; it would break npm and Electron spawns.
 unset ELECTRON_RUN_AS_NODE
 
+# A free loopback port P with P+1 free too (the preview takes P, its API P+1), so the e2e suite never
+# collides with another lane's preview or Electron on the fixed default (4417).
+free_e2e_port() {
+  node -e '
+    const net = require("node:net");
+    const free = port => new Promise(resolve => {
+      const server = net.createServer();
+      server.once("error", () => resolve(false));
+      server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+    });
+    (async () => {
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const port = 20000 + Math.floor(Math.random() * 20000);
+        if ((await free(port)) && (await free(port + 1))) return console.log(port);
+      }
+      process.exit(1);
+    })();
+  '
+}
+
 declare -a NAMES STATUS SECONDS_TOTAL
 run() { # run <name> <cmd...>
   local name="$1" log start code
@@ -136,7 +156,13 @@ else
   # ---- job: e2e-browser ---------------------------------------------------------
   if [ "$DO_E2E" = 1 ]; then
     if (cd "$TREE" && npx playwright install chromium >"$LOGS/playwright-install.log" 2>&1); then
-      run "e2e browser" npm run test:e2e:browser
+      E2E_PORT=$(free_e2e_port) || E2E_PORT=""
+      if [ -n "$E2E_PORT" ]; then
+        echo "local-ci: e2e preview on port $E2E_PORT (API $((E2E_PORT + 1)))"
+        run "e2e browser" env APLOS_E2E_PORT="$E2E_PORT" npm run test:e2e:browser
+      else
+        run "e2e browser" npm run test:e2e:browser
+      fi
     else
       skip "e2e browser" "playwright chromium install failed ($LOGS/playwright-install.log)"
     fi
