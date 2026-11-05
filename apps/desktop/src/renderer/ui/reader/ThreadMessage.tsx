@@ -12,7 +12,7 @@ import type { ThreadMessageProps } from '../props';
 import { Chip } from '../list/Chip';
 import { Action } from '../list/internal/Action';
 import { formatFull, formatMessageTime } from '../list/internal/format';
-import { tooltipText } from '../list/internal/keys';
+import { useTooltipText } from '../list/internal/keys';
 import { UndoTray } from './UndoTray';
 
 /** The excerpt's words when a message has no text to show (plain, dim, no exclamation mark). */
@@ -34,6 +34,7 @@ export function ThreadMessage({
   undoTray,
   ref,
 }: ThreadMessageProps) {
+  const tip = useTooltipText();
   const fromId = `${id}-from`;
   const folded = fold !== undefined && !fold.open;
   const headLine = (
@@ -74,10 +75,7 @@ export function ThreadMessage({
             className="ui-thread-message__toggle"
             aria-expanded={fold.open}
             aria-controls={`${id}-content`}
-            title={tooltipText(
-              fold.open ? 'Fold this message' : 'Open this message',
-              fold.commandId,
-            )}
+            title={tip(fold.open ? 'Fold this message' : 'Open this message', fold.commandId)}
             onFocus={fold.onFocus}
             onClick={fold.onToggle}
           >
@@ -114,10 +112,7 @@ export function ThreadMessage({
             label={quoted.shown ? 'Hide quoted text' : 'Show quoted text'}
             tooltip={
               quoted.commandId
-                ? tooltipText(
-                    quoted.shown ? 'Hide quoted text' : 'Show quoted text',
-                    quoted.commandId,
-                  )
+                ? tip(quoted.shown ? 'Hide quoted text' : 'Show quoted text', quoted.commandId)
                 : undefined
             }
             expanded={quoted.shown}

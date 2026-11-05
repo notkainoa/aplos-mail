@@ -29,7 +29,7 @@ host degrades quietly as noted.
   would keep names/colours live.
 - **`AgendaView` 'today' shows only what is left now** (owner decision, F7 — we edited it, needs
   lane-approved:ui-calendar): finished timed events fold into one quiet "N earlier" line where the dimmed rows
-  were, the header counts what is left ("N left today" · next at …, or "Nothing left today." beside the earlier
+  were, the header counts what is left ("N left today" · next at …, or "Nothing left today" beside the earlier
   count), and the now-line draws only while a timed event remains; the model's `behind` rule is gone.
 
 ## engine/contract (already frozen — confirm only)

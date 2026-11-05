@@ -46,13 +46,14 @@ import type { HomeBulkDeps } from './homeBulk';
 import { homeBarActions, homeRunContext } from './homeCommands';
 import {
   buildItems,
+  keyOf,
   layoutOf,
   orderLayout,
   pickableIds,
   type HomeItem,
   type HomeLayout,
 } from './homeModel';
-import { densityOf, senderOf, subjectOf } from './homeRows';
+import { densityOf, senderOf, subjectOf, suggestionOf } from './homeRows';
 import { useHomeActions } from './useHomeActions';
 import { useHomeDatePicker } from './useHomeDatePicker';
 import { useFollowHomeCursor } from './useFollowHomeCursor';
@@ -199,6 +200,11 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     picked: pick.bulk.picking ? pick.bulk.picked : undefined,
   };
   const cursorRow = cursor.key === null ? undefined : home.rows.get(cursor.key);
+  const cursorSection = cursor.items.find(item => keyOf(item) === cursor.key);
+  const suggestion =
+    cursorRow && cursorSection?.kind === 'row'
+      ? suggestionOf(cursorRow, cursorSection.section)
+      : undefined;
   useCommandTarget(
     cursorRow
       ? {
@@ -246,8 +252,10 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   }, [listHidden, closeDatePicker]);
   const openLow = useCallback(() => setLowOpen(true), []);
   const openMore = useCallback(() => {
-    const dom = activeDomId(snapshot.current.key);
-    setMenuAnchor(dom ? document.getElementById(dom) : null);
+    // The ⋯ menu is a message menu: only a real row has one (the Low band does not).
+    const item = snapshot.current.items.find(i => keyOf(i) === snapshot.current.key);
+    if (item?.kind !== 'row') return;
+    setMenuAnchor(document.getElementById(rowDomId(item.id)));
   }, []);
   const openWhy = useCallback(() => {
     const { key, items } = snapshot.current;
@@ -343,6 +351,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
         accounts={accounts}
         rowOf={rowOf}
         cursorKey={cursor.key}
+        suggestion={suggestion}
         onOpen={onOpen ?? ignore}
         actions={actions}
         why={why}

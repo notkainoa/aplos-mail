@@ -28,7 +28,7 @@ import {
 import { expandEvent, walkableIds, type ReaderUi, type UiEvent } from './readerUi';
 import { useLetterData, type LetterData } from './useLetterData';
 
-export const GONE_COPY = 'This email is no longer here.';
+export const GONE_COPY = 'This email is no longer here';
 
 const TRIAGE_COMMANDS = {
   suggest: 'mail.suggested',
@@ -279,7 +279,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
 function Contents(props: BodyProps): ReactNode {
   const { data } = props;
   const row = data.row;
-  if (data.status === 'missing') return <EmptyLine text={GONE_COPY} />;
+  if (data.status === 'missing') return <EmptyLine placement="pane" icon="mail" text={GONE_COPY} />;
   if (data.status === 'failed')
     return <ErrorLine kind="bodyFailed" placement="column" onAction={props.onRetry} />;
   return row ? <Thread {...props} row={row} /> : null;

@@ -141,5 +141,5 @@ test('the switcher menu still ends with Add an account, and the empty copy is un
   const entries = accountEntries([], noop);
   const last = entries.at(-1);
   assert.equal(last?.kind === 'item' ? last.label : undefined, 'Add an account');
-  assert.equal(emptyText('later'), 'Nothing set aside for later.');
+  assert.equal(emptyText('later'), 'Nothing set aside for later');
 });

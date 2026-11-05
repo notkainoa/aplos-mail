@@ -193,6 +193,30 @@ const LABEL = { label: 'demo-work:label-projects' } as const;
 const NO_MAIL = { label: 'demo-work:label-nothing-here' } as const;
 const LATER_ROW = '.aplos-screen [role="option"]';
 
+/** Discards every draft: they are not threads, so `actOnView`'s Thread/act cannot reach them. */
+const EMPTY_DRAFTS: Step = {
+  run: async () => {
+    const client = boot('demo');
+    const window = await client.api.view.watch({ spec: { kind: 'drafts' } });
+    for (const id of window.ids)
+      await api.draft
+        .destroy({ id })
+        .catch((error: unknown) => console.error('gallery draft discard failed', error));
+    await client.api.view.unwatch({ windowId: window.windowId });
+  },
+};
+
+/** Types a query nothing matches; the field's onChange does the rest (the remote offer joins the line). */
+const SEARCH_NO_MATCH: Step = {
+  run: async () => {
+    const field = document.querySelector<HTMLInputElement>('.ui-search-field__input');
+    if (!field) return;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(field, 'meteor');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  },
+};
+
 /** Presses `keys` one after another, each once (J then X, say). */
 const keys = (...pressed: readonly string[]): readonly Step[] => pressed.map(key => ({ key }));
 
@@ -217,6 +241,7 @@ const WALK_THROUGH: Step = {
 
 export const homeScenes: Record<string, () => ReactElement> = {
   'home-full': sceneOf({ scenario: 'demo', screen: 'home' }),
+  'home-menu': sceneOf({ scenario: 'demo', screen: 'home', steps: [{ key: '.' }] }),
   'home-with-cursor-focusslot': sceneOf({
     scenario: 'demo',
     screen: 'home',
@@ -289,6 +314,32 @@ export const homeScenes: Record<string, () => ReactElement> = {
   'list-spam': sceneOf({ scenario: 'demo', screen: 'spam' }),
   'list-label': sceneOf({ scenario: 'demo', screen: LABEL }),
   'list-empty': sceneOf({ scenario: 'demo', screen: NO_MAIL }),
+  'list-all-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'all',
+    steps: [actOnView({ kind: 'mailbox', role: 'all' }, { type: 'trash' })],
+  }),
+  'list-drafts-empty': sceneOf({ scenario: 'demo', screen: 'drafts', steps: [EMPTY_DRAFTS] }),
+  'list-trash-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'trash',
+    steps: [actOnView({ kind: 'mailbox', role: 'trash' }, { type: 'restore' })],
+  }),
+  'list-spam-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'spam',
+    steps: [actOnView({ kind: 'mailbox', role: 'spam' }, { type: 'restore' })],
+  }),
+  'search-no-results': sceneOf({
+    scenario: 'demo',
+    screen: { label: 'Search' },
+    steps: [SEARCH_NO_MATCH],
+  }),
+  'home-low-sheet-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [{ click: '#home-low' }, actOnView({ kind: 'lowBySender' }, { type: 'done' })],
+  }),
   'done-screen-rows': sceneOf({ scenario: 'demo', screen: 'done' }),
   'done-empty': sceneOf({
     scenario: 'demo',

@@ -156,7 +156,7 @@ test('the palette shows keycaps from the registry and hides commands without han
   const entries = registry.commandsForPalette(context(['global', 'list', 'home', 'palette']));
   assert.deepEqual(
     entries.map(e => [e.id, e.keys]),
-    [['mail.done', 'E or →']],
+    [['mail.done', '→ or E']],
   );
   assert.ok(registry.missingHandlers().includes('mail.later'));
 });

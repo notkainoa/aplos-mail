@@ -657,6 +657,7 @@ export function createRegistry(
   }
 
   function describeKeys(id: CommandId, stack?: readonly ContextName[]): string {
+    if (stack && disabledHere(id, stack)) return '';
     return formatAlternatives(keysFor(id, stack));
   }
 
