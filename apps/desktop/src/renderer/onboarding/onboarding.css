@@ -95,6 +95,12 @@
    "Add an account" with "Try demo mail" as a text button, and the small privacy line. It centres itself in the pane
    inside a reading measure, like inbox zero (`safe` so a taller block anchors at the top and scrolls inside the
    pane body instead of clipping its headline); with no height to fill it draws at its natural size. */
+/* The slot only has a min-height, so it becomes a column the block's flex: 1 can fill. */
+.aplos-screen:has(> .onb-zero) {
+  display: flex;
+  flex-direction: column;
+}
+
 .onb-zero {
   flex: 1;
   box-sizing: border-box;

@@ -84,7 +84,7 @@ function TodayAgenda(props: CalendarGridProps) {
   const next = upcoming[0];
   const sub =
     left === 0
-      ? 'Nothing left today.'
+      ? 'Nothing left today'
       : `${left} left today${next ? ` · next at ${timeOf(next.start)}` : ''}`;
   const detail = (e: CalendarEventData, lead?: string): string =>
     [lead, e.calendar.name, durationText(minutesBetween(e.start, e.end))]
@@ -133,7 +133,7 @@ function TodayAgenda(props: CalendarGridProps) {
       {left === 0 ? (
         <>
           <div className="ui-calendar-grid__empty" data-view="agenda" role="status">
-            <span>{todays.length === 0 ? 'Nothing scheduled.' : 'Nothing left today.'}</span>
+            <span>{todays.length === 0 ? 'Nothing scheduled' : 'Nothing left today'}</span>
             {todays.length === 0 && emptyAction ? <GridAction action={emptyAction} /> : null}
           </div>
           {earlierLine}
@@ -165,7 +165,7 @@ function FullAgenda(props: CalendarGridProps) {
   if (days.every(d => d.list.length === 0)) {
     return (
       <div className="ui-calendar-grid__empty" data-view="agenda" role="status">
-        <span>Nothing scheduled.</span>
+        <span>Nothing scheduled</span>
         {emptyAction ? <GridAction action={emptyAction} /> : null}
       </div>
     );

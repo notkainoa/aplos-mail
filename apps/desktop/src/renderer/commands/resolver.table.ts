@@ -206,6 +206,32 @@ export const TABLE: readonly Row[] = [
   },
   { name: '← does nothing in Done', stack: DONE, event: keydown('ArrowLeft'), expect: null },
   {
+    name: '→ in a text field moves the caret, not Done',
+    stack: HOME,
+    event: keydown('ArrowRight'),
+    focus: 'text',
+    expect: null,
+  },
+  {
+    name: '← in a text field moves the caret, not Later',
+    stack: HOME,
+    event: keydown('ArrowLeft'),
+    focus: 'text',
+    expect: null,
+  },
+  {
+    name: '⇧→ is not → on Home',
+    stack: HOME,
+    event: keydown('ArrowRight', { shiftKey: true }),
+    expect: null,
+  },
+  {
+    name: '⌘→ is not → on Home',
+    stack: HOME,
+    event: keydown('ArrowRight', { metaKey: true }),
+    expect: null,
+  },
+  {
     name: '→ is the next period in calendar',
     stack: CALENDAR,
     event: keydown('ArrowRight'),

@@ -193,7 +193,7 @@ export function gridLabel(
   dayCount: number,
 ): string {
   if (view === 'day')
-    return `${dayTitle(anchor)}. ${dayCount === 0 ? 'Nothing scheduled.' : `${eventCount(dayCount)}.`}`;
+    return `${dayTitle(anchor)}. ${dayCount === 0 ? 'Nothing scheduled' : `${eventCount(dayCount)}.`}`;
   if (view === 'month') return monthTitle(yearMonthOf(anchor));
   return `Week of ${dayTitle(period.days[0])}`;
 }

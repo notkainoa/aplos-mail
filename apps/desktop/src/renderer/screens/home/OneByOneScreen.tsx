@@ -7,6 +7,7 @@
 import { ListFailed } from '../lists/ListStates';
 import { Reopenable } from '../lists/Reopenable';
 import { HomeMenu, type HomeMenuChoice } from './HomeMenu';
+import { suggestionOf } from './homeRows';
 import { OneByOneLetter } from './OneByOneLetter';
 import { OneByOneFinish } from './OneByOneStates';
 import { useOneByOne, type OneByOne, type OneByOneScreenProps } from './useOneByOne';
@@ -16,9 +17,22 @@ export type { OneByOneScreenProps } from './useOneByOne';
 
 /** The ⋯ menu's choices, on the thread showing. */
 function chooseFromMenu(view: OneByOne, id: HomeMenuChoice): void {
-  if (id === 'bookmark') view.actions.bookmark();
-  else if (id === 'why') view.openWhy();
-  else view.actions.trash();
+  switch (id) {
+    case 'suggested':
+      return view.actions.suggested();
+    case 'later':
+      return view.actions.later();
+    case 'done':
+      return view.actions.done();
+    case 'setDate':
+      return view.actions.setDate();
+    case 'bookmark':
+      return view.actions.bookmark();
+    case 'why':
+      return view.openWhy();
+    case 'trash':
+      return view.actions.trash();
+  }
 }
 
 function Overlays({ view }: { readonly view: OneByOne }) {
@@ -28,6 +42,7 @@ function Overlays({ view }: { readonly view: OneByOne }) {
       <HomeMenu
         anchor={menu?.anchor ?? null}
         row={row}
+        suggestion={row ? suggestionOf(row, view.section) : undefined}
         onSelect={id => {
           view.closeMenu();
           chooseFromMenu(view, id);

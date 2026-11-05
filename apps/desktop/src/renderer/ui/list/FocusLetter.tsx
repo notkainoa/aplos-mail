@@ -11,7 +11,7 @@ import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { Icon } from './internal/Icon';
 import { formatFull, formatListDate } from './internal/format';
-import { keycapFor, tooltipText } from './internal/keys';
+import { tooltipText, useKeycapFor } from './internal/keys';
 
 /** The Home focus letter, the selected option of the Home listbox. */
 export function FocusLetter({
@@ -31,7 +31,10 @@ export function FocusLetter({
   onDone,
   onMore,
 }: FocusLetterProps) {
-  const space = keycapFor(commands.suggest);
+  const space = useKeycapFor(commands.suggest);
+  const later = useKeycapFor(commands.later);
+  const done = useKeycapFor(commands.done);
+  const more = useKeycapFor(commands.more);
   return (
     <div
       id={id}
@@ -89,7 +92,7 @@ export function FocusLetter({
           icon="clock"
           labelHidden={narrow}
           tooltip={tooltipText('Later', commands.later)}
-          hintKey={keycapFor(commands.later)}
+          keycap={later}
           duplicate
           onPress={anchor => onLater(anchor)}
         />
@@ -101,7 +104,7 @@ export function FocusLetter({
             icon="check"
             labelHidden={narrow}
             tooltip={tooltipText('Done', commands.done)}
-            hintKey={keycapFor(commands.done)}
+            keycap={done}
             duplicate
             onPress={() => onDone()}
           />
@@ -112,7 +115,7 @@ export function FocusLetter({
           label="More"
           icon="more"
           tooltip={tooltipText('More: bookmark, trash, why it’s here', commands.more)}
-          hintKey={keycapFor(commands.more)}
+          hintKey={more}
           duplicate
           onPress={anchor => onMore(anchor)}
         />

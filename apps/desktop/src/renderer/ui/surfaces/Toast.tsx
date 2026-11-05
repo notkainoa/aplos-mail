@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
 import type { ComponentPropsMap, IconName, ToastKind } from '../props';
-import { PartIcon, PartKeys, keysFor, prefersReducedMotion } from './parts';
+import { PartIcon, PartKeys, prefersReducedMotion, useKeysFor } from './parts';
 
 const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' }> = {
   done: { icon: 'check', tone: 'hill' },
@@ -107,6 +107,7 @@ export function Toast({
     return () => clearTimeout(t);
   }, [leaving]);
 
+  const keysOf = useKeysFor();
   const look = KIND[kind];
   return (
     <div
@@ -133,7 +134,7 @@ export function Toast({
           onClick={() => onAction(action.id)}
         >
           <span>{action.label}</span>
-          <PartKeys chords={keysFor(action.commandId ?? action.keysFrom)} />
+          <PartKeys chords={keysOf(action.commandId ?? action.keysFrom)} />
         </button>
       ))}
     </div>

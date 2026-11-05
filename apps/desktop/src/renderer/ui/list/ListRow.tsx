@@ -11,7 +11,7 @@ import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { formatDoneStamp, formatFull, formatListDate } from './internal/format';
 import { Icon } from './internal/Icon';
-import { keycapFor, tooltipText } from './internal/keys';
+import { tooltipText, useKeycapFor } from './internal/keys';
 
 const COMMIT_WORD: Record<CommitKind, string> = { done: 'Done', later: 'Later', trash: 'Trash' };
 const COMMIT_ICON: Record<CommitKind, IconName> = { done: 'check', later: 'clock', trash: 'trash' };
@@ -142,6 +142,28 @@ function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
   );
 }
 
+/** One hover icon button; its hint cap comes from the shell's registry when mounted (→ on Home, E elsewhere). */
+function HoverAction({
+  action,
+  onAction,
+}: {
+  action: RowProps['hoverActions'][number];
+  onAction: NonNullable<RowProps['onAction']>;
+}) {
+  return (
+    <Action
+      variant="icon"
+      size="sm"
+      label={action.label}
+      icon={action.icon}
+      tooltip={tooltipText(action.label, action.commandId)}
+      hintKey={useKeycapFor(action.commandId)}
+      duplicate
+      onPress={anchor => onAction(action.commandId, anchor)}
+    />
+  );
+}
+
 /** The hover actions: an overlay inside the meta cell, so it always covers the whole date column. */
 function HoverActions({
   actions,
@@ -154,17 +176,7 @@ function HoverActions({
     <span className="ui-list-row__actions">
       <span className="ui-list-row__actions-fill">
         {actions.map(action => (
-          <Action
-            key={action.commandId}
-            variant="icon"
-            size="sm"
-            label={action.label}
-            icon={action.icon}
-            tooltip={tooltipText(action.label, action.commandId)}
-            hintKey={keycapFor(action.commandId)}
-            duplicate
-            onPress={anchor => onAction(action.commandId, anchor)}
-          />
+          <HoverAction key={action.commandId} action={action} onAction={onAction} />
         ))}
       </span>
     </span>

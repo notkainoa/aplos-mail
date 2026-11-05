@@ -66,15 +66,25 @@ function prefsOf(ui: KeyFields) {
   return keyPrefsFromUi(ui as UiKeyFields);
 }
 
-/** A command's tap chords as the registry has them, de-duplicated across contexts, in catalog order. */
+/**
+ * A command's tap chords as the registry has them, de-duplicated across contexts. Chords that live in only
+ * some of the command's contexts (→ Done, which triages on Home, one by one and the reader but not in plain
+ * lists) sort after the ones that work everywhere the command does, so a remap still replaces the letter and
+ * keeps the arrow — `remapChords` swaps the first chord out.
+ */
 function tapChords(registry: ReturnType<typeof createAppRegistry>, id: string): string[] {
-  const out: string[] = [];
+  const entry = registry.get(id);
+  const contexts = entry?.kind === 'command' ? entry.spec.contexts : [];
+  const byChord = new Map<string, Set<string>>();
   for (const b of registry.keysFor(id)) {
     if (b.phase !== 'tap') continue;
     const c = chordId(b.chord);
-    if (!out.includes(c)) out.push(c);
+    byChord.set(c, (byChord.get(c) ?? new Set()).add(b.context));
   }
-  return out;
+  const full = (set: Set<string>) => contexts.every(c => set.has(c));
+  return [...byChord.keys()].sort(
+    (a, b) => Number(full(byChord.get(b)!)) - Number(full(byChord.get(a)!)),
+  );
 }
 
 function entryChord(e: KeyBinding | string): string {

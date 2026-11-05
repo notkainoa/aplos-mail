@@ -83,6 +83,7 @@ import {
 } from 'lucide-react';
 import {
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -94,6 +95,7 @@ import {
   type Ref,
 } from 'react';
 import { createAppRegistry, type Registry } from '../../commands/index';
+import { CommandKeysContext } from '../buttons-keys/keyHints';
 import type { Anchor, CommandId, IconName, KeyHint, LiteralKey } from '../props';
 
 /* ───────────── Icons: the closed IconName set, Lucide fallback (DESIGN 4.7) ───────────── */
@@ -199,6 +201,22 @@ export function keysFor(commandId?: CommandId, literal?: LiteralKey): readonly s
   registry ??= createAppRegistry();
   const text = registry.describeKeys(commandId);
   return text ? text.split(' or ') : [];
+}
+
+/**
+ * `keysFor` from the registry the shell mounted (remaps, the swipe-direction swap and the keys that work on the
+ * current screen show). Where no `CommandKeysProvider` is mounted — the gallery, tests, previews — it answers
+ * exactly as `keysFor` does: the default catalog's keys.
+ */
+export function useKeysFor(): (commandId?: CommandId, literal?: LiteralKey) => readonly string[] {
+  const describe = useContext(CommandKeysContext);
+  if (!describe) return keysFor;
+  return (commandId, literal) => {
+    if (literal) return [literal];
+    if (!commandId) return [];
+    const text = describe(commandId);
+    return text ? text.split(' or ') : [];
+  };
 }
 
 /** Caps for a set of chords, alternatives joined with "or". 'hint' caps show only in the "Show all key hints" mode. */
@@ -321,7 +339,7 @@ export function PartButton(props: PartButtonProps) {
     onPress,
   } = props;
   const tipId = useId();
-  const chords = keysFor(commandId, keys);
+  const chords = useKeysFor()(commandId, keys);
   const showLabel = variant !== 'icon' || labelVisible === true;
   const inlineKeys = keyHint === 'always' || keyHint === 'hint';
   const hasTip = wantsTip(props, chords);

@@ -14,8 +14,9 @@ export interface OneByOneFinishProps {
 export function OneByOneFinish({ nothing, onBack }: OneByOneFinishProps) {
   return (
     <EmptyLine
+      placement="pane"
       size="display"
-      text={nothing ? 'Nothing to go through.' : 'That’s everyone.'}
+      text={nothing ? 'Nothing to go through' : 'That’s everyone'}
       action={{ label: 'Back to Home', commandId: 'nav.back', emphasis: 'text', onSelect: onBack }}
     />
   );

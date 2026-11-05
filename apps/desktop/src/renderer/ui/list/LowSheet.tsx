@@ -133,7 +133,7 @@ export function LowSheet({
 
         {empty ? (
           <EmptyLine
-            text="No low-importance mail."
+            text="No low-importance mail"
             action={{ label: 'Back to Home', emphasis: 'text', keys: 'Esc', onSelect: onClose }}
           />
         ) : (

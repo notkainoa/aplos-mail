@@ -120,7 +120,7 @@ export interface CalendarViewModel {
 
 /** What an empty day or week says: one plain sentence, then what comes next from the loaded events. */
 export interface EmptyView {
-  /** "Nothing on Sunday, November 1." / "A clear week." */
+  /** "Nothing on Sunday, November 1" / "A clear week" */
   readonly sentence: string;
   /** "Next: Q4 review, Thursday at 11:00 AM", or the honest fallback. */
   readonly next: string;
@@ -141,8 +141,8 @@ function nextUpcoming(state: CalendarState, ctx: CalendarContext, period: Period
   }).find(e => new Date(e.start).getTime() >= from);
   if (!next) {
     return ctx.loadedThrough >= limit
-      ? 'Nothing coming up in the next two weeks.'
-      : 'Nothing coming up.';
+      ? 'Nothing coming up in the next two weeks'
+      : 'Nothing coming up';
   }
   const day = dayOf(next.start);
   const soon = new Date(next.start).getTime() - from < 7 * DAY_MS;
@@ -166,14 +166,14 @@ function emptyView(
   // Every calendar hidden draws a bare grid that is not a clear week: say what is really true (review2 7).
   if (ctx.calendars.length > 0 && visibleCalendarIds(ctx.calendars, state.solo).length === 0)
     return {
-      sentence: 'All your calendars are hidden.',
-      next: 'Turn one back on to see your events.',
+      sentence: 'All your calendars are hidden',
+      next: 'Turn one back on to see your events',
     };
   const sentence =
     shown === 'day' && dayCount === 0
-      ? `Nothing on ${longDay(state.anchor)}.`
+      ? `Nothing on ${longDay(state.anchor)}`
       : shown === 'week' && entries.length === 0
-        ? 'A clear week.'
+        ? 'A clear week'
         : null;
   return sentence === null ? null : { sentence, next: nextUpcoming(state, ctx, period) };
 }
