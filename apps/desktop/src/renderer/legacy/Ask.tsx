@@ -50,6 +50,8 @@ import { AskEvent } from './AskEvent';
 import { showSettingsTab } from './Settings';
 import type { Contact } from './Compose';
 
+// The one event type the dock hears (see the subscribe below).
+const ASK_EVENTS = { only: ['ai.progress'] } as const;
 const holdDelay = 220;
 // Emails opened from Ask, newest first: picked from its matches or clicked in an answer.
 const openedKey = 'aplos.askOpened';
@@ -265,6 +267,7 @@ export const Ask = memo(function Ask({
     }
   }
   // Progress for the running answer streams in as engine events; anything for another request is ignored.
+  // `only`: this dock listens before the app does and must not take the deep-link, command and prepare-close events held for it.
   useEffect(
     () =>
       bridge.subscribe(event => {
@@ -295,7 +298,7 @@ export const Ask = memo(function Ask({
           }
           return current;
         });
-      }),
+      }, ASK_EVENTS),
     [],
   );
   const askLatest = useRef(ask);
