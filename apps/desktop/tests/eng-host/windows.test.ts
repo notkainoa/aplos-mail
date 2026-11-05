@@ -68,6 +68,7 @@ function harness(options: { testMode?: boolean; fade?: boolean } = {}) {
     mail: [] as FakeWindow[],
     ends: 0,
     shown: [] as number[],
+    navigated: [] as Array<{ id: number; to: string }>,
     quitting: false,
     timers: [] as Array<{ run: () => void; ms: number; cleared: boolean }>,
     endFails: false,
@@ -90,6 +91,7 @@ function harness(options: { testMode?: boolean; fade?: boolean } = {}) {
       if (log.endFails) throw new Error('Unsupported engine method.');
     },
     announceShown: win => void log.shown.push(win.id),
+    navigate: (win, to) => void log.navigated.push({ id: win.id, to }),
     isQuitting: () => log.quitting,
     testMode: options.testMode ?? false,
     setTimer: (run, ms) => {
@@ -356,4 +358,43 @@ test('fade: a window that fails to take an opacity closes at once; test mode nev
   await done;
   assert.deepEqual((quiet.log.onboarding[0] as FadeWindow).opacities, []);
   assert.equal(quiet.log.onboarding[0].destroyed, true);
+});
+
+test('finish with a destination tells the mail window once, after it is shown; without one it does not', async () => {
+  const withTo = harness();
+  withTo.controller.start(fresh, { atLogin: false });
+  const handoff = withTo.controller.finish({ to: 'settings.ai' });
+  assert.deepEqual(withTo.log.navigated, [], 'not before the mail window paints');
+  withTo.mailWindow()!.paint();
+  await handoff;
+  assert.deepEqual(withTo.log.navigated, [{ id: withTo.mailWindow()!.id, to: 'settings.ai' }]);
+
+  const plain = harness();
+  plain.controller.start(fresh, { atLogin: false });
+  const done = plain.controller.finish();
+  plain.mailWindow()!.paint();
+  await done;
+  assert.deepEqual(plain.log.navigated, []);
+});
+
+test('finish with a destination also navigates a mail window that is already up; a joined call keeps the first', async () => {
+  const up = harness();
+  up.controller.start(fresh, { atLogin: false });
+  const mail = up.seedMail();
+  mail.visible = true;
+  mail.painted = true;
+  await up.controller.finish({ to: 'settings.ai' });
+  assert.deepEqual(up.log.navigated, [{ id: mail.id, to: 'settings.ai' }]);
+
+  const joined = harness();
+  joined.controller.start(fresh, { atLogin: false });
+  const a = joined.controller.finish();
+  const b = joined.controller.finish({ to: 'settings.ai' });
+  joined.mailWindow()!.paint();
+  await Promise.all([a, b]);
+  assert.deepEqual(
+    joined.log.navigated,
+    [],
+    'the first call had no destination, the joiner is ignored',
+  );
 });

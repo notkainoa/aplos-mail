@@ -76,7 +76,8 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     return ok;
   }
   if (method === 'Window/finishOnboarding') {
-    await onboarding.finish();
+    // `to` was checked against the contract before it got here; anything but the one named screen is Home.
+    await onboarding.finish(payload.to === 'settings.ai' ? { to: 'settings.ai' } : {});
     return ok;
   }
   if (method === 'System/openSettings') {

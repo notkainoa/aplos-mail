@@ -315,6 +315,11 @@ const onboarding = createOnboarding({
   announceShown: port => {
     for (const win of windows) if (win.id === port.id) announceShown(win);
   },
+  navigate: (port, to) => {
+    for (const win of windows)
+      if (win.id === port.id)
+        win.webContents.send('aplos:event', { type: 'navigate', payload: { to } });
+  },
   isQuitting: () => quitting || closing,
   testMode: isTest,
   setTimer: (run, ms) => setTimeout(run, ms),
