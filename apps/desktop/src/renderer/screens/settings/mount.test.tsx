@@ -109,7 +109,7 @@ describe('optimistic Account/set', () => {
       [ALEX.id]: { colorTag: 'hill' },
       [JORDAN.id]: { aiAllowed: false },
     });
-    const merged = mergeAccounts(dataAt().accounts, h.accountOverlays.at(-1));
+    const merged = mergeAccounts(dataAt().accounts, h.accountOverlays.at(-1) ?? null);
     assert.equal(merged.find(a => a.id === ALEX.id)?.colorTag, 'hill');
     // The first write settling drops only its own overlay; the second is still optimistic.
     finish.get(ALEX.id)!();
