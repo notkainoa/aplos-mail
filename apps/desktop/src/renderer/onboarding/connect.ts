@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 import { api, useFrames } from '../data';
 import type { ConnectFrame, Input, Output } from '../data';
 import type { FocusTarget } from './flow';
+import { reasonOf } from './reason';
 
 /** The Accounts step's states (onboarding-accounts.html: choose, typed, waiting, connected; plus failed). */
 export type AccountsMode = 'choose' | 'discovering' | 'typed' | 'waiting' | 'failed' | 'connected';
@@ -394,15 +395,6 @@ export async function runAccountsEffect(
       }
       return;
   }
-}
-
-/** A contract error's reason code, when it carries one. */
-function reasonOf(error: unknown): string | undefined {
-  if (error && typeof error === 'object' && 'reasonCode' in error) {
-    const code = (error as { reasonCode?: unknown }).reasonCode;
-    return typeof code === 'string' ? code : undefined;
-  }
-  return undefined;
 }
 
 /**
