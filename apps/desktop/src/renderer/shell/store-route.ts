@@ -43,8 +43,12 @@ function sameScreen(a: Screen, b: Screen): boolean {
   return a.label === b.label;
 }
 
-/** Shows `screen`; the same screen keeps its snapshot. */
+/**
+ * Shows `screen`; the same screen keeps its snapshot. A pending Settings deep link belongs to the visit `setRoute`
+ * opened, so showing any other screen drops it (a stale link must not steer the next visit).
+ */
 export function setScreen(screen: Screen): void {
+  if (screen !== 'settings' && routeStore.get()) routeStore.set(null);
   if (!sameScreen(screenStore.get(), screen)) screenStore.set(screen);
 }
 
