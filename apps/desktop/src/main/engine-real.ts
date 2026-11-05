@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   MessageChannelMain,
   nativeTheme,
@@ -10,6 +11,7 @@ import {
   type IpcMainInvokeEvent,
   type MessagePortMain,
 } from 'electron';
+import os from 'node:os';
 import { join } from 'node:path';
 import { HostEvent, NotificationItem, parseArgs, type MethodName } from '@aplos/contract';
 import type { PendingWork } from '../host/lifecycle';
@@ -31,7 +33,10 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
-import { invokeNative, nativeMethods, notify } from './native-methods';
+import { invokeNative, nativeMethods, notify, openBytes, saveBytes } from './native-methods';
+import { guardedDesktopCall } from '../shared/desktop-error';
+import { SNIFFED_EXTENSIONS } from '../shared/file-sniff';
+import { extensionOf, fileNameOf, legacyNames, v1Result } from '../shared/desktop-v1';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
@@ -175,25 +180,69 @@ async function composeWindow(event: IpcMainInvokeEvent, draftId: string) {
 }
 
 /** The desktop methods main serves on this path today, by their v1 names; each maps to main's own handler. */
-const legacyNames: Record<string, string> = {
-  'App/info': 'app.info',
-  'Window/thread': 'window.thread',
-  'Window/closeReady': 'window.closeReady',
-  'Window/closeCancel': 'window.closeCancel',
-  'Window/openOnboarding': 'Window/openOnboarding',
-  'Window/finishOnboarding': 'Window/finishOnboarding',
-  'System/openSettings': 'System/openSettings',
-};
+/** Main's host-only diagnostics: content-free facts about this install, for when the engine cannot give its own bundle. */
+function hostBundle(): Record<string, unknown> {
+  return {
+    source: 'host',
+    at: new Date().toISOString(),
+    app: { name: app.getName(), version: app.getVersion() },
+    runtime: {
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+    },
+    system: { platform: process.platform, arch: process.arch, release: os.release() },
+    engine: { running: Boolean(link() && !link()!.exited) },
+  };
+}
 
-async function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
-  assertCaller(event);
+/** `Diagnostics/copy`: the content-free bundle to the clipboard. Today the host-only one (the engine's bundle is not on main's control connection). */
+function copyDiagnostics() {
+  // Test mode never writes the shared clipboard.
+  if (!isTest) clipboard.writeText(JSON.stringify(hostBundle(), null, 2));
+  return { source: 'host' as const };
+}
+
+/** The bytes of a blob, read through main's own control connection (`Blob/get`), never through a renderer. */
+async function blobBytes(blobId: string): Promise<Buffer> {
+  const current = link();
+  if (!current) throw new Error('The mailbox is restarting. Try again in a moment.');
+  const blob = (await current.call('Blob/get', { blobId }, 30_000)) as { bytes?: unknown };
+  if (!(blob.bytes instanceof Uint8Array)) throw new Error('That file is no longer available.');
+  return Buffer.from(blob.bytes);
+}
+
+function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
+  // The caller check runs first and alone; what follows answers a failure as an envelope (shared/desktop-error.ts).
+  return guardedDesktopCall(
+    () => assertCaller(event),
+    () => desktopMethodFor(event, method, input),
+  );
+}
+
+async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
   if (typeof method !== 'string') throw new Error('Unsupported application method.');
   const args = parseArgs(method as MethodName, input ?? {}) as Record<string, unknown>;
   if (method === 'Window/compose') return composeWindow(event, String(args.draftId));
+  if (method === 'Engine/restart') {
+    if (!supervisor) throw new Error('The mailbox engine is not running on this build.');
+    await supervisor.restart();
+    return ok;
+  }
+  if (method === 'Diagnostics/copy') return copyDiagnostics();
+  if (method === 'File/save' || method === 'File/open') {
+    const name = fileNameOf(args.name);
+    // A type that would not be opened is refused before its bytes are read across the process boundary.
+    if (method === 'File/open' && !SNIFFED_EXTENSIONS.has(extensionOf(name)))
+      throw new Error('Save this attachment to inspect it before opening.');
+    const data = await blobBytes(String(args.blobId));
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('That window was closed.');
+    return method === 'File/save' ? saveBytes(win, name, data) : (await openBytes(name, data), ok);
+  }
   const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
   if (!name) throw new Error('This is not available on the new engine yet.');
-  const result = await invokeNative(event, name, args);
-  return result === true ? ok : result;
+  return v1Result(method, await invokeNative(event, name, args));
 }
 
 /**
@@ -241,13 +290,18 @@ function serveMail({ signal, ...args }: ServeArgs): Promise<unknown> {
 let closeRequested = false;
 
 /** Starts the new engine and the IPC that reaches it. `noteExit` is lifecycle's park counter (3 stops in 60 s). */
-async function bootRealEngine(options: { dataDir: string; noteExit(): boolean }): Promise<void> {
+async function bootRealEngine(options: {
+  dataDir: string;
+  noteExit(): boolean;
+  noteRestart?(): void;
+}): Promise<void> {
   const init = await engineInit(options.dataDir);
   // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
   if (closeRequested) return;
   supervisor = createEngineSupervisor({
     spawn: () => spawn(init),
     noteExit: options.noteExit,
+    ...(options.noteRestart ? { onRestart: options.noteRestart } : {}),
     onUp: (_link, restarted) => {
       if (restarted) broker.reissue();
       broker.desktop(engineFrame('ready'));

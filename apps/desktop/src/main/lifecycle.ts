@@ -288,7 +288,7 @@ else {
       installPermissionHandlers();
       // One engine per data directory: a live holder refuses here (the catch below shows why), a dead one is reclaimed.
       lock = acquireLock(dataDirOverride ?? app.getPath('userData'), nodeLockPorts());
-      await bootEngine({ noteExit: noteEngineExit });
+      await bootEngine({ noteExit: noteEngineExit, noteRestart: () => processState.tryAgain() });
       processState.engineReady();
       started = true;
       nativeTheme.on('updated', () => syncTheme(true));

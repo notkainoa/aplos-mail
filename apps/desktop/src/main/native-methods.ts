@@ -7,8 +7,8 @@ import {
   systemPreferences,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { writeFile, mkdtemp } from 'node:fs/promises';
-import { join, basename, extname } from 'node:path';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { record, text, external } from './security';
 import {
@@ -27,6 +27,9 @@ import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
 import { finishOptionsOf, settingsPaneUrl } from '../host/lifecycle';
+import { fileNameOf } from '../shared/desktop-v1';
+import { openAttachment, saveAttachment, sweepTemp, type FileIo } from '../shared/attachment-files';
+import { markQuarantined } from '../shared/quarantine';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
@@ -34,6 +37,8 @@ const v1Served: (typeof desktopMethods)[number][] = [
   'Window/openOnboarding',
   'Window/finishOnboarding',
   'System/openSettings',
+  'System/login',
+  'System/notifications',
 ];
 for (const name of v1Served) nativeMethods.add(name);
 const ok = { ok: true } as const;
@@ -49,6 +54,48 @@ function notify(title: string, body: string, threadId?: string) {
   });
   notification.show();
 }
+/** The real disk and OS behind `shared/attachment-files.ts`. */
+const fileIo: FileIo = {
+  chooseSavePath: async defaultName => {
+    const win = BrowserWindow.getFocusedWindow() ?? main;
+    const options = { defaultPath: defaultName };
+    return win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options);
+  },
+  writeFile: (path, data, options) => writeFile(path, data, options),
+  makeTempDir: prefix => mkdtemp(join(tmpdir(), prefix)),
+  join,
+  openPath: path => shell.openPath(path),
+  removeDir: path => rm(path, { recursive: true, force: true }),
+  quarantine: path => markQuarantined(path),
+  get testMode() {
+    return isTest;
+  },
+};
+
+/** The save dialog, then the bytes to the chosen path. Shared by the legacy `file.save` and v1 `File/save`. */
+function saveBytes(win: BrowserWindow, name: string, data: Uint8Array) {
+  return saveAttachment(
+    { ...fileIo, chooseSavePath: d => dialog.showSaveDialog(win, { defaultPath: d }) },
+    name,
+    data,
+  );
+}
+
+/** Writes the bytes to a private temp file, quarantines it, and opens it in its app; only safe types whose bytes match. */
+function openBytes(name: string, data: Uint8Array) {
+  return openAttachment(fileIo, name, data);
+}
+
+/** Start-up: removes the temp folders opened attachments left in earlier sessions. */
+function sweepAttachmentTemp() {
+  // Test instances run beside the real app and share its temp folder: they never sweep.
+  if (isTest) return Promise.resolve(0);
+  return sweepTemp({
+    tempEntries: () => readdir(tmpdir()),
+    removeTemp: entry => rm(join(tmpdir(), entry), { recursive: true, force: true }),
+  });
+}
+
 async function invokeNative(event: IpcMainInvokeEvent, method: string, input: unknown) {
   const payload = record(input),
     win = BrowserWindow.fromWebContents(event.sender)!;
@@ -79,6 +126,18 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     // Only the one named destination counts, whichever door the payload came through; anything else is Home.
     await onboarding.finish(finishOptionsOf(payload));
     return ok;
+  }
+  if (method === 'System/login') {
+    // v1: `enabled` absent reads the setting; present sets it. Test mode touches nothing system-wide.
+    if (payload.enabled !== undefined && typeof payload.enabled !== 'boolean')
+      throw new Error('Choose whether to launch at login.');
+    if (isTest) return { enabled: payload.enabled === true };
+    if (payload.enabled !== undefined) app.setLoginItemSettings({ openAtLogin: payload.enabled });
+    return { enabled: app.getLoginItemSettings().openAtLogin };
+  }
+  if (method === 'System/notifications') {
+    // Electron's main process cannot read the macOS notification permission, so the honest answer is "unknown".
+    return { status: 'unknown' as const };
   }
   if (method === 'System/openSettings') {
     const url = settingsPaneUrl(payload.pane);
@@ -125,54 +184,11 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     return true;
   }
   if (method === 'file.save' || method === 'file.open') {
-    const name =
-      basename(text(payload.name, 'file name', 255)).replace(/[\x00-\x1f]/g, '_') || 'attachment';
+    const name = fileNameOf(payload.name);
     const encoded = text(payload.data, 'file content', 36 * 1024 * 1024);
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) throw new Error('Invalid attachment data.');
     const data = Buffer.from(encoded, 'base64');
-    if (data.length > 25 * 1024 * 1024) throw new Error('Attachment exceeds 25 MB.');
-    if (method === 'file.save') {
-      const result = await dialog.showSaveDialog(win, { defaultPath: name });
-      if (result.canceled || !result.filePath) return { canceled: true };
-      await writeFile(result.filePath, data);
-      return { canceled: false, path: result.filePath };
-    }
-    if (
-      !new Set([
-        '.pdf',
-        '.txt',
-        '.md',
-        '.csv',
-        '.json',
-        '.eml',
-        '.ics',
-        '.png',
-        '.jpg',
-        '.jpeg',
-        '.gif',
-        '.webp',
-        '.heic',
-        '.doc',
-        '.docx',
-        '.xls',
-        '.xlsx',
-        '.ppt',
-        '.pptx',
-        '.rtf',
-        '.mp3',
-        '.mp4',
-        '.wav',
-        '.mov',
-      ]).has(extname(name).toLowerCase())
-    )
-      throw new Error('Save this attachment to inspect it before opening.');
-    if (isTest) return true; // no other app is launched in test mode
-    const directory = await mkdtemp(join(tmpdir(), 'aplos-attachment-'));
-    const file = join(directory, name);
-    await writeFile(file, data, { mode: 0o600 });
-    const error = await shell.openPath(file);
-    if (error) throw new Error(error);
-    return true;
+    return method === 'file.save' ? saveBytes(win, name, data) : openBytes(name, data);
   }
   if (method === 'notification.test') {
     notify('Aplos Mail', 'Notifications are ready.');
@@ -206,4 +222,4 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
   throw new Error('Unsupported desktop method.');
 }
 
-export { nativeMethods, notify, invokeNative };
+export { nativeMethods, notify, invokeNative, saveBytes, openBytes, sweepAttachmentTemp };

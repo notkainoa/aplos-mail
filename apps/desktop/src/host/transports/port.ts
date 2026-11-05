@@ -10,6 +10,7 @@
  * comes in as a small interface, so all of it runs under node:test with fakes.
  */
 import type { DesktopEvent, ErrorBody, Frame } from '@aplos/contract';
+import { failureOf } from '../../shared/desktop-error';
 import type { EngineSession } from '@aplos/contract/client';
 import {
   desktopMethods,
@@ -545,125 +546,7 @@ export function createEngineLink(
   };
 }
 
-// ---- the restart policy -------------------------------------------------------------------------------------------
-
-/** `close` asks the engine to quit and waits this long, then kills it (host/lifecycle.ts's `QUIT_DRAIN_MS` is longer). */
-export const ENGINE_QUIT_MS = 3000;
-/** After the kill, `close` waits this long for the exit event before it reports the engine as stuck. */
-export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
-
-/** How `close` ended: the engine exited (asked or after the kill), or it is still running after the kill. */
-export type CloseResult = 'exited' | 'stuck';
-
-export interface SupervisorOptions {
-  spawn(): EngineLink;
-  /**
-   * The engine process stopped unexpectedly: true when this stop parks the app. Main passes host/lifecycle.ts's
-   * `createProcessState().noteEngineExit` (3 stops within 60 s park), so the legacy and the real path share one policy.
-   */
-  noteExit(): boolean;
-  /** The engine answered `ready`; `restarted` after an unexpected stop. */
-  onUp(link: EngineLink, restarted: boolean): void;
-  /** The engine stopped unexpectedly; `parked` when no restart follows. */
-  onDown(parked: boolean): void;
-  timers: Timers;
-  /** Default 500 ms, so a crash loop cannot spin. */
-  restartDelayMs?: number;
-  /** How long `close` waits for the engine to exit before killing it. Default `ENGINE_QUIT_MS`. */
-  quitMs?: number;
-  /** How long `close` waits for the exit AFTER killing it. Default `ENGINE_EXIT_AFTER_KILL_MS`. */
-  exitAfterKillMs?: number;
-  /**
-   * How long an engine may take to answer `ready` before it is killed; the kill is a stop like any other (it counts
-   * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
-   */
-  readyTimeoutMs?: number;
-  /** A kill threw (the OS refused): tell someone, since an engine that never becomes ready then leaves `start` waiting. */
-  onKillFailed?(error: unknown): void;
-}
-
-/** Kills an engine; a kill that throws is no uncaught error in main: the exit wait that follows still decides. */
-function stop(link: EngineLink, onKillFailed?: (error: unknown) => void): void {
-  try {
-    link.kill();
-  } catch (error) {
-    // The process may already be gone, or the OS refused; the caller waits for the exit event either way.
-    onKillFailed?.(error);
-  }
-}
-
-/** Keeps one engine process running: restarts it after an unexpected stop until `noteExit` parks, never after `close`. */
-export function createEngineSupervisor(options: SupervisorOptions) {
-  let current: EngineLink | undefined;
-  let closing = false;
-  let everUp = false;
-  let restart: unknown;
-
-  function down(link: EngineLink) {
-    if (current !== link) return;
-    current = undefined;
-    // A first start that fails is the caller's error (startup shows it); only a running engine restarts.
-    if (closing || !everUp) return;
-    const parked = options.noteExit();
-    options.onDown(parked);
-    if (parked) return;
-    restart = options.timers.set(() => {
-      restart = undefined;
-      up(true).catch(() => undefined);
-    }, options.restartDelayMs ?? 500);
-  }
-
-  async function up(restarted: boolean): Promise<EngineLink> {
-    if (closing) throw unavailable();
-    const link = options.spawn();
-    current = link;
-    link.onExit(() => down(link));
-    const timer = options.timers.set(
-      () => stop(link, options.onKillFailed),
-      options.readyTimeoutMs ?? 60_000,
-    );
-    try {
-      await link.ready;
-    } finally {
-      options.timers.clear(timer);
-    }
-    if (closing || current !== link) throw unavailable();
-    everUp = true;
-    options.onUp(link, restarted);
-    return link;
-  }
-
-  return {
-    start: () => up(false),
-    current: () => current,
-    /**
-     * Stops restarting, asks the engine to quit, kills it after `quitMs`, and says how it ended: `'exited'` when the
-     * process is gone (a quit that was heard, or one that died after the kill), `'stuck'` when it is still running
-     * `exitAfterKillMs` after the kill. Nothing running (never started, or already gone) counts as exited.
-     */
-    close(): Promise<CloseResult> {
-      closing = true;
-      if (restart !== undefined) options.timers.clear(restart);
-      const link = current;
-      if (!link || link.exited) return Promise.resolve('exited');
-      return new Promise<CloseResult>(resolve => {
-        let timer: unknown;
-        link.onExit(() => {
-          options.timers.clear(timer);
-          resolve('exited');
-        });
-        timer = options.timers.set(() => {
-          stop(link, options.onKillFailed);
-          timer = options.timers.set(
-            () => resolve('stuck'),
-            options.exitAfterKillMs ?? ENGINE_EXIT_AFTER_KILL_MS,
-          );
-        }, options.quitMs ?? ENGINE_QUIT_MS);
-        link.quit();
-      });
-    },
-  };
-}
+export * from '../../shared/engine-supervisor';
 
 // ---- main: who gets a port ----------------------------------------------------------------------------------------
 
@@ -678,32 +561,7 @@ export interface PortWindow {
   desktop(frame: DesktopFrame): void;
 }
 
-/** The parts of an IPC event the caller check reads (Electron's `IpcMainInvokeEvent`). */
-export interface CallerEvent {
-  senderFrame: { url: string; detached?: boolean } | null | undefined;
-  sender: { mainFrame: unknown; isDestroyed(): boolean; getType?(): string };
-}
-
-/**
- * The window whose trusted main frame sent `event`, or undefined. Refused: no frame or a detached one, a subframe
- * (a mail frame, any iframe), a page other than the app's own renderer (another origin, `devtools://`), a webContents
- * that is not a window's (DevTools, a webview), or one with no window.
- */
-export function trustedCaller<W>(
-  event: CallerEvent,
-  deps: {
-    trustedURL(url: string): boolean;
-    windowOf(sender: CallerEvent['sender']): W | undefined;
-  },
-): W | undefined {
-  const frame = event.senderFrame;
-  const sender = event.sender;
-  if (!frame || frame.detached || frame !== sender.mainFrame || sender.isDestroyed())
-    return undefined;
-  if (sender.getType && sender.getType() !== 'window') return undefined;
-  if (!deps.trustedURL(frame.url)) return undefined;
-  return deps.windowOf(sender);
-}
+export { trustedCaller, type CallerEvent } from '../../shared/trusted-caller';
 
 export interface BrokerDeps {
   /** A new `MessageChannelMain`: one end for the engine, one for the window. */
@@ -1037,7 +895,16 @@ export function exposeEngineBridge(electron: PreloadElectron, argv: readonly str
   contextBridge.exposeInMainWorld('aplosEngine', {
     call: (method: unknown, args?: unknown, transfer?: unknown): Promise<unknown> => {
       if (typeof method === 'string' && isDesktopMethod(method))
-        return ipcRenderer.invoke('aplos:desktop', method, args);
+        // A failure comes back as an envelope (main answers it, so its reason survives); the page gets the plain error
+        // body, as from any other failed call. A rejection here is main refusing the caller, which has no reason to give.
+        return ipcRenderer.invoke('aplos:desktop', method, args).then(
+          result => {
+            const failure = failureOf(result);
+            if (failure) return Promise.reject(failure);
+            return result;
+          },
+          () => Promise.reject({ type: 'unavailable', message: 'That did not work. Try again.' }),
+        );
       // A refused name never even asks for a port.
       if (typeof method === 'string' && portMethods.has(method)) connect();
       return engine.call(method, args, transfer);

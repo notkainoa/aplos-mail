@@ -524,3 +524,269 @@ test('source shape: finishQuit hands the REAL close to closeThenRelease, and sta
   assert.ok(guard >= 0, 'the start-up catch returns while a quit is in progress');
   assert.ok(guard < startup.indexOf('showErrorBox'), '... before it shows the dialog');
 });
+
+function restartWorld() {
+  const timers = manualTimers();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  const downs: boolean[] = [];
+  const ups: boolean[] = [];
+  const restarts: boolean[] = [];
+  let stops = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => ++stops >= 3,
+    onUp: (_link, restarted) => void ups.push(restarted),
+    onDown: parked => void downs.push(parked),
+    timers,
+    restartDelayMs: 10,
+    quitMs: 100,
+    exitAfterKillMs: 50,
+    // The restarts below are meant to follow each other; the coalescing has its own test.
+    restartCoalesceMs: 0,
+    onRestart: () => void restarts.push(true),
+  });
+  return { supervisor, links, downs, ups, timers, restarts, stops: () => stops };
+}
+
+test('Engine/restart: a running engine is asked to quit and the next starts at once, without counting toward the park', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  for (let i = 0; i < 5; i++) {
+    await w.supervisor.restart();
+    await until(() => w.links.length === i + 2, 'the next engine');
+  }
+  assert.equal(w.stops(), 0, 'an asked restart never reaches noteExit');
+  assert.deepEqual(w.downs, [false, false, false, false, false]);
+  assert.equal(w.ups.at(-1), true);
+  assert.equal(w.links.length, 6);
+});
+
+test('Engine/restart: an engine that ignores the quit is killed after quitMs, then replaced', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  // This engine ignores quit: only the kill ends it.
+  const stubborn = w.links[0].link;
+  stubborn.quit = () => undefined;
+  await w.supervisor.restart();
+  assert.equal(w.links.length, 1, 'nothing replaces it while it runs');
+  w.timers.advance(100);
+  assert.equal(w.links[0].kills(), 1);
+  await until(() => w.links.length === 2, 'the next engine');
+});
+
+test('Engine/restart: a parked app starts an engine now, and a closed supervisor refuses', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  for (let i = 0; i < 3; i++) {
+    w.links[i].exit();
+    w.timers.advance(10);
+    await until(() => w.links.length === Math.min(i + 2, 3), 'the next engine');
+  }
+  assert.equal(w.downs.at(-1), true, 'three stops park it');
+  const before = w.links.length;
+  await w.supervisor.restart();
+  await until(() => w.links.length === before + 1, 'the next engine');
+  assert.equal(w.ups.at(-1), true);
+  await w.supervisor.close();
+  await assert.rejects(w.supervisor.restart());
+});
+
+test('Engine/restart: an engine that survives the kill does not leave the app unable to retry', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  const wedged = w.links[0].link;
+  wedged.quit = () => undefined;
+  wedged.kill = () => undefined; // the OS refused: the process stays
+  await w.supervisor.restart();
+  w.timers.advance(100); // quit window over: the kill is tried
+  w.timers.advance(50); // and the wait after it: give up
+  // The next ask is a real one again (quit is tried a second time), not a silent success.
+  let quits = 0;
+  wedged.quit = () => void (quits += 1);
+  await w.supervisor.restart();
+  assert.equal(quits, 1);
+  assert.equal(w.restarts.length, 2, 'each accepted ask told the host');
+});
+
+test('Engine/restart: asks closer together than the coalescing window are one restart', async () => {
+  const timers = manualTimers();
+  let clock = 1_000;
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+  });
+  await supervisor.start();
+  await supervisor.restart();
+  await until(() => links.length === 2, 'the next engine');
+  for (let i = 0; i < 10; i++) await supervisor.restart(); // a loop of asks
+  assert.equal(links.length, 2, 'no second restart inside the window');
+  assert.equal(told, 1);
+  clock += 5_000;
+  await supervisor.restart();
+  await until(() => links.length === 3, 'the engine after the window');
+  assert.equal(told, 2);
+});
+
+test('source shape: the desktop handler checks the caller before anything else, and File/open refuses a type before reading bytes', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../../src/main/engine-real.ts', import.meta.url)),
+    'utf8',
+  );
+  // The whole handler is ONE return of the guard: the caller check is its first argument, so no branch can reach a
+  // method without it (the guard's behaviour is tested in attachment-files.test.ts).
+  const handler = /function desktopMethod\(([^)]*)\) \{([\s\S]*?)\n\}/.exec(source);
+  assert.ok(handler, 'desktopMethod is found');
+  const body = handler![2]!.replace(/\/\/[^\n]*/g, '');
+  assert.match(
+    body,
+    /^\s*return guardedDesktopCall\(\s*\(\) => assertCaller\(event\),\s*\(\) => desktopMethodFor\(event, method, input\),\s*\);\s*$/,
+  );
+  const open = source.indexOf("method === 'File/open' && !SNIFFED_EXTENSIONS");
+  assert.ok(open > 0 && open < source.indexOf('await blobBytes('), 'the type check comes first');
+  const bundle = source.slice(
+    source.indexOf('function hostBundle'),
+    source.indexOf('function copyDiagnostics'),
+  );
+  for (const banned of [/hostname/, /userInfo/, /homedir/, /networkInterfaces/])
+    assert.doesNotMatch(bundle, banned, 'the host bundle stays content-free');
+  assert.match(
+    source,
+    /isTest\) clipboard\.writeText|!isTest\) clipboard/,
+    'test mode never writes the clipboard',
+  );
+});
+
+test('Engine/restart: the park count is cleared by at most three asks per window, the engine restarts every time', async () => {
+  const timers = manualTimers();
+  let clock = 0;
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+    restartCoalesceMs: 0,
+  });
+  await supervisor.start();
+  for (let i = 0; i < 6; i++) {
+    clock += 1_000;
+    await supervisor.restart();
+    await until(() => links.length === i + 2, 'the next engine');
+  }
+  assert.equal(links.length, 7, 'every ask restarted the engine');
+  assert.equal(told, 3, 'but only three cleared the park count');
+  clock += 10 * 60_000;
+  await supervisor.restart();
+  await until(() => links.length === 8, 'the engine after the window');
+  assert.equal(told, 4, 'the window passed: the cap resets');
+});
+
+test('Engine/restart: an ask while the FIRST engine is still starting changes nothing and is not lost to the start', async () => {
+  const timers = manualTimers();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(false);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    timers,
+    restartCoalesceMs: 0,
+  });
+  const starting = supervisor.start();
+  starting.catch(() => undefined);
+  await supervisor.restart();
+  assert.equal(links.length, 1, 'no second engine while the first one starts');
+  assert.equal(told, 0, 'and the host is not told to forget stops');
+  assert.equal(links[0].kills(), 0);
+});
+
+test('Engine/restart: past the un-park cap while PARKED, the next crash parks again instead of looping', async () => {
+  const timers = manualTimers();
+  let clock = 0;
+  const processState = createProcessState();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  const downs: boolean[] = [];
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => processState.noteEngineExit(clock),
+    onUp: () => undefined,
+    onDown: parked => void downs.push(parked),
+    onRestart: () => processState.tryAgain(),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+    restartDelayMs: 10,
+    restartCoalesceMs: 0,
+    maxUnparks: 1,
+  });
+  await supervisor.start();
+  // Three quick stops park the app.
+  for (let i = 0; i < 3; i++) {
+    clock += 1_000;
+    links.at(-1)!.exit();
+    timers.advance(10);
+  }
+  assert.equal(downs.at(-1), true, 'parked');
+  await supervisor.restart(); // the one allowed un-park
+  await until(() => links.length >= 4, 'the engine after the first ask');
+  for (let i = 0; i < 3; i++) {
+    clock += 1_000;
+    links.at(-1)!.exit();
+    timers.advance(10);
+  }
+  assert.equal(downs.at(-1), true, 'parked again');
+  const spawned = links.length;
+  clock += 6_000;
+  await supervisor.restart(); // past the cap: the engine starts, the park count is not cleared
+  await until(() => links.length === spawned + 1, 'the engine after the capped ask');
+  links.at(-1)!.exit();
+  timers.advance(10);
+  timers.advance(10);
+  assert.equal(links.length, spawned + 1, 'a crash while still parked does not restart it again');
+  assert.equal(downs.at(-1), true);
+});
+
+test('Engine/restart: a second ask while the quit is pending does not spend an un-park slot', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  w.links[0].link.quit = () => undefined; // slow to quit
+  await w.supervisor.restart();
+  await w.supervisor.restart();
+  await w.supervisor.restart();
+  assert.equal(w.restarts.length, 1, 'the host was told once');
+});

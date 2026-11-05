@@ -1,3 +1,4 @@
+import { desktopFailure } from '../../src/shared/desktop-error';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -94,4 +95,35 @@ test('LOW-1: main passes the argument only on the real path, and preload never e
   assert.match(source, /exposeEngineBridge\(\{ contextBridge, ipcRenderer \}, process\.argv\)/);
   const windows = readFileSync(join(import.meta.dirname, '../../src/main/windows.ts'), 'utf8');
   assert.match(windows, /additionalArguments: engineWindowArguments\(realPath\)/);
+});
+
+test('a failed desktop method rejects with the plain error body; a result passes; a refused caller gets no reason', async t => {
+  const fake = fakeElectron(t);
+  const answers: unknown[] = [
+    desktopFailure(new Error('Save this draft before opening a separate window.')),
+    { canceled: false, path: '/tmp/x' },
+    'refused',
+  ];
+  const original = fake.electron.ipcRenderer.invoke;
+  fake.electron.ipcRenderer.invoke = async (channel, ...args) => {
+    if (channel !== 'aplos:desktop') return original(channel, ...args);
+    const answer = answers.shift();
+    if (answer === 'refused')
+      throw new Error("Error invoking remote method 'aplos:desktop': Error: Untrusted");
+    return answer;
+  };
+  exposeEngineBridge(fake.electron, ['electron', ENGINE_PORT_ARG]);
+  const bridge = fake.exposed.get('aplosEngine') as EngineBridge;
+  await assert.rejects(bridge.call('Window/compose', { draftId: 'd1' }), {
+    type: 'unavailable',
+    message: 'Save this draft before opening a separate window.',
+  });
+  assert.deepEqual(await bridge.call('File/save', { blobId: 'b', name: 'a.txt' }), {
+    canceled: false,
+    path: '/tmp/x',
+  });
+  await assert.rejects(bridge.call('Shell/open', { url: 'https://x.example' }), {
+    type: 'unavailable',
+    message: 'That did not work. Try again.',
+  });
 });
