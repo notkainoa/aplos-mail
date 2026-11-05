@@ -1,6 +1,7 @@
 /**
  * Connects the data layer to a transport and installs it behind `./index.ts`, so every hook and `api` method works.
- * `renderer/main.tsx` (and `bridge.ts` once it chooses MessagePort or HTTP) calls this once per window.
+ * `renderer/main.tsx` calls this once per window: on the stand-in, or on `../bridge.ts`'s MessagePort session on the
+ * real-engine path.
  */
 import { createHooks } from './hooks';
 import { installDataRuntime } from './index';
