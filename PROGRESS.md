@@ -526,3 +526,9 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Not done (REQUESTs, not this lane): exactly one live region on first sync needs a prop on `OnboardingStep`/`ProgressSegments` (ui-foundation; the skipped F11 todo already names REQUEST R2); `Window/finishOnboarding` (`Onboarding.finish` with `to: 'settings.ai'`) still waits on ui-shell/eng-host; FocusLetter's own hint keycaps read a module-default registry (ui-foundation), so a remap still shows the default letter inside the card.
 
 - ui-onboard: `apps/desktop/src/main/windows/onboarding.ts` removed from the PR at eng-host's request (parallel copy of the revamp window controller); the window code is eng-host's (#268). Lane tests and the window numbers (640x600, min 640x520) are unaffected: none imported the file.
+
+## 2026-11-04 — ui-onboard: reason-code fix + frameless AccountsBody (rv/ui-onboard/reason-and-body)
+
+- `onboarding/reason.ts` is the lane's one `reasonOf`: a refused call's code lives on `ContractError.body.reasonCode`, with plain `{reasonCode}` objects still honoured; `connect.ts`, `reconnect/reconnect.model.ts` and `steps/Ai.tsx` all use it, so a refused connect/reconnect/key-save shows the specific `copy.ts` sentence instead of the generic one (regressions in `tests/ui-onboard/reason.test.ts`).
+- `steps/Accounts.tsx` exports `AccountsBody`, the connect flow's content with no `OnboardingStep` frame, for the shell's Add account dialog; `AccountsStep` wraps it with identical markup (byte-identical render across all modes; `tests/ui-onboard/accounts-body.test.ts` proves the body frameless and the step framed).
+- Verified: `npx tsx --test "tests/ui-onboard/*.test.ts"` 230 pass / 0 fail; `npm run check` green; gallery re-capture of five Accounts states shows no visual change from this refactor (the `accounts-connected` baseline delta is upstream `data-has-detail` row CSS, not this diff).
