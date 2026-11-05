@@ -144,17 +144,29 @@ const SYSTEM_CHORDS = new Set([
   'shift+meta+5',
 ]);
 
+/** Chords the window's region navigation owns (shell/regions.ts): the registry never sees them. */
+const REGION_CHORDS = new Set(['Tab', 'shift+Tab']);
+
 /**
  * Chords no remap may take, as canonical spec strings ("meta+c"): text editing
- * (⌘C, ⌘V, ⌘X, ⌘A, ⌘Z, ⌘⇧Z, the ⌃ Emacs keys…) and the system's (⌘Q, ⌘W, ⌘H, ⌘M,
- * ⌘,, ⌘Tab…). A command may keep one that is its own default (⌘A Select all, ⌘, Settings).
+ * (⌘C, ⌘V, ⌘X, ⌘A, ⌘Z, ⌘⇧Z, the ⌃ Emacs keys…), the system's (⌘Q, ⌘W, ⌘H, ⌘M,
+ * ⌘,, ⌘Tab…) and the region cycle's (Tab, ⇧Tab). A command may keep one that is
+ * its own default (⌘A Select all, ⌘, Settings, Tab Keep suggestion).
  */
-export const RESERVED_CHORDS: readonly string[] = [...TEXT_EDITING_CHORDS, ...SYSTEM_CHORDS];
+export const RESERVED_CHORDS: readonly string[] = [
+  ...TEXT_EDITING_CHORDS,
+  ...SYSTEM_CHORDS,
+  ...REGION_CHORDS,
+];
 
-/** Why a chord is reserved, or null: 'text' edits text in a field, 'system' belongs to macOS or the app menu. */
-export function reservedReason(chord: KeyChord): 'text' | 'system' | null {
+/**
+ * Why a chord is reserved, or null: 'text' edits text in a field, 'system' belongs to macOS or the
+ * app menu, 'navigation' is the shell's region Tab.
+ */
+export function reservedReason(chord: KeyChord): 'text' | 'system' | 'navigation' | null {
   const id = chordId(chord);
   if (TEXT_EDITING_CHORDS.has(id)) return 'text';
+  if (REGION_CHORDS.has(id)) return 'navigation';
   return SYSTEM_CHORDS.has(id) ? 'system' : null;
 }
 
