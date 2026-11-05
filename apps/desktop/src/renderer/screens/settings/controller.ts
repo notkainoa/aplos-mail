@@ -30,6 +30,7 @@ import {
   type KeyFields,
 } from './keyboard.model';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
+import type { AccountWrite } from './settings.model';
 import type { Confirmation, SettingsView } from './view';
 
 export interface ControllerDeps {
@@ -41,6 +42,8 @@ export interface ControllerDeps {
   setData(patch: Partial<SettingsData>): void;
   /** Shows a patch at once over the live settings; null takes it away. */
   overlay(patch: SettingsPatch | null): void;
+  /** Shows account writes at once over the live accounts, by account id; null takes them away. */
+  accountOverlay(patch: Readonly<Record<string, AccountWrite>> | null): void;
   fail(failure: WriteFailure | null): void;
   /** Runs `fn` after `ms`; returns a cancel. Defaults to a timer. */
   schedule?(fn: () => void, ms: number): () => void;
@@ -105,6 +108,28 @@ export function createController(deps: ControllerDeps) {
     deps.overlay(overlayNow());
   };
 
+  /* The account overlay works the same way, per account: a switch or a colour moves at once, and several writes
+   * in flight each hold only their own patch until they settle. */
+  let accountSeq = 0;
+  const accountInFlight = new Map<number, { accountId: string; patch: AccountWrite }>();
+  const accountOverlayNow = (): Record<string, AccountWrite> | null => {
+    if (accountInFlight.size === 0) return null;
+    const out: Record<string, AccountWrite> = {};
+    for (const { accountId, patch } of accountInFlight.values())
+      out[accountId] = { ...(out[accountId] ?? {}), ...patch };
+    return out;
+  };
+  const pushAccountOverlay = (accountId: string, patch: AccountWrite): number => {
+    const id = ++accountSeq;
+    accountInFlight.set(id, { accountId, patch });
+    deps.accountOverlay(accountOverlayNow());
+    return id;
+  };
+  const dropAccountOverlay = (id: number): void => {
+    accountInFlight.delete(id);
+    deps.accountOverlay(accountOverlayNow());
+  };
+
   /** `Settings/set` with the optimistic overlay: the control moves at once and goes back if the write is refused. */
   async function set(patch: SettingsPatch, op = 'save that setting'): Promise<boolean> {
     const id = pushOverlay(patch);
@@ -160,11 +185,25 @@ export function createController(deps: ControllerDeps) {
     },
 
     /* ───────────── Accounts ───────────── */
-    setAccount(
-      accountId: string,
-      patch: { colorTag?: string; aiAllowed?: boolean; notifications?: boolean },
-    ) {
-      return guard('save that account setting', () => ports.accountSet(accountId, patch));
+    /** `Account/set` with the optimistic overlay: the control moves at once and goes back if the write is refused. */
+    async setAccount(accountId: string, patch: AccountWrite) {
+      const id = pushAccountOverlay(accountId, patch);
+      let ok: boolean;
+      try {
+        await ports.accountSet(accountId, patch);
+        deps.fail(null);
+        ok = true;
+      } catch {
+        // Retry is the same write again, overlay and all — the control moves at once on Retry too.
+        deps.fail({
+          op: 'save that account setting',
+          retry: () => void self.setAccount(accountId, patch),
+          dismiss: () => deps.fail(null),
+        });
+        ok = false;
+      }
+      dropAccountOverlay(id);
+      return ok;
     },
     startReconnect(accountId: string, mode: 'reconnect' | 'grant') {
       deps.setView({ reconnect: { accountId, mode } });

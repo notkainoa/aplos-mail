@@ -9,9 +9,16 @@ import { parseSettingRoute, type SettingRoute, type SettingSection } from '../..
 import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
 import './paletteEntries';
+import { clearAvailability, publishAvailability } from './availability';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import { SettingsScreen } from './SettingsScreen';
-import { actThenList, mergePatch, type AiModelInfo } from './settings.model';
+import {
+  actThenList,
+  mergeAccounts,
+  mergePatch,
+  type AccountWrite,
+  type AiModelInfo,
+} from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import type { SettingsPatch } from '../../data';
 
@@ -147,6 +154,7 @@ export function useSettingsState(
   const [view, setViewState] = useState<SettingsView>(INITIAL_VIEW);
   const [loaded, setLoaded] = useState<Partial<SettingsData>>({});
   const [overlay, setOverlay] = useState<SettingsPatch | null>(null);
+  const [accountsOverlay, setAccountsOverlay] = useState<Record<string, AccountWrite> | null>(null);
   const [failure, setFailure] = useState<WriteFailure | null>(null);
   const viewRef = useRef(view);
   const loadedRef = useRef(loaded);
@@ -156,6 +164,7 @@ export function useSettingsState(
     ...base,
     ...loaded,
     settings: overlay ? mergePatch(base.settings, overlay) : base.settings,
+    accounts: mergeAccounts(loaded.accounts ?? base.accounts, accountsOverlay),
   };
   dataRef.current = data;
 
@@ -197,6 +206,7 @@ export function useSettingsState(
           setLoaded(loadedRef.current);
         },
         overlay: patch => setOverlay(patch),
+        accountOverlay: patch => setAccountsOverlay(patch ? { ...patch } : null),
         fail: setFailure,
       }),
     // The ports and host are stable for the life of the screen.
@@ -235,6 +245,14 @@ export function useSettingsState(
   }, [section, view.queue, actions, keepData]);
 
   useEffect(() => () => actions.leave(), [actions]);
+
+  // The palette's conditional rows read the live data while Settings is mounted; it goes back to optimistic on
+  // unmount so a row is hidden only once its state was actually seen.
+  const { accounts, providers, session } = data;
+  useEffect(() => {
+    publishAvailability({ accounts, providers, session });
+    return clearAvailability;
+  }, [accounts, providers, session]);
 
   return { data, view, actions, failure };
 }

@@ -9,7 +9,7 @@ import { ReconnectSheet } from '../../../ui/status';
 import { createController } from '../controller';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from '../ports';
 import { SettingsScreen } from '../SettingsScreen';
-import { mergePatch } from '../settings.model';
+import { mergeAccounts, mergePatch, type AccountWrite } from '../settings.model';
 import { INITIAL_VIEW, type SettingsView } from '../view';
 import {
   ALEX,
@@ -438,6 +438,7 @@ export function staticScreen(spec: StateSpec, host: SettingsHost = HOST): JSX.El
     setView: noop,
     setData: noop,
     overlay: noop,
+    accountOverlay: noop,
     fail: noop,
   });
   return (
@@ -483,10 +484,15 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
   const [section, setSection] = useState(spec.section);
   const [failure, setFailure] = useState<WriteFailure | null>(spec.failure ?? null);
   const [overlay, setOverlay] = useState<Parameters<typeof mergePatch>[1] | null>(null);
+  const [accountOverlay, setAccountOverlay] = useState<Record<string, AccountWrite> | null>(null);
   const dataRef = useRef(data);
   const viewRef = useRef(view);
   dataRef.current = data;
-  const shown = overlay ? { ...data, settings: mergePatch(data.settings, overlay) } : data;
+  const shown = {
+    ...data,
+    settings: overlay ? mergePatch(data.settings, overlay) : data.settings,
+    accounts: mergeAccounts(data.accounts, accountOverlay),
+  };
   const actions = useMemo(() => {
     const ports = standInPorts(
       () => dataRef.current,
@@ -509,6 +515,7 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
         setData(dataRef.current);
       },
       overlay: setOverlay,
+      accountOverlay: setAccountOverlay,
       fail: setFailure,
     });
   }, []);

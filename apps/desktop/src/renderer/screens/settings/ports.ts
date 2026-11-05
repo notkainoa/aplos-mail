@@ -82,6 +82,11 @@ export interface SettingsHost {
   toast?(message: string): void;
   /** Puts a local change on the shared undo stack (Z). */
   pushUndo?(entry: { label: string; undo(): void | Promise<void> }): void;
+  /**
+   * Opens the shell's reconnect sheet (`openSheet('reconnect', …)`). When it exists the Reconnect button calls it
+   * instead of opening the inline `renderReconnect` path, which stays for the preview gallery.
+   */
+  openReconnect?(accountId: string, mode: 'reconnect' | 'grant'): void;
   /** The reconnect flow, mounted by ui-onboard (`ReconnectFlow`). */
   renderReconnect?(accountId: string, mode: 'reconnect' | 'grant', onClose: () => void): ReactNode;
   /** "Add an account" inline, ui-onboard's account component. */

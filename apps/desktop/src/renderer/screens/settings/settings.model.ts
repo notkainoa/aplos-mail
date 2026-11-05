@@ -357,6 +357,49 @@ export function accountRows(accounts: readonly Account[], now: number): readonly
   );
 }
 
+/** The slice of the host a Reconnect button reads (kept here so the model never imports the ports). */
+export interface ReconnectHostLike {
+  openReconnect?(accountId: string, mode: 'reconnect' | 'grant'): void;
+  renderReconnect?(accountId: string, mode: 'reconnect' | 'grant', onClose: () => void): unknown;
+}
+
+/** The slice of the controller `reconnectPress` needs (kept loose so the model stays free of the controller type). */
+export interface ReconnectActions {
+  startReconnect(accountId: string, mode: 'reconnect' | 'grant'): void;
+}
+
+/**
+ * What a Reconnect button does: the shell's reconnect sheet when the host offers `openReconnect`, else Settings'
+ * own overlay through `startReconnect` (the preview's `renderReconnect`). Undefined when the host offers neither,
+ * so no dead button is drawn.
+ */
+export function reconnectPress(
+  host: ReconnectHostLike,
+):
+  | ((accountId: string, mode: 'reconnect' | 'grant', actions: ReconnectActions) => void)
+  | undefined {
+  if (host.openReconnect) return (id, mode) => host.openReconnect!(id, mode);
+  if (!host.renderReconnect) return undefined;
+  return (id, mode, actions) => actions.startReconnect(id, mode);
+}
+
+/** The write an Accounts control makes (`Account/set`). */
+export type AccountWrite = {
+  readonly colorTag?: string;
+  readonly aiAllowed?: boolean;
+  readonly notifications?: boolean;
+  readonly name?: string;
+};
+
+/** Accounts with the optimistic per-account overlay applied, for the rows the sections draw. */
+export function mergeAccounts(
+  accounts: readonly Account[],
+  overlay: Readonly<Record<string, AccountWrite>> | null,
+): readonly Account[] {
+  if (!overlay) return accounts;
+  return accounts.map(a => (overlay[a.id] ? { ...a, ...overlay[a.id] } : a));
+}
+
 /** Demo controls (plan 30 section 4.5 row 8): the demo row has Reset and Remove; Help offers Load only with no demo account. */
 export function demoControls(accounts: readonly Account[]): {
   readonly hasDemo: boolean;

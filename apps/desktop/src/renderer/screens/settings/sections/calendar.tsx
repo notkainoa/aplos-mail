@@ -2,12 +2,12 @@
 import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { Group, NotAvailable, Row, Select } from '../parts';
-import { hasCapability, WEEK_START_OPTIONS, withCurrent } from '../settings.model';
+import { hasCapability, reconnectPress, WEEK_START_OPTIONS, withCurrent } from '../settings.model';
 import type { SectionProps } from './types';
 
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export function Calendar({ data, actions }: SectionProps) {
+export function Calendar({ data, actions, host }: SectionProps) {
   const { calendar, ui } = data.settings;
   if (!hasCapability(data.session, 'calendar')) {
     return (
@@ -81,11 +81,13 @@ export function Calendar({ data, actions }: SectionProps) {
             description="Aplos needs permission to use your Google Calendar."
             descriptionTone="attention"
             control={
-              <Button
-                variant="text"
-                label="Reconnect"
-                onPress={() => actions.startReconnect(a.id, 'grant')}
-              />
+              reconnectPress(host) ? (
+                <Button
+                  variant="text"
+                  label="Reconnect"
+                  onPress={() => reconnectPress(host)!(a.id, 'grant', actions)}
+                />
+              ) : undefined
             }
           />
         ))}
