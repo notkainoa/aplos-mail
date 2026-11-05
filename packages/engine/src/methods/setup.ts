@@ -1,7 +1,9 @@
-import type { Input, Output, ReasonCode, SetupStatus } from '@aplos/contract';
+import type { Account, Input, Output, ReasonCode, SetupStatus } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import type { AccountRuntime } from '../ports/engine';
-import { accountIds, readAccount } from '../sync/account-read';
+import { accountExists, accountIds, readAccount } from '../sync/account-read';
 import { hexId } from '../sync/connect-sessions';
+import { statusOfRefusal } from '../sync/status';
 import type { AreaHandlers, MethodContext } from './types';
 
 /**
@@ -27,24 +29,27 @@ const FAILED_STATES = new Set([
 
 /** The account's first-sync state, from its health and first-window facts. A demo account is always `ready`. */
 export function setupStateOf(
-  account: { demo: boolean; baselineDoneAt?: number },
+  account: Pick<Account, 'demo' | 'baselineDoneAt' | 'health'>,
   runtime: AccountRuntime | undefined,
 ): SetupAccountRow['state'] {
   if (account.demo) return 'ready';
-  const status = runtime?.status;
-  if (status !== undefined && FAILED_STATES.has(status.state)) return 'failed';
+  // `account.health` is the live actor's status when one runs, else the account's stored health, so an
+  // actor that failed to start or was stopped is answered by what the account last said, never `finding`.
+  const status = account.health.status;
+  if (FAILED_STATES.has(status.state)) return 'failed';
   if ((runtime?.baselineDoneAt ?? account.baselineDoneAt) !== undefined) return 'ready';
-  if (status?.state === 'paused' || status?.state === 'offline') return 'paused';
+  if (status.state === 'paused') return 'paused';
+  if (runtime === undefined) return 'notConnected';
+  if (status.state === 'offline') return 'paused';
   if (
-    status?.state === 'syncing' &&
-    runtime !== undefined &&
+    status.state === 'syncing' &&
     (runtime.firstWindow.read > 0 ||
       runtime.firstWindow.total > 0 ||
       runtime.firstWindow.found !== undefined)
   )
     return 'reading';
-  // 'starting', 'syncing' with nothing read yet, 'ok' without a baseline, or an actor that is not up
-  // yet: the account is connected and its first window is still to come.
+  // 'starting', 'syncing' with nothing read yet, or 'ok' without a baseline: the account is connected
+  // and its first window is still to come.
   return 'finding';
 }
 
@@ -57,9 +62,10 @@ function setupAccountOf(
   const account = readAccount(services.store, accountId, runtime);
   if (!account) return undefined;
   const state = setupStateOf(account, runtime);
+  const status = account.health.status;
   const window = runtime?.firstWindow ?? { read: 0, total: 0 };
   const baselineIn = account.baselineDoneAt !== undefined;
-  const backfilling = runtime?.status.state === 'backfilling' ? runtime.status : undefined;
+  const backfilling = status.state === 'backfilling' ? status : undefined;
   return {
     accountId,
     state,
@@ -72,11 +78,17 @@ function setupAccountOf(
     backfill: backfilling
       ? { read: backfilling.done, target: backfilling.of ?? backfilling.done }
       : { read: 0, target: 0 },
-    ...(runtime?.status.state === 'paused' ? { pausedUntil: runtime.status.until } : {}),
+    // A pause or failure after the first window is in is the backfill's, not the row's: a ready row
+    // emits neither, so the screen still reaches "Open Aplos" (U8 4a).
+    ...(state === 'paused' && status.state === 'paused' && status.until !== undefined
+      ? { pausedUntil: status.until }
+      : {}),
     ...(account.health.reconnectBy !== undefined
       ? { reconnectBy: account.health.reconnectBy }
       : {}),
-    ...(runtime?.reasonCode !== undefined ? { reasonCode: runtime.reasonCode } : {}),
+    ...((state === 'paused' || state === 'failed') && account.health.reasonCode !== undefined
+      ? { reasonCode: account.health.reasonCode }
+      : {}),
     // Counters are monotonic for the account's life here; a retry resumes the same run.
     runId: `run-${accountId}`,
   };
@@ -117,6 +129,9 @@ function begin(_args: Input<'Setup/begin'>, ctx: MethodContext): Output<'Setup/b
 
 function end(args: Input<'Setup/end'>, ctx: MethodContext): Output<'Setup/end'> {
   const { store, clock, randomBytes } = ctx.services;
+  // An end naming an earlier session is an idempotent ok that changes nothing: it must not clear the
+  // live session's id or stamp `setup.*` while a new run is in progress.
+  if (args.setupId !== undefined && args.setupId !== setupId) return { ok: true };
   const key =
     args.reason === 'skipped'
       ? 'setup.skippedAt'
@@ -135,13 +150,38 @@ function end(args: Input<'Setup/end'>, ctx: MethodContext): Output<'Setup/end'> 
         writes: [{ kind: 'meta', key, value: String(clock.now()) }],
       });
   }
+  // The one-shot AI backfill of unsummarised threads queues here once the AI pass lands (PR #21 F1/F2/F5/F6).
   setupId = undefined;
   return { ok: true };
 }
 
 function retry(args: Input<'Setup/retry'>, ctx: MethodContext): Output<'Setup/retry'> {
-  ctx.services.accounts.request(args.accountId, { manual: true, force: true });
-  return { ok: true };
+  const { services } = ctx;
+  // The `readAccount` convention: an unknown or removed account is `notFound`, never a quiet ok.
+  if (!accountExists(services.store, args.accountId))
+    throw new ContractError({ type: 'notFound', message: 'That account is not in Aplos.' });
+  const admission = services.accounts.request(args.accountId, { manual: true, force: true });
+  if (admission.ok) return { ok: true };
+  // `Ok` cannot carry `Sync/request`'s `accepted:false`, so the refusal surfaces as an error with the
+  // catalogue reason code `statusOfRefusal` gives the same refusal, and the resume time when it has one.
+  const view = statusOfRefusal(admission, { now: services.clock.now() });
+  const type =
+    view.status.state === 'needsReauth'
+      ? 'needsReauth'
+      : view.status.state === 'needsPermission'
+        ? 'permission'
+        : 'paused';
+  throw new ContractError({
+    type,
+    message:
+      type === 'needsReauth'
+        ? 'Sign in to this account again to retry.'
+        : type === 'permission'
+          ? 'Aplos needs permission to reach this account again.'
+          : 'Aplos is waiting before it tries this again.',
+    ...(view.reasonCode !== undefined ? { reasonCode: view.reasonCode } : {}),
+    ...(admission.until !== undefined ? { resumeAt: admission.until } : {}),
+  });
 }
 
 export const handlers: AreaHandlers<'setup'> = {
