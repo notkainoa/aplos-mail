@@ -297,15 +297,16 @@ prototypes, viewport and container units rewritten to bounded px); they stay her
    letter then fails at the deadline) or feeds it another element. The sanitiser's `m-` namespacing for `name`/`id` is
    what prevents it (the corpus's dom-clobbering entries pass). Pin that with a test, or have the reporter read through
    `Document.prototype` getters it captures first.
-4. **Quirks mode: done (#249), one visible cost.** Every served document now starts with `<!DOCTYPE html>`. Checked
-   with original demo letters through `render` + `withReporter` in the sealed host at 640 px: heights now follow the
-   content (a `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its
-   letter), table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air). The
-   one regression is the classic image gap: an image alone in a table cell sits on the text baseline, so sliced-image
-   newsletters show a strip of the cell's background under every image row (8 px with the reading CSS's line height;
-   0 in quirks). The host cannot fix it in a sealed document. REQUEST: an almost-standards doctype (for example HTML
-   4.01 Transitional with its system identifier), which differs from standards only in that line-height rule, or an
-   equivalent rule in the reading CSS.
+4. **Quirks mode: done (#249); the image gap: done (`mail-html/7`).** Every served document starts with
+   `READING_DOCTYPE` (`packages/mail-html/src/index.ts`): HTML 4.01 Transitional with its system identifier, which
+   Chromium treats as almost-standards mode (`document.compatMode` still `CSS1Compat`). Heights follow the content (a
+   `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its letter),
+   table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air); with the plain
+   `<!DOCTYPE html>` the classic image gap also showed (an image alone in a table cell sat on the text baseline, a strip
+   of the cell's background under every sliced-image row, 6 px at the reading CSS in Chromium, font-dependent). The
+   almost-standards rule removes exactly that strip: cell 120 beside a 120 px image. Pinned in real Chromium by
+   `reporter.e2e.ts` ("an image alone in a table cell leaves no baseline strip", with a control that shows the strip
+   under `<!DOCTYPE html>`). The system identifier is a mode switch only; nothing fetches it. The development-only srcdoc frame (`document.ts`, scriptless, stand-in engine) still writes `<!doctype html>`, so a sliced-image letter shows the strip there and not in the sealed frame; ui-reader may adopt the same doctype when it next touches that file.
 5. **Viewport units.** Rewrite `vh`, `vw`, `vmin`, `vmax` (and the `dvh`/`svh`/`lvh` family) to fixed lengths in
    the sanitiser, or lay the frame out at a fixed viewport height, so a letter's height cannot depend on its frame's
    ("Runaway growth"; the host's fence is the backstop, not the fix).

@@ -40,6 +40,11 @@ export interface SettingEntry {
   readonly keywords?: readonly string[];
   /** The row's anchor in its section: letters, digits, "-" or "_", starting with a letter. */
   readonly rowAnchor: string;
+  /**
+   * Optional live check: false means the row is not drawn in the current state, so the palette does not offer it.
+   * Absent means always offered. Read at listing time, never cached.
+   */
+  readonly available?: () => boolean;
 }
 
 /** A table of settings entries; the app has one (registerSetting), tests make their own. */
