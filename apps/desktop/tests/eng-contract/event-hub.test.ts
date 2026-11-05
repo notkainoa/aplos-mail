@@ -56,13 +56,67 @@ test('a keys-only listener hears only its type; the app listener still hears eve
   );
 });
 
-test('with only a keys-only listener present, an app event is still held for the app', () => {
+test('with only a typed listener present, an app event is held for the app as well as heard live', () => {
   const hub = createEventHub();
-  hub.subscribe(collect().listener, { only: ['mail-key'] });
+  const typed = collect();
+  hub.subscribe(typed.listener, { only: ['deep-link'] });
   hub.emit(link);
+  assert.deepEqual(typed.heard, [link]);
   const app = collect();
   hub.subscribe(app.listener);
   assert.deepEqual(app.heard, [link]);
+});
+
+test('a typed listener never drains the queue, even naming a waiting type', () => {
+  const hub = createEventHub();
+  hub.emit(link);
+  hub.emit({ type: 'command', payload: 'compose' });
+  const typed = collect();
+  hub.subscribe(typed.listener, { only: ['command', 'deep-link'] });
+  assert.deepEqual(typed.heard, []);
+  const app = collect();
+  hub.subscribe(app.listener);
+  assert.deepEqual(
+    app.heard.map(e => e.type),
+    ['deep-link', 'command'],
+  );
+});
+
+test('a listener that subscribes from inside its replay cannot take events from the replay', () => {
+  const hub = createEventHub();
+  hub.emit(link);
+  hub.emit({ type: 'command', payload: 'a' });
+  const outer: HubEvent[] = [];
+  const inner = collect();
+  hub.subscribe(event => {
+    outer.push(event);
+    if (outer.length === 1) hub.subscribe(inner.listener);
+  });
+  assert.equal(outer.length, 2);
+  assert.deepEqual(inner.heard, []);
+});
+
+test('a listener that throws during its replay is not left registered', () => {
+  const hub = createEventHub();
+  hub.emit(link);
+  let calls = 0;
+  assert.throws(() =>
+    hub.subscribe(() => {
+      calls += 1;
+      throw new Error('boom');
+    }),
+  );
+  hub.emit({ type: 'state' });
+  assert.equal(calls, 1, 'not called again for a later event');
+});
+
+test('the same function subscribed twice is one registration', () => {
+  const hub = createEventHub();
+  const app = collect();
+  hub.subscribe(app.listener);
+  hub.subscribe(app.listener);
+  hub.emit({ type: 'state' });
+  assert.equal(app.heard.length, 1);
 });
 
 test('a mail key nobody wants is dropped, never queued; unsubscribe stops delivery; the queue is bounded', () => {
