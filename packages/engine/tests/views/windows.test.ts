@@ -648,11 +648,18 @@ test('a throttled search answer cools the account; the next search fails fast lo
   try {
     await t.call('Search/remote', { opId: 'p1', query: { text: 'garden' } });
     await t.advance(10);
-    const afterFirst = calls.length;
-    // Inside the pause: the same account is not asked again — the run fails fast as `paused`.
+    // Inside the pause: the cooled account is skipped, but a healthy one is still asked.
     await t.call('Search/remote', { opId: 'p2', query: { text: 'garden' } });
     await t.advance(10);
-    assert.equal(calls.length, afterFirst, 'the paused account is not re-asked');
+    assert.deepEqual(
+      calls.filter(c => c === 'acct-1:garden'),
+      ['acct-1:garden'],
+      'the paused account is not re-asked',
+    );
+    assert.deepEqual(
+      calls.filter(c => c === 'imap:2:garden'),
+      ['imap:2:garden'],
+    );
     const last = t.frames.filter(f => f.frame === 'progress').at(-1);
     assert.equal(last?.kind, 'error');
     assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');

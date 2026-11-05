@@ -30,7 +30,9 @@ const inflight = new WeakMap<object, Map<string, Promise<ErrorBody | undefined>>
 /**
  * Per-account cool-down after a throttle/quota answer: its `resumeAt`/`retryAfterMs` is honoured before the
  * account is asked again — a search inside the pause fails fast locally without a call. A hint-less throttle
- * still buys a short breath (escalating, 10 s), so an Enter loop cannot keep hitting a hot provider.
+ * still buys a flat 10 s breath, so an Enter loop cannot keep hitting a hot provider. A `PausedError` without
+ * `until` (an auth or config block, ended only by the governor) gets the same breath — the next try just hits
+ * the governor's refusal again.
  */
 const pauses = new WeakMap<object, Map<string, number>>();
 const COALESCE_LIMIT = 50;
@@ -67,14 +69,16 @@ function resumeHint(error: unknown, now: number): number | undefined {
     const e = error.error;
     if (typeof e.resumeAt === 'number') return e.resumeAt;
     if (typeof e.retryAfterMs === 'number') return now + e.retryAfterMs;
-    return ['throttle', 'quota', 'daily', 'concurrency'].includes(e.class ?? '')
+    return ['throttle', 'quota', 'daily', 'concurrency'].includes(e.class ?? '') || e.concurrency
       ? now + DEFAULT_PAUSE_MS
       : undefined;
   }
   return undefined;
 }
 
-const scopeKey = (args: Args) => `${args.accountId ?? '*'}\0${args.query.text}`;
+// `null` marks the all-accounts scope ('*' is a valid wire Id) and the WHOLE query keys the run —
+// structured fields (from/subject/in:) must not share a leader's results.
+const scopeKey = (args: Args) => JSON.stringify([args.accountId ?? null, args.query]);
 
 async function runSearch(
   services: EngineServices,
@@ -90,7 +94,13 @@ async function runSearch(
   progress('step', {
     step: { id: 'search', text: 'Searching your mail provider', state: 'running' },
   });
-  const body = await shareSearch(services, args);
+  let body: ErrorBody | undefined;
+  try {
+    body = await shareSearch(services, args);
+  } catch {
+    // A shared run that rejects rather than resolves a body still answers each joiner.
+    body = { type: 'internal', message: 'Something went wrong. Try again.' };
+  }
   if (body === undefined) progress('done');
   else {
     progress('error', { problem: problemOf(body) });
@@ -114,35 +124,52 @@ function shareSearch(services: EngineServices, args: Args): Promise<ErrorBody | 
   const key = scopeKey(args);
   const running = map.get(key);
   if (running) return running;
-  const run = askProvider(services, args).finally(() => map.delete(key));
+  // `run` is read only inside the settled callback, which fires after assignment — const is safe.
+  const run = askProvider(services, args).finally(() => {
+    if (map.get(key) === run) map.delete(key);
+  });
   map.set(key, run);
   if (map.size > COALESCE_LIMIT) map.delete(map.keys().next().value as string);
   return run;
 }
 
-/** The actual provider round: one serial pass over the accounts, honouring each account's cool-down first. */
+/** The actual provider round: one serial pass over the accounts, skipping any in cool-down — one paused
+ * account never starves the rest; the run reports `paused` only when EVERY account was cooled down. */
 async function askProvider(services: EngineServices, args: Args): Promise<ErrorBody | undefined> {
   const accounts = args.accountId ? [args.accountId] : services.store.read(q => accountIds(q));
   const pauseMap = pauses.get(services.views) ?? new Map<string, number>();
   pauses.set(services.views, pauseMap);
   const now = () => services.clock.now();
+  let pausedUntil: number | undefined;
   for (const account of accounts) {
     const until = pauseMap.get(account);
-    if (until !== undefined && until > now())
-      return {
-        type: 'paused',
-        message: 'Aplos is waiting before it tries this again.',
-        resumeAt: until,
-      };
+    if (until !== undefined && until > now()) {
+      pausedUntil = Math.min(pausedUntil ?? until, until);
+      continue;
+    }
     try {
       await services.accounts.search(account, { text: args.query.text, limit: REMOTE_LIMIT });
       pauseMap.delete(account);
     } catch (error) {
       const resume = resumeHint(error, now());
-      if (resume !== undefined) pauseMap.set(account, resume);
-      return toContractError(error, 'Search/remote', services.log).body;
+      if (resume !== undefined) {
+        // A project-scoped refusal (Gmail's daily limit) cools every account on the project.
+        const project = error instanceof ProviderError && error.scope === 'project';
+        for (const a of project ? accounts : [account]) pauseMap.set(a, resume);
+      }
+      const body = toContractError(error, 'Search/remote', services.log).body;
+      return resume === undefined || body.resumeAt !== undefined
+        ? body
+        : { ...body, resumeAt: resume };
     }
   }
+  // Every account was cooled down: the run pauses until the earliest can be asked again.
+  if (accounts.length > 0 && pausedUntil !== undefined)
+    return {
+      type: 'paused',
+      message: 'Aplos is waiting before it tries this again.',
+      resumeAt: pausedUntil,
+    };
   return undefined;
 }
 
