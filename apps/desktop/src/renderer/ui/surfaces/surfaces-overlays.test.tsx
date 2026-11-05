@@ -225,7 +225,13 @@ describe('Puck', () => {
     assert.match(textOf(html), /Home ⌃1/);
     assert.match(textOf(html), /Mail you finished\. Press H to move one back to Home\./);
     assert.match(html, /data-color="ember"/);
-    assert.ok(!html.includes('tabindex'), 'navigation rows are all in the tab order');
+    assert.match(
+      html,
+      /aria-current="page"[^>]*tabindex="0"/,
+      'the selected row is the one tab stop',
+    );
+    assert.equal(count(html, 'tabindex="0"'), 1, 'roving: exactly one row is tabbable');
+    assert.equal(count(html, 'tabindex="-1"'), 3, 'the rest are out of the tab order');
     assertIdRefs(html);
     assertClean(html, [CJK]);
   });

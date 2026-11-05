@@ -4,15 +4,27 @@
  */
 import { FirstSyncLine } from '../../shell/states';
 import { EmptyLine, ErrorLine } from '../../ui/list';
+import type { IconName } from '../../ui/props';
 import { Confirm } from '../../ui/surfaces';
 import type { Confirmation } from './listActions';
 import { useReopen } from './Reopenable';
 import type { EmptyState } from './useMailList';
 
-/** The line a list shows when it holds nothing. */
-export function ListEmpty({ text, state }: { readonly text: string; readonly state: EmptyState }) {
+/** Props for `ListEmpty`. */
+export interface ListEmptyProps {
+  /** The list's empty sentence (its config's `empty`). */
+  readonly text: string;
+  /** The place's muted mark (its config's `emptyIcon`). */
+  readonly icon?: IconName;
+  /** The quieter second line (its config's `emptyDetail`), if any. */
+  readonly detail?: string;
+  readonly state: EmptyState;
+}
+
+/** The line a list shows when it holds nothing, centred in the pane. */
+export function ListEmpty({ text, icon, detail, state }: ListEmptyProps) {
   if (state.settling) return <FirstSyncLine reason={state.reason} />;
-  return <EmptyLine text={text} />;
+  return <EmptyLine placement="pane" text={text} icon={icon} detail={detail} />;
 }
 
 /**

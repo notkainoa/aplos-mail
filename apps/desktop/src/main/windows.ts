@@ -263,7 +263,18 @@ function createWindow(query?: { draft?: string; thread?: string }) {
   });
   win.on('focus', () => syncTheme(false));
   lockNavigation(win);
+  // The sidebar's top layout follows fullscreen (macOS traffic lights only overlap it while windowed).
+  win.on('enter-full-screen', () => {
+    win.webContents.send('aplos:event', { type: 'fullscreen', payload: { fullscreen: true } });
+  });
+  win.on('leave-full-screen', () => {
+    win.webContents.send('aplos:event', { type: 'fullscreen', payload: { fullscreen: false } });
+  });
   win.webContents.on('did-finish-load', () => {
+    win.webContents.send('aplos:event', {
+      type: 'fullscreen',
+      payload: { fullscreen: win.isFullScreen() },
+    });
     if (latestState) win.webContents.send('aplos:event', { type: 'state', payload: latestState });
     if (win === main)
       for (const link of pendingLinks.splice(0))

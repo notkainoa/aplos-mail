@@ -1,6 +1,6 @@
 /** What opens over Home: the Low importance sheet, the focus letter's ⋯ menu and "Why it's here". */
 import type { Account, AccountId, ThreadId, ThreadRow } from '../../data';
-import type { Density } from '../../ui/props';
+import type { Density, SuggestedAction } from '../../ui/props';
 import { HomeMenu, type HomeMenuChoice } from './HomeMenu';
 import { LowSheetHost } from './LowSheetHost';
 import { WhyHost, type WhyTarget } from './WhyHost';
@@ -17,6 +17,8 @@ export interface HomeOverlaysProps {
   readonly accounts: readonly Account[];
   readonly rowOf: (id: ThreadId) => ThreadRow | undefined;
   readonly cursorKey: string | null;
+  /** The focus letter's suggestion, for the ⋯ menu's first row. */
+  readonly suggestion?: SuggestedAction;
   readonly onOpen: (id: ThreadId, how: OpenHow) => void;
   readonly actions: HomeActions;
   /** The thread "Why it's here" is open for, or null. */
@@ -26,12 +28,25 @@ export interface HomeOverlaysProps {
 }
 
 /** Runs a ⋯ menu choice on the row under the cursor. */
-function choose(id: HomeMenuChoice, props: HomeOverlaysProps): void {
+export function chooseFromHomeMenu(id: HomeMenuChoice, props: HomeOverlaysProps): void {
   // The menu belongs to the row under the cursor, so it acts on that row even while others are picked.
   const key = props.cursorKey ?? undefined;
-  if (id === 'bookmark') props.actions.bookmark(key);
-  else if (id === 'why') props.onWhy();
-  else props.actions.trash(key);
+  switch (id) {
+    case 'suggested':
+      return props.actions.suggested();
+    case 'later':
+      return props.actions.later(key);
+    case 'done':
+      return props.actions.done(key);
+    case 'setDate':
+      return props.actions.setDate();
+    case 'bookmark':
+      return props.actions.bookmark(key);
+    case 'why':
+      return props.onWhy();
+    case 'trash':
+      return props.actions.trash(key);
+  }
 }
 
 export function HomeOverlays(props: HomeOverlaysProps) {
@@ -50,9 +65,10 @@ export function HomeOverlays(props: HomeOverlaysProps) {
       <HomeMenu
         anchor={menuAnchor}
         row={cursorKey === null ? undefined : rowOf(cursorKey)}
+        suggestion={props.suggestion}
         onSelect={id => {
           onCloseMenu();
-          choose(id, props);
+          chooseFromHomeMenu(id, props);
         }}
         onClose={onCloseMenu}
       />

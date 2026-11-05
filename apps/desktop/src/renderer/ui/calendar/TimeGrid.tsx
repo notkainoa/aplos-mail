@@ -459,7 +459,7 @@ export function TimeGrid(props: CalendarGridProps) {
                   perDay[dayIndex].allDay.length === 0 &&
                   emptyAction ? (
                     <div className="ui-calendar-grid__empty" role="status">
-                      <span>Nothing scheduled.</span>
+                      <span>Nothing scheduled</span>
                       <GridAction action={emptyAction} />
                     </div>
                   ) : null}

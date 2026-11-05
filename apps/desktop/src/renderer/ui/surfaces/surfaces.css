@@ -264,12 +264,14 @@
   color: var(--dim);
   overflow-wrap: anywhere;
 }
-.ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
+/* The html flags come from inputIntent (buttons-keys): a real keydown or pointer move since load.
+   Without one, an element drawn under a resting cursor (or script focus) would show a tip nobody asked for. */
+html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   visibility: visible;
   opacity: 1;
 }
 @media (hover: hover) {
-  .ui-part-tipwrap:hover > .ui-part-tip {
+  html[data-real-pointer] .ui-part-tipwrap:hover > .ui-part-tip {
     visibility: visible;
     opacity: 1;
   }
@@ -277,6 +279,14 @@
     visibility: hidden;
     opacity: 0;
   }
+}
+
+/* Regions and overlays that only hold focus for the keys draw no ring; the row or control inside owns it. */
+.ui-pane:focus-visible,
+.ui-menu:focus-visible,
+.ui-dialog:focus-visible,
+.ui-popover:focus-visible {
+  outline: none;
 }
 
 /* ───────────── Pane (shell.css .main / .dock / .toolbar) ───────────── */

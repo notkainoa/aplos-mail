@@ -15,7 +15,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { ComponentPropsMap, PuckItem } from '../props';
-import { PartIcon, PartTip, formatCount, keysFor } from './parts';
+import { PartIcon, PartTip, formatCount, useKeysFor } from './parts';
 
 interface Thumb {
   x: number;
@@ -31,6 +31,7 @@ function PuckCell({
   role,
   focusable,
   onSelect,
+  onFocus,
   onKeyDown,
 }: {
   item: PuckItem;
@@ -38,10 +39,11 @@ function PuckCell({
   role: 'tabs' | 'navigation' | 'radio';
   focusable: boolean;
   onSelect: () => void;
+  onFocus: () => void;
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const tipId = useId();
-  const chords = keysFor(item.commandId);
+  const chords = useKeysFor()(item.commandId);
   const hasTip = chords.length > 0 || item.tooltip !== undefined || item.shortLabel !== undefined;
   const roleAttr = role === 'tabs' ? 'tab' : role === 'radio' ? 'radio' : undefined;
   return (
@@ -56,9 +58,10 @@ function PuckCell({
         aria-current={role === 'navigation' && selected ? 'page' : undefined}
         aria-label={item.shortLabel ? item.label : undefined}
         aria-describedby={hasTip ? tipId : undefined}
-        tabIndex={role === 'navigation' ? undefined : focusable ? 0 : -1}
+        tabIndex={focusable ? 0 : -1}
         disabled={item.disabled}
         onClick={onSelect}
+        onFocus={onFocus}
         onKeyDown={onKeyDown}
       >
         {item.icon ? <PartIcon name={item.icon} /> : null}
@@ -142,11 +145,17 @@ export function Puck({
   }, [thumb, instant]);
 
   const enabled = items.filter(item => !item.disabled);
-  const roving = role !== 'navigation';
+  // Roving tab stop for every role: the last-focused row keeps tabindex 0 (the selected row, or the
+  // first enabled, until one is focused). Navigation rows leave the arrow keys to the region handler
+  // in shell/regions so the groups in one region behave as a single cycle.
+  const [lastFocus, setLastFocus] = useState<string | null>(null);
   const focusId =
-    selectedId !== null && enabled.some(item => item.id === selectedId)
-      ? selectedId
-      : enabled[0]?.id;
+    lastFocus !== null && enabled.some(item => item.id === lastFocus)
+      ? lastFocus
+      : selectedId !== null && enabled.some(item => item.id === selectedId)
+        ? selectedId
+        : enabled[0]?.id;
+  const roving = role !== 'navigation';
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!roving || event.nativeEvent.isComposing) return;
@@ -198,6 +207,7 @@ export function Puck({
           selected={item.id === selectedId}
           focusable={item.id === focusId}
           onSelect={() => onSelect(item.id)}
+          onFocus={() => setLastFocus(item.id)}
           onKeyDown={roving ? onKeyDown : undefined}
         />
       ))}

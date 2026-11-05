@@ -4,7 +4,7 @@
 
 import type { LowBandProps } from '../props';
 import { formatCount } from './internal/format';
-import { tooltipText } from './internal/keys';
+import { useTooltipText } from './internal/keys';
 
 const SHOWN = 3;
 
@@ -45,6 +45,7 @@ export function LowBand({
   commandId,
   onOpen,
 }: LowBandProps) {
+  const tip = useTooltipText();
   const { names, more } = lowBandParts(senders, moreSenders);
   return (
     <div
@@ -54,7 +55,7 @@ export function LowBand({
       className="ui-low-band"
       data-density={density}
       data-cursor={cursor ? 'true' : undefined}
-      title={tooltipText('Open low importance', commandId)}
+      title={tip('Open low importance', commandId)}
       onClick={onOpen}
     >
       <span className="ui-low-band__label">Low importance</span>

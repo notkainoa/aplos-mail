@@ -34,6 +34,10 @@ import {
 } from '../../../apps/desktop/src/renderer/shell/states';
 import { placeCounts, type PlaceId } from '../../../apps/desktop/src/renderer/shell/nav';
 import {
+  DRAFTS_CONFIG,
+  SENT_CONFIG,
+} from '../../../apps/desktop/src/renderer/screens/lists/listKinds';
+import {
   navigate,
   useSidebarSlot,
   type Screen,
@@ -397,7 +401,8 @@ function EmptyInboxZero(): ReactElement {
   return (
     <Frame>
       <EmptyLine
-        text="You handled 12 emails."
+        placement="pane"
+        text="You handled 12 emails"
         size="display"
         detail="Next: Design review at 2:00 PM"
         action={{ label: 'Undo last', commandId: 'app.undo', emphasis: 'text', onSelect: noop }}
@@ -426,7 +431,16 @@ function EmptyNoAccounts(): ReactElement {
 function EmptyDrafts(): ReactElement {
   return (
     <Frame screen="drafts">
-      <EmptyLine text="No drafts." />
+      <EmptyLine placement="pane" icon={DRAFTS_CONFIG.emptyIcon} text={DRAFTS_CONFIG.empty} />
+    </Frame>
+  );
+}
+
+/** Sent's empty line: the stand-in's Sent view keeps trashed mail, so the screen's own line is drawn here. */
+function EmptySent(): ReactElement {
+  return (
+    <Frame screen="sent">
+      <EmptyLine placement="pane" icon={SENT_CONFIG.emptyIcon} text={SENT_CONFIG.empty} />
     </Frame>
   );
 }
@@ -542,6 +556,7 @@ export const shellScenes: Record<string, () => ReactElement> = {
   'shell-empty-first-sync': EmptyFirstSync,
   'shell-empty-no-accounts': EmptyNoAccounts,
   'shell-empty-drafts': EmptyDrafts,
+  'shell-empty-sent': EmptySent,
   'shell-fatal-screen': () => <FatalScene kind="unreachable" />,
   'shell-fatal-parked': () => <FatalScene kind="parked" />,
   'shell-add-account-open': addAccountScene(),

@@ -141,8 +141,8 @@ describe('ReaderActions', () => {
       m,
       /data-variant="filled" data-size="md" title="Reply · Space\. Hold R to dictate a reply">.*Reply<\/span><kbd class="ui-list-kbd">Space<\/kbd>/,
     );
-    assert.match(m, /title="Later · L"/);
-    assert.match(m, /title="Done · E"/);
+    assert.match(m, /title="Later · ←"/);
+    assert.match(m, /title="Done · →"/);
     assert.doesNotMatch(m, /tabindex="-1"/, 'the reader is not a listbox: buttons are focusable');
     assert.doesNotMatch(m, /data-icon="more"/, '⋯ lives in the pane header');
   });

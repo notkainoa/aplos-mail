@@ -31,6 +31,7 @@ import {
   versionLine,
   aiNotices,
 } from './settings.model';
+import { createAppRegistry, DEFAULT_KEY_PREFS, formatChord } from '../../commands';
 import { applyRemap, judgeChord, resetKeys, shortcutGroups } from './keyboard.model';
 import {
   account,
@@ -49,11 +50,11 @@ import {
 } from './preview/fixtures';
 
 const HOUR = 3_600_000;
-const ui = (keymap = {}) => ({
+const ui = (keymap = {}, swipeDirection: 'doneRight' | 'doneLeft' = 'doneRight') => ({
   keymap,
   singleKeys: true,
   holdMs: 250,
-  swipeDirection: 'doneRight' as const,
+  swipeDirection,
 });
 
 describe('reconnect rule (DESIGN 7.10, U7 acceptance 8)', () => {
@@ -457,6 +458,36 @@ describe('Keyboard model', () => {
       ['meta+shift+9', 'ArrowRight'],
     );
     assert.deepEqual(applyRemap(ui(km), 'mail.done', 'e'), {});
+  });
+
+  test('with the triage arrows swapped, remapping Done stores the catalog chord and keeps the swapped arrow', () => {
+    const swapped = ui({}, 'doneLeft');
+    const row = shortcutGroups(swapped)
+      .flatMap(g => g.rows)
+      .find(r => r.commandId === 'mail.done')!;
+    assert.deepEqual(row.chords, ['e', 'ArrowRight']);
+    assert.deepEqual(row.shown, ['e', 'ArrowLeft']);
+    assert.equal(judgeChord('mail.done', 'y', swapped).kind, 'ok');
+    const km = applyRemap(swapped, 'mail.done', 'y');
+    assert.deepEqual(
+      km['mail.done'].map(b => b.chord),
+      ['y', 'ArrowRight'],
+    );
+    const registry = createAppRegistry({
+      ...DEFAULT_KEY_PREFS,
+      swapTriageArrows: true,
+      keymap: km,
+    });
+    assert.deepEqual(registry.keymapIssues, []);
+    const keys = registry
+      .keysFor('mail.done', ['global', 'list', 'home'])
+      .map(b => formatChord(b.chord));
+    assert.ok(keys.includes('←') && keys.includes('Y'), keys.join());
+    const remapped = shortcutGroups(ui(km, 'doneLeft'))
+      .flatMap(g => g.rows)
+      .find(r => r.commandId === 'mail.done')!;
+    assert.deepEqual(remapped.shown, ['y', 'ArrowLeft']);
+    assert.deepEqual(applyRemap(ui(km, 'doneLeft'), 'mail.done', 'e'), {});
   });
 
   test('reserved chords are refused with a reason: ⌘Q, ⌘W, ⌘H', () => {
