@@ -170,6 +170,7 @@ describe('review1 finding 1: a failed handoff', () => {
     const handlers = firstSyncCommands({
       view: () => view,
       drillOpen: () => false,
+      notice: () => undefined,
       onOpen: () => {
         const out = reduceFlow(flow, { type: 'open' });
         flow = out.state;
@@ -743,6 +744,7 @@ describe('review1 other findings', () => {
       const handlers = firstSyncCommands({
         view: () => build(status([acct()])),
         drillOpen: () => true,
+        notice: () => undefined,
         onOpen: noop,
         onDrill: noop,
         onLeaveDrill: noop,
