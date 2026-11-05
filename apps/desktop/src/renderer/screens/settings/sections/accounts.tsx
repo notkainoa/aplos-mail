@@ -6,14 +6,7 @@
 import { Button } from '../../../ui/buttons-keys';
 import { Switch, SwatchPicker } from '../../../ui/controls';
 import { Group, Row } from '../parts';
-import {
-  accountRows,
-  hasCapability,
-  leaseLine,
-  NOT_AVAILABLE,
-  reconnectPress,
-  tagColor,
-} from '../settings.model';
+import { accountRows, hasCapability, leaseLine, NOT_AVAILABLE, tagColor } from '../settings.model';
 import type { SectionProps } from './types';
 
 export function Accounts({ data, view, actions, host }: SectionProps) {
@@ -38,11 +31,11 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             descriptionTone={r.tone}
             control={
               <>
-                {r.reconnect && reconnectPress(host) ? (
+                {r.reconnect && host.renderReconnect ? (
                   <Button
                     variant={r.reconnect.filled ? 'filled' : 'text'}
                     label={r.reconnect.label}
-                    onPress={() => reconnectPress(host)!(r.id, r.reconnect!.mode, actions)}
+                    onPress={() => actions.startReconnect(r.id, r.reconnect!.mode)}
                   />
                 ) : null}
                 {r.demo ? (

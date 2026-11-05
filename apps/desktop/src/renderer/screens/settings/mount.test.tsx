@@ -1,6 +1,6 @@
-// The F8 follow-ups: Reconnect reaches the shell's sheet through `openReconnect`, Account/set writes are
-// optimistic per account, and conditional rows carry a live `available` so the palette stops offering rows that
-// are not drawn. Run: npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}' (from apps/desktop)
+// The F8 follow-ups: Account/set writes are optimistic per account, and conditional rows carry a live
+// `available` so the palette stops offering rows that are not drawn.
+// Run: npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}' (from apps/desktop)
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -10,7 +10,7 @@ import { clearAvailability, publishAvailability, rowAvailable } from './availabi
 import { createController } from './controller';
 import { entryFor, isConditional, SETTING_ROWS } from './paletteEntries';
 import type { SettingsApiPort, SettingsData, SettingsHost } from './ports';
-import { accountRows, mergeAccounts, reconnectPress, type AccountWrite } from './settings.model';
+import { mergeAccounts, type AccountWrite } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import {
   ALEX,
@@ -19,7 +19,6 @@ import {
   consent,
   JORDAN,
   models,
-  needsReauth,
   NOW,
   providers,
   queue,
@@ -78,54 +77,18 @@ function harness(
   };
 }
 
-describe('Reconnect reaches the shell sheet', () => {
-  test('pressing Reconnect calls openReconnect: reconnect for needsReauth, grant for needsPermission', () => {
-    const calls: [string, string][] = [];
-    const host: SettingsHost = {
-      openReconnect: (accountId, mode) => void calls.push([accountId, mode]),
-    };
-    const reauth = accountRows([needsReauth(ALEX)], NOW)[0]!;
-    const perm = accountRows(
-      [
-        account({
-          id: 'perm',
-          address: 'perm@example.com',
-          health: {
-            status: { state: 'needsPermission', missingScopes: ['calendar'] },
-            reasonCode: 'permission.calendar',
-          },
-        }),
-      ],
-      NOW,
-    )[0]!;
-    const press = reconnectPress(host)!;
-    press(reauth.id, reauth.reconnect!.mode, { startReconnect: () => assert.fail('inline path') });
-    press(perm.id, perm.reconnect!.mode, { startReconnect: () => assert.fail('inline path') });
-    assert.deepEqual(calls, [
-      [ALEX.id, 'reconnect'],
-      ['perm', 'grant'],
-    ]);
-  });
-
-  test('without openReconnect the preview path stays: startReconnect opens the inline flow', () => {
-    const started: [string, string][] = [];
-    const press = reconnectPress({ renderReconnect: () => null })!;
-    press(ALEX.id, 'reconnect', {
-      startReconnect: (id, mode) => void started.push([id, mode]),
-    });
-    assert.deepEqual(started, [[ALEX.id, 'reconnect']]);
-    assert.equal(reconnectPress({}), undefined, 'no host method, no dead button');
-  });
-
-  test('the row draws the button when the host offers openReconnect', () => {
-    const markup = renderToStaticMarkup(
-      staticScreen(STATES['accounts-reconnect'], {
-        ...HOST,
-        renderReconnect: undefined,
-        openReconnect: () => {},
-      }),
+describe('Reconnect comes from the host flow', () => {
+  test('the row shows Reconnect only when the host can render the flow', () => {
+    assert.match(
+      renderToStaticMarkup(staticScreen(STATES['accounts-reconnect'], HOST)),
+      />Reconnect</,
     );
-    assert.match(markup, />Reconnect</);
+    const noFlow: SettingsHost = { ...HOST, renderReconnect: undefined };
+    assert.doesNotMatch(
+      renderToStaticMarkup(staticScreen(STATES['accounts-reconnect'], noFlow)),
+      />Reconnect</,
+      'no renderReconnect, no dead button',
+    );
   });
 });
 
