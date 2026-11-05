@@ -25,7 +25,7 @@ test('events sent before anyone listens go to the first listener, once', () => {
   assert.deepEqual(second.heard, [], 'a later listener never sees the queued events');
 });
 
-test('a keys-only listener that subscribes first neither receives nor consumes the queued app events', () => {
+test('the queue goes to the app subscriber even when a mail-key subscriber registered first', () => {
   const hub = createEventHub();
   hub.emit(link);
   hub.emit({ type: 'prepare-close' });
@@ -80,4 +80,16 @@ test('a mail key nobody wants is dropped, never queued; unsubscribe stops delive
   late.subscribe(one.listener);
   assert.equal(one.heard.length, 50);
   assert.equal(one.heard[0]!.payload, 10, 'the oldest ten were dropped');
+});
+
+test('a mail-key event on the general event channel is dropped; only deliver() makes one', () => {
+  const hub = createEventHub();
+  const keys = collect();
+  const app = collect();
+  hub.subscribe(keys.listener, { only: ['mail-key'] });
+  hub.subscribe(app.listener);
+  hub.emit(key);
+  assert.deepEqual([keys.heard, app.heard], [[], []]);
+  hub.deliver(key);
+  assert.deepEqual([keys.heard, app.heard], [[key], [key]]);
 });

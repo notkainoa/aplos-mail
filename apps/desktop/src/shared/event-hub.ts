@@ -5,6 +5,8 @@
 // sees it. A listener that names the types it wants (`only`) neither receives nor consumes any other type, so a helper that
 // listens for one narrow thing (the sealed letter's mail keys) cannot swallow the app's queued events by subscribing first.
 
+import { MAIL_KEY_EVENT } from './mail-keys';
+
 export type HubEvent = { type: string; payload?: unknown };
 export type HubListener = (event: HubEvent) => void;
 export interface HubSubscribeOptions {
@@ -35,6 +37,9 @@ export function createEventHub(): EventHub {
   const queued: HubEvent[] = [];
   return {
     emit(event) {
+      // Mail keys come only through `deliver` (main's key relay, validated): a `mail-key` on the general event channel
+      // is not one, so it is dropped here rather than forged into the key hook.
+      if (event.type === MAIL_KEY_EVENT) return;
       const heard = [...entries].filter(entry => accepts(entry, event.type));
       if (!heard.length && WAITS.has(event.type)) {
         queued.push(event);
