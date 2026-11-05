@@ -48,8 +48,13 @@ test('review1: a non-time edit on an occurrence still offers All events', () => 
     assert.equal(fx.change.scope, 'series');
     assert.equal(fx.change.id, occ.id);
     assert.deepEqual(fx.change.fields, { title: 'Standup renamed' });
-    // A title-only change shifts no occurrence: the overlay touches just the edited one.
-    assert.equal(fx.optimistic.more, undefined);
+    // The engine copies the text fields to the whole series (DECISIONS 2026-11-04, #290): every loaded
+    // occurrence's title is patched at once, so the settled window never disagrees with the overlay.
+    const standups = [...ctx.events.values()].filter(
+      e => e.seriesId === 'standup' && e.id !== occ.id,
+    );
+    assert.equal(fx.optimistic.more?.length, standups.length);
+    for (const m of fx.optimistic.more ?? []) assert.equal(m.patch?.title, 'Standup renamed');
   }
 });
 
