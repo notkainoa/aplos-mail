@@ -91,8 +91,9 @@ const ENUMS: Readonly<Record<string, readonly string[]>> = {
   'mail.signatureMode': ['always', 'new', 'never'],
 };
 
-/** Optional fields the defaults do not carry, by path; each is kept when it is a number. */
+/** Optional fields the defaults do not carry, by path; each is kept when it is of the named type. */
 const OPTIONAL_NUMBERS: ReadonlySet<string> = new Set(['ui.dock.width']);
+const OPTIONAL_STRINGS: ReadonlySet<string> = new Set(['calendar.defaultCalendarId']);
 
 /**
  * `value` read as the shape of `fallback`: a field of the wrong type, an enum value outside its set or a non-object
@@ -108,9 +109,12 @@ function coerce(path: string, fallback: unknown, value: unknown): unknown {
     const out: Doc = {};
     for (const key of Object.keys(fallback))
       out[key] = coerce(`${path}.${key}`, fallback[key], source[key]);
-    for (const key of Object.keys(source))
-      if (OPTIONAL_NUMBERS.has(`${path}.${key}`) && typeof source[key] === 'number')
-        out[key] = source[key];
+    for (const key of Object.keys(source)) {
+      const at = `${path}.${key}`;
+      const value = source[key];
+      if (OPTIONAL_NUMBERS.has(at) && typeof value === 'number') out[key] = value;
+      if (OPTIONAL_STRINGS.has(at) && typeof value === 'string' && value !== '') out[key] = value;
+    }
     return out;
   }
   if (typeof fallback === 'string') {
@@ -133,12 +137,18 @@ export function withDefaults(stored: Doc): Settings {
   return out as unknown as Settings;
 }
 
+/** The sections the document has; a patch key outside them (`__proto__`, `constructor`, anything new) is ignored. */
+const SECTIONS: ReadonlySet<string> = new Set(Object.keys(defaultSettings()));
+
 /** `patch` laid over the stored sections, section by section (a field named in the patch replaces that field whole). */
 export function mergePatch(stored: Doc, patch: SettingsPatch): Doc {
   const next: Doc = { ...stored };
-  for (const [section, fields] of Object.entries(patch)) {
+  for (const section of Object.keys(patch)) {
+    if (!SECTIONS.has(section)) continue;
+    const fields = (patch as unknown as Doc)[section];
     if (!isObject(fields)) continue;
     const mine = next[section];
+    // Spread defines own data properties, so a field named `__proto__` cannot reach a prototype.
     next[section] = { ...(isObject(mine) ? mine : {}), ...fields };
   }
   return next;
