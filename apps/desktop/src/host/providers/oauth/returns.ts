@@ -48,18 +48,22 @@ function parse(raw: string): URL | undefined {
 }
 
 /**
- * Whether `raw` claims to be the oauth-return deep link (scheme `aplos:`, host `oauth-return`). A
- * claimed link is handled by the oauth-return path alone: it never falls through to the generic
- * deep-link handling, so a malformed one is a no-op rather than a window focus. `aplos:` links under
- * any other host are not claimed and keep their existing handling.
+ * Whether `raw` claims to be the oauth-return deep link. A claimed link is handled by the
+ * oauth-return path alone: it never falls through to the generic deep-link handling, so a malformed
+ * or overlong one is a silent no-op rather than a window focus and a nonce never reaches the
+ * renderer. The claim is therefore broader than the strict accept in `oauthReturnNonce`: any
+ * `aplos:` link whose host or path starts with `oauth-return`, where `aplos:/x`, `aplos:///x` and
+ * `aplos:x` spellings put the claim in the path and `aplos://x` puts it in the host (its port and
+ * trailing dots normalised away, so `oauth-return:443` and `oauth-return.` count while
+ * `oauth-return.evil` does not). `aplos:` links under any other host are not claimed.
  */
 export function isOauthReturnLink(raw: string): boolean {
-  if (typeof raw !== 'string' || raw.length > oauthReturnLinkMaxLength) return false;
+  if (typeof raw !== 'string') return false;
   const url = parse(raw);
   if (!url || url.protocol !== `${oauthReturnScheme}:`) return false;
+  if (url.hostname.toLowerCase().replace(/\.+$/, '') === oauthReturnHost) return true;
   return (
-    url.host.toLowerCase() === oauthReturnHost ||
-    (url.host === '' && url.pathname.toLowerCase() === oauthReturnHost)
+    url.host === '' && url.pathname.toLowerCase().replace(/^\/+/, '').startsWith(oauthReturnHost)
   );
 }
 

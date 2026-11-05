@@ -81,6 +81,25 @@ test('isOauthReturnLink claims only the oauth-return shape, never other aplos li
   assert.equal(isOauthReturnLink(`aplos://oauth-return.evil?n=${nonce}`), false);
 });
 
+test('isOauthReturnLink claims every oauth-return near-miss so it cannot reach handleLink', () => {
+  // Slash-count, port, trailing-dot, userinfo, extra-path and overlong variants are all claimed:
+  // each then fails the strict nonce check and is a silent no-op instead of a focused window with
+  // the raw link (nonce included) forwarded to the renderer.
+  assert.equal(isOauthReturnLink(`aplos:/oauth-return?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos:///oauth-return?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://oauth-return:443?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://oauth-return.?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://OAUTH-RETURN.:443?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://oauth-return/extra?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://user@oauth-return?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos:oauth-return-anything?n=${nonce}`), true);
+  assert.equal(isOauthReturnLink(`aplos://oauth-return?n=${'a'.repeat(500)}`), true);
+  // Still not claimed: a different host or scheme keeps its existing handling.
+  assert.equal(isOauthReturnLink(`aplos://oauth-return.evil?n=${nonce}`), false);
+  assert.equal(isOauthReturnLink(`aplos://notoauth-return?n=${nonce}`), false);
+  assert.equal(isOauthReturnLink(`aplos://compose/oauth-return?n=${nonce}`), false);
+});
+
 // ---------- the registry ----------
 
 test('register then consume returns the purpose once; a second consume or a replay is a no-op', () => {
