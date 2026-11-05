@@ -1,7 +1,7 @@
 /**
  * The data layer's one link to the engine: the F2 typed client over an injected transport (plan 30 4.1 `client.ts`).
- * Today the transport is the stand-in engine in-process; the MessagePort (Electron) and tokenised HTTP and SSE
- * (browser preview) transports arrive with `bridge.ts` and plug in here as another `EngineSession`.
+ * The transport is the stand-in engine in-process or `../bridge.ts`'s `window.aplosEngine` session in Electron; the
+ * browser preview's tokenised HTTP and SSE transport plugs in here the same way when it arrives.
  */
 import { configureZodForCsp } from '@aplos/contract';
 import {
