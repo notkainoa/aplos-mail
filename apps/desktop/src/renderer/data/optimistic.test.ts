@@ -9,6 +9,7 @@ import type { ThreadRow, ViewSpec } from './contract-shapes';
 import { createHarness, type Harness, type HarnessOptions } from './harness';
 import { operationStore, rowStore, topicStore, windowStore } from './hooks';
 import { OperationFailedError, type ViewResult } from './index';
+import { specKey } from './optimistic';
 import type { DataLayer } from './layer';
 import type { EngineWindow } from './windows';
 
@@ -483,4 +484,15 @@ test('operation rows are held only while their record is remembered; a reset re-
   } finally {
     h.close();
   }
+});
+
+test('specKey separates two search queries and ignores key order at every depth', () => {
+  const search = (text: string) =>
+    ({ kind: 'search', query: { text } }) as const satisfies ViewSpec;
+  assert.notEqual(specKey(search('dentist')), specKey(search('zebra')));
+  assert.equal(
+    specKey({ kind: 'mailbox', role: 'inbox', accountId: 'a1' }),
+    specKey({ accountId: 'a1', role: 'inbox', kind: 'mailbox' }),
+  );
+  assert.equal(specKey(search('dentist')), specKey({ query: { text: 'dentist' }, kind: 'search' }));
 });

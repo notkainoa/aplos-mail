@@ -252,6 +252,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
             dir="auto"
             aria-label="Ask"
             placeholder="Ask about your mail or calendar"
+            data-dictation="body"
             aria-controls={props.activeOption ? props.emptyId : undefined}
             aria-activedescendant={props.activeOption}
             value={value}
