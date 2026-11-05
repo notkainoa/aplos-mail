@@ -7,7 +7,7 @@ import type { Clock, Logger, StorePort } from '../ports';
 import { openConnection, type ConnectedSession } from './connection';
 import { contractError } from './errors';
 import { createFrameHub, observeCommits } from './frames';
-import type { EngineServices, LaneModule, LaneModuleSource } from './services';
+import type { EngineServices, HostFacts, LaneModule, LaneModuleSource } from './services';
 
 /** Ports a host injects when it has them; each one left out is a stand-in that answers `unavailable`. */
 export type HostPorts = Partial<
@@ -36,6 +36,8 @@ export interface EngineOptions {
   log: Logger;
   randomBytes?: (n: number) => Uint8Array;
   ports?: HostPorts;
+  /** Facts about the build and this Mac for `Session/get`; absent: a bare build named 'This Mac'. */
+  host?: HostFacts;
   /** The host's argument check, `parseArgs` from `@aplos/contract`; transports that validate themselves omit it. */
   validate?: (method: string, args: unknown) => unknown;
   /** Tests only: handlers that replace the F5 table's entries of the same name. */
@@ -172,13 +174,21 @@ function coreServices(options: EngineOptions, hub: ReturnType<typeof createFrame
     log: options.log,
     frames: Object.freeze({ emit: hub.emit, changed: hub.changed, reset: hub.reset }),
     randomBytes,
+    host: options.host ?? BARE_HOST,
   } as EngineServices;
   for (const name of HOST_PORTS)
     (services as unknown as Record<string, unknown>)[name] = options.ports?.[name] ?? absent();
   return services;
 }
 
-const CORE = new Set(['store', 'clock', 'log', 'frames', 'randomBytes']);
+const CORE = new Set(['store', 'clock', 'log', 'frames', 'randomBytes', 'host']);
+
+const BARE_HOST: HostFacts = Object.freeze({
+  appVersion: '0.0.0',
+  device: Object.freeze({ id: 'device', name: 'This Mac' }),
+  resident: false,
+  capabilities: Object.freeze({}),
+});
 
 /** Starts the lanes in order; when one fails, stops the ones already running, in reverse, and rethrows. */
 async function startAll(lanes: readonly LaneModule[], hub: { close(): void }) {

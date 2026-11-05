@@ -18,7 +18,8 @@ test('the in-process connection serves the F5 table: stubs, unknown and desktop 
   const t = await testEngine();
   try {
     const s = t.engine.connect();
-    await assert.rejects(s.call('Session/get', {}), isType('notImplemented'));
+    // A stub (Session/get was one until the real handler landed); Setup/status is eng-ai's and still is.
+    await assert.rejects(s.call('Setup/status', {}), isType('notImplemented'));
     await assert.rejects(s.call('Thread/explode', {}), isType('unsupported'));
     await assert.rejects(
       s.call('File/save', { blobId: 'b', name: 'x.txt' }),
