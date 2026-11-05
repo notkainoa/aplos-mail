@@ -3,10 +3,12 @@
 // (`#real/<token>/<timeoutMs>`: the engine's document with the engine's reporter, served by the spec from the engine's
 // `serveFrame` at `http://sealed.test/<token>/`), with every callback and every message event recorded on
 // `window.__mailframe` for the spec to read. `window.aplos` stands in for the preload bridge the frame must not reach.
+// `#mailkey` mounts the relayed-key page instead (mailkey-harness.tsx), with a fake bridge that delivers `mail-key`.
 import { createRoot } from 'react-dom/client';
 import { CORPUS } from '../corpus';
 import { MailFrameView } from '../MailFrameView';
 import { MAX_BODY_CHARS } from '../sanitise';
+import { mountMailKeyHarness, type MailKeyHarness } from './mailkey-harness';
 import type { FrameSource, ImagePolicy, MailFrameKey, MailFrameReady } from '../types';
 
 interface Recorder {
@@ -30,6 +32,8 @@ const REAL_ORIGIN = 'http://sealed.test';
 declare global {
   interface Window {
     __mailframe: Recorder;
+    /** `#mailkey` only: the relayed-key page's handles (mailkey-harness.tsx). */
+    __mailkey: MailKeyHarness;
   }
 }
 
@@ -91,15 +95,17 @@ window.addEventListener('message', e => {
 });
 
 const root = createRoot(document.getElementById('root')!);
-root.render(
-  <MailFrameView
-    source={sourceFor()}
-    timeoutMs={sealedTimeout}
-    reload={() => void recorder.reloads++}
-    onReady={ready => recorder.ready.push(ready)}
-    onKey={key => {
-      recorder.keys.push(key);
-      return true;
-    }}
-  />,
-);
+if (id === 'mailkey') window.__mailkey = mountMailKeyHarness(root, recorder);
+else
+  root.render(
+    <MailFrameView
+      source={sourceFor()}
+      timeoutMs={sealedTimeout}
+      reload={() => void recorder.reloads++}
+      onReady={ready => recorder.ready.push(ready)}
+      onKey={key => {
+        recorder.keys.push(key);
+        return true;
+      }}
+    />,
+  );

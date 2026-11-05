@@ -700,11 +700,16 @@ describe('review1 other findings', () => {
 
   test('review1: the reconnect flow never waits forever for an account the list doesn’t have', () => {
     assert.equal(
-      missingAccountClose(0),
+      missingAccountClose(true, 0),
       'afterWait',
-      'an empty list closes after the wait, not never',
+      'an answered empty list closes after the wait, not never',
     );
-    assert.equal(missingAccountClose(2), 'now');
+    assert.equal(missingAccountClose(true, 2), 'now');
+    assert.equal(
+      missingAccountClose(false, 0),
+      'wait',
+      'a list that has not answered yet is not proof the account is gone',
+    );
     assert.ok(MISSING_ACCOUNT_WAIT_MS > 0 && MISSING_ACCOUNT_WAIT_MS <= 10_000);
     assert.match(
       source('reconnect/ReconnectFlow.tsx'),
