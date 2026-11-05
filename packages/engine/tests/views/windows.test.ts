@@ -595,3 +595,69 @@ test('with the timer loop injected, the views module is one deadline source and 
     world.cleanup();
   }
 });
+
+test('a repeated query joins the running search; a throttled account cools down before it is asked again', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  let gate: (() => void) | undefined;
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (gate) await new Promise<void>(resolve => (gate = resolve));
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    // Two Returns on the same query while the first runs: the second joins, not fans out.
+    const a = t.call('Search/remote', { opId: 'c1', query: { text: 'garden' } });
+    const b = t.call('Search/remote', { opId: 'c2', query: { text: 'garden' } });
+    const [ra, rb] = await Promise.all([a, b]);
+    await t.advance(10);
+    gate?.();
+    await t.advance(10);
+    assert.deepEqual(
+      calls.sort(),
+      ['acct-1:garden', 'imap:2:garden'],
+      'two Enters, one provider round',
+    );
+    assert.notEqual(ra.runId, rb.runId, 'each caller still gets its own run');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('a throttled search answer cools the account; the next search fails fast locally', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (account === 'acct-1')
+        throw new ProviderError({
+          class: 'throttle',
+          reason: 'rateLimitExceeded',
+          retryAfterMs: 60_000,
+        } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'p1', query: { text: 'garden' } });
+    await t.advance(10);
+    const afterFirst = calls.length;
+    // Inside the pause: the same account is not asked again — the run fails fast as `paused`.
+    await t.call('Search/remote', { opId: 'p2', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.equal(calls.length, afterFirst, 'the paused account is not re-asked');
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(last?.kind, 'error');
+    assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
