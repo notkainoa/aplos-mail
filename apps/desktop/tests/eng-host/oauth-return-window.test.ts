@@ -67,7 +67,8 @@ test('focusOpen raises the open welcome window and never creates one', () => {
       mailCreated++;
       return mail;
     },
-    currentMail: () => mail,
+    // First run: no mail window exists (#316: first-run never opens over a live mail window).
+    currentMail: () => undefined,
     endSetup: async () => undefined,
     announceShown: () => {},
     isQuitting: () => false,
@@ -78,6 +79,10 @@ test('focusOpen raises the open welcome window and never creates one', () => {
   assert.equal(onboarding.focusOpen(), false);
   onboarding.open('first');
   assert.ok(welcome);
+  // A window still waiting for its first paint is not shown early (F4, #316's bring): the focus is a no-op until it paints.
+  assert.equal(onboarding.focusOpen(), true);
+  assert.equal(welcome.focused, false);
+  welcome.painted = true;
   assert.equal(onboarding.focusOpen(), true);
   assert.equal(welcome.focused, true);
   assert.equal(mailCreated, 0);
