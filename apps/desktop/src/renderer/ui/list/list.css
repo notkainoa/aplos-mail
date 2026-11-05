@@ -495,10 +495,10 @@
   position: relative;
   border-radius: var(--radius-md);
 }
-/* The ring is never removed (DESIGN §11.2): it marks that the list has focus; the cursor row marks the option. */
+/* The listbox is a focus container, not a control: the cursor row (puck fill plus accent bar) is
+   the focus marker, so the box itself never draws a ring. */
 .ui-list-box:focus-visible {
-  outline: var(--focus-width) solid var(--accent);
-  outline-offset: var(--focus-gap);
+  outline: none;
 }
 
 .ui-list-group + .ui-list-group,
@@ -1054,6 +1054,9 @@
   background-color: var(--paper);
   box-shadow: var(--elev-dialog);
   color: var(--ink);
+}
+.ui-low-sheet__panel:focus-visible {
+  outline: none;
 }
 .ui-low-sheet__panel .ui-list-row {
   --ui-row-base: var(--paper);
