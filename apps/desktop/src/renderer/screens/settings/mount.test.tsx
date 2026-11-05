@@ -1,5 +1,6 @@
 // The F8 follow-ups: Account/set writes are optimistic per account, and conditional rows carry a live
-// `available` so the palette stops offering rows that are not drawn.
+// `available` so the palette stops offering rows that are not drawn — while the account list is still
+// loading it keeps offering them, since an empty list then says nothing.
 // Run: npx tsx --test 'src/renderer/screens/settings/**/*.test.{ts,tsx}' (from apps/desktop)
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
@@ -235,6 +236,93 @@ describe('conditional rows and palette availability', () => {
       assert.equal(rowAvailable('calendar', 'calendarPermission'), true);
       assert.equal(rowAvailable('help', 'demoLoad'), true);
       assert.equal(rowAvailable('accounts', 'accountColour'), true);
+    } finally {
+      clearAvailability();
+    }
+  });
+
+  test('the calendar permission row also needs the calendar capability, as the section draws it', () => {
+    const missing = account({
+      id: 'mp',
+      address: 'mp@example.com',
+      missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
+    });
+    try {
+      publishAvailability({ accounts: [missing], providers: providers(), session: session() });
+      assert.equal(rowAvailable('calendar', 'calendarPermission'), true);
+      const noCalendar = session({
+        capabilities: { ...session().capabilities, calendar: false },
+      });
+      publishAvailability({ accounts: [missing], providers: providers(), session: noCalendar });
+      assert.equal(
+        rowAvailable('calendar', 'calendarPermission'),
+        false,
+        'without the capability the section draws no permission row',
+      );
+    } finally {
+      clearAvailability();
+    }
+  });
+
+  test('the lease row mirrors the drawn condition: a truthy lease or the workflow capability', () => {
+    const noSync = session({ capabilities: { ...session().capabilities, workflowSync: false } });
+    const noLease = account({ id: 'x', address: 'x@example.com', lease: undefined });
+    try {
+      publishAvailability({ accounts: [noLease], providers: providers(), session: noSync });
+      assert.equal(rowAvailable('accounts', 'lease'), false);
+      publishAvailability({
+        accounts: [{ ...noLease, lease: null as unknown as Account['lease'] }],
+        providers: providers(),
+        session: noSync,
+      });
+      assert.equal(rowAvailable('accounts', 'lease'), false, 'a null lease draws no row');
+      publishAvailability({ accounts: [ALEX], providers: providers(), session: noSync });
+      assert.equal(rowAvailable('accounts', 'lease'), true, 'the fixture lease draws the row');
+      publishAvailability({ accounts: [noLease], providers: providers(), session: session() });
+      assert.equal(
+        rowAvailable('accounts', 'lease'),
+        true,
+        'workflowSync draws the row for every real account',
+      );
+    } finally {
+      clearAvailability();
+    }
+  });
+
+  test('while Account/get has not answered, the per-account rows stay offered', () => {
+    const offered = [
+      ['calendar', 'calendarPermission'],
+      ['accounts', 'accountAi'],
+      ['accounts', 'accountColour'],
+      ['accounts', 'lease'],
+      ['notifications', 'perAccount'],
+      ['help', 'demoLoad'],
+    ] as const;
+    try {
+      publishAvailability({
+        accounts: [],
+        providers: providers(),
+        session: session(),
+        accountsLoaded: false,
+      });
+      for (const [section, anchor] of offered) {
+        assert.equal(rowAvailable(section, anchor), true, `${section}/${anchor} stays offered`);
+      }
+      publishAvailability({
+        accounts: [],
+        providers: providers(),
+        session: session(),
+        accountsLoaded: true,
+      });
+      for (const [section, anchor] of offered) {
+        // An answered empty list has no demo, so Load demo mail is drawn and stays offered.
+        const expected = anchor === 'demoLoad';
+        assert.equal(
+          rowAvailable(section, anchor),
+          expected,
+          `${section}/${anchor} once the answer is in`,
+        );
+      }
     } finally {
       clearAvailability();
     }

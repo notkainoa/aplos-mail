@@ -4,7 +4,15 @@
  * It cannot run until `ui-shell` implements the data layer (every hook is a stub today); it must typecheck.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, useAccounts, useConsent, useNow, useSession, useSettings } from '../../data';
+import {
+  api,
+  useAccounts,
+  useAccountsLoaded,
+  useConsent,
+  useNow,
+  useSession,
+  useSettings,
+} from '../../data';
 import { parseSettingRoute, type SettingRoute, type SettingSection } from '../../commands';
 import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
@@ -81,13 +89,14 @@ export interface SettingsContainerProps {
 export function SettingsContainer({ route, onRoute, host = {}, ports }: SettingsContainerProps) {
   const settings = useSettings();
   const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
   const consent = useConsent();
   const session = useSession();
   const now = useNow({ granularity: 'minute' });
   if (!settings || !consent || !session) return null;
   return (
     <Loaded
-      {...{ route, onRoute, host, ports }}
+      {...{ route, onRoute, host, ports, accountsLoaded }}
       base={{ settings, accounts, consent, session, now }}
     />
   );
@@ -101,14 +110,21 @@ function Loaded({
   host,
   ports,
   base,
-}: SettingsContainerProps & { host: SettingsHost; base: Base }) {
+  accountsLoaded,
+}: SettingsContainerProps & { host: SettingsHost; base: Base; accountsLoaded: boolean }) {
   const parsed = route ? parseSettingRoute(route) : null;
   const [section, setSection] = useState<SettingSection>(parsed?.section ?? 'general');
   const routeSection = parsed?.section;
   const routeRow = parsed?.row;
 
   const resolved = useMemo(() => ports ?? dataPorts(), [ports]);
-  const { data, view, actions, failure } = useSettingsState(base, host, resolved, section);
+  const { data, view, actions, failure } = useSettingsState(
+    base,
+    host,
+    resolved,
+    section,
+    accountsLoaded,
+  );
 
   // A route-driven section change (a deep link, back/forward) leaves like the nav does: drafts and failures drop.
   useEffect(() => {
@@ -145,6 +161,7 @@ export function useSettingsState(
   host: SettingsHost,
   ports: SettingsApiPort,
   section: SettingSection,
+  accountsLoaded: boolean,
 ): {
   data: SettingsData;
   view: SettingsView;
@@ -250,9 +267,9 @@ export function useSettingsState(
   // unmount so a row is hidden only once its state was actually seen.
   const { accounts, providers, session } = data;
   useEffect(() => {
-    publishAvailability({ accounts, providers, session });
+    publishAvailability({ accounts, providers, session, accountsLoaded });
     return clearAvailability;
-  }, [accounts, providers, session]);
+  }, [accounts, providers, session, accountsLoaded]);
 
   return { data, view, actions, failure };
 }

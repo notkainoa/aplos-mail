@@ -13,6 +13,8 @@ export interface AvailabilityData {
   readonly accounts: readonly Account[];
   readonly providers: readonly AiProvider[] | undefined;
   readonly session: Session | undefined;
+  /** False until `Account/get` has answered: an empty `accounts` then means "still loading", not "none". */
+  readonly accountsLoaded?: boolean;
 }
 
 let current: AvailabilityData | null = null;
@@ -36,22 +38,29 @@ const hasProvider = (data: AvailabilityData, id: string): boolean =>
 export function rowAvailable(section: SettingSection, anchor: string): boolean {
   const data = current;
   if (!data) return true;
+  // While `Account/get` has not answered, `accounts` is [] and says nothing: rows drawn per account stay offered.
+  const pending = data.accountsLoaded === false;
   switch (`${section}/${anchor}`) {
     case 'calendar/calendarPermission':
-      return data.accounts.some(a => a.missingPermissions?.some(m => m.capability === 'calendar'));
+      return (
+        hasCapability(data.session, 'calendar') &&
+        (pending ||
+          data.accounts.some(a => a.missingPermissions?.some(m => m.capability === 'calendar')))
+      );
     case 'accounts/accountAi':
     case 'accounts/accountColour':
-      return realAccount(data);
+      return pending || realAccount(data);
     case 'accounts/lease':
-      return data.accounts.some(
-        a => !a.demo && (hasCapability(data.session, 'workflowSync') || a.lease !== undefined),
+      return (
+        pending ||
+        data.accounts.some(a => !a.demo && (hasCapability(data.session, 'workflowSync') || a.lease))
       );
     case 'notifications/perAccount':
-      return hasCapability(data.session, 'notifications') && realAccount(data);
+      return hasCapability(data.session, 'notifications') && (pending || realAccount(data));
     case 'ai/geminiPaid':
       return data.providers === undefined || paidSwitch(data.providers) !== null;
     case 'help/demoLoad':
-      return !data.accounts.some(a => a.demo);
+      return pending || !data.accounts.some(a => a.demo);
     default:
       break;
   }
