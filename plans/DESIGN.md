@@ -1024,7 +1024,7 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 | Diagnostics | "Diagnostics copied" / "Diagnostics copied. They hold no mail." / "Diagnostics exported" / "Couldn’t get the diagnostics." |
 | Reconnect sheet failures | "That was a different account. Sign in with the same one.", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
 | Confirms | "Delete this email forever?" (button "Delete forever"); "Discard this draft?" (button "Discard") |
-| Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home", "Account added" (when the inline Add an account dialog connects an account and closes; sibling of "Reconnected", §7.1) |
+| Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home", "Account added" (after Add an account connects) |
 | Spam quick action | "Not spam" (this replaces "Restore" for Spam) |
 | Fallbacks | "No sender", "No recipient", "No subject", "No mail here yet." |
 | Later row action | "Change date" |
