@@ -108,12 +108,13 @@ export async function realComposeOptions(
     file: 'google-tokens.v2.enc.json',
     ...(cipher ? { encrypt: cipher.encrypt, decrypt: cipher.decrypt } : {}),
   });
+  const deviceId = deviceIdOf(init.dataDir);
   return {
     dataDir: init.dataDir,
     fetch: globalThis.fetch,
     clock: systemClock(),
-    deviceId: deviceIdOf(init.dataDir),
-    host: hostFacts(init, deviceIdOf(init.dataDir)),
+    deviceId,
+    host: hostFacts(init, deviceId),
     power: bridge.power,
     vault,
     openExternal: async url => void (await bridge.request({ op: 'openExternal', url })),

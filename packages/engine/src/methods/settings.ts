@@ -16,16 +16,27 @@ const readDoc = (ctx: MethodContext) =>
     parseStored(q.get<{ data: string }>('SELECT data FROM settings WHERE id = 1')?.data),
   );
 
-/** The seq of the last commit that changed settings, or 0 when none did. */
+/**
+ * The seq of the last commit that changed settings, or the compaction floor when the log no longer holds one: a state
+ * below either may have missed a change, so it must not pass `ifInState`.
+ */
 function lastSettingsSeq(ctx: MethodContext): number {
-  return (
-    ctx.services.store.read(
-      q =>
-        q.get<{ seq: number | null }>("SELECT max(seq) AS seq FROM changes WHERE type = 'Settings'")
-          ?.seq,
-    ) ?? 0
-  );
+  return ctx.services.store.read(q => {
+    const last =
+      q.get<{ seq: number | null }>("SELECT max(seq) AS seq FROM changes WHERE type = 'Settings'")
+        ?.seq ?? 0;
+    const floor = Number(
+      q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'change_floor_seq'")?.value ?? 0,
+    );
+    return Math.max(last, Number.isFinite(floor) ? floor : 0);
+  });
 }
+
+/** Whether this opId was already applied: its retry gets the first receipt, not a staleness check against its own commit. */
+const applied = (ctx: MethodContext, opId: string) =>
+  ctx.services.store.read(
+    q => q.get('SELECT 1 AS one FROM commits WHERE op_id = ?', opId) !== undefined,
+  );
 
 function getSettings(_args: Input<'Settings/get'>, ctx: MethodContext): Output<'Settings/get'> {
   return withDefaults(readDoc(ctx));
@@ -34,7 +45,11 @@ function getSettings(_args: Input<'Settings/get'>, ctx: MethodContext): Output<'
 function setSettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'Settings/set'> {
   const { store, frames } = ctx.services;
   const { ifInState } = args;
-  if (ifInState && (ifInState.dbEpoch !== store.dbEpoch || ifInState.seq < lastSettingsSeq(ctx)))
+  if (
+    ifInState &&
+    !applied(ctx, args.opId) &&
+    (ifInState.dbEpoch !== store.dbEpoch || ifInState.seq < lastSettingsSeq(ctx))
+  )
     throw new ContractError({
       type: 'stateMismatch',
       message: 'Settings changed in another window. Reopen them and try again.',

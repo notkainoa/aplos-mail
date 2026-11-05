@@ -42,7 +42,7 @@ const DEFAULT_WEEK_START = 1;
  * Today evening (18:00, only before 17:00), Tomorrow (8:00), This weekend (Saturday 8:00, offered Monday to Thursday),
  * Next week (the owner's first weekday, 8:00, never today) and Someday without a date. These are the rules the picker
  * mirrors (`renderer/screens/later/laterPresets.ts`). Wall times are resolved in `zone`, so they stay right across a
- * DST change; `weekStart` is 0 (Sunday) to 6, from `calendar.weekStart`.
+ * DST change; `weekStart` is 0 (Sunday) to 6, from `ui.calendar.weekStart`.
  */
 export function resolvePresets(
   now: number,
@@ -68,10 +68,10 @@ export function resolvePresets(
   return presets;
 }
 
-/** `calendar.weekStart` from the settings document (0 to 6), else Monday. Read like the views lane reads `mail.*`. */
+/** `ui.calendar.weekStart` from the settings document (0 to 6), else Monday. Read like the views lane reads `mail.*`. */
 function weekStartOf(q: StoreReader): number {
   const row = q.get<{ day: number | null }>(
-    "SELECT json_extract(data, '$.calendar.weekStart') AS day FROM settings WHERE id = 1",
+    "SELECT json_extract(data, '$.ui.calendar.weekStart') AS day FROM settings WHERE id = 1",
   );
   const day = row?.day;
   return typeof day === 'number' && Number.isInteger(day) && day >= 0 && day <= 6

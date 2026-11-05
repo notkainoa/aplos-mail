@@ -76,14 +76,60 @@ export function parseStored(data: string | undefined): Doc {
   }
 }
 
-/** Each section laid over its default: a section the document lacks is the default, a field it lacks is too. */
+/** The few enum fields (their values from the contract); a stored value outside the set reads as the default. */
+const ENUMS: Readonly<Record<string, readonly string[]>> = {
+  'ui.theme': ['light', 'dark', 'system'],
+  'ui.density': ['compact', 'default', 'roomy'],
+  'ui.keyHints': ['tooltip', 'always'],
+  'ui.dock.tab': ['ask', 'today'],
+  'ui.swipeDirection': ['doneRight', 'doneLeft'],
+  'mail.remoteImages': ['block', 'allow'],
+  'mail.doneAction': ['archive', 'read', 'unread'],
+  'mail.laterAction': ['archive', 'read', 'unread'],
+  'mail.lowAction': ['archive', 'read', 'unread'],
+  'mail.defaultReply': ['reply', 'replyAll'],
+  'mail.signatureMode': ['always', 'new', 'never'],
+};
+
+/** Optional fields the defaults do not carry, by path; each is kept when it is a number. */
+const OPTIONAL_NUMBERS: ReadonlySet<string> = new Set(['ui.dock.width']);
+
+/**
+ * `value` read as the shape of `fallback`: a field of the wrong type, an enum value outside its set or a non-object
+ * where an object belongs is the fallback, and a key the defaults do not know is dropped. The engine bundles no schema,
+ * so this is what keeps `Settings/get` valid after a downgrade, a hand edit or a damaged row. An empty default object
+ * is a free-form record (keymap, per-account flags, providers): kept as stored when it is an object.
+ */
+function coerce(path: string, fallback: unknown, value: unknown): unknown {
+  if (Array.isArray(fallback)) return Array.isArray(value) ? value : fallback;
+  if (isObject(fallback)) {
+    if (Object.keys(fallback).length === 0) return isObject(value) ? value : fallback;
+    const source = isObject(value) ? value : {};
+    const out: Doc = {};
+    for (const key of Object.keys(fallback))
+      out[key] = coerce(`${path}.${key}`, fallback[key], source[key]);
+    for (const key of Object.keys(source))
+      if (OPTIONAL_NUMBERS.has(`${path}.${key}`) && typeof source[key] === 'number')
+        out[key] = source[key];
+    return out;
+  }
+  if (typeof fallback === 'string') {
+    if (typeof value !== 'string') return fallback;
+    const allowed = ENUMS[path];
+    return allowed && !allowed.includes(value) ? fallback : value;
+  }
+  if (typeof fallback === 'number')
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  if (typeof fallback === 'boolean') return typeof value === 'boolean' ? value : fallback;
+  return fallback;
+}
+
+/** Each section read as its default's shape (`coerce`): a section the document lacks is the default, a field it lacks is too. */
 export function withDefaults(stored: Doc): Settings {
   const base = defaultSettings() as unknown as Record<string, Doc>;
-  const out: Record<string, Doc> = {};
-  for (const section of Object.keys(base)) {
-    const mine = stored[section];
-    out[section] = { ...base[section], ...(isObject(mine) ? mine : {}) };
-  }
+  const out: Record<string, unknown> = {};
+  for (const section of Object.keys(base))
+    out[section] = coerce(section, base[section], stored[section]);
   return out as unknown as Settings;
 }
 
@@ -115,6 +161,8 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   if (!isObject(patch)) throw new StoreError('invalid', 'A settings change is sections of fields');
   const row = tx.get<{ data: string }>('SELECT data FROM settings WHERE id = 1');
   const next = JSON.stringify(mergePatch(parseStored(row?.data), patch));
+  // Nothing changed (an empty patch, the same values): no write and no change row, so no window is told to reload.
+  if (row && JSON.stringify(parseStored(row.data)) === next) return;
   tx.run(
     'INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data',
     next,

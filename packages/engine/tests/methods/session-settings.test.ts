@@ -250,3 +250,110 @@ test('the merge helpers: a section the patch names is merged field by field, a f
   assert.deepEqual(next.ui, { dock: { open: true, tab: 'cal' }, zen: true });
   assert.deepEqual(withDefaults({}).notifications, defaultSettings().notifications);
 });
+
+test('Settings/get stays valid after a damaged or newer document: wrong types, unknown values and keys, partial nested objects', async () => {
+  const w = await world();
+  const damaged = {
+    ui: { theme: 'purple', holdMs: 'fast', dock: { open: true }, newerField: 1 },
+    mail: {
+      undoSendSeconds: 'eight',
+      remoteImages: 'maybe',
+      imageAllowList: 'nope',
+      unknown: true,
+    },
+    ai: { features: { ask: { provider: 'groq' } }, dailyCap: [] },
+    notifications: 'off',
+    host: { menuBar: false },
+    surprise: { a: 1 },
+  };
+  w.file.open().prepare('INSERT INTO settings(id, data) VALUES(1, ?)').run(JSON.stringify(damaged));
+  const got = await w.call('Settings/get', {});
+  const defaults = defaultSettings();
+  assert.equal(got.ui.theme, defaults.ui.theme, 'an enum value outside its set');
+  assert.equal(got.ui.holdMs, defaults.ui.holdMs, 'a string where a number belongs');
+  assert.deepEqual(
+    got.ui.dock,
+    { open: true, tab: 'ask' },
+    'a partial nested object: the stored field stays, the missing one is the default',
+  );
+  assert.equal('newerField' in got.ui, false, 'an unknown key is dropped');
+  assert.equal(got.mail.undoSendSeconds, defaults.mail.undoSendSeconds);
+  assert.equal(got.mail.remoteImages, 'block');
+  assert.deepEqual(got.mail.imageAllowList, []);
+  assert.deepEqual(
+    got.ai.features,
+    defaults.ai.features,
+    'one feature stored of five: the whole shape is the default',
+  );
+  assert.deepEqual(got.ai.dailyCap, defaults.ai.dailyCap);
+  assert.deepEqual(got.notifications, defaults.notifications, 'a section that is not an object');
+  assert.equal(got.host.menuBar, false, 'a valid stored field survives');
+  assert.equal('surprise' in got, false);
+  w.file
+    .open()
+    .prepare('UPDATE settings SET data = ? WHERE id = 1')
+    .run(JSON.stringify({ ui: { dock: { open: true, tab: 'today', width: 400 } } }));
+  assert.deepEqual((await w.call('Settings/get', {})).ui.dock, {
+    open: true,
+    tab: 'today',
+    width: 400,
+  });
+});
+
+test('Settings/set: ifInState survives compaction of the change log, and a retry of an applied opId is not a mismatch', async () => {
+  const w = await world();
+  const first = await w.call('Settings/set', { opId: 'c1', patch: { mail: { followUpDays: 5 } } });
+  w.store.compact({ maxRows: 0 });
+  await assert.rejects(
+    w.call('Settings/set', {
+      opId: 'c2',
+      patch: { mail: { followUpDays: 6 } },
+      ifInState: { dbEpoch: w.store.dbEpoch, seq: 0 },
+    }),
+    (e: { type?: string }) => e.type === 'stateMismatch',
+  );
+  const retry = await w.call('Settings/set', {
+    opId: 'c1',
+    patch: { mail: { followUpDays: 5 } },
+    ifInState: { dbEpoch: w.store.dbEpoch, seq: 0 },
+  });
+  assert.equal(
+    retry.receipt.appliedState.seq,
+    first.receipt.appliedState.seq,
+    'the first receipt, not a mismatch',
+  );
+});
+
+test('Settings/set: a change that changes nothing writes nothing and tells no window', async () => {
+  const w = await world();
+  await w.call('Settings/set', { opId: 'n1', patch: { mail: { followUpDays: 5 } } });
+  const seq = w.store.seq();
+  await w.call('Settings/set', { opId: 'n2', patch: { mail: { followUpDays: 5 } } });
+  await w.call('Settings/set', { opId: 'n3', patch: {} });
+  assert.equal(w.store.seq(), seq, 'no commit seq moved');
+});
+
+test('Session/changes: a type filter can leave an empty page with hasMore, and the state still moves forward', async () => {
+  const w = await world();
+  const start = (await w.call('Session/get', {})).state;
+  for (let i = 0; i < 3; i++)
+    await w.call('Settings/set', { opId: `p${i}`, patch: { mail: { followUpDays: 2 + i } } });
+  const page = await w.call('Session/changes', { since: start, types: ['Thread'], maxChanges: 1 });
+  assert.deepEqual(page.changes, []);
+  assert.equal(page.hasMore, true);
+  assert.ok(page.newState.seq > start.seq, 'so a client that loops makes progress');
+});
+
+test('Later/presets reads the week start from ui.calendar.weekStart in the settings document', async () => {
+  const w = await world();
+  const at = async () =>
+    (
+      (await w.engine.connect().call('Later/presets', {})) as {
+        presets: Array<{ key: string; until?: number }>;
+      }
+    ).presets.find(p => p.key === 'nextWeek')!.until;
+  const monday = await at();
+  await w.call('Settings/set', { opId: 'ws', patch: { ui: { calendar: { weekStart: 0 } } } });
+  const sunday = await at();
+  assert.notEqual(sunday, monday, 'the owner\'s Sunday start moves "Next week"');
+});
