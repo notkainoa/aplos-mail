@@ -29,7 +29,8 @@ const MAX_QUEUED = 50;
 /**
  * Held until a listener NAMES the type (`only`), then given to the first such listener: a screen change main asks for
  * (`navigate`) may arrive before the app has mounted the one place that can act on it. Plain listeners hear it live and
- * never take it, so the app's own first plain subscribe cannot swallow it without opening a route.
+ * never take it, so the app's own first plain subscribe cannot swallow it without opening a route. It is single-consumer
+ * (the first listener that names it takes the held copy) and trusted to come from main only: nothing renderer-side can emit.
  */
 const NAMED_WAITS: ReadonlySet<string> = new Set(['navigate']);
 const MAX_NAMED = 10;

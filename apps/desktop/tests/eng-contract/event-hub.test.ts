@@ -250,3 +250,15 @@ test('held navigate events are bounded, and a throwing replay hands the rest bac
   hub.subscribe(next.listener, { only: ['navigate'] });
   assert.equal(next.heard.length, 8, '10 held, 2 delivered to the one that threw');
 });
+
+test('the boot order: the app subscribes plain first, navigate arrives, then the router names it and gets it', () => {
+  const hub = createEventHub();
+  const app = collect();
+  hub.subscribe(app.listener);
+  const nav = { type: 'navigate', payload: { to: 'settings.ai' } };
+  hub.emit(nav);
+  assert.deepEqual(app.heard, [nav], 'heard live');
+  const router = collect();
+  hub.subscribe(router.listener, { only: ['navigate'] });
+  assert.deepEqual(router.heard, [nav], 'and still held for the one that names it');
+});

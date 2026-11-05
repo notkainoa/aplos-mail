@@ -82,6 +82,12 @@ export type OnboardingMode = 'first' | 'review';
 /** Where the mail window opens after the handoff instead of Home (`Window/finishOnboarding { to }`). */
 export type FinishDestination = 'settings.ai';
 
+/** `finish`'s options from a raw `Window/finishOnboarding` payload: the one named destination, or none (Home). */
+export function finishOptionsOf(payload: unknown): { to?: FinishDestination } {
+  const to = (payload as { to?: unknown } | null | undefined)?.to;
+  return to === 'settings.ai' ? { to } : {};
+}
+
 export interface OnboardingDeps {
   /** A hidden onboarding window. It shows itself on its own `ready-to-show` (never in test mode). */
   createOnboarding(mode: OnboardingMode): WindowPort;
@@ -158,7 +164,13 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
     if (deps.isQuitting()) return done();
     bring(mail);
     deps.announceShown(mail);
-    if (to) deps.navigate?.(mail, to);
+    if (to) {
+      try {
+        deps.navigate?.(mail, to);
+      } catch {
+        // The mail window cannot take the request (it went away): the handoff still completes, on Home.
+      }
+    }
     const onboarding = win;
     win = undefined;
     if (alive(onboarding)) fadeAndClose(onboarding, done);
@@ -204,8 +216,10 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   function finish(options?: { to?: FinishDestination }): Promise<void> {
     if (handoff) return handoff;
     const to = options?.to;
-    handoff = new Promise<void>(resolve => {
+    let finished = false;
+    const promise = new Promise<void>(resolve => {
       const done = () => {
+        finished = true;
         handoff = undefined;
         resolve();
       };
@@ -232,7 +246,9 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
         done();
       });
     });
-    return handoff;
+    // A handoff that was over before this line (nothing to hand over) must not stay registered as running.
+    if (!finished) handoff = promise;
+    return promise;
   }
 
   return {

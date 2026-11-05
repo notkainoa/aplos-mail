@@ -26,7 +26,7 @@ import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
-import { settingsPaneUrl } from '../host/lifecycle';
+import { finishOptionsOf, settingsPaneUrl } from '../host/lifecycle';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
@@ -76,8 +76,8 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     return ok;
   }
   if (method === 'Window/finishOnboarding') {
-    // `to` was checked against the contract before it got here; anything but the one named screen is Home.
-    await onboarding.finish(payload.to === 'settings.ai' ? { to: 'settings.ai' } : {});
+    // Only the one named destination counts, whichever door the payload came through; anything else is Home.
+    await onboarding.finish(finishOptionsOf(payload));
     return ok;
   }
   if (method === 'System/openSettings') {
