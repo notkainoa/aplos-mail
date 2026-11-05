@@ -65,6 +65,7 @@ const fileIo: FileIo = {
   makeTempDir: prefix => mkdtemp(join(tmpdir(), prefix)),
   join,
   openPath: path => shell.openPath(path),
+  removeDir: path => rm(path, { recursive: true, force: true }),
   quarantine: path => markQuarantined(path),
   get testMode() {
     return isTest;
@@ -87,6 +88,8 @@ function openBytes(name: string, data: Uint8Array) {
 
 /** Start-up: removes the temp folders opened attachments left in earlier sessions. */
 function sweepAttachmentTemp() {
+  // Test instances run beside the real app and share its temp folder: they never sweep.
+  if (isTest) return Promise.resolve(0);
   return sweepTemp({
     tempEntries: () => readdir(tmpdir()),
     removeTemp: entry => rm(join(tmpdir(), entry), { recursive: true, force: true }),

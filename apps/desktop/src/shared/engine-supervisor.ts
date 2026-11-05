@@ -142,6 +142,8 @@ export function createEngineSupervisor(options: SupervisorOptions) {
         options.timers.clear(restart);
         restart = undefined;
       }
+      // A second ask while the quit is pending is a no-op: it does not spend an un-park slot.
+      if (asked && current === asked && !asked.exited) return Promise.resolve();
       // A renderer that asks again and again must not keep a crash-looping engine from ever parking: the park count
       // is cleared by at most `maxUnparks` asks per window.
       const window = options.unparkWindowMs ?? UNPARK_WINDOW_MS;
@@ -152,7 +154,6 @@ export function createEngineSupervisor(options: SupervisorOptions) {
       }
       const link = current;
       if (link && !link.exited) {
-        if (asked) return Promise.resolve();
         asked = link;
         const killer = options.timers.set(() => {
           stop(link, options.onKillFailed);

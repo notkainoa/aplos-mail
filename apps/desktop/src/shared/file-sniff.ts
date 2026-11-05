@@ -7,14 +7,39 @@ const ascii = (bytes: Uint8Array, at: number, text: string) =>
 const hex = (bytes: Uint8Array, at: number, values: readonly number[]) =>
   at + values.length <= bytes.length && values.every((v, i) => bytes[at + i] === v);
 
-/** Plain text carries no NUL byte in its first 4 KB (a binary file almost always does). */
-const looksLikeText = (bytes: Uint8Array) => !bytes.subarray(0, 4096).includes(0);
+/**
+ * Plain text: no NUL byte in the first 4 KB (a binary file almost always does), or UTF-16 (a byte order mark, or a NUL in
+ * every other byte throughout, the shape Excel's "Unicode Text" and Notepad's UTF-16 write).
+ */
+function looksLikeText(bytes: Uint8Array): boolean {
+  const head = bytes.subarray(0, 4096);
+  if (!head.includes(0)) return true;
+  const bom =
+    head.length >= 2 &&
+    ((head[0] === 0xff && head[1] === 0xfe) || (head[0] === 0xfe && head[1] === 0xff));
+  if (!bom) return false;
+  // Past the mark, text in UTF-16 has its NULs in one lane only.
+  let even = 0;
+  let odd = 0;
+  for (let i = 2; i < head.length; i += 1) {
+    if (head[i] !== 0) continue;
+    if (i % 2 === 0) even += 1;
+    else odd += 1;
+  }
+  return even === 0 || odd === 0;
+}
 
-const BMFF_BRANDS = ['ftyp', 'moov', 'mdat', 'wide', 'free', 'skip'];
+/** A PDF reader accepts the header anywhere in the first 1 KB (a stray BOM or newline is common). */
+const pdfHeader = (bytes: Uint8Array) =>
+  [...Array(Math.max(0, Math.min(bytes.length, 1024) - 4)).keys()].some(i =>
+    ascii(bytes, i, '%PDF'),
+  );
+
+const BMFF_BRANDS = ['ftyp', 'moov', 'mdat', 'wide', 'free', 'skip', 'pnot', 'PICT'];
 const isoBmff = (bytes: Uint8Array) => BMFF_BRANDS.some(brand => ascii(bytes, 4, brand));
 
 const SNIFFERS: Readonly<Record<string, (bytes: Uint8Array) => boolean>> = {
-  '.pdf': b => ascii(b, 0, '%PDF'),
+  '.pdf': pdfHeader,
   '.png': b => hex(b, 0, [0x89, 0x50, 0x4e, 0x47]),
   '.jpg': b => hex(b, 0, [0xff, 0xd8, 0xff]),
   '.jpeg': b => hex(b, 0, [0xff, 0xd8, 0xff]),

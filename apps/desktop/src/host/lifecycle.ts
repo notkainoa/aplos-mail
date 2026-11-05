@@ -401,7 +401,8 @@ export function createProcessState(): ProcessState {
       if (state === 'starting') state = 'ready';
     },
     noteEngineExit(now) {
-      if (state === 'parked') return false;
+      // An exit while parked is still parked: the supervisor must not schedule an automatic restart for it.
+      if (state === 'parked') return true;
       exits.push(now);
       while (exits.length && now - exits[0] > PARK_WINDOW_MS) exits.shift();
       state = exits.length >= PARK_AFTER_EXITS ? 'parked' : 'starting';

@@ -33,14 +33,7 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
-import {
-  invokeNative,
-  nativeMethods,
-  notify,
-  openBytes,
-  saveBytes,
-  sweepAttachmentTemp,
-} from './native-methods';
+import { invokeNative, nativeMethods, notify, openBytes, saveBytes } from './native-methods';
 import { guardedDesktopCall } from '../shared/desktop-error';
 import { SNIFFED_EXTENSIONS } from '../shared/file-sniff';
 import { extensionOf, fileNameOf, legacyNames, v1Result } from '../shared/desktop-v1';
@@ -302,8 +295,6 @@ async function bootRealEngine(options: {
   noteExit(): boolean;
   noteRestart?(): void;
 }): Promise<void> {
-  // Folders an opened attachment left in the temp directory in earlier sessions.
-  void sweepAttachmentTemp().catch(() => undefined);
   const init = await engineInit(options.dataDir);
   // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
   if (closeRequested) return;

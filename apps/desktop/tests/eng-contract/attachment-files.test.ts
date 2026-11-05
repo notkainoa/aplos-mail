@@ -48,6 +48,7 @@ function fakeIo(
       calls.push(`quarantine:${path}`);
       if (options.quarantineFails) throw new Error('no xattr');
     },
+    removeDir: async path => void calls.push(`rm:${path}`),
     testMode: options.testMode ?? false,
   };
   return { io, calls, written };
@@ -162,6 +163,10 @@ test('openAttachment fails closed: no quarantine, no open; an OS error is the pl
     !noMark.calls.some(call => call.startsWith('open:')),
     'never handed to an app unmarked',
   );
+  assert.ok(
+    noMark.calls.includes('rm:/tmp/aplos-attachment-AbC'),
+    'and nothing unmarked stays on disk',
+  );
   const osError = fakeIo({ openError: "No application knows how to open '/private/var/x'" });
   await assert.rejects(openAttachment(osError.io, 'Report.pdf', PDF), (error: Error) => {
     assert.match(error.message, /couldn't open that file/);
@@ -252,4 +257,30 @@ test('guardedDesktopCall: the caller check runs first and alone; a failure after
     ),
     { ok: true },
   );
+});
+
+test('sniffing: real-world variants open (UTF-16 text, a PDF with a leading byte-order mark, a QuickTime picture atom) and look-alikes do not', () => {
+  const utf16 = Uint8Array.from([
+    0xff,
+    0xfe,
+    ...[...'Name,Amount\n'].flatMap(c => [c.charCodeAt(0), 0]),
+  ]);
+  assert.ok(sniffMatches('.txt', utf16), 'UTF-16LE with a byte order mark');
+  assert.ok(
+    !sniffMatches('.txt', Uint8Array.from([0xff, 0xfe, 0, 0, 0x41, 0x00, 0x42, 0x00, 0, 0x43])),
+    'NULs in both lanes are binary',
+  );
+  assert.ok(
+    sniffMatches('.pdf', Uint8Array.from([0xef, 0xbb, 0xbf, ...ascii('\n%PDF-1.4')])),
+    'a header after a BOM and a newline',
+  );
+  assert.ok(
+    !sniffMatches('.pdf', Uint8Array.from([...new Uint8Array(1100), ...ascii('%PDF-1.4')])),
+    'but not after 1 KB',
+  );
+  assert.ok(sniffMatches('.mov', ascii('\0\0\0\x14pnotabcd')));
+});
+
+test('fileNameOf also drops the C1 controls and the line and paragraph separators', () => {
+  assert.equal(fileNameOf('a\u0085b\u009Fc\u2028d\u2029e.pdf'), 'abcde.pdf');
 });

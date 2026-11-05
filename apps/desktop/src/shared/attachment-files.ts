@@ -20,6 +20,8 @@ export interface FileIo {
   openPath(path: string): Promise<string>;
   /** Marks a file quarantined (`shared/quarantine.ts`); rejects when it cannot. */
   quarantine(path: string): Promise<void>;
+  /** Removes a directory and what is in it (the temp folder of a file that was not opened). */
+  removeDir(path: string): Promise<void>;
   /** Test mode launches no other app. */
   testMode: boolean;
 }
@@ -50,7 +52,9 @@ export async function openAttachment(io: FileIo, name: string, data: Uint8Array)
   const file = io.join(directory, name);
   await io.writeFile(file, data, { mode: 0o600 });
   // Fail closed: a file that cannot be marked as downloaded is not handed to an app.
-  await io.quarantine(file).catch(() => {
+  await io.quarantine(file).catch(async () => {
+    // Nothing unmarked stays on disk.
+    await io.removeDir(directory).catch(() => undefined);
     throw new Error("Aplos couldn't open that file. Save it and open it from there.");
   });
   // The OS's own sentence names paths; the page is told the plain one.

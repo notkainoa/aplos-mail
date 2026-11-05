@@ -730,3 +730,63 @@ test('Engine/restart: an ask while the FIRST engine is still starting changes no
   assert.equal(told, 0, 'and the host is not told to forget stops');
   assert.equal(links[0].kills(), 0);
 });
+
+test('Engine/restart: past the un-park cap while PARKED, the next crash parks again instead of looping', async () => {
+  const timers = manualTimers();
+  let clock = 0;
+  const processState = createProcessState();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  const downs: boolean[] = [];
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => processState.noteEngineExit(clock),
+    onUp: () => undefined,
+    onDown: parked => void downs.push(parked),
+    onRestart: () => processState.tryAgain(),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+    restartDelayMs: 10,
+    restartCoalesceMs: 0,
+    maxUnparks: 1,
+  });
+  await supervisor.start();
+  // Three quick stops park the app.
+  for (let i = 0; i < 3; i++) {
+    clock += 1_000;
+    links.at(-1)!.exit();
+    timers.advance(10);
+  }
+  assert.equal(downs.at(-1), true, 'parked');
+  await supervisor.restart(); // the one allowed un-park
+  await until(() => links.length >= 4, 'the engine after the first ask');
+  for (let i = 0; i < 3; i++) {
+    clock += 1_000;
+    links.at(-1)!.exit();
+    timers.advance(10);
+  }
+  assert.equal(downs.at(-1), true, 'parked again');
+  const spawned = links.length;
+  clock += 6_000;
+  await supervisor.restart(); // past the cap: the engine starts, the park count is not cleared
+  await until(() => links.length === spawned + 1, 'the engine after the capped ask');
+  links.at(-1)!.exit();
+  timers.advance(10);
+  timers.advance(10);
+  assert.equal(links.length, spawned + 1, 'a crash while still parked does not restart it again');
+  assert.equal(downs.at(-1), true);
+});
+
+test('Engine/restart: a second ask while the quit is pending does not spend an un-park slot', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  w.links[0].link.quit = () => undefined; // slow to quit
+  await w.supervisor.restart();
+  await w.supervisor.restart();
+  await w.supervisor.restart();
+  assert.equal(w.restarts.length, 1, 'the host was told once');
+});

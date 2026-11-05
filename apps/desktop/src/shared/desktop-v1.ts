@@ -42,8 +42,8 @@ export function v1Result(method: string, result: unknown): unknown {
   return result === true ? ok : result;
 }
 
-/** Format characters (bidi controls, zero-width, BOM) and DEL: invisible in a dialog, they make a name read as another. */
-const INVISIBLE = /[\p{Cf}\u007f]/gu;
+/** Format characters (bidi controls, zero-width, BOM), DEL, the C1 controls and the line and paragraph separators: invisible in a dialog, they make a name read as another. */
+const INVISIBLE = /[\p{Cf}\u007f-\u009f\u2028\u2029]/gu;
 
 /**
  * A file name from a caller: its last path part, control characters become underscores, format characters and DEL are
