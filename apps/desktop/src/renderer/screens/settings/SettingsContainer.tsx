@@ -14,6 +14,7 @@ import {
   useSettings,
 } from '../../data';
 import { parseSettingRoute, type SettingRoute, type SettingSection } from '../../commands';
+import { ErrorLine } from '../../ui/list';
 import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
 import './paletteEntries';
@@ -93,7 +94,18 @@ export function SettingsContainer({ route, onRoute, host = {}, ports }: Settings
   const consent = useConsent();
   const session = useSession();
   const now = useNow({ granularity: 'minute' });
-  if (!settings || !consent || !session) return null;
+  // Consent leaves the hard gate: a failed `Consent/get` is the AI section's own error line, not a blank
+  // pane. Settings and Session are core — their failure is the pane's single error line, still not a blank.
+  if (!settings || !session)
+    return (
+      <ErrorLine
+        kind="reason"
+        text="Couldn’t load Settings."
+        retryable={false}
+        placement="settings"
+        onAction={() => {}}
+      />
+    );
   return (
     <Loaded
       {...{ route, onRoute, host, ports, accountsLoaded }}
