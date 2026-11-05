@@ -175,7 +175,15 @@ export function Ai({ data, view, actions }: SectionProps) {
             />
           )}
           below={
-            settings.ai.background && consent.state === 'review' && !view.consentCard ? (
+            data.consent === undefined ? (
+              <ErrorLine
+                kind="reason"
+                text="Couldn’t load this part."
+                retryable={false}
+                placement="settings"
+                onAction={() => {}}
+              />
+            ) : settings.ai.background && consent.state === 'review' && !view.consentCard ? (
               <ErrorLine
                 kind="consentNeeded"
                 placement="settings"
