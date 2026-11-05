@@ -73,11 +73,34 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
   }
 }
 
+/**
+ * What a window on the real engine owes main once its root is up: answer `prepare-close` (main keeps the window
+ * disabled until it hears `Window/closeReady`) and, for the mail window, open the screen main asks for (first sync's
+ * "Open Settings"). Both listeners are typed, so neither takes the deep-link and command events held for the app's
+ * own first plain subscribe. Errors never reach the page: a window that cannot answer is the lesser harm.
+ */
+async function serveMain(kind: 'mail' | 'onboarding'): Promise<void> {
+  const [{ answerPrepareClose }, { api }, { flushComposeSessions }] = await Promise.all([
+    import('./shell/closeHandshake'),
+    import('./data'),
+    import('./screens/compose/runtime/useComposeSession'),
+  ]);
+  answerPrepareClose(window.aplos, {
+    save: kind === 'mail' ? () => flushComposeSessions() : async () => undefined,
+    ready: () => api.window.closeReady(),
+    cancel: () => api.window.closeCancel(),
+  });
+  if (kind !== 'mail') return;
+  const [{ listenMainNavigate }, { openRoute }] = await Promise.all([
+    import('./shell/mainNavigate'),
+    import('./shell'),
+  ]);
+  listenMainNavigate(window.aplos, openRoute);
+}
+
 async function boot(): Promise<void> {
-  const [{ App }, { connectStandInDataLayer }, { createClient }] = await Promise.all([
+  const [{ App }] = await Promise.all([
     import('./App'),
-    import('./data/standin-layer'),
-    import('@aplos/contract/client'),
     import('./ui/styles.css'),
     import('./shell/shell.css'),
     import('./screens/screens.css'),
@@ -92,9 +115,14 @@ async function boot(): Promise<void> {
         <App client={engine.client} />
       </StrictMode>,
     );
-    return;
+    return serveMain('mail').catch(() => undefined);
   }
+  // Stand-in data is a development build's alone: a release never fetches the fixture.
   if (!import.meta.env.DEV) return bootLegacy();
+  const [{ connectStandInDataLayer }, { createClient }] = await Promise.all([
+    import('./data/standin-layer'),
+    import('@aplos/contract/client'),
+  ]);
   // The data layer (hooks and `api`) and a second client on the same engine for the Home boot proof.
   const layer = connectStandInDataLayer({ scenario });
   const client = createClient(layer.engine.connect());
@@ -115,15 +143,15 @@ async function bootOnboarding(): Promise<void> {
   // One stylesheet first, then the onboarding window's layout file: the later one wins, so the order is the rule.
   await import('./ui/styles.css');
   await import('./onboarding/onboarding.css');
-  const [{ OnboardingApp }, { connectStandInDataLayer }, ports] = await Promise.all([
+  const [{ OnboardingApp }, ports] = await Promise.all([
     import('./onboarding/OnboardingApp'),
-    import('./data/standin-layer'),
     import('./onboardingPorts'),
   ]);
   // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
   const engine = await connectEngine();
   if (!engine) {
     if (!import.meta.env.DEV) return bootLegacy();
+    const { connectStandInDataLayer } = await import('./data/standin-layer');
     connectStandInDataLayer({ scenario: scenario ?? 'empty' });
   }
   createRoot(document.getElementById('root')!).render(
@@ -135,6 +163,7 @@ async function bootOnboarding(): Promise<void> {
       />
     </StrictMode>,
   );
+  if (engine) return serveMain('onboarding').catch(() => undefined);
 }
 
 /** The legacy renderer: the entry is the one place allowed to reach it (its path until the legacy folders go). */
@@ -143,6 +172,20 @@ async function bootLegacy(): Promise<void> {
   await import('./legacy/main');
 }
 
+/**
+ * A new root that fails to start (a missing chunk, a throw while booting) leaves a blank window. In a build that is
+ * not a development build that window goes to the legacy renderer instead, as a bridge that fails to connect does.
+ */
+function bootFailed(): Promise<void> {
+  return import.meta.env.DEV ? Promise.resolve() : bootLegacy();
+}
+
 if (entry === 'legacy') void bootLegacy().catch(() => undefined);
-else if (entry === 'onboarding') void bootOnboarding().catch(() => undefined);
-else void boot().catch(() => undefined);
+else if (entry === 'onboarding')
+  void bootOnboarding()
+    .catch(bootFailed)
+    .catch(() => undefined);
+else
+  void boot()
+    .catch(bootFailed)
+    .catch(() => undefined);

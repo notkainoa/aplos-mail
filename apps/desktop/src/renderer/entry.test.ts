@@ -81,3 +81,13 @@ test('hasBridgeShape needs an object with call and subscribe functions and never
   };
   assert.equal(hasBridgeShape(hostile), false);
 });
+
+test('a pop-out window (?draft= or ?thread=) is the legacy renderer on every build, bridge or not', () => {
+  for (const dev of [true, false])
+    for (const bridge of [true, false]) {
+      assert.equal(chooseEntry({ search: '?draft=d1', dev, bridge }), 'legacy');
+      assert.equal(chooseEntry({ search: '?thread=t1', dev, bridge }), 'legacy');
+    }
+  assert.equal(transportOf({ search: '?draft=d1', dev: true, bridge: true }), 'standin');
+  assert.equal(chooseEntry({ search: '?drafts=1', dev: true }), 'app');
+});

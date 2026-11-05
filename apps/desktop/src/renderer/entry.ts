@@ -57,9 +57,13 @@ export function onboardingMode(search: string): OnboardingMode {
 
 /** True when the legacy renderer must boot: the env switch, `?legacy=1`, or a production build without the real engine. */
 export function wantsLegacy({ search, dev, legacyEnv, bridge }: EntryInput): boolean {
+  const params = new URLSearchParams(search);
   return (
     legacyEnv === true ||
-    new URLSearchParams(search).get('legacy') === '1' ||
+    params.get('legacy') === '1' ||
+    // A pop-out (`?draft=<id>` or `?thread=<id>`, main's `popout()`) is the legacy renderer's until the new one has them.
+    params.has('draft') ||
+    params.has('thread') ||
     (!dev && bridge !== true)
   );
 }
