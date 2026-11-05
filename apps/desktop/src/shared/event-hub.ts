@@ -32,9 +32,12 @@ const accepts = (only: Only, type: string) => !only || only.has(type);
 
 export function createEventHub(): EventHub {
   const entries = new Map<HubListener, Only>();
+  const unsubscribers = new Map<HubListener, () => void>();
   const queued: HubEvent[] = [];
   const reach = (event: HubEvent) => {
-    for (const [listener, only] of [...entries]) if (accepts(only, event.type)) listener(event);
+    for (const [listener, only] of [...entries])
+      // Still registered: a listener removed by an earlier one in this same pass is skipped, as in a live Set.
+      if (entries.has(listener) && accepts(only, event.type)) listener(event);
   };
   const hasGeneral = () => [...entries.values()].some(only => !only);
   return {
@@ -43,27 +46,37 @@ export function createEventHub(): EventHub {
       // is not one, so it is dropped here rather than forged into the key hook.
       if (event.type === MAIL_KEY_EVENT) return;
       if (WAITS.has(event.type) && !hasGeneral()) {
-        queued.push(event);
+        // A copy: a typed listener that hears this event live cannot change the one held for the app.
+        queued.push({ ...event });
         if (queued.length > MAX_QUEUED) queued.shift();
       }
       reach(event);
     },
     deliver: reach,
     subscribe(listener, options) {
+      const known = unsubscribers.get(listener);
+      if (known) return known;
       const only: Only = options?.only ? new Set(options.only) : undefined;
       entries.set(listener, only);
+      const off = () => {
+        entries.delete(listener);
+        unsubscribers.delete(listener);
+      };
+      unsubscribers.set(listener, off);
       // The whole queue is taken before anything is delivered, so a listener that subscribes from inside its replay
       // cannot take events from the one being served.
       const mine = only ? [] : queued.splice(0);
-      try {
-        for (const event of mine) listener(event);
-      } catch (error) {
-        entries.delete(listener);
-        throw error;
+      for (const [i, event] of mine.entries()) {
+        try {
+          listener(event);
+        } catch (error) {
+          // This listener is unregistered and the events it did not get wait for the next one.
+          off();
+          queued.unshift(...mine.slice(i + 1));
+          throw error;
+        }
       }
-      return () => {
-        entries.delete(listener);
-      };
+      return off;
     },
   };
 }

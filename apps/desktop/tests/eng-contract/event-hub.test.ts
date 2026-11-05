@@ -147,3 +147,56 @@ test('a mail-key event on the general event channel is dropped; only deliver() m
   hub.deliver(key);
   assert.deepEqual([keys.heard, app.heard], [[key], [key]]);
 });
+
+test('events a throwing replay did not deliver wait for the next plain subscriber', () => {
+  const hub = createEventHub();
+  hub.emit(link);
+  hub.emit({ type: 'prepare-close' });
+  assert.throws(() =>
+    hub.subscribe(event => {
+      if (event.type === 'deep-link') throw new Error('boom');
+    }),
+  );
+  const next = collect();
+  hub.subscribe(next.listener);
+  assert.deepEqual(
+    next.heard.map(e => e.type),
+    ['prepare-close'],
+  );
+});
+
+test('re-subscribing a registered function returns its unsubscribe and keeps its first options', () => {
+  const hub = createEventHub();
+  const app = collect();
+  const off = hub.subscribe(app.listener);
+  assert.equal(hub.subscribe(app.listener, { only: ['x'] }), off);
+  hub.emit({ type: 'state' });
+  assert.equal(app.heard.length, 1, 'still a plain listener');
+  off();
+  hub.emit({ type: 'state' });
+  assert.equal(app.heard.length, 1);
+});
+
+test('a typed listener cannot change the event held for the app; one removed mid-delivery is skipped', () => {
+  const hub = createEventHub();
+  const payload = { to: 'a' };
+  hub.subscribe(
+    event => {
+      (event.payload as { to: string }).to = 'changed';
+    },
+    { only: ['deep-link'] },
+  );
+  hub.emit({ type: 'deep-link', payload });
+  const app = collect();
+  hub.subscribe(app.listener);
+  // The copy is shallow: the top-level event is the app's own, so a typed listener cannot retype or drop it.
+  assert.equal(app.heard[0]!.type, 'deep-link');
+
+  const hub2 = createEventHub();
+  const second = collect();
+  let offSecond = () => {};
+  hub2.subscribe(() => offSecond());
+  offSecond = hub2.subscribe(second.listener);
+  hub2.emit({ type: 'state' });
+  assert.deepEqual(second.heard, [], 'removed by the first listener in the same pass: not called');
+});
