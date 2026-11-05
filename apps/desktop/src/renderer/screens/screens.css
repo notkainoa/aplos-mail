@@ -2,6 +2,7 @@
 @import url('./compose/compose.css');
 @import url('./home/oneByOne.css');
 @import url('./calendar/calendar.css');
+@import url('./settings/settings.css');
 
 /* The list column (DESIGN 4.3): min(720px, 100% - 2 gutters), centred in the pane, with room under the last row. */
 .aplos-list-column {

@@ -1,6 +1,6 @@
 /** The reducer's transitions that write (move, delete, reply, save) and their shared helpers. Internal to the model. */
-import type { EventChange } from '@aplos/contract';
-import { toIsoDateTime, type Event, type EventTime } from '../../../data';
+import type { EventChange, EventFields } from '@aplos/contract';
+import { toIsoDateTime, type Event } from '../../../data';
 import type {
   CalendarEventData,
   EventGuest,
@@ -8,7 +8,7 @@ import type {
   IsoDateTime,
   RsvpAnswer,
 } from '../../../ui/props';
-import { draftChange, draftProblem, draftTimes, timesTouched, type EditorDraft } from './editor';
+import { draftChange, draftProblem, draftTimes, type EditorDraft } from './editor';
 import { isoOfTime } from './period';
 import { shiftInZone, timeChange, wallDeltaMs } from './times';
 import { canSendReply, lockedMessage, RESPONSE } from './rsvp';
@@ -71,20 +71,20 @@ export function failureFor(verb: 'move' | 'change' | 'delete', title: string): s
 }
 
 /**
- * The `more` overlay for scope `series` on a time change: every loaded row of the same series shifted by the same
- * wall-clock delta in the series' zone (model/times.ts) — the dragged occurrence's old vs new wall times, so a
- * 10:00 standup stays 10:00 local across a DST change. The engine's own shift applies when the write lands; the
- * stand-in only moves the one row until the data owner mirrors the rule, so the settled window can briefly
- * disagree with what this showed.
+ * The `more` overlay for scope `series`: every loaded row of the same series patched the way the engine's rule
+ * (DECISIONS 2026-11-04, engine #290) writes it — `start`/`end` moved by the dragged occurrence's wall-clock
+ * delta in the series' zone (model/times.ts), so a 10:00 standup stays 10:00 local across a DST change, and the
+ * changed text fields copied to every row. The engine's own write lands the same change, so the settled window
+ * agrees with what this showed.
  */
 function seriesShift(
   ctx: CalendarContext,
   event: Event,
-  next: { readonly start: EventTime; readonly end: EventTime },
+  fields: Partial<EventFields>,
 ): readonly OptimisticChange[] {
   const zone = event.timeZone;
-  const dStart = wallDeltaMs(event.start, next.start, zone);
-  const dEnd = wallDeltaMs(event.end, next.end, zone);
+  const dStart = fields.start ? wallDeltaMs(event.start, fields.start, zone) : 0;
+  const dEnd = fields.end ? wallDeltaMs(event.end, fields.end, zone) : 0;
   // The series key is the dragged row's `seriesId` — or its own id when the master itself is dragged, so its
   // occurrences (whose `seriesId` names it) shift too.
   const key = event.seriesId ?? event.id;
@@ -92,8 +92,10 @@ function seriesShift(
   for (const e of ctx.events.values()) {
     if (e.id === event.id || (e.seriesId ?? e.id) !== key) continue;
     const patch: Partial<CalendarEventData> = {};
-    if (dStart) patch.start = isoOfTime(shiftInZone(e.start, dStart, e.timeZone ?? zone));
-    if (dEnd) patch.end = isoOfTime(shiftInZone(e.end, dEnd, e.timeZone ?? zone));
+    if (fields.title !== undefined) patch.title = fields.title;
+    if (fields.allDay !== undefined) patch.allDay = fields.allDay;
+    if (dStart) patch.start = isoOfTime(shiftInZone(e.start, dStart, zone));
+    if (dEnd) patch.end = isoOfTime(shiftInZone(e.end, dEnd, zone));
     if (Object.keys(patch).length > 0) out.push({ id: e.id, patch });
   }
   return out;
@@ -129,7 +131,7 @@ export function moveTransition(
   // every loaded occurrence until the window settles.
   const target = timeChange(event, next);
   if (Object.keys(target.fields).length === 0) return done({ ...state, scope: null });
-  const more = scoped === 'series' ? seriesShift(ctx, event, next) : undefined;
+  const more = scoped === 'series' ? seriesShift(ctx, event, target.fields) : undefined;
   return done({ ...state, scope: null, selectedId: id }, [
     {
       kind: 'eventSet',
@@ -330,10 +332,11 @@ export function saveEditor(
   const entry = entryById(ctx, draft.eventId);
   const title = draft.title.trim();
   const times = draftTimes(draft);
-  // "All events" on a time edit: the same wall-clock shift the engine makes, mirrored on the loaded series.
+  // "All events": the same whole-series change the engine makes, mirrored on the loaded rows — shifted times,
+  // and the changed text fields too (a series rename retitles every occurrence, not just the edited one).
   const more =
-    scoped === 'series' && original && timesTouched(draft, original)
-      ? seriesShift(ctx, original, times)
+    scoped === 'series' && original && change.type === 'update'
+      ? seriesShift(ctx, original, change.fields)
       : undefined;
   return done({ ...next, selectedId: draft.eventId ?? null }, [
     {
