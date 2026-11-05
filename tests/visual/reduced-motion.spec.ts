@@ -4,7 +4,7 @@ import { openState } from './support/gallery';
 
 // The status family under reduced motion. The indeterminate runner is static (DESIGN 4.8 `status`, Reduced column):
 // it rests as a centred 30 % bar inside its track with no animation. The Spinner glyph KEEPS turning (DESIGN 11.5:
-// "spinners stay"). DESIGN 4.8 and 11.5 disagree about spinners; 11.5 is followed for the Spinner. With no
+// "spinners stay"). Read together (DESIGN 11.5 says so explicitly): 4.8 for the runner, 11.5 for the Spinner. With no
 // preference the normal loops are unchanged. The gallery has no 'waiting' state, so the markup is injected into the
 // first-sync state, which already loads the status stylesheet.
 

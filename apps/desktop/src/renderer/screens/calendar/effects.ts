@@ -88,19 +88,25 @@ function failureToast(opId: string, message: string, retry: () => void): void {
 
 interface WriteSpec {
   readonly opId: string;
-  readonly entryId: string;
+  /** Every overlay id the write covers (a series time shift patches a whole family); they settle and roll back together. */
+  readonly entryIds: readonly string[];
   /** The overlay stays until a window reaches this state. */
   readonly call: () => Promise<State | null>;
   /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
   readonly failure?: string;
 }
 
+/** Every entry an optimistic change covers: its own id and its `more` siblings'. */
+function optimisticIds(change: OptimisticChange): string[] {
+  return [change.id, ...(change.more ?? []).map(m => m.id)];
+}
+
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
 function runWrite(spec: WriteSpec, ui: EffectUi, retry: () => void): void {
   spec.call().then(
-    at => ui.settle(spec.entryId, at),
+    at => spec.entryIds.forEach(id => ui.settle(id, at)),
     () => {
-      ui.rollback(spec.entryId);
+      spec.entryIds.forEach(id => ui.rollback(id));
       dismissToast(spec.opId);
       if (spec.failure) failureToast(spec.opId, spec.failure, retry);
     },
@@ -124,7 +130,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
       runWrite(
         {
           opId,
-          entryId: fx.optimistic.id,
+          entryIds: optimisticIds(fx.optimistic),
           call: () =>
             ports.eventSet({ opId, change: fx.change }).then(out => {
               // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
@@ -155,7 +161,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
       runWrite(
         {
           opId,
-          entryId: fx.id,
+          entryIds: [fx.id],
           call: () =>
             ports
               .eventRsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope })
@@ -209,7 +215,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
       runWrite(
         {
           opId,
-          entryId: fx.optimistic.id,
+          entryIds: optimisticIds(fx.optimistic),
           call: () =>
             ports
               .planConfirm({
@@ -231,7 +237,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
       runWrite(
         {
           opId,
-          entryId: fx.optimistic.id,
+          entryIds: optimisticIds(fx.optimistic),
           call: () =>
             ports.planDismiss({ opId, ids: [fx.planId] }).then(receipt => receipt.appliedState),
         },
@@ -253,7 +259,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
       runWrite(
         {
           opId,
-          entryId: fx.id,
+          entryIds: [fx.id],
           call: () =>
             ports
               .eventHide({ opId, ids: [fx.id], hidden: true })
