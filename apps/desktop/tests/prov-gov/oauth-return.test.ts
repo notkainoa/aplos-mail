@@ -2,7 +2,17 @@
 // and the strict link parsing that decides what main may do with it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -156,33 +166,40 @@ test('the registry is bounded: past the cap, register refuses and the page gets 
   }
 });
 
-test('a refused delete still spends the nonce: consume and revoke leave a tombstone the sweep removes', () => {
-  const dir = tmp();
-  try {
-    const returns = createOauthReturns({ dir });
-    assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 60_000 }), true);
-    assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 60_000 }), true);
-    // A directory the process cannot delete from: the unlink fails, the file itself stays writable.
-    chmodSync(dir, 0o500);
+test(
+  'a refused delete still spends the nonce: consume and revoke leave a tombstone the sweep removes',
+  { skip: process.getuid?.() === 0 && 'root ignores a read-only folder' },
+  () => {
+    const dir = tmp();
     try {
-      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), 'mail');
-      // A fresh consumed set (as after a restart) still reads the nonce as spent, and so does a
-      // revoked one — the failed unlink left a tombstone, not a live entry.
-      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), undefined);
-      assert.equal(readFileSync(join(dir, `${nonce}.json`), 'utf8'), '');
-      returns.revoke(nonce2);
-      assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce2), undefined);
+      const returns = createOauthReturns({ dir });
+      assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 60_000 }), true);
+      assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 60_000 }), true);
+      // A directory the process cannot delete from: the unlink fails, the file itself stays writable.
+      chmodSync(dir, 0o500);
+      try {
+        assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), 'mail');
+        // A fresh consumed set (as after a restart) still reads the nonce as spent, and so does a
+        // revoked one — the failed unlink left a tombstone, not a live entry.
+        assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce), undefined);
+        assert.equal(readFileSync(join(dir, `${nonce}.json`), 'utf8'), '');
+        returns.revoke(nonce2);
+        assert.equal(consumeOauthReturn({ dir, consumed: new Set() }, nonce2), undefined);
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      // The next register's sweep deletes both tombstones.
+      assert.equal(
+        returns.register({ nonce: 'c'.repeat(32), purpose: 'mail', ttlMs: 60_000 }),
+        true,
+      );
+      assert.throws(() => readFileSync(join(dir, `${nonce}.json`), 'utf8'));
+      assert.throws(() => readFileSync(join(dir, `${nonce2}.json`), 'utf8'));
     } finally {
-      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
     }
-    // The next register's sweep deletes both tombstones.
-    assert.equal(returns.register({ nonce: 'c'.repeat(32), purpose: 'mail', ttlMs: 60_000 }), true);
-    assert.throws(() => readFileSync(join(dir, `${nonce}.json`), 'utf8'));
-    assert.throws(() => readFileSync(join(dir, `${nonce2}.json`), 'utf8'));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 test('a sign-in whose loopback never opens still revokes the return nonce it registered', async () => {
   const abort = new AbortController();
@@ -259,6 +276,38 @@ async function openTestLoopback(returnLink?: string) {
   return { loopback, controller };
 }
 
+test('register tightens a registry folder that already exists with open permissions', () => {
+  const dir = tmp();
+  try {
+    const registry = join(dir, 'oauth-returns');
+    mkdirSync(registry, { mode: 0o777 });
+    chmodSync(registry, 0o777);
+    const returns = createOauthReturns({ dir: registry });
+    assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 60_000 }), true);
+    assert.equal(statSync(registry).mode & 0o777, 0o700, 'the folder is private to this user');
+    assert.equal(statSync(join(registry, `${nonce}.json`)).mode & 0o777, 0o600);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failed rename leaves no temp file behind', () => {
+  const dir = tmp();
+  try {
+    const returns = createOauthReturns({ dir });
+    // A directory where the entry file must go makes the rename fail after the temp file was written.
+    mkdirSync(join(dir, `${nonce}.json`), { recursive: true });
+    assert.equal(returns.register({ nonce, purpose: 'mail', ttlMs: 60_000 }), false);
+    assert.deepEqual(
+      readdirSync(dir).filter(name => name.endsWith('.tmp')),
+      [],
+      'the temp file is removed on failure',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the ok page redirects to the deep link and keeps a visible fallback anchor', async () => {
   const link = oauthReturnLink(nonce);
   const { loopback, controller } = await openTestLoopback(link);
@@ -266,7 +315,10 @@ test('the ok page redirects to the deep link and keeps a visible fallback anchor
     const page = await get(`${loopback.redirectUri}?state=state-1&code=x`);
     assert.equal(page.status, 200);
     assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
-    assert.equal(page.headers['content-security-policy'], "default-src 'none'");
+    assert.equal(
+      page.headers['content-security-policy'],
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    );
     assert.equal(page.headers['referrer-policy'], 'no-referrer');
     assert.equal(page.headers['cache-control'], 'no-store');
     assert.match(

@@ -19,6 +19,9 @@ import { oauthReturnLink, type OauthReturns, type OauthReturnPurpose } from './r
 import { googleTokenUrl } from './token-source';
 import { refusalError, transportError } from './token-errors';
 
+/** How long the return link outlives the callback wait. */
+const returnGraceMs = 60_000;
+
 export const googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const googleRevokeUrl = 'https://oauth2.googleapis.com/revoke';
 
@@ -283,7 +286,8 @@ export async function runAuthorization(
     deps.returns!.register({
       nonce,
       purpose: request.returnTo!,
-      ttlMs: deps.callbackTimeoutMs ?? callbackTimeoutMs,
+      // A grace past the callback wait: a sign-in finished at the last second still gets a live fallback link.
+      ttlMs: (deps.callbackTimeoutMs ?? callbackTimeoutMs) + returnGraceMs,
     })
       ? oauthReturnLink(nonce)
       : undefined;

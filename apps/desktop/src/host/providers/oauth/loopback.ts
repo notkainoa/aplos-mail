@@ -120,7 +120,9 @@ function reply(res: ServerResponse, decision: CallbackDecision, returnLink?: str
   res.writeHead(decision.status, {
     'content-type': result.html ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': "default-src 'none'",
+    // `default-src` does not cover framing, the base URI or form targets: close those too.
+    'content-security-policy':
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     'referrer-policy': 'no-referrer',
     connection: 'close',
   });

@@ -17,6 +17,7 @@
 
 import {
   lstatSync,
+  chmodSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -183,19 +184,30 @@ export function createOauthReturns(options: {
   };
   return {
     register({ nonce, purpose, ttlMs }) {
+      let tmp: string | undefined;
       try {
         if (!noncePattern.test(nonce) || !(ttlMs > 0)) return false;
         mkdirSync(dir, { recursive: true, mode: 0o700 });
+        // mkdir never tightens a folder that already exists: the registry folder is private to this user.
+        chmodSync(dir, 0o700);
         sweep();
         const live = readdirSync(dir).filter(name => name.endsWith(fileSuffix));
         if (live.length >= max) return false;
         const file = join(dir, `${nonce}${fileSuffix}`);
-        const tmp = join(dir, `.${nonce}.tmp`);
+        tmp = join(dir, `.${nonce}.tmp`);
         const entry: OauthReturnEntry = { purpose, exp: now() + ttlMs };
         writeFileSync(tmp, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
         renameSync(tmp, file);
         return true;
       } catch {
+        // A failed write or rename must not leave its temp file behind (the sweep only reads `.json` entries).
+        if (tmp) {
+          try {
+            rmSync(tmp, { force: true });
+          } catch {
+            /* nothing more to do */
+          }
+        }
         return false;
       }
     },
