@@ -307,8 +307,11 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
       screen: 'home',
       counts: {},
       minimised: false,
+      chrome: { fullscreen: false, collapsed: false },
+      mac: false,
       onNavigate: () => undefined,
       onCompose: () => undefined,
+      onToggleSidebar: () => undefined,
       accountSwitcher: null,
       status: null,
       header: paneHeader(
@@ -326,7 +329,7 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
   const dock = docked.indexOf('data-kind="dock"');
   assert.ok(main > 0 && dock > main, 'the dock pane sits beside the main pane');
   assert.match(docked, /dock body/);
-  assert.match(docked, /data-kind="dock" aria-label="Ask"/, 'the dock landmark is the Ask tab');
+  assert.match(docked, /data-kind="dock"[^>]*aria-label="Ask"/, 'the dock landmark is the Ask tab');
 
   // On the Today tab the landmark says so.
   const today = renderToStaticMarkup(
@@ -334,8 +337,11 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
       screen: 'home',
       counts: {},
       minimised: false,
+      chrome: { fullscreen: false, collapsed: false },
+      mac: false,
       onNavigate: () => undefined,
       onCompose: () => undefined,
+      onToggleSidebar: () => undefined,
       accountSwitcher: null,
       status: null,
       header: paneHeader(
@@ -350,7 +356,7 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
       children: createElement('div', null, 'home body'),
     }),
   );
-  assert.match(today, /data-kind="dock" aria-label="Today"/);
+  assert.match(today, /data-kind="dock"[^>]*aria-label="Today"/);
 
   // The shell's own table: ⌘K toggles the palette, the dock keys open and toggle it (a mounted host shadows them).
   const ctx = context(['global']);
@@ -362,6 +368,7 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
     togglePalette: () => {
       palette = !palette;
     },
+    toggleSidebar: () => undefined,
   });
   commands['app.palette']!.run(ctx);
   assert.equal(palette, true, '⌘K opens the palette');
@@ -376,4 +383,30 @@ test('the dock is closed on first run, opens beside the main pane, and ⌘K reac
     createElement(PaletteHost, { open: true, onClose: () => undefined }),
   );
   assert.match(paletteHtml, /ui-palette__panel/);
+});
+
+test('the collapsed strip is the sidebar region, so its toggle stays a region Tab stop', () => {
+  const html = renderToStaticMarkup(
+    createElement(ShellLayout, {
+      screen: 'home',
+      counts: {},
+      minimised: false,
+      chrome: { fullscreen: false, collapsed: true },
+      mac: false,
+      onNavigate: () => undefined,
+      onCompose: () => undefined,
+      onToggleSidebar: () => undefined,
+      accountSwitcher: null,
+      status: null,
+      header: paneHeader(
+        'closed',
+        () => undefined,
+        {},
+        () => undefined,
+      ),
+      toasts: null,
+      children: createElement('div', null, 'home body'),
+    }),
+  );
+  assert.match(html, /aplos-shell__strip[^>]*data-region="sidebar"/);
 });

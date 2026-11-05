@@ -39,6 +39,7 @@ function sidebar(): string {
       counts: {},
       onNavigate: noop,
       onCompose: noop,
+      onToggleSidebar: noop,
       accountSwitcher: null,
       status: null,
     }),

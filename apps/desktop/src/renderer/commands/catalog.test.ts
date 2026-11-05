@@ -393,7 +393,14 @@ test('a remap may set only chord and phase, and never a text-editing chord', () 
   assert.deepEqual(issuesFor(sneaky), [['mail.trash', 'invalidEntry']]);
   assert.deepEqual(issuesFor({ 'mail.done': ['meta+c'] }), [['mail.done', 'reserved']]);
   assert.deepEqual(issuesFor({ 'mail.done': ['ctrl+k'] }), [['mail.done', 'reserved']]);
+  assert.deepEqual(issuesFor({ 'mail.done': ['Tab'] }), [['mail.done', 'reserved']]);
+  assert.deepEqual(issuesFor({ 'mail.done': ['shift+Tab'] }), [['mail.done', 'reserved']]);
   assert.deepEqual(issuesFor({ 'list.selectAll': ['meta+a'] }), [], 'its own default');
+  assert.deepEqual(
+    issuesFor({ 'compose.keepSuggestion': ['Tab'] }),
+    [],
+    'Tab is Keep suggestion’s own default',
+  );
   assert.deepEqual(issuesFor({ 'mail.done': ['meta+shift+'] }), [['mail.done', 'invalidChord']]);
 });
 
@@ -402,12 +409,12 @@ test('a remapped command keeps the field rule only for chords that do not type',
   assert.deepEqual(
     registry.configure({
       ...DEFAULT_KEY_PREFS,
-      keymap: { 'compose.send': ['meta+s'], 'compose.bold': ['q'] },
+      keymap: { 'compose.send': ['meta+o'], 'compose.bold': ['q'] },
     }),
     [],
   );
   const ctx = context(['global', 'compose'], { focus: 'text' });
-  assert.equal(registry.resolve(keydown('s', { metaKey: true }), ctx)?.commandId, 'compose.send');
+  assert.equal(registry.resolve(keydown('o', { metaKey: true }), ctx)?.commandId, 'compose.send');
   assert.equal(registry.resolve(keydown('q'), ctx), null, 'a single key never fires in the body');
 });
 
