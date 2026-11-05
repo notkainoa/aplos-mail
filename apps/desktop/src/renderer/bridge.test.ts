@@ -443,7 +443,7 @@ test('close unsubscribes the upstream, later calls reject unavailable and subscr
   session.close();
   assert.equal(fake.stats.unbinds, 1);
   fake.emit(VALID_STATE);
-  assert.deepEqual(received, []);
+  assert.deepEqual<Frame[]>(received, []);
   const error = await rejection(session);
   assert.equal(error.body.type, 'unavailable');
   const off = session.subscribe(frame => received.push(frame));
