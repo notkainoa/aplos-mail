@@ -12,6 +12,7 @@ import {
   bridgeSubscribe,
   listenSealedKeys,
   mailKeyOfEvent,
+  SEALED_READER_KEYS,
   sealedMailKey,
   type BridgeEvent,
   type SealedKeyGate,
@@ -68,11 +69,17 @@ describe('sealedMailKey', () => {
       shift: false,
       alt: false,
     });
-    assert.deepEqual(sealedMailKey(mailKey('PageDown'), gate()), {
-      key: 'PageDown',
-      shift: false,
-      alt: false,
-    });
+  });
+
+  test('the reader-side allowlist: j k J K and Escape only; scrolling keys stay with the letter', () => {
+    assert.deepEqual([...SEALED_READER_KEYS], ['j', 'k', 'J', 'K', 'Escape']);
+    for (const key of MAIL_KEYS) {
+      const routed = sealedMailKey(mailKey(key), gate());
+      if ((SEALED_READER_KEYS as readonly string[]).includes(key)) assert.ok(routed, key);
+      else assert.equal(routed, null, key);
+    }
+    for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
+      assert.equal(sealedMailKey(mailKey(key), gate()), null, key);
   });
 
   test('Caps Lock J and Shift+J are j: the letter decides, never a shift flag', () => {
@@ -95,7 +102,7 @@ describe('sealedMailKey', () => {
   });
 
   test('guard (c): a layer above the reader drops every key, Esc first', () => {
-    for (const key of MAIL_KEYS)
+    for (const key of SEALED_READER_KEYS)
       assert.equal(sealedMailKey(mailKey(key), gate({ layerAbove: () => true })), null, key);
   });
 });
@@ -141,6 +148,22 @@ describe('listenSealedKeys', () => {
     assert.deepEqual(heard, ['shown:j', 'other:k']);
     for (const stop of stops) stop();
     assert.equal(b.listeners.size, 0);
+  });
+
+  test('a throwing onKey does not skip the next subscriber (preload loops over its listeners)', () => {
+    const b = bus();
+    const frame = fakeFrame();
+    const heard: string[] = [];
+    listenSealedKeys(b.subscribe, gate({}, frame), () => {
+      throw new Error('slot failed');
+    });
+    listenSealedKeys(b.subscribe, gate({}, frame), key => heard.push(key.key));
+    // preload's delivery: `for (const listener of listeners) listener(event)`, no try/catch of its own.
+    const deliver = (event: BridgeEvent) => {
+      for (const listener of b.listeners) listener(event);
+    };
+    assert.doesNotThrow(() => deliver(mailKey('j')));
+    assert.deepEqual(heard, ['j']);
   });
 });
 
@@ -210,6 +233,9 @@ describe('layers above the reader', () => {
     assert.equal(layerAbove({ ...quiet, sheetOpen: true }), true);
     assert.equal(layerAbove({ ...quiet, overlays: [el({ role: 'dialog' })] }), true);
     assert.equal(layerAbove({ ...quiet, overlays: [el({ role: 'menu' })] }), true);
+    assert.equal(layerAbove({ ...quiet, overlays: [el({ 'aria-modal': 'true' })] }), true);
+    assert.equal(layerAbove({ ...quiet, overlays: [el({ role: 'alertdialog' })] }), true);
+    assert.equal(layerAbove({ ...quiet, overlays: [el({ 'aria-modal': 'false' })] }), false);
     const presets = el({ class: 'ui-date-presets' });
     assert.equal(layerAbove({ ...quiet, overlays: [el({ role: 'menu' }, presets)] }), true);
     assert.equal(layerAbove({ ...quiet, overlays: [el({ [KEY_LAYER_ATTRIBUTE]: 'find' })] }), true);

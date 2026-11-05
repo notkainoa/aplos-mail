@@ -8,11 +8,22 @@
 // (b) the sealed slot installs no keydown listener: this subscription is its only key path;
 // (c) nothing sits above the reader (`layers.ts`): a relayed Esc never closes a composer, dialog, menu, sheet or the
 //     find bar, and no other key reaches them either.
+// (d) only the reader's allowlist (`SEALED_READER_KEYS`: j, k, J, K, Escape) is handed on; main cannot cancel a key from
+//     the out-of-process frame, so the keys the letter scrolls with are left to scroll it (see the constant).
 // Letters, never shift: main cannot tell Caps Lock J from Shift+J (both arrive as `J`), so `J`/`K` become `j`/`k` with
 // no shift, whatever any payload says about shift.
 
 import { isMailKey, MAIL_KEY_EVENT, type MailKey } from '../../shared/mail-keys';
 import type { MailFrameKey } from './types';
+
+/**
+ * The relayed keys the reader takes from a sealed letter: next and previous email, and Escape. A sealed key is relayed
+ * without being cancelled (main cannot cancel a key from an out-of-process frame), so a key the page scrolls with
+ * would both scroll the letter and run its reader command (ArrowUp/ArrowDown step the message cursor). The scrolling
+ * keys (arrows, Page Up/Down, Home, End) are therefore ignored here and the letter scrolls natively; with focus on the
+ * page itself the arrows still step messages. This is narrower than the shared list `isMailKey` validates.
+ */
+export const SEALED_READER_KEYS = ['j', 'k', 'J', 'K', 'Escape'] as const;
 
 /** An event as preload hands it to `window.aplos.subscribe` listeners. */
 export interface BridgeEvent {
@@ -53,6 +64,10 @@ export function letterOf(key: MailKey): string {
   return key.length === 1 ? key.toLowerCase() : key;
 }
 
+function isReaderKey(key: MailKey): boolean {
+  return (SEALED_READER_KEYS as readonly string[]).includes(key);
+}
+
 function isInert(frame: unknown): boolean {
   const closest = (frame as { closest?: unknown }).closest;
   return typeof closest === 'function' && (frame as Element).closest('[inert]') !== null;
@@ -68,7 +83,7 @@ function ownsFocus(gate: SealedKeyGate): boolean {
 /** The key to hand `onKey`, or null when the event is not a listed mail key or any guard refuses it. */
 export function sealedMailKey(event: unknown, gate: SealedKeyGate): MailFrameKey | null {
   const key = mailKeyOfEvent(event);
-  if (key === null || !ownsFocus(gate) || gate.layerAbove()) return null;
+  if (key === null || !isReaderKey(key) || !ownsFocus(gate) || gate.layerAbove()) return null;
   return { key: letterOf(key), shift: false, alt: false };
 }
 
@@ -87,6 +102,13 @@ export function listenSealedKeys(
 ): () => void {
   return subscribe(event => {
     const key = sealedMailKey(event, gate);
-    if (key) onKey(key);
+    if (!key) return;
+    // Preload calls its listeners in a bare loop: a throw here would skip every later subscriber. Swallowed, and the
+    // key is not logged.
+    try {
+      onKey(key);
+    } catch {
+      // The slot's handler failed; the other subscribers still hear the key.
+    }
   });
 }

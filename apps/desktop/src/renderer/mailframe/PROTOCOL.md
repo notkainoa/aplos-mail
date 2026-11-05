@@ -190,9 +190,17 @@ when the key arrives:
    path (the browser spec records every key listener the mount adds: none).
 3. **Top-most layer first.** When anything sits above the reader the key is dropped, Esc included, instead of being
    handed on: a modal context (menu, date picker, dialog, palette, sheet, low importance), the composer (`compose`)
-   or Ask on the shell's key layers or open sheet, an open overlay in the host DOM (role `dialog` or `menu`,
-   `aria-modal`, `data-keyctx`, as the shell's `overlayContexts` reads them), or a host layer marked `data-keylayer`
+   or Ask on the shell's key layers or open sheet, an open overlay in the host DOM (role `dialog`, `alertdialog` or `menu`,
+   `aria-modal="true"`, `data-keyctx`, as the shell's `overlayContexts` reads them), or a host layer marked `data-keylayer`
    (the reader's find bar). A key relayed from inside an email can never close or cancel anything above the letter.
+
+4. **Reader allowlist.** Main validates the full shared list (`isMailKey`), then the sealed path hands on only
+   `SEALED_READER_KEYS`: j, k, J, K and Escape. Main relays without cancelling (it cannot cancel a key from an
+   out-of-process frame), so a sealed letter's ArrowUp/ArrowDown would otherwise both scroll the letter and step the
+   reader's message cursor (`reader.nextMessage`/`previousMessage`), unlike the srcdoc path, where a handled key is
+   cancelled in the frame. ArrowUp, ArrowDown, Page Up/Down, Home and End are ignored, so the letter scrolls natively;
+   with focus on the page (not in the letter) the arrows still step messages. This is the one deliberate divergence
+   from the srcdoc relay, which keeps the full list.
 
 **Letters, never shift.** Main cannot tell Caps Lock J from Shift+J: both arrive as `J`. The relayed key is the letter,
 lower-cased, with no shift (`J`/`K` become `j`/`k`, whatever a payload says about shift), so j, Caps Lock J and Shift+J

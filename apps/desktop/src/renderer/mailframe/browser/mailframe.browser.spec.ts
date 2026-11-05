@@ -432,7 +432,9 @@ test('mail-key: a relayed key reaches onKey once, only while the sealed letter h
   await focusOutside(page);
   expect(await deliver(page, { key: 'j' }, { key: 'Escape' })).toEqual([]);
   await focusLetter(page);
-  expect(await deliver(page, { key: 'ArrowDown' })).toEqual([{ ...KEY_J, key: 'ArrowDown' }]);
+  // Arrows and the paging keys scroll the letter natively and are not routed (the reader allowlist).
+  const scrolling = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'];
+  expect(await deliver(page, ...scrolling.map(key => ({ key })))).toEqual([]);
   // Nothing was dispatched on the host page: onKey is the only way out.
   expect(await page.evaluate(() => window.__mailframe.hostKeys)).toEqual([]);
 });
@@ -518,6 +520,23 @@ test('mail-key: the sealed slot adds no key listener and unsubscribes on unmount
   expect(await state()).toEqual({ listeners: 1, keyListeners: [] });
   await page.evaluate(() => window.__mailkey.unmount());
   expect(await state()).toEqual({ listeners: 0, keyListeners: [] });
+});
+
+test('mail-key: a srcdoc slot never subscribes; only the sealed slot does (exactly one call)', async ({
+  page,
+}) => {
+  await mailKeyPage(page);
+  const state = () =>
+    page.evaluate(() => ({
+      subscribes: window.__mailkey.subscribes(),
+      listeners: window.__mailkey.listeners(),
+    }));
+  expect(await state()).toEqual({ subscribes: 1, listeners: 1 });
+  // The srcdoc letter loads, reports and replaces the sealed one: the sealed subscription ends, nothing replaces it.
+  await page.evaluate(() => window.__mailkey.srcdoc());
+  await page.waitForFunction(() => window.__mailframe.ready.length === 2);
+  await expect(page.locator('iframe')).toHaveCount(1);
+  expect(await state()).toEqual({ subscribes: 1, listeners: 0 });
 });
 
 test('links open outside the app and never navigate the frame', async ({ page }) => {

@@ -58,3 +58,12 @@ test('the open find bar marks itself as a layer above the reader', () => {
   );
   assert.match(html, new RegExp(`${KEY_LAYER_ATTRIBUTE}="find"`));
 });
+
+test('arrows and paging keys from a sealed letter are not routed, though typed on the page they step messages', () => {
+  for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
+    assert.equal(sealedMailKey({ type: 'mail-key', payload: { key } }, open), null, key);
+  assert.equal(
+    wiredRegistry().resolve(keydown('ArrowDown'), READER)?.commandId,
+    'reader.nextMessage',
+  );
+});

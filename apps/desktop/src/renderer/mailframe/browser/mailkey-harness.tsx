@@ -16,6 +16,8 @@ export interface MailKeyHarness {
   deliver(payload: unknown, type?: string): void;
   /** Subscribers now. */
   listeners(): number;
+  /** Calls made to `window.aplos.subscribe` since the page loaded (a mounted srcdoc slot must add none). */
+  subscribes(): number;
   /** Every keydown, keyup or keypress listener added after the root was created, as `<target>:<type>`. */
   keyListeners: string[];
   /** Adds a key layer (`compose`, `dialog`, ...); `clearLayers` removes them all. */
@@ -27,6 +29,8 @@ export interface MailKeyHarness {
   inert(on: boolean): void;
   /** Asks for a second letter, which stays pending (hidden) because it never reports. */
   pend(): void;
+  /** Asks for a srcdoc letter (the stand-in path) in place of the sealed one. */
+  srcdoc(): void;
   /** Unmounts and mounts the view `times` times. */
   remount(times: number): void;
   unmount(): void;
@@ -45,14 +49,21 @@ interface Sink {
   keys: MailFrameKey[];
 }
 
-function fakeBridge(): Set<(event: BridgeEvent) => void> {
+interface FakeBridge {
+  listeners: Set<(event: BridgeEvent) => void>;
+  calls: { count: number };
+}
+
+function fakeBridge(): FakeBridge {
   const listeners = new Set<(event: BridgeEvent) => void>();
+  const calls = { count: 0 };
   const subscribe = (listener: (event: BridgeEvent) => void) => {
+    calls.count += 1;
     listeners.add(listener);
     return () => void listeners.delete(listener);
   };
   (window as unknown as { aplos: unknown }).aplos = { invoke: () => Promise.resolve(), subscribe };
-  return listeners;
+  return { listeners, calls };
 }
 
 /** Records key listeners added from now on (the root's own delegation listeners are already in place). */
@@ -67,7 +78,7 @@ function watchKeyListeners(into: string[]): void {
 
 /** Mounts the page on `root` and returns the spec's handles. */
 export function mountMailKeyHarness(root: Root, sink: Sink): MailKeyHarness {
-  const listeners = fakeBridge();
+  const { listeners, calls } = fakeBridge();
   const keyListeners: string[] = [];
   watchKeyListeners(keyListeners);
   const layers: (() => void)[] = [];
@@ -91,6 +102,7 @@ export function mountMailKeyHarness(root: Root, sink: Sink): MailKeyHarness {
   return {
     deliver: (payload, type = 'mail-key') => listeners.forEach(l => l({ type, payload })),
     listeners: () => listeners.size,
+    subscribes: () => calls.count,
     keyListeners,
     layer: contexts => void layers.push(addKeyLayer({ contexts })),
     clearLayers: () => layers.splice(0).forEach(remove => remove()),
@@ -108,6 +120,15 @@ export function mountMailKeyHarness(root: Root, sink: Sink): MailKeyHarness {
     },
     pend: () => {
       state.source = sealed(PENDING_TOKEN, 'pending');
+      render();
+    },
+    srcdoc: () => {
+      state.source = {
+        kind: 'srcdoc',
+        key: 'srcdoc',
+        html: '<p>Stand-in letter</p>',
+        imagePolicy: 'block',
+      };
       render();
     },
     remount: times => {

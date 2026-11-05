@@ -1,5 +1,9 @@
 // The sealed slot's one key path (sealedKeys.ts, PROTOCOL.md "mail-key wiring"): subscribe to main's relayed keys for
 // as long as the slot is mounted and feed the accepted ones to the same `onKey` the srcdoc relay uses.
+// Divergence from the srcdoc path: only j, k, J, K and Escape are accepted (`SEALED_READER_KEYS`). Main relays without
+// cancelling (it cannot cancel a key from an out-of-process frame), so ArrowUp/ArrowDown would both scroll the letter
+// and step the reader's message cursor; the arrows, Page Up/Down, Home and End are ignored and the letter scrolls
+// natively. With focus on the page itself the arrows still step messages.
 
 import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { layerAboveReader } from './layers';
