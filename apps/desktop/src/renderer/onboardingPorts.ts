@@ -16,9 +16,10 @@ export const dataConnectPorts: ConnectPorts = {
 };
 
 /**
- * The onboarding window's own calls. `Window/finishOnboarding` takes no input yet, so first sync's "Open Settings"
- * (`to: 'settings.ai'`) hands over without the target (REQUEST contract: an optional `{ to }`).
+ * The onboarding window's own calls. `Window/finishOnboarding` takes an optional `{ to: 'settings.ai' }` (eng-contract,
+ * #289): first sync's "Open Settings" passes it through, every other handoff sends none. Main ignores `to` until
+ * eng-host's follow-up, so this only forwards it.
  */
 export const dataWindowPorts: Partial<WindowPorts> = {
-  finish: () => api.window.finishOnboarding(),
+  finish: input => api.window.finishOnboarding(input ?? {}),
 };

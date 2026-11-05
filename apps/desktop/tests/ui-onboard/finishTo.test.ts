@@ -17,6 +17,7 @@ import {
   type FlowState,
 } from '../../src/renderer/onboarding/flow';
 import { defaultWindowPorts } from '../../src/renderer/onboarding/windowPorts';
+import { dataWindowPorts } from '../../src/renderer/onboardingPorts';
 
 const ends = (effects: readonly FlowEffect[]) => effects.filter(e => e.type === 'setupEnd');
 const handoffs = (effects: readonly FlowEffect[]) => effects.filter(e => e.type === 'handoff');
@@ -173,5 +174,25 @@ describe('finishOnboarding to: settings.ai', () => {
       installDataRuntime(null);
     }
     assert.deepEqual(calls, [{ to: 'settings.ai' }, {}, {}]);
+  });
+  test('finishTo: the window route’s own port (main.tsx passes dataWindowPorts) forwards { to } too', async () => {
+    const calls: unknown[] = [];
+    installDataRuntime({
+      api: {
+        window: {
+          finishOnboarding: async (args: unknown) => {
+            calls.push(args);
+            return { ok: true };
+          },
+        },
+      },
+    } as unknown as DataRuntime);
+    try {
+      await dataWindowPorts.finish?.({ to: 'settings.ai' });
+      await dataWindowPorts.finish?.();
+    } finally {
+      installDataRuntime(null);
+    }
+    assert.deepEqual(calls, [{ to: 'settings.ai' }, {}]);
   });
 });

@@ -97,7 +97,7 @@ export interface FirstSyncSlotProps {
 }
 
 export { defaultWindowPorts, type WindowPorts } from './windowPorts';
-import { defaultWindowPorts } from './windowPorts';
+import { defaultWindowPorts, type WindowPorts } from './windowPorts';
 
 export interface OnboardingAppProps {
   /** 'first' = first run; 'review' = "Show welcome" from Settings beside the mail window. */
