@@ -2,6 +2,7 @@
  * The review1 regression tests (see calendar.test.ts for the shared suite): each names the bug it guards.
  * Run: `cd apps/desktop && TZ=America/Los_Angeles npx tsx --test 'src/renderer/screens/calendar/*.test.ts*'`.
  */
+import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { api } from '../../data';

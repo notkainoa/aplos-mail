@@ -4,6 +4,7 @@
  * against the real data layer on the stand-in engine. Run:
  * `cd apps/desktop && TZ=America/Los_Angeles npx tsx --test 'src/renderer/screens/calendar/*.test.ts*'`.
  */
+import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
