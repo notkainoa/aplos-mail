@@ -122,6 +122,23 @@ export interface OnboardingController {
    */
   noteRendererSetupEnd(): void;
   isOpen(): boolean;
+  /** Raises the welcome window when it is open; false when it is not. Never opens one. */
+  focusOpen(): boolean;
+}
+
+/**
+ * The one existing window an `aplos://oauth-return` deep link may raise for `purpose` (the window the
+ * sign-in started in). It never opens anything: a link naming the welcome window falls back to the
+ * mail window, a link for a mail flow that finds no mail window does nothing — a later add must never
+ * surface the setup window.
+ */
+export function oauthReturnTarget(
+  purpose: 'onboarding' | 'mail',
+  open: { onboarding: boolean; mail: boolean },
+): 'onboarding' | 'mail' | 'none' {
+  if (purpose === 'onboarding' && open.onboarding) return 'onboarding';
+  if (open.mail) return 'mail';
+  return 'none';
 }
 
 const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.isDestroyed();
@@ -269,6 +286,11 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
       ended = true;
     },
     isOpen: () => alive(win),
+    focusOpen() {
+      if (!alive(win)) return false;
+      bring(win);
+      return true;
+    },
   };
 }
 

@@ -454,7 +454,11 @@ test('attachSealedFrameRelays: keys, mail-frame links and window.open, all throu
 
 test('windows.ts wires the sealed-frame relays; double-delivery guard: one key path per frame kind', () => {
   const windows = read('main/windows.ts');
-  assert.match(windows, /openMail: handleLink,/, 'mailto goes through handleLink');
+  assert.match(
+    windows,
+    /openMail: url => \{\s*if \(!handleOauthReturn\(url\)\) handleLink\(url\);\s*\}/,
+    'mailto goes through handleLink after the oauth-return claim',
+  );
   assert.match(windows, /attachSealedFrameRelays\(contents, frameLinks\);/);
   assert.doesNotMatch(windows, /openExternal/, 'no direct shell access from windows.ts');
   const relays = read('host/protocol/frame-relays.ts');

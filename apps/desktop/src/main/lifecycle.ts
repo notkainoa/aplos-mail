@@ -14,7 +14,16 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { installPermissionHandlers } from './security';
-import { windows, focusMain, syncTheme, createWindow, setMain, startWindows } from './windows';
+import {
+  windows,
+  focusMain,
+  syncTheme,
+  createWindow,
+  setMain,
+  startWindows,
+  handleOauthReturn,
+} from './windows';
+import { isOauthReturnLink } from '../host/providers/oauth/returns';
 import { handleLink } from './protocol';
 import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
@@ -57,6 +66,23 @@ let systemShutdown = false;
 let skipQuitWarning = false;
 let lock: HeldLock | undefined;
 let stopPower: (() => void) | undefined;
+/**
+ * `aplos://oauth-return` links the OS delivered before a window existed (an `open-url` during launch):
+ * they are queued, bounded, and answered after `startWindows` — the nonce's own TTL still applies at
+ * consume time, so a stale one is a silent no-op either way.
+ */
+const queuedOauthReturns: string[] = [];
+function routeLink(raw: string) {
+  if (isOauthReturnLink(raw)) {
+    if (!started) {
+      if (queuedOauthReturns.length < 8) queuedOauthReturns.push(raw);
+      return;
+    }
+    handleOauthReturn(raw);
+    return;
+  }
+  handleLink(raw);
+}
 
 const pause = createPause(() => Date.now());
 const timers = {
@@ -244,13 +270,13 @@ if (!locked) app.quit();
 else {
   app.on('open-url', (event, url) => {
     event.preventDefault();
-    handleLink(url);
+    routeLink(url);
   });
   app.on('second-instance', (_event, argv) => {
     // While Aplos is still starting, startup is choosing the one window: a second launch only queues its link.
     if (started) focusMain();
     else pendingActivation = true;
-    for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
+    for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
   });
   app.on('activate', () => {
     if (started) focusMain();
@@ -301,7 +327,8 @@ else {
       if (startWindows(atLogin) === 'mail') setMain(createWindow());
       else if (pendingActivation) focusMain();
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
-      for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
+      for (const link of queuedOauthReturns.splice(0)) handleOauthReturn(link);
+      for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
     })
     .catch(error => {
       // A quit that landed during the start-up is finishing on its own (finishQuit): no dialog, no second quit.
