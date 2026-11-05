@@ -256,6 +256,8 @@ export interface CommandSpec {
   /** Choosing it opens a nested palette page (its handler's `children`); the label ends with "…". */
   readonly page?: true;
   readonly onlyWhen?: Condition;
+  /** Listed in the palette only while this condition holds (the key still works without it); for actions whose label is wrong otherwise. */
+  readonly paletteWhen?: Condition;
   /** For a hold command: the tap it upgrades (mail.dictateReply upgrades mail.reply). */
   readonly holdFor?: CommandId;
   /** Auto-repeat keydowns run it again (movement only). */
