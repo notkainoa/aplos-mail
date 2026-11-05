@@ -68,6 +68,7 @@ import {
 } from './ask.model';
 import { AskPanel } from './AskPanel';
 import { ConsentLine } from './AskConsent';
+import { oncePerTask } from './oncePerTask';
 import { askStore, defaultDockWidth, dockWidthPersisted, useDock } from './askStore';
 import { setFormatClock } from '../../ui/ask/format';
 import './ask-screen.css';
@@ -99,16 +100,6 @@ type ProviderId =
   | 'ollama'
   | 'lmstudio'
   | 'custom';
-
-function oncePerTask() {
-  const seen = new Set<string>();
-  return (key: string, run: () => void) => {
-    if (seen.has(key)) return;
-    seen.add(key);
-    queueMicrotask(() => seen.delete(key));
-    run();
-  };
-}
 
 function errorBody(error: unknown): Pick<ErrorBody, 'type' | 'reasonCode' | 'message'> {
   const body = (error as { body?: ErrorBody } | null)?.body;
@@ -365,7 +356,7 @@ export function AskDockHost(props: AskDockHostProps) {
 
   // The run's frames move it on: settle, then the next queued question.
   useEffect(() => {
-    const stepped = advance(askStore.get().ask, frames);
+    const stepped = advance(askStore.get().ask, frames, inputsRef.current.consentNeeded === true);
     if (stepped.state !== askStore.get().ask || stepped.effects.length > 0) perform(stepped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frames]);
@@ -606,12 +597,14 @@ export function AskDockHost(props: AskDockHostProps) {
           onQueuedChange: (id, text) => setAsk(editQueued(cur(), id, text)),
           onSendQueuedNow: id => once('submit', () => perform(sendNow(cur(), viewRef.current, id))),
           onPickSuggestion: question =>
-            perform(submit(setField(cur(), question), viewRef.current, 'ask')),
+            once('submit', () =>
+              perform(submit(setField(cur(), question), viewRef.current, 'ask')),
+            ),
           onOpenRecent: id => perform(openConversation(cur(), id)),
           onToggleSteps: turnId => setAsk(toggleSteps(cur(), turnId)),
           onOpenCitation: (_turnId, threadId) => openThread(threadId),
           onOpenEventCitation: () => navigate('calendar'),
-          onRetry: turnId => perform(retry(cur(), viewRef.current, turnId)),
+          onRetry: turnId => once('submit', () => perform(retry(cur(), viewRef.current, turnId))),
           onUseAnotherProvider: () => openRoute('settings/ai'),
           onConfirmProposal: proposalId =>
             once('accept', () => perform(decide(cur(), viewRef.current, true, proposalId))),

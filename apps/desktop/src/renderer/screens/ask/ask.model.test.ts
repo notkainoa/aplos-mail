@@ -174,7 +174,7 @@ test('queued follow-ups run in order after the answer finishes', () => {
       { id: 'q2', text: 'second follow-up', searchAll: false },
     ],
   };
-  const stepped = advance(state, [frame('done')]);
+  const stepped = advance(state, [frame('done')], false);
   assert.equal(stepped.effects[0].kind, 'run');
   const effect = stepped.effects[0] as Extract<(typeof stepped.effects)[number], { kind: 'run' }>;
   assert.equal(effect.question, 'first follow-up');
@@ -395,7 +395,7 @@ test('a dock reopened after the run finished settles from the seeded run log, no
       },
     ],
   };
-  const stepped = advance(state, frames);
+  const stepped = advance(state, frames, false);
   assert.equal(stepped.state.run?.settled, true);
   const view = dockView(stepped.state, inputs({ frames, conversation }));
   assert.equal(view.working, false);
@@ -465,9 +465,22 @@ test('a queued send-now and a cursor pick hold for consent the same way', () => 
     queued: [{ id: 'q1', text: 'follow up?', searchAll: true }],
   };
   const held = sendNow(working, dockView(working, gate), 'q1');
-  assert.deepEqual(held.effects, []);
+  // The card jumped ahead of the running answer, so the hold still stops it: Allow later runs only
+  // the held question — no orphan run beside it.
+  assert.deepEqual(held.effects, [{ kind: 'cancel', runId: 'r1' }]);
+  assert.equal(held.state.run?.stopped, true);
+  assert.equal(held.state.run?.settled, true);
   assert.deepEqual(held.state.consentHeld, { question: 'follow up?', searchAll: true });
   assert.deepEqual(held.state.queued, []);
+  // Allow starts just the held run; the stopped one is remembered in `past`, not left running.
+  const sent = consentGranted(held.state);
+  assert.deepEqual(
+    sent.effects.map(e => e.kind),
+    ['run'],
+  );
+  assert.equal(sent.state.run?.question, 'follow up?');
+  assert.equal(sent.state.past.length, 1);
+  assert.equal(sent.state.past[0].stopped, true);
   // Return on an empty view's suggestion holds too.
   const emptyGate = { ...initialAsk, cursor: 0 };
   const picked = pickCursor(emptyGate, dockView(emptyGate, gate));

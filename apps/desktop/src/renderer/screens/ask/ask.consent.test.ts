@@ -6,9 +6,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Consent } from '../../data';
+import type { Consent, ProgressFrame } from '../../data';
 import {
+  advance,
   consentGate,
+  consentGranted,
   consentLineNeeded,
   consentNeededInput,
   dockView,
@@ -17,6 +19,7 @@ import {
   setField,
   submit,
   type AskInputs,
+  type AskState,
 } from './ask.model';
 import { dockWidthPersisted } from './askStore';
 
@@ -132,6 +135,60 @@ test('the line shows while consent is owed and hides only for the dismissed vers
     false,
     'unloaded record: no line yet',
   );
+});
+
+test('consent coming due mid-run holds the next queued card instead of running it', () => {
+  const state: AskState = {
+    ...initialAsk,
+    conversationId: 'conv-1',
+    run: {
+      clientId: 'c1',
+      question: 'q?',
+      searchAll: false,
+      runId: 'r1',
+      stopped: false,
+      settled: false,
+    },
+    queued: [
+      { id: 'q1', text: 'first follow-up', searchAll: true },
+      { id: 'q2', text: 'second follow-up', searchAll: false },
+    ],
+  };
+  const done = {
+    frame: 'progress',
+    dbEpoch: 'demo',
+    seq: 1,
+    runId: 'r1',
+    source: 'ask',
+    kind: 'done',
+    turnId: 'turn-1',
+  } as ProgressFrame;
+
+  // Still granted: the queue advances as before.
+  const ran = advance(state, [done], false);
+  assert.deepEqual(
+    ran.effects.map(e => e.kind),
+    ['run'],
+  );
+  assert.equal(ran.state.run?.question, 'first follow-up');
+  assert.equal(ran.state.consentHeld, undefined);
+
+  // Flipped ungranted before the run ended: the card waits for Allow, the rest of the queue stays.
+  const held = advance(state, [done], true);
+  assert.deepEqual(held.effects, [], 'the queued question is not sent without Allow');
+  assert.equal(held.state.run?.settled, true);
+  assert.deepEqual(held.state.consentHeld, { question: 'first follow-up', searchAll: true });
+  assert.deepEqual(
+    held.state.queued.map(q => q.id),
+    ['q2'],
+  );
+  const sent = consentGranted(held.state);
+  assert.deepEqual(
+    sent.effects.map(e => e.kind),
+    ['run'],
+  );
+  assert.equal(sent.state.run?.question, 'first follow-up');
+  assert.equal(sent.state.run?.searchAll, true);
 });
 
 test('only a dragged width is written back; the seed and the restored value are not', () => {

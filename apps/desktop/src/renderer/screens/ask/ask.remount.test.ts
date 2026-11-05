@@ -69,7 +69,7 @@ test('a dock reopened after the run finished settles from the run-scoped seed, n
       'the terminal frame is in the log',
     );
 
-    const stepped = advance(kept, frames);
+    const stepped = advance(kept, frames, false);
     assert.equal(stepped.state.run?.settled, true);
     const view = dockView(stepped.state, inputs({ conversation, frames }));
     assert.equal(view.working, false);

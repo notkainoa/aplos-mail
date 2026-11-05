@@ -536,17 +536,18 @@ export function sendNow(state: AskState, view: DockView, id: string): AskStep {
   if (!card) return step(state);
   const rest = { ...state, queued: state.queued.filter(q => q.id !== id) };
   if (card.text.trim() === '') return step(rest);
-  if (view.consentNeeded) {
-    return step({
-      ...rest,
-      consentHeld: { question: card.text.trim(), searchAll: card.searchAll },
-    });
-  }
   const effects: AskEffect[] = [];
   let base = rest;
   if (view.working && state.run) {
     if (state.run.runId) effects.push({ kind: 'cancel', runId: state.run.runId });
     base = { ...rest, run: { ...state.run, stopped: true, settled: true } };
+  }
+  // A held card still stops the answer it jumped ahead of: Allow then runs only the held question.
+  if (view.consentNeeded) {
+    return step(
+      { ...base, consentHeld: { question: card.text.trim(), searchAll: card.searchAll } },
+      ...effects,
+    );
   }
   const started = startRun(base, card.text.trim(), card.searchAll);
   return step(started.state, ...effects, ...started.effects);
@@ -591,9 +592,14 @@ export function runRefused(
 
 /**
  * Call when the frames change. Once the run ends it settles, and if it finished normally the next queued question
- * runs. A stopped or failed run leaves the queue for the owner (⌘Return sends a card).
+ * runs — unless consent came due mid-run, in which case the card is held for the line's Allow like any other run
+ * start. A stopped or failed run leaves the queue for the owner (⌘Return sends a card).
  */
-export function advance(state: AskState, frames: readonly ProgressFrame[]): AskStep {
+export function advance(
+  state: AskState,
+  frames: readonly ProgressFrame[],
+  consentNeeded: boolean,
+): AskStep {
   const run = state.run;
   if (!run || run.settled) return step(state);
   const live = foldFrames(frames, run.runId);
@@ -609,7 +615,14 @@ export function advance(state: AskState, frames: readonly ProgressFrame[]): AskS
   if (!ok) return step(settled);
   const [first, ...rest] = settled.queued;
   if (!first) return step(settled);
-  if (first.text.trim() === '') return advance({ ...settled, queued: rest }, frames);
+  if (first.text.trim() === '') return advance({ ...settled, queued: rest }, frames, consentNeeded);
+  if (consentNeeded) {
+    return step({
+      ...settled,
+      queued: rest,
+      consentHeld: { question: first.text.trim(), searchAll: first.searchAll },
+    });
+  }
   return startRun({ ...settled, queued: rest }, first.text.trim(), first.searchAll);
 }
 
