@@ -2,7 +2,7 @@
  * The new app: the shell (`./shell/Shell`) around the screen slot.
  *
  * The slot shows the F9 boot-proof Home for the `home` screen, and a plain placeholder line for every other screen
- * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-screens'`). The boot proof reads Home's section
+ * (Later and the lists are `ui-home`'s, the calendar `ui-calendar`'s, Settings `ui-settings`'s). The boot proof reads Home's section
  * labels and counts and the Low importance band from a `home` window on the engine it is given, through the F2 typed
  * client and the contract's types. It talks to the client directly because `ui-home` has not replaced it with
  * `useHome()` yet.
@@ -11,7 +11,7 @@
  * window's `total` (here it only ever shows the section's up-to-three names); there is no cursor, density setting or
  * Low sheet behind the band; rows are never read.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
@@ -37,6 +37,8 @@ import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
 import { ComposeScreen, composeHeader } from './screens/compose';
 import { ReaderScreen } from './screens/reader';
+import { SearchScreen } from './screens/search';
+import { SettingsMount } from './shell/settingsHost';
 import { useRunCommand } from './shell/KeysProviders';
 import { Shell } from './shell/Shell';
 import { ENGINE_UNREACHABLE_COPY, LIST_FAILED_COPY } from './shell/failure-copy';
@@ -348,8 +350,20 @@ function ComposeSlot() {
   );
 }
 
-/** Labels other lanes open as placeholders (search, help); any other label is a folder id. */
-const PLACEHOLDER_LABELS: readonly string[] = ['Search', 'Help'];
+/** The Ask dock's host component type, once its chunk has resolved. */
+type AskDockHostComponent = typeof import('./screens/ask').AskDockHost;
+
+/**
+ * The Ask dock's chunk, split out so this module stays loadable in node tests: the host's own stylesheet import only
+ * resolves in the app build. Loaded once, on first call.
+ */
+let askDockModule: Promise<typeof import('./screens/ask')> | undefined;
+function loadAskDockModule(): Promise<typeof import('./screens/ask')> {
+  return (askDockModule ??= import('./screens/ask'));
+}
+
+/** Labels other lanes open as placeholders (help); any other label is a folder id. */
+const PLACEHOLDER_LABELS: readonly string[] = ['Help'];
 
 const LIST_PLACES: readonly string[] = ['all', 'drafts', 'sent', 'trash', 'spam'];
 
@@ -357,10 +371,11 @@ function isListPlace(screen: string): screen is Exclude<ListWhich, { label: stri
   return LIST_PLACES.includes(screen);
 }
 
-/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded); nothing (so the placeholder) for the rest. */
+/** The screen slot: Home, Later, the lists and Done are `ui-home`'s, the reader is `ui-reader`'s (it goes back to where `openThread` recorded), Search is `ui-ask`'s, Settings is `ui-settings`' mounted by `shell/settingsHost`; nothing (so the placeholder) for the rest. */
 export function renderScreen(_client: AppClient, screen: Screen) {
   if (typeof screen !== 'string' && screen.label === 'thread') return <ReaderScreen />;
   if (typeof screen !== 'string' && screen.label === 'compose') return <ComposeSlot />;
+  if (typeof screen !== 'string' && screen.label === 'Search') return <SearchScreen />;
   if (typeof screen !== 'string' && screen.label === 'one by one') return <OneByOneSlot />;
   if (typeof screen !== 'string')
     return PLACEHOLDER_LABELS.includes(screen.label) ? undefined : (
@@ -370,10 +385,36 @@ export function renderScreen(_client: AppClient, screen: Screen) {
   if (screen === 'calendar') return <CalendarSlot />;
   if (screen === 'later') return <LaterSlot />;
   if (screen === 'done') return <DoneSlot />;
+  if (screen === 'settings') return <SettingsMount />;
   return isListPlace(screen) ? <ListSlot which={screen} /> : undefined;
 }
 
 /** The new renderer's root. */
 export function App({ client }: AppProps) {
-  return <Shell renderScreen={screen => renderScreen(client, screen)} />;
+  // The dock chunk resolves once at start-up; until then renderDock returns nothing so the shell mounts no pane.
+  // An empty pane for the frame the chunk took would measure zero wide and pop to the dock's width after.
+  const [DockHost, setDockHost] = useState<AskDockHostComponent | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadAskDockModule()
+      .then(module => {
+        if (live) setDockHost(() => module.AskDockHost);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <Shell
+      renderScreen={screen => renderScreen(client, screen)}
+      renderDock={(tab, onTab, close) =>
+        DockHost ? (
+          <Suspense fallback={null}>
+            <DockHost tab={tab} onTab={onTab} onClose={close} />
+          </Suspense>
+        ) : null
+      }
+    />
+  );
 }

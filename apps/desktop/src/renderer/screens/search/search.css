@@ -1,0 +1,12 @@
+/* The Search page's own wrappers (DESIGN §7.9). Layout only: the list column, the field row and the Google line. */
+.search-screen {
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  margin-inline: auto;
+}
+.search-screen__column {
+  display: flex;
+  flex-direction: column;
+}
+.search-screen__remote {
+  margin-top: var(--space-3);
+}

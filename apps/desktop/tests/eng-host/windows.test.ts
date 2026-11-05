@@ -7,6 +7,7 @@ import {
   activation,
   createOnboarding,
   fadeOpacities,
+  finishOptionsOf,
   isFirstRun,
   settingsPaneUrl,
   startupWindow,
@@ -62,12 +63,13 @@ class FadeWindow extends FakeWindow {
   };
 }
 
-function harness(options: { testMode?: boolean; fade?: boolean } = {}) {
+function harness(options: { testMode?: boolean; fade?: boolean; navigateThrows?: boolean } = {}) {
   const log = {
     onboarding: [] as FakeWindow[],
     mail: [] as FakeWindow[],
     ends: 0,
     shown: [] as number[],
+    navigated: [] as Array<{ id: number; to: string }>,
     quitting: false,
     timers: [] as Array<{ run: () => void; ms: number; cleared: boolean }>,
     endFails: false,
@@ -90,6 +92,10 @@ function harness(options: { testMode?: boolean; fade?: boolean } = {}) {
       if (log.endFails) throw new Error('Unsupported engine method.');
     },
     announceShown: win => void log.shown.push(win.id),
+    navigate: (win, to) => {
+      if (options.navigateThrows) throw new Error('webContents is gone');
+      log.navigated.push({ id: win.id, to });
+    },
     isQuitting: () => log.quitting,
     testMode: options.testMode ?? false,
     setTimer: (run, ms) => {
@@ -356,4 +362,86 @@ test('fade: a window that fails to take an opacity closes at once; test mode nev
   await done;
   assert.deepEqual((quiet.log.onboarding[0] as FadeWindow).opacities, []);
   assert.equal(quiet.log.onboarding[0].destroyed, true);
+});
+
+test('finish with a destination tells the mail window once, after it is shown; without one it does not', async () => {
+  const withTo = harness();
+  withTo.controller.start(fresh, { atLogin: false });
+  const handoff = withTo.controller.finish({ to: 'settings.ai' });
+  assert.deepEqual(withTo.log.navigated, [], 'not before the mail window paints');
+  withTo.mailWindow()!.paint();
+  await handoff;
+  assert.deepEqual(withTo.log.navigated, [{ id: withTo.mailWindow()!.id, to: 'settings.ai' }]);
+
+  const plain = harness();
+  plain.controller.start(fresh, { atLogin: false });
+  const done = plain.controller.finish();
+  plain.mailWindow()!.paint();
+  await done;
+  assert.deepEqual(plain.log.navigated, []);
+});
+
+test('finish with a destination also navigates a mail window that is already up; a joined call keeps the first', async () => {
+  const up = harness();
+  up.controller.start(fresh, { atLogin: false });
+  const mail = up.seedMail();
+  mail.visible = true;
+  mail.painted = true;
+  await up.controller.finish({ to: 'settings.ai' });
+  assert.deepEqual(up.log.navigated, [{ id: mail.id, to: 'settings.ai' }]);
+
+  const joined = harness();
+  joined.controller.start(fresh, { atLogin: false });
+  const a = joined.controller.finish();
+  const b = joined.controller.finish({ to: 'settings.ai' });
+  joined.mailWindow()!.paint();
+  await Promise.all([a, b]);
+  assert.deepEqual(
+    joined.log.navigated,
+    [],
+    'the first call had no destination, the joiner is ignored',
+  );
+});
+
+test('finishOptionsOf accepts the one named destination and nothing else', () => {
+  assert.deepEqual(finishOptionsOf({ to: 'settings.ai' }), { to: 'settings.ai' });
+  for (const payload of [
+    undefined,
+    null,
+    {},
+    { to: 'inbox' },
+    { to: 1 },
+    { to: { x: 1 } },
+    'settings.ai',
+  ])
+    assert.deepEqual(finishOptionsOf(payload), {}, JSON.stringify(payload));
+});
+
+test('a destination is never sent when the handoff is abandoned, nothing to hand over, or the sender throws', async () => {
+  const abandoned = harness();
+  abandoned.controller.start(fresh, { atLogin: false });
+  const gone = abandoned.controller.finish({ to: 'settings.ai' });
+  abandoned.mailWindow()!.destroy();
+  await gone;
+  assert.deepEqual(abandoned.log.navigated, []);
+
+  const idle = harness();
+  await idle.controller.finish({ to: 'settings.ai' });
+  assert.deepEqual(idle.log.navigated, [], 'no onboarding window: nothing to hand over');
+  // The refused call must not leave a handoff registered: a later one still runs.
+  idle.controller.start(fresh, { atLogin: false });
+  const later = idle.controller.finish({ to: 'settings.ai' });
+  idle.mailWindow()!.paint();
+  await later;
+  assert.equal(idle.log.navigated.length, 1);
+});
+
+test('a sender that throws does not block the handoff: the welcome window still closes', async () => {
+  const w = harness({ navigateThrows: true });
+  w.controller.start(fresh, { atLogin: false });
+  const handoff = w.controller.finish({ to: 'settings.ai' });
+  w.mailWindow()!.paint();
+  await handoff;
+  assert.equal(w.log.onboarding[0].destroyed, true);
+  assert.equal(w.mailWindow()!.visible, true);
 });

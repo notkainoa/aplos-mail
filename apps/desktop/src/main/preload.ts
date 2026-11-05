@@ -2,42 +2,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { Bridge, Listener } from '@aplos/contract/legacy/types';
 import { legacyMethods } from '@aplos/contract/allowlists';
 import { exposeEngineBridge } from '../host/transports/port';
+import { createEventHub } from '../shared/event-hub';
 import { MAIL_KEY_CHANNEL, mailKeyEvent } from '../shared/mail-keys';
 
 const allowed = new Set<string>(legacyMethods);
-const listeners = new Set<Listener>();
-const queued: Parameters<Listener>[0][] = [];
-ipcRenderer.on(
-  'aplos:event',
-  (_event: Electron.IpcRendererEvent, event: Parameters<Listener>[0]) => {
-    if (
-      !listeners.size &&
-      (event.type === 'deep-link' || event.type === 'command' || event.type === 'prepare-close')
-    ) {
-      queued.push(event);
-      if (queued.length > 50) queued.shift();
-    }
-    for (const listener of listeners) listener(event);
-  },
+const hub = createEventHub();
+ipcRenderer.on('aplos:event', (_event: Electron.IpcRendererEvent, event: Parameters<Listener>[0]) =>
+  hub.emit(event),
 );
 // A key main relayed from the sealed mail frame: one narrow message, validated again here, anything else dropped.
 // Never queued: a key nobody is listening for is stale.
 ipcRenderer.on(MAIL_KEY_CHANNEL, (_event: Electron.IpcRendererEvent, message: unknown) => {
   const event = mailKeyEvent(message);
-  if (event) for (const listener of listeners) listener(event);
+  if (event) hub.deliver(event);
 });
 const bridge: Bridge = {
   invoke: async <T>(method: string, payload?: unknown): Promise<T> => {
     if (!allowed.has(method)) throw new Error('Unsupported application method.');
     return ipcRenderer.invoke('aplos:invoke', method, payload) as Promise<T>;
   },
-  subscribe: (listener: Listener) => {
-    listeners.add(listener);
-    for (const event of queued.splice(0)) listener(event);
-    return () => {
-      listeners.delete(listener);
-    };
-  },
+  subscribe: (listener: Listener, options?: { only?: readonly string[] }) =>
+    hub.subscribe(listener, options),
 };
 contextBridge.exposeInMainWorld('aplos', bridge);
 

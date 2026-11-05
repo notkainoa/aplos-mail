@@ -54,6 +54,12 @@ async function boot(): Promise<void> {
       <App client={client} />
     </StrictMode>,
   );
+  // Main may ask this window to open a screen (first sync's "Open Settings"); typed, so it never takes held app events.
+  const [{ listenMainNavigate }, { openRoute }] = await Promise.all([
+    import('./shell/mainNavigate'),
+    import('./shell'),
+  ]);
+  listenMainNavigate(window.aplos, openRoute);
 }
 
 async function bootOnboarding(): Promise<void> {

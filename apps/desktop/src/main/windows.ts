@@ -315,6 +315,19 @@ const onboarding = createOnboarding({
   announceShown: port => {
     for (const win of windows) if (win.id === port.id) announceShown(win);
   },
+  navigate: (port, to) => {
+    for (const win of windows) {
+      if (win.id !== port.id || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+      const send = () => {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed())
+          win.webContents.send('aplos:event', { type: 'navigate', payload: { to } });
+      };
+      // A page still loading has no preload yet and would drop the event: send it when it has loaded.
+      if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+      else send();
+    }
+  },
+
   isQuitting: () => quitting || closing,
   testMode: isTest,
   setTimer: (run, ms) => setTimeout(run, ms),

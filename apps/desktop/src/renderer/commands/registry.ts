@@ -682,18 +682,21 @@ export function createRegistry(
 
   function settingEntries(stack: readonly ContextName[]): PaletteEntry[] {
     if (!settingsTable || !stack.includes('global')) return [];
-    return settingsTable.list().map(s => ({
-      id: s.id,
-      label: s.label,
-      group: 'Settings' as const,
-      suggested: false,
-      keys: '',
-      keywords: s.keywords ?? [],
-      destructive: false,
-      page: false,
-      route: settingRoute(s),
-      detail: SETTING_SECTIONS.find(section => section.id === s.section)?.label,
-    }));
+    return settingsTable
+      .list()
+      .filter(s => s.available?.() !== false)
+      .map(s => ({
+        id: s.id,
+        label: s.label,
+        group: 'Settings' as const,
+        suggested: false,
+        keys: '',
+        keywords: s.keywords ?? [],
+        destructive: false,
+        page: false,
+        route: settingRoute(s),
+        detail: SETTING_SECTIONS.find(section => section.id === s.section)?.label,
+      }));
   }
 
   function commandsForPalette(ctx: CommandContext): readonly PaletteEntry[] {
@@ -702,6 +705,7 @@ export function createRegistry(
     for (const group of PALETTE_GROUPS) {
       for (const spec of commands) {
         if (spec.group !== group || spec.palette === false) continue;
+        if (spec.paletteWhen !== undefined && ctx.conditions[spec.paletteWhen] !== true) continue;
         if (!spec.contexts.some(c => stack.includes(c))) continue;
         if (!isEnabled(spec.id, ctx)) continue;
         out.push({

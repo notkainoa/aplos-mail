@@ -167,7 +167,7 @@ fires for the out-of-process frame's keys (measured), and main sends the embeddi
 `aplos:mail-key`, `{ key }`, only when the focused frame is the sealed `aplos-mail://m/<token>/` document, only for a
 listed key (`shared/mail-keys.ts` `MAIL_KEYS`, which `FALLBACK_KEYS` is built from), keydown only, **no** Ctrl, Cmd or Alt
 and Shift only for J and K, **no** auto-repeat. Main validates the message before it sends and preload before it
-delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued).
+delivers it, as the event `{ type: 'mail-key', payload: { key } }` to `window.aplos.subscribe` listeners (never queued). The key hook subscribes with `window.aplos.subscribe(listener, { only: ['mail-key'] })`: a listener that names its types hears only those and never takes the deep-link, command and prepare-close events that wait for the app's own first plain subscribe.
 Main does not cancel the key, so an arrow or Page Down still scrolls the letter; the shell decides what it handles.
 The sealed slot maps it to the same `onKey` path and never also listens to the frame (the srcdoc listener never runs
 for a sealed frame, and main never relays a srcdoc frame's keys): "mail-key wiring" below.
@@ -193,6 +193,8 @@ when the key arrives:
    or Ask on the shell's key layers or open sheet, an open overlay in the host DOM (role `dialog`, `alertdialog` or `menu`,
    `aria-modal="true"`, `data-keyctx`, as the shell's `overlayContexts` reads them), or a host layer marked `data-keylayer`
    (the reader's find bar). A key relayed from inside an email can never close or cancel anything above the letter.
+   Every new overlay MUST carry at least one of those markers (role `dialog`/`alertdialog`/`menu`, `aria-modal`, `data-keyctx`
+   or `data-keylayer`): the check reads only the markers, so an overlay with none of them is invisible to it and the check fails open.
 
 4. **Reader allowlist.** Main validates the full shared list (`isMailKey`), then the sealed path hands on only
    `SEALED_READER_KEYS`: j, k, J, K and Escape. Main relays without cancelling (it cannot cancel a key from an
@@ -295,15 +297,16 @@ prototypes, viewport and container units rewritten to bounded px); they stay her
    letter then fails at the deadline) or feeds it another element. The sanitiser's `m-` namespacing for `name`/`id` is
    what prevents it (the corpus's dom-clobbering entries pass). Pin that with a test, or have the reporter read through
    `Document.prototype` getters it captures first.
-4. **Quirks mode: done (#249), one visible cost.** Every served document now starts with `<!DOCTYPE html>`. Checked
-   with original demo letters through `render` + `withReporter` in the sealed host at 640 px: heights now follow the
-   content (a `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its
-   letter), table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air). The
-   one regression is the classic image gap: an image alone in a table cell sits on the text baseline, so sliced-image
-   newsletters show a strip of the cell's background under every image row (8 px with the reading CSS's line height;
-   0 in quirks). The host cannot fix it in a sealed document. REQUEST: an almost-standards doctype (for example HTML
-   4.01 Transitional with its system identifier), which differs from standards only in that line-height rule, or an
-   equivalent rule in the reading CSS.
+4. **Quirks mode: done (#249); the image gap: done (`mail-html/7`).** Every served document starts with
+   `READING_DOCTYPE` (`packages/mail-html/src/index.ts`): HTML 4.01 Transitional with its system identifier, which
+   Chromium treats as almost-standards mode (`document.compatMode` still `CSS1Compat`). Heights follow the content (a
+   `height="100%"` table or a `height:50%` band no longer fills a viewport; good in a frame sized to its letter),
+   table text inherits the body's size, and a `<p>` in a cell keeps its margins (a few px of extra air); with the plain
+   `<!DOCTYPE html>` the classic image gap also showed (an image alone in a table cell sat on the text baseline, a strip
+   of the cell's background under every sliced-image row, 6 px at the reading CSS in Chromium, font-dependent). The
+   almost-standards rule removes exactly that strip: cell 120 beside a 120 px image. Pinned in real Chromium by
+   `reporter.e2e.ts` ("an image alone in a table cell leaves no baseline strip", with a control that shows the strip
+   under `<!DOCTYPE html>`). The system identifier is a mode switch only; nothing fetches it. The development-only srcdoc frame (`document.ts`, scriptless, stand-in engine) still writes `<!doctype html>`, so a sliced-image letter shows the strip there and not in the sealed frame; ui-reader may adopt the same doctype when it next touches that file.
 5. **Viewport units.** Rewrite `vh`, `vw`, `vmin`, `vmax` (and the `dvh`/`svh`/`lvh` family) to fixed lengths in
    the sanitiser, or lay the frame out at a fixed viewport height, so a letter's height cannot depend on its frame's
    ("Runaway growth"; the host's fence is the backstop, not the fix).

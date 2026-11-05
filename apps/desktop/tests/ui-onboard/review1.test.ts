@@ -170,6 +170,7 @@ describe('review1 finding 1: a failed handoff', () => {
     const handlers = firstSyncCommands({
       view: () => view,
       drillOpen: () => false,
+      notice: () => undefined,
       onOpen: () => {
         const out = reduceFlow(flow, { type: 'open' });
         flow = out.state;
@@ -609,7 +610,7 @@ describe('review1 finding 6: Reconnect and Open Settings', () => {
     const { each } = replay(atFirstSync(), [
       { type: 'openSettings' },
       { type: 'handoffFailed' },
-      { type: 'next' },
+      { type: 'retryHandoff' },
     ]);
     assert.deepEqual(each[0], [
       { type: 'setupEnd', reason: 'finished' },
@@ -743,6 +744,7 @@ describe('review1 other findings', () => {
       const handlers = firstSyncCommands({
         view: () => build(status([acct()])),
         drillOpen: () => true,
+        notice: () => undefined,
         onOpen: noop,
         onDrill: noop,
         onLeaveDrill: noop,

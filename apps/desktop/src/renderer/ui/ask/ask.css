@@ -45,7 +45,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(-1 * var(--space-1));
+  /* Inside the pane's edge: the dock pane clips overflow, so a handle straddling the edge loses half its grab. */
+  left: 0;
   z-index: var(--z-sticky);
   width: var(--space-2);
   cursor: col-resize;
@@ -247,7 +248,12 @@
 .ui-ask-dock__input::placeholder {
   color: var(--dim);
 }
+/* The ring belongs to the rounded field card, not the bare textarea: it follows the container's
+   --radius-lg with the same focus tokens and no layout shift. */
 .ui-ask-dock__input:focus-visible {
+  outline: none;
+}
+.ui-ask-dock__field:has(.ui-ask-dock__input:focus-visible) {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
@@ -441,7 +447,7 @@
   left: 0;
   z-index: var(--z-tooltip);
   display: block;
-  width: calc(var(--dock-w) - var(--space-8));
+  width: calc(var(--ask-dock-w) - var(--space-8));
   max-width: calc(var(--dock-w-narrow) - var(--space-8));
   margin-bottom: var(--space-2);
   padding: var(--space-3) var(--space-4);

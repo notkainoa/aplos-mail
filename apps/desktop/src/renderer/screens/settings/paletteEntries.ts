@@ -6,6 +6,7 @@
  * route "settings/<section>#<row>"; the screen scrolls to the row and focuses its control.
  */
 import { registerSetting, settingId, type SettingEntry, type SettingSection } from '../../commands';
+import { rowAvailable } from './availability';
 
 export interface RowSpec {
   readonly section: SettingSection;
@@ -136,7 +137,27 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   row('help', 'devDetails', 'Developer details', ['model names', 'scores', 'debug']),
 ];
 
-/** The palette entry for a row. */
+/** Anchors drawn only in some states (per account, a missing permission, a key, the demo, a listed provider). */
+const CONDITIONAL: readonly string[] = [
+  'calendar/calendarPermission',
+  'accounts/accountAi',
+  'accounts/accountColour',
+  'accounts/lease',
+  'notifications/perAccount',
+  'ai/geminiPaid',
+  'help/demoLoad',
+];
+
+/** True for rows whose anchor is conditional, including the per-provider rows (`provider-*`, `server-*`). */
+export function isConditional(spec: Pick<RowSpec, 'section' | 'anchor'>): boolean {
+  return (
+    CONDITIONAL.includes(`${spec.section}/${spec.anchor}`) ||
+    (spec.section === 'ai' &&
+      (spec.anchor.startsWith('provider-') || spec.anchor.startsWith('server-')))
+  );
+}
+
+/** The palette entry for a row. A conditional row carries a live `available`, so it is not offered when not drawn. */
 export function entryFor(spec: RowSpec): SettingEntry {
   return {
     id: settingId(spec.section, spec.anchor),
@@ -144,6 +165,7 @@ export function entryFor(spec: RowSpec): SettingEntry {
     section: spec.section,
     rowAnchor: spec.anchor,
     keywords: spec.keywords,
+    ...(isConditional(spec) ? { available: () => rowAvailable(spec.section, spec.anchor) } : {}),
   };
 }
 

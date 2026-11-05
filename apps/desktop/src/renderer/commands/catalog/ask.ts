@@ -8,6 +8,9 @@ export const ASK_COMMANDS: readonly CommandSpec[] = [
     keys: [{ chord: 'Enter', inTextField: true }],
     contexts: ['ask'],
     group: 'Ask',
+    // The key also answers an empty field (accept a proposal, pick a suggestion), but the label is
+    // wrong there: the palette lists it only with a question typed.
+    paletteWhen: 'askText',
   },
   {
     id: 'ask.searchAllMail',
@@ -16,6 +19,7 @@ export const ASK_COMMANDS: readonly CommandSpec[] = [
     keys: [{ chord: 'meta+Enter', inTextField: true }],
     contexts: ['ask'],
     group: 'Ask',
+    paletteWhen: 'askText',
   },
   {
     id: 'ask.sendNow',

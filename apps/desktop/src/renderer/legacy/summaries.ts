@@ -38,18 +38,22 @@ function watch() {
   watching = true;
   // Sync may have started before this window was listening; ask what is in flight, minus anything that ends meanwhile.
   let ended: Set<string> | undefined = new Set();
-  bridge.subscribe(event => {
-    if (event.type !== 'ai.summarizing') return;
-    const { threadId, active } = event.payload as { threadId: string; active: boolean };
-    if (active) {
-      working.add(threadId);
-      ended?.delete(threadId);
-    } else {
-      working.delete(threadId);
-      ended?.add(threadId);
-    }
-    notify();
-  });
+  bridge.subscribe(
+    event => {
+      if (event.type !== 'ai.summarizing') return;
+      const { threadId, active } = event.payload as { threadId: string; active: boolean };
+      if (active) {
+        working.add(threadId);
+        ended?.delete(threadId);
+      } else {
+        working.delete(threadId);
+        ended?.add(threadId);
+      }
+      notify();
+      // `only`: this window-wide watcher may start before the app subscribes and must not take its held events.
+    },
+    { only: ['ai.summarizing'] },
+  );
   void invoke<string[]>('ai.summarizing')
     .then(
       ids => {

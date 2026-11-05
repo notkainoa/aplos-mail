@@ -125,7 +125,7 @@ export function FirstSync(props: FirstSyncProps) {
           title={view.title}
           titleId={titleId}
           footer={{ note: 'escOpensAplos', buttons: [leave] }}
-          phaseStatus={view.announcement}
+          phaseStatus={props.notice?.text ?? view.announcement}
         >
           <div className="fs-rows" data-compact="true">
             {view.rows.map(row => (
@@ -171,7 +171,7 @@ export function FirstSync(props: FirstSyncProps) {
         titleId={titleId}
         lede={view.outcome === 'ready' ? undefined : view.lede}
         footer={{ note: 'escOpensAplos', buttons }}
-        phaseStatus={view.announcement}
+        phaseStatus={props.notice?.text ?? view.announcement}
       >
         {view.outcome === 'ready' ? (
           <div className="fs-rows">

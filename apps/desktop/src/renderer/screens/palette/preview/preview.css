@@ -1,0 +1,28 @@
+/* The preview gallery's frame: a gray window, a white pane, the palette overlaying it. */
+.prev-window {
+  display: flex;
+  height: 100vh;
+  background: var(--gray);
+}
+.prev-sidebar {
+  width: 208px;
+  flex: none;
+}
+.prev-pane {
+  position: relative;
+  flex: 1;
+  margin: var(--space-2) var(--space-2) var(--space-2) 0;
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+.prev-page {
+  padding: var(--space-6);
+}
+.prev-index {
+  padding: var(--space-6);
+  font: var(--type-ui);
+}
+.prev-index a {
+  color: var(--accent);
+}
