@@ -99,7 +99,7 @@ export async function boot() {
   setClock(harnessClock);
   await settle(scheduler.flush);
   const flush = async () => settle(scheduler.flush);
-  return { connection, flush };
+  return { connection, flush, engine };
 }
 
 export async function settle(flush: () => void) {
