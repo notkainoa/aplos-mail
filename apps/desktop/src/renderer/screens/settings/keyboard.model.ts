@@ -141,12 +141,12 @@ export type ChordVerdict =
     }
   | { readonly kind: 'refused'; readonly text: string };
 
-const REFUSED: Partial<Record<KeymapIssue['reason'], (chord: string) => string>> = {
-  reserved: c =>
-    `${c} belongs to macOS or edits text, so it can’t be a shortcut. Press other keys.`,
-  invalidChord: c => `${c} can’t be a shortcut. Press other keys.`,
-  invalidEntry: c => `${c} can’t be a shortcut. Press other keys.`,
-};
+const REFUSED: Partial<Record<KeymapIssue['reason'], (chord: string, detail?: string) => string>> =
+  {
+    reserved: (c, detail) => `${detail ?? `${c} can’t be a shortcut`}. Press other keys.`,
+    invalidChord: c => `${c} can’t be a shortcut. Press other keys.`,
+    invalidEntry: c => `${c} can’t be a shortcut. Press other keys.`,
+  };
 
 /** The command's keys after remapping its first key to `chord` (the rest stay). */
 export function remapChords(current: readonly string[], chord: string): string[] {
@@ -171,7 +171,7 @@ export function judgeChord(commandId: string, chord: string, ui: KeyFields): Cho
     }
   })();
   const refused = issues.find(i => REFUSED[i.reason]);
-  if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown) };
+  if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown, refused.detail) };
   const clash = issues.find(
     i => (i.reason === 'conflict' || i.reason === 'shadowed') && i.with?.length,
   );

@@ -73,6 +73,11 @@
   outline: none;
 }
 
+/* The letter frame is a document surface, not a control: it holds focus for its scroll keys without a ring. */
+.aplos-mailframe__frame:focus-visible {
+  outline: none;
+}
+
 .aplos-reader__find {
   margin-bottom: var(--space-4);
 }

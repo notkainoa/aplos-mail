@@ -3,10 +3,11 @@
  * command, and how a place maps to a screen. No React here, so the grouping is testable on its own.
  */
 import type { CountsBlock } from '../data';
+import type { SettingRoute } from '../commands';
 import type { CommandId, IconName } from '../ui/props';
 import type { Screen } from './index';
 
-/** A sidebar row. Search and Help have no screen of their own yet, so they open a labelled placeholder. */
+/** A sidebar row. Search has no screen of its own yet, so it opens a labelled placeholder; Help opens Settings at its "Help & about" section (`placeRoute`). */
 export type PlaceId =
   | 'search'
   | 'home'
@@ -75,11 +76,16 @@ export const ALL_PLACES: readonly Place[] = [...TOP_PLACES, ...MAIL_PLACES, ...F
 
 const LABEL_SCREENS: Readonly<Partial<Record<PlaceId, string>>> = {
   search: 'Search',
-  help: 'Help',
 };
 
-/** The screen a place opens. */
+/** The Settings route a place opens instead of a plain screen, when it has one (Help → "Help & about"). */
+export function placeRoute(id: PlaceId): SettingRoute | null {
+  return id === 'help' ? 'settings/help' : null;
+}
+
+/** The screen a place opens. Help's screen is `settings`; `placeRoute` selects the section. */
 export function placeScreen(id: PlaceId): Screen {
+  if (id === 'help') return 'settings';
   const label = LABEL_SCREENS[id];
   return label ? { label } : (id as Exclude<Screen, { label: string }>);
 }

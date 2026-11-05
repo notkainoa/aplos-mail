@@ -185,14 +185,15 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'list.nextSection',
     label: 'Next section',
-    keys: ['Tab'],
+    // Tab moves between regions (shell/regions.ts); the command stays in the palette.
+    keys: [],
     contexts: ['list'],
     group: 'Go to',
   },
   {
     id: 'list.previousSection',
     label: 'Previous section',
-    keys: ['shift+Tab'],
+    keys: [],
     contexts: ['list'],
     group: 'Go to',
   },

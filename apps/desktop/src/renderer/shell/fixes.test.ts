@@ -6,7 +6,7 @@ import test, { afterEach, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAppRegistry } from '../commands';
 import { failedText, noAccountsKnown } from '../App';
-import { dispatchShellKey, overlayContexts, shellKeyContext } from './keys-dispatch';
+import { dispatchShellKey, openOverlays, overlayContexts, shellKeyContext } from './keys-dispatch';
 import { DEFAULT_HANDLERS, shellRegistryFor } from './ShellRegistry';
 import { scopeIsStale } from './Shell';
 import { accountGone, ownFrame, reconnectDefault } from './SheetHost';
@@ -356,6 +356,7 @@ test('the shell ask.dictate fallback opens the dock and flags pending dictation 
     openTab: tab => opened.push(tab),
     toggleDock: () => undefined,
     togglePalette: () => undefined,
+    toggleSidebar: () => undefined,
   });
   askStore.update(s => ({ ...s, pendingDictation: undefined }));
   commands['ask.dictate']!.run({} as never);
@@ -406,4 +407,63 @@ test('the dock pane landmark names its tab', async () => {
   const { dockLabel } = await import('./Shell');
   assert.equal(dockLabel('ask'), 'Ask');
   assert.equal(dockLabel('today'), 'Today');
+});
+
+// ---- round 5: collapse focus handoff, modal-only overlay gate ---------------------------------
+
+test('collapsing the sidebar hands focus to the strip toggle; expanding back lands on the region', async () => {
+  const { sidebarCollapseFocus } = await import('./Shell');
+  const { resetRegionFocus } = await import('./regions');
+  resetRegionFocus();
+  const focused: string[] = [];
+  const mkEl = (name: string) => ({
+    focus: () => focused.push(name),
+    hasAttribute: () => true,
+    setAttribute: () => undefined,
+    getAttribute: (attr: string) => (attr === 'data-region' ? 'sidebar' : null),
+    contains: () => false,
+    querySelector: () => mkEl('row'),
+    querySelectorAll: () => [],
+  });
+  const strip = mkEl('strip-toggle');
+  const region = mkEl('sidebar');
+  const body = {};
+  const doc = {
+    activeElement: body as unknown,
+    body,
+    documentElement: {},
+    querySelector: (selector: string) =>
+      selector === '.aplos-shell__strip button'
+        ? strip
+        : selector === '[data-region="sidebar"]'
+          ? region
+          : null,
+  };
+  Object.assign(globalThis, { document: doc });
+  sidebarCollapseFocus(true);
+  assert.deepEqual(focused, ['strip-toggle'], 'collapsed with the page shell focused');
+  sidebarCollapseFocus(false);
+  assert.equal(focused[1], 'row', 'expanding lands on the region target');
+  // Focus kept somewhere else stays put on either direction.
+  doc.activeElement = { listRow: true };
+  focused.length = 0;
+  sidebarCollapseFocus(true);
+  sidebarCollapseFocus(false);
+  assert.deepEqual(focused, [], 'a focused control keeps its place');
+});
+
+test('openOverlays counts real overlays only: a screen data-keyctx (reader, search, ask) is not one', () => {
+  assert.deepEqual(openOverlays(chain({}, { 'data-keyctx': 'reader' })), []);
+  assert.deepEqual(openOverlays(chain({}, { 'data-keyctx': 'search,list' })), []);
+  assert.deepEqual(openOverlays(chain({}, { 'data-keyctx': 'ask' })), []);
+  assert.deepEqual(openOverlays(chain({ role: 'menuitem' }, { role: 'menu' })), ['menu']);
+  assert.deepEqual(openOverlays(chain({}, { role: 'dialog' }, { 'data-keyctx': 'reader' })), [
+    'dialog',
+  ]);
+  assert.deepEqual(
+    openOverlays(chain({ role: 'option' }, { role: 'dialog', class: 'ui-palette__panel' })),
+    ['palette'],
+  );
+  assert.deepEqual(openOverlays(chain({}, { class: 'ui-date-presets' })), ['datePicker']);
+  assert.deepEqual(openOverlays(null), []);
 });

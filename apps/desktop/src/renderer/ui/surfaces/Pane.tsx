@@ -133,13 +133,25 @@ export function Pane(props: ComponentPropsMap['Pane']) {
   };
   if (props.kind === 'dock') {
     return (
-      <section ref={props.ref} className="ui-pane" data-kind="dock" aria-label={props.label}>
+      <section
+        ref={props.ref}
+        className="ui-pane"
+        data-kind="dock"
+        data-region="dock"
+        aria-label={props.label}
+      >
         {props.children}
       </section>
     );
   }
   return (
-    <section ref={props.ref} className="ui-pane" data-kind="main" aria-label={props.label}>
+    <section
+      ref={props.ref}
+      className="ui-pane"
+      data-kind="main"
+      data-region="main"
+      aria-label={props.label}
+    >
       {props.header ? <PaneHeader header={props.header} scrolled={scrolled} /> : null}
       <div className="ui-pane__body" onScroll={props.header ? onScroll : undefined}>
         {props.children}
