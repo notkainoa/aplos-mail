@@ -325,7 +325,12 @@ export function expandKeymapEntries(
     const ownDefault = defaults.some(d => chordId(d.chord) === chordId(chord));
     const reserved = reservedReason(chord);
     if (reserved && !ownDefault) {
-      const why = reserved === 'text' ? 'edits text' : 'belongs to macOS';
+      const why =
+        reserved === 'text'
+          ? 'edits text'
+          : reserved === 'system'
+            ? 'belongs to macOS'
+            : 'moves focus between regions';
       throw new KeymapRefusal(
         'reserved',
         `${formatChord(chord)} ${why}, so it can’t run ${owner.id}`,
@@ -657,6 +662,7 @@ export function createRegistry(
   }
 
   function describeKeys(id: CommandId, stack?: readonly ContextName[]): string {
+    if (stack && disabledHere(id, stack)) return '';
     return formatAlternatives(keysFor(id, stack));
   }
 

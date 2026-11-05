@@ -5,7 +5,7 @@
  */
 import type { AccountId, ViewSpec } from '../../data';
 import type { ContextName } from '../../commands';
-import type { RowAction, RowLayout } from '../../ui/props';
+import type { IconName, RowAction, RowLayout } from '../../ui/props';
 
 /** Which list a `ListScreen` shows. A label is named by its folder id (the `label` view's `folderId`). */
 export type ListWhich = 'all' | 'drafts' | 'sent' | 'trash' | 'spam' | { readonly label: string };
@@ -26,8 +26,12 @@ export interface ListConfig {
   readonly layout: RowLayout;
   /** The view it watches, apart from the account. */
   readonly view: ViewShape;
-  /** DESIGN 7.14's sentence for an empty list. */
+  /** DESIGN 7.14's sentence for an empty list; no trailing period (owner override 2026-11-05). */
   readonly empty: string;
+  /** The one muted mark above the empty sentence. */
+  readonly emptyIcon: IconName;
+  /** A second, quieter line under the empty sentence, only where it helps. */
+  readonly emptyDetail?: string;
   /** Date groups ("Today", "Yesterday") use section labels in All mail and Done (DESIGN 7.4). */
   readonly dateGroups: boolean;
   /** Which date a date group reads: when the thread last moved, or when it was finished. */
@@ -71,7 +75,8 @@ export const ALL_CONFIG: ListConfig = {
     name: 'All mail',
     scope: 'list:all',
     view: { kind: 'mailbox', role: 'all' },
-    empty: 'No mail here yet.',
+    empty: 'No mail here yet',
+    emptyIcon: 'tray',
     hoverActions: TRIAGE_ACTIONS,
   }),
   dateGroups: true,
@@ -83,7 +88,8 @@ export const DRAFTS_CONFIG: ListConfig = config({
   name: 'Drafts',
   scope: 'list:drafts',
   view: { kind: 'drafts' },
-  empty: 'No drafts.',
+  empty: 'No drafts',
+  emptyIcon: 'file',
   hoverActions: [],
 });
 
@@ -93,7 +99,8 @@ export const SENT_CONFIG: ListConfig = config({
   name: 'Sent',
   scope: 'list:sent',
   view: { kind: 'mailbox', role: 'sent' },
-  empty: 'Nothing sent yet.',
+  empty: 'Nothing sent yet',
+  emptyIcon: 'send',
   hoverActions: TRIAGE_ACTIONS,
 });
 
@@ -103,7 +110,8 @@ export const TRASH_CONFIG: ListConfig = config({
   name: 'Trash',
   scope: 'list:trash',
   view: { kind: 'mailbox', role: 'trash' },
-  empty: 'Trash is empty.',
+  empty: 'Trash is empty',
+  emptyIcon: 'trash',
   hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Restore' }],
 });
 
@@ -113,7 +121,8 @@ export const SPAM_CONFIG: ListConfig = config({
   name: 'Spam',
   scope: 'list:spam',
   view: { kind: 'mailbox', role: 'spam' },
-  empty: 'Spam is empty.',
+  empty: 'Spam is empty',
+  emptyIcon: 'spam',
   hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Not spam' }],
 });
 
@@ -125,7 +134,8 @@ export const DONE_CONFIG: ListConfig = {
     name: 'Done mail',
     scope: 'list:done',
     view: { kind: 'done' },
-    empty: 'Nothing done yet.',
+    empty: 'Nothing done yet',
+    emptyIcon: 'check-circle',
     hoverActions: [{ commandId: 'done.moveToHome', icon: 'home', label: 'Move to Home' }],
   }),
   layout: 'done',
@@ -142,7 +152,8 @@ export const LATER_CONFIG: ListConfig = {
     name: 'Later',
     scope: 'list:later',
     view: { kind: 'later' },
-    empty: 'Nothing set aside for later.',
+    empty: 'Nothing set aside for later',
+    emptyIcon: 'clock',
     hoverActions: [{ commandId: 'mail.setDate', icon: 'clock', label: 'Change date' }, DONE_ACTION],
   }),
   layout: 'later',
@@ -155,7 +166,9 @@ export const BOOKMARKS_CONFIG: ListConfig = config({
   name: 'Bookmarks',
   scope: 'list:bookmarks',
   view: { kind: 'bookmarks' },
-  empty: 'No bookmarks. Press B on any email.',
+  empty: 'No bookmarks',
+  emptyIcon: 'bookmark',
+  emptyDetail: 'Press B on any email',
   hoverActions: [DONE_ACTION],
 });
 
@@ -167,7 +180,8 @@ export function labelConfig(folderId: string): ListConfig {
     name: 'Label',
     scope: `list:label:${folderId}`,
     view: { kind: 'label', folderId },
-    empty: 'No mail here yet.',
+    empty: 'No mail here yet',
+    emptyIcon: 'tag',
     hoverActions: TRIAGE_ACTIONS,
   });
 }

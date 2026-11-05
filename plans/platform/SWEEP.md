@@ -48,3 +48,21 @@ Run 2026-11-05 on `~/Applications-test/Aplos Mail (revamp).app` built from `93c2
 - **Search**: REQUEST to Engine 4 (`eng-contract` methods / real-path). Repro: real-engine
   packaged app, Search → type "receipt" → Enter → "Couldn't load this list" + rate-limit copy.
   Evidence `~/.local/share/aplos-mail-review/sweep/93c21b85/shots/search.png`.
+
+## Run 2 — 2026-11-05, revamp `6f1ad17c` (includes #319 shell-chrome batch)
+
+App rebuilt to `~/Applications-test/Aplos Mail (revamp).app` (397 MB, verify-hardening
+`--expect adhoc` 10/10). Evidence `~/.local/share/aplos-mail-review/sweep/6f1ad17c/`.
+
+**#319 verified packaged:** new chrome renders — sidebar collapse toggle, compose button at top,
+key-hint chips on the featured card ("Later ←", "Done →"), Ask chip top-right.
+
+**Unchanged (engine PRs #313/#315/#317/#320 still open):** Calendar + views "Couldn't load this
+list"; Search "Couldn't load this list" on query; Settings pane fully blank (the stub the
+#320 fail-safe addresses); "Help isn't in this build yet" — and per #319 Help now routes through
+Settings → Help & about, so with Settings blank the Help section is unreachable too.
+
+**Script note:** the sweep's Settings nav enumeration now trips the new sidebar-collapse toggle
+(and collapsed-sidebar clicks miss by design), so `settings-sections`/`help` rows show
+click-miss flags that are sweep artifacts, not app bugs. A collapsed sidebar + blank pane is the
+end state — the owner can recover by toggling the sidebar back.

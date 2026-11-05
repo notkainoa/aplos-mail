@@ -2,6 +2,7 @@
 // Run: cd apps/desktop && npx tsx --test src/renderer/ui/list/list-parts.test.tsx
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { before, describe, test } from 'node:test';
 import type { LowSheetGroup } from '../props';
 import { Chip, CommitChip, CommitEdge, EmptyLine, ErrorLine, LowBand, LowSheet } from './index';
@@ -164,7 +165,7 @@ describe('LowBand and LowSheet', () => {
     );
   });
 
-  test('empty sheet: "No low-importance mail." with Back to Home', () => {
+  test('empty sheet: "No low-importance mail" with Back to Home', () => {
     const m = render(
       <LowSheet
         open
@@ -177,7 +178,7 @@ describe('LowBand and LowSheet', () => {
         onClose={noop}
       />,
     );
-    assert.match(text(m), /No low-importance mail\. Back to Home Esc/);
+    assert.match(text(m), /No low-importance mail Back to Home Esc/);
     assert.doesNotMatch(m, /role="listbox"/);
   });
 });
@@ -295,27 +296,47 @@ describe('Chip', () => {
 
 describe('EmptyLine', () => {
   test('one line, no icon; display block with detail and the Undo last · Z action', () => {
-    const line = render(<EmptyLine text="No drafts." />);
-    assert.match(line, /class="ui-empty-line" data-size="line" role="status"/);
-    assert.equal(text(line), 'No drafts.');
+    const line = render(<EmptyLine text="No drafts" />);
+    assert.match(
+      line,
+      /class="ui-empty-line" data-size="line" data-placement="inline" role="status"/,
+    );
+    assert.equal(text(line), 'No drafts');
     assert.doesNotMatch(line, /<svg/);
     const zero = render(
       <EmptyLine
+        placement="pane"
         size="display"
-        text="You handled 12 emails."
+        text="You handled 12 emails"
         detail="Next: Design review at 2:00 PM"
         action={{ label: 'Undo last', commandId: 'app.undo', emphasis: 'text', onSelect: noop }}
       />,
     );
-    assert.match(zero, /data-size="display"/);
-    assert.equal(text(zero), 'You handled 12 emails. Next: Design review at 2:00 PM Undo last Z');
+    assert.match(zero, /data-size="display" data-placement="pane"/);
+    assert.equal(text(zero), 'You handled 12 emails Next: Design review at 2:00 PM Undo last Z');
     assert.doesNotMatch(zero, /data-variant="filled"/);
+  });
+
+  test('one muted mark above the line; the pane placement carries the centre hook', () => {
+    const pane = render(<EmptyLine placement="pane" icon="trash" text="Trash is empty" />);
+    assert.match(pane, /data-placement="pane"/);
+    assert.match(
+      pane,
+      /ui-empty-line__copy"><svg[^>]*ui-list-icon" data-size="sm" data-icon="trash"[^>]*aria-hidden="true"/,
+    );
+    const css = readFileSync(new URL('./list.css', import.meta.url), 'utf8');
+    assert.match(
+      css,
+      /\.aplos-screen:has\(> \.ui-empty-line\[data-placement='pane'\]\) \{[^}]*display: flex/s,
+      'the slot becomes a column the pane line can fill',
+    );
+    assert.match(css, /\.ui-empty-line\[data-placement='pane'\][^}]*justify-content: safe center/s);
   });
 
   test('No accounts: filled Add an account with plus, then Try demo mail', () => {
     const m = render(
       <EmptyLine
-        text="Add an account to bring in your mail."
+        text="Add an account to bring in your mail"
         action={{ label: 'Add an account', icon: 'plus', emphasis: 'filled', onSelect: noop }}
         secondaryAction={{ label: 'Try demo mail', onSelect: noop }}
       />,
@@ -324,7 +345,7 @@ describe('EmptyLine', () => {
     assert.match(text(m), /Add an account Try demo mail$/);
     const search = render(
       <EmptyLine
-        text="No mail matches 'dentist'."
+        text="No mail matches 'dentist'"
         action={{
           label: 'Search all mail on Google',
           keys: 'Return',

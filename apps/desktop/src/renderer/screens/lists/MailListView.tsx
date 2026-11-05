@@ -104,7 +104,14 @@ function Groups({ list }: { readonly list: MailListState }) {
 export function MailListView({ list }: { readonly list: MailListState }) {
   const { config, view, cursor, actions, confirmation, pointer } = list;
   if (view.status === 'live' && view.ids.length === 0 && view.total === 0)
-    return <ListEmpty text={config.empty} state={list.empty} />;
+    return (
+      <ListEmpty
+        text={config.empty}
+        icon={config.emptyIcon}
+        detail={config.emptyDetail}
+        state={list.empty}
+      />
+    );
   if (view.status === 'failed' && view.ids.length === 0) return <ListFailed />;
   if (view.status !== 'live' && view.ids.length === 0) return null;
   const binding: ListboxBinding = {

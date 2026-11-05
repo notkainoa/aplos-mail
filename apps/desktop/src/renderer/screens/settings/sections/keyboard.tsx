@@ -93,7 +93,7 @@ export function Keyboard({ data, view, actions, host }: SectionProps) {
                   <KeyRecorder
                     commandId={row.commandId}
                     label={row.label}
-                    chords={row.chords}
+                    chords={row.shown}
                     changed={row.changed}
                     state={mine ? mine.state : 'idle'}
                     pendingChord={mine?.pendingChord}

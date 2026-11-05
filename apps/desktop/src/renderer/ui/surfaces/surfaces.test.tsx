@@ -30,7 +30,10 @@ describe('Pane', () => {
         <p>Body</p>
       </Pane>,
     );
-    assert.match(html, /^<section class="ui-pane" data-kind="main" aria-label="Home">/);
+    assert.match(
+      html,
+      /^<section class="ui-pane" data-kind="main" data-region="main" aria-label="Home">/,
+    );
     assert.match(html, /<header class="ui-pane__head">/);
     assert.ok(!html.includes('data-scrolled'), 'no hairline before scroll');
     assert.match(html, /aria-label="Back"/);
@@ -151,7 +154,10 @@ describe('Pane', () => {
         Dock
       </Pane>,
     );
-    assert.equal(dock, '<section class="ui-pane" data-kind="dock" aria-label="Ask">Dock</section>');
+    assert.equal(
+      dock,
+      '<section class="ui-pane" data-kind="dock" data-region="dock" aria-label="Ask">Dock</section>',
+    );
     const bare = render(
       <Pane kind="main" label="Aplos">
         Fatal
