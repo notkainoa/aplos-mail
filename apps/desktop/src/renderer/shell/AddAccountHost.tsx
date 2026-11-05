@@ -1,10 +1,10 @@
 /**
  * The inline Add account host (DESIGN 7.1, 7.11 step 2; plan 30 4.5): a Dialog over the mail window that connects one
  * more Google account without opening the setup window. It runs the onboarding lane's Accounts connect flow
- * (`onboarding/connect.ts`) on the data layer's ports and draws it in the Dialog's own frame, because
- * `onboarding/steps/AccountsStep` draws the setup window's frame (the strip, the dashes, "Setup continues in the
- * background"). The rules (Esc, Return, the toast, ending a wait) live in `add-account-controller.ts`; this file
- * subscribes to it and draws.
+ * (`onboarding/connect.ts`) on the data layer's ports and draws the lane's `AccountsBody`
+ * (`onboarding/steps/Accounts`) inside the Dialog's own frame — the step wraps the same body in `OnboardingStep`'s
+ * strip, dashes, title and "Setup continues in the background" note, which the dialog does not have. The rules
+ * (Esc, Return, the toast, ending a wait) live in `add-account-controller.ts`; this file subscribes to it and draws.
  *
  * Opened by `openAddAccount()` (the account switcher's "Add an account", the empty state's button); it is the shell's
  * `addAccount` sheet, so one sheet shows at a time, the modal `sheet` key context is on, and focus returns to the
@@ -15,21 +15,15 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import {
   ACCOUNTS_LABELS,
-  ADDRESS_FIELD_ID,
   useConnectFrames,
   type AccountsMode,
   type ChooseNotice,
   type ConnectPorts,
 } from '../onboarding/connect';
-import { connectSentence } from '../onboarding/copy';
-import { noticeSentence } from '../onboarding/steps/Accounts';
+import { AccountsBody } from '../onboarding/steps/Accounts';
 import { dataConnectPorts } from '../onboardingPorts';
 import { Button } from '../ui/buttons-keys';
-import { TextField } from '../ui/controls';
-import { ErrorLine } from '../ui/list';
-import { ChoiceRow } from '../ui/onboarding';
-import { ProgressSegments } from '../ui/status';
-import { Dialog, Text } from '../ui/surfaces';
+import { Dialog } from '../ui/surfaces';
 import { FOCUS_IDS, addAccountFocusId, createAddAccountController } from './add-account-controller';
 import { closeSheet, pushToast, useRegisterCommands } from './index';
 
@@ -38,85 +32,12 @@ const LEDE =
   'Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.';
 const WAITING = 'Waiting for Google in your browser…';
 
-const noop = () => {};
-
-/** The id of the one line under the field (a notice or a failed connect). */
-const LINE_ID = 'add-account-line';
-
-/** What sits under the field: a refusal of the address itself, or one line about something else. */
-type Under =
-  | { readonly kind: 'invalid'; readonly text: string }
-  | { readonly kind: 'notice'; readonly text: string }
-  | { readonly kind: 'failure'; readonly text: string };
-
 /**
- * `TextField` links its own error to the field, so it gets the sentence only when the address itself is refused
- * (`invalid`: aria-invalid and the red ring are true). A notice or a failed connect is not about the address, so it is
- * one line under the field instead (the setup window's wording and look), and the field is pointed at it here.
+ * The id of the body's one live region (the notice or failed-connect line). The step's `phaseStatus` announces for
+ * the step; the dialog has no status line of its own, so the body's line is the status — `liveLineId` also makes a
+ * refused address the field's own error and points the field at the line.
  */
-function useDescribedBy(line: boolean) {
-  useEffect(() => {
-    if (!line) return undefined;
-    const input = document.getElementById(ADDRESS_FIELD_ID);
-    input?.setAttribute('aria-describedby', LINE_ID);
-    return () => {
-      if (input?.getAttribute('aria-describedby') === LINE_ID) {
-        input.removeAttribute('aria-describedby');
-      }
-    };
-  }, [line]);
-}
-
-/** The one line that is not the field's own error: the only live region in the dialog's body. */
-function UnderLine({ under }: { readonly under: Under }) {
-  return (
-    <div id={LINE_ID} role="status">
-      {under.kind === 'failure' ? (
-        <ErrorLine
-          kind="reason"
-          text={under.text}
-          retryable={false}
-          placement="checklist"
-          onAction={noop}
-        />
-      ) : (
-        <Text variant="small" tone="ink-2">
-          {under.text}
-        </Text>
-      )}
-    </div>
-  );
-}
-
-/** The field, and under it the one line that belongs to it. */
-function AddressBlock(props: {
-  readonly address: string;
-  readonly under?: Under;
-  readonly keycap: boolean;
-  readonly onEdit: (address: string) => void;
-  readonly onSubmit: () => void;
-}) {
-  const { under } = props;
-  useDescribedBy(under !== undefined && under.kind !== 'invalid');
-  return (
-    <>
-      <TextField
-        id={ADDRESS_FIELD_ID}
-        value={props.address}
-        onChange={props.onEdit}
-        onSubmit={props.onSubmit}
-        label="Email address"
-        placeholder="name@example.com"
-        type="email"
-        size="lg"
-        icon="mail"
-        {...(props.keycap ? { trailingKeys: 'Return' as const } : {})}
-        {...(under?.kind === 'invalid' ? { error: under.text } : {})}
-      />
-      {under && under.kind !== 'invalid' ? <UnderLine under={under} /> : null}
-    </>
-  );
-}
+const LINE_ID = 'add-account-line';
 
 /** Props for `AddAccountView`. */
 export interface AddAccountViewProps {
@@ -139,64 +60,33 @@ export interface AddAccountViewProps {
   readonly onClose: () => void;
 }
 
-function underOf(notice: ChooseNotice | null): Under | undefined {
-  if (!notice) return undefined;
-  const text = noticeSentence(notice);
-  return { kind: notice === 'invalid' ? 'invalid' : 'notice', text };
-}
-
 function bodyOf(props: AddAccountViewProps) {
-  const { mode } = props;
-  if (mode === 'waiting') {
+  const body = (
+    <AccountsBody
+      mode={props.mode}
+      address={props.address}
+      notice={props.notice}
+      failure={props.failure}
+      accounts={[]}
+      onEdit={props.onEdit}
+      onSubmit={props.onSubmit}
+      onChooseGoogle={props.onChooseGoogle}
+      liveLineId={LINE_ID}
+    />
+  );
+  // The step titles its wait ("Waiting for Google in your browser…"); the dialog's title stays "Add an account",
+  // so the line belongs to this frame — the one live region over the body's segments.
+  if (props.mode === 'waiting') {
     return (
       <div className="aplos-add-account__block">
         <p className="aplos-add-account__wait" role="status">
           {WAITING}
         </p>
-        <ProgressSegments variant="waiting" label="Waiting for sign-in" />
+        {body}
       </div>
     );
   }
-  const field = { address: props.address, onEdit: props.onEdit, onSubmit: props.onSubmit };
-  if (mode === 'typed') {
-    return (
-      <div className="aplos-add-account__block">
-        <AddressBlock {...field} keycap={false} />
-        <ChoiceRow
-          id="add-account-found-google"
-          role="static"
-          label="Google"
-          icon="mail"
-          detail="You sign in on Google's own page in your browser. Aplos never sees your password."
-          status={{ text: 'Found', tone: 'ok' }}
-        />
-      </div>
-    );
-  }
-  if (mode === 'failed') {
-    const problem = connectSentence(props.failure ?? undefined, {
-      address: props.address || undefined,
-    });
-    return (
-      <div className="aplos-add-account__block">
-        <AddressBlock {...field} keycap={false} under={{ kind: 'failure', text: problem }} />
-      </div>
-    );
-  }
-  const under = underOf(props.notice);
-  return (
-    <div className="aplos-add-account__block">
-      <AddressBlock {...field} keycap {...(under ? { under } : {})} />
-      <Text variant="label">Or choose a provider</Text>
-      <ChoiceRow
-        id="add-account-google"
-        role="link"
-        label="Google"
-        icon="mail"
-        onPress={props.onChooseGoogle}
-      />
-    </div>
-  );
+  return <div className="aplos-add-account__block">{body}</div>;
 }
 
 function footerOf({ mode, onCancel, onClear, onClose, onConnect }: AddAccountViewProps) {
