@@ -1,10 +1,11 @@
 /**
  * The Today tab's view model (DESIGN §7.7 Today). Pure, no React.
  *
- * Rules: today's timed events from now on, the next one marked, the following two in full and the rest folded
- * ("2 more"); the last event behind you dimmed; a now line; free gaps of 30 minutes or more between now and the last
- * event of the day (never after it). Declined, cancelled, hidden and free (transparent) events are left out, so they
- * neither show nor block a gap. All-day events sit above the timeline. Times are local.
+ * Rules: today's timed events that have not ended yet — the one under way marked, the next one, the following two
+ * in full and the rest folded ("2 more"); what already ended only counts into the quiet "N earlier" line; a now
+ * line; free gaps of 30 minutes or more between now and the last event of the day (never after it). Declined,
+ * cancelled, hidden and free (transparent) events are left out, so they neither show nor block a gap. All-day
+ * events sit above the timeline. Times are local.
  *
  * `CalendarGrid` (view 'agenda', agenda 'today') draws the agenda from `events` and `now`; this model chooses which
  * events it gets and works out the facts the screen states itself (the fold, the announcement) and that tests check.
@@ -119,8 +120,8 @@ export interface TodayModel {
   /** What CalendarGrid gets: today's all-day and timed events that block time. */
   readonly events: readonly CalendarEventData[];
   readonly allDay: readonly AgendaEntry[];
-  /** The last event already over, dimmed. */
-  readonly behind?: AgendaEntry;
+  /** Timed events already over; they fold into the "N earlier" line, never rows. */
+  readonly earlier: number;
   /** Under way now. */
   readonly current: readonly AgendaEntry[];
   readonly next?: AgendaEntry;
@@ -134,7 +135,7 @@ export interface TodayModel {
   readonly gaps: readonly FreeGap[];
   /** The gaps before the three shown events. */
   readonly shownGaps: readonly FreeGap[];
-  /** "4 events · next at 11:00 AM" (the same sentence the agenda's header shows). */
+  /** "4 left today · next at 11:00 AM" (the same sentence the agenda's header shows). */
   readonly headline: string;
   readonly empty: boolean;
 }
@@ -193,7 +194,8 @@ export function todayModel(
   const timed = entries.filter(e => !e.event.allDay);
   const upcoming = timed.filter(e => e.start >= now);
   const current = timed.filter(e => e.start < now && e.end > now);
-  const past = timed.filter(e => e.end <= now);
+  const earlier = timed.filter(e => e.end <= now).length;
+  const left = allDay.length + current.length + upcoming.length;
   const ahead = upcoming.slice(0, SHOWN_AHEAD);
 
   const gaps: FreeGap[] = [];
@@ -213,21 +215,14 @@ export function todayModel(
   }
   const shownIds = new Set(ahead.map(e => e.event.id));
   const folded = upcoming.slice(SHOWN_AHEAD);
-  const count = allDay.length + timed.length;
   const next = upcoming[0];
-  // `past` is sorted by start; the event behind you is the one that ended most recently (a long earlier meeting
-  // outranks a short later one).
-  const behind = past.reduce<AgendaEntry | undefined>(
-    (latest, e) => (latest === undefined || e.end > latest.end ? e : latest),
-    undefined,
-  );
 
   return {
     day,
     now: toIsoDateTime(now),
     events: entries.map(e => e.event),
     allDay,
-    behind,
+    earlier,
     current,
     next,
     following: ahead.slice(1),
@@ -235,7 +230,10 @@ export function todayModel(
     moreText: folded.length > 0 ? `${folded.length} more` : undefined,
     gaps,
     shownGaps: gaps.filter(g => shownIds.has(g.beforeId)),
-    headline: `${count} ${count === 1 ? 'event' : 'events'} · ${next ? `next at ${clock(next.start)}` : 'none left today'}`,
-    empty: count === 0,
+    headline:
+      left === 0
+        ? 'Nothing left today.'
+        : `${left} left today${next ? ` · next at ${clock(next.start)}` : ''}`,
+    empty: entries.length === 0,
   };
 }

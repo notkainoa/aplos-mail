@@ -1,7 +1,8 @@
 /**
  * The agenda body of CalendarGrid: the narrow-pane calendar list ('full') and the Today tab's compact agenda
- * ('today', DESIGN 7.7: the last event behind you, the now-line, the next event and the following two, with the
- * free gaps between). Internal to the calendar family.
+ * ('today', DESIGN 7.7: what is left of the day — the event under way, the now-line, the next event and the
+ * following two, with the free gaps between — plus a quiet "N earlier" for what already ended). Internal to the
+ * calendar family.
  */
 import { useId } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
@@ -12,7 +13,7 @@ import { GridAction } from './GridAction';
 import { allDayOn, daysOf } from './layout';
 import { NowLine } from './NowLine';
 
-type RowState = 'past' | 'next' | 'later';
+type RowState = 'next' | 'later';
 
 function row(
   props: CalendarGridProps,
@@ -62,10 +63,6 @@ function row(
   );
 }
 
-function plural(n: number): string {
-  return `${n} ${n === 1 ? 'event' : 'events'}`;
-}
-
 function TodayAgenda(props: CalendarGridProps) {
   const { events, now, emptyAction } = props;
   const day = dayOf(now);
@@ -81,21 +78,35 @@ function TodayAgenda(props: CalendarGridProps) {
   const current = timed.filter(
     e => new Date(e.start).getTime() < nowMs && new Date(e.end).getTime() > nowMs,
   );
-  const past = timed.filter(e => new Date(e.end).getTime() <= nowMs);
+  const earlier = timed.filter(e => new Date(e.end).getTime() <= nowMs).length;
+  const left = todays.length - earlier;
   const ahead = upcoming.slice(0, 3);
   const next = upcoming[0];
-  const sub = `${plural(todays.length)} · ${next ? `next at ${timeOf(next.start)}` : 'none left today'}`;
+  const sub =
+    left === 0
+      ? 'Nothing left today.'
+      : `${left} left today${next ? ` · next at ${timeOf(next.start)}` : ''}`;
   const detail = (e: CalendarEventData, lead?: string): string =>
     [lead, e.calendar.name, durationText(minutesBetween(e.start, e.end))]
       .filter(Boolean)
       .join(' · ');
 
+  // The events already over fold into one quiet line where the dimmed rows used to sit.
+  const earlierLine =
+    earlier > 0 ? (
+      <p key="earlier" className="ui-calendar-grid__earlier">
+        <span aria-hidden="true" />
+        <span>{`${earlier} earlier`}</span>
+      </p>
+    ) : null;
+
   const parts: ReactNode[] = [];
   for (const e of todays.filter(x => x.allDay)) parts.push(row(props, e, e.calendar.name));
-  // The whole day shows: every event already over, dimmed, so the header's count matches the rows.
-  for (const e of past) parts.push(row(props, e, undefined, 'past'));
+  if (earlierLine) parts.push(earlierLine);
   for (const e of current) parts.push(row(props, e, detail(e, 'Now')));
-  parts.push(<NowLine key="now" now={now} variant="agenda" />);
+  // The now-line stays between the running event and the next one; with nothing timed left there is no between.
+  if (current.length + upcoming.length > 0)
+    parts.push(<NowLine key="now" now={now} variant="agenda" />);
   ahead.forEach((e, i) => {
     const before = i === 0 ? undefined : ahead[i - 1];
     const from = before
@@ -119,11 +130,14 @@ function TodayAgenda(props: CalendarGridProps) {
         <h2 className="ui-calendar-grid__today-day">{longDay(day)}</h2>
         <p className="ui-calendar-grid__today-sub">{sub}</p>
       </div>
-      {todays.length === 0 ? (
-        <div className="ui-calendar-grid__empty" data-view="agenda" role="status">
-          <span>Nothing scheduled.</span>
-          {emptyAction ? <GridAction action={emptyAction} /> : null}
-        </div>
+      {left === 0 ? (
+        <>
+          <div className="ui-calendar-grid__empty" data-view="agenda" role="status">
+            <span>{todays.length === 0 ? 'Nothing scheduled.' : 'Nothing left today.'}</span>
+            {todays.length === 0 && emptyAction ? <GridAction action={emptyAction} /> : null}
+          </div>
+          {earlierLine}
+        </>
       ) : (
         <div className="ui-calendar-grid__ag-list">{parts}</div>
       )}

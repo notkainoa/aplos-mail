@@ -27,10 +27,12 @@ host degrades quietly as noted.
   screen; attach `calendar.newEvent` there so it opens the create flow on today.
 - **`useCalendars` hook or `Calendar` state frames.** Today fetches `Calendar/get` once per mount; a watched hook
   would keep names/colours live.
-- **`AgendaView` 'today' shows the whole day now** (round 3): every past event lists dimmed instead of the one
-  latest-started ended event, so the header's "N events" matches the rows; the model's `behind` (max end) rule
-  stands. Still open: each gap is measured from the previous shown event's end rather than the model's running
-  `free` cursor, so a long overlapping event can still yield a wrong or missing "Free for …" line.
+- **`AgendaView` 'today' shows only what is left now** (owner decision, F7 — we edited it, needs
+  lane-approved:ui-calendar): finished timed events fold into one quiet "N earlier" line where the dimmed rows
+  were, the header counts what is left ("N left today" · next at …, or "Nothing left today." beside the earlier
+  count), and the now-line draws only while a timed event remains; the model's `behind` rule is gone. Still open:
+  each gap is measured from the previous shown event's end rather than the model's running `free` cursor, so a
+  long overlapping event can still yield a wrong or missing "Free for …" line.
 
 ## engine/contract (already frozen — confirm only)
 

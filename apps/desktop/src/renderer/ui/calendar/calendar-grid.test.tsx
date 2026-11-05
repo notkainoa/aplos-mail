@@ -225,17 +225,67 @@ test('CalendarGrid agenda today: header, now-line, next event, following gaps', 
     <CalendarGrid {...gridProps({ view: 'agenda', agenda: 'today', label: 'Today' })} />,
   );
   assert.match(out, /<h2[^>]*>Thursday, October 29<\/h2>/);
-  assert.match(out, /4 events · next at 11:00 AM/);
+  assert.match(out, /4 left today · next at 11:00 AM/);
   assert.match(out, /role="separator"[^>]*aria-label="Now, 10:00 AM"/);
   assert.match(out, /Next · Work · 15 min/);
   assert.match(out, /Free for 2 h 45 min/);
   assert.match(out, /Free for 3 h/);
   assert.match(out, /Now · Personal · 1 h/);
   assert.ok(out.indexOf('Standup') < out.indexOf('Design review'));
+  // Nothing has ended yet, so no "earlier" line.
+  assert.doesNotMatch(out, /ui-calendar-grid__earlier/);
   assertCleanCopy(out);
 });
 
-test('CalendarGrid agenda today: nothing left says so; an empty day offers the action', () => {
+test('CalendarGrid agenda today: finished events fold into one "N earlier" line', () => {
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        agenda: 'today',
+        label: 'Today',
+        events: [
+          ev('a', 'Breakfast with Leah', '2026-10-29T07:00:00', '2026-10-29T08:00:00'),
+          ev('b', 'Call Sami', '2026-10-29T08:00:00', '2026-10-29T09:00:00'),
+          ev('c', 'Budget check', '2026-10-29T09:00:00', '2026-10-29T09:30:00'),
+          ev('d', 'Standup', '2026-10-29T11:00:00', '2026-10-29T11:15:00'),
+          ev('e', 'Design review', '2026-10-29T14:00:00', '2026-10-29T14:30:00'),
+        ],
+      })}
+    />,
+  );
+  // Three finished + two left: the rows are only what is left, the rest one quiet count.
+  assert.match(out, /2 left today · next at 11:00 AM/);
+  assert.equal((out.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 2);
+  assert.match(out, /3 earlier/);
+  assert.doesNotMatch(out, /Breakfast with Leah|Budget check/);
+  assertCleanCopy(out);
+});
+
+test('CalendarGrid agenda today: a running event counts as left beside an overlapped finished one', () => {
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        view: 'agenda',
+        agenda: 'today',
+        label: 'Today',
+        events: [
+          ev('long', 'Workshop', '2026-10-29T08:00:00', '2026-10-29T10:30:00'),
+          ev('short', 'Standup', '2026-10-29T09:00:00', '2026-10-29T09:15:00'),
+          ev('noon', 'Lunch with Leah', '2026-10-29T12:00:00', '2026-10-29T13:00:00'),
+        ],
+      })}
+    />,
+  );
+  assert.match(out, /2 left today · next at 12:00 PM/);
+  assert.equal((out.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 2);
+  assert.match(out, /Now · Work/);
+  assert.match(out, /Workshop/);
+  assert.match(out, /1 earlier/);
+  assert.doesNotMatch(out, /Standup/);
+});
+
+test('CalendarGrid agenda today: nothing left says so and keeps the earlier count; an empty day offers the action', () => {
   const later = html(
     <CalendarGrid
       {...gridProps({
@@ -246,11 +296,11 @@ test('CalendarGrid agenda today: nothing left says so; an empty day offers the a
       })}
     />,
   );
-  assert.match(later, /4 events · none left today/);
-  assert.match(later, /Climbing with Theo/);
-  // The whole day lists: all four events are rows (every one over, so all dimmed), matching the count.
-  assert.equal((later.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 4);
-  assert.equal((later.match(/data-state="past"/g) ?? []).length, 4);
+  assert.match(later, /Nothing left today\./);
+  // All four events are over: no rows, one "4 earlier" line instead.
+  assert.equal((later.match(/class="ui-calendar-grid__ag"/g) ?? []).length, 0);
+  assert.match(later, /4 earlier/);
+  assert.doesNotMatch(later, /Climbing with Theo/);
   const empty = html(
     <CalendarGrid
       {...gridProps({
@@ -262,8 +312,9 @@ test('CalendarGrid agenda today: nothing left says so; an empty day offers the a
       })}
     />,
   );
-  assert.match(empty, /0 events · none left today/);
+  assert.match(empty, /Nothing left today\./);
   assert.match(empty, /Nothing scheduled\./);
+  assert.doesNotMatch(empty, /ui-calendar-grid__earlier/);
 });
 
 test('CalendarGrid agenda full: days with the comma title, only days with entries and today', () => {

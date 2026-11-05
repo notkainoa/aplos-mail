@@ -59,7 +59,7 @@ test('next event plus the following two; the rest fold into "N more"', () => {
     ['two', 'three'],
   );
   assert.equal(model.moreText, '1 more');
-  assert.equal(model.headline, '4 events · next at 11:00 AM');
+  assert.equal(model.headline, '4 left today · next at 11:00 AM');
 });
 
 test('declined, cancelled, hidden and free events neither show nor block a gap', () => {
@@ -88,24 +88,50 @@ test('a gap of at least 30 minutes between now and the next event is a Free line
   assert.ok(MIN_GAP_MINUTES >= 30);
 });
 
-test('a past event sits behind, a running event is current, an empty day is a real empty state', () => {
+test('a finished event only counts as earlier, a running event is current, an empty day is a real empty state', () => {
   const model = todayModel(
     [event('early', at(8), at(9)), event('now', at(9, 30), at(10, 30))],
     calendars,
     NOW,
   );
-  assert.equal(model.behind?.event.title, 'early');
+  assert.equal(model.earlier, 1);
   assert.equal(model.current[0]?.event.title, 'now');
   assert.equal(todayModel([], calendars, NOW).empty, true);
 });
 
-test('the event behind you is the one that ended most recently, not the one that started last', () => {
+test('every finished event counts as earlier, however they overlapped', () => {
   const model = todayModel(
     [event('long', at(8), at(9, 50)), event('short', at(9), at(9, 10))],
     calendars,
     NOW,
   );
-  assert.equal(model.behind?.event.title, 'long');
+  assert.equal(model.earlier, 2);
+});
+
+test('three finished and two left says "2 left today"; a singular earlier keeps one count', () => {
+  const model = todayModel(
+    [
+      event('one', at(7), at(8)),
+      event('two', at(8), at(9)),
+      event('three', at(9), at(9, 30)),
+      event('four', at(11), at(12)),
+      event('five', at(13), at(14)),
+    ],
+    calendars,
+    NOW,
+  );
+  assert.equal(model.earlier, 3);
+  assert.equal(model.headline, '2 left today · next at 11:00 AM');
+  assert.equal(
+    todayModel([event('one', at(7), at(8)), event('two', at(11), at(12))], calendars, NOW).earlier,
+    1,
+  );
+});
+
+test('a day where everything ended says "Nothing left today."', () => {
+  const model = todayModel([event('over', at(8), at(9))], calendars, NOW);
+  assert.equal(model.earlier, 1);
+  assert.equal(model.headline, 'Nothing left today.');
 });
 
 test('instant reads utc, date and floating times; formatWhen merges the meridiem', () => {
