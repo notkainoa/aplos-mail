@@ -52,6 +52,7 @@ import {
   setAccountScope,
   useAccountScope,
   useAppRoute,
+  useCloseHandshake,
   usePaneHeaderParts,
   useRegisterCommands,
   useSheetContextActive,
@@ -428,6 +429,8 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
 
 /** The shell: fatal when the engine is gone or parked, otherwise the sidebar, the pane and the singletons. */
 export function Shell(props: ShellProps) {
+  // Main's held close is answered on every engine path, the fatal screen included; with no bridge this mounts nothing.
+  useCloseHandshake();
   const connection = useConnection();
   const fatal = connection.state === 'unreachable' || connection.state === 'parked';
   // A sheet left open behind the fatal screen would restart its sign-in flow, unasked, when the engine returns.

@@ -51,6 +51,7 @@ import {
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import type { ComposeRequest } from './store-compose';
+import { answerClose, listenPrepareClose } from './closeHandshake';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
@@ -431,5 +432,26 @@ export function useHomeShellProps(): HomeShellProps {
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The window-close handshake (additive): main's `prepare-close` answered once the close guards flush
+// ---------------------------------------------------------------------------
+
+export { registerCloseGuard } from './closeHandshake';
+export type { CloseAnswer, CloseGuard } from './closeHandshake';
+
+/**
+ * Mounts this window's close handshake (additive): on main's `prepare-close` the registered close guards flush
+ * their unsaved work, then the shell answers `closeReady` when every one resolves `true` in time (or there are
+ * none) and `closeCancel` otherwise. The reader and compose screens register their draft flush with
+ * `registerCloseGuard` when those lanes land; nothing registers today, so the answer is always `closeReady`. A
+ * window without preload's `window.aplos` — the browser preview, the stand-in page — mounts nothing.
+ */
+export function useCloseHandshake(): void {
+  useEffect(
+    () => listenPrepareClose(typeof window === 'undefined' ? undefined : window.aplos, answerClose),
+    [],
   );
 }
