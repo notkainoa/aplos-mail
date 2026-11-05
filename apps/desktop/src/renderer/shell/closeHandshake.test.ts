@@ -34,6 +34,27 @@ function collector() {
   return { answers, answer: (a: string) => void answers.push(a) };
 }
 
+/** The globals `answerClose` may answer through. */
+interface AnswerGlobals {
+  aplosEngine?: unknown;
+  aplos?: { invoke?: unknown };
+}
+
+const answerHost = globalThis as AnswerGlobals;
+
+/** Runs `fn` with `stubs` on `globalThis`, restoring whatever was there before even on a throw. */
+async function withGlobals(stubs: AnswerGlobals, fn: () => Promise<void>): Promise<void> {
+  const saved: AnswerGlobals = { aplosEngine: answerHost.aplosEngine, aplos: answerHost.aplos };
+  answerHost.aplosEngine = stubs.aplosEngine;
+  answerHost.aplos = stubs.aplos;
+  try {
+    await fn();
+  } finally {
+    answerHost.aplosEngine = saved.aplosEngine;
+    answerHost.aplos = saved.aplos;
+  }
+}
+
 const flush = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
 
 test('a prepare-close with no guards answers ready, once', async () => {
@@ -103,16 +124,23 @@ test('registered guards run, and unregistering removes them', async () => {
 test('a second prepare-close while one is in flight is ignored', async () => {
   const b = bridge();
   const { answers, answer } = collector();
+  let calls = 0;
   let release: (safe: boolean) => void = () => undefined;
-  const hold: CloseGuard = () => new Promise<boolean>(resolve => (release = resolve));
+  const hold: CloseGuard = () => {
+    calls += 1;
+    return new Promise<boolean>(resolve => (release = resolve));
+  };
   listenPrepareClose(b.api, answer, { guards: [hold] });
   b.send('prepare-close');
   b.send('prepare-close');
+  // The second event never reached the guards.
+  assert.equal(calls, 1);
   release(true);
   await flush();
   assert.deepEqual(answers, ['ready']);
   // The lock released: a later event gets its own answer.
   b.send('prepare-close');
+  assert.equal(calls, 2);
   release(true);
   await flush();
   assert.deepEqual(answers, ['ready', 'ready']);
@@ -150,6 +178,24 @@ test('unsubscribe stops answering, and a kept listener is not answered after off
   assert.deepEqual(answers, []);
 });
 
+test('an answer owed when unsubscribe lands mid-guard is still sent once the guards settle', async () => {
+  const b = bridge();
+  const { answers, answer } = collector();
+  let release: (safe: boolean) => void = () => undefined;
+  const hold: CloseGuard = () => new Promise<boolean>(resolve => (release = resolve));
+  const stop = listenPrepareClose(b.api, answer, { guards: [hold] });
+  b.send('prepare-close');
+  stop();
+  assert.equal(b.offs(), 1);
+  release(true);
+  await flush();
+  // StrictMode's first cleanup unsubscribes mid-flight: the held close is still answered.
+  assert.deepEqual(answers, ['ready']);
+  b.send('prepare-close');
+  await flush();
+  assert.deepEqual(answers, ['ready']);
+});
+
 test('a rejecting or throwing answer is swallowed', async () => {
   const b = bridge();
   listenPrepareClose(b.api, () => Promise.reject(new Error('gone')));
@@ -180,7 +226,85 @@ test('no bridge mounts nothing and never throws', () => {
   off2();
 });
 
+test('answerClose prefers the engine bridge: Window/closeReady|closeCancel, and never subscribes', async () => {
+  const calls: { method: string; args: unknown }[] = [];
+  const invokes: string[] = [];
+  let subscribes = 0;
+  await withGlobals(
+    {
+      aplosEngine: {
+        call: (method: string, args: unknown) => {
+          calls.push({ method, args });
+          return Promise.resolve({});
+        },
+        subscribe: () => {
+          subscribes += 1;
+          return () => undefined;
+        },
+      },
+      aplos: { invoke: (method: string) => void invokes.push(method) },
+    },
+    async () => {
+      await answerClose('ready');
+      await answerClose('cancel');
+    },
+  );
+  assert.deepEqual(calls, [
+    { method: 'Window/closeReady', args: {} },
+    { method: 'Window/closeCancel', args: {} },
+  ]);
+  assert.equal(subscribes, 0);
+  assert.deepEqual(invokes, []);
+});
+
+test('answerClose falls back to the legacy invoke when the engine call rejects', async () => {
+  const calls: string[] = [];
+  const invokes: { method: string; payload: unknown }[] = [];
+  await withGlobals(
+    {
+      aplosEngine: {
+        call: (method: string) => {
+          calls.push(method);
+          return Promise.reject(new Error('refused'));
+        },
+        subscribe: () => () => undefined,
+      },
+      aplos: {
+        invoke: (method: string, payload?: unknown) => {
+          invokes.push({ method, payload });
+          return Promise.resolve();
+        },
+      },
+    },
+    async () => {
+      await answerClose('ready');
+      await answerClose('cancel');
+    },
+  );
+  assert.deepEqual(calls, ['Window/closeReady', 'Window/closeCancel']);
+  assert.deepEqual(invokes, [
+    { method: 'window.closeReady', payload: undefined },
+    { method: 'window.closeCancel', payload: undefined },
+  ]);
+});
+
+test('answerClose with only the legacy invoke calls window.closeReady|closeCancel', async () => {
+  const invokes: string[] = [];
+  await withGlobals(
+    { aplosEngine: undefined, aplos: { invoke: (method: string) => void invokes.push(method) } },
+    async () => {
+      await answerClose('ready');
+      await answerClose('cancel');
+    },
+  );
+  assert.deepEqual(invokes, ['window.closeReady', 'window.closeCancel']);
+});
+
 test('answerClose with no bridge resolves quietly', async () => {
-  await answerClose('ready');
-  await answerClose('cancel');
+  await withGlobals({ aplosEngine: undefined, aplos: undefined }, async () => {
+    await answerClose('ready');
+    await answerClose('cancel');
+  });
+  // An `aplos` without an invoke is no bridge either.
+  await withGlobals({ aplosEngine: undefined, aplos: {} }, () => answerClose('ready'));
 });
