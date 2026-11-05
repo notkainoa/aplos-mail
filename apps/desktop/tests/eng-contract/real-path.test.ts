@@ -112,8 +112,21 @@ test('real path: a window gets its own port, Session/get answers, main validates
   const one = fakeWindow(1);
   main.broker.connect(one.win);
 
-  // Contract-3 has not filled Session/get yet: the real engine answers over the port with the contract's error.
-  await assert.rejects(one.client.call('Session/get', {}), { type: 'notImplemented' });
+  // The handshake and the settings answer over the port from the real handlers (go-live needs both: a window opens on them).
+  const session = (await one.client.call('Session/get', {})) as {
+    apiVersion: number;
+    dbEpoch: string;
+    engine: { state: string };
+    device: { id: string };
+  };
+  assert.equal(session.apiVersion, 1);
+  assert.equal(session.dbEpoch, ready.dbEpoch);
+  assert.equal(session.engine.state, 'ready');
+  assert.ok(session.device.id);
+  const settings = (await one.client.call('Settings/get', {})) as {
+    mail: { remoteImages: string };
+  };
+  assert.equal(settings.mail.remoteImages, 'block');
   assert.equal(
     one.client.position().dbEpoch,
     ready.dbEpoch,

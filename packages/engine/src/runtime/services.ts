@@ -28,7 +28,19 @@ import type { FrameBus } from './frames';
  * Ports the host has not injected yet (Providers' actors before `prov-gov` lands) are present as stand-ins that reject
  * every call with `unavailable`, so a handler never needs an `undefined` check.
  */
+/** Facts only the host knows, for `Session/get`: the build, this Mac, what the desktop can do. Plain data, injected at start. */
+export interface HostFacts {
+  appVersion: string;
+  device: { id: string; name: string };
+  /** The engine keeps running with no window (the menu-bar mode). */
+  resident: boolean;
+  /** Capability keys the host adds (`desktop`, `notifications`, `loginItem`, `menuBar`, `microphone`); the engine adds its own. */
+  capabilities: Readonly<Record<string, boolean>>;
+}
+
 export interface EngineServices {
+  /** What the host says about itself; defaults to a bare build so tests need not supply it. */
+  host: HostFacts;
   /** The store, wrapped so every commit that lands queues its coalesced `state` frame. */
   store: StorePort;
   /** Account actors: connect, sync requests, leases, status, and the `ProviderPort` reads. */

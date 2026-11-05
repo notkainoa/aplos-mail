@@ -7,6 +7,7 @@ import {
   laneExtensions,
   type Engine,
   type EngineOptions,
+  type HostFacts,
   type HostPorts,
 } from '@aplos/engine';
 import { createLogger, type LogSink } from '@aplos/engine/diag/log';
@@ -98,6 +99,8 @@ export interface ComposeOptions {
    * and the engine gets the key too. Without it accounts run as primary and nothing is shared.
    */
   keys?: KeyProvider;
+  /** What `Session/get` says about this build and Mac. Absent: a bare build named 'This Mac'. */
+  host?: HostFacts;
   /** Ports the host has besides the ones composed here (`send`, `html`, `images`, ...). */
   ports?: Omit<HostPorts, 'accounts' | 'drafts' | 'deadlines' | 'keys'>;
   /** The single-instance lock: taken first, released last. Absent: no lock (`host/lock.ts` is not on this base). */
@@ -380,6 +383,7 @@ function engineOptions(
     clock: options.clock,
     log,
     validate: (method, args) => parseArgs(method as MethodName, args),
+    ...(options.host ? { host: options.host } : {}),
     ports: {
       ...options.ports,
       ...(blobFiles ? { blobFiles } : {}),

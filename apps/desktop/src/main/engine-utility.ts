@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import type { EngineSession } from '@aplos/contract/client';
 import { appScopes } from '@aplos/contract/access';
-import { windowCaller } from '@aplos/engine';
+import { windowCaller, type HostFacts } from '@aplos/engine';
 import { systemClock } from '@aplos/engine/clock/system';
 import { composeEngineHost, type ComposedHost, type ComposeOptions } from '../host/compose';
 import type { GoogleTokenBundle } from '../host/providers/oauth/token-source';
@@ -73,6 +74,23 @@ export function deviceIdOf(dataDir: string): string {
   return id;
 }
 
+/** What `Session/get` says about this build and Mac: the version main gave, the device, the desktop's own capabilities. */
+export function hostFacts(init: UtilityInit, deviceId: string): HostFacts {
+  return {
+    appVersion: init.appVersion,
+    device: { id: deviceId, name: hostname().slice(0, 200) || 'This Mac' },
+    // The menu-bar mode is main's (host-2); the utility cannot see it, and a window reads the desktop frame for it.
+    resident: false,
+    capabilities: {
+      desktop: true,
+      notifications: true,
+      loginItem: true,
+      menuBar: true,
+      microphone: true,
+    },
+  };
+}
+
 /**
  * The production host ports. Real: the SQLite file, the network, the system clock, the rotating log, the Google
  * sign-in, the keychain-sealed token vault (main unwrapped the key). Through main: banners, the browser, power events.
@@ -90,11 +108,13 @@ export async function realComposeOptions(
     file: 'google-tokens.v2.enc.json',
     ...(cipher ? { encrypt: cipher.encrypt, decrypt: cipher.decrypt } : {}),
   });
+  const deviceId = deviceIdOf(init.dataDir);
   return {
     dataDir: init.dataDir,
     fetch: globalThis.fetch,
     clock: systemClock(),
-    deviceId: deviceIdOf(init.dataDir),
+    deviceId,
+    host: hostFacts(init, deviceId),
     power: bridge.power,
     vault,
     openExternal: async url => void (await bridge.request({ op: 'openExternal', url })),
