@@ -1002,19 +1002,12 @@
   overflow-wrap: anywhere;
 }
 
-.ui-calendar-grid__ag[data-state='past'] .ui-calendar-grid__ag-name {
-  color: var(--dim);
-}
-
-.ui-calendar-grid__ag[data-state='past'] i {
-  background: var(--faint); /* a past entry's mark is the non-text grey */
-}
-
 .ui-calendar-grid__ag[data-state='next'] .ui-calendar-grid__ag-name {
   font-weight: 600;
 }
 
-.ui-calendar-grid__gap {
+.ui-calendar-grid__gap,
+.ui-calendar-grid__earlier {
   display: grid;
   grid-template-columns: var(--space-10) minmax(0, 1fr);
   column-gap: var(--space-2);
@@ -1025,7 +1018,8 @@
   color: var(--dim);
 }
 
-.ui-calendar-grid__gap span:last-child {
+.ui-calendar-grid__gap span:last-child,
+.ui-calendar-grid__earlier span:last-child {
   padding-left: calc(var(--mark-dot) + var(--space-2));
 }
 

@@ -49,9 +49,23 @@ export interface OverlayEntry {
   superseded: boolean;
 }
 
-/** The value of a view spec, for comparing specs by value. */
+/** The value of a view spec, for comparing specs by value: a deep stable stringify — keys sorted at every depth, so `{kind:'search', query:{text:'a'}}` and `{text:'b'}` never share a key. */
 export function specKey(spec: ViewSpec): string {
-  return JSON.stringify(spec, Object.keys(spec).sort());
+  return JSON.stringify(sortDeep(spec));
+}
+
+/** `value` with every object's keys sorted, recursively; arrays keep their order. */
+function sortDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortDeep);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map(key => [key, sortDeep(record[key])]),
+    );
+  }
+  return value;
 }
 
 const HOME_KINDS = new Set(['home', 'homeSection', 'oneByOne']);

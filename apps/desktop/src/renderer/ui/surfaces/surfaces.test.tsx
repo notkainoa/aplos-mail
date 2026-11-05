@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { readFileSync } from 'node:fs';
 import type { MenuEntry, PaneTools } from '../props';
 import { AccountSwitcher, Menu, NavHead, PageHead, Pane, Text } from './index';
 import {
@@ -157,6 +158,16 @@ describe('Pane', () => {
       </Pane>,
     );
     assert.ok(!bare.includes('<header'));
+  });
+
+  it('the dock pane wraps its contents, so a resized dock never dead-spaces or clips', () => {
+    const css = readFileSync(new URL('./surfaces.css', import.meta.url), 'utf8');
+    const rule = /\.ui-pane\[data-kind='dock'\]\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+    assert.match(
+      rule,
+      /width:\s*fit-content/,
+      'the pane follows the aside, whose width AskDock owns',
+    );
   });
 
   it('the tools tuple refuses a fourth tool at compile time', () => {
