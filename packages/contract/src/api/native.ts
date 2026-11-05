@@ -92,10 +92,10 @@ export const native = desktop({
   },
   'Window/finishOnboarding': {
     summary:
-      'Hand over from onboarding to the mail window (main also calls `Setup/end` itself on any close).',
+      'Hand over from onboarding to the mail window (main also calls `Setup/end` itself on any close); `to` names the screen the mail window opens on instead of Home.',
     kind: 'command',
     scope: 'read',
-    input: Empty,
+    input: z.object({ to: z.optional(choice(['settings.ai'])) }),
     output: Ok,
   },
   'Shell/open': {

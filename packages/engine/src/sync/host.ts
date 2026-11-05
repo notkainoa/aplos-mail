@@ -32,7 +32,7 @@ import {
 import { ProviderError } from '../ports/base';
 import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
-import { openedWrites, messageWrite, syncStateWrite } from './facts';
+import { messageWrite, syncStateWrite } from './facts';
 import type { Governor } from './governor';
 import {
   clockReading,
@@ -49,7 +49,7 @@ import {
   type LeaseRecord,
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
-import { attachmentBytes, originalRemote } from './host-read';
+import { attachmentBytes, openThreadRemote, originalRemote } from './host-read';
 import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
@@ -653,21 +653,14 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     remoteThreadId: string,
     opts: { knownCount?: number; lane?: 'interactive' | 'prefetch' } = {},
   ): Promise<OpenedThread> {
-    const entry = this.entry(account);
-    const ctx = entry.actor.context();
-    const fence = readFence(this.deps.store, account, ctx.generation);
-    const opened = await entry.adapter.openThread(
-      { remoteThreadId, ...(opts.knownCount !== undefined ? { knownCount: opts.knownCount } : {}) },
-      opts.lane ?? 'interactive',
-      ctx,
+    return openThreadRemote(
+      this.entry(account),
+      this.deps.store,
+      () => this.newId(),
+      account,
+      remoteThreadId,
+      opts,
     );
-    this.deps.store.commit({
-      opId: this.newId(),
-      origin: 'sync',
-      fenceSeq: fence,
-      writes: openedWrites(ctx.account, remoteThreadId, opened),
-    });
-    return opened;
   }
 
   async search(
@@ -697,8 +690,12 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     return attachmentBytes(this.entry(account), ref);
   }
 
-  async original(account: AccountId, remoteMessageId: string): Promise<AsyncIterable<Uint8Array>> {
-    return originalRemote(this.entry(account), remoteMessageId);
+  async original(
+    account: AccountId,
+    remoteMessageId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<AsyncIterable<Uint8Array>> {
+    return originalRemote(this.entry(account), remoteMessageId, options);
   }
 
   // ---------------------------------------------------------------- DraftSyncPort
