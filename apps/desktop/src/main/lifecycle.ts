@@ -298,8 +298,10 @@ else {
       const atLogin = !isTest && app.getLoginItemSettings().wasOpenedAtLogin;
       // A login launch is windowless and resident: the menu-bar item or the Dock opens the window.
       if (atLogin) setPolicy('accessory');
-      if (startWindows(atLogin) === 'mail') setMain(createWindow());
-      else if (pendingActivation) focusMain();
+      void startWindows(atLogin).then(choice => {
+        if (choice === 'mail') setMain(createWindow());
+        else if (pendingActivation) focusMain();
+      });
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })

@@ -26,6 +26,14 @@ export function isFirstRun(facts: SessionFacts): boolean {
 export type WindowChoice = 'onboarding' | 'mail' | 'none';
 
 /**
+ * The onboarding window is the default first-run path (DESIGN 7.11; the APLOS_ONBOARDING_WINDOW gate is removed).
+ * `APLOS_ONBOARDING_WINDOW=0` is the explicit opt-out for tests and debugging; every other value keeps it on.
+ */
+export function onboardingOptedOut(env: { APLOS_ONBOARDING_WINDOW?: string }): boolean {
+  return env.APLOS_ONBOARDING_WINDOW === '0';
+}
+
+/**
  * A login launch (`wasOpenedAtLogin`) stays windowless, with or without accounts, until the Dock or the menu-bar item
  * is clicked (host-2: Aplos at login is a menu-bar app and must not throw a window at the owner after a restart).
  */
