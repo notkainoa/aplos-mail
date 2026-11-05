@@ -33,15 +33,17 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
-import { invokeNative, nativeMethods, notify, openBytes, saveBytes } from './native-methods';
-import { desktopFailure } from '../shared/desktop-error';
 import {
-  extensionOf,
-  fileNameOf,
-  legacyNames,
-  OPENABLE_EXTENSIONS,
-  v1Result,
-} from '../shared/desktop-v1';
+  invokeNative,
+  nativeMethods,
+  notify,
+  openBytes,
+  saveBytes,
+  sweepAttachmentTemp,
+} from './native-methods';
+import { guardedDesktopCall } from '../shared/desktop-error';
+import { SNIFFED_EXTENSIONS } from '../shared/file-sniff';
+import { extensionOf, fileNameOf, legacyNames, v1Result } from '../shared/desktop-v1';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
@@ -217,15 +219,12 @@ async function blobBytes(blobId: string): Promise<Buffer> {
   return Buffer.from(blob.bytes);
 }
 
-async function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
-  // A caller that is not the app's own page gets a plain rejection and no reason (it is not told why).
-  assertCaller(event);
-  try {
-    return await desktopMethodFor(event, method, input);
-  } catch (error) {
-    // Answered, not thrown: `ipcRenderer.invoke` would flatten a rejection to one wrapper sentence.
-    return desktopFailure(error);
-  }
+function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
+  // The caller check runs first and alone; what follows answers a failure as an envelope (shared/desktop-error.ts).
+  return guardedDesktopCall(
+    () => assertCaller(event),
+    () => desktopMethodFor(event, method, input),
+  );
 }
 
 async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
@@ -241,7 +240,7 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
   if (method === 'File/save' || method === 'File/open') {
     const name = fileNameOf(args.name);
     // A type that would not be opened is refused before its bytes are read across the process boundary.
-    if (method === 'File/open' && !OPENABLE_EXTENSIONS.has(extensionOf(name)))
+    if (method === 'File/open' && !SNIFFED_EXTENSIONS.has(extensionOf(name)))
       throw new Error('Save this attachment to inspect it before opening.');
     const data = await blobBytes(String(args.blobId));
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -303,6 +302,8 @@ async function bootRealEngine(options: {
   noteExit(): boolean;
   noteRestart?(): void;
 }): Promise<void> {
+  // Folders an opened attachment left in the temp directory in earlier sessions.
+  void sweepAttachmentTemp().catch(() => undefined);
   const init = await engineInit(options.dataDir);
   // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
   if (closeRequested) return;

@@ -17,6 +17,9 @@ export const ENGINE_QUIT_MS = 3000;
 export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
 /** Restarts the owner asks for closer together than this are one restart. */
 export const RESTART_COALESCE_MS = 5000;
+/** At most this many asked restarts clear the park count in `UNPARK_WINDOW_MS`. */
+export const MAX_UNPARKS = 3;
+export const UNPARK_WINDOW_MS = 10 * 60_000;
 
 /** How `close` ended: the engine exited (asked or after the kill), or it is still running after the kill. */
 export type CloseResult = 'exited' | 'stuck';
@@ -50,6 +53,9 @@ export interface SupervisorOptions {
   onRestart?(): void;
   /** The clock for the restart coalescing (default `Date.now`). */
   now?(): number;
+  /** An asked restart may clear the host's park count this many times per `unparkWindowMs` (default 3); past that it still restarts the engine, and the stops keep counting. */
+  maxUnparks?: number;
+  unparkWindowMs?: number;
   /** An asked restart within this long of the last accepted one is answered without doing anything. Default 5 s. */
   restartCoalesceMs?: number;
 }
@@ -73,6 +79,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   /** The engine the owner asked to restart: its exit starts the next one at once and does not count toward the park. */
   let asked: EngineLink | undefined;
   let lastAsk = -Infinity;
+  const unparks: number[] = [];
 
   function down(link: EngineLink) {
     if (current !== link) return;
@@ -128,12 +135,21 @@ export function createEngineSupervisor(options: SupervisorOptions) {
       // A loop of asks must not keep the engine in spawn, quit, spawn: one restart per coalescing window.
       if (now - lastAsk < (options.restartCoalesceMs ?? RESTART_COALESCE_MS))
         return Promise.resolve();
+      // The first engine is still starting: that start finishes or fails loudly on its own; there is nothing to restart yet.
+      if (current && !everUp) return Promise.resolve();
       lastAsk = now;
       if (restart !== undefined) {
         options.timers.clear(restart);
         restart = undefined;
       }
-      options.onRestart?.();
+      // A renderer that asks again and again must not keep a crash-looping engine from ever parking: the park count
+      // is cleared by at most `maxUnparks` asks per window.
+      const window = options.unparkWindowMs ?? UNPARK_WINDOW_MS;
+      while (unparks.length && now - unparks[0]! >= window) unparks.shift();
+      if (unparks.length < (options.maxUnparks ?? MAX_UNPARKS)) {
+        unparks.push(now);
+        options.onRestart?.();
+      }
       const link = current;
       if (link && !link.exited) {
         if (asked) return Promise.resolve();

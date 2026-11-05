@@ -7,7 +7,7 @@ import {
   systemPreferences,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { writeFile, mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { record, text, external } from './security';
@@ -27,7 +27,9 @@ import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
 import { finishOptionsOf, settingsPaneUrl } from '../host/lifecycle';
-import { extensionOf, fileNameOf, OPENABLE_EXTENSIONS } from '../shared/desktop-v1';
+import { fileNameOf } from '../shared/desktop-v1';
+import { openAttachment, saveAttachment, sweepTemp, type FileIo } from '../shared/attachment-files';
+import { markQuarantined } from '../shared/quarantine';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
@@ -52,30 +54,43 @@ function notify(title: string, body: string, threadId?: string) {
   });
   notification.show();
 }
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+/** The real disk and OS behind `shared/attachment-files.ts`. */
+const fileIo: FileIo = {
+  chooseSavePath: async defaultName => {
+    const win = BrowserWindow.getFocusedWindow() ?? main;
+    const options = { defaultPath: defaultName };
+    return win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options);
+  },
+  writeFile: (path, data, options) => writeFile(path, data, options),
+  makeTempDir: prefix => mkdtemp(join(tmpdir(), prefix)),
+  join,
+  openPath: path => shell.openPath(path),
+  quarantine: path => markQuarantined(path),
+  get testMode() {
+    return isTest;
+  },
+};
 
 /** The save dialog, then the bytes to the chosen path. Shared by the legacy `file.save` and v1 `File/save`. */
-async function saveBytes(win: BrowserWindow, name: string, data: Uint8Array) {
-  if (data.length > MAX_FILE_BYTES) throw new Error('Attachment exceeds 25 MB.');
-  const result = await dialog.showSaveDialog(win, { defaultPath: name });
-  if (result.canceled || !result.filePath) return { canceled: true };
-  await writeFile(result.filePath, data);
-  return { canceled: false, path: result.filePath };
+function saveBytes(win: BrowserWindow, name: string, data: Uint8Array) {
+  return saveAttachment(
+    { ...fileIo, chooseSavePath: d => dialog.showSaveDialog(win, { defaultPath: d }) },
+    name,
+    data,
+  );
 }
 
-/** Writes the bytes to a private temp file and opens it in its app; only safe document and media types. */
-async function openBytes(name: string, data: Uint8Array) {
-  if (data.length > MAX_FILE_BYTES) throw new Error('Attachment exceeds 25 MB.');
-  if (!OPENABLE_EXTENSIONS.has(extensionOf(name)))
-    throw new Error('Save this attachment to inspect it before opening.');
-  if (isTest) return true; // no other app is launched in test mode
-  const directory = await mkdtemp(join(tmpdir(), 'aplos-attachment-'));
-  const file = join(directory, name);
-  await writeFile(file, data, { mode: 0o600 });
-  const error = await shell.openPath(file);
-  // The OS's own sentence names paths; the page is told the plain one.
-  if (error) throw new Error("Aplos couldn't open that file. Save it and open it from there.");
-  return true;
+/** Writes the bytes to a private temp file, quarantines it, and opens it in its app; only safe types whose bytes match. */
+function openBytes(name: string, data: Uint8Array) {
+  return openAttachment(fileIo, name, data);
+}
+
+/** Start-up: removes the temp folders opened attachments left in earlier sessions. */
+function sweepAttachmentTemp() {
+  return sweepTemp({
+    tempEntries: () => readdir(tmpdir()),
+    removeTemp: entry => rm(join(tmpdir(), entry), { recursive: true, force: true }),
+  });
 }
 
 async function invokeNative(event: IpcMainInvokeEvent, method: string, input: unknown) {
@@ -204,4 +219,4 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
   throw new Error('Unsupported desktop method.');
 }
 
-export { nativeMethods, notify, invokeNative, saveBytes, openBytes };
+export { nativeMethods, notify, invokeNative, saveBytes, openBytes, sweepAttachmentTemp };

@@ -1,13 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { desktopMethods } from '@aplos/contract/allowlists';
-import {
-  extensionOf,
-  fileNameOf,
-  legacyNames,
-  OPENABLE_EXTENSIONS,
-  v1Result,
-} from '../../src/shared/desktop-v1';
+import { extensionOf, fileNameOf, legacyNames, v1Result } from '../../src/shared/desktop-v1';
+import { SNIFFED_EXTENSIONS } from '../../src/shared/file-sniff';
 
 test('every row of the v1 table names a real desktop method', () => {
   const all = new Set<string>(desktopMethods);
@@ -66,7 +61,7 @@ test('extensionOf and the openable list: documents and media open, scripts and a
   assert.equal(extensionOf('.hidden'), '');
   assert.equal(extensionOf('archive'), '');
   for (const ok of ['a.pdf', 'a.PNG', 'a.docx', 'a.ics'])
-    assert.ok(OPENABLE_EXTENSIONS.has(extensionOf(ok)), ok);
+    assert.ok(SNIFFED_EXTENSIONS.has(extensionOf(ok)), ok);
   for (const no of [
     'a.app',
     'a.command',
@@ -78,5 +73,5 @@ test('extensionOf and the openable list: documents and media open, scripts and a
     'a.webloc',
     'a',
   ])
-    assert.ok(!OPENABLE_EXTENSIONS.has(extensionOf(no)), no);
+    assert.ok(!SNIFFED_EXTENSIONS.has(extensionOf(no)), no);
 });

@@ -69,3 +69,19 @@ export function failureOf(result: unknown): ErrorBody | undefined {
     ...(typeof reasonCode === 'string' ? { reasonCode } : {}),
   } as ErrorBody;
 }
+
+/**
+ * One desktop call: `check` (the caller check) runs first and a throw from it is a bare rejection with no reason; then
+ * `run`, whose failure is answered as an envelope. There is no path to `run` that skips `check`.
+ */
+export async function guardedDesktopCall(
+  check: () => void,
+  run: () => Promise<unknown>,
+): Promise<unknown> {
+  check();
+  try {
+    return await run();
+  } catch (error) {
+    return desktopFailure(error);
+  }
+}

@@ -42,42 +42,24 @@ export function v1Result(method: string, result: unknown): unknown {
   return result === true ? ok : result;
 }
 
-/** A file name from a caller: its last path part, control characters gone, `.` and `..` refused, never empty. */
+/** Format characters (bidi controls, zero-width, BOM) and DEL: invisible in a dialog, they make a name read as another. */
+const INVISIBLE = /[\p{Cf}\u007f]/gu;
+
+/**
+ * A file name from a caller: its last path part, control characters become underscores, format characters and DEL are
+ * dropped, leading dots (a hidden file) and trailing dots and spaces go, and `.` and `..` and empty are `attachment`.
+ */
 export function fileNameOf(raw: unknown): string {
   if (typeof raw !== 'string' || raw.length > 255) throw new Error('Invalid file name.');
   const last = raw.split(/[\\/]/).pop() ?? '';
   // Control characters (below space) become underscores.
-  const clean = [...last].map(char => (char.charCodeAt(0) < 32 ? '_' : char)).join('');
-  return clean === '' || clean === '.' || clean === '..' ? 'attachment' : clean;
+  const controlled = [...last].map(char => (char.charCodeAt(0) < 32 ? '_' : char)).join('');
+  const clean = controlled
+    .replace(INVISIBLE, '')
+    .replace(/^\.+/, '')
+    .replace(/[. ]+$/, '');
+  return clean === '' ? 'attachment' : clean;
 }
-
-/** File types a downloaded attachment may be opened in their app without saving it first. */
-export const OPENABLE_EXTENSIONS: ReadonlySet<string> = new Set([
-  '.pdf',
-  '.txt',
-  '.md',
-  '.csv',
-  '.json',
-  '.eml',
-  '.ics',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.heic',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.rtf',
-  '.mp3',
-  '.mp4',
-  '.wav',
-  '.mov',
-]);
 
 /** The lower-cased extension of a file name, with its dot; empty for none. */
 export function extensionOf(name: string): string {

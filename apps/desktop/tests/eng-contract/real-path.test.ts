@@ -648,11 +648,16 @@ test('source shape: the desktop handler checks the caller before anything else, 
     fileURLToPath(new URL('../../src/main/engine-real.ts', import.meta.url)),
     'utf8',
   );
+  // The whole handler is ONE return of the guard: the caller check is its first argument, so no branch can reach a
+  // method without it (the guard's behaviour is tested in attachment-files.test.ts).
+  const handler = /function desktopMethod\(([^)]*)\) \{([\s\S]*?)\n\}/.exec(source);
+  assert.ok(handler, 'desktopMethod is found');
+  const body = handler![2]!.replace(/\/\/[^\n]*/g, '');
   assert.match(
-    source,
-    /async function desktopMethod\([^)]*\) \{[^}]*assertCaller\(event\);\s*try \{/s,
+    body,
+    /^\s*return guardedDesktopCall\(\s*\(\) => assertCaller\(event\),\s*\(\) => desktopMethodFor\(event, method, input\),\s*\);\s*$/,
   );
-  const open = source.indexOf("method === 'File/open' && !OPENABLE_EXTENSIONS");
+  const open = source.indexOf("method === 'File/open' && !SNIFFED_EXTENSIONS");
   assert.ok(open > 0 && open < source.indexOf('await blobBytes('), 'the type check comes first');
   const bundle = source.slice(
     source.indexOf('function hostBundle'),
@@ -665,4 +670,63 @@ test('source shape: the desktop handler checks the caller before anything else, 
     /isTest\) clipboard\.writeText|!isTest\) clipboard/,
     'test mode never writes the clipboard',
   );
+});
+
+test('Engine/restart: the park count is cleared by at most three asks per window, the engine restarts every time', async () => {
+  const timers = manualTimers();
+  let clock = 0;
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+    restartCoalesceMs: 0,
+  });
+  await supervisor.start();
+  for (let i = 0; i < 6; i++) {
+    clock += 1_000;
+    await supervisor.restart();
+    await until(() => links.length === i + 2, 'the next engine');
+  }
+  assert.equal(links.length, 7, 'every ask restarted the engine');
+  assert.equal(told, 3, 'but only three cleared the park count');
+  clock += 10 * 60_000;
+  await supervisor.restart();
+  await until(() => links.length === 8, 'the engine after the window');
+  assert.equal(told, 4, 'the window passed: the cap resets');
+});
+
+test('Engine/restart: an ask while the FIRST engine is still starting changes nothing and is not lost to the start', async () => {
+  const timers = manualTimers();
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(false);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    timers,
+    restartCoalesceMs: 0,
+  });
+  const starting = supervisor.start();
+  starting.catch(() => undefined);
+  await supervisor.restart();
+  assert.equal(links.length, 1, 'no second engine while the first one starts');
+  assert.equal(told, 0, 'and the host is not told to forget stops');
+  assert.equal(links[0].kills(), 0);
 });
