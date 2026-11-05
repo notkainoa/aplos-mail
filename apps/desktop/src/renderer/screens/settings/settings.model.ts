@@ -357,6 +357,23 @@ export function accountRows(accounts: readonly Account[], now: number): readonly
   );
 }
 
+/** The write an Accounts control makes (`Account/set`). */
+export type AccountWrite = {
+  readonly colorTag?: string;
+  readonly aiAllowed?: boolean;
+  readonly notifications?: boolean;
+  readonly name?: string;
+};
+
+/** Accounts with the optimistic per-account overlay applied, for the rows the sections draw. */
+export function mergeAccounts(
+  accounts: readonly Account[],
+  overlay: Readonly<Record<string, AccountWrite>> | null,
+): readonly Account[] {
+  if (!overlay) return accounts;
+  return accounts.map(a => (overlay[a.id] ? { ...a, ...overlay[a.id] } : a));
+}
+
 /** Demo controls (plan 30 section 4.5 row 8): the demo row has Reset and Remove; Help offers Load only with no demo account. */
 export function demoControls(accounts: readonly Account[]): {
   readonly hasDemo: boolean;
