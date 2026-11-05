@@ -260,14 +260,23 @@ export function overlayWith(
     patch?: Partial<CalendarEventData>;
     remove?: boolean;
     add?: CalendarEventData;
+    /** Sibling changes of the same write (a series time shift moves every loaded occurrence). */
+    more?: readonly {
+      id: string;
+      patch?: Partial<CalendarEventData>;
+      remove?: boolean;
+      add?: CalendarEventData;
+    }[];
   },
 ): Overlay {
   const patch = new Map(overlay.patch);
   const removed = new Set(overlay.removed);
   let added = overlay.added;
-  if (change.patch) patch.set(change.id, { ...patch.get(change.id), ...change.patch });
-  if (change.remove) removed.add(change.id);
-  if (change.add) added = [...added.filter(a => a.id !== change.add?.id), change.add];
+  for (const c of [change, ...(change.more ?? [])]) {
+    if (c.patch) patch.set(c.id, { ...patch.get(c.id), ...c.patch });
+    if (c.remove) removed.add(c.id);
+    if (c.add) added = [...added.filter(a => a.id !== c.add?.id), c.add];
+  }
   return { patch, removed, added };
 }
 

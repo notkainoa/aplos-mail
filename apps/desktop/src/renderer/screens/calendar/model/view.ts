@@ -110,8 +110,6 @@ export interface CalendarViewModel {
     action: ScopeAsk['action'];
     title: string;
     entryId: string;
-    /** A time change without the series row in the window: "This event" only, with the reason (ScopeAlone). */
-    seriesAlone: boolean;
   } | null;
   readonly editor: EditorView | null;
   /** DESIGN 7.14: "Nothing scheduled." with New event · N, on an empty day. */
@@ -249,7 +247,6 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
             action: state.scope.action,
             title: scopeEntry.title,
             entryId: scopeEntry.id,
-            seriesAlone: state.scope.seriesAlone === true,
           }
         : null,
     editor: state.editor ? editorView(state.editor, ctx) : null,
