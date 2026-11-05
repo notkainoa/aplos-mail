@@ -8,7 +8,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron';
 import { writeFile, mkdtemp } from 'node:fs/promises';
-import { join, basename, extname } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { record, text, external } from './security';
 import {
@@ -27,6 +27,7 @@ import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
 import { settingsPaneUrl } from '../host/lifecycle';
+import { extensionOf, fileNameOf, OPENABLE_EXTENSIONS } from '../shared/desktop-v1';
 
 const nativeMethods = new Set<string>(legacyDesktopMethods);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
@@ -51,11 +52,6 @@ function notify(title: string, body: string, threadId?: string) {
   });
   notification.show();
 }
-/** A file name from a caller: its last path part, control characters gone, never empty. */
-function fileNameOf(raw: unknown): string {
-  return basename(text(raw, 'file name', 255)).replace(/[\x00-\x1f]/g, '_') || 'attachment';
-}
-
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 /** The save dialog, then the bytes to the chosen path. Shared by the legacy `file.save` and v1 `File/save`. */
@@ -67,44 +63,18 @@ async function saveBytes(win: BrowserWindow, name: string, data: Uint8Array) {
   return { canceled: false, path: result.filePath };
 }
 
-const OPENABLE = new Set([
-  '.pdf',
-  '.txt',
-  '.md',
-  '.csv',
-  '.json',
-  '.eml',
-  '.ics',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.heic',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.rtf',
-  '.mp3',
-  '.mp4',
-  '.wav',
-  '.mov',
-]);
-
 /** Writes the bytes to a private temp file and opens it in its app; only safe document and media types. */
 async function openBytes(name: string, data: Uint8Array) {
   if (data.length > MAX_FILE_BYTES) throw new Error('Attachment exceeds 25 MB.');
-  if (!OPENABLE.has(extname(name).toLowerCase()))
+  if (!OPENABLE_EXTENSIONS.has(extensionOf(name)))
     throw new Error('Save this attachment to inspect it before opening.');
   if (isTest) return true; // no other app is launched in test mode
   const directory = await mkdtemp(join(tmpdir(), 'aplos-attachment-'));
   const file = join(directory, name);
   await writeFile(file, data, { mode: 0o600 });
   const error = await shell.openPath(file);
-  if (error) throw new Error(error);
+  // The OS's own sentence names paths; the page is told the plain one.
+  if (error) throw new Error("Aplos couldn't open that file. Save it and open it from there.");
   return true;
 }
 
@@ -233,4 +203,4 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
   throw new Error('Unsupported desktop method.');
 }
 
-export { nativeMethods, notify, invokeNative, fileNameOf, saveBytes, openBytes };
+export { nativeMethods, notify, invokeNative, saveBytes, openBytes };

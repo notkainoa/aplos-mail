@@ -22,10 +22,19 @@ const isBody = (value: unknown): value is ErrorBody =>
   typeof (value as ErrorBody).type === 'string' &&
   typeof (value as ErrorBody).message === 'string';
 
+/** An Error main wrote a sentence for: exactly `Error`, no system `code`, a message. */
+const isSentence = (error: unknown): error is Error =>
+  error instanceof Error &&
+  error.constructor === Error &&
+  typeof (error as { code?: unknown }).code !== 'string' &&
+  error.message.trim().length > 0;
+
 /**
  * The envelope for a thrown error: a ContractError keeps its `type`, message and reason code (the validation reason,
- * "Save this draft before opening a separate window."); any other Error keeps its sentence as `unavailable`, cut short;
- * anything else is the generic sentence. A stack or a cause never travels.
+ * "Save this draft before opening a separate window."); a plain `Error` (one main's handler wrote a sentence for) keeps
+ * its sentence as `unavailable`, cut short; a system error (it has a `code`: `ENOENT: ... open '/Users/...'`) or any
+ * subclass (a TypeError from a bug) is the generic sentence, so a path or an internal message never reaches the page.
+ * A stack or a cause never travels.
  */
 export function desktopFailure(error: unknown): DesktopFailure {
   const body = (error as { body?: unknown } | null)?.body;
@@ -40,7 +49,7 @@ export function desktopFailure(error: unknown): DesktopFailure {
       } as ErrorBody,
     };
   }
-  if (error instanceof Error && error.message.trim())
+  if (isSentence(error))
     return {
       [DESKTOP_FAILURE_KEY]: { type: 'unavailable', message: error.message.slice(0, MAX_MESSAGE) },
     };
@@ -51,5 +60,12 @@ export function desktopFailure(error: unknown): DesktopFailure {
 export function failureOf(result: unknown): ErrorBody | undefined {
   if (typeof result !== 'object' || result === null) return undefined;
   const body = (result as Record<string, unknown>)[DESKTOP_FAILURE_KEY];
-  return isBody(body) ? body : undefined;
+  if (!isBody(body)) return undefined;
+  // Only what the envelope is built from: a stray extra key on a body never travels on.
+  const reasonCode = (body as { reasonCode?: unknown }).reasonCode;
+  return {
+    type: body.type,
+    message: body.message,
+    ...(typeof reasonCode === 'string' ? { reasonCode } : {}),
+  } as ErrorBody;
 }

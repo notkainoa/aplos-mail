@@ -52,3 +52,28 @@ test('failureOf finds an envelope and nothing else: no normal result looks like 
   ])
     assert.equal(failureOf(result), undefined);
 });
+
+test('a system error or a subclass never carries its message: no path, no internal text reaches the page', () => {
+  const fs = Object.assign(new Error("EACCES: permission denied, open '/Users/me/secret.txt'"), {
+    code: 'EACCES',
+  });
+  for (const thrown of [
+    fs,
+    new TypeError("Cannot read properties of undefined (reading 'info')"),
+  ]) {
+    const failure = desktopFailure(thrown)[DESKTOP_FAILURE_KEY];
+    assert.deepEqual(failure, { type: 'internal', message: 'Something went wrong. Try again.' });
+  }
+});
+
+test('failureOf forwards type, message and reason code only', () => {
+  const widened = {
+    [DESKTOP_FAILURE_KEY]: {
+      type: 'unavailable',
+      message: 'No.',
+      stack: 'at x (/Users/me)',
+      cause: 'c',
+    },
+  };
+  assert.deepEqual(failureOf(widened), { type: 'unavailable', message: 'No.' });
+});

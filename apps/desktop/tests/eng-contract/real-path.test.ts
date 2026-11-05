@@ -530,6 +530,7 @@ function restartWorld() {
   const links: ReturnType<typeof fakeLink>[] = [];
   const downs: boolean[] = [];
   const ups: boolean[] = [];
+  const restarts: boolean[] = [];
   let stops = 0;
   const supervisor = createEngineSupervisor({
     spawn: () => {
@@ -543,8 +544,12 @@ function restartWorld() {
     timers,
     restartDelayMs: 10,
     quitMs: 100,
+    exitAfterKillMs: 50,
+    // The restarts below are meant to follow each other; the coalescing has its own test.
+    restartCoalesceMs: 0,
+    onRestart: () => void restarts.push(true),
   });
-  return { supervisor, links, downs, ups, timers, stops: () => stops };
+  return { supervisor, links, downs, ups, timers, restarts, stops: () => stops };
 }
 
 test('Engine/restart: a running engine is asked to quit and the next starts at once, without counting toward the park', async () => {
@@ -588,4 +593,76 @@ test('Engine/restart: a parked app starts an engine now, and a closed supervisor
   assert.equal(w.ups.at(-1), true);
   await w.supervisor.close();
   await assert.rejects(w.supervisor.restart());
+});
+
+test('Engine/restart: an engine that survives the kill does not leave the app unable to retry', async () => {
+  const w = restartWorld();
+  await w.supervisor.start();
+  const wedged = w.links[0].link;
+  wedged.quit = () => undefined;
+  wedged.kill = () => undefined; // the OS refused: the process stays
+  await w.supervisor.restart();
+  w.timers.advance(100); // quit window over: the kill is tried
+  w.timers.advance(50); // and the wait after it: give up
+  // The next ask is a real one again (quit is tried a second time), not a silent success.
+  let quits = 0;
+  wedged.quit = () => void (quits += 1);
+  await w.supervisor.restart();
+  assert.equal(quits, 1);
+  assert.equal(w.restarts.length, 2, 'each accepted ask told the host');
+});
+
+test('Engine/restart: asks closer together than the coalescing window are one restart', async () => {
+  const timers = manualTimers();
+  let clock = 1_000;
+  const links: ReturnType<typeof fakeLink>[] = [];
+  let told = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const next = fakeLink(true);
+      links.push(next);
+      return next.link;
+    },
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onRestart: () => void (told += 1),
+    now: () => clock,
+    timers,
+    quitMs: 100,
+  });
+  await supervisor.start();
+  await supervisor.restart();
+  await until(() => links.length === 2, 'the next engine');
+  for (let i = 0; i < 10; i++) await supervisor.restart(); // a loop of asks
+  assert.equal(links.length, 2, 'no second restart inside the window');
+  assert.equal(told, 1);
+  clock += 5_000;
+  await supervisor.restart();
+  await until(() => links.length === 3, 'the engine after the window');
+  assert.equal(told, 2);
+});
+
+test('source shape: the desktop handler checks the caller before anything else, and File/open refuses a type before reading bytes', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../../src/main/engine-real.ts', import.meta.url)),
+    'utf8',
+  );
+  assert.match(
+    source,
+    /async function desktopMethod\([^)]*\) \{[^}]*assertCaller\(event\);\s*try \{/s,
+  );
+  const open = source.indexOf("method === 'File/open' && !OPENABLE_EXTENSIONS");
+  assert.ok(open > 0 && open < source.indexOf('await blobBytes('), 'the type check comes first');
+  const bundle = source.slice(
+    source.indexOf('function hostBundle'),
+    source.indexOf('function copyDiagnostics'),
+  );
+  for (const banned of [/hostname/, /userInfo/, /homedir/, /networkInterfaces/])
+    assert.doesNotMatch(bundle, banned, 'the host bundle stays content-free');
+  assert.match(
+    source,
+    /isTest\) clipboard\.writeText|!isTest\) clipboard/,
+    'test mode never writes the clipboard',
+  );
 });

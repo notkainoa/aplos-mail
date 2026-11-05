@@ -33,15 +33,15 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { KeyringError, loadDataKey } from './keyring';
-import {
-  fileNameOf,
-  invokeNative,
-  nativeMethods,
-  notify,
-  openBytes,
-  saveBytes,
-} from './native-methods';
+import { invokeNative, nativeMethods, notify, openBytes, saveBytes } from './native-methods';
 import { desktopFailure } from '../shared/desktop-error';
+import {
+  extensionOf,
+  fileNameOf,
+  legacyNames,
+  OPENABLE_EXTENSIONS,
+  v1Result,
+} from '../shared/desktop-v1';
 import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
@@ -185,34 +185,6 @@ async function composeWindow(event: IpcMainInvokeEvent, draftId: string) {
 }
 
 /** The desktop methods main serves on this path today, by their v1 names; each maps to main's own handler. */
-const legacyNames: Record<string, string> = {
-  'App/info': 'app.info',
-  'Window/thread': 'window.thread',
-  'Window/closeReady': 'window.closeReady',
-  'Window/closeCancel': 'window.closeCancel',
-  'Window/claim': 'window.claim',
-  'Window/release': 'window.release',
-  'Window/openOnboarding': 'Window/openOnboarding',
-  'Window/finishOnboarding': 'Window/finishOnboarding',
-  'Shell/open': 'shell.open',
-  'Notification/test': 'notification.test',
-  'Update/status': 'update.status',
-  'Update/check': 'update.check',
-  'Update/later': 'update.later',
-  'Update/restart': 'update.restart',
-  'System/openSettings': 'System/openSettings',
-  'System/login': 'System/login',
-  'System/notifications': 'System/notifications',
-  'System/defaultMail': 'system.defaultMail',
-  'System/microphone': 'system.microphone',
-};
-
-/** What a plain-`true` legacy answer becomes under the v1 contract, per method (most answer `{ ok: true }`). */
-function v1Result(method: string, result: unknown): unknown {
-  if (method === 'Window/claim') return { claimed: result === true };
-  return result === true ? ok : result;
-}
-
 /** Main's host-only diagnostics: content-free facts about this install, for when the engine cannot give its own bundle. */
 function hostBundle(): Record<string, unknown> {
   return {
@@ -268,8 +240,12 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
   if (method === 'Diagnostics/copy') return copyDiagnostics();
   if (method === 'File/save' || method === 'File/open') {
     const name = fileNameOf(args.name);
+    // A type that would not be opened is refused before its bytes are read across the process boundary.
+    if (method === 'File/open' && !OPENABLE_EXTENSIONS.has(extensionOf(name)))
+      throw new Error('Save this attachment to inspect it before opening.');
     const data = await blobBytes(String(args.blobId));
-    const win = BrowserWindow.fromWebContents(event.sender)!;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('That window was closed.');
     return method === 'File/save' ? saveBytes(win, name, data) : (await openBytes(name, data), ok);
   }
   const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
@@ -322,13 +298,18 @@ function serveMail({ signal, ...args }: ServeArgs): Promise<unknown> {
 let closeRequested = false;
 
 /** Starts the new engine and the IPC that reaches it. `noteExit` is lifecycle's park counter (3 stops in 60 s). */
-async function bootRealEngine(options: { dataDir: string; noteExit(): boolean }): Promise<void> {
+async function bootRealEngine(options: {
+  dataDir: string;
+  noteExit(): boolean;
+  noteRestart?(): void;
+}): Promise<void> {
   const init = await engineInit(options.dataDir);
   // A quit that landed while the start-up was still preparing: no engine is started without the data lock to cover it.
   if (closeRequested) return;
   supervisor = createEngineSupervisor({
     spawn: () => spawn(init),
     noteExit: options.noteExit,
+    ...(options.noteRestart ? { onRestart: options.noteRestart } : {}),
     onUp: (_link, restarted) => {
       if (restarted) broker.reissue();
       broker.desktop(engineFrame('ready'));

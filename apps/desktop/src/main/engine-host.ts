@@ -173,9 +173,14 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
   );
 }
 /** `noteExit` counts an engine stop toward the park (lifecycle.ts); the legacy path keeps its own restart dialog. */
-async function bootEngine(hooks: { noteExit(): boolean }) {
+async function bootEngine(hooks: { noteExit(): boolean; noteRestart?(): void }) {
   const dataDir = dataDirOverride ?? app.getPath('userData');
-  if (realPath) return bootRealEngine({ dataDir, noteExit: hooks.noteExit });
+  if (realPath)
+    return bootRealEngine({
+      dataDir,
+      noteExit: hooks.noteExit,
+      ...(hooks.noteRestart ? { noteRestart: hooks.noteRestart } : {}),
+    });
   service = await startEngine(await engineInit(dataDir));
   ipcMain.handle('aplos:invoke', async (event, method: unknown, payload: unknown) => {
     assertCaller(event);
