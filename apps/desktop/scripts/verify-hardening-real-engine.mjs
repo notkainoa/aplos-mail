@@ -121,16 +121,32 @@ try {
       m => m.result?.result?.value,
     );
 
-  // Give the first screen time to render or to fatal, then read what is actually on it.
-  await delay(4000);
-  const body = await evaluate('document.body?.innerText ?? ""');
+  // Read the first window's text until it settles: a transient "can't reach its mail engine" is
+  // fine while the bridge connects, but a fatal screen, or an engine-down state that outlasts
+  // the window, is a FAIL either way.
+  let body = '';
+  let settled = '';
+  for (let i = 0; i < 30 && Date.now() < deadline; i++) {
+    body = String(await evaluate('document.body?.innerText ?? ""'));
+    if (/Aplos needs a moment|Error invoking remote method/i.test(body)) break;
+    if (body.trim() && !/can’t reach its mail engine|can't reach its mail engine/i.test(body)) {
+      settled = body;
+      break;
+    }
+    await delay(2000);
+  }
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   if (out && shot.result?.data) writeFileSync(out, Buffer.from(shot.result.data, 'base64'));
   ws.close();
 
   if (/(Aplos needs a moment|Error invoking remote method)/i.test(String(body)))
     fail('first-window', `the first window shows the fatal screen: ${String(body).slice(0, 120)}`);
-  else pass('first-window', 'first window rendered, no fatal screen');
+  else if (!settled)
+    fail(
+      'first-window',
+      `the first window never left the engine-down state: ${String(body).slice(0, 120)}`,
+    );
+  else pass('first-window', `first window rendered content: ${settled.slice(0, 80)}`);
 
   const console_ = output.join('');
   const refused = console_.match(/[^\n]*aplos:invoke[^\n]*/);
