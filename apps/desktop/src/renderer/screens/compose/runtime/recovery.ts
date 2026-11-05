@@ -110,6 +110,11 @@ export function releaseKeptFor(state: ComposeState): void {
   release(key);
 }
 
+/** The composers kept for their unsaved text, so a closing window can ask them to save once more. */
+export function keptSessions(): ComposeSession[] {
+  return [...kept.values()].map(entry => entry.session);
+}
+
 /** How many composers are kept (tests). */
 export function keptCount(): number {
   return kept.size;
