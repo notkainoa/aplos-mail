@@ -120,9 +120,11 @@ describe('change check', () => {
       'touch engine',
       'Lane-Approved: eng-store',
     ]);
-    const res = check(dir);
+    const res = check(dir, ['--trailers']);
     assert.equal(res.code, 0, res.out);
     assert.match(res.out, /eng-store \(trailer [0-9a-f]{7}\)/);
+    // The PR author wrote that trailer, so by default it approves nothing.
+    assert.equal(check(dir).code, 1);
   });
 
   test('a trailer for another lane does not approve', () => {
@@ -131,7 +133,7 @@ describe('change check', () => {
       'touch engine',
       'Lane-Approved: integrator',
     ]);
-    assert.equal(check(dir).code, 1);
+    assert.equal(check(dir, ['--trailers']).code, 1);
   });
 
   test('--approved approves the owning lane', () => {
@@ -379,11 +381,11 @@ describe('approval trailers', () => {
       'touch',
       'Lane-Approved: eng-store per ui-foundation review pending',
     ]);
-    const bad = check(dir, ['--json']);
+    const bad = check(dir, ['--trailers', '--json']);
     assert.equal(bad.code, 1);
     assert.deepEqual(JSON.parse(bad.out).approvals, []);
     assert.equal(JSON.parse(bad.out).ignoredTrailers.length, 1);
-    assert.match(check(dir).out, /ignored Lane-Approved value/);
+    assert.match(check(dir, ['--trailers']).out, /ignored Lane-Approved value/);
     const fresh = makeRepo({
       files: { 'packages/engine/src/s.ts': 'a', 'tools/lint/design/d.mjs': 'a' },
     });
@@ -391,7 +393,7 @@ describe('approval trailers', () => {
       'touch',
       'Lane-Approved: eng-store, ui-foundation',
     ]);
-    assert.equal(check(fresh).code, 0);
+    assert.equal(check(fresh, ['--trailers']).code, 0);
   });
 
   test('a trailer covers only the files of its own commit', () => {
@@ -400,18 +402,18 @@ describe('approval trailers', () => {
     });
     commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
     commit(dir, { 'packages/engine/src/two.ts': 'rewrite' }, ['rewrite two']);
-    const res = check(dir, ['--json']);
+    const res = check(dir, ['--trailers', '--json']);
     assert.equal(res.code, 1);
     assert.deepEqual(violationFiles(res), ['packages/engine/src/two.ts']);
-    assert.equal(check(dir, ['--no-trailers']).code, 1);
+    assert.equal(check(dir, ['--trailers', '--no-trailers']).code, 1);
   });
 
   test('every commit touching a file must carry the approval', () => {
     const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a' } });
     commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
-    assert.equal(check(dir).code, 0);
+    assert.equal(check(dir, ['--trailers']).code, 0);
     commit(dir, { 'packages/engine/src/one.ts': 'c' }, ['follow-up without approval']);
-    assert.equal(check(dir).code, 1);
+    assert.equal(check(dir, ['--trailers']).code, 1);
   });
 
   test('Owners-Exempt: phase-0 needs the integrator lane to approve it', () => {
@@ -420,10 +422,10 @@ describe('approval trailers', () => {
       'restructure',
       'Owners-Exempt: phase-0',
     ]);
-    assert.equal(check(dir).code, 1);
-    assert.equal(check(dir, ['--approved', 'integrator']).code, 0);
+    assert.equal(check(dir, ['--trailers']).code, 1);
+    assert.equal(check(dir, ['--trailers', '--approved', 'integrator']).code, 0);
     git(dir, 'checkout', '-q', '-B', 'rv/thread/integrator');
-    assert.equal(check(dir).code, 0);
+    assert.equal(check(dir, ['--trailers']).code, 0);
   });
 });
 
