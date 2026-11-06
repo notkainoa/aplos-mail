@@ -621,6 +621,8 @@ const FIXTURES: Record<string, Fixture> = {
   'sidebar-accounts-syncing': {
     title: 'Jordan’s grant is in and its list is still arriving: Syncing…',
     state: { view: 'week' },
+    events: [],
+    plans: [],
     calendars: [],
     accounts: [
       googleAccount('acct-jordan', 'jordan.lee@example.com', {
@@ -633,6 +635,8 @@ const FIXTURES: Record<string, Fixture> = {
   'sidebar-accounts-no-calendars': {
     title: 'Jordan’s grant is in and the list answered empty: No calendars',
     state: { view: 'week' },
+    events: [],
+    plans: [],
     calendars: [],
     accounts: [
       googleAccount('acct-jordan', 'jordan.lee@example.com', {
@@ -644,12 +648,16 @@ const FIXTURES: Record<string, Fixture> = {
   'sidebar-accounts-pending': {
     title: 'Calendar/get has not answered: a granted account reads Syncing…',
     state: { view: 'week' },
+    events: [],
+    plans: [],
     calendars: [],
     calendarsLoaded: false,
   },
   'sidebar-accounts-none': {
     title: 'No accounts: the legend and the block both say so',
     state: { view: 'week' },
+    events: [],
+    plans: [],
     calendars: [],
     accounts: [],
   },
