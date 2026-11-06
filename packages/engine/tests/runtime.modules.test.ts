@@ -27,11 +27,20 @@ function deps() {
 const registry: DeadlineRegistry = { register: () => () => {}, changed: () => {} };
 
 test('the root composes the lane modules; ports the host left out answer unavailable', async () => {
-  // eng-contract registers the settings writer, eng-views the sender-rule writer, eng-time the submission writer, eng-html the image allow-list
-  // writer and eng-host the audit-log writer; eng-ai's module is still empty.
+  // eng-contract registers the settings writer, eng-views the sender-rule writer, eng-time the submission writer,
+  // eng-ai the consent and job writers, eng-html the image allow-list writer and eng-host the audit and client writers.
   assert.deepEqual(
     laneExtensions().map(extension => extension.lane),
-    ['eng-contract', 'eng-views', 'eng-time', 'eng-html', 'eng-host'],
+    [
+      'eng-contract',
+      'eng-views',
+      'eng-time',
+      'eng-ai',
+      'eng-ai',
+      'eng-html',
+      'eng-host',
+      'eng-host',
+    ],
   );
   const t = await testEngine();
   try {
