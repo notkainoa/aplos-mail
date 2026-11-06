@@ -490,11 +490,19 @@ describe('Keyboard model', () => {
     assert.deepEqual(applyRemap(ui(km, 'doneLeft'), 'mail.done', 'e'), {});
   });
 
-  test('reserved chords are refused with a reason: ⌘Q, ⌘W, ⌘H', () => {
-    for (const chord of ['meta+q', 'meta+w', 'meta+h']) {
+  test('reserved chords are refused with a reason that never names a command id', () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ['meta+q', '⌘Q belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+      ['meta+c', '⌘C edits text, so it can’t be a shortcut. Press other keys.'],
+      ['Tab', 'Tab moves focus between regions, so it can’t be a shortcut. Press other keys.'],
+      ['meta+w', '⌘W belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+      ['meta+h', '⌘H belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+    ];
+    for (const [chord, sentence] of cases) {
       const v = judgeChord('mail.done', chord, ui());
       assert.equal(v.kind, 'refused', chord);
-      assert.match((v as { text: string }).text, /belongs to macOS/);
+      assert.equal((v as { text: string }).text, sentence, chord);
+      assert.doesNotMatch((v as { text: string }).text, /\b[a-z]+\.[a-zA-Z]+\b/, chord);
     }
   });
 
