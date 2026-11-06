@@ -234,7 +234,7 @@ export function judgeChord(commandId: string, chord: string, ui: KeyFields): Cho
       kind: 'refused',
       text: why
         ? `${shown} ${RESERVED_WHY[why]}, so it can’t be a shortcut. Press other keys.`
-        : `${shown} can’t be a shortcut. Press other keys.`,
+        : 'That shortcut holds a key that can’t be used. Reset it and try again.',
     };
   }
   if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown) };

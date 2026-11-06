@@ -506,6 +506,15 @@ describe('Keyboard model', () => {
     }
   });
 
+  test('a stale reserved chord elsewhere in a saved remap never blames the key just pressed', () => {
+    const stale = ui({ 'mail.done': [{ chord: 'meta+k' }, { chord: 'meta+c' }] });
+    const v = judgeChord('mail.done', 'meta+j', stale);
+    assert.equal(v.kind, 'refused');
+    const text = (v as { text: string }).text;
+    assert.equal(text, 'That shortcut holds a key that can’t be used. Reset it and try again.');
+    assert.doesNotMatch(text, /⌘J|meta/);
+  });
+
   test('a saved clash shows "Same keys as …" on the row; Reset removes one override, Reset all clears them', () => {
     const km = { 'mail.laneDown': [{ chord: 'meta+j' }] };
     const row = shortcutGroups(ui(km))
