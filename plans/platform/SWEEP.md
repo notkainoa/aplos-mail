@@ -85,3 +85,46 @@ should retry search on the real signed-in launch before counting this as open.
 **Unchanged:** Calendar + views "Couldn't load this list" (engine #313/#315 still open).
 Rows `settings-sections`/`help`/`reader-menu` show click-miss flags that are sweep artifacts
 (enumeration trips the sidebar-minimize toggle; ⋯ verified working by real click earlier).
+
+---
+
+## Run 5 — real-path e2e on the windowed packaged app (via the APLOS_TEST window/CDP hook)
+
+Driver: `apps/desktop/scripts/verify-hardening-e2e.mjs` — launches the packaged app with
+`APLOS_TEST=1 APLOS_ENGINE=real APLOS_TEST_SHOW_WINDOWS=1 APLOS_TEST_CDP_PORT=<port>
+APLOS_TEST_KEYCHAIN=login APLOS_DATA_DIR=<private copy>` and drives the shown window over
+loopback CDP (real pointer/key events, screenshots every step). Requires the test-window
+hook (PR #338). Seed = private copy of the signed-in spare-account data dir (cached mail
+renders; the copied credential does not unwrap → Reconnect state, documented below).
+
+Evidence: `~/.local/share/aplos-mail-review/e2e/final/` (43 screenshots + e2e.json).
+
+| Area | Result | Notes |
+|---|---|---|
+| Boot → Home | PASS | Sidebar, list, Do now + featured card render |
+| Triage keys E / → / L / Space | PASS | Done/Later move cards, Space opens |
+| One by one | PASS | Triage view works; harness ordering nit (already in obo mode from Space) |
+| Reader open | PASS | Letter opens inline; honest "Couldn't load this email. Try again" body state |
+| Reader images / links / mailto / ⋯ | n/a-seed | Body fetch needs live token — owner to check on real launch |
+| Attachment affordance | PASS | Save/open affordance present |
+| All mailboxes (Later/Done/Drafts/Sent/Spam/Trash/All mail) | PASS | Correct lists + empty states |
+| Search (query, open hit, clear) | PASS | Live query runs; results open |
+| Ask + Today | PASS | Dock opens, Today panel renders |
+| Calendar day/week/month + open event | PASS | Views render; an event opens (cached) |
+| Settings all sections (General/Mail/Calendar/AI/Notifications/Accounts/Keyboard/Help & about) | PASS | Every section renders — Accounts shows Reconnect/Remove/Add account |
+| Add account redirect | PASS | Recorded (test mode records the OAuth redirect, never opens a browser) |
+| Compose open | PASS | Compose renders |
+| Compose → send to spare itself | PASS | To/Subject/Body filled, ⌘↩ send accepted (dead auth queues — the flow itself works) |
+| Draft save → Drafts | PASS | Draft persists |
+| Sidebar toggle ⌘S | PASS | Collapses/restores |
+| Account switcher | PASS | All accounts menu opens |
+| Window drag / fullscreen | SKIP | Browser-domain bounds unavailable over page-level CDP headless |
+
+**Seed-state caveat (not app bugs):** the private copy cannot unwrap the credential — the
+account shows "Google needs you to sign in again. Reconnect" throughout. Letter bodies show
+"Couldn't load this email. Try again" (correct fail-soft), and any live network step
+(images/links/refresh) can't be verified on the copy. Live-account coverage for these stays
+with the owner's launch + the guarded live runner.
+
+**Finding:** the seeded-path screens are clean. Search now behaves (local index + honest
+copy) — the earlier seeded Search failure is closed.

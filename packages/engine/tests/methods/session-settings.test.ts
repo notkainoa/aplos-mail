@@ -357,3 +357,110 @@ test('Later/presets reads the week start from ui.calendar.weekStart in the setti
   const sunday = await at();
   assert.notEqual(sunday, monday, 'the owner\'s Sunday start moves "Next week"');
 });
+
+test('Settings: calendar.defaultCalendarId round-trips (an optional string the defaults do not carry)', async () => {
+  const w = await world();
+  const out = await w.call('Settings/set', {
+    opId: 'cal',
+    patch: { calendar: { defaultCalendarId: 'cal-1' } },
+  });
+  assert.equal(out.settings.calendar.defaultCalendarId, 'cal-1');
+  assert.equal((await w.call('Settings/get', {})).calendar.defaultCalendarId, 'cal-1');
+  w.file
+    .open()
+    .prepare('UPDATE settings SET data = ? WHERE id = 1')
+    .run(JSON.stringify({ calendar: { defaultCalendarId: 7 } }));
+  assert.equal(
+    'defaultCalendarId' in (await w.call('Settings/get', {})).calendar,
+    false,
+    'a wrong type is dropped',
+  );
+});
+
+test('Settings/set: a listener client cannot change what the owner is exposed to or can undo; a window can', async () => {
+  const w = await world();
+  const client = w.engine.connect(
+    listenerCaller({ id: 'c1', kind: 'cli', scopes: ['read', 'admin'] }, 'http') as never,
+  );
+  for (const patch of [
+    { mail: { remoteImages: 'allow' } },
+    { mail: { imageAllowList: ['a@b.example'] } },
+    { mail: { undoSendSeconds: 0 } },
+    { ai: { background: false } },
+  ] as const)
+    await assert.rejects(
+      client.call('Settings/set', { opId: `x-${JSON.stringify(patch).length}`, patch } as never),
+      (e: { type?: string }) => e.type === 'forbidden',
+      JSON.stringify(patch),
+    );
+  await client.call('Settings/set', { opId: 'ok', patch: { mail: { followUpDays: 6 } } });
+  const out = await w.call('Settings/set', {
+    opId: 'win',
+    patch: { mail: { remoteImages: 'allow', undoSendSeconds: 20 } },
+  });
+  assert.equal(out.settings.mail.remoteImages, 'allow');
+});
+
+test('Settings/set: ifInState from the future is a mismatch', async () => {
+  const w = await world();
+  await assert.rejects(
+    w.call('Settings/set', {
+      opId: 'f',
+      patch: {},
+      ifInState: { dbEpoch: w.store.dbEpoch, seq: w.store.seq() + 50 },
+    }),
+    (e: { type?: string }) => e.type === 'stateMismatch',
+  );
+});
+
+test("Session/get: the Mac's own name goes to the app, a listener client is told a generic one", async () => {
+  const w = await world();
+  assert.equal((await w.call('Session/get', {})).device.name, 'Test Mac');
+  const client = w.engine.connect(
+    listenerCaller({ id: 'c1', kind: 'cli', scopes: ['read'] }, 'http') as never,
+  );
+  assert.equal(
+    ((await client.call('Session/get', {})) as { device: { name: string; id: string } }).device
+      .name,
+    'This Mac',
+  );
+});
+
+test('Session/changes: one commit too big to send is cannotCalculateChanges (reload), a normal one is not', async () => {
+  const w = await world();
+  const start = (await w.call('Session/get', {})).state;
+  const many = (n: number, tag: string) =>
+    Array.from({ length: n }, (_, i) => ({
+      ...accountWrite,
+      id: `${tag}-${i}`,
+      address: `${tag}${i}@mail.example`,
+    }));
+  w.store.commit({ opId: 'small', origin: 'sync', writes: many(50, 'small') });
+  assert.equal((await w.call('Session/changes', { since: start })).changes.length, 50);
+  const mid = (await w.call('Session/get', {})).state;
+  w.store.commit({ opId: 'huge', origin: 'sync', writes: many(2100, 'huge') });
+  await assert.rejects(
+    w.call('Session/changes', { since: mid }),
+    (e: { type?: string }) => e.type === 'cannotCalculateChanges',
+  );
+});
+
+test('mergePatch ignores keys that are not sections and cannot be turned into a prototype write', () => {
+  const hostile = JSON.parse(
+    '{"__proto__":{"polluted":true},"constructor":{"x":1},"mail":{"__proto__":{"y":2},"followUpDays":4}}',
+  );
+  const next = mergePatch({}, hostile) as Record<string, unknown>;
+  assert.equal(
+    ({} as Record<string, unknown>).polluted,
+    undefined,
+    'Object.prototype is untouched',
+  );
+  assert.deepEqual(Object.keys(next), ['mail']);
+  assert.equal(Object.getPrototypeOf(next), Object.prototype);
+  assert.equal((next.mail as Record<string, unknown>).followUpDays, 4);
+  assert.equal(
+    Object.getPrototypeOf(next.mail),
+    Object.prototype,
+    'a __proto__ field is an own property, not a prototype',
+  );
+});

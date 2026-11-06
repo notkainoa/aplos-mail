@@ -31,8 +31,29 @@ export function ListEmpty({ text, icon, detail, state }: ListEmptyProps) {
  * The line a list shows when its view failed with nothing to show: the ErrorLine's own sentence (DESIGN 7.15) with Try
  * again, which reopens the view (`Reopenable`).
  */
-export function ListFailed() {
+/**
+ * Why a window ended, in the owner-visible contract classes: a sign-in or scope problem gets the sentence that
+ * says what to do; an unbuilt or unloaded view says it plainly; anything else is the generic list failure.
+ */
+function listFailedWhy(type: string | undefined): string | undefined {
+  switch (type) {
+    case 'needsReauth':
+    case 'permission':
+      return 'Google needs you to sign in again before it can show this list. Reconnect the account and try again.';
+    case 'unsupported':
+    case 'unavailable':
+    case 'notImplemented':
+      return 'This list isn’t available in this build yet.';
+    default:
+      return undefined;
+  }
+}
+
+export function ListFailed({ errorType }: { errorType?: string } = {}) {
   const reopen = useReopen();
+  const why = listFailedWhy(errorType);
+  if (why)
+    return <ErrorLine kind="reason" text={why} retryable placement="column" onAction={reopen} />;
   return <ErrorLine kind="listFailed" placement="column" onAction={reopen} />;
 }
 

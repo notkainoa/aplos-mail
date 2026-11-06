@@ -148,12 +148,17 @@
     "/call/Settings/set": {
       "post": {
         "operationId": "Settings_set",
-        "summary": "Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) is for Electron windows only.",
+        "summary": "Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) and three `mail` fields that change what the owner is exposed to or can undo (`remoteImages`, `imageAllowList`, `undoSendSeconds`) are for Electron windows only.",
         "tags": ["settings"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
         "x-aplos-audit": true,
-        "x-aplos-window-only-args": ["patch.ai"],
+        "x-aplos-window-only-args": [
+          "patch.ai",
+          "patch.mail.remoteImages",
+          "patch.mail.imageAllowList",
+          "patch.mail.undoSendSeconds"
+        ],
         "requestBody": {
           "required": true,
           "content": {

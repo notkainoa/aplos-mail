@@ -79,3 +79,8 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 | Today's tests, `apps/desktop/tests/*.test.ts` and `apps/desktop/tests/fixtures/**` | Kept green as long as their legacy code exists. Edited only by the restructure and by the lane that replaces the code under test; deleted in Phase 2 with that code. |
 | `mockups/**`, `research/**` | Read-only reference. Nobody edits them in this round. |
 | `packages/engine/src/methods/<area>.ts` not listed above | F5 creates one stub per contract area. If F5 adds an area this file does not name, `eng-contract` names the owning lane in its PR and the integrator adds it here. |
+
+## Owner pings
+
+OWNER PINGS. The owner gets a phone ping ONLY when something needs them. Any thread that posts READY-FOR-OWNER or WAITING ON OWNER (STATUS line or chat) ALSO runs, if on the owner's Mac: `~/.config/aplos-owner-ping.sh ready|waiting "<thread title>" "<one-line summary>"` (it POSTs `{kind,thread,summary}` to the owner webhook, reads the URL and key from `~/.config/aplos-owner-webhook.env`, dedupes within 1h). Threads on other machines (Linux) cannot reach the secret: they post the STATUS line and the orchestrator pings. NEVER ping for progress, merges, PRs, bugs found, reviews or status. NEVER print, log, copy or commit the URL or key; do not put them in any file in the repo, STATUS, PR or chat.
+

@@ -188,3 +188,41 @@ export function exposeTestHooks() {
     enumerable: false,
   });
 }
+
+/**
+ * Test-only window/CDP/keychain flags (APLOS_TEST=1 required for all):
+ * - APLOS_TEST_SHOW_WINDOWS=1: windows order in with showInactive() instead of staying hidden — a headless run a
+ *   CDP driver can screenshot. Never steals focus or switches Space, but they do become visible on screen.
+ * - APLOS_TEST_CDP_PORT=<0-65534>: append --remote-debugging-port for the run; 0 asks for a random port. The flag
+ *   is loopback-only by Chromium design; a caller-supplied -/--remote-debugging-address in argv is refused at startup.
+ * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain. On Electron 44 the safeStorage item resolves from the
+ *   package name — i.e. the real "Aplos Mail Safe Storage" item. A seal made by an identically-signed build unwraps
+ *   (same build re-run); a signature mismatch either raises the macOS keychain prompt (never silently) or denies the
+ *   unwrap, in which case the engine runs with a key error and accounts stay locked.
+ * Without APLOS_TEST=1 every flag is inert — normal launches are byte-for-byte unchanged.
+ */
+export interface TestFlags {
+  readonly showWindows: boolean;
+  readonly useLoginKeychain: boolean;
+  readonly cdpPort: number | undefined;
+}
+
+export function testFlags(env: NodeJS.ProcessEnv, isTest: boolean): TestFlags {
+  const none: TestFlags = { showWindows: false, useLoginKeychain: false, cdpPort: undefined };
+  if (!isTest) return none;
+  const raw = env.APLOS_TEST_CDP_PORT;
+  let cdpPort: number | undefined;
+  if (raw !== undefined) {
+    if (!/^\d{1,5}$/.test(raw)) return none;
+    const port = Number(raw);
+    if (port > 65534) return none;
+    cdpPort = port;
+  }
+  return {
+    showWindows: env.APLOS_TEST_SHOW_WINDOWS === '1',
+    useLoginKeychain: env.APLOS_TEST_KEYCHAIN === 'login',
+    cdpPort,
+  };
+}
+
+export const testOnlyFlags = testFlags(process.env, isTest);
