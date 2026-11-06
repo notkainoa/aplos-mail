@@ -17,5 +17,5 @@ export function overflows(el: Extent): boolean {
  * changes (a part added or dropped later, or the slot emptied) instead of keeping nodes that are gone.
  */
 export function partsKey(slot: SidebarSlot): string {
-  return `${slot.miniMonth ? 'month' : ''}|${slot.calendars ? 'calendars' : ''}`;
+  return `${slot.miniMonth ? 'month' : ''}|${slot.calendars ? 'calendars' : ''}|${slot.calendarAccounts ? 'accounts' : ''}`;
 }

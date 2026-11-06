@@ -38,12 +38,13 @@ export interface SidebarSlotViewProps {
 
 export function SidebarSlotView({ slot }: SidebarSlotViewProps) {
   const [ref, scrolls] = useScrolls(partsKey(slot));
-  if (!slot.miniMonth && !slot.calendars) return null;
+  if (!slot.miniMonth && !slot.calendars && !slot.calendarAccounts) return null;
   const reach = scrolls ? { tabIndex: 0, role: 'region', 'aria-label': 'Calendar' } : {};
   return (
     <div ref={ref} className="aplos-sidebar__slot" {...reach}>
       {slot.miniMonth ? <MiniMonth {...slot.miniMonth} /> : null}
       {slot.calendars ? <CalendarList {...slot.calendars} /> : null}
+      {slot.calendarAccounts ?? null}
     </div>
   );
 }

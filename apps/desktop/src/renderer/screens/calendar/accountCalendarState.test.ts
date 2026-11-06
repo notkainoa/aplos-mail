@@ -1,0 +1,168 @@
+// `calendarAccessOf`: every state and edge, on hand-written contract values (demo, non-Google, reauth +
+// missing calendar, granted with 0 and 1 and N calendars, syncing vs none, non-calendar missingPermissions).
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import { HARNESS_NOW_MS, type Account, type Calendar } from '../../data';
+import { calendarAccessOf, calendarOnLine } from './accountCalendarState';
+
+const NOW = HARNESS_NOW_MS;
+
+export function account(over: Partial<Account> = {}): Account {
+  return {
+    id: 'acct-1',
+    rev: 1,
+    provider: 'google',
+    address: 'alex.moreno@example.com',
+    name: 'Alex Moreno',
+    colorTag: 'sky',
+    demo: false,
+    health: { status: { state: 'ok' }, lastSyncAt: NOW - 120_000 },
+    capabilities: {
+      labels: true,
+      folders: false,
+      drafts: true,
+      serverSearch: true,
+      calendar: true,
+      filters: true,
+      push: true,
+      sendAs: true,
+      unsubscribeHeaders: true,
+    },
+    grantedScopes: [],
+    aiAllowed: true,
+    notifications: true,
+    identities: [],
+    pendingChanges: 0,
+    baselineDoneAt: NOW - 86_400_000,
+    createdAt: NOW - 30 * 86_400_000,
+    ...over,
+  };
+}
+
+function calendar(id: string, accountId: string): Calendar {
+  return {
+    id,
+    accountId,
+    name: id,
+    primary: false,
+    readOnly: false,
+    shown: true,
+    providerHidden: false,
+  };
+}
+
+const missingCalendar = (): Account =>
+  account({
+    missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
+  });
+
+describe('calendarAccessOf', () => {
+  test('demo and non-Google providers claim nothing', () => {
+    assert.equal(calendarAccessOf(account({ demo: true }), undefined), null);
+    assert.equal(
+      calendarAccessOf(account({ provider: 'demo', demo: true }), [calendar('c', 'acct-1')]),
+      null,
+    );
+    assert.equal(calendarAccessOf(account({ provider: 'imap' }), []), null);
+    assert.equal(calendarAccessOf(account({ provider: 'microsoft' }), undefined), null);
+  });
+
+  test('needsReauth signs in again, ahead of any missing permission', () => {
+    const a = account({
+      health: { status: { state: 'needsReauth', reason: 'invalid_grant' } },
+      missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
+    });
+    const access = calendarAccessOf(a, [calendar('c', 'acct-1')]);
+    assert.equal(access?.kind, 'needs-signin');
+    assert.equal(access?.line, 'Needs sign-in again');
+    assert.deepEqual(access?.action, { label: 'Sign in again', mode: 'reconnect' });
+  });
+
+  test('a missing calendar permission is not-allowed with the grant action', () => {
+    const access = calendarAccessOf(missingCalendar(), [calendar('c', 'acct-1')]);
+    assert.equal(access?.kind, 'not-allowed');
+    assert.equal(access?.line, 'Calendar not allowed yet');
+    assert.deepEqual(access?.action, { label: 'Allow calendar access', mode: 'grant' });
+  });
+
+  test('calendar capability off is not-allowed too', () => {
+    const a = account({
+      capabilities: { ...account().capabilities, calendar: false },
+    });
+    assert.equal(calendarAccessOf(a, [])?.kind, 'not-allowed');
+  });
+
+  test('needsPermission naming a calendar scope is not-allowed', () => {
+    const a = account({
+      health: {
+        status: {
+          state: 'needsPermission',
+          missingScopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
+        },
+      },
+    });
+    assert.equal(calendarAccessOf(a, [])?.kind, 'not-allowed');
+  });
+
+  test('needsPermission for mail scopes alone leaves the calendar state alone', () => {
+    const a = account({
+      health: {
+        status: { state: 'needsPermission', missingScopes: ['mail.modify'] },
+      },
+    });
+    const access = calendarAccessOf(a, [calendar('c', 'acct-1')]);
+    assert.equal(access?.kind, 'on');
+  });
+
+  test('a missing permission for another capability is not a calendar gap', () => {
+    const a = account({
+      missingPermissions: [{ capability: 'filters', reasonCode: 'permission.filters' }],
+    });
+    const access = calendarAccessOf(a, [calendar('c', 'acct-1')]);
+    assert.equal(access?.kind, 'on');
+    assert.equal(access?.line, 'Calendar on · 1 calendar');
+  });
+
+  test('granted: 1 and N calendars read with the count, singular for one', () => {
+    const one = calendarAccessOf(account(), [calendar('c1', 'acct-1')]);
+    assert.equal(one?.kind, 'on');
+    assert.equal(one?.line, 'Calendar on · 1 calendar');
+    const many = calendarAccessOf(account(), [
+      calendar('c1', 'acct-1'),
+      calendar('c2', 'acct-1'),
+      calendar('c3', 'acct-1'),
+      calendar('other', 'acct-2'),
+    ]);
+    assert.equal(many?.kind, 'on');
+    assert.equal(many?.line, 'Calendar on · 3 calendars');
+  });
+
+  test('granted, list not answered yet: Syncing…', () => {
+    assert.equal(calendarAccessOf(account(), undefined)?.kind, 'syncing');
+    assert.equal(calendarAccessOf(account(), undefined)?.line, 'Syncing…');
+  });
+
+  test('granted with none yet while the account still syncs: Syncing…', () => {
+    assert.equal(
+      calendarAccessOf(account({ health: { status: { state: 'syncing' } } }), [])?.kind,
+      'syncing',
+    );
+    assert.equal(
+      calendarAccessOf(account({ health: { status: { state: 'starting' } } }), [])?.kind,
+      'syncing',
+    );
+    assert.equal(calendarAccessOf(account({ baselineDoneAt: undefined }), [])?.kind, 'syncing');
+  });
+
+  test('granted, the list answered empty after first sync: No calendars', () => {
+    const access = calendarAccessOf(account(), []);
+    assert.equal(access?.kind, 'none');
+    assert.equal(access?.line, 'No calendars');
+    assert.equal(access?.action, null);
+  });
+
+  test('calendarOnLine: the exact words', () => {
+    assert.equal(calendarOnLine(1), 'Calendar on · 1 calendar');
+    assert.equal(calendarOnLine(4), 'Calendar on · 4 calendars');
+  });
+});

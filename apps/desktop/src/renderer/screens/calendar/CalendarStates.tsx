@@ -13,6 +13,7 @@ import { useMemo, useRef, useState, type JSX } from 'react';
 import {
   HARNESS_NOW_MS,
   toIsoDate,
+  type Account,
   type Calendar,
   type EpochMs,
   type Event,
@@ -78,6 +79,57 @@ const HOLLOW = calendar('hollow', 'Hollow Creek', 'ember');
 const FAMILY = calendar('family', 'Family', 'sand');
 const HOLIDAYS = calendar('holidays', 'Holidays', 'dusk', { readOnly: true });
 const CALENDARS: readonly Calendar[] = [WORK, PERSONAL, HOLLOW, FAMILY];
+
+/** A Google account for the sidebar's accounts block; `over` makes the state under test. */
+function googleAccount(id: string, address: string, over: Partial<Account> = {}): Account {
+  return {
+    id,
+    rev: 1,
+    provider: 'google',
+    address,
+    name: address,
+    colorTag: 'sky',
+    demo: false,
+    health: { status: { state: 'ok' }, lastSyncAt: HARNESS_NOW_MS - 120_000 },
+    capabilities: {
+      labels: true,
+      folders: false,
+      drafts: true,
+      serverSearch: true,
+      calendar: true,
+      filters: true,
+      push: true,
+      sendAs: true,
+      unsubscribeHeaders: true,
+    },
+    grantedScopes: [],
+    aiAllowed: true,
+    notifications: true,
+    identities: [],
+    pendingChanges: 0,
+    baselineDoneAt: HARNESS_NOW_MS - 86_400_000,
+    createdAt: HARNESS_NOW_MS - 30 * 86_400_000,
+    ...over,
+  };
+}
+
+const ALEX_ACCOUNT = googleAccount('acct-alex', 'alex.moreno@example.com', {
+  name: 'Alex Moreno',
+});
+const JORDAN_NO_CALENDAR = googleAccount('acct-jordan', 'jordan.lee@example.com', {
+  name: 'Jordan Lee',
+  colorTag: 'hill',
+  capabilities: { ...googleAccount('a', 'a@e.c').capabilities, calendar: false },
+  missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
+});
+const JORDAN_SIGNIN = googleAccount('acct-jordan', 'jordan.lee@example.com', {
+  name: 'Jordan Lee',
+  colorTag: 'hill',
+  health: {
+    status: { state: 'needsReauth', reason: 'invalid_grant' },
+    reasonCode: 'auth.expired',
+  },
+});
 
 type Person = { address: string; name: string };
 const person = (name: string, domain = 'example.com'): Person => ({
@@ -337,6 +389,12 @@ interface Fixture {
   events?: readonly Event[];
   plans?: readonly Plan[];
   calendars?: readonly Calendar[];
+  /** The accounts the sidebar's block lists; default Alex alone, calendars granted and synced. */
+  accounts?: readonly Account[];
+  /** False makes the block say "Syncing…" (Account/get unanswered); default true. */
+  accountsLoaded?: boolean;
+  /** False keeps the calendars list unanswered, so a granted account reads "Syncing…"; default true. */
+  calendarsLoaded?: boolean;
   /** Draw a pane state instead of the grid: 'loading' (the opening moment) or 'error' (the failed events window). */
   pane?: 'loading' | 'error';
 }
@@ -404,6 +462,10 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     today: toIsoDate(now),
     weekStartsOn,
     dispatch,
+    accounts: fixture.accounts ?? [ALEX_ACCOUNT],
+    accountsLoaded: fixture.accountsLoaded ?? true,
+    calendarsLoaded: fixture.calendarsLoaded ?? true,
+    onAccessAction: noop,
   });
 
   return (
@@ -414,6 +476,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
       >
         <MiniMonth {...sidebar.miniMonth} />
         <CalendarList {...sidebar.calendars} />
+        {sidebar.calendarAccounts}
       </aside>
       <Pane
         kind="main"
@@ -540,6 +603,55 @@ const FIXTURES: Record<string, Fixture> = {
     title: 'Family hidden, then Work shown alone with ⌥-click',
     state: { view: 'week', solo: 'work' },
     calendars: CALENDARS.map(c => (c.id === 'family' ? { ...c, shown: false } : c)),
+  },
+  'sidebar-accounts-on': {
+    title: 'Accounts under the legend: Alex’s four calendars, “Calendar on · 4 calendars”',
+    state: { view: 'week' },
+  },
+  'sidebar-accounts-not-allowed': {
+    title: 'Alex’s calendars on, Jordan’s not allowed yet: the one-line Allow calendar access',
+    state: { view: 'week' },
+    accounts: [ALEX_ACCOUNT, JORDAN_NO_CALENDAR],
+  },
+  'sidebar-accounts-needs-signin': {
+    title: 'Alex’s calendars on, Jordan’s sign-in expired: Needs sign-in again · Sign in again',
+    state: { view: 'week' },
+    accounts: [ALEX_ACCOUNT, JORDAN_SIGNIN],
+  },
+  'sidebar-accounts-syncing': {
+    title: 'Jordan’s grant is in and its list is still arriving: Syncing…',
+    state: { view: 'week' },
+    calendars: [],
+    accounts: [
+      googleAccount('acct-jordan', 'jordan.lee@example.com', {
+        name: 'Jordan Lee',
+        colorTag: 'hill',
+        health: { status: { state: 'syncing' } },
+      }),
+    ],
+  },
+  'sidebar-accounts-no-calendars': {
+    title: 'Jordan’s grant is in and the list answered empty: No calendars',
+    state: { view: 'week' },
+    calendars: [],
+    accounts: [
+      googleAccount('acct-jordan', 'jordan.lee@example.com', {
+        name: 'Jordan Lee',
+        colorTag: 'hill',
+      }),
+    ],
+  },
+  'sidebar-accounts-pending': {
+    title: 'Calendar/get has not answered: a granted account reads Syncing…',
+    state: { view: 'week' },
+    calendars: [],
+    calendarsLoaded: false,
+  },
+  'sidebar-accounts-none': {
+    title: 'No accounts: the legend and the block both say so',
+    state: { view: 'week' },
+    calendars: [],
+    accounts: [],
   },
   'cal-loading': {
     title: 'Opening: nothing yet, and no spinner for a local read',

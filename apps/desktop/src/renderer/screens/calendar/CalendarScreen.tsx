@@ -13,6 +13,8 @@ import type { CommandContext } from '../../commands';
 import {
   api,
   toIsoDate,
+  useAccounts,
+  useAccountsLoaded,
   useNow,
   useSettings,
   useView,
@@ -23,6 +25,7 @@ import {
   type State,
 } from '../../data';
 import {
+  openSheet,
   useCommandTarget,
   usePaneHeaderPart,
   useRegisterCommands,
@@ -371,8 +374,21 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     [events, plans, calendars, state.solo, range.from, range.to, defaultId, overlay],
   );
   const today = toIsoDate(now);
-  // The shell's sidebar slot (PR #271): MiniMonth and the Calendars list under the place groups. Null while the pane
-  // draws nothing (opening, or the failed window), and the hook clears it when the screen unmounts.
+  // The sidebar's accounts block reads the accounts this view draws from — scoped when the screen is.
+  const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
+  const shownAccounts = useMemo(
+    () => (accountId ? accounts.filter(a => a.id === accountId) : accounts),
+    [accounts, accountId],
+  );
+  // "Allow calendar access" and "Sign in again" open the shell's one reconnect sheet (grant vs reconnect).
+  const accessAction = useCallback(
+    (id: string, mode: 'reconnect' | 'grant') => openSheet('reconnect', { accountId: id, mode }),
+    [],
+  );
+  // The shell's sidebar slot (PR #271): MiniMonth, the Calendars list and the accounts block under the place
+  // groups. Null while the pane draws nothing (opening, or the failed window), and the hook clears it when the
+  // screen unmounts.
   const sidebar = useMemo(
     () =>
       ctx.windowReady
@@ -383,9 +399,25 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
             today,
             weekStartsOn,
             dispatch,
+            accounts: shownAccounts,
+            accountsLoaded,
+            calendarsLoaded: loaded !== undefined,
+            onAccessAction: accessAction,
           })
         : null,
-    [ctx.windowReady, state, calendars, windowEntries, today, weekStartsOn, dispatch],
+    [
+      ctx.windowReady,
+      state,
+      calendars,
+      windowEntries,
+      today,
+      weekStartsOn,
+      dispatch,
+      shownAccounts,
+      accountsLoaded,
+      loaded,
+      accessAction,
+    ],
   );
   useSidebarSlot(sidebar);
 
