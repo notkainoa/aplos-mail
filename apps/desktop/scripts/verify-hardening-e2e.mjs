@@ -74,6 +74,8 @@ async function main() {
   }
   if (!mailPage) throw new Error('no renderer page after 60s');
   const ws = new WebSocket(mailPage.webSocketDebuggerUrl);
+  let bws = null;
+  let bsend = async () => undefined;
   await new Promise((res, rej) => {
     ws.addEventListener('open', res, { once: true });
     ws.addEventListener('error', rej, { once: true });
@@ -92,6 +94,31 @@ async function main() {
   });
   await send('Runtime.enable');
   await send('Page.enable');
+  try {
+    const ver = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+    bws = new WebSocket(ver.webSocketDebuggerUrl);
+    await new Promise((res, rej) => {
+      bws.addEventListener('open', res, { once: true });
+      bws.addEventListener('error', rej, { once: true });
+    });
+    let bid = 10000;
+    const bpending = new Map();
+    bws.addEventListener('message', e => {
+      const m = JSON.parse(e.data);
+      if (m.id && bpending.has(m.id)) {
+        bpending.get(m.id)(m);
+        bpending.delete(m.id);
+      }
+    });
+    bsend = (method, params = {}) =>
+      new Promise(r => {
+        const i = ++bid;
+        bpending.set(i, r);
+        bws.send(JSON.stringify({ id: i, method, params }));
+      });
+  } catch {
+    // No browser-level endpoint — window-geometry checks will be skipped.
+  }
   function send(method, params = {}) {
     return new Promise(r => {
       const i = ++id;
@@ -128,8 +155,10 @@ async function main() {
         const t=(e.getAttribute('aria-label')||e.textContent||'').trim();
         return t===want||t.startsWith(want+'\\n')||t.startsWith(want+' ');
       });
-      if(!el)return null;const r=el.getBoundingClientRect();
-      return {x:r.x+r.width/2,y:r.y+r.height/2,vis:r.width>0&&r.height>0};
+      if(!el)return null;el.scrollIntoViewIfNeeded?el.scrollIntoViewIfNeeded():el.scrollIntoView({block:'nearest'});
+      const r=el.getBoundingClientRect();
+      const vis=r.width>0&&r.height>0&&r.x>=0&&r.y>=0&&r.x<window.innerWidth&&r.y<window.innerHeight;
+      return {x:r.x+r.width/2,y:r.y+r.height/2,vis};
     })()`);
   const click = async name => {
     const r = await rect(name);
@@ -179,7 +208,7 @@ async function main() {
   // Let the app settle: engine boot + window + first sync state.
   await delay(9000);
   const win = async () =>
-    send('Browser.getWindowForTarget')
+    bsend('Browser.getWindowForTarget', { targetId: mailPage.id })
       .then(r => r.result?.bounds)
       .catch(() => null);
 
