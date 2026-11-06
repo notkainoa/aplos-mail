@@ -167,4 +167,6 @@ export const Problem = z.object({
   reasonCode: z.string(),
   message: z.optional(text(1_000)),
   at: z.optional(EpochMs),
+  /** A pause: when the engine asks again (`paused`, and a run that skipped accounts cooling down). */
+  resumeAt: z.optional(EpochMs),
 });
