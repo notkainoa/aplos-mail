@@ -73,6 +73,32 @@ export function searchRemote(services: EngineServices, args: Args, connectionId:
   return result;
 }
 
+/** The body a failed search puts on the run and its windows. An auth failure is NOT a pause: the generic
+ * `paused` body would show the "slow down" copy, hiding that the account needs re-signing (Platform's
+ * sweep found a Reconnect-state token rendering the throttle line). `auth.reconnect` keeps the
+ * progress-frame path honest too — the renderer keys needsReauth off the `auth.` prefix as well as the type. */
+function searchErrorBody(error: unknown, services: EngineServices): ErrorBody {
+  if (error instanceof PausedError && error.cls === 'auth')
+    return {
+      type: 'needsReauth',
+      reasonCode: 'auth.reconnect',
+      message: 'This account needs you to sign in again.',
+    };
+  if (error instanceof ProviderError && error.error.class === 'auth')
+    return {
+      type: 'needsReauth',
+      reasonCode: 'auth.reconnect',
+      message: 'This account needs you to sign in again.',
+    };
+  if (error instanceof PausedError && error.cls === 'config')
+    return {
+      type: 'permission',
+      reasonCode: 'auth.config',
+      message: 'This account needs its permissions reviewed.',
+    };
+  return toContractError(error, 'Search/remote', services.log).body;
+}
+
 /** The provider's own "wait until" from whatever it threw, or a short breath for a hint-less throttle;
  * `synthetic` means we guessed (no provider hint) and the number should not go on the wire. */
 function resumeHint(
@@ -223,7 +249,7 @@ async function askAccounts(services: EngineServices, args: Args): Promise<Outcom
         for (const a of project ? sameProvider(services, account) : [account])
           pauseMap.set(a, until);
       }
-      const body = toContractError(error, 'Search/remote', services.log).body;
+      const body = searchErrorBody(error, services);
       // A synthesized breath (hint-less PausedError) is not put on the wire — the client would trust it.
       if (until === undefined || resume!.synthetic) return { body };
       return { body: { ...body, resumeAt: until } };
