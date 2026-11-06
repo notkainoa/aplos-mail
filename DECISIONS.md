@@ -1681,8 +1681,19 @@ html-5 part 1, items (a) to (c) of the Integrator's 2026-11-04 03:59 DECIDED. De
 
 - **The owner hand-checked the app and overrode DESIGN 7.14's periods and layout.** Empty states are now centred both ways in the pane (the white pane body under the pane header, never top-of-column), carry NO trailing period, keep one short line with at most one quieter `detail` line, may show one small muted icon above the line (never in a circle), and all render through the one shared `EmptyLine` (`ui/list/EmptyLine.tsx`) with `placement: 'pane' | 'inline'` and an optional `icon`. Inline uses (Low sheet, Settings queue, search no-match, the calendar's floating panel) stay compact. Home's inbox zero keeps the `display` role, calmer. The icon per place is chosen once, in `screens/lists/listKinds.ts` (`emptyIcon`/`emptyDetail` on `ListConfig`) and `shell/states.tsx` (`EMPTY_STATES`), never scattered.
 
+<<<<<<< HEAD
 ## 2026-11-05 — eng-host: the #313 tickets that are eng-host's
 
 - **A revoked client is refused on its next call, whatever its transport does (prov-cal's ticket 2).** `dispatchWith` asks `clients.revoked_at` for a listener caller's `clientId` before any handler runs and answers `forbidden` "This tool is no longer allowed." (one indexed read per listener call). A client the engine has no row for is the transport's to authenticate (not refused here); a window or main is never refused. Closing the open stream and socket is the transport's, when the real engine has one.
 - **`Clients/audit` shows a `target` only for methods whose target is a client id** (`Clients/revoke`, which only the app can call, so in practice none today); the allowed sender behind a `Mail/allowImages` row stays in the table and never reaches a reader. `Clients/revoke` stamps `revoked_at` once (a repeat does not move the time).
 - **Not eng-host's, for eng-ai (prov-cal's tickets 1 and 3):** `Ai/*` and the background job runner must refuse unless consent is granted and not `needsReconsent`; the `Ai/providers` fingerprint origin and path must match the configured address it reports. `audit_log` age-out (HANDOFF.md) is still open.
+=======
+## 2026-11-05 — eng-views: #317 fix round (Search/remote cool-downs)
+
+- **A skipped account is a partial run, not `done` (HIGH).** When some accounts were skipped for a cool-down and the others answered, the run ends with a progress `error` frame whose `problem` is `{reasonCode: 'paused', message, resumeAt}` (the windows keep what the healthy accounts found; `done` would read an empty list as "nothing matched anywhere"). All accounts cooling is still the `paused` error that ends the windows. `Problem` gained an optional `resumeAt` (additive, `contract/src/schemas/common.ts`).
+- **Pauses are clamped (MEDIUM).** A stored `until` is at most now + 24 h (a huge or garbage `retryAfterMs`, `resumeAt` or `PausedError.until`), the same number goes on the wire, and an entry more than 24 h ahead of now is expired when read (a clock set back).
+- **A project-wide refusal cools that provider's accounts only (LOW):** the accounts of the same provider as the one that got it (`SELECT ... WHERE provider = ...`), not the other providers'.
+- **The default breath (10 s, not on the wire) applies to the governor's budget classes `throttle`, `daily`, `anti_abuse` (and a concurrency refusal)**; `quota` and `concurrency` were not classes (`ports/governor.ts`).
+- **`askProvider` is total** (a store failure is an error body, as before the PR) on top of the shared-run backstop in `runSearch`.
+- Tests: `tests/views/remote-pause.test.ts` (8, fake clock, each guard mutation-checked: the pause ending, the exact 10 s, anti_abuse, the 24 h clamp on the wire and in the store, the project scope, the partial run, a joiner's own frames, a store failure) and the two older tests in `windows.test.ts` updated to the partial / three-run shapes.
+>>>>>>> origin/revamp
