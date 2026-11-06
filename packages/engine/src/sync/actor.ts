@@ -817,7 +817,7 @@ export class AccountActor {
    * Settings row (`Account.missingPermissions` capability 'calendar'), at start, on reconnect and on a `permission`
    * refusal that names the scopes. Never `needsPermission`: that is the core mail scope's alone.
    */
-  private refreshMissingPermissions(): void {
+  refreshMissingPermissions(): void {
     const missing = this.missingPermissionsNow() ?? [];
     const before = this.runtime.missingPermissions ?? [];
     if (
