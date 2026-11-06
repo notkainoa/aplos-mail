@@ -41,6 +41,8 @@ export const oauthReturnLinkMaxLength = 300;
 
 const noncePattern = /^[0-9a-f]{32}$/;
 const fileSuffix = '.json';
+/** An entry is a two-field object well under this; a bigger file is never read at all. */
+const entryFileMaxBytes = 256;
 
 function parse(raw: string): URL | undefined {
   try {
@@ -124,7 +126,9 @@ interface EntryFile {
 
 function readEntry(file: string): OauthReturnEntry | undefined {
   try {
-    if (!lstatSync(file).isFile()) return undefined;
+    const stat = lstatSync(file);
+    // A planted oversized file is treated as absent without being read or parsed.
+    if (!stat.isFile() || stat.size > entryFileMaxBytes) return undefined;
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as EntryFile;
     const purpose =
       parsed?.purpose === 'onboarding' || parsed?.purpose === 'mail' ? parsed.purpose : undefined;

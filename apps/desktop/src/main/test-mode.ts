@@ -145,13 +145,13 @@ export function silenceDialogs(dialog: object, log: (line: string) => void) {
 }
 
 /** Links the app asked the system to open in test mode (`globalThis.aplosTest.externalLinks`), so a test can finish an OAuth connect. */
+export const recordedExternalLinks: string[] = [];
+
 /** What `handleOauthReturn` did with each `aplos://oauth-return` link, never the nonce. */
 export const recordedOauthReturns: string[] = [];
 export function recordOauthReturn(entry: string) {
   if (isTest) recordedOauthReturns.push(entry);
 }
-
-export const recordedExternalLinks: string[] = [];
 /**
  * Freeze round 2, R2H-5: the engine's `openExternal` request (OAuth connect) and the session's microphone permission
  * handler reach `shell.openExternal` and `systemPreferences.askForMediaAccess` without a test-mode check, which would
