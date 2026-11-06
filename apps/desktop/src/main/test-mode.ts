@@ -192,8 +192,8 @@ export function exposeTestHooks() {
 /**
  * Test-only window/CDP/keychain flags (APLOS_TEST=1 required for all):
  * - APLOS_TEST_SHOW_WINDOWS=1: windows order in with showInactive() instead of staying hidden — a headless run a
- *   CDP driver can screenshot. Never steals focus or switches Space.
- * - APLOS_TEST_CDP_PORT=<0-65535>: append --remote-debugging-port for the run; 0 asks for a random port. The flag
+ *   CDP driver can screenshot. Never steals focus or switches Space, but they do become visible on screen.
+ * - APLOS_TEST_CDP_PORT=<0-65534>: append --remote-debugging-port for the run; 0 asks for a random port. The flag
  *   is loopback-only by Chromium design; a caller-supplied -/--remote-debugging-address in argv is refused at startup.
  * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain. On Electron 44 the safeStorage item resolves from the
  *   package name — i.e. the real "Aplos Mail Safe Storage" item. A seal made by an identically-signed build unwraps
@@ -213,9 +213,9 @@ export function testFlags(env: NodeJS.ProcessEnv, isTest: boolean): TestFlags {
   const raw = env.APLOS_TEST_CDP_PORT;
   let cdpPort: number | undefined;
   if (raw !== undefined) {
-    if (!/^\d+$/.test(raw)) return none;
+    if (!/^\d{1,5}$/.test(raw)) return none;
     const port = Number(raw);
-    if (port > 65535) return none;
+    if (port > 65534) return none;
     cdpPort = port;
   }
   return {

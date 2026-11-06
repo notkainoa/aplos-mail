@@ -4,10 +4,12 @@
 // records PASS/FAIL. Unlike the seeded sweep this exercises live Gmail: real search, real sync
 // state, real send-to-self. Never prints the account address, tokens or mail bodies.
 //
-// Usage: node scripts/verify-hardening-e2e.mjs <path-to-.app> --out <dir> [--port N] [--skip-send]
+// Usage: node scripts/verify-hardening-e2e.mjs <path-to-.app> --out <dir> --data-dir <seed> [--skip-send]
+// --data-dir must be a private copy under a temp root carrying .aplos-test (no run/ or Singleton* locks).
+// Screenshots contain real mail content: keep --out private (never inside the repo).
 // Results: <out>/e2e.json, <out>/e2e.md, <out>/<step>.png. Exit 1 on any FAIL row.
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const appArg = process.argv.find(a => a.endsWith('.app'));
@@ -16,7 +18,6 @@ const flag = n => {
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
 const outDir = flag('--out');
-const PORT = Number(flag('--port') ?? 0) || 9258;
 const skipSend = process.argv.includes('--skip-send');
 if (!appArg || !outDir) {
   console.error('usage: verify-hardening-e2e.mjs <.app> --out <dir> [--port N] [--skip-send]');
@@ -39,15 +40,17 @@ mkdirSync(outDir, { recursive: true });
 const output = [];
 const child = spawn(exe, [], {
   env: {
-    ...process.env,
-    ELECTRON_RUN_AS_NODE: undefined,
-    NODE_OPTIONS: undefined,
-    APLOS_RENDERER_URL: undefined,
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    USER: process.env.USER,
+    SHELL: process.env.SHELL,
+    LANG: process.env.LANG ?? 'en_US.UTF-8',
+    TMPDIR: process.env.TMPDIR ?? '/tmp',
     APLOS_ENGINE: 'real',
     APLOS_TEST: '1',
     APLOS_DATA_DIR: dataDir,
     APLOS_TEST_SHOW_WINDOWS: '1',
-    APLOS_TEST_CDP_PORT: String(PORT),
+    APLOS_TEST_CDP_PORT: '0',
     APLOS_TEST_KEYCHAIN: 'login',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -56,8 +59,22 @@ for (const s of [child.stdout, child.stderr]) s.on('data', c => output.push(c.to
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
 
+let PORT;
 async function main() {
-  // Wait for the mail window to appear over CDP (real path prints no test-ready line).
+  // Wait for Chromium to publish the random loopback port inside OUR private data dir — a stale
+  // endpoint owned by another process can never be mistaken for ours.
+  const portFile = `${dataDir}/DevToolsActivePort`;
+  for (let i = 0; i < 120 && !PORT; i++) {
+    await delay(500);
+    try {
+      PORT = Number(readFileSync(portFile, 'utf8').split('\n')[0]) || undefined;
+    } catch {
+      // DevToolsActivePort not written yet.
+    }
+    if (child.exitCode !== null)
+      throw new Error(`app exited early: ${output.join('').slice(-300)}`);
+  }
+  if (!PORT) throw new Error(`no DevToolsActivePort in ${dataDir}`);
   let mailPage;
   for (let i = 0; i < 150; i++) {
     await delay(400);
@@ -76,7 +93,7 @@ async function main() {
       // DevTools endpoint not up yet — keep polling.
     }
   }
-  if (!mailPage) throw new Error('no renderer page after 60s');
+  if (!mailPage) throw new Error(`no renderer page after 60s — ${output.join('').slice(-240)}`);
   const ws = new WebSocket(mailPage.webSocketDebuggerUrl);
   let bws = null;
   let bsend = async () => undefined;
@@ -266,6 +283,14 @@ async function main() {
       await clickAt(r.x, r.y);
       await delay(2000);
       await key('Escape', 0, 'Escape');
+      await delay(800);
+      const left = await ev(
+        `document.querySelector('input[placeholder*="To"],textarea[placeholder*="To"]')?'compose-open':'closed'`,
+      );
+      if (left !== 'closed') {
+        await key('Escape', 0, 'Escape');
+        pageErrors.push('mailto compose did not close; send step will not run');
+      }
     } else pageErrors.push('no mailto link found');
   });
   await step('reader-attachment', async () => {
@@ -346,11 +371,21 @@ async function main() {
       wait: 1500,
     });
   }
-  // Capture the spare account's own address from Settings → Accounts for send-to-self (kept in
-  // memory only, never written to disk or the report).
-  const selfAddress = await ev(`(()=>{
-    const m=(document.body.innerText||'').match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);
-    return m?m[0]:null})()`);
+  // The spare account's own address for send-to-self: read from the private copy's accounts
+  // table, never from page text (a wrong scrape would send to a third party). Memory only.
+  const selfAddress = (() => {
+    try {
+      const out = execFileSync('/usr/bin/sqlite3', [
+        `${dataDir}/mail.db`,
+        "SELECT address FROM accounts WHERE provider='gmail' LIMIT 1",
+      ])
+        .toString()
+        .trim();
+      return /^[\w.+-]+@[\w.-]+\.[\w.]+$/.test(out) ? out : null;
+    } catch {
+      return null;
+    }
+  })();
 
   // ── Add account redirect ────────────────────────────────────
   await step('add-account', async () => {
