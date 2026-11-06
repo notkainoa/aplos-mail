@@ -39,6 +39,15 @@ if (!dataDir) {
 mkdirSync(outDir, { recursive: true });
 
 const output = [];
+// A free loopback port we hand to the child; DevToolsActivePort in our private dir then proves
+// the bound endpoint is really this app's and never a stale bind owned by someone else.
+const PORT = await new Promise((resolve, reject) => {
+  const srv = createServer().listen(0, '127.0.0.1', () => {
+    const port = srv.address().port;
+    srv.close(() => resolve(port));
+  });
+  srv.on('error', reject);
+});
 const child = spawn(exe, [], {
   env: {
     HOME: process.env.HOME,
@@ -59,15 +68,6 @@ const child = spawn(exe, [], {
 for (const s of [child.stdout, child.stderr]) s.on('data', c => output.push(c.toString()));
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
-// A free loopback port we hand to the child; DevToolsActivePort in our private dir then proves
-// the bound endpoint is really this app's and never a stale bind owned by someone else.
-const PORT = await new Promise((resolve, reject) => {
-  const srv = createServer().listen(0, '127.0.0.1', () => {
-    const port = srv.address().port;
-    srv.close(() => resolve(port));
-  });
-  srv.on('error', reject);
-});
 async function main() {
   // Wait for Chromium to publish the random loopback port inside OUR private data dir — a stale
   // endpoint owned by another process can never be mistaken for ours.
