@@ -128,7 +128,7 @@ export function readAccount(store: StorePort, id: AccountId): AccountRow | undef
       id,
       provider: row.provider as ProviderKind,
       address: row.address,
-      grantedScopes: row.granted_scopes ? (JSON.parse(row.granted_scopes) as string[]) : [],
+      grantedScopes: parseScopes(row.granted_scopes),
       capabilities: { threading: 'native', ...caps } as Capabilities,
     },
     baselineDoneAt: row.baseline_done_at ?? undefined,
@@ -190,4 +190,15 @@ export function readFailures(
     ),
   );
   return new Map(rows.map(r => [r.item, r.attempts]));
+}
+
+/** A `granted_scopes` column: its string array, or [] for anything else — a corrupt row narrows, it never crashes. */
+function parseScopes(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
 }

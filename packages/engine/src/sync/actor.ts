@@ -245,6 +245,10 @@ export class AccountActor {
     this.opsHoldUntil = 0;
     if (facts.grantedScopes) this.runtime.grantedScopes = facts.grantedScopes;
     if (facts.capabilities) this.runtime.capabilities = facts.capabilities;
+    // The adapter holds the same `AdapterAccount` object: mutate it in place so `plan` and `context()`
+    // see the new grant at once — a re-consent that added the calendar scopes must not wait for a restart.
+    if (facts.grantedScopes) this.deps.account.grantedScopes = facts.grantedScopes;
+    if (facts.capabilities) this.deps.account.capabilities = facts.capabilities;
     this.calendarScopeGap = undefined;
     this.refreshMissingPermissions();
     if (facts.reconnectBy !== undefined) {
