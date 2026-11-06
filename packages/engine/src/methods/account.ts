@@ -173,7 +173,7 @@ export const handlers: AreaHandlers<'account'> = {
     // grant on this same connection return there too (`returns.ts` binds the nonce to the window).
     // A non-window caller (a listener client, the CLI) can send a setupId but never binds the
     // setup window — the same check that gates the mark gates the binding.
-    const fromSetupWindow = ctx.caller.kind === 'window' && args.setupId !== undefined;
+    const fromSetupWindow = ctx.caller.kind === 'window' && Boolean(args.setupId);
     if (fromSetupWindow) noteOnboardingConnection(ctx.connectionId);
     const returnTo = fromSetupWindow ? 'onboarding' : 'mail';
     return sessionsOf(ctx.services).begin({

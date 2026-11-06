@@ -83,6 +83,12 @@ test('Account/connect binds the setup window only for a window caller carrying s
     // A window caller without a setupId is the mail window's Add account flow.
     await handlers['Account/connect']({ provider: 'google', address: 'm@gmail.com' }, t.ctx);
     assert.equal(oauthReturnFor('new:m@gmail.com'), 'mail');
+    // An empty setupId is no setup session (the old truthiness rule): it binds 'mail' too.
+    await handlers['Account/connect'](
+      { provider: 'google', address: 'e@gmail.com', setupId: '' },
+      t.ctx,
+    );
+    assert.equal(oauthReturnFor('new:e@gmail.com'), 'mail');
   } finally {
     t.cleanup();
   }
