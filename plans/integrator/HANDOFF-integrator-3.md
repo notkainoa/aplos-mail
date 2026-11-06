@@ -78,3 +78,7 @@ Send path and send guard (`outbox/*`, prov-gmail send/draft MIME headers), draft
 
 Twice I chained `owners-check ...; resolve; merge` in ONE command, and the merge ran although owners-check had printed FAIL (the chain used `;`, not `&&`). Both were benign (plans/STATUS.md; eng-contract's calendar.test.ts, which I had read), but run owners-check as its own step, READ its last lines, and gate the merge on it: `node scripts/audit/owners-check.mjs ... --approved <lanes> && echo OWNERS-OK` then merge in a separate call. Always include `plat-ci` (for plans/STATUS.md) and `eng-contract` (for packages/engine/tests/**) in --approved when the PR touches them.
 
+## Direct pushes to revamp (2026-11-05 slip by platform)
+
+`git push origin HEAD:revamp` from a feature branch lands the WHOLE branch (platform's f8105204). Before any direct push of STATUS lines run `git log --oneline origin/revamp..HEAD` and push only if every listed commit is a STATUS or HANDOFF commit; otherwise open a PR. My own thread branch (rv/thread/integrator-3) holds only STATUS/OWNERS/HANDOFF commits and `git pull --no-rebase origin revamp` merges, so the push is safe there.
+
