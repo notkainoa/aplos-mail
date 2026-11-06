@@ -241,6 +241,36 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
+  test('ai/accountMail is offered only while a real account keeps AI off', () => {
+    try {
+      publishAvailability({ accounts: [ALEX], providers: providers(), session: session() });
+      assert.equal(rowAvailable('ai', 'accountMail'), false, 'every account on hides the row');
+      publishAvailability({ accounts: [ALEX, JORDAN], providers: providers(), session: session() });
+      assert.equal(rowAvailable('ai', 'accountMail'), true, 'an account off offers it');
+      const demo = account({
+        id: 'demo',
+        address: 'demo@example.com',
+        demo: true,
+        aiAllowed: false,
+      });
+      publishAvailability({ accounts: [demo], providers: providers(), session: session() });
+      assert.equal(
+        rowAvailable('ai', 'accountMail'),
+        false,
+        'the demo account never draws the row',
+      );
+      publishAvailability({
+        accounts: [],
+        providers: providers(),
+        session: session(),
+        accountsLoaded: false,
+      });
+      assert.equal(rowAvailable('ai', 'accountMail'), true, 'accounts still loading stays offered');
+    } finally {
+      clearAvailability();
+    }
+  });
+
   test('the calendar permission row also needs the calendar capability, as the section draws it', () => {
     const missing = account({
       id: 'mp',

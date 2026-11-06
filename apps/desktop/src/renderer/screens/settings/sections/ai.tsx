@@ -61,7 +61,7 @@ export function Ai({ data, view, actions }: SectionProps) {
   const paused = capNote(data.usage, data.now);
   // Accounts from before the on-by-default owner decision keep AI off; this row is the one-time way to
   // bring them to the new default (owner's ask, 2026-11-06). Hidden when every account is already on.
-  const offAccounts = data.accounts.filter(a => !a.aiAllowed);
+  const offAccounts = data.accounts.filter(a => !a.demo && !a.aiAllowed);
 
   return (
     <>
