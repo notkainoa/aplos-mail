@@ -30,7 +30,6 @@ import {
   type WorkflowCopy,
 } from '../ports';
 import { LANES } from './budgets';
-import { runCalendarStep } from './actor-calendar';
 import { stepWrites } from './facts';
 import { peerClaimLive } from './lease';
 import { flushable, parseOpPayload, pendingOp, readOps, settleWrites, type OpRow } from './ops';
@@ -512,8 +511,12 @@ export class AccountActor {
   }
 
   /** A `calendars` or `cal:<id>` step on the adapter's calendar half (D12; the body lives in actor-calendar.ts). */
+  private calSteps: Promise<typeof import('./actor-calendar')> | undefined;
   private runCalendarStep(step: PlannedStep, state: SyncState): Promise<void> {
-    return runCalendarStep(this, step, state);
+    // Dynamic edge keeps the calendar half out of the startup bundle (portability budget); it loads
+    // only on accounts whose adapter actually has a `.calendar` slot.
+    const mod = (this.calSteps ??= import('./actor-calendar'));
+    return mod.then(m => m.runCalendarStep(this, step, state));
   }
 
   /** One `cal:<id>` entry in `runtime.calendars` (the D12 per-calendar state), emitted on change. */

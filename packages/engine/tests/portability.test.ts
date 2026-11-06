@@ -106,6 +106,10 @@ const lazyModules = [
   join(src, 'calendar', 'recurrence', 'index.ts'),
   join(src, 'calendar', 'recurrence', 'edit.ts'),
   join(src, 'calendar', 'recurrence', 'keys.ts'),
+  // Calendar sync dispatch is loaded on first use via `import()` in actor.ts — only accounts with a
+  // calendar-capable adapter pay for it.
+  join(src, 'sync', 'actor-calendar.ts'),
+  join(src, 'sync', 'calendar-facts.ts'),
 ];
 // The budget is for the bundle that ships, so it is measured minified (2026-10-28: 253,443 bytes; unminified the same
 // files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06
