@@ -17,6 +17,7 @@ import type {
   SyncLane,
   SyncState,
 } from '@aplos/engine/ports';
+import { RECURRENCE_ID_FORMAT } from '@aplos/engine/ports';
 import { GcalClient, type GcalDeps } from './gcal-client';
 
 /**
@@ -233,6 +234,24 @@ function recurrenceOf(lines: string[] | undefined): Pick<EventFacts, 'rrule' | '
   };
 }
 
+/**
+ * A canonical id only counts when its date is real too — `2026-02-30`, `2026-1-5` and year +275760 all
+ * leave Google's hands occasionally and any one of them would fail the store's FR-20 check and wedge the
+ * whole calendar's commit. Dropping the one bad event keeps the rest of the page.
+ */
+function validRecurrenceId(id: string | undefined): id is string {
+  if (id === undefined || !RECURRENCE_ID_FORMAT.test(id)) return false;
+  const y = Number(id.slice(0, 4));
+  const mo = Number(id.slice(4, 6));
+  const d = Number(id.slice(6, 8));
+  const u = new Date(Date.UTC(y, mo - 1, d));
+  if (u.getUTCFullYear() !== y || u.getUTCMonth() !== mo - 1 || u.getUTCDate() !== d) return false;
+  if (id.length === 8) return true;
+  return (
+    Number(id.slice(9, 11)) < 24 && Number(id.slice(11, 13)) < 60 && Number(id.slice(13, 15)) < 60
+  );
+}
+
 function conference(e: ApiEvent): EventFacts['conference'] {
   const uri = e.conferenceData?.entryPoints?.find(p => typeof p.uri === 'string');
   if (uri?.uri) return { url: uri.uri, ...(uri.label ? { provider: uri.label } : {}) };
@@ -243,6 +262,9 @@ function eventFacts(calendarRemoteId: string, e: ApiEvent): EventFacts | undefin
   if (typeof e.id !== 'string' || e.id === '') return undefined;
   const override = e.recurringEventId !== undefined;
   const recurrenceId = canonicalRecurrenceId(e.originalStartTime);
+  // An override's id IS its original start: if it cannot be canonicalised to a real date, emitting it
+  // would throw on commit and retry the same poisoned page forever — drop the event instead.
+  if (override && !validRecurrenceId(recurrenceId)) return undefined;
   const status =
     e.status === 'cancelled' ? 'cancelled' : e.status === 'tentative' ? 'tentative' : 'confirmed';
   const epoch = { type: 'utc', utc: 0 } as const;
@@ -333,17 +355,23 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
       for (const cal of syncCalendars(input)) {
         const scope = `cal:${cal.id}` as ScopeId;
         const state = input.states.find(s => s.scope === scope);
-        // No cursor yet: the first full events.list is a backfill (secondary devices skip it, ARCH 6.5).
-        const lane: SyncLane = state?.cursor ? 'incremental' : 'backfill';
         const wait = cal.primary
           ? PRIMARY_MIN_MS + jitter(cal.id) * PRIMARY_SPAN_MS
           : OTHER_MIN_MS + jitter(cal.id) * OTHER_SPAN_MS;
         steps.push({
           scope,
-          lane,
-          origin: lane === 'backfill' ? 'backfill' : 'incremental',
+          // Always incremental: the first sync is page-limited, and 'backfill' would mean secondary
+          // devices (a second Mac) never fetch any events.
+          lane: 'incremental',
+          origin: 'incremental',
           trigger: input.trigger,
-          notBefore: state ? state.updatedAt + wait : input.env.now,
+          // A saved pageToken resumes the round at once; a quiet calendar polls on its cadence.
+          notBefore:
+            state?.pageToken !== undefined
+              ? input.env.now
+              : state
+                ? state.updatedAt + wait
+                : input.env.now,
         });
       }
       return steps;
@@ -369,7 +397,8 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
               maxResults: PAGE,
               showHidden: true,
               showDeleted: true,
-              ...(pageToken ? { pageToken } : syncToken ? { syncToken } : {}),
+              ...(syncToken ? { syncToken } : {}),
+              ...(pageToken ? { pageToken } : {}),
             },
             fields: LIST_FIELDS,
             lane: 'incremental',
@@ -444,54 +473,64 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
           lane,
         });
 
+      // One request per step: a 20k-event backfill spans many turns instead of holding the account
+      // loop, committed pages survive a later failure, and a quit mid-round resumes from pageToken.
+      // A 410 clears the round, at most once per step — a 410 on a token-less resync request fails.
+      let res: ApiListResponse<ApiEvent>;
       for (;;) {
-        let res: ApiListResponse<ApiEvent>;
         try {
           res = await page({
             showDeleted: true,
-            ...(pageToken ? { pageToken } : syncToken ? { syncToken } : {}),
+            // A continuation page carries both: the syncToken keeps the delta's context on real
+            // Google (the pageToken alone has none).
+            ...(syncToken ? { syncToken } : {}),
+            ...(pageToken ? { pageToken } : {}),
           });
+          break;
         } catch (error) {
-          // A 410 is a resync of this calendar alone, whenever it lands: drop both tokens, drop the
+          // A 410 is a resync of this calendar alone, whenever it lands: drop both tokens and the
           // pages fetched so far (stale pages would double rows), and list everything (ports.walk.md).
-          if (!(error instanceof ProviderError && error.error.status === 410)) throw error;
+          if (
+            !(error instanceof ProviderError && error.error.status === 410) ||
+            reset !== undefined
+          )
+            throw error;
           upserts.length = 0;
           pageToken = undefined;
           syncToken = undefined;
           reset = 'syncTokenInvalid';
-          continue;
-        }
-        for (const e of res.items ?? []) {
-          const facts = eventFacts(calendarRemoteId, e);
-          if (facts) upserts.push(facts);
-        }
-        pageToken = res.nextPageToken;
-        if (!pageToken) {
-          nextSyncToken = res.nextSyncToken;
-          break;
         }
       }
+      for (const e of res.items ?? []) {
+        const facts = eventFacts(calendarRemoteId, e);
+        if (facts) upserts.push(facts);
+      }
+      const last = res.nextPageToken === undefined;
+      if (last) nextSyncToken = res.nextSyncToken;
 
-      // A round that starts now (first sync or a 410 resync) stamps the current fence; incremental steps keep the
-      // generation their round opened with, so a later resync sweep can tell them from rows of the new round.
+      // A round with no sync token (the first sync, or a 410 resync) listed every event, so only its
+      // last page covers the scope: rows stamped by an earlier round and not re-listed are ghosts.
+      const full = syncToken === undefined;
+      // A round that starts now (first sync or a 410 resync) stamps the current fence; mid-round
+      // steps keep the generation their round opened with, so the sweep compares like with like.
       const generation = state.generation === 0 || reset ? ctx.generation : state.generation;
+      const nextState: SyncState = {
+        scope,
+        generation,
+        updatedAt: ctx.clock.now(),
+        ...(last
+          ? nextSyncToken
+            ? { cursor: nextSyncToken }
+            : {}
+          : { ...(syncToken ? { cursor: syncToken } : {}), pageToken: res.nextPageToken }),
+      };
       return {
         upserts,
         removals: [],
-        nextState: {
-          scope,
-          ...(nextSyncToken ? { cursor: nextSyncToken } : {}),
-          generation,
-          updatedAt: ctx.clock.now(),
-        },
-        done: true,
-        // A resync listed every event: rows stamped by an earlier round and not re-listed are ghosts.
-        ...(reset
-          ? {
-              reset,
-              scopeCovered: { scope, generation },
-            }
-          : {}),
+        nextState,
+        done: last,
+        ...(reset ? { reset } : {}),
+        ...(last && full ? { scopeCovered: { scope, generation } } : {}),
         costUnits: c.spent,
       };
     },

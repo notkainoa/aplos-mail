@@ -17,7 +17,7 @@ import { RigStore } from './store-rig';
 
 const CAL_SCOPES = [SCOPE.calendarList, SCOPE.calendarEvents];
 
-async function calRig(options: { scopes?: string[] } = {}) {
+async function calRig(options: { scopes?: string[]; fetch?: typeof fetch } = {}) {
   const clock = new FakeClock();
   const emu = createGmailEmulator({ clock, retryAfter: 'none' });
   emu.oauth.addClient('prov-gmail-tests.apps.example.test');
@@ -54,7 +54,10 @@ async function calRig(options: { scopes?: string[] } = {}) {
       threading: 'native',
     },
   };
-  const adapter = new GmailAdapter(account, { fetch: emu.fetch, pace: false });
+  const adapter = new GmailAdapter(account, {
+    fetch: options.fetch ?? emu.fetch,
+    pace: false,
+  });
   const store = new RigStore(account, () => clock.now());
   const stopper = new AbortController();
   const ctx = () => ({
@@ -176,10 +179,15 @@ test('plan emits calendars then one step per synced calendar; none without the c
       scopes.includes('cal:work@g.com'),
     scopes.join(),
   );
-  // First sync of a calendar is a backfill; the primary and the list are incremental.
+  // Calendar scopes always plan incremental: a 'backfill' lane would keep every secondary
+  // device (a second Mac) from ever fetching events.
   const primary = steps.find(s => s.scope === `cal:${r.ctx().account.address}`)!;
-  assert.equal(primary.lane, 'backfill');
+  assert.equal(primary.lane, 'incremental');
   assert.equal(steps.find(s => s.scope === 'calendars')!.lane, 'incremental');
+  assert.ok(
+    steps.filter(s => s.scope.startsWith('cal:')).every(s => s.lane === 'incremental'),
+    'no cal: step is ever a backfill',
+  );
 
   // Capability off: nothing is planned.
   const noCap = await calRig({ scopes: GMAIL_SCOPES });
@@ -401,6 +409,179 @@ test('a 410 on the list resyncs it and reports the calendars that vanished', asy
     set.some(s => s.id === 'gone@g.com'),
     false,
   );
+  r.close();
+});
+
+test('a first sync commits one page per step, saved under pageToken, and resumes', async () => {
+  const r = await calRig();
+  const cal = r.ctx().account.address;
+  for (let i = 0; i < 260; i++) {
+    const hh = String(i % 24).padStart(2, '0');
+    r.emu.calendar.addEvent(cal, {
+      summary: `Ev ${i}`,
+      start: { dateTime: `2026-11-09T${hh}:00:00-08:00` },
+      end: { dateTime: `2026-11-09T${hh}:30:00-08:00` },
+    });
+  }
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+
+  // Page 1: one request's worth is committed, the round stays open on a saved pageToken.
+  const p1 = await r.adapter.calendar.syncStep(cal, r.state(`cal:${cal}`), 'incremental', r.ctx());
+  assert.equal(p1.done, false);
+  assert.ok(p1.nextState.pageToken, 'the resume token is saved in the state');
+  assert.equal(p1.nextState.cursor, undefined, 'no sync token until the last page');
+  assert.equal(p1.scopeCovered, undefined, 'a mid-round page never covers the scope');
+  r.commitStep(cal, p1);
+  assert.equal(r.events().length, 250);
+
+  // Page 2 resumes from the saved pageToken and closes the round with the sync token.
+  const p2 = await r.adapter.calendar.syncStep(cal, r.state(`cal:${cal}`), 'incremental', r.ctx());
+  assert.equal(p2.done, true);
+  assert.equal(p2.nextState.pageToken, undefined);
+  assert.ok(p2.nextState.cursor, 'the last page stores nextSyncToken');
+  r.commitStep(cal, p2);
+  assert.equal(r.events().length, 260);
+  r.close();
+});
+
+test('an interrupted resync keeps old rows — the sweep only runs on the last page', async () => {
+  const r = await calRig();
+  const cal = r.ctx().account.address;
+  for (let i = 0; i < 255; i++) {
+    const hh = String(i % 24).padStart(2, '0');
+    r.emu.calendar.addEvent(cal, {
+      summary: `Ev ${i}`,
+      start: { dateTime: `2026-11-09T${hh}:00:00-08:00` },
+      end: { dateTime: `2026-11-09T${hh}:30:00-08:00` },
+    });
+  }
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+  // The two-page first sync commits both halves.
+  for (let s = r.state(`cal:${cal}`); ; s = r.state(`cal:${cal}`)) {
+    const step = await r.adapter.calendar.syncStep(cal, s, 'incremental', r.ctx());
+    r.commitStep(cal, step);
+    if (step.done) break;
+  }
+  assert.equal(r.events().length, 255);
+
+  // A row stamped by the old round that the resync will never re-list.
+  r.store.raw.commit({
+    opId: 'stale',
+    origin: 'sync',
+    changes: 'fine',
+    writes: [
+      {
+        kind: 'event',
+        accountId: r.ctx().account.id,
+        calendarRemoteId: cal,
+        remoteId: 'stale-row',
+        rows: [
+          {
+            recurrenceId: '',
+            status: 'confirmed',
+            startUtc: 0,
+            endUtc: 0,
+            allDay: false,
+            data: '{"id":"stale-row"}',
+          },
+        ],
+        seenGen: 1,
+      },
+    ],
+  });
+
+  r.emu.calendar.expireSyncTokens({ kind: 'events', calendarId: cal });
+  // Page 1 of the resync commits mid-round: done:false and no scopeCovered — if the sweep ran
+  // here the stale row would die before page 2 ever fetched (the 'sweep on interrupt' mutation).
+  const p1 = await r.adapter.calendar.syncStep(cal, r.state(`cal:${cal}`), 'incremental', r.ctx());
+  assert.equal(p1.reset, 'syncTokenInvalid');
+  assert.equal(p1.done, false);
+  assert.equal(p1.scopeCovered, undefined);
+  r.commitStep(cal, p1);
+  assert.ok(
+    r.events().some(e => e.remote_id === 'stale-row'),
+    'the unlisted row survives an interrupted resync',
+  );
+
+  // Page 2 closes the round: the sweep finally runs and the ghost goes.
+  const p2 = await r.adapter.calendar.syncStep(cal, r.state(`cal:${cal}`), 'incremental', r.ctx());
+  assert.equal(p2.done, true);
+  assert.ok(p2.scopeCovered, 'the last page covers the scope');
+  r.commitStep(cal, p2);
+  assert.equal(
+    r.events().some(e => e.remote_id === 'stale-row'),
+    false,
+    'the finished resync sweeps the ghost',
+  );
+  r.close();
+});
+
+test('a malformed override is dropped and a duplicated event keeps its last copy', async () => {
+  // The emulator never emits these shapes, so the fetch injects them into every events.list page
+  // (the box exists because the adapter's fetch is wired before calRig returns its emulator).
+  const emuBox: { emu?: ReturnType<typeof createGmailEmulator> } = {};
+  const injecting: typeof fetch = async (input, init) => {
+    const res = await emuBox.emu!.fetch(input, init);
+    const url =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+    if (!url.includes('/events')) return res;
+    const body = (await res.json()) as { items?: unknown[] };
+    const timed = {
+      status: 'confirmed',
+      start: { dateTime: '2026-11-10T09:00:00Z' },
+      end: { dateTime: '2026-11-10T10:00:00Z' },
+    };
+    body.items = [
+      ...(body.items ?? []),
+      // Three overrides whose original starts cannot be canonicalised to a real date.
+      {
+        ...timed,
+        id: 'bad-feb30',
+        recurringEventId: 'm-1',
+        originalStartTime: { date: '2026-02-30' },
+      },
+      { ...timed, id: 'bad-pad', recurringEventId: 'm-1', originalStartTime: { date: '2026-1-5' } },
+      {
+        ...timed,
+        id: 'bad-year',
+        recurringEventId: 'm-1',
+        originalStartTime: { dateTime: '+275760-11-09T09:00:00Z' },
+      },
+      // The same event twice on one page: the last copy wins instead of wedging the commit.
+      { ...timed, id: 'dup-1', summary: 'first copy' },
+      { ...timed, id: 'dup-1', summary: 'last copy' },
+    ];
+    return new Response(JSON.stringify(body), { status: res.status, headers: res.headers });
+  };
+  const r = await calRig({ fetch: injecting });
+  emuBox.emu = r.emu;
+  const cal = r.ctx().account.address;
+  r.emu.calendar.addEvent(cal, {
+    summary: 'Good',
+    start: { dateTime: '2026-11-09T09:00:00-08:00' },
+    end: { dateTime: '2026-11-09T09:30:00-08:00' },
+  });
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+  const step = await r.adapter.calendar.syncStep(
+    cal,
+    r.state(`cal:${cal}`),
+    'incremental',
+    r.ctx(),
+  );
+  r.commitStep(cal, step);
+  const evs = r.events();
+  assert.ok(
+    evs.some(e => e.data.includes('Good')),
+    'the healthy events still land',
+  );
+  assert.equal(
+    evs.filter(e => e.remote_id.startsWith('bad-')).length,
+    0,
+    'all three malformed overrides are dropped',
+  );
+  const dups = evs.filter(e => e.remote_id === 'dup-1');
+  assert.equal(dups.length, 1, 'one row for the duplicated event');
+  assert.ok(dups[0]!.data.includes('last copy'), 'the last copy wins');
   r.close();
 });
 

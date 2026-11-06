@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProviderError } from '../src/ports';
-import type { CalendarAdapter, PlannedStep, SyncState } from '../src/ports';
+import type { CalendarAdapter, PlannedStep, SyncLane, SyncState } from '../src/ports';
 import { ACCOUNT, FakeAdapter, disk, settle, world } from './sync-actor-helpers';
 
 // The actor's calendar dispatch (actor-calendar.ts): `calendars` and `cal:<id>` steps run on the
@@ -50,13 +50,22 @@ const FACT = {
 const calWorld = (
   d: ReturnType<typeof disk>,
   calendar: CalendarAdapter,
-  options: { grantedScopes?: string[]; calendarCap?: boolean } = {},
+  options: { grantedScopes?: string[]; calendarCap?: boolean; calLane?: SyncLane } = {},
 ) => {
-  const { grantedScopes = ['gmail.modify', 'cal.a', 'cal.b'], calendarCap = true } = options;
+  const {
+    grantedScopes = ['gmail.modify', 'cal.a', 'cal.b'],
+    calendarCap = true,
+    calLane = 'backfill',
+  } = options;
   const adapter = new FakeAdapter(input => {
     const steps: PlannedStep[] = [];
     if (!input.states.some(s => s.scope === 'calendars')) steps.push(LIST);
-    if (!input.states.some(s => s.scope === 'cal:work-1')) steps.push(CAL);
+    if (!input.states.some(s => s.scope === 'cal:work-1'))
+      steps.push({
+        ...CAL,
+        lane: calLane,
+        origin: calLane === 'backfill' ? 'backfill' : 'incremental',
+      });
     return steps;
   }, {});
   (adapter as { calendar?: CalendarAdapter }).calendar = calendar;
@@ -197,6 +206,54 @@ test('a permission refusal on a calendar step marks missingPermissions and leave
     assert.deepEqual(runtime.missingPermissions?.[0]?.missingScopes, [
       'https://www.googleapis.com/auth/calendar.events',
     ]);
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('a calendar step in the incremental lane still runs on a secondary device', async () => {
+  const d = disk();
+  try {
+    const calendar: CalendarAdapter = {
+      budget: 'gcal',
+      plan: () => [],
+      listCalendars: () =>
+        Promise.resolve({
+          calendars: [
+            { remoteId: 'work-1', name: 'Work', hidden: false, selected: true, readOnly: false },
+          ],
+          removed: [],
+          nextState: state('calendars', 'list-token'),
+          costUnits: 1,
+        }),
+      syncStep: () =>
+        Promise.resolve({
+          upserts: [FACT],
+          removals: [],
+          nextState: state('cal:work-1', 'cal-token'),
+          done: true,
+          costUnits: 1,
+        }),
+      put: () => Promise.reject(new Error('unused')),
+      remove: () => Promise.reject(new Error('unused')),
+      rsvp: () => Promise.reject(new Error('unused')),
+    };
+    // The adapter plans cal: scopes incremental (never 'backfill'), so a second Mac — whose lease
+    // reads secondary — still fills its Calendar view; 'backfill' would be filtered by PRIMARY_ONLY.
+    const w = calWorld(d, calendar, { calLane: 'incremental' });
+    await w.host.start(ACCOUNT);
+    w.host.leaseChanged(ACCOUNT, { role: 'secondary' });
+    await settle();
+
+    const events = w.store.read(q => q.all<{ remote_id: string }>('SELECT remote_id FROM events'));
+    assert.deepEqual(
+      events.map(e => e.remote_id),
+      ['ev-1'],
+    );
+    assert.equal(
+      w.host.status(ACCOUNT)!.calendars?.find(c => c.remoteId === 'work-1')?.state,
+      'ok',
+    );
   } finally {
     await d.cleanup();
   }

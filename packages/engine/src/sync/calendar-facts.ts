@@ -131,6 +131,15 @@ export function calendarListWrites(
   }
   for (const remoteId of result.removed) {
     writes.push({ kind: 'calendarDelete', accountId: id, remoteId });
+    // Its `cal:<id>` state goes with it: a re-added calendar resuming from the stale cursor would
+    // silently miss every event before it.
+    writes.push(
+      syncStateWrite(id, {
+        scope: `cal:${remoteId}` as const,
+        generation: 0,
+        updatedAt: result.nextState.updatedAt,
+      }),
+    );
     set.delete(remoteId);
   }
   writes.push(syncStateWrite(id, result.nextState), {
@@ -148,10 +157,12 @@ export function calendarStepWrites(
 ): StoreWrite[] {
   const id = ctx.account.id;
   const writes: StoreWrite[] = [];
-  const byRemote = new Map<string, EventRow[]>();
+  // One row per (remoteId, recurrenceId): the store refuses a repeat within a commit, so a provider
+  // listing the same event twice (a page race) keeps the last copy instead of wedging the calendar.
+  const byRemote = new Map<string, Map<string, EventRow>>();
   for (const f of result.upserts) {
-    const rows = byRemote.get(f.remoteId) ?? [];
-    rows.push(eventRow(f));
+    const rows = byRemote.get(f.remoteId) ?? new Map<string, EventRow>();
+    rows.set(f.recurrenceId ?? '', eventRow(f));
     byRemote.set(f.remoteId, rows);
   }
   for (const [remoteId, rows] of byRemote) {
@@ -160,7 +171,7 @@ export function calendarStepWrites(
       accountId: id,
       calendarRemoteId: ctx.calendarRemoteId,
       remoteId,
-      rows,
+      rows: [...rows.values()],
       seenGen: result.nextState.generation,
     });
   }
