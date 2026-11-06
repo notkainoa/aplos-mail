@@ -5,7 +5,7 @@ import { describe, test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Account } from '../../data';
 import { CalendarAccounts, type CalendarAccountsModel } from './CalendarAccounts';
-import { accountLinesOf } from './sidebar';
+import { accountLinesOf, calendarSidebar } from './sidebar';
 import { account } from './accountCalendarState.test';
 
 const noop = () => {};
@@ -119,5 +119,49 @@ describe('the accounts block under the Calendars list', () => {
       const live = (html.match(/aria-live|role="status"/g) ?? []).length;
       assert.ok(live <= 1, `at most one live region, got ${live}`);
     }
+  });
+});
+
+describe('the muted line under the Calendars head (emptyNote)', () => {
+  const sidebarFor = (
+    accounts: Account[],
+    opts: { accountsLoaded?: boolean; calendars?: import('../../data').Calendar[] | undefined },
+  ) => {
+    return calendarSidebar({
+      state: { view: 'week', anchor: '2026-10-29', solo: null } as never,
+      calendars: opts.calendars ?? [],
+      entries: [],
+      today: '2026-10-29',
+      weekStartsOn: 0,
+      dispatch: () => {},
+      accounts,
+      accountsLoaded: opts.accountsLoaded ?? true,
+      calendarsLoaded: opts.calendars !== undefined,
+      onAccessAction: () => {},
+    }).calendars.emptyNote;
+  };
+
+  test('non-empty legend draws no line', () => {
+    assert.equal(sidebarFor([google()], { calendars: [CAL] }), undefined);
+  });
+  test('no accounts says so', () => {
+    assert.equal(sidebarFor([], { calendars: [] }), 'No accounts yet');
+  });
+  test('unanswered reads Syncing…', () => {
+    assert.equal(sidebarFor([google()], { calendars: undefined }), 'Syncing…');
+    assert.equal(sidebarFor([google()], { accountsLoaded: false, calendars: [] }), 'Syncing…');
+  });
+  test('a syncing account reads Syncing…', () => {
+    const a = google({ id: 'a2', health: { status: { state: 'syncing' } } });
+    assert.equal(sidebarFor([a], { calendars: [] }), 'Syncing…');
+  });
+  test('needs sign-in names the fix', () => {
+    assert.equal(sidebarFor([reauth], { calendars: [] }), 'Sign in again to see calendars');
+  });
+  test('not allowed waits for access', () => {
+    assert.equal(sidebarFor([missing], { calendars: [] }), 'Waiting for calendar access');
+  });
+  test('granted and answered empty reads No calendars yet', () => {
+    assert.equal(sidebarFor([google()], { calendars: [] }), 'No calendars yet');
   });
 });

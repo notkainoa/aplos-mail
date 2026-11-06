@@ -55,10 +55,12 @@ describe('Settings → Accounts calendar state', () => {
     void modes;
   });
 
-  test('needs sign-in: “Needs sign-in again” with Sign in again', () => {
+  test('needs sign-in: the row’s own reauth line and Reconnect speak — no stacked second copy', () => {
     const html = render({ accounts: [needsReauth(ALEX)] }, 'accounts');
-    assert.match(html, /Needs sign-in again/);
-    assert.match(html, /Sign in again/);
+    assert.match(html, /Google needs you to sign in again\./);
+    assert.match(html, /Reconnect/);
+    assert.doesNotMatch(html, /Needs sign-in again/);
+    assert.doesNotMatch(html, /settings-cal-access/);
   });
 
   test('syncing: “Syncing…” and no action', () => {

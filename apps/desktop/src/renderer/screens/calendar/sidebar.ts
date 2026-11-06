@@ -19,7 +19,7 @@ import {
 } from './calendar.model';
 import type { CalendarEventData } from '../../ui/props';
 import { CalendarAccounts, type CalendarAccountsModel } from './CalendarAccounts';
-import { accountTag, calendarAccessOf } from './accountCalendarState';
+import { accountTag, calendarAccessOf, CALENDAR_ACCESS_COPY } from './accountCalendarState';
 
 /** A `SidebarSlot` with all three parts present, so the gallery and the slot itself can draw without a check. */
 export type CalendarSidebar = Required<
@@ -66,6 +66,26 @@ export function accountLinesOf(
 }
 
 /**
+ * One muted line under the "Calendars" head when the legend is empty, so the heading never hangs blank (DESIGN 7.8,
+ * 7.15): still arriving reads "Syncing…", no accounts says so, a gap says what it waits on.
+ */
+export function listNote(
+  accounts: readonly Account[],
+  accountsLoaded: boolean,
+  calendars: readonly Calendar[] | undefined,
+  shownCount: number,
+): string | null {
+  if (shownCount > 0) return null;
+  if (!accountsLoaded || calendars === undefined) return CALENDAR_ACCESS_COPY.syncing;
+  if (accounts.length === 0) return CALENDAR_ACCESS_COPY.noAccounts;
+  const states = accounts.map(a => calendarAccessOf(a, calendars));
+  if (states.some(s => s?.kind === 'syncing')) return CALENDAR_ACCESS_COPY.syncing;
+  if (states.some(s => s?.kind === 'needs-signin')) return 'Sign in again to see calendars';
+  if (states.some(s => s?.kind === 'not-allowed')) return 'Waiting for calendar access';
+  return 'No calendars yet';
+}
+
+/**
  * MiniMonth: the anchor's month unless paged away; the grid's range on the puck (one day, or the week); today's badge;
  * a quiet mark under days with something on them in the loaded range. CalendarList: a click shows or hides a calendar
  * in Aplos (never at Google); ⌥-click shows one alone and ⌥-click again brings the others back. The accounts block
@@ -89,6 +109,7 @@ export function calendarSidebar({
     shown === 'month'
       ? undefined
       : { start: period.days[0], end: period.days[period.days.length - 1] };
+  const infos = calendarInfos(calendars, state.solo);
   return {
     miniMonth: {
       month: state.miniMonth ?? yearMonthOf(state.anchor),
@@ -100,9 +121,12 @@ export function calendarSidebar({
       marks: busyDays(entries),
     },
     calendars: {
-      calendars: calendarInfos(calendars, state.solo),
+      calendars: infos,
       onToggle: id => dispatch({ type: 'toggleCalendar', id }),
       onSolo: id => dispatch({ type: 'soloCalendar', id }),
+      emptyNote:
+        listNote(accounts, accountsLoaded, calendarsLoaded ? calendars : undefined, infos.length) ??
+        undefined,
     },
     calendarAccounts: createElement(CalendarAccounts, {
       model: accountLinesOf(accounts, accountsLoaded, calendarsLoaded ? calendars : undefined),

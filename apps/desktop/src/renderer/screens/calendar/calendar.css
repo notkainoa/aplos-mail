@@ -194,6 +194,12 @@
   padding-left: calc(var(--mark-dot) + var(--space-2) + var(--space-half));
 }
 
+/* The action's words start where the state line above starts: the text button's own padding would push them right. */
+.cal-account__action .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .cal-accounts__empty {
   min-height: var(--control-sm);
   font: var(--type-small);

@@ -9,7 +9,7 @@ import { CalIcon } from './icons';
  * Option-click shows that one alone (DESIGN 6 CalendarList, 7.1, 7.8). A hidden calendar has a hollow swatch and
  * a dim name, and a shown one has a check in its swatch, so colour is never the only cue.
  */
-export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps) {
+export function CalendarList({ calendars, onToggle, onSolo, emptyNote }: CalendarListProps) {
   const headId = useId();
   return (
     <div className="ui-calendar-list" role="group" aria-labelledby={headId}>
@@ -17,6 +17,9 @@ export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps)
         Calendars
       </div>
       <ul className="ui-calendar-list__items">
+        {calendars.length === 0 && emptyNote ? (
+          <li className="ui-calendar-list__empty">{emptyNote}</li>
+        ) : null}
         {calendars.map(calendar => (
           <li key={calendar.id}>
             <button

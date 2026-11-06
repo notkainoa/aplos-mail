@@ -34,7 +34,8 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
               description={r.description}
               descriptionTone={r.tone}
               below={
-                access ? (
+                // needs-signin is already said by the row's own reauth line and Reconnect — never stack a second copy.
+                access && access.kind !== 'needs-signin' ? (
                   <div className="settings-cal-access">
                     <span className="settings-cal-access__line">{access.line}</span>
                     {access.action && host.renderReconnect ? (

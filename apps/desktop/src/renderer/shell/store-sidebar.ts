@@ -15,7 +15,7 @@ export interface SidebarSlot {
   readonly miniMonth?: MiniMonthProps;
   /** The "Calendars" list. */
   readonly calendars?: CalendarListProps;
-  /** The accounts block under the Calendars list (ui-calendar's `CalendarAccounts`), drawn as given. */
+  /** The accounts block (ui-calendar's `CalendarAccounts`), pinned above the foot so the scrollable slot can never clip it. */
   readonly calendarAccounts?: ReactNode;
 }
 

@@ -44,7 +44,6 @@ export function SidebarSlotView({ slot }: SidebarSlotViewProps) {
     <div ref={ref} className="aplos-sidebar__slot" {...reach}>
       {slot.miniMonth ? <MiniMonth {...slot.miniMonth} /> : null}
       {slot.calendars ? <CalendarList {...slot.calendars} /> : null}
-      {slot.calendarAccounts ?? null}
     </div>
   );
 }
