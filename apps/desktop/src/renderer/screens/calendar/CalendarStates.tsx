@@ -475,7 +475,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
         aria-label="Sidebar (drawn by ui-shell; the calendar block is this lane's data)"
       >
         <MiniMonth {...sidebar.miniMonth} />
-        <CalendarList {...sidebar.calendars} />
+        {sidebar.calendars ? <CalendarList {...sidebar.calendars} /> : null}
         {sidebar.calendarAccounts}
       </aside>
       <Pane

@@ -55,13 +55,16 @@ export function CalendarAccounts({ model, onAction }: CalendarAccountsProps) {
                   {line.name}
                 </span>
               </div>
-              {line.state ? <div className="cal-account__state">{line.state.line}</div> : null}
+              {line.state?.line ? (
+                <div className="cal-account__state">{line.state.line}</div>
+              ) : null}
               {line.state?.action ? (
                 <div className="cal-account__action">
                   <Button
                     variant="text"
                     size="sm"
                     label={line.state.action.label}
+                    ariaLabel={`${line.name}: ${line.state.action.label}`}
                     onPress={() => onAction(line.accountId, line.state!.action!.mode)}
                   />
                 </div>

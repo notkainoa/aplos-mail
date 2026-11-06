@@ -52,7 +52,9 @@ export type CalendarAccess =
       readonly action: CalendarAccessAction;
     }
   | { readonly kind: 'syncing'; readonly line: string; readonly action: null }
-  | { readonly kind: 'none'; readonly line: string; readonly action: null };
+  | { readonly kind: 'none'; readonly line: string; readonly action: null }
+  /** A halted account says nothing about its calendar: the status slot and the account row already do. */
+  | { readonly kind: 'unknown'; readonly line: null; readonly action: null };
 
 const SYNCING: CalendarAccess = {
   kind: 'syncing',
@@ -60,26 +62,31 @@ const SYNCING: CalendarAccess = {
   action: null,
 };
 
-/** The account's own read is still running: a zero list says nothing yet. */
-function syncRuns(account: Account): boolean {
-  const state = account.health.status.state;
+const UNKNOWN: CalendarAccess = { kind: 'unknown', line: null, action: null };
+
+/** Halted states: nothing is moving, so no sync claim and no grant (an admin/API halt cannot be granted away). */
+const HALTED: ReadonlySet<string> = new Set([
+  'paused',
+  'error',
+  'offline',
+  'needsAdmin',
+  'misconfigured',
+]);
+
+/** A needsPermission status whose missingScopes name the calendar half: re-consent can add them. */
+function needsPermissionCalendar(account: Account): boolean {
+  const status = account.health?.status;
   return (
-    state === 'starting' ||
-    state === 'syncing' ||
-    state === 'backfilling' ||
-    account.baselineDoneAt === undefined
+    status?.state === 'needsPermission' &&
+    status.missingScopes?.some(scope => scope.toLowerCase().includes('calendar')) === true
   );
 }
 
 /** The account's grant lacks the calendar half, however the engine says so. */
 function calendarMissing(account: Account): boolean {
   if (account.missingPermissions?.some(m => m.capability === 'calendar')) return true;
-  if (account.capabilities.calendar !== true) return true;
-  const status = account.health.status;
-  return (
-    status.state === 'needsPermission' &&
-    status.missingScopes.some(scope => scope.toLowerCase().includes('calendar'))
-  );
+  if (account.capabilities?.calendar !== true) return true;
+  return needsPermissionCalendar(account);
 }
 
 /**
@@ -92,13 +99,24 @@ export function calendarAccessOf(
   calendars: readonly Calendar[] | undefined,
 ): CalendarAccess | null {
   if (account.demo || account.provider !== 'google') return null;
-  if (account.health.status.state === 'needsReauth') {
+  const state = account.health?.status?.state;
+  if (state === 'needsReauth') {
     return {
       kind: 'needs-signin',
       line: CALENDAR_ACCESS_COPY.needsSignIn,
       action: { label: CALENDAR_ACCESS_COPY.signIn, mode: 'reconnect' },
     };
   }
+  if (needsPermissionCalendar(account)) {
+    return {
+      kind: 'not-allowed',
+      line: CALENDAR_ACCESS_COPY.notAllowed,
+      action: { label: CALENDAR_ACCESS_COPY.grant, mode: 'grant' },
+    };
+  }
+  // Halted: the status slot and the account row already say so; only a needsPermission naming the
+  // calendar scopes can take the grant path above — an admin/API halt cannot be granted away.
+  if (HALTED.has(state ?? '') || state === 'needsPermission') return UNKNOWN;
   if (calendarMissing(account)) {
     return {
       kind: 'not-allowed',
@@ -106,12 +124,14 @@ export function calendarAccessOf(
       action: { label: CALENDAR_ACCESS_COPY.grant, mode: 'grant' },
     };
   }
+  if (state === 'starting' || state === 'syncing' || state === 'backfilling') return SYNCING;
   if (calendars === undefined) return SYNCING;
   const count = calendars.filter(c => c.accountId === account.id).length;
   if (count > 0) return { kind: 'on', count, line: calendarOnLine(count), action: null };
-  return syncRuns(account)
-    ? SYNCING
-    : { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null };
+  if (account.baselineDoneAt === undefined) return SYNCING;
+  // REQUEST (prov-cal): an `Account` fact that the calendar list completed a read (`calendarListedAt`)
+  // would split "listed, empty" from "never listed" exactly; today `ok` + `baselineDoneAt` is the proxy.
+  return state === 'ok' ? { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null } : UNKNOWN;
 }
 
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];

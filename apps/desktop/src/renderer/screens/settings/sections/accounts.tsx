@@ -34,8 +34,8 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
               description={r.description}
               descriptionTone={r.tone}
               below={
-                // needs-signin is already said by the row's own reauth line and Reconnect — never stack a second copy.
-                access && access.kind !== 'needs-signin' ? (
+                // When the row already carries its own reconnect/grant control it says everything — never stack a second copy.
+                access && !r.reconnect ? (
                   <div className="settings-cal-access">
                     <span className="settings-cal-access__line">{access.line}</span>
                     {access.action && host.renderReconnect ? (
@@ -43,6 +43,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                         variant="text"
                         size="sm"
                         label={access.action.label}
+                        ariaLabel={`${r.name}: ${access.action.label}`}
                         onPress={() => actions.startReconnect(r.id, access.action!.mode)}
                       />
                     ) : null}

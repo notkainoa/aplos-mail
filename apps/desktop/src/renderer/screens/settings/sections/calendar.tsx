@@ -43,13 +43,14 @@ export function Calendar({ data, actions, host }: SectionProps) {
               idSuffix={a.id}
               label={a.name || a.address}
               mark={tagColor(a, i)}
-              description={access?.line}
+              description={access?.line ?? undefined}
               descriptionTone={attention ? 'attention' : 'default'}
               control={
                 access?.action && host.renderReconnect ? (
                   <Button
                     variant="text"
                     label={access.action.label}
+                    ariaLabel={`${a.name || a.address}: ${access.action.label}`}
                     onPress={() => actions.startReconnect(a.id, access.action!.mode)}
                   />
                 ) : undefined

@@ -97,8 +97,6 @@ export interface CalendarListProps {
   onToggle: (id: string) => void;
   /** ⌥-click: show this one alone. */
   onSolo: (id: string) => void;
-  /** One muted line under the head when the list is empty, so the heading is never blank. */
-  emptyNote?: string;
 }
 
 /** A calendar entry from the data layer. */

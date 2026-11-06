@@ -122,10 +122,10 @@ describe('the accounts block under the Calendars list', () => {
   });
 });
 
-describe('the muted line under the Calendars head (emptyNote)', () => {
+describe('an empty legend', () => {
   const sidebarFor = (
     accounts: Account[],
-    opts: { accountsLoaded?: boolean; calendars?: import('../../data').Calendar[] | undefined },
+    opts: { accountsLoaded?: boolean; calendars?: import('../../data').Calendar[] },
   ) => {
     return calendarSidebar({
       state: { view: 'week', anchor: '2026-10-29', solo: null } as never,
@@ -138,30 +138,19 @@ describe('the muted line under the Calendars head (emptyNote)', () => {
       accountsLoaded: opts.accountsLoaded ?? true,
       calendarsLoaded: opts.calendars !== undefined,
       onAccessAction: () => {},
-    }).calendars.emptyNote;
+    }).calendars;
   };
-
-  test('non-empty legend draws no line', () => {
-    assert.equal(sidebarFor([google()], { calendars: [CAL] }), undefined);
+  test('an empty list draws no Calendars part at all — the pinned accounts block explains', () => {
+    assert.equal(sidebarFor([], { calendars: [] }), undefined);
+    assert.equal(sidebarFor([missing], { calendars: [] }), undefined);
+    assert.equal(sidebarFor([google()], { calendars: [] }), undefined);
   });
-  test('no accounts says so', () => {
-    assert.equal(sidebarFor([], { calendars: [] }), 'No accounts yet');
+  test('a non-empty list draws the legend', () => {
+    assert.ok(sidebarFor([google()], { calendars: [CAL] }));
   });
-  test('unanswered reads Syncing…', () => {
-    assert.equal(sidebarFor([google()], { calendars: undefined }), 'Syncing…');
-    assert.equal(sidebarFor([google()], { accountsLoaded: false, calendars: [] }), 'Syncing…');
-  });
-  test('a syncing account reads Syncing…', () => {
-    const a = google({ id: 'a2', health: { status: { state: 'syncing' } } });
-    assert.equal(sidebarFor([a], { calendars: [] }), 'Syncing…');
-  });
-  test('needs sign-in names the fix', () => {
-    assert.equal(sidebarFor([reauth], { calendars: [] }), 'Sign in again to see calendars');
-  });
-  test('not allowed waits for access', () => {
-    assert.equal(sidebarFor([missing], { calendars: [] }), 'Waiting for calendar access');
-  });
-  test('granted and answered empty reads No calendars yet', () => {
-    assert.equal(sidebarFor([google()], { calendars: [] }), 'No calendars yet');
+  test('each action names its account (two accounts, two names)', () => {
+    const html = render(accountLinesOf([missing, reauth], true, []));
+    assert.match(html, /aria-label="Jordan Lee: Allow calendar access"/);
+    assert.match(html, /aria-label="Sam Kim: Sign in again"/);
   });
 });

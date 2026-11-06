@@ -111,7 +111,7 @@ describe('calendarAccessOf', () => {
       },
     });
     const access = calendarAccessOf(a, [calendar('c', 'acct-1')]);
-    assert.equal(access?.kind, 'on');
+    assert.equal(access?.kind, 'unknown');
   });
 
   test('a missing permission for another capability is not a calendar gap', () => {
@@ -159,6 +159,45 @@ describe('calendarAccessOf', () => {
     assert.equal(access?.kind, 'none');
     assert.equal(access?.line, 'No calendars');
     assert.equal(access?.action, null);
+  });
+
+  test('halted accounts claim nothing: unknown kind, no line, no action', () => {
+    for (const state of ['paused', 'error', 'offline', 'needsAdmin', 'misconfigured'] as const) {
+      const a = account({ health: { status: { state } as never } });
+      const access = calendarAccessOf(a, []);
+      assert.equal(access?.kind, 'unknown', state);
+      assert.equal(access?.line, null);
+      assert.equal(access?.action, null);
+    }
+  });
+
+  test('needsAdmin/misconfigured with a calendar gap is still unknown — the grant cannot succeed', () => {
+    const a = missingCalendar();
+    const admin = account({
+      health: { status: { state: 'needsAdmin', reason: 'policy' } },
+      missingPermissions: a.missingPermissions,
+    });
+    assert.equal(calendarAccessOf(admin, [])?.kind, 'unknown');
+  });
+
+  test('needsPermission without a calendar gap is unknown; with one it is not-allowed', () => {
+    const mail = account({
+      health: { status: { state: 'needsPermission', missingScopes: ['mail.modify'] } },
+    });
+    assert.equal(calendarAccessOf(mail, [])?.kind, 'unknown');
+    const cal = account({
+      health: { status: { state: 'needsPermission', missingScopes: ['calendar.events'] } },
+    });
+    assert.equal(calendarAccessOf(cal, [])?.kind, 'not-allowed');
+  });
+
+  test('malformed accounts never throw', () => {
+    assert.doesNotThrow(() =>
+      calendarAccessOf({ provider: 'google' } as unknown as Account, undefined),
+    );
+    assert.doesNotThrow(() =>
+      calendarAccessOf(account({ health: { status: { state: 'needsPermission' } } as never }), []),
+    );
   });
 
   test('calendarOnLine: the exact words', () => {

@@ -63,6 +63,16 @@ describe('Settings → Accounts calendar state', () => {
     assert.doesNotMatch(html, /settings-cal-access/);
   });
 
+  test('a row already carrying a grant control suppresses the below for any kind', () => {
+    const perm = {
+      ...missing(ALEX),
+      health: { status: { state: 'needsPermission', missingScopes: ['calendar.events'] } as never },
+    };
+    const html = render({ accounts: [perm] }, 'accounts');
+    assert.match(html, /Reconnect/);
+    assert.doesNotMatch(html, /settings-cal-access/);
+  });
+
   test('syncing: “Syncing…” and no action', () => {
     const html = render({ accounts: [syncing(ALEX)], calendars: [] }, 'accounts');
     assert.match(html, /Syncing…/);
