@@ -1,10 +1,11 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-06 from `revamp` `eed51934`, includes the go-live flip, the
+The app to check (built 2026-11-06 from `revamp` `969ecf79`, includes the go-live flip, the
 Session/Settings engine stubs, the close-handshake fix, and every hand-check fix batch:
 chrome #318/#319, Settings resilience #320, first-sync window + progress #316, OAuth return
 #321/#329, Calendar/Event reads #315/#330/#332, Search auth/coalescing #317/#322/#324,
-Settings data sources #313):
+Settings data sources #313 — plus #345 calendar OAuth scopes and #346 real Google Calendar
+read-sync, so Calendar now shows real events after a one-time re-consent):
 
 `~/Applications-test/Aplos Mail (revamp).app`
 
@@ -75,9 +76,17 @@ doesn't and where it stopped.
   Expected: the right letters come back; no spinner that never ends.
 - [ ] Open the Ask dock and ask something trivial (or just look at the consent gate).
 - [ ] Today shows the day's agenda; Calendar shows day/week/month.
-  Expected (2026-11-05, eng-views NOTICE): the grid opens and is EMPTY — Google Calendar sync is not wired yet
-  (no adapter syncer; the OAuth connect flow keeps calendar scopes off until it lands, so the account's grant has
-  none). An empty grid is correct; an error banner is not. RSVP needs a synced event, so it is out of this check.
+  Expected (updated 2026-11-06, #345+#346 merged): real Google Calendar read-sync is wired, but it
+  needs a one-time re-consent first. Your current grant holds mail scopes only, so:
+  1. Settings → Calendar shows an "Aplos needs permission to use your Google Calendar" row with a
+     Reconnect (grant) button. Click it.
+  2. Google's consent asks read-only scopes — calendar list + events read (consent text
+     "See the events on your calendars"). If the consent screen (Testing mode) lists scopes,
+     make sure `calendar.events.readonly` is among them before approving.
+  3. After consent the calendar list syncs first, then the primary calendar's events page in
+     (250 per step), then the other calendars every 15–30 min. The grid fills in as pages commit.
+  Until the re-consent, an empty grid with that permission row is correct; "Couldn't load this
+  list" or an error banner is not. RSVP needs a synced event you can respond to — out of this check.
 - [ ] Settings opens; the AI section lets you pick providers/models; the account switcher works.
 
 ## 7. Compose and send to yourself (2 min)
@@ -105,7 +114,7 @@ doesn't and where it stopped.
 
 ---
 
-## Known gaps today (agent run, 2026-11-06, build at eed51934)
+## Known gaps today (agent run, 2026-11-06, build at 969ecf79)
 
 - Everything your last pass flagged is merged and re-verified packaged: Settings renders all
   sections (Help now lives in Settings → Help & about), Calendar loads its day/week/month
