@@ -158,21 +158,23 @@ async function main() {
       clickCount: 1,
     });
   };
-  const rect = name =>
+  const rect = (name, minX = 0) =>
     ev(`(()=>{
-      const want=${JSON.stringify(name)};
-      const minX=${JSON.stringify(null)};
+      const want=${JSON.stringify(name)}, minX=${minX};
+      const els=[...document.querySelectorAll('a,button,[role=button],[role=link],[role=tab],[role=option],[role=menuitem],[role=row],div,li,span,p')];
       const el=els.find(e=>{
         const t=(e.getAttribute('aria-label')||e.textContent||'').trim();
-        return t===want||t.startsWith(want+'\\n')||t.startsWith(want+' ');
+        if(!(t===want||t.startsWith(want+'\\n')||t.startsWith(want+' ')))return false;
+        const r0=e.getBoundingClientRect();
+        return r0.width>0&&r0.height>0&&r0.x>=minX;
       });
       if(!el)return null;el.scrollIntoViewIfNeeded?el.scrollIntoViewIfNeeded():el.scrollIntoView({block:'nearest'});
       const r=el.getBoundingClientRect();
       const vis=r.width>0&&r.height>0&&r.x>=0&&r.y>=0&&r.x<window.innerWidth&&r.y<window.innerHeight;
       return {x:r.x+r.width/2,y:r.y+r.height/2,vis};
     })()`);
-  const click = async name => {
-    const r = await rect(name);
+  const click = async (name, minX = 0) => {
+    const r = await rect(name, minX);
     if (!r || !r.vis) {
       pageErrors.push(`click target missing: ${name}`);
       return 'MISSING';
