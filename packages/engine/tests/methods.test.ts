@@ -22,7 +22,10 @@ const grantable: Scope[] = ['read', 'triage', 'draft', 'send', 'ai', 'admin'];
 const as = (caller: Caller): MethodContext => ({
   caller,
   signal: new AbortController().signal,
-  services: {} as EngineServices,
+  // Only what dispatch itself reads: the revoked-client check asks the store for a row, and finds none.
+  services: {
+    store: { read: (fn: (q: { get: () => undefined }) => unknown) => fn({ get: () => undefined }) },
+  } as unknown as EngineServices,
   connectionId: 'c1',
   redispatch: () => Promise.reject(new Error('no re-dispatch in these tests')),
 });

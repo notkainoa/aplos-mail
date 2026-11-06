@@ -18,7 +18,12 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   const w = write as ClientWrite;
   if (typeof w.id !== 'string' || w.id.length === 0)
     throw new StoreError('invalid', 'A client write names a client');
-  const gone = tx.run('UPDATE clients SET revoked_at = ? WHERE id = ?', w.revokedAt, w.id);
+  // Only the first revoke stamps: a repeat must not move the time the tool was cut off.
+  const gone = tx.run(
+    'UPDATE clients SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL',
+    w.revokedAt,
+    w.id,
+  );
   if (gone.changes) tx.mark('Client', w.id, 'u');
 }
 
