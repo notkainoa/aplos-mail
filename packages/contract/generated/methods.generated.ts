@@ -1180,7 +1180,12 @@ export const methodScopeRule: Record<string, 'originating' | 'guests'> = {
 
 /** Argument paths a listener caller may not set (`MethodSpec.windowOnlyArgs`, freeze FR-5). */
 export const windowOnlyArgs: Record<string, readonly string[]> = {
-  'Settings/set': ['patch.ai'],
+  'Settings/set': [
+    'patch.ai',
+    'patch.mail.remoteImages',
+    'patch.mail.imageAllowList',
+    'patch.mail.undoSendSeconds',
+  ],
   'Account/set': ['aiAllowed'],
 };
 
