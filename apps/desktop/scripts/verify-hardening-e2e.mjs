@@ -9,7 +9,7 @@
 // Screenshots contain real mail content: keep --out private (never inside the repo).
 // Results: <out>/e2e.json, <out>/e2e.md, <out>/<step>.png. Exit 1 on any FAIL row.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 
@@ -71,20 +71,17 @@ const results = [];
 async function main() {
   // Wait for Chromium to publish the random loopback port inside OUR private data dir — a stale
   // endpoint owned by another process can never be mistaken for ours.
-  const portFile = `${dataDir}/DevToolsActivePort`;
+  // Ownership proof: the child itself announces the loopback bind on stderr — a stale bind
+  // owned by another process can never be mistaken for ours.
   let confirmed = false;
   for (let i = 0; i < 120 && !confirmed; i++) {
     await delay(500);
-    try {
-      confirmed = Number(readFileSync(portFile, 'utf8').split('\n')[0]) === PORT;
-    } catch {
-      // DevToolsActivePort not written yet.
-    }
+    confirmed = output.join('').includes(`DevTools listening on ws://127.0.0.1:${PORT}/`);
     if (child.exitCode !== null)
       throw new Error(`app exited early: ${output.join('').slice(-300)}`);
   }
   if (!confirmed)
-    throw new Error(`DevToolsActivePort never listed our port ${PORT} — endpoint is not ours`);
+    throw new Error(`child never announced DevTools on ${PORT}: ${output.join('').slice(-240)}`);
   let mailPage;
   for (let i = 0; i < 150; i++) {
     await delay(400);
