@@ -59,10 +59,10 @@ export interface GoogleConnectDeps extends FlowDeps {
   /** The vault reference of an account's bundle. Default: the account id (as `GoogleTokenSource`). */
   refFor?: (account: AccountId) => string;
   /**
-   * Optional manifest scopes to ask for besides the required ones. Default: none for a new connect, every optional
-   * scope for `grantPermissions`.
+   * Optional manifest scopes to ask for besides the required ones. Undefined means the mode's default: none for a
+   * new connect or a reconnect, every optional scope for `grantPermissions`.
    */
-  optionalScopes?: (req: ConnectRequest) => readonly string[];
+  optionalScopes?: (req: ConnectRequest) => readonly string[] | undefined;
   /**
    * The scopes the account's stored grant holds. Installed apps have no incremental auth, so a reconnect or re-grant
    * asks for these optional scopes again, or the new grant would silently drop them.
@@ -90,9 +90,10 @@ export interface GoogleConnectDeps extends FlowDeps {
 }
 
 /**
- * What the Gmail adapter can do today, as prov-gmail's own rig declares it (tests/prov-gmail/harness.ts); the adapter
- * itself declares none yet. Filters also need their granted scope; calendar stays off until the adapter has a
- * calendar half (prov-cal).
+ * What the Google adapter can do today, as its own rig declares it (tests/prov-gmail/harness.ts). Filters and
+ * calendar also need their granted scopes; calendar needs the list scope plus an events scope (the read-only one
+ * in round 1 — a held `calendar.events` write scope counts too, since it covers reads), so a grant holding only
+ * `calendarlist.readonly` still reads false (prov-cal).
  */
 export function googleCapabilities(grantedScopes: readonly string[]): Capabilities {
   const features = grantedFeatures(grantedScopes);
@@ -101,7 +102,9 @@ export function googleCapabilities(grantedScopes: readonly string[]): Capabiliti
     folders: false,
     drafts: true,
     serverSearch: true,
-    calendar: false,
+    calendar:
+      features.has('calendarList') &&
+      (features.has('calendarEvents') || features.has('calendarEventsWrite')),
     filters: features.has('filters'),
     push: false,
     sendAs: true,
@@ -143,13 +146,18 @@ function grantTokenOf(body: Record<string, unknown>): string | undefined {
 
 const optionalManifestScopes = googleScopeManifest.filter(e => !e.required).map(e => e.scope);
 
-/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every optional scope. */
+/** The optional scopes a flow may newly ask for: a `deferred` entry (round 2's calendar.events) is never one. */
+const requestableOptionalScopes = googleScopeManifest
+  .filter(e => !e.required && !e.deferred)
+  .map(e => e.scope);
+
+/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every requestable scope. */
 function scopesFor(deps: GoogleConnectDeps, req: ConnectRequest, account: AccountId): string[] {
   const asked = deps.optionalScopes?.(req);
   if (req.mode === 'new') return connectScopes(asked ?? []);
   const held = new Set(deps.grantedScopes?.(account) ?? []);
   const kept = optionalManifestScopes.filter(scope => held.has(scope));
-  const wanted = asked ?? (req.mode === 'grantPermissions' ? optionalManifestScopes : []);
+  const wanted = asked ?? (req.mode === 'grantPermissions' ? requestableOptionalScopes : []);
   return connectScopes([...new Set([...kept, ...wanted])]);
 }
 
