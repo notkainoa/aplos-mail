@@ -354,6 +354,7 @@ export const logEvents = {
     rows: f.count(),
     durationMs: f.duration(),
   }),
+  'view.window_failed': event('warn', ['eng-views'], { kind: f.code(), type: f.code() }),
   'operation.failed': event('warn', ['eng-views'], {
     op: f.id(),
     kind: f.code(),
