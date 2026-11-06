@@ -80,6 +80,10 @@ test('Account/connect binds the setup window only for a window caller carrying s
       listener,
     );
     assert.equal(oauthReturnFor('new:l@gmail.com'), 'mail');
+    // ...and its connection is never marked as the setup window's, so a later reconnect or grant on it
+    // cannot return to the setup window either (the window caller's own connection is marked).
+    assert.equal(connectionOpensOnboarding('c2'), false);
+    assert.equal(connectionOpensOnboarding(t.ctx.connectionId), true);
     // A window caller without a setupId is the mail window's Add account flow.
     await handlers['Account/connect']({ provider: 'google', address: 'm@gmail.com' }, t.ctx);
     assert.equal(oauthReturnFor('new:m@gmail.com'), 'mail');
