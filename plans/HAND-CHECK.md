@@ -1,13 +1,17 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-05 from `revamp` `93c21b85`, includes the go-live flip, the
-Session/Settings engine stubs and the close-handshake fix):
+The app to check (built 2026-11-05 from `revamp` `e03bb50c`, includes the go-live flip, the
+Session/Settings engine stubs, the close-handshake fix, and every hand-check fix batch:
+chrome #318/#319, Settings resilience #320, first-sync window + progress #316, OAuth return
+#321/#329, Calendar/Event reads #315/#330/#332, Search auth/coalescing #317/#322/#324,
+Settings data sources #313):
 
 `~/Applications-test/Aplos Mail (revamp).app`
 
-Verified before this list: the real-engine launch opens the new renderer's "Add an account to
-bring in your mail" screen (screenshot: `~/Applications-test/first-window-93c21b85.png`), the
-engine is up, no `aplos:invoke` refusals.
+Verified before this list: the real-engine packaged sweep is 21/21 PASS — every screen renders,
+Calendar loads, Settings shows all sections, Search gives the honest sign-in copy on a dead
+token, no `aplos:invoke` refusals (full table lands in `plans/platform/SWEEP.md` with PR #333;
+earlier runs are already there).
 
 It is ad-hoc signed for this Mac — double-click to open; if macOS refuses, right-click → Open.
 It was never downloaded, so no quarantine warning is expected.
@@ -98,18 +102,19 @@ doesn't and where it stopped.
 
 ---
 
-## Known gaps today (agent run, 2026-11-05, build at 93c21b85)
+## Known gaps today (agent run, 2026-11-05, build at e03bb50c)
 
-- Packaging: `npm run package` produced the app above (395 MB, ad-hoc signed, verify-hardening
-  10/10 PASS). Caveat seen twice: `npm ci --ignore-scripts` leaves `node_modules/electron/dist`
-  empty — `node node_modules/electron/install.js` once fixes it (local-ci.sh already does this).
-- `APLOS_ENGINE=real` boots and the engine is alive in the packaged app, and the new bridge
-  carries the screens — but a few older `aplos:invoke` calls still answer
-  "This screen is not on the new engine yet". Expected for now.
-- Live-account coverage is API-level only (the guarded runner, re-run today on `5237de1b`):
-  sign-in reuse, first-sync shape, header parsing and the draft probe all PASS. Search results,
-  archive/undo and the on-screen first-sync UI have no automated live check — this list is the
-  check.
+- Everything your last pass flagged is merged and re-verified packaged: Settings renders all
+  sections (Help now lives in Settings → Help & about), Calendar loads its day/week/month
+  views, the chrome nits are fixed (sidebar collapse, compose button, key hints, Tab roving),
+  first-sync shows real progress, and Search on a dead/expired sign-in says "sign in again
+  before it can search" instead of a fake rate-limit error. The 21-screen packaged sweep is
+  21/21 PASS — full table lands in `plans/platform/SWEEP.md` with PR #333.
+- Live-account coverage is API-level only (the guarded runner): sign-in reuse, first-sync
+  shape, header parsing and the draft probe all PASS. Search results, archive/undo and the
+  on-screen first-sync UI have no automated live check — this list is the check.
+- Small UI nit already sent to the UI lane: with an expired sign-in, Search shows two stacked
+  banners ("Couldn't load this list." plus the sign-in message).
 - The guarded runner's send-to-self probe is once a day and the owner has skipped the live send
   gate; the draft probe leaves one `aplos-live-probe` draft in the test account's Drafts —
   discard it by hand when you're next in there.
