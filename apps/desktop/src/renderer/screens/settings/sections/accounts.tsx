@@ -91,7 +91,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             section="accounts"
             anchor="accountAi"
             idSuffix={account.id}
-            description="Off means nothing from it is sent to a provider."
+            description="On for new accounts. A provider you set up still asks your consent before mail leaves this Mac."
             control={id => (
               <Switch
                 label={`Use ${account.name || account.address} mail for AI`}

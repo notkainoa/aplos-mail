@@ -12,6 +12,7 @@ import { SettingsScreen } from '../SettingsScreen';
 import { mergeAccounts, mergePatch, type AccountWrite } from '../settings.model';
 import { INITIAL_VIEW, type SettingsView } from '../view';
 import {
+  account,
   ALEX,
   baseSettings,
   bundle,
@@ -286,6 +287,23 @@ export const STATES: Record<string, StateSpec> = {
         },
       })),
     }),
+  },
+  'ai-account-mail': {
+    title: 'AI, existing accounts still keep their mail out',
+    section: 'ai',
+    data: dataOf({ accounts: [ALEX, JORDAN] }),
+  },
+  'ai-accounts-mail': {
+    title: 'AI, two accounts keep their mail out',
+    section: 'ai',
+    data: dataOf({
+      accounts: [JORDAN, account({ id: 'acct-rio', address: 'rio@example.com', aiAllowed: false })],
+    }),
+  },
+  'ai-demo-only': {
+    title: 'AI, demo mail only: the account-mail row is hidden',
+    section: 'ai',
+    data: dataOf({ accounts: [DEMO] }),
   },
   'keyboard-default': { title: 'Keyboard', section: 'keyboard', data: dataOf() },
   'keyboard-recording': {

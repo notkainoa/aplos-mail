@@ -168,6 +168,10 @@ function newAccountWrites(accountId: string, result: ConnectResult, name?: strin
     capabilities: { ...result.capabilities },
     grantedScopes: result.grantedScopes,
     status: { state: 'starting' },
+    // Owner decision (2026-11-06): a new account permits its mail for AI by default. It only PERMITS —
+    // no mail text leaves the device until a provider exists and the background consent is granted.
+    // Reconnects never write this column, so an account the owner turned off stays off.
+    aiAllowed: true,
     remoteSubject: identity.subject,
     ...(grant ? { tokenGrantedAt: grant.grantedAt } : {}),
     ...(grant?.refreshExpiresAt !== undefined ? { refreshExpiresAt: grant.refreshExpiresAt } : {}),

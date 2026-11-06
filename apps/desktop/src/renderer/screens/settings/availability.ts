@@ -59,6 +59,8 @@ export function rowAvailable(section: SettingSection, anchor: string): boolean {
       return hasCapability(data.session, 'notifications') && (pending || realAccount(data));
     case 'ai/geminiPaid':
       return data.providers === undefined || paidSwitch(data.providers) !== null;
+    case 'ai/accountMail':
+      return pending || data.accounts.some(a => !a.demo && !a.aiAllowed);
     case 'help/demoLoad':
       return pending || !data.accounts.some(a => a.demo);
     default:
