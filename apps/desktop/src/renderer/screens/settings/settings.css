@@ -130,3 +130,14 @@
     margin-left: 0;
   }
 }
+
+/* An account row's calendar state (the shared `calendarAccessOf` line and its action), under the row (DESIGN 7.10). */
+.settings-cal-access {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}

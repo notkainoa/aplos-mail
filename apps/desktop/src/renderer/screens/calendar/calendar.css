@@ -124,6 +124,89 @@
   padding: var(--space-3) var(--space-2);
 }
 
+/* ---------- The accounts block under the Calendars list (DESIGN 7.8) ---------- */
+
+.cal-accounts {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2);
+}
+
+.cal-accounts__head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  font: var(--type-small);
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.cal-accounts__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cal-account {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cal-account__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink-2);
+}
+
+.cal-account__dot {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  margin: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+}
+
+.cal-account__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-account__state {
+  padding-left: calc(var(--mark-dot) + var(--space-2) + var(--space-half));
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-account__action {
+  padding-left: calc(var(--mark-dot) + var(--space-2) + var(--space-half));
+}
+
+/* The action's words start where the state line above starts: the text button's own padding would push them right. */
+.cal-account__action .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.cal-accounts__empty {
+  min-height: var(--control-sm);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
 /* The harness states' stand-in window and sidebar (CalendarStates): the real sidebar is ui-shell's. */
 .calp-window {
   height: 100%;

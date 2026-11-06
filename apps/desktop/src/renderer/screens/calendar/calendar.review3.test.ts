@@ -38,6 +38,10 @@ test('review3: the screen publishes its slot through useSidebarSlot, not a prop'
     today: THU,
     weekStartsOn: 0,
     dispatch: () => undefined,
+    accounts: [],
+    accountsLoaded: true,
+    calendarsLoaded: true,
+    onAccessAction: () => undefined,
   });
   assert.ok(slot.miniMonth && slot.calendars, 'the slot carries both parts the Sidebar draws');
   const owner = {};
@@ -69,10 +73,14 @@ test('review3: a toggle, a solo and the mini month through the slot run the mode
       today: THU,
       weekStartsOn: 0,
       dispatch,
+      accounts: [],
+      accountsLoaded: true,
+      calendarsLoaded: true,
+      onAccessAction: () => undefined,
     });
 
   // A click in the Calendars list is the same write a key toggle plans: one calendarSet, one Undo toast.
-  slot().calendars.onToggle('personal');
+  slot().calendars!.onToggle('personal');
   const writes = effects.filter(
     (fx): fx is Extract<CalendarEffect, { kind: 'calendarSet' }> => fx.kind === 'calendarSet',
   );
@@ -81,7 +89,7 @@ test('review3: a toggle, a solo and the mini month through the slot run the mode
   assert.equal(writes[0]!.toast?.undoable, true);
 
   // ⌥-click solos one calendar without a write; the mini month pages and picks into the same reducer.
-  slot().calendars.onSolo('work');
+  slot().calendars!.onSolo('work');
   assert.equal(state.solo, 'work');
   slot().miniMonth.onMonthChange('2026-11');
   assert.equal(state.miniMonth, '2026-11');

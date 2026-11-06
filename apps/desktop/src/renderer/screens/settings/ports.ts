@@ -10,7 +10,7 @@
  *   `renderer/onboarding/showWelcome`; both are supplied by whoever mounts Settings.
  */
 import type { ReactNode } from 'react';
-import type { Account, Consent, Session, Settings, SettingsPatch } from '../../data';
+import type { Account, Calendar, Consent, Session, Settings, SettingsPatch } from '../../data';
 import type {
   AiModelInfo,
   AiUsageInfo,
@@ -38,6 +38,8 @@ export interface SettingsData {
   readonly queue?: readonly QueueEntry[];
   /** The diagnostics preview, once asked for. */
   readonly bundle?: BundleInfo;
+  /** `Calendar/get`'s list, loaded while the accounts or calendar section is open; undefined until it answers. */
+  readonly calendars?: readonly Calendar[];
 }
 
 /** The contract calls Settings makes, each by the contract method's own shape. */
@@ -74,6 +76,8 @@ export interface SettingsApiPort {
   queueList(): Promise<readonly QueueEntry[]>;
   /** Re-reads the provider table after a key changed. */
   loadProviders?(): Promise<void>;
+  /** `Calendar/get`'s list, asked for while the accounts or calendar section is open. */
+  calendarsGet?(): Promise<readonly Calendar[]>;
 }
 
 /** Shell facilities Settings uses; all optional so a test needs none. */

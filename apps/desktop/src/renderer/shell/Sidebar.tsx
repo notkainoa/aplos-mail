@@ -131,6 +131,7 @@ export function Sidebar({
       <PlaceGroup label="Mail" places={MAIL_PLACES} {...group} />
       {slot ? <SidebarSlotView slot={slot} /> : null}
       <div className="aplos-sidebar__foot">
+        {slot?.calendarAccounts ?? null}
         {status}
         <PlaceGroup label="App" places={FOOTER_PLACES} {...group} />
       </div>
