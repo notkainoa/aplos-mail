@@ -783,7 +783,7 @@ test('concurrent watchers of a lazy kind share the one load', async () => {
     }));
   });
   await withWorld(async t => {
-    const spec = { kind: 'events', from: 0, to: 86_400_000 };
+    const spec = { kind: 'events' as const, from: 0, to: 86_400_000 };
     const a = t.call('View/watch', { spec });
     const b = t.call('View/watch', { spec });
     await t.advance(10);

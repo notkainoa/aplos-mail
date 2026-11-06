@@ -38,7 +38,9 @@ const SELECT = `
          e.start_utc, e.end_utc, e.all_day, e.data
   FROM events e JOIN calendars c ON c.id = e.calendar_id
   WHERE c.hidden = 0
-    AND (e.recurrence_id != '' OR e.recurrence IS NOT NULL OR (e.start_utc < ? AND e.end_utc > ?))`;
+    AND (e.recurrence_id != '' OR e.recurrence IS NOT NULL
+      OR e.start_utc IS NULL OR e.end_utc IS NULL
+      OR (e.start_utc < ? + 172800000 AND e.end_utc >= ? - 172800000))`;
 
 interface Joined {
   [k: string]: string | number | null;
@@ -155,7 +157,7 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
       // A single event: overlap by its own times.
       const start = instant(base.start, env.zone);
       const end = instant(base.end, env.zone);
-      if (start < spec.to && end > spec.from) out.push({ id: base.id, event: base, at: start });
+      if (start < spec.to && end >= spec.from) out.push({ id: base.id, event: base, at: start });
       continue;
     }
     const oRows: Override[] = overrides.map(o => {

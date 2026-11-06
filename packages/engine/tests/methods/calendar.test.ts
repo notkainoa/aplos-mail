@@ -192,3 +192,144 @@ test('master + override: view emits master@recId; Event/get round-trips the over
   const after = await w.call('Event/get', { ids: [occId] });
   assert.equal(after.list[0]!.hidden, true);
 });
+
+test('events view SQL bounds: NULL times, edge all-days, zero-length pass; far rows unread', async () => {
+  const w = await world();
+  w.store.commit({ opId: 'a', origin: 'local', writes: [{ ...accountWrite }] });
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'Personal',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+        selected: true,
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'evNull',
+        rows: [
+          // No projection columns at all — what a writer that never sets startUtc/endUtc stores.
+          { status: 'confirmed', allDay: false, data: GEVENT },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'evFirst',
+        rows: [
+          {
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 9, 26),
+            endUtc: Date.UTC(2026, 9, 27),
+            allDay: true,
+            data: JSON.stringify({
+              summary: 'First',
+              start: { date: '2026-10-26' },
+              end: { date: '2026-10-27' },
+              status: 'confirmed',
+            }),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'evLast',
+        rows: [
+          {
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 9, 28),
+            endUtc: Date.UTC(2026, 9, 29),
+            allDay: true,
+            data: JSON.stringify({
+              summary: 'Last',
+              start: { date: '2026-10-28' },
+              end: { date: '2026-10-29' },
+              status: 'confirmed',
+            }),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'evZero',
+        rows: [
+          {
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 9, 26),
+            endUtc: Date.UTC(2026, 9, 26),
+            allDay: false,
+            data: JSON.stringify({
+              summary: 'Zero',
+              start: { dateTime: '2026-10-26T00:00:00Z' },
+              end: { dateTime: '2026-10-26T00:00:00Z' },
+              status: 'confirmed',
+            }),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'evFar',
+        rows: [
+          {
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 10, 10),
+            endUtc: Date.UTC(2026, 10, 10, 1),
+            allDay: false,
+            data: JSON.stringify({
+              summary: 'Far',
+              start: { dateTime: '2026-11-10T00:00:00Z' },
+              end: { dateTime: '2026-11-10T01:00:00Z' },
+              status: 'confirmed',
+            }),
+          },
+        ],
+      },
+    ],
+  });
+  const spec = { kind: 'events' as const, from: Date.UTC(2026, 9, 26), to: Date.UTC(2026, 9, 29) };
+  const win = await w.call('View/watch', { spec });
+  assert.deepEqual(
+    [...win.ids].sort(),
+    [
+      'acct-1:primary/evFirst',
+      'acct-1:primary/evLast',
+      'acct-1:primary/evNull',
+      'acct-1:primary/evZero',
+    ].sort(),
+  );
+  // The SQL filter itself: a reader counting returned rows never sees the >2-day-out event.
+  const { eventsPlan } = await import('../../src/calendar/views');
+  let seenRemote: string[] = [];
+  w.store.read(q => {
+    const counted = Object.create(q, {
+      all: {
+        value(sql: string, ...params: never[]) {
+          const rows = q.all<{ remote_id: string }>(sql, ...params);
+          seenRemote = seenRemote.concat(rows.map(r => r.remote_id));
+          return rows;
+        },
+      },
+    });
+    const plan = eventsPlan(spec, { zone: 'UTC' } as never);
+    plan.layout(counted);
+    plan.rows(counted, undefined, 500);
+  });
+  assert.ok(seenRemote.includes('evNull'), 'NULL-times row passes the filter');
+  assert.ok(!seenRemote.includes('evFar'), 'a row more than two days out is never read');
+});
