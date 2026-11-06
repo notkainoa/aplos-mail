@@ -171,8 +171,11 @@ export const handlers: AreaHandlers<'account'> = {
   'Account/connect': (args, ctx) => {
     // A `setupId` rides only on connects from the setup window; the mark lets a later reconnect or
     // grant on this same connection return there too (`returns.ts` binds the nonce to the window).
-    if (ctx.caller.kind === 'window' && args.setupId) noteOnboardingConnection(ctx.connectionId);
-    const returnTo = args.setupId ? 'onboarding' : 'mail';
+    // A non-window caller (a listener client, the CLI) can send a setupId but never binds the
+    // setup window — the same check that gates the mark gates the binding.
+    const fromSetupWindow = ctx.caller.kind === 'window' && Boolean(args.setupId);
+    if (fromSetupWindow) noteOnboardingConnection(ctx.connectionId);
+    const returnTo = fromSetupWindow ? 'onboarding' : 'mail';
     return sessionsOf(ctx.services).begin({
       ...newAccountFlow(flowDeps(ctx.services), args),
       returnTo,
