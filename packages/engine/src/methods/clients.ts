@@ -11,6 +11,9 @@ import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './
 
 type AuditEntry = Output<'Clients/audit'>['list'][number];
 
+/** The audited methods whose target is a client id, safe to show to whoever reads the audit. */
+const TARGET_IS_CLIENT: ReadonlySet<string> = new Set(['Clients/revoke']);
+
 interface ClientRow {
   [key: string]: string | number | null | Uint8Array;
   id: string;
@@ -71,7 +74,8 @@ function audit(args: Input<'Clients/audit'>, ctx: MethodContext): Output<'Client
     at: r.at,
     clientId: r.client_id,
     method: r.method,
-    ...(r.target !== null ? { target: r.target } : {}),
+    // A target is shown only where it is a client id. Everywhere else it can be content (an allowed sender's address).
+    ...(r.target !== null && TARGET_IS_CLIENT.has(r.method) ? { target: r.target } : {}),
   }));
   return { list };
 }
