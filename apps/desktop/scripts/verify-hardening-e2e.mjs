@@ -384,7 +384,7 @@ async function main() {
     try {
       const out = execFileSync('/usr/bin/sqlite3', [
         `${dataDir}/mail.db`,
-        "SELECT address FROM accounts WHERE provider='gmail' LIMIT 1",
+        'SELECT address FROM accounts LIMIT 1',
       ])
         .toString()
         .trim();
