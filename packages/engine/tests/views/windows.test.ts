@@ -715,6 +715,8 @@ test('every account cooled down: the whole run fails fast as paused, nothing ask
     await t.close();
     world.cleanup();
   }
+});
+
 test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
   const { lazyViewLoaderForTest } = await import('../../src/views/registry');
   // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
