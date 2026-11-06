@@ -630,3 +630,7 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Shots: all three places, 7+5+6 states x light+dark gallery, origin/revamp befores, and real-engine (APLOS_TEST=1, isolated dir): no-accounts, demo and needs-sign-in shown; `~/.local/share/aplos-mail-review/calendar-account-state/a6e3aefa/` (README lists every shot). Real engine honestly flips a credential-less google account to needsReauth, so not-allowed/on/syncing stay gallery-only.
 
 - Round 2 (real-engine fixes): accounts block now mounts above `aplos-sidebar__foot` — the scrollable slot clipped its state lines; `Calendars` head gains a muted `emptyNote` when the legend is empty; Settings > Accounts suppresses the calendar line for needs-signin (PR note: the row's own reauth line + Reconnect already say it, deliberate deviation from the shared five-state spec — kept in Settings > Calendar and the sidebar).
+
+- Round 3 (review fixes): halted accounts return 'unknown' (no line/action); 'none' only for ok+baseline+0 with a `calendarListedAt` REQUEST comment; arrows hand off at the slot's scroll ends; no duplicate grant line on reconnect rows; per-account action labels; empty legend draws no bare head.
+- A-4 (cap at 3 + "N more in Settings") skipped — needs a settings-navigation path through the shell, more than a small change.
+- Real-engine shot `94f360ad/real/signin-*` re-verifies the pinned block; demo/empty/heights covered by the `f32966dd` pass.
