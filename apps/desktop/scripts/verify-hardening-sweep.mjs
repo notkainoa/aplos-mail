@@ -191,6 +191,13 @@ async function main() {
 
   // Let the seeded mailbox settle (sync may still be running).
   await delay(4000);
+  // A seed that was last used with the sidebar minimised (a persisted setting) has no sidebar to click:
+  // open it once, or every nav row reads "click target missing".
+  const sidebarOpen = await ev(`!!document.querySelector('[aria-label="Sidebar"]')`);
+  if (!sidebarOpen) {
+    await click('Show or hide the sidebar');
+    await delay(600);
+  }
   const rowClick = async () => {
     const rect = await ev(`(()=>{const r=[...document.querySelectorAll('*')]
       .filter(e=>e.children.length<=2&&/^[A-Z][\\w ]{2,30}$/.test((e.textContent||'').trim()))
