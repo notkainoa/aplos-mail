@@ -714,7 +714,7 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
       );
     if (violations.some(v => v.reason === 'other-lane'))
       out(
-        'Other-lane file(s): get the owning lane to approve (commit trailer "Lane-Approved: <lane>" on every commit touching the file, --approved <lane>, or PR label "lane-approved:<lane>").',
+        'Other-lane file(s): get the owning lane to approve (PR label "lane-approved:<lane>" or --approved <lane>; a "Lane-Approved: <lane>" commit trailer counts only with --trailers, and it is self-attested).',
       );
   }
   out(
@@ -729,7 +729,7 @@ export function main(argv, { cwd = process.cwd(), out = console.log } = {}) {
   const opts = parseArgs(argv);
   if (opts.help) {
     out(
-      'usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--no-trailers] [--json]',
+      'usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--trailers] [--json]',
     );
     return 0;
   }

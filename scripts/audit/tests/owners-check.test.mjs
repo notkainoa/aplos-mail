@@ -405,7 +405,20 @@ describe('approval trailers', () => {
     const res = check(dir, ['--trailers', '--json']);
     assert.equal(res.code, 1);
     assert.deepEqual(violationFiles(res), ['packages/engine/src/two.ts']);
+  });
+
+  test('--no-trailers after --trailers turns trailers back off', () => {
+    const dir = makeRepo({ files: { 'packages/engine/src/one.ts': 'a' } });
+    commit(dir, { 'packages/engine/src/one.ts': 'b' }, ['fix one', 'Lane-Approved: eng-store']);
+    assert.equal(check(dir, ['--trailers']).code, 0);
     assert.equal(check(dir, ['--trailers', '--no-trailers']).code, 1);
+  });
+
+  test('the help text and the failure hint name --trailers', () => {
+    const dir = makeRepo();
+    commit(dir, { 'packages/engine/src/store.ts': 'y' });
+    assert.match(check(dir, ['--help']).out, /\[--trailers\]/);
+    assert.match(check(dir).out, /counts only with --trailers/);
   });
 
   test('every commit touching a file must carry the approval', () => {

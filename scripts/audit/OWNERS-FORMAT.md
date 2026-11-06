@@ -49,7 +49,7 @@ The change check reads `plans/OWNERS.md` from the integration branch, never from
 A change by lane A to a file owned by lane B passes when B approved it:
 
 - `--approved B`, or with `--pr N` the PR label `lane-approved:B`. These cover the whole change. The labels are the authoritative record.
-- A `Lane-Approved: B` trailer is read only with `--trailers` (off by default, 2026-11-05): the PR's own author writes its commits, so a trailer is self-attested and is not an approval. With `--trailers` (lanes separated by commas; each item must be exactly one known lane name, anything else approves nothing and is reported) it covers only the files of its own commit, and a file is covered only if every commit in `base..head` that touched it carries the approval. `--no-trailers` is still accepted and changes nothing.
+- A `Lane-Approved: B` trailer is read only with `--trailers` (off by default, 2026-11-05): the PR's own author writes its commits, so a trailer is self-attested and is not an approval. With `--trailers` (lanes separated by commas; each item must be exactly one known lane name, anything else approves nothing and is reported) it covers only the files of its own commit, and a file is covered only if every commit in `base..head` that touched it carries the approval. `--no-trailers` is still accepted and turns a `--trailers` earlier on the line back off.
 - `Owners-Exempt: phase-0` on a commit (the restructure chain; read only with `--trailers`) exempts that commit's files from every check, but only when the integrator lane approved the change (`--approved integrator`, the label `lane-approved:integrator`, or an `rv/thread/integrator` branch).
 
 An unowned file cannot be approved; the Integrator adds it to `plans/OWNERS.md`.
