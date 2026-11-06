@@ -119,11 +119,14 @@ type Singleton = 'session' | 'accounts' | 'counts' | 'settings' | 'consent' | 's
 /** Which singletons a `state` frame's types re-read. */
 const READS_ON: Record<string, readonly Singleton[]> = {
   Session: ['session'],
-  Account: ['accounts'],
+  // First sync is mail progress: account status transitions and each committed mail batch re-read Setup/status.
+  Account: ['accounts', 'setup'],
   Counts: ['counts'],
   Settings: ['settings'],
   Consent: ['consent'],
   Setup: ['setup'],
+  Thread: ['setup'],
+  Message: ['setup'],
 };
 
 const CONNECTING: ConnectionView = {
