@@ -137,6 +137,8 @@ function calendarStepFailed(actor: CalendarActor, step: PlannedStep, error: unkn
     actor.calendarScopeGap = classified?.missingScopes ?? [];
     actor.refreshMissingPermissions();
     actor.backoff.set(step.scope, { failures: 0, until: Infinity });
+    if (remoteId)
+      actor.markCalendar(remoteId, { state: 'error', reasonCode: 'permission.calendar' });
     return;
   }
   if (cls && HOLDABLE.has(cls)) {

@@ -126,7 +126,7 @@ export function calendarListWrites(
     set.set(c.remoteId, {
       id: c.remoteId,
       ...(c.primary ? { primary: true } : {}),
-      ...(c.selected && !c.hidden ? { sync: true } : {}),
+      ...((c.selected || c.primary === true) && !c.hidden ? { sync: true } : {}),
     });
   }
   for (const remoteId of result.removed) {

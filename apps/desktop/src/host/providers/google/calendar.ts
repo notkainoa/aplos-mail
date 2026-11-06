@@ -145,9 +145,45 @@ function eventTime(v: ApiDateTime | undefined): EventTime | undefined {
     : { type: 'floating', local: at.slice(0, 19) };
 }
 
+/** The instant a zone's wall clock reads `local` (single-pass; transition edges are a round-2 care). */
+function zonedToUtc(local: string, tz: string): number | undefined {
+  try {
+    const wall = Date.parse(`${local}Z`);
+    if (Number.isNaN(wall)) return undefined;
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const parts = Object.fromEntries(dtf.formatToParts(new Date(wall)).map(p => [p.type, p.value]));
+    const shown = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    return wall - (shown - wall);
+  } catch {
+    return undefined;
+  }
+}
+
+const utcKey = (utc: number): string => {
+  const d = new Date(utc);
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+};
+
 /**
  * The canonical `recurrenceId` (ports/calendar.ts RECURRENCE_ID_FORMAT): a timed original start to UTC
  * `YYYYMMDDTHHMMSSZ`, an all-day one `YYYYMMDD`, a floating one the wall clock `YYYYMMDDTHHMMSS`.
+ * An offset-less `dateTime` carrying `timeZone` is a zoned instant — the same `…Z` key Google embeds.
  */
 function canonicalRecurrenceId(v: ApiDateTime | undefined): string | undefined {
   if (!v) return undefined;
@@ -155,8 +191,12 @@ function canonicalRecurrenceId(v: ApiDateTime | undefined): string | undefined {
   const at = v.dateTime;
   if (!at) return undefined;
   if (HAS_OFFSET.test(at)) {
-    const d = new Date(Date.parse(at));
-    return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+    const utc = Date.parse(at);
+    return Number.isNaN(utc) ? undefined : utcKey(utc);
+  }
+  if (v.timeZone) {
+    const utc = zonedToUtc(at.slice(0, 19), v.timeZone);
+    if (utc !== undefined) return utcKey(utc);
   }
   return at.slice(0, 19).replace(/[-:]/g, '');
 }
@@ -205,11 +245,12 @@ function eventFacts(calendarRemoteId: string, e: ApiEvent): EventFacts | undefin
   const recurrenceId = canonicalRecurrenceId(e.originalStartTime);
   const status =
     e.status === 'cancelled' ? 'cancelled' : e.status === 'tentative' ? 'tentative' : 'confirmed';
-  const epoch = { type: 'date', date: '1970-01-01' } as const;
+  const epoch = { type: 'utc', utc: 0 } as const;
   // A cancelled row can arrive with nothing but id/status/recurring ids; an override's tombstone still
   // names its original start, which is the occurrence it cancels — use it before the epoch fallback.
   const start = eventTime(e.start) ?? eventTime(e.originalStartTime) ?? epoch;
   const end = eventTime(e.end) ?? start;
+  const conf = conference(e);
   return {
     calendarRemoteId,
     remoteId: e.id,
@@ -219,7 +260,7 @@ function eventFacts(calendarRemoteId: string, e: ApiEvent): EventFacts | undefin
     description: e.description ?? '',
     start,
     end,
-    allDay: e.start?.date !== undefined,
+    allDay: start.type === 'date',
     attendees: (e.attendees ?? []).map(attendee),
     ...(override ? { masterRemoteId: e.recurringEventId } : {}),
     ...(override && recurrenceId ? { recurrenceId, instance: 'exception' as const } : {}),
@@ -228,7 +269,7 @@ function eventFacts(calendarRemoteId: string, e: ApiEvent): EventFacts | undefin
     status,
     organizerIsSelf: e.organizer?.self === true || e.creator?.self === true,
     canEditShared: e.guestsCanModify === true,
-    ...(conference(e) ? { conference: conference(e) } : {}),
+    ...(conf ? { conference: conf } : {}),
     raw: JSON.stringify(e),
   };
 }
@@ -242,7 +283,8 @@ function calendarFacts(e: ApiCalendarListEntry): CalendarFacts | undefined {
     ...(e.colorId ? { color: e.colorId } : {}),
     ...(e.primary === true ? { primary: true } : {}),
     hidden: e.hidden === true,
-    selected: e.selected !== false,
+    // Google omits `selected` when it is false (default False): only an explicit true counts.
+    selected: e.selected === true,
     readOnly: role !== 'owner' && role !== 'writer',
     ...(e.timeZone ? { timeZone: e.timeZone } : {}),
     ...(e.etag ? { changeTag: e.etag } : {}),
@@ -410,14 +452,10 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
             ...(pageToken ? { pageToken } : syncToken ? { syncToken } : {}),
           });
         } catch (error) {
-          // A 410 is a resync of this calendar alone: drop the token and list everything (ports.walk.md).
-          const fullSync =
-            !pageToken &&
-            syncToken !== undefined &&
-            error instanceof ProviderError &&
-            error.error.status === 410;
-          if (!fullSync) throw error;
-          // The token is dead: the resync asks for everything without one (ports.walk.md).
+          // A 410 is a resync of this calendar alone, whenever it lands: drop both tokens, drop the
+          // pages fetched so far (stale pages would double rows), and list everything (ports.walk.md).
+          if (!(error instanceof ProviderError && error.error.status === 410)) throw error;
+          upserts.length = 0;
           pageToken = undefined;
           syncToken = undefined;
           reset = 'syncTokenInvalid';

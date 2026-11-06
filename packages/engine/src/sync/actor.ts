@@ -833,15 +833,27 @@ export class AccountActor {
 
   /** The gaps right now, or undefined when nothing is missing. */
   private missingPermissionsNow(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
-    if (this.deps.adapter.calendar === undefined || this.runtime.capabilities.calendar === true) {
-      return undefined;
+    if (this.deps.adapter.calendar === undefined) return undefined;
+    // A `permission` refusal names the scopes it was refused for — that outranks the stored capability,
+    // which can be stale after a revocation (reconnect re-derives it).
+    if (this.calendarScopeGap !== undefined) {
+      return [
+        {
+          capability: 'calendar',
+          reasonCode: 'permission.calendar',
+          missingScopes: this.calendarScopeGap,
+        },
+      ];
     }
-    // A `permission` refusal names the scopes it was refused for (`calendarScopeGap`); before one has
-    // run, the gap is whichever calendar scopes the grant lacks.
-    const missingScopes =
-      this.calendarScopeGap ??
-      GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s));
-    return [{ capability: 'calendar', reasonCode: 'permission.calendar', missingScopes }];
+    if (this.runtime.capabilities.calendar === true) return undefined;
+    // Before a refusal has run, the gap is whichever calendar scopes the grant lacks.
+    return [
+      {
+        capability: 'calendar',
+        reasonCode: 'permission.calendar',
+        missingScopes: GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s)),
+      },
+    ];
   }
 
   // ---------------------------------------------------------------- waiting and liveness
