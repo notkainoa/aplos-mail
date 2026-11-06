@@ -51,11 +51,47 @@ trap cleanup EXIT
 
 # One local CI run at a time: two runs would fight for CPU and for Electron's download cache.
 LOCK="${TMPDIR:-/tmp}/aplos-local-ci.lock"
-if ! mkdir "$LOCK" 2>/dev/null; then
-  echo "local-ci: another run is in progress ($LOCK exists; remove it if that run is dead)" >&2
+# The lock directory holds the owner's pid. A run that was killed (SIGKILL skips the EXIT trap) leaves
+# the directory behind, so a lock whose owner is gone is stale and is taken over. A lock with no pid yet
+# gets a minute: its owner may be between the mkdir and the pid write.
+lock_is_stale() {
+  local owner
+  owner=$(cat "$LOCK/pid" 2>/dev/null)
+  if [ -n "$owner" ]; then
+    # kill -0 fails with EPERM for a live process of another user, so ps decides too.
+    ! kill -0 "$owner" 2>/dev/null && ! ps -p "$owner" >/dev/null 2>&1
+  else
+    [ -n "$(find "$LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+  fi
+}
+# Taking over runs under its own mutex directory and re-checks staleness inside it, so two runs that
+# both saw the same stale lock cannot both win. A mutex left by a killed taker expires after a minute.
+acquire_lock() {
+  local got=1
+  if mkdir "$LOCK" 2>/dev/null; then
+    echo $$ >"$LOCK/pid"
+    return 0
+  fi
+  lock_is_stale || return 1
+  find "$LOCK.takeover" -maxdepth 0 -mmin +1 -exec rmdir {} \; 2>/dev/null
+  mkdir "$LOCK.takeover" 2>/dev/null || return 1
+  if lock_is_stale; then
+    echo "local-ci: taking over a stale lock ($LOCK; its owner is gone)" >&2
+    rm -f "$LOCK/pid"
+    rmdir "$LOCK" 2>/dev/null
+    if mkdir "$LOCK" 2>/dev/null; then
+      echo $$ >"$LOCK/pid"
+      got=0
+    fi
+  fi
+  rmdir "$LOCK.takeover" 2>/dev/null
+  return $got
+}
+if ! acquire_lock; then
+  echo "local-ci: another run is in progress ($LOCK exists, owner pid $(cat "$LOCK/pid" 2>/dev/null))" >&2
   exit 2
 fi
-trap 'rmdir "$LOCK" 2>/dev/null; cleanup' EXIT
+trap 'rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null; cleanup' EXIT
 
 # Terminal agents export this for themselves; it would break npm and Electron spawns.
 unset ELECTRON_RUN_AS_NODE
