@@ -14,6 +14,8 @@ import {
   cascadeChoice,
   featureLabel,
   featurePatch,
+  mailAllowedLabel,
+  mailAllowedOp,
   paidPatch,
   providerName,
   testResultStatus,
@@ -45,6 +47,8 @@ export interface ControllerDeps {
   /** Shows account writes at once over the live accounts, by account id; null takes them away. */
   accountOverlay(patch: Readonly<Record<string, AccountWrite>> | null): void;
   fail(failure: WriteFailure | null): void;
+  /** The failure on screen right now, so a write can clear its own line without touching a sibling's. */
+  failure?(): WriteFailure | null;
   /** Runs `fn` after `ms`; returns a cancel. Defaults to a timer. */
   schedule?(fn: () => void, ms: number): () => void;
 }
@@ -147,6 +151,42 @@ export function createController(deps: ControllerDeps) {
     return ok;
   }
 
+  /* "Turn on for existing accounts" (Settings → AI): a bulk write still holds one optimistic overlay per
+   * account and each write settles on its own, but the outcome is ONE line — naming the refused accounts
+   * only, with a Retry that writes only those — and ONE undo covering exactly the accounts the press
+   * turned on. The single failure slot is never cleared for a sibling: a full success takes down only a
+   * line this path wrote itself. */
+  let mailFailure: WriteFailure | null = null;
+  async function writeMailAllowed(ids: readonly string[], on: boolean): Promise<readonly string[]> {
+    const previous = mailFailure;
+    const results = await Promise.allSettled(
+      ids.map(id => {
+        const overlayId = pushAccountOverlay(id, { aiAllowed: on });
+        return Promise.resolve()
+          .then(() => ports.accountSet(id, { aiAllowed: on }))
+          .finally(() => dropAccountOverlay(overlayId));
+      }),
+    );
+    const refused = ids.filter((_, i) => results[i]!.status === 'rejected');
+    if (refused.length === 0) {
+      // A success clears the slot only while it still holds this path's own line.
+      if (previous && (deps.failure?.() ?? previous) === previous) deps.fail(null);
+      if (mailFailure === previous) mailFailure = null;
+      return refused;
+    }
+    const failure: WriteFailure = {
+      op: mailAllowedOp(data().accounts, refused, on),
+      retry: () => void writeMailAllowed(refused, on),
+      dismiss: () => {
+        if (mailFailure === failure) mailFailure = null;
+        deps.fail(null);
+      },
+    };
+    mailFailure = failure;
+    deps.fail(failure);
+    return refused;
+  }
+
   /** The provider table re-read after a key changed; it failing quietly must never skip what follows. */
   const refreshProviders = async (): Promise<void> => {
     try {
@@ -246,6 +286,17 @@ export function createController(deps: ControllerDeps) {
     },
 
     /* ───────────── AI ───────────── */
+    /** "Turn on for existing accounts": each account settles on its own; the line and the undo are one. */
+    async allowMailForAccounts(ids: readonly string[]) {
+      const refused = await writeMailAllowed(ids, true);
+      const turnedOn = ids.filter(id => !refused.includes(id));
+      if (turnedOn.length > 0)
+        host.pushUndo?.({
+          label: mailAllowedLabel(data().accounts, turnedOn),
+          undo: () => void writeMailAllowed(turnedOn, false),
+        });
+      return refused.length === 0;
+    },
     /** A feature's provider or model changed; a new provider resets the model to its first one. */
     async changeFeature(feature: AiFeature, choice: { provider: ProviderId; model: string }) {
       const d = data();

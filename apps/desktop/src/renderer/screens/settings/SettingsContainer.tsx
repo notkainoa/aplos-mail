@@ -188,6 +188,8 @@ export function useSettingsState(
   const viewRef = useRef(view);
   const loadedRef = useRef(loaded);
   const dataRef = useRef<SettingsData>(null as never);
+  const failureRef = useRef(failure);
+  failureRef.current = failure;
 
   const data: SettingsData = {
     ...base,
@@ -237,6 +239,7 @@ export function useSettingsState(
         overlay: patch => setOverlay(patch),
         accountOverlay: patch => setAccountsOverlay(patch ? { ...patch } : null),
         fail: setFailure,
+        failure: () => failureRef.current,
       }),
     // The ports and host are stable for the life of the screen.
     // eslint-disable-next-line react-hooks/exhaustive-deps

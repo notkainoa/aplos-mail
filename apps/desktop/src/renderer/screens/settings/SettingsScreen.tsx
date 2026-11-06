@@ -45,6 +45,25 @@ const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
   '[role="switch"]:not([disabled]):not([aria-disabled="true"]), [tabindex="0"]';
 
+/**
+ * The identity signal that re-runs a deep link's row resolution: a conditional row can appear after the
+ * link landed (providers still loading, an account's AI switch flipped by a bulk write), so the list of
+ * real accounts keeping their mail out of AI is part of it, not just who is connected.
+ */
+export function screenDataVersion(
+  data: Pick<SectionProps['data'], 'providers' | 'accounts' | 'queue'>,
+): string {
+  return [
+    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
+    data.accounts.map(a => a.id).join(','),
+    data.accounts
+      .filter(a => !a.demo && !a.aiAllowed)
+      .map(a => a.id)
+      .join(','),
+    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
+  ].join('|');
+}
+
 /** What the pane does when no row wants focus: reset for a section change, keep its place otherwise. */
 export function scrollWithoutTarget(
   previous: SettingSection | null,
@@ -95,14 +114,10 @@ export function SettingsScreen({
     missing: string | null;
   }>({ section: null, anchor: undefined, recordingId: undefined, missing: null });
 
-  // A conditional row can appear after the link landed (providers still loading): this cheap identity signal
-  // re-runs the resolution so the row is scrolled to and focused once it is drawn.
+  // A conditional row can appear after the link landed (providers still loading, an AI-off account turned
+  // on): this cheap identity signal re-runs the resolution so the row is scrolled to and focused once drawn.
   const { data } = rest;
-  const dataVersion = [
-    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
-    data.accounts.map(a => a.id).join(','),
-    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
-  ].join('|');
+  const dataVersion = screenDataVersion(data);
 
   // A deep link lands on its row; a plain section switch starts at the top. Anything else keeps its place.
   useEffect(() => {
