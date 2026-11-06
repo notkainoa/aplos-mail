@@ -112,10 +112,18 @@ const WITH_REMOTE = {
 
 const QUERY = { text: 'invoice' };
 
-function SearchScene({ state, remote = false }: { state: SearchState; remote?: boolean }) {
+function SearchScene({
+  state,
+  remote = false,
+  local,
+}: {
+  state: SearchState;
+  remote?: boolean;
+  local?: Parameters<typeof searchPage>[1];
+}) {
   const model = searchPage(
     state,
-    remote ? WITH_REMOTE : state.field || state.tokens.length ? WITH_LOCAL : EMPTY_LOCAL,
+    local ?? (remote ? WITH_REMOTE : state.field || state.tokens.length ? WITH_LOCAL : EMPTY_LOCAL),
     FROZEN,
   );
   return (
@@ -246,7 +254,7 @@ export const states: Record<string, StateEntry> = {
           tokens: [],
           remote: {
             phase: 'running',
-            key: 'invoice',
+            key: 'all|invoice',
             at: 0,
             runId: 'r1',
             localIds: WITH_LOCAL.ids,
@@ -264,7 +272,7 @@ export const states: Record<string, StateEntry> = {
         state={{
           field: 'invoice',
           tokens: [],
-          remote: { phase: 'done', key: 'invoice', runId: 'r1', localIds: WITH_LOCAL.ids },
+          remote: { phase: 'done', key: 'all|invoice', runId: 'r1', localIds: WITH_LOCAL.ids },
         }}
       />
     ),
@@ -277,7 +285,45 @@ export const states: Record<string, StateEntry> = {
         state={{
           field: 'invoice',
           tokens: [],
-          remote: { phase: 'failed', key: 'invoice', reason: 'error' },
+          remote: { phase: 'failed', key: 'all|invoice', reason: 'error' },
+        }}
+      />
+    ),
+  },
+  'search-failed-reauth': {
+    title: 'Search: sign-in expired — the reason line alone, no generic banner',
+    kind: 'page',
+    render: () => (
+      <SearchScene
+        local={{
+          status: 'failed',
+          ids: [],
+          total: 0,
+          error: { type: 'needsReauth' },
+        }}
+        state={{
+          field: 'invoice',
+          tokens: [],
+          remote: { phase: 'failed', key: 'all|invoice', reason: 'needsReauth' },
+        }}
+      />
+    ),
+  },
+  'search-failed-partial': {
+    title: 'Search: remote sign-in failure under kept local results',
+    kind: 'page',
+    render: () => (
+      <SearchScene
+        local={{
+          status: 'failed',
+          ids: WITH_LOCAL.ids,
+          total: WITH_LOCAL.total,
+          error: { type: 'needsReauth' },
+        }}
+        state={{
+          field: 'invoice',
+          tokens: [],
+          remote: { phase: 'failed', key: 'all|invoice', reason: 'needsReauth' },
         }}
       />
     ),
