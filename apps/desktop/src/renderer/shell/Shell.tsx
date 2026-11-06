@@ -304,7 +304,11 @@ export function ChromeNotch() {
   );
 }
 
-/** The notch's size in px: it spans the lights, the toggle and the corner curves (CSS --notch-w / --notch-h match). */
+/**
+ * The notch's size in px: it spans the lights, the toggle and the corner curves. NOTCH_W matches CSS --notch-w; NOTCH_H is
+ * --shell-pad + --pane-head (the notch's bottom meets the header's hairline). The path's 10 and 12 are the step and
+ * pane corner radii (12 = --radius-lg).
+ */
 export const NOTCH_W = 134;
 export const NOTCH_H = 56;
 const NOTCH_EDGE = 'M134 8A10 10 0 0 0 124 18V32A12 12 0 0 1 112 44H20A12 12 0 0 0 8 56';

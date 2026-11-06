@@ -56,9 +56,11 @@
   position: absolute;
   top: 0;
   left: 0;
-  z-index: var(--z-sticky);
+  /* One layer above the pane header (also --z-sticky), which spans this corner and would otherwise take its clicks. */
+  z-index: calc(var(--z-sticky) + 1);
   width: var(--notch-w);
-  height: calc(var(--traffic-center) * 2 + var(--space-5));
+  /* The notch's depth: the pane's inset plus its header (the path's 56). */
+  height: calc(var(--shell-pad) + var(--pane-head));
   padding: 0;
 }
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__notch {

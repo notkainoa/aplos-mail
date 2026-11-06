@@ -19,7 +19,7 @@ import { createManualScheduler, createManualTimers } from '../data/scheduler';
 import { closeSheet, navigate, pushToast, dismissToast } from './index';
 import { context } from '../commands/testing';
 import { PaletteHost } from '../screens/palette';
-import { paneHeader, Shell, ShellLayout, shellCommands } from './Shell';
+import { NOTCH_W, paneHeader, Shell, ShellLayout, shellCommands } from './Shell';
 import { failureReason, flowEnded, reconnectKey } from './SheetHost';
 import { toSyncStatus } from './status-map';
 import { StatusHost } from './StatusHost';
@@ -409,4 +409,7 @@ test('the collapsed strip is the sidebar region, so its toggle stays a region Ta
     }),
   );
   assert.match(html, /aplos-shell__strip[^>]*data-region="sidebar"/);
+  // The notch is inside the strip, hidden from assistive tech, and its fill and edge share the notch's width.
+  assert.match(html, /aplos-shell__strip[\s\S]*aplos-shell__notch[^>]*aria-hidden="true"/);
+  assert.match(html, new RegExp(`d="M0 0H${NOTCH_W}V8A10 10 0 0 0 124 18`));
 });
