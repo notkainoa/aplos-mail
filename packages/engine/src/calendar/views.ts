@@ -157,7 +157,10 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
       // A single event: overlap by its own times.
       const start = instant(base.start, env.zone);
       const end = instant(base.end, env.zone);
-      if (start < spec.to && end >= spec.from) out.push({ id: base.id, event: base, at: start });
+      // Half-open window: only a zero-length event at exactly `from` counts as inside; an event
+      // ending at `from` (incl. exclusive all-day ends) belongs to the window before.
+      if (start < spec.to && (end > spec.from || (end === start && start >= spec.from)))
+        out.push({ id: base.id, event: base, at: start });
       continue;
     }
     const oRows: Override[] = overrides.map(o => {

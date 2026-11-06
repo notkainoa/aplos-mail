@@ -284,6 +284,27 @@ test('events view SQL bounds: NULL times, edge all-days, zero-length pass; far r
         kind: 'event',
         accountId: 'acct-1',
         calendarRemoteId: 'primary',
+        remoteId: 'evEdge',
+        rows: [
+          // 23:00-midnight: inside the Oct 26 window, must not ghost into Oct 27's.
+          {
+            status: 'confirmed',
+            startUtc: Date.UTC(2026, 9, 26, 23),
+            endUtc: Date.UTC(2026, 9, 27),
+            allDay: false,
+            data: JSON.stringify({
+              summary: 'Edge',
+              start: { dateTime: '2026-10-26T23:00:00Z' },
+              end: { dateTime: '2026-10-27T00:00:00Z' },
+              status: 'confirmed',
+            }),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
         remoteId: 'evFar',
         rows: [
           {
@@ -307,14 +328,28 @@ test('events view SQL bounds: NULL times, edge all-days, zero-length pass; far r
   assert.deepEqual(
     [...win.ids].sort(),
     [
+      'acct-1:primary/evEdge',
       'acct-1:primary/evFirst',
       'acct-1:primary/evLast',
       'acct-1:primary/evNull',
       'acct-1:primary/evZero',
     ].sort(),
   );
-  // The SQL filter itself: a reader counting returned rows never sees the >2-day-out event.
+  // Half-open window: Oct 26's all-day (end Oct 27 exclusive) and the 23:00-00:00 event do NOT
+  // ghost into the next day's view — evaluated at the plan level in UTC, since the engine's zone
+  // shifts date instants by the viewer offset.
   const { eventsPlan } = await import('../../src/calendar/views');
+  const nextIds: string[] = [];
+  w.store.read(q => {
+    const plan = eventsPlan(
+      { kind: 'events' as const, from: Date.UTC(2026, 9, 27), to: Date.UTC(2026, 9, 28) },
+      { zone: 'UTC' } as never,
+    );
+    for (const r of plan.rows(q, undefined, 500)) nextIds.push(r.id);
+  });
+  assert.ok(!nextIds.includes('acct-1:primary/evFirst'), 'Oct 26 all-day is not in Oct 27');
+  assert.ok(!nextIds.includes('acct-1:primary/evEdge'), '23:00-00:00 is not in Oct 27');
+  // The SQL filter itself: a reader counting returned rows never sees the >2-day-out event.
   let seenRemote: string[] = [];
   w.store.read(q => {
     const counted = Object.create(q, {
