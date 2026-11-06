@@ -1,4 +1,4 @@
-import type { ClassifiedError } from '@aplos/contract';
+import type { ClassifiedError, ReasonCode } from '@aplos/contract';
 import {
   NotSentError,
   PausedError,
@@ -128,17 +128,17 @@ export class AccountActor {
   private pass?: Set<ScopeId>;
   private wakeAt?: number;
   /** `retryNow` granted one call: the next step runs through the cooldown. */
-  private forced = false;
+  forced = false;
   private opsDirty = true;
   /** A pause on a budget other than this account's mail budget holds op flushes until it ends. */
   private opsHoldUntil = 0;
   /** Ops whose write may have landed wait for the next incremental pass (F3 `OpOutcome`). */
   private heldUncertain = true;
-  private readonly backoff = new Map<ScopeId, { failures: number; until: number }>();
+  readonly backoff = new Map<ScopeId, { failures: number; until: number }>();
   /** A failure the governor does not hold (missing mail permission): no sync until reconnect or a manual request. */
   private halted?: StatusView;
   /** The missing scopes a `permission` refusal on a calendar call named; unset until one does. */
-  private calendarScopeGap?: string[];
+  calendarScopeGap?: string[];
   private failure?: StatusView;
   private view?: StatusView;
   private heartbeat: number;
@@ -148,9 +148,9 @@ export class AccountActor {
   private role: Role;
   private backfillRead = 0;
   private readonly bound: BoundGovernor;
-  private readonly log: Logger;
+  readonly log: Logger;
 
-  constructor(private readonly deps: ActorDeps) {
+  constructor(readonly deps: ActorDeps) {
     this.role = deps.role;
     this.heartbeat = deps.clock.now();
     this.log = deps.log.with({ account: deps.account.id });
@@ -173,7 +173,7 @@ export class AccountActor {
     return this.deps.account.id;
   }
 
-  private get stopped() {
+  get stopped() {
     return this.stopper.signal.aborted;
   }
 
@@ -414,7 +414,7 @@ export class AccountActor {
     return Math.max(step.notBefore ?? now, this.backoff.get(step.scope)?.until ?? 0);
   }
 
-  private setTrigger(trigger: PlanTrigger): void {
+  setTrigger(trigger: PlanTrigger): void {
     this.trigger = trigger;
     this.pass = undefined;
   }
@@ -422,6 +422,9 @@ export class AccountActor {
   // ---------------------------------------------------------------- one step
 
   private async runStep(step: PlannedStep, state: SyncState): Promise<void> {
+    if (step.scope === 'calendars' || step.scope.startsWith('cal:')) {
+      return this.runCalendarStep(step, state);
+    }
     const { store, clock, adapter } = this.deps;
     // The mutation fence and the round generation: the store's seq before the page request goes out (ARCH 4.3).
     const fence = store.seq();
@@ -507,6 +510,56 @@ export class AccountActor {
     return { nextStates: [round.nextState], done: true, costUnits: round.costUnits };
   }
 
+  /** A `calendars` or `cal:<id>` step on the adapter's calendar half (D12; the body lives in actor-calendar.ts). */
+  private calSteps: Promise<typeof import('./actor-calendar')> | undefined;
+  private runCalendarStep(step: PlannedStep, state: SyncState): Promise<void> {
+    // Dynamic edge keeps the calendar half out of the startup bundle (portability budget); it loads
+    // only on accounts whose adapter actually has a `.calendar` slot.
+    const mod = (this.calSteps ??= import('./actor-calendar'));
+    return mod.then(m => m.runCalendarStep(this, step, state));
+  }
+
+  /** One `cal:<id>` entry in `runtime.calendars` (the D12 per-calendar state), emitted on change. */
+  markCalendar(
+    remoteId: string,
+    entry: {
+      state: 'ok' | 'paused' | 'error';
+      until?: number;
+      reason?: string;
+      reasonCode?: ReasonCode;
+    },
+  ): void {
+    const list = (this.runtime.calendars ??= []);
+    const at = list.findIndex(c => c.remoteId === remoteId);
+    const next = { remoteId, ...entry };
+    const same =
+      at >= 0 &&
+      list[at]!.state === next.state &&
+      list[at]!.until === next.until &&
+      list[at]!.reasonCode === next.reasonCode;
+    if (same) return;
+    if (at >= 0) list[at] = next;
+    else list.push(next);
+    this.emit();
+  }
+
+  /**
+   * Every listed calendar reads ok — but a delta list names only the changed ones, so anything not
+   * listed keeps its entry. Paused or errored calendars keep their state until their own step runs.
+   */
+  calendarsOk(remoteIds: string[]): void {
+    const listed = new Set(remoteIds);
+    const byId = new Map((this.runtime.calendars ?? []).map(c => [c.remoteId, c]));
+    this.runtime.calendars = [
+      ...remoteIds.map(remoteId => {
+        const old = byId.get(remoteId);
+        return old && old.state !== 'ok' ? old : { remoteId, state: 'ok' as const };
+      }),
+      ...(this.runtime.calendars ?? []).filter(c => !listed.has(c.remoteId)),
+    ];
+    this.emit();
+  }
+
   /** A step that threw: the governor already holds pauses and blocks; everything else backs this scope off. */
   private stepFailed(step: PlannedStep, error: unknown): void {
     const now = this.deps.clock.now();
@@ -549,7 +602,7 @@ export class AccountActor {
    * A `permission` refusal on a calendar scope is a feature-level gap (D12), never an account halt: the scope backs
    * off on the usual escalation while `missingPermissions` names the scopes a re-consent must add. Mail is untouched.
    */
-  private calendarScopeRefused(
+  calendarScopeRefused(
     step: PlannedStep,
     classified: ClassifiedError | undefined,
     now: number,
@@ -566,7 +619,7 @@ export class AccountActor {
    * A pause on another budget (calendar, OAuth) passes that check, so the step would run, be refused without I/O and
    * run again at once. Back the scope off until the pause ends.
    */
-  private holdScope(step: PlannedStep, until: number | undefined): void {
+  holdScope(step: PlannedStep, until: number | undefined): void {
     const now = this.deps.clock.now();
     if (!this.deps.governor.admission(this.id, this.deps.budget.id, 'incremental').ok) return;
     const failures = this.backoff.get(step.scope)?.failures ?? 0;
@@ -764,7 +817,7 @@ export class AccountActor {
    * Settings row (`Account.missingPermissions` capability 'calendar'), at start, on reconnect and on a `permission`
    * refusal that names the scopes. Never `needsPermission`: that is the core mail scope's alone.
    */
-  private refreshMissingPermissions(): void {
+  refreshMissingPermissions(): void {
     const missing = this.missingPermissionsNow() ?? [];
     const before = this.runtime.missingPermissions ?? [];
     if (
@@ -783,15 +836,27 @@ export class AccountActor {
 
   /** The gaps right now, or undefined when nothing is missing. */
   private missingPermissionsNow(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
-    if (this.deps.adapter.calendar === undefined || this.runtime.capabilities.calendar === true) {
-      return undefined;
+    if (this.deps.adapter.calendar === undefined) return undefined;
+    // A `permission` refusal names the scopes it was refused for — that outranks the stored capability,
+    // which can be stale after a revocation (reconnect re-derives it).
+    if (this.calendarScopeGap !== undefined) {
+      return [
+        {
+          capability: 'calendar',
+          reasonCode: 'permission.calendar',
+          missingScopes: this.calendarScopeGap,
+        },
+      ];
     }
-    // A `permission` refusal names the scopes it was refused for (`calendarScopeGap`); before one has
-    // run, the gap is whichever calendar scopes the grant lacks.
-    const missingScopes =
-      this.calendarScopeGap ??
-      GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s));
-    return [{ capability: 'calendar', reasonCode: 'permission.calendar', missingScopes }];
+    if (this.runtime.capabilities.calendar === true) return undefined;
+    // Before a refusal has run, the gap is whichever calendar scopes the grant lacks.
+    return [
+      {
+        capability: 'calendar',
+        reasonCode: 'permission.calendar',
+        missingScopes: GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s)),
+      },
+    ];
   }
 
   // ---------------------------------------------------------------- waiting and liveness
@@ -825,7 +890,7 @@ export class AccountActor {
   }
 
   /** During a step, the heartbeat beats only while a request waits in the governor; a stalled adapter goes silent. */
-  private tick(): AbortController {
+  tick(): AbortController {
     const ticker = new AbortController();
     const signal = AbortSignal.any([ticker.signal, this.stopper.signal]);
     void (async () => {
