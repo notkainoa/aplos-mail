@@ -372,6 +372,7 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
       newId: this.newId,
       random: this.random,
       baselineDoneAt: row.baselineDoneAt,
+      calendarListedAt: row.calendarListedAt,
       reconnectBy: row.refreshExpiresAt,
       role,
       onStatus: runtime => this.notify(account, runtime),

@@ -87,6 +87,7 @@ export interface ActorDeps {
   newId: () => string;
   random: () => number;
   baselineDoneAt?: number;
+  calendarListedAt?: number;
   reconnectBy?: number;
   role: Role;
   onStatus: (runtime: AccountRuntime) => void;
@@ -161,6 +162,7 @@ export class AccountActor {
       capabilities: deps.account.capabilities,
       firstWindow: { read: 0, total: 0 },
       ...(deps.baselineDoneAt !== undefined ? { baselineDoneAt: deps.baselineDoneAt } : {}),
+      ...(deps.calendarListedAt !== undefined ? { calendarListedAt: deps.calendarListedAt } : {}),
       ...(deps.reconnectBy !== undefined ? { reconnectBy: deps.reconnectBy } : {}),
       lease: { role: deps.role },
     };

@@ -167,6 +167,70 @@ test('the actor lists calendars and syncs events into the tables the views read'
   }
 });
 
+test('the first calendars commit stamps calendar_listed_at once (#356)', async () => {
+  const d = disk();
+  try {
+    let relist = false;
+    const calendar: CalendarAdapter = {
+      budget: 'gcal',
+      plan: () => [],
+      listCalendars: () => {
+        relist = false;
+        return Promise.resolve({
+          calendars: [],
+          removed: [],
+          nextState: state('calendars', 'list-token'),
+          costUnits: 1,
+        });
+      },
+      syncStep: () => Promise.reject(new Error('unused')),
+      put: () => Promise.reject(new Error('unused')),
+      remove: () => Promise.reject(new Error('unused')),
+      rsvp: () => Promise.reject(new Error('unused')),
+    };
+    const adapter = new FakeAdapter(
+      input => (relist || !input.states.some(s => s.scope === 'calendars') ? [LIST] : []),
+      {},
+    );
+    (adapter as { calendar?: CalendarAdapter }).calendar = calendar;
+    const w = world(d, () => adapter);
+    w.store.commit({
+      opId: 'caps-setup',
+      origin: 'system',
+      writes: [
+        {
+          kind: 'account',
+          id: ACCOUNT,
+          grantedScopes: ['gmail.modify', 'cal.a'],
+          capabilities: caps(true),
+        },
+      ],
+    });
+    await w.host.start(ACCOUNT);
+    await settle();
+
+    const listed = () =>
+      w.store.read(
+        q =>
+          q.get<{ calendar_listed_at: number | null }>(
+            'SELECT calendar_listed_at FROM accounts WHERE id = ?',
+            ACCOUNT,
+          )?.calendar_listed_at,
+      );
+    const stamp = listed();
+    assert.equal(typeof stamp, 'number', 'the first list commit stamps the account');
+    assert.equal(w.host.status(ACCOUNT)!.calendarListedAt, stamp);
+
+    await w.clock.advance(60_000);
+    relist = true;
+    w.host.opsChanged(ACCOUNT);
+    await settle();
+    assert.equal(listed(), stamp, 'a later list keeps the first stamp');
+  } finally {
+    await d.cleanup();
+  }
+});
+
 test('a permission refusal on a calendar step marks missingPermissions and leaves mail alone', async () => {
   const d = disk();
   try {

@@ -102,6 +102,7 @@ export function readGovernor(
 export interface AccountRow {
   account: AdapterAccount;
   baselineDoneAt?: number;
+  calendarListedAt?: number;
   refreshExpiresAt?: number;
   status: string;
 }
@@ -114,10 +115,11 @@ export function readAccount(store: StorePort, id: AccountId): AccountRow | undef
       capabilities: string;
       granted_scopes: string | null;
       baseline_done_at: number | null;
+      calendar_listed_at: number | null;
       refresh_expires_at: number | null;
       status: string;
     }>(
-      'SELECT provider, address, capabilities, granted_scopes, baseline_done_at, refresh_expires_at, status FROM accounts WHERE id = ?',
+      'SELECT provider, address, capabilities, granted_scopes, baseline_done_at, calendar_listed_at, refresh_expires_at, status FROM accounts WHERE id = ?',
       id,
     ),
   );
@@ -132,6 +134,7 @@ export function readAccount(store: StorePort, id: AccountId): AccountRow | undef
       capabilities: { threading: 'native', ...caps } as Capabilities,
     },
     baselineDoneAt: row.baseline_done_at ?? undefined,
+    calendarListedAt: row.calendar_listed_at ?? undefined,
     refreshExpiresAt: row.refresh_expires_at ?? undefined,
     status: row.status,
   };

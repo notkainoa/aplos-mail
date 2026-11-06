@@ -18,6 +18,7 @@ type AccountRow = {
   status_detail: string | null;
   resume_at: number | null;
   baseline_done_at: number | null;
+  calendar_listed_at: number | null;
   refresh_expires_at: number | null;
   remote_subject: string | null;
   ai_allowed: number;
@@ -34,7 +35,7 @@ interface AccountSettings {
 }
 
 const ROW_COLUMNS =
-  'id, provider, address, display_name, capabilities, granted_scopes, status, status_reason, status_reason_code, status_detail, resume_at, baseline_done_at, refresh_expires_at, remote_subject, ai_allowed, settings, created_at';
+  'id, provider, address, display_name, capabilities, granted_scopes, status, status_reason, status_reason_code, status_detail, resume_at, baseline_done_at, calendar_listed_at, refresh_expires_at, remote_subject, ai_allowed, settings, created_at';
 
 const CAPABILITY_FLAGS = [
   'labels',
@@ -143,6 +144,7 @@ function toAccount(
 ): Account {
   const settings = parseJson<AccountSettings>(row.settings, {});
   const baselineDoneAt = runtime?.baselineDoneAt ?? row.baseline_done_at ?? undefined;
+  const calendarListedAt = runtime?.calendarListedAt ?? row.calendar_listed_at ?? undefined;
   const account: Account = {
     id: row.id,
     rev,
@@ -170,6 +172,7 @@ function toAccount(
   if (settings.preset) account.preset = settings.preset;
   if (settings.server) account.server = settings.server;
   if (baselineDoneAt !== undefined) account.baselineDoneAt = baselineDoneAt;
+  if (calendarListedAt !== undefined) account.calendarListedAt = calendarListedAt;
   if (runtime?.sendBlockedUntil !== undefined) account.sendBlockedUntil = runtime.sendBlockedUntil;
   const missing = missingPermissionsOf(runtime);
   if (missing) account.missingPermissions = missing;

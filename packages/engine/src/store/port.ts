@@ -161,6 +161,7 @@ export interface AccountWrite {
   /** The copy key for the current status (F1 `AccountHealth.reasonCode`); `status.reason` stays the provider's own code. */
   reasonCode?: string | null;
   baselineDoneAt?: number | null;
+  calendarListedAt?: number | null;
   tokenGrantedAt?: number | null;
   refreshExpiresAt?: number | null;
   remoteSubject?: string | null;

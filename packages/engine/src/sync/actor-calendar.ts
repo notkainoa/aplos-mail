@@ -1,4 +1,11 @@
-import type { AdapterContext, PlannedStep, PlanTrigger, ScopeId, SyncState } from '../ports';
+import type {
+  AccountRuntime,
+  AdapterContext,
+  PlannedStep,
+  PlanTrigger,
+  ScopeId,
+  SyncState,
+} from '../ports';
 import { PausedError, ProviderError, NotSentError } from '../ports';
 import type { ClassifiedError } from '@aplos/contract';
 import type { ActorDeps } from './actor';
@@ -16,6 +23,7 @@ import { readFailures, readMemory } from './persist';
 
 export interface CalendarActor {
   readonly deps: ActorDeps;
+  readonly runtime: AccountRuntime;
   readonly stopped: boolean;
   readonly log: ActorDeps['log'];
   readonly backoff: Map<ScopeId, { failures: number; until: number }>;
@@ -71,18 +79,34 @@ export async function runCalendarStep(
       if (actor.stopped) return;
       actor.backoff.delete(step.scope);
       actor.calendarsOk(result.calendars.map(c => c.remoteId));
+      // The list's first commit stamps calendarListedAt (the #356 ask): the UI reads it to tell
+      // "No calendars" from "Syncing…". Written once; runtime updates only after the commit lands.
+      const now = clock.now();
+      const firstList = actor.runtime.calendarListedAt === undefined;
       store.commit({
         opId: actor.deps.newId(),
         origin: 'sync',
         step: step.origin,
         fenceSeq: fence,
         changes: 'fine',
-        writes: calendarListWrites(
-          actor.deps.account.id,
-          result,
-          parseSyncSet(readMemory(store, actor.deps.account.id).get(CAL_SYNC_MEMORY_KEY)),
-        ),
+        writes: [
+          ...calendarListWrites(
+            actor.deps.account.id,
+            result,
+            parseSyncSet(readMemory(store, actor.deps.account.id).get(CAL_SYNC_MEMORY_KEY)),
+          ),
+          ...(firstList
+            ? [
+                {
+                  kind: 'account' as const,
+                  id: actor.deps.account.id,
+                  calendarListedAt: now,
+                },
+              ]
+            : []),
+        ],
       });
+      if (firstList) actor.runtime.calendarListedAt = now;
     } else {
       const calendarRemoteId = step.scope.slice(4);
       const result = await calendar.syncStep(calendarRemoteId, state, step.lane, ctx);

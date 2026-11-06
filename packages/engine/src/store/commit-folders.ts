@@ -85,6 +85,7 @@ export function account(run: CommitRun, w: AccountWrite) {
   }
   set('status_reason_code', w.reasonCode);
   set('baseline_done_at', w.baselineDoneAt);
+  set('calendar_listed_at', w.calendarListedAt);
   set('token_granted_at', w.tokenGrantedAt);
   set('refresh_expires_at', w.refreshExpiresAt);
   set('remote_subject', w.remoteSubject);

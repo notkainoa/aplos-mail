@@ -82,6 +82,8 @@ export interface AccountRuntime extends AccountHealth {
   /** The first window's progress (AM-4); complete once `baselineDoneAt` is set. `found` only when the provider estimates it. */
   firstWindow: { read: number; total: number; found?: number };
   baselineDoneAt?: number;
+  /** The first `calendars` list commit (D12): set means "listed at least once", so an empty list reads "No calendars", not "Syncing…". */
+  calendarListedAt?: number;
   /** "Background work runs on: <Mac>" (ARCH 6.5). */
   lease?: {
     role: 'primary' | 'secondary';
