@@ -28,9 +28,9 @@ test('a window killed by a contract error logs view.window_failed with kind + ty
   try {
     t.store.commit({ opId: 'a', origin: 'local', writes: [{ ...accountWrite }] });
     const w = t.engine.connect();
-    const win = await w.call('View/watch', {
+    const win = (await w.call('View/watch', {
       spec: { kind: 'events', from: 0, to: 86_400_000 },
-    });
+    })) as { windowId: string };
     assert.ok(win.windowId);
     t.store.commit({
       opId: 'bump',
