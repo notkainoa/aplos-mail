@@ -12,6 +12,7 @@ import { SettingsScreen } from '../SettingsScreen';
 import { mergeAccounts, mergePatch, type AccountWrite } from '../settings.model';
 import { INITIAL_VIEW, type SettingsView } from '../view';
 import {
+  account,
   ALEX,
   baseSettings,
   bundle,
@@ -342,6 +343,23 @@ export const STATES: Record<string, StateSpec> = {
       })),
     }),
   },
+  'ai-account-mail': {
+    title: 'AI, existing accounts still keep their mail out',
+    section: 'ai',
+    data: dataOf({ accounts: [ALEX, JORDAN] }),
+  },
+  'ai-accounts-mail': {
+    title: 'AI, two accounts keep their mail out',
+    section: 'ai',
+    data: dataOf({
+      accounts: [JORDAN, account({ id: 'acct-rio', address: 'rio@example.com', aiAllowed: false })],
+    }),
+  },
+  'ai-demo-only': {
+    title: 'AI, demo mail only: the account-mail row is hidden',
+    section: 'ai',
+    data: dataOf({ accounts: [DEMO] }),
+  },
   'keyboard-default': { title: 'Keyboard', section: 'keyboard', data: dataOf() },
   'keyboard-recording': {
     title: 'Keyboard, recording a new key',
@@ -542,7 +560,9 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
   const [accountOverlay, setAccountOverlay] = useState<Record<string, AccountWrite> | null>(null);
   const dataRef = useRef(data);
   const viewRef = useRef(view);
+  const failureRef = useRef(failure);
   dataRef.current = data;
+  failureRef.current = failure;
   const shown = {
     ...data,
     settings: overlay ? mergePatch(data.settings, overlay) : data.settings,
@@ -572,6 +592,7 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
       overlay: setOverlay,
       accountOverlay: setAccountOverlay,
       fail: setFailure,
+      failure: () => failureRef.current,
     });
   }, []);
   viewRef.current = view;

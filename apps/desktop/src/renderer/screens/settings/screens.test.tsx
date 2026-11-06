@@ -412,6 +412,14 @@ describe('states, copy and design rules', () => {
     assert.match(render('ai-cap-reached'), /What is sent\./);
   });
 
+  test('AI: the account-mail row names off accounts, hides for all-on and demo-only', () => {
+    assert.match(render('ai-account-mail'), /jordan\.lee@example\.com keeps its mail out of AI\./);
+    assert.match(render('ai-account-mail'), /Turn on for existing accounts/);
+    assert.match(render('ai-accounts-mail'), /2 accounts keep their mail out of AI\./);
+    assert.doesNotMatch(render('ai-default'), /data-setting-anchor="accountMail"/);
+    assert.doesNotMatch(render('ai-demo-only'), /data-setting-anchor="accountMail"/);
+  });
+
   test('General, Mail, Calendar, Notifications copy', () => {
     assert.match(render('general'), /Light, dark, or match the system\./);
     assert.match(render('general'), /Open Aplos when you log in/);
@@ -575,6 +583,7 @@ describe('accessibility in markup', () => {
       linked: false,
       wasMissing: false,
       freshNav: false,
+      consumed: false,
     };
     // A deep link on a drawn row scrolls and focuses it.
     assert.equal(anchorScroll({ ...base, linked: true, freshNav: true }), 'linked');
@@ -592,6 +601,13 @@ describe('accessibility in markup', () => {
     // A still-missing row never scrolls, whether the navigation is fresh or not.
     assert.equal(anchorScroll({ ...base, freshNav: true }), 'top');
     assert.equal(anchorScroll({ ...base, wasMissing: true }), 'none');
+    // A spent link (the row drew once on this visit) moves nothing ever after: a vanish is not a
+    // miss and a redraw does not steal scroll or focus back.
+    assert.equal(anchorScroll({ ...base, consumed: true }), 'none');
+    assert.equal(anchorScroll({ ...base, consumed: true, linked: true }), 'none');
+    assert.equal(anchorScroll({ ...base, consumed: true, wasMissing: true, linked: true }), 'none');
+    // A fresh navigation starts the visit over: the spent flag from the last one does not apply.
+    assert.equal(anchorScroll({ ...base, consumed: true, linked: true, freshNav: true }), 'linked');
     // A plain re-render keeps everything still.
     assert.equal(anchorScroll(base), 'none');
   });

@@ -5,6 +5,7 @@
  * character of it; Test is on every row; a key from the environment shows Remove disabled with the reason.
  * Privacy sits behind one disclosure, and the background switch, consent re-review and daily cap follow.
  */
+import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { ErrorLine } from '../../../ui/list';
 import { ProviderTable, SettingRow } from '../../../ui/settings';
@@ -29,6 +30,34 @@ import {
   formatTokens,
 } from '../settings.model';
 import type { SectionProps } from './types';
+
+/** The controls a row's control query can land on, the same set the screen's deep-link focus uses. */
+const ROW_CONTROLS =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
+  '[role="switch"]:not([disabled]):not([aria-disabled="true"]), [tabindex="0"]';
+
+/**
+ * Where focus goes when the "Turn on for existing accounts" row unmounts under its pressed button
+ * (DESIGN 11.2: it moves to the next row): the background switch that follows it, else the section's
+ * first control.
+ */
+export function accountMailFocusTarget(
+  root: { querySelector(selectors: string): Element | null } | null,
+): HTMLElement | null {
+  if (!root) return null;
+  const next =
+    root.querySelector('[data-setting-anchor="background"] [role="switch"]') ??
+    root.querySelector(ROW_CONTROLS);
+  return next && 'focus' in next ? (next as HTMLElement) : null;
+}
+
+/** Moves focus to the next row before the commit, but only when it is on this row — never a steal. */
+function moveFocusOffAccountMail(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  if (!active.closest('[data-setting-anchor="accountMail"]')) return;
+  accountMailFocusTarget(active.closest('.settings-content'))?.focus({ preventScroll: true });
+}
 
 export function Ai({ data, view, actions }: SectionProps) {
   const { settings } = data;
@@ -58,6 +87,9 @@ export function Ai({ data, view, actions }: SectionProps) {
     else if (action === 'remove') actions.askRemoveKey(provider);
   };
   const paused = capNote(data.usage, data.now);
+  // Accounts from before the on-by-default owner decision keep AI off; this row is the one-time way to
+  // bring them to the new default (owner's ask, 2026-11-06). Hidden when every account is already on.
+  const offAccounts = data.accounts.filter(a => !a.demo && !a.aiAllowed);
 
   return (
     <>
@@ -162,6 +194,27 @@ export function Ai({ data, view, actions }: SectionProps) {
             }}
           />
         </div>
+        {offAccounts.length > 0 ? (
+          <Row
+            section="ai"
+            anchor="accountMail"
+            description={
+              offAccounts.length === 1
+                ? `${offAccounts[0]!.name || offAccounts[0]!.address} keeps its mail out of AI.`
+                : `${offAccounts.length} accounts keep their mail out of AI.`
+            }
+            control={
+              <Button
+                variant="text"
+                label="Turn on for existing accounts"
+                onPress={() => {
+                  moveFocusOffAccountMail();
+                  void actions.allowMailForAccounts(offAccounts.map(a => a.id));
+                }}
+              />
+            }
+          />
+        ) : null}
         <Row
           section="ai"
           anchor="background"

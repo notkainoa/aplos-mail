@@ -374,6 +374,33 @@ export function mergeAccounts(
   return accounts.map(a => (overlay[a.id] ? { ...a, ...overlay[a.id] } : a));
 }
 
+/** Who the bulk mail-for-AI write names: the one account it is about, or a count of several. */
+function mailAccountsTarget(
+  accounts: readonly Pick<Account, 'id' | 'name' | 'address'>[],
+  ids: readonly string[],
+): string {
+  if (ids.length !== 1) return `${ids.length} accounts`;
+  const a = accounts.find(x => x.id === ids[0]);
+  return a ? a.name || a.address : 'that account';
+}
+
+/** The one failure line's op for the bulk "Mail for AI" write: "Couldn’t turn on mail for AI on …". */
+export function mailAllowedOp(
+  accounts: readonly Pick<Account, 'id' | 'name' | 'address'>[],
+  refused: readonly string[],
+  on: boolean,
+): string {
+  return `${on ? 'turn on' : 'turn off'} mail for AI on ${mailAccountsTarget(accounts, refused)}`;
+}
+
+/** The undo entry's label for the accounts a press turned on (DESIGN 10: what happened). */
+export function mailAllowedLabel(
+  accounts: readonly Pick<Account, 'id' | 'name' | 'address'>[],
+  turnedOn: readonly string[],
+): string {
+  return `Mail for AI turned on for ${mailAccountsTarget(accounts, turnedOn)}`;
+}
+
 /** Demo controls (plan 30 section 4.5 row 8): the demo row has Reset and Remove; Help offers Load only with no demo account. */
 export function demoControls(accounts: readonly Account[]): {
   readonly hasDemo: boolean;
@@ -757,7 +784,7 @@ export const HOW_MAIL_IS_USED: readonly { lead: string; body: string }[] = [
   },
   {
     lead: 'Your control.',
-    body: 'Turn off “Use this account’s mail for AI” under Accounts to keep a mailbox out of every feature.',
+    body: 'New accounts allow their mail for AI by default. Turn off “Use this account’s mail for AI” under Accounts to keep a mailbox out of every feature.',
   },
 ];
 
