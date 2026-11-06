@@ -5,6 +5,7 @@
  */
 import { Button } from '../../../ui/buttons-keys';
 import { Switch, SwatchPicker } from '../../../ui/controls';
+import { calendarAccessOf } from '../../calendar/accountCalendarState';
 import { Group, Row } from '../parts';
 import { accountRows, hasCapability, leaseLine, NOT_AVAILABLE, tagColor } from '../settings.model';
 import type { SectionProps } from './types';
@@ -18,52 +19,71 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
         {rows.length === 0 ? (
           <Row section="accounts" anchor="accountsList" description="No accounts yet." />
         ) : null}
-        {rows.map(r => (
-          <Row
-            key={r.id}
-            section="accounts"
-            anchor="accountsList"
-            idSuffix={r.id}
-            label={r.name}
-            meta={r.meta || undefined}
-            mark={r.mark}
-            description={r.description}
-            descriptionTone={r.tone}
-            control={
-              <>
-                {r.reconnect && host.renderReconnect ? (
-                  <Button
-                    variant={r.reconnect.filled ? 'filled' : 'text'}
-                    label={r.reconnect.label}
-                    onPress={() => actions.startReconnect(r.id, r.reconnect!.mode)}
-                  />
-                ) : null}
-                {r.demo ? (
-                  <>
+        {rows.map(r => {
+          const account = data.accounts.find(a => a.id === r.id);
+          const access = account ? calendarAccessOf(account, data.calendars) : null;
+          return (
+            <Row
+              key={r.id}
+              section="accounts"
+              anchor="accountsList"
+              idSuffix={r.id}
+              label={r.name}
+              meta={r.meta || undefined}
+              mark={r.mark}
+              description={r.description}
+              descriptionTone={r.tone}
+              below={
+                access ? (
+                  <div className="settings-cal-access">
+                    <span className="settings-cal-access__line">{access.line}</span>
+                    {access.action && host.renderReconnect ? (
+                      <Button
+                        variant="text"
+                        size="sm"
+                        label={access.action.label}
+                        onPress={() => actions.startReconnect(r.id, access.action!.mode)}
+                      />
+                    ) : null}
+                  </div>
+                ) : undefined
+              }
+              control={
+                <>
+                  {r.reconnect && host.renderReconnect ? (
                     <Button
-                      variant="text"
-                      label="Reset"
-                      busy={view.busy.demo === true}
-                      onPress={() => void actions.resetDemo()}
+                      variant={r.reconnect.filled ? 'filled' : 'text'}
+                      label={r.reconnect.label}
+                      onPress={() => actions.startReconnect(r.id, r.reconnect!.mode)}
                     />
+                  ) : null}
+                  {r.demo ? (
+                    <>
+                      <Button
+                        variant="text"
+                        label="Reset"
+                        busy={view.busy.demo === true}
+                        onPress={() => void actions.resetDemo()}
+                      />
+                      <Button
+                        variant="text"
+                        label="Remove"
+                        disabled={view.busy.demo === true}
+                        onPress={() => actions.askRemoveDemo()}
+                      />
+                    </>
+                  ) : (
                     <Button
                       variant="text"
                       label="Remove"
-                      disabled={view.busy.demo === true}
-                      onPress={() => actions.askRemoveDemo()}
+                      onPress={() => actions.askRemoveAccount(r.id)}
                     />
-                  </>
-                ) : (
-                  <Button
-                    variant="text"
-                    label="Remove"
-                    onPress={() => actions.askRemoveAccount(r.id)}
-                  />
-                )}
-              </>
-            }
-          />
-        ))}
+                  )}
+                </>
+              }
+            />
+          );
+        })}
         <Row
           section="accounts"
           anchor="addAccount"

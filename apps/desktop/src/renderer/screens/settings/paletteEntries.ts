@@ -139,7 +139,6 @@ export const SETTING_ROWS: readonly RowSpec[] = [
 
 /** Anchors drawn only in some states (per account, a missing permission, a key, the demo, a listed provider). */
 const CONDITIONAL: readonly string[] = [
-  'calendar/calendarPermission',
   'accounts/accountAi',
   'accounts/accountColour',
   'accounts/lease',

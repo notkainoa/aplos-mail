@@ -420,7 +420,8 @@ describe('states, copy and design rules', () => {
       render('mail'),
       /Keeps message text for 90 days, plus anything opened, starred or unread, up to 2 GB\./,
     );
-    assert.match(render('calendar'), /Aplos needs permission to use your Google Calendar\./);
+    assert.match(render('calendar'), /Calendar not allowed yet/);
+    assert.match(render('calendar'), /Allow calendar access/);
     assert.match(render('notifications'), /Low importance never interrupts/);
   });
 

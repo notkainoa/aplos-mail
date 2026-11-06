@@ -226,7 +226,11 @@ describe('conditional rows and palette availability', () => {
       assert.equal(rowAvailable('accounts', 'lease'), false);
       assert.equal(rowAvailable('notifications', 'perAccount'), false);
       assert.equal(rowAvailable('help', 'demoLoad'), false, 'a demo account hides Load');
-      assert.equal(rowAvailable('calendar', 'calendarPermission'), false);
+      assert.equal(
+        rowAvailable('calendar', 'calendarPermission'),
+        true,
+        'the accounts block is always drawn',
+      );
       const missing: Account = account({
         id: 'mp',
         address: 'mp@example.com',
@@ -241,7 +245,7 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
-  test('the calendar permission row also needs the calendar capability, as the section draws it', () => {
+  test('the calendar accounts block stays offered whatever the capability or grant', () => {
     const missing = account({
       id: 'mp',
       address: 'mp@example.com',
@@ -256,8 +260,14 @@ describe('conditional rows and palette availability', () => {
       publishAvailability({ accounts: [missing], providers: providers(), session: noCalendar });
       assert.equal(
         rowAvailable('calendar', 'calendarPermission'),
-        false,
-        'without the capability the section draws no permission row',
+        true,
+        'the accounts block is drawn even with the calendar capability off',
+      );
+      publishAvailability({ accounts: [], providers: providers(), session: noCalendar });
+      assert.equal(
+        rowAvailable('calendar', 'calendarPermission'),
+        true,
+        'with no accounts the block still draws, saying so',
       );
     } finally {
       clearAvailability();
@@ -291,7 +301,6 @@ describe('conditional rows and palette availability', () => {
 
   test('while Account/get has not answered, the per-account rows stay offered', () => {
     const offered = [
-      ['calendar', 'calendarPermission'],
       ['accounts', 'accountAi'],
       ['accounts', 'accountColour'],
       ['accounts', 'lease'],

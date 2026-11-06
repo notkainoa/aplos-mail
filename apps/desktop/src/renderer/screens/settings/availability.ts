@@ -41,12 +41,6 @@ export function rowAvailable(section: SettingSection, anchor: string): boolean {
   // While `Account/get` has not answered, `accounts` is [] and says nothing: rows drawn per account stay offered.
   const pending = data.accountsLoaded === false;
   switch (`${section}/${anchor}`) {
-    case 'calendar/calendarPermission':
-      return (
-        hasCapability(data.session, 'calendar') &&
-        (pending ||
-          data.accounts.some(a => a.missingPermissions?.some(m => m.capability === 'calendar')))
-      );
     case 'accounts/accountAi':
     case 'accounts/accountColour':
       return pending || realAccount(data);
