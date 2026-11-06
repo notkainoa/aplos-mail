@@ -48,7 +48,9 @@ function setSettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'S
   if (
     ifInState &&
     !applied(ctx, args.opId) &&
-    (ifInState.dbEpoch !== store.dbEpoch || ifInState.seq < lastSettingsSeq(ctx))
+    (ifInState.dbEpoch !== store.dbEpoch ||
+      ifInState.seq > store.seq() ||
+      ifInState.seq < lastSettingsSeq(ctx))
   )
     throw new ContractError({
       type: 'stateMismatch',
