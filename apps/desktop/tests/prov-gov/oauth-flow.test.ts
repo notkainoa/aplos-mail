@@ -11,7 +11,12 @@ import {
 import { identityFromIdToken } from '../../src/host/providers/oauth/id-token';
 import { decideCallback, openLoopback, sameSecret } from '../../src/host/providers/oauth/loopback';
 import { challengeFor, verifierBytes } from '../../src/host/providers/oauth/pkce';
-import { connectScopes, identityScopes } from '../../src/host/providers/oauth/scopes';
+import {
+  connectScopes,
+  identityScopes,
+  scopesForFeatures,
+} from '../../src/host/providers/oauth/scopes';
+import { googleCapabilities } from '../../src/host/providers/oauth/connect';
 import {
   clientId,
   clientSecret,
@@ -483,11 +488,69 @@ test('no failure carries a secret: malformed body, transport error, token endpoi
 // ---------- scopes across reconnects ----------
 
 const settingsScope = SCOPE.gmailSettingsBasic;
-const optionalAll = [settingsScope, SCOPE.calendarList, SCOPE.calendarEvents];
+const eventsReadonly = SCOPE.calendarEventsReadonly;
+const eventsWrite = SCOPE.calendarEvents;
+/** Every optional scope a flow may ask in round 1: the deferred `calendar.events` write scope is never one. */
+const optionalAll = [settingsScope, SCOPE.calendarList, eventsReadonly];
 const askedScopes = (r: { browser: FakeBrowser }) =>
   r.browser.opened[0].searchParams.get('scope')!.split(' ');
 
+test('the calendar capability needs the list scope plus an events scope; each alone reads false', () => {
+  assert.equal(googleCapabilities([mailScope]).calendar, false);
+  assert.equal(googleCapabilities([mailScope, SCOPE.calendarList]).calendar, false);
+  assert.equal(googleCapabilities([mailScope, eventsReadonly]).calendar, false);
+  assert.equal(googleCapabilities([mailScope, SCOPE.calendarList, eventsReadonly]).calendar, true);
+  // A held write scope covers reads (least privilege asks the read-only pair, but grants can hold either).
+  assert.equal(googleCapabilities([mailScope, SCOPE.calendarList, eventsWrite]).calendar, true);
+});
+
+test('scopesForFeatures names the optional scopes of a feature', () => {
+  assert.deepEqual(scopesForFeatures('calendarList', 'calendarEvents'), [
+    SCOPE.calendarList,
+    eventsReadonly,
+  ]);
+  assert.deepEqual(scopesForFeatures('calendarEventsWrite'), [eventsWrite]);
+  assert.deepEqual(scopesForFeatures('filters'), [settingsScope]);
+  assert.deepEqual(scopesForFeatures('mail'), []);
+});
+
+test('an optionalScopes answer of undefined keeps the mode default', async () => {
+  const none = emulatorRig({ deps: { optionalScopes: () => undefined } });
+  const result = await none.connect(newConnect, none.ctx);
+  assert.deepEqual(askedScopes(none), [...identityScopes, mailScope]);
+  assert.equal(result.capabilities.calendar, false);
+
+  // The composition's choice: calendar scopes on a new sign-in (the onboarding copy says so).
+  const cal = emulatorRig({
+    deps: {
+      optionalScopes: req =>
+        req.mode === 'new' ? scopesForFeatures('calendarList', 'calendarEvents') : undefined,
+    },
+  });
+  const granted = await cal.connect(newConnect, cal.ctx);
+  assert.deepEqual(askedScopes(cal), [
+    ...identityScopes,
+    mailScope,
+    SCOPE.calendarList,
+    eventsReadonly,
+  ]);
+  assert.equal(granted.capabilities.calendar, true);
+});
+
+test('grantPermissions asks every requestable optional scope — never the deferred write scope', async () => {
+  const r = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: { grantedScopes: () => [mailScope], optionalScopes: () => undefined },
+  });
+  const result = await r.connect({ mode: 'grantPermissions', expectedSubject: 'sub-1' }, r.ctx);
+  assert.deepEqual(askedScopes(r), [...identityScopes, mailScope, ...optionalAll]);
+  assert.ok(!askedScopes(r).includes(eventsWrite));
+  assert.equal(result.capabilities.calendar, true);
+  assert.equal(result.capabilities.filters, true);
+});
+
 test('a reconnect asks again for the optional scopes the stored grant holds', async () => {
+  // A HELD deferred scope (calendar.events) is still re-asked — it is never newly requested, never dropped.
   const held = ['openid', SCOPE.email, mailScope, settingsScope, SCOPE.calendarEvents];
   const r = emulatorRig({ vault: memoryVault(oldBundle), deps: { grantedScopes: () => held } });
   const result = await r.connect({ mode: 'reconnect', expectedSubject: 'sub-1' }, r.ctx);
@@ -501,13 +564,28 @@ test('a reconnect asks again for the optional scopes the stored grant holds', as
   assert.equal(result.capabilities.filters, true);
 });
 
-test('grantPermissions asks for every optional scope, or the ones the caller names', async () => {
+test('grantPermissions asks for every requestable scope, or the ones the caller names', async () => {
   const held = [mailScope];
   const all = emulatorRig({ vault: memoryVault(oldBundle), deps: { grantedScopes: () => held } });
   const req: ConnectRequest = { mode: 'grantPermissions', expectedSubject: 'sub-1' };
   const result = await all.connect(req, all.ctx);
   assert.deepEqual(askedScopes(all), [...identityScopes, mailScope, ...optionalAll]);
+  assert.ok(!askedScopes(all).includes(eventsWrite));
   for (const scope of optionalAll) assert.ok(result.grantedScopes.includes(scope));
+
+  // A grant that somehow already holds the deferred write scope keeps it (never silently dropped), but the
+  // re-grant still does not newly ask for it.
+  const holdsWrite = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: { grantedScopes: () => [mailScope, eventsWrite] },
+  });
+  await holdsWrite.connect(req, holdsWrite.ctx);
+  assert.deepEqual(askedScopes(holdsWrite), [
+    ...identityScopes,
+    mailScope,
+    eventsWrite,
+    ...optionalAll,
+  ]);
 
   const named = emulatorRig({
     vault: memoryVault(oldBundle),
