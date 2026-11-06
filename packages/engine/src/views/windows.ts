@@ -404,6 +404,9 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
       deps.log.event('rpc.failed', { method: 'View/rerun', reason: 'internal' });
       return;
     }
+    // Contract failures end the window with the same body the caller sees; logged too, or a generic
+    // "Couldn't load this list." is all anyone ever finds (owner calendar bug: the log stayed silent).
+    deps.log.event('view.window_failed', { kind: w.spec.kind, type: error.body.type });
     stopWindow(w, error.body);
   }
 

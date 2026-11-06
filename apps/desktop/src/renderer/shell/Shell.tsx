@@ -282,6 +282,38 @@ export interface ShellLayoutProps {
   readonly children: ReactNode;
 }
 
+/**
+ * The grey notch the main pane wraps around the macOS window buttons and the toggle when the sidebar is collapsed and
+ * the window is not fullscreen (CSS shows it only then). One path in the shell colour over the pane's top-left corner:
+ * a concave step on the right, a rounded white corner under it on the left. The numbers are the pane's inset
+ * (--shell-pad, 8) and the 44 px notch depth; the white edge gets the pane's hairline.
+ */
+export function ChromeNotch() {
+  return (
+    <svg
+      className="aplos-shell__notch"
+      width={NOTCH_W}
+      height={NOTCH_H}
+      viewBox={`0 0 ${NOTCH_W} ${NOTCH_H}`}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path className="aplos-shell__notch-fill" d={NOTCH_FILL} />
+      <path className="aplos-shell__notch-edge" d={NOTCH_EDGE} />
+    </svg>
+  );
+}
+
+/**
+ * The notch's size in px: it spans the lights, the toggle and the corner curves. NOTCH_W matches CSS --notch-w; NOTCH_H is
+ * --shell-pad + --pane-head (the notch's bottom meets the header's hairline). The path's 10 and 12 are the step and
+ * pane corner radii (12 = --radius-lg).
+ */
+export const NOTCH_W = 134;
+export const NOTCH_H = 56;
+const NOTCH_EDGE = 'M134 8A10 10 0 0 0 124 18V32A12 12 0 0 1 112 44H20A12 12 0 0 0 8 56';
+const NOTCH_FILL = `M0 0H134V8${NOTCH_EDGE.slice('M134 8'.length)}H0Z`;
+
 /** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
 export function ShellLayout(props: ShellLayoutProps) {
   const { screen, counts, minimised, onNavigate, children, chrome } = props;
@@ -297,6 +329,7 @@ export function ShellLayout(props: ShellLayoutProps) {
     >
       {collapsed ? (
         <div className="aplos-shell__strip" data-region="sidebar">
+          <ChromeNotch />
           <Button
             variant="icon"
             size="sm"

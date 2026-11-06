@@ -6,11 +6,20 @@
   width: 100%;
   height: 100vh;
   min-height: 0;
+  position: relative;
   background: var(--shell);
   color: var(--ink);
   /* Window dragging (macOS hidden title bar): the gray shell gutter, the sidebar's empty areas, the collapsed
      strip and the pane header drag the window. Interactive controls and content regions opt out below. */
   -webkit-app-region: drag;
+}
+
+/* macOS windowed geometry. The window buttons are 16 px boxes whose first sits at (15, 13) for the window's
+   trafficLightPosition {x: 16, y: 14} (main/windows.ts; read from the native frames), so the dots' centre line is
+   y = 21 and the last dot ends at x = 75. Everything in the top row centres on that line. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) {
+  --traffic-center: 21px;
+  --notch-w: 134px;
 }
 
 /* Collapsed: the chrome strip sits across the top and the panes drop below it. */
@@ -35,11 +44,53 @@
   padding: 0 var(--space-3);
   -webkit-app-region: drag;
 }
-/* The toggle clears the macOS traffic lights while the window is not fullscreen (x 16, y 14). */
-.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip {
-  padding-left: calc(var(--space-8) * 2 + var(--space-1));
+/* Windowed on macOS the collapsed sidebar has no strip above the pane: the pane rises to the top edge and wraps
+   the window buttons and the toggle with a notch (ChromeNotch), drawn over the pane's top-left corner. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true'] {
+  flex-direction: row;
 }
-.aplos-shell__strip > * {
+.aplos-shell__notch {
+  display: none;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* One layer above the pane header (also --z-sticky), which spans this corner and would otherwise take its clicks. */
+  z-index: calc(var(--z-sticky) + 1);
+  width: var(--notch-w);
+  /* The notch's depth: the pane's inset plus its header (the path's 56). */
+  height: calc(var(--shell-pad) + var(--pane-head));
+  padding: 0;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__notch {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+}
+.aplos-shell__notch-fill {
+  fill: var(--shell);
+}
+.aplos-shell__notch-edge {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: var(--hairline);
+}
+/* The toggle sits just after the last dot, on the dots' centre line. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip > :not(svg) {
+  position: absolute;
+  top: calc(var(--traffic-center) - var(--control-sm) / 2);
+  left: calc(var(--space-8) * 2 + var(--space-2));
+}
+/* The pane's header starts past the notch so a back button or crumb is never under it. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true']
+  .ui-pane[data-kind='main']
+  .ui-pane__head {
+  padding-left: calc(var(--notch-w) - var(--shell-pad) + var(--space-2));
+}
+.aplos-shell__strip > :not(svg) {
   -webkit-app-region: no-drag;
 }
 
@@ -82,10 +133,13 @@
   gap: var(--space-1);
   margin-left: auto;
 }
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar {
+  padding-top: 0;
+}
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar__chrome {
   order: 0;
   flex: 0 0 100%;
-  height: var(--control-lg);
+  height: calc(var(--traffic-center) * 2);
   justify-content: flex-end;
   -webkit-app-region: drag;
 }
