@@ -266,6 +266,25 @@ test('a symlinked entry file is never followed', () => {
   }
 });
 
+test('an oversized entry file is never read: consume treats it as absent', () => {
+  const dir = tmp();
+  try {
+    // A megabyte of valid-looking JSON: an entry that would read live must still be ignored
+    // unread — the registry caps what it reads, so a planted blob cannot be parsed or held.
+    const padded =
+      JSON.stringify({ purpose: 'mail', exp: Date.now() + 1e5, pad: 'x'.repeat(1024 * 1024) }) +
+      '\n';
+    writeFileSync(join(dir, `${nonce}.json`), padded, { mode: 0o600 });
+    assert.equal(consumeOauthReturn({ dir }, nonce), undefined);
+    // The oversized file also stays out of the sweep's count for live entries.
+    const returns = createOauthReturns({ dir });
+    assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 60_000 }), true);
+    assert.equal(consumeOauthReturn({ dir }, nonce2), 'mail', 'a legitimate entry still works');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------- the page ----------
 
 async function get(
