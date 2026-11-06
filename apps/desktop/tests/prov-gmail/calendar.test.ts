@@ -599,3 +599,48 @@ test('a grant without the calendar scope is refused permission, classified, neve
   assert.ok(error.error.missingScopes?.length, 'the refusal names the missing scopes');
   r.close();
 });
+
+test('a recorded events.list page stores canonical rows (master, override, all-day, meet, tombstone)', async () => {
+  // The fixture is a real-shaped events.list page (fixtures/events-list.real.json): one page, the
+  // shapes a first sync on a real account returns. Replayed through the adapter's fetch.
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('fixtures/events-list.real.json', import.meta.url), 'utf8');
+  const fixtureFetch: typeof fetch = async (input, _init) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+    return url.includes('/events')
+      ? new Response(page, { status: 200, headers: { 'content-type': 'application/json' } })
+      : r.emu.fetch(input, _init);
+  };
+  const r = await calRig({ fetch: fixtureFetch });
+  const cal = r.ctx().account.address;
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+  const step = await r.adapter.calendar.syncStep(
+    cal,
+    r.state(`cal:${cal}`),
+    'incremental',
+    r.ctx(),
+  );
+  r.commitStep(cal, step);
+  const evs = r.events();
+  const master = evs.find(e => e.remote_id === 'standup-series-1')!;
+  assert.deepEqual(JSON.parse(master.recurrence!), { rrule: ['RRULE:FREQ=DAILY;COUNT=10'] });
+  assert.equal(master.start_utc, Date.UTC(2026, 10, 9, 17, 0), 'master 09:00-08:00 -> 17:00Z ms');
+  // The override keys on its original start (zoned -> UTC recurrence id) and names its master.
+  const moved = evs.find(e => e.data.includes('moved'))!;
+  assert.equal(moved.recurrence_id, '20261110T170000Z');
+  assert.equal(moved.master_remote_id, 'standup-series-1');
+  // The cancelled override keeps its occurrence identity (the tombstone, not an epoch-0 ghost).
+  const tomb = evs.find(e => e.remote_id === 'standup-series-1_20261111T170000Z')!;
+  assert.equal(tomb.status, 'cancelled');
+  assert.equal(tomb.recurrence_id, '20261111T170000Z');
+  // All-day and Meet rows carry their real columns.
+  assert.equal(evs.find(e => e.remote_id === 'allday-offsite-1')!.all_day, 1);
+  assert.equal(
+    evs.find(e => e.remote_id === 'allday-offsite-1')!.start_utc,
+    Date.UTC(2026, 10, 12),
+  );
+  const meet = JSON.parse(evs.find(e => e.remote_id === 'meet-sync-1')!.data);
+  assert.equal(meet.conferenceData.entryPoints[0].uri, 'https://meet.google.com/abc-defg-hij');
+  r.close();
+});
