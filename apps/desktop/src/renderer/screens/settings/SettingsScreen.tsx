@@ -45,6 +45,25 @@ const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
   '[role="switch"]:not([disabled]):not([aria-disabled="true"]), [tabindex="0"]';
 
+/**
+ * The identity signal that re-runs a deep link's row resolution: a conditional row can appear after the
+ * link landed (providers still loading, an account's AI switch flipped by a bulk write), so the list of
+ * real accounts keeping their mail out of AI is part of it, not just who is connected.
+ */
+export function screenDataVersion(
+  data: Pick<SectionProps['data'], 'providers' | 'accounts' | 'queue'>,
+): string {
+  return [
+    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
+    data.accounts.map(a => a.id).join(','),
+    data.accounts
+      .filter(a => !a.demo && !a.aiAllowed)
+      .map(a => a.id)
+      .join(','),
+    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
+  ].join('|');
+}
+
 /** What the pane does when no row wants focus: reset for a section change, keep its place otherwise. */
 export function scrollWithoutTarget(
   previous: SettingSection | null,
@@ -57,7 +76,9 @@ export function scrollWithoutTarget(
  * What the deep-link effect may move, and when it may move it: a fresh section/anchor navigation, the moment a
  * conditional row is drawn (`wasMissing`), or a recording starting on a different row. A `recordingId` change on
  * its own never re-runs the anchor's scroll and focus, so finishing a recording does not jump the tall
- * 'shortcuts' anchor mid-list or steal the recorder's restored focus.
+ * 'shortcuts' anchor mid-list or steal the recorder's restored focus. Once the row has been drawn on this visit
+ * the link is 'consumed' and spent: a redraw or a vanish (a write that empties a conditional row under the
+ * owner's finger) never scrolls or focuses it again.
  */
 export function anchorScroll(input: {
   /** A KeyRecorder row is recording a chord. */
@@ -70,10 +91,29 @@ export function anchorScroll(input: {
   readonly wasMissing: boolean;
   /** The section or the anchor changed since the last run. */
   readonly freshNav: boolean;
+  /** The row already drew once on this visit: the link is spent. */
+  readonly consumed: boolean;
 }): 'recording' | 'linked' | 'top' | 'none' {
   if (input.recording) return input.recordingChanged ? 'recording' : 'none';
+  if (input.consumed && !input.freshNav) return 'none';
   if (input.linked) return input.freshNav || input.wasMissing ? 'linked' : 'none';
   return input.freshNav ? 'top' : 'none';
+}
+
+/**
+ * Whether the "not shown in this state" line is up for a deep link: only while its row has never been drawn on
+ * this visit. A drawn-then-vanished row is a spent link, not a miss — a write that empties the row under the
+ * owner's finger must not read as "not shown".
+ */
+export function anchorMissing(input: {
+  /** The link names a row and no recording took over. */
+  readonly looking: boolean;
+  /** The deep-linked row is drawn right now. */
+  readonly linked: boolean;
+  /** The row already drew once on this visit: the link is spent. */
+  readonly consumed: boolean;
+}): boolean {
+  return input.looking && !input.linked && !input.consumed;
 }
 
 export function SettingsScreen({
@@ -93,16 +133,20 @@ export function SettingsScreen({
     anchor: string | undefined;
     recordingId: string | undefined;
     missing: string | null;
-  }>({ section: null, anchor: undefined, recordingId: undefined, missing: null });
+    /** The linked row has been drawn on this visit: the link is spent. */
+    consumed: boolean;
+  }>({
+    section: null,
+    anchor: undefined,
+    recordingId: undefined,
+    missing: null,
+    consumed: false,
+  });
 
-  // A conditional row can appear after the link landed (providers still loading): this cheap identity signal
-  // re-runs the resolution so the row is scrolled to and focused once it is drawn.
+  // A conditional row can appear after the link landed (providers still loading, an AI-off account turned
+  // on): this cheap identity signal re-runs the resolution so the row is scrolled to and focused once drawn.
   const { data } = rest;
-  const dataVersion = [
-    data.providers ? data.providers.map(p => p.id).join(',') : 'pending',
-    data.accounts.map(a => a.id).join(','),
-    data.queue ? data.queue.map(q => q.id).join(',') : 'pending',
-  ].join('|');
+  const dataVersion = screenDataVersion(data);
 
   // A deep link lands on its row; a plain section switch starts at the top. Anything else keeps its place.
   useEffect(() => {
@@ -116,16 +160,28 @@ export function SettingsScreen({
       !recording && anchor
         ? el.querySelector<HTMLElement>(`[data-setting-anchor="${CSS.escape(anchor)}"]`)
         : null;
-    // A conditional row may not be drawn in this state: say so rather than landing silently at the top.
-    const missing = !recording && anchor && !linked ? anchor : null;
-    setMissingAnchor(missing);
     const p = previous.current;
+    const freshNav = p.section !== section || p.anchor !== anchor;
+    // The link is spent once its row has been drawn on this visit: a later vanish (a write that empties the
+    // row) is not a miss, and a redraw never scrolls or focuses it again. A new section, a new anchor or a
+    // remount on a re-opened link starts a fresh visit.
+    const consumed = !freshNav && p.consumed;
+    // A conditional row may not be drawn in this state: say so rather than landing silently at the top.
+    const missing = anchorMissing({
+      looking: Boolean(anchor) && !recording,
+      linked: linked !== null,
+      consumed,
+    })
+      ? (anchor ?? null)
+      : null;
+    setMissingAnchor(missing);
     const move = anchorScroll({
       recording: recording !== null,
       recordingChanged: p.recordingId !== recordingId,
       linked: linked !== null,
       wasMissing: p.missing === anchor,
-      freshNav: p.section !== section || p.anchor !== anchor,
+      freshNav,
+      consumed,
     });
     if (move === 'recording' && recording) {
       recording.scrollIntoView({ block: 'nearest' });
@@ -141,7 +197,13 @@ export function SettingsScreen({
     } else if (move === 'top') {
       (el.closest('.ui-pane__body') ?? document.scrollingElement)?.scrollTo?.(0, 0);
     }
-    previous.current = { section, anchor, recordingId, missing };
+    previous.current = {
+      section,
+      anchor,
+      recordingId,
+      missing,
+      consumed: consumed || linked !== null,
+    };
   }, [section, anchor, recordingId, dataVersion]);
 
   // Arrow keys rove the nav (a navigation Puck keeps Tab order but does not rove on its own).

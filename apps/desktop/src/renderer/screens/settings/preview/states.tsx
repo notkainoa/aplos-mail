@@ -505,7 +505,9 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
   const [accountOverlay, setAccountOverlay] = useState<Record<string, AccountWrite> | null>(null);
   const dataRef = useRef(data);
   const viewRef = useRef(view);
+  const failureRef = useRef(failure);
   dataRef.current = data;
+  failureRef.current = failure;
   const shown = {
     ...data,
     settings: overlay ? mergePatch(data.settings, overlay) : data.settings,
@@ -535,6 +537,7 @@ export function PreviewScreen({ spec }: { spec: StateSpec }): JSX.Element {
       overlay: setOverlay,
       accountOverlay: setAccountOverlay,
       fail: setFailure,
+      failure: () => failureRef.current,
     });
   }, []);
   viewRef.current = view;

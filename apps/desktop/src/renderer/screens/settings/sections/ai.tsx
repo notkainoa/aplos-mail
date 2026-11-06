@@ -31,6 +31,34 @@ import {
 } from '../settings.model';
 import type { SectionProps } from './types';
 
+/** The controls a row's control query can land on, the same set the screen's deep-link focus uses. */
+const ROW_CONTROLS =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), ' +
+  '[role="switch"]:not([disabled]):not([aria-disabled="true"]), [tabindex="0"]';
+
+/**
+ * Where focus goes when the "Turn on for existing accounts" row unmounts under its pressed button
+ * (DESIGN 11.2: it moves to the next row): the background switch that follows it, else the section's
+ * first control.
+ */
+export function accountMailFocusTarget(
+  root: { querySelector(selectors: string): Element | null } | null,
+): HTMLElement | null {
+  if (!root) return null;
+  const next =
+    root.querySelector('[data-setting-anchor="background"] [role="switch"]') ??
+    root.querySelector(ROW_CONTROLS);
+  return next && 'focus' in next ? (next as HTMLElement) : null;
+}
+
+/** Moves focus to the next row before the commit, but only when it is on this row — never a steal. */
+function moveFocusOffAccountMail(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  if (!active.closest('[data-setting-anchor="accountMail"]')) return;
+  accountMailFocusTarget(active.closest('.settings-content'))?.focus({ preventScroll: true });
+}
+
 export function Ai({ data, view, actions }: SectionProps) {
   const { settings } = data;
   const providers = data.providers;
@@ -180,7 +208,8 @@ export function Ai({ data, view, actions }: SectionProps) {
                 variant="text"
                 label="Turn on for existing accounts"
                 onPress={() => {
-                  for (const a of offAccounts) void actions.setAccount(a.id, { aiAllowed: true });
+                  moveFocusOffAccountMail();
+                  void actions.allowMailForAccounts(offAccounts.map(a => a.id));
                 }}
               />
             }
