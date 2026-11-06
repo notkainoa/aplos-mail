@@ -51,11 +51,32 @@ trap cleanup EXIT
 
 # One local CI run at a time: two runs would fight for CPU and for Electron's download cache.
 LOCK="${TMPDIR:-/tmp}/aplos-local-ci.lock"
-if ! mkdir "$LOCK" 2>/dev/null; then
-  echo "local-ci: another run is in progress ($LOCK exists; remove it if that run is dead)" >&2
+# The lock directory holds the owner's pid. A run that was killed (SIGKILL skips the EXIT trap) leaves
+# the directory behind, so a lock whose pid is gone is stale and is taken over. A lock with no pid yet
+# gets a minute: its owner may be between the mkdir and the pid write.
+lock_is_stale() {
+  local owner
+  owner=$(cat "$LOCK/pid" 2>/dev/null)
+  if [ -n "$owner" ]; then
+    ! kill -0 "$owner" 2>/dev/null
+  else
+    [ -n "$(find "$LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+  fi
+}
+acquire_lock() {
+  mkdir "$LOCK" 2>/dev/null && return 0
+  lock_is_stale || return 1
+  echo "local-ci: taking over a stale lock ($LOCK; its owner is gone)" >&2
+  rm -f "$LOCK/pid"
+  rmdir "$LOCK" 2>/dev/null
+  mkdir "$LOCK" 2>/dev/null
+}
+if ! acquire_lock; then
+  echo "local-ci: another run is in progress ($LOCK exists, owner pid $(cat "$LOCK/pid" 2>/dev/null))" >&2
   exit 2
 fi
-trap 'rmdir "$LOCK" 2>/dev/null; cleanup' EXIT
+echo $$ >"$LOCK/pid"
+trap 'rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null; cleanup' EXIT
 
 # Terminal agents export this for themselves; it would break npm and Electron spawns.
 unset ELECTRON_RUN_AS_NODE
