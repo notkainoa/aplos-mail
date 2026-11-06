@@ -58,9 +58,12 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
   },
 ];
 
-/** The `scope` parameter of the authorization URL. */
+/** The `scope` parameter of the authorization URL: never carries a `deferred` entry. */
 export function googleScopeParam(): string {
-  return [...identityScopes, ...googleScopeManifest.map(entry => entry.scope)].join(' ');
+  return [
+    ...identityScopes,
+    ...googleScopeManifest.filter(entry => !entry.deferred).map(entry => entry.scope),
+  ].join(' ');
 }
 
 /**
