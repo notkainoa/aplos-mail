@@ -38,7 +38,8 @@ export interface SidebarSlotViewProps {
 
 export function SidebarSlotView({ slot }: SidebarSlotViewProps) {
   const [ref, scrolls] = useScrolls(partsKey(slot));
-  if (!slot.miniMonth && !slot.calendars && !slot.calendarAccounts) return null;
+  // `calendarAccounts` is drawn by the sidebar itself above the foot, so it never makes this scrolling slot non-empty.
+  if (!slot.miniMonth && !slot.calendars) return null;
   const reach = scrolls ? { tabIndex: 0, role: 'region', 'aria-label': 'Calendar' } : {};
   return (
     <div ref={ref} className="aplos-sidebar__slot" {...reach}>

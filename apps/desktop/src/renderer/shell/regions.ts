@@ -259,12 +259,6 @@ function hasClassName(el: RegionElement | null | undefined, name: string): boole
   return (el?.getAttribute('class') ?? '').split(/\s+/).includes(name);
 }
 
-/**
- * The sidebar's within-region arrow keys: a plain ↑/↓/Home/End walks the region's items across
- * every Puck group. Returns true when focus moved. Bound as a React onKeyDown on the sidebar's
- * aside; modified keys (⌥↑/⌥↓ lane moves live in the registry), fields, the slot scroller and
- * targets that are not region items (or keys a widget already took) pass through.
- */
 /** A scrollable slot keeps arrows for scrolling — except at its ends, where they hand on to the next region item. */
 function slotKeepsArrow(target: unknown, key: string): boolean {
   const el = target as { scrollTop: number; clientHeight: number; scrollHeight: number };
@@ -277,6 +271,13 @@ function slotKeepsArrow(target: unknown, key: string): boolean {
   return true;
 }
 
+/**
+ * The sidebar's within-region arrow keys: a plain ↑/↓/Home/End walks the region's items across
+ * every Puck group. Returns true when focus moved. Bound as a React onKeyDown on the sidebar's
+ * aside; modified keys (⌥↑/⌥↓ lane moves live in the registry), fields, the slot scroller (mid-scroll
+ * only: at its ends the arrow hands on) and targets that are not region items (or keys a widget already
+ * took) pass through.
+ */
 export function handleRegionItemKey(event: {
   key: string;
   target: EventTarget | null;

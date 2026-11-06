@@ -22,6 +22,11 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
         {rows.map(r => {
           const account = data.accounts.find(a => a.id === r.id);
           const access = account ? calendarAccessOf(account, data.calendars) : null;
+          // The row's own reconnect/grant control (and its red line) already says "sign in again": never stack a copy of
+          // that. Any other state keeps its line; only an action that would repeat the row's own control is dropped.
+          const hideLine = access?.kind === 'needs-signin' && r.reconnect !== undefined;
+          const repeatsRowControl =
+            r.reconnect !== undefined && r.reconnect.mode === access?.action?.mode;
           return (
             <Row
               key={r.id}
@@ -34,11 +39,10 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
               description={r.description}
               descriptionTone={r.tone}
               below={
-                // When the row already carries its own reconnect/grant control it says everything — never stack a second copy.
-                access && !r.reconnect ? (
+                access && !hideLine ? (
                   <div className="settings-cal-access">
                     <span className="settings-cal-access__line">{access.line}</span>
-                    {access.action && host.renderReconnect ? (
+                    {access.action && host.renderReconnect && !repeatsRowControl ? (
                       <Button
                         variant="text"
                         size="sm"

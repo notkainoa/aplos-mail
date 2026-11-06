@@ -63,14 +63,25 @@ describe('Settings → Accounts calendar state', () => {
     assert.doesNotMatch(html, /settings-cal-access/);
   });
 
-  test('a row already carrying a grant control suppresses the below for any kind', () => {
+  test('a row already carrying the same grant control keeps the words but not a second button', () => {
     const perm = {
       ...missing(ALEX),
       health: { status: { state: 'needsPermission', missingScopes: ['calendar.events'] } as never },
     };
     const html = render({ accounts: [perm] }, 'accounts');
     assert.match(html, /Reconnect/);
-    assert.doesNotMatch(html, /settings-cal-access/);
+    assert.match(html, /Calendar not allowed yet/);
+    assert.doesNotMatch(html, /Allow calendar access/);
+  });
+
+  test('a row whose own control is a different mode (reconnect due soon) still gets the calendar line and its action', () => {
+    const due = {
+      ...missing(ALEX),
+      health: { ...missing(ALEX).health, reconnectBy: Date.now() + 10 * 3_600_000 },
+    };
+    const html = render({ accounts: [due] }, 'accounts');
+    assert.match(html, /Calendar not allowed yet/);
+    assert.match(html, /Allow calendar access/);
   });
 
   test('syncing: “Syncing…” and no action', () => {
