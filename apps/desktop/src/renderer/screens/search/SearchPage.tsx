@@ -138,7 +138,7 @@ export function SearchPage(props: SearchPageProps) {
             ) : null}
           </ListBox>
         ) : null}
-        {model.localFailed ? (
+        {model.listFailed ? (
           <ErrorLine kind="listFailed" placement="column" onAction={handlers.onRetryResults} />
         ) : null}
         {model.noMatch ? (
@@ -191,7 +191,7 @@ export function SearchPage(props: SearchPageProps) {
               text={line.text}
               retryable={line.retry}
               placement="column"
-              onAction={() => handlers.onSubmit()}
+              onAction={() => (model.localFailed ? handlers.onRetryResults() : handlers.onSubmit())}
             />
           </div>
         ) : null}

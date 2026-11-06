@@ -266,8 +266,11 @@ export interface SearchPageModel {
   readonly noMatch: string | null;
   /** The no-match line carries "Search all mail on Google · Return" itself (DESIGN §7.14). */
   readonly noMatchOffer: boolean;
-  /** The local window failed: the page draws the error line (DESIGN §7.15), not "No mail matches". */
+  /** The local window failed (status 'failed'): the page draws one error line for it, never "No mail matches",
+   * and a failed line's Try again reopens the view. */
   readonly localFailed: boolean;
+  /** The window failed with no reason of its own or remote's to show: the generic list line draws (§7.15). */
+  readonly listFailed: boolean;
   readonly remoteLine: RemoteLine | null;
   /** The polite live region's sentence. */
   readonly announce: string;
@@ -327,8 +330,18 @@ function pageRemoteLine(
   now: number,
   remoteCount: number,
 ): RemoteLine | null {
-  if (local.status === 'failed' && local.error && refusal(key, local.error).phase === 'paused') {
-    return { kind: 'paused', text: pausedText(local.error.resumeAt) };
+  if (local.status === 'failed' && local.error) {
+    // A failed window's own reason names the failure: its line replaces the generic list line, so one failure
+    // never draws two banners (#322). An unnamed error leaves the remote's line; the generic line stands alone.
+    const declined = refusal(key, local.error);
+    if (declined.phase === 'paused') return { kind: 'paused', text: pausedText(declined.resumeAt) };
+    if (declined.phase === 'failed' && declined.reason !== 'error') {
+      return {
+        kind: 'failed',
+        text: FAILED_TEXT[declined.reason],
+        retry: declined.reason === 'offline',
+      };
+    }
   }
   return remoteLineFor(remote, now, remoteCount);
 }
@@ -344,6 +357,20 @@ function announceText(settled: boolean, empty: boolean, localCount: number): str
 /** The remote state for this query in this scope, or idle when it belongs to another scope or query. */
 function scopedRemote(remote: RemoteState, scoped: string): RemoteState {
   return 'key' in remote && remote.key === scoped ? remote : { phase: 'idle' };
+}
+
+/**
+ * The window's failure flags (#322). `localFailed` is the raw fact; `listFailed` asks for the generic
+ * "Couldn't load this list." line, which draws only when no reason line — the remote's or the failed window's
+ * own — speaks for the failure. One failure, one line.
+ */
+function searchFailure(
+  local: LocalResults,
+  remoteLine: RemoteLine | null,
+): Pick<SearchPageModel, 'localFailed' | 'listFailed'> {
+  const localFailed = local.status === 'failed';
+  const reasonLine = remoteLine?.kind === 'failed' || remoteLine?.kind === 'paused';
+  return { localFailed, listFailed: localFailed && !reasonLine };
 }
 
 /** The page's view of the state, the local window and the clock. `scope` is the account scope the page shows. */
@@ -367,7 +394,7 @@ export function searchPage(
   const remoteLine =
     !empty && supported ? pageRemoteLine(local, remote, key, now, remoteIds.length) : null;
 
-  const localFailed = local.status === 'failed';
+  const { localFailed, listFailed } = searchFailure(local, remoteLine);
   const settled = local.status === 'live' || local.status === 'reset' || localFailed;
   // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
   const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
@@ -387,6 +414,7 @@ export function searchPage(
     noMatch,
     noMatchOffer: noMatch !== null && remoteLine?.kind === 'offer',
     localFailed,
+    listFailed,
     remoteLine: line,
     announce: announceText(settled && !localFailed, empty, localCount),
   };
