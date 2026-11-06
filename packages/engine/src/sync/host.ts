@@ -492,6 +492,7 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     governor.clear(account, 'auth');
     this.actors.get(account)?.actor.reconnected({
       grantedScopes: result.grantedScopes,
+      capabilities: result.capabilities,
       reconnectBy: result.grant?.refreshExpiresAt,
     });
   }

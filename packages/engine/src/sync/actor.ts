@@ -46,6 +46,21 @@ export const STEP_BACKOFF_MAX_MS = 900_000;
 /** A loop turn that threw (a bug or a store failure) waits this long before the next. */
 const LOOP_ERROR_MS = 30_000;
 
+/**
+ * The Google calendar scopes the OAuth manifest's round-1 request carries (apps/desktop oauth/scopes.ts):
+ * `calendar.calendarlist.readonly` + `calendar.events.readonly` (`calendar.events` is round 2's write scope and is
+ * never asked). Used only to name the gap in `missingPermissions` before a refusal has reported one — the engine
+ * knows the URLs, not the manifest's feature names. Exported for the parity test that pins it to the manifest.
+ */
+export const GOOGLE_CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+  'https://www.googleapis.com/auth/calendar.events.readonly',
+];
+
+/** The calendar scopes' own failure channel (a `permission` refusal on one is a gap, not an account halt). */
+const isCalendarScope = (scope: ScopeId): boolean =>
+  scope === 'calendars' || scope.startsWith('cal:');
+
 /** Lanes a secondary device never runs, except the workflow round itself (ARCH 6.5, ports.walk.md lease). */
 const PRIMARY_ONLY: ReadonlySet<SyncLane> = new Set<SyncLane>([
   'backfill',
@@ -122,6 +137,8 @@ export class AccountActor {
   private readonly backoff = new Map<ScopeId, { failures: number; until: number }>();
   /** A failure the governor does not hold (missing mail permission): no sync until reconnect or a manual request. */
   private halted?: StatusView;
+  /** The missing scopes a `permission` refusal on a calendar call named; unset until one does. */
+  private calendarScopeGap?: string[];
   private failure?: StatusView;
   private view?: StatusView;
   private heartbeat: number;
@@ -147,6 +164,9 @@ export class AccountActor {
       ...(deps.reconnectBy !== undefined ? { reconnectBy: deps.reconnectBy } : {}),
       lease: { role: deps.role },
     };
+    // The first emit has not been wired yet: set the row directly, no subscriber call.
+    const missing = this.missingPermissionsNow();
+    if (missing) this.runtime.missingPermissions = missing;
   }
 
   get id() {
@@ -219,12 +239,23 @@ export class AccountActor {
   }
 
   /** After `clear(auth)`: resume from the stored cursors with no resync, and flush queued ops first. */
-  reconnected(facts: { grantedScopes?: string[]; reconnectBy?: number }): void {
+  reconnected(facts: {
+    grantedScopes?: string[];
+    capabilities?: AdapterAccount['capabilities'];
+    reconnectBy?: number;
+  }): void {
     this.halted = undefined;
     this.failure = undefined;
     this.backoff.clear();
     this.opsHoldUntil = 0;
     if (facts.grantedScopes) this.runtime.grantedScopes = facts.grantedScopes;
+    if (facts.capabilities) this.runtime.capabilities = facts.capabilities;
+    // The adapter holds the same `AdapterAccount` object: mutate it in place so `plan` and `context()`
+    // see the new grant at once — a re-consent that added the calendar scopes must not wait for a restart.
+    if (facts.grantedScopes) this.deps.account.grantedScopes = facts.grantedScopes;
+    if (facts.capabilities) this.deps.account.capabilities = facts.capabilities;
+    this.calendarScopeGap = undefined;
+    this.refreshMissingPermissions();
     if (facts.reconnectBy !== undefined) {
       this.runtime.reconnectBy = facts.reconnectBy;
       this.deps.reconnectBy = facts.reconnectBy;
@@ -495,6 +526,7 @@ export class AccountActor {
     if (cls === 'cancelled') return;
     const view = statusOfFailure(classified, now);
     if (cls === 'permission') {
+      if (isCalendarScope(step.scope)) return this.calendarScopeRefused(step, classified, now);
       this.halted = view;
       this.setStatus(view!);
       return;
@@ -511,6 +543,22 @@ export class AccountActor {
       this.failure = view;
       this.setStatus(view);
     }
+  }
+
+  /**
+   * A `permission` refusal on a calendar scope is a feature-level gap (D12), never an account halt: the scope backs
+   * off on the usual escalation while `missingPermissions` names the scopes a re-consent must add. Mail is untouched.
+   */
+  private calendarScopeRefused(
+    step: PlannedStep,
+    classified: ClassifiedError | undefined,
+    now: number,
+  ): void {
+    if (classified?.missingScopes?.length) this.calendarScopeGap = classified.missingScopes;
+    this.refreshMissingPermissions();
+    const failures = (this.backoff.get(step.scope)?.failures ?? 0) + 1;
+    const until = now + Math.min(STEP_BACKOFF_MAX_MS, STEP_BACKOFF_MS * 2 ** (failures - 1));
+    this.backoff.set(step.scope, { failures, until });
   }
 
   /**
@@ -708,6 +756,42 @@ export class AccountActor {
     } catch {
       // A failing subscriber never stops the actor.
     }
+  }
+
+  /**
+   * `runtime.missingPermissions`: the feature-level gaps that do not halt the account (D12, governor.ts `permission`).
+   * Today the only producer is calendar — a provider that has a calendar half whose grant lacks its scopes gets the
+   * Settings row (`Account.missingPermissions` capability 'calendar'), at start, on reconnect and on a `permission`
+   * refusal that names the scopes. Never `needsPermission`: that is the core mail scope's alone.
+   */
+  private refreshMissingPermissions(): void {
+    const missing = this.missingPermissionsNow() ?? [];
+    const before = this.runtime.missingPermissions ?? [];
+    if (
+      before.length === missing.length &&
+      before.every(
+        (b, i) =>
+          b.capability === missing[i]!.capability &&
+          b.reasonCode === missing[i]!.reasonCode &&
+          b.missingScopes.join(' ') === missing[i]!.missingScopes.join(' '),
+      )
+    )
+      return;
+    this.runtime.missingPermissions = missing.length ? missing : undefined;
+    this.emit();
+  }
+
+  /** The gaps right now, or undefined when nothing is missing. */
+  private missingPermissionsNow(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
+    if (this.deps.adapter.calendar === undefined || this.runtime.capabilities.calendar === true) {
+      return undefined;
+    }
+    // A `permission` refusal names the scopes it was refused for (`calendarScopeGap`); before one has
+    // run, the gap is whichever calendar scopes the grant lacks.
+    const missingScopes =
+      this.calendarScopeGap ??
+      GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s));
+    return [{ capability: 'calendar', reasonCode: 'permission.calendar', missingScopes }];
   }
 
   // ---------------------------------------------------------------- waiting and liveness

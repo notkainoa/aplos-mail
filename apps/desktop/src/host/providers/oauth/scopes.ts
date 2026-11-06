@@ -1,7 +1,8 @@
 // The one table of Google scopes Aplos may request: what each is for and the exact consent text (plan 20 PV5).
 // Adding a scope forces every user to consent again, so a new scope needs a DECISIONS.md entry and a row here.
 
-export type ScopeFeature = 'mail' | 'filters' | 'calendarList' | 'calendarEvents';
+export type ScopeFeature =
+  'mail' | 'filters' | 'calendarList' | 'calendarEvents' | 'calendarEventsWrite';
 
 export interface ScopeEntry {
   scope: string;
@@ -10,6 +11,12 @@ export interface ScopeEntry {
   required: boolean;
   /** What the owner is told before Google's screen opens. */
   consent: string;
+  /**
+   * Declared but never requested until its round ships (calendar.events is round 2, writes; least privilege —
+   * the consent screen must never promise "create, change and delete" for a sync that only reads). A grant that
+   * already holds a deferred scope keeps it on a reconnect; it is just never newly asked for.
+   */
+  deferred?: true;
 }
 
 const google = (name: string) => `https://www.googleapis.com/auth/${name}`;
@@ -37,16 +44,26 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
     consent: 'See the list of your calendars.',
   },
   {
-    scope: google('calendar.events'),
+    scope: google('calendar.events.readonly'),
     feature: 'calendarEvents',
     required: false,
+    consent: 'See the events on your calendars.',
+  },
+  {
+    scope: google('calendar.events'),
+    feature: 'calendarEventsWrite',
+    required: false,
+    deferred: true,
     consent: 'See, create, change and delete events on your calendars.',
   },
 ];
 
-/** The `scope` parameter of the authorization URL. */
+/** The `scope` parameter of the authorization URL: never carries a `deferred` entry. */
 export function googleScopeParam(): string {
-  return [...identityScopes, ...googleScopeManifest.map(entry => entry.scope)].join(' ');
+  return [
+    ...identityScopes,
+    ...googleScopeManifest.filter(entry => !entry.deferred).map(entry => entry.scope),
+  ].join(' ');
 }
 
 /**
@@ -60,6 +77,14 @@ export function connectScopes(optional: readonly string[] = []): string[] {
     throw new Error(`Not an optional scope in the manifest: ${unknown.join(' ')}`);
   const required = googleScopeManifest.filter(entry => entry.required).map(entry => entry.scope);
   return [...new Set([...identityScopes, ...required, ...optional])];
+}
+
+/** The optional manifest scopes of the named features, in manifest order (e.g. both calendar scopes). */
+export function scopesForFeatures(...features: ScopeFeature[]): string[] {
+  const wanted = new Set<ScopeFeature>(features);
+  return googleScopeManifest
+    .filter(entry => !entry.required && wanted.has(entry.feature))
+    .map(entry => entry.scope);
 }
 
 /** A token response's `scope` string as a list; Google separates scopes with spaces. */
