@@ -10,6 +10,7 @@
 // Results: <out>/e2e.json, <out>/e2e.md, <out>/<step>.png. Exit 1 on any FAIL row.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 
 const appArg = process.argv.find(a => a.endsWith('.app'));
@@ -50,7 +51,7 @@ const child = spawn(exe, [], {
     APLOS_TEST: '1',
     APLOS_DATA_DIR: dataDir,
     APLOS_TEST_SHOW_WINDOWS: '1',
-    APLOS_TEST_CDP_PORT: '0',
+    APLOS_TEST_CDP_PORT: String(PORT),
     APLOS_TEST_KEYCHAIN: 'login',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -58,23 +59,32 @@ const child = spawn(exe, [], {
 for (const s of [child.stdout, child.stderr]) s.on('data', c => output.push(c.toString()));
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const results = [];
-
-let PORT;
+// A free loopback port we hand to the child; DevToolsActivePort in our private dir then proves
+// the bound endpoint is really this app's and never a stale bind owned by someone else.
+const PORT = await new Promise((resolve, reject) => {
+  const srv = createServer().listen(0, '127.0.0.1', () => {
+    const port = srv.address().port;
+    srv.close(() => resolve(port));
+  });
+  srv.on('error', reject);
+});
 async function main() {
   // Wait for Chromium to publish the random loopback port inside OUR private data dir — a stale
   // endpoint owned by another process can never be mistaken for ours.
   const portFile = `${dataDir}/DevToolsActivePort`;
-  for (let i = 0; i < 120 && !PORT; i++) {
+  let confirmed = false;
+  for (let i = 0; i < 120 && !confirmed; i++) {
     await delay(500);
     try {
-      PORT = Number(readFileSync(portFile, 'utf8').split('\n')[0]) || undefined;
+      confirmed = Number(readFileSync(portFile, 'utf8').split('\n')[0]) === PORT;
     } catch {
       // DevToolsActivePort not written yet.
     }
     if (child.exitCode !== null)
       throw new Error(`app exited early: ${output.join('').slice(-300)}`);
   }
-  if (!PORT) throw new Error(`no DevToolsActivePort in ${dataDir}`);
+  if (!confirmed)
+    throw new Error(`DevToolsActivePort never listed our port ${PORT} — endpoint is not ours`);
   let mailPage;
   for (let i = 0; i < 150; i++) {
     await delay(400);
