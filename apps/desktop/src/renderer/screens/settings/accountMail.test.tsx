@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { clearAvailability, publishAvailability, rowAvailable } from './availability';
 import { createController } from './controller';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
-import { screenDataVersion } from './SettingsScreen';
+import { anchorMissing, anchorScroll, screenDataVersion } from './SettingsScreen';
 import { accountMailFocusTarget } from './sections/ai';
 import type { AccountWrite } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
@@ -208,6 +208,146 @@ describe('Turn on for existing accounts (the bulk write)', () => {
     calls.length = 0;
     await h.undos[0]!.undo();
     assert.deepEqual(calls, [[ALEX.id, { aiAllowed: false }]]);
+  });
+});
+
+describe('the one failure slot: a write clears only the line it wrote', () => {
+  test('a refused bulk line survives a successful Settings/set and Account/set', async () => {
+    const h = harness({
+      data: { accounts: [alexOff, JORDAN] },
+      ports: {
+        accountSet: async id => {
+          if (id === JORDAN.id) throw new Error('rejected');
+        },
+        settingsSet: async () => {},
+      },
+    });
+    await h.actions.allowMailForAccounts([ALEX.id, JORDAN.id]);
+    const bulk = h.failure();
+    assert.equal(bulk?.op, 'turn on mail for AI on jordan.lee@example.com');
+    await h.actions.set({ ui: { singleKeys: false } });
+    assert.equal(h.failure(), bulk, 'a settings write leaves the bulk line up');
+    await h.actions.setAccount(ALEX.id, { colorTag: 'sky' });
+    assert.equal(h.failure(), bulk, 'an account write leaves the bulk line up');
+  });
+
+  test('a refused bulk line also survives a guarded write', async () => {
+    const h = harness({
+      data: { accounts: [alexOff, JORDAN] },
+      ports: {
+        accountSet: async id => {
+          if (id === JORDAN.id) throw new Error('rejected');
+        },
+        listenerSet: async () => {},
+      },
+    });
+    await h.actions.allowMailForAccounts([ALEX.id, JORDAN.id]);
+    const bulk = h.failure();
+    assert.ok(bulk);
+    await h.actions.setListener(true);
+    assert.equal(h.failure(), bulk, 'a guarded write leaves the bulk line up');
+  });
+
+  test('a path still takes down the line it wrote itself', async () => {
+    let refuse = true;
+    const h = harness({
+      ports: {
+        settingsSet: async () => {
+          if (refuse) throw new Error('rejected');
+        },
+      },
+    });
+    assert.equal(await h.actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send'), false);
+    assert.equal(h.failure()?.op, 'change undo send');
+    refuse = false;
+    assert.equal(await h.actions.set({ mail: { undoSendSeconds: 30 } }), true);
+    assert.equal(h.failure(), null, "the path's own success clears its own line");
+  });
+
+  test('Retry on a refused settings write re-runs it and clears its own line', async () => {
+    let attempts = 0;
+    const h = harness({
+      ports: {
+        settingsSet: async () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error('rejected');
+        },
+      },
+    });
+    assert.equal(await h.actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send'), false);
+    h.failure()!.retry();
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(attempts, 2);
+    assert.equal(h.failure(), null);
+  });
+});
+
+// Replays the anchor effect's bookkeeping over a sequence of draws, so the spent-link rule can be
+// checked without a DOM: what the miss line, scroll and focus would do at each step.
+const anchorVisit = (steps: { linked: boolean; freshNav?: boolean }[]) => {
+  let missing: string | null = null;
+  let wasConsumed = false;
+  return steps.map(step => {
+    const consumed = step.freshNav ? false : wasConsumed;
+    const line = anchorMissing({ looking: true, linked: step.linked, consumed })
+      ? 'accountMail'
+      : null;
+    const move = anchorScroll({
+      recording: false,
+      recordingChanged: false,
+      linked: step.linked,
+      wasMissing: missing === 'accountMail',
+      freshNav: step.freshNav ?? false,
+      consumed,
+    });
+    missing = line;
+    wasConsumed = consumed || step.linked;
+    return { move, missing };
+  });
+};
+
+describe('a drawn anchor is spent: the write that empties it is not a miss', () => {
+  test('draw-then-vanish never shows the "not shown" line and never moves again', () => {
+    const seen = anchorVisit([
+      { linked: true, freshNav: true }, // the link lands on its row
+      { linked: false }, // 'Turn on for existing accounts' empties it under the button
+      { linked: true }, // a lagging data layer draws it once more
+      { linked: false },
+    ]);
+    assert.deepEqual(
+      seen.map(s => s.move),
+      ['linked', 'none', 'none', 'none'],
+    );
+    assert.deepEqual(
+      seen.map(s => s.missing),
+      [null, null, null, null],
+    );
+  });
+
+  test('a row never drawn still reads "not shown" and links the moment it appears', () => {
+    const seen = anchorVisit([
+      { linked: false, freshNav: true },
+      { linked: false },
+      { linked: true },
+    ]);
+    assert.deepEqual(
+      seen.map(s => s.missing),
+      ['accountMail', 'accountMail', null],
+    );
+    assert.deepEqual(
+      seen.map(s => s.move),
+      ['top', 'none', 'linked'],
+    );
+  });
+
+  test('a re-open of the same anchor after leaving still scrolls to the row', () => {
+    const seen = anchorVisit([
+      { linked: true, freshNav: true },
+      { linked: false }, // it left under the button
+      { linked: true, freshNav: true }, // the link lands again
+    ]);
+    assert.equal(seen.at(-1)!.move, 'linked');
+    assert.equal(seen.at(-1)!.missing, null);
   });
 });
 

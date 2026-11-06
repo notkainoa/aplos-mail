@@ -75,14 +75,43 @@ export function createController(deps: ControllerDeps) {
   const data = () => deps.data();
   const busy = (key: string, on: boolean) => deps.setView({ busy: { ...view().busy, [key]: on } });
 
+  /* The failure line is one shared slot, but a write takes down only the line it put up itself: each path
+   * remembers the failure object it last wrote and, on success, clears the slot only while it still holds that
+   * same object — so a refused bulk-mail line survives an unrelated write. A host that cannot answer
+   * `failure` keeps the old unconditional clear. */
+  const ownFailure = () => {
+    let written: WriteFailure | null = null;
+    return {
+      write(failure: WriteFailure): void {
+        written = failure;
+        deps.fail(failure);
+      },
+      clearIfOwn(): void {
+        if (!deps.failure || deps.failure() === written) deps.fail(null);
+      },
+    };
+  };
+  type OwnFailure = ReturnType<typeof ownFailure>;
+
+  const setFail = ownFailure();
+  const accountFail = ownFailure();
+  const featureFail = ownFailure();
+  const keyFail = ownFailure();
+  const mailFail = ownFailure();
+  /* `guard` is shared by every one-off write; each op keeps the line it last wrote so one action's success
+   * never clears another's refusal. */
+  const guardFails = new Map<string, OwnFailure>();
+
   /** Runs a write; on rejection the failure line offers Retry for the same step. */
   async function guard(op: string, run: () => Promise<void>): Promise<boolean> {
+    let own = guardFails.get(op);
+    if (!own) guardFails.set(op, (own = ownFailure()));
     try {
       await run();
-      deps.fail(null);
+      own.clearIfOwn();
       return true;
     } catch {
-      deps.fail({ op, retry: () => void guard(op, run), dismiss: () => deps.fail(null) });
+      own.write({ op, retry: () => void guard(op, run), dismiss: () => deps.fail(null) });
       return false;
     }
   }
@@ -135,16 +164,20 @@ export function createController(deps: ControllerDeps) {
   };
 
   /** `Settings/set` with the optimistic overlay: the control moves at once and goes back if the write is refused. */
-  async function set(patch: SettingsPatch, op = 'save that setting'): Promise<boolean> {
+  async function set(
+    patch: SettingsPatch,
+    op = 'save that setting',
+    own: OwnFailure = setFail,
+  ): Promise<boolean> {
     const id = pushOverlay(patch);
     let ok: boolean;
     try {
       await ports.settingsSet(patch);
-      deps.fail(null);
+      own.clearIfOwn();
       ok = true;
     } catch {
       // Retry is the same write again, overlay and all — the control moves at once on Retry too.
-      deps.fail({ op, retry: () => void set(patch, op), dismiss: () => deps.fail(null) });
+      own.write({ op, retry: () => void set(patch, op, own), dismiss: () => deps.fail(null) });
       ok = false;
     }
     dropOverlay(id);
@@ -156,9 +189,7 @@ export function createController(deps: ControllerDeps) {
    * only, with a Retry that writes only those — and ONE undo covering exactly the accounts the press
    * turned on. The single failure slot is never cleared for a sibling: a full success takes down only a
    * line this path wrote itself. */
-  let mailFailure: WriteFailure | null = null;
   async function writeMailAllowed(ids: readonly string[], on: boolean): Promise<readonly string[]> {
-    const previous = mailFailure;
     const results = await Promise.allSettled(
       ids.map(id => {
         const overlayId = pushAccountOverlay(id, { aiAllowed: on });
@@ -170,20 +201,14 @@ export function createController(deps: ControllerDeps) {
     const refused = ids.filter((_, i) => results[i]!.status === 'rejected');
     if (refused.length === 0) {
       // A success clears the slot only while it still holds this path's own line.
-      if (previous && (deps.failure?.() ?? previous) === previous) deps.fail(null);
-      if (mailFailure === previous) mailFailure = null;
+      mailFail.clearIfOwn();
       return refused;
     }
-    const failure: WriteFailure = {
+    mailFail.write({
       op: mailAllowedOp(data().accounts, refused, on),
       retry: () => void writeMailAllowed(refused, on),
-      dismiss: () => {
-        if (mailFailure === failure) mailFailure = null;
-        deps.fail(null);
-      },
-    };
-    mailFailure = failure;
-    deps.fail(failure);
+      dismiss: () => deps.fail(null),
+    });
     return refused;
   }
 
@@ -231,11 +256,11 @@ export function createController(deps: ControllerDeps) {
       let ok: boolean;
       try {
         await ports.accountSet(accountId, patch);
-        deps.fail(null);
+        accountFail.clearIfOwn();
         ok = true;
       } catch {
         // Retry is the same write again, overlay and all — the control moves at once on Retry too.
-        deps.fail({
+        accountFail.write({
           op: 'save that account setting',
           retry: () => void self.setAccount(accountId, patch),
           dismiss: () => deps.fail(null),
@@ -314,7 +339,7 @@ export function createController(deps: ControllerDeps) {
       }
       const next = cascadeChoice(feature, choice, current, models ?? {});
       if (!next) {
-        deps.fail({
+        featureFail.write({
           op: `use ${providerName(choice.provider)} for ${featureLabel(feature)}`,
           retry: () => void self.changeFeature(feature, choice),
           dismiss: () => deps.fail(null),
@@ -325,6 +350,7 @@ export function createController(deps: ControllerDeps) {
       const ok = await set(
         featurePatch({ ai: { ...d.settings.ai, features } }, feature, next),
         `change the ${featureLabel(feature)} model`,
+        featureFail,
       );
       // A refused write puts the control back and drops the intent; a newer one for the same feature stays.
       if (!ok && pendingFeatures.get(feature) === next) pendingFeatures.delete(feature);
@@ -422,12 +448,12 @@ export function createController(deps: ControllerDeps) {
       let ok: boolean;
       try {
         await ports.aiSetKey(provider, key);
-        deps.fail(null);
+        keyFail.clearIfOwn();
         ok = true;
       } catch {
         ok = false;
         // The key is never kept: Retry reopens the add-key dialog for a fresh paste, it does not resubmit.
-        deps.fail({
+        keyFail.write({
           op: `save the ${providerName(provider)} key`,
           retry: () => self.openAddKey(provider, 'add'),
           dismiss: () => deps.fail(null),
