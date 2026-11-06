@@ -57,6 +57,7 @@ import {
   silenceSystem,
   exposeTestHooks,
   markTestDir,
+  testOnlyFlags,
 } from './test-mode';
 
 let started = false;
@@ -257,7 +258,19 @@ if (isTest) {
   // Chromium's in-memory keychain: safeStorage works without touching the login keychain at all, so a test can
   // neither prompt nor leave items behind (an ad-hoc rebuilt app would be refused a keychain item an earlier build made).
   // The separate app name below is the second line of defence should the switch ever be ignored.
-  app.commandLine.appendSwitch('use-mock-keychain');
+  // APLOS_TEST_KEYCHAIN=login opts out: a seeded private data dir can then unwrap the real credential.
+  if (!testOnlyFlags.useLoginKeychain) app.commandLine.appendSwitch('use-mock-keychain');
+  // APLOS_TEST_CDP_PORT=<port|0>: loopback-only remote debugging for CDP drivers. A caller-supplied
+  // --remote-debugging-address would defeat the loopback bind, so it is refused outright.
+  if (testOnlyFlags.cdpPort !== undefined) {
+    if (process.argv.some(arg => arg.startsWith('--remote-debugging-address'))) {
+      process.stderr.write(
+        'Aplos Mail test: --remote-debugging-address is refused (loopback only).\n',
+      );
+      process.exit(2);
+    }
+    app.commandLine.appendSwitch('remote-debugging-port', String(testOnlyFlags.cdpPort));
+  }
   silenceDialogs(dialog, line => console.error(`Aplos Mail test: ${line}`));
   silenceSystem(shell, systemPreferences, line => console.error(`Aplos Mail test: ${line}`));
   markTestDir(testDataDir!);

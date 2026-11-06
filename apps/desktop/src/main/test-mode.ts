@@ -188,3 +188,38 @@ export function exposeTestHooks() {
     enumerable: false,
   });
 }
+
+/**
+ * Test-only window/CDP/keychain flags (APLOS_TEST=1 required for all):
+ * - APLOS_TEST_SHOW_WINDOWS=1: windows order in with showInactive() instead of staying hidden — a headless run a
+ *   CDP driver can screenshot. Never steals focus or switches Space.
+ * - APLOS_TEST_CDP_PORT=<1-65535|0>: append --remote-debugging-port for the run; 0 asks for a random one. The flag
+ *   is loopback-only by Chromium design; a caller-supplied --remote-debugging-address in argv is refused at startup.
+ * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain so a seeded data dir can unwrap the real login-keychain
+ *   credential (live account in a private copy). Reads still never write keychain items.
+ * Without APLOS_TEST=1 every flag is inert — normal launches are byte-for-byte unchanged.
+ */
+export interface TestFlags {
+  readonly showWindows: boolean;
+  readonly useLoginKeychain: boolean;
+  readonly cdpPort: number | undefined;
+}
+
+export function testFlags(env: NodeJS.ProcessEnv, isTest: boolean): TestFlags {
+  const none: TestFlags = { showWindows: false, useLoginKeychain: false, cdpPort: undefined };
+  if (!isTest) return none;
+  const raw = env.APLOS_TEST_CDP_PORT;
+  let cdpPort: number | undefined;
+  if (raw !== undefined) {
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) return none;
+    cdpPort = port;
+  }
+  return {
+    showWindows: env.APLOS_TEST_SHOW_WINDOWS === '1',
+    useLoginKeychain: env.APLOS_TEST_KEYCHAIN === 'login',
+    cdpPort,
+  };
+}
+
+export const testOnlyFlags = testFlags(process.env, isTest);

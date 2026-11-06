@@ -6,7 +6,7 @@ import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
 import { latestState, realPath, realEngine, service } from './engine-host';
 import { closing, quitting, finishQuit, failedStart } from './lifecycle';
-import { isTest, dataDirOverride } from './test-mode';
+import { isTest, dataDirOverride, testOnlyFlags } from './test-mode';
 import {
   createOnboarding,
   focusOauthReturnWindow,
@@ -286,7 +286,9 @@ function createWindow(query?: { draft?: string; thread?: string }) {
   });
   win.once('ready-to-show', () => {
     painted.add(win);
-    if (!isTest && !quitting) win.show();
+    if (isTest) {
+      if (testOnlyFlags.showWindows && !quitting) win.showInactive();
+    } else if (!quitting) win.show();
     announceShown(win);
   });
   win.on('focus', () => syncTheme(false));
@@ -396,7 +398,9 @@ function createWelcomeWindow(mode: OnboardingMode): WindowPort {
   windows.add(win);
   win.once('ready-to-show', () => {
     painted.add(win);
-    if (!isTest && !quitting) win.show();
+    if (isTest) {
+      if (testOnlyFlags.showWindows && !quitting) win.showInactive();
+    } else if (!quitting) win.show();
     announceShown(win);
   });
   win.on('focus', () => syncTheme(false));
