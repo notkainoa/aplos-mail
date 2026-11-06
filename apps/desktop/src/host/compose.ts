@@ -177,9 +177,10 @@ const holdsSubject = (store: StorePort, subject: string) =>
 
 /**
  * The scopes an account's stored grant holds (`accounts.granted_scopes`): a reconnect asks for them again, or the
- * new grant would silently drop the optional ones. Undefined when there is no row to read.
+ * new grant would silently drop the optional ones. Undefined when there is no row to read — and also undefined on
+ * malformed JSON, failing toward the narrower (safer) request.
  */
-const grantedScopesOf = (store: StorePort, id: string): string[] | undefined => {
+export const grantedScopesOf = (store: StorePort, id: string): string[] | undefined => {
   const raw = store.read(
     q =>
       q.get<{ granted_scopes: string | null }>(

@@ -37,6 +37,9 @@ const capsWith = (calendar: boolean) => ({
   threading: 'native' as const,
 });
 
+const CAL_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+const CAL_EVENTS = 'https://www.googleapis.com/auth/calendar.events';
+
 test('a calendar-capable adapter on a grant without calendar scopes records missingPermissions', async () => {
   const d = disk();
   try {
@@ -48,11 +51,35 @@ test('a calendar-capable adapter on a grant without calendar scopes records miss
       {
         capability: 'calendar',
         reasonCode: 'permission.calendar',
-        missingScopes: [],
+        missingScopes: [CAL_LIST, CAL_EVENTS],
       },
     ]);
     // The account itself is not halted: mail status is not needsPermission.
     assert.notEqual(runtime.status.state, 'needsPermission');
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('a grant holding one calendar scope names only the other as missing', async () => {
+  const d = disk();
+  try {
+    const w = world(d, () => idle(calendarStub()));
+    w.store.commit({
+      opId: 'grant',
+      origin: 'system',
+      writes: [{ kind: 'account', id: ACCOUNT, grantedScopes: ['gmail.modify', CAL_LIST] }],
+    });
+    await w.host.start(ACCOUNT);
+    await settle();
+    const runtime = w.host.status(ACCOUNT)!;
+    assert.deepEqual(runtime.missingPermissions, [
+      {
+        capability: 'calendar',
+        reasonCode: 'permission.calendar',
+        missingScopes: [CAL_EVENTS],
+      },
+    ]);
   } finally {
     await d.cleanup();
   }
@@ -108,6 +135,23 @@ test('a reconnect that granted the scopes clears the row; one that did not keeps
     assert.equal(runtime.missingPermissions, undefined);
     assert.equal(runtime.capabilities.calendar, true);
 
+    // The same reconnect again changes nothing and emits nothing (emit-on-change, not emit-always).
+    const emits: unknown[] = [];
+    const unsub = w.host.subscribe((_id, runtime) => emits.push(runtime));
+    await w.host.reconnected(
+      ACCOUNT,
+      connectResult({
+        grantedScopes: [
+          'https://www.googleapis.com/auth/gmail.modify',
+          'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+          'https://www.googleapis.com/auth/calendar.events',
+        ],
+        capabilities: capsWith(true),
+      }),
+    );
+    assert.equal(emits.length, 0);
+    unsub();
+
     // A later grant-less reconnect re-marks it (the grant it replaced still lacks the scopes).
     await w.host.reconnected(
       ACCOUNT,
@@ -120,7 +164,7 @@ test('a reconnect that granted the scopes clears the row; one that did not keeps
       {
         capability: 'calendar',
         reasonCode: 'permission.calendar',
-        missingScopes: [],
+        missingScopes: [CAL_LIST, CAL_EVENTS],
       },
     ]);
   } finally {

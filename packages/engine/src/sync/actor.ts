@@ -46,6 +46,16 @@ export const STEP_BACKOFF_MAX_MS = 900_000;
 /** A loop turn that threw (a bug or a store failure) waits this long before the next. */
 const LOOP_ERROR_MS = 30_000;
 
+/**
+ * The Google calendar scopes the OAuth manifest declares (apps/desktop oauth/scopes.ts). Used only to
+ * name the gap in `missingPermissions` before a refusal has reported one — the engine knows the URLs,
+ * not the manifest's feature names.
+ */
+const GOOGLE_CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
+];
+
 /** Lanes a secondary device never runs, except the workflow round itself (ARCH 6.5, ports.walk.md lease). */
 const PRIMARY_ONLY: ReadonlySet<SyncLane> = new Set<SyncLane>([
   'backfill',
@@ -149,7 +159,9 @@ export class AccountActor {
       ...(deps.reconnectBy !== undefined ? { reconnectBy: deps.reconnectBy } : {}),
       lease: { role: deps.role },
     };
-    this.refreshMissingPermissions();
+    // The first emit has not been wired yet: set the row directly, no subscriber call.
+    const missing = this.missingPermissionsNow();
+    if (missing) this.runtime.missingPermissions = missing;
   }
 
   get id() {
@@ -727,14 +739,7 @@ export class AccountActor {
    * refusal that names the scopes. Never `needsPermission`: that is the core mail scope's alone.
    */
   private refreshMissingPermissions(): void {
-    const missing: NonNullable<AccountRuntime['missingPermissions']> = [];
-    if (this.deps.adapter.calendar !== undefined && this.runtime.capabilities.calendar !== true) {
-      missing.push({
-        capability: 'calendar',
-        reasonCode: 'permission.calendar',
-        missingScopes: this.calendarScopeGap ?? [],
-      });
-    }
+    const missing = this.missingPermissionsNow() ?? [];
     const before = this.runtime.missingPermissions ?? [];
     if (
       before.length === missing.length &&
@@ -748,6 +753,19 @@ export class AccountActor {
       return;
     this.runtime.missingPermissions = missing.length ? missing : undefined;
     this.emit();
+  }
+
+  /** The gaps right now, or undefined when nothing is missing. */
+  private missingPermissionsNow(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
+    if (this.deps.adapter.calendar === undefined || this.runtime.capabilities.calendar === true) {
+      return undefined;
+    }
+    // A `permission` refusal names the scopes it was refused for (`calendarScopeGap`); before one has
+    // run, the gap is whichever calendar scopes the grant lacks.
+    const missingScopes =
+      this.calendarScopeGap ??
+      GOOGLE_CALENDAR_SCOPES.filter(s => !this.runtime.grantedScopes.includes(s));
+    return [{ capability: 'calendar', reasonCode: 'permission.calendar', missingScopes }];
   }
 
   // ---------------------------------------------------------------- waiting and liveness
