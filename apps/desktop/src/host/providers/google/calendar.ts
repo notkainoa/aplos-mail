@@ -37,6 +37,8 @@ const PRIMARY_SPAN_MS = 3 * 60_000;
 const OTHER_MIN_MS = 15 * 60_000;
 const OTHER_SPAN_MS = 15 * 60_000;
 const PAGE = 250;
+/** Mid-round pages wait a beat so a due mail step interleaves instead of queueing behind a backfill. */
+const RESUME_MS = 1_500;
 
 /** Deterministic jitter in [0,1) from the scope's remote id (keeps calendars off one beat). */
 function jitter(id: string): number {
@@ -365,10 +367,11 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
           lane: 'incremental',
           origin: 'incremental',
           trigger: input.trigger,
-          // A saved pageToken resumes the round at once; a quiet calendar polls on its cadence.
+          // A saved pageToken resumes after a short gap so mail work due now runs first; a quiet
+          // calendar polls on its cadence.
           notBefore:
             state?.pageToken !== undefined
-              ? input.env.now
+              ? input.env.now + RESUME_MS
               : state
                 ? state.updatedAt + wait
                 : input.env.now,
@@ -490,21 +493,29 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
         } catch (error) {
           // A 410 is a resync of this calendar alone, whenever it lands: drop both tokens and the
           // pages fetched so far (stale pages would double rows), and list everything (ports.walk.md).
-          if (
-            !(error instanceof ProviderError && error.error.status === 410) ||
-            reset !== undefined
-          )
-            throw error;
+          // Google also answers a saved-but-dead pageToken with 400, not 410 — same recovery, or the
+          // calendar would stall on the token forever.
+          const dead =
+            error instanceof ProviderError &&
+            (error.error.status === 410 || (error.error.status === 400 && pageToken !== undefined));
+          if (!dead || reset !== undefined) throw error;
           upserts.length = 0;
           pageToken = undefined;
           syncToken = undefined;
           reset = 'syncTokenInvalid';
         }
       }
+      const dropped: string[] = [];
       for (const e of res.items ?? []) {
         const facts = eventFacts(calendarRemoteId, e);
         if (facts) upserts.push(facts);
+        else if (typeof e.id === 'string') dropped.push(e.id);
       }
+      if (dropped.length > 0)
+        ctx.log.event('sync.gcal.items_dropped', {
+          count: dropped.length,
+          ids: dropped.join(' '),
+        });
       const last = res.nextPageToken === undefined;
       if (last) nextSyncToken = res.nextSyncToken;
 
