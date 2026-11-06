@@ -202,6 +202,11 @@ export const logEvents = {
   ...syncEvents('imap'),
   ...syncEvents('jmap'),
   ...syncEvents('caldav'),
+  /** Rows Google sent that made no storable fact (e.g. a malformed override); ids only, never content. */
+  'sync.gcal.items_dropped': event('warn', ['prov-cal'], {
+    count: f.count(),
+    ids: opt(f.text()),
+  }),
   'sync.status_changed': event('info', ['prov-gov'], {
     from: f.oneOf(accountStates),
     to: f.oneOf(accountStates),
