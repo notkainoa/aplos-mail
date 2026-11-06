@@ -456,7 +456,7 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
 
   // covered: model.test.ts: a saved clash shows "Same keys as …" on the row; Reset removes one override, Reset all clears them
 
-  // covered: model.test.ts: reserved chords are refused with a reason: ⌘Q, ⌘W, ⌘H
+  // covered: model.test.ts: reserved chords are refused with a reason that never names a command id
 
   test('keyboard.singleKey.off – with the switch off, E does nothing in Home and ⌘K still runs Done (per UNCLEAR-1)', () => {
     const bindings = createAppRegistry().bindings();

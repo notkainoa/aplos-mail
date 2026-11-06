@@ -14,6 +14,7 @@ import {
   formatChord,
   keyPrefsFromUi,
   parseChord,
+  reservedReason,
   type KeymapIssue,
   type UiKeyFields,
 } from '../../commands';
@@ -187,12 +188,21 @@ export type ChordVerdict =
     }
   | { readonly kind: 'refused'; readonly text: string };
 
-const REFUSED: Partial<Record<KeymapIssue['reason'], (chord: string, detail?: string) => string>> =
-  {
-    reserved: (c, detail) => `${detail ?? `${c} can’t be a shortcut`}. Press other keys.`,
-    invalidChord: c => `${c} can’t be a shortcut. Press other keys.`,
-    invalidEntry: c => `${c} can’t be a shortcut. Press other keys.`,
-  };
+/**
+ * Why a reserved chord is refused, in the owner's words. The sentence is built here, from the
+ * chord alone: the registry's `KeymapIssue.detail` names a command id, which must never reach
+ * the owner.
+ */
+const RESERVED_WHY = {
+  text: 'edits text',
+  system: 'belongs to macOS',
+  navigation: 'moves focus between regions',
+} as const;
+
+const REFUSED: Partial<Record<KeymapIssue['reason'], (chord: string) => string>> = {
+  invalidChord: c => `${c} can’t be a shortcut. Press other keys.`,
+  invalidEntry: c => `${c} can’t be a shortcut. Press other keys.`,
+};
 
 /** The command's keys after remapping its first key to `chord` (the rest stay). */
 export function remapChords(current: readonly string[], chord: string): string[] {
@@ -209,15 +219,25 @@ export function judgeChord(commandId: string, chord: string, ui: KeyFields): Cho
   };
   const issues = conflicts(candidate, prefsOf(ui)).filter(i => i.commandId === commandId);
   if (issues.length === 0) return { kind: 'ok' };
-  const shown = (() => {
+  const parsed = (() => {
     try {
-      return formatChord(parseChord(chord));
+      return parseChord(chord);
     } catch {
-      return chord;
+      return null;
     }
   })();
-  const refused = issues.find(i => REFUSED[i.reason]);
-  if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown, refused.detail) };
+  const shown = parsed ? formatChord(parsed) : chord;
+  const refused = issues.find(i => i.reason === 'reserved' || REFUSED[i.reason]);
+  if (refused?.reason === 'reserved') {
+    const why = parsed ? reservedReason(parsed) : null;
+    return {
+      kind: 'refused',
+      text: why
+        ? `${shown} ${RESERVED_WHY[why]}, so it can’t be a shortcut. Press other keys.`
+        : 'That shortcut holds a key that can’t be used. Reset it and try again.',
+    };
+  }
+  if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown) };
   const clash = issues.find(
     i => (i.reason === 'conflict' || i.reason === 'shadowed') && i.with?.length,
   );
