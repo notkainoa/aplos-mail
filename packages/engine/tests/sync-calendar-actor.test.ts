@@ -187,7 +187,7 @@ test('a permission refusal on a calendar step marks missingPermissions and leave
             provider: 'google',
             method: 'gcal.events.list',
             reason: 'insufficientPermissions',
-            missingScopes: ['https://www.googleapis.com/auth/calendar.events'],
+            missingScopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
           }),
         ),
       put: () => Promise.reject(new Error('unused')),
@@ -204,7 +204,7 @@ test('a permission refusal on a calendar step marks missingPermissions and leave
     assert.notEqual(runtime.status.state, 'needsPermission', 'a calendar refusal never halts mail');
     assert.equal(runtime.missingPermissions?.[0]?.reasonCode, 'permission.calendar');
     assert.deepEqual(runtime.missingPermissions?.[0]?.missingScopes, [
-      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/calendar.events.readonly',
     ]);
   } finally {
     await d.cleanup();

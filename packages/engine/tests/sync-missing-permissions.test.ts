@@ -221,10 +221,20 @@ test('a permission refusal on a calendar step names the gap and never halts mail
         'window:inbox': () => Promise.resolve({ nextStates: [], done: true, costUnits: 1 }),
       },
     );
-    (adapter as { calendar?: CalendarAdapter }).calendar = calendarStub();
+    // On this branch `cal:` scopes dispatch to the calendar half, so the refusal lives in its syncStep
+    // (tracked on its own calls — adapter.calls only sees mail steps).
+    const calendarCalls: string[] = [];
+    const refusing: CalendarAdapter = {
+      ...calendarStub(),
+      syncStep: (id: string) => {
+        calendarCalls.push(id);
+        return refused();
+      },
+    };
+    (adapter as { calendar?: CalendarAdapter }).calendar = refusing;
     const w = world(d, () => adapter);
     await w.host.start(ACCOUNT);
-    await until(() => adapter.calls.some(c => c.startsWith('cal:primary')), 'the calendar step');
+    await until(() => calendarCalls.length > 0, 'the calendar step');
     await until(() => adapter.calls.some(c => c.startsWith('window:inbox')), 'the mail step');
     await settle();
 

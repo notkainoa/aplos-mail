@@ -15,7 +15,7 @@ import { RigStore } from './store-rig';
 // The Google Calendar read-sync (prov-cal): listCalendars + events.list singleEvents=false with sync tokens on the
 // gcal budget, committing the calendars/events tables the views read. Driven on the emulator like the mail rig.
 
-const CAL_SCOPES = [SCOPE.calendarList, SCOPE.calendarEvents];
+const CAL_SCOPES = [SCOPE.calendarList, SCOPE.calendarEventsReadonly];
 
 async function calRig(options: { scopes?: string[]; fetch?: typeof fetch } = {}) {
   const clock = new FakeClock();
@@ -46,7 +46,7 @@ async function calRig(options: { scopes?: string[]; fetch?: typeof fetch } = {})
       folders: false,
       drafts: true,
       serverSearch: true,
-      calendar: scopes.includes(SCOPE.calendarEvents),
+      calendar: scopes.includes(SCOPE.calendarEventsReadonly),
       filters: false,
       push: false,
       sendAs: true,
