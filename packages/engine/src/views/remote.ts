@@ -25,7 +25,16 @@ const memos = new WeakMap<object, Map<string, Result>>();
  * running run instead of asking the provider again — several Enters (or a re-mounted screen) must never fan out
  * to several Gmail calls, which is what tripped the user-rate limit (Platform 3's finding).
  */
-const inflight = new WeakMap<object, Map<string, Promise<ErrorBody | undefined>>>();
+const inflight = new WeakMap<object, Map<string, Promise<Outcome>>>();
+
+/**
+ * How a provider round ended: `body` is an error that ends the run; `partialUntil` says some accounts were SKIPPED for a
+ * cool-down while the rest answered (the earliest time one of them is asked again), which is not the same as no results.
+ */
+interface Outcome {
+  body?: ErrorBody;
+  partialUntil?: number;
+}
 
 /**
  * Per-account cool-down after a throttle/quota answer: its `resumeAt`/`retryAfterMs` is honoured before the
@@ -37,6 +46,8 @@ const inflight = new WeakMap<object, Map<string, Promise<ErrorBody | undefined>>
 const pauses = new WeakMap<object, Map<string, number>>();
 const COALESCE_LIMIT = 50;
 const DEFAULT_PAUSE_MS = 10_000;
+/** The longest a stored pause counts for: a huge or garbage hint, or a clock set back, never pauses an account for good. */
+const MAX_PAUSE_MS = 24 * 60 * 60 * 1000;
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 
@@ -103,7 +114,8 @@ function resumeHint(
     if (typeof e.resumeAt === 'number') return { until: e.resumeAt, synthetic: false };
     if (typeof e.retryAfterMs === 'number')
       return { until: now + e.retryAfterMs, synthetic: false };
-    return ['throttle', 'quota', 'daily', 'concurrency'].includes(e.class ?? '') || e.concurrency
+    // The governor's classes that pause a budget (ports/governor.ts GOVERNOR_CLASS_POLICY), or a concurrency refusal.
+    return ['throttle', 'daily', 'anti_abuse'].includes(e.class ?? '') || e.concurrency
       ? { until: now + DEFAULT_PAUSE_MS, synthetic: true }
       : undefined;
   }
@@ -128,16 +140,16 @@ async function runSearch(
   progress('step', {
     step: { id: 'search', text: 'Searching your mail provider', state: 'running' },
   });
-  let body: ErrorBody | undefined;
+  let outcome: Outcome;
   try {
-    body = await shareSearch(services, args);
+    outcome = await shareSearch(services, args);
   } catch {
-    // A shared run that rejects rather than resolves a body still answers each joiner.
+    // A shared run that rejects rather than resolves an outcome still answers each joiner.
     services.log.event('rpc.failed', { method: 'Search/remote', reason: 'shared-run rejected' });
-    body = { type: 'internal', message: 'Something went wrong. Try again.' };
+    outcome = { body: { type: 'internal', message: 'Something went wrong. Try again.' } };
   }
-  if (body === undefined) progress('done');
-  else {
+  const { body, partialUntil } = outcome;
+  if (body !== undefined) {
     progress('error', { problem: problemOf(body) });
     services.views.stopWindows(
       connectionId,
@@ -145,16 +157,27 @@ async function runSearch(
       body,
       spec => spec.kind === 'search' && sameSearch(spec, args),
     );
-  }
+  } else if (partialUntil !== undefined) {
+    // Some accounts were not asked (cooling down) while the rest answered: say so, with when they are asked again. The
+    // windows keep what the healthy accounts found; only the run's last frame carries the gap, so an empty list is never
+    // read as "nothing matched anywhere".
+    progress('error', {
+      problem: {
+        reasonCode: 'paused',
+        message: 'Some accounts are waiting before they are searched again.',
+        resumeAt: partialUntil,
+      },
+    });
+  } else progress('done');
 }
 
 /**
  * The coalesced call: the first run for a scope+query holds the key and does the asking; joiners await its
- * outcome (undefined for done, else the error body) and report it to their own connection — the provider sees
+ * outcome and report it to their own connection (each gets its own done or error frame) — the provider sees
  * one search no matter how many callers asked. The key clears when the run settles.
  */
-function shareSearch(services: EngineServices, args: Args): Promise<ErrorBody | undefined> {
-  const map = inflight.get(services.views) ?? new Map<string, Promise<ErrorBody | undefined>>();
+function shareSearch(services: EngineServices, args: Args): Promise<Outcome> {
+  const map = inflight.get(services.views) ?? new Map<string, Promise<Outcome>>();
   inflight.set(services.views, map);
   const key = scopeKey(args);
   const running = map.get(key);
@@ -168,9 +191,35 @@ function shareSearch(services: EngineServices, args: Args): Promise<ErrorBody | 
   return run;
 }
 
-/** The actual provider round: one serial pass over the accounts, skipping any in cool-down — one paused
- * account never starves the rest; a FAILING account still ends the run (first-error-wins, as before). */
-async function askProvider(services: EngineServices, args: Args): Promise<ErrorBody | undefined> {
+/** The accounts on the same provider as `account` (a project-wide refusal does not reach another provider's accounts). */
+function sameProvider(services: EngineServices, account: string): string[] {
+  const ids = services.store.read(q =>
+    q.all<{ id: string }>(
+      'SELECT id FROM accounts WHERE provider = (SELECT provider FROM accounts WHERE id = ?)',
+      account,
+    ),
+  );
+  return ids.length ? ids.map(row => row.id) : [account];
+}
+
+/** A stored pause that is still in force: ahead of now, and not further ahead than the clamp (a clock set back). */
+const inForce = (until: number | undefined, now: number): until is number =>
+  until !== undefined && until > now && until - now <= MAX_PAUSE_MS;
+
+/**
+ * The actual provider round: one serial pass over the accounts, skipping any in cool-down — one paused account never
+ * starves the rest; a FAILING account still ends the run (first-error-wins, as before). Total: a store failure is an
+ * error body, never a rejection nobody handles.
+ */
+async function askProvider(services: EngineServices, args: Args): Promise<Outcome> {
+  try {
+    return await askAccounts(services, args);
+  } catch (error) {
+    return { body: toContractError(error, 'Search/remote', services.log).body };
+  }
+}
+
+async function askAccounts(services: EngineServices, args: Args): Promise<Outcome> {
   const accounts = args.accountId ? [args.accountId] : services.store.read(q => accountIds(q));
   const pauseMap = pauses.get(services.views) ?? new Map<string, number>();
   pauses.set(services.views, pauseMap);
@@ -179,38 +228,44 @@ async function askProvider(services: EngineServices, args: Args): Promise<ErrorB
   let asked = 0;
   for (const account of accounts) {
     const until = pauseMap.get(account);
-    if (until !== undefined && until > now()) {
+    if (inForce(until, now())) {
       pausedUntil = Math.min(pausedUntil ?? until, until);
       continue;
     }
+    // An entry that is over, or too far ahead to be believed, is gone.
+    if (until !== undefined) pauseMap.delete(account);
     try {
       asked += 1;
       await services.accounts.search(account, { text: args.query.text, limit: REMOTE_LIMIT });
       pauseMap.delete(account);
     } catch (error) {
       const resume = resumeHint(error, now());
-      if (resume !== undefined) {
-        // A project-scoped refusal (Gmail's daily limit) cools every account on the project — the
-        // engine can't see project membership, so non-Google accounts get the same pause too.
+      // Stored at most MAX_PAUSE_MS ahead; the same number goes on the wire.
+      const until = resume && Math.min(resume.until, now() + MAX_PAUSE_MS);
+      if (until !== undefined) {
+        // A project-scoped refusal (Gmail's daily limit) cools every account of that provider; another provider's are
+        // not its business.
         const project = error instanceof ProviderError && error.scope === 'project';
-        for (const a of project ? accounts : [account]) pauseMap.set(a, resume.until);
+        for (const a of project ? sameProvider(services, account) : [account])
+          pauseMap.set(a, until);
       }
       const body = searchErrorBody(error, services);
       // A synthesized breath (hint-less PausedError) is not put on the wire — the client would trust it.
-      return resume === undefined || resume.synthetic || body.resumeAt !== undefined
-        ? body
-        : { ...body, resumeAt: resume.until };
+      if (until === undefined || resume!.synthetic) return { body };
+      return { body: { ...body, resumeAt: until } };
     }
   }
-  // `paused` only when no account was asked at all: a skipped account's absence is honest while
-  // the healthy ones' results still join the window (stopping it would hide them).
+  // Nothing was asked: every account is cooling down, the run is `paused`. Some were skipped and others answered: the
+  // caller says so, partially.
   if (asked === 0 && pausedUntil !== undefined)
     return {
-      type: 'paused',
-      message: 'Aplos is waiting before it tries this again.',
-      resumeAt: pausedUntil,
+      body: {
+        type: 'paused',
+        message: 'Aplos is waiting before it tries this again.',
+        resumeAt: pausedUntil,
+      },
     };
-  return undefined;
+  return pausedUntil === undefined ? {} : { partialUntil: pausedUntil };
 }
 
 /** A search window shows what this run looks for: the same query over the same account scope. */
@@ -220,4 +275,5 @@ const sameSearch = (spec: Extract<ViewSpec, { kind: 'search' }>, args: Args) =>
 const problemOf = (body: ErrorBody) => ({
   reasonCode: body.reasonCode ?? body.type,
   message: body.message,
+  ...(body.resumeAt !== undefined ? { resumeAt: body.resumeAt } : {}),
 });
