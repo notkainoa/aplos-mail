@@ -716,3 +716,35 @@ test('every account cooled down: the whole run fails fast as paused, nothing ask
     world.cleanup();
   }
 });
+
+test('a Reconnect-state account is needsReauth, never the throttle copy', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const { PausedError, ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string) => {
+      if (account === 'acct-1')
+        throw new PausedError(account as never, 'interactive' as never, 'auth', 'reconnect');
+      if (account === 'imap:2')
+        throw new ProviderError({ class: 'auth', reason: 'authError' } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    const win = await t.call('View/watch', {
+      spec: { kind: 'search', query: { text: 'receipt' } },
+    });
+    await t.call('Search/remote', { opId: 'a1', query: { text: 'receipt' } });
+    await t.advance(10);
+    const last = frameOf(t, win.windowId)!;
+    assert.equal(last.error?.type, 'needsReauth', 'an auth refusal is not a rate limit');
+    const progress = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(
+      (progress as { problem?: { reasonCode?: string } })?.problem?.reasonCode,
+      'auth.reconnect',
+    );
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
