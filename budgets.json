@@ -512,11 +512,11 @@
       "calibration": "calibrate",
       "value": null,
       "unit": null,
-      "notes": "scripts/audit/ci-minutes.mjs warns at 70% of the allowance; the allowance itself is not stated in the plans. The limit only tightens.",
+      "notes": "scripts/audit/ci-minutes.mjs warns at 70% of the allowance; the allowance itself is not stated in the plans. The limit only tightens. 2026-11-06: hosted CI was blocked by a billing hold from 2026-11-04 to 2026-11-05 and the 30-day window is not a calendar month, so this is first measured on the first full calendar month, November 2026, on 2026-12-01.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-07"
+      "dueBy": "2026-12-01"
     },
     {
       "id": "sync.first-sync-first50",
