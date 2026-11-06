@@ -28,6 +28,7 @@ import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { createTimerLoop, type TimerLoop } from '@aplos/engine/clock/loop';
 import { accountIds } from '@aplos/engine/sync/account-read';
 import { disposeConnectSessions } from '@aplos/engine/sync/connect-sessions';
+import * as engineConnectSessions from '@aplos/engine/sync/connect-sessions';
 import { Governor } from '@aplos/engine/sync/governor';
 import { ActorHost, type ActorHostOptions } from '@aplos/engine/sync/host';
 import { storeLookup } from '@aplos/engine/sync/lookup';
@@ -40,6 +41,7 @@ import { googleWorkflowChannel, googleWorkflowMerged } from './providers/google/
 import { resolveGoogleClient, type GoogleClientInputs } from './providers/oauth/client';
 import { createGoogleHostConnect } from './providers/oauth/host-connect';
 import { boundedKnownSubject } from './providers/oauth/known-subject';
+import { createOauthReturns } from './providers/oauth/returns';
 import {
   GoogleTokenSource,
   type CredentialVault,
@@ -194,6 +196,18 @@ function googleFactory(
     clientInputs: options.googleClient,
     governor,
     accountIsCommitted: id => holdsAccount(store, id),
+    // The `aplos://oauth-return` nonce registry: written here in the utility, consumed by main.
+    returns: createOauthReturns({ dir: join(options.dataDir, 'oauth-returns') }),
+    // Which window a live sign-in returns to (`sync/connect-sessions`'s binding). Presence-checked:
+    // an engine build without the helpers resolves 'mail', which can never surface the setup window.
+    returnToFor: (req, accountId) => {
+      const helpers = engineConnectSessions as {
+        oauthReturnFor?(key: string): 'onboarding' | 'mail' | undefined;
+        oauthReturnKey?(req: { mode: string; address?: string }, accountId: string): string;
+      };
+      const key = helpers.oauthReturnKey?.(req, accountId);
+      return (key && helpers.oauthReturnFor?.(key)) || undefined;
+    },
     knownSubject: boundedKnownSubject(subject => holdsSubject(store, subject), {
       clock: options.clock,
     }),

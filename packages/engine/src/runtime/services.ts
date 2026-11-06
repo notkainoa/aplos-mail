@@ -36,6 +36,11 @@ export interface HostFacts {
   resident: boolean;
   /** Capability keys the host adds (`desktop`, `notifications`, `loginItem`, `menuBar`, `microphone`); the engine adds its own. */
   capabilities: Readonly<Record<string, boolean>>;
+  /**
+   * The names of provider environment variables that are set (never their values): `Ai/providers` reports
+   * `keySource: 'env'` from this list without the neutral engine ever reading process.env.
+   */
+  envKeys?: readonly string[];
 }
 
 export interface EngineServices {
