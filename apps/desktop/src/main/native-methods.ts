@@ -20,6 +20,7 @@ import {
   focusMain,
   popout,
   onboarding,
+  sendWhenReady,
 } from './windows';
 import { updates, restartToUpdate, cancelInstall } from './updater';
 import { latestState } from './engine-host';
@@ -48,9 +49,11 @@ function notify(title: string, body: string, threadId?: string) {
     throw new Error('Desktop notifications are unavailable on this system.');
   const notification = new Notification({ title, body, silent: !latestState?.settings.sendSound });
   notification.on('click', () => {
-    focusMain();
-    if (threadId)
-      main?.webContents.send('aplos:event', { type: 'command', payload: `thread:${threadId}` });
+    // The thread command goes to the window the activation answers with, once its page can take it;
+    // an onboarding answer (first run) makes no mail window, and the command is dropped with it.
+    void focusMain().then(win => {
+      if (threadId && win) sendWhenReady(win, { type: 'command', payload: `thread:${threadId}` });
+    });
   });
   notification.show();
 }

@@ -14,7 +14,7 @@ import {
 import os from 'node:os';
 import { join } from 'node:path';
 import { HostEvent, NotificationItem, parseArgs, type MethodName } from '@aplos/contract';
-import type { PendingWork } from '../host/lifecycle';
+import type { PendingWork, SessionFacts } from '../host/lifecycle';
 import {
   createEngineLink,
   createEngineSupervisor,
@@ -326,6 +326,13 @@ async function bootRealEngine(options: {
 /** What lifecycle.ts needs from the real engine: power wakes, the quit warning's facts, and the quit itself. */
 const realEngine = {
   wake: () => link()?.power('resume'),
+  /** `Session/get` on main's control connection: the first-run facts the window choice needs. */
+  session: async (): Promise<SessionFacts> => {
+    const current = link();
+    if (!current) throw new Error('The mailbox is restarting.');
+    const session = (await current.call('Session/get', {}, 3000)) as SessionFacts;
+    return { hasAccounts: session.hasAccounts === true, setup: session.setup ?? {} };
+  },
   /** Rejects when the engine is down or slow; the quit gate then quits without a warning (host/lifecycle.ts). */
   pending: async () => {
     const current = link();

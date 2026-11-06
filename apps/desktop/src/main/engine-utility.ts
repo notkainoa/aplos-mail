@@ -88,8 +88,23 @@ export function hostFacts(init: UtilityInit, deviceId: string): HostFacts {
       menuBar: true,
       microphone: true,
     },
+    // Names only: `Ai/providers` learns which provider keys the environment already holds (never a value).
+    envKeys: AI_ENV_VARS.filter(name => process.env[name] !== undefined),
   };
 }
+
+/** The provider environment variables Settings → AI can read a key from. */
+const AI_ENV_VARS = [
+  'GROQ_API_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'GEMINI_API_KEY',
+  'OPENROUTER_API_KEY',
+  'OPENCODE_API_KEY',
+  'OLLAMA_API_KEY',
+  'LM_STUDIO_API_KEY',
+  'CUSTOM_AI_API_KEY',
+] as const;
 
 /**
  * The production host ports. Real: the SQLite file, the network, the system clock, the rotating log, the Google
