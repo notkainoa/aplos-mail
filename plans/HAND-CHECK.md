@@ -74,7 +74,10 @@ doesn't and where it stopped.
 - [ ] Search (⌘K or the Search screen) for a word in a real subject.
   Expected: the right letters come back; no spinner that never ends.
 - [ ] Open the Ask dock and ask something trivial (or just look at the consent gate).
-- [ ] Today shows the day's agenda; Calendar shows day/week/month and lets you RSVP to an event.
+- [ ] Today shows the day's agenda; Calendar shows day/week/month.
+  Expected (2026-11-05, eng-views NOTICE): the grid opens and is EMPTY — Google Calendar sync is not wired yet
+  (no adapter syncer; the OAuth connect flow keeps calendar scopes off until it lands, so the account's grant has
+  none). An empty grid is correct; an error banner is not. RSVP needs a synced event, so it is out of this check.
 - [ ] Settings opens; the AI section lets you pick providers/models; the account switcher works.
 
 ## 7. Compose and send to yourself (2 min)
