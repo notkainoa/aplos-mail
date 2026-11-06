@@ -9,6 +9,7 @@ import type {
   ViewRow,
 } from '../views/specs';
 import { expand } from './recurrence/expand';
+import { isKnownZone } from './recurrence/zone';
 import type { Override } from './recurrence/types';
 import { registerViewKind } from '../views/registry';
 import {
@@ -36,7 +37,8 @@ const SELECT = `
          e.remote_id, e.recurrence_id, e.master_remote_id, e.status, e.recurrence,
          e.start_utc, e.end_utc, e.all_day, e.data
   FROM events e JOIN calendars c ON c.id = e.calendar_id
-  WHERE c.hidden = 0`;
+  WHERE c.hidden = 0
+    AND (e.recurrence_id != '' OR e.recurrence IS NOT NULL OR (e.start_utc < ? AND e.end_utc > ?))`;
 
 interface Joined {
   [k: string]: string | number | null;
@@ -124,7 +126,7 @@ function rangeCheck(from: number, to: number) {
 }
 
 function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materialized[] {
-  const rows = q.all<Joined>(SELECT);
+  const rows = q.all<Joined>(SELECT, spec.to, spec.from);
   const hidden = hiddenSet(q);
   // The pair, not just remote_id: `primary` (and the owner's email) repeat across accounts.
   const wanted = spec.calendarIds ? new Set(spec.calendarIds) : undefined;
@@ -172,7 +174,7 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
       start: fromWire(base.start),
       end: fromWire(base.end),
       allDay: base.allDay,
-      ...(base.timeZone ? { tzid: base.timeZone } : {}),
+      ...(base.timeZone && isKnownZone(base.timeZone) ? { tzid: base.timeZone } : {}),
       rrule: rec.rrule as string[] | undefined,
       rdate: rec.rdate as string[] | undefined,
       exdate: rec.exdate as string[] | undefined,
@@ -210,7 +212,15 @@ function materialize(q: StoreReader, spec: EventsSpec, env: ViewEnv): Materializ
 export const eventsPlan: ViewCompiler = (spec, env): ViewPlan => {
   const s = spec as EventsSpec;
   rangeCheck(s.from, s.to);
-  const load = (q: StoreReader) => materialize(q, s, env);
+  const memo = new WeakMap<StoreReader, Materialized[]>();
+  const load = (q: StoreReader) => {
+    let m = memo.get(q);
+    if (!m) {
+      m = materialize(q, s, env);
+      memo.set(q, m);
+    }
+    return m;
+  };
   return {
     kind: 'events',
     rowType: 'Event',
@@ -238,7 +248,7 @@ export const eventsPlan: ViewCompiler = (spec, env): ViewPlan => {
       return { index, at: { part: 0, key: [r.at, r.id] } };
     },
     statements: (_q): Statement[] => [
-      { sql: SELECT, params: [] },
+      { sql: SELECT, params: [s.to, s.from] },
       { sql: 'SELECT calendar_id, remote_id, recurrence_id FROM event_hidden', params: [] },
     ],
   };

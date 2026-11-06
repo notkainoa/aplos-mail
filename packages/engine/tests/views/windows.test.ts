@@ -761,3 +761,64 @@ test('a Reconnect-state account is needsReauth, never the throttle copy', async 
     world.cleanup();
   }
 });
+
+test('concurrent watchers of a lazy kind share the one load', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  let loads = 0;
+  // `events` is unloaded in this process: a slow gated loader proves the second watcher joins the first.
+  // The loader registers a stub plan itself — importing the real module would register every kind in it.
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => (release = resolve));
+  lazyViewLoaderForTest('events', async () => {
+    loads += 1;
+    await gate;
+    const { registerViewKind } = await import('../../src/views/registry');
+    registerViewKind('events', () => ({
+      kind: 'events',
+      rowType: 'Event',
+      layout: () => ({ total: 0, sections: [] }),
+      rows: () => [],
+      locate: () => undefined,
+      statements: () => [],
+    }));
+  });
+  await withWorld(async t => {
+    const spec = { kind: 'events', from: 0, to: 86_400_000 };
+    const a = t.call('View/watch', { spec });
+    const b = t.call('View/watch', { spec });
+    await t.advance(10);
+    release();
+    await Promise.all([a, b]);
+    assert.equal(loads, 1, 'two watchers, one chunk load');
+  });
+});
+
+test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
+  lazyViewLoaderForTest('plans', () => Promise.reject(new Error('chunk missing')));
+  await withWorld(async t => {
+    const body = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => undefined)
+      .catch(e => e as { type?: string });
+    assert.equal((body as { type?: string })?.type, 'unavailable');
+    // The rejection is not cached: a loader that later resolves serves the next watcher.
+    lazyViewLoaderForTest('plans', async () => {
+      const { registerViewKind } = await import('../../src/views/registry');
+      registerViewKind('plans', () => ({
+        kind: 'plans',
+        rowType: 'Event',
+        layout: () => ({ total: 0, sections: [] }),
+        rows: () => [],
+        locate: () => undefined,
+        statements: () => [],
+      }));
+    });
+    const ok = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => 'ok')
+      .catch(() => 'fail');
+    assert.equal(ok, 'ok', 'a call after the rejection retries the load');
+  });
+});
