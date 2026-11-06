@@ -10912,6 +10912,9 @@
           },
           "at": {
             "$ref": "#/components/schemas/EpochMs"
+          },
+          "resumeAt": {
+            "$ref": "#/components/schemas/EpochMs"
           }
         },
         "required": ["reasonCode"]
@@ -12977,6 +12980,9 @@
                 "maxLength": 1000
               },
               "at": {
+                "$ref": "#/components/schemas/EpochMs"
+              },
+              "resumeAt": {
                 "$ref": "#/components/schemas/EpochMs"
               },
               "until": {
