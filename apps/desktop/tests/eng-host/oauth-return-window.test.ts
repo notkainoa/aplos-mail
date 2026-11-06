@@ -93,13 +93,13 @@ test('focusOpen raises the open welcome window and never creates one', () => {
 });
 
 test('focusOauthReturnWindow raises the app only after a live window took the focus', () => {
-  // The recorded welcome window died between the open check and the focus: resolving 'none' must
-  // not pull the app forward over nothing.
+  // The recorded welcome window died between the open check and the focus and there is no mail
+  // window to fall back to: resolving 'none' must not pull the app forward over nothing.
   let raised = 0;
   const dead = focusOauthReturnWindow('onboarding', {
     onboardingOpen: () => true,
     focusOnboarding: () => false,
-    mail: () => new FakeWindow(),
+    mail: () => undefined,
     raiseApp: () => raised++,
     testMode: false,
   });
@@ -147,6 +147,43 @@ test('focusOauthReturnWindow raises the app only after a live window took the fo
   });
   assert.equal(none, 'none');
   assert.equal(raised2, 0);
+});
+
+test('an unfocusable welcome window falls through to the live mail window, or to none', () => {
+  // The welcome window is open but unpainted, so focusOpen declines it: the deep link falls back
+  // to the mail window, exactly where oauthReturnTarget sends a closed welcome.
+  const mail = new FakeWindow();
+  let raised = 0;
+  const focused = focusOauthReturnWindow('onboarding', {
+    onboardingOpen: () => true,
+    focusOnboarding: () => false,
+    mail: () => mail,
+    raiseApp: () => raised++,
+    testMode: false,
+  });
+  assert.equal(focused, 'mail');
+  assert.equal(raised, 1);
+  assert.deepEqual([mail.shown, mail.focused], [1, true]);
+  // No mail window either: nothing is focused and the app is never raised.
+  let raised2 = 0;
+  const none = focusOauthReturnWindow('onboarding', {
+    onboardingOpen: () => true,
+    focusOnboarding: () => false,
+    mail: () => undefined,
+    raiseApp: () => raised2++,
+    testMode: false,
+  });
+  assert.equal(none, 'none');
+  assert.equal(raised2, 0);
+  // A welcome window that takes the focus still wins over the mail fallback.
+  const painted = focusOauthReturnWindow('onboarding', {
+    onboardingOpen: () => true,
+    focusOnboarding: () => true,
+    mail: () => mail,
+    raiseApp: () => {},
+    testMode: false,
+  });
+  assert.equal(painted, 'onboarding');
 });
 
 test('a link gate holds oauth-return links until the first window choice is applied', () => {

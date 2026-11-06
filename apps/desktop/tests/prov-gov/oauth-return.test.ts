@@ -25,7 +25,19 @@ import {
 } from '../../src/host/providers/oauth/returns';
 import { openLoopback } from '../../src/host/providers/oauth/loopback';
 import { runAuthorization } from '../../src/host/providers/oauth/flow';
-import { countingRandom, recordingGovernor } from './flow-rig';
+import { createHttpClient } from '../../src/host/providers/shared/http';
+import {
+  clientId,
+  countingRandom,
+  fakeBrowser,
+  json,
+  mailScope,
+  manualClock,
+  portClock,
+  recordingGovernor,
+  tokenEndpoint,
+  withCode,
+} from './flow-rig';
 import type { Clock } from '@aplos/engine/ports';
 
 const nonce = 'a'.repeat(32);
@@ -254,6 +266,25 @@ test('a symlinked entry file is never followed', () => {
   }
 });
 
+test('an oversized entry file is never read: consume treats it as absent', () => {
+  const dir = tmp();
+  try {
+    // A megabyte of valid-looking JSON: an entry that would read live must still be ignored
+    // unread — the registry caps what it reads, so a planted blob cannot be parsed or held.
+    const padded =
+      JSON.stringify({ purpose: 'mail', exp: Date.now() + 1e5, pad: 'x'.repeat(1024 * 1024) }) +
+      '\n';
+    writeFileSync(join(dir, `${nonce}.json`), padded, { mode: 0o600 });
+    assert.equal(consumeOauthReturn({ dir }, nonce), undefined);
+    // The oversized file also stays out of the sweep's count for live entries.
+    const returns = createOauthReturns({ dir });
+    assert.equal(returns.register({ nonce: nonce2, purpose: 'mail', ttlMs: 60_000 }), true);
+    assert.equal(consumeOauthReturn({ dir }, nonce2), 'mail', 'a legitimate entry still works');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------- the page ----------
 
 async function get(
@@ -265,10 +296,10 @@ async function get(
   return { status: res.status, headers, body: await res.text() };
 }
 
-async function openTestLoopback(returnLink?: string) {
+async function openTestLoopback(returnLink?: string, state = 'state-1') {
   const controller = new AbortController();
   const loopback = await openLoopback({
-    state: 'state-1',
+    state,
     clock,
     signal: controller.signal,
     ...(returnLink ? { returnLink } : {}),
@@ -366,4 +397,78 @@ test('without a return link the pages stay the plain text they were', async () =
     controller.abort();
     loopback.close();
   }
+});
+
+test('the ok and failed pages reflect none of the OAuth error, state or code values', async () => {
+  const link = oauthReturnLink(nonce);
+  const state = 'oauth-state-sentinel-7f3b';
+  const code = 'oauth-code-sentinel-9c1d';
+  const error = 'access_denied';
+  const sentinels = [error, state, code];
+  const okRun = await openTestLoopback(link, state);
+  try {
+    // The code callback answers the ok page; the state and code must not come back in it.
+    const ok = await get(`${okRun.loopback.redirectUri}?state=${state}&code=${code}`);
+    assert.equal(ok.status, 200);
+    for (const sentinel of sentinels)
+      assert.ok(!ok.body.includes(sentinel), `the ok page contains ${sentinel}`);
+  } finally {
+    okRun.controller.abort();
+    okRun.loopback.close();
+  }
+  const failedRun = await openTestLoopback(link, state);
+  try {
+    // An error callback answers the failed page; the error value (and a stray code) stay out of it.
+    const failed = await get(
+      `${failedRun.loopback.redirectUri}?state=${state}&error=${error}&code=${code}`,
+    );
+    assert.equal(failed.status, 200);
+    for (const sentinel of sentinels)
+      assert.ok(!failed.body.includes(sentinel), `the failed page contains ${sentinel}`);
+  } finally {
+    failedRun.controller.abort();
+    failedRun.loopback.close();
+  }
+});
+
+test('the return nonce is fresh entropy: not in the consent URL and never the OAuth state', async () => {
+  const clock = manualClock();
+  const endpoint = tokenEndpoint(() => json({ access_token: 'x' }));
+  const browser = fakeBrowser(withCode);
+  const drawn: number[][] = [];
+  let next = 1;
+  const random = (size: number) => {
+    const bytes = Uint8Array.from({ length: size }, () => next++ % 256);
+    drawn.push([...bytes]);
+    return bytes;
+  };
+  let registered: string | undefined;
+  const returns: OauthReturns = {
+    register: ({ nonce: n }) => {
+      registered = n;
+      return true;
+    },
+    revoke: () => {},
+  };
+  const abort = new AbortController();
+  await runAuthorization(
+    {
+      http: createHttpClient({ fetch: endpoint.fetch, clock, userAgent: 'aplos-test' }),
+      openExternal: browser.openExternal,
+      random,
+      returns,
+    },
+    { client: { clientId }, scopes: [mailScope], params: {}, returnTo: 'mail' },
+    { governor: recordingGovernor().governor, clock: portClock(clock), signal: abort.signal },
+  );
+  assert.ok(registered, 'a returnTo flow registers one nonce');
+  assert.match(registered, /^[0-9a-f]{32}$/);
+  const consent = String(browser.opened[0]);
+  const state = browser.opened[0].searchParams.get('state')!;
+  assert.ok(!consent.includes(registered), 'the nonce must not ride inside the consent URL');
+  assert.notEqual(registered, state, 'the nonce is minted, never the OAuth state');
+  // The nonce is the flow's own fresh 16-byte draw — a value derived from `state` or the
+  // verifier could not equal it.
+  assert.equal(registered, Buffer.from(drawn.at(-1)!).toString('hex'));
+  assert.equal(drawn.at(-1)!.length, 16);
 });

@@ -235,15 +235,16 @@ const up = (win: WindowPort | undefined): win is WindowPort =>
 /**
  * The focus half of `aplos://oauth-return`: resolves the one live window `oauthReturnTarget` picked
  * and raises the app behind it — in that order. `raiseApp` runs only once a window actually took the
- * focus: a welcome window that died between `onboardingOpen` and `focusOnboarding` resolves 'none',
- * and the app stays where it was. Never opens a window.
+ * focus. A welcome window that cannot take it (unpainted, or one that died between `onboardingOpen`
+ * and `focusOnboarding`) falls through to the mail window `oauthReturnTarget` would have picked for
+ * a closed one; with no live window at all the app stays where it was. Never opens a window.
  */
 export function focusOauthReturnWindow(
   purpose: 'onboarding' | 'mail',
   deps: {
     /** `onboarding.isOpen()`, sampled now. */
     onboardingOpen(): boolean;
-    /** Raises the open welcome window; false when it is gone. Never opens one. */
+    /** Raises the open welcome window; false when it is gone or unpainted. Never opens one. */
     focusOnboarding(): boolean;
     /** The live mail window, when one exists. */
     mail(): WindowPort | undefined;
@@ -261,7 +262,7 @@ export function focusOauthReturnWindow(
   let focused: 'onboarding' | 'mail' | 'none' = 'none';
   if (target === 'onboarding' && deps.focusOnboarding()) {
     focused = 'onboarding';
-  } else if (target === 'mail' && alive(mail)) {
+  } else if (target !== 'none' && alive(mail)) {
     if (mail.isMinimized()) mail.restore();
     if (!deps.testMode) {
       mail.show();
