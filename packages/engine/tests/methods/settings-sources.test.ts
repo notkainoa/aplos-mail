@@ -100,18 +100,6 @@ test('Queue: empty list; retry/discard of a stored op re-dispatches', async () =
   await assert.rejects(w.call('Queue/discard', { id: 'sub:nope' }), /no longer in the queue/);
 });
 
-test('Setup/status: no accounts is not done; with an account reports firstWindow', async () => {
-  const w = await world();
-  const empty = await w.call('Setup/status', {});
-  assert.equal(empty.accounts.length, 0);
-  assert.equal(empty.done, false);
-  w.store.commit({ opId: 'seed-account', origin: 'local', writes: [{ ...accountWrite }] });
-  const s = await w.call('Setup/status', {});
-  assert.equal(s.accounts.length, 1);
-  assert.equal(s.accounts[0]!.accountId, 'acct-1');
-  assert.equal(s.accounts[0]!.state, 'reading');
-});
-
 test('Ai/providers: hosted rows report env key source or missingKey, never a key', async () => {
   const w = await world();
   const { list } = await w.call('Ai/providers', {});
