@@ -602,7 +602,7 @@ export class AccountActor {
    * A `permission` refusal on a calendar scope is a feature-level gap (D12), never an account halt: the scope backs
    * off on the usual escalation while `missingPermissions` names the scopes a re-consent must add. Mail is untouched.
    */
-  private calendarScopeRefused(
+  calendarScopeRefused(
     step: PlannedStep,
     classified: ClassifiedError | undefined,
     now: number,

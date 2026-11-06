@@ -26,6 +26,11 @@ export interface CalendarActor {
   holdScope(step: PlannedStep, until: number | undefined): void;
   setTrigger(trigger: PlanTrigger): void;
   refreshMissingPermissions(): void;
+  calendarScopeRefused(
+    step: PlannedStep,
+    classified: ClassifiedError | undefined,
+    now: number,
+  ): void;
   markCalendar(
     remoteId: string,
     entry: {
@@ -130,13 +135,11 @@ function calendarStepFailed(actor: CalendarActor, step: PlannedStep, error: unkn
   const classified = classifiedOf(error);
   const cls = classified?.class;
   if (cls === 'cancelled') return;
-  if (cls === 'permission' && (classified?.missingScopes?.length ?? 0) > 0) {
-    // The grant lacks calendar scopes: record the gap for Settings and stop this scope only (never the
-    // account). A scope-less permission error — say, one shared calendar lost access — is an error on
-    // that calendar below, not an account-level gap.
-    actor.calendarScopeGap = classified?.missingScopes ?? [];
-    actor.refreshMissingPermissions();
-    actor.backoff.set(step.scope, { failures: 0, until: Infinity });
+  if (cls === 'permission') {
+    // One path for every permission refusal (actor.ts): named scopes record the gap for Settings and
+    // the scope backs off — never an account halt. A scope-less error — say, one shared calendar lost
+    // access — records no gap but still marks the calendar below.
+    actor.calendarScopeRefused(step, classified, actor.deps.clock.now());
     if (remoteId)
       actor.markCalendar(remoteId, { state: 'error', reasonCode: 'permission.calendar' });
     return;
