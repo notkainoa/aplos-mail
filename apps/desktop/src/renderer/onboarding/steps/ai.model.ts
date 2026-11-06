@@ -472,7 +472,7 @@ const addressId = (provider: string): string => `onb-ai-address-${provider}`;
 const TEXT: Readonly<Record<AiView, { title: string; lede: string }>> = {
   pick: {
     title: 'Set up AI',
-    lede: 'AI sums up each email in a line, drafts replies and answers questions about your mail. It is optional.',
+    lede: 'AI sums up each email in a line, drafts replies and answers questions about your mail. It is optional. Your accounts allow their mail for AI by default — nothing leaves this Mac until you set up a provider and allow it.',
   },
   hosted: {
     title: 'Use your own key',

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
 import { handlers } from '../src/methods/account';
+import { handlers as consentHandlers } from '../src/methods/consent';
 import type { AccountActorHost, ConnectResult } from '../src/ports';
 import { disposeConnectSessions } from '../src/sync/connect-sessions';
 import { T0 } from './store/helpers';
@@ -610,6 +611,50 @@ test('a host without discardCredential refuses the same way', async () => {
     await tick();
     assert.equal(lastFailure(t), 'permission.mailModify');
     assert.equal(t.discards.length, 1, 'no port to call, and the refusal still landed');
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('a new account permits its mail for AI by default, and consent still gates anything leaving the Mac', async () => {
+  const t = setup();
+  try {
+    await handlers['Account/connect']({ provider: 'google', address: 'n@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-n', 'n@gmail.com'));
+    await tick();
+    const [account] = (await handlers['Account/get']({}, t.ctx)).list;
+    assert.equal(account.aiAllowed, true);
+    // The flag only permits: with no consent row and no provider key, Consent/get is still closed.
+    const consent = await consentHandlers['Consent/get']({}, t.ctx);
+    assert.equal(consent.granted, false);
+  } finally {
+    t.cleanup();
+  }
+});
+
+test('an account the owner turned off stays off through a reconnect', async () => {
+  const t = setup();
+  try {
+    await handlers['Account/connect']({ provider: 'google', address: 'k@gmail.com' }, t.ctx);
+    await tick();
+    t.pending[0].resolve(answer('sub-k', 'k@gmail.com'));
+    await tick();
+    const [account] = (await handlers['Account/get']({}, t.ctx)).list;
+    await handlers['Account/set'](
+      { opId: 'ai-off', accountId: account.id, aiAllowed: false },
+      t.ctx,
+    );
+    assert.equal((await handlers['Account/get']({}, t.ctx)).list[0].aiAllowed, false);
+    await handlers['Account/reconnect']({ accountId: account.id }, t.ctx);
+    await tick();
+    t.pending[1].resolve(answer('sub-k', 'k@gmail.com'));
+    await tick();
+    assert.equal(
+      (await handlers['Account/get']({}, t.ctx)).list[0].aiAllowed,
+      false,
+      'the reconnect write leaves ai_allowed alone',
+    );
   } finally {
     t.cleanup();
   }

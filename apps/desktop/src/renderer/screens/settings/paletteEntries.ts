@@ -80,6 +80,11 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   row('ai', 'server-lmstudio', 'LM Studio address', ['local', 'localhost', 'server']),
   row('ai', 'server-custom', 'Custom server address', ['openai compatible', 'url', 'server']),
   row('ai', 'howMailIsUsed', 'How your mail is used', ['privacy', 'what is sent', 'data']),
+  row('ai', 'accountMail', 'Mail for AI on your accounts', [
+    'account',
+    'allow',
+    'existing accounts',
+  ]),
   row('ai', 'background', 'Summarise in the background', ['consent', 'automatic summaries']),
   row('ai', 'dailyCap', 'Daily limit', ['cap', 'tokens', 'budget', 'pause']),
   // Notifications
@@ -145,6 +150,7 @@ const CONDITIONAL: readonly string[] = [
   'accounts/lease',
   'notifications/perAccount',
   'ai/geminiPaid',
+  'ai/accountMail',
   'help/demoLoad',
 ];
 

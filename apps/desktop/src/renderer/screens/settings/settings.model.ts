@@ -757,7 +757,7 @@ export const HOW_MAIL_IS_USED: readonly { lead: string; body: string }[] = [
   },
   {
     lead: 'Your control.',
-    body: 'Turn off “Use this account’s mail for AI” under Accounts to keep a mailbox out of every feature.',
+    body: 'New accounts allow their mail for AI by default. Turn off “Use this account’s mail for AI” under Accounts to keep a mailbox out of every feature.',
   },
 ];
 
