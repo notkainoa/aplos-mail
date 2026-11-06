@@ -75,7 +75,12 @@ export function setupTick(fx: Fixture, accountId: string, to?: SetupRecord['stat
     if (next.state !== 'paused') delete next.pausedUntil;
     tx.put('Setup', next);
     const now = tx.get('Account', accountId)!;
-    if (next.done && !now.baselineDoneAt) tx.put('Account', { ...now, baselineDoneAt: fx.now });
+    if (next.done && !now.baselineDoneAt)
+      tx.put('Account', {
+        ...now,
+        baselineDoneAt: fx.now,
+        calendarListedAt: now.calendarListedAt ?? fx.now,
+      });
     if (next.state === 'ready')
       tx.put('Account', {
         ...tx.get('Account', accountId)!,

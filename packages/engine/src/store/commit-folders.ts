@@ -103,10 +103,16 @@ export function account(run: CommitRun, w: AccountWrite) {
         `UPDATE accounts SET ${keys.map(k => `${k} = ?`).join(', ')}${keys.length ? ', ' : ''}updated_at = ? WHERE id = ?`,
       )
       .run(...keys.map(k => cols[k]), now, w.id);
+    // First list wins: a later list never moves when the account's calendars were first known.
+    if (w.calendarListedAt !== undefined)
+      run
+        .q('UPDATE accounts SET calendar_listed_at = COALESCE(calendar_listed_at, ?) WHERE id = ?')
+        .run(w.calendarListedAt, w.id);
   } else {
     if (!w.provider || !w.address || !w.capabilities)
       throw new StoreError('invalid', 'A new account needs provider, address and capabilities');
     cols.status ??= 'starting';
+    if (w.calendarListedAt !== undefined) cols.calendar_listed_at = w.calendarListedAt;
     const keys = Object.keys(cols);
     run
       .q(

@@ -47,7 +47,7 @@ test('migration 0005 on a 0004 database with mail: existing rows stay NULL (unkn
     raw.close();
     for (let pass = 0; pass < 2; pass++) {
       const store = openStore(file.open());
-      assert.equal(store.schemaVersion, 5);
+      assert.equal(store.schemaVersion, MIGRATIONS.length);
       assert.equal(listAuth(store, 'm1'), null);
       const headers = headersOf(store, 'm1');
       assert.equal(headers?.listUnsubscribePost, 'List-Unsubscribe=One-Click');

@@ -4,6 +4,7 @@ import { migration0002 } from './0002_drafts_sync';
 import { migration0003 } from './0003_account_settings';
 import { migration0004 } from './0004_reminder_index';
 import { migration0005 } from './0005_list_auth';
+import { migration0006 } from './0006_calendar_listed';
 
 /** Every migration in order. Append only. */
 export const MIGRATIONS: readonly Migration[] = [
@@ -12,4 +13,5 @@ export const MIGRATIONS: readonly Migration[] = [
   migration0003,
   migration0004,
   migration0005,
+  migration0006,
 ];
