@@ -11,7 +11,12 @@ import {
 import { identityFromIdToken } from '../../src/host/providers/oauth/id-token';
 import { decideCallback, openLoopback, sameSecret } from '../../src/host/providers/oauth/loopback';
 import { challengeFor, verifierBytes } from '../../src/host/providers/oauth/pkce';
-import { connectScopes, identityScopes } from '../../src/host/providers/oauth/scopes';
+import {
+  connectScopes,
+  identityScopes,
+  scopesForFeatures,
+} from '../../src/host/providers/oauth/scopes';
+import { googleCapabilities } from '../../src/host/providers/oauth/connect';
 import {
   clientId,
   clientSecret,
@@ -486,6 +491,59 @@ const settingsScope = SCOPE.gmailSettingsBasic;
 const optionalAll = [settingsScope, SCOPE.calendarList, SCOPE.calendarEvents];
 const askedScopes = (r: { browser: FakeBrowser }) =>
   r.browser.opened[0].searchParams.get('scope')!.split(' ');
+
+test('the calendar capability needs BOTH calendar scopes; each alone reads false', () => {
+  assert.equal(googleCapabilities([mailScope]).calendar, false);
+  assert.equal(googleCapabilities([mailScope, SCOPE.calendarList]).calendar, false);
+  assert.equal(googleCapabilities([mailScope, SCOPE.calendarEvents]).calendar, false);
+  assert.equal(
+    googleCapabilities([mailScope, SCOPE.calendarList, SCOPE.calendarEvents]).calendar,
+    true,
+  );
+});
+
+test('scopesForFeatures names the optional scopes of a feature', () => {
+  assert.deepEqual(scopesForFeatures('calendarList', 'calendarEvents'), [
+    SCOPE.calendarList,
+    SCOPE.calendarEvents,
+  ]);
+  assert.deepEqual(scopesForFeatures('filters'), [settingsScope]);
+  assert.deepEqual(scopesForFeatures('mail'), []);
+});
+
+test('an optionalScopes answer of undefined keeps the mode default', async () => {
+  const none = emulatorRig({ deps: { optionalScopes: () => undefined } });
+  const result = await none.connect(newConnect, none.ctx);
+  assert.deepEqual(askedScopes(none), [...identityScopes, mailScope]);
+  assert.equal(result.capabilities.calendar, false);
+
+  // The composition's choice: calendar scopes on a new sign-in (the onboarding copy says so).
+  const cal = emulatorRig({
+    deps: {
+      optionalScopes: req =>
+        req.mode === 'new' ? scopesForFeatures('calendarList', 'calendarEvents') : undefined,
+    },
+  });
+  const granted = await cal.connect(newConnect, cal.ctx);
+  assert.deepEqual(askedScopes(cal), [
+    ...identityScopes,
+    mailScope,
+    SCOPE.calendarList,
+    SCOPE.calendarEvents,
+  ]);
+  assert.equal(granted.capabilities.calendar, true);
+});
+
+test('grantPermissions still asks every optional scope when optionalScopes answers undefined', async () => {
+  const r = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: { grantedScopes: () => [mailScope], optionalScopes: () => undefined },
+  });
+  const result = await r.connect({ mode: 'grantPermissions', expectedSubject: 'sub-1' }, r.ctx);
+  assert.deepEqual(askedScopes(r), [...identityScopes, mailScope, ...optionalAll]);
+  assert.equal(result.capabilities.calendar, true);
+  assert.equal(result.capabilities.filters, true);
+});
 
 test('a reconnect asks again for the optional scopes the stored grant holds', async () => {
   const held = ['openid', SCOPE.email, mailScope, settingsScope, SCOPE.calendarEvents];

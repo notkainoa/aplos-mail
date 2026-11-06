@@ -62,6 +62,14 @@ export function connectScopes(optional: readonly string[] = []): string[] {
   return [...new Set([...identityScopes, ...required, ...optional])];
 }
 
+/** The optional manifest scopes of the named features, in manifest order (e.g. both calendar scopes). */
+export function scopesForFeatures(...features: ScopeFeature[]): string[] {
+  const wanted = new Set<ScopeFeature>(features);
+  return googleScopeManifest
+    .filter(entry => !entry.required && wanted.has(entry.feature))
+    .map(entry => entry.scope);
+}
+
 /** A token response's `scope` string as a list; Google separates scopes with spaces. */
 export function parseGrantedScopes(scope: unknown): string[] {
   if (typeof scope !== 'string') return [];

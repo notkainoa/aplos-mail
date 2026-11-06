@@ -122,6 +122,8 @@ export class AccountActor {
   private readonly backoff = new Map<ScopeId, { failures: number; until: number }>();
   /** A failure the governor does not hold (missing mail permission): no sync until reconnect or a manual request. */
   private halted?: StatusView;
+  /** The missing scopes a `permission` refusal on a calendar call named; unset until one does. */
+  private calendarScopeGap?: string[];
   private failure?: StatusView;
   private view?: StatusView;
   private heartbeat: number;
@@ -147,6 +149,7 @@ export class AccountActor {
       ...(deps.reconnectBy !== undefined ? { reconnectBy: deps.reconnectBy } : {}),
       lease: { role: deps.role },
     };
+    this.refreshMissingPermissions();
   }
 
   get id() {
@@ -219,12 +222,19 @@ export class AccountActor {
   }
 
   /** After `clear(auth)`: resume from the stored cursors with no resync, and flush queued ops first. */
-  reconnected(facts: { grantedScopes?: string[]; reconnectBy?: number }): void {
+  reconnected(facts: {
+    grantedScopes?: string[];
+    capabilities?: AdapterAccount['capabilities'];
+    reconnectBy?: number;
+  }): void {
     this.halted = undefined;
     this.failure = undefined;
     this.backoff.clear();
     this.opsHoldUntil = 0;
     if (facts.grantedScopes) this.runtime.grantedScopes = facts.grantedScopes;
+    if (facts.capabilities) this.runtime.capabilities = facts.capabilities;
+    this.calendarScopeGap = undefined;
+    this.refreshMissingPermissions();
     if (facts.reconnectBy !== undefined) {
       this.runtime.reconnectBy = facts.reconnectBy;
       this.deps.reconnectBy = facts.reconnectBy;
@@ -708,6 +718,36 @@ export class AccountActor {
     } catch {
       // A failing subscriber never stops the actor.
     }
+  }
+
+  /**
+   * `runtime.missingPermissions`: the feature-level gaps that do not halt the account (D12, governor.ts `permission`).
+   * Today the only producer is calendar — a provider that has a calendar half whose grant lacks its scopes gets the
+   * Settings row (`Account.missingPermissions` capability 'calendar'), at start, on reconnect and on a `permission`
+   * refusal that names the scopes. Never `needsPermission`: that is the core mail scope's alone.
+   */
+  private refreshMissingPermissions(): void {
+    const missing: NonNullable<AccountRuntime['missingPermissions']> = [];
+    if (this.deps.adapter.calendar !== undefined && this.runtime.capabilities.calendar !== true) {
+      missing.push({
+        capability: 'calendar',
+        reasonCode: 'permission.calendar',
+        missingScopes: this.calendarScopeGap ?? [],
+      });
+    }
+    const before = this.runtime.missingPermissions ?? [];
+    if (
+      before.length === missing.length &&
+      before.every(
+        (b, i) =>
+          b.capability === missing[i]!.capability &&
+          b.reasonCode === missing[i]!.reasonCode &&
+          b.missingScopes.join(' ') === missing[i]!.missingScopes.join(' '),
+      )
+    )
+      return;
+    this.runtime.missingPermissions = missing.length ? missing : undefined;
+    this.emit();
   }
 
   // ---------------------------------------------------------------- waiting and liveness
