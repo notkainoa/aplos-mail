@@ -14,7 +14,16 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { installPermissionHandlers } from './security';
-import { windows, focusMain, syncTheme, ensureMain, startWindows, onboarding } from './windows';
+import {
+  windows,
+  focusMain,
+  syncTheme,
+  ensureMain,
+  startWindows,
+  onboarding,
+  handleOauthReturn,
+} from './windows';
+import { isOauthReturnLink } from '../host/providers/oauth/returns';
 import { handleLink } from './protocol';
 import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
@@ -22,6 +31,7 @@ import { service, bootEngine, latestState, realPath, realEngine } from './engine
 import {
   activationPolicy,
   applyWindowChoice,
+  createLinkGate,
   createProcessState,
   createQuitGate,
   closeThenRelease,
@@ -59,6 +69,22 @@ let systemShutdown = false;
 let skipQuitWarning = false;
 let lock: HeldLock | undefined;
 let stopPower: (() => void) | undefined;
+/**
+ * `aplos://oauth-return` links the OS delivered before a window existed (an `open-url` during launch):
+ * they are queued, bounded, and answered after `startWindows` — the nonce's own TTL still applies at
+ * consume time, so a stale one is a silent no-op either way.
+ */
+// Held until the first window choice has been applied (not just until `started`): startup is async now, so a link
+// answered earlier would find no window to focus and burn its one-time nonce.
+const oauthGate = createLinkGate(8);
+function routeLink(raw: string) {
+  if (isOauthReturnLink(raw)) {
+    if (oauthGate.hold(raw)) return;
+    handleOauthReturn(raw);
+    return;
+  }
+  handleLink(raw);
+}
 
 const pause = createPause(() => Date.now());
 const timers = {
@@ -246,13 +272,13 @@ if (!locked) app.quit();
 else {
   app.on('open-url', (event, url) => {
     event.preventDefault();
-    handleLink(url);
+    routeLink(url);
   });
   app.on('second-instance', (_event, argv) => {
     // While Aplos is still starting, startup is choosing the one window: a second launch only queues its link.
     if (started) void focusMain();
     else pendingActivation = true;
-    for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
+    for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
   });
   app.on('activate', () => {
     if (started) void focusMain();
@@ -302,7 +328,7 @@ else {
       if (atLogin) setPolicy('accessory');
       // The choice is applied through the same guards as every activation, so whichever answer lands
       // second never makes a second window (F3); a failure falls back to the mail window (M3).
-      void startWindows(atLogin)
+      const windowsSettled = startWindows(atLogin)
         .then(choice =>
           applyWindowChoice(choice, {
             onboardingOpen: () => onboarding.isOpen(),
@@ -321,7 +347,11 @@ else {
           }),
         );
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
-      for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
+      // Links that arrived while the window was being chosen (and the cold-start argv) are answered once it exists.
+      void windowsSettled.finally(() => {
+        for (const link of oauthGate.release()) handleOauthReturn(link);
+        for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) routeLink(arg);
+      });
     })
     .catch(failedStart);
 }

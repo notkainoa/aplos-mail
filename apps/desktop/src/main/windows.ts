@@ -6,9 +6,10 @@ import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
 import { latestState, realPath, realEngine, service } from './engine-host';
 import { closing, quitting, finishQuit, failedStart } from './lifecycle';
-import { isTest } from './test-mode';
+import { isTest, dataDirOverride } from './test-mode';
 import {
   createOnboarding,
+  focusOauthReturnWindow,
   mailForActivation,
   onboardingEnabledFor,
   readSessionFacts,
@@ -19,6 +20,13 @@ import {
   type WindowChoice,
   type WindowPort,
 } from '../host/lifecycle';
+import {
+  consumeOauthReturn,
+  isOauthReturnLink,
+  oauthReturnNonce,
+  type OauthReturnPurpose,
+} from '../host/providers/oauth/returns';
+import { recordOauthReturn } from './test-mode';
 import { releaseBuild } from './oauth-config';
 import { engineWindowArguments } from '../host/transports/port';
 import { isMailDocumentUrl } from '../host/protocol/relay';
@@ -142,9 +150,50 @@ function mailFrameURL(event: { url: string; initiator?: { url: string } | null }
   if (/^about:(blank|srcdoc)$/.test(event.url)) return true;
   return isMailDocumentUrl(event.url) && !!event.initiator && trustedURL(event.initiator.url);
 }
+/** The app's own data directory: the oauth-return nonce registry the utility process writes lives under it. */
+const oauthReturnsDir = () => join(dataDirOverride ?? app.getPath('userData'), 'oauth-returns');
+/** Nonces already accepted this run, so a replay or a re-created file can never focus twice. */
+const consumedNonces = new Set<string>();
+
+/**
+ * Raises the one existing window a completed sign-in started in, resolved by `oauthReturnTarget`.
+ * Never creates a window, never takes an action in test mode besides the record (`bring`/focus stay off).
+ * The app itself is raised only once a live window took the focus (host/lifecycle orders it so): a
+ * window that died between the open check and the focus must not pull Aplos forward over nothing.
+ */
+function focusOauthReturn(purpose: OauthReturnPurpose): 'onboarding' | 'mail' | 'none' {
+  return focusOauthReturnWindow(purpose, {
+    onboardingOpen: () => onboarding.isOpen(),
+    focusOnboarding: () => onboarding.focusOpen(),
+    mail: () => (main && !main.isDestroyed() ? portOf(main) : undefined),
+    raiseApp: () => {
+      if (!isTest && process.platform === 'darwin') app.focus({ steal: true });
+    },
+    testMode: isTest,
+  });
+}
+
+/**
+ * Claims `aplos://oauth-return` links (OS entry points and the mail-frame link sink): a strictly-shaped
+ * link whose nonce the utility's registry still holds raises the recorded window; anything else that
+ * claims the shape is a silent no-op. Returns false for every other link, which callers pass on to
+ * `handleLink` unchanged. Never throws, never navigates, never creates a window.
+ */
+function handleOauthReturn(raw: string): boolean {
+  if (!isOauthReturnLink(raw)) return false;
+  const nonce = oauthReturnNonce(raw);
+  const purpose = nonce
+    ? consumeOauthReturn({ dir: oauthReturnsDir(), consumed: consumedNonces }, nonce)
+    : undefined;
+  recordOauthReturn(purpose ? `${purpose}:${focusOauthReturn(purpose)}` : 'rejected');
+  return true;
+}
+
 /** Where a link from a sealed letter goes: mailto to Compose (`handleLink`), web links to the browser (never in test mode). */
 const frameLinks: FrameLinkSinks = {
-  openMail: handleLink,
+  openMail: url => {
+    if (!handleOauthReturn(url)) handleLink(url);
+  },
   openWeb: url => {
     if (!isTest) void external(url).catch(() => {});
   },
@@ -415,4 +464,5 @@ export {
   onboarding,
   sessionFacts,
   startWindows,
+  handleOauthReturn,
 };
