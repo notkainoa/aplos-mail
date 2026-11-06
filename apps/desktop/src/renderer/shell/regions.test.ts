@@ -464,3 +464,35 @@ test('focus containers draw no ring: every swept :focus rule is outline none', (
     }
   }
 });
+
+test('handleRegionItemKey: the slot scroller hands arrows on at its ends, never traps', () => {
+  const { items } = windowTree(false);
+  const slot = items.slot as FakeEl & {
+    scrollTop: number;
+    clientHeight: number;
+    scrollHeight: number;
+  };
+  const key = (name: string) => {
+    let prevented = false;
+    const used = handleRegionItemKey({
+      key: name,
+      target: slot as unknown as EventTarget,
+      defaultPrevented: false,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    return { used, prevented };
+  };
+  Object.assign(slot, { scrollTop: 0, clientHeight: 300, scrollHeight: 900 });
+  // Mid-scroll: the slot keeps the arrow for scrolling.
+  slot.scrollTop = 200;
+  assert.equal(key('ArrowDown').used, false);
+  slot.scrollTop = 100;
+  assert.equal(key('ArrowUp').used, false);
+  // At the ends the arrow moves on to the next region item — focus is never trapped.
+  slot.scrollTop = 600; // scrollTop + clientHeight >= scrollHeight
+  assert.equal(key('ArrowDown').used, true);
+  slot.scrollTop = 0;
+  assert.equal(key('ArrowUp').used, true);
+});

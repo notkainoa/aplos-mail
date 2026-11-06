@@ -6,6 +6,7 @@
  * reference changes, so memoise it.
  */
 import { createStore } from './store-core';
+import type { ReactNode } from 'react';
 import type { CalendarListProps, MiniMonthProps } from '../ui/props';
 
 /** The parts a screen may show in the sidebar. A missing part is not drawn. */
@@ -14,6 +15,8 @@ export interface SidebarSlot {
   readonly miniMonth?: MiniMonthProps;
   /** The "Calendars" list. */
   readonly calendars?: CalendarListProps;
+  /** The accounts block (ui-calendar's `CalendarAccounts`), pinned above the foot so the scrollable slot can never clip it. */
+  readonly calendarAccounts?: ReactNode;
 }
 
 interface Entry {

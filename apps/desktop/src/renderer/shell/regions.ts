@@ -259,11 +259,24 @@ function hasClassName(el: RegionElement | null | undefined, name: string): boole
   return (el?.getAttribute('class') ?? '').split(/\s+/).includes(name);
 }
 
+/** A scrollable slot keeps arrows for scrolling — except at its ends, where they hand on to the next region item. */
+function slotKeepsArrow(target: unknown, key: string): boolean {
+  const el = target as { scrollTop: number; clientHeight: number; scrollHeight: number };
+  const { scrollTop, clientHeight, scrollHeight } = el;
+  if ([scrollTop, clientHeight, scrollHeight].some(n => typeof n !== 'number' || Number.isNaN(n)))
+    return true;
+  if (key === 'ArrowDown' || key === 'End' || key === 'PageDown')
+    return scrollTop + clientHeight < scrollHeight - 1;
+  if (key === 'ArrowUp' || key === 'Home' || key === 'PageUp') return scrollTop > 0;
+  return true;
+}
+
 /**
  * The sidebar's within-region arrow keys: a plain ↑/↓/Home/End walks the region's items across
  * every Puck group. Returns true when focus moved. Bound as a React onKeyDown on the sidebar's
- * aside; modified keys (⌥↑/⌥↓ lane moves live in the registry), fields, the slot scroller and
- * targets that are not region items (or keys a widget already took) pass through.
+ * aside; modified keys (⌥↑/⌥↓ lane moves live in the registry), fields, the slot scroller (mid-scroll
+ * only: at its ends the arrow hands on) and targets that are not region items (or keys a widget already
+ * took) pass through.
  */
 export function handleRegionItemKey(event: {
   key: string;
@@ -279,8 +292,9 @@ export function handleRegionItemKey(event: {
   if (event.defaultPrevented || event.nativeEvent?.isComposing) return false;
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
   const target = event.target as unknown as RegionElement | null;
-  // A field keeps its arrows for the caret; the slot scroller keeps them for scrolling.
-  if (focusKindOf(target) === 'text' || hasClassName(target, 'aplos-sidebar__slot')) return false;
+  if (focusKindOf(target) === 'text') return false;
+  if (hasClassName(target, 'aplos-sidebar__slot') && slotKeepsArrow(target, event.key))
+    return false;
   const region = target?.closest?.(`[${REGION_ATTRIBUTE}]`) ?? null;
   if (!region) return false;
   const items = regionItems(region);

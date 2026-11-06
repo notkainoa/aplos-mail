@@ -323,6 +323,10 @@ test('review1: the MiniMonth marks come from the loaded window, not the drawn pe
     today: THU,
     weekStartsOn: 0,
     dispatch: () => undefined,
+    accounts: [],
+    accountsLoaded: true,
+    calendarsLoaded: true,
+    onAccessAction: () => undefined,
   });
   assert.ok(sidebar.miniMonth.marks?.includes('2026-11-04'));
 });

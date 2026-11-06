@@ -3,7 +3,7 @@
  * (invented people on example domains, no real mail, addresses, keys or tokens). Times are relative to the harness
  * clock (2026-10-29 10:00 in Los Angeles), so every state reads the same on every machine.
  */
-import type { Account, AiProvider, Consent, Session, Settings } from '../../../data';
+import type { Account, AiProvider, Calendar, Consent, Session, Settings } from '../../../data';
 import { HARNESS_NOW_MS } from '../../../data';
 import type {
   AiModelInfo,
@@ -102,6 +102,7 @@ export function account(over: Partial<Account> & { id: string; address: string }
     lease: { role: 'primary', holderDeviceName: 'MacBook Pro' },
     identities: [],
     pendingChanges: 0,
+    baselineDoneAt: NOW - DAY,
     createdAt: NOW - 30 * DAY,
     ...over,
   };
@@ -136,6 +137,37 @@ export function needsReauth(a: Account): Account {
 }
 export function reconnectIn(a: Account, ms: number): Account {
   return { ...a, health: { ...a.health, reconnectBy: NOW + ms } };
+}
+
+/** One calendar, for the calendar-access states `calendarAccessOf` reads (`Calendar/get`). */
+export function calendar(
+  over: Partial<Calendar> & { id: string; accountId: string; name: string },
+): Calendar {
+  return {
+    primary: false,
+    readOnly: false,
+    shown: true,
+    providerHidden: false,
+    ...over,
+  };
+}
+
+/** Two calendars on Alex, one on Jordan: "Calendar on · 2 calendars" and the singular "1 calendar". */
+export const ALEX_CALENDARS: readonly Calendar[] = [
+  calendar({
+    id: 'cal-alex-work',
+    accountId: ALEX.id,
+    name: 'Work',
+    colorTag: 'hill',
+    primary: true,
+  }),
+  calendar({ id: 'cal-alex-personal', accountId: ALEX.id, name: 'Personal' }),
+];
+export const JORDAN_CALENDARS: readonly Calendar[] = [
+  calendar({ id: 'cal-jordan', accountId: JORDAN.id, name: 'Jordan', colorTag: 'hill' }),
+];
+export function calendars(): readonly Calendar[] {
+  return [...ALEX_CALENDARS, ...JORDAN_CALENDARS];
 }
 
 export function session(over: Partial<Session> = {}): Session {

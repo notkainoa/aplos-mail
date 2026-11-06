@@ -16,6 +16,7 @@ import {
   ALEX,
   baseSettings,
   bundle,
+  calendars,
   CANARY,
   clients,
   consent,
@@ -59,6 +60,7 @@ export function dataOf(over: Partial<SettingsData> = {}): SettingsData {
     listener: { enabled: false },
     clients: [],
     queue: queue(),
+    calendars: calendars(),
     ...over,
   };
 }
@@ -126,6 +128,34 @@ export const STATES: Record<string, StateSpec> = {
       ],
     }),
   },
+  'calendar-accounts-on': {
+    title: 'Calendar, two accounts with calendars on',
+    section: 'calendar',
+    data: dataOf({ accounts: [ALEX, JORDAN] }),
+  },
+  'calendar-accounts-syncing': {
+    title: 'Calendar, an account still syncing',
+    section: 'calendar',
+    data: dataOf({
+      accounts: [{ ...ALEX, health: { status: { state: 'syncing' } } }],
+      calendars: [],
+    }),
+  },
+  'calendar-accounts-signin': {
+    title: 'Calendar, sign-in expired',
+    section: 'calendar',
+    data: dataOf({ accounts: [needsReauth(ALEX)] }),
+  },
+  'calendar-accounts-empty': {
+    title: 'Calendar, access on but nothing synced yet',
+    section: 'calendar',
+    data: dataOf({ calendars: [] }),
+  },
+  'calendar-no-accounts': {
+    title: 'Calendar, no accounts yet',
+    section: 'calendar',
+    data: dataOf({ accounts: [], calendars: [] }),
+  },
   notifications: {
     title: 'Notifications',
     section: 'notifications',
@@ -166,6 +196,31 @@ export const STATES: Record<string, StateSpec> = {
         },
       ],
     }),
+  },
+  'accounts-calendar-missing': {
+    title: 'Accounts, calendar not allowed yet',
+    section: 'accounts',
+    data: dataOf({
+      accounts: [
+        {
+          ...ALEX,
+          missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
+        },
+      ],
+    }),
+  },
+  'accounts-calendar-syncing': {
+    title: 'Accounts, calendar still syncing',
+    section: 'accounts',
+    data: dataOf({
+      accounts: [{ ...ALEX, health: { status: { state: 'syncing' } } }],
+      calendars: [],
+    }),
+  },
+  'accounts-none': {
+    title: 'Accounts, none yet',
+    section: 'accounts',
+    data: dataOf({ accounts: [], calendars: [] }),
   },
   'accounts-demo': {
     title: 'Accounts, demo mail with Reset and Remove',

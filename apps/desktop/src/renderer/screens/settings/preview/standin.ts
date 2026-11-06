@@ -123,5 +123,8 @@ export function standInPorts(
     async queueList() {
       return get().queue ?? [];
     },
+    async calendarsGet() {
+      return get().calendars ?? [];
+    },
   };
 }

@@ -74,6 +74,7 @@ export function dataPorts(): SettingsApiPort {
     listenerGet: () => api.listener.get({}),
     clientsList: async () => (await api.clients.list({})).list,
     queueList: async () => (await api.queue.list({})).list,
+    calendarsGet: async () => (await api.calendar.get({})).list,
   };
 }
 
@@ -273,6 +274,11 @@ export function useSettingsState(
     }
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));
+    }
+    if (section === 'accounts' || section === 'calendar') {
+      quiet(
+        Promise.resolve(ports.calendarsGet?.()).then(calendars => calendars && keep({ calendars })),
+      );
     }
   }, [section, view.queue, actions, keepData]);
 
