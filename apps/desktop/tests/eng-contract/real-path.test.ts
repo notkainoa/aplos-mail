@@ -532,10 +532,11 @@ test('source shape: finishQuit hands the REAL close to closeThenRelease, and sta
   const source = sourceOf('../../src/main/lifecycle.ts');
   assert.match(source, /realPath \? realEngine\.close\(\) : service\?\.close\(\)/);
   assert.match(source, /closeThenRelease\(Promise\.resolve\(engineClosed\), QUIT_DRAIN_MS/);
-  const startup = /\.catch\(error => \{([\s\S]*?)\n {4}\}\);/.exec(source)?.[1] ?? '';
-  const guard = startup.indexOf('if (closing) return;');
+  assert.match(source, /\.catch\(failedStart\)/, 'a start-up failure goes through failedStart');
+  const failed = /function failedStart\(error: unknown\) \{([\s\S]*?)\n\}/.exec(source)?.[1] ?? '';
+  const guard = failed.indexOf('if (closing) return;');
   assert.ok(guard >= 0, 'the start-up catch returns while a quit is in progress');
-  assert.ok(guard < startup.indexOf('showErrorBox'), '... before it shows the dialog');
+  assert.ok(guard < failed.indexOf('showErrorBox'), '... before it shows the dialog');
 });
 
 function restartWorld() {

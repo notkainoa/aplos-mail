@@ -14,19 +14,21 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 import { installPermissionHandlers } from './security';
-import { windows, focusMain, syncTheme, createWindow, setMain, startWindows } from './windows';
+import { windows, focusMain, syncTheme, ensureMain, startWindows, onboarding } from './windows';
 import { handleLink } from './protocol';
 import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
 import { service, bootEngine, latestState, realPath, realEngine } from './engine-host';
 import {
   activationPolicy,
+  applyWindowChoice,
   createProcessState,
   createQuitGate,
   closeThenRelease,
   pendingWork,
   quitWarning,
   quitWarningButtons,
+  windowFallback,
   QUIT_DRAIN_MS,
   type ActivationPolicy,
 } from '../host/lifecycle';
@@ -211,7 +213,7 @@ function startResident() {
     sync: () => latestState?.sync,
     open: () => {
       app.focus({ steal: true });
-      focusMain();
+      void focusMain();
     },
     quit: () => app.quit(),
   });
@@ -248,12 +250,12 @@ else {
   });
   app.on('second-instance', (_event, argv) => {
     // While Aplos is still starting, startup is choosing the one window: a second launch only queues its link.
-    if (started) focusMain();
+    if (started) void focusMain();
     else pendingActivation = true;
     for (const arg of argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
   });
   app.on('activate', () => {
-    if (started) focusMain();
+    if (started) void focusMain();
   });
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
@@ -298,21 +300,41 @@ else {
       const atLogin = !isTest && app.getLoginItemSettings().wasOpenedAtLogin;
       // A login launch is windowless and resident: the menu-bar item or the Dock opens the window.
       if (atLogin) setPolicy('accessory');
-      if (startWindows(atLogin) === 'mail') setMain(createWindow());
-      else if (pendingActivation) focusMain();
+      // The choice is applied through the same guards as every activation, so whichever answer lands
+      // second never makes a second window (F3); a failure falls back to the mail window (M3).
+      void startWindows(atLogin)
+        .then(choice =>
+          applyWindowChoice(choice, {
+            onboardingOpen: () => onboarding.isOpen(),
+            ensureMail: () => void ensureMain(),
+            activate: () => {
+              if (pendingActivation) void focusMain();
+            },
+          }),
+        )
+        .catch(error =>
+          windowFallback(error, {
+            report: failure =>
+              console.error('Aplos Mail: could not open the first window:', failure),
+            ensureMail: () => void ensureMain(),
+            fatal: failedStart,
+          }),
+        );
       if (!isTest) app.setAsDefaultProtocolClient('aplos');
       for (const arg of process.argv) if (/^(mailto|aplos):/i.test(arg)) handleLink(arg);
     })
-    .catch(error => {
-      // A quit that landed during the start-up is finishing on its own (finishQuit): no dialog, no second quit.
-      if (closing) return;
-      dialog.showErrorBox(
-        'Aplos Mail could not start',
-        error instanceof Error ? error.message : 'An unknown startup error occurred.',
-      );
-      if (isTest) app.exit(1);
-      else app.quit();
-    });
+    .catch(failedStart);
 }
 
-export { started, closing, quitting, finishQuit, cancelQuit };
+/** The "could not start" path: a quit that landed during start-up is finishing on its own, so no dialog. */
+function failedStart(error: unknown) {
+  if (closing) return;
+  dialog.showErrorBox(
+    'Aplos Mail could not start',
+    error instanceof Error ? error.message : 'An unknown startup error occurred.',
+  );
+  if (isTest) app.exit(1);
+  else app.quit();
+}
+
+export { started, closing, quitting, finishQuit, cancelQuit, failedStart };
