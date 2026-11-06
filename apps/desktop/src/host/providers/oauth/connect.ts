@@ -47,6 +47,7 @@ import {
   missingRequiredScopes,
 } from './scopes';
 import type { CredentialVault, GoogleTokenBundle } from './token-source';
+import type { OauthReturnPurpose } from './returns';
 
 export type GoogleConnect = (req: ConnectRequest, ctx: ConnectContext) => Promise<ConnectResult>;
 
@@ -67,6 +68,15 @@ export interface GoogleConnectDeps extends FlowDeps {
    * asks for these optional scopes again, or the new grant would silently drop them.
    */
   grantedScopes?: (account: AccountId) => readonly string[] | undefined;
+  /**
+   * The live sign-in session's `aplos://oauth-return` target, injected by the composition (it reads
+   * `sync/connect-sessions`'s binding). Undefined or returning undefined resolves 'mail', which can
+   * never surface the setup window.
+   */
+  returnToFor?(
+    req: Pick<ConnectRequest, 'mode' | 'address'>,
+    accountId: string,
+  ): OauthReturnPurpose | undefined;
   /** Capabilities for a grant. Default: `googleCapabilities`. */
   capabilities?: (grantedScopes: readonly string[]) => Capabilities;
   /**
@@ -379,7 +389,15 @@ export function createGoogleConnect(deps: GoogleConnectDeps): GoogleConnect {
     requireExpectedAccount(req);
     const attempt = startAttempt(deps, req, ctx);
     const scopes = scopesFor(deps, req, ctx.accountId);
-    const request = { client: attempt.client, scopes, params: authParamsFor(req) };
+    const request = {
+      client: attempt.client,
+      scopes,
+      params: authParamsFor(req),
+      // The live session's return target, resolved by the composition's `returnToFor` (a caller
+      // outside the sessions — a rig — has none). 'mail' is the failure direction: a later add must
+      // never surface the setup window.
+      returnTo: deps.returnToFor?.(req, ctx.accountId) ?? 'mail',
+    };
     const exchange = await runAuthorization(deps, request, attempt.flow);
     return finishConnect(deps, attempt, exchange);
   };

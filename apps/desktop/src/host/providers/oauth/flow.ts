@@ -13,10 +13,14 @@ import {
   redirectError,
 } from './connect-errors';
 import { reconnectAuthParams } from './grant';
-import { openLoopback, type CallbackOutcome, type Loopback } from './loopback';
+import { callbackTimeoutMs, openLoopback, type CallbackOutcome, type Loopback } from './loopback';
 import { createPkce, createState, nodeRandom, type Pkce, type RandomSource } from './pkce';
+import { oauthReturnLink, type OauthReturns, type OauthReturnPurpose } from './returns';
 import { googleTokenUrl } from './token-source';
 import { refusalError, transportError } from './token-errors';
+
+/** How long the return link outlives the callback wait. */
+const returnGraceMs = 60_000;
 
 export const googleAuthUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const googleRevokeUrl = 'https://oauth2.googleapis.com/revoke';
@@ -33,6 +37,12 @@ export interface FlowDeps {
   random?: RandomSource;
   /** Default 5 minutes. */
   callbackTimeoutMs?: number;
+  /**
+   * The deep-link nonce registry behind `returns.ts`: when present and the request names a `returnTo`
+   * window, the success page redirects to `aplos://oauth-return?n=<nonce>` so that window comes
+   * forward. Absent: the pages stay plain text.
+   */
+  returns?: OauthReturns;
 }
 
 export interface FlowClient {
@@ -45,6 +55,8 @@ export interface FlowRequest {
   scopes: readonly string[];
   /** `access_type`, `prompt`, `login_hint`; never overrides the flow's own parameters. */
   params: Readonly<Record<string, string>>;
+  /** The window the success page's deep link returns to (recorded with the nonce by `FlowDeps.returns`). */
+  returnTo?: OauthReturnPurpose;
 }
 
 export interface FlowContext {
@@ -91,17 +103,28 @@ function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw abortedError();
 }
 
-async function openCallback(state: string, deps: FlowDeps, ctx: FlowContext): Promise<Loopback> {
+async function openCallback(
+  state: string,
+  deps: FlowDeps,
+  ctx: FlowContext,
+  returnLink: string | undefined,
+): Promise<Loopback> {
   try {
     return await openLoopback({
       state,
       clock: ctx.clock,
       signal: ctx.signal,
       timeoutMs: deps.callbackTimeoutMs,
+      ...(returnLink ? { returnLink } : {}),
     });
   } catch {
     throw connectError('transient', 'loopbackFailed', { extra: { uncertain: false } });
   }
+}
+
+/** The 128-bit deep-link nonce, minted by the flow itself (never the OAuth `state` or `code`). */
+function returnNonce(random: RandomSource): string {
+  return Buffer.from(random(16)).toString('hex');
 }
 
 /** Only Google's consent page over TLS reaches the browser: no other host, scheme, port or userinfo. */
@@ -257,18 +280,36 @@ export async function runAuthorization(
   const random = deps.random ?? nodeRandom;
   const pkce = createPkce(random);
   const state = createState(random);
-  const loopback = await openCallback(state, deps, ctx);
+  const nonce = deps.returns && request.returnTo ? returnNonce(random) : undefined;
+  const link =
+    nonce &&
+    deps.returns!.register({
+      nonce,
+      purpose: request.returnTo!,
+      // A grace past the callback wait: a sign-in finished at the last second still gets a live fallback link.
+      ttlMs: (deps.callbackTimeoutMs ?? callbackTimeoutMs) + returnGraceMs,
+    })
+      ? oauthReturnLink(nonce)
+      : undefined;
+  // Whether a page carrying the link was served: only then may the nonce outlive the flow. The
+  // whole rest of the run sits inside the try so an `openLoopback` failure revokes too.
+  let served = false;
+  let loopback: Loopback | undefined;
   try {
+    loopback = await openCallback(state, deps, ctx, link);
     const base = googleAuthUrl;
     const redirectUri = loopback.redirectUri;
     await launch(deps, consentUrl({ base, request, redirectUri, state, pkce }), ctx.signal);
-    const code = codeFrom(await loopback.outcome);
+    const outcome = await loopback.outcome;
+    served = outcome.kind === 'code' || outcome.kind === 'error';
+    const code = codeFrom(outcome);
     throwIfAborted(ctx.signal);
     return await exchangeCode(deps, request, { code, verifier: pkce.verifier, redirectUri }, ctx);
   } catch (error) {
     throw asConnect(error);
   } finally {
-    loopback.close();
+    loopback?.close();
+    if (nonce && !served) deps.returns?.revoke(nonce);
   }
 }
 

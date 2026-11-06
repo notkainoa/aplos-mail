@@ -9,6 +9,8 @@ import {
   fadeOpacities,
   finishOptionsOf,
   isFirstRun,
+  onboardingEnabledFor,
+  onboardingOptedOut,
   settingsPaneUrl,
   startupWindow,
   type OnboardingDeps,
@@ -126,6 +128,65 @@ test('activation: an open mail window answers a click, then an open onboarding w
   assert.equal(activation({ onboarding: true, mail: false }, fresh), 'focus-onboarding');
   assert.equal(activation({ onboarding: false, mail: false }, fresh), 'open-onboarding');
   assert.equal(activation({ onboarding: false, mail: false }, withAccount), 'open-mail');
+});
+
+test('the onboarding window is the default first-run path; only APLOS_ONBOARDING_WINDOW=0 opts out', () => {
+  assert.equal(onboardingOptedOut({}), false, 'unset: on');
+  assert.equal(onboardingOptedOut({ APLOS_ONBOARDING_WINDOW: '1' }), false);
+  assert.equal(onboardingOptedOut({ APLOS_ONBOARDING_WINDOW: 'yes' }), false);
+  assert.equal(onboardingOptedOut({ APLOS_ONBOARDING_WINDOW: '0' }), true, 'the explicit opt-out');
+});
+
+test('the onboarding window is the default only on the real-engine path (the legacy engine would load the whole mail app into it)', () => {
+  assert.equal(onboardingEnabledFor({}, true), true, 'real engine, unset: on');
+  assert.equal(onboardingEnabledFor({}, false), false, 'legacy engine (every release build): off');
+  assert.equal(onboardingEnabledFor({ APLOS_ONBOARDING_WINDOW: '1' }, false), false);
+  assert.equal(
+    onboardingEnabledFor({ APLOS_ONBOARDING_WINDOW: '0' }, true),
+    false,
+    'the opt-out still wins',
+  );
+});
+
+test('first run: exactly one window exists, the onboarding window, and no mail window until the handoff', async () => {
+  const { controller, log, mailWindow } = harness();
+  assert.equal(controller.start(fresh, { atLogin: false }), 'onboarding');
+  assert.equal(log.onboarding.length + log.mail.length, 1, 'exactly one window');
+  assert.equal(log.mail.length, 0, 'the mail window does not exist before the handoff');
+  // A second launch or a Dock click while it waits only focuses the one window.
+  assert.equal(controller.activate(fresh), 'focus-onboarding');
+  assert.equal(log.onboarding.length + log.mail.length, 1);
+  const handoff = controller.finish();
+  mailWindow()!.paint();
+  await handoff;
+  assert.equal(log.mail.length, 1, 'the mail window is created only at the handoff');
+  assert.equal(log.onboarding[0].destroyed, true, 'and onboarding is gone after it');
+});
+
+test('accounts exist: startup opens the mail window, never onboarding', () => {
+  const { controller, log } = harness();
+  assert.equal(controller.start(withAccount, { atLogin: false }), 'mail');
+  assert.equal(log.onboarding.length, 0);
+  assert.equal(controller.activate(withAccount), 'open-mail');
+});
+
+test('a login launch is windowless even on first run, and a later Dock click opens onboarding then', () => {
+  const { controller, log } = harness();
+  assert.equal(controller.start(fresh, { atLogin: true }), 'none');
+  assert.equal(log.onboarding.length + log.mail.length, 0);
+  assert.equal(controller.activate(fresh), 'open-onboarding');
+  assert.equal(log.onboarding.length, 1);
+});
+
+test('the demo path (Demo/load then finish) hands over to the mail window the same as a clean finish', async () => {
+  const { controller, log, mailWindow } = harness();
+  controller.start(fresh, { atLogin: false });
+  const handoff = controller.finish();
+  mailWindow()!.paint();
+  await handoff;
+  assert.equal(log.mail.length, 1);
+  assert.equal(controller.isOpen(), false);
+  assert.equal(controller.activate({ hasAccounts: true, setup: {} }), 'focus-mail');
 });
 
 test('start opens the one onboarding window on first run and none on a login launch', () => {

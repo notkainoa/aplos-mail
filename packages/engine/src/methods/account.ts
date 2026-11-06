@@ -9,7 +9,11 @@ import {
   readAccount,
   readAccounts,
 } from '../sync/account-read';
-import { connectSessionsOf as sessionsOf } from '../sync/connect-sessions';
+import {
+  connectSessionsOf as sessionsOf,
+  connectionOpensOnboarding,
+  noteOnboardingConnection,
+} from '../sync/connect-sessions';
 import type { StorePort } from '../store/port';
 import type { AreaHandlers, EngineServices, MethodContext } from './types';
 
@@ -41,8 +45,9 @@ function get(args: Input<'Account/get'>, ctx: MethodContext): Output<'Account/ge
 
 function reconnectWith(mode: 'reconnect' | 'grantPermissions') {
   return (args: { accountId: string }, ctx: MethodContext) => {
+    const returnTo = connectionOpensOnboarding(ctx.connectionId) ? 'onboarding' : 'mail';
     const flow = existingAccountFlow(flowDeps(ctx.services), mode, args.accountId);
-    return sessionsOf(ctx.services).begin(flow);
+    return sessionsOf(ctx.services).begin({ ...flow, returnTo });
   };
 }
 
@@ -163,8 +168,16 @@ function disconnect(args: Input<'Account/disconnect'>, ctx: MethodContext): neve
 export const handlers: AreaHandlers<'account'> = {
   'Account/get': get,
   'Account/discover': args => discoverProvider(args),
-  'Account/connect': (args, ctx) =>
-    sessionsOf(ctx.services).begin(newAccountFlow(flowDeps(ctx.services), args)),
+  'Account/connect': (args, ctx) => {
+    // A `setupId` rides only on connects from the setup window; the mark lets a later reconnect or
+    // grant on this same connection return there too (`returns.ts` binds the nonce to the window).
+    if (ctx.caller.kind === 'window' && args.setupId) noteOnboardingConnection(ctx.connectionId);
+    const returnTo = args.setupId ? 'onboarding' : 'mail';
+    return sessionsOf(ctx.services).begin({
+      ...newAccountFlow(flowDeps(ctx.services), args),
+      returnTo,
+    });
+  },
   'Account/reconnect': reconnectWith('reconnect'),
   'Account/updateSecret': updateSecret,
   'Account/grantPermissions': reconnectWith('grantPermissions'),

@@ -6,7 +6,7 @@ import { launchAplos } from '../../../../tests/e2e/support/electron';
 test.skip(process.env.APLOS_E2E_ELECTRON !== '1', 'set APLOS_E2E_ELECTRON=1 (needs a build)');
 
 test('startup opens exactly one hidden window and test hooks are exposed', async () => {
-  const aplos = await launchAplos();
+  const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const window = await aplos.app.firstWindow();
     await expect(window.locator('.app-shell')).toBeAttached();
@@ -27,7 +27,7 @@ test('startup opens exactly one hidden window and test hooks are exposed', async
 });
 
 test('window.open is denied: no second window opens and none is visible', async () => {
-  const aplos = await launchAplos();
+  const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const page = await aplos.app.firstWindow();
     await expect(page.locator('.app-shell')).toBeAttached();
@@ -45,8 +45,8 @@ test('window.open is denied: no second window opens and none is visible', async 
   }
 });
 
-test('with the welcome window opted in, exactly one window opens and it is hidden', async () => {
-  const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '1' } });
+test('first run opens exactly one window: the welcome window (on by default), and it is hidden', async () => {
+  const aplos = await launchAplos();
   try {
     const window = await aplos.app.firstWindow();
     await expect(window.locator('body')).toBeAttached();
@@ -61,7 +61,7 @@ test('with the welcome window opted in, exactly one window opens and it is hidde
 });
 
 test('R2H-5: a renderer permission request and an openExternal call reach no system prompt or browser', async () => {
-  const aplos = await launchAplos();
+  const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const window = await aplos.app.firstWindow();
     await expect(window.locator('.app-shell')).toBeAttached();
