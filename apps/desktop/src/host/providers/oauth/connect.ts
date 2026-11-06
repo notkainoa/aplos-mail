@@ -91,8 +91,9 @@ export interface GoogleConnectDeps extends FlowDeps {
 
 /**
  * What the Google adapter can do today, as its own rig declares it (tests/prov-gmail/harness.ts). Filters and
- * calendar also need their granted scopes; calendar needs BOTH of them (the list and the events), so a grant holding
- * only `calendarlist.readonly` still reads false (prov-cal).
+ * calendar also need their granted scopes; calendar needs the list scope plus an events scope (the read-only one
+ * in round 1 — a held `calendar.events` write scope counts too, since it covers reads), so a grant holding only
+ * `calendarlist.readonly` still reads false (prov-cal).
  */
 export function googleCapabilities(grantedScopes: readonly string[]): Capabilities {
   const features = grantedFeatures(grantedScopes);
@@ -101,7 +102,9 @@ export function googleCapabilities(grantedScopes: readonly string[]): Capabiliti
     folders: false,
     drafts: true,
     serverSearch: true,
-    calendar: features.has('calendarList') && features.has('calendarEvents'),
+    calendar:
+      features.has('calendarList') &&
+      (features.has('calendarEvents') || features.has('calendarEventsWrite')),
     filters: features.has('filters'),
     push: false,
     sendAs: true,
@@ -143,13 +146,18 @@ function grantTokenOf(body: Record<string, unknown>): string | undefined {
 
 const optionalManifestScopes = googleScopeManifest.filter(e => !e.required).map(e => e.scope);
 
-/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every optional scope. */
+/** The optional scopes a flow may newly ask for: a `deferred` entry (round 2's calendar.events) is never one. */
+const requestableOptionalScopes = googleScopeManifest
+  .filter(e => !e.required && !e.deferred)
+  .map(e => e.scope);
+
+/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every requestable scope. */
 function scopesFor(deps: GoogleConnectDeps, req: ConnectRequest, account: AccountId): string[] {
   const asked = deps.optionalScopes?.(req);
   if (req.mode === 'new') return connectScopes(asked ?? []);
   const held = new Set(deps.grantedScopes?.(account) ?? []);
   const kept = optionalManifestScopes.filter(scope => held.has(scope));
-  const wanted = asked ?? (req.mode === 'grantPermissions' ? optionalManifestScopes : []);
+  const wanted = asked ?? (req.mode === 'grantPermissions' ? requestableOptionalScopes : []);
   return connectScopes([...new Set([...kept, ...wanted])]);
 }
 

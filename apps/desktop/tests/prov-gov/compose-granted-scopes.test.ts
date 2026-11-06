@@ -38,3 +38,30 @@ test('non-string members are filtered out, not fatal', () => {
   const store = storeWith({ granted_scopes: JSON.stringify([SCOPES[0], 7, null, SCOPES[1]]) });
   assert.deepEqual(grantedScopesOf(store, 'acct-1'), SCOPES);
 });
+
+import { GOOGLE_CALENDAR_SCOPES } from '@aplos/engine/sync/actor';
+import { connectOptionalScopes } from '../../src/host/compose';
+import { scopesForFeatures } from '../../src/host/providers/oauth/scopes';
+
+const CAL_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+const CAL_EVENTS_RO = 'https://www.googleapis.com/auth/calendar.events.readonly';
+const CAL_EVENTS_WRITE = 'https://www.googleapis.com/auth/calendar.events';
+const GMAIL_SETTINGS = 'https://www.googleapis.com/auth/gmail.settings.basic';
+
+test('the composition asks the calendar read pair on a new sign-in, the mode default otherwise', () => {
+  // Pin the whole answer, not just membership: nothing beyond the two read-only scopes is ever asked.
+  assert.deepEqual(connectOptionalScopes({ mode: 'new' }), [CAL_LIST, CAL_EVENTS_RO]);
+  assert.equal(connectOptionalScopes({ mode: 'reconnect' }), undefined);
+  assert.equal(connectOptionalScopes({ mode: 'grantPermissions' }), undefined);
+  const asked = connectOptionalScopes({ mode: 'new' })!;
+  assert.ok(!asked.includes(CAL_EVENTS_WRITE));
+  assert.ok(!asked.includes(GMAIL_SETTINGS));
+});
+
+test("the engine's calendar scope copy matches the manifest's calendar features", () => {
+  // actor.ts keeps its own URL list for the missingPermissions gap; a manifest drift must not go unnoticed.
+  assert.deepEqual(
+    [...GOOGLE_CALENDAR_SCOPES].sort(),
+    [...scopesForFeatures('calendarList', 'calendarEvents')].sort(),
+  );
+});

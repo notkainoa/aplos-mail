@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { CalendarAdapter } from '../src/ports';
-import { ACCOUNT, FakeAdapter, connectResult, disk, settle, world } from './sync-actor-helpers';
+import { ProviderError, type CalendarAdapter, type PlannedStep } from '../src/ports';
+import {
+  ACCOUNT,
+  FakeAdapter,
+  connectResult,
+  disk,
+  settle,
+  until,
+  world,
+} from './sync-actor-helpers';
 
 // `Account.missingPermissions`'s producer (D12): an adapter with a calendar half whose grant lacks its scopes gets
 // the feature-level row — never needsPermission, which is the core mail scope's alone. The Settings Calendar
@@ -38,7 +46,7 @@ const capsWith = (calendar: boolean) => ({
 });
 
 const CAL_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
-const CAL_EVENTS = 'https://www.googleapis.com/auth/calendar.events';
+const CAL_EVENTS = 'https://www.googleapis.com/auth/calendar.events.readonly';
 
 test('a calendar-capable adapter on a grant without calendar scopes records missingPermissions', async () => {
   const d = disk();
@@ -56,6 +64,7 @@ test('a calendar-capable adapter on a grant without calendar scopes records miss
     ]);
     // The account itself is not halted: mail status is not needsPermission.
     assert.notEqual(runtime.status.state, 'needsPermission');
+    await w.kill();
   } finally {
     await d.cleanup();
   }
@@ -80,6 +89,7 @@ test('a grant holding one calendar scope names only the other as missing', async
         missingScopes: [CAL_EVENTS],
       },
     ]);
+    await w.kill();
   } finally {
     await d.cleanup();
   }
@@ -126,7 +136,7 @@ test('a reconnect that granted the scopes clears the row; one that did not keeps
         grantedScopes: [
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
-          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/calendar.events.readonly',
         ],
         capabilities: capsWith(true),
       }),
@@ -144,7 +154,7 @@ test('a reconnect that granted the scopes clears the row; one that did not keeps
         grantedScopes: [
           'https://www.googleapis.com/auth/gmail.modify',
           'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
-          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/calendar.events.readonly',
         ],
         capabilities: capsWith(true),
       }),
@@ -167,6 +177,69 @@ test('a reconnect that granted the scopes clears the row; one that did not keeps
         missingScopes: [CAL_LIST, CAL_EVENTS],
       },
     ]);
+    await w.kill();
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('a permission refusal on a calendar step names the gap and never halts mail', async () => {
+  const d = disk();
+  try {
+    const refused = () =>
+      Promise.reject(
+        new ProviderError({
+          class: 'permission',
+          provider: 'google',
+          method: 'gcal.events.list',
+          reason: 'insufficientPermissions',
+          missingScopes: [CAL_EVENTS],
+        }),
+      );
+    // Each scope is offered until it has run once; re-offering a due step forever busy-loops the actor.
+    const adapter = new FakeAdapter(
+      input => {
+        const due: PlannedStep[] = [];
+        if (!adapter.calls.some(c => c.startsWith('cal:primary')))
+          due.push({
+            scope: 'cal:primary',
+            lane: 'incremental',
+            origin: 'incremental',
+            trigger: input.trigger,
+          });
+        if (!adapter.calls.some(c => c.startsWith('window:inbox')))
+          due.push({
+            scope: 'window:inbox',
+            lane: 'incremental',
+            origin: 'incremental',
+            trigger: input.trigger,
+          });
+        return due;
+      },
+      {
+        'cal:primary': refused,
+        'window:inbox': () => Promise.resolve({ nextStates: [], done: true, costUnits: 1 }),
+      },
+    );
+    (adapter as { calendar?: CalendarAdapter }).calendar = calendarStub();
+    const w = world(d, () => adapter);
+    await w.host.start(ACCOUNT);
+    await until(() => adapter.calls.some(c => c.startsWith('cal:primary')), 'the calendar step');
+    await until(() => adapter.calls.some(c => c.startsWith('window:inbox')), 'the mail step');
+    await settle();
+
+    const runtime = w.host.status(ACCOUNT)!;
+    // Mail ran and no halt: the refusal became the calendar's row, not needsPermission.
+    assert.ok(adapter.calls.some(c => c.startsWith('window:inbox')));
+    assert.notEqual(runtime.status.state, 'needsPermission');
+    assert.deepEqual(runtime.missingPermissions, [
+      {
+        capability: 'calendar',
+        reasonCode: 'permission.calendar',
+        missingScopes: [CAL_EVENTS],
+      },
+    ]);
+    await w.kill();
   } finally {
     await d.cleanup();
   }

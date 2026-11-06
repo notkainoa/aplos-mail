@@ -202,6 +202,15 @@ export const grantedScopesOf = (store: StorePort, id: string): string[] | undefi
 /** A new sign-in asks for the calendar scopes too: the onboarding copy already tells the owner. */
 const CALENDAR_CONNECT_SCOPES = scopesForFeatures('calendarList', 'calendarEvents');
 
+/**
+ * The optional scopes a connect asks for (the connect's `optionalScopes` dep): the calendar pair on a NEW sign-in,
+ * undefined on anything else so the mode's default applies (a reconnect keeps the held ones, a re-grant asks every
+ * requestable scope — the deferred `calendar.events` write scope is never asked in round 1).
+ */
+export const connectOptionalScopes = (req: {
+  mode: 'new' | 'reconnect' | 'grantPermissions';
+}): readonly string[] | undefined => (req.mode === 'new' ? CALENDAR_CONNECT_SCOPES : undefined);
+
 /** Google access tokens over the vault, and the one HTTP client that sign-in and refresh share. */
 function googleTokens(options: ComposeOptions) {
   const { clock, vault } = options;
@@ -227,7 +236,7 @@ function googleFactory(
     // A reconnect keeps the optional scopes the stored grant holds; a grant-only-asked subset would drop them.
     grantedScopes: id => grantedScopesOf(store, id),
     // New sign-ins ask for the calendar scopes (a re-grant asks every optional scope itself).
-    optionalScopes: req => (req.mode === 'new' ? CALENDAR_CONNECT_SCOPES : undefined),
+    optionalScopes: connectOptionalScopes,
     // The `aplos://oauth-return` nonce registry: written here in the utility, consumed by main.
     returns: createOauthReturns({ dir: join(options.dataDir, 'oauth-returns') }),
     // Which window a live sign-in returns to (`sync/connect-sessions`'s binding). Presence-checked:

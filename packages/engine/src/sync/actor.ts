@@ -47,14 +47,19 @@ export const STEP_BACKOFF_MAX_MS = 900_000;
 const LOOP_ERROR_MS = 30_000;
 
 /**
- * The Google calendar scopes the OAuth manifest declares (apps/desktop oauth/scopes.ts). Used only to
- * name the gap in `missingPermissions` before a refusal has reported one — the engine knows the URLs,
- * not the manifest's feature names.
+ * The Google calendar scopes the OAuth manifest's round-1 request carries (apps/desktop oauth/scopes.ts):
+ * `calendar.calendarlist.readonly` + `calendar.events.readonly` (`calendar.events` is round 2's write scope and is
+ * never asked). Used only to name the gap in `missingPermissions` before a refusal has reported one — the engine
+ * knows the URLs, not the manifest's feature names. Exported for the parity test that pins it to the manifest.
  */
-const GOOGLE_CALENDAR_SCOPES = [
+export const GOOGLE_CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
-  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.events.readonly',
 ];
+
+/** The calendar scopes' own failure channel (a `permission` refusal on one is a gap, not an account halt). */
+const isCalendarScope = (scope: ScopeId): boolean =>
+  scope === 'calendars' || scope.startsWith('cal:');
 
 /** Lanes a secondary device never runs, except the workflow round itself (ARCH 6.5, ports.walk.md lease). */
 const PRIMARY_ONLY: ReadonlySet<SyncLane> = new Set<SyncLane>([
@@ -521,6 +526,7 @@ export class AccountActor {
     if (cls === 'cancelled') return;
     const view = statusOfFailure(classified, now);
     if (cls === 'permission') {
+      if (isCalendarScope(step.scope)) return this.calendarScopeRefused(step, classified, now);
       this.halted = view;
       this.setStatus(view!);
       return;
@@ -537,6 +543,22 @@ export class AccountActor {
       this.failure = view;
       this.setStatus(view);
     }
+  }
+
+  /**
+   * A `permission` refusal on a calendar scope is a feature-level gap (D12), never an account halt: the scope backs
+   * off on the usual escalation while `missingPermissions` names the scopes a re-consent must add. Mail is untouched.
+   */
+  private calendarScopeRefused(
+    step: PlannedStep,
+    classified: ClassifiedError | undefined,
+    now: number,
+  ): void {
+    if (classified?.missingScopes?.length) this.calendarScopeGap = classified.missingScopes;
+    this.refreshMissingPermissions();
+    const failures = (this.backoff.get(step.scope)?.failures ?? 0) + 1;
+    const until = now + Math.min(STEP_BACKOFF_MAX_MS, STEP_BACKOFF_MS * 2 ** (failures - 1));
+    this.backoff.set(step.scope, { failures, until });
   }
 
   /**

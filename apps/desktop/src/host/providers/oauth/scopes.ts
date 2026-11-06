@@ -1,7 +1,8 @@
 // The one table of Google scopes Aplos may request: what each is for and the exact consent text (plan 20 PV5).
 // Adding a scope forces every user to consent again, so a new scope needs a DECISIONS.md entry and a row here.
 
-export type ScopeFeature = 'mail' | 'filters' | 'calendarList' | 'calendarEvents';
+export type ScopeFeature =
+  'mail' | 'filters' | 'calendarList' | 'calendarEvents' | 'calendarEventsWrite';
 
 export interface ScopeEntry {
   scope: string;
@@ -10,6 +11,12 @@ export interface ScopeEntry {
   required: boolean;
   /** What the owner is told before Google's screen opens. */
   consent: string;
+  /**
+   * Declared but never requested until its round ships (calendar.events is round 2, writes; least privilege —
+   * the consent screen must never promise "create, change and delete" for a sync that only reads). A grant that
+   * already holds a deferred scope keeps it on a reconnect; it is just never newly asked for.
+   */
+  deferred?: true;
 }
 
 const google = (name: string) => `https://www.googleapis.com/auth/${name}`;
@@ -37,9 +44,16 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
     consent: 'See the list of your calendars.',
   },
   {
-    scope: google('calendar.events'),
+    scope: google('calendar.events.readonly'),
     feature: 'calendarEvents',
     required: false,
+    consent: 'See the events on your calendars.',
+  },
+  {
+    scope: google('calendar.events'),
+    feature: 'calendarEventsWrite',
+    required: false,
+    deferred: true,
     consent: 'See, create, change and delete events on your calendars.',
   },
 ];
