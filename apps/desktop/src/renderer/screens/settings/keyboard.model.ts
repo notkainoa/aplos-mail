@@ -14,6 +14,7 @@ import {
   formatChord,
   keyPrefsFromUi,
   parseChord,
+  reservedReason,
   type KeymapIssue,
   type UiKeyFields,
 } from '../../commands';
@@ -38,8 +39,13 @@ export interface ShortcutRow {
   readonly commandId: string;
   readonly label: string;
   readonly group: ShortcutGroup;
-  /** Canonical chord ids ("meta+k", "e"), tap keys only. */
+  /**
+   * Canonical chord ids ("meta+k", "e"), tap keys only, in the form the keymap stores: a key that follows the
+   * swipe direction is the catalog's own chord (Done is ArrowRight) whatever the swap setting is.
+   */
   readonly chords: readonly string[];
+  /** The same keys as they work now, for display: with "swap triage arrows" on, Done's arrow shows as ←. */
+  readonly shown: readonly string[];
   /** The owner changed it: Reset shows. */
   readonly changed: boolean;
   /** Its keys are taken by another command: "Same keys as …". */
@@ -66,15 +72,54 @@ function prefsOf(ui: KeyFields) {
   return keyPrefsFromUi(ui as UiKeyFields);
 }
 
-/** A command's tap chords as the registry has them, de-duplicated across contexts, in catalog order. */
+/**
+ * A registry in storage form: the swipe swap is off, so every chord is the one the keymap stores (`expandKeymapEntries`
+ * matches a remap entry to the command's own catalog key, which is the unswapped one). Display swaps afterwards.
+ */
+function storageRegistry(ui: KeyFields, keymap: KeymapState = ui.keymap) {
+  return createAppRegistry({ ...prefsOf({ ...ui, keymap }), swapTriageArrows: false });
+}
+
+const SWAPPED_ARROW: Readonly<Record<string, string>> = {
+  ArrowLeft: 'ArrowRight',
+  ArrowRight: 'ArrowLeft',
+};
+
+/** The chord ids of a command's default keys that follow the swipe direction (Done: ArrowRight). */
+function swipeChords(registry: ReturnType<typeof createAppRegistry>, id: string): Set<string> {
+  const keys = registry.keysFor(id).filter(b => b.phase === 'tap' && b.followsSwipe);
+  return new Set(keys.map(b => chordId(b.chord)));
+}
+
+/** Storage-form chords as they work now: swipe-following arrows swap when the owner swapped the triage arrows. */
+function shownChords(
+  ui: KeyFields,
+  chords: readonly string[],
+  followsSwipe: ReadonlySet<string>,
+): string[] {
+  if (!prefsOf(ui).swapTriageArrows) return [...chords];
+  return chords.map(c => (followsSwipe.has(c) ? (SWAPPED_ARROW[c] ?? c) : c));
+}
+
+/**
+ * A command's tap chords as the registry has them, de-duplicated across contexts. Chords that live in only
+ * some of the command's contexts (→ Done, which triages on Home, one by one and the reader but not in plain
+ * lists) sort after the ones that work everywhere the command does, so a remap still replaces the letter and
+ * keeps the arrow — `remapChords` swaps the first chord out.
+ */
 function tapChords(registry: ReturnType<typeof createAppRegistry>, id: string): string[] {
-  const out: string[] = [];
+  const entry = registry.get(id);
+  const contexts = entry?.kind === 'command' ? entry.spec.contexts : [];
+  const byChord = new Map<string, Set<string>>();
   for (const b of registry.keysFor(id)) {
     if (b.phase !== 'tap') continue;
     const c = chordId(b.chord);
-    if (!out.includes(c)) out.push(c);
+    byChord.set(c, (byChord.get(c) ?? new Set()).add(b.context));
   }
-  return out;
+  const full = (set: Set<string>) => contexts.every(c => set.has(c));
+  return [...byChord.keys()].sort(
+    (a, b) => Number(full(byChord.get(b)!)) - Number(full(byChord.get(a)!)),
+  );
 }
 
 function entryChord(e: KeyBinding | string): string {
@@ -98,8 +143,8 @@ export interface ShortcutGroupModel {
 
 /** Every remappable command, grouped, with its effective keys, whether it changed and any clash it has at rest. */
 export function shortcutGroups(ui: KeyFields): readonly ShortcutGroupModel[] {
-  const registry = createAppRegistry(prefsOf(ui));
-  const defaults = createAppRegistry(prefsOf({ ...ui, keymap: {} }));
+  const registry = storageRegistry(ui);
+  const defaults = storageRegistry(ui, {});
   const issues = registry.keymapIssues;
   const ids: string[] = [];
   for (const b of defaults.bindings())
@@ -117,11 +162,13 @@ export function shortcutGroups(ui: KeyFields): readonly ShortcutGroupModel[] {
         i.with?.length,
     );
     const other = clash?.with?.[0];
+    const chords = stored ? stored.map(entryChord) : tapChords(registry, id);
     rows.push({
       commandId: id,
       label: entry.spec.label,
       group: groupOf(id, entry.spec.contexts),
-      chords: stored ? stored.map(entryChord) : tapChords(registry, id),
+      chords,
+      shown: shownChords(ui, chords, swipeChords(defaults, id)),
       changed: stored !== undefined,
       ...(other ? { conflictWith: { commandId: other, label: labelOf(registry, other) } } : {}),
     });
@@ -141,9 +188,18 @@ export type ChordVerdict =
     }
   | { readonly kind: 'refused'; readonly text: string };
 
+/**
+ * Why a reserved chord is refused, in the owner's words. The sentence is built here, from the
+ * chord alone: the registry's `KeymapIssue.detail` names a command id, which must never reach
+ * the owner.
+ */
+const RESERVED_WHY = {
+  text: 'edits text',
+  system: 'belongs to macOS',
+  navigation: 'moves focus between regions',
+} as const;
+
 const REFUSED: Partial<Record<KeymapIssue['reason'], (chord: string) => string>> = {
-  reserved: c =>
-    `${c} belongs to macOS or edits text, so it can’t be a shortcut. Press other keys.`,
   invalidChord: c => `${c} can’t be a shortcut. Press other keys.`,
   invalidEntry: c => `${c} can’t be a shortcut. Press other keys.`,
 };
@@ -163,14 +219,24 @@ export function judgeChord(commandId: string, chord: string, ui: KeyFields): Cho
   };
   const issues = conflicts(candidate, prefsOf(ui)).filter(i => i.commandId === commandId);
   if (issues.length === 0) return { kind: 'ok' };
-  const shown = (() => {
+  const parsed = (() => {
     try {
-      return formatChord(parseChord(chord));
+      return parseChord(chord);
     } catch {
-      return chord;
+      return null;
     }
   })();
-  const refused = issues.find(i => REFUSED[i.reason]);
+  const shown = parsed ? formatChord(parsed) : chord;
+  const refused = issues.find(i => i.reason === 'reserved' || REFUSED[i.reason]);
+  if (refused?.reason === 'reserved') {
+    const why = parsed ? reservedReason(parsed) : null;
+    return {
+      kind: 'refused',
+      text: why
+        ? `${shown} ${RESERVED_WHY[why]}, so it can’t be a shortcut. Press other keys.`
+        : 'That shortcut holds a key that can’t be used. Reset it and try again.',
+    };
+  }
   if (refused) return { kind: 'refused', text: REFUSED[refused.reason]!(shown) };
   const clash = issues.find(
     i => (i.reason === 'conflict' || i.reason === 'shadowed') && i.with?.length,
@@ -196,7 +262,7 @@ function setKeys(
   commandId: string,
   chords: readonly string[],
 ): KeymapState {
-  const defaults = createAppRegistry(prefsOf({ ...ui, keymap: {} }));
+  const defaults = storageRegistry(ui, {});
   const next: Record<string, KeyBinding[]> = { ...keymap };
   if (sameChords(chords, tapChords(defaults, commandId))) delete next[commandId];
   else next[commandId] = chords.map(c => ({ chord: c }));

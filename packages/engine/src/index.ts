@@ -1,4 +1,5 @@
 import * as ai from './ai/module';
+import * as calendar from './calendar/module';
 import * as clock from './clock/module';
 import * as host from './host/module';
 import * as html from './mail/module';
@@ -24,6 +25,7 @@ const modules: readonly LaneModuleSource[] = [
   ai,
   html,
   host,
+  calendar,
 ];
 
 /** Every lane's commit extensions, for the host's `openStore({extensions})` (seam 2). */

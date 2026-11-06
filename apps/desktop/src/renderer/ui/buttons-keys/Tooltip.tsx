@@ -21,6 +21,7 @@ import {
 import { createPortal } from 'react-dom';
 import { timing } from '../generated/motion';
 import type { ShortcutChord, TooltipProps } from '../props';
+import { realKeySeen, realPointerOf, realPointerSeen } from './inputIntent';
 import { KeyCaps } from './Kbd';
 import { useControlKeys } from './keyHints';
 import { mergeRefs } from './mergeRefs';
@@ -89,6 +90,7 @@ type TriggerProps = {
   ref?: Ref<HTMLElement>;
   'aria-describedby'?: string;
   onPointerEnter?: (event: PointerEvent<HTMLElement>) => void;
+  onPointerMove?: (event: PointerEvent<HTMLElement>) => void;
   onPointerLeave?: (event: PointerEvent<HTMLElement>) => void;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   onFocus?: (event: FocusEvent<HTMLElement>) => void;
@@ -115,6 +117,9 @@ export function Tooltip({
   } | null>(null);
   const [instant, setInstant] = useState(false);
   const openRef = useRef(false);
+  // Set by pointerenter: the element may have been drawn under a resting cursor, so the rest timer
+  // waits for a genuine move over the trigger (a mount-under-cursor enter produces none).
+  const armedRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -201,19 +206,30 @@ export function Tooltip({
     'aria-describedby': detail ? reasonId : open ? id : own['aria-describedby'],
     onPointerEnter: (event: PointerEvent<HTMLElement>) => {
       own.onPointerEnter?.(event);
-      if (event.pointerType !== 'touch') show(false);
+      if (event.pointerType !== 'touch') armedRef.current = true;
+    },
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
+      own.onPointerMove?.(event);
+      if (!armedRef.current || event.pointerType === 'touch') return;
+      if (realPointerOf(event.nativeEvent) || realPointerSeen()) {
+        armedRef.current = false;
+        show(false);
+      }
     },
     onPointerLeave: (event: PointerEvent<HTMLElement>) => {
       own.onPointerLeave?.(event);
+      armedRef.current = false;
       hide();
     },
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
       own.onPointerDown?.(event);
+      armedRef.current = false;
       hide();
     },
     onFocus: (event: FocusEvent<HTMLElement>) => {
       own.onFocus?.(event);
-      if (event.currentTarget.matches(':focus-visible')) show(true);
+      // Script focus can match :focus-visible without any keyboard use (launch, focus restore).
+      if (event.currentTarget.matches(':focus-visible') && realKeySeen()) show(true);
     },
     onBlur: (event: FocusEvent<HTMLElement>) => {
       own.onBlur?.(event);

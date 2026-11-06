@@ -76,7 +76,7 @@ async function checkManually() {
       'You can restart to update when it is ready.',
     );
   else if (status.state === 'ready') {
-    focusMain();
+    void focusMain();
   } else if (status.state === 'disabled') show('Automatic updates are off', status.reason);
   else if (status.state === 'error') show('Couldn’t check for updates', status.message);
 }

@@ -112,6 +112,11 @@
 .ui-list-btn[data-label-hidden='true']:active {
   transform: scale(var(--press-scale-icon));
 }
+/* A keycap inside a label-hidden button widens it (the narrow focus letter's icon plus its cap). */
+.ui-list-btn[data-label-hidden='true']:has(> .ui-list-kbd) {
+  width: auto;
+  padding: 0 var(--space-2);
+}
 /* The one filled button: ink blue, a 1 px top highlight and bottom shade that swap on press. */
 .ui-list-btn[data-variant='filled'] {
   background-color: var(--accent);
@@ -362,14 +367,18 @@
   gap: var(--space-4);
   padding: var(--space-6) var(--space-3);
   color: var(--dim);
-  font: var(--type-base);
-  letter-spacing: var(--track-base);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
 }
 .ui-empty-line__copy {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   max-width: 100%;
+}
+/* The one muted mark above the line; never in a circle. */
+.ui-empty-line__copy > .ui-list-icon {
+  color: var(--faint);
 }
 .ui-empty-line__text,
 .ui-empty-line__detail {
@@ -386,18 +395,33 @@
   align-items: center;
   gap: var(--space-2);
 }
-/* Inbox zero: a calm centred block; the space carries it. No sky, no card, no icon. */
-.ui-empty-line[data-size='display'] {
+/* The slot only has a min-height, so it becomes a column the pane line can grow in (the one-by-one slot does the
+   same in screens/home/oneByOne.css). */
+.aplos-screen:has(> .ui-empty-line[data-placement='pane']) {
+  display: flex;
+  flex-direction: column;
+}
+/* In the pane the line centres both ways; `safe` keeps a taller block anchored at the top where it can scroll.
+   No sky, no card, no icon in a circle. */
+.ui-empty-line[data-placement='pane'] {
   box-sizing: border-box;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-6);
+  justify-content: safe center;
+  flex: 1 0 auto;
+  gap: var(--space-4);
   min-height: 100%;
   padding: var(--pane-head) var(--space-8) var(--space-10);
   text-align: center;
 }
-.ui-empty-line[data-size='display'] .ui-empty-line__copy {
+.ui-empty-line[data-placement='pane'] .ui-empty-line__copy {
   align-items: center;
+  gap: var(--space-2);
+}
+.ui-empty-line[data-placement='pane'] .ui-empty-line__actions {
+  justify-content: center;
+}
+/* Inbox zero keeps the `display` role, calmer (owner review 2026-11-05). */
+.ui-empty-line[data-size='display'] .ui-empty-line__copy {
   gap: var(--space-3);
 }
 .ui-empty-line[data-size='display'] .ui-empty-line__text {
@@ -409,9 +433,6 @@
 .ui-empty-line[data-size='display'] .ui-empty-line__detail {
   font: var(--type-base);
   letter-spacing: var(--track-base);
-}
-.ui-empty-line[data-size='display'] .ui-empty-line__actions {
-  justify-content: center;
 }
 
 /* ---------- Error line ---------- */
@@ -474,10 +495,10 @@
   position: relative;
   border-radius: var(--radius-md);
 }
-/* The ring is never removed (DESIGN §11.2): it marks that the list has focus; the cursor row marks the option. */
+/* The listbox is a focus container, not a control: the cursor row (puck fill plus accent bar) is
+   the focus marker, so the box itself never draws a ring. */
 .ui-list-box:focus-visible {
-  outline: var(--focus-width) solid var(--accent);
-  outline-offset: var(--focus-gap);
+  outline: none;
 }
 
 .ui-list-group + .ui-list-group,
@@ -1033,6 +1054,9 @@
   background-color: var(--paper);
   box-shadow: var(--elev-dialog);
   color: var(--ink);
+}
+.ui-low-sheet__panel:focus-visible {
+  outline: none;
 }
 .ui-low-sheet__panel .ui-list-row {
   --ui-row-base: var(--paper);

@@ -326,15 +326,24 @@ test('reserved chords: system and text-editing chords are refused unless they ar
     'meta+m',
     'meta+,',
     'meta+Tab',
+    'Tab',
+    'shift+Tab',
   ]) {
     assert.ok(RESERVED_CHORDS.includes(wanted), wanted);
   }
   assert.equal(reservedReason(parseChord('meta+q')), 'system');
   assert.equal(reservedReason(parseChord('meta+c')), 'text');
+  assert.equal(reservedReason(parseChord('Tab')), 'navigation');
+  assert.equal(reservedReason(parseChord('shift+Tab')), 'navigation');
   assert.equal(reservedReason(parseChord('meta+k')), null);
   assert.deepEqual(issuesFor({ 'mail.done': ['meta+q'] }), [['mail.done', 'reserved']]);
   assert.deepEqual(issuesFor({ 'mail.done': ['meta+Tab'] }), [['mail.done', 'reserved']]);
   assert.deepEqual(issuesFor({ 'app.settings': ['meta+,'] }), [], '⌘, is Settings’ own default');
+  assert.deepEqual(
+    issuesFor({ 'compose.keepSuggestion': ['Tab'] }),
+    [],
+    'Tab is Keep suggestion’s own default',
+  );
 });
 
 test('conflicts(keymap) checks a keymap without touching a live registry and names who has the chord', () => {

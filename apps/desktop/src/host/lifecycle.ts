@@ -22,8 +22,55 @@ export function isFirstRun(facts: SessionFacts): boolean {
   );
 }
 
+/**
+ * What the window choice treats "no `Session/get` answer ever arrived" as: NOT first run. A failed first read on
+ * an existing install must not open onboarding over a finished setup (with "Try demo mail" into the real mailbox);
+ * a truly fresh install gets the mail window's own zero-accounts pane, which is acceptable.
+ */
+export const UNKNOWN_FACTS: SessionFacts = Object.freeze({ hasAccounts: true, setup: {} });
+
+/**
+ * `Session/get` for the window choice, tried once more when the first read fails or times out: one bad read must
+ * never decide the install is fresh. After the second miss `previous` (the last good answer) stands in, or
+ * `UNKNOWN_FACTS` when there never was one.
+ */
+export async function readSessionFacts(
+  read: () => Promise<SessionFacts>,
+  previous: SessionFacts | undefined,
+): Promise<SessionFacts> {
+  try {
+    return await read();
+  } catch {
+    try {
+      return await read();
+    } catch {
+      return previous ?? UNKNOWN_FACTS;
+    }
+  }
+}
+
 /** Which window a launch opens. `none` means the app stays windowless (resident). */
 export type WindowChoice = 'onboarding' | 'mail' | 'none';
+
+/**
+ * The onboarding window is the default first-run path (DESIGN 7.11; the APLOS_ONBOARDING_WINDOW gate is removed).
+ * `APLOS_ONBOARDING_WINDOW=0` is the explicit opt-out for tests and debugging; every other value keeps it on.
+ */
+export function onboardingOptedOut(env: { APLOS_ONBOARDING_WINDOW?: string }): boolean {
+  return env.APLOS_ONBOARDING_WINDOW === '0';
+}
+
+/**
+ * The small first-run window is the default only on the real-engine path: it needs the new renderer route and the
+ * engine's `Setup/*`, and the legacy engine (every release build until the switch) would load today's whole mail app
+ * into the 640 x 600 window. `APLOS_ONBOARDING_WINDOW=0` still opts out on the real path.
+ */
+export function onboardingEnabledFor(
+  env: { APLOS_ONBOARDING_WINDOW?: string },
+  realPath: boolean,
+): boolean {
+  return realPath && !onboardingOptedOut(env);
+}
 
 /**
  * A login launch (`wasOpenedAtLogin`) stays windowless, with or without accounts, until the Dock or the menu-bar item
@@ -44,6 +91,45 @@ export function activation(
   if (open.mail) return 'focus-mail';
   if (open.onboarding) return 'focus-onboarding';
   return isFirstRun(facts) ? 'open-onboarding' : 'open-mail';
+}
+
+/**
+ * The startup `.then` (F3): the mail choice opens the one mail window through `ensureMail`, but never over an
+ * onboarding window an activation opened while startup waited — closing it makes the mail window itself. Any other
+ * choice hands off to `activate` (which decides the pending-activation call).
+ */
+export function applyWindowChoice(
+  choice: WindowChoice,
+  deps: { onboardingOpen(): boolean; ensureMail(): void; activate(): void },
+): void {
+  if (choice === 'mail') {
+    if (!deps.onboardingOpen()) deps.ensureMail();
+  } else deps.activate();
+}
+
+/**
+ * An activation's mail branch: an onboarding decision belongs to the controller (nothing to make here); anything
+ * else resolves to the one guarded mail window, returned so a caller can queue work for it (M5).
+ */
+export function mailForActivation<T>(decision: Activation, ensureMail: () => T): T | undefined {
+  if (decision === 'focus-onboarding' || decision === 'open-onboarding') return undefined;
+  return ensureMail();
+}
+
+/**
+ * What a failed window decision does: `report` logs it, then the mail window is made through the same guard;
+ * when even that fails `fatal` runs the "could not start" path. The app is never left silently windowless.
+ */
+export function windowFallback(
+  error: unknown,
+  deps: { report(error: unknown): void; ensureMail(): void; fatal(error: unknown): void },
+): void {
+  deps.report(error);
+  try {
+    deps.ensureMail();
+  } catch (fatal) {
+    deps.fatal(fatal);
+  }
 }
 
 /** The longest the handoff waits for the mail window's first paint before showing it anyway. */
@@ -122,6 +208,23 @@ export interface OnboardingController {
    */
   noteRendererSetupEnd(): void;
   isOpen(): boolean;
+  /** Raises the welcome window when it is open; false when it is not. Never opens one. */
+  focusOpen(): boolean;
+}
+
+/**
+ * The one existing window an `aplos://oauth-return` deep link may raise for `purpose` (the window the
+ * sign-in started in). It never opens anything: a link naming the welcome window falls back to the
+ * mail window, a link for a mail flow that finds no mail window does nothing — a later add must never
+ * surface the setup window.
+ */
+export function oauthReturnTarget(
+  purpose: 'onboarding' | 'mail',
+  open: { onboarding: boolean; mail: boolean },
+): 'onboarding' | 'mail' | 'none' {
+  if (purpose === 'onboarding' && open.onboarding) return 'onboarding';
+  if (open.mail) return 'mail';
+  return 'none';
 }
 
 const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.isDestroyed();
@@ -129,13 +232,58 @@ const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.
 const up = (win: WindowPort | undefined): win is WindowPort =>
   alive(win) && (win.isVisible() || win.hasPainted());
 
+/**
+ * The focus half of `aplos://oauth-return`: resolves the one live window `oauthReturnTarget` picked
+ * and raises the app behind it — in that order. `raiseApp` runs only once a window actually took the
+ * focus. A welcome window that cannot take it (unpainted, or one that died between `onboardingOpen`
+ * and `focusOnboarding`) falls through to the mail window `oauthReturnTarget` would have picked for
+ * a closed one; with no live window at all the app stays where it was. Never opens a window.
+ */
+export function focusOauthReturnWindow(
+  purpose: 'onboarding' | 'mail',
+  deps: {
+    /** `onboarding.isOpen()`, sampled now. */
+    onboardingOpen(): boolean;
+    /** Raises the open welcome window; false when it is gone or unpainted. Never opens one. */
+    focusOnboarding(): boolean;
+    /** The live mail window, when one exists. */
+    mail(): WindowPort | undefined;
+    /** Brings the app itself forward (macOS `app.focus`); runs only after a window took focus. */
+    raiseApp(): void;
+    /** Test mode never shows or focuses a window; the resolution is still reported. */
+    testMode: boolean;
+  },
+): 'onboarding' | 'mail' | 'none' {
+  const mail = deps.mail();
+  const target = oauthReturnTarget(purpose, {
+    onboarding: deps.onboardingOpen(),
+    mail: alive(mail),
+  });
+  let focused: 'onboarding' | 'mail' | 'none' = 'none';
+  if (target === 'onboarding' && deps.focusOnboarding()) {
+    focused = 'onboarding';
+  } else if (target !== 'none' && alive(mail)) {
+    if (mail.isMinimized()) mail.restore();
+    if (!deps.testMode) {
+      mail.show();
+      mail.focus();
+    }
+    focused = 'mail';
+  }
+  if (focused !== 'none') deps.raiseApp();
+  return focused;
+}
+
 export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   let win: WindowPort | undefined;
   let ended = false;
   let handoff: Promise<void> | undefined;
 
-  function bring(target: WindowPort) {
+  function bring(target: WindowPort, opts?: { showUnpainted?: boolean }) {
     if (deps.testMode) return;
+    // A window still waiting for its first paint shows itself then (F4: never a blank flash); only the
+    // handoff's backstop may show one that never painted rather than leave nothing.
+    if (!target.hasPainted() && !opts?.showUnpainted) return;
     if (target.isMinimized()) target.restore();
     target.show();
     target.focus();
@@ -154,6 +302,10 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   function open(mode: OnboardingMode) {
     if (deps.isQuitting()) return;
     if (alive(win)) return bring(win);
+    // A first-run window never opens over a live mail window, even one still waiting for its first paint:
+    // a late startup answer or an activation decided while a mail window was already being made (F3).
+    // "Show welcome" (review) is a deliberate ask and may sit over mail.
+    if (mode === 'first' && alive(deps.currentMail())) return;
     const created = deps.createOnboarding(mode);
     win = created;
     ended = false;
@@ -162,7 +314,7 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
 
   function reveal(mail: WindowPort, done: () => void, to?: FinishDestination) {
     if (deps.isQuitting()) return done();
-    bring(mail);
+    bring(mail, { showUnpainted: true });
     deps.announceShown(mail);
     if (to) {
       try {
@@ -269,6 +421,14 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
       ended = true;
     },
     isOpen: () => alive(win),
+    focusOpen() {
+      if (!alive(win)) return false;
+      // A window still waiting for its first paint is not raised (bring declines it): say so, so the caller does not
+      // pull the app forward over a window nobody can see yet.
+      if (!deps.testMode && !win.hasPainted()) return false;
+      bring(win);
+      return true;
+    },
   };
 }
 
@@ -487,6 +647,29 @@ export function createQuitGate(confirm: () => Promise<boolean>, begin: () => voi
             // Nothing safe to report from here; the next quit request asks again.
           }
         });
+    },
+  };
+}
+
+/**
+ * Holds `aplos://oauth-return` links until the first window choice has been applied. A link that arrives while
+ * `startWindows` is still deciding (cold start, `open-url` or argv) would otherwise be answered with no window to
+ * focus and its one-time nonce burned. `hold` says whether the link was held back (bounded; the rest are dropped,
+ * which is the safe direction: a dropped link is a no-op and the page keeps its visible fallback link).
+ */
+export function createLinkGate(cap: number) {
+  let open = false;
+  const held: string[] = [];
+  return {
+    hold(link: string): boolean {
+      if (open) return false;
+      if (held.length < cap) held.push(link);
+      return true;
+    },
+    /** Opens the gate and returns what was held, oldest first. */
+    release(): string[] {
+      open = true;
+      return held.splice(0);
     },
   };
 }

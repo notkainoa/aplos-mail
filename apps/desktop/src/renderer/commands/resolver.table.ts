@@ -5,7 +5,9 @@ import type { ContextName, FocusKind, KeyInput, KeyPrefs } from './types';
 export const HOME: ContextName[] = ['global', 'list', 'home'];
 export const ALL_MAIL: ContextName[] = ['global', 'list'];
 export const READER: ContextName[] = ['global', 'list', 'reader'];
-export const ONE_BY_ONE: ContextName[] = ['global', 'list', 'reader', 'oneByOne'];
+// The runtime stack of "Go one by one": the screen has no key context of its own and `useOneByOne` puts `home` on
+// the shell's key layer, so it is Home's stack (the `oneByOne` context is only what a binding can name).
+export const ONE_BY_ONE: ContextName[] = ['global', 'list', 'home'];
 export const DONE: ContextName[] = ['global', 'list', 'done'];
 export const CALENDAR: ContextName[] = ['global', 'calendar'];
 export const INLINE_REPLY: ContextName[] = ['global', 'list', 'reader', 'compose'];
@@ -205,6 +207,32 @@ export const TABLE: readonly Row[] = [
     expect: null,
   },
   { name: '← does nothing in Done', stack: DONE, event: keydown('ArrowLeft'), expect: null },
+  {
+    name: '→ in a text field moves the caret, not Done',
+    stack: HOME,
+    event: keydown('ArrowRight'),
+    focus: 'text',
+    expect: null,
+  },
+  {
+    name: '← in a text field moves the caret, not Later',
+    stack: HOME,
+    event: keydown('ArrowLeft'),
+    focus: 'text',
+    expect: null,
+  },
+  {
+    name: '⇧→ is not → on Home',
+    stack: HOME,
+    event: keydown('ArrowRight', { shiftKey: true }),
+    expect: null,
+  },
+  {
+    name: '⌘→ is not → on Home',
+    stack: HOME,
+    event: keydown('ArrowRight', { metaKey: true }),
+    expect: null,
+  },
   {
     name: '→ is the next period in calendar',
     stack: CALENDAR,

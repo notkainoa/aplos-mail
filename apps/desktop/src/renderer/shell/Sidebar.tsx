@@ -13,13 +13,15 @@ import {
   FOOTER_PLACES,
   MAIL_PLACES,
   TOP_PLACES,
+  placeRoute,
   placeScreen,
   screenPlace,
   type Place,
   type PlaceId,
 } from './nav';
+import { handleRegionItemKey } from './regions';
 import { SidebarSlotView } from './SidebarSlotView';
-import { useSidebarSlotValue, type Screen } from './index';
+import { openRoute, useSidebarSlotValue, type Screen } from './index';
 
 const MAIL_HEAD_ID = 'sidebar-mail';
 
@@ -33,6 +35,8 @@ export interface SidebarProps {
   readonly onNavigate: (screen: Screen) => void;
   /** The compose pencil was pressed. */
   readonly onCompose: () => void;
+  /** The sidebar toggle was pressed. */
+  readonly onToggleSidebar: () => void;
   /** The account switcher and its menu. */
   readonly accountSwitcher: ReactNode;
   /** The status slot. */
@@ -61,6 +65,13 @@ interface GroupProps {
   readonly onNavigate: (screen: Screen) => void;
 }
 
+/** Where a row goes: a place with a Settings route (Help) deep-links it; the rest open their screen. */
+export function selectPlace(id: PlaceId, onNavigate: (screen: Screen) => void): void {
+  const route = placeRoute(id);
+  if (route) openRoute(route);
+  else onNavigate(placeScreen(id));
+}
+
 function PlaceGroup({ label, places, counts, selected, onNavigate }: GroupProps) {
   const here = places.some(place => place.id === selected);
   return (
@@ -70,7 +81,7 @@ function PlaceGroup({ label, places, counts, selected, onNavigate }: GroupProps)
       label={label}
       items={toItems(places, counts)}
       selectedId={here ? selected : null}
-      onSelect={id => onNavigate(placeScreen(id as PlaceId))}
+      onSelect={id => selectPlace(id as PlaceId, onNavigate)}
     />
   );
 }
@@ -80,6 +91,7 @@ export function Sidebar({
   counts,
   onNavigate,
   onCompose,
+  onToggleSidebar,
   accountSwitcher,
   status,
 }: SidebarProps) {
@@ -87,17 +99,32 @@ export function Sidebar({
   const group = { counts, selected, onNavigate };
   const slot = useSidebarSlotValue();
   return (
-    <aside className="aplos-sidebar" aria-label="Sidebar">
+    <aside
+      className="aplos-sidebar"
+      aria-label="Sidebar"
+      data-region="sidebar"
+      onKeyDown={handleRegionItemKey}
+    >
       <div className="aplos-sidebar__top">
-        {accountSwitcher}
-        <Button
-          variant="icon"
-          size="sm"
-          icon="compose"
-          label="New message"
-          commandId="mail.compose"
-          onPress={onCompose}
-        />
+        <div className="aplos-sidebar__account">{accountSwitcher}</div>
+        <div className="aplos-sidebar__chrome">
+          <Button
+            variant="icon"
+            size="sm"
+            icon="sidebar"
+            label="Show or hide the sidebar"
+            commandId="app.sidebar"
+            onPress={onToggleSidebar}
+          />
+          <Button
+            variant="icon"
+            size="sm"
+            icon="compose"
+            label="New message"
+            commandId="mail.compose"
+            onPress={onCompose}
+          />
+        </div>
       </div>
       <PlaceGroup label="Places" places={TOP_PLACES} {...group} />
       <NavHead label="Mail" id={MAIL_HEAD_ID} />
