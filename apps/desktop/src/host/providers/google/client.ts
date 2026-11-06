@@ -67,7 +67,7 @@ export function isStop(error: unknown): error is PausedError | ProviderError {
   );
 }
 
-function networkKind(error: unknown): 'timeout' | 'reset' | 'refused' {
+export function networkKind(error: unknown): 'timeout' | 'reset' | 'refused' {
   const code = (error as { cause?: { code?: string } })?.cause?.code ?? '';
   if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN/.test(code)) return 'refused';
   if (/TIMEOUT/i.test(code) || (error as Error)?.name === 'TimeoutError') return 'timeout';

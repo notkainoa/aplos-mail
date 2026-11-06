@@ -4,6 +4,7 @@ import type {
   AdapterContext,
   AttachmentRef,
   BudgetSpec,
+  CalendarAdapter,
   CoalescedOp,
   ConnectContext,
   ConnectRequest,
@@ -30,6 +31,7 @@ import type {
 } from '@aplos/engine/ports';
 import type { GoogleConnect } from '../oauth/connect';
 import { fetchAttachment, fetchOriginal, openThread } from './bodies';
+import { createGoogleCalendar } from './calendar';
 import { GmailPacer, PACER_TARGET, type GmailDeps } from './client';
 import { GMAIL_COSTS, type GmailCostTable } from './costs';
 import { deleteDraftCopy, saveDraftCopy } from './drafts';
@@ -142,6 +144,30 @@ export const GMAIL_BUDGET: BudgetSpec = {
   batch: { start: 10, min: 1, max: 25, growBy: 5 },
 };
 
+/**
+ * The `gcal` budget (prov-cal): Google Calendar's 600 requests a minute per user, half of it as the target — the
+ * same spec as `gcalBudget` in the engine's `sync/budgets.ts`, declared here because the factory supplies budgets.
+ * A pause or block on it shows per calendar, never as the mail status (D12).
+ */
+export const GCAL_BUDGET: BudgetSpec = {
+  id: 'gcal',
+  unit: 'requests',
+  windowMs: 60_000,
+  ceiling: 600,
+  target: { primary: 300, secondary: 300 },
+  floor: 60,
+  laneShare: {
+    interactive: 1,
+    opFlush: 1,
+    incremental: 0.9,
+    prefetch: 0.2,
+    backfill: 0.75,
+    enrichment: 0.5,
+  },
+  inFlight: 2,
+  reservedInteractive: 1,
+};
+
 export class GmailAdapter implements ProviderAdapter {
   readonly kind = 'google' as const;
   private readonly closer = new AbortController();
@@ -155,6 +181,12 @@ export class GmailAdapter implements ProviderAdapter {
   readonly workflow?: WorkflowChannel;
   /** The sender-rules mirror (prov-gmail-write): the account's granted scopes decide what it answers. */
   readonly rules: RulesAdapter;
+  /**
+   * The calendar half (prov-cal, calendar.ts): always present, so `runtime.missingPermissions` can tell a grant
+   * without its scopes from a provider that has no calendar at all. Its `plan` emits nothing while
+   * `capabilities.calendar` is false.
+   */
+  readonly calendar: CalendarAdapter;
 
   constructor(
     readonly account: AdapterAccount,
@@ -166,6 +198,11 @@ export class GmailAdapter implements ProviderAdapter {
       userAgent: options.userAgent ?? 'AplosMail/0.3 (gzip)',
       closed: this.closer.signal,
     };
+    this.calendar = createGoogleCalendar({
+      fetch: deps.fetch,
+      userAgent: deps.userAgent,
+      closed: deps.closed,
+    });
     this.rt = {
       deps,
       windowCall: options.windowCall ?? 'messages.get',
@@ -212,7 +249,7 @@ export class GmailAdapter implements ProviderAdapter {
   plan(input: PlanInput): PlannedStep[] {
     const steps = plan(input);
     const workflow = this.workflowStep(input);
-    return workflow ? [...steps, workflow] : steps;
+    return [...steps, ...this.calendar.plan(input), ...(workflow ? [workflow] : [])];
   }
 
   /**
@@ -328,7 +365,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ProviderFa
     },
     ...(discardCredential ? { discardCredential } : {}),
     budgets(): BudgetSpec[] {
-      return [GMAIL_BUDGET];
+      return [GMAIL_BUDGET, GCAL_BUDGET];
     },
     open(account: AdapterAccount): ProviderAdapter {
       return new GmailAdapter(account, options);
