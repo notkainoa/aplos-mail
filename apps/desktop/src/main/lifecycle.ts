@@ -258,8 +258,8 @@ if (isTest) {
   // Chromium's in-memory keychain: safeStorage works without touching the login keychain at all, so a test can
   // neither prompt nor leave items behind (an ad-hoc rebuilt app would be refused a keychain item an earlier build made).
   // The separate app name below is the second line of defence should the switch ever be ignored.
-  // APLOS_TEST_KEYCHAIN=login opts out: the test then uses the real login keychain under the
-  // test-namespaced item, so only credentials a test run sealed unwrap — never the real app's item.
+  // APLOS_TEST_KEYCHAIN=login opts out: the run then touches the real login-keychain item — a signature
+  // mismatch against the seal raises the macOS prompt or denies the unwrap (never a silent success).
   if (!testOnlyFlags.useLoginKeychain) app.commandLine.appendSwitch('use-mock-keychain');
   // -/--remote-debugging-address would defeat the loopback bind the e2e relies on, so it is refused
   // whenever test mode is on — whether or not APLOS_TEST_CDP_PORT was set. Chromium accepts a

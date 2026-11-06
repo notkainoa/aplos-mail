@@ -29,7 +29,9 @@ if (!existsSync(exe)) {
 }
 const dataDir = flag('--data-dir');
 if (!dataDir) {
-  console.error('e2e: pass --data-dir <seeded private copy of the signed-in data dir>');
+  console.error(
+    'e2e: pass --data-dir <temp dir copy of a signed-in data dir; needs .aplos-test marker, no run/ or Singleton* locks>',
+  );
   process.exit(2);
 }
 mkdirSync(outDir, { recursive: true });
@@ -159,7 +161,7 @@ async function main() {
   const rect = name =>
     ev(`(()=>{
       const want=${JSON.stringify(name)};
-      const els=[...document.querySelectorAll('a,button,[role=button],[role=link],[role=tab],[role=option],[role=menuitem],[role=row],div,li,span,p')];
+      const minX=${JSON.stringify(null)};
       const el=els.find(e=>{
         const t=(e.getAttribute('aria-label')||e.textContent||'').trim();
         return t===want||t.startsWith(want+'\\n')||t.startsWith(want+' ');
@@ -191,7 +193,7 @@ async function main() {
   };
   const text = () => ev('document.body?.innerText ?? ""');
   const BAD =
-    /Aplos needs a moment|Error invoking remote method|Couldn['’]t load|not on the new engine/i;
+    /Aplos needs a moment|Error invoking remote method|Couldn['’]t load this list|not on the new engine/i;
   async function step(name, act, opts = {}) {
     pageErrors.length = 0;
     const before = output.length;
@@ -338,7 +340,7 @@ async function main() {
     'Keyboard',
     'Help & about',
   ]) {
-    await step(`settings-${s.toLowerCase().replace(/[&\s]+/g, '-')}`, () => click(s), {
+    await step(`settings-${s.toLowerCase().replace(/[&\s]+/g, '-')}`, () => click(s, 290), {
       wait: 1500,
     });
   }
@@ -350,9 +352,9 @@ async function main() {
 
   // ── Add account redirect ────────────────────────────────────
   await step('add-account', async () => {
-    await click('Accounts');
+    await click('Accounts', 290);
     await delay(1200);
-    await click('Add account');
+    await click('Add account', 290);
     await delay(3000); // Test mode records the OAuth redirect instead of opening a browser.
     await key('Escape', 0, 'Escape');
   });
@@ -441,10 +443,10 @@ async function main() {
     if (b2 && b2.left === b.left && b2.top === b.top) pageErrors.push('window did not move');
   });
   await step('fullscreen', async () => {
-    await key('f', 12); // ⌃⌘F
+    await key('f', 6); // ⌃⌘F
     await delay(2500);
     const b = await win();
-    await key('f', 12);
+    await key('f', 6);
     await delay(1500);
     if (!b) return 'SKIP';
   });

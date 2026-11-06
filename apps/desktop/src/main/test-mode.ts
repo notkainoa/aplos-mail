@@ -195,8 +195,10 @@ export function exposeTestHooks() {
  *   CDP driver can screenshot. Never steals focus or switches Space.
  * - APLOS_TEST_CDP_PORT=<0-65535>: append --remote-debugging-port for the run; 0 asks for a random port. The flag
  *   is loopback-only by Chromium design; a caller-supplied -/--remote-debugging-address in argv is refused at startup.
- * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain. The test then uses the real login keychain under the
- *   test-namespaced item, so it can only unwrap credentials a test run sealed — never the real app's item.
+ * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain. On Electron 44 the safeStorage item resolves from the
+ *   package name — i.e. the real "Aplos Mail Safe Storage" item. A seal made by an identically-signed build unwraps
+ *   (same build re-run); a signature mismatch either raises the macOS keychain prompt (never silently) or denies the
+ *   unwrap, in which case the engine runs with a key error and accounts stay locked.
  * Without APLOS_TEST=1 every flag is inert — normal launches are byte-for-byte unchanged.
  */
 export interface TestFlags {
