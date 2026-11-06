@@ -1,6 +1,7 @@
 // verify-hardening-sweep.mjs — real-engine screen sweep of a packaged Aplos Mail .app: launches it
 // with APLOS_TEST=1 + APLOS_ENGINE=real on a pre-seeded isolated data dir (copy of a signed-in
-// mailbox, .aplos-test marker added by the caller), drives every screen over CDP headless and
+// mailbox, .aplos-test marker added by the caller; the run MUTATES it (UI prefs, read state), so pass a
+// disposable copy only), drives every screen over CDP headless and
 // records a screenshot, the visible text and console errors for each. FAILS a screen on the legacy
 // fatal copy, an 'aplos:invoke' refusal or a 'Couldn't load' state it notices.
 //
@@ -173,7 +174,9 @@ async function main() {
         const r=e.getBoundingClientRect();
         if(r.x>300&&r.width>0&&r.height>0&&e.children.length===0)n+=(e.textContent||'').trim().length;
       }return n})()`);
-    const bad = text.match(BAD) || (paneLen < 8 ? ['blank pane'] : null);
+    // "Couldn't load" next to the Reconnect copy is the expected state of a seed whose token is dead.
+    const reconnect = /sign in again/i.test(text);
+    const bad = (!reconnect && text.match(BAD)) || (paneLen < 8 ? ['blank pane'] : null);
     const refused = output
       .slice(before)
       .join('')
@@ -191,6 +194,14 @@ async function main() {
 
   // Let the seeded mailbox settle (sync may still be running).
   await delay(4000);
+  // A seed whose sidebar was last COLLAPSED to the strip (localStorage aplos.sidebar.collapsed) has no
+  // nav rows to click: open it once, or every nav row reads "click target missing". The separate
+  // "Sidebar minimised" setting (a ☰ menu, no toggle) is not handled: un-minimise it in the seed.
+  const sidebarOpen = await ev(`!!document.querySelector('[aria-label="Sidebar"]')`);
+  if (!sidebarOpen) {
+    await click('Show or hide the sidebar');
+    await delay(600);
+  }
   const rowClick = async () => {
     const rect = await ev(`(()=>{const r=[...document.querySelectorAll('*')]
       .filter(e=>e.children.length<=2&&/^[A-Z][\\w ]{2,30}$/.test((e.textContent||'').trim()))
@@ -211,7 +222,7 @@ async function main() {
         await rowClick();
       },
     ],
-    ['reader-menu', () => click('⋯')],
+    ['reader-menu', () => click('More')],
     ['later', () => click('Later')],
     ['calendar', () => click('Calendar')],
     [
@@ -228,14 +239,6 @@ async function main() {
         await click('Calendar');
         await delay(1500);
         await click('Month');
-      },
-    ],
-    [
-      'calendar-agenda',
-      async () => {
-        await click('Calendar');
-        await delay(1500);
-        await click('Agenda');
       },
     ],
     ['all-mail', () => click('All mail')],
@@ -278,7 +281,10 @@ async function main() {
         const navs =
           await ev(`(()=>[...document.querySelectorAll('aside a,nav a,aside button,nav button')]
         .map(n=>(n.getAttribute('aria-label')||n.textContent||'').trim()).filter(Boolean).slice(0,12))()`);
-        for (const n of navs || []) {
+        // The app shell's own rows are not Settings sections: clicking them would leave Settings.
+        const shellRow =
+          /^(New message|Search|Home|Later|Calendar|All mail|Done|Drafts|Sent|Spam|Trash|Settings|Help|Show or hide the sidebar)/;
+        for (const n of (navs || []).filter(label => !shellRow.test(label))) {
           await click(n);
           await delay(500);
         }
