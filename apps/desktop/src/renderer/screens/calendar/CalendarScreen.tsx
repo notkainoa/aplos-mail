@@ -389,7 +389,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
   useSidebarSlot(sidebar);
 
-  if (eventsWindow.status === 'failed') return <ListFailed />;
+  if (eventsWindow.status === 'failed') return <ListFailed errorType={eventsWindow.error?.type} />;
   if (eventsWindow.status === 'opening' && events.length === 0) return null;
   return (
     <CalendarView

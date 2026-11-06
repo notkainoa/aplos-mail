@@ -43,11 +43,16 @@ export const settings = area('settings', {
   },
   'Settings/set': {
     summary:
-      'Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) is for Electron windows only.',
+      'Change settings by section; `stateMismatch` when `ifInState` is behind. The `ai` section (providers, their addresses, the paid mark, features, background) and three `mail` fields that change what the owner is exposed to or can undo (`remoteImages`, `imageAllowList`, `undoSendSeconds`) are for Electron windows only.',
     kind: 'command',
     scope: 'admin',
     audit: true,
-    windowOnlyArgs: ['patch.ai'],
+    windowOnlyArgs: [
+      'patch.ai',
+      'patch.mail.remoteImages',
+      'patch.mail.imageAllowList',
+      'patch.mail.undoSendSeconds',
+    ],
     input: z.object({ opId: OpId, patch: SettingsPatch, ifInState: z.optional(State) }),
     output: z.object({ settings: Settings, receipt: Receipt }),
   },

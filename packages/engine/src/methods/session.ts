@@ -71,11 +71,21 @@ function getSession(_args: Input<'Session/get'>, ctx: MethodContext): Output<'Se
     hasAccounts,
     setup: setupFacts(ctx),
     now: clock.now(),
-    device: { id: host.device.id, name: host.device.name },
+    // The Mac's own name is for the app; a listener client (a script, an MCP tool) is told a generic one.
+    device: {
+      id: host.device.id,
+      name: ctx.caller.kind === 'listener' ? 'This Mac' : host.device.name,
+    },
   };
 }
 
 const DEFAULT_MAX_CHANGES = 500;
+/**
+ * The most rows a page may carry. A page never splits a commit, so one huge commit (a first sync's backfill) is a page of
+ * its own; past this the catch-up is not worth sending (the reply would not fit a port message) and the client re-reads
+ * its windows instead, which is what `cannotCalculateChanges` means.
+ */
+const MAX_PAGE_ROWS = 2_000;
 
 function sessionChanges(
   args: Input<'Session/changes'>,
@@ -85,9 +95,9 @@ function sessionChanges(
   const { since, types, maxChanges = DEFAULT_MAX_CHANGES } = args;
   const page =
     since.dbEpoch === store.dbEpoch
-      ? store.changesSince(since.seq, { limit: maxChanges })
+      ? store.changesSince(since.seq, { limit: Math.min(maxChanges, MAX_PAGE_ROWS) })
       : undefined;
-  if (!page || page.status !== 'ok')
+  if (!page || page.status !== 'ok' || page.changes.length > MAX_PAGE_ROWS)
     throw new ContractError({
       type: 'cannotCalculateChanges',
       message: 'Aplos needs to reload this view.',

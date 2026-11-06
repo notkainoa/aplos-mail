@@ -252,6 +252,16 @@ export type RemoteLine =
   | { readonly kind: 'paused'; readonly text: string }
   | { readonly kind: 'failed'; readonly text: string; readonly retry: boolean };
 
+/**
+ * The one banner a failed window draws (#322). Every kind carries Try again, and Try again always reopens the
+ * view — a dead window must never dead-end, not even on sign-in or a pause.
+ */
+export type LocalLine =
+  /** The window's error has no sentence it can safely borrow: "Couldn’t load this list." (DESIGN §7.15). */
+  | { readonly kind: 'list' }
+  /** A sentence that truthfully names the window's failure: the sign-in line, or the pause notice. */
+  | { readonly kind: 'reason'; readonly text: string };
+
 export interface SearchPageModel {
   readonly field: string;
   readonly tokens: readonly SearchToken[];
@@ -266,8 +276,14 @@ export interface SearchPageModel {
   readonly noMatch: string | null;
   /** The no-match line carries "Search all mail on Google · Return" itself (DESIGN §7.14). */
   readonly noMatchOffer: boolean;
-  /** The local window failed: the page draws the error line (DESIGN §7.15), not "No mail matches". */
+  /** The local window failed (status 'failed'): its own banner (`localLine`) is the page's one failure line —
+   * "No mail matches" never draws, the remote's line hides until the window stands again, and Try again always
+   * reopens the view. */
   readonly localFailed: boolean;
+  /** The failed window's banner, or null while the window stands. */
+  readonly localLine: LocalLine | null;
+  /** The window failed with no reason it can safely name: the generic list line draws (§7.15). */
+  readonly listFailed: boolean;
   readonly remoteLine: RemoteLine | null;
   /** The polite live region's sentence. */
   readonly announce: string;
@@ -319,18 +335,23 @@ function remoteLineFor(remote: RemoteState, now: number, remoteCount: number): R
   }
 }
 
-/** The Google line, or null when there is none (an empty query, or an account that cannot search on Google). */
-function pageRemoteLine(
-  local: LocalResults,
-  remote: RemoteState,
-  key: string,
-  now: number,
-  remoteCount: number,
-): RemoteLine | null {
-  if (local.status === 'failed' && local.error && refusal(key, local.error).phase === 'paused') {
-    return { kind: 'paused', text: pausedText(local.error.resumeAt) };
+/**
+ * The failed window's banner: a needsReauth error borrows the sign-in sentence and a pause the pause notice
+ * (with its resume time) — both true of the window — while anything else, named or not, gets the generic list
+ * line. The remote's own copy would describe a failure the window never had (a dead local view is not "this
+ * account can't search on Google", and "your mail on this Mac is still searched" is false when that search is
+ * what failed).
+ */
+function localLineFor(local: LocalResults): LocalLine | null {
+  if (local.status !== 'failed') return null;
+  if (local.error) {
+    const declined = refusal('', local.error);
+    if (declined.phase === 'paused') return { kind: 'reason', text: pausedText(declined.resumeAt) };
+    if (declined.phase === 'failed' && declined.reason === 'needsReauth') {
+      return { kind: 'reason', text: FAILED_TEXT.needsReauth };
+    }
   }
-  return remoteLineFor(remote, now, remoteCount);
+  return { kind: 'list' };
 }
 
 /** The polite live region's sentence. */
@@ -344,6 +365,28 @@ function announceText(settled: boolean, empty: boolean, localCount: number): str
 /** The remote state for this query in this scope, or idle when it belongs to another scope or query. */
 function scopedRemote(remote: RemoteState, scoped: string): RemoteState {
   return 'key' in remote && remote.key === scoped ? remote : { phase: 'idle' };
+}
+
+/** A failure banner's Try again: reopen the window while it is down, re-ask Google once it stands. */
+export function retryTarget(model: Pick<SearchPageModel, 'localFailed'>): 'results' | 'submit' {
+  return model.localFailed ? 'results' : 'submit';
+}
+
+/**
+ * The Google line while the window stands. While the window is down its own banner is the page's one failure
+ * line and the remote's hides with it; it returns once the window stands again (#322). Also null on an empty
+ * query or an account that cannot search on Google.
+ */
+function shownRemoteLine(
+  localFailed: boolean,
+  empty: boolean,
+  supported: boolean,
+  remote: RemoteState,
+  now: number,
+  remoteCount: number,
+): RemoteLine | null {
+  if (empty || !supported || localFailed) return null;
+  return remoteLineFor(remote, now, remoteCount);
 }
 
 /** The page's view of the state, the local window and the clock. `scope` is the account scope the page shows. */
@@ -364,10 +407,11 @@ export function searchPage(
   const remoteIds = before ? local.ids.filter(id => !before.has(id)) : [];
   const localCount = before ? Math.max(0, local.total - remoteIds.length) : local.total;
 
-  const remoteLine =
-    !empty && supported ? pageRemoteLine(local, remote, key, now, remoteIds.length) : null;
-
   const localFailed = local.status === 'failed';
+  const localLine = localLineFor(local);
+  const remoteLine = shownRemoteLine(localFailed, empty, supported, remote, now, remoteIds.length);
+  const listFailed = localLine?.kind === 'list';
+
   const settled = local.status === 'live' || local.status === 'reset' || localFailed;
   // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
   const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
@@ -387,6 +431,8 @@ export function searchPage(
     noMatch,
     noMatchOffer: noMatch !== null && remoteLine?.kind === 'offer',
     localFailed,
+    localLine,
+    listFailed,
     remoteLine: line,
     announce: announceText(settled && !localFailed, empty, localCount),
   };

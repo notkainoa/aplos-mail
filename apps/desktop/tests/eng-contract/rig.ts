@@ -96,7 +96,7 @@ export function dataDir(t: TestContext): string {
 }
 
 /** Compose options with no network, a fake clock and an in-memory vault; banners and links go through the bridge. */
-export function testOptions(dir: string, clock: FakeClock) {
+export function testOptions(dir: string, clock: FakeClock, ports?: ComposeOptions['ports']) {
   return async (_init: unknown, bridge: HostBridge): Promise<ComposeOptions> => ({
     dataDir: dir,
     fetch: async () => {
@@ -111,6 +111,7 @@ export function testOptions(dir: string, clock: FakeClock) {
     googleClient: () => ({ env: {}, bundled: {} }),
     postNotification: async item =>
       (await bridge.request({ op: 'notify', item })) === 'posted' ? 'posted' : 'dropped',
+    ...(ports ? { ports } : {}),
   });
 }
 
@@ -126,6 +127,8 @@ export function inProcessUtility(options: {
   dir: string;
   clock: FakeClock;
   hosts?: ComposedHost[];
+  /** Extra host ports the compose injects (`send`, `html`, ...), as `ComposeOptions.ports`. */
+  ports?: ComposeOptions['ports'];
 }) {
   const toMain: ((message: unknown) => void)[] = [];
   const exits: ((code: number) => void)[] = [];
@@ -150,7 +153,7 @@ export function inProcessUtility(options: {
       },
     },
     {
-      options: testOptions(options.dir, options.clock),
+      options: testOptions(options.dir, options.clock, options.ports),
       compose: async compose => {
         host = await composeEngineHost(compose);
         options.hosts?.push(host);
