@@ -540,17 +540,19 @@ export class AccountActor {
     this.emit();
   }
 
-  /** Every listed calendar reads ok (the ones a pause or error touched keep their state until their own step runs). */
+  /**
+   * Every listed calendar reads ok — but a delta list names only the changed ones, so anything not
+   * listed keeps its entry. Paused or errored calendars keep their state until their own step runs.
+   */
   calendarsOk(remoteIds: string[]): void {
     const listed = new Set(remoteIds);
-    const kept = (this.runtime.calendars ?? []).filter(
-      c => c.state !== 'ok' && listed.has(c.remoteId),
-    );
+    const byId = new Map((this.runtime.calendars ?? []).map(c => [c.remoteId, c]));
     this.runtime.calendars = [
-      ...remoteIds.map(
-        remoteId => kept.find(c => c.remoteId === remoteId) ?? { remoteId, state: 'ok' as const },
-      ),
-      ...(this.runtime.calendars ?? []).filter(c => c.state !== 'ok' && !listed.has(c.remoteId)),
+      ...remoteIds.map(remoteId => {
+        const old = byId.get(remoteId);
+        return old && old.state !== 'ok' ? old : { remoteId, state: 'ok' as const };
+      }),
+      ...(this.runtime.calendars ?? []).filter(c => !listed.has(c.remoteId)),
     ];
     this.emit();
   }

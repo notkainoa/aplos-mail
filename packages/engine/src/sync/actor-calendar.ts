@@ -2,8 +2,13 @@ import type { AdapterContext, PlannedStep, PlanTrigger, ScopeId, SyncState } fro
 import { PausedError, ProviderError, NotSentError } from '../ports';
 import type { ClassifiedError } from '@aplos/contract';
 import type { ActorDeps } from './actor';
-import { calendarListWrites, calendarStepWrites } from './calendar-facts';
-import { readFailures } from './persist';
+import {
+  CAL_SYNC_MEMORY_KEY,
+  calendarListWrites,
+  calendarStepWrites,
+  parseSyncSet,
+} from './calendar-facts';
+import { readFailures, readMemory } from './persist';
 
 // The account actor's calendar steps (D12): `calendars` and `cal:<id>` run on the adapter's calendar half with their
 // own result type, commit path and per-calendar state — never as the mail status. Kept out of actor.ts for its
@@ -67,7 +72,11 @@ export async function runCalendarStep(
         step: step.origin,
         fenceSeq: fence,
         changes: 'fine',
-        writes: calendarListWrites(actor.deps.account.id, result),
+        writes: calendarListWrites(
+          actor.deps.account.id,
+          result,
+          parseSyncSet(readMemory(store, actor.deps.account.id).get(CAL_SYNC_MEMORY_KEY)),
+        ),
       });
     } else {
       const calendarRemoteId = step.scope.slice(4);
@@ -96,8 +105,9 @@ export async function runCalendarStep(
         }),
       });
       if (result.reset) {
+        // Logged, not triggered: a calendar resync must not schedule a mail poll (D12). The
+        // calendar's own cadence already schedules its next step.
         actor.log.event('sync.gcal.cursor_reset', { reset: result.reset });
-        actor.setTrigger('reset');
       }
     }
   } catch (error) {
@@ -120,8 +130,10 @@ function calendarStepFailed(actor: CalendarActor, step: PlannedStep, error: unkn
   const classified = classifiedOf(error);
   const cls = classified?.class;
   if (cls === 'cancelled') return;
-  if (cls === 'permission') {
-    // The grant lacks calendar scopes: record the gap for Settings and stop this scope only (never the account).
+  if (cls === 'permission' && (classified?.missingScopes?.length ?? 0) > 0) {
+    // The grant lacks calendar scopes: record the gap for Settings and stop this scope only (never the
+    // account). A scope-less permission error — say, one shared calendar lost access — is an error on
+    // that calendar below, not an account-level gap.
     actor.calendarScopeGap = classified?.missingScopes ?? [];
     actor.refreshMissingPermissions();
     actor.backoff.set(step.scope, { failures: 0, until: Infinity });

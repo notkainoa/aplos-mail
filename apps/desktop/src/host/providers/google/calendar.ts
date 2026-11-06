@@ -117,10 +117,15 @@ interface ApiCalendarListEntry extends ApiCalendarEntry {
   kind?: string;
 }
 
-/** The `cal.sync` provider_memory entry: the calendars the last list said to sync. */
+/**
+ * A `cal.sync` provider_memory entry: every calendar the last full-or-delta list saw, with `sync` set on the
+ * ones to sync (selected and not hidden). Remembering all ids is how a resync can tell "no longer listed"
+ * from "never was": `removed` comes from the difference.
+ */
 interface SyncCalendar {
   id: string;
   primary?: boolean;
+  sync?: boolean;
 }
 
 // ---------- mapping ----------
@@ -201,8 +206,9 @@ function eventFacts(calendarRemoteId: string, e: ApiEvent): EventFacts | undefin
   const status =
     e.status === 'cancelled' ? 'cancelled' : e.status === 'tentative' ? 'tentative' : 'confirmed';
   const epoch = { type: 'date', date: '1970-01-01' } as const;
-  // A cancelled row can arrive with nothing but id/status/recurring ids; its times never show.
-  const start = eventTime(e.start) ?? epoch;
+  // A cancelled row can arrive with nothing but id/status/recurring ids; an override's tombstone still
+  // names its original start, which is the occurrence it cancels — use it before the epoch fallback.
+  const start = eventTime(e.start) ?? eventTime(e.originalStartTime) ?? epoch;
   const end = eventTime(e.end) ?? start;
   return {
     calendarRemoteId,
@@ -248,10 +254,10 @@ function calendarFacts(e: ApiCalendarListEntry): CalendarFacts | undefined {
 export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
   const client = (ctx: AdapterContext) => new GcalClient(deps, ctx);
 
-  /** The calendars the last list marked for sync (`cal.sync` provider_memory). */
-  const syncCalendars = (input: PlanInput): SyncCalendar[] => {
+  /** Parse the `cal.sync` memory: every remembered calendar entry (syncable or not). */
+  const syncCalendarsFrom = (memory: ReadonlyMap<string, string>): SyncCalendar[] => {
     try {
-      const parsed: unknown = JSON.parse(input.memory.get('cal.sync') ?? '[]');
+      const parsed: unknown = JSON.parse(memory.get('cal.sync') ?? '[]');
       return Array.isArray(parsed)
         ? parsed.filter(
             (c): c is SyncCalendar =>
@@ -262,6 +268,10 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
       return [];
     }
   };
+
+  /** The calendars the last list marked for sync (`sync === true`). */
+  const syncCalendars = (input: PlanInput): SyncCalendar[] =>
+    syncCalendarsFrom(input.memory).filter(c => c.sync === true);
 
   return {
     budget: 'gcal',
@@ -299,24 +309,42 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
 
     async listCalendars(state: SyncState | undefined, ctx: AdapterContext) {
       const c = client(ctx);
-      const syncToken = state?.cursor;
+      let syncToken = state?.cursor;
       let pageToken = state?.pageToken;
       const calendars: CalendarFacts[] = [];
       const removed: string[] = [];
+      // `full` once the listing has asked for everything: the first list and a 410 resync both return
+      // every calendar, so the ones absent afterwards are gone — an incremental delta says nothing.
+      let full = syncToken === undefined;
       let nextSyncToken: string | undefined;
       for (;;) {
-        const res = await c.call<ApiListResponse<ApiCalendarListEntry>>({
-          method: 'gcal.calendarList.list',
-          path: '/users/me/calendarList',
-          query: {
-            maxResults: PAGE,
-            showHidden: true,
-            ...(syncToken ? { syncToken, showDeleted: true } : {}),
-            ...(pageToken ? { pageToken } : {}),
-          },
-          fields: LIST_FIELDS,
-          lane: 'incremental',
-        });
+        let res: ApiListResponse<ApiCalendarListEntry>;
+        try {
+          res = await c.call<ApiListResponse<ApiCalendarListEntry>>({
+            method: 'gcal.calendarList.list',
+            path: '/users/me/calendarList',
+            query: {
+              maxResults: PAGE,
+              showHidden: true,
+              showDeleted: true,
+              ...(pageToken ? { pageToken } : syncToken ? { syncToken } : {}),
+            },
+            fields: LIST_FIELDS,
+            lane: 'incremental',
+          });
+        } catch (error) {
+          // A 410 is a resync: drop the dead token and list everything, same rule as events (ports.walk.md).
+          const fullSync =
+            !pageToken &&
+            syncToken !== undefined &&
+            error instanceof ProviderError &&
+            error.error.status === 410;
+          if (!fullSync) throw error;
+          pageToken = undefined;
+          syncToken = undefined;
+          full = true;
+          continue;
+        }
         for (const entry of res.items ?? []) {
           if (entry.deleted === true) {
             if (entry.id) removed.push(entry.id);
@@ -329,6 +357,13 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
         if (!pageToken) {
           nextSyncToken = res.nextSyncToken;
           break;
+        }
+      }
+      if (full) {
+        // The `cal.sync` memory remembers every listed id: anything absent from this full list is gone.
+        const listed = new Set(calendars.map(e => e.remoteId));
+        for (const prev of syncCalendarsFrom(ctx.memory)) {
+          if (!listed.has(prev.id) && !removed.includes(prev.id)) removed.push(prev.id);
         }
       }
       return {

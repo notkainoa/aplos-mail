@@ -15,11 +15,35 @@ import { quarantineDelay, syncStateWrite } from './facts';
 // `EventFacts.raw` lands in `events.data` verbatim; `start_utc`/`end_utc` exist only for the SQL window filter.
 
 /**
- * `provider_memory['cal.sync']`: the remote ids (and `primary` flag) of the calendars the last list said to sync —
- * selected and not hidden. `CalendarAdapter.plan` reads it to emit `cal:<id>` steps, since `PlanInput` carries no
- * store access and a `sync_state` row cannot be deleted to say "stop".
+ * `provider_memory['cal.sync']`: every calendar the last list saw — `[{id, primary?, sync?}]` with `sync:true`
+ * on the selected-and-not-hidden ones. `CalendarAdapter.plan` emits `cal:<id>` steps for the syncable entries
+ * (a `PlanInput` carries no store access and a `sync_state` row cannot be deleted to say "stop"), and the
+ * adapter's resync path diffs the remembered ids against a full list to find the removed ones.
  */
 export const CAL_SYNC_MEMORY_KEY = 'cal.sync';
+
+/** One remembered calendar entry (`sync` marks the ones that get `cal:<id>` steps). */
+export interface SyncSetEntry {
+  id: string;
+  primary?: boolean;
+  sync?: boolean;
+}
+
+/** The remembered entries, or none — unknown/malformed is an empty set, never a crash. */
+export function parseSyncSet(raw: string | undefined): SyncSetEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (c): c is SyncSetEntry =>
+            typeof c === 'object' && c !== null && typeof (c as SyncSetEntry).id === 'string',
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface CalendarWriteContext {
   account: AdapterAccount;
@@ -73,9 +97,18 @@ export function calendarListWrites(
     removed: string[];
     nextState: Parameters<typeof syncStateWrite>[1];
   },
+  previous?: readonly SyncSetEntry[],
 ): StoreWrite[] {
   const writes: StoreWrite[] = [];
-  const sync: { id: string; primary?: true }[] = [];
+  // A delta list only touches the entries it names: merge into `previous` or an empty delta would
+  // silently stop every `cal:<id>` step (and a resync's full list already folded removals into
+  // `result.removed`).
+  const set = new Map<string, SyncSetEntry>(
+    (previous ?? []).map(e => [
+      e.id,
+      { id: e.id, ...(e.primary ? { primary: true } : {}), ...(e.sync ? { sync: true } : {}) },
+    ]),
+  );
   for (const c of result.calendars) {
     writes.push({
       kind: 'calendar',
@@ -90,16 +123,20 @@ export function calendarListWrites(
       ...(c.timeZone !== undefined ? { timeZone: c.timeZone } : {}),
       ...(c.changeTag !== undefined ? { changeTag: c.changeTag } : {}),
     });
-    if (c.selected && !c.hidden)
-      sync.push({ id: c.remoteId, ...(c.primary ? { primary: true } : {}) });
+    set.set(c.remoteId, {
+      id: c.remoteId,
+      ...(c.primary ? { primary: true } : {}),
+      ...(c.selected && !c.hidden ? { sync: true } : {}),
+    });
   }
   for (const remoteId of result.removed) {
     writes.push({ kind: 'calendarDelete', accountId: id, remoteId });
+    set.delete(remoteId);
   }
   writes.push(syncStateWrite(id, result.nextState), {
     kind: 'providerMemory',
     accountId: id,
-    values: { [CAL_SYNC_MEMORY_KEY]: JSON.stringify(sync) },
+    values: { [CAL_SYNC_MEMORY_KEY]: JSON.stringify([...set.values()]) },
   });
   return writes;
 }

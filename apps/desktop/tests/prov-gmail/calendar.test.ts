@@ -6,6 +6,7 @@ import type { AdapterAccount, SyncState } from '@aplos/engine/ports';
 import {
   calendarListWrites,
   calendarStepWrites,
+  parseSyncSet,
 } from '../../../../packages/engine/src/sync/calendar-facts';
 import { GmailAdapter } from '../../src/host/providers/google/adapter';
 import { ACCOUNT_ID, CaptureLog, GMAIL_SCOPES, StubGovernor, TokenStub } from './harness';
@@ -75,7 +76,7 @@ async function calRig(options: { scopes?: string[] } = {}) {
       opId: `cal-${store.seq}`,
       origin: 'sync',
       changes: 'fine',
-      writes: calendarListWrites(account.id, result),
+      writes: calendarListWrites(account.id, result, parseSyncSet(store.memory.get('cal.sync'))),
     });
   const commitStep = (cal: string, result: Awaited<ReturnType<typeof adapter.calendar.syncStep>>) =>
     store.raw.commit({
@@ -206,9 +207,12 @@ test('listCalendars writes rows the views read, with the resume token and the sy
   assert.equal(primary.is_primary, 1);
   assert.equal(cals.find(c => c.remote_id === 'work@g.com')!.time_zone, 'Europe/Berlin');
   assert.equal(cals.find(c => c.remote_id === 'hidden@g.com')!.hidden, 1);
-  // The sync set: selected and not hidden only.
-  const sync = JSON.parse(r.store.memory.get('cal.sync')!) as { id: string }[];
-  assert.deepEqual(sync.map(s => s.id).sort(), [r.ctx().account.address, 'work@g.com'].sort());
+  // The sync set marks the selected-and-not-hidden calendars `sync: true`; the hidden one is
+  // remembered (so a resync can tell "no longer listed" from "never was") but not synced.
+  const set = JSON.parse(r.store.memory.get('cal.sync')!) as { id: string; sync?: boolean }[];
+  const syncable = set.filter(s => s.sync === true).map(s => s.id);
+  assert.deepEqual(syncable.sort(), [r.ctx().account.address, 'work@g.com'].sort());
+  assert.ok(set.some(s => s.id === 'hidden@g.com' && s.sync === undefined));
   // The list's sync token was stored for the incremental round.
   assert.ok(r.state('calendars').cursor);
   r.close();
@@ -300,6 +304,103 @@ test('a 410 resyncs one calendar and sweeps ghosts; other calendars keep their t
   const ghost = r.events().find(e => e.remote_id === stale.id);
   assert.equal(ghost?.status, 'cancelled');
   assert.ok(resync.nextState.cursor, 'a fresh token comes back');
+
+  // The sweep proof: a row stamped by an older round that the resync did not re-list is deleted;
+  // the re-listed tombstone (new generation) survives.
+  const oldGen = resync.nextState.generation;
+  r.store.raw.commit({
+    opId: 'ghost',
+    origin: 'sync',
+    changes: 'fine',
+    writes: [
+      {
+        kind: 'event',
+        accountId: r.ctx().account.id,
+        calendarRemoteId: cal,
+        remoteId: 'remote-ghost',
+        rows: [
+          {
+            recurrenceId: '',
+            status: 'confirmed',
+            startUtc: 0,
+            endUtc: 0,
+            allDay: false,
+            data: '{"id":"remote-ghost","summary":"Gone"}',
+          },
+        ],
+        seenGen: oldGen,
+      },
+    ],
+  });
+  assert.ok(r.events().some(e => e.remote_id === 'remote-ghost'));
+  r.emu.calendar.expireSyncTokens({ kind: 'events', calendarId: cal });
+  const resync2 = await r.adapter.calendar.syncStep(
+    cal,
+    r.state(`cal:${cal}`),
+    'incremental',
+    r.ctx(),
+  );
+  r.commitStep(cal, resync2);
+  const after = r.events();
+  assert.equal(
+    after.some(e => e.remote_id === 'remote-ghost'),
+    false,
+    'a row never re-listed is swept',
+  );
+  assert.equal(after.find(e => e.remote_id === stale.id)?.status, 'cancelled');
+  r.close();
+});
+
+test('an incremental list delta keeps the untouched calendars in the sync set', async () => {
+  const r = await calRig();
+  const me = r.ctx().account.address;
+  r.emu.calendar.addCalendar({ id: 'work@g.com', summary: 'Work' });
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+
+  // A delta that renames one calendar returns only that entry; the sync set must not shrink.
+  r.emu.calendar.updateCalendar('work@g.com', { summaryOverride: 'Work (renamed)' });
+  const delta = await r.adapter.calendar.listCalendars(r.state('calendars'), r.ctx());
+  assert.equal(delta.calendars.length, 1, 'only the changed entry comes back');
+  r.commitList(delta);
+  const set = JSON.parse(r.store.memory.get('cal.sync')!) as { id: string; sync?: boolean }[];
+  const syncable = set.filter(s => s.sync === true).map(s => s.id);
+  assert.deepEqual(syncable.sort(), [me, 'work@g.com'].sort(), 'untouched calendars stay syncable');
+
+  // And plan still emits a step for both.
+  const steps = r.adapter.calendar.plan({
+    account: r.ctx().account,
+    states: [...r.store.states.values()],
+    trigger: 'poll',
+    env: { now: r.clock.now() + 3600_000, focused: true, windowVisible: true, onBattery: false },
+    memory: r.store.memory,
+  });
+  const scopes = steps.map(s => s.scope);
+  assert.ok(scopes.includes(`cal:${me}`) && scopes.includes('cal:work@g.com'), scopes.join());
+  r.close();
+});
+
+test('a 410 on the list resyncs it and reports the calendars that vanished', async () => {
+  const r = await calRig();
+  r.emu.calendar.addCalendar({ id: 'gone@g.com', summary: 'Soon gone' });
+  r.commitList(await r.adapter.calendar.listCalendars(undefined, r.ctx()));
+  assert.ok(r.calendars().some(c => c.remote_id === 'gone@g.com'));
+
+  // The calendar vanishes remotely, then the list token expires.
+  r.emu.calendar.deleteCalendar('gone@g.com');
+  r.emu.calendar.expireSyncTokens({ kind: 'calendarList' });
+  const resync = await r.adapter.calendar.listCalendars(r.state('calendars'), r.ctx());
+  assert.ok(resync.removed.includes('gone@g.com'), 'the vanished calendar is reported removed');
+  r.commitList(resync);
+  assert.equal(
+    r.calendars().some(c => c.remote_id === 'gone@g.com'),
+    false,
+    'its row is deleted',
+  );
+  const set = JSON.parse(r.store.memory.get('cal.sync')!) as { id: string }[];
+  assert.equal(
+    set.some(s => s.id === 'gone@g.com'),
+    false,
+  );
   r.close();
 });
 
