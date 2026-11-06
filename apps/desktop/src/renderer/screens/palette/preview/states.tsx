@@ -328,6 +328,30 @@ export const states: Record<string, StateEntry> = {
       />
     ),
   },
+  'search-failed-window-paused': {
+    title: 'Search: window failed without a reason under a remote pause — one line, Try again',
+    kind: 'page',
+    render: () => (
+      <SearchScene
+        local={{
+          status: 'failed',
+          ids: [],
+          total: 0,
+          error: { type: 'internal' },
+        }}
+        state={{
+          field: 'invoice',
+          tokens: [],
+          remote: {
+            phase: 'paused',
+            key: 'all|invoice',
+            resumeAt: FROZEN + HOUR,
+            at: FROZEN,
+          },
+        }}
+      />
+    ),
+  },
   'search-no-results': {
     title: 'Search: no match carries the Google offer',
     kind: 'page',
