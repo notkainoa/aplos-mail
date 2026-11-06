@@ -85,3 +85,21 @@ should retry search on the real signed-in launch before counting this as open.
 **Unchanged:** Calendar + views "Couldn't load this list" (engine #313/#315 still open).
 Rows `settings-sections`/`help`/`reader-menu` show click-miss flags that are sweep artifacts
 (enumeration trips the sidebar-minimize toggle; ⋯ verified working by real click earlier).
+
+## Run 4 — 2026-11-05, revamp `e03bb50c` (#313, #315, #317, #321, #322, #324 and #327-#329 merged)
+
+Fresh `npm ci` + `npm run package` build; `verify-hardening-real-engine.mjs` PASS (engine up, first
+window, no `aplos:invoke` refusal). Sweep on a disposable copy of the seeded spare-account profile
+(`APLOS_ENGINE=real`): **21 of 21 rows PASS, exit 0.**
+
+- **Calendar loads** on the real engine (day, week, month); Settings renders all sections; Help is reachable.
+- **Search** now reads "Google needs you to sign in again before it can search." (needsReauth, #322),
+  not the throttle copy. It sits under a generic "Couldn't load this list." banner, so two error
+  banners show at once: a small UI nit for the ui-screens lane.
+- The seed's token is still dead, so mail bodies show "Couldn't load this email." and live calls
+  cannot be judged here; the owner's real signed-in launch is the proof for those.
+- Sweep script fixes (this PR): it opens a sidebar collapsed to the strip, clicks the reader's "More"
+  button (was "⋯"), drops the Agenda view (the calendar switcher is Day/Week/Month), treats
+  "Couldn't load" beside the Reconnect copy as the expected dead-token state, and skips the shell's own
+  rows when it walks the Settings sections. A seed with "Sidebar minimised" on (a ☰ menu, no toggle)
+  is not handled: un-minimise it in the seed first.
