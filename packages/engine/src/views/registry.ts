@@ -32,6 +32,52 @@ export function hasViewKind(kind: string): boolean {
   return compilers.has(kind);
 }
 
+/**
+ * Kinds whose compiler lives in a chunk of its own (the engine-bundle budget's one seam): `View/watch` awaits
+ * `ensureViewKind` before opening a window, so the code loads only when such a window is first opened. A loader
+ * that rejects is reported as `unavailable`, never a thrown import to the caller.
+ */
+const lazyCompilers = new Map<string, () => Promise<unknown>>();
+const lazyRunning = new Map<string, Promise<void>>();
+
+export function registerLazyViewKind(kind: Kind, load: () => Promise<unknown>): void {
+  if (lazyCompilers.has(kind) || compilers.has(kind))
+    throw new Error(`View kind ${kind} is registered twice`);
+  lazyCompilers.set(kind, load);
+}
+
+/** Registers the lazy kind's compiler on first use; answers `unavailable` if the chunk cannot load. */
+export async function ensureViewKind(kind: string): Promise<void> {
+  if (compilers.has(kind)) return;
+  const load = lazyCompilers.get(kind);
+  if (!load) return; // compileView answers `unsupported` as always
+  let run = lazyRunning.get(kind);
+  if (!run) {
+    run = Promise.resolve()
+      .then(load)
+      .then(
+        () => {
+          lazyRunning.delete(kind);
+        },
+        () => {
+          lazyRunning.delete(kind);
+          throw new ContractError({
+            type: 'unavailable',
+            message: 'This view is not available right now.',
+          });
+        },
+      );
+    lazyRunning.set(kind, run);
+  }
+  return run;
+}
+
+/** Tests only: swap a lazy loader before any window of the kind opened, to pin the fail-soft path. */
+export function lazyViewLoaderForTest(kind: Kind, load: () => Promise<unknown>): void {
+  if (compilers.has(kind)) throw new Error(`View kind ${kind} already loaded`);
+  lazyCompilers.set(kind, load);
+}
+
 /** Compiles a validated spec. A kind nobody registered yet answers `unsupported` with a sentence the UI can show. */
 export function compileView(spec: ViewSpec, env: ViewEnv): ViewPlan {
   const compile = compilers.get(spec.kind) as ViewCompiler<ViewSpec> | undefined;
