@@ -595,3 +595,230 @@ test('with the timer loop injected, the views module is one deadline source and 
     world.cleanup();
   }
 });
+
+test('a repeated query joins the running search; a throttled account cools down before it is asked again', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  // The first provider call holds its round open on a real gate, so the second Return must join it.
+  let release!: () => void;
+  const blocker = new Promise<void>(resolve => (release = resolve));
+  let asked = 0;
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (asked++ === 0) await blocker;
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    // Two Returns on the same query while the first runs: the second joins, not fans out.
+    const a = t.call('Search/remote', { opId: 'c1', query: { text: 'garden' } });
+    const b = t.call('Search/remote', { opId: 'c2', query: { text: 'garden' } });
+    const [ra, rb] = await Promise.all([a, b]);
+    await t.advance(10);
+    release();
+    await t.advance(10);
+    assert.deepEqual(
+      calls.sort(),
+      ['acct-1:garden', 'imap:2:garden'],
+      'two Enters, one provider round',
+    );
+    assert.notEqual(ra.runId, rb.runId, 'each caller still gets its own run');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('a throttled search answer cools the account; the next search fails fast locally', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      if (account === 'acct-1')
+        throw new ProviderError({
+          class: 'throttle',
+          reason: 'rateLimitExceeded',
+          retryAfterMs: 60_000,
+        } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'p1', query: { text: 'garden' } });
+    await t.advance(10);
+    // Inside the pause: the cooled account is skipped, but a healthy one is still asked.
+    await t.call('Search/remote', { opId: 'p2', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.deepEqual(
+      calls.filter(c => c === 'acct-1:garden'),
+      ['acct-1:garden'],
+      'the paused account is not re-asked',
+    );
+    assert.deepEqual(
+      calls.filter(c => c === 'imap:2:garden'),
+      ['imap:2:garden'],
+    );
+    // A healthy account answered but one was skipped: the run says so (partial), it does not end `done` as if nothing
+    // were missing, and it carries when the skipped account is asked again.
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1) as {
+      kind?: string;
+      problem?: { reasonCode?: string; resumeAt?: number };
+    };
+    assert.equal(last?.kind, 'error');
+    assert.equal(last?.problem?.reasonCode, 'paused');
+    assert.ok((last?.problem?.resumeAt ?? 0) > t.clock.now(), 'resumeAt is ahead of now');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('every account cooled down: the whole run fails fast as paused, nothing asked', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const calls: string[] = [];
+  const { ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string, query: { text: string }) => {
+      calls.push(`${account}:${query.text}`);
+      // A refusal that cools only the account that got it (the project-wide kind is in remote-pause.test.ts).
+      throw new ProviderError({
+        class: 'throttle',
+        reason: 'rateLimitExceeded',
+        retryAfterMs: 60_000,
+      } as never);
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    await t.call('Search/remote', { opId: 'q1', query: { text: 'garden' } });
+    await t.advance(10);
+    await t.call('Search/remote', { opId: 'q2', query: { text: 'garden' } });
+    await t.advance(10);
+    const asked = calls.length;
+    assert.deepEqual(
+      calls.sort(),
+      ['acct-1:garden', 'imap:2:garden'],
+      'each account was asked once',
+    );
+    await t.call('Search/remote', { opId: 'q3', query: { text: 'garden' } });
+    await t.advance(10);
+    assert.equal(calls.length, asked, 'all accounts cooled: nothing is re-asked');
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(last?.kind, 'error');
+    assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
+  lazyViewLoaderForTest('plans', () => Promise.reject(new Error('chunk missing')));
+  await withWorld(async t => {
+    const body = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => undefined)
+      .catch(e => e as { type?: string });
+    assert.equal((body as { type?: string })?.type, 'unavailable');
+  });
+});
+
+test('a Reconnect-state account is needsReauth, never the throttle copy', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const { PausedError, ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string) => {
+      if (account === 'acct-1')
+        throw new PausedError(account as never, 'interactive' as never, 'auth', 'reconnect');
+      if (account === 'imap:2')
+        throw new ProviderError({ class: 'auth', reason: 'authError' } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    const win = await t.call('View/watch', {
+      spec: { kind: 'search', query: { text: 'receipt' } },
+    });
+    await t.call('Search/remote', { opId: 'a1', query: { text: 'receipt' } });
+    await t.advance(10);
+    const last = frameOf(t, win.windowId)!;
+    assert.equal(last.error?.type, 'needsReauth', 'an auth refusal is not a rate limit');
+    const progress = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(
+      (progress as { problem?: { reasonCode?: string } })?.problem?.reasonCode,
+      'auth.reconnect',
+    );
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('concurrent watchers of a lazy kind share the one load', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  let loads = 0;
+  // `events` is unloaded in this process: a slow gated loader proves the second watcher joins the first.
+  // The loader registers a stub plan itself — importing the real module would register every kind in it.
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => (release = resolve));
+  lazyViewLoaderForTest('events', async () => {
+    loads += 1;
+    await gate;
+    const { registerViewKind } = await import('../../src/views/registry');
+    registerViewKind('events', () => ({
+      kind: 'events',
+      rowType: 'Event',
+      layout: () => ({ total: 0, sections: [] }),
+      rows: () => [],
+      locate: () => undefined,
+      statements: () => [],
+    }));
+  });
+  await withWorld(async t => {
+    const spec = { kind: 'events' as const, from: 0, to: 86_400_000 };
+    const a = t.call('View/watch', { spec });
+    const b = t.call('View/watch', { spec });
+    await t.advance(10);
+    release();
+    await Promise.all([a, b]);
+    assert.equal(loads, 1, 'two watchers, one chunk load');
+  });
+});
+
+test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
+  lazyViewLoaderForTest('plans', () => Promise.reject(new Error('chunk missing')));
+  await withWorld(async t => {
+    const body = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => undefined)
+      .catch(e => e as { type?: string });
+    assert.equal((body as { type?: string })?.type, 'unavailable');
+    // The rejection is not cached: a loader that later resolves serves the next watcher.
+    lazyViewLoaderForTest('plans', async () => {
+      const { registerViewKind } = await import('../../src/views/registry');
+      registerViewKind('plans', () => ({
+        kind: 'plans',
+        rowType: 'Event',
+        layout: () => ({ total: 0, sections: [] }),
+        rows: () => [],
+        locate: () => undefined,
+        statements: () => [],
+      }));
+    });
+    const ok = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => 'ok')
+      .catch(() => 'fail');
+    assert.equal(ok, 'ok', 'a call after the rejection retries the load');
+  });
+});

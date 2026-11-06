@@ -11,11 +11,11 @@ import {
   FOOTER_PLACES,
   MAIL_PLACES,
   TOP_PLACES,
-  placeScreen,
   screenPlace,
   type Place,
   type PlaceId,
 } from './nav';
+import { selectPlace } from './Sidebar';
 import type { Screen } from './index';
 
 const GROUPS: readonly (readonly Place[])[] = [TOP_PLACES, MAIL_PLACES, FOOTER_PLACES];
@@ -57,7 +57,7 @@ export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) 
     setAnchor(null);
   };
   return (
-    <div className="aplos-rail">
+    <div className="aplos-rail" data-region="sidebar">
       <Button
         variant="icon"
         size="sm"
@@ -79,7 +79,7 @@ export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) 
         checkedId={screenPlace(screen) ?? undefined}
         onSelect={id => {
           close();
-          onNavigate(placeScreen(id as PlaceId));
+          selectPlace(id as PlaceId, onNavigate);
         }}
         onClose={close}
       />

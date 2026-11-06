@@ -15,14 +15,15 @@
 // Usage:
 //   node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>]
 //        [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict]
-//        [--no-trailers] [--json]
+//        [--trailers] [--json]
 //
 // The rules are read from the integration branch (the --base ref, else the tip of origin/revamp or
 // revamp), never from the change being checked, so a PR cannot edit or delete OWNERS.md to pass.
 // Acting lanes: --lane, else the branch name (rv/<lane>/<slug> is that lane; rv/thread/<name> is
 // every lane of that thread; in a detached CI checkout GITHUB_HEAD_REF is used). Approvals:
-// --approved, the PR labels "lane-approved:<lane>" (--pr, read-only `gh pr view`), and
-// "Lane-Approved: <lane>[, <lane>]" trailers, which cover only the files of their own commit.
+// --approved and the PR labels "lane-approved:<lane>" (--pr, read-only `gh pr view`). Commit trailers
+// ("Lane-Approved: <lane>[, <lane>]", covering only the files of their own commit) are written by the
+// PR's own author, so they are self-attested and ignored unless --trailers is given.
 // Exit codes: 0 ok (no changes, or OWNERS.md missing: pending), 1 violations or invalid OWNERS.md,
 // 2 usage or environment error.
 
@@ -342,7 +343,7 @@ function git(args, cwd, { allowFail = false } = {}) {
 }
 
 const VALUE_OPTIONS = new Set(['base', 'head', 'lane', 'approved', 'pr', 'owners']);
-const FLAG_OPTIONS = new Set(['validate', 'strict', 'json', 'help', 'no-trailers']);
+const FLAG_OPTIONS = new Set(['validate', 'strict', 'json', 'help', 'trailers', 'no-trailers']);
 
 function parseArgs(argv) {
   const opts = {};
@@ -635,9 +636,9 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
   const approved = globalApprovals(opts, cwd);
   const exemptAllowed = lanes.includes('integrator') || approved.has('integrator');
   const trailers =
-    opts.trailers === false
-      ? { commits: [], ignored: [] }
-      : commitTrailers(base, head, cwd, parsed.lanes);
+    opts.trailers === true
+      ? commitTrailers(base, head, cwd, parsed.lanes)
+      : { commits: [], ignored: [] };
   const trailerSources = new Map();
   // A file is covered by trailers when it was touched by at least one commit and every commit that
   // touched it approves the owning lane (or is an authorised phase-0 commit).
@@ -713,7 +714,7 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
       );
     if (violations.some(v => v.reason === 'other-lane'))
       out(
-        'Other-lane file(s): get the owning lane to approve (commit trailer "Lane-Approved: <lane>" on every commit touching the file, --approved <lane>, or PR label "lane-approved:<lane>").',
+        'Other-lane file(s): get the owning lane to approve (PR label "lane-approved:<lane>" or --approved <lane>; a "Lane-Approved: <lane>" commit trailer counts only with --trailers, and it is self-attested).',
       );
   }
   out(
@@ -728,7 +729,7 @@ export function main(argv, { cwd = process.cwd(), out = console.log } = {}) {
   const opts = parseArgs(argv);
   if (opts.help) {
     out(
-      'usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--no-trailers] [--json]',
+      'usage: node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--owners <file>] [--validate] [--strict] [--trailers] [--json]',
     );
     return 0;
   }

@@ -11,6 +11,7 @@ import {
   buildStack,
   createHoldTracker,
   focusKindOf,
+  isModal,
   type CommandContext,
   type CommandId,
   type ConditionState,
@@ -21,6 +22,7 @@ import {
   type Registry,
   type TargetSummary,
 } from '../commands';
+import { handleRegionTab, trackRegionFocus } from './regions';
 
 /** What a keydown needs to build its `CommandContext`, read at the moment of the key. */
 export interface ShellKeyState {
@@ -70,6 +72,51 @@ export function overlayContexts(target: unknown): ContextName[] {
 function domContexts(focusTarget: unknown): ContextName[] {
   const active = typeof document === 'undefined' ? null : document.activeElement;
   return [...overlayContexts(active), ...overlayContexts(focusTarget)];
+}
+
+/**
+ * One element's own overlay markers, for `openOverlays`: the overlay roles, the date picker, an
+ * aria-modal surface or a popover, or a `data-keyctx` that names a modal context. A screen's
+ * `data-keyctx` ('reader', 'search,list', 'ask') is a key context, not an overlay, so it is left
+ * out — region Tab keeps working on those screens.
+ */
+function overlayMarks(el: ElementLike): ContextName[] {
+  const out: ContextName[] = [];
+  const declared = el.getAttribute?.('data-keyctx');
+  if (declared)
+    for (const name of declared.split(',')) {
+      const context = name.trim() as ContextName;
+      if (isModal(context)) out.push(context);
+    }
+  if (hasClass(el, 'ui-date-presets')) out.push('datePicker');
+  const role = el.getAttribute?.('role');
+  if (role === 'menu') out.push('menu');
+  else if (role === 'dialog' || role === 'alertdialog')
+    out.push(hasClass(el, 'ui-palette__panel') ? 'palette' : 'dialog');
+  else if (el.getAttribute?.('aria-modal') === 'true' || hasClass(el, 'ui-popover'))
+    out.push('dialog');
+  return out;
+}
+
+/**
+ * The real overlays open around an element, outer to inner — the same ancestor walk as
+ * `overlayContexts` but only modal surfaces count (the shell's overlay stack: menus, dialogs, the
+ * palette, the date picker, sheets). `handleRegionTab` reads it so region Tab yields to an open
+ * overlay but stays alive on screens that carry a `data-keyctx`.
+ */
+export function openOverlays(target: unknown): ContextName[] {
+  if (typeof target !== 'object' || target === null) return [];
+  const found: ContextName[] = [];
+  for (let el: ElementLike | null | undefined = target; el; el = el.parentElement)
+    found.unshift(...overlayMarks(el));
+  return found;
+}
+
+/** The overlays around an element plus the modal contexts the key stack reports (the open sheet). */
+function regionTabOverlays(state: ShellKeyState, target: unknown): readonly ContextName[] {
+  const modals = state.stack.filter(isModal);
+  const dom = openOverlays(target);
+  return modals.length === 0 ? dom : [...modals, ...dom];
 }
 
 /** The context a key runs in; `focusTarget` is the event's target. The overlays open around it join the stack. */
@@ -360,6 +407,12 @@ function listenShellKeys(registry: HoldRegistry, readState: () => ShellKeyState)
     event.stopPropagation();
   };
   const onKeyDown = (event: KeyboardEvent) => {
+    // Tab/Shift+Tab are the region cycle (regions.ts): they move between the window's regions
+    // before the registry sees them, except inside fields, overlays and the sealed frame.
+    if (handleRegionTab(event, { overlays: target => regionTabOverlays(readState(), target) })) {
+      event.preventDefault();
+      return;
+    }
     if (dispatchShellKey(registry, readState(), event, holds())) event.preventDefault();
   };
   const onKeyUp = (event: KeyboardEvent) => releaseShellKey(registry, readState(), event, holds());
@@ -369,6 +422,7 @@ function listenShellKeys(registry: HoldRegistry, readState: () => ShellKeyState)
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') onBlur();
   };
+  const untrackRegions = trackRegionFocus(document);
   window.addEventListener('keydown', onRepeat, true);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp, true);
@@ -376,6 +430,7 @@ function listenShellKeys(registry: HoldRegistry, readState: () => ShellKeyState)
   window.addEventListener('blur', onBlur);
   document.addEventListener('visibilitychange', onVisibility);
   return () => {
+    untrackRegions();
     window.removeEventListener('keydown', onRepeat, true);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp, true);

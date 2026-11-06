@@ -98,6 +98,22 @@ export function refusal(
 }
 
 /**
+ * Whether the listener client behind this call has been revoked (`clients.revoked_at`): checked on EVERY call, so a
+ * revoked tool that still holds a connection cannot use it, whatever the transport does about open connections. A client
+ * with no row is the transport's to authenticate; only a stamped revocation refuses here.
+ */
+function revoked(ctx: MethodContext): boolean {
+  const { caller } = ctx;
+  if (caller.kind !== 'listener' || !caller.clientId) return false;
+  const id = caller.clientId;
+  return ctx.services.store.read(
+    q =>
+      q.get<{ revoked_at: number | null }>('SELECT revoked_at FROM clients WHERE id = ?', id)
+        ?.revoked_at != null,
+  );
+}
+
+/**
  * Runs one call whose arguments the transport has already validated (`parseArgs`). Rejects with `unsupported` for a
  * name the engine does not serve, and with `forbidden` when `refusal` denies the caller, before any handler runs.
  */
@@ -120,5 +136,7 @@ export async function dispatchWith(
     throw new ContractError({ type: 'unsupported', message: 'Unsupported application method.' });
   const denied = refusal(method as EngineMethodName, ctx.caller, args);
   if (denied) throw new ContractError({ type: 'forbidden', message: denied });
+  if (revoked(ctx))
+    throw new ContractError({ type: 'forbidden', message: 'This tool is no longer allowed.' });
   return (table[method as EngineMethodName] as Handler<EngineMethodName>)(args as never, ctx);
 }

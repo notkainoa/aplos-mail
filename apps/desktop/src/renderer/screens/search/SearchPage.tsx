@@ -143,6 +143,7 @@ export function SearchPage(props: SearchPageProps) {
         ) : null}
         {model.noMatch ? (
           <EmptyLine
+            icon="search"
             text={model.noMatch}
             action={
               model.noMatchOffer

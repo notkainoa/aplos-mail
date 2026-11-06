@@ -36,6 +36,12 @@ export interface ConnectFlow {
   request: ConnectRequest;
   /** May answer with the id of the account it actually stored, when that is not `accountId` (a retried new account). */
   accept(result: ConnectResult): Promise<AcceptOutcome> | AcceptOutcome;
+  /**
+   * Which window the sign-in's `aplos://oauth-return` deep link should come back to, resolved by the
+   * `Account/*` handler from the caller's connection (`setupId` marks the setup window). The host's
+   * sign-in flow looks it up by `oauthReturnKey` while the session is live.
+   */
+  returnTo?: 'onboarding' | 'mail';
 }
 
 interface Session {
@@ -65,6 +71,45 @@ export const SIGN_IN_DEADLINE_MS = 10 * 60_000;
 export const TOO_MANY_OPEN =
   'Too many sign-ins are open. Finish or cancel one before starting another.';
 const DEADLINE_ID = 'connect';
+
+// ---- oauth-return purpose binding ---------------------------------------------------------------------------
+// `aplos://oauth-return?n=<nonce>` links focus the window that started the sign-in. The host flow (prov-gov's
+// oauth module) mints the nonce; it finds the window's purpose here by `oauthReturnKey`. A connection is
+// marked as the setup window's when it calls `Account/connect` with a `setupId` (only that window runs
+// `Setup/begin`; the mail window's Add account dialog never sends one), so a later reconnect or grant on the
+// same connection also returns to the setup window. Unmarked connections resolve 'mail', so a later add can
+// never be routed to the setup window.
+const pendingReturns = new Map<string, 'onboarding' | 'mail'>();
+const onboardingConnections = new Set<string>();
+const MAX_ONBOARDING_CONNECTIONS = 128;
+
+/** Marks the caller's connection as the setup window's (an `Account/connect` carrying `setupId`). */
+export function noteOnboardingConnection(connectionId: string): void {
+  onboardingConnections.add(connectionId);
+  if (onboardingConnections.size > MAX_ONBOARDING_CONNECTIONS)
+    onboardingConnections.delete(onboardingConnections.keys().next().value!);
+}
+
+/** Whether the connection was marked by `noteOnboardingConnection` (the setup window's). */
+export function connectionOpensOnboarding(connectionId: string): boolean {
+  return onboardingConnections.has(connectionId);
+}
+
+/**
+ * The `ConnectFlow.key` a live sign-in maps to from the `ConnectRequest`/`accountId` the host's connect
+ * sees: `new:<lowercased address>` for a new account (matching `newAccountFlow`), `account:<id>` otherwise.
+ */
+export function oauthReturnKey(
+  req: Pick<ConnectRequest, 'mode' | 'address'>,
+  accountId: string,
+): string {
+  return req.mode === 'new' ? `new:${(req.address ?? '').toLowerCase()}` : `account:${accountId}`;
+}
+
+/** The window a live sign-in returns to, or undefined when it has ended (or never named one). */
+export function oauthReturnFor(key: string): 'onboarding' | 'mail' | undefined {
+  return pendingReturns.get(key);
+}
 
 export interface ConnectSessionsDeps {
   accounts: AccountActorHost;
@@ -126,6 +171,7 @@ export class ConnectSessions {
       hostSettled: false,
     };
     this.byId.set(session.connectId, session);
+    if (flow.returnTo) pendingReturns.set(flow.key, flow.returnTo);
     for (const key of keys) this.byKey.set(key, session);
     this.deps.deadlines.changed(DEADLINE_ID);
     setTimeout(() => void this.run(session), 0);
@@ -243,6 +289,7 @@ export class ConnectSessions {
     for (const session of this.byId.values()) session.controller.abort();
     this.byId.clear();
     this.byKey.clear();
+    pendingReturns.clear();
     this.unregister();
   }
 
@@ -273,6 +320,7 @@ export class ConnectSessions {
     for (const key of guardKeys(session.flow)) {
       if (this.byKey.get(key) === session) this.byKey.delete(key);
     }
+    pendingReturns.delete(session.flow.key);
   }
 
   private emit(

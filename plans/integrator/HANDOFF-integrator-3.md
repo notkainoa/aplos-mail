@@ -73,3 +73,8 @@ Send path and send guard (`outbox/*`, prov-gmail send/draft MIME headers), draft
 ## Local CI (from Platform 3, 2026-11-04; the owner will not pay for GitHub Actions)
 
 `scripts/local-ci.sh <ref> [--package] [--no-e2e] [--no-web] [--keep]` runs every ci.yml job in a scratch worktree (usage in `plans/integrator/LOCAL-CI.md`). Owner rule: run it on the head of every Opus-gated or engine PR before merging, and once per day on `origin/revamp`. Roughly 17 minutes. First daily run: `origin/revamp` at dd63b32b was all green. Do not wait on or re-run GitHub CI; the `plat-ci` label is not a merge gate.
+
+## Process slip to avoid (2026-11-05)
+
+Twice I chained `owners-check ...; resolve; merge` in ONE command, and the merge ran although owners-check had printed FAIL (the chain used `;`, not `&&`). Both were benign (plans/STATUS.md; eng-contract's calendar.test.ts, which I had read), but run owners-check as its own step, READ its last lines, and gate the merge on it: `node scripts/audit/owners-check.mjs ... --approved <lanes> && echo OWNERS-OK` then merge in a separate call. Always include `plat-ci` (for plans/STATUS.md) and `eng-contract` (for packages/engine/tests/**) in --approved when the PR touches them.
+

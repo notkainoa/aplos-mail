@@ -13,7 +13,7 @@
 import { useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import type { ComponentPropsMap, ToastData, ToastStackProps, UndoTrayAction } from '../props';
 import { Toast } from './Toast';
-import { PartIcon, PartKeys, formatTime, keysFor } from './parts';
+import { PartIcon, PartKeys, formatTime, useKeysFor } from './parts';
 
 const MAX_VISIBLE = 3;
 
@@ -59,6 +59,7 @@ function UndoSendNotice({
   onAction,
   announce,
 }: NonNullable<ToastStackProps['undoSend']>) {
+  const keysOf = useKeysFor();
   const announced = useRef(false);
   useEffect(() => {
     if (announced.current || !announce || state.kind !== 'sending') return;
@@ -74,7 +75,7 @@ function UndoSendNotice({
       onClick={() => onAction(action)}
     >
       <span>{label}</span>
-      {withKeys ? <PartKeys chords={keysFor(undoCommandId)} /> : null}
+      {withKeys ? <PartKeys chords={keysOf(undoCommandId)} /> : null}
     </button>
   );
 

@@ -200,7 +200,7 @@ export interface CalendarGridProps {
   onResize: (id: string, end: IsoDateTime) => void;
   /** A "+N" stack was opened; the screen shows a Menu of these ids. */
   onOpenStack: (ids: readonly string[], anchor: HTMLElement) => void;
-  /** Empty day: "Nothing scheduled." with this action (New event · N, DESIGN §7.14). */
+  /** Empty day: "Nothing scheduled" with this action (New event · N, DESIGN §7.14). */
   emptyAction?: CommandAction;
   /** View 'agenda' only: 'today' = the Today tab's compact agenda (header "Thursday, October 29 · 4 events · next at 11:00 AM", next event, the following two, free gaps, now line); 'full' = the narrow-pane calendar list. Default 'full'. */
   agenda?: 'today' | 'full';

@@ -199,8 +199,12 @@ const getMethods: { readonly [T in CachedRowType]: MethodName } = {
   Operation: 'Operation/get',
 };
 
-/** `T/get` takes at most 500 ids (Account/get 200), so a big batch is split; one frame rarely needs more than 200. */
-const MAX_IDS: Partial<Record<CachedRowType, number>> = { Account: 200 };
+/**
+ * `T/get` takes at most 500 ids (Account/get 200), so a big batch is split; one frame rarely needs more than 200.
+ * Events fetch in chunks of 100: an event row carries its attendees, and `Event/get` with many attendees can exceed
+ * the reply cap (500 events with 10 attendees each is a ~594 KB answer, refused as tooLarge).
+ */
+const MAX_IDS: Partial<Record<CachedRowType, number>> = { Account: 200, Event: 100 };
 
 interface GetAnswer {
   state?: State;

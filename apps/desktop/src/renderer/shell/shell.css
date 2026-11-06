@@ -8,6 +8,39 @@
   min-height: 0;
   background: var(--shell);
   color: var(--ink);
+  /* Window dragging (macOS hidden title bar): the gray shell gutter, the sidebar's empty areas, the collapsed
+     strip and the pane header drag the window. Interactive controls and content regions opt out below. */
+  -webkit-app-region: drag;
+}
+
+/* Collapsed: the chrome strip sits across the top and the panes drop below it. */
+.aplos-shell[data-collapsed='true'] {
+  flex-direction: column;
+}
+
+/* The panes' row; with no sidebar beside it (collapsed) it still fills the shell. */
+.aplos-shell__row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Collapsed sidebar: a traffic-light-high strip across the top holds just the toggle; it is a drag region. */
+.aplos-shell__strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
+  -webkit-app-region: drag;
+}
+/* The toggle clears the macOS traffic lights while the window is not fullscreen (x 16, y 14). */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip {
+  padding-left: calc(var(--space-8) * 2 + var(--space-1));
+}
+.aplos-shell__strip > * {
+  -webkit-app-region: no-drag;
 }
 
 .aplos-sidebar {
@@ -18,6 +51,7 @@
   width: var(--sidebar-w);
   padding: var(--space-3) var(--space-2) var(--space-2) var(--space-3);
   overflow-y: auto;
+  -webkit-app-region: drag;
 }
 
 /* Rows are 28 px with no gaps; groups sit 20 px apart (NavHead carries its own margin). */
@@ -27,9 +61,40 @@
 
 .aplos-sidebar__top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   margin-bottom: var(--space-3);
+}
+
+/* Windowed on macOS the top is two rows: a traffic-light-high chrome row (toggle + compose at its right end)
+   over the account switcher. Fullscreen and other platforms keep one row. */
+.aplos-sidebar__account {
+  order: 0;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.aplos-sidebar__chrome {
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar__chrome {
+  order: 0;
+  flex: 0 0 100%;
+  height: var(--control-lg);
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar__account {
+  order: 1;
+  flex: 0 0 100%;
+}
+.aplos-sidebar__chrome > * {
+  -webkit-app-region: no-drag;
 }
 
 /* The screen's slot (Calendar's MiniMonth and Calendars list) sits under the groups and above the footer. It shrinks
@@ -62,8 +127,74 @@
   padding: var(--space-3) var(--space-2) 0 var(--space-3);
 }
 
-.aplos-shell > .ui-pane:first-child {
+/* The ☰ clears the macOS traffic lights while the window is not fullscreen. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-rail {
+  padding-top: calc(var(--control-lg) + var(--space-2));
+}
+
+.aplos-shell > .ui-pane:first-child,
+.aplos-shell__row > .ui-pane:first-child {
   margin-left: var(--shell-pad);
+}
+
+/* The drag opt-outs for .aplos-shell's drag region (declared at the top of this file): every interactive control
+   and content region. */
+.aplos-shell
+  :is(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [contenteditable='true'],
+    [role='button'],
+    [role='menuitem'],
+    [role='option'],
+    [role='tab'],
+    [role='link'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='combobox'],
+    [role='listbox'],
+    [role='slider'],
+    [role='dialog'],
+    [role='menu'],
+    [role='tooltip'],
+    .ui-puck,
+    .ui-pane,
+    .ui-menu,
+    .ui-popover,
+    .ui-dialog,
+    .ui-dialog__scrim,
+    .ui-toast,
+    .ui-palette,
+    .aplos-sidebar__slot,
+    .aplos-sidebar__foot
+  ) {
+  -webkit-app-region: no-drag;
+}
+/* The pane re-enters the drag region only at its header; its own controls opt out. */
+.aplos-shell .ui-pane__head {
+  -webkit-app-region: drag;
+}
+.aplos-shell
+  .ui-pane__head
+  :is(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [contenteditable='true'],
+    [role='button'],
+    [role='menuitem'],
+    [role='option'],
+    [role='tab'],
+    [role='link'],
+    .ui-part-tipwrap
+  ) {
+  -webkit-app-region: no-drag;
 }
 
 /* The screen slot fills the pane body. */
@@ -77,6 +208,12 @@
   min-height: 100%;
 }
 .aplos-settings-mount:focus {
+  outline: none;
+}
+
+/* The sidebar is a region, not a control: when it holds focus for the keys it draws no ring. */
+.aplos-sidebar:focus-visible,
+.aplos-rail:focus-visible {
   outline: none;
 }
 

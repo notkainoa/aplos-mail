@@ -337,10 +337,14 @@ export type ChipProps =
 
 /** An empty state: one plain sentence plus at most one action (two only for No accounts); no icon in a circle (DESIGN §6 EmptyLine, §7.14). Mockups: empty.html, search.html (no-match), calendar-day.html (empty), ask.html (no-provider). Plain + refines: ui-foundation; used by ui-home, ui-ask, ui-calendar. */
 export interface EmptyLineProps {
-  /** The sentence, e.g. "No drafts.", "Your first mail is on its way.", "You handled 12 emails." */
+  /** The sentence, e.g. "No drafts", "Your first mail is on its way", "You handled 12 emails". No trailing period. */
   text: string;
-  /** 'line' = one line in the column; 'display' = the calm centred inbox-zero block in `display` type. Default 'line'. */
+  /** 'line' = one line in the column; 'display' = the `display` type size of inbox zero; it does not centre (that is `placement='pane'`). Default 'line'. */
   size?: 'line' | 'display';
+  /** 'pane' = fills the pane body and centres the line both ways (list and screen empties); 'inline' = a compact line in flow (sheets, settings rows, under a field). Default 'inline'. */
+  placement?: 'inline' | 'pane';
+  /** One small muted mark above the line — the place's own glyph, e.g. 'trash' for Trash. Never in a circle. */
+  icon?: IconName;
   /** A second dim line, e.g. "Next: Design review at 2:00 PM" or the status slot's reason. */
   detail?: string;
   /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. */

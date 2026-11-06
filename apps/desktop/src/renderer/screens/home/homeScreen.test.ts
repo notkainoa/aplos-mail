@@ -333,7 +333,7 @@ test('Clear from Home sends Back from Later to Later in one operation with Undo'
   }
 });
 
-test("the registry runs Home's commands: E is Done, Tab jumps a section, Z undoes", async () => {
+test("the registry runs Home's commands: E is Done, Next section jumps, Z undoes", async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -365,7 +365,15 @@ test("the registry runs Home's commands: E is Done, Tab jumps a section, Z undoe
       return registry.run(resolution.commandId, context).status;
     };
     const start = deps.snapshot().key!;
-    assert.equal(press('Tab'), 'ran');
+    // Tab is the shell's region key now; the section jump stays a palette command.
+    assert.equal(
+      registry.resolve(
+        { key: 'Tab', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false },
+        context,
+      ),
+      null,
+    );
+    assert.equal(registry.run('list.nextSection', context).status, 'ran');
     assert.notEqual(key.current, start, 'Tab moved to another section');
     key.current = start;
     assert.equal(press('e'), 'ran');

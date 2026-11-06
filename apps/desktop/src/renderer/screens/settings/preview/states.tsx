@@ -323,7 +323,7 @@ export const STATES: Record<string, StateSpec> = {
       recording: {
         commandId: 'mail.done',
         state: 'recording',
-        refused: '⌘Q belongs to macOS or edits text, so it can’t be a shortcut. Press other keys.',
+        refused: '⌘Q belongs to macOS, so it can’t be a shortcut. Press other keys.',
       },
     },
   },

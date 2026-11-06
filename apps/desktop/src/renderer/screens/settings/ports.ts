@@ -26,7 +26,7 @@ export interface SettingsData {
   readonly settings: Settings;
   readonly accounts: readonly Account[];
   readonly session: Session;
-  readonly consent: Consent;
+  readonly consent: Consent | undefined;
   /** The one renderer clock, epoch ms (harness-frozen in tests). */
   readonly now: number;
   readonly providers?: readonly AiProvider[];

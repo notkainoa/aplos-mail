@@ -9,7 +9,7 @@ import type { LowSheetProps } from '../props';
 import { EmptyLine } from './EmptyLine';
 import { Action, Keycap } from './internal/Action';
 import { formatCount } from './internal/format';
-import { keycapFor } from './internal/keys';
+import { useKeycapFor } from './internal/keys';
 import { ListBox } from './ListBox';
 import { ListGroup } from './ListGroup';
 import { ListRow } from './ListRow';
@@ -38,7 +38,8 @@ export function LowSheet({
 }: LowSheetProps) {
   const titleId = useId();
   const total = groups.reduce((n, g) => n + g.rows.length, 0);
-  const key = keycapFor(markAllCommandId) || '→';
+  const key = useKeycapFor(markAllCommandId) || '→';
+  const markEventKey = key === '←' ? 'ArrowLeft' : 'ArrowRight';
   const panelRef = useRef<HTMLDivElement>(null);
   const empty = groups.length === 0;
 
@@ -95,7 +96,7 @@ export function LowSheet({
     if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
-    } else if (event.key === 'ArrowRight' && total > 0) {
+    } else if (event.key === markEventKey && total > 0) {
       event.preventDefault();
       if (armed) onCommitAll();
       else onArm();
@@ -133,7 +134,7 @@ export function LowSheet({
 
         {empty ? (
           <EmptyLine
-            text="No low-importance mail."
+            text="No low-importance mail"
             action={{ label: 'Back to Home', emphasis: 'text', keys: 'Esc', onSelect: onClose }}
           />
         ) : (

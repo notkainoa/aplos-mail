@@ -21,6 +21,7 @@ import { DoneScreen } from '../done';
 import { commandsForDone } from '../done/doneCommands';
 import {
   ALL_CONFIG,
+  BOOKMARKS_CONFIG,
   DONE_CONFIG,
   DRAFTS_CONFIG,
   SENT_CONFIG,
@@ -280,31 +281,47 @@ test('a Done row with no finish time reads a bare "Done", never a time it was no
   assert.doesNotMatch(text(renderToStaticMarkup(createElement(ListRow, props))), /2:07|Done \d/);
 });
 
-test('an empty list is one plain sentence, and first sync is never called empty', () => {
+test('an empty list is one plain sentence centred in the pane, and first sync is never called empty', () => {
   const calm = { settling: false };
-  for (const [config, line] of [
-    [ALL_CONFIG, 'No mail here yet.'],
-    [DRAFTS_CONFIG, 'No drafts.'],
-    [SENT_CONFIG, 'Nothing sent yet.'],
-    [TRASH_CONFIG, 'Trash is empty.'],
-    [SPAM_CONFIG, 'Spam is empty.'],
-    [DONE_CONFIG, 'Nothing done yet.'],
+  for (const [config, line, icon] of [
+    [ALL_CONFIG, 'No mail here yet', 'tray'],
+    [DRAFTS_CONFIG, 'No drafts', 'file'],
+    [SENT_CONFIG, 'Nothing sent yet', 'send'],
+    [TRASH_CONFIG, 'Trash is empty', 'trash'],
+    [SPAM_CONFIG, 'Spam is empty', 'spam'],
+    [DONE_CONFIG, 'Nothing done yet', 'check-circle'],
   ] as const) {
     const html = renderToStaticMarkup(
-      createElement(ListEmpty, { text: config.empty, state: calm }),
+      createElement(ListEmpty, {
+        text: config.empty,
+        icon: config.emptyIcon,
+        detail: config.emptyDetail,
+        state: calm,
+      }),
     );
     assert.equal(text(html), line);
+    assert.match(html, /data-placement="pane"/, 'centres in the pane');
+    assert.match(html, new RegExp(`data-icon="${icon}"`), 'wears the place’s mark');
     assert.doesNotMatch(html, /ui-list-box/);
   }
+  const bookmarks = renderToStaticMarkup(
+    createElement(ListEmpty, {
+      text: BOOKMARKS_CONFIG.empty,
+      icon: BOOKMARKS_CONFIG.emptyIcon,
+      detail: BOOKMARKS_CONFIG.emptyDetail,
+      state: calm,
+    }),
+  );
+  assert.equal(text(bookmarks), 'No bookmarks Press B on any email');
   const syncing = text(
     renderToStaticMarkup(
       createElement(ListEmpty, {
-        text: 'No drafts.',
+        text: 'No drafts',
         state: { settling: true, reason: 'Importing 3 of 9' },
       }),
     ),
   );
-  assert.match(syncing, /Your first mail is on its way\./);
+  assert.match(syncing, /Your first mail is on its way(?!\.)/);
   assert.match(syncing, /Importing 3 of 9/);
 });
 

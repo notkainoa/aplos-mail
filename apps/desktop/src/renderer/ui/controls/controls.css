@@ -339,8 +339,7 @@
   scrollbar-color: var(--line-strong) transparent;
 }
 .ui-shortcut-sheet-body:focus-visible {
-  outline: var(--focus-width) solid var(--accent);
-  outline-offset: calc(-1 * var(--focus-width));
+  outline: none;
 }
 .ui-shortcut-sheet-cols {
   display: grid;

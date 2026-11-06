@@ -246,7 +246,7 @@ test('the offer row sits under local results; a no-match carries the offer itsel
   assert.equal(hit.remoteLine?.kind, 'offer');
   assert.equal(hit.noMatch, null);
   const miss = searchPage(state, LOCAL([]), 1_000);
-  assert.equal(miss.noMatch, 'No mail matches ‘dentist’.');
+  assert.equal(miss.noMatch, 'No mail matches ‘dentist’');
   assert.equal(miss.noMatchOffer, true);
   assert.equal(miss.remoteLine, null);
 });

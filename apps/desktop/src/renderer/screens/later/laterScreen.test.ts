@@ -103,7 +103,7 @@ test('an empty Later is one sentence', async () => {
   const world = await boot('empty');
   try {
     const html = text(renderToStaticMarkup(createElement(LaterScreen)));
-    assert.match(html, /(Nothing set aside for later\.|Your first mail is on its way\.)/);
+    assert.match(html, /(Nothing set aside for later|Your first mail is on its way)/);
   } finally {
     world.connection.close();
   }

@@ -89,8 +89,8 @@ test('Home lines: Do now includes Back from Later, Low is the band, unknown keys
     { kind: 'low', count: 2, senders: ['Parcel Trail', 'Field Notes'] },
     { kind: 'section', key: 'follow', label: 'Follow up', variant: 'section', count: 1 },
   ]);
-  assert.equal(handledLine(1), 'You handled 1 email.');
-  assert.equal(handledLine(12), 'You handled 12 emails.');
+  assert.equal(handledLine(1), 'You handled 1 email');
+  assert.equal(handledLine(12), 'You handled 12 emails');
 });
 
 test('the demo mailbox boots into section headers and one Low band', async () => {
@@ -126,7 +126,7 @@ test('an empty mailbox shows the handled line, a failure its sentence, opening n
   try {
     const state = await home.until(live);
     const html = renderToStaticMarkup(createElement(HomeContent, { home: state }));
-    assert.match(text(html), /^You handled 0 emails\.$/);
+    assert.match(text(html), /^You handled 0 emails$/);
   } finally {
     home.stop();
     close();

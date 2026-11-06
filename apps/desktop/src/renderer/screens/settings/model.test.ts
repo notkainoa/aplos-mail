@@ -31,6 +31,7 @@ import {
   versionLine,
   aiNotices,
 } from './settings.model';
+import { createAppRegistry, DEFAULT_KEY_PREFS, formatChord } from '../../commands';
 import { applyRemap, judgeChord, resetKeys, shortcutGroups } from './keyboard.model';
 import {
   account,
@@ -49,11 +50,11 @@ import {
 } from './preview/fixtures';
 
 const HOUR = 3_600_000;
-const ui = (keymap = {}) => ({
+const ui = (keymap = {}, swipeDirection: 'doneRight' | 'doneLeft' = 'doneRight') => ({
   keymap,
   singleKeys: true,
   holdMs: 250,
-  swipeDirection: 'doneRight' as const,
+  swipeDirection,
 });
 
 describe('reconnect rule (DESIGN 7.10, U7 acceptance 8)', () => {
@@ -459,12 +460,59 @@ describe('Keyboard model', () => {
     assert.deepEqual(applyRemap(ui(km), 'mail.done', 'e'), {});
   });
 
-  test('reserved chords are refused with a reason: ⌘Q, ⌘W, ⌘H', () => {
-    for (const chord of ['meta+q', 'meta+w', 'meta+h']) {
+  test('with the triage arrows swapped, remapping Done stores the catalog chord and keeps the swapped arrow', () => {
+    const swapped = ui({}, 'doneLeft');
+    const row = shortcutGroups(swapped)
+      .flatMap(g => g.rows)
+      .find(r => r.commandId === 'mail.done')!;
+    assert.deepEqual(row.chords, ['e', 'ArrowRight']);
+    assert.deepEqual(row.shown, ['e', 'ArrowLeft']);
+    assert.equal(judgeChord('mail.done', 'y', swapped).kind, 'ok');
+    const km = applyRemap(swapped, 'mail.done', 'y');
+    assert.deepEqual(
+      km['mail.done'].map(b => b.chord),
+      ['y', 'ArrowRight'],
+    );
+    const registry = createAppRegistry({
+      ...DEFAULT_KEY_PREFS,
+      swapTriageArrows: true,
+      keymap: km,
+    });
+    assert.deepEqual(registry.keymapIssues, []);
+    const keys = registry
+      .keysFor('mail.done', ['global', 'list', 'home'])
+      .map(b => formatChord(b.chord));
+    assert.ok(keys.includes('←') && keys.includes('Y'), keys.join());
+    const remapped = shortcutGroups(ui(km, 'doneLeft'))
+      .flatMap(g => g.rows)
+      .find(r => r.commandId === 'mail.done')!;
+    assert.deepEqual(remapped.shown, ['y', 'ArrowLeft']);
+    assert.deepEqual(applyRemap(ui(km, 'doneLeft'), 'mail.done', 'e'), {});
+  });
+
+  test('reserved chords are refused with a reason that never names a command id', () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ['meta+q', '⌘Q belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+      ['meta+c', '⌘C edits text, so it can’t be a shortcut. Press other keys.'],
+      ['Tab', 'Tab moves focus between regions, so it can’t be a shortcut. Press other keys.'],
+      ['meta+w', '⌘W belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+      ['meta+h', '⌘H belongs to macOS, so it can’t be a shortcut. Press other keys.'],
+    ];
+    for (const [chord, sentence] of cases) {
       const v = judgeChord('mail.done', chord, ui());
       assert.equal(v.kind, 'refused', chord);
-      assert.match((v as { text: string }).text, /belongs to macOS/);
+      assert.equal((v as { text: string }).text, sentence, chord);
+      assert.doesNotMatch((v as { text: string }).text, /\b[a-z]+\.[a-zA-Z]+\b/, chord);
     }
+  });
+
+  test('a stale reserved chord elsewhere in a saved remap never blames the key just pressed', () => {
+    const stale = ui({ 'mail.done': [{ chord: 'meta+k' }, { chord: 'meta+c' }] });
+    const v = judgeChord('mail.done', 'meta+j', stale);
+    assert.equal(v.kind, 'refused');
+    const text = (v as { text: string }).text;
+    assert.equal(text, 'That shortcut holds a key that can’t be used. Reset it and try again.');
+    assert.doesNotMatch(text, /⌘J|meta/);
   });
 
   test('a saved clash shows "Same keys as …" on the row; Reset removes one override, Reset all clears them', () => {

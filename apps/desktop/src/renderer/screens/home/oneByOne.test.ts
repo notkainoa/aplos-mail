@@ -376,7 +376,17 @@ test('Why it is here: the menu offers it between Bookmark and Trash, and a lane 
     const entries = menuEntries(rowOf(world)(first));
     assert.deepEqual(
       entries.map(entry => (entry.kind === 'item' ? entry.id : entry.kind)),
-      ['bookmark', 'why', 'trash'],
+      [
+        'suggested',
+        'later',
+        'done',
+        'separator',
+        'setDate',
+        'bookmark',
+        'why',
+        'separator',
+        'trash',
+      ],
     );
     const why = entries.find(entry => entry.kind === 'item' && entry.id === 'why');
     assert.equal(why?.kind === 'item' ? why.commandId : null, 'mail.why');
@@ -400,12 +410,12 @@ test('the finish is one calm line with a quiet way back, and the walk shows noth
   const finished = renderToStaticMarkup(
     createElement(OneByOneFinish, { nothing: false, onBack: () => undefined }),
   );
-  assert.match(finished, /That’s everyone\./);
+  assert.match(finished, /That’s everyone(?!\.)/);
   assert.match(finished, /Back to Home/);
   const empty = renderToStaticMarkup(
     createElement(OneByOneFinish, { nothing: true, onBack: () => undefined }),
   );
-  assert.match(empty, /Nothing to go through\./);
+  assert.match(empty, /Nothing to go through(?!\.)/);
 });
 
 test('the view renders the first Do-now thread as one letter, with no list around it', async () => {
