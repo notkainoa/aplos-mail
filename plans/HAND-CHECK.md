@@ -1,6 +1,6 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-05 from `revamp` `e03bb50c`, includes the go-live flip, the
+The app to check (built 2026-11-06 from `revamp` `eed51934`, includes the go-live flip, the
 Session/Settings engine stubs, the close-handshake fix, and every hand-check fix batch:
 chrome #318/#319, Settings resilience #320, first-sync window + progress #316, OAuth return
 #321/#329, Calendar/Event reads #315/#330/#332, Search auth/coalescing #317/#322/#324,
@@ -105,7 +105,7 @@ doesn't and where it stopped.
 
 ---
 
-## Known gaps today (agent run, 2026-11-05, build at e03bb50c)
+## Known gaps today (agent run, 2026-11-06, build at eed51934)
 
 - Everything your last pass flagged is merged and re-verified packaged: Settings renders all
   sections (Help now lives in Settings → Help & about), Calendar loads its day/week/month
