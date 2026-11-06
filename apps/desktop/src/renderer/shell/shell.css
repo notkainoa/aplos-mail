@@ -90,7 +90,7 @@
   .ui-pane__head {
   padding-left: calc(var(--notch-w) - var(--shell-pad) + var(--space-2));
 }
-.aplos-shell__strip > * {
+.aplos-shell__strip > :not(svg) {
   -webkit-app-region: no-drag;
 }
 
