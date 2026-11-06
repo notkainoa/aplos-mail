@@ -8,7 +8,9 @@ import { grantedScopesOf } from '../../src/host/compose';
 
 /** A store whose `read` hands the callback a canned `accounts` row. */
 const storeWith = (row: { granted_scopes: string | null } | undefined): StorePort =>
-  ({ read: run => run({ get: () => row }) }) as unknown as StorePort;
+  ({
+    read: (run: (q: { get: () => unknown }) => unknown) => run({ get: () => row }),
+  }) as unknown as StorePort;
 
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
