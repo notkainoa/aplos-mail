@@ -717,6 +717,19 @@ test('every account cooled down: the whole run fails fast as paused, nothing ask
   }
 });
 
+test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
+  lazyViewLoaderForTest('plans', () => Promise.reject(new Error('chunk missing')));
+  await withWorld(async t => {
+    const body = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => undefined)
+      .catch(e => e as { type?: string });
+    assert.equal((body as { type?: string })?.type, 'unavailable');
+  });
+});
+
 test('a Reconnect-state account is needsReauth, never the throttle copy', async () => {
   const world = makeWorld(5, BIG_NOW, 60);
   const { PausedError, ProviderError } = await import('../../src/ports');

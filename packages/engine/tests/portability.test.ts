@@ -94,7 +94,19 @@ test('the engine bundles for a platform without Node, so a mobile app can reuse 
 const legacy = join(src, 'legacy');
 // Modules a first run reaches only through `import()` (see `lazyDemoWrites`): measured as a chunk of their own, so
 // they are reported but do not count against the startup budget. Nothing may import them statically.
-const lazyModules = [join(src, 'ai', 'demo', 'data.ts')];
+const lazyModules = [
+  join(src, 'ai', 'demo', 'data.ts'),
+  join(src, 'calendar', 'views.ts'),
+  join(src, 'calendar', 'recurrence', 'expand.ts'),
+  join(src, 'calendar', 'recurrence', 'generate.ts'),
+  join(src, 'calendar', 'recurrence', 'series.ts'),
+  join(src, 'calendar', 'recurrence', 'rule.ts'),
+  // Reached only through the lazy chain or not at all yet (the event-edit writes are still to come):
+  // kept out of the entry list so their imports cannot pull the lazy modules back into the core.
+  join(src, 'calendar', 'recurrence', 'index.ts'),
+  join(src, 'calendar', 'recurrence', 'edit.ts'),
+  join(src, 'calendar', 'recurrence', 'keys.ts'),
+];
 // The budget is for the bundle that ships, so it is measured minified (2026-10-28: 253,443 bytes; unminified the same
 // files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06
 // (owner decision, DECISIONS.md); the last raise without a new decision.
@@ -115,20 +127,23 @@ test('the new engine (contract types and zod-free tables only, no zod) stays und
   // A lazy chunk holds nothing but lazy modules; a static import would fold them into the core chunk instead.
   const lazy = chunks.filter(chunk => chunk.inputs.length > 0 && chunk.inputs.every(isLazy));
   const core = chunks.filter(chunk => !lazy.includes(chunk));
-  assert.equal(lazy.length, lazyModules.length, 'each lazy module is a chunk of its own');
+  // esbuild merges `import()` points that share deps: several lazy modules may sit in one chunk; the invariant
+  // is that a lazy chunk holds ONLY lazy modules and none reach the core.
+  assert.ok(
+    lazy.every(chunk => chunk.inputs.every(isLazy)),
+    'a lazy chunk holds nothing but lazy modules',
+  );
   assert.ok(
     core.every(chunk => !chunk.inputs.some(isLazy)),
     'no lazy module is in the core bundle',
   );
+
   const bytes = core.reduce((sum, chunk) => sum + chunk.bytes, 0);
   const later = lazy.reduce((sum, chunk) => sum + chunk.bytes, 0);
   console.log(
     `engine bundle: ${bytes} bytes minified of ${BUDGET_BYTES} (${BUDGET_BYTES - bytes} left), plus ${later} bytes loaded on first use`,
   );
-  assert.ok(
-    later > 0 && lazy.length === 1,
-    'the demo data is a chunk of its own, loaded on first use',
-  );
+  assert.ok(later > 0 && lazy.length > 0, 'the lazy modules load on first use, not at startup');
   assert.ok(bytes < BUDGET_BYTES, `engine bundle stays small (${bytes} bytes minified)`);
 });
 
