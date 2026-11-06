@@ -194,7 +194,13 @@ export function createViewEngine(deps: ViewEngineDeps): ViewEngine {
   function changedIds(w: Win, q: StoreReader, ids: string[]): string[] {
     if (w.rowType === 'Thread') return changedThreads(q, ids, w.sentSeq, accountIds(q));
     const shown = new Set(ids);
-    const out = w.touchedAll ? ids : [...w.touched].filter(id => shown.has(id));
+    // An Event mark names the resource (`acct:cal/remote`); a shown occurrence carries `@<recurrenceId>`
+    // appended, so it matches its resource's mark by prefix.
+    const hit =
+      w.rowType === 'Event'
+        ? (id: string) => shown.has(id) || ids.some(s => s.startsWith(`${id}@`))
+        : (id: string) => shown.has(id);
+    const out = w.touchedAll ? ids : [...w.touched].filter(hit);
     w.touched.clear();
     w.touchedAll = false;
     return out;

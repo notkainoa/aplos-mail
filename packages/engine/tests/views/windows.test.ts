@@ -663,9 +663,15 @@ test('a throttled search answer cools the account; the next search fails fast lo
       calls.filter(c => c === 'imap:2:garden'),
       ['imap:2:garden'],
     );
-    // A healthy account answered: the run is `done`, the window keeps the results it had.
-    const last = t.frames.filter(f => f.frame === 'progress').at(-1);
-    assert.equal(last?.kind, 'done');
+    // A healthy account answered but one was skipped: the run says so (partial), it does not end `done` as if nothing
+    // were missing, and it carries when the skipped account is asked again.
+    const last = t.frames.filter(f => f.frame === 'progress').at(-1) as {
+      kind?: string;
+      problem?: { reasonCode?: string; resumeAt?: number };
+    };
+    assert.equal(last?.kind, 'error');
+    assert.equal(last?.problem?.reasonCode, 'paused');
+    assert.ok((last?.problem?.resumeAt ?? 0) > t.clock.now(), 'resumeAt is ahead of now');
   } finally {
     await t.close();
     world.cleanup();
@@ -679,28 +685,77 @@ test('every account cooled down: the whole run fails fast as paused, nothing ask
   const accounts = {
     search: async (account: string, query: { text: string }) => {
       calls.push(`${account}:${query.text}`);
-      // Project scope (Gmail's daily limit) cools every account at once.
-      throw new ProviderError(
-        {
-          class: 'throttle',
-          reason: 'rateLimitExceeded',
-          retryAfterMs: 60_000,
-        } as never,
-        'project',
-      );
+      // A refusal that cools only the account that got it (the project-wide kind is in remote-pause.test.ts).
+      throw new ProviderError({
+        class: 'throttle',
+        reason: 'rateLimitExceeded',
+        retryAfterMs: 60_000,
+      } as never);
     },
   } as unknown as AccountActorHost;
   const t = await openEngine(world.store, { ports: { accounts } });
   try {
     await t.call('Search/remote', { opId: 'q1', query: { text: 'garden' } });
     await t.advance(10);
-    const asked = calls.length;
     await t.call('Search/remote', { opId: 'q2', query: { text: 'garden' } });
+    await t.advance(10);
+    const asked = calls.length;
+    assert.deepEqual(
+      calls.sort(),
+      ['acct-1:garden', 'imap:2:garden'],
+      'each account was asked once',
+    );
+    await t.call('Search/remote', { opId: 'q3', query: { text: 'garden' } });
     await t.advance(10);
     assert.equal(calls.length, asked, 'all accounts cooled: nothing is re-asked');
     const last = t.frames.filter(f => f.frame === 'progress').at(-1);
     assert.equal(last?.kind, 'error');
     assert.equal((last as { problem?: { reasonCode?: string } })?.problem?.reasonCode, 'paused');
+  } finally {
+    await t.close();
+    world.cleanup();
+  }
+});
+
+test('a lazy view chunk that cannot load answers unavailable, never a thrown import', async () => {
+  const { lazyViewLoaderForTest } = await import('../../src/views/registry');
+  // `plans` has not loaded in this process: swap its loader for one that rejects (a missing chunk).
+  lazyViewLoaderForTest('plans', () => Promise.reject(new Error('chunk missing')));
+  await withWorld(async t => {
+    const body = await t
+      .call('View/watch', { spec: { kind: 'plans' } })
+      .then(() => undefined)
+      .catch(e => e as { type?: string });
+    assert.equal((body as { type?: string })?.type, 'unavailable');
+  });
+});
+
+test('a Reconnect-state account is needsReauth, never the throttle copy', async () => {
+  const world = makeWorld(5, BIG_NOW, 60);
+  const { PausedError, ProviderError } = await import('../../src/ports');
+  const accounts = {
+    search: async (account: string) => {
+      if (account === 'acct-1')
+        throw new PausedError(account as never, 'interactive' as never, 'auth', 'reconnect');
+      if (account === 'imap:2')
+        throw new ProviderError({ class: 'auth', reason: 'authError' } as never);
+      return { remoteThreadIds: [] };
+    },
+  } as unknown as AccountActorHost;
+  const t = await openEngine(world.store, { ports: { accounts } });
+  try {
+    const win = await t.call('View/watch', {
+      spec: { kind: 'search', query: { text: 'receipt' } },
+    });
+    await t.call('Search/remote', { opId: 'a1', query: { text: 'receipt' } });
+    await t.advance(10);
+    const last = frameOf(t, win.windowId)!;
+    assert.equal(last.error?.type, 'needsReauth', 'an auth refusal is not a rate limit');
+    const progress = t.frames.filter(f => f.frame === 'progress').at(-1);
+    assert.equal(
+      (progress as { problem?: { reasonCode?: string } })?.problem?.reasonCode,
+      'auth.reconnect',
+    );
   } finally {
     await t.close();
     world.cleanup();
