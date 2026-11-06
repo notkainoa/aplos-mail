@@ -82,3 +82,7 @@ Twice I chained `owners-check ...; resolve; merge` in ONE command, and the merge
 
 `git push origin HEAD:revamp` from a feature branch lands the WHOLE branch (platform's f8105204). Before any direct push of STATUS lines run `git log --oneline origin/revamp..HEAD` and push only if every listed commit is a STATUS or HANDOFF commit; otherwise open a PR. My own thread branch (rv/thread/integrator-3) holds only STATUS/OWNERS/HANDOFF commits and `git pull --no-rebase origin revamp` merges, so the push is safe there.
 
+## Gate the merge on the head you CHECKED (2026-11-06 slip on #346)
+
+`resolve-decisions.sh` pushes a merge head, and the PR author may ALSO push new commits while CI runs. On #346 two providers commits (a live gcal tier-R probe, a sign-in scope change) arrived after my CI and my `git diff --stat` printed them only AFTER the merge command in the same chain. Before `gh pr merge`: `git log --oneline <checked-sha>..<head-to-merge>` and read every commit that is not a `Merge ... revamp` or a STATUS commit; if there is one, either run the check on the new head or read the delta first. Do the diff in a separate call BEFORE merging, not in the same chain.
+

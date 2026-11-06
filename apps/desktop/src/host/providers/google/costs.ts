@@ -78,3 +78,24 @@ export function gmailCost(
   const expensive = format === undefined || format === 'full' || format === 'raw';
   return expensive && price.full !== undefined ? price.full : price.base;
 }
+
+/**
+ * The Calendar price list (`gcal` budget, `requests` units): one request is one unit, the same rule as Gmail's —
+ * a method missing here is a bug, not a default price.
+ */
+export const GCAL_COSTS = {
+  'gcal.calendarList.list': { base: 1 },
+  'gcal.calendarList.get': { base: 1 },
+  'gcal.events.list': { base: 1 },
+  'gcal.events.get': { base: 1 },
+  'gcal.events.instances': { base: 1 },
+} as const satisfies GmailCostTable;
+
+export type GcalMethod = keyof typeof GCAL_COSTS;
+
+/** Units one Calendar call costs. */
+export function gcalCost(method: string, table: GmailCostTable = GCAL_COSTS): number {
+  const price = table[method];
+  if (!price) throw new Error(`No Calendar price for ${method}`);
+  return price.base;
+}
