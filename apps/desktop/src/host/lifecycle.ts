@@ -208,12 +208,70 @@ export interface OnboardingController {
    */
   noteRendererSetupEnd(): void;
   isOpen(): boolean;
+  /** Raises the welcome window when it is open; false when it is not. Never opens one. */
+  focusOpen(): boolean;
+}
+
+/**
+ * The one existing window an `aplos://oauth-return` deep link may raise for `purpose` (the window the
+ * sign-in started in). It never opens anything: a link naming the welcome window falls back to the
+ * mail window, a link for a mail flow that finds no mail window does nothing — a later add must never
+ * surface the setup window.
+ */
+export function oauthReturnTarget(
+  purpose: 'onboarding' | 'mail',
+  open: { onboarding: boolean; mail: boolean },
+): 'onboarding' | 'mail' | 'none' {
+  if (purpose === 'onboarding' && open.onboarding) return 'onboarding';
+  if (open.mail) return 'mail';
+  return 'none';
 }
 
 const alive = (win: WindowPort | undefined): win is WindowPort => !!win && !win.isDestroyed();
 /** A mail window that is up: one still waiting for its first paint belongs to a handoff and is not "open" yet. */
 const up = (win: WindowPort | undefined): win is WindowPort =>
   alive(win) && (win.isVisible() || win.hasPainted());
+
+/**
+ * The focus half of `aplos://oauth-return`: resolves the one live window `oauthReturnTarget` picked
+ * and raises the app behind it — in that order. `raiseApp` runs only once a window actually took the
+ * focus: a welcome window that died between `onboardingOpen` and `focusOnboarding` resolves 'none',
+ * and the app stays where it was. Never opens a window.
+ */
+export function focusOauthReturnWindow(
+  purpose: 'onboarding' | 'mail',
+  deps: {
+    /** `onboarding.isOpen()`, sampled now. */
+    onboardingOpen(): boolean;
+    /** Raises the open welcome window; false when it is gone. Never opens one. */
+    focusOnboarding(): boolean;
+    /** The live mail window, when one exists. */
+    mail(): WindowPort | undefined;
+    /** Brings the app itself forward (macOS `app.focus`); runs only after a window took focus. */
+    raiseApp(): void;
+    /** Test mode never shows or focuses a window; the resolution is still reported. */
+    testMode: boolean;
+  },
+): 'onboarding' | 'mail' | 'none' {
+  const mail = deps.mail();
+  const target = oauthReturnTarget(purpose, {
+    onboarding: deps.onboardingOpen(),
+    mail: alive(mail),
+  });
+  let focused: 'onboarding' | 'mail' | 'none' = 'none';
+  if (target === 'onboarding' && deps.focusOnboarding()) {
+    focused = 'onboarding';
+  } else if (target === 'mail' && alive(mail)) {
+    if (mail.isMinimized()) mail.restore();
+    if (!deps.testMode) {
+      mail.show();
+      mail.focus();
+    }
+    focused = 'mail';
+  }
+  if (focused !== 'none') deps.raiseApp();
+  return focused;
+}
 
 export function createOnboarding(deps: OnboardingDeps): OnboardingController {
   let win: WindowPort | undefined;
@@ -362,6 +420,14 @@ export function createOnboarding(deps: OnboardingDeps): OnboardingController {
       ended = true;
     },
     isOpen: () => alive(win),
+    focusOpen() {
+      if (!alive(win)) return false;
+      // A window still waiting for its first paint is not raised (bring declines it): say so, so the caller does not
+      // pull the app forward over a window nobody can see yet.
+      if (!deps.testMode && !win.hasPainted()) return false;
+      bring(win);
+      return true;
+    },
   };
 }
 
@@ -580,6 +646,29 @@ export function createQuitGate(confirm: () => Promise<boolean>, begin: () => voi
             // Nothing safe to report from here; the next quit request asks again.
           }
         });
+    },
+  };
+}
+
+/**
+ * Holds `aplos://oauth-return` links until the first window choice has been applied. A link that arrives while
+ * `startWindows` is still deciding (cold start, `open-url` or argv) would otherwise be answered with no window to
+ * focus and its one-time nonce burned. `hold` says whether the link was held back (bounded; the rest are dropped,
+ * which is the safe direction: a dropped link is a no-op and the page keeps its visible fallback link).
+ */
+export function createLinkGate(cap: number) {
+  let open = false;
+  const held: string[] = [];
+  return {
+    hold(link: string): boolean {
+      if (open) return false;
+      if (held.length < cap) held.push(link);
+      return true;
+    },
+    /** Opens the gate and returns what was held, oldest first. */
+    release(): string[] {
+      open = true;
+      return held.splice(0);
     },
   };
 }
