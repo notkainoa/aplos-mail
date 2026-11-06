@@ -193,10 +193,10 @@ export function exposeTestHooks() {
  * Test-only window/CDP/keychain flags (APLOS_TEST=1 required for all):
  * - APLOS_TEST_SHOW_WINDOWS=1: windows order in with showInactive() instead of staying hidden — a headless run a
  *   CDP driver can screenshot. Never steals focus or switches Space.
- * - APLOS_TEST_CDP_PORT=<1-65535|0>: append --remote-debugging-port for the run; 0 asks for a random one. The flag
- *   is loopback-only by Chromium design; a caller-supplied --remote-debugging-address in argv is refused at startup.
- * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain so a seeded data dir can unwrap the real login-keychain
- *   credential (live account in a private copy). Reads still never write keychain items.
+ * - APLOS_TEST_CDP_PORT=<0-65535>: append --remote-debugging-port for the run; 0 asks for a random port. The flag
+ *   is loopback-only by Chromium design; a caller-supplied -/--remote-debugging-address in argv is refused at startup.
+ * - APLOS_TEST_KEYCHAIN=login: skip the in-memory keychain. The test then uses the real login keychain under the
+ *   test-namespaced item, so it can only unwrap credentials a test run sealed — never the real app's item.
  * Without APLOS_TEST=1 every flag is inert — normal launches are byte-for-byte unchanged.
  */
 export interface TestFlags {
@@ -211,8 +211,9 @@ export function testFlags(env: NodeJS.ProcessEnv, isTest: boolean): TestFlags {
   const raw = env.APLOS_TEST_CDP_PORT;
   let cdpPort: number | undefined;
   if (raw !== undefined) {
+    if (!/^\d+$/.test(raw)) return none;
     const port = Number(raw);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) return none;
+    if (port > 65535) return none;
     cdpPort = port;
   }
   return {

@@ -27,18 +27,20 @@ if (!existsSync(exe)) {
   console.error(`e2e: no executable ${exe}`);
   process.exit(2);
 }
-mkdirSync(outDir, { recursive: true });
-
-const output = [];
 const dataDir = flag('--data-dir');
 if (!dataDir) {
   console.error('e2e: pass --data-dir <seeded private copy of the signed-in data dir>');
   process.exit(2);
 }
+mkdirSync(outDir, { recursive: true });
+
+const output = [];
 const child = spawn(exe, [], {
   env: {
     ...process.env,
     ELECTRON_RUN_AS_NODE: undefined,
+    NODE_OPTIONS: undefined,
+    APLOS_RENDERER_URL: undefined,
     APLOS_ENGINE: 'real',
     APLOS_TEST: '1',
     APLOS_DATA_DIR: dataDir,
@@ -120,9 +122,16 @@ async function main() {
     // No browser-level endpoint — window-geometry checks will be skipped.
   }
   function send(method, params = {}) {
-    return new Promise(r => {
+    return new Promise((resolve, reject) => {
       const i = ++id;
-      pending.set(i, r);
+      const timer = setTimeout(() => {
+        pending.delete(i);
+        reject(new Error(`cdp timeout: ${method}`));
+      }, 20000);
+      pending.set(i, m => {
+        clearTimeout(timer);
+        resolve(m);
+      });
       ws.send(JSON.stringify({ id: i, method, params }));
     });
   }
@@ -186,7 +195,7 @@ async function main() {
   async function step(name, act, opts = {}) {
     pageErrors.length = 0;
     const before = output.length;
-    if (act) await act();
+    const actResult = act ? await act() : undefined;
     await delay(opts.wait ?? 2000);
     await shot(`e2e-${name}`);
     const body = String(await text()).slice(0, 800);
@@ -199,7 +208,7 @@ async function main() {
     if (refused) errs.push('console: ' + refused[0].trim().slice(0, 160));
     results.push({
       name,
-      status: bad || errs.length ? 'FAIL' : 'PASS',
+      status: actResult === 'SKIP' ? 'SKIP' : bad || errs.length ? 'FAIL' : 'PASS',
       flags: [...(bad ? [`screen copy: ${bad[0]}`] : []), ...errs.slice(0, 4)],
       text: body.replace(/\n{3,}/g, '\n\n').slice(0, 400),
     });
@@ -344,7 +353,7 @@ async function main() {
     await click('Accounts');
     await delay(1200);
     await click('Add account');
-    await delay(3000); // OAuth browser flow opens — record that it fired, then bail.
+    await delay(3000); // Test mode records the OAuth redirect instead of opening a browser.
     await key('Escape', 0, 'Escape');
   });
 
@@ -405,7 +414,7 @@ async function main() {
   });
   await step('window-drag', async () => {
     const b = await win();
-    if (!b) return pageErrors.push('no window bounds');
+    if (!b) return 'SKIP';
     // Drag the chrome strip above the content area.
     await send('Input.dispatchMouseEvent', {
       type: 'mousePressed',
@@ -437,7 +446,7 @@ async function main() {
     const b = await win();
     await key('f', 12);
     await delay(1500);
-    if (!b) pageErrors.push('no window bounds after fullscreen');
+    if (!b) return 'SKIP';
   });
   ws.close();
 }

@@ -42,7 +42,7 @@ test('testFlags: APLOS_TEST_CDP_PORT parses a port and 0 for random', () => {
 });
 
 test('testFlags: an invalid APLOS_TEST_CDP_PORT disables the whole flag set', () => {
-  for (const raw of ['65536', '-1', 'abc', '1.5']) {
+  for (const raw of ['65536', '-1', 'abc', '1.5', '', '  ', '0x1234', '1e3']) {
     const flags = testFlags(
       { APLOS_TEST_CDP_PORT: raw, APLOS_TEST_SHOW_WINDOWS: '1' } as NodeJS.ProcessEnv,
       true,

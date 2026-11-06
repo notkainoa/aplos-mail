@@ -6,7 +6,7 @@ import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
 import { latestState, realPath, realEngine, service } from './engine-host';
 import { closing, quitting, finishQuit, failedStart } from './lifecycle';
-import { isTest, dataDirOverride, testOnlyFlags } from './test-mode';
+import { isTest, dataDirOverride, testOnlyFlags, recordOauthReturn } from './test-mode';
 import {
   createOnboarding,
   focusOauthReturnWindow,
@@ -26,7 +26,6 @@ import {
   oauthReturnNonce,
   type OauthReturnPurpose,
 } from '../host/providers/oauth/returns';
-import { recordOauthReturn } from './test-mode';
 import { releaseBuild } from './oauth-config';
 import { engineWindowArguments } from '../host/transports/port';
 import { isMailDocumentUrl } from '../host/protocol/relay';
