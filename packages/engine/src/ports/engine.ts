@@ -71,7 +71,7 @@ export interface AccountRuntime extends AccountHealth {
   capabilities: Capabilities;
   /**
    * Feature-level gaps (calendar, filters) that do not make the whole account `needsPermission`. Same shape as the F1
-   * `Account.missingPermissions` row, so `Account/get` copies it: `reasonCode` is the copy key (`missingCalendarScope`).
+   * `Account.missingPermissions` row, so `Account/get` copies it: `reasonCode` is the copy key (`permission.calendar` for the calendar half).
    */
   missingPermissions?: {
     capability: keyof Capabilities;
