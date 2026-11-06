@@ -11,7 +11,13 @@ import { Button } from '../../ui/buttons-keys';
 import { EmptyLine, ErrorLine, ListBox, ListGroup, ListRow } from '../../ui/list';
 import { PageHead, Text } from '../../ui/surfaces';
 import type { CommandId, Density, RowAction } from '../../ui/props';
-import { fieldTokens, SEARCH_GOOGLE, type ResultRow, type SearchPageModel } from './search.model';
+import {
+  fieldTokens,
+  retryTarget,
+  SEARCH_GOOGLE,
+  type ResultRow,
+  type SearchPageModel,
+} from './search.model';
 
 /** Done, Later and Trash overlay the date column on hover (DESIGN §5 rule 17). */
 export const RESULT_ACTIONS: readonly RowAction[] = [
@@ -138,8 +144,23 @@ export function SearchPage(props: SearchPageProps) {
             ) : null}
           </ListBox>
         ) : null}
-        {model.listFailed ? (
-          <ErrorLine kind="listFailed" placement="column" onAction={handlers.onRetryResults} />
+        {model.localLine?.kind === 'list' ? (
+          <ErrorLine
+            kind="listFailed"
+            placement="column"
+            onAction={() => handlers.onRetryResults()}
+          />
+        ) : null}
+        {model.localLine?.kind === 'reason' ? (
+          <div className="search-screen__remote">
+            <ErrorLine
+              kind="reason"
+              text={model.localLine.text}
+              retryable
+              placement="column"
+              onAction={() => handlers.onRetryResults()}
+            />
+          </div>
         ) : null}
         {model.noMatch ? (
           <EmptyLine
@@ -191,7 +212,9 @@ export function SearchPage(props: SearchPageProps) {
               text={line.text}
               retryable={line.retry}
               placement="column"
-              onAction={() => (model.localFailed ? handlers.onRetryResults() : handlers.onSubmit())}
+              onAction={() =>
+                retryTarget(model) === 'results' ? handlers.onRetryResults() : handlers.onSubmit()
+              }
             />
           </div>
         ) : null}
