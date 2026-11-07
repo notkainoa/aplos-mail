@@ -203,6 +203,28 @@ test('jobs runner: provider failures back off; five attempts dead-letter', async
   }
 });
 
+for (const code of ['unavailable', 'missingKey', 'noProvider'] as const) {
+  test(`jobs runner: a ${code} failure waits without spending attempts, so the backlog survives until AI is connected`, async () => {
+    const w = await world(stubTransport({ fail: new AiCallError(code, 'not yet') }));
+    seedMail(w);
+    await consentNow(w);
+    const req = await w.call('Ai/request', {
+      opId: 'r1',
+      kind: 'summary',
+      threadId: 'acct-1:T-thread',
+    });
+    for (let i = 0; i < 7; i++) {
+      await runJobs(w.engine.services, w.clock.now());
+      w.clock.advance(24 * 60 * 60_000);
+    }
+    const job = (
+      await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
+    ).list.find(j => j.id === req.job.id)!;
+    assert.equal(job.state, 'queued', 'never dead-lettered');
+    assert.equal(job.attempts, 0, 'no attempt was spent');
+  });
+}
+
 test('jobs runner: the daily cap refuses background calls and pauses the queue', async () => {
   const w = await world(stubTransport({ answer: '{"summary":"S.","action":null}' }));
   seedMail(w);

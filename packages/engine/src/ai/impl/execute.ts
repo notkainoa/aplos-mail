@@ -20,6 +20,14 @@ export interface JobOutcome {
 }
 
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 4 * 60 * 60_000];
+const RELEASE_CODES: ReadonlySet<string> = new Set([
+  'gatePaused',
+  'dailyLimit',
+  'unavailable',
+  'missingKey',
+  'noProvider',
+]);
+
 const MAX_ATTEMPTS = 5;
 /** Mail text sent to a provider is capped; a longer thread is truncated, never dropped mid-word. */
 const MAX_THREAD_CHARS = 12_000;
@@ -225,11 +233,9 @@ export async function executeJob(
         state: 'skipped',
         lastError: JSON.stringify({ reasonCode: error.message.slice(0, 60) }),
       };
-    if (
-      error instanceof AiCallError &&
-      (error.code === 'gatePaused' || error.code === 'dailyLimit')
-    )
-      return { state: 'release' };
+    // No transport, no key and no provider are conditions the owner can fix later: they pause the row like a
+    // closed gate, so a backfill queued before AI is connected is never dead-lettered by its own waiting.
+    if (error instanceof AiCallError && RELEASE_CODES.has(error.code)) return { state: 'release' };
     const reason =
       error instanceof AiCallError
         ? error.message.startsWith('ai.')
