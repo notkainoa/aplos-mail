@@ -7,7 +7,9 @@
   "license": "UNLICENSED",
   "exports": {
     ".": "./src/index.ts",
-    "./frame": "./src/frame/index.ts"
+    "./frame": "./src/frame/index.ts",
+    "./frame/tokens": "./src/frame/tokens.ts",
+    "./frame/lru": "./src/frame/lru.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",

@@ -7,7 +7,7 @@ import { contractError } from '../runtime/errors';
 import { BLOB_SENTENCES, cleanName } from '../runtime/blobs';
 import { deadline, within } from './deadline';
 import { requireMessage } from './message';
-import { closeIterator, collectBytes } from './serve';
+import { closeIterator, collectBytes } from './stream';
 
 /**
  * `Message/original` (Blob package 7, blob-area.md decision 13): the message's raw RFC822 for "Show original"
