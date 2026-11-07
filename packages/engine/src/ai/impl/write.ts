@@ -160,7 +160,8 @@ async function transcribe(
       type: 'notFound',
       message: 'That audio is not on this Mac anymore.',
     });
-  // Voice goes through the same provider gate (a trains-on-inputs pick is refused); audio isn't mail.
+  // Voice goes through the same provider gate (exists, not a loopback-free pick); audio isn't mail text,
+  // so the trains-on-inputs refusal does not apply to it.
   const model = interactiveModel(ctx.services, 'voice', { withMail: false });
   const controller = ctx.services.ai;
   const signal = controller.track(args.requestId);
