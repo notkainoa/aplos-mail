@@ -132,7 +132,6 @@ test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail i
   await assert.rejects(
     () =>
       w.call('Ai/polish', {
-        opId: 'p1',
         requestId: 'req-p',
         html: '<p>hi</p>',
         accountId: ACCOUNT,
@@ -145,7 +144,6 @@ test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail i
   await assert.rejects(
     () =>
       w.call('Ask/run', {
-        opId: 'a1',
         question: 'what did they say',
         context: { draft: { accountId: ACCOUNT, html: '<p>reply</p>' } },
       }),
