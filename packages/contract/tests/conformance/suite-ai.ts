@@ -76,6 +76,18 @@ export function aiSuite({ scenario }: SuiteTools) {
         draftId: draft.id,
       }),
     ];
+    // Pasted text and Ask's draft context have no draft row, so they name the composing account instead.
+    refused.push(
+      c.session.call('Ai/polish', {
+        requestId: opId('ai'),
+        html: '<p>Private</p>',
+        accountId: excluded.id,
+      }),
+      c.session.call('Ask/run', {
+        question: 'Tighten this.',
+        context: { draft: { html: '<p>Private</p>', accountId: excluded.id } },
+      }),
+    );
     for (const call of refused) {
       const error = await rejects(call, 'forbidden');
       assert.equal(error?.body.reasonCode, 'ai.accountExcluded');

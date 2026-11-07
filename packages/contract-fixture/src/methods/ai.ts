@@ -94,6 +94,14 @@ export function ai(fx: Fixture) {
       });
     return t;
   };
+  /** An account an AI call names (pasted text, an Ask draft) must be AI-allowed, else `forbidden`. */
+  const aiAccount = (accountId: string) => {
+    must(fx.store, 'Account', accountId, 'This account is no longer available.');
+    if (!aiAccounts().has(accountId))
+      fail('forbidden', "AI is turned off for this account's mail.", {
+        reasonCode: 'ai.accountExcluded',
+      });
+  };
   /** A draft an AI call names follows the same rule, by its account and by the thread it answers (R2B-5). */
   const aiDraft = (draftId: string) => {
     const d = must(fx.store, 'Draft', draftId, 'This draft no longer exists.');
@@ -232,9 +240,10 @@ export function ai(fx: Fixture) {
             (!states || states.includes(j.state as 'queued')),
         ),
     }),
-    'Ai/polish': ({ html, draftId }) => {
+    'Ai/polish': ({ html, draftId, accountId }) => {
       need('drafts');
       if (draftId) aiDraft(draftId);
+      if (accountId) aiAccount(accountId);
       const polished = html.replace(/ {2,}/g, ' ').replace(/\bi\b/g, 'I');
       return { html: polished, changes: polished === html ? 0 : 1 };
     },
@@ -355,6 +364,7 @@ export function ai(fx: Fixture) {
 
     'Ask/run': ({ question, conversationId, scope, context }, cx) => {
       need('ask');
+      if (context?.draft?.accountId) aiAccount(context.draft.accountId);
       const runId = `ask-${fx.id('n')}`,
         turnId = fx.id('turn');
       const id = conversationId ? conv(conversationId).id : fx.id('conv');
