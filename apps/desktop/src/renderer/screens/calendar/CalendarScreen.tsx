@@ -79,6 +79,7 @@ import {
 } from './keys';
 import { livePorts, runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
 import { calendarSidebar } from './sidebar';
+import { calendarListedKey } from './accountCalendarState';
 
 export interface CalendarScreenProps {
   /** One account, or absent for all accounts (the account scope). */
@@ -102,10 +103,16 @@ const PERIOD_COMMANDS: ReadonlySet<CalendarCommandId> = new Set([
   'calendar.previousPeriod',
 ]);
 
-/** The calendar list: one `Calendar/get`, re-read after bursts of engine state changes (a toggle and its undo included). */
+/**
+ * The calendar list: one `Calendar/get`, re-read after bursts of engine state changes (a toggle and its undo
+ * included) and when `listedKey` says an account's calendar list was read — a first list commits rows plus
+ * the stamp in one engine commit that touches no events window, so without the key the sidebar would say
+ * "No calendars" beside calendars that now exist.
+ */
 function useCalendars(
   accountId: AccountId | undefined,
   touched: string,
+  listedKey: string,
 ): readonly Calendar[] | undefined {
   const [list, setList] = useState<readonly Calendar[] | undefined>(undefined);
   const get = useCallback(() => {
@@ -114,7 +121,7 @@ function useCalendars(
       () => undefined,
     );
   }, [accountId]);
-  useEffect(get, [get]);
+  useEffect(get, [get, listedKey]);
   useEffect(() => {
     if (touched === '') return undefined;
     const timer = setTimeout(get, 400);
@@ -191,7 +198,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const touched = eventsWindow.state
     ? `${eventsWindow.state.dbEpoch}:${eventsWindow.state.seq}`
     : '';
-  const loaded = useCalendars(accountId, touched);
+  // The sidebar's accounts block reads the accounts this view draws from — scoped when the screen is — and
+  // their list stamps trigger a re-read of the once-fetched calendar list.
+  const accounts = useAccounts();
+  const accountsLoaded = useAccountsLoaded();
+  const loaded = useCalendars(accountId, touched, calendarListedKey(accounts));
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>
@@ -374,9 +385,6 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     [events, plans, calendars, state.solo, range.from, range.to, defaultId, overlay],
   );
   const today = toIsoDate(now);
-  // The sidebar's accounts block reads the accounts this view draws from — scoped when the screen is.
-  const accounts = useAccounts();
-  const accountsLoaded = useAccountsLoaded();
   const shownAccounts = useMemo(
     () => (accountId ? accounts.filter(a => a.id === accountId) : accounts),
     [accounts, accountId],

@@ -1,0 +1,458 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { EngineMethodName, Frame, Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
+import { createLogger } from '../../src/diag/log';
+import { createEngine, laneExtensions } from '../../src/index';
+import { openStore } from '../../src/store';
+import {
+  detachedTransport,
+  AiCallError,
+  type AiChatRequest,
+  type AiTransport,
+} from '../../src/ai/host';
+import { runJobs } from '../../src/ai/impl/runner';
+import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
+import { manualClock } from '../runtime.helpers';
+
+/** A scripted provider: `chat` answers every call with `answer`, or throws `fail` when set. */
+function stubTransport(opts: {
+  answer?: string;
+  fail?: AiCallError;
+  onChat?: (req: AiChatRequest) => void;
+}): AiTransport & { calls: AiChatRequest[] } {
+  const calls: AiChatRequest[] = [];
+  return {
+    calls,
+    async chat(req) {
+      calls.push(req);
+      opts.onChat?.(req);
+      if (opts.fail) throw opts.fail;
+      return {
+        content: opts.answer ?? '{"answer":"It is due Friday [1].","proposals":[]}',
+        toolCalls: [],
+        usage: { prompt: 42, completion: 21 },
+      };
+    },
+    transcribe: () => Promise.resolve({ text: 'words' }),
+    models: provider => Promise.resolve({ list: [`${provider}-live`], live: true }),
+    check: () => (opts.fail ? Promise.reject(opts.fail) : Promise.resolve()),
+    setKey: () => Promise.resolve('keychain' as const),
+    removeKey: () => Promise.resolve('none' as const),
+    keySource: () => 'env' as const,
+  };
+}
+
+/** Engine + window over a temp store with every lane's writers; seeds an account, folders and mail. */
+async function world(transport?: AiTransport) {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  const log = createLogger({ sink: { write: () => undefined }, salt: 's', clock });
+  const engine = await createEngine({
+    store,
+    clock,
+    log,
+    host: {
+      appVersion: '9.9.9',
+      device: { id: 'd', name: 'd' },
+      resident: true,
+      capabilities: { desktop: true },
+    },
+  });
+  engine.services.ai.useTransport(transport ?? stubTransport({}));
+  const window = engine.connect();
+  const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
+    window.call(method, args) as Promise<Output<M>>;
+  const frames: Frame[] = [];
+  window.subscribe(f => void frames.push(f));
+  return { store, engine, call, frames, clock, file };
+}
+
+const seedMail = (w: Awaited<ReturnType<typeof world>>, aiAllowed = true) =>
+  w.store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-thread', 5, {
+        subject: 'Invoice due Friday',
+        snippet: 'The invoice is due this Friday.',
+      }),
+      msg('m2', 'T-thread', 6),
+    ],
+  });
+
+const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
+  await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
+  const got = await w.call('Consent/get', {});
+  return w.call('Consent/grant', {
+    scope: 'background',
+    version: got.currentVersion ?? got.version,
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+  });
+};
+
+test('Ai/request: unknown thread and a kept-out account refuse before anything queues', async () => {
+  const w = await world();
+  seedMail(w);
+  await assert.rejects(
+    () => w.call('Ai/request', { opId: 'r1', kind: 'summary', threadId: 'acct-1:nope' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'notFound',
+  );
+  // Turn the account's AI off and re-seed a fresh thread: the refusal names the setting.
+  w.store.commit({
+    opId: 'off',
+    origin: 'sync',
+    writes: [{ kind: 'account', id: ACCOUNT, aiAllowed: false }],
+  });
+  await assert.rejects(
+    () => w.call('Ai/request', { opId: 'r2', kind: 'summary', threadId: 'acct-1:T-thread' }),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.type === 'forbidden' &&
+      e.body.reasonCode === 'ai.accountExcluded',
+  );
+  const jobs = await w.call('Ai/jobs', {});
+  assert.equal(jobs.list.length, 0);
+});
+
+test('Ai/request: a fresh thread enqueues once under the singleton key; force reruns', async () => {
+  const w = await world();
+  seedMail(w);
+  const one = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  assert.equal(one.job.kind, 'summary');
+  assert.equal(one.job.state, 'queued');
+  const two = await w.call('Ai/request', {
+    opId: 'r2',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  assert.equal(two.job.id, one.job.id, 'the same key wins');
+  const jobs = await w.call('Ai/jobs', {});
+  assert.equal(jobs.list.length, 1);
+});
+
+test('jobs runner: without consent the due summary job waits; with consent it summarizes and meters', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"summary":"Ada asked about the invoice.","action":null}' }),
+  );
+  seedMail(w);
+  await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
+  const req = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  let job = (await w.call('Ai/jobs', {})).list.find(j => j.id === req.job.id)!;
+  assert.equal(job.state, 'queued', 'the gate deferred it, not failed it');
+  assert.ok((job.nextAt ?? 0) > w.clock.now());
+  const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
+  assert.equal(transport.calls.length, 0, 'no mail text left without consent');
+
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now() + 1);
+  job = w.engine.services.store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM jobs WHERE id = ?', Number(req.job.id)),
+  ) as never;
+  assert.equal((job as unknown as { state: string }).state, 'done');
+  assert.equal(transport.calls.length, 1);
+  assert.match(transport.calls[0].model.model, /gpt-oss/);
+  const summary = w.file.open().prepare('SELECT text, state FROM summaries').all() as {
+    text: string;
+    state: string;
+  }[];
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].state, 'ready');
+  const usage = await w.call('Ai/usage', {});
+  assert.equal(usage.byModel.length, 1);
+  assert.equal(usage.byModel[0].lane, 'background');
+  assert.equal(usage.byModel[0].tokensIn, 42);
+});
+
+test('jobs runner: provider failures back off; five attempts dead-letter', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('unreachable', 'down') }));
+  seedMail(w);
+  await consentNow(w);
+  const req = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  for (let i = 0; i < 5; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    const job = (
+      await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
+    ).list.find(j => j.id === req.job.id)!;
+    if (i < 4) {
+      assert.equal(job.state, 'failed', `attempt ${i + 1}`);
+      assert.equal(job.attempts, i + 1);
+      w.clock.advance(24 * 60 * 60_000);
+    } else {
+      assert.equal(job.state, 'dead');
+      assert.equal(job.attempts, 5);
+      assert.equal(job.problem?.reasonCode, 'ai.unreachable');
+    }
+  }
+});
+
+for (const code of ['unavailable', 'missingKey', 'noProvider'] as const) {
+  test(`jobs runner: a ${code} failure waits without spending attempts, so the backlog survives until AI is connected`, async () => {
+    const w = await world(stubTransport({ fail: new AiCallError(code, 'not yet') }));
+    seedMail(w);
+    await consentNow(w);
+    const req = await w.call('Ai/request', {
+      opId: 'r1',
+      kind: 'summary',
+      threadId: 'acct-1:T-thread',
+    });
+    for (let i = 0; i < 7; i++) {
+      await runJobs(w.engine.services, w.clock.now());
+      w.clock.advance(24 * 60 * 60_000);
+    }
+    const job = (
+      await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
+    ).list.find(j => j.id === req.job.id)!;
+    assert.equal(job.state, 'queued', 'never dead-lettered');
+    assert.equal(job.attempts, 0, 'no attempt was spent');
+  });
+}
+
+test('jobs runner: an open setup session defers due jobs instead of spinning on them', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  const req = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  await w.call('Setup/begin', { origin: 'onboarding' });
+  try {
+    const now = w.clock.now();
+    await runJobs(w.engine.services, now);
+    const job = (
+      await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
+    ).list.find(j => j.id === req.job.id)!;
+    assert.equal(job.state, 'queued', 'not run while the session is open');
+    assert.ok(
+      (job.nextAt ?? 0) > now,
+      'pushed out, so the deadline source does not re-fire immediately',
+    );
+  } finally {
+    await w.call('Setup/end', { reason: 'skipped' });
+  }
+});
+
+test('jobs runner: the daily cap refuses background calls and pauses the queue', async () => {
+  const w = await world(stubTransport({ answer: '{"summary":"S.","action":null}' }));
+  seedMail(w);
+  await consentNow(w);
+  await w.call('Settings/set', {
+    opId: 'cap',
+    patch: { ai: { dailyCap: { enabled: true, tokens: 10 } } },
+  });
+  // Spend past the cap interactively — background share is what counts, so write usage as background.
+  w.store.commit({
+    opId: 'spend',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'aiUsage',
+        day: new Date(w.clock.now()).toISOString().slice(0, 10),
+        provider: 'groq',
+        model: 'm',
+        lane: 'background',
+        requests: 1,
+        tokensIn: 500,
+        tokensOut: 0,
+      },
+    ],
+  });
+  const req = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(transport.calls.length, 0, 'capped: no provider call');
+  const job = (await w.call('Ai/jobs', {})).list.find(j => j.id === req.job.id)!;
+  assert.equal(job.state, 'queued');
+});
+
+test('Ai/testKey, Ai/test and Ai/models: bound transport answers live; detached answers honestly', async () => {
+  const w = await world();
+  const ok = await w.call('Ai/testKey', { provider: 'groq' });
+  assert.equal(ok.ok, true);
+  const models = await w.call('Ai/models', { provider: 'groq' });
+  assert.equal(models.live, true);
+  assert.deepEqual(
+    models.list.map(m => m.id),
+    ['groq-live'],
+  );
+  const test = await w.call('Ai/test', { model: { provider: 'groq', model: 'm' } });
+  assert.equal(typeof test.ms, 'number');
+
+  const bare = await world(detachedTransport());
+  const miss = await bare.call('Ai/testKey', { provider: 'groq' });
+  assert.equal(miss.ok, false);
+  assert.equal(miss.reasonCode, 'ai.unavailable');
+  const list = await bare.call('Ai/models', { provider: 'groq' });
+  assert.equal(list.live, false);
+  assert.ok(list.list.length > 0, 'curated fallback');
+});
+
+test('Ask/run: retrieves mail, streams frames, lands a cited turn in the conversation', async () => {
+  const w = await world();
+  seedMail(w);
+  const { runId, conversationId } = await w.call('Ask/run', {
+    question: 'When is the invoice due?',
+  });
+  const prog = () =>
+    w.frames.filter(
+      (f): f is Extract<Frame, { frame: 'progress' }> =>
+        f.frame === 'progress' && (f as { runId?: string }).runId === runId,
+    );
+  for (let i = 0; i < 50 && !prog().some(f => f.kind === 'done'); i++)
+    await new Promise(r => setImmediate(r));
+  const done = w.frames.filter(
+    (f): f is Extract<Frame, { frame: 'progress' }> =>
+      f.frame === 'progress' && (f as { runId?: string }).runId === runId,
+  );
+  assert.ok(done.some(f => f.kind === 'step'));
+  assert.ok(done.some(f => f.kind === 'citation'));
+  assert.ok(done.some(f => f.kind === 'done'));
+  const { list } = await w.call('Conversation/get', { ids: [conversationId] });
+  assert.equal(list.length, 1);
+  const turn = list[0].turns[0];
+  assert.equal(turn.question, 'When is the invoice due?');
+  assert.equal(turn.answer!.blocks[0].text, 'It is due Friday .');
+  assert.equal(turn.citations.length, 1);
+  assert.equal(turn.citations[0].kind, 'message');
+  assert.equal(turn.citations[0].threadId, 'acct-1:T-thread');
+  assert.equal(turn.noSource, false);
+});
+
+test('Ask/run: a kept-out scope and a trains-on-inputs provider refuse honestly', async () => {
+  const w = await world();
+  seedMail(w);
+  // Scope to an account with AI off.
+  w.store.commit({
+    opId: 'b',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'account',
+        id: 'acct-2',
+        provider: 'google',
+        address: 'two@mail.example',
+        capabilities: {},
+        status: { state: 'ok' },
+        aiAllowed: false,
+      },
+    ],
+  });
+  const { runId } = await w.call('Ask/run', {
+    question: 'hi',
+    scope: { accountIds: ['acct-2'] },
+  });
+  for (
+    let i = 0;
+    i < 50 &&
+    !w.frames.some(
+      f =>
+        f.frame === 'progress' &&
+        (f as { runId?: string }).runId === runId &&
+        (f as { kind?: string }).kind === 'error',
+    );
+    i++
+  )
+    await new Promise(r => setImmediate(r));
+  const err = w.frames.find(
+    f =>
+      f.frame === 'progress' &&
+      (f as { runId?: string }).runId === runId &&
+      (f as { kind?: string }).kind === 'error',
+  ) as { problem?: { reasonCode?: string } } | undefined;
+  assert.equal(err?.problem?.reasonCode, 'ai.accountExcluded');
+  // Gemini trains on inputs: ask must refuse before a call is made.
+  const cur = (await w.call('Settings/get', {})).ai.features;
+  await w.call('Settings/set', {
+    opId: 'gem',
+    patch: { ai: { features: { ...cur, ask: { provider: 'gemini', model: 'gemini-flash' } } } },
+  });
+  const r2 = await w.call('Ask/run', { question: 'hi' });
+  for (
+    let i = 0;
+    i < 50 &&
+    !w.frames.some(
+      f =>
+        f.frame === 'progress' &&
+        (f as { runId?: string }).runId === r2.runId &&
+        (f as { kind?: string }).kind === 'error',
+    );
+    i++
+  )
+    await new Promise(r => setImmediate(r));
+  const err2 = w.frames.find(
+    f =>
+      f.frame === 'progress' &&
+      (f as { runId?: string }).runId === r2.runId &&
+      (f as { kind?: string }).kind === 'error',
+  ) as { problem?: { reasonCode?: string } } | undefined;
+  assert.equal(err2?.problem?.reasonCode, 'ai.providerTrains');
+});
+
+test('Ask/cancel: a live run aborts', async () => {
+  let signal: AbortSignal | undefined;
+  const hanging = stubTransport({ onChat: req => (signal = req.signal) });
+  hanging.chat = req => {
+    signal = req.signal;
+    return new Promise((_, reject) =>
+      req.signal?.addEventListener('abort', () => reject(new AiCallError('cancelled', 'aborted')), {
+        once: true,
+      }),
+    );
+  };
+  const w = await world(hanging);
+  seedMail(w);
+  const { runId } = await w.call('Ask/run', { question: 'hi' });
+  for (let i = 0; i < 50 && !signal; i++) await new Promise(r => setImmediate(r));
+  assert.ok(signal);
+  const res = await w.call('Ask/cancel', { runId });
+  assert.equal(res.cancelled, true);
+  assert.equal(signal!.aborted, true);
+});
+
+test('detached transport: Ai/* calls never log or leak a key; unavailable is honest', async () => {
+  const w = await world(detachedTransport());
+  seedMail(w);
+  const t = await w.call('Ai/testKey', { provider: 'openai' });
+  assert.equal(t.ok, false);
+  assert.match(t.message ?? '', /not connected|unavailable|key/i);
+  assert.doesNotMatch(t.message ?? '', /sk-/);
+});
+
+test('Setup/end: the one-shot backfill queues summaries for Home-visible mail, never Spam/Trash', async () => {
+  const w = await world();
+  seedMail(w);
+  await w.call('Setup/end', { reason: 'finished' });
+  for (let i = 0; i < 50 && !(await w.call('Ai/jobs', {})).list.length; i++)
+    await new Promise(r => setImmediate(r));
+  const jobs = await w.call('Ai/jobs', {});
+  assert.equal(jobs.list.length, 1);
+  assert.equal(jobs.list[0].kind, 'summary');
+  assert.equal(jobs.list[0].threadId, 'acct-1:T-thread');
+  // A second end does not double the queue (singleton keys).
+  await w.call('Setup/end', { reason: 'finished' });
+  for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+  assert.equal((await w.call('Ai/jobs', {})).list.length, 1);
+});
