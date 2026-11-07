@@ -211,8 +211,6 @@ test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail i
   );
 });
 
-
-
 test('Ai/request: a fresh thread enqueues once under the singleton key; force reruns', async () => {
   const w = await world();
   seedMail(w);
