@@ -5,6 +5,7 @@ import { auditWrites } from '../../host/audit';
 import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
 import { interactiveModel, accountAllowed } from './gate';
+import { lastSentHashOf } from './jobs';
 import { callMessage, meteredChat } from './runtime';
 import { localDay } from '../providers';
 
@@ -205,11 +206,24 @@ function followup(args: Input<'Ai/followup'>, ctx: MethodContext): Output<'Ai/fo
       `followup:${args.threadId}`,
     )?.value;
     if (!raw) return undefined;
-    try {
-      return JSON.parse(raw) as NonNullable<Output<'Ai/followup'>['suggestion']>;
-    } catch {
-      return undefined;
-    }
+    const stored = parseJson<
+      NonNullable<Output<'Ai/followup'>['suggestion']> & { inputHash?: unknown }
+    >(raw);
+    if (!stored || typeof stored.html !== 'string' || !stored.html) return undefined;
+    // A new reply or a new sent message moved the last-sent hash: the stored suggestion retires itself —
+    // no cleanup write, the next job overwrites it under the same key.
+    const parts = splitId(q, args.threadId);
+    const row =
+      parts &&
+      q.get<{ id: number }>(
+        'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
+        parts.accountId,
+        parts.remoteId,
+      );
+    const current = row && lastSentHashOf(q, row.id);
+    if (!current || current.hash !== stored.inputHash) return undefined;
+    const { inputHash: _inputHash, ...out } = stored;
+    return out;
   });
   return suggestion ? { suggestion } : {};
 }

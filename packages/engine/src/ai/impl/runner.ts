@@ -1,9 +1,11 @@
 import type { EngineServices } from '../../runtime/services';
 import { setupSessionOpen } from '../../methods/setup';
+import { sweepFollowups } from './backfill';
+import { hexId } from '../../sync/connect-sessions';
 import { backgroundGate } from './gate';
 import { budgetOpen } from './runtime';
 import { executeJob } from './execute';
-import type { JobRow } from './jobs';
+import { nextFollowAt, type JobRow } from './jobs';
 
 /**
  * The `jobs` deadline source's fire (ARCH 8.1): drains due queued jobs in priority order, 1-2 concurrent, behind the
@@ -89,6 +91,48 @@ function pauseDue(services: EngineServices, now: number, until: number): void {
  * One fire of the `jobs` source: claim and run what is due, then leave `next()` at the next due row.
  * The crash-reset is per STORE, not per process: two engines (or a test store) each reclaim once.
  */
+/**
+ * Arms the Follow up lane's wake sentinel: exactly one `wake`-kind row under key `followup-wake` carries
+ * `nextFollowAt` as its `next_at`, so the plain `next()` SQL wakes the queue when a thread ages into the lane
+ * (runJobs settles a due wake row `done` and the sweep at pass top queues the new thread's job). No candidates
+ * and the row settles; a moved deadline re-arms via `defer`. Call it after every sweep/pass.
+ */
+function ensureFollowWake(services: EngineServices): void {
+  services.store.commit({
+    opId: `ai-wake-${hexId(services.randomBytes, 'w')}`,
+    origin: 'system',
+    writes: services.store.read(q => {
+      const existing = q.get<{ id: number; next_at: number }>(
+        "SELECT id, next_at FROM jobs WHERE key = 'followup-wake' AND state IN ('queued','failed')",
+      );
+      const at = nextFollowAt(q);
+      if (at === undefined)
+        return existing
+          ? [
+              {
+                kind: 'job' as const,
+                action: 'settle' as const,
+                id: existing.id,
+                state: 'done' as const,
+              },
+            ]
+          : [];
+      if (!existing)
+        return [
+          {
+            kind: 'job' as const,
+            action: 'enqueue' as const,
+            job: { kind: 'wake', key: 'followup-wake', priority: 9, payload: '{}', nextAt: at },
+          },
+        ];
+      return existing.next_at === at
+        ? []
+        : [{ kind: 'job' as const, action: 'defer' as const, id: existing.id, nextAt: at }];
+    }),
+  });
+  services.deadlines.changed('jobs');
+}
+
 const resetDone = new WeakSet<object>();
 
 export async function runJobs(services: EngineServices, now: number): Promise<void> {
@@ -100,6 +144,15 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       origin: 'system',
       writes: [{ kind: 'job', action: 'reset' }],
     });
+  }
+  // Threads aging into Home's Follow up lane queue their nudge job here, before due work is claimed; the
+  // bounded sweep's singleton keys make the repeat pass a no-op when nothing moved. A sweep failure must
+  // never block due jobs — it retries at the next wake.
+  try {
+    sweepFollowups(services);
+    ensureFollowWake(services);
+  } catch {
+    /* the wake sentinel and the sweep re-arm together at the next pass */
   }
   for (;;) {
     const rows = dueJobs(services, now, CONCURRENCY);
@@ -126,6 +179,12 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     let claimed = 0;
     await Promise.all(
       rows.map(async row => {
+        // A due 'wake' sentinel only meant "a thread may have aged into Follow up" — the pass-top sweep
+        // already did that work; settle done without spending the provider path.
+        if (row.kind === 'wake') {
+          settle(services, row, { state: 'done' });
+          return;
+        }
         if (!claim(services, row, now)) return;
         claimed++;
         const outcome = await executeJob(services, row, now);
