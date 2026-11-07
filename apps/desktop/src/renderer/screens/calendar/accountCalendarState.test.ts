@@ -160,6 +160,11 @@ describe('calendarAccessOf', () => {
     }
   });
 
+  test('a stamp at epoch 0 still counts as listed', () => {
+    // EpochMs 0 is falsy; the rule is presence (`!== undefined`), not truthiness.
+    assert.equal(calendarAccessOf(account({ calendarListedAt: 0 }), [])?.kind, 'none');
+  });
+
   test('never listed, the list answered empty: Syncing… — even with ok and baselineDoneAt', () => {
     // The old proxy read this exact case as "No calendars"; the fact says the list was never read.
     const done = account({ calendarListedAt: undefined });
