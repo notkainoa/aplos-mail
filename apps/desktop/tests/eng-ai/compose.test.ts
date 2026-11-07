@@ -13,7 +13,7 @@ import { memoryVault } from '../prov-gov/flow-rig';
 
 const T0 = Date.UTC(2026, 9, 27, 16, 0, 0);
 
-function options(t: TestContext, ai?: AiTransport): ComposeOptions {
+function options(t: TestContext, aiTransport?: AiTransport): ComposeOptions {
   const dir = mkdtempSync(join(tmpdir(), 'aplos-ai-bind-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return {
@@ -27,7 +27,7 @@ function options(t: TestContext, ai?: AiTransport): ComposeOptions {
     googleClient: () => ({ env: {}, bundled: {} }),
     postNotification: () => 'posted',
     aiEnv: () => ({}),
-    ...(ai ? { ai } : {}),
+    ...(aiTransport ? { aiTransport } : {}),
   };
 }
 
@@ -54,7 +54,7 @@ test('a bound fake transport answers through services.ai', async t => {
   const fake: AiTransport = {
     chat: async () => answer,
     transcribe: async () => ({ text: '' }),
-    models: async () => [],
+    models: async () => ({ list: [], live: false }),
     check: async () => undefined,
     setKey: async () => 'env' as const,
     removeKey: async () => 'none' as const,

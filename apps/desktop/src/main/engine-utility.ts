@@ -140,7 +140,7 @@ export async function realComposeOptions(
     // AI keys are read in this process only, from the env thunk at bind time — never in HostFacts, a log
     // field or a window. The vault and saved provider addresses live under dataDir like the token vault.
     aiEnv: () => process.env,
-    ai: createAiHost({
+    aiTransport: createAiHost({
       fetch: globalThis.fetch,
       env: process.env,
       vaultPath: join(init.dataDir, 'ai-keys.json'),

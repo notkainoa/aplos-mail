@@ -103,7 +103,7 @@ export interface ComposeOptions {
    * The AI provider transport (`host/ai`), built by `realComposeOptions`. Absent: every `Ai/*` answers
    * `unavailable` through the detached stand-in.
    */
-  ai?: AiTransport;
+  aiTransport?: AiTransport;
   /** The banner: the notification loop posts claimed items through it, and so do missed reminders. */
   postNotification: PostNotification;
   /** Focus, window and battery as the Mac sees them, read at every planning step. Default: no window, unfocused, on mains. */
@@ -452,7 +452,7 @@ function engineOptions(
     ...(options.host ? { host: options.host } : {}),
     ports: {
       ...options.ports,
-      ...(options.ai ? { ai: options.ai } : {}),
+      ...(options.aiTransport ? { aiTransport: options.aiTransport } : {}),
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,

@@ -29,7 +29,7 @@ export type HostPorts = Partial<
     | 'attachmentFiles'
   > & {
     /** The AI provider transport (`host/ai`, eng-ai); absent, the ai lane stays on its detached stand-in. */
-    ai: AiTransport;
+    aiTransport: AiTransport;
   }
 >;
 
@@ -117,15 +117,10 @@ export async function buildEngine(
 ): Promise<Engine> {
   const hub = createFrameHub({ store: options.store, clock: options.clock });
   const draft = coreServices(options, hub);
-  // `ports.ai` is a transport bound after start, not a services member — it is excluded from the
-  // host-name set so the ai lane still owns `services.ai`.
-  const portNames = new Set(Object.keys(options.ports ?? {}).filter(name => name !== 'ai'));
-  const started = composeModules(draft, modules, portNames);
+  const started = composeModules(draft, modules, new Set(Object.keys(options.ports ?? {})));
   // Frozen once composed: no lane or handler swaps a port, the observed store or the log for everyone after it.
   const services = Object.freeze(draft);
   await startAll(started, hub);
-  // The AI transport binds through the lane runtime after every module is up; unbound stays the detached stand-in.
-  if (options.ports?.ai) services.ai?.useTransport(options.ports.ai);
   const dispatch = dispatcher(options.handlers);
   const open = new Set<EngineSession>();
   let counter = 0;
@@ -187,6 +182,9 @@ function coreServices(options: EngineOptions, hub: ReturnType<typeof createFrame
   } as EngineServices;
   for (const name of HOST_PORTS)
     (services as unknown as Record<string, unknown>)[name] = options.ports?.[name] ?? absent();
+  // The AI transport is copied, never proxied: unbound means the ai lane's own detached stand-in, which the
+  // lane reads in createModule and answers 'unavailable' itself.
+  if (options.ports?.aiTransport) services.aiTransport = options.ports.aiTransport;
   return services;
 }
 
