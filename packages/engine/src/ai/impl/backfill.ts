@@ -1,4 +1,5 @@
 import type { EngineServices } from '../../runtime/services';
+import { hexId } from '../../sync/connect-sessions';
 import {
   enqueue,
   FOLLOWUP_PRIORITY,
@@ -112,7 +113,7 @@ export function sweepFollowups(services: EngineServices): number {
     const key = `followup:${c.account_id}:${c.remote_id}:${sent.hash}`;
     const have = services.store.read(q => q.get('SELECT 1 AS one FROM jobs WHERE key = ?', key));
     if (have) continue;
-    enqueue(services, `ai-follow-${c.id}-${sent.hash}`, {
+    enqueue(services, `ai-follow-${c.id}-${sent.hash}-${hexId(services.randomBytes, 'q')}`, {
       kind: 'followup',
       key,
       priority: FOLLOWUP_PRIORITY,

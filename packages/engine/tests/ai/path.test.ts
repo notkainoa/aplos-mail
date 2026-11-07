@@ -212,6 +212,7 @@ test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail i
 });
 
 
+
 test('Ai/request: a fresh thread enqueues once under the singleton key; force reruns', async () => {
   const w = await world();
   seedMail(w);
@@ -556,6 +557,38 @@ test('followup job: a sent, unanswered thread gets a local nudge Ai/followup ser
   assert.equal(got.suggestion?.model.provider, 'groq');
   const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
   assert.equal(transport.calls.length, 1, 'one provider call wrote the suggestion');
+});
+
+test('followup sweep: a discarded job re-queues cleanly and never blocks summaries', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"bump?","summary":"Ada asked.","action":null}' }),
+  );
+  seedFollow(w);
+  seedMail(w);
+  await consentNow(w);
+  await w.call('Ai/request', { opId: 'rs', kind: 'summary', threadId: 'acct-1:T-thread' });
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ id: number; key: string; state: string }>(
+      "SELECT id, key, state FROM jobs WHERE kind = 'followup'",
+    ),
+  );
+  assert.equal(rows.length, 1);
+  await w.call('Queue/discard', { id: `job:${rows[0].id}` });
+  // The next pass must not throw — the sweep's fresh opId re-enqueues under the same singleton key.
+  await runJobs(w.engine.services, w.clock.now());
+  const again = w.engine.services.store.read(q =>
+    q.all<{ id: number; key: string; state: string }>(
+      "SELECT id, key, state FROM jobs WHERE kind = 'followup'",
+    ),
+  );
+  assert.equal(again.length, 1, 'the discarded job re-queued under its singleton key');
+  assert.notEqual(again[0].state, 'failed', 'the re-enqueue ran clean, not a replayed commit');
+  // A summary job still claims and completes in the same passes — the sweep never blocked the queue.
+  const summaries = w.engine.services.store.read(q =>
+    q.all<{ state: string }>("SELECT state FROM jobs WHERE kind = 'summary'"),
+  );
+  assert.ok(summaries.length > 0 && summaries.every(r => r.state === 'done'));
 });
 
 test('followup job: a new sent message retires the suggestion and re-keys the job', async () => {

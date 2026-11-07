@@ -116,7 +116,7 @@ function jobs(args: Input<'Ai/jobs'>, ctx: MethodContext): Output<'Ai/jobs'> {
     const states = args.states?.length ? args.states : ['queued', 'running', 'failed', 'dead'];
     const list = q.all<JobRow>(
       `SELECT id, kind, key, priority, payload, state, attempts, next_at, last_error FROM jobs
-       WHERE state IN (${states.map(() => '?').join(',')}) ORDER BY priority, next_at, id LIMIT 500`,
+       WHERE kind != 'wake' AND state IN (${states.map(() => '?').join(',')}) ORDER BY priority, next_at, id LIMIT 500`,
       ...states,
     );
     return list;

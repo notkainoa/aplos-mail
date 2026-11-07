@@ -68,11 +68,19 @@ export const lane = 'eng-ai';
 /** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
 export const extensions: readonly CommitExtension[] = [consentExtension, aiWritesExtension];
 
-/** The earliest queued job's `next_at` — or the next thread's entry into the Follow up lane: the `jobs` deadline. */
+/** The earliest queued job's `next_at`: the `jobs` deadline the timer loop sleeps on. */
 function jobsSource(services: EngineServices): DeadlineSource {
   return {
     id: 'jobs',
-    next: async () => (await import('./impl/jobs')).nextJobsAt(services),
+    next: () =>
+      Promise.resolve(
+        services.store.read(
+          q =>
+            q.get<{ at: number | null }>(
+              "SELECT MIN(next_at) at FROM jobs WHERE state IN ('queued','failed')",
+            )?.at ?? undefined,
+        ),
+      ),
     async fire(now: number) {
       const { runJobs } = await import('./impl/runner');
       await runJobs(services, now);

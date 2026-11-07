@@ -295,16 +295,3 @@ export function nextFollowAt(q: StoreReader): number | undefined {
   }
   return undefined;
 }
-
-/** The `jobs` source's deadline: the earliest due job, or the next thread's entry into the Follow up lane. */
-export function nextJobsAt(services: EngineServices): number | undefined {
-  return services.store.read(q => {
-    const at =
-      q.get<{ at: number | null }>(
-        "SELECT MIN(next_at) at FROM jobs WHERE state IN ('queued','failed')",
-      )?.at ?? undefined;
-    const follow = nextFollowAt(q);
-    if (at === undefined) return follow;
-    return follow === undefined ? at : Math.min(at, follow);
-  });
-}
