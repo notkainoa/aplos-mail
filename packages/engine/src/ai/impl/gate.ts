@@ -62,7 +62,7 @@ export function allowedAccounts(
     excluded: string[] = [];
   const wanted = ids ? new Set(ids) : undefined;
   for (const r of rows) (r.ai_allowed === 1 ? allowed : excluded).push(r.id);
-  // An id that is not an account at all stays out of `allowed`; it is not an exclusion the owner chose.
+  // An id that is not an account at all stays out of `allowed`; the UI counts it as excluded either way.
   if (wanted) for (const id of wanted) if (!rows.some(r => r.id === id)) excluded.push(id);
   return { allowed, excluded };
 }

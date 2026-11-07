@@ -1,5 +1,6 @@
 import type { EngineServices } from '../../runtime/services';
 import type { StoreReader } from '../../store/port';
+import { hexId } from '../../sync/connect-sessions';
 import { readBody } from '../../store/bodies';
 import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
@@ -13,7 +14,7 @@ import { callMessage, meteredChat } from './runtime';
  */
 
 export interface JobOutcome {
-  state: 'done' | 'failed' | 'dead' | 'release';
+  state: 'done' | 'failed' | 'dead' | 'skipped' | 'release';
   lastError?: string | null;
   nextAt?: number;
 }
@@ -126,17 +127,29 @@ async function summarize(
   const inputHash = String(payload.inputHash ?? '');
   const wireId = String(payload.threadId ?? '');
   const gate = backgroundGate(services, 'summaries', accountId);
-  if (!gate.ok) throw new AiCallError('gatePaused', gate.reasonCode);
-  const thread = services.store.read(q =>
-    q.get<{ id: number }>(
+  if (!gate.ok)
+    throw new AiCallError(
+      gate.reasonCode === 'ai.accountExcluded' ? 'gatePermanent' : 'gatePaused',
+      gate.reasonCode,
+    );
+  const thread = services.store.read(q => {
+    const t = q.get<{ id: number }>(
       'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
       accountId,
       remoteThreadId,
-    ),
-  );
-  if (!thread) throw new AiCallError('invalid', 'ai.threadGone');
+    );
+    if (!t) return undefined;
+    // Execution-time re-check: a thread moved to Spam/Trash since enqueue is never read for a provider.
+    const banned = q.get(
+      `SELECT 1 AS one FROM thread_folders tf JOIN folders f ON f.id = tf.folder_id
+       WHERE tf.thread_id = ? AND f.role IN ('trash','spam')`,
+      t.id,
+    );
+    return banned ? undefined : t;
+  });
+  if (!thread) throw new AiCallError('gatePermanent', 'ai.threadGone');
   const mail = services.store.read(q => threadMail(q, accountId, thread.id));
-  if (!mail.length) throw new AiCallError('invalid', 'ai.threadEmpty');
+  if (!mail.length) throw new AiCallError('gatePermanent', 'ai.threadEmpty');
   const turn = await meteredChat(
     services,
     { feature: 'summaries', model: gate.model, lane: 'background' },
@@ -151,8 +164,9 @@ async function summarize(
   );
   const parsed = parseSummary(turn.content);
   if (!parsed) throw new AiCallError('invalid', 'ai.badAnswer');
+  // The opId carries a nonce: a forced re-run (same hash) must write, not replay the earlier summary.
   services.store.commit({
-    opId: `ai-summary-${wireId}-${inputHash}`,
+    opId: `ai-summary-${wireId}-${inputHash}-${hexId(services.randomBytes, 's')}`,
     origin: 'system',
     writes: [
       {
@@ -186,8 +200,17 @@ export async function executeJob(
     }
   } catch (error) {
     // A closed gate or a spent daily cap RELEASES the row — the runner requeues it without burning an attempt.
-    if (error instanceof AiCallError && error.code === 'gatePaused') return { state: 'release' };
-    if (error instanceof AiCallError && error.code === 'dailyLimit') return { state: 'release' };
+    // Permanent refusals never retry; pauses release back to the queue; both keep the attempt budget.
+    if (error instanceof AiCallError && error.code === 'gatePermanent')
+      return {
+        state: 'skipped',
+        lastError: JSON.stringify({ reasonCode: error.message.slice(0, 60) }),
+      };
+    if (
+      error instanceof AiCallError &&
+      (error.code === 'gatePaused' || error.code === 'dailyLimit')
+    )
+      return { state: 'release' };
     const reason =
       error instanceof AiCallError
         ? error.message.startsWith('ai.')
@@ -196,7 +219,10 @@ export async function executeJob(
         : 'ai.failed';
     if (row.attempts + 1 >= MAX_ATTEMPTS)
       return { state: 'dead', lastError: JSON.stringify({ reasonCode: reason.slice(0, 60) }) };
-    const wait = BACKOFF_MS[Math.min(row.attempts + 1, BACKOFF_MS.length) - 1] ?? 60_000;
+    const wait = Math.max(
+      BACKOFF_MS[Math.min(row.attempts + 1, BACKOFF_MS.length) - 1] ?? 60_000,
+      error instanceof AiCallError ? (error.retryAfterMs ?? 0) : 0,
+    );
     return {
       state: 'failed',
       lastError: JSON.stringify({ reasonCode: reason.slice(0, 60) }),

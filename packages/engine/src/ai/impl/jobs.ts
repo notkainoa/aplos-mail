@@ -1,4 +1,5 @@
 import type { AiJob } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import type { StoreReader } from '../../store/port';
 import type { EngineServices } from '../../runtime/services';
 import { splitId } from '../../views/compile';
@@ -113,7 +114,7 @@ export function priorityOf(
       t.id,
     )
     .map(r => r.role);
-  if (roles.length > 0 && roles.every(r => r === 'trash' || r === 'spam')) return undefined;
+  if (roles.some(r => r === 'trash' || r === 'spam')) return undefined;
   const home = t.status === 'new' && t.hidden_from_home !== 1;
   const priority = home ? 0 : t.unread > 0 && roles.includes('inbox') ? 1 : 2;
   return { priority, threadRowId: t.id, lastDate: t.last_date };
@@ -155,7 +156,11 @@ export function enqueue(
     ),
   );
   services.deadlines.changed('jobs');
-  if (!row) throw new Error('job enqueue did not land');
+  if (!row)
+    throw new ContractError({
+      type: 'internal',
+      message: 'The queued job could not be read back.',
+    });
   return row;
 }
 

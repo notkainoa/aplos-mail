@@ -118,7 +118,10 @@ export async function meteredChat(
   if (call.lane === 'background' && !budgetOpen(services))
     throw new AiCallError('dailyLimit', "Today's AI limit is reached.");
   const transport = services.ai.transport();
-  const signal = call.trackId ? services.ai.track(call.trackId) : req.signal;
+  // The tracked signal AND the caller's own must both abort the call — a disconnected caller kills it
+  // even when Ai/cancel never runs.
+  const tracked = call.trackId ? services.ai.track(call.trackId) : undefined;
+  const signal = combine(req.signal, tracked);
   try {
     const turn = await transport.chat({ ...req, model: call.model, signal });
     recordUsage(services, call.model, call.lane, turn.usage);
@@ -126,4 +129,18 @@ export async function meteredChat(
   } finally {
     if (call.trackId) services.ai.release(call.trackId);
   }
+}
+
+/** A signal that aborts when either input does (AbortSignal.any where available, else manual). */
+function combine(...signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
+  const live = signals.filter((s): s is AbortSignal => !!s);
+  if (!live.length) return undefined;
+  if (live.length === 1) return live[0];
+  const c = new AbortController();
+  const abort = () => c.abort();
+  for (const s of live) {
+    if (s.aborted) return (abort(), c.signal);
+    s.addEventListener('abort', abort, { once: true });
+  }
+  return c.signal;
 }

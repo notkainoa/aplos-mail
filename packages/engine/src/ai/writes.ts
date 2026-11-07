@@ -30,7 +30,7 @@ export interface JobWrite {
   /** `claim`/`defer` (the due bound for the bulk form). */
   at?: number;
   /** `settle`. */
-  state?: 'done' | 'failed' | 'dead';
+  state?: 'done' | 'failed' | 'dead' | 'skipped';
   /** `settle`: the classified problem, never provider text. */
   lastError?: string | null;
   /** `settle`/`requeue`/`defer`: the next due time. */
@@ -121,7 +121,13 @@ function jobClaim(write: JobWrite, id: number, sid: string, tx: CommitExtensionT
 }
 
 function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
-  if (write.state !== 'done' && write.state !== 'failed' && write.state !== 'dead') bad();
+  if (
+    write.state !== 'done' &&
+    write.state !== 'failed' &&
+    write.state !== 'dead' &&
+    write.state !== 'skipped'
+  )
+    bad();
   ok(
     tx,
     tx.run(
@@ -160,12 +166,13 @@ function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx
           ),
           sid,
         );
-      // The whole-queue pause: every due row moves so `next()` sleeps until the horizon.
+      // The whole-queue pause: every due row moves so `next()` sleeps until the horizon, marked so a
+      // later `wake` pulls back only rows the pause deferred — provider backoffs keep their schedule.
       if (!Number.isFinite(write.at)) bad();
       return ok(
         tx,
         tx.run(
-          "UPDATE jobs SET next_at = ? WHERE state IN ('queued','failed') AND next_at <= ?",
+          "UPDATE jobs SET next_at = ?, last_error = 'ai.paused' WHERE state IN ('queued','failed') AND next_at <= ?",
           write.nextAt!,
           write.at!,
         ),

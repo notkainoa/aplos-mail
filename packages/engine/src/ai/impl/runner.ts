@@ -30,26 +30,22 @@ function dueJobs(services: EngineServices, now: number, limit: number): JobRow[]
   );
 }
 
-/** Claim a due row (queued → running); false when another runner took it. */
+/** Claim a due row (queued → running); the commit's changed count says whether OUR update won. */
 function claim(services: EngineServices, row: JobRow, now: number): boolean {
   const seq = services.store.seq();
-  services.store.commit({
+  const res = services.store.commit({
     opId: `ai-claim-${row.id}-${now}-${seq}`,
     origin: 'system',
     writes: [{ kind: 'job', action: 'claim', id: row.id, at: now }],
   });
-  return (
-    services.store.read(
-      q => q.get<{ state: string }>('SELECT state FROM jobs WHERE id = ?', row.id)?.state,
-    ) === 'running'
-  );
+  return res.changed > 0;
 }
 
 function settle(
   services: EngineServices,
   row: JobRow,
   result: {
-    state: 'done' | 'failed' | 'dead' | 'release';
+    state: 'done' | 'failed' | 'dead' | 'skipped' | 'release';
     lastError?: string | null;
     nextAt?: number;
   },
@@ -106,9 +102,10 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
   for (;;) {
     const rows = dueJobs(services, now, CONCURRENCY);
     if (!rows.length) return;
-    // A spent daily cap pauses the queue until tomorrow, not fail-by-fail.
+    // A spent daily cap pauses the queue until tomorrow, not fail-by-fail and not a 30-minute spin.
     if (!budgetOpen(services)) {
-      pauseDue(services, now, now + PAUSE_MS);
+      const d = new Date(now);
+      pauseDue(services, now, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime());
       return;
     }
     // The gate covers the whole pass: no consent, AI off or a trains-on-inputs pick pauses the queue.

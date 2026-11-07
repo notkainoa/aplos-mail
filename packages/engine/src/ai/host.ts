@@ -73,7 +73,9 @@ export type AiCallCode =
   | 'cancelled'
   | 'unavailable'
   /** A background gate (consent, ai_allowed, settings) is closed; the job releases and waits. */
-  | 'gatePaused';
+  | 'gatePaused'
+  /** A permanent gate refusal (account off, thread gone/trashed/empty); the job is skipped, not retried. */
+  | 'gatePermanent';
 
 export class AiCallError extends Error {
   constructor(
