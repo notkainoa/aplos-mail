@@ -3,7 +3,7 @@ import { anthropicChat } from './anthropic';
 import { openAiChat } from './chat';
 import { createKeys, type AiKeys } from './keys';
 import type { ProviderRow } from './providers';
-import { callProvider, requireRow, type AiDeps } from './request';
+import { callProvider, readJson, requireRow, type AiDeps } from './request';
 import { transcribeAudio } from './transcribe';
 
 /**
@@ -75,7 +75,8 @@ async function listModels(
       json: false,
       timeoutMs: 15_000,
     });
-    const data = ((await response.json()) as { data?: Array<{ id?: unknown }> }).data ?? [];
+    const data =
+      ((await readJson(response, row.label)) as { data?: Array<{ id?: unknown }> }).data ?? [];
     const list = data
       .map(model => String(model.id ?? '').replace(/^models\//, ''))
       .filter(id => id && (!row.keepModel || row.keepModel.test(id)));
