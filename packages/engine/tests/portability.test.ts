@@ -103,6 +103,7 @@ const lazyModules = [
   join(src, 'ai', 'impl', 'ai-methods.ts'),
   join(src, 'ai', 'impl', 'ai-reads.ts'),
   join(src, 'ai', 'impl', 'ask.ts'),
+  join(src, 'ai', 'impl', 'backfill.ts'),
   join(src, 'ai', 'impl', 'execute.ts'),
   join(src, 'ai', 'impl', 'gate.ts'),
   join(src, 'ai', 'impl', 'jobs.ts'),

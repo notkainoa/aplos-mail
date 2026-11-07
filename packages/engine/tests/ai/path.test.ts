@@ -392,3 +392,19 @@ test('detached transport: Ai/* calls never log or leak a key; unavailable is hon
   assert.match(t.message ?? '', /not connected|unavailable|key/i);
   assert.doesNotMatch(t.message ?? '', /sk-/);
 });
+
+test('Setup/end: the one-shot backfill queues summaries for Home-visible mail, never Spam/Trash', async () => {
+  const w = await world();
+  seedMail(w);
+  await w.call('Setup/end', { reason: 'done' });
+  for (let i = 0; i < 50 && !(await w.call('Ai/jobs', {})).list.length; i++)
+    await new Promise(r => setImmediate(r));
+  const jobs = await w.call('Ai/jobs', {});
+  assert.equal(jobs.list.length, 1);
+  assert.equal(jobs.list[0].kind, 'summary');
+  assert.equal(jobs.list[0].threadId, 'acct-1:T-thread');
+  // A second end does not double the queue (singleton keys).
+  await w.call('Setup/end', { reason: 'done' });
+  for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+  assert.equal((await w.call('Ai/jobs', {})).list.length, 1);
+});
