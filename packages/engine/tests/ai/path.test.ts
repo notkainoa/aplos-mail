@@ -225,6 +225,32 @@ for (const code of ['unavailable', 'missingKey', 'noProvider'] as const) {
   });
 }
 
+test('jobs runner: an open setup session defers due jobs instead of spinning on them', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  const req = await w.call('Ai/request', {
+    opId: 'r1',
+    kind: 'summary',
+    threadId: 'acct-1:T-thread',
+  });
+  await w.call('Setup/begin', { origin: 'onboarding' });
+  try {
+    const now = w.clock.now();
+    await runJobs(w.engine.services, now);
+    const job = (
+      await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
+    ).list.find(j => j.id === req.job.id)!;
+    assert.equal(job.state, 'queued', 'not run while the session is open');
+    assert.ok(
+      (job.nextAt ?? 0) > now,
+      'pushed out, so the deadline source does not re-fire immediately',
+    );
+  } finally {
+    await w.call('Setup/end', { reason: 'skipped' });
+  }
+});
+
 test('jobs runner: the daily cap refuses background calls and pauses the queue', async () => {
   const w = await world(stubTransport({ answer: '{"summary":"S.","action":null}' }));
   seedMail(w);

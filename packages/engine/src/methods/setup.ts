@@ -16,6 +16,11 @@ import type { AreaHandlers, MethodContext } from './types';
 /** The one setup session at a time (`Setup/begin`); not persisted — a session ends with the engine. */
 let setupId: string | undefined;
 
+/** True while a `Setup/begin` session is open; the AI jobs runner pauses so backfill stays one-shot. */
+export function setupSessionOpen(): boolean {
+  return setupId !== undefined;
+}
+
 /** One account's row inside `Setup/status`. */
 type SetupAccountRow = SetupStatus['accounts'][number];
 
