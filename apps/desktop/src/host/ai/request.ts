@@ -94,6 +94,8 @@ export async function callProvider(
   let response: Response;
   try {
     response = await deps.fetch(url, {
+      // A redirect could carry the key header to a different host — never follow one.
+      redirect: 'error',
       method,
       headers: {
         ...authHeaders(row, key),
