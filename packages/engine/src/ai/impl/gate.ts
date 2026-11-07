@@ -52,15 +52,21 @@ export function allowedAccounts(
   services: EngineServices,
   ids?: readonly string[],
 ): { allowed: string[]; excluded: string[] } {
-  const rows = services.store.read(q =>
-    q.all<{ id: string; ai_allowed: number }>(
-      `SELECT id, ai_allowed FROM accounts${ids?.length ? ` WHERE id IN (${ids.map(() => '?').join(',')})` : ''}`,
-      ...(ids ?? []),
-    ),
-  );
+  // `scope.accountIds` only narrows: absent means every allowed account; present (even empty) means only those.
+  const rows =
+    ids === undefined
+      ? services.store.read(q =>
+          q.all<{ id: string; ai_allowed: number }>('SELECT id, ai_allowed FROM accounts'),
+        )
+      : services.store.read(q =>
+          q.all<{ id: string; ai_allowed: number }>(
+            `SELECT id, ai_allowed FROM accounts WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ...ids,
+          ),
+        );
   const allowed: string[] = [],
     excluded: string[] = [];
-  const wanted = ids ? new Set(ids) : undefined;
+  const wanted = ids !== undefined ? new Set(ids) : undefined;
   for (const r of rows) (r.ai_allowed === 1 ? allowed : excluded).push(r.id);
   // An id that is not an account at all stays out of `allowed`; the UI counts it as excluded either way.
   if (wanted) for (const id of wanted) if (!rows.some(r => r.id === id)) excluded.push(id);

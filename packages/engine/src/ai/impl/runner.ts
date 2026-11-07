@@ -1,4 +1,5 @@
 import type { EngineServices } from '../../runtime/services';
+import { setupSessionOpen } from '../../methods/setup';
 import { backgroundGate } from './gate';
 import { budgetOpen } from './runtime';
 import { executeJob } from './execute';
@@ -102,6 +103,8 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
   for (;;) {
     const rows = dueJobs(services, now, CONCURRENCY);
     if (!rows.length) return;
+    // An open setup session means the backfill is still being composed — don't race it.
+    if (setupSessionOpen()) return;
     // A spent daily cap pauses the queue until tomorrow, not fail-by-fail and not a 30-minute spin.
     if (!budgetOpen(services)) {
       const d = new Date(now);
