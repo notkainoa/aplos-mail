@@ -258,3 +258,112 @@ test('a calendar step in the incremental lane still runs on a secondary device',
     await d.cleanup();
   }
 });
+
+const stubCalendar = (
+  list: () => ReturnType<CalendarAdapter['listCalendars']>,
+): CalendarAdapter => ({
+  budget: 'gcal',
+  plan: () => [],
+  listCalendars: list,
+  syncStep: () =>
+    Promise.resolve({
+      upserts: [],
+      removals: [],
+      nextState: state('cal:work-1', 'cal-token'),
+      done: true,
+      costUnits: 0,
+    }),
+  put: () => Promise.reject(new Error('unused')),
+  remove: () => Promise.reject(new Error('unused')),
+  rsvp: () => Promise.reject(new Error('unused')),
+});
+
+const listedAt = (w: ReturnType<typeof calWorld>) =>
+  w.store.read(
+    q =>
+      q.get<{ calendar_listed_at: number | null }>(
+        'SELECT calendar_listed_at FROM accounts WHERE id = ?',
+        ACCOUNT,
+      )?.calendar_listed_at ?? null,
+  );
+
+test('the first calendar list stamps the account, EMPTY or not, so "No calendars" differs from "Syncing…"', async () => {
+  const d = disk();
+  try {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => (release = resolve));
+    const w = calWorld(
+      d,
+      stubCalendar(async () => {
+        await gate;
+        return { calendars: [], removed: [], nextState: state('calendars', 't'), costUnits: 0 };
+      }),
+    );
+    await w.host.start(ACCOUNT);
+    await settle();
+    assert.equal(listedAt(w), null, 'the list is still being read: Syncing…');
+    release();
+    await settle();
+    assert.ok(
+      (listedAt(w) ?? 0) > 0,
+      'the list came back empty: stamped, so the UI can say No calendars',
+    );
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('a later list never moves calendarListedAt: the first one wins', async () => {
+  const d = disk();
+  try {
+    const w = calWorld(
+      d,
+      stubCalendar(() =>
+        Promise.resolve({
+          calendars: [],
+          removed: [],
+          nextState: state('calendars', 't'),
+          costUnits: 0,
+        }),
+      ),
+    );
+    await w.host.start(ACCOUNT);
+    await settle();
+    const first = listedAt(w);
+    assert.ok(first);
+    w.store.commit({
+      opId: 'second-list',
+      origin: 'sync',
+      writes: [{ kind: 'account', id: ACCOUNT, calendarListedAt: (first as number) + 99_999 }],
+    });
+    assert.equal(listedAt(w), first, 'the stored first value stands');
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('Account/get-shaped read: calendarListedAt is on the account only once listed', async () => {
+  const d = disk();
+  try {
+    const w = calWorld(
+      d,
+      stubCalendar(() =>
+        Promise.resolve({
+          calendars: [],
+          removed: [],
+          nextState: state('calendars', 't'),
+          costUnits: 0,
+        }),
+      ),
+    );
+    const { readAccount } = await import('../src/sync/account-read');
+    const before = readAccount(w.store, ACCOUNT, undefined);
+    assert.equal(before?.calendarListedAt, undefined);
+    await w.host.start(ACCOUNT);
+    await settle();
+    const after = readAccount(w.store, ACCOUNT, undefined);
+    assert.equal(typeof after?.calendarListedAt, 'number');
+  } finally {
+    await d.cleanup();
+  }
+});

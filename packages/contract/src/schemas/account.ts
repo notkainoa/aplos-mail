@@ -109,6 +109,11 @@ export const Account = z.object({
   sendBlockedUntil: z.optional(EpochMs),
   /** The first window (the newest ~50 Inbox threads) is in: notifications and background AI may start (AM-4). Absent while first sync reads it. */
   baselineDoneAt: z.optional(EpochMs),
+  /**
+   * When the account's calendar list was first read from the provider, even if it held no calendars. Absent until then:
+   * a calendar-capable account without it is still syncing its list; with it and no calendars, there are none.
+   */
+  calendarListedAt: z.optional(EpochMs),
   /** Changes made here that have not reached the provider yet ("Offline · 2 changes waiting", "Saved here · will sync"). */
   pendingChanges: Count,
   preset: z.optional(AccountPreset),

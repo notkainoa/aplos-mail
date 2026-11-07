@@ -161,6 +161,11 @@ export interface AccountWrite {
   /** The copy key for the current status (F1 `AccountHealth.reasonCode`); `status.reason` stays the provider's own code. */
   reasonCode?: string | null;
   baselineDoneAt?: number | null;
+  /**
+   * When the account's calendar list was first committed, even an empty one (`Account.calendarListedAt`). First write
+   * wins: a later value never moves it.
+   */
+  calendarListedAt?: number;
   tokenGrantedAt?: number | null;
   refreshExpiresAt?: number | null;
   remoteSubject?: string | null;

@@ -73,6 +73,8 @@ export function demoAccount(
     lease: { role: 'primary', holderDeviceId: 'fixture-device', holderDeviceName: 'Fixture Mac' },
     identities: [{ address, name: 'Alex Morgan', default: true }],
     baselineDoneAt: now - 30 * day,
+    // The calendar list was read long ago (the demo has calendars): "No calendars" and "Syncing…" are told apart by this.
+    calendarListedAt: now - 30 * day,
     createdAt: now - 30 * day,
     pendingChanges: 0,
     ...extra,

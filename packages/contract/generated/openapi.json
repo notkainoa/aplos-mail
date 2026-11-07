@@ -5150,6 +5150,9 @@
           "baselineDoneAt": {
             "$ref": "#/components/schemas/EpochMs"
           },
+          "calendarListedAt": {
+            "$ref": "#/components/schemas/EpochMs"
+          },
           "pendingChanges": {
             "$ref": "#/components/schemas/Count"
           },

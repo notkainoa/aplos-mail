@@ -77,11 +77,15 @@ export async function runCalendarStep(
         step: step.origin,
         fenceSeq: fence,
         changes: 'fine',
-        writes: calendarListWrites(
-          actor.deps.account.id,
-          result,
-          parseSyncSet(readMemory(store, actor.deps.account.id).get(CAL_SYNC_MEMORY_KEY)),
-        ),
+        writes: [
+          ...calendarListWrites(
+            actor.deps.account.id,
+            result,
+            parseSyncSet(readMemory(store, actor.deps.account.id).get(CAL_SYNC_MEMORY_KEY)),
+          ),
+          // The list is in, even when it is empty: "No calendars" is now different from "Syncing…". First list wins.
+          { kind: 'account', id: actor.deps.account.id, calendarListedAt: clock.now() },
+        ],
       });
     } else {
       const calendarRemoteId = step.scope.slice(4);
