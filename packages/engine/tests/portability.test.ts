@@ -100,6 +100,20 @@ const lazyModules = [
   // eng-ai's provider catalogue loads on first use with its working half (the files under `ai/impl/` are lazy by
   // the `lazyDirs` rule below), so the core stays inside budget.
   join(src, 'ai', 'providers.ts'),
+  // The mail renderer and the `aplos-mail://` server (the frame code of @aplos/mail-html) load on first Mail/frame,
+  // MessageBody/get or Mail/serve: `import()` in methods/mail.ts.
+  join(src, 'mail', 'frame.ts'),
+  join(src, 'mail', 'render.ts'),
+  join(src, 'mail', 'serve.ts'),
+  join(src, 'mail', 'body.ts'),
+  join(src, 'mail', 'prefetch.ts'),
+  // The frame code of @aplos/mail-html those modules use (the reporter, the response builder and its helpers): reached
+  // only from the modules above, so it loads with them. The token registry and the render cache stay in the core.
+  join(src, '..', '..', 'mail-html', 'src', 'frame', 'index.ts'),
+  join(src, '..', '..', 'mail-html', 'src', 'frame', 'reporter.ts'),
+  join(src, '..', '..', 'mail-html', 'src', 'frame', 'serve.ts'),
+  join(src, '..', '..', 'mail-html', 'src', 'frame', 'headers.ts'),
+  join(src, '..', '..', 'mail-html', 'src', 'frame', 'sniff.ts'),
   join(src, 'calendar', 'views.ts'),
   join(src, 'calendar', 'recurrence', 'expand.ts'),
   join(src, 'calendar', 'recurrence', 'generate.ts'),

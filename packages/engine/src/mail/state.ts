@@ -1,4 +1,7 @@
-import { FrameTokens, Lru } from '@aplos/mail-html/frame';
+// The two classes the module needs at start, by their own paths: the `frame` barrel would drag the reporter and the
+// response builder (about 8 KB) into the core, and only the lazy `Mail/*` modules use them.
+import { FrameTokens } from '@aplos/mail-html/frame/tokens';
+import { Lru } from '@aplos/mail-html/frame/lru';
 import type { MailHtmlResult } from '../ports';
 
 /** One sanitized render as the cache keeps it: the result without a reporter, and the cids it numbered. */
