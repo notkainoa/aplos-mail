@@ -16,9 +16,11 @@ const missing = (a: Account): Account => ({
   ...a,
   missingPermissions: [{ capability: 'calendar', reasonCode: 'permission.calendar' }],
 });
+/** Still reading its calendar list: syncing mail status and no `calendarListedAt` stamp yet. */
 const syncing = (a: Account): Account => ({
   ...a,
   health: { status: { state: 'syncing' } },
+  calendarListedAt: undefined,
 });
 
 describe('Settings → Accounts calendar state', () => {

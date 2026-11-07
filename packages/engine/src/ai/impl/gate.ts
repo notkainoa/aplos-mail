@@ -52,15 +52,21 @@ export function allowedAccounts(
   services: EngineServices,
   ids?: readonly string[],
 ): { allowed: string[]; excluded: string[] } {
-  const rows = services.store.read(q =>
-    q.all<{ id: string; ai_allowed: number }>(
-      `SELECT id, ai_allowed FROM accounts${ids?.length ? ` WHERE id IN (${ids.map(() => '?').join(',')})` : ''}`,
-      ...(ids ?? []),
-    ),
-  );
+  // `scope.accountIds` only narrows: absent means every allowed account; present (even empty) means only those.
+  const rows =
+    ids === undefined
+      ? services.store.read(q =>
+          q.all<{ id: string; ai_allowed: number }>('SELECT id, ai_allowed FROM accounts'),
+        )
+      : services.store.read(q =>
+          q.all<{ id: string; ai_allowed: number }>(
+            `SELECT id, ai_allowed FROM accounts WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ...ids,
+          ),
+        );
   const allowed: string[] = [],
     excluded: string[] = [];
-  const wanted = ids ? new Set(ids) : undefined;
+  const wanted = ids !== undefined ? new Set(ids) : undefined;
   for (const r of rows) (r.ai_allowed === 1 ? allowed : excluded).push(r.id);
   // An id that is not an account at all stays out of `allowed`; the UI counts it as excluded either way.
   if (wanted) for (const id of wanted) if (!rows.some(r => r.id === id)) excluded.push(id);
@@ -137,4 +143,36 @@ export function accountAllowed(services: EngineServices, accountId: string): voi
       'ai.accountExcluded',
       "This account's mail is kept out of AI. Turn it on in Settings → AI.",
     );
+}
+
+/**
+ * Saved provider addresses: http(s) only, no embedded credentials, and a non-loopback host needs https whenever that
+ * provider has a key saved — an API key can't ride plain http to another machine.
+ */
+export function checkProviderAddresses(
+  providers: Record<string, { address?: string | undefined } | undefined>,
+  services: EngineServices,
+): void {
+  for (const [id, row] of Object.entries(providers)) {
+    if (!row?.address) continue;
+    try {
+      const u = new URL(row.address);
+      if (!/^https?:$/.test(u.protocol)) throw new Error('protocol');
+      if (u.username || u.password) throw new Error('userinfo');
+      const loopback = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?)$/.test(u.hostname);
+      const keyed =
+        services.ai?.transport().keySource(id as 'ollama' | 'lmstudio' | 'custom') !== 'none';
+      if (u.protocol === 'http:' && !loopback && keyed)
+        throw new ContractError({
+          type: 'validation',
+          message: `${id}: use an https:// address for a server that isn't on this Mac — an API key can't ride plain http.`,
+        });
+    } catch (e) {
+      if (e instanceof ContractError) throw e;
+      throw new ContractError({
+        type: 'validation',
+        message: `${id}: enter a full http(s):// server address without credentials.`,
+      });
+    }
+  }
 }

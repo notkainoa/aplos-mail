@@ -195,12 +195,39 @@ test('Consent: a provider URL with credentials keys the same fingerprint as the 
       ai: { providers: { groq: { address: 'https://api.groq.com/openai/v1?key=leak' } } },
     },
   });
-  await w.call('Settings/set', {
-    opId: 'addr3',
-    patch: {
-      ai: { providers: { groq: { address: 'https://user:pass@api.groq.com/openai/v1' } } },
-    },
-  });
+  // Credentials in an address are refused at Settings/set now (#374), so the fingerprint never sees them.
+  await assert.rejects(
+    w.call('Settings/set', {
+      opId: 'addr3',
+      patch: {
+        ai: { providers: { groq: { address: 'https://user:pass@api.groq.com/openai/v1' } } },
+      },
+    }),
+    { type: 'validation' },
+  );
   const same = await w.call('Consent/get', {});
   assert.equal(same.needsReconsent, false, 'URL userinfo/query never reach the fingerprint');
+});
+
+test('Settings/set refuses a provider address that is not a plain http(s) server address', async () => {
+  const w = await world();
+  for (const address of [
+    'file:///etc/passwd',
+    'ftp://example.test',
+    'not a url',
+    'http://u:p@localhost:11434',
+  ]) {
+    await assert.rejects(
+      w.call('Settings/set', {
+        opId: `bad-${address}`,
+        patch: { ai: { providers: { ollama: { address } } } },
+      }),
+      { type: 'validation' },
+      address,
+    );
+  }
+  await w.call('Settings/set', {
+    opId: 'good-local',
+    patch: { ai: { providers: { ollama: { address: 'http://localhost:11434' } } } },
+  });
 });
