@@ -44,6 +44,8 @@ export interface HostFacts {
 }
 
 export interface EngineServices {
+  /** The host's AI transport when one was composed (`host/ai`); absent, `services.ai` stays on its detached stand-in. */
+  aiTransport?: import('../ports/ai').AiTransport;
   /** What the host says about itself; defaults to a bare build so tests need not supply it. */
   host: HostFacts;
   /** The store, wrapped so every commit that lands queues its coalesced `state` frame. */

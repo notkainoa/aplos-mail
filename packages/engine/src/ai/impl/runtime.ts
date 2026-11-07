@@ -1,4 +1,5 @@
 import type { ModelRef } from '@aplos/contract';
+import { hexId } from '../../sync/connect-sessions';
 import type { EngineServices } from '../../runtime/services';
 import { AiCallError, type AiChatRequest, type AiChatTurn } from '../host';
 import { localDay } from '../providers';
@@ -39,7 +40,7 @@ function recordUsage(
   usage: { prompt: number; completion: number } | undefined,
 ): void {
   services.store.commit({
-    opId: `ai-usage-${lane}-${services.clock.now()}-${Math.floor(services.randomBytes(2)[0])}`,
+    opId: `ai-usage-${lane}-${services.clock.now()}-${hexId(services.randomBytes, 'u')}`,
     origin: 'system',
     writes: [
       {
