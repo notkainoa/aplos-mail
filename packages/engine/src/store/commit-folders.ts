@@ -62,6 +62,15 @@ function serialize(value: unknown): string {
   }
 }
 
+/** True when `w` only carries `calendarListedAt` and the stored value is already set (first write wins). */
+function alreadyListed(run: CommitRun, w: AccountWrite): boolean {
+  if (w.calendarListedAt === undefined) return false;
+  const row = run
+    .q('SELECT calendar_listed_at AS at FROM accounts WHERE id = ?')
+    .get<{ at: number | null }>(w.id);
+  return row?.at !== null && row?.at !== undefined;
+}
+
 /** Writes the account row: upsert by id, status fields split into their columns. */
 export function account(run: CommitRun, w: AccountWrite) {
   const now = run.now();
@@ -98,6 +107,7 @@ export function account(run: CommitRun, w: AccountWrite) {
   const exists = run.q('SELECT 1 FROM accounts WHERE id = ?').get(w.id);
   if (exists) {
     const keys = Object.keys(cols);
+    if (keys.length === 0 && alreadyListed(run, w)) return; // A repeat stamp is a no-op: no updated_at bump, no change row.
     run
       .q(
         `UPDATE accounts SET ${keys.map(k => `${k} = ?`).join(', ')}${keys.length ? ', ' : ''}updated_at = ? WHERE id = ?`,
