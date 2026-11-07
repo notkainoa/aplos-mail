@@ -43,6 +43,7 @@ import {
   citationData,
   effectiveProposalState,
   foldFrames,
+  isAccountExcluded,
   isDailyLimit,
   isNoProvider,
   openTarget,
@@ -225,17 +226,24 @@ function storedTurn(turn: StoredTurn, inputs: AskInputs, state: AskState): TurnV
   const known = new Set(turn.citations.map(c => c.n));
   const answer = turn.answer ? toParagraphs(turn.answer.blocks, known) : [];
   const dailyLimit = isDailyLimit(turn.problem);
+  const excluded = isAccountExcluded(turn.problem);
   // The same failure `liveTurn` reads from a terminal frame: a partial answer does not rescue a `problem`.
   const failed =
-    Boolean(turn.problem) && !dailyLimit && !isNoProvider(turn.problem) && !turn.stopped;
+    Boolean(turn.problem) &&
+    !dailyLimit &&
+    !excluded &&
+    !isNoProvider(turn.problem) &&
+    !turn.stopped;
   const stopped = turn.stopped === true;
   const status: TurnView['state'] = stopped
     ? 'stopped'
     : dailyLimit
       ? 'paused'
-      : failed
-        ? 'failed'
-        : 'answered';
+      : excluded
+        ? 'excluded'
+        : failed
+          ? 'failed'
+          : 'answered';
   const citations = [...turn.citations].sort((a, b) => a.n - b.n);
   const decisionsFor = (p: Proposal) => state.decisions[p.id];
   const card = stopped
@@ -287,6 +295,22 @@ function liveCard(
   return pickProposal(live.proposals, id, inputs.calendars, p => state.decisions[p.id]);
 }
 
+/**
+ * The live turn's state from the run's flags and its folded frames: a refusal or an error frame becomes the
+ * quiet paused or excluded line, or a real failure — never counted as an answer.
+ */
+function liveStatus(run: RunRef, live: LiveRun, hasAnswer: boolean): TurnView['state'] {
+  if (run.stopped) return 'stopped';
+  const errored = live.terminal === 'error';
+  if (isDailyLimit(run.refused) || (errored && isDailyLimit(live.problem))) return 'paused';
+  if (isAccountExcluded(run.refused) || (errored && isAccountExcluded(live.problem)))
+    return 'excluded';
+  const refused = run.refused !== undefined && !isNoProvider(run.refused);
+  if (refused || (errored && !isNoProvider(live.problem))) return 'failed';
+  if (live.terminal !== undefined || run.refused !== undefined) return 'answered';
+  return hasAnswer ? 'streaming' : 'working';
+}
+
 function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState): TurnView {
   const id = live.turnId ?? run.clientId;
   const known = new Set(live.citations.map(c => c.citation.n));
@@ -296,26 +320,8 @@ function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState
   );
   const answer = toParagraphs(blocks, known);
   const hasAnswer = answer.length > 0;
-  const refusedNoProvider = isNoProvider(run.refused);
-  const dailyLimit =
-    isDailyLimit(run.refused) || (live.terminal === 'error' && isDailyLimit(live.problem));
-  const failed =
-    !run.stopped &&
-    !dailyLimit &&
-    ((run.refused !== undefined && !refusedNoProvider) ||
-      (live.terminal === 'error' && !isNoProvider(live.problem)));
   const finished = run.stopped || live.terminal !== undefined || run.refused !== undefined;
-  const status: TurnView['state'] = run.stopped
-    ? 'stopped'
-    : dailyLimit
-      ? 'paused'
-      : failed
-        ? 'failed'
-        : finished
-          ? 'answered'
-          : hasAnswer
-            ? 'streaming'
-            : 'working';
+  const status = liveStatus(run, live, hasAnswer);
   const citations = [...live.citations].map(c => c.citation).sort((a, b) => a.n - b.n);
   const card = liveCard(run, live, id, finished, inputs, state);
   return {
@@ -330,7 +336,11 @@ function liveTurn(run: RunRef, live: LiveRun, inputs: AskInputs, state: AskState
     provenance: hasAnswer && finished ? provenance(inputs.askModel, inputs.providers) : undefined,
     proposal: card,
     sourceLine:
-      hasAnswer && finished && !failed ? (citations.length > 0 ? 'cited' : 'noSource') : null,
+      hasAnswer && finished && status !== 'failed'
+        ? citations.length > 0
+          ? 'cited'
+          : 'noSource'
+        : null,
     live: true,
   };
 }
@@ -586,7 +596,11 @@ export function runRefused(
 ): AskState {
   if (state.run?.clientId !== clientId) return state;
   // With no provider the question never became a turn: it goes back in the field, so nothing typed is lost.
-  const field = isNoProvider(error) && state.field === '' ? state.run.question : state.field;
+  // An excluded draft's account hands it back too, so the owner can ask from another account.
+  const field =
+    (isNoProvider(error) || isAccountExcluded(error)) && state.field === ''
+      ? state.run.question
+      : state.field;
   return { ...state, field, run: { ...state.run, refused: error } };
 }
 
@@ -604,8 +618,12 @@ export function advance(
   if (!run || run.settled) return step(state);
   const live = foldFrames(frames, run.runId);
   if (!runEnded(run, live)) return step(state);
-  // With no provider the question never became an answer: it goes back in the field, so nothing typed is lost.
-  const giveBack = live.terminal === 'error' && isNoProvider(live.problem) && state.field === '';
+  // With no provider the question never became an answer: it goes back in the field, so nothing typed is
+  // lost. An exclusion refusal hands it back the same way, so the owner can ask from another account.
+  const giveBack =
+    live.terminal === 'error' &&
+    (isNoProvider(live.problem) || isAccountExcluded(live.problem)) &&
+    state.field === '';
   const settled: AskState = {
     ...state,
     field: giveBack ? run.question : state.field,

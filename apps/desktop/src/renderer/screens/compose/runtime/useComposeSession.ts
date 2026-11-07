@@ -74,6 +74,23 @@ function newSession(initial: ComposeState): ComposeSession {
 /** The sessions of the composers mounted now, so the window can save them all before it closes. */
 const liveSessions = new Set<ComposeSession>();
 
+/**
+ * The account an open composer is writing in, for Ask's `context.draft.accountId` — read at run start, never
+ * cached: which composer is open changes without the dock re-rendering, and a run fired after the composer
+ * closed carries no account. The last open session wins: a compose page mounts over a reader's inline reply.
+ * A sending composer is not open — its draft is already on its way, not being written.
+ */
+export function openDraftAccount(
+  sessions: Iterable<Pick<ComposeSession, 'getState'>> = liveSessions,
+): string | undefined {
+  let accountId: string | undefined;
+  for (const session of sessions) {
+    const state = session.getState();
+    if (state.open) accountId = state.context.accountId;
+  }
+  return accountId;
+}
+
 /** Whether a closing window may go: every composer's text is in the engine, or some of it is still only here. */
 export type SaveResult = 'saved' | 'unsaved';
 

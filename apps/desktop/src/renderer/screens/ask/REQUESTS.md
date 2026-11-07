@@ -32,6 +32,22 @@ host degrades quietly as noted.
   were, the header counts what is left ("N left today" · next at …, or "Nothing left today" beside the earlier
   count), and the now-line draws only while a timed event remains; the model's `behind` rule is gone.
 
+## ui-reader
+
+- **`openDraftAccount()`** (we edited it, needs lane-approved:ui-reader): exported from
+  `screens/compose/runtime/useComposeSession.ts` (and `screens/compose/index.ts`), it reads the mounted
+  composers' `liveSessions` and returns the account the newest open composer is writing in. The dock calls it at
+  `Ask/run` start so `context.draft.accountId` names the draft's account — and a run fired after the composer
+  closed carries none.
+
+## ui-foundation
+
+- **AskTurn `'excluded'` state** (we edited it, needs lane-approved:ui-foundation): `ui/props/ask.ts` adds
+  `'excluded'` to `AskTurnProps.state` and an `onOpenSettings` action; `ui/ask/AskTurn.tsx` draws the quiet line
+  "This account is turned off for AI. Turn it on in Settings, or ask from another account." with an Open
+  Settings text button, styled by the shared dim-line rule in `ui/ask/ask.css`. The model maps an
+  `ai.accountExcluded` refusal (or error frame) to it instead of the generic "didn't answer" line.
+
 ## engine/contract (already frozen — confirm only)
 
 - `Ask/run` progress carries `turnId` from the first frame; `ai.dailyCap` reason code → the dock's "Paused for

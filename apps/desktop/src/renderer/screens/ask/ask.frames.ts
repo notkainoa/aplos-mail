@@ -289,6 +289,14 @@ export function isDailyLimit(
   return DAILY_LIMIT.has(error?.reasonCode ?? '');
 }
 
+/** The refusal for a draft (or every account) left out of AI: a quiet line, not a provider failure. */
+export function isAccountExcluded(
+  error:
+    Pick<ErrorBody, 'type' | 'reasonCode'> | { reasonCode?: string; type?: string } | undefined,
+): boolean {
+  return error?.reasonCode === 'ai.accountExcluded';
+}
+
 /** "Use another provider": ready providers other than the one that failed. */
 export function otherProviders<P extends Pick<AiProvider, 'id' | 'status'>>(
   providers: readonly P[],

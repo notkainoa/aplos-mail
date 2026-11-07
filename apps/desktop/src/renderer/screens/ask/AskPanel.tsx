@@ -78,6 +78,7 @@ function Turn({ turn, handlers }: { turn: TurnView; handlers: AskPanelHandlers }
             ? () => handlers.onUseAnotherProvider(turn.id)
             : undefined
         }
+        onOpenSettings={turn.state === 'excluded' ? () => handlers.onOpenSettings() : undefined}
       />
       {turn.excludedNote ? (
         <div className="ask-screen__note">

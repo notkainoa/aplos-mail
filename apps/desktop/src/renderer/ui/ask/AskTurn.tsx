@@ -35,6 +35,7 @@ export function AskTurn(props: AskTurnProps) {
     onOpenEventCitation,
     onRetry,
     onUseAnotherProvider,
+    onOpenSettings,
   } = props;
   const questionId = `${id}-question`;
   // Any non-answered state this mount committed counts: the transition into 'answered' announces, a reopen does not.
@@ -128,6 +129,17 @@ export function AskTurn(props: AskTurnProps) {
             <>
               {' '}
               <Btn variant="text" label="Use another provider" onPress={onUseAnotherProvider} />
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {state === 'excluded' ? (
+        <p className="ui-ask-turn__excluded" role="status">
+          This account is turned off for AI. Turn it on in Settings, or ask from another account.
+          {onOpenSettings ? (
+            <>
+              {' '}
+              <Btn variant="text" label="Open Settings" onPress={onOpenSettings} />
             </>
           ) : null}
         </p>
