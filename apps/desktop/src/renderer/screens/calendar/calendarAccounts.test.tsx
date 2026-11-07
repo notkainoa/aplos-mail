@@ -68,13 +68,16 @@ describe('the accounts block under the Calendars list', () => {
     assert.match(html, /Sign in again/);
   });
 
-  test('syncing: a granted account with the list unanswered reads Syncing…', () => {
+  test('syncing: a granted account whose list is unanswered or was never read reads Syncing…', () => {
     const html = render(accountLinesOf([google()], true, undefined));
     assert.match(html, /Syncing…/);
     assert.doesNotMatch(html, /No calendars/);
+    const unlisted = render(accountLinesOf([google({ calendarListedAt: undefined })], true, []));
+    assert.match(unlisted, /Syncing…/);
+    assert.doesNotMatch(unlisted, /No calendars/);
   });
 
-  test('none: granted, the list answered empty after first sync reads No calendars', () => {
+  test('none: granted, the list answered and held nothing reads No calendars', () => {
     const html = render(accountLinesOf([google()], true, []));
     assert.match(html, /No calendars/);
   });
