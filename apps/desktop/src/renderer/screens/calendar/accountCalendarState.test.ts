@@ -1,9 +1,10 @@
 // `calendarAccessOf`: every state and edge, on hand-written contract values (demo, non-Google, reauth +
 // missing calendar, granted with 0 and 1 and N calendars, syncing vs none, non-calendar missingPermissions).
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { HARNESS_NOW_MS, type Account, type Calendar } from '../../data';
-import { calendarAccessOf, calendarOnLine } from './accountCalendarState';
+import { calendarAccessOf, calendarListedKey, calendarOnLine } from './accountCalendarState';
 
 const NOW = HARNESS_NOW_MS;
 
@@ -241,5 +242,50 @@ describe('calendarAccessOf', () => {
   test('calendarOnLine: the exact words', () => {
     assert.equal(calendarOnLine(1), 'Calendar on · 1 calendar');
     assert.equal(calendarOnLine(4), 'Calendar on · 4 calendars');
+  });
+});
+
+describe('calendarListedKey', () => {
+  test('moves exactly when a stamp lands or moves, or a Google account joins or leaves', () => {
+    const unlisted = account({ calendarListedAt: undefined });
+    const listed = account({ calendarListedAt: NOW - 60_000 });
+    assert.notEqual(calendarListedKey([unlisted]), calendarListedKey([listed]), 'a stamp landing');
+    assert.notEqual(
+      calendarListedKey([listed]),
+      calendarListedKey([account({ calendarListedAt: NOW })]),
+      'a stamp moving',
+    );
+    // Colour, name, health and mail-sync fields never move it — no refetch on flicker.
+    const flicker = account({
+      calendarListedAt: NOW - 60_000,
+      colorTag: 'ember',
+      name: 'A. Moreno',
+      health: { status: { state: 'syncing' }, lastSyncAt: NOW },
+      baselineDoneAt: undefined,
+      pendingChanges: 3,
+    });
+    assert.equal(calendarListedKey([listed]), calendarListedKey([flicker]));
+    // Joining or leaving moves it; order does not.
+    const other = account({ id: 'acct-2', calendarListedAt: NOW });
+    assert.notEqual(calendarListedKey([listed]), calendarListedKey([listed, other]), 'joining');
+    assert.notEqual(calendarListedKey([other]), calendarListedKey([listed, other]), 'leaving');
+    assert.equal(calendarListedKey([listed, other]), calendarListedKey([other, listed]));
+    // Non-Google accounts carry no calendar claim, so they never move the key.
+    const imap = account({ id: 'acct-imap', provider: 'imap' });
+    assert.equal(calendarListedKey([listed]), calendarListedKey([listed, imap]));
+  });
+
+  test('both fetch effects re-read Calendar/get on the key (source shape)', () => {
+    // The stamp arrives live through useAccounts while each list was fetched once; the deps carry the
+    // key so a first list commit (rows plus stamp) refetches instead of reading "No calendars".
+    const screen = readFileSync(new URL('./CalendarScreen.tsx', import.meta.url), 'utf8');
+    assert.match(screen, /calendarListedKey\(accounts\)/);
+    assert.match(screen, /useEffect\(get, \[get, listedKey\]\)/);
+    const settings = readFileSync(
+      new URL('../settings/SettingsContainer.tsx', import.meta.url),
+      'utf8',
+    );
+    assert.match(settings, /calendarListedKey\(base\.accounts\)/);
+    assert.match(settings, /\}, \[section, view\.queue, actions, keepData, listedKey\]\)/);
   });
 });

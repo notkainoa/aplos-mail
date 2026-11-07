@@ -145,3 +145,17 @@ export function accountTag(account: Pick<Account, 'colorTag'>, index: number): T
     ? own
     : ACCOUNT_TAGS[index % ACCOUNT_TAGS.length];
 }
+
+/**
+ * Every Google account's `calendarListedAt` stamp as one sorted `id:stamp` string: it changes only when a
+ * stamp lands or moves, or a Google account joins or leaves — never on colour, name or health flicker. The
+ * stamp arrives live through `useAccounts` while `Calendar/get` answers once, so the fetch effects that keep
+ * a copy of the list depend on this key and re-read it when an account's first list commits.
+ */
+export function calendarListedKey(accounts: readonly Account[]): string {
+  return accounts
+    .filter(a => a.provider === 'google')
+    .map(a => `${a.id}:${a.calendarListedAt ?? ''}`)
+    .sort()
+    .join('|');
+}
