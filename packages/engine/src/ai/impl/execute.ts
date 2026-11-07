@@ -107,12 +107,31 @@ function parseSummary(raw: string): { text: string; action?: unknown } | undefin
         typeof (a as { label?: unknown }).label !== 'string')
     )
       return { text: v.summary.trim().slice(0, 10_000) };
-    // A model-chosen link is sanitized before it is stored: only https/mailto survive — a hostile email can
-    // steer the model but not ship a javascript: URL to a button.
+    // A model-chosen link is sanitized before it is stored: parsed https/mailto only, no userinfo —
+    // a hostile email can steer the model but not ship a javascript: or https://bank.com@evil.tld URL.
     const url = (a as { url?: unknown } | null | undefined)?.url;
-    if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\/|^mailto:/i.test(url)))
-      return { text: v.summary.trim().slice(0, 10_000) };
-    return { text: v.summary.trim().slice(0, 10_000), action: a ?? undefined };
+    const urlOk = (() => {
+      if (url === undefined) return true;
+      if (typeof url !== 'string' || url.length > 2_000) return false;
+      try {
+        const u = new URL(url);
+        return (u.protocol === 'https:' || u.protocol === 'mailto:') && !u.username && !u.password;
+      } catch {
+        return false;
+      }
+    })();
+    if (!urlOk) return { text: v.summary.trim().slice(0, 10_000) };
+    // Rebuild the action: only kind/label/url survive, each inside its schema bound.
+    const act = a as { kind?: unknown; label?: unknown; url?: unknown } | null;
+    const action =
+      act === null
+        ? undefined
+        : {
+            kind: String(act!.kind),
+            label: String(act!.label).replace(/\s+/g, ' ').slice(0, 200),
+            ...(typeof url === 'string' ? { url } : {}),
+          };
+    return { text: v.summary.trim().slice(0, 10_000), action };
   } catch {
     return undefined;
   }

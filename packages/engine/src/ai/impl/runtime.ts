@@ -124,7 +124,14 @@ export async function meteredChat(
   const signal = combine(req.signal, tracked);
   try {
     const turn = await transport.chat({ ...req, model: call.model, signal });
-    recordUsage(services, call.model, call.lane, turn.usage);
+    // A provider that reports no usage still spent compute — estimate ~4 chars/token so the daily cap
+    // is never blind (local servers and un-metered responses included).
+    const estimated = turn.usage ?? {
+      prompt: Math.ceil(req.messages.reduce((n, m) => n + (m.content?.length ?? 0), 0) / 4),
+      completion: Math.ceil((turn.content ?? '').length / 4),
+    };
+    recordUsage(services, call.model, call.lane, estimated);
+
     return turn;
   } finally {
     if (call.trackId) services.ai.release(call.trackId);
