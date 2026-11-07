@@ -1721,3 +1721,28 @@ html-5 part 1, items (a) to (c) of the Integrator's 2026-11-04 03:59 DECIDED. De
 - **Where it is stamped:** the sync actor's `calendars` step (`sync/actor-calendar.ts`) adds `{kind: 'account', id, calendarListedAt: now}` to the same commit as the list, so the stamp and the list land together or not at all. First write wins in the store (`COALESCE(calendar_listed_at, ?)`): a later list never moves it. A new account row may carry it from its first write.
 - **Storage:** `accounts.calendar_listed_at INTEGER`, migration 0006 (additive; accounts from before it stay NULL until their next list, which is one `calendars` step away). `readAccount` exposes it; the stand-in's demo accounts carry it, and its setup flow stamps it when setup completes.
 - **Not done here:** the Calendar UI's use of it (ui-screens, a follow-up to #356); a halted account (no list ever) keeps showing nothing, as before; a disconnect-reconnect creates a new row, so it re-lists.
+## 2026-11-06: 21 budget rows move from dueBy 2026-11-06 to 2026-11-20 (plat-ci, answering the Integrator's REQUEST of 16:10)
+
+`check:budgets` failed on revamp itself (and so in every PR's local-ci) because 21 rows had no first measurement on their `dueBy` of 2026-11-06. Platform cannot take these measurements: each needs its owner lane's harness or benchmark run. So each date moves two weeks, to 2026-11-20, and the limits are NOT changed; an owner that records a measurement earlier simply turns the row green (`npm run measure:budgets -- --record` for plat-ci rows, the lane's own harness otherwise). One line per row:
+
+- `store.first-page` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.unread-counts` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.label-commit` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.page-commit-throughput` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.cold-open` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.rss-first-page` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `store.search-newest-50` (eng-store): eng-store has not recorded a first measurement for this store row yet (needs the store benchmark run on the large fixture); due date moved to 2026-11-20, limit unchanged.
+- `sync.first-sync-first50` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
+- `sync.first-sync-refusals` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
+- `views.window-rerun` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.view-move` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.thread-act-receipt` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.window-open-rows` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.window-open-bytes` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.burst-window-update-interval` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `views.message-size-cap` (eng-views): eng-views has not recorded a first measurement for this views row yet (needs the views harness run); due date moved to 2026-11-20, limit unchanged.
+- `sanitizer.median` (eng-html): eng-html has not recorded a first measurement for this sanitizer row yet (needs the sanitizer benchmark on the corpus); due date moved to 2026-11-20, limit unchanged.
+- `sanitizer.p99` (eng-html): eng-html has not recorded a first measurement for this sanitizer row yet (needs the sanitizer benchmark on the corpus); due date moved to 2026-11-20, limit unchanged.
+- `sync.emu-stale-rerun-units` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
+- `sync.emu-relabel-units` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
+- `sync.first-sync-500-threads` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
