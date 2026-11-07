@@ -3,6 +3,7 @@ import type { EngineConnection, EngineSession } from '@aplos/contract/client';
 import type { EngineMethodName } from '@aplos/contract';
 import { dispatchWith, handlers as table } from '../methods/index';
 import type { Caller, EngineHandlers } from '../methods/types';
+import type { AiTransport } from '../ai/host';
 import type { Clock, Logger, StorePort } from '../ports';
 import { openConnection, type ConnectedSession } from './connection';
 import { contractError } from './errors';
@@ -26,7 +27,10 @@ export type HostPorts = Partial<
     | 'keys'
     | 'blobFiles'
     | 'attachmentFiles'
-  >
+  > & {
+    /** The AI provider transport (`host/ai`, eng-ai); absent, the ai lane stays on its detached stand-in. */
+    ai: AiTransport;
+  }
 >;
 
 export interface EngineOptions {
@@ -113,10 +117,15 @@ export async function buildEngine(
 ): Promise<Engine> {
   const hub = createFrameHub({ store: options.store, clock: options.clock });
   const draft = coreServices(options, hub);
-  const started = composeModules(draft, modules, new Set(Object.keys(options.ports ?? {})));
+  // `ports.ai` is a transport bound after start, not a services member — it is excluded from the
+  // host-name set so the ai lane still owns `services.ai`.
+  const portNames = new Set(Object.keys(options.ports ?? {}).filter(name => name !== 'ai'));
+  const started = composeModules(draft, modules, portNames);
   // Frozen once composed: no lane or handler swaps a port, the observed store or the log for everyone after it.
   const services = Object.freeze(draft);
   await startAll(started, hub);
+  // The AI transport binds through the lane runtime after every module is up; unbound stays the detached stand-in.
+  if (options.ports?.ai) services.ai?.useTransport(options.ports.ai);
   const dispatch = dispatcher(options.handlers);
   const open = new Set<EngineSession>();
   let counter = 0;

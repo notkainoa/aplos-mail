@@ -24,6 +24,7 @@ import {
   type StorePort,
 } from '@aplos/engine/ports';
 import { openStore } from '@aplos/engine/store';
+import type { AiTransport } from '@aplos/engine';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { createTimerLoop, type TimerLoop } from '@aplos/engine/clock/loop';
 import { accountIds } from '@aplos/engine/sync/account-read';
@@ -93,6 +94,16 @@ export interface ComposeOptions {
   openExternal(url: string): Promise<void> | void;
   /** The environment, the Settings client and the bundled one, read again at each sign-in. */
   googleClient: () => GoogleClientInputs;
+  /**
+   * The AI provider keys' environment, read at bind time in the utility process only — the values never enter
+   * HostFacts, a log field or a window. Thunk like `googleClient`; default `() => process.env`.
+   */
+  aiEnv?: () => NodeJS.ProcessEnv;
+  /**
+   * The AI provider transport (`host/ai`), built by `realComposeOptions`. Absent: every `Ai/*` answers
+   * `unavailable` through the detached stand-in.
+   */
+  ai?: AiTransport;
   /** The banner: the notification loop posts claimed items through it, and so do missed reminders. */
   postNotification: PostNotification;
   /** Focus, window and battery as the Mac sees them, read at every planning step. Default: no window, unfocused, on mains. */
@@ -441,6 +452,7 @@ function engineOptions(
     ...(options.host ? { host: options.host } : {}),
     ports: {
       ...options.ports,
+      ...(options.ai ? { ai: options.ai } : {}),
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,

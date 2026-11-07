@@ -1,10 +1,7 @@
 import { AiCallError, type AiTransport } from '@aplos/engine';
-import { anthropicChat } from './anthropic';
-import { openAiChat } from './chat';
 import { createKeys, type AiKeys } from './keys';
 import type { ProviderRow } from './providers';
 import { callProvider, requireRow, type AiDeps } from './request';
-import { transcribeAudio } from './transcribe';
 
 /**
  * The host's AI transport (lane eng-ai): the `AiTransport` port bound to real fetch, environment and the
@@ -24,10 +21,16 @@ export function createAiHost(deps: AiHostDeps): AiTransport {
     async chat(req) {
       const row = requireRow(req.model.provider);
       return row.wire === 'anthropic'
-        ? anthropicChat(deps, keys, row, req)
-        : openAiChat(deps, keys, row, req);
+        ? (await import('./anthropic')).anthropicChat(deps, keys, row, req)
+        : (await import('./chat')).openAiChat(deps, keys, row, req);
     },
-    transcribe: async req => transcribeAudio(deps, keys, requireRow(req.model.provider), req),
+    transcribe: async req =>
+      (await import('./transcribe')).transcribeAudio(
+        deps,
+        keys,
+        requireRow(req.model.provider),
+        req,
+      ),
     models: async provider => listModels(deps, keys, requireRow(provider)),
     check: async provider => checkProvider(deps, keys, requireRow(provider)),
     setKey: (provider, key) => keys.setKey(provider, key),

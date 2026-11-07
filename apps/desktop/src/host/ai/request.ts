@@ -12,8 +12,11 @@ import type { AiKeys } from './keys';
 export interface AiDeps {
   fetch: typeof fetch;
   env: NodeJS.ProcessEnv;
-  /** The owner's server addresses from Settings → AI (local providers); env vars are the fallback. */
-  addresses?: Partial<Record<AiProviderId, string>>;
+  /**
+   * The owner's server addresses from Settings → AI (local providers); env vars are the fallback. A thunk is
+   * re-read per request so a Settings change takes effect without a restart.
+   */
+  addresses?: Partial<Record<AiProviderId, string>> | (() => Partial<Record<AiProviderId, string>>);
 }
 
 export interface CallOptions {
@@ -38,6 +41,16 @@ export function retryAfterMs(headers: Headers): number | undefined {
   const at = Date.parse(raw);
   if (!Number.isNaN(at)) return Math.max(0, at - Date.now());
   return undefined;
+}
+
+/** Authorization-class headers redacted for any log field; the transport itself never logs. */
+export function redactHeaders(
+  headers: HeadersInit | Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers as Record<string, string>))
+    out[k] = /^authorization$|^x-api-key$/i.test(k) ? '<redacted>' : String(v);
+  return out;
 }
 
 /** An HTTP status becomes a code and one generic sentence; the body is left unread. */
@@ -78,7 +91,11 @@ export async function callProvider(
   path: string,
   init: CallOptions = {},
 ): Promise<Response> {
-  const base = baseUrl(row, deps.env, deps.addresses);
+  const base = baseUrl(
+    row,
+    deps.env,
+    typeof deps.addresses === 'function' ? deps.addresses() : deps.addresses,
+  );
   if (!base && !/^https?:\/\//.test(path))
     throw new AiCallError(
       'unavailable',
