@@ -3,6 +3,7 @@
 export { ComposeScreen, type ComposeCardStyle, type ComposeScreenProps } from './ComposeScreen';
 export { composeHeader, COMPOSE_CRUMB } from './composeHeader';
 export { InlineReplyHost, type InlineReplyHostProps } from './InlineReplyHost';
+export { openDraftAccount } from './runtime/useComposeSession';
 export { useUndoSendNotice } from './runtime/useUndoSendNotice';
 export { useDictation, type DictationHook } from './runtime/useDictation';
 export {

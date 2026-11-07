@@ -238,7 +238,14 @@ test('AskTurn announces "Answered" only after this mount saw the turn unfinished
   );
   assert.equal(announcesAnswered(true, 'answered'), true, 'a live transition announces');
   assert.equal(announcesAnswered(false, 'answered'), false, 'mounted answered stays quiet');
-  for (const state of ['working', 'streaming', 'stopped', 'failed', 'paused'] as const) {
+  for (const state of [
+    'working',
+    'streaming',
+    'stopped',
+    'failed',
+    'paused',
+    'excluded',
+  ] as const) {
     assert.equal(announcesAnswered(true, state), false);
     assert.doesNotMatch(
       html(turn({ state, answer: undefined, citations: [] })),

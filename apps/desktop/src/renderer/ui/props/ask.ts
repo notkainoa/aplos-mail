@@ -123,8 +123,8 @@ export interface AskTurnProps {
   id: string;
   /** The question. */
   question: string;
-  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the model's daily limit is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red; shows "Use another provider" when `onUseAnotherProvider` is given; the plan 30 §4.5 phrase is reused for Ask's per-model daily limit, ARCH §8.4). */
-  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed' | 'paused';
+  /** 'working' = steady step line; 'streaming' = one thin non-blinking caret; 'answered'; 'stopped' = "Stopped."; 'failed' = ErrorLine askFailed; 'paused' = the model's daily limit is reached: "Paused for today. Resumes tomorrow." (a quiet line, never red; shows "Use another provider" when `onUseAnotherProvider` is given; the plan 30 §4.5 phrase is reused for Ask's per-model daily limit, ARCH §8.4); 'excluded' = the draft's account is left out of AI: "This account is turned off for AI." (a quiet line like 'paused'; shows "Open Settings" when `onOpenSettings` is given). */
+  state: 'working' | 'streaming' | 'answered' | 'stopped' | 'failed' | 'paused' | 'excluded';
   /** The step log (live line while working, dim fold after). */
   steps?: StepLogProps;
   /** Answer prose. */
@@ -145,6 +145,8 @@ export interface AskTurnProps {
   onRetry?: () => void;
   /** "Use another provider" after a failure or when the state is 'paused'. */
   onUseAnotherProvider?: () => void;
+  /** "Open Settings" when the state is 'excluded' (the account's AI toggle lives in Settings → AI). */
+  onOpenSettings?: () => void;
 }
 
 /** One steady line naming the real step ("Reading 14 emails from Jordan") that folds into a dim, expandable step log (DESIGN §6 StepLog, §7.7). Mockups: ask.html (answer, working). Plain + refines: ui-ask. */

@@ -23,6 +23,7 @@ import {
   openRoute,
   openThread,
   pushToast,
+  useAppRoute,
   useCurrentTarget,
   useRegisterCommands,
   useShellKeyLayer,
@@ -30,6 +31,8 @@ import {
 } from '../../shell';
 import { useDictation } from '../compose/runtime/useDictation';
 import { keepsOnRelease } from '../compose/model/dictationModel';
+import { openDraftAccount } from '../compose/runtime/useComposeSession';
+import { askRunArgs } from './ask.context';
 import { todayCalendar, type TodayCalendar } from '../today/today.model';
 import { TodayHost } from '../today/TodayHost';
 import {
@@ -183,6 +186,7 @@ export function AskDockHost(props: AskDockHostProps) {
   const consent = useConsent();
   const accounts = useAccounts();
   const target = useCurrentTarget();
+  const screen = useAppRoute();
   const once = useRef(oncePerTask()).current;
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [proposalFocused, setProposalFocused] = useState(false);
@@ -237,6 +241,8 @@ export function AskDockHost(props: AskDockHostProps) {
   inputsRef.current = inputs;
   const targetRef = useRef(target);
   targetRef.current = target;
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
 
   /* ── state and effects ── */
 
@@ -271,18 +277,20 @@ export function AskDockHost(props: AskDockHostProps) {
   }
 
   async function effectRun(effect: Extract<AskEffect, { kind: 'run' }>) {
-    const now = targetRef.current;
     try {
-      const out = await api.ask.run({
-        question: effect.question,
-        conversationId: effect.conversationId,
-        scope: effect.searchAll ? { searchAllMail: true } : undefined,
-        context: {
-          threadId: now?.kind === 'thread' ? now.id : undefined,
-          eventId: now?.kind === 'event' ? now.id : undefined,
-        },
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
+      // Read at run start, not at mount: which draft is open (and in which account) can change while the
+      // dock stays put, and a run fired after the composer closed must carry no stale account.
+      const out = await api.ask.run(
+        askRunArgs(
+          effect,
+          {
+            target: targetRef.current,
+            screen: screenRef.current,
+            draftAccountId: openDraftAccount(),
+          },
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ),
+      );
       perform(runStarted(askStore.get().ask, effect.clientId, out.runId, out.conversationId));
     } catch (error) {
       setAsk(runRefused(askStore.get().ask, effect.clientId, errorBody(error)));

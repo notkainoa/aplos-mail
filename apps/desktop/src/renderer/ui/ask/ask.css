@@ -313,7 +313,8 @@
 }
 .ui-ask-turn__no-source,
 .ui-ask-turn__stopped,
-.ui-ask-turn__paused {
+.ui-ask-turn__paused,
+.ui-ask-turn__excluded {
   margin: var(--space-2) 0 0;
   color: var(--dim);
   font: var(--type-small);

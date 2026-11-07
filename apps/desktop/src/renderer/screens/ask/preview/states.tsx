@@ -16,7 +16,14 @@ import type {
 import type { DictationState } from '../../../ui/props';
 import { AskPanel, type AskPanelHandlers } from '../AskPanel';
 import { ConsentLine } from '../AskConsent';
-import { dockView, initialAsk, setField, type AskInputs, type AskState } from '../ask.model';
+import {
+  dockView,
+  initialAsk,
+  runRefused,
+  setField,
+  type AskInputs,
+  type AskState,
+} from '../ask.model';
 import { Today } from '../../today/Today';
 import { todayModel, type TodayCalendar } from '../../today/today.model';
 import { at, NOW, noop } from './shared';
@@ -403,6 +410,18 @@ export const states: Record<string, StateEntry> = {
       dock(
         running('What did I miss this week?'),
         inputs({ frames: [frame('error', { problem: { reasonCode: 'ai.dailyCap' } })] }),
+      ),
+  },
+  'ask-excluded': {
+    title: 'Ask: this account is turned off for AI, with Open Settings',
+    render: () =>
+      dock(
+        runRefused(running('What did I miss this week?'), 'ask-1', {
+          type: 'forbidden',
+          reasonCode: 'ai.accountExcluded',
+          message: 'account excluded',
+        }),
+        inputs(),
       ),
   },
   'ask-dictating': {
