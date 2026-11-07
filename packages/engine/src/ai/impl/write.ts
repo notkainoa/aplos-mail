@@ -45,6 +45,8 @@ function draftAccount(ctx: MethodContext, draftId: string): void {
 
 async function polish(args: Input<'Ai/polish'>, ctx: MethodContext): Promise<Output<'Ai/polish'>> {
   if (args.draftId !== undefined) draftAccount(ctx, args.draftId);
+  // Pasted text names the composing account: one left out of AI is forbidden the same way.
+  if (args.accountId !== undefined) accountAllowed(ctx.services, args.accountId);
   const model = interactiveModel(ctx.services, 'drafts', { withMail: true });
   try {
     const turn = await meteredChat(
