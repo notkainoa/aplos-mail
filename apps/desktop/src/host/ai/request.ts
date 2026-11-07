@@ -12,8 +12,11 @@ import type { AiKeys } from './keys';
 export interface AiDeps {
   fetch: typeof fetch;
   env: NodeJS.ProcessEnv;
-  /** The owner's server addresses from Settings → AI (local providers); env vars are the fallback. */
-  addresses?: Partial<Record<AiProviderId, string>>;
+  /**
+   * The owner's server addresses from Settings → AI (local providers); env vars are the fallback. A thunk is
+   * re-read per request so a Settings change takes effect without a restart.
+   */
+  addresses?: Partial<Record<AiProviderId, string>> | (() => Partial<Record<AiProviderId, string>>);
 }
 
 export interface CallOptions {
@@ -40,10 +43,38 @@ export function retryAfterMs(headers: Headers): number | undefined {
   return undefined;
 }
 
+/** A bounded `response.json()` for non-streaming endpoints — a hostile body can't grow unbounded. */
+export async function readJson(
+  response: Response,
+  label: string,
+  maxBytes = 1024 * 1024,
+): Promise<unknown> {
+  const text = await response.text();
+  if (text.length > maxBytes)
+    throw new AiCallError('invalid', `${label} returned a response that was too large.`);
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new AiCallError('invalid', `${label} returned an invalid response.`);
+  }
+}
+
+/** Authorization-class headers redacted for any log field; the transport itself never logs. */
+export function redactHeaders(
+  headers: HeadersInit | Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers as Record<string, string>))
+    out[k] = /^authorization$|^x-api-key$/i.test(k) ? '<redacted>' : String(v);
+  return out;
+}
+
 /** An HTTP status becomes a code and one generic sentence; the body is left unread. */
 export function httpError(status: number, headers: Headers, label: string): AiCallError {
   if (status === 401 || status === 403)
     return new AiCallError('rejected', `${label} rejected the API key.`);
+  if (status === 402)
+    return new AiCallError('rejected', `${label} needs a paid plan or billing top-up.`);
   if (status === 429)
     return new AiCallError('rateLimited', `${label} rate limit reached.`, retryAfterMs(headers));
   if (status >= 500) return new AiCallError('unreachable', `${label} request failed (${status}).`);
@@ -78,7 +109,11 @@ export async function callProvider(
   path: string,
   init: CallOptions = {},
 ): Promise<Response> {
-  const base = baseUrl(row, deps.env, deps.addresses);
+  const base = baseUrl(
+    row,
+    deps.env,
+    typeof deps.addresses === 'function' ? deps.addresses() : deps.addresses,
+  );
   if (!base && !/^https?:\/\//.test(path))
     throw new AiCallError(
       'unavailable',
@@ -114,7 +149,10 @@ export async function callProvider(
     if (isAbort(error)) throw new AiCallError('unreachable', `${row.label} did not answer.`);
     throw new AiCallError('unreachable', `${row.label} could not complete the request.`);
   }
-  if (!response.ok) throw httpError(response.status, response.headers, row.label);
+  if (!response.ok) {
+    void response.body?.cancel().catch(() => {});
+    throw httpError(response.status, response.headers, row.label);
+  }
   return response;
 }
 
@@ -130,6 +168,8 @@ export async function readSse(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let total = 0;
+  const rowLabel = 'the provider';
   const line = (raw: string): boolean => {
     if (!raw.startsWith('data:')) return false;
     const data = raw.slice(5).trim();
@@ -158,8 +198,13 @@ export async function readSse(
         ? Promise.race([reader.read(), aborted])
         : reader.read());
       if (done) break;
+      total += value.length;
+      if (total > 8 * 1024 * 1024)
+        throw new AiCallError('invalid', `${rowLabel} streamed a response that was too large.`);
       buffer += decoder.decode(value, { stream: true });
       for (let at = buffer.indexOf('\n'); at >= 0; at = buffer.indexOf('\n')) {
+        if (at > 64 * 1024)
+          throw new AiCallError('invalid', `${rowLabel} sent an event that was too large.`);
         if (line(buffer.slice(0, at).replace(/\r$/, ''))) return;
         buffer = buffer.slice(at + 1);
       }

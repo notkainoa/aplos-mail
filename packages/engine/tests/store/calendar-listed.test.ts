@@ -57,3 +57,29 @@ test('a new account can carry calendarListedAt from its first write', () => {
     file.cleanup?.();
   }
 });
+
+test('a repeat calendarListedAt stamp is a no-op: no updated_at bump and no change row', () => {
+  const file = tempDb();
+  try {
+    const store = openStore(file.open());
+    store.commit({ opId: 'a', origin: 'sync', writes: [accountWrite] });
+    const stamp = (opId: string, at: number) =>
+      store.commit({
+        opId,
+        origin: 'sync',
+        writes: [{ kind: 'account', id: accountWrite.id, calendarListedAt: at }],
+      });
+    stamp('l1', 1_000);
+    const updatedAt = () =>
+      (file.open().prepare('SELECT updated_at AS u FROM accounts').get() as { u: number }).u;
+    const seq = store.seq();
+    const before = updatedAt();
+    stamp('l2', 2_000);
+    assert.equal(listed(file), 1_000);
+    assert.equal(updatedAt(), before, 'updated_at is not bumped');
+    assert.equal(store.seq(), seq, 'no change row for a repeat stamp');
+    store.close();
+  } finally {
+    file.cleanup?.();
+  }
+});

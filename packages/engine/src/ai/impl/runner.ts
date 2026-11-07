@@ -1,4 +1,5 @@
 import type { EngineServices } from '../../runtime/services';
+import { setupSessionOpen } from '../../methods/setup';
 import { backgroundGate } from './gate';
 import { budgetOpen } from './runtime';
 import { executeJob } from './execute';
@@ -17,6 +18,7 @@ const CONCURRENCY = 2;
 const MAX_ATTEMPTS = 5;
 /** Gate-paused passes retry the whole queue this far out. */
 const PAUSE_MS = 30 * 60_000;
+const SETUP_RECHECK_MS = 60_000;
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 4 * 60 * 60_000];
 
 /** Due queued rows in priority order. */
@@ -102,6 +104,9 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
   for (;;) {
     const rows = dueJobs(services, now, CONCURRENCY);
     if (!rows.length) return;
+    // An open setup session means the backfill is still being composed — don't race it. Push the due rows out a
+    // minute (like the cap pause) so the timer loop sleeps instead of re-firing on rows that are still due.
+    if (setupSessionOpen()) return pauseDue(services, now, now + SETUP_RECHECK_MS);
     // A spent daily cap pauses the queue until tomorrow, not fail-by-fail and not a 30-minute spin.
     if (!budgetOpen(services)) {
       const d = new Date(now);

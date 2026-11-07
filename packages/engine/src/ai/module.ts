@@ -91,6 +91,8 @@ function jobsSource(services: EngineServices): DeadlineSource {
 /** Builds the lane's services once the core services exist; runs once, in the root's fixed order. */
 export function createModule(services: EngineServices): LaneModule {
   const ai = createAiService();
+  // A host-composed transport binds here; absent, the service stays on the detached stand-in.
+  if (services.aiTransport) ai.useTransport(services.aiTransport);
   return {
     services: { ai },
     start() {

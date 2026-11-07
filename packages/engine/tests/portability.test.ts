@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { builtinModules } from 'node:module';
@@ -126,6 +126,13 @@ const lazyModules = [
   join(src, 'sync', 'actor-calendar.ts'),
   join(src, 'sync', 'calendar-facts.ts'),
 ];
+// Whole folders that are lazy: eng-ai's implementation (ask loop, jobs runner, prompts, usage) is reached only through
+// `import()` from the thin dispatchers in `ai/module.ts` and `methods/`, so a new file there needs no entry above.
+const lazyDirs = [join(src, 'ai', 'impl') + sep];
+const isLazyFile = (file: string) => {
+  const abs = resolve(file);
+  return lazyModules.includes(abs) || lazyDirs.some(dir => abs.startsWith(dir));
+};
 // The budget is for the bundle that ships, so it is measured minified (2026-10-28: 253,443 bytes; unminified the same
 // files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06
 // (owner decision, DECISIONS.md); the last raise without a new decision.
@@ -133,7 +140,7 @@ const BUDGET_BYTES = 465_000;
 test('the new engine (contract types and zod-free tables only, no zod) stays under 465,000 minified bytes and never imports legacy code', async () => {
   const { chunks, inputs } = await bundleNeutral(
     src,
-    f => f.startsWith(legacy) || lazyModules.includes(f),
+    f => f.startsWith(legacy) || isLazyFile(f),
     true,
     true,
   );
@@ -142,7 +149,7 @@ test('the new engine (contract types and zod-free tables only, no zod) stays und
     [],
     'no legacy imports outside legacy/',
   );
-  const isLazy = (path: string) => lazyModules.some(m => path.endsWith(relative(process.cwd(), m)));
+  const isLazy = (path: string) => isLazyFile(path);
   // A lazy chunk holds nothing but lazy modules; a static import would fold them into the core chunk instead.
   const lazy = chunks.filter(chunk => chunk.inputs.length > 0 && chunk.inputs.every(isLazy));
   const core = chunks.filter(chunk => !lazy.includes(chunk));

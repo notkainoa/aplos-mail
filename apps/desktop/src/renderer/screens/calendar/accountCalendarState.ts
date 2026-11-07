@@ -10,9 +10,9 @@
  *   reconnect and on a refused calendar scope);
  * - `Account.capabilities.calendar` (the grant's calendar half);
  * - `Account.health.status` (`needsReauth` signs in again; `needsPermission` naming calendar scopes is the same
- *   not-allowed gap; `starting`/`syncing`/`backfilling` means the first read is still on its way);
- * - `Account.calendarListedAt` (absent until the account's first calendar list commits — before that an
- *   answered-but-never-listed account still reads "Syncing…", not "No calendars");
+ *   not-allowed gap; a halted status says nothing here — the status slot already does);
+ * - `Account.calendarListedAt` (stamped when the account's calendar list was first read, even an empty one;
+ *   absent until then, so accounts predating the field read "Syncing…" until their next list);
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
  */
 import type { Account, Calendar } from '../../data';
@@ -93,7 +93,10 @@ function calendarMissing(account: Account): boolean {
 /**
  * The account's calendar state, or `null` when there is no calendar claim to make (demo, non-Google). Order:
  * sign-in first (nothing can be granted while the grant is dead), then the permission gap, then what the
- * calendar list itself says — still arriving, on, or honestly empty.
+ * calendar list itself says — still arriving, on, or honestly empty. The last step reads the list and
+ * `calendarListedAt`, never the mail status: calendars that exist show as on while mail still syncs, a list
+ * that answered empty is "No calendars" once `calendarListedAt` says it was read, and an unlisted account
+ * stays "Syncing…" (accounts predating the field read so until their next list).
  */
 export function calendarAccessOf(
   account: Account,
@@ -125,14 +128,12 @@ export function calendarAccessOf(
       action: { label: CALENDAR_ACCESS_COPY.grant, mode: 'grant' },
     };
   }
-  if (state === 'starting' || state === 'syncing' || state === 'backfilling') return SYNCING;
   if (calendars === undefined) return SYNCING;
   const count = calendars.filter(c => c.accountId === account.id).length;
   if (count > 0) return { kind: 'on', count, line: calendarOnLine(count), action: null };
-  // An empty list is "No calendars" only once the account's first list committed (`calendarListedAt`); an
-  // account without it — including ones that predate the field — is still honestly "Syncing…".
-  if (account.calendarListedAt === undefined) return SYNCING;
-  return state === 'ok' ? { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null } : UNKNOWN;
+  return account.calendarListedAt === undefined
+    ? SYNCING
+    : { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null };
 }
 
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];
@@ -143,4 +144,18 @@ export function accountTag(account: Pick<Account, 'colorTag'>, index: number): T
   return own !== undefined && ACCOUNT_TAGS.includes(own)
     ? own
     : ACCOUNT_TAGS[index % ACCOUNT_TAGS.length];
+}
+
+/**
+ * Every Google account's `calendarListedAt` stamp as one sorted `id:stamp` string: it changes only when a
+ * stamp lands or moves, or a Google account joins or leaves — never on colour, name or health flicker. The
+ * stamp arrives live through `useAccounts` while `Calendar/get` answers once, so the fetch effects that keep
+ * a copy of the list depend on this key and re-read it when an account's first list commits.
+ */
+export function calendarListedKey(accounts: readonly Account[]): string {
+  return accounts
+    .filter(a => a.provider === 'google')
+    .map(a => `${a.id}:${a.calendarListedAt ?? ''}`)
+    .sort()
+    .join('|');
 }

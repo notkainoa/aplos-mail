@@ -397,6 +397,14 @@ async function askRun(
               }
             })
             .filter((t): t is AskTurn => !!t)
+            // History only counts if its sources are still readable: a turn citing a thread in an
+            // account since switched off is dropped, not resent to the provider.
+            .filter(t =>
+              t.citations.every(c => {
+                const parts = c.kind === 'message' ? splitId(q, c.threadId) : undefined;
+                return !parts || allowed.includes(parts.accountId);
+              }),
+            )
             .reverse(),
         )
       : [];
