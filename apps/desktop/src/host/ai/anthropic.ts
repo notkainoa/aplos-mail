@@ -68,12 +68,14 @@ export async function anthropicChat(
   req: AiChatRequest,
 ): Promise<AiChatTurn> {
   const { system, messages } = toClaude(req.messages);
+  // Anthropic has no JSON mode: an assistant prefill of `{` forces the object shape; the streamed
+  // content continues it, so the caller's parse sees the same JSON OpenAI would have sent.
   const body = {
     model: req.model.model,
     max_tokens: req.maxTokens ?? 1024,
     stream: true,
     ...(system ? { system } : {}),
-    messages,
+    messages: req.json ? [...messages, { role: 'assistant' as const, content: '{' }] : messages,
     ...(req.tools?.length
       ? {
           tools: req.tools.map(tool => ({
@@ -91,7 +93,8 @@ export async function anthropicChat(
   });
   if (!response.body)
     throw new AiCallError('invalid', `${row.label} returned an invalid response.`);
-  return readMessageStream(response.body, row, req);
+  const out = await readMessageStream(response.body, row, req);
+  return req.json ? { ...out, content: '{' + out.content } : out;
 }
 
 type ContentBlock = { type: 'text' } | { type: 'tool'; id: string; name: string; json: string };

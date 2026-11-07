@@ -36,6 +36,8 @@ export interface ProviderRow {
   bodyExtras?: (model: string) => Record<string, unknown>;
   /** The completion-token ceiling when a request does not set one. */
   maxTokens?: number;
+  /** Which token-limit field the server accepts; `max_completion_tokens` is the OpenAI default. */
+  tokensParam?: 'max_tokens' | 'max_completion_tokens';
   /** Speech-to-text through an OpenAI-style `audio/transcriptions` endpoint. */
   stt?: boolean;
   /** Keeps chat models out of a live list that also names audio, image and embedding models. */
@@ -63,7 +65,7 @@ export const PROVIDERS: readonly ProviderRow[] = [
     wire: 'openai',
     base: 'https://api.openai.com/v1',
     stt: true,
-    bodyExtras: () => ({ reasoning_effort: 'low' }),
+    bodyExtras: () => ({}),
     keepModel:
       /^(gpt-|o\d|chatgpt-)(?!.*(audio|realtime|image|tts|transcribe|search|embedding|moderation|instruct))/,
   },
@@ -82,7 +84,7 @@ export const PROVIDERS: readonly ProviderRow[] = [
     keyOptional: false,
     wire: 'openai',
     base: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    bodyExtras: () => ({ reasoning_effort: 'low' }),
+    bodyExtras: () => ({}),
     keepModel: /^gemini-(?!.*(embedding|image|tts|live|audio))/,
   },
   {
@@ -118,6 +120,7 @@ export const PROVIDERS: readonly ProviderRow[] = [
     wire: 'openai',
     defaultAddress: 'http://localhost:11434',
     addressEnv: 'OLLAMA_ADDRESS',
+    tokensParam: 'max_tokens',
   },
   {
     id: 'lmstudio',
@@ -128,6 +131,7 @@ export const PROVIDERS: readonly ProviderRow[] = [
     defaultAddress: 'http://localhost:1234',
     addressEnv: 'LM_STUDIO_ADDRESS',
     maxTokens: 4096,
+    tokensParam: 'max_tokens',
   },
   {
     id: 'custom',
@@ -136,6 +140,7 @@ export const PROVIDERS: readonly ProviderRow[] = [
     keyOptional: true,
     wire: 'openai',
     addressEnv: 'CUSTOM_AI_ADDRESS',
+    tokensParam: 'max_tokens',
   },
 ];
 

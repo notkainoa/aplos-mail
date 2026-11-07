@@ -49,7 +49,9 @@ export async function openAiChat(
     model: req.model.model,
     messages: req.messages.map(toWire),
     stream: true,
-    max_completion_tokens: req.maxTokens ?? row.maxTokens ?? 2048,
+    // OpenAI-family streams carry `usage` only when asked — without it metering (and the daily cap) is blind.
+    stream_options: { include_usage: true },
+    [row.tokensParam ?? 'max_completion_tokens']: req.maxTokens ?? row.maxTokens ?? 2048,
     ...(req.json ? { response_format: { type: 'json_object' } } : {}),
     ...row.bodyExtras?.(req.model.model),
     ...(req.tools?.length
