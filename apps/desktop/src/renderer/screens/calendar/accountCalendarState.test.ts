@@ -34,6 +34,7 @@ export function account(over: Partial<Account> = {}): Account {
     identities: [],
     pendingChanges: 0,
     baselineDoneAt: NOW - 86_400_000,
+    calendarListedAt: NOW - 86_400_000,
     createdAt: NOW - 30 * 86_400_000,
     ...over,
   };
@@ -140,34 +141,66 @@ describe('calendarAccessOf', () => {
   test('granted, list not answered yet: Syncing…', () => {
     assert.equal(calendarAccessOf(account(), undefined)?.kind, 'syncing');
     assert.equal(calendarAccessOf(account(), undefined)?.line, 'Syncing…');
+    // Even once the account has listed before: the list the UI holds is what counts.
+    assert.equal(calendarAccessOf(account({ calendarListedAt: NOW }), undefined)?.kind, 'syncing');
   });
 
-  test('granted with none yet while the account still syncs: Syncing…', () => {
-    assert.equal(
-      calendarAccessOf(account({ health: { status: { state: 'syncing' } } }), [])?.kind,
-      'syncing',
-    );
-    assert.equal(
-      calendarAccessOf(account({ health: { status: { state: 'starting' } } }), [])?.kind,
-      'syncing',
-    );
-    assert.equal(calendarAccessOf(account({ baselineDoneAt: undefined }), [])?.kind, 'syncing');
-  });
-
-  test('granted, the list answered empty after first sync: No calendars', () => {
-    const access = calendarAccessOf(account(), []);
-    assert.equal(access?.kind, 'none');
-    assert.equal(access?.line, 'No calendars');
-    assert.equal(access?.action, null);
-  });
-
-  test('halted accounts claim nothing: unknown kind, no line, no action', () => {
-    for (const state of ['paused', 'error', 'offline', 'needsAdmin', 'misconfigured'] as const) {
-      const a = account({ health: { status: { state } as never } });
-      const access = calendarAccessOf(a, []);
-      assert.equal(access?.kind, 'unknown', state);
-      assert.equal(access?.line, null);
+  test('listed, the list answered empty: No calendars — even while mail still syncs', () => {
+    for (const status of [
+      { state: 'ok' },
+      { state: 'starting' },
+      { state: 'syncing' },
+      { state: 'backfilling', done: 12 },
+    ] as const) {
+      const access = calendarAccessOf(account({ health: { status } }), []);
+      assert.equal(access?.kind, 'none', status.state);
+      assert.equal(access?.line, 'No calendars');
       assert.equal(access?.action, null);
+    }
+  });
+
+  test('never listed, the list answered empty: Syncing… — even with ok and baselineDoneAt', () => {
+    // The old proxy read this exact case as "No calendars"; the fact says the list was never read.
+    const done = account({ calendarListedAt: undefined });
+    assert.equal(calendarAccessOf(done, [])?.kind, 'syncing');
+    assert.equal(
+      calendarAccessOf(account({ calendarListedAt: undefined, baselineDoneAt: undefined }), [])
+        ?.kind,
+      'syncing',
+    );
+    assert.equal(
+      calendarAccessOf(
+        account({ calendarListedAt: undefined, health: { status: { state: 'syncing' } } }),
+        [],
+      )?.kind,
+      'syncing',
+    );
+  });
+
+  test('calendars present read on with the count — even while mail syncs, even unlisted', () => {
+    const syncing = calendarAccessOf(
+      account({ health: { status: { state: 'syncing' } }, calendarListedAt: undefined }),
+      [calendar('c1', 'acct-1')],
+    );
+    assert.equal(syncing?.kind, 'on');
+    assert.equal(syncing?.line, 'Calendar on · 1 calendar');
+    const backfilling = calendarAccessOf(
+      account({ health: { status: { state: 'backfilling', done: 3 } } }),
+      [calendar('c1', 'acct-1'), calendar('c2', 'acct-1')],
+    );
+    assert.equal(backfilling?.kind, 'on');
+    assert.equal(backfilling?.line, 'Calendar on · 2 calendars');
+  });
+
+  test('halted accounts claim nothing: unknown kind, no line, no action — whatever the list says', () => {
+    for (const state of ['paused', 'error', 'offline', 'needsAdmin', 'misconfigured'] as const) {
+      for (const calendarListedAt of [NOW, undefined] as const) {
+        const a = account({ health: { status: { state } as never }, calendarListedAt });
+        const access = calendarAccessOf(a, []);
+        assert.equal(access?.kind, 'unknown', `${state} listed=${calendarListedAt}`);
+        assert.equal(access?.line, null);
+        assert.equal(access?.action, null);
+      }
     }
   });
 
@@ -197,6 +230,11 @@ describe('calendarAccessOf', () => {
     );
     assert.doesNotThrow(() =>
       calendarAccessOf(account({ health: { status: { state: 'needsPermission' } } as never }), []),
+    );
+    assert.doesNotThrow(() =>
+      calendarAccessOf(account({ calendarListedAt: 'not-a-number' as never }), [
+        { accountId: 'acct-1' } as never,
+      ]),
     );
   });
 

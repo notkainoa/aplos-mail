@@ -10,8 +10,9 @@
  *   reconnect and on a refused calendar scope);
  * - `Account.capabilities.calendar` (the grant's calendar half);
  * - `Account.health.status` (`needsReauth` signs in again; `needsPermission` naming calendar scopes is the same
- *   not-allowed gap; `starting`/`syncing`/`backfilling` means the first read is still on its way);
- * - `Account.baselineDoneAt` (absent while the first sync still reads the first window);
+ *   not-allowed gap; a halted status says nothing here — the status slot already does);
+ * - `Account.calendarListedAt` (stamped when the account's calendar list was first read, even an empty one;
+ *   absent until then, so accounts predating the field read "Syncing…" until their next list);
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
  */
 import type { Account, Calendar } from '../../data';
@@ -92,7 +93,10 @@ function calendarMissing(account: Account): boolean {
 /**
  * The account's calendar state, or `null` when there is no calendar claim to make (demo, non-Google). Order:
  * sign-in first (nothing can be granted while the grant is dead), then the permission gap, then what the
- * calendar list itself says — still arriving, on, or honestly empty.
+ * calendar list itself says — still arriving, on, or honestly empty. The last step reads the list and
+ * `calendarListedAt`, never the mail status: calendars that exist show as on while mail still syncs, a list
+ * that answered empty is "No calendars" once `calendarListedAt` says it was read, and an unlisted account
+ * stays "Syncing…" (accounts predating the field read so until their next list).
  */
 export function calendarAccessOf(
   account: Account,
@@ -124,14 +128,12 @@ export function calendarAccessOf(
       action: { label: CALENDAR_ACCESS_COPY.grant, mode: 'grant' },
     };
   }
-  if (state === 'starting' || state === 'syncing' || state === 'backfilling') return SYNCING;
   if (calendars === undefined) return SYNCING;
   const count = calendars.filter(c => c.accountId === account.id).length;
   if (count > 0) return { kind: 'on', count, line: calendarOnLine(count), action: null };
-  if (account.baselineDoneAt === undefined) return SYNCING;
-  // REQUEST (prov-cal): an `Account` fact that the calendar list completed a read (`calendarListedAt`)
-  // would split "listed, empty" from "never listed" exactly; today `ok` + `baselineDoneAt` is the proxy.
-  return state === 'ok' ? { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null } : UNKNOWN;
+  return account.calendarListedAt === undefined
+    ? SYNCING
+    : { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null };
 }
 
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];
