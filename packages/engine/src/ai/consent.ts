@@ -54,24 +54,23 @@ export interface ConsentWrite {
 
 function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   const w = write as ConsentWrite;
-  if (typeof w.scope !== 'string' || w.scope.length === 0 || w.scope.length > 60)
-    throw new StoreError('invalid', 'A consent write names a scope');
+  const scope = w.scope;
+  if (typeof scope !== 'string' || !scope || scope.length > 60)
+    throw new StoreError('invalid', 'scope');
   if (w.remove) {
-    const gone = tx.run('DELETE FROM consent WHERE scope = ?', w.scope);
-    if (gone.changes) tx.mark('Consent', w.scope, 'd');
+    if (tx.run('DELETE FROM consent WHERE scope = ?', scope).changes)
+      tx.mark('Consent', scope, 'd');
     return;
   }
   tx.run(
-    'INSERT INTO consent(scope, version, provider, model, granted_at) VALUES(?, ?, ?, ?, ?) ' +
-      'ON CONFLICT(scope) DO UPDATE SET version = excluded.version, provider = excluded.provider, ' +
-      'model = excluded.model, granted_at = excluded.granted_at',
-    w.scope,
+    'INSERT OR REPLACE INTO consent(scope, version, provider, model, granted_at) VALUES(?, ?, ?, ?, ?)',
+    scope,
     w.version ?? 0,
     w.provider ?? null,
     w.model ?? null,
     w.grantedAt ?? tx.now(),
   );
-  tx.mark('Consent', w.scope, 'u');
+  tx.mark('Consent', scope, 'u');
 }
 
 export const consentExtension: CommitExtension = {

@@ -1,9 +1,10 @@
 // `calendarAccessOf`: every state and edge, on hand-written contract values (demo, non-Google, reauth +
 // missing calendar, granted with 0 and 1 and N calendars, syncing vs none, non-calendar missingPermissions).
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { HARNESS_NOW_MS, type Account, type Calendar } from '../../data';
-import { calendarAccessOf, calendarOnLine } from './accountCalendarState';
+import { calendarAccessOf, calendarListedKey, calendarOnLine } from './accountCalendarState';
 
 const NOW = HARNESS_NOW_MS;
 
@@ -34,6 +35,7 @@ export function account(over: Partial<Account> = {}): Account {
     identities: [],
     pendingChanges: 0,
     baselineDoneAt: NOW - 86_400_000,
+    calendarListedAt: NOW - 86_400_000,
     createdAt: NOW - 30 * 86_400_000,
     ...over,
   };
@@ -140,34 +142,71 @@ describe('calendarAccessOf', () => {
   test('granted, list not answered yet: Syncing…', () => {
     assert.equal(calendarAccessOf(account(), undefined)?.kind, 'syncing');
     assert.equal(calendarAccessOf(account(), undefined)?.line, 'Syncing…');
+    // Even once the account has listed before: the list the UI holds is what counts.
+    assert.equal(calendarAccessOf(account({ calendarListedAt: NOW }), undefined)?.kind, 'syncing');
   });
 
-  test('granted with none yet while the account still syncs: Syncing…', () => {
-    assert.equal(
-      calendarAccessOf(account({ health: { status: { state: 'syncing' } } }), [])?.kind,
-      'syncing',
-    );
-    assert.equal(
-      calendarAccessOf(account({ health: { status: { state: 'starting' } } }), [])?.kind,
-      'syncing',
-    );
-    assert.equal(calendarAccessOf(account({ baselineDoneAt: undefined }), [])?.kind, 'syncing');
-  });
-
-  test('granted, the list answered empty after first sync: No calendars', () => {
-    const access = calendarAccessOf(account(), []);
-    assert.equal(access?.kind, 'none');
-    assert.equal(access?.line, 'No calendars');
-    assert.equal(access?.action, null);
-  });
-
-  test('halted accounts claim nothing: unknown kind, no line, no action', () => {
-    for (const state of ['paused', 'error', 'offline', 'needsAdmin', 'misconfigured'] as const) {
-      const a = account({ health: { status: { state } as never } });
-      const access = calendarAccessOf(a, []);
-      assert.equal(access?.kind, 'unknown', state);
-      assert.equal(access?.line, null);
+  test('listed, the list answered empty: No calendars — even while mail still syncs', () => {
+    for (const status of [
+      { state: 'ok' },
+      { state: 'starting' },
+      { state: 'syncing' },
+      { state: 'backfilling', done: 12 },
+    ] as const) {
+      const access = calendarAccessOf(account({ health: { status } }), []);
+      assert.equal(access?.kind, 'none', status.state);
+      assert.equal(access?.line, 'No calendars');
       assert.equal(access?.action, null);
+    }
+  });
+
+  test('a stamp at epoch 0 still counts as listed', () => {
+    // EpochMs 0 is falsy; the rule is presence (`!== undefined`), not truthiness.
+    assert.equal(calendarAccessOf(account({ calendarListedAt: 0 }), [])?.kind, 'none');
+  });
+
+  test('never listed, the list answered empty: Syncing… — even with ok and baselineDoneAt', () => {
+    // The old proxy read this exact case as "No calendars"; the fact says the list was never read.
+    const done = account({ calendarListedAt: undefined });
+    assert.equal(calendarAccessOf(done, [])?.kind, 'syncing');
+    assert.equal(
+      calendarAccessOf(account({ calendarListedAt: undefined, baselineDoneAt: undefined }), [])
+        ?.kind,
+      'syncing',
+    );
+    assert.equal(
+      calendarAccessOf(
+        account({ calendarListedAt: undefined, health: { status: { state: 'syncing' } } }),
+        [],
+      )?.kind,
+      'syncing',
+    );
+  });
+
+  test('calendars present read on with the count — even while mail syncs, even unlisted', () => {
+    const syncing = calendarAccessOf(
+      account({ health: { status: { state: 'syncing' } }, calendarListedAt: undefined }),
+      [calendar('c1', 'acct-1')],
+    );
+    assert.equal(syncing?.kind, 'on');
+    assert.equal(syncing?.line, 'Calendar on · 1 calendar');
+    const backfilling = calendarAccessOf(
+      account({ health: { status: { state: 'backfilling', done: 3 } } }),
+      [calendar('c1', 'acct-1'), calendar('c2', 'acct-1')],
+    );
+    assert.equal(backfilling?.kind, 'on');
+    assert.equal(backfilling?.line, 'Calendar on · 2 calendars');
+  });
+
+  test('halted accounts claim nothing: unknown kind, no line, no action — whatever the list says', () => {
+    for (const state of ['paused', 'error', 'offline', 'needsAdmin', 'misconfigured'] as const) {
+      for (const calendarListedAt of [NOW, undefined] as const) {
+        const a = account({ health: { status: { state } as never }, calendarListedAt });
+        const access = calendarAccessOf(a, []);
+        assert.equal(access?.kind, 'unknown', `${state} listed=${calendarListedAt}`);
+        assert.equal(access?.line, null);
+        assert.equal(access?.action, null);
+      }
     }
   });
 
@@ -198,10 +237,60 @@ describe('calendarAccessOf', () => {
     assert.doesNotThrow(() =>
       calendarAccessOf(account({ health: { status: { state: 'needsPermission' } } as never }), []),
     );
+    assert.doesNotThrow(() =>
+      calendarAccessOf(account({ calendarListedAt: 'not-a-number' as never }), [
+        { accountId: 'acct-1' } as never,
+      ]),
+    );
   });
 
   test('calendarOnLine: the exact words', () => {
     assert.equal(calendarOnLine(1), 'Calendar on · 1 calendar');
     assert.equal(calendarOnLine(4), 'Calendar on · 4 calendars');
+  });
+});
+
+describe('calendarListedKey', () => {
+  test('moves exactly when a stamp lands or moves, or a Google account joins or leaves', () => {
+    const unlisted = account({ calendarListedAt: undefined });
+    const listed = account({ calendarListedAt: NOW - 60_000 });
+    assert.notEqual(calendarListedKey([unlisted]), calendarListedKey([listed]), 'a stamp landing');
+    assert.notEqual(
+      calendarListedKey([listed]),
+      calendarListedKey([account({ calendarListedAt: NOW })]),
+      'a stamp moving',
+    );
+    // Colour, name, health and mail-sync fields never move it — no refetch on flicker.
+    const flicker = account({
+      calendarListedAt: NOW - 60_000,
+      colorTag: 'ember',
+      name: 'A. Moreno',
+      health: { status: { state: 'syncing' }, lastSyncAt: NOW },
+      baselineDoneAt: undefined,
+      pendingChanges: 3,
+    });
+    assert.equal(calendarListedKey([listed]), calendarListedKey([flicker]));
+    // Joining or leaving moves it; order does not.
+    const other = account({ id: 'acct-2', calendarListedAt: NOW });
+    assert.notEqual(calendarListedKey([listed]), calendarListedKey([listed, other]), 'joining');
+    assert.notEqual(calendarListedKey([other]), calendarListedKey([listed, other]), 'leaving');
+    assert.equal(calendarListedKey([listed, other]), calendarListedKey([other, listed]));
+    // Non-Google accounts carry no calendar claim, so they never move the key.
+    const imap = account({ id: 'acct-imap', provider: 'imap' });
+    assert.equal(calendarListedKey([listed]), calendarListedKey([listed, imap]));
+  });
+
+  test('both fetch effects re-read Calendar/get on the key (source shape)', () => {
+    // The stamp arrives live through useAccounts while each list was fetched once; the deps carry the
+    // key so a first list commit (rows plus stamp) refetches instead of reading "No calendars".
+    const screen = readFileSync(new URL('./CalendarScreen.tsx', import.meta.url), 'utf8');
+    assert.match(screen, /calendarListedKey\(accounts\)/);
+    assert.match(screen, /useEffect\(get, \[get, listedKey\]\)/);
+    const settings = readFileSync(
+      new URL('../settings/SettingsContainer.tsx', import.meta.url),
+      'utf8',
+    );
+    assert.match(settings, /calendarListedKey\(base\.accounts\)/);
+    assert.match(settings, /\}, \[section, view\.queue, actions, keepData, listedKey\]\)/);
   });
 });

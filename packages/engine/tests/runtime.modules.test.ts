@@ -28,7 +28,8 @@ const registry: DeadlineRegistry = { register: () => () => {}, changed: () => {}
 
 test('the root composes the lane modules; ports the host left out answer unavailable', async () => {
   // eng-contract registers the settings writer, eng-views the sender-rule writer, eng-time the submission writer,
-  // eng-ai the consent and job writers, eng-html the image allow-list writer and eng-host the audit and client writers.
+  // eng-ai the consent and AI writers, eng-html the image allow-list writer and eng-host the audit and client
+  // writers.
   assert.deepEqual(
     laneExtensions().map(extension => extension.lane),
     [
