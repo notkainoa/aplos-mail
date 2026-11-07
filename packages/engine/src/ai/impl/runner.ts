@@ -1,5 +1,6 @@
 import type { EngineServices } from '../../runtime/services';
 import { setupSessionOpen } from '../../methods/setup';
+import { sweepFollowups } from './backfill';
 import { backgroundGate } from './gate';
 import { budgetOpen } from './runtime';
 import { executeJob } from './execute';
@@ -101,6 +102,9 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       writes: [{ kind: 'job', action: 'reset' }],
     });
   }
+  // Threads aging into Home's Follow up lane queue their nudge job here, before due work is claimed; the
+  // bounded sweep's singleton keys make the repeat pass a no-op when nothing moved.
+  sweepFollowups(services);
   for (;;) {
     const rows = dueJobs(services, now, CONCURRENCY);
     if (!rows.length) return;
