@@ -96,6 +96,18 @@ const legacy = join(src, 'legacy');
 // they are reported but do not count against the startup budget. Nothing may import them statically.
 const lazyModules = [
   join(src, 'ai', 'demo', 'data.ts'),
+  join(src, 'ai', 'demo', 'load.ts'),
+  // eng-ai's working half: gate, metering, the jobs runner and the Ask loop load on first use (import() in
+  // methods/ai.ts, methods/ask.ts and ai/module.ts) so the core stays inside budget.
+  join(src, 'ai', 'providers.ts'),
+  join(src, 'ai', 'impl', 'ai-methods.ts'),
+  join(src, 'ai', 'impl', 'ai-reads.ts'),
+  join(src, 'ai', 'impl', 'ask.ts'),
+  join(src, 'ai', 'impl', 'execute.ts'),
+  join(src, 'ai', 'impl', 'gate.ts'),
+  join(src, 'ai', 'impl', 'jobs.ts'),
+  join(src, 'ai', 'impl', 'runner.ts'),
+  join(src, 'ai', 'impl', 'runtime.ts'),
   join(src, 'calendar', 'views.ts'),
   join(src, 'calendar', 'recurrence', 'expand.ts'),
   join(src, 'calendar', 'recurrence', 'generate.ts'),

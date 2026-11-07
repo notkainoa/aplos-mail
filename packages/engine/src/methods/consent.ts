@@ -86,9 +86,11 @@ function grant(args: Input<'Consent/grant'>, ctx: MethodContext): Output<'Consen
         grantedAt: ctx.services.clock.now(),
       },
       { kind: 'meta', key: CONSENT_KEY_META, value: current },
+      { kind: 'job', action: 'wake' },
       ...auditWrites(ctx.caller, 'Consent/grant', args.scope),
     ],
   });
+  ctx.services.deadlines.changed('jobs');
   return readConsent(ctx);
 }
 
