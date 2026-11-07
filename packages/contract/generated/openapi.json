@@ -1930,7 +1930,7 @@
     "/call/Ai/polish": {
       "post": {
         "operationId": "Ai_polish",
-        "summary": "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`).",
+        "summary": "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`). Pasted text with no draft names the composing account in `accountId`, and one left out of AI is `forbidden` the same way; with neither, only the provider rule applies.",
         "tags": ["ai"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
@@ -2508,7 +2508,7 @@
     "/call/Ask/run": {
       "post": {
         "operationId": "Ask_run",
-        "summary": "Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose \"Use this account's mail for AI\" is on; they never widen past them.",
+        "summary": "Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose \"Use this account's mail for AI\" is on; they never widen past them. A `context.draft.accountId` left out of AI is `forbidden` (`ai.accountExcluded`).",
         "tags": ["ask"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "ai",
@@ -5877,6 +5877,9 @@
           },
           "draftId": {
             "$ref": "#/components/schemas/Id"
+          },
+          "accountId": {
+            "$ref": "#/components/schemas/Id"
           }
         },
         "required": ["requestId", "html"]
@@ -6643,6 +6646,9 @@
                   "html": {
                     "type": "string",
                     "maxLength": 40000
+                  },
+                  "accountId": {
+                    "$ref": "#/components/schemas/Id"
                   }
                 }
               }
