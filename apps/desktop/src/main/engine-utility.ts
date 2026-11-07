@@ -139,10 +139,10 @@ export async function realComposeOptions(
     googleClient: () => ({ env: process.env, bundled: bundledOAuth.google }),
     // AI keys are read in this process only, from the env thunk at bind time — never in HostFacts, a log
     // field or a window. The vault and saved provider addresses live under dataDir like the token vault.
-    aiEnv: () => process.env,
+    aiEnv,
     aiTransport: createAiHost({
       fetch: globalThis.fetch,
-      env: process.env,
+      env: aiEnv(),
       vaultPath: join(init.dataDir, 'ai-keys.json'),
       addresses: () => aiAddressesOf(init.dataDir),
     }),
@@ -150,6 +150,9 @@ export async function realComposeOptions(
       (await bridge.request({ op: 'notify', item })) === 'posted' ? 'posted' : 'dropped',
   };
 }
+
+/** The process env for AI keys, a thunk like the other ComposeOptions envs so tests can swap it. */
+const aiEnv = (): NodeJS.ProcessEnv => process.env;
 
 /** Saved provider addresses from `settings` (id 1), re-read per request — a Settings → AI edit is live. */
 function aiAddressesOf(dataDir: string): Partial<Record<AiProviderId, string>> {
