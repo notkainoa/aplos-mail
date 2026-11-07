@@ -3,7 +3,7 @@ import type { EngineConnection, EngineSession } from '@aplos/contract/client';
 import type { EngineMethodName } from '@aplos/contract';
 import { dispatchWith, handlers as table } from '../methods/index';
 import type { Caller, EngineHandlers } from '../methods/types';
-import type { AiTransport } from '../ai/host';
+import type { AiTransport } from '../ports/ai';
 import type { Clock, Logger, StorePort } from '../ports';
 import { openConnection, type ConnectedSession } from './connection';
 import { contractError } from './errors';
