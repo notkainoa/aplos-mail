@@ -108,6 +108,7 @@ function googleAccount(id: string, address: string, over: Partial<Account> = {})
     identities: [],
     pendingChanges: 0,
     baselineDoneAt: HARNESS_NOW_MS - 86_400_000,
+    calendarListedAt: HARNESS_NOW_MS - 86_400_000,
     createdAt: HARNESS_NOW_MS - 30 * 86_400_000,
     ...over,
   };
@@ -629,6 +630,7 @@ const FIXTURES: Record<string, Fixture> = {
         name: 'Jordan Lee',
         colorTag: 'hill',
         health: { status: { state: 'syncing' } },
+        calendarListedAt: undefined,
       }),
     ],
   },

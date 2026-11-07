@@ -38,6 +38,13 @@ export function cleanKey(value: unknown): string {
 }
 
 export function createKeys(deps: KeysDeps): AiKeys {
+  // Writes serialize on this chain so a read-modify-write can't lose a just-saved key.
+  let writes: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = writes.then(fn, fn);
+    writes = run.catch(() => {});
+    return run;
+  };
   const envKey = (provider: string): string | undefined => {
     const row = providerRow(provider);
     const value = row && deps.env[row.envVar]?.trim();
@@ -63,9 +70,11 @@ export function createKeys(deps: KeysDeps): AiKeys {
         'unavailable',
         'Keys can only be saved where the sealed store is mounted.',
       );
-    await fs.mkdir(dirname(deps.vaultPath), { recursive: true });
-    await fs.writeFile(deps.vaultPath, JSON.stringify(map), { mode: 0o600 });
-    // `mode` only applies to a file this write created; tighten one that was already there.
+    await fs.mkdir(dirname(deps.vaultPath), { recursive: true, mode: 0o700 });
+    // Temp file + rename: a crash mid-write can never leave a half-written vault.
+    const tmp = `${deps.vaultPath}.${process.pid}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(map), { mode: 0o600 });
+    await fs.rename(tmp, deps.vaultPath);
     await fs.chmod(deps.vaultPath, 0o600).catch(() => {});
   };
   const keySource = (provider: string): AiKeySource => {
@@ -78,19 +87,24 @@ export function createKeys(deps: KeysDeps): AiKeys {
     async setKey(provider, key) {
       if (!providerRow(provider))
         throw new AiCallError('noProvider', 'That AI provider is not known.');
-      const map = readVault();
-      map[provider] = cleanKey(key);
-      await writeVault(map);
-      return keySource(provider);
+      return serialize(async () => {
+        const map = readVault();
+        map[provider] = cleanKey(key);
+        await writeVault(map);
+        return keySource(provider);
+      });
     },
     async removeKey(provider) {
       if (!providerRow(provider))
         throw new AiCallError('noProvider', 'That AI provider is not known.');
-      const map = readVault();
-      if (provider in map) {
-        delete map[provider];
-        await writeVault(map);
-      }
+      await serialize(async () => {
+        const map = readVault();
+        if (provider in map) {
+          delete map[provider];
+          await writeVault(map);
+        }
+      });
+      return keySource(provider);
       // An environment key cannot be removed here; the source stays 'env'.
       return keySource(provider);
     },

@@ -8,6 +8,9 @@ import { appScopes } from '@aplos/contract/access';
 import { windowCaller, type HostFacts } from '@aplos/engine';
 import { systemClock } from '@aplos/engine/clock/system';
 import { composeEngineHost, type ComposedHost, type ComposeOptions } from '../host/compose';
+import { createAiHost } from '../host/ai/index';
+import { openSqlite } from '../host/sqlite';
+import type { AiProviderId } from '../host/ai/providers';
 import type { GoogleTokenBundle } from '../host/providers/oauth/token-source';
 import {
   controlMethods,
@@ -134,9 +137,42 @@ export async function realComposeOptions(
     vault,
     openExternal: async url => void (await bridge.request({ op: 'openExternal', url })),
     googleClient: () => ({ env: process.env, bundled: bundledOAuth.google }),
+    // AI keys are read in this process only, from the env thunk at bind time — never in HostFacts, a log
+    // field or a window. The vault and saved provider addresses live under dataDir like the token vault.
+    aiEnv: () => process.env,
+    aiTransport: createAiHost({
+      fetch: globalThis.fetch,
+      env: process.env,
+      vaultPath: join(init.dataDir, 'ai-keys.json'),
+      addresses: () => aiAddressesOf(init.dataDir),
+    }),
     postNotification: async item =>
       (await bridge.request({ op: 'notify', item })) === 'posted' ? 'posted' : 'dropped',
   };
+}
+
+/** Saved provider addresses from `settings` (id 1), re-read per request — a Settings → AI edit is live. */
+function aiAddressesOf(dataDir: string): Partial<Record<AiProviderId, string>> {
+  try {
+    const db = openSqlite(join(dataDir, 'mail.db'), { readOnly: true, busyTimeoutMs: 250 });
+    try {
+      const row = db.prepare('SELECT data FROM settings WHERE id = 1').get() as
+        { data?: string } | undefined;
+      const providers = (JSON.parse(row?.data ?? '{}') as { ai?: { providers?: unknown } }).ai
+        ?.providers;
+      const out: Partial<Record<AiProviderId, string>> = {};
+      for (const id of ['ollama', 'lmstudio', 'custom'] as const) {
+        const address = (providers as Record<string, { address?: unknown }> | undefined)?.[id]
+          ?.address;
+        if (typeof address === 'string' && address) out[id] = address;
+      }
+      return out;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return {};
+  }
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;

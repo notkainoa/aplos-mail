@@ -14,6 +14,7 @@ import {
   useSettings,
 } from '../../data';
 import { parseSettingRoute, type SettingRoute, type SettingSection } from '../../commands';
+import { calendarListedKey } from '../calendar/accountCalendarState';
 import { ErrorLine } from '../../ui/list';
 import type { ProviderId } from '../../ui/props';
 import { createController, type SettingsController } from './controller';
@@ -257,7 +258,11 @@ export function useSettingsState(
   const featuresRef = useRef(base.settings.ai.features);
   featuresRef.current = base.settings.ai.features;
 
-  // Each section asks only for what it shows.
+  // Each section asks only for what it shows. `listedKey` re-runs the calendar read when an account's
+  // `calendarListedAt` lands: the stamp arrives live through `useAccounts`, while `Calendar/get` here
+  // answered once — a first list commits rows plus the stamp, and the block must not stay "No calendars"
+  // beside calendars that now exist.
+  const listedKey = calendarListedKey(base.accounts);
   useEffect(() => {
     const ports = portsRef.current;
     const keep = keepData;
@@ -280,7 +285,7 @@ export function useSettingsState(
         Promise.resolve(ports.calendarsGet?.()).then(calendars => calendars && keep({ calendars })),
       );
     }
-  }, [section, view.queue, actions, keepData]);
+  }, [section, view.queue, actions, keepData, listedKey]);
 
   useEffect(() => () => actions.leave(), [actions]);
 
