@@ -154,7 +154,7 @@ export async function realComposeOptions(
 /** Saved provider addresses from `settings` (id 1), re-read per request — a Settings → AI edit is live. */
 function aiAddressesOf(dataDir: string): Partial<Record<AiProviderId, string>> {
   try {
-    const db = openSqlite(join(dataDir, 'mail.db'));
+    const db = openSqlite(join(dataDir, 'mail.db'), { readOnly: true, busyTimeoutMs: 250 });
     try {
       const row = db.prepare('SELECT data FROM settings WHERE id = 1').get() as
         { data?: string } | undefined;
