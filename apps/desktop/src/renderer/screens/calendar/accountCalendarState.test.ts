@@ -34,6 +34,7 @@ export function account(over: Partial<Account> = {}): Account {
     identities: [],
     pendingChanges: 0,
     baselineDoneAt: NOW - 86_400_000,
+    calendarListedAt: NOW - 86_400_000,
     createdAt: NOW - 30 * 86_400_000,
     ...over,
   };
@@ -151,7 +152,7 @@ describe('calendarAccessOf', () => {
       calendarAccessOf(account({ health: { status: { state: 'starting' } } }), [])?.kind,
       'syncing',
     );
-    assert.equal(calendarAccessOf(account({ baselineDoneAt: undefined }), [])?.kind, 'syncing');
+    assert.equal(calendarAccessOf(account({ calendarListedAt: undefined }), [])?.kind, 'syncing');
   });
 
   test('granted, the list answered empty after first sync: No calendars', () => {
@@ -159,6 +160,65 @@ describe('calendarAccessOf', () => {
     assert.equal(access?.kind, 'none');
     assert.equal(access?.line, 'No calendars');
     assert.equal(access?.action, null);
+  });
+
+  test('listed: no calendarListedAt and zero calendars, even ok, reads Syncing…', () => {
+    const access = calendarAccessOf(account({ calendarListedAt: undefined }), []);
+    assert.equal(access?.kind, 'syncing');
+    assert.equal(access?.line, 'Syncing…');
+  });
+
+  test('listed: calendarListedAt set and zero calendars reads No calendars', () => {
+    const access = calendarAccessOf(account({ calendarListedAt: NOW - 60_000 }), []);
+    assert.equal(access?.kind, 'none');
+    assert.equal(access?.line, 'No calendars');
+    assert.equal(access?.action, null);
+    // baselineDoneAt is out of this decision: a listed account without it still reads “No calendars”.
+    assert.equal(calendarAccessOf(account({ baselineDoneAt: undefined }), [])?.kind, 'none');
+  });
+
+  test('listed: calendarListedAt set with calendars reads on with the count', () => {
+    const access = calendarAccessOf(account({ calendarListedAt: NOW - 60_000 }), [
+      calendar('c1', 'acct-1'),
+      calendar('c2', 'acct-1'),
+    ]);
+    assert.equal(access?.kind, 'on');
+    assert.equal(access?.line, 'Calendar on · 2 calendars');
+  });
+
+  test('listed: needsReauth, halted and needsPermission still win over the list state', () => {
+    const listed = { calendarListedAt: NOW - 60_000 };
+    assert.equal(
+      calendarAccessOf(
+        account({
+          ...listed,
+          health: { status: { state: 'needsReauth', reason: 'invalid_grant' } },
+        }),
+        [],
+      )?.kind,
+      'needs-signin',
+    );
+    assert.equal(
+      calendarAccessOf(account({ ...listed, health: { status: { state: 'paused' } as never } }), [])
+        ?.kind,
+      'unknown',
+    );
+    assert.equal(
+      calendarAccessOf(
+        account({
+          ...listed,
+          health: { status: { state: 'needsPermission', missingScopes: ['calendar.events'] } },
+        }),
+        [],
+      )?.kind,
+      'not-allowed',
+    );
+  });
+
+  test('listed: an old account without the field (baselineDoneAt set, ok, zero) reads Syncing…', () => {
+    const old = account({ calendarListedAt: undefined });
+    assert.ok(old.baselineDoneAt !== undefined);
+    assert.equal(calendarAccessOf(old, [])?.kind, 'syncing');
   });
 
   test('halted accounts claim nothing: unknown kind, no line, no action', () => {

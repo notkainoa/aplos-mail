@@ -103,6 +103,7 @@ export function account(over: Partial<Account> & { id: string; address: string }
     identities: [],
     pendingChanges: 0,
     baselineDoneAt: NOW - DAY,
+    calendarListedAt: NOW - DAY,
     createdAt: NOW - 30 * DAY,
     ...over,
   };
