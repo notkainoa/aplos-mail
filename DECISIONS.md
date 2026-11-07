@@ -1746,3 +1746,11 @@ html-5 part 1, items (a) to (c) of the Integrator's 2026-11-04 03:59 DECIDED. De
 - `sync.emu-stale-rerun-units` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
 - `sync.emu-relabel-units` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
 - `sync.first-sync-500-threads` (prov-gmail): prov-gmail has not recorded a first measurement for this sync row yet (needs the emulator first-sync run); due date moved to 2026-11-20, limit unchanged.
+
+## 2026-11-07 — eng-contract: AI inputs with raw html name their account
+
+Context: eng-ai's REQUEST (07:15). `Ai/polish` without a `draftId` (pasted text) and Ask's `context.draft {to,cc,subject,html}` carry raw html and no account, so the `ai_allowed` check cannot run on them; only the provider gate (`trainsOnInputs`) applies.
+
+Decision (a): add an optional `accountId` to `Ai/polish` and to `Ask/run` `context.draft`. A caller that has the composing account passes it, and an account left out of AI is `forbidden` with `ai.accountExcluded`, like a `draftId` in that account. Absent, the call stays allowed (the text is what the user typed; the provider rule still applies), so existing callers keep working. Not (b): documenting an unchecked path leaves the toggle bypassable by any composer that has an account.
+
+How to apply: additive optional fields (no `currentVersion` change, openapi regenerated); the fixture refuses an excluded or unknown `accountId` and the conformance suite pins it for both calls. eng-ai implements the same check in the engine (`ai/impl/gate.ts`); the composer and Ask docked panel (ui lanes) pass the draft's `accountId`.

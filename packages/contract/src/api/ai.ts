@@ -76,7 +76,7 @@ export const ai = area('ai', {
   },
   'Ai/polish': {
     summary:
-      "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`).",
+      "Suggest edits to a draft's text; the user's text stays until they choose. A `draftId` in an account left out of AI, or answering a thread there, is `forbidden` (`ai.accountExcluded`). Pasted text with no draft names the composing account in `accountId`, and one left out of AI is `forbidden` the same way; with neither, only the provider rule applies.",
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -84,6 +84,8 @@ export const ai = area('ai', {
       html: text(1_000_000),
       instruction: z.optional(text(10_000)),
       draftId: z.optional(Id),
+      /** The account the text is being written in, for pasted text with no `draftId`. */
+      accountId: z.optional(Id),
     }),
     output: z.object({ html: text(1_000_000), changes: Count }),
   },
@@ -203,7 +205,7 @@ export const ai = area('ai', {
 export const ask = area('ask', {
   'Ask/run': {
     summary:
-      'Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose "Use this account\'s mail for AI" is on; they never widen past them.',
+      'Ask about your mail; returns at once with a run id, streams `progress` frames, and the answer lands in the Conversation. `scope.accountIds` and `context` only narrow the accounts whose "Use this account\'s mail for AI" is on; they never widen past them. A `context.draft.accountId` left out of AI is `forbidden` (`ai.accountExcluded`).',
     kind: 'command',
     scope: 'ai',
     input: z.object({
@@ -225,6 +227,8 @@ export const ask = area('ask', {
               cc: z.optional(z.array(Address)),
               subject: z.optional(text(2_000)),
               html: z.optional(text(40_000)),
+              /** The account the draft is being written in; one left out of AI makes the run `forbidden` (`ai.accountExcluded`). */
+              accountId: z.optional(Id),
             }),
           ),
         }),
