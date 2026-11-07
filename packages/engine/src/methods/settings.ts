@@ -42,7 +42,20 @@ function getSettings(_args: Input<'Settings/get'>, ctx: MethodContext): Output<'
   return withDefaults(readDoc(ctx));
 }
 
-function setSettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'Settings/set'> {
+/**
+ * A saved provider address is checked before it can steer a key or mail text at a server the owner did not mean
+ * (`checkProviderAddresses`, in the lazy AI gate so the core stays inside its bundle budget).
+ */
+async function setSettings(
+  args: Input<'Settings/set'>,
+  ctx: MethodContext,
+): Promise<Output<'Settings/set'>> {
+  const providers = args.patch.ai?.providers;
+  if (providers) (await import('../ai/impl/gate')).checkProviderAddresses(providers, ctx.services);
+  return applySettings(args, ctx);
+}
+
+function applySettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'Settings/set'> {
   const { store, frames } = ctx.services;
   const { ifInState } = args;
   if (

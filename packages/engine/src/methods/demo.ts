@@ -1,6 +1,7 @@
 import type { State } from '@aplos/contract';
-import { lazyDemoWrites, loadDemo, removeDemo, resetDemo } from '../ai/demo/load';
 import type { AreaHandlers, EngineServices } from './types';
+
+const load = () => import('../ai/demo/load');
 
 /**
  * The `demo` area, owned by lane `eng-ai`: the original demo mailbox (`src/ai/demo/`) committed through the
@@ -17,6 +18,7 @@ const receipt = (op: string, appliedState: State) => ({ opId: op, appliedState, 
 
 export const handlers: AreaHandlers<'demo'> = {
   'Demo/load': async (_args, ctx) => {
+    const { lazyDemoWrites, loadDemo } = await load();
     const writes = await lazyDemoWrites();
     const id = opId(ctx.services, 'load');
     const applied = loadDemo(ctx.services.store, id, ctx.services.clock.now(), writes);
@@ -24,12 +26,14 @@ export const handlers: AreaHandlers<'demo'> = {
     return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
   'Demo/reset': async (_args, ctx) => {
+    const { lazyDemoWrites, resetDemo } = await load();
     const writes = await lazyDemoWrites();
     const id = opId(ctx.services, 'reset');
     const applied = resetDemo(ctx.services.store, id, ctx.services.clock.now(), writes);
     return { accountIds: applied.accountIds, receipt: receipt(applied.opId, applied.state) };
   },
-  'Demo/remove': (_args, ctx) => {
+  'Demo/remove': async (_args, ctx) => {
+    const { removeDemo } = await load();
     const id = opId(ctx.services, 'remove');
     const applied = removeDemo(ctx.services.store, id);
     return receipt(applied.opId, applied.state);
