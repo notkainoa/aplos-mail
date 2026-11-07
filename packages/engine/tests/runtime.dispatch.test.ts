@@ -18,8 +18,8 @@ test('the in-process connection serves the F5 table: stubs, unknown and desktop 
   const t = await testEngine();
   try {
     const s = t.engine.connect();
-    // A stub (Setup/status and Ai/request were until eng-ai landed them); Ai/polish still is.
-    await assert.rejects(s.call('Ai/polish', {}), isType('notImplemented'));
+    // A stub (the ai area's were until eng-ai landed them); Data/export still is.
+    await assert.rejects(s.call('Data/export', {}), isType('notImplemented'));
     await assert.rejects(s.call('Thread/explode', {}), isType('unsupported'));
     await assert.rejects(
       s.call('File/save', { blobId: 'b', name: 'x.txt' }),

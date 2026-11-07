@@ -4,8 +4,10 @@ import type { MethodContext } from '../../methods/types';
 import { splitId } from '../../views/compile';
 import { AiCallError } from '../host';
 import { providerRow } from '../providers';
+import { auditWrites } from '../../host/audit';
+import { hexId } from '../../sync/connect-sessions';
 import { accountAllowed } from './gate';
-import { enqueue, inputHashOf, jobOf, priorityOf, type JobRow } from './jobs';
+import { enqueue, inputHashOf, jobOf, jobRow, priorityOf, type JobRow } from './jobs';
 import { callMessage } from './runtime';
 
 /**
@@ -16,6 +18,12 @@ import { callMessage } from './runtime';
 
 function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/request'> {
   const { store, clock } = ctx.services;
+  // Only the implemented kinds enqueue; asking for another kind fails honestly instead of dead-lettering.
+  if (args.kind !== 'summary')
+    throw new ContractError({
+      type: 'notImplemented',
+      message: 'That AI job is not built yet.',
+    });
   const parts = store.read(q => splitId(q, args.threadId));
   if (!parts)
     throw new ContractError({ type: 'notFound', message: 'That thread is not in Aplos.' });
@@ -36,6 +44,22 @@ function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/requ
   if (existing && !args.force) {
     return {
       job: jobOf(existing),
+      receipt: { opId: args.opId, appliedState: { dbEpoch: store.dbEpoch, seq: store.seq() } },
+    };
+  }
+  // A forced refresh re-runs the job under its key instead of enqueuing a duplicate: a fresh attempt
+  // budget, `queued` again. A `running` row is left alone — it is already doing the work.
+  if (existing && args.force) {
+    if (existing.state !== 'running')
+      store.commit({
+        opId: `${args.opId}-force`,
+        origin: 'local',
+        writes: [{ kind: 'job', action: 'requeue', id: existing.id, nextAt: clock.now() }],
+      });
+    ctx.services.deadlines.changed('jobs');
+    const row = store.read(q => jobRow(q, existing.id))!;
+    return {
+      job: jobOf(row),
       receipt: { opId: args.opId, appliedState: { dbEpoch: store.dbEpoch, seq: store.seq() } },
     };
   }
@@ -113,6 +137,12 @@ async function setKey(args: Input<'Ai/setKey'>, ctx: MethodContext): Promise<Out
   if (!providerRow(args.provider))
     throw new ContractError({ type: 'invalid', message: 'Unknown AI provider.' });
   const keySource = await ctx.services.ai.transport().setKey(args.provider, args.key);
+  // The method declares `audit: true`: the key event is logged (the key's characters never are).
+  ctx.services.store.commit({
+    opId: hexId(ctx.services.randomBytes, 'ai-key'),
+    origin: 'local',
+    writes: auditWrites(ctx.caller, 'Ai/setKey', args.provider),
+  });
   return { keySource };
 }
 
@@ -123,6 +153,11 @@ async function removeKey(
   if (!providerRow(args.provider))
     throw new ContractError({ type: 'invalid', message: 'Unknown AI provider.' });
   const keySource = await ctx.services.ai.transport().removeKey(args.provider);
+  ctx.services.store.commit({
+    opId: hexId(ctx.services.randomBytes, 'ai-key'),
+    origin: 'local',
+    writes: auditWrites(ctx.caller, 'Ai/removeKey', args.provider),
+  });
   return { keySource };
 }
 

@@ -48,41 +48,55 @@ function claim(services: EngineServices, row: JobRow, now: number): boolean {
 function settle(
   services: EngineServices,
   row: JobRow,
-  result: { state: 'done' | 'failed' | 'dead'; lastError?: string | null; nextAt?: number },
+  result: {
+    state: 'done' | 'failed' | 'dead' | 'release';
+    lastError?: string | null;
+    nextAt?: number;
+  },
 ): void {
+  // 'release' is a gate/cap pause mid-run: back to queued with a fresh attempt budget at the pause horizon.
+  const write =
+    result.state === 'release'
+      ? {
+          kind: 'job' as const,
+          action: 'requeue' as const,
+          id: row.id,
+          nextAt: result.nextAt ?? services.clock.now() + PAUSE_MS,
+        }
+      : {
+          kind: 'job' as const,
+          action: 'settle' as const,
+          id: row.id,
+          state: result.state as 'done' | 'failed' | 'dead',
+          ...(result.lastError !== undefined ? { lastError: result.lastError } : {}),
+          ...(result.nextAt !== undefined ? { nextAt: result.nextAt } : {}),
+        };
   services.store.commit({
     opId: `ai-settle-${row.id}-${services.clock.now()}`,
     origin: 'system',
-    writes: [
-      {
-        kind: 'job',
-        action: 'settle',
-        id: row.id,
-        state: result.state,
-        ...(result.lastError !== undefined ? { lastError: result.lastError } : {}),
-        ...(result.nextAt !== undefined ? { nextAt: result.nextAt } : {}),
-      },
-    ],
+    writes: [write],
   });
 }
 
-/** When the whole queue waits on consent or budget: push due rows out so `next()` sleeps instead of spinning. */
-function pauseDue(services: EngineServices, rows: JobRow[], until: number): void {
-  for (const row of rows)
-    services.store.commit({
-      opId: `ai-defer-${row.id}-${until}`,
-      origin: 'system',
-      writes: [{ kind: 'job', action: 'defer', id: row.id, nextAt: until }],
-    });
+/** When the whole queue waits on consent or budget: push ALL due rows out so `next()` sleeps instead of spinning. */
+function pauseDue(services: EngineServices, now: number, until: number): void {
+  services.store.commit({
+    opId: `ai-defer-${now}-${until}`,
+    origin: 'system',
+    writes: [{ kind: 'job', action: 'defer', at: now, nextAt: until }],
+  });
 }
 
-/** One fire of the `jobs` source: claim and run what is due, then leave `next()` at the next due row. */
-let resetDone = false;
+/**
+ * One fire of the `jobs` source: claim and run what is due, then leave `next()` at the next due row.
+ * The crash-reset is per STORE, not per process: two engines (or a test store) each reclaim once.
+ */
+const resetDone = new WeakSet<object>();
 
 export async function runJobs(services: EngineServices, now: number): Promise<void> {
-  // Once per engine life: a crash can leave 'running' rows with no runner behind them — queue them again.
-  if (!resetDone) {
-    resetDone = true;
+  // Once per store: a crash can leave 'running' rows with no runner behind them — queue them again.
+  if (!resetDone.has(services.store)) {
+    resetDone.add(services.store);
     services.store.commit({
       opId: `ai-reset-${now}`,
       origin: 'system',
@@ -94,7 +108,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     if (!rows.length) return;
     // A spent daily cap pauses the queue until tomorrow, not fail-by-fail.
     if (!budgetOpen(services)) {
-      pauseDue(services, rows, now + PAUSE_MS);
+      pauseDue(services, now, now + PAUSE_MS);
       return;
     }
     // The gate covers the whole pass: no consent, AI off or a trains-on-inputs pick pauses the queue.
@@ -103,7 +117,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       if (gate.reasonCode === 'ai.accountExcluded') {
         // Per-account gates are checked inside executeJob; run the pass.
       } else {
-        pauseDue(services, rows, now + PAUSE_MS);
+        pauseDue(services, now, now + PAUSE_MS);
         return;
       }
     }

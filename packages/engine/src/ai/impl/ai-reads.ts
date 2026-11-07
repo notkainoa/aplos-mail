@@ -67,7 +67,9 @@ const providerStatus = (
   row.group === 'local'
     ? row.id === 'custom' && !address
       ? 'notConfigured'
-      : 'unreachable'
+      : // A configured local server reads `ready`, same as `Ai/status` — reachability is proven by calls,
+        // not by a read that must never do I/O.
+        'ready'
     : source === 'none' && !row.keyOptional
       ? 'missingKey'
       : 'ready';

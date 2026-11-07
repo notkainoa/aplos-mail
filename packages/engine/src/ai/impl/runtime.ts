@@ -86,6 +86,11 @@ export function callMessage(error: unknown): { reasonCode: string; message: stri
       return { reasonCode: 'ai.noProvider', message: 'Choose an AI provider in Settings → AI.' };
     case 'cancelled':
       return { reasonCode: 'ai.cancelled', message: 'AI request cancelled.' };
+    case 'gatePaused':
+      return {
+        reasonCode: 'ai.paused',
+        message: 'AI is paused for this account. Check Settings → AI.',
+      };
     case 'unavailable':
       return { reasonCode: 'ai.unavailable', message: 'AI is not connected on this build.' };
     default:

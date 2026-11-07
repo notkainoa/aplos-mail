@@ -13,7 +13,7 @@ import { callMessage, meteredChat } from './runtime';
  */
 
 export interface JobOutcome {
-  state: 'done' | 'failed' | 'dead';
+  state: 'done' | 'failed' | 'dead' | 'release';
   lastError?: string | null;
   nextAt?: number;
 }
@@ -106,6 +106,11 @@ function parseSummary(raw: string): { text: string; action?: unknown } | undefin
         typeof (a as { label?: unknown }).label !== 'string')
     )
       return { text: v.summary.trim().slice(0, 10_000) };
+    // A model-chosen link is sanitized before it is stored: only https/mailto survive — a hostile email can
+    // steer the model but not ship a javascript: URL to a button.
+    const url = (a as { url?: unknown } | null | undefined)?.url;
+    if (url !== undefined && (typeof url !== 'string' || !/^https?:\/\/|^mailto:/i.test(url)))
+      return { text: v.summary.trim().slice(0, 10_000) };
     return { text: v.summary.trim().slice(0, 10_000), action: a ?? undefined };
   } catch {
     return undefined;
@@ -121,7 +126,7 @@ async function summarize(
   const inputHash = String(payload.inputHash ?? '');
   const wireId = String(payload.threadId ?? '');
   const gate = backgroundGate(services, 'summaries', accountId);
-  if (!gate.ok) throw new AiCallError('invalid', gate.reasonCode);
+  if (!gate.ok) throw new AiCallError('gatePaused', gate.reasonCode);
   const thread = services.store.read(q =>
     q.get<{ id: number }>(
       'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
@@ -180,14 +185,15 @@ export async function executeJob(
         return { state: 'failed', lastError: JSON.stringify({ reasonCode: 'ai.notImplemented' }) };
     }
   } catch (error) {
+    // A closed gate or a spent daily cap RELEASES the row — the runner requeues it without burning an attempt.
+    if (error instanceof AiCallError && error.code === 'gatePaused') return { state: 'release' };
+    if (error instanceof AiCallError && error.code === 'dailyLimit') return { state: 'release' };
     const reason =
       error instanceof AiCallError
         ? error.message.startsWith('ai.')
           ? error.message
           : callMessage(error).reasonCode
         : 'ai.failed';
-    // A gate refusal (`ai.*` reasonCode thrown above) or a permanent failure should not burn retries forever:
-    // they still back off, but the cap stays the same — dead after 5 attempts.
     if (row.attempts + 1 >= MAX_ATTEMPTS)
       return { state: 'dead', lastError: JSON.stringify({ reasonCode: reason.slice(0, 60) }) };
     const wait = BACKOFF_MS[Math.min(row.attempts + 1, BACKOFF_MS.length) - 1] ?? 60_000;

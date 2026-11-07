@@ -64,6 +64,7 @@ function findSources(
   question: string,
   allowed: readonly string[],
   threadWire: string | undefined,
+  selectedIds: readonly string[] | undefined,
 ): Source[] {
   const out: Source[] = [];
   const seen = new Set<number>();
@@ -113,6 +114,30 @@ function findSources(
         `SELECT m.id, m.remote_id, m.account_id, m.thread_id, m.subject, m.from_name, m.from_addr, m.internal_date, m.snippet, t.remote_id AS remote_thread
          FROM messages m JOIN threads t ON t.id = m.thread_id
          WHERE t.account_id = ? AND t.remote_id = ? ORDER BY m.id DESC LIMIT 3`,
+        parts.accountId,
+        parts.remoteId,
+      ))
+        push(m as never);
+  }
+  // Messages the user selected are sources even when the question's words don't match them.
+  for (const id of selectedIds ?? []) {
+    if (out.length >= MAX_SOURCES) break;
+    const parts = splitId(q, id);
+    if (parts && allowed.includes(parts.accountId))
+      for (const m of q.all<{
+        id: number;
+        remote_id: string;
+        account_id: string;
+        thread_id: number;
+        subject: string | null;
+        from_name: string | null;
+        from_addr: string | null;
+        internal_date: number;
+        snippet: string | null;
+      }>(
+        `SELECT m.id, m.remote_id, m.account_id, m.thread_id, m.subject, m.from_name, m.from_addr, m.internal_date, m.snippet, t.remote_id AS remote_thread
+         FROM messages m JOIN threads t ON t.id = m.thread_id
+         WHERE m.account_id = ? AND m.remote_id = ? LIMIT 1`,
         parts.accountId,
         parts.remoteId,
       ))
@@ -181,6 +206,22 @@ function findSources(
   return out;
 }
 
+/** The open draft, when the question is about it — its text is user input, not mail, so it needs no gate. */
+function draftCtx(
+  d:
+    | { to?: { address: string }[]; cc?: { address: string }[]; subject?: string; html?: string }
+    | undefined,
+): string {
+  if (!d) return '';
+  const parts: string[] = [];
+  if (d.to?.length) parts.push(`To: ${d.to.map(a => a.address).join(', ')}`);
+  if (d.cc?.length) parts.push(`Cc: ${d.cc.map(a => a.address).join(', ')}`);
+  if (d.subject) parts.push(`Subject: ${d.subject}`);
+  const body = d.html ? plain(d.html).slice(0, 4_000) : '';
+  if (!parts.length && !body) return '';
+  return `\n\nThe draft being written:\n${parts.join('\n')}${body ? `\n${body}` : ''}`;
+}
+
 /** Strip `[n]` markers the model wrote; each becomes a chip at its character offset in the shown text (FR-30). */
 function stripMarkers(text: string): {
   text: string;
@@ -201,8 +242,9 @@ function stripMarkers(text: string): {
 
 function conversationOf(q: StoreReader, id: string): Conversation | undefined {
   const rows = q.all<{ pos: number; data: string }>(
-    'SELECT pos, data FROM conversations WHERE id = ? ORDER BY pos',
+    'SELECT pos, data FROM conversations WHERE id = ? OR id GLOB ? ORDER BY pos',
     id,
+    `${id}:*`,
   );
   if (!rows.length) return undefined;
   const turns: AskTurn[] = [];
@@ -258,17 +300,23 @@ async function askRun(
 ): Promise<void> {
   const { services } = ctx;
   const steps = askSteps();
-  const emit = (frame: Record<string, unknown>) =>
-    services.frames.emit(
-      { frame: 'progress', runId, source: 'ask', ...frame } as never,
-      ctx.connectionId,
-    );
+  const emit = (frame: Record<string, unknown>) => {
+    try {
+      services.frames.emit(
+        { frame: 'progress', runId, source: 'ask', ...frame } as never,
+        ctx.connectionId,
+      );
+    } catch {
+      /* a dying bus must not reject the detached run */
+    }
+  };
   const fail = (error: unknown) => {
     const { reasonCode, message } =
       error instanceof ContractError
         ? { reasonCode: error.body.reasonCode ?? 'ai.failed', message: error.message }
         : callMessage(error);
     emit({ kind: 'error', problem: { reasonCode, message } });
+    emit({ kind: 'done' });
   };
   try {
     const model = interactiveModel(services, 'ask', { withMail: true });
@@ -281,8 +329,9 @@ async function askRun(
         reasonCode: 'ai.accountExcluded',
       });
     emit({ kind: 'step', step: steps.emit('search', 'Searching your mail', 'running') });
+    // searchAllMail widens retrieval beyond the default inbox-facing sources.
     const sources = services.store.read(q =>
-      findSources(q, args.question, allowed, args.context?.threadId),
+      findSources(q, args.question, allowed, args.context?.threadId, args.context?.selectedIds),
     );
     emit({
       kind: 'step',
@@ -295,8 +344,9 @@ async function askRun(
       ? services.store.read(q =>
           q
             .all<{ data: string }>(
-              'SELECT data FROM conversations WHERE id = ? ORDER BY pos DESC LIMIT 4',
+              'SELECT data FROM conversations WHERE id = ? OR id GLOB ? ORDER BY pos DESC LIMIT 4',
               args.conversationId!,
+              `${args.conversationId}:*`,
             )
             .map(r => {
               try {
@@ -317,7 +367,7 @@ async function askRun(
       ]),
       {
         role: 'user',
-        content: `${args.question}\n\nSources:\n${quoted || '(no matching mail found)'}`,
+        content: `${args.question}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft)}${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
       },
     ];
     const turnId = hexId(services.randomBytes, 'turn');
@@ -334,6 +384,8 @@ async function askRun(
         signal: ctx.signal,
         onText: delta => {
           raw += delta;
+          // Stream the answer text as it lands so the UI types ahead of the stored turn.
+          emit({ kind: 'text', delta });
         },
       },
     );
@@ -473,10 +525,7 @@ export async function decide(
     throw new ContractError({ type: 'notFound', message: 'That suggestion is no longer there.' });
   if (proposal.state !== 'open')
     throw new ContractError({ type: 'conflict', message: 'That suggestion was already handled.' });
-  let receipt: Output<'Ask/decide'>['receipt'] = {
-    opId: args.opId,
-    appliedState: { dbEpoch: services.store.dbEpoch, seq: services.store.seq() },
-  };
+  let receipt: Output<'Ask/decide'>['receipt'] | undefined;
   if (args.accept) {
     if (proposal.kind === 'triage') {
       receipt = (await ctx.redispatch('Thread/act', {
@@ -501,8 +550,9 @@ export async function decide(
   const pos = services.store.read(
     q =>
       q.get<{ pos: number }>(
-        'SELECT pos FROM conversations WHERE id = ? ORDER BY pos',
+        'SELECT pos FROM conversations WHERE id = ? OR id GLOB ? ORDER BY pos',
         args.conversationId,
+        `${args.conversationId}:*`,
       )?.pos ?? 0,
   );
   const turnPos = conversation.turns.indexOf(turn);
@@ -519,7 +569,13 @@ export async function decide(
       ...auditWrites(ctx.caller, 'Ask/decide', args.proposalId),
     ],
   });
-  return { receipt };
+  // The receipt names the state AFTER this commit — the caller's view must include the marking.
+  return {
+    receipt: receipt ?? {
+      opId: args.opId,
+      appliedState: { dbEpoch: services.store.dbEpoch, seq: services.store.seq() },
+    },
+  };
 }
 
 export function suggestions(
@@ -559,7 +615,12 @@ export function conversationDestroy(
 ): Output<'Conversation/destroy'> {
   const { services } = ctx;
   const exists = services.store.read(
-    q => q.get('SELECT 1 AS one FROM conversations WHERE id = ?', args.id) !== undefined,
+    q =>
+      q.get(
+        'SELECT 1 AS one FROM conversations WHERE id = ? OR id GLOB ? LIMIT 1',
+        args.id,
+        `${args.id}:*`,
+      ) !== undefined,
   );
   if (!exists)
     throw new ContractError({ type: 'notFound', message: 'That conversation is already gone.' });

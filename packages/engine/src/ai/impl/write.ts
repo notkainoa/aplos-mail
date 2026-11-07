@@ -2,7 +2,7 @@ import type { Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { MethodContext } from '../../methods/types';
 import { auditWrites } from '../../host/audit';
-import { parseStored, withDefaults } from '../../runtime/settings';
+import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
 import { interactiveModel, accountAllowed } from './gate';
 import { callMessage, meteredChat } from './runtime';
@@ -160,13 +160,8 @@ async function transcribe(
       type: 'notFound',
       message: 'That audio is not on this Mac anymore.',
     });
-  const ai = ctx.services.store.read(
-    q =>
-      withDefaults(
-        parseStored(q.get<{ data: string }>('SELECT data FROM settings WHERE id = 1')?.data),
-      ).ai,
-  );
-  const model = ai.features.voice;
+  // Voice goes through the same provider gate (a trains-on-inputs pick is refused); audio isn't mail.
+  const model = interactiveModel(ctx.services, 'voice', { withMail: false });
   const controller = ctx.services.ai;
   const signal = controller.track(args.requestId);
   try {
@@ -178,7 +173,7 @@ async function transcribe(
       signal,
     });
     ctx.services.store.commit({
-      opId: `ai-usage-tr-${args.requestId}`,
+      opId: hexId(ctx.services.randomBytes, 'ai-usage-tr'),
       origin: 'system',
       writes: [
         {

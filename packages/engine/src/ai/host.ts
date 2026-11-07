@@ -71,7 +71,9 @@ export type AiCallCode =
   | 'noProvider'
   | 'invalid'
   | 'cancelled'
-  | 'unavailable';
+  | 'unavailable'
+  /** A background gate (consent, ai_allowed, settings) is closed; the job releases and waits. */
+  | 'gatePaused';
 
 export class AiCallError extends Error {
   constructor(

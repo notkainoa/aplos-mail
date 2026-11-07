@@ -14,18 +14,20 @@ declare module '../store/port' {
  * eng-ai's lane writes (seam 2): `jobs`, `summaries`, `ai_usage` and `conversations` (consent lives in
  * `consent.ts`). A summary touches its Thread change row (`tx.touchThread`) so Home refreshes without a new type;
  * `jobs` lifecycle: `enqueue` inserts under the singleton key (a second enqueue is a no-op), `claim` moves a due
- * row to `running`, `settle` lands the outcome, `requeue` gives a failed or dead row another go, `defer` pushes a
- * queued row out (a gate pause), `wake` pulls rows back when the gate opens, `reset` re-queues `running` rows after
- * a crash, `delete` removes a row.
+ * row to `running`, `settle` lands the outcome, `requeue` gives a row a fresh 5-attempt budget (manual retry, force
+ * refresh, a paused `running` row released by the gate or the daily cap), `defer` pushes due rows out (a gate
+ * pause), `wake` pulls them back when the gate opens, `reset` re-queues `running` rows after a crash, `delete`
+ * removes a row. A `conversations` row key is `<conversationId>:<pos>` — the PK is `id`, so turns share the
+ * prefix and order by `pos`.
  */
 export interface JobWrite {
   kind: 'job';
   action: 'enqueue' | 'claim' | 'settle' | 'requeue' | 'defer' | 'wake' | 'reset' | 'delete';
-  /** Every action but `enqueue`, `wake` and `reset`. */
+  /** `claim`/`settle`/`requeue`/`delete`; `defer` without it moves every due row. */
   id?: number;
   /** `enqueue`: the row to insert. */
   job?: { kind: string; key: string; priority: number; payload: string; nextAt: number };
-  /** `claim`/`wake`: the due bound. */
+  /** `claim`/`defer` (the due bound for the bulk form). */
   at?: number;
   /** `settle`. */
   state?: 'done' | 'failed' | 'dead';
@@ -136,10 +138,11 @@ function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtension
 function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
   switch (write.action) {
     case 'requeue':
+      // A fresh retry budget: manual retry, a forced refresh, or a paused `running` row the gate released.
       return ok(
         tx,
         tx.run(
-          "UPDATE jobs SET state = 'queued', attempts = attempts + 1, next_at = ? WHERE id = ? AND state IN ('failed','dead')",
+          "UPDATE jobs SET state = 'queued', attempts = 0, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done')",
           write.nextAt ?? tx.now(),
           id,
         ),
@@ -147,10 +150,26 @@ function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx
       );
     case 'defer':
       if (!Number.isFinite(write.nextAt)) bad();
+      if (Number.isInteger(write.id))
+        return ok(
+          tx,
+          tx.run(
+            "UPDATE jobs SET next_at = ? WHERE id = ? AND state IN ('queued','failed')",
+            write.nextAt!,
+            id,
+          ),
+          sid,
+        );
+      // The whole-queue pause: every due row moves so `next()` sleeps until the horizon.
+      if (!Number.isFinite(write.at)) bad();
       return ok(
         tx,
-        tx.run("UPDATE jobs SET next_at = ? WHERE id = ? AND state = 'queued'", write.nextAt!, id),
-        sid,
+        tx.run(
+          "UPDATE jobs SET next_at = ? WHERE state IN ('queued','failed') AND next_at <= ?",
+          write.nextAt!,
+          write.at!,
+        ),
+        '*',
       );
     case 'delete':
       if (tx.run('DELETE FROM jobs WHERE id = ?', id).changes) tx.mark('AiJob', sid, 'd');
@@ -175,6 +194,7 @@ function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx
 function job(write: JobWrite, tx: CommitExtensionTx): void {
   if (write.action === 'enqueue') return jobEnqueue(write, tx);
   if (write.action === 'wake' || write.action === 'reset') return jobMove(write, 0, '*', tx);
+  if (write.action === 'defer' && write.id === undefined) return jobMove(write, 0, '*', tx);
   if (!Number.isInteger(write.id)) bad();
   const id = write.id!;
   const sid = String(id);
@@ -235,16 +255,27 @@ function aiUsage(write: AiUsageWrite, tx: CommitExtensionTx): void {
 function conversation(write: ConversationWrite, tx: CommitExtensionTx): void {
   if (typeof write.id !== 'string' || !write.id || write.id.length > 200) bad();
   if (write.remove) {
-    if (tx.run('DELETE FROM conversations WHERE id = ?', write.id).changes)
+    if (
+      tx.run('DELETE FROM conversations WHERE id = ? OR id GLOB ?', write.id, `${write.id}:*`)
+        .changes
+    )
       tx.mark('Conversation', write.id, 'd');
     return;
   }
   if (typeof write.data !== 'string' || write.data.length > 200_000) bad();
   const pos =
     write.pos ??
-    (tx.get<{ p: number | null }>('SELECT MAX(pos)+1 p FROM conversations WHERE id = ?', write.id)
-      ?.p ?? -1) + 1;
-  tx.run('INSERT INTO conversations(id, pos, data) VALUES(?, ?, ?)', write.id, pos, write.data!);
+    tx.get<{ p: number | null }>(
+      'SELECT MAX(pos)+1 p FROM conversations WHERE id GLOB ?',
+      `${write.id}:*`,
+    )?.p ??
+    0;
+  tx.run(
+    'INSERT OR REPLACE INTO conversations(id, pos, data) VALUES(?, ?, ?)',
+    `${write.id}:${pos}`,
+    pos,
+    write.data!,
+  );
   tx.mark('Conversation', write.id, 'u');
 }
 
