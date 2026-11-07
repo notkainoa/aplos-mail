@@ -16,6 +16,11 @@ import type { AreaHandlers, MethodContext } from './types';
 /** The one setup session at a time (`Setup/begin`); not persisted — a session ends with the engine. */
 let setupId: string | undefined;
 
+/** True while a `Setup/begin` session is open; the AI jobs runner pauses so backfill stays one-shot. */
+export function setupSessionOpen(): boolean {
+  return setupId !== undefined;
+}
+
 /** One account's row inside `Setup/status`. */
 type SetupAccountRow = SetupStatus['accounts'][number];
 
@@ -154,7 +159,11 @@ function end(args: Input<'Setup/end'>, ctx: MethodContext): Output<'Setup/end'> 
         writes: [{ kind: 'meta', key, value: String(clock.now()) }],
       });
   }
-  // The one-shot AI backfill of unsummarised threads queues here once the AI pass lands (PR #21 F1/F2/F5/F6).
+  // The one-shot AI backfill of unsummarised threads queues here (F1/F2/F5/F6); the queue's own gate decides when
+  // they run, so a setup ending before consent just leaves the jobs waiting.
+  void import('../ai/impl/backfill')
+    .then(m => m.backfillSummaries(ctx.services))
+    .catch(() => undefined);
   setupId = undefined;
   return { ok: true };
 }

@@ -134,10 +134,20 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ accounts: [ALEX, JORDAN] }),
   },
   'calendar-accounts-syncing': {
-    title: 'Calendar, an account still syncing',
+    title: 'Calendar, an account still syncing whose list was never read: Syncing…',
     section: 'calendar',
     data: dataOf({
-      accounts: [{ ...ALEX, health: { status: { state: 'syncing' } } }],
+      accounts: [
+        { ...ALEX, health: { status: { state: 'syncing' } }, calendarListedAt: undefined },
+      ],
+      calendars: [],
+    }),
+  },
+  'calendar-accounts-unlisted': {
+    title: 'Calendar, mail caught up but the calendar list was never read: Syncing…',
+    section: 'calendar',
+    data: dataOf({
+      accounts: [{ ...ALEX, calendarListedAt: undefined }],
       calendars: [],
     }),
   },
@@ -147,7 +157,7 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ accounts: [needsReauth(ALEX)] }),
   },
   'calendar-accounts-empty': {
-    title: 'Calendar, access on but nothing synced yet',
+    title: 'Calendar, access on and the list answered empty: No calendars',
     section: 'calendar',
     data: dataOf({ calendars: [] }),
   },
@@ -210,10 +220,12 @@ export const STATES: Record<string, StateSpec> = {
     }),
   },
   'accounts-calendar-syncing': {
-    title: 'Accounts, calendar still syncing',
+    title: 'Accounts, calendar list never read yet: Syncing…',
     section: 'accounts',
     data: dataOf({
-      accounts: [{ ...ALEX, health: { status: { state: 'syncing' } } }],
+      accounts: [
+        { ...ALEX, health: { status: { state: 'syncing' } }, calendarListedAt: undefined },
+      ],
       calendars: [],
     }),
   },

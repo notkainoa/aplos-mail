@@ -44,3 +44,15 @@ export type { ConnectedSession } from './runtime/connection';
 export type { EngineServices, HostFacts, LaneModule, LaneModuleSource } from './runtime/services';
 export { STATE_COALESCE_MS } from './runtime/frames';
 export type { EngineFrame, FrameBus, ResetReason } from './runtime/frames';
+export { AiCallError, detachedTransport } from './ai/host';
+export type {
+  AiCallCode,
+  AiChatMessage,
+  AiChatRequest,
+  AiChatTurn,
+  AiKeySource,
+  AiToolCall,
+  AiToolSpec,
+  AiTranscribeRequest,
+  AiTransport,
+} from './ai/host';
