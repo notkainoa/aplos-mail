@@ -642,6 +642,7 @@ const FIXTURES: Record<string, Fixture> = {
       googleAccount('acct-jordan', 'jordan.lee@example.com', {
         name: 'Jordan Lee',
         colorTag: 'hill',
+        calendarListedAt: HARNESS_NOW_MS - 86_400_000,
       }),
     ],
   },
