@@ -175,12 +175,7 @@ async function test(args: Input<'Ai/test'>, ctx: MethodContext): Promise<Output<
   }
 }
 
-export const impl = {
-  request,
-  jobs,
-  cancel,
-  setKey,
-  removeKey,
-  testKey,
-  test,
-};
+export { request, jobs, cancel, setKey, removeKey, testKey, test };
+export const impl = { request, jobs, cancel, setKey, removeKey, testKey, test };
+
+export { dismissFollowup, draft, followup, polish, transcribe } from './write';

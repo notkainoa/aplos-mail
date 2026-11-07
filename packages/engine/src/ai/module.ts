@@ -37,8 +37,8 @@ export function createAiService(): AiService {
     useTransport: t => void (transport = t ?? detachedTransport()),
     transport: () => transport,
     track(id) {
-      live.get(id)?.abort();
       const controller = new AbortController();
+      live.get(id)?.abort();
       live.set(id, controller);
       return controller.signal;
     },
@@ -77,7 +77,7 @@ function jobsSource(services: EngineServices): DeadlineSource {
         services.store.read(
           q =>
             q.get<{ at: number | null }>(
-              "SELECT MIN(next_at) AS at FROM jobs WHERE state IN ('queued','failed')",
+              "SELECT MIN(next_at) at FROM jobs WHERE state IN ('queued','failed')",
             )?.at ?? undefined,
         ),
       ),
@@ -91,18 +91,12 @@ function jobsSource(services: EngineServices): DeadlineSource {
 /** Builds the lane's services once the core services exist; runs once, in the root's fixed order. */
 export function createModule(services: EngineServices): LaneModule {
   const ai = createAiService();
-  let unregister: (() => void) | undefined;
   return {
     services: { ai },
     start() {
       // Stranded 'running' rows from a crash are reclaimed lazily on the first fire (impl/runner), so this stays a
       // register: nothing commits on a store that never ran jobs.
-      unregister = services.deadlines.register(jobsSource(services));
-    },
-    stop() {
-      unregister?.();
-      unregister = undefined;
-      ai.useTransport(undefined);
+      services.deadlines.register(jobsSource(services));
     },
   };
 }

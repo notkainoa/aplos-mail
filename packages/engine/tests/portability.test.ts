@@ -109,6 +109,7 @@ const lazyModules = [
   join(src, 'ai', 'impl', 'jobs.ts'),
   join(src, 'ai', 'impl', 'runner.ts'),
   join(src, 'ai', 'impl', 'runtime.ts'),
+  join(src, 'ai', 'impl', 'write.ts'),
   join(src, 'calendar', 'views.ts'),
   join(src, 'calendar', 'recurrence', 'expand.ts'),
   join(src, 'calendar', 'recurrence', 'generate.ts'),

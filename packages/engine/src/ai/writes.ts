@@ -242,7 +242,7 @@ function conversation(write: ConversationWrite, tx: CommitExtensionTx): void {
   if (typeof write.data !== 'string' || write.data.length > 200_000) bad();
   const pos =
     write.pos ??
-    (tx.get<{ p: number | null }>('SELECT MAX(pos) p FROM conversations WHERE id = ?', write.id)
+    (tx.get<{ p: number | null }>('SELECT MAX(pos)+1 p FROM conversations WHERE id = ?', write.id)
       ?.p ?? -1) + 1;
   tx.run('INSERT INTO conversations(id, pos, data) VALUES(?, ?, ?)', write.id, pos, write.data!);
   tx.mark('Conversation', write.id, 'u');

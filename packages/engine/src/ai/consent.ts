@@ -53,10 +53,10 @@ export interface ConsentWrite {
 }
 
 function apply(write: { kind: string }, tx: CommitExtensionTx): void {
-  const { scope } = write as ConsentWrite;
+  const w = write as ConsentWrite;
+  const scope = w.scope;
   if (typeof scope !== 'string' || !scope || scope.length > 60)
     throw new StoreError('invalid', 'scope');
-  const w = write as ConsentWrite;
   if (w.remove) {
     if (tx.run('DELETE FROM consent WHERE scope = ?', scope).changes)
       tx.mark('Consent', scope, 'd');
