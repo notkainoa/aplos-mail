@@ -98,16 +98,18 @@ export function account(run: CommitRun, w: AccountWrite) {
   const exists = run.q('SELECT 1 FROM accounts WHERE id = ?').get(w.id);
   if (exists) {
     const keys = Object.keys(cols);
+    // First list wins: a repeat stamp (nothing else to write) is a no-op, no updated_at bump and no change row.
+    const first =
+      w.calendarListedAt !== undefined &&
+      run
+        .q('UPDATE accounts SET calendar_listed_at = ? WHERE id = ? AND calendar_listed_at IS NULL')
+        .run(w.calendarListedAt, w.id).changes > 0;
+    if (!keys.length && w.calendarListedAt !== undefined && !first) return;
     run
       .q(
         `UPDATE accounts SET ${keys.map(k => `${k} = ?`).join(', ')}${keys.length ? ', ' : ''}updated_at = ? WHERE id = ?`,
       )
       .run(...keys.map(k => cols[k]), now, w.id);
-    // First list wins: a later list never moves when the account's calendars were first known.
-    if (w.calendarListedAt !== undefined)
-      run
-        .q('UPDATE accounts SET calendar_listed_at = COALESCE(calendar_listed_at, ?) WHERE id = ?')
-        .run(w.calendarListedAt, w.id);
   } else {
     if (!w.provider || !w.address || !w.capabilities)
       throw new StoreError('invalid', 'A new account needs provider, address and capabilities');
