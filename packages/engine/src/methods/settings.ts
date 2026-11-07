@@ -42,7 +42,20 @@ function getSettings(_args: Input<'Settings/get'>, ctx: MethodContext): Output<'
   return withDefaults(readDoc(ctx));
 }
 
-function setSettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'Settings/set'> {
+/**
+ * A saved provider address is checked before it can steer a key or mail text at a server the owner did not mean
+ * (`checkProviderAddresses`, in the lazy AI gate so the core stays inside its bundle budget).
+ */
+async function setSettings(
+  args: Input<'Settings/set'>,
+  ctx: MethodContext,
+): Promise<Output<'Settings/set'>> {
+  const providers = args.patch.ai?.providers;
+  if (providers) (await import('../ai/impl/gate')).checkProviderAddresses(providers, ctx.services);
+  return applySettings(args, ctx);
+}
+
+function applySettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'Settings/set'> {
   const { store, frames } = ctx.services;
   const { ifInState } = args;
   if (
@@ -56,34 +69,6 @@ function setSettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<'S
       type: 'stateMismatch',
       message: 'Settings changed in another window. Reopen them and try again.',
     });
-  // A saved provider address is checked before it can steer a key or mail text at a server the owner
-  // did not mean: http(s) only, no embedded credentials, and a non-loopback host needs https whenever
-  // that provider has a key saved.
-  const providers = args.patch.ai?.providers;
-  if (providers) {
-    for (const [id, row] of Object.entries(providers)) {
-      if (!row?.address) continue;
-      try {
-        const u = new URL(row.address);
-        if (!/^https?:$/.test(u.protocol)) throw new Error('protocol');
-        if (u.username || u.password) throw new Error('userinfo');
-        const loopback = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?)$/.test(u.hostname);
-        const keyed =
-          ctx.services.ai?.transport().keySource(id as 'ollama' | 'lmstudio' | 'custom') !== 'none';
-        if (u.protocol === 'http:' && !loopback && keyed)
-          throw new ContractError({
-            type: 'validation',
-            message: `${id}: use an https:// address for a server that isn't on this Mac — an API key can't ride plain http.`,
-          });
-      } catch (e) {
-        if (e instanceof ContractError) throw e;
-        throw new ContractError({
-          type: 'validation',
-          message: `${id}: enter a full http(s):// server address without credentials.`,
-        });
-      }
-    }
-  }
   const before = withDefaults(readDoc(ctx));
   const result = store.commit({
     opId: args.opId,

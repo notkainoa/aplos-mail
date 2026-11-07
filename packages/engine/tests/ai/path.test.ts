@@ -242,7 +242,10 @@ test('jobs runner: an open setup session defers due jobs instead of spinning on 
       await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead'] })
     ).list.find(j => j.id === req.job.id)!;
     assert.equal(job.state, 'queued', 'not run while the session is open');
-    assert.ok(job.nextAt > now, 'pushed out, so the deadline source does not re-fire immediately');
+    assert.ok(
+      (job.nextAt ?? 0) > now,
+      'pushed out, so the deadline source does not re-fire immediately',
+    );
   } finally {
     await w.call('Setup/end', { reason: 'skipped' });
   }
