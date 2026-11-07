@@ -11,7 +11,8 @@
  * - `Account.capabilities.calendar` (the grant's calendar half);
  * - `Account.health.status` (`needsReauth` signs in again; `needsPermission` naming calendar scopes is the same
  *   not-allowed gap; `starting`/`syncing`/`backfilling` means the first read is still on its way);
- * - `Account.baselineDoneAt` (absent while the first sync still reads the first window);
+ * - `Account.calendarListedAt` (absent until the account's first calendar list commits — before that an
+ *   answered-but-never-listed account still reads "Syncing…", not "No calendars");
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
  */
 import type { Account, Calendar } from '../../data';
@@ -128,9 +129,9 @@ export function calendarAccessOf(
   if (calendars === undefined) return SYNCING;
   const count = calendars.filter(c => c.accountId === account.id).length;
   if (count > 0) return { kind: 'on', count, line: calendarOnLine(count), action: null };
-  if (account.baselineDoneAt === undefined) return SYNCING;
-  // REQUEST (prov-cal): an `Account` fact that the calendar list completed a read (`calendarListedAt`)
-  // would split "listed, empty" from "never listed" exactly; today `ok` + `baselineDoneAt` is the proxy.
+  // An empty list is "No calendars" only once the account's first list committed (`calendarListedAt`); an
+  // account without it — including ones that predate the field — is still honestly "Syncing…".
+  if (account.calendarListedAt === undefined) return SYNCING;
   return state === 'ok' ? { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null } : UNKNOWN;
 }
 
