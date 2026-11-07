@@ -188,7 +188,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.unread-counts",
@@ -202,7 +202,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.label-commit",
@@ -217,7 +217,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.page-commit-throughput",
@@ -232,7 +232,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.cold-open",
@@ -246,7 +246,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.rss-first-page",
@@ -260,7 +260,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "store.search-newest-50",
@@ -274,7 +274,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "soak.rss-slope",
@@ -530,7 +530,7 @@
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md journey J2",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "sync.first-sync-refusals",
@@ -544,7 +544,7 @@
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/20-providers-sync.md PV3 acceptance",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-06"
+      "dueBy": "2026-11-20"
     },
     {
       "id": "views.window-rerun",
@@ -557,7 +557,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -572,7 +572,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -587,7 +587,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -602,7 +602,7 @@
       "unit": "rows",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -617,7 +617,7 @@
       "unit": "KB",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -632,7 +632,7 @@
       "unit": "ms",
       "stat": "minimum interval",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -647,7 +647,7 @@
       "unit": "KB",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -662,7 +662,7 @@
       "unit": "ms",
       "stat": "median",
       "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -677,7 +677,7 @@
       "unit": "ms",
       "stat": "p99",
       "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -722,7 +722,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -737,7 +737,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -782,7 +782,7 @@
       "unit": "min",
       "stat": "about",
       "source": "plans/20-providers-sync.md PV3 acceptance",
-      "dueBy": "2026-11-06",
+      "dueBy": "2026-11-20",
       "maxAgeDays": null,
       "lastMeasured": null
     },
