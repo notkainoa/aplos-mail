@@ -119,6 +119,43 @@ test('Ai/request: unknown thread and a kept-out account refuse before anything q
   assert.equal(jobs.list.length, 0);
 });
 
+test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail is read', async () => {
+  const w = await world();
+  seedMail(w);
+  await consentNow(w);
+  // Turn the account's AI off: the named account is forbidden for polish and for Ask's open draft.
+  w.store.commit({
+    opId: 'off2',
+    origin: 'sync',
+    writes: [{ kind: 'account', id: ACCOUNT, aiAllowed: false }],
+  });
+  await assert.rejects(
+    () =>
+      w.call('Ai/polish', {
+        opId: 'p1',
+        requestId: 'req-p',
+        html: '<p>hi</p>',
+        accountId: ACCOUNT,
+      }),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.type === 'forbidden' &&
+      e.body.reasonCode === 'ai.accountExcluded',
+  );
+  await assert.rejects(
+    () =>
+      w.call('Ask/run', {
+        opId: 'a1',
+        question: 'what did they say',
+        context: { draft: { accountId: ACCOUNT, html: '<p>reply</p>' } },
+      }),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.type === 'forbidden' &&
+      e.body.reasonCode === 'ai.accountExcluded',
+  );
+});
+
 test('Ai/request: a fresh thread enqueues once under the singleton key; force reruns', async () => {
   const w = await world();
   seedMail(w);

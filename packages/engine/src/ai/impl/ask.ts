@@ -9,7 +9,7 @@ import { readBody } from '../../store/bodies';
 import { splitId } from '../../views/compile';
 import { ftsPhrases } from '../../views/search';
 import type { AiChatMessage } from '../host';
-import { allowedAccounts, interactiveModel } from './gate';
+import { accountAllowed, allowedAccounts, interactiveModel } from './gate';
 import { callMessage, meteredChat } from './runtime';
 
 /**
@@ -293,6 +293,9 @@ function askSteps(): {
 }
 
 export async function run(args: Input<'Ask/run'>, ctx: MethodContext): Promise<Output<'Ask/run'>> {
+  // The open draft counts as mail from its account: one left out of AI is forbidden before any read.
+  if (args.context?.draft?.accountId !== undefined)
+    accountAllowed(ctx.services, args.context.draft.accountId);
   const runId = hexId(ctx.services.randomBytes, 'run');
   const conversationId = args.conversationId ?? hexId(ctx.services.randomBytes, 'conv');
   void askRun(ctx, args, runId, conversationId);
