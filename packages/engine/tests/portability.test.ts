@@ -137,10 +137,10 @@ const isLazyFile = (file: string) => {
   return lazyModules.includes(abs) || lazyDirs.some(dir => abs.startsWith(dir));
 };
 // The budget is for the bundle that ships, so it is measured minified (2026-10-28: 253,443 bytes; unminified the same
-// files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06
-// (owner decision, DECISIONS.md); the last raise without a new decision.
-const BUDGET_BYTES = 465_000;
-test('the new engine (contract types and zod-free tables only, no zod) stays under 465,000 minified bytes and never imports legacy code', async () => {
+// files measure 426,360, which is only a growth signal, see DECISIONS.md). Raised 400,000 -> 450,000 on 2026-11-04 and 450,000 -> 465,000 on 2026-11-06 and
+// 465,000 -> 470,000 on 2026-11-07 (owner decision, DECISIONS.md); the third raise: any further one needs a new owner decision.
+const BUDGET_BYTES = 470_000;
+test('the new engine (contract types and zod-free tables only, no zod) stays under 470,000 minified bytes and never imports legacy code', async () => {
   const { chunks, inputs } = await bundleNeutral(
     src,
     f => f.startsWith(legacy) || isLazyFile(f),

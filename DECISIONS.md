@@ -1754,3 +1754,12 @@ Context: eng-ai's REQUEST (07:15). `Ai/polish` without a `draftId` (pasted text)
 Decision (a): add an optional `accountId` to `Ai/polish` and to `Ask/run` `context.draft`. A caller that has the composing account passes it, and an account left out of AI is `forbidden` with `ai.accountExcluded`, like a `draftId` in that account. Absent, the call stays allowed (the text is what the user typed; the provider rule still applies), so existing callers keep working. Not (b): documenting an unchecked path leaves the toggle bypassable by any composer that has an account.
 
 How to apply: additive optional fields (no `currentVersion` change, openapi regenerated); the fixture refuses an excluded or unknown `accountId` and the conformance suite pins it for both calls. eng-ai implements the same check in the engine (`ai/impl/gate.ts`); the composer and Ask docked panel (ui lanes) pass the draft's `accountId`.
+
+## 2026-11-07: the engine core bundle budget rises from 465,000 to 470,000 bytes (owner decided via the orchestrator; integrator-3)
+
+Context: the core measured 464,938 of 465,000 (62 B free) after #362. PR #379 (the AI follow-up job kind) keeps every source line in the lazy `ai/impl/` folder and leaves `ai/module.ts` byte-identical to revamp, yet it lands the core at 465,652: the larger lazy graph moves about 700 B of esbuild chunk glue into the core chunks. There is no source to trim.
+
+Decision (owner, via the orchestrator, 2026-11-07, option A): `BUDGET_BYTES` in `packages/engine/tests/portability.test.ts` and the `size.engine-bundle` row of `budgets.json` rise to 470,000. This is the third raise (400,000 to 450,000 on 2026-11-04, to 465,000 on 2026-11-06, now 470,000). **Further raises need a new owner decision.**
+
+How to apply: the budget is a growth alarm, not a limit of the shipped app (the desktop bundles the engine into one `dist/main/engine.cjs`). Put new engine code in lazy folders (`packages/engine/src/ai/impl/**`) and keep the host bundle on static imports. Option B stays a ticket (not blocking): make the mail frame renderer (`packages/engine/src/mail/*`, which pulls `packages/mail-html/src/frame/reporter.ts`, 8.4 KB, into the core) lazy, to give the headroom back.
+

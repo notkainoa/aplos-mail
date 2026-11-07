@@ -1,5 +1,14 @@
 import type { EngineServices } from '../../runtime/services';
-import { enqueue, inputHashOf, priorityOf } from './jobs';
+import { hexId } from '../../sync/connect-sessions';
+import {
+  enqueue,
+  FOLLOWUP_PRIORITY,
+  followScan,
+  followUpDaysOf,
+  inputHashOf,
+  lastSentHashOf,
+  priorityOf,
+} from './jobs';
 
 /**
  * The one-shot Setup backfill (ai-3): when the first-sync screen ends, queue a `summary` job for every thread that
@@ -75,6 +84,45 @@ export function backfillSummaries(services: EngineServices): number {
         accountId: c.accountId,
         remoteThreadId: c.remoteId,
         inputHash: hash,
+      },
+    });
+    queued++;
+  }
+  sweepFollowups(services);
+  return queued;
+}
+
+const DAY_MS = 86_400_000;
+/** A sweep queues at most this many follow-up jobs per pass; the rest wait for the next fire. */
+const FOLLOW_SWEEP_LIMIT = 50;
+
+/**
+ * The Follow up half of the queue (ARCH 8.1): every thread sitting in Home's Follow up lane on an AI-allowed
+ * account gets a `followup` job under its current last-sent hash, at the flat follow-up priority. A new reply
+ * or a new sent message changes the hash, so the next pass queues fresh work while the old suggestion expires
+ * on read — no cleanup. Spam/Trash threads and kept-out accounts never appear in `followScan`. Runs on every
+ * `jobs` fire: the singleton key makes repeats no-ops, so the pass costs one bounded scan when nothing moved.
+ */
+export function sweepFollowups(services: EngineServices): number {
+  const now = services.clock.now();
+  const cutoff = now - services.store.read(q => followUpDaysOf(q)) * DAY_MS;
+  let queued = 0;
+  for (const c of services.store.read(q => followScan(q, cutoff, FOLLOW_SWEEP_LIMIT))) {
+    const sent = services.store.read(q => lastSentHashOf(q, c.id));
+    if (!sent) continue;
+    const key = `followup:${c.account_id}:${c.remote_id}:${sent.hash}`;
+    const have = services.store.read(q => q.get('SELECT 1 AS one FROM jobs WHERE key = ?', key));
+    if (have) continue;
+    enqueue(services, `ai-follow-${c.id}-${sent.hash}-${hexId(services.randomBytes, 'q')}`, {
+      kind: 'followup',
+      key,
+      priority: FOLLOWUP_PRIORITY,
+      nextAt: now,
+      payload: {
+        threadId: `${c.account_id}:${c.remote_id}`,
+        accountId: c.account_id,
+        remoteThreadId: c.remote_id,
+        inputHash: sent.hash,
       },
     });
     queued++;

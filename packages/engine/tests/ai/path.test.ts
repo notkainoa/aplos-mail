@@ -95,6 +95,63 @@ const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
   });
 };
 
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * A Follow up thread (followUpDays defaults to 3; the clock sits at T0): an inbound question a week old and the
+ * owner's answer four days old, still `awaitingReply`, sitting in Sent. `spam` adds the Spam label instead.
+ */
+const seedFollow = (
+  w: Awaited<ReturnType<typeof world>>,
+  opts: { aiAllowed?: boolean; spam?: boolean } = {},
+) =>
+  w.store.commit({
+    opId: 'seed-f',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed: opts.aiAllowed ?? true },
+      ...folderWrites.map(f => ({ ...f })),
+      {
+        kind: 'folder' as const,
+        accountId: ACCOUNT,
+        remoteId: 'SENT',
+        name: 'Sent',
+        role: 'sent' as const,
+        folderKind: 'system' as const,
+      },
+      ...(opts.spam
+        ? [
+            {
+              kind: 'folder' as const,
+              accountId: ACCOUNT,
+              remoteId: 'SPAM',
+              name: 'Spam',
+              role: 'spam' as const,
+              folderKind: 'system' as const,
+            },
+          ]
+        : []),
+      msg('f-in', 'T-follow', -7 * 24 * 60, {
+        subject: 'Invoice question',
+        snippet: 'Could you send the invoice?',
+        ...(opts.spam ? { folders: [{ folder: 'INBOX' }, { folder: 'SPAM' }] } : {}),
+      }),
+      msg('f-out', 'T-follow', -4 * 24 * 60, {
+        from: { address: 'owner@mail.example', name: 'Owner' },
+        to: [{ address: 'sender-f-in@mail.example' }],
+        snippet: 'Here is the invoice.',
+        flags: { seen: true, flagged: false, draft: false, fromMe: true },
+        folders: opts.spam ? [{ folder: 'SENT' }, { folder: 'SPAM' }] : [{ folder: 'SENT' }],
+      }),
+      {
+        kind: 'workflow' as const,
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-follow',
+        patch: { replyStatus: 'awaitingReply' as const },
+      },
+    ],
+  });
+
 test('Ai/request: unknown thread and a kept-out account refuse before anything queues', async () => {
   const w = await world();
   seedMail(w);
@@ -474,6 +531,125 @@ test('detached transport: Ai/* calls never log or leak a key; unavailable is hon
   assert.equal(t.ok, false);
   assert.match(t.message ?? '', /not connected|unavailable|key/i);
   assert.doesNotMatch(t.message ?? '', /sk-/);
+});
+
+const followJobRows = (w: Awaited<ReturnType<typeof world>>) =>
+  w.engine.services.store.read(q =>
+    q.all<{ key: string; state: string }>("SELECT key, state FROM jobs WHERE kind = 'followup'"),
+  );
+
+test('followup job: a sent, unanswered thread gets a local nudge Ai/followup serves', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"quick check: any update on the invoice?"}' }),
+  );
+  seedFollow(w);
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = followJobRows(w);
+  assert.equal(rows.length, 1, 'the sweep queued the lane thread');
+  assert.match(rows[0].key, /^followup:acct-1:T-follow:/);
+  assert.equal(rows[0].state, 'done');
+  const got = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.match(got.suggestion?.html ?? '', /quick check: any update on the invoice/);
+  assert.equal(got.suggestion?.basedOnMessageId, 'acct-1:f-out');
+  assert.equal(got.suggestion?.model.provider, 'groq');
+  const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
+  assert.equal(transport.calls.length, 1, 'one provider call wrote the suggestion');
+});
+
+test('followup sweep: a discarded job re-queues cleanly and never blocks summaries', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"bump?","summary":"Ada asked.","action":null}' }),
+  );
+  seedFollow(w);
+  seedMail(w);
+  await consentNow(w);
+  await w.call('Ai/request', { opId: 'rs', kind: 'summary', threadId: 'acct-1:T-thread' });
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ id: number; key: string; state: string }>(
+      "SELECT id, key, state FROM jobs WHERE kind = 'followup'",
+    ),
+  );
+  assert.equal(rows.length, 1);
+  await w.call('Queue/discard', { id: `job:${rows[0].id}` });
+  // The next pass must not throw — the sweep's fresh opId re-enqueues under the same singleton key.
+  await runJobs(w.engine.services, w.clock.now());
+  const again = w.engine.services.store.read(q =>
+    q.all<{ id: number; key: string; state: string }>(
+      "SELECT id, key, state FROM jobs WHERE kind = 'followup'",
+    ),
+  );
+  assert.equal(again.length, 1, 'the discarded job re-queued under its singleton key');
+  assert.notEqual(again[0].state, 'failed', 'the re-enqueue ran clean, not a replayed commit');
+  // A summary job still claims and completes in the same passes — the sweep never blocked the queue.
+  const summaries = w.engine.services.store.read(q =>
+    q.all<{ state: string }>("SELECT state FROM jobs WHERE kind = 'summary'"),
+  );
+  assert.ok(summaries.length > 0 && summaries.every(r => r.state === 'done'));
+});
+
+test('followup job: a new sent message retires the suggestion and re-keys the job', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"quick check: any update on the invoice?"}' }),
+  );
+  seedFollow(w);
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  const first = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.ok(first.suggestion, 'the first nudge landed');
+  // Four days pass; the owner sends again (still a day over the nudge period, still awaiting a reply).
+  w.clock.advance(4 * DAY_MS);
+  w.store.commit({
+    opId: 'bump',
+    origin: 'sync',
+    writes: [
+      msg('f-out2', 'T-follow', 0, {
+        from: { address: 'owner@mail.example', name: 'Owner' },
+        to: [{ address: 'sender-f-in@mail.example' }],
+        snippet: 'Bumping this to the top of your inbox.',
+        flags: { seen: true, flagged: false, draft: false, fromMe: true },
+        folders: [{ folder: 'SENT' }],
+      }),
+    ],
+  });
+  const stale = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.equal(stale.suggestion, undefined, 'the moved hash expired the old suggestion');
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = followJobRows(w);
+  assert.equal(rows.length, 2, 'a fresh job ran under the new last-sent hash');
+  assert.notEqual(rows[0].key, rows[1].key);
+  const fresh = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.match(fresh.suggestion?.html ?? '', /quick check/);
+  assert.equal(fresh.suggestion?.basedOnMessageId, 'acct-1:f-out2');
+});
+
+test('followup job: a spam-labeled thread is never queued, never read', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"quick check: any update on the invoice?"}' }),
+  );
+  seedFollow(w, { spam: true });
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(followJobRows(w).length, 0);
+  const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
+  assert.equal(transport.calls.length, 0, 'spam mail never reached the provider');
+  const got = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.equal(got.suggestion, undefined);
+});
+
+test('followup job: an account kept out of AI gets no job even when eligible', async () => {
+  const w = await world(
+    stubTransport({ answer: '{"nudge":"quick check: any update on the invoice?"}' }),
+  );
+  seedFollow(w, { aiAllowed: false });
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(followJobRows(w).length, 0);
+  const transport = w.engine.services.ai.transport() as ReturnType<typeof stubTransport>;
+  assert.equal(transport.calls.length, 0);
+  const got = await w.call('Ai/followup', { threadId: 'acct-1:T-follow' });
+  assert.equal(got.suggestion, undefined);
 });
 
 test('Setup/end: the one-shot backfill queues summaries for Home-visible mail, never Spam/Trash', async () => {
