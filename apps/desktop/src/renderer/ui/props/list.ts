@@ -230,8 +230,8 @@ export interface LowBandProps {
   cursor: boolean;
   /** Fixed height per density. */
   density: Density;
-  /** Registry command for the tooltip "Open low importance" and its key (Return). */
-  commandId: CommandId;
+  /** Registry command for the tooltip "Open low importance" and its key (Return). Absent: the band is click-only (no cursor, as at a count of 0) and the tooltip names no key. */
+  commandId?: CommandId;
   /** Click or Return: open the Low-importance sheet. */
   onOpen: () => void;
 }

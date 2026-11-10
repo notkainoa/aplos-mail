@@ -16,6 +16,7 @@ import {
 import { ThreadMessage } from '../../ui/reader';
 import type { InviteView } from './invite';
 import { InviteCard } from './InviteCard';
+import { RecipientsLine } from './RecipientsLine';
 import { allowImagesFrom, fetchAttachment } from './readerEffects';
 import {
   attachmentChips,
@@ -48,6 +49,8 @@ export interface ReaderMessageProps {
   };
   /** The invitation this message carries (an invite email). */
   readonly invite?: InviteView;
+  /** The thread's subject: the card's own top line. Given to the first card only, and only when a written summary stands above. */
+  readonly subject?: string;
   /** The frame is laid out and measured. */
   readonly onFrame: (messageId: string, ready: MailFrameReady) => void;
   readonly onLoadImages: (messageId: string) => void;
@@ -131,6 +134,8 @@ export function ReaderMessage(props: ReaderMessageProps) {
       id={message.id}
       from={fromName(message, me)}
       toLabel={toLabel(message, me)}
+      subject={props.subject}
+      recipients={fold ? undefined : <RecipientsLine message={message} me={me} />}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
       fold={foldOf(fold)}

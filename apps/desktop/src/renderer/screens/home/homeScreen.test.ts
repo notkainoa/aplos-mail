@@ -13,14 +13,29 @@ import { fixtureControl } from '@aplos/contract-fixture/control';
 import { createAppRegistry, DEFAULT_KEY_PREFS, type CommandContext } from '../../commands';
 import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { api, setClock, undoStack, type ThreadRow } from '../../data';
+import {
+  api,
+  setClock,
+  undoStack,
+  type HomeSection,
+  type HomeSectionView,
+  type HomeView,
+  type ThreadRow,
+} from '../../data';
 import { harnessClock } from '../../data/clock';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { pushToast, dismissToast, runToastAction } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
-import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
+import {
+  buildItems,
+  initialKey,
+  layoutOf as homeLayoutOf,
+  orderLayout,
+  type HomeLayout,
+} from './homeModel';
+import { HomeList } from './HomeList';
 import { HomeScreen } from './HomeScreen';
 import { accountsAreKnown } from './HomeStates';
 import { offerLives } from './useHomeActions';
@@ -159,6 +174,63 @@ test('Home renders Do now, Important updates, the Low band, Follow up in that or
     assert.ok(
       !html.includes('Back from Later') || html.indexOf('Back from Later') > html.indexOf('Do now'),
     );
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('with no Low mail the band still shows, at 0, so Low importance can always be opened', async () => {
+  const world = await boot();
+  try {
+    const section = (key: HomeSection, count: number): HomeSectionView => ({
+      key,
+      ids: [],
+      count,
+      start: 0,
+      visible: count > 0,
+      fromLater: null,
+      waiting: 0,
+    });
+    const view = (total: number): HomeView => ({
+      sections: [section('do', total), section('update', 0), section('follow', 0)],
+      low: { count: 0, names: [], moreSenders: 0 },
+      rows: new Map(),
+      failures: new Map(),
+      total,
+      state: null,
+      status: 'live',
+      error: null,
+      move: () => undefined,
+    });
+    const none = () => undefined;
+    const draw = (home: HomeView) =>
+      renderToStaticMarkup(
+        createElement(HomeList, {
+          view: home,
+          layout: homeLayoutOf(home),
+          cursorKey: null,
+          density: 'comfortable',
+          accounts: [],
+          demoted: false,
+          picked: new Set<string>(),
+          handlers: {
+            select: none,
+            open: none,
+            rowAction: none,
+            suggested: none,
+            later: none,
+            done: none,
+            more: none,
+            openLow: none,
+            oneByOne: none,
+            clearFromHome: none,
+          },
+        }),
+      );
+    const html = draw(view(4));
+    assert.equal(html.match(/class="ui-low-band"/g)?.length, 1, 'the band is there at zero');
+    assert.match(text(html), /Low importance 0/);
+    assert.doesNotMatch(draw(view(0)), /ui-low-band/, 'an empty Home has no band');
   } finally {
     world.connection.close();
   }
