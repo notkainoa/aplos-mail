@@ -1778,4 +1778,4 @@ Context: the owner asked, by name, for the reader / one-by-one email to be one r
 
 Decision: the owner's request wins over those lines for this card only. The circles are monograms (never a remote avatar loaded by the renderer); the details popover lists only what `Message` carries (From, To, Cc, Bcc, Reply-to when it differs, Date); the bell shows a neutral state until the engine reports whether the email notified. The summary stays big above the card; Space, Reply, Later, Done and the docked Ask are unchanged. Not built (owner skipped): the "New 6" counter, the left tick-marks, the "Full email" button.
 
-How to apply: the integrator appends the superseding note to plans/DESIGN.md (the lines above) and the skill; no other screen gains avatars, monograms or an Important menu.
+How to apply: plans/DESIGN.md section 16 holds the superseding entry (integrator, 2026-11-10); the code follows it in #391 (card header and details popover), #396 (Importance menu, bell, ⋯) and #403 (the one-by-one view mounts the same card). No other screen gains avatars, monograms or an Important menu.
