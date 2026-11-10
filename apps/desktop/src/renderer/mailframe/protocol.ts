@@ -190,7 +190,7 @@ function sizeReport(
 
 /**
  * Accept a `message` event only from this frame instance: the source is its `contentWindow`, the origin is expected,
- * the token matches, and the payload is a plain object with exactly the reporter's six fields, well formed. Returns
+ * the token matches, and the payload is a plain object with exactly the reporter's fields (its six, or its seven with `plain`), well formed. Returns
  * null for anything else.
  */
 export function acceptReport(event: ReportEvent, expect: ReportExpectation): SizeReport | null {

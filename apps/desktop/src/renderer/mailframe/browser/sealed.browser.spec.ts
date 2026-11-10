@@ -27,6 +27,15 @@ import { URL_SANDBOX } from '../document';
 import { FALLBACK_KEYS } from '../keys';
 import { FRAME_DARK, FRAME_PAPER } from '../paper';
 
+/** A colour as the browser serialises it back from an inline style (the page's own, so no colour literal is built here). */
+function cssColour(page: Page, colour: string): Promise<string> {
+  return page.evaluate(value => {
+    const probe = document.createElement('i');
+    probe.style.background = value;
+    return probe.style.background;
+  }, colour);
+}
+
 /** The paper colour off by one blue step: a body colour a mail may choose, and no signal of anything. */
 const OFF_WHITE = `${FRAME_PAPER.paper.slice(0, -2)}fe`;
 import { parseBg } from '../protocol';
@@ -185,6 +194,10 @@ function hostState(page: Page) {
       sandbox: frame?.getAttribute('sandbox'),
       src: frame?.getAttribute('src'),
       height: frame?.style.height,
+      padding: frame?.style.padding,
+      background: frame?.style.background,
+      colorScheme: frame?.style.colorScheme,
+      radius: frame?.style.borderRadius,
       hidden: frame?.style.visibility === 'hidden',
       href: location.href,
       aplos: JSON.stringify((window as unknown as { aplos: unknown }).aplos),
@@ -244,6 +257,17 @@ for (const [name, html, plain] of PLAIN_CASES)
     expect(posts.length).toBeGreaterThan(0);
     for (const post of posts) expect(post.plain).toBe(plain);
     expect(onlyReporterPosts(state.posted, token)).toBe(true);
+    // The host's own styling follows the marker and nothing else: a rich letter keeps the light paper in its inset ring,
+    // whatever body colour it painted; only a plain one is flush on the card.
+    if (plain) {
+      expect(state.padding).toBe('0px');
+      expect(state.radius).toBe('0px');
+    } else {
+      expect(state.padding).toContain('--sheet-inset');
+      expect(state.background).toBe(await cssColour(page, FRAME_PAPER.paper));
+      expect(state.colorScheme).toBe('light');
+      expect(state.radius).not.toBe('0px');
+    }
   });
 
 test('the real reporter sizes the host: height, bg and onReady once, from an opaque frame', async ({
