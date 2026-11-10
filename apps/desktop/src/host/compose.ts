@@ -462,6 +462,7 @@ function engineOptions(
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,
+      calendar: accounts.calendarPort,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),
     },
