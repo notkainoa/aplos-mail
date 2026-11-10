@@ -13,14 +13,14 @@ import { fixtureControl } from '@aplos/contract-fixture/control';
 import { createAppRegistry, DEFAULT_KEY_PREFS, type CommandContext } from '../../commands';
 import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { api, setClock, undoStack, type ThreadRow } from '../../data';
+import { api, setClock, undoStack, type HomeView, type ThreadRow } from '../../data';
 import { harnessClock } from '../../data/clock';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { pushToast, dismissToast, runToastAction } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
-import { buildItems, initialKey, layoutOf, orderLayout, type HomeLayout } from './homeModel';
+import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
 import { HomeList } from './HomeList';
 import { HomeScreen } from './HomeScreen';
 import { accountsAreKnown } from './HomeStates';
@@ -168,17 +168,18 @@ test('Home renders Do now, Important updates, the Low band, Follow up in that or
 test('with no Low mail the band still shows, at 0, so Low importance can always be opened', async () => {
   const world = await boot();
   try {
-    const view = { ...world.home.snapshot(), low: { count: 0, names: [], moreSenders: 0 } };
+    const snap = world.home.snapshot();
+    const view = { ...snap, low: { count: 0, names: [], moreSenders: 0 } } as unknown as HomeView;
     const none = () => undefined;
     const html = renderToStaticMarkup(
       createElement(HomeList, {
         view,
-        layout: layoutOf(view),
+        layout: layoutOf(snap),
         cursorKey: null,
         density: 'comfortable',
         accounts: [],
         demoted: false,
-        picked: new Set(),
+        picked: new Set<string>(),
         handlers: {
           select: none,
           open: none,
@@ -195,14 +196,13 @@ test('with no Low mail the band still shows, at 0, so Low importance can always 
     );
     assert.equal(html.match(/class="ui-low-band"/g)?.length, 1, 'the band is there at zero');
     assert.match(text(html), /Low importance 0/);
-    const empty = { ...view, sections: [] };
+    const empty = { ...snap, sections: [] };
     const bare = renderToStaticMarkup(
       createElement(HomeList, {
-        ...({} as never),
-        view: empty,
+        view: { ...view, sections: [] } as unknown as HomeView,
         layout: layoutOf(empty),
         handlers: {} as never,
-        picked: new Set(),
+        picked: new Set<string>(),
         accounts: [],
         density: 'comfortable',
         demoted: false,
