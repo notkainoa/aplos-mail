@@ -7,7 +7,7 @@
 // stretches over it), Enter, Space or O on it opens it to the full message. Once open, only the head is the target, so
 // links, attachments and the body keep their own clicks.
 
-import type { ReactNode, Ref } from 'react';
+import type { Ref } from 'react';
 import type { ThreadMessageProps } from '../props';
 import { Chip } from '../list/Chip';
 import { Action } from '../list/internal/Action';
@@ -18,63 +18,11 @@ import { UndoTray } from './UndoTray';
 /** The excerpt's words when a message has no text to show (plain, dim, no exclamation mark). */
 export const NO_PREVIEW = 'No preview';
 
-function TimeText({ date }: { readonly date: string }) {
-  return (
-    <time className="ui-thread-message__when" dateTime={date} title={formatFull(date)}>
-      {formatMessageTime(date)}
-    </time>
-  );
-}
-
-interface HeadLineProps {
-  readonly fromId: string;
-  readonly from: string;
-  readonly date: string;
-  readonly toLabel: string;
-  /** The card layout: who, when, then the screen's "To"; `actions` take the right side. Else who, the dim phrase, when. */
-  readonly recipients: ReactNode;
-  readonly actions: ReactNode;
-  /** The folded card's first sentence or two; absent while open. */
-  readonly excerpt: string | undefined;
-}
-
-/** Who, when and (folded) the excerpt: the content of a message's head, which a fold wraps in its one button. */
-function HeadLine({ fromId, from, date, toLabel, recipients, actions, excerpt }: HeadLineProps) {
-  const card = recipients !== undefined || actions !== undefined;
-  return (
-    <>
-      <span className="ui-thread-message__line" data-layout={card ? 'card' : undefined}>
-        <span id={fromId} className="ui-thread-message__from" dir="auto">
-          {from}
-        </span>
-        {card ? null : <span className="ui-thread-message__to">{toLabel}</span>}
-        <TimeText date={date} />
-        {recipients}
-        {actions === undefined ? null : (
-          <span className="ui-thread-message__actions">{actions}</span>
-        )}
-      </span>
-      {excerpt === undefined ? null : (
-        <span
-          className="ui-thread-message__excerpt"
-          dir="auto"
-          data-empty={excerpt === '' ? 'true' : undefined}
-        >
-          {excerpt === '' ? NO_PREVIEW : excerpt}
-        </span>
-      )}
-    </>
-  );
-}
-
 /** A full message in the thread. */
 export function ThreadMessage({
   id,
   from,
   toLabel,
-  subject,
-  recipients,
-  headActions,
   date,
   cursor,
   body,
@@ -89,16 +37,27 @@ export function ThreadMessage({
   const tip = useTooltipText();
   const fromId = `${id}-from`;
   const folded = fold !== undefined && !fold.open;
-  const head = (
-    <HeadLine
-      fromId={fromId}
-      from={from}
-      date={date}
-      toLabel={toLabel}
-      recipients={fold ? undefined : recipients}
-      actions={fold ? undefined : headActions}
-      excerpt={folded ? excerpt : undefined}
-    />
+  const headLine = (
+    <>
+      <span className="ui-thread-message__line">
+        <span id={fromId} className="ui-thread-message__from" dir="auto">
+          {from}
+        </span>
+        <span className="ui-thread-message__to">{toLabel}</span>
+        <time className="ui-thread-message__when" dateTime={date} title={formatFull(date)}>
+          {formatMessageTime(date)}
+        </time>
+      </span>
+      {folded && excerpt !== undefined ? (
+        <span
+          className="ui-thread-message__excerpt"
+          dir="auto"
+          data-empty={excerpt === '' ? 'true' : undefined}
+        >
+          {excerpt === '' ? NO_PREVIEW : excerpt}
+        </span>
+      ) : null}
+    </>
   );
   return (
     <article
@@ -106,15 +65,9 @@ export function ThreadMessage({
       id={id}
       className="ui-thread-message"
       data-cursor={cursor ? 'true' : undefined}
-      data-titled={subject ? 'true' : undefined}
       data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
       aria-labelledby={fromId}
     >
-      {subject ? (
-        <h2 className="ui-thread-message__subject" dir="auto">
-          {subject}
-        </h2>
-      ) : null}
       <header className="ui-thread-message__head">
         {fold ? (
           <button
@@ -126,10 +79,10 @@ export function ThreadMessage({
             onFocus={fold.onFocus}
             onClick={fold.onToggle}
           >
-            {head}
+            {headLine}
           </button>
         ) : (
-          head
+          headLine
         )}
       </header>
 

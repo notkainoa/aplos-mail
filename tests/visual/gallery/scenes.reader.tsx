@@ -693,7 +693,6 @@ function richScene(options: RichScene): () => ReactElement {
 }
 
 /** Scrolls the pane the open letter sits in to its end, where the Reply stub is. */
-const OPEN_DETAILS: Step = { click: '.aplos-recipients__button' };
 const SCROLL_TO_END: Step = {
   run: async () => {
     const letter = document.querySelector('.aplos-reader__letter[data-paper="true"]');
@@ -869,7 +868,6 @@ export const readerScenes: Record<string, () => ReactElement> = {
       { key: 'o' },
     ],
   }),
-  'reader-rich-details': richScene({ open: 'project', steps: [OPEN_DETAILS] }),
   'reader-rich-attachments': richScene({ open: 'files' }),
   'reader-rich-attachment-failed': richScene({
     open: 'files',

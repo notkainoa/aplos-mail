@@ -293,16 +293,6 @@ export const readerStates: readonly VisualState[] = [
     summary: 'ready',
   },
   {
-    id: 'reader-rich-details',
-    frame: 'shell',
-    title: 'Reader, rich: the card header with its open details popover (From, To, Cc, Date)',
-    components: ['ThreadMessage', 'Popover'],
-    design: '7.5',
-    mockup: 'reader.html (default)',
-    filled: 1,
-    summary: 'ready',
-  },
-  {
     id: 'reader-rich-attachments',
     frame: 'shell',
     title: 'Reader, rich: a PDF, a zip and a spreadsheet under the latest message',
