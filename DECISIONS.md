@@ -1776,7 +1776,7 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 
 Context: ui-reader's REQUEST (owner request: a bell in the card header that is slashed when the email did NOT notify; circles are monograms).
 
-Decision: `Message.notification?: 'sent' | 'suppressed' | 'none'`, additive and optional, set by `Message/get` from the notification outbox row (`notifications.state`): pending, claimed and posted are `sent`; dropped (notifications off, Focus) is `suppressed`; no row is `none`. The outbox keeps rows 30 days, so a message older than that carries no field (unknown, not `none`) and the bell stays neutral. Within v:1, an open enum, no `currentVersion` change.
+Decision: `Message.notification?: 'sent' | 'suppressed' | 'none'`, additive and optional, set by `Message/get` from the notification outbox row (`notifications.state`): pending, claimed and posted are `sent`; dropped (Focus, the OS refused, or the mail was read or moved out of the Inbox before the banner posted) is `suppressed`; no row is `none`, which includes notifications turned off for the account (no row is ever written) and the baseline sync. A pending row reports `sent` before the banner has posted and may still become `suppressed`. The outbox keeps rows 30 days, so a message older than that carries no field (unknown, not `none`) and the bell stays neutral. Within v:1, an open enum, no `currentVersion` change.
 
 `Contact/photo` is NOT added now. Avatars would mean fetching a remote image or reading a contacts photo for every sender, which is a privacy and egress decision (the renderer never loads a remote URL). Monograms stay; if the owner wants avatars, the method is designed then (bytes or a `data:` URL, from sources already on this Mac).
 
