@@ -89,12 +89,16 @@ describe('the asking loop', () => {
     const timers: { fn: () => void; ms: number; live: boolean }[] = [];
     const asked: [string, string][] = [];
     const results: (readonly SuggestEntry[])[] = [];
+    const answers: { query: string; accountId: string }[] = [];
     const loop = createSuggestLoop({
       suggest: (q, a) => {
         asked.push([q, a]);
         return answer(q, a);
       },
-      onResult: r => void results.push(r),
+      onResult: (r, asked) => {
+        results.push(r);
+        answers.push(asked);
+      },
       schedule: (fn, ms) => {
         const t = { fn, ms, live: true };
         timers.push(t);
@@ -104,7 +108,7 @@ describe('the asking loop', () => {
       },
     });
     const fire = () => timers.filter(t => t.live).forEach(t => ((t.live = false), t.fn()));
-    return { loop, asked, results, fire, timers };
+    return { loop, asked, results, answers, fire, timers };
   }
   const tick = () => new Promise<void>(r => setImmediate(r));
 
@@ -119,6 +123,11 @@ describe('the asking loop', () => {
     await tick();
     assert.deepEqual(r.asked, [['jor', 'acct-1']], 'one ask, for the last text');
     assert.deepEqual(r.results.at(-1), [JORDAN]);
+    assert.deepEqual(
+      r.answers.at(-1),
+      { query: 'jor', accountId: 'acct-1' },
+      'the answer names its question',
+    );
   });
 
   test('a changed From account asks again, and empty text clears at once without asking', async () => {

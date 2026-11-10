@@ -5,9 +5,16 @@
  */
 import { SUGGEST_DEBOUNCE_MS, type SuggestEntry, type SuggestFn } from '../model/suggestions';
 
+/** What was asked: the trimmed text and the From account. */
+export interface SuggestAsked {
+  readonly query: string;
+  readonly accountId: string;
+}
+
 export interface SuggestLoopOptions {
   readonly suggest: SuggestFn;
-  readonly onResult: (entries: readonly SuggestEntry[]) => void;
+  /** The answer and the question it answers, so a caller never shows it under other text or another account. */
+  readonly onResult: (entries: readonly SuggestEntry[], asked: SuggestAsked) => void;
   /** Runs `fn` after `ms`; returns a cancel. Defaults to a timer. */
   readonly schedule?: (fn: () => void, ms: number) => () => void;
 }
@@ -27,12 +34,13 @@ export function createSuggestLoop({ suggest, onResult, schedule }: SuggestLoopOp
       cancel?.();
       cancel = null;
       const mine = ++seq;
-      if (query.trim() === '') return onResult([]);
+      const asked = { query: query.trim(), accountId };
+      if (asked.query === '') return onResult([], asked);
       cancel = later(() => {
         cancel = null;
-        suggest(query.trim(), accountId).then(
-          entries => mine === seq && onResult(entries),
-          () => mine === seq && onResult([]),
+        suggest(asked.query, accountId).then(
+          entries => mine === seq && onResult(entries, asked),
+          () => mine === seq && onResult([], asked),
         );
       }, SUGGEST_DEBOUNCE_MS);
     },
