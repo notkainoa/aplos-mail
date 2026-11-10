@@ -1864,3 +1864,5 @@ Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox,
 - `idle.wakeups` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
 - `ui.home-100k-first-rows` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
 - `ui.scroll-100k-frame` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- Diagnostics/verbose is now partly a query: called with no `on` it answers the stored deadline ({until?}) without writing, while the method stays a command and only the writes are audited.
+

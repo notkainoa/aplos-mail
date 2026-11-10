@@ -277,8 +277,8 @@ test('checkBundle accepts a fully populated bundle and rejects smuggled fields',
     generatedAt: 1,
     versions: {
       app: '0.1.0 (build 42)',
-      api: '1',
-      schema: '7',
+      api: 1,
+      schema: 7,
       sqlite: '3.46',
       os: 'macOS 26',
       electron: '37',
@@ -327,6 +327,7 @@ test('checkBundle accepts a fully populated bundle and rejects smuggled fields',
     crashes: { count: 1, lastAt: 2 },
   };
   checkBundle(full as never); // every field the strict schema knows passes
+  parseDiagnosticsBundle(full as never); // and the strict parse agrees
   const bad = (mutate: (b: Record<string, unknown>) => void) => {
     const copy = JSON.parse(JSON.stringify(full)) as Record<string, unknown>;
     mutate(copy);
@@ -354,8 +355,24 @@ test('verbose with no argument reads the stored deadline — window and listener
     assert.deepEqual(await w.call('Diagnostics/verbose', {}), { until: want });
     const admin = w.asClient('c5', ['read', 'admin']);
     assert.deepEqual(await admin.call('Diagnostics/verbose', {}), { until: want });
+    // The read is a query, not a write — a listener reading must leave no audit row.
+    const reads = w.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM audit_log WHERE method = 'Diagnostics/verbose' AND client_id = 'c5'",
+      )
+      .get() as { n: number };
+    assert.equal(reads.n, 0, 'a verbose read audits nothing');
     await w.call('Diagnostics/verbose', { on: false });
     assert.deepEqual(await w.call('Diagnostics/verbose', {}), {});
+    // A planted deadline past the window reads as off, not as an impossible deadline.
+    w.db
+      .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('verbose_until', ?)")
+      .run(String(w.clock.now() - 1));
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'expired reads off');
+    w.db
+      .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('verbose_until', ?)")
+      .run(String(w.clock.now() + 60 * 60_000));
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'beyond the window reads off');
   } finally {
     await w.engine.close();
   }
