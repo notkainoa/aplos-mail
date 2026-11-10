@@ -17,7 +17,7 @@ import {
   parseDate,
 } from '../../../ui/calendar/dates';
 import { isoOfTime, msOf } from './period';
-import { timeChange } from './times';
+import { timeChange, wallOf } from './times';
 import { DAY_MS, MINUTE_MS, pad } from './units';
 
 const DAY_MINUTES = 24 * 60;
@@ -216,13 +216,31 @@ export function draftProblem(d: EditorDraft): string | null {
   return null;
 }
 
-/** The draft's times as contract fields: instants for a timed event, dates with an exclusive end for an all-day one. */
-export function draftTimes(d: EditorDraft): Pick<EventFields, 'start' | 'end' | 'allDay'> {
+/**
+ * The draft's times as contract fields. All-day: `date` times with the end EXCLUSIVE, as Google stores
+ * them — `endDate` is the draft's inclusive last day, so the write adds one. Timed: `utc` instants, or
+ * `floating` in `zone` when the target calendar (or the event) carries one — a floating write always
+ * names its zone, or the engine refuses `event.timeZoneRequired` (shapes 4–5).
+ */
+export function draftTimes(
+  d: EditorDraft,
+  zone?: string,
+): Pick<EventFields, 'start' | 'end' | 'allDay'> {
   if (d.allDay)
     return {
       start: { type: 'date', date: d.date },
       end: { type: 'date', date: addDays(d.endDate, 1) },
       allDay: true,
+    };
+  if (zone)
+    return {
+      start: {
+        type: 'floating',
+        local: wallOf(localMs(d.date, d.start), zone),
+        timeZone: zone,
+      },
+      end: { type: 'floating', local: wallOf(localMs(d.endDate, d.end), zone), timeZone: zone },
+      allDay: false,
     };
   return {
     start: { type: 'utc', utc: localMs(d.date, d.start) },
@@ -252,14 +270,15 @@ export function draftChange(
   d: EditorDraft,
   original: Event | undefined,
   scope: EventScope,
+  zone?: string,
 ): EventChange | null {
-  const times = draftTimes(d);
+  const times = draftTimes(d, zone);
   if (d.mode === 'new') {
     if (!d.calendarId) return null;
     return {
       type: 'create',
       calendarId: d.calendarId,
-      fields: { title: d.title.trim(), ...times },
+      fields: { title: d.title.trim(), ...times, ...(zone ? { timeZone: zone } : {}) },
     };
   }
   // An edit whose event left the window writes nothing; saveEditor says why (review2 2).

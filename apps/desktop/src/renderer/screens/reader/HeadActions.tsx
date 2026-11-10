@@ -5,7 +5,7 @@
  * actions the reader already has handlers for. Every control is a real button with a name, and Esc closes a menu.
  */
 import { useId, useRef, useState } from 'react';
-import type { ThreadRow } from '../../data';
+import type { Message, ThreadRow } from '../../data';
 import { Button, Icon } from '../../ui/buttons-keys';
 import type { MenuEntry, SuggestedAction } from '../../ui/props';
 import { Menu } from '../../ui/surfaces';
@@ -34,6 +34,8 @@ export interface HeadControls {
 /** Props for `HeadActions`. */
 export interface HeadActionsProps {
   readonly row: ThreadRow;
+  /** The message whose header this is (the latest): the bell reports whether it notified. */
+  readonly message: Message;
   /** The filled suggestion's verb and icon, for the menu's first row. */
   readonly suggestion: SuggestedAction;
   readonly controls: HeadControls;
@@ -100,21 +102,20 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
   );
 }
 
-const BELL: Readonly<Record<NotificationState, { icon: 'bell' | 'bell-off'; label: string }>> = {
+const BELL: Readonly<
+  Record<Exclude<NotificationState, 'unknown'>, { icon: 'bell' | 'bell-off'; label: string }>
+> = {
   notified: { icon: 'bell', label: 'This email notified you' },
   silent: { icon: 'bell-off', label: 'This email did not notify you' },
-  unknown: { icon: 'bell', label: '' },
 };
 
-/** The bell: a status mark, not a control. Slashed when the email did not notify; while that is unknown it is a plain, unnamed outline bell that claims nothing. */
+/**
+ * The bell: a status mark, not a control. A bell when the email notified, a slashed bell when it did not. While the engine
+ * has not said (mail older than its notification log) there is no bell at all: a plain bell would read as "notified".
+ */
 function NotificationBell({ state }: { readonly state: NotificationState }) {
+  if (state === 'unknown') return null;
   const { icon, label } = BELL[state];
-  if (state === 'unknown')
-    return (
-      <span className="aplos-bell" aria-hidden="true" data-state={state}>
-        <Icon name={icon} />
-      </span>
-    );
   return (
     <span className="aplos-bell" role="img" aria-label={label} title={label} data-state={state}>
       <Icon name={icon} />
@@ -217,7 +218,7 @@ export function HeadActions(props: HeadActionsProps) {
   return (
     <>
       <ImportanceMenu row={props.row} controls={props.controls} />
-      <NotificationBell state={notificationOf(props.row)} />
+      <NotificationBell state={notificationOf(props.message)} />
       <MoreMenu {...props} />
     </>
   );
