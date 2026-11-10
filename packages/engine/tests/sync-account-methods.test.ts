@@ -257,6 +257,39 @@ test('Account/grantPermissions runs the same flow under its own mode', async () 
   }
 });
 
+test('Account/grantPermissions carries the calendarWrite opt-in to the sign-in only when named', async () => {
+  const t = setup();
+  try {
+    seed(t.store);
+    await handlers['Account/grantPermissions']({ accountId: 'acct-1' }, t.ctx);
+    await tick();
+    assert.equal(t.pending[0].req.enable, undefined);
+    t.pending[0].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+
+    await handlers['Account/grantPermissions'](
+      { accountId: 'acct-1', enable: 'calendarWrite' },
+      t.ctx,
+    );
+    await tick();
+    assert.equal(t.pending[1].req.mode, 'grantPermissions');
+    assert.equal(t.pending[1].req.enable, 'calendarWrite');
+    t.pending[1].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+
+    // A plain reconnect can never widen the grant, even if a caller passes the field.
+    const sneaky = { accountId: 'acct-1', enable: 'calendarWrite' } as { accountId: string };
+    await handlers['Account/reconnect'](sneaky, t.ctx);
+    await tick();
+    assert.equal(t.pending[2].req.mode, 'reconnect');
+    assert.equal(t.pending[2].req.enable, undefined);
+    t.pending[2].resolve(answer('sub-1', 'owner@gmail.com'));
+    await tick();
+  } finally {
+    t.cleanup();
+  }
+});
+
 test('Account/cancelConnect emits cancelled and ignores a late answer', async () => {
   const t = setup();
   try {

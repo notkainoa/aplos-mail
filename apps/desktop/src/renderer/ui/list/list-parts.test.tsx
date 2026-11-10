@@ -67,6 +67,17 @@ describe('LowBand and LowSheet', () => {
     );
     assert.match(big, /data-cursor="true"/);
     assert.match(text(big), /^Low importance 9,999$/);
+    const clickOnly = render(
+      <LowBand
+        id="low"
+        senders={[]}
+        count={0}
+        cursor={false}
+        density="comfortable"
+        onOpen={noop}
+      />,
+    );
+    assert.match(clickOnly, /title="Open low importance"/, 'no command, no key in the tooltip');
   });
 
   test('moreSenders adds senders the caller did not pass to "and N more"; default unchanged', () => {

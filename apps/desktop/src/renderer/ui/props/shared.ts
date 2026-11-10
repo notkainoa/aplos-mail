@@ -104,6 +104,7 @@ export type IconName =
   | 'phone'
   | 'undo'
   | 'bell'
+  | 'bell-off'
   | 'keyboard'
   | 'user'
   | 'users'
