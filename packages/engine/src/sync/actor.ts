@@ -31,6 +31,7 @@ import {
 } from '../ports';
 import { LANES } from './budgets';
 import { stepWrites } from './facts';
+import { GOOGLE_CALENDAR_WRITE_SCOPE } from './host-calendar';
 import { peerClaimLive } from './lease';
 import { flushable, parseOpPayload, pendingOp, readOps, settleWrites, type OpRow } from './ops';
 import { readFailures, readMemory, readStates } from './persist';
@@ -139,6 +140,8 @@ export class AccountActor {
   private halted?: StatusView;
   /** The missing scopes a `permission` refusal on a calendar call named; unset until one does. */
   calendarScopeGap?: string[];
+  /** Set when an event write was refused for lack of the write scope; cleared by a reconnect or a grant that has it. */
+  private calendarWriteGap?: string[];
   private failure?: StatusView;
   private view?: StatusView;
   private heartbeat: number;
@@ -255,6 +258,7 @@ export class AccountActor {
     if (facts.grantedScopes) this.deps.account.grantedScopes = facts.grantedScopes;
     if (facts.capabilities) this.deps.account.capabilities = facts.capabilities;
     this.calendarScopeGap = undefined;
+    this.calendarWriteGap = undefined;
     this.refreshMissingPermissions();
     if (facts.reconnectBy !== undefined) {
       this.runtime.reconnectBy = facts.reconnectBy;
@@ -834,8 +838,34 @@ export class AccountActor {
     this.emit();
   }
 
+  /**
+   * An event write was refused because the grant only reads. Returns whether the grant really lacks the scope
+   * (a stale refusal after a re-consent is not a gap). `Account.missingPermissions` then carries a `calendarWrite`
+   * row that Settings → Calendar turns into "Enable editing".
+   */
+  calendarWriteRefused(): boolean {
+    if (this.runtime.grantedScopes.includes(GOOGLE_CALENDAR_WRITE_SCOPE)) return false;
+    this.calendarWriteGap = [GOOGLE_CALENDAR_WRITE_SCOPE];
+    this.refreshMissingPermissions();
+    return true;
+  }
+
   /** The gaps right now, or undefined when nothing is missing. */
   private missingPermissionsNow(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
+    const read = this.calendarReadGap();
+    if (read) return read;
+    if (this.calendarWriteGap === undefined) return undefined;
+    return [
+      {
+        capability: 'calendarWrite',
+        reasonCode: 'permission.calendarWrite',
+        missingScopes: this.calendarWriteGap,
+      },
+    ];
+  }
+
+  /** The read-side gap: the calendar scopes the grant lacks (or that a refusal named), or undefined. */
+  private calendarReadGap(): NonNullable<AccountRuntime['missingPermissions']> | undefined {
     if (this.deps.adapter.calendar === undefined) return undefined;
     // A `permission` refusal names the scopes it was refused for — that outranks the stored capability,
     // which can be stale after a revocation (reconnect re-derives it).

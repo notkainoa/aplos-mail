@@ -44,9 +44,9 @@ function get(args: Input<'Account/get'>, ctx: MethodContext): Output<'Account/ge
 }
 
 function reconnectWith(mode: 'reconnect' | 'grantPermissions') {
-  return (args: { accountId: string }, ctx: MethodContext) => {
+  return (args: { accountId: string; enable?: 'calendarWrite' }, ctx: MethodContext) => {
     const returnTo = connectionOpensOnboarding(ctx.connectionId) ? 'onboarding' : 'mail';
-    const flow = existingAccountFlow(flowDeps(ctx.services), mode, args.accountId);
+    const flow = existingAccountFlow(flowDeps(ctx.services), mode, args.accountId, args.enable);
     return sessionsOf(ctx.services).begin({ ...flow, returnTo });
   };
 }

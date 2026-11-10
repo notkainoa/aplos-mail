@@ -42,6 +42,7 @@ import {
 import { identityFromIdToken, subjectClaim, type GoogleIdentity } from './id-token';
 import {
   connectScopes,
+  explicitScopes,
   googleScopeManifest,
   grantedFeatures,
   missingRequiredScopes,
@@ -146,18 +147,25 @@ function grantTokenOf(body: Record<string, unknown>): string | undefined {
 
 const optionalManifestScopes = googleScopeManifest.filter(e => !e.required).map(e => e.scope);
 
-/** The optional scopes a flow may newly ask for: a `deferred` entry (round 2's calendar.events) is never one. */
+/** The optional scopes a flow may newly ask for by default: a `deferred` entry (calendar.events, write) is never one. */
 const requestableOptionalScopes = googleScopeManifest
   .filter(e => !e.required && !e.deferred)
   .map(e => e.scope);
 
-/** New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every requestable scope. */
+/**
+ * New: the caller's optional scopes. Reconnect: those plus the ones held before. Re-grant: every requestable scope.
+ * An explicit re-grant (`req.enable`, Settings → Calendar → "Enable editing") asks ONLY for what that opt-in names
+ * plus what is already held: it is the single path to a `deferred` scope and never re-asks for anything else.
+ */
 function scopesFor(deps: GoogleConnectDeps, req: ConnectRequest, account: AccountId): string[] {
   const asked = deps.optionalScopes?.(req);
   if (req.mode === 'new') return connectScopes(asked ?? []);
   const held = new Set(deps.grantedScopes?.(account) ?? []);
   const kept = optionalManifestScopes.filter(scope => held.has(scope));
-  const wanted = asked ?? (req.mode === 'grantPermissions' ? requestableOptionalScopes : []);
+  const enabled = req.mode === 'grantPermissions' && req.enable ? explicitScopes(req.enable) : [];
+  const wanted = enabled.length
+    ? enabled
+    : (asked ?? (req.mode === 'grantPermissions' ? requestableOptionalScopes : []));
   return connectScopes([...new Set([...kept, ...wanted])]);
 }
 

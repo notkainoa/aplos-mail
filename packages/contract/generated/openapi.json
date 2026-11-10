@@ -3891,7 +3891,7 @@
     "/call/Account/grantPermissions": {
       "post": {
         "operationId": "Account_grantPermissions",
-        "summary": "Full re-consent for missing scopes (installed apps cannot do incremental auth).",
+        "summary": "Full re-consent for missing scopes (installed apps cannot do incremental auth). `enable: calendarWrite` is the only way Aplos ever asks for permission to create, change and delete calendar events; without it the re-consent never asks for more than reading.",
         "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
@@ -5353,6 +5353,10 @@
         "properties": {
           "accountId": {
             "$ref": "#/components/schemas/Id"
+          },
+          "enable": {
+            "type": "string",
+            "enum": ["calendarWrite"]
           }
         },
         "required": ["accountId"]
@@ -11298,6 +11302,7 @@
               "permission.mailModify",
               "permission.filters",
               "permission.calendar",
+              "permission.calendarWrite",
               "permission.settings",
               "config.apiDisabled",
               "config.clientMissing",
