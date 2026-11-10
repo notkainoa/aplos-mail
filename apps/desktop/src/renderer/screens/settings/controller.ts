@@ -610,6 +610,8 @@ export function createController(deps: ControllerDeps) {
       deps.setView({ addTool: true });
     },
     closeAddTool() {
+      // A failed grant's Retry must not outlive the dialog: it would make a tool whose key path nobody sees.
+      if (deps.failure?.()?.op === 'allow that tool') deps.fail(null);
       deps.setView({ addTool: false });
     },
     /**

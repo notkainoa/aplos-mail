@@ -32,8 +32,8 @@ export const TOOL_SCOPES: readonly ToolScopeChoice[] = [
   { id: 'ai', label: 'Use your AI providers' },
   {
     id: 'admin',
-    label: 'Change settings and tools',
-    warning: 'This tool could change these settings, including who else is allowed.',
+    label: 'Change settings and accounts',
+    warning: 'This tool could change your settings and disconnect accounts.',
   },
 ];
 
@@ -65,6 +65,14 @@ export function toggleScope(scopes: readonly ToolScope[], id: ToolScope, on: boo
   return TOOL_SCOPES.map(s => s.id).filter(s => next.has(s));
 }
 
+/** An MCP tool reaches only reading and drafting today; the other permissions would be stored and never used. */
+export function kindNote(kind: ToolKind, scopes: readonly ToolScope[]): string | null {
+  if (kind !== 'mcp') return null;
+  return scopes.some(s => s === 'triage' || s === 'send' || s === 'admin')
+    ? 'MCP tools can only read and write drafts for now, so the other permissions do nothing yet.'
+    : null;
+}
+
 /** The sentences under the ticked permissions that act for you. */
 export function scopeWarnings(scopes: readonly ToolScope[]): readonly string[] {
   return TOOL_SCOPES.filter(s => s.warning && scopes.includes(s.id)).map(s => s.warning!);
@@ -90,7 +98,6 @@ export function revokeConfirm(name: string): { question: string; consequence: st
 
 /** The device-sync row: one calm sentence, and whether any control can exist yet. */
 export function workflowLine(status: WorkflowInfo | undefined): string {
-  if (!status) return 'Keeps Done and Later in step between Macs.';
-  if (!status.available) return 'Device sync comes in a later version.';
+  if (!status || !status.available) return 'Device sync comes in a later version.';
   return status.enabled ? 'On. Done and Later follow you between Macs.' : 'Off.';
 }

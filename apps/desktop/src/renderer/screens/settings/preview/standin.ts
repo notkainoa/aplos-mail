@@ -102,7 +102,7 @@ export function standInPorts(
         kind: input.kind,
         scopes: [...input.scopes],
         createdAt: Date.now(),
-        tokenPath: '~/Library/Application Support/Aplos Mail/clients/demo.token',
+        tokenPath: `/Users/someone/Library/Application Support/Aplos Mail/run/clients/${Date.now()}.token`,
       };
       set({ clients: [...(get().clients ?? []), client] });
       return client;

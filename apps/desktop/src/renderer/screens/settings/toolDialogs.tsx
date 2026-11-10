@@ -11,6 +11,7 @@ import { FailureLine } from './parts';
 import type { SectionProps } from './sections/types';
 import {
   EMPTY_TOOL_DRAFT,
+  kindNote,
   scopeWarnings,
   TOOL_KEY_NOTE,
   TOOL_KIND_ITEMS,
@@ -21,9 +22,21 @@ import {
   type ToolKind,
 } from './settings.model';
 
-export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions' | 'failure'>) {
+/** The longest name the engine takes. */
+const MAX_NAME = 200;
+
+export function AddToolDialog({
+  actions,
+  failure,
+  initialGranted = null,
+}: Pick<SectionProps, 'actions' | 'failure'> & {
+  /** Opens on the key file step: for the gallery and tests only; the app never passes it. */
+  initialGranted?: { name: string; path: string | undefined } | null;
+}) {
   const [draft, setDraft] = useState<ToolDraft>(EMPTY_TOOL_DRAFT);
-  const [granted, setGranted] = useState<{ name: string; path: string | undefined } | null>(null);
+  const [granted, setGranted] = useState<{ name: string; path: string | undefined } | null>(
+    initialGranted,
+  );
   const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -151,7 +164,7 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
           labelVisible
           placeholder="Terminal assistant"
           value={draft.name}
-          onChange={name => setDraft({ ...draft, name })}
+          onChange={name => setDraft({ ...draft, name: name.slice(0, MAX_NAME) })}
           onSubmit={() => void submit()}
         />
         <Puck
@@ -177,11 +190,13 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
             />
           ))}
         </fieldset>
-        {scopeWarnings(draft.scopes).map(w => (
-          <Text key={w} variant="small" tone="ink">
-            {w}
-          </Text>
-        ))}
+        {[...scopeWarnings(draft.scopes), kindNote(draft.kind, draft.scopes)]
+          .filter((w): w is string => w !== null)
+          .map(w => (
+            <Text key={w} variant="small" tone="ink">
+              {w}
+            </Text>
+          ))}
       </div>
     </Dialog>
   );

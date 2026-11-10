@@ -1,7 +1,9 @@
 /** Settings → Tools on this Mac: Add a tool, the one-time key file path, Revoke with a question, device sync (DESIGN 7.10; ARCH 12.3). */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { AddToolDialog } from './toolDialogs';
 import { createController } from './controller';
 import type { SettingsApiPort, SettingsData, WriteFailure } from './ports';
 import { clients, NOW } from './preview/fixtures';
@@ -9,6 +11,7 @@ import { STATES, staticScreen } from './preview/states';
 import {
   EMPTY_TOOL_DRAFT,
   revokeConfirm,
+  kindNote,
   scopeWarnings,
   toggleScope,
   toolDraftReady,
@@ -71,7 +74,10 @@ describe('ui-settings: Add a tool', () => {
   test('Send and settings carry a plain warning while they are ticked, and nothing else does', () => {
     assert.deepEqual(scopeWarnings(['read', 'draft']), []);
     assert.match(scopeWarnings(['read', 'send']).join(' '), /send mail as you/);
-    assert.match(scopeWarnings(['admin']).join(' '), /change these settings/);
+    assert.match(
+      scopeWarnings(['admin']).join(' '),
+      /change your settings and disconnect accounts/,
+    );
   });
 
   test('grant: the new tool joins the list WITHOUT its key file path; the path goes back to the dialog only', async () => {
@@ -171,10 +177,43 @@ describe('ui-settings: Add a tool', () => {
       workflowLine({ enabled: false, available: false }),
       'Device sync comes in a later version.',
     );
-    assert.match(workflowLine(undefined), /between Macs/);
+    assert.equal(workflowLine(undefined), 'Device sync comes in a later version.');
+    assert.match(workflowLine({ enabled: true, available: true }), /between Macs/);
     const markup = renderToStaticMarkup(staticScreen(STATES['device-sync-later']));
     assert.match(markup, /Device sync comes in a later version\./);
     assert.doesNotMatch(markup, /set-general-deviceSync[^]*role="switch"/);
+  });
+
+  test('Cancel after a failed grant takes its Retry away; an MCP tool is told which permissions do nothing', async () => {
+    const h = harness({
+      clientsGrant: async () => {
+        throw new Error('refused');
+      },
+    });
+    await h.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read', 'send'] }, () => {});
+    assert.equal(h.failures.at(-1)?.op, 'allow that tool');
+    h.actions.openAddTool();
+    h.actions.closeAddTool();
+    assert.equal(h.failures.at(-1), null, 'no Retry is left behind the closed dialog');
+    assert.equal(kindNote('cli', ['send']), null);
+    assert.equal(kindNote('mcp', ['read', 'draft']), null);
+    assert.match(kindNote('mcp', ['send']) ?? '', /do nothing yet/);
+  });
+
+  test('the key file step shows the path, the one-time note and one filled button', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AddToolDialog, {
+        actions: harness({}).actions,
+        failure: null,
+        initialGranted: { name: 'Terminal assistant', path: PATH },
+      }),
+    );
+    assert.match(markup, /Terminal assistant” is allowed/);
+    assert.ok(markup.includes(PATH.replace(/ /g, ' ')), 'the path is shown');
+    assert.match(markup, /Aplos never shows the key itself/);
+    assert.match(markup, /shown once/);
+    assert.match(markup, />Copy path</);
+    assert.equal((markup.match(/data-variant="filled"/g) ?? []).length, 1);
   });
 
   test('the Add dialog and the Revoke question draw: one filled button, no key path, plain copy', () => {
