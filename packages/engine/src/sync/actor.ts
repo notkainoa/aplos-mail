@@ -31,7 +31,7 @@ import {
 } from '../ports';
 import { LANES } from './budgets';
 import { stepWrites } from './facts';
-import { GOOGLE_CALENDAR_WRITE_SCOPE } from '../calendar/write-port';
+import { GOOGLE_CALENDAR_WRITE_SCOPE, hasCalendarWrite } from '../calendar/write-port';
 import { peerClaimLive } from './lease';
 import { flushable, parseOpPayload, pendingOp, readOps, settleWrites, type OpRow } from './ops';
 import { readFailures, readMemory, readStates } from './persist';
@@ -844,7 +844,7 @@ export class AccountActor {
    * row that Settings → Calendar turns into "Enable editing".
    */
   calendarWriteRefused(): boolean {
-    if (this.runtime.grantedScopes.includes(GOOGLE_CALENDAR_WRITE_SCOPE)) return false;
+    if (hasCalendarWrite(this.runtime.grantedScopes)) return false;
     this.calendarWriteGap = [GOOGLE_CALENDAR_WRITE_SCOPE];
     this.refreshMissingPermissions();
     return true;

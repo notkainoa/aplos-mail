@@ -391,7 +391,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
   // "Allow calendar access" and "Sign in again" open the shell's one reconnect sheet (grant vs reconnect).
   const accessAction = useCallback(
-    (id: string, mode: 'reconnect' | 'grant') => openSheet('reconnect', { accountId: id, mode }),
+    (id: string, mode: 'reconnect' | 'grant', enable?: 'calendarWrite') =>
+      openSheet('reconnect', { accountId: id, mode, ...(enable ? { enable } : {}) }),
     [],
   );
   // The shell's sidebar slot (PR #271): MiniMonth, the Calendars list and the accounts block under the place

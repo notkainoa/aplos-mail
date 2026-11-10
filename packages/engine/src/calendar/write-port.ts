@@ -27,6 +27,21 @@ import { writeFailure } from './write-errors';
 /** Google's event write scope (`oauth/scopes.ts` `calendarEventsWrite`; pinned by a test). */
 export const GOOGLE_CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
+/**
+ * Every grant that satisfies a write: the narrow `calendar.events` scope OR the `calendar` umbrella an older
+ * grant may already hold. One list for every gate (`prepare` here, the actor's `calendarWriteRefused`) so a
+ * holder of the umbrella is never refused a write it can make; the gap still reports `calendar.events`,
+ * the least the owner can add.
+ */
+export const CALENDAR_WRITE_SCOPES = [
+  GOOGLE_CALENDAR_WRITE_SCOPE,
+  'https://www.googleapis.com/auth/calendar',
+] as const;
+
+/** True when the grant covers calendar writes (any scope in `CALENDAR_WRITE_SCOPES`). */
+export const hasCalendarWrite = (grantedScopes: readonly string[]) =>
+  CALENDAR_WRITE_SCOPES.some(s => grantedScopes.includes(s));
+
 /** What a calendar write needs from a started account. */
 export interface CalendarTarget {
   adapter: ProviderAdapter;
@@ -84,7 +99,8 @@ function notStarted(method: string): NotSentError {
 
 function calendarOf(target: CalendarTarget, method: string): CalendarAdapter {
   const calendar = target.adapter.calendar;
-  if (calendar) return calendar;
+  // A non-Google calendar half may exist without write support; refuse cleanly, never a TypeError.
+  if (calendar && typeof calendar.put === 'function') return calendar;
   throw new ContractError({
     type: 'unsupported',
     message: 'This account has no calendar Aplos can change.',
@@ -111,7 +127,7 @@ function prepare(account: AccountId, target: CalendarTarget | undefined, method:
       message: 'Aplos could not tell which account to change.',
     });
   }
-  if (!ctx.account.grantedScopes.includes(GOOGLE_CALENDAR_WRITE_SCOPE) && target.writeRefused())
+  if (!hasCalendarWrite(ctx.account.grantedScopes) && target.writeRefused())
     throw writePermissionError();
   return { calendar, ctx, target };
 }

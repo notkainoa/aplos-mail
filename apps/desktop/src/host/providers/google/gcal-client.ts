@@ -40,6 +40,8 @@ export interface GcalRequest {
   kind?: RequestKind;
   /** The remote item, so a one-item 404 is classified `permanent` with it. */
   item?: string;
+  /** Per-request timeout: a hung call fails instead of holding the governor slot (writes set one). */
+  timeoutMs?: number;
 }
 
 export class GcalClient {
@@ -62,8 +64,10 @@ export class GcalClient {
     return `${req.path}${qs ? `?${qs}` : ''}`;
   }
 
-  private signal(): AbortSignal {
-    return AbortSignal.any([this.ctx.signal, this.deps.closed]);
+  private signal(req: GcalRequest): AbortSignal {
+    const signals = [this.ctx.signal, this.deps.closed];
+    if (req.timeoutMs !== undefined) signals.push(AbortSignal.timeout(req.timeoutMs));
+    return AbortSignal.any(signals);
   }
 
   /** One governed call. Throws `ProviderError` (classified) or `PausedError`; resolves with the parsed JSON. */
@@ -75,7 +79,7 @@ export class GcalClient {
     const cost = gcalCost(req.method);
     const asked = this.ctx.clock.now();
     return this.ctx.governor.run(
-      { budget: 'gcal', lane: req.lane, kind, method: req.method, cost, signal: this.signal() },
+      { budget: 'gcal', lane: req.lane, kind, method: req.method, cost, signal: this.signal(req) },
       async io => {
         const started = this.ctx.clock.now();
         const waitMs = started - asked;

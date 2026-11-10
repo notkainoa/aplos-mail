@@ -53,12 +53,15 @@ export interface ReconnectFlowProps {
    * args carry the mode the entry point asked for, and that wins over what the account's health would re-derive.
    */
   readonly call?: ReconnectCall;
+  /** The named opt-in a 'grant' asks for (`calendarWrite` for "Enable editing"); absent otherwise. */
+  readonly enable?: 'calendarWrite';
 }
 
 /** What the flow knows about the account when it opens; later health changes never restart it. */
 interface Facts {
   readonly address: string;
   readonly call: ReconnectCall;
+  readonly enable?: 'calendarWrite';
 }
 
 /** Puts focus back where it was, unless something else already holds it. */
@@ -73,14 +76,24 @@ export function restoreFocus(opener: Element | null): boolean {
 
 const noop = () => {};
 
-export function ReconnectFlow({ accountId, onClose, ports: given, call }: ReconnectFlowProps) {
+export function ReconnectFlow({
+  accountId,
+  onClose,
+  ports: given,
+  call,
+  enable,
+}: ReconnectFlowProps) {
   const accounts = useAccounts();
   const loaded = useAccountsLoaded();
   const factsRef = useRef<Facts | null>(null);
   if (!factsRef.current) {
     const account = accounts.find(a => a.id === accountId);
     if (account)
-      factsRef.current = { address: account.address, call: call ?? callFor(account, getNow()) };
+      factsRef.current = {
+        address: account.address,
+        call: call ?? callFor(account, getNow()),
+        ...(enable ? { enable } : {}),
+      };
   }
   const facts = factsRef.current;
   // The account is not here (removed, or the list has not arrived): nothing to reconnect.
@@ -133,7 +146,12 @@ function Run({
   );
 
   const [state, setState] = useState<ReconnectState>(() =>
-    initialReconnect({ accountId, address: facts.address, call: facts.call }),
+    initialReconnect({
+      accountId,
+      address: facts.address,
+      call: facts.call,
+      ...(facts.enable ? { enable: facts.enable } : {}),
+    }),
   );
   const stateRef = useRef(state);
   const onCloseRef = useRef(onClose);

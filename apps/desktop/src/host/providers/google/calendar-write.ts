@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ContractError } from '@aplos/contract/contract-error';
 import { ProviderError } from '@aplos/engine/ports';
 import type {
@@ -70,6 +71,17 @@ function randomEventId(): string {
   return Array.from(bytes, b => '0123456789abcdefghijklmnopqrstuv'[b % 32]).join('');
 }
 
+/**
+ * The event id for a create, derived from the op id (HIGH, #394): a re-sent create names the SAME event, so a
+ * request whose answer was lost meets 409 instead of making a second event. Deterministic, 17 base32hex chars.
+ */
+export function eventIdForOp(opId: string): string {
+  const digest = createHash('sha256').update(`gcal-event:${opId}`).digest();
+  return Array.from(digest.subarray(0, 17), b => '0123456789abcdefghijklmnopqrstuv'[b % 32]).join(
+    '',
+  );
+}
+
 /** `EventTime` to Google's start/end object. */
 function apiTime(t: EventTime, patch: boolean): ApiDateTime {
   if (t.type === 'date') return { date: t.date, ...(patch ? { dateTime: null } : {}) };
@@ -136,6 +148,9 @@ export function targetId(ref: {
 
 const sendUpdates = (notify: boolean | undefined) => (notify === true ? 'all' : 'none');
 
+/** Every write call's deadline; reads stay unbounded (they already fail on governor/abort). */
+const WRITE_TIMEOUT_MS = 20_000;
+
 const path = (calendarRemoteId: string, eventId?: string) =>
   `/calendars/${encodeURIComponent(calendarRemoteId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ''}`;
 
@@ -173,12 +188,25 @@ export function createCalendarWrites(
       ...(req.ifMatch ? { ifMatch: req.ifMatch } : {}),
       lane: 'interactive',
       kind: req.kind,
+      // Writes get a bound: a hung request fails instead of holding the op forever (MED, #394).
+      ...(req.http ? { timeoutMs: WRITE_TIMEOUT_MS } : {}),
       ...(req.eventId ? { item: req.eventId } : {}),
     });
   }
 
   const read = (ctx: AdapterContext, calendar: string, eventId: string) =>
     call(ctx, { method: 'gcal.events.get', calendar, eventId, kind: 'read' });
+
+  /** `read` that answers undefined for a missing event (404/410), every other failure thrown. */
+  const tryRead = async (ctx: AdapterContext, calendar: string, eventId: string) => {
+    try {
+      return await read(ctx, calendar, eventId);
+    } catch (error) {
+      const status = statusOf(error);
+      if (status === 404 || status === 410) return undefined;
+      throw error;
+    }
+  };
 
   const saved = (calendar: string, event: ApiEvent): CalendarWriteResult => {
     const facts = map.facts(calendar, event);
@@ -203,7 +231,8 @@ export function createCalendarWrites(
     const f = change.fields;
     if (f.summary === undefined || f.start === undefined || f.end === undefined)
       throw invalid('Give the event a title, a start and an end.', 'event.fieldsRequired');
-    const eventId = newId();
+    // An op-named id makes a re-sent create idempotent (409 → read back); no op id falls back to random.
+    const eventId = change.opId ? eventIdForOp(change.opId) : newId();
     const body = { id: eventId, ...eventBody(f, false) };
     const calendar = change.calendarRemoteId;
     try {
@@ -230,9 +259,14 @@ export function createCalendarWrites(
       ...(change.recurrenceId ? { recurrenceId: change.recurrenceId } : {}),
       scope: change.scope,
     });
-    // New guests need the current list to keep the existing guests' answers.
+    // New guests need the current list to keep the existing guests' answers. An occurrence with no stored
+    // etag (no exception row seen yet) also reads first: an instance Google already holds gets ITS etag as
+    // the base, so the patch is still guarded; a 404 means the override is created (nothing to clobber).
+    const isOccurrence = eventId !== change.remoteId;
     const before =
-      change.fields.attendees !== undefined ? await read(ctx, calendar, eventId) : undefined;
+      change.fields.attendees !== undefined || (isOccurrence && change.etag === undefined)
+        ? await tryRead(ctx, calendar, eventId)
+        : undefined;
     const body = eventBody(change.fields, true, before?.attendees);
     try {
       const made = await call(ctx, {
@@ -241,7 +275,7 @@ export function createCalendarWrites(
         calendar,
         eventId,
         body,
-        ifMatch: change.etag,
+        ifMatch: change.etag ?? before?.etag,
         notify: change.notify,
         kind: 'write',
       });
@@ -290,12 +324,14 @@ export function createCalendarWrites(
       const calendar = ref.calendarRemoteId;
       const eventId = targetId(ref);
       const current = await read(ctx, calendar, eventId);
-      if (ref.etag !== undefined && current.etag !== undefined && current.etag !== ref.etag)
-        return conflict(ctx, calendar, eventId);
       const guests = current.attendees ?? [];
       const me = guests.find(a => a.self === true);
       if (!me) throw invalid('You are not on this event’s guest list.', 'event.notAGuest');
+      // A no-op answers saved before the staleness check: on a busy meeting another guest's RSVP bumps the
+      // etag, but nothing needs writing when my answer is already the target (MED, #394).
       if (me.responseStatus === response) return saved(calendar, current);
+      if (ref.etag !== undefined && current.etag !== undefined && current.etag !== ref.etag)
+        return conflict(ctx, calendar, eventId);
       const attendees = guests.map(a => (a === me ? { ...a, responseStatus: response } : a));
       try {
         const made = await call(ctx, {

@@ -148,6 +148,8 @@ export interface SettledFrame {
 export interface ReconnectState {
   readonly phase: SheetPhase;
   readonly call: ReconnectCall;
+  /** The explicit opt-in a 'grant' asks for (`calendarWrite`); absent on a plain re-consent. */
+  readonly enable?: 'calendarWrite';
   readonly accountId: string;
   /** The address being reconnected: the sheet's title and `login_hint`. */
   readonly address: string;
@@ -189,6 +191,7 @@ export type ReconnectEffect =
       readonly call: ReconnectCall;
       readonly accountId: string;
       readonly attempt: number;
+      readonly enable?: 'calendarWrite';
     }
   | { readonly type: 'cancelConnect'; readonly connectId: string }
   /** Tell the parent the sheet is gone. "Reconnected" also raises the toast. */
@@ -203,10 +206,12 @@ export function initialReconnect(input: {
   accountId: string;
   address: string;
   call?: ReconnectCall;
+  enable?: 'calendarWrite';
 }): ReconnectState {
   return {
     phase: 'idle',
     call: input.call ?? 'reconnect',
+    ...(input.enable ? { enable: input.enable } : {}),
     accountId: input.accountId,
     address: input.address,
     attempt: 0,
@@ -263,7 +268,15 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
       const attempt = state.attempt + 1;
       return {
         state: { ...state, phase: 'waiting', attempt, connectId: null, early: [] },
-        effects: [{ type: 'start', call: state.call, accountId: state.accountId, attempt }],
+        effects: [
+          {
+            type: 'start',
+            call: state.call,
+            accountId: state.accountId,
+            attempt,
+            ...(state.enable ? { enable: state.enable } : {}),
+          },
+        ],
       };
     }
 
@@ -332,7 +345,15 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
       const { reason: _old, ...rest } = state;
       return {
         state: { ...rest, phase: 'waiting', attempt, connectId: null, early: [] },
-        effects: [{ type: 'start', call: state.call, accountId: state.accountId, attempt }],
+        effects: [
+          {
+            type: 'start',
+            call: state.call,
+            accountId: state.accountId,
+            attempt,
+            ...(state.enable ? { enable: state.enable } : {}),
+          },
+        ],
       };
     }
   }
@@ -359,8 +380,11 @@ export function sheetView(state: ReconnectState): {
 export interface ReconnectPorts {
   /** `Account/reconnect {accountId}`: the engine passes the stored address as `login_hint`. */
   reconnect(input: { accountId: string }): Promise<{ connectId: string }>;
-  /** `Account/grantPermissions {accountId}`: full re-consent for the missing scopes. */
-  grantPermissions(input: { accountId: string }): Promise<{ connectId: string }>;
+  /** `Account/grantPermissions {accountId, enable?}`: full re-consent for the missing scopes; `enable` asks a named opt-in (calendar write). */
+  grantPermissions(input: {
+    accountId: string;
+    enable?: 'calendarWrite';
+  }): Promise<{ connectId: string }>;
   /** `Account/cancelConnect {connectId}`: idempotent. */
   cancelConnect(input: { connectId: string }): Promise<unknown>;
 }
@@ -374,11 +398,13 @@ export async function runReconnectEffect(
   switch (effect.type) {
     case 'start':
       try {
-        const input = { accountId: effect.accountId };
         const out =
           effect.call === 'grantPermissions'
-            ? await ports.grantPermissions(input)
-            : await ports.reconnect(input);
+            ? await ports.grantPermissions({
+                accountId: effect.accountId,
+                ...(effect.enable ? { enable: effect.enable } : {}),
+              })
+            : await ports.reconnect({ accountId: effect.accountId });
         dispatch({ type: 'started', attempt: effect.attempt, connectId: out.connectId });
       } catch (error) {
         const code = reasonOf(error);

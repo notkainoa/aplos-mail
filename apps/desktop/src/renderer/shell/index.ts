@@ -94,7 +94,12 @@ export interface SheetArgs {
    * `reconnect` or `grantPermissions`); the shell passes `mode` on as
    * `ReconnectSheetProps.mode` for the copy.
    */
-  reconnect: { readonly accountId: AccountId; readonly mode: 'reconnect' | 'grant' };
+  reconnect: {
+    readonly accountId: AccountId;
+    readonly mode: 'reconnect' | 'grant';
+    /** The named opt-in a 'grant' asks for: 'calendarWrite' = the Enable-editing consent. */
+    readonly enable?: 'calendarWrite';
+  };
   /**
    * The AI consent card as a sheet (plan 30 4.5 #1: Settings → AI "Review" after a provider
    * change, or `Consent.needsReconsent`). Provider and model default to the Summaries choice in

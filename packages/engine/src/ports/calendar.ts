@@ -75,6 +75,8 @@ export interface EventChange {
   scope: EditScope;
   fields: Partial<EventFields>;
   notify?: boolean;
+  /** The caller's op id on a create: the event id is derived from it, so a re-sent create meets 409 instead of duplicating. */
+  opId?: string;
 }
 
 /** D24; `changeTag` is CalDAV's ctag, to skip unchanged collections. */

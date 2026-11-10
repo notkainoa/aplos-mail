@@ -94,6 +94,7 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
     <ReconnectFlow
       accountId={args.accountId}
       call={callForSheetMode(args.mode)}
+      {...(args.enable ? { enable: args.enable } : {})}
       onClose={() => closeSheet()}
     />
   );
