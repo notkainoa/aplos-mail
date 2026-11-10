@@ -874,6 +874,7 @@ export function listenerLine(listener: ListenerInfo | undefined): string {
 }
 
 export * from './settings.queue.model';
+export * from './settings.tools.model';
 
 /* ───────────────────────── confirmations ───────────────────────── */
 

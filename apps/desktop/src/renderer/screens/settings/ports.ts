@@ -16,6 +16,9 @@ import type {
   ClientEntry,
   ListenerInfo,
   QueueEntry,
+  ToolKind,
+  ToolScope,
+  WorkflowInfo,
 } from './settings.model';
 import type { AiProvider } from '../../data';
 
@@ -33,6 +36,8 @@ export interface SettingsData {
   readonly usage?: AiUsageInfo;
   readonly listener?: ListenerInfo;
   readonly clients?: readonly ClientEntry[];
+  /** Device sync, loaded with the General section. */
+  readonly workflow?: WorkflowInfo;
   readonly queue?: readonly QueueEntry[];
   /** The diagnostics preview, once asked for. */
   readonly bundle?: BundleInfo;
@@ -68,6 +73,14 @@ export interface SettingsApiPort {
   consentRevoke(): Promise<void>;
   listenerSet(enabled: boolean): Promise<void>;
   clientsRevoke(id: string): Promise<void>;
+  /** `Clients/grant`: the new tool, with `tokenPath` (where its key file is). The key itself never crosses the contract. */
+  clientsGrant(input: {
+    name: string;
+    kind: ToolKind;
+    scopes: readonly ToolScope[];
+  }): Promise<ClientEntry>;
+  /** `Workflow/status`: whether device sync exists yet, and whether it is on. */
+  workflowStatus(): Promise<WorkflowInfo>;
   diagnosticsPreview(): Promise<BundleInfo>;
   /** Copies the report to the clipboard. */
   diagnosticsCopy(): Promise<void>;

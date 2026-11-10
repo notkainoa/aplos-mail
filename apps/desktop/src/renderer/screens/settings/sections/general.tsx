@@ -9,6 +9,7 @@ import {
   densityToUi,
   hasCapability,
   listenerLine,
+  workflowLine,
   SWIPE_OPTIONS,
   THEME_ITEMS,
   toolRows,
@@ -133,6 +134,7 @@ export function General({ data, actions }: SectionProps) {
       </Group>
 
       <Tools {...{ data, actions }} />
+      <DeviceSync {...{ data }} />
     </>
   );
 }
@@ -163,6 +165,23 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
       ) : (
         <NotAvailable section="general" anchor="allowTools" />
       )}
+      {clientsOn ? (
+        <Row
+          section="general"
+          anchor="addTool"
+          description={enabled ? 'Name it and choose what it may do.' : 'Turn on tools first.'}
+          control={
+            <Button
+              variant="text"
+              label="Add a tool"
+              disabled={!enabled}
+              onPress={() => actions.openAddTool()}
+            />
+          }
+        />
+      ) : (
+        <NotAvailable section="general" anchor="addTool" />
+      )}
       {!clientsOn ? (
         <NotAvailable section="general" anchor="tools" />
       ) : !enabled ? (
@@ -191,12 +210,21 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
               <Button
                 variant="text"
                 label="Revoke"
-                onPress={() => void actions.revokeClient(t.id)}
+                onPress={() => actions.askRevokeClient(t.id, t.name)}
               />
             }
           />
         ))
       )}
+    </Group>
+  );
+}
+
+/** Device sync: one calm row. The engine says whether it exists yet; no control is drawn until it does (STATUS, ui-settings DECIDED). */
+function DeviceSync({ data }: Pick<SectionProps, 'data'>) {
+  return (
+    <Group id="set-general-sync" label="Your Macs">
+      <Row section="general" anchor="deviceSync" description={workflowLine(data.workflow)} />
     </Group>
   );
 }
