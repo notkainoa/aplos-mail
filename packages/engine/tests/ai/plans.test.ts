@@ -125,3 +125,27 @@ test('Event/extract: no consent and a Spam thread mean no provider call', async 
   assert.equal(t.calls.length, 0);
   w.file.cleanup();
 });
+
+test('the plans window lists open proposals; a foreign-account wire id cannot dismiss; confirm refuses settled plans', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  assert.equal(out.plans.length, 1);
+  const win = await w.call('View/watch', { spec: { kind: 'plans' } });
+  assert.deepEqual(win.ids, ['acct-1:plan-1'], 'the open plan appears in the plans window');
+  // A wire id with another account's prefix never settles this row.
+  await w.call('Plan/dismiss', { opId: 'd1', ids: ['acct-2:plan-1'] });
+  const still = await w.call('Plan/get', { ids: ['acct-1:plan-1'] });
+  assert.equal(still.list[0].state, 'open');
+  // The real dismiss works, and confirming a settled plan is a conflict — no provider call.
+  await w.call('Plan/dismiss', { opId: 'd2', ids: ['acct-1:plan-1'] });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c1', id: 'acct-1:plan-1' }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+  );
+  const win2 = await w.call('View/watch', { spec: { kind: 'plans' } });
+  assert.deepEqual(win2.ids, [], 'dismissed plans leave the window');
+  w.file.cleanup();
+});

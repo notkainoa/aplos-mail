@@ -303,17 +303,19 @@ function planPut(write: PlanWrite, tx: CommitExtensionTx): void {
 }
 
 function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
-  if (!Number.isInteger(write.id)) bad();
+  if (!Number.isInteger(write.id) || typeof write.accountId !== 'string') bad();
   if (write.state !== 'confirmed' && write.state !== 'dismissed' && write.state !== 'open') bad();
   const row = tx.get<{ account_id: string }>(
     'SELECT account_id FROM plans WHERE id = ?',
     write.id!,
   );
   const r = tx.run(
-    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), rev = rev + 1 WHERE id = ? AND state = 'open'`,
+    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), rev = rev + 1
+     WHERE id = ? AND account_id = ? AND state = 'open'`,
     write.state!,
     write.eventId ?? null,
     write.id!,
+    write.accountId,
   );
   if (r.changes && row) tx.mark('Plan', `${row.account_id}:plan-${write.id}`, 'u');
 }

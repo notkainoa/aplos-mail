@@ -255,6 +255,8 @@ export interface Extracted {
   mail: ThreadMail[];
   plans: ParsedPlan[];
   model: string;
+  /** The input hash of the exact mail snapshot the model read — plans are stored under it. */
+  inputHash: string;
 }
 
 /**
@@ -278,7 +280,11 @@ export async function extractThread(
     const t = threadRow(q, accountId, remoteThreadId);
     if (!t || t.banned) return undefined;
     const mail = threadMail(q, accountId, t.id);
-    return mail.length ? { id: t.id, mail } : undefined;
+    if (!mail.length) return undefined;
+    // The hash of this exact snapshot — stored with the plans so a thread that moved while the model
+    // answered never produces rows that pretend to describe the new input.
+    const { hash } = inputHashOf(q, t.id);
+    return { id: t.id, mail, hash };
   });
   if (!work) return 'empty';
   if (!dateish(work.mail)) return 'empty';
@@ -312,6 +318,7 @@ export async function extractThread(
     mail: work.mail,
     plans: parsed,
     model: `${gate.model.provider}/${gate.model.model}`,
+    inputHash: work.hash,
   };
 }
 
@@ -320,10 +327,13 @@ export function writePlans(
   services: EngineServices,
   accountId: string,
   remoteThreadId: string,
-  inputHash: string,
   x: Extracted,
 ): Plan[] {
-  const opId = `ai-plan-${remoteThreadId}-${inputHash}-${hexId(services.randomBytes, 'p')}`;
+  // The thread may have moved while the model answered: only write plans under the hash of the mail
+  // that was actually read, and drop the result entirely if the thread has since changed.
+  const moved = services.store.read(q => inputHashOf(q, x.threadRowId).hash !== x.inputHash);
+  if (moved) return services.store.read(q => openPlans(q, x.threadRowId)).map(planOf);
+  const opId = `ai-plan-${remoteThreadId}-${x.inputHash}-${hexId(services.randomBytes, 'p')}`;
   const first = x.mail.find(m => m.text || m.subject);
   services.store.commit({
     opId,
@@ -333,7 +343,7 @@ export function writePlans(
       action: 'put' as const,
       accountId,
       remoteThreadId,
-      inputHash,
+      inputHash: x.inputHash,
       ...(first ? { messageRemoteId: first.remoteId, fromName: first.from } : {}),
       ...(p.quote ? { quote: p.quote } : {}),
       title: p.title,
@@ -384,7 +394,7 @@ export async function extract(
     const x = await extractThread(services, parts.accountId, parts.remoteId, args.timeZone);
     if (x === 'empty') return { plans: [], receipt: receipt(ctx, args.opId) };
     return {
-      plans: writePlans(services, parts.accountId, parts.remoteId, hash, x),
+      plans: writePlans(services, parts.accountId, parts.remoteId, x),
       receipt: receipt(ctx, args.opId),
     };
   } catch (error) {
@@ -445,12 +455,13 @@ export function dismissPlans(
     writes: args.ids.flatMap(id => {
       const parts = services.store.read(q => splitId(q, id));
       const num = parts && wirePlan(parts.remoteId);
-      return num !== undefined
+      return num !== undefined && parts
         ? [
             {
               kind: 'plan' as const,
               action: 'settle' as const,
               id: Number(num),
+              accountId: parts.accountId,
               state: 'dismissed' as const,
             },
           ]
@@ -463,7 +474,7 @@ export function dismissPlans(
 function findPlan(
   q: Parameters<EngineServices['store']['read']>[0] extends (q: infer Q) => unknown ? Q : never,
   args: Input<'Plan/confirm'>,
-): { row: PlanRow; accountId: string; calRemote: string } | undefined {
+): { row: PlanRow } | undefined {
   const parts = splitId(q, args.id);
   const num = parts && wirePlan(parts.remoteId);
   if (!parts || num === undefined) return undefined;
@@ -473,19 +484,47 @@ function findPlan(
     parts.accountId,
   );
   if (!row) return undefined;
-  const cal = args.calendarId
+  return { row };
+}
+
+type PlanQuery = Parameters<EngineServices['store']['read']>[0] extends (q: infer Q) => unknown
+  ? Q
+  : never;
+
+/**
+ * The calendar a confirmed plan lands on: `args.calendarId` may name another owned account's calendar
+ * (the unified grid) — the event and its wire id belong to that account. The calendar must exist;
+ * absent an explicit id, the plan account's primary, then any of its calendars.
+ */
+function resolveCalendar(
+  q: PlanQuery,
+  row: PlanRow,
+  calendarId: string | undefined,
+): { calAccountId: string; calRemote: string } | undefined {
+  const cal = calendarId
     ? parseCalendarIdIn(
-        args.calendarId,
+        calendarId,
         q.all<{ id: string }>('SELECT id FROM accounts').map(r => r.id),
       )
     : undefined;
-  const target =
+  if (calendarId && !cal) return undefined;
+  const calAccountId = cal?.accountId ?? row.account_id;
+  const calRemote =
     cal?.remoteId ??
     q.get<{ remote_id: string }>(
       'SELECT remote_id FROM calendars WHERE account_id = ? ORDER BY is_primary DESC, remote_id LIMIT 1',
-      row.account_id,
+      calAccountId,
     )?.remote_id;
-  return target ? { row, accountId: parts.accountId, calRemote: target } : undefined;
+  if (
+    !calRemote ||
+    !q.get(
+      'SELECT 1 AS one FROM calendars WHERE account_id = ? AND remote_id = ?',
+      calAccountId,
+      calRemote,
+    )
+  )
+    return undefined;
+  return { calAccountId, calRemote };
 }
 
 const planFields = (
@@ -514,12 +553,21 @@ export async function confirmPlan(
   ctx: MethodContext,
 ): Promise<Output<'Plan/confirm'>> {
   const { services } = ctx;
-  const found = services.store.read(q => findPlan(q, args));
-  if (!found)
+  const plan = services.store.read(q => findPlan(q, args));
+  if (!plan)
     throw new ContractError({ type: 'notFound', message: 'This plan is no longer available.' });
-  const { row, accountId, calRemote } = found;
+  if (plan.row.state !== 'open')
+    throw new ContractError({
+      type: 'conflict',
+      message: 'This plan was already confirmed or dismissed.',
+    });
+  const target = services.store.read(q => resolveCalendar(q, plan.row, args.calendarId));
+  if (!target)
+    throw new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
+  const { calAccountId, calRemote } = target;
+  const row = plan.row;
   const fields = planFields(row, args);
-  const result = await services.calendar.put(accountId, {
+  const result = await services.calendar.put(calAccountId, {
     calendarRemoteId: calRemote,
     scope: 'occurrence',
     fields,
@@ -529,7 +577,7 @@ export async function confirmPlan(
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
   const first = result.upserts[0];
   const eventId = first
-    ? `${accountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`
+    ? `${calAccountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`
     : undefined;
   services.store.commit({
     opId: args.opId,
@@ -539,6 +587,7 @@ export async function confirmPlan(
         kind: 'plan',
         action: 'settle',
         id: row.id,
+        accountId: row.account_id,
         state: 'confirmed',
         ...(eventId ? { eventId } : {}),
       },
