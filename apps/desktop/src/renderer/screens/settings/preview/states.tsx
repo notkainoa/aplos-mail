@@ -492,6 +492,12 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ listener: { enabled: true }, clients: [] }),
     view: { addTool: true },
   },
+  'tool-admin-confirm': {
+    title: 'General, admin access asks twice',
+    section: 'general',
+    data: tools(),
+    view: { addTool: true, confirm: { kind: 'grantAdmin', name: 'Terminal assistant' } },
+  },
   'tool-revoke-confirm': {
     title: 'General, revoking a tool asks first',
     section: 'general',

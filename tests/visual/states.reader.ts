@@ -13,7 +13,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-no-summary',
@@ -23,7 +22,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (no-ai)',
     filled: 1,
-    summary: 'absent',
   },
   {
     id: 'reader-plain-text',
@@ -33,7 +31,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-long-thread',
@@ -43,7 +40,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-earlier-collapsed',
@@ -53,7 +49,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-earlier-expanded',
@@ -63,7 +58,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-attachments',
@@ -73,7 +67,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-attachment-failed',
@@ -83,7 +76,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-images-blocked',
@@ -93,7 +85,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-trackers-removed',
@@ -103,7 +94,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-find',
@@ -113,7 +103,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-loading-line',
@@ -123,7 +112,6 @@ export const readerStates: readonly VisualState[] = [
     design: '5, 7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-body-failed',
@@ -133,7 +121,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5, 7.15',
     mockup: 'errors.html (body-failed)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-thread-gone',
@@ -152,7 +139,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6',
     mockup: 'reply.html (reply)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'inline-reply-ai-draft',
@@ -162,7 +148,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 9',
     mockup: 'reply.html (reply)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'inline-reply-dictating',
@@ -180,7 +165,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 10',
     mockup: 'reply.html (reply)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'compose-new',
@@ -208,7 +192,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6',
     mockup: 'reply.html (sent)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-scheduled-toast',
@@ -218,7 +201,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6',
     mockup: 'reply.html (sent)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-offline',
@@ -228,7 +210,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 7.13',
     mockup: 'errors.html (offline)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-failed',
@@ -238,7 +219,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.15',
     mockup: 'errors.html (send-failed)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-deferred',
@@ -248,7 +228,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 7.15',
     mockup: 'errors.html (send-failed)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-uncertain',
@@ -258,7 +237,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 7.15',
     mockup: 'errors.html (send-failed)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'send-suspended',
@@ -268,7 +246,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6, 7.15',
     mockup: 'errors.html (send-failed)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-project',
@@ -279,7 +256,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-project-expanded',
@@ -290,7 +266,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (earlier)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-details',
@@ -300,7 +275,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-attachments',
@@ -310,7 +284,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-attachment-failed',
@@ -321,7 +294,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-invite',
@@ -332,7 +304,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'reader-rich-oneliner',
@@ -342,7 +313,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'pending',
   },
   {
     id: 'reader-rich-receipt',
@@ -353,7 +323,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'absent',
   },
   {
     id: 'reader-rich-newsletter',
@@ -363,7 +332,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'absent',
   },
   {
     id: 'reader-rich-newsletter-bottom',
@@ -373,7 +341,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'absent',
   },
   {
     id: 'reader-rich-no-attachments',
@@ -383,7 +350,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'pending',
   },
   {
     id: 'reader-rich-loading',
@@ -394,7 +360,6 @@ export const readerStates: readonly VisualState[] = [
     design: '5, 7.5',
     mockup: 'reader.html (default)',
     filled: 1,
-    summary: 'pending',
   },
   {
     id: 'reader-rich-no-summary',
@@ -404,7 +369,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.5',
     mockup: 'reader.html (no-ai)',
     filled: 1,
-    summary: 'absent',
   },
   {
     id: 'compose-rich-reply-draft',
@@ -414,7 +378,6 @@ export const readerStates: readonly VisualState[] = [
     design: '7.6',
     mockup: 'reply.html (reply)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'compose-rich-new',

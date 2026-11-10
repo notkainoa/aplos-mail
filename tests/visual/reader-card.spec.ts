@@ -14,11 +14,12 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('reader card header', () => {
-  test('the subject is the first card top line and the head carries sender, time and the To circles', async ({
+  test('the head carries the sender mark, name, time and the To circles; there is no subject row or summary above', async ({
     page,
   }) => {
     await open(page);
-    await expect(page.locator(`${LETTER} .ui-thread-message__subject`)).toHaveCount(1);
+    await expect(page.locator(`${LETTER} .ui-thread-message__subject`)).toHaveCount(0);
+    await expect(page.locator(`${LETTER} .ui-reader-head`)).toHaveCount(0);
     const head = page.locator(`${LETTER} .ui-thread-message`).last();
     await expect(head.locator('.ui-thread-message__from')).toBeVisible();
     await expect(head.locator('.ui-thread-message__when')).toBeVisible();
@@ -98,5 +99,20 @@ test.describe('reader card header', () => {
     await expect(menu).toHaveAttribute('aria-activedescendant', /.+/);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
+  });
+
+  test('↑ moves the cursor to the earlier card, which shows a quiet accent edge; the latest shows none until then', async ({
+    page,
+  }) => {
+    await open(page);
+    const cards = page.locator(`${LETTER} .ui-thread-message`);
+    const edge = (index: number) =>
+      cards.nth(index).evaluate(el => getComputedStyle(el).boxShadow.includes('inset'));
+    expect(await edge((await cards.count()) - 1), 'the latest card starts without an edge').toBe(
+      false,
+    );
+    await page.keyboard.press('ArrowUp');
+    await expect(cards.nth((await cards.count()) - 2)).toHaveAttribute('data-cursor', 'true');
+    expect(await edge((await cards.count()) - 2)).toBe(true);
   });
 });

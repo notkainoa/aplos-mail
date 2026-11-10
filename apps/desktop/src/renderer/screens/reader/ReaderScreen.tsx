@@ -287,6 +287,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
           key={id}
           threadId={id}
           paper={id === shown}
+          cards={cards}
           ui={uiFor(ui, id)}
           dispatch={id === shown ? dispatchShown : ignore}
           controls={controls}

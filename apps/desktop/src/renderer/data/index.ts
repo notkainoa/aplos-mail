@@ -966,6 +966,10 @@ export const api: DataApi = {
     verbose: ((...args: unknown[]) =>
       forward('diagnostics', 'verbose', args)) as DataApi['diagnostics']['verbose'],
   },
+  contact: {
+    suggest: ((...args: unknown[]) =>
+      forward('contact', 'suggest', args)) as DataApi['contact']['suggest'],
+  },
   data: {
     export: ((...args: unknown[]) => forward('data', 'export', args)) as DataApi['data']['export'],
   },
