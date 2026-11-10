@@ -46,7 +46,7 @@ function Preview() {
   return (
     <div className="rdr-frame">
       <Pane kind="main" label="Reader preview">
-        <div className="aplos-reader" data-cards="b">
+        <div className="aplos-reader" data-cards="a">
           <ReaderHead
             summary={{
               state: 'ready',

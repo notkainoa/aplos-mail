@@ -623,9 +623,9 @@ describe('ui-settings: behaviour and DOM (dom)', () => {
     assert.ok(failure);
     assert.equal(JSON.stringify(view).includes(KEY), false, 'no key in view state');
     assert.equal(JSON.stringify(failure!.op).includes(KEY), false, 'no key in the line');
-    assert.equal(failure!.retry.toString().includes(KEY), false, 'the retry closure keeps no key');
+    assert.equal(failure!.retry!.toString().includes(KEY), false, 'the retry closure keeps no key');
     assert.equal(failure!.dismiss.toString().includes(KEY), false);
-    failure!.retry();
+    failure!.retry?.();
     assert.deepEqual(
       view.addKey,
       { provider: 'anthropic', mode: 'add' },
