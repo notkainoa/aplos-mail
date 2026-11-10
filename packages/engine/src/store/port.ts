@@ -724,6 +724,7 @@ export const LANE_WRITE_KINDS = {
   job: 'eng-ai',
   consent: 'eng-ai',
   summary: 'eng-ai',
+  plan: 'eng-ai',
   aiUsage: 'eng-ai',
   conversation: 'eng-ai',
   senderRule: 'eng-views',

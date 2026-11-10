@@ -7,6 +7,7 @@ declare module '../store/port' {
     summary: SummaryWrite;
     aiUsage: AiUsageWrite;
     conversation: ConversationWrite;
+    plan: PlanWrite;
   }
 }
 
@@ -48,6 +49,34 @@ export interface SummaryWrite {
   /** A `SuggestedAction` serialized; `null` clears. */
   action?: string | null;
   state: 'ready' | 'stale' | 'failed';
+}
+
+/**
+ * One `plans` row (an AI-found date or meeting): `put` inserts a proposal under its input hash and marks the `Plan`
+ * change row `<accountId>:plan-<rowid>`; `settle` moves it to `confirmed`/`dismissed` and bumps `rev`.
+ */
+export interface PlanWrite {
+  kind: 'plan';
+  action: 'put' | 'settle';
+  /** `settle`: the numeric row id. */
+  id?: number;
+  accountId?: string;
+  remoteThreadId?: string;
+  inputHash?: string;
+  messageRemoteId?: string;
+  fromName?: string;
+  quote?: string;
+  title?: string;
+  startUtc?: number;
+  startDate?: string;
+  endUtc?: number;
+  endDate?: string;
+  allDay?: boolean;
+  timeZone?: string;
+  location?: string;
+  model?: string;
+  state?: 'open' | 'confirmed' | 'dismissed';
+  eventId?: string;
 }
 
 /** Token accounting per day, provider, model and lane (ARCH 8.4); no change row. */
@@ -235,6 +264,66 @@ function summary(write: SummaryWrite, tx: CommitExtensionTx): void {
   tx.touchThread(write.accountId, write.remoteThreadId);
 }
 
+function planParams(write: PlanWrite, tx: CommitExtensionTx): number {
+  const threadId =
+    typeof write.accountId === 'string' && typeof write.remoteThreadId === 'string'
+      ? tx.threadRowId(write.accountId, write.remoteThreadId)
+      : undefined;
+  if (threadId === undefined || typeof write.title !== 'string' || !write.title) bad();
+  const timed = write.startUtc !== undefined && write.endUtc !== undefined;
+  const dated = write.startDate !== undefined && write.endDate !== undefined;
+  if (timed === dated) bad();
+  return threadId!;
+}
+
+function planPut(write: PlanWrite, tx: CommitExtensionTx): void {
+  const threadId = planParams(write, tx);
+  const r = tx.run(
+    `INSERT INTO plans(account_id, thread_id, input_hash, message_remote_id, from_name, quote, title,
+       start_utc, start_date, end_utc, end_date, all_day, time_zone, location, state, model, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+    write.accountId!,
+    threadId!,
+    (write.inputHash ?? '').slice(0, 100),
+    write.messageRemoteId?.slice(0, 300) ?? null,
+    write.fromName?.slice(0, 200) ?? null,
+    write.quote?.slice(0, 1_000) ?? null,
+    write.title!.slice(0, 1_000),
+    write.startUtc ?? null,
+    write.startDate ?? null,
+    write.endUtc ?? null,
+    write.endDate ?? null,
+    write.allDay ? 1 : 0,
+    write.timeZone?.slice(0, 60) ?? null,
+    write.location?.slice(0, 2_000) ?? null,
+    write.model?.slice(0, 200) ?? null,
+    tx.now(),
+  );
+  if (r.changes) tx.mark('Plan', `${write.accountId}:plan-${r.lastInsertRowid}`, 'u');
+}
+
+function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
+  if (!Number.isInteger(write.id)) bad();
+  if (write.state !== 'confirmed' && write.state !== 'dismissed' && write.state !== 'open') bad();
+  const row = tx.get<{ account_id: string }>(
+    'SELECT account_id FROM plans WHERE id = ?',
+    write.id!,
+  );
+  const r = tx.run(
+    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), rev = rev + 1 WHERE id = ? AND state = 'open'`,
+    write.state!,
+    write.eventId ?? null,
+    write.id!,
+  );
+  if (r.changes && row) tx.mark('Plan', `${row.account_id}:plan-${write.id}`, 'u');
+}
+
+function plan(write: PlanWrite, tx: CommitExtensionTx): void {
+  if (write.action === 'put') planPut(write, tx);
+  else if (write.action === 'settle') planSettle(write, tx);
+  else bad();
+}
+
 function aiUsage(write: AiUsageWrite, tx: CommitExtensionTx): void {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(write.day) ||
@@ -294,6 +383,8 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
       return summary(write as SummaryWrite, tx);
     case 'aiUsage':
       return aiUsage(write as AiUsageWrite, tx);
+    case 'plan':
+      return plan(write as PlanWrite, tx);
     case 'conversation':
       return conversation(write as ConversationWrite, tx);
   }
@@ -301,7 +392,7 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
 
 export const aiWritesExtension: CommitExtension = {
   lane: 'eng-ai',
-  kinds: ['job', 'summary', 'aiUsage', 'conversation'],
-  changeTypes: ['AiJob', 'Conversation'],
+  kinds: ['job', 'summary', 'aiUsage', 'conversation', 'plan'],
+  changeTypes: ['AiJob', 'Conversation', 'Plan'],
   apply,
 };

@@ -1,4 +1,4 @@
-import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
+import type { Event, Input, Output, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
 import {
@@ -15,7 +15,7 @@ import {
 } from '../calendar/project';
 import type { EventFields } from '@aplos/contract';
 import type { EventFields as PortFields } from '../ports/calendar';
-import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './types';
+import { nonce, type AreaHandlers, type MethodContext } from './types';
 
 /** The recurrence expander lives in the calendar chunk (the bundle budget's seam): `Event/get` loads it only
  * for an occurrence id that has no stored override row, and a missing chunk answers `unavailable`, not a throw. */
@@ -354,13 +354,6 @@ async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Outp
   return receipt(ctx, args.opId);
 }
 
-function getPlans(args: Input<'Plan/get'>, ctx: MethodContext): Output<'Plan/get'> {
-  return { state: stateOf(ctx), list: [] as Plan[], notFound: args.ids };
-}
-
-const noPlan = () =>
-  new ContractError({ type: 'notFound', message: 'This plan is no longer waiting.' });
-
 export const handlers: AreaHandlers<'event'> = {
   'Calendar/get': getCalendars,
   'Calendar/set': setCalendar,
@@ -368,12 +361,10 @@ export const handlers: AreaHandlers<'event'> = {
   'Event/set': setEvent,
   'Event/hide': hideEvents,
   'Event/rsvp': rsvp,
-  'Event/extract': notImplemented('Event/extract'),
-  'Plan/get': getPlans,
-  'Plan/confirm': () => {
-    throw noPlan();
-  },
-  'Plan/dismiss': () => {
-    throw noPlan();
-  },
+  // The plan surface lazy-loads `ai/impl/plans` (the bundle budget's seam); the impl holds the gate, the
+  // date-ish pre-filter and the model call. `Plan/*` writes stay local except `Plan/confirm`'s calendar put.
+  'Event/extract': async (args, ctx) => (await import('../ai/impl/plans')).extract(args, ctx),
+  'Plan/get': async (args, ctx) => (await import('../ai/impl/plans')).getPlans(args, ctx),
+  'Plan/confirm': async (args, ctx) => (await import('../ai/impl/plans')).confirmPlan(args, ctx),
+  'Plan/dismiss': async (args, ctx) => (await import('../ai/impl/plans')).dismissPlans(args, ctx),
 };
