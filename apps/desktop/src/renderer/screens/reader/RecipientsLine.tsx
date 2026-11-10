@@ -2,7 +2,8 @@
  * The card header's "To" (owner request 2026-11-10, image B): the word, one overlapping circle per recipient (the owner
  * included) and a chevron. The whole group is one button that opens the message's details in a Popover (image C): From
  * with name and address, To, Cc, Bcc, Reply-to when it differs, Date. Esc closes it and focus returns to the button.
- * Circles are monograms: no remote avatar is ever loaded by the renderer.
+ * Circles are monograms drawn from a data attribute by CSS (so the button's visible text is just "To", and its name starts
+ * with it); no remote avatar is ever loaded by the renderer.
  */
 import { useRef, useState } from 'react';
 import type { Message } from '../../data';
@@ -25,9 +26,12 @@ export interface RecipientsLineProps {
 
 function Circle({ person }: { readonly person: Person }) {
   return (
-    <span className="aplos-circle" data-me={person.me ? 'true' : undefined} aria-hidden="true">
-      {person.initial}
-    </span>
+    <span
+      className="aplos-circle"
+      data-me={person.me ? 'true' : undefined}
+      data-mark={person.initial}
+      aria-hidden="true"
+    />
   );
 }
 
@@ -41,9 +45,7 @@ function Circles({ people }: { readonly people: readonly Person[] }) {
   return (
     <span className="aplos-circles" aria-hidden="true">
       {rest > 0 ? (
-        <span className="aplos-circle" data-more="true">
-          +{rest}
-        </span>
+        <span className="aplos-circle" data-more="true" data-mark={`+${rest}`} aria-hidden="true" />
       ) : null}
       {[...shown].reverse().map(person => (
         <Circle key={person.key} person={person} />
@@ -105,7 +107,7 @@ export function RecipientsLine({ message, me }: RecipientsLineProps) {
         className="aplos-recipients__button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Show details, ${recipientsPhrase(people)}`}
+        aria-label={`To ${recipientsPhrase(people)}, show details`}
         onClick={() => setOpen(value => !value)}
       >
         <span className="aplos-recipients__to" aria-hidden="true">

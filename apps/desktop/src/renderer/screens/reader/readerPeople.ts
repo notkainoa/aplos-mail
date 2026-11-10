@@ -68,10 +68,10 @@ export function recipientCircles(message: Message, me: ReadonlySet<string>): rea
   return meFirst(arrived ? [...listed, you] : listed);
 }
 
-/** "to you, Mina Cho": the accessible name of the circles. */
+/** "you, Mina Cho" (or "no one"): who the circles stand for, for the button's accessible name after "To". */
 export function recipientsPhrase(people: readonly Person[]): string {
   const names = people.map(p => (p.name.toLowerCase() === 'you' ? 'you' : p.name));
-  return `to ${names.length > 0 ? names.join(', ') : 'no one'}`;
+  return names.length > 0 ? names.join(', ') : 'no one';
 }
 
 function sameAddresses(a: readonly Address[], b: readonly Address[]): boolean {

@@ -290,6 +290,9 @@
   font-weight: 600;
   letter-spacing: var(--track-caption);
 }
+.aplos-circle::before {
+  content: attr(data-mark);
+}
 .aplos-circle[data-me='true'] {
   color: var(--ink);
 }

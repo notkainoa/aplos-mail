@@ -63,12 +63,12 @@ test('mail that arrived without the owner on it still went to them; a sent messa
   );
 });
 
-test("the phrase is the circles' accessible name", () => {
+test('the phrase names who the circles stand for', () => {
   assert.equal(
     recipientsPhrase(recipientCircles(message({ to: [ALEX, MINA] }), ME)),
-    'to you, Mina Cho',
+    'you, Mina Cho',
   );
-  assert.equal(recipientsPhrase([]), 'to no one');
+  assert.equal(recipientsPhrase([]), 'no one');
   assert.ok(MAX_CIRCLES >= 3);
 });
 
