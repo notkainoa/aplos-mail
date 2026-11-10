@@ -56,30 +56,44 @@ function rankedThreads(run: CommitRun): number[] {
 }
 
 /** Threads ranked per commit while mail that synced before `laneFor` was wired is caught up. */
-const BACKFILL_BATCH = 200;
+const BACKFILL_BATCH = 300;
 const BACKFILL_KEY = 'lane_backfill';
 
 /**
- * The next batch of threads that were stored before `laneFor` ran (they still hold the schema default lane), found by
- * walking thread ids with a cursor kept in `meta`. A batch rides on an ordinary sync commit, so a big mailbox never
- * stalls start-up; once the walk ends the marker reads `done` and later commits pay one lookup.
+ * The next batch of threads that were stored before `laneFor` ran (they still hold the schema default lane). The walk
+ * keeps its place in `meta`: first the threads Home can show, newest first (`n:<last_date>:<id>`), so the first commit
+ * fixes the top of Home; then everything else by thread id (`a:<id>`); then `done`. A batch rides on an ordinary sync
+ * commit, so a big mailbox never stalls start-up, and once the walk ends later commits pay one lookup.
  */
 function unrankedThreads(run: CommitRun): number[] {
   const mark = run.q('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(BACKFILL_KEY);
   if (mark?.value === 'done') return [];
+  const [phase, x = '0', y = '0'] = (mark?.value ?? 'n:9007199254740991:9007199254740991').split(
+    ':',
+  );
+  const newest = phase === 'n';
   const ids = run
     .q(
-      'SELECT thread_id AS id FROM thread_workflow WHERE thread_id > ? AND ranked_at IS NULL ORDER BY thread_id LIMIT ?',
+      newest
+        ? `SELECT thread_id AS id, last_date AS d FROM thread_workflow WHERE status = 'new' AND ranked_at IS NULL
+          AND (last_date < ?1 OR (last_date = ?1 AND thread_id < ?2)) ORDER BY last_date DESC, thread_id DESC LIMIT ?3`
+        : `SELECT thread_id AS id, last_date AS d FROM thread_workflow WHERE thread_id > ?1 AND ranked_at IS NULL
+          ORDER BY thread_id LIMIT ?3`,
     )
-    .all<{ id: number }>(Number(mark?.value ?? 0), BACKFILL_BATCH)
-    .map(r => r.id);
-  const next = ids.length < BACKFILL_BATCH ? 'done' : String(ids[ids.length - 1]);
+    .all<{ id: number; d: number }>(Number(x), Number(y), BACKFILL_BATCH);
+  const last = ids[ids.length - 1];
+  const full = ids.length === BACKFILL_BATCH && last !== undefined;
+  const next = full
+    ? `${phase}:${newest ? `${last.d}:${last.id}` : last.id}`
+    : newest
+      ? 'a:0'
+      : 'done';
   run
     .q(
       'INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     )
     .run(BACKFILL_KEY, next);
-  return ids;
+  return ids.map(r => r.id);
 }
 
 interface WorkflowRow {

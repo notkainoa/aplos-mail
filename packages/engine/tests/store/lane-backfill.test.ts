@@ -93,14 +93,21 @@ test('the catch-up runs a bounded batch per commit and then stops', () => {
     const after = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
     const low = () => Object.values(lanesOf(after)).filter(v => v === 'low/heuristic').length;
     const counts: number[] = [];
-    for (const n of [1, 2, 3, 4]) {
+    for (const n of [1, 2, 3]) {
       after.commit({ opId: `tick${n}`, origin: 'sync', writes: [msg(`x${n}`, `x${n}`, 1000 + n)] });
       counts.push(low());
+      if (n === 1) {
+        const lanes = lanesOf(after);
+        assert.equal(lanes.t449, 'low/heuristic', 'the newest thread is ranked in the first batch');
+        assert.equal(lanes.t0, 'do/heuristic', 'the oldest waits for a later batch');
+      }
     }
-    assert.equal(counts[0], 200, 'one commit ranks one batch');
-    assert.equal(counts[1], 400);
-    assert.equal(counts[2], 450, 'the last batch ends the catch-up');
-    assert.equal(counts[3], 450, 'a later commit ranks only its own mail');
+    // The first batch of 300 holds the commit's own new thread too (it stays `do`), so 299 newsletters are Low.
+    assert.deepEqual(
+      counts,
+      [299, 450, 450],
+      "one batch per commit, then only a commit's own mail",
+    );
     after.close();
   } finally {
     file.cleanup();
