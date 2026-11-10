@@ -49,6 +49,7 @@ export function ReaderStage({ open, controls }: ReaderStageProps) {
           key={id}
           threadId={id}
           paper={id === shown}
+          cards={cards}
           ui={uiFor(ui, id)}
           dispatch={id === shown ? dispatchShown : ignore}
           controls={controls}

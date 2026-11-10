@@ -9,6 +9,8 @@
   flex-direction: column;
 }
 .aplos-reader {
+  /* The sender mark's width and its gap: where a plain body's text starts (below). */
+  --plain-indent: 0px;
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -136,10 +138,6 @@
 .aplos-reader:not([data-cards='off']) .aplos-reader__thread {
   margin-top: var(--space-6);
 }
-.aplos-reader[data-cards='a'] .ui-reader-head__summary,
-.aplos-reader[data-cards='a'] .ui-reader-head__due {
-  padding-inline: var(--space-6);
-}
 /* Attachments read as small cards: the chip keeps its size and its failed tint, and takes the card's surface. */
 .aplos-reader:not([data-cards='off'])
   .ui-thread-message__attachments
@@ -198,9 +196,15 @@
 .aplos-reader[data-cards='a'] .aplos-reader__messages > .ui-thread-message:first-child {
   margin-top: 0;
 }
+/* Owner sketch 2026-11-10: no blue rail beside the sender. The card ↑/↓ walks to takes a quiet accent edge instead, so the
+   message O acts on is always seen; the latest message (where the cursor starts) shows nothing until a key moves it. */
 .aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true']::before {
-  top: var(--space-6);
-  left: var(--space-3);
+  content: none;
+}
+.aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true'] {
+  box-shadow:
+    var(--elev-pane),
+    inset 0 0 0 var(--hairline) var(--accent);
 }
 .aplos-reader[data-cards='a'] .ui-thread-message__attachments {
   padding-top: var(--space-5);
@@ -388,4 +392,69 @@
 }
 .aplos-reader__offer .ui-text {
   margin: 0;
+/* ---------- The sender's mark and the plain body's column (owner sketch 2026-11-10) ----------
+   A 24 px rounded square with the sender's initial before the name. A plain email (the frame reports its sentinel
+   surface, mailframe/paper.ts) is drawn straight on the card in the app's own body type, indented to the name's column;
+   `--plain-indent` is the mark's width and its gap. */
+.aplos-sender-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  background-color: var(--sunken);
+  color: var(--ink-2);
+  font: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: var(--track-caption);
+}
+.aplos-sender-mark::before {
+  content: attr(data-mark);
+}
+
+/* ---------- Go one by one: the card fills the pane (owner sketch 2026-11-10) ----------
+   The email is one tall rounded card down to the pinned bar, with no Reply stub under it (Reply is on the bar). */
+.aplos-reader[data-stage='one-by-one']
+  .aplos-reader__letter[data-paper='true']
+  > .aplos-reader__thread {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__messages {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__messages > .ui-thread-message:last-child {
+  flex: 1 0 auto;
+}
+.aplos-reader[data-stage='one-by-one'] .ui-reply-stub {
+  display: none;
+}
+/* The card is as wide as the sketch draws it: nearly the pane, under the top bar, instead of the 640 px reading column. */
+.aplos-reader[data-stage='one-by-one'] {
+  width: min(calc(100% - 2 * var(--space-7)), calc(var(--space-10) * 18));
+  padding-top: var(--space-2);
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__thread {
+  margin-top: 0;
+}
+
+/* In the dark theme the marks are a soft lift of the card, not the near-black --sunken (opaque, so overlapping circles stay clean). */
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-circle,
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-sender-mark {
+  --circle-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
+  background-color: var(--circle-fill);
+}
+
+/* Only a message with the card head (the sender's mark) indents its plain body to the name's column. */
+.aplos-reader
+  .ui-thread-message:has(
+    > .ui-thread-message__head > .ui-thread-message__line[data-layout='card']
+  ) {
+  --plain-indent: calc(var(--control-xs) + var(--space-2));
 }

@@ -32,7 +32,13 @@ import {
   type KeyFields,
 } from './keyboard.model';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
-import type { AccountWrite } from './settings.model';
+import {
+  withoutKeyPath,
+  type AccountWrite,
+  type ClientEntry,
+  type ToolKind,
+  type ToolScope,
+} from './settings.model';
 import type { Confirmation, SettingsView } from './view';
 
 export interface ControllerDeps {
@@ -589,11 +595,46 @@ export function createController(deps: ControllerDeps) {
       const ok = await guard('change that setting', () => ports.listenerSet(enabled));
       if (ok) deps.setData({ listener: { ...(data().listener ?? {}), enabled } });
     },
+    askRevokeClient(id: string, name: string) {
+      deps.setView({ confirm: { kind: 'revokeClient', id, name } });
+    },
     revokeClient(id: string) {
       return guard('revoke that tool', async () => {
         await ports.clientsRevoke(id);
         deps.setData({ clients: (data().clients ?? []).filter(c => c.id !== id) });
       });
+    },
+    openAddTool() {
+      // The dialog shows the shared failure slot: another action's line must not appear inside it.
+      deps.fail(null);
+      deps.setView({ addTool: true });
+    },
+    closeAddTool() {
+      // A failed grant's Retry must not outlive the dialog: it would make a tool whose key path nobody sees.
+      if (deps.failure?.()?.op === 'allow that tool') deps.fail(null);
+      deps.setView({ addTool: false });
+    },
+    /**
+     * Allows a tool. The new tool joins the list without its key file's path; the path goes back to the dialog once
+     * and is kept nowhere else. Resolves with the client (for the dialog) or null when the engine refused.
+     */
+    async grantClient(
+      input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
+      onGranted: (client: ClientEntry) => void,
+    ): Promise<boolean> {
+      if (view().busy.grant) return false;
+      busy('grant', true);
+      // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
+      const ok = await guard('allow that tool', async () => {
+        const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
+        onGranted(granted);
+        const listed = withoutKeyPath(granted);
+        deps.setData({
+          clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
+        });
+      });
+      busy('grant', false);
+      return ok;
     },
     async openDiagnostics() {
       // The dialog shows the shared failure slot: another action's line must not appear inside it.
@@ -702,6 +743,8 @@ export function createController(deps: ControllerDeps) {
         }
         case 'discardQueueItem':
           return guard('discard that item', () => ports.queueDiscard(c.id));
+        case 'revokeClient':
+          return self.revokeClient(c.id);
       }
     },
   };

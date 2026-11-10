@@ -51,6 +51,8 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'assistants',
   ]),
   row('general', 'tools', 'Connected tools', ['revoke', 'clients', 'permissions']),
+  row('general', 'addTool', 'Add a tool', ['grant', 'allow', 'cli', 'mcp', 'key', 'token']),
+  row('general', 'deviceSync', 'Device sync', ['workflow', 'macs', 'pairing', 'code']),
   // Mail
   row('mail', 'undoSend', 'Undo send', ['delay', 'unsend', 'seconds']),
   row('mail', 'followUp', 'Follow up', ['nudge', 'no reply', 'days']),

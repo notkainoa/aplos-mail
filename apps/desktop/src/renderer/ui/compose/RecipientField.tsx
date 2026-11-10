@@ -61,6 +61,8 @@ export function RecipientField(props: RecipientFieldProps) {
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
+    // ⌘Return and Ctrl+Return send the message; they never pick a suggestion.
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) return;
     if (event.key === 'Enter') {
       if (activeSuggestionId && open) {
         event.preventDefault();
