@@ -326,6 +326,11 @@ export interface DataApi {
     /** `Diagnostics/verbose {on}`: the verbose protocol log (headers only), off by itself at `until`. */
     readonly verbose: ClientApi['diagnostics']['verbose'];
   };
+  /** Recipient type-ahead (To, Cc, Bcc). */
+  readonly contact: {
+    /** `Contact/suggest {query, accountId?, limit?}`: addresses you have written to or heard from, matching the start of a name or address. Local data only. */
+    readonly suggest: ClientApi['contact']['suggest'];
+  };
   /** Your own data (Settings → Help & about; UI-only method). */
   readonly data: {
     /** `Data/export`: accounts, settings, drafts and conversations as a file blob, no credentials; pass it to `api.file.save`. */

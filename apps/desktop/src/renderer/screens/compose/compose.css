@@ -114,3 +114,8 @@
 :root[data-theme='dark'] .aplos-compose:not([data-cards='off']) .ui-composer__page {
   background: var(--raised);
 }
+
+/* The wrapper that hears the type-ahead's keys: it adds no box of its own. */
+.compose-suggest {
+  display: contents;
+}
