@@ -15,6 +15,7 @@ import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
 import { subjectOf } from '../home/homeRows';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
+import { EventOffers } from './EventOffer';
 import { FindBar } from './FindBar';
 import { HeadActions, type HeadControls } from './HeadActions';
 import { inviteOf, type InviteView } from './invite';
@@ -252,6 +253,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         />
       ) : null}
       <ReaderHead due={dueOf(row)} summary={summaryFor(row)} />
+      {props.paper ? <EventOffers row={row} hasInvite={invite !== null} /> : null}
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
