@@ -128,7 +128,11 @@ function rankThread(run: CommitRun, threadId: number, laneFor: LaneFor) {
     result.lane === wf.lane &&
     result.importance === wf.importance &&
     (due === undefined || due === wf.due_date);
-  if (same) return;
+  if (same) {
+    // Evaluated and unchanged: stamp it, so the back-fill does not pick it again and "never ranked" stays meaningful.
+    run.q('UPDATE thread_workflow SET ranked_at = ? WHERE thread_id = ?').run(run.now(), threadId);
+    return;
+  }
   run
     .q(
       `UPDATE thread_workflow SET lane = ?, importance = ?, ranked_at = ?,

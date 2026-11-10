@@ -1778,3 +1778,4 @@ The owner saw one mixed Home with no Low importance. Cause: `host/compose.ts` op
 
 - The host passes `laneFor` through a new `@aplos/engine/ai/lanes` subpath export, so the rules stay out of the engine core bundle (450,018 of 470,000 after the change).
 - `store/ingest.ts` ranks mail stored before the wiring in bounded batches of 300 threads per sync commit: first the threads Home can show, newest first, so the first commit fixes the top of Home; then the rest by thread id; the place is kept in `meta` (key `lane_backfill`, ends at `done`). Only `rank_source = 'heuristic'` threads change; user, rule and AI ranks are never touched.
+- Known limit: the catch-up is one pass. If a build ever opens the store without `laneFor` again, mail synced in that window is not re-ranked; `lane_backfill` is a reserved meta key, so no commit can reset or skip it, and a thread that `laneFor` leaves in Do now is still stamped `ranked_at`.

@@ -113,3 +113,28 @@ test('the catch-up runs a bounded batch per commit and then stops', () => {
     file.cleanup();
   }
 });
+
+test('the catch-up marker is reserved: no commit can write it, and a rank that stays Do is still stamped', () => {
+  const file = tempDb();
+  try {
+    const store = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
+    store.commit(setup[0]);
+    assert.throws(
+      () =>
+        store.commit({
+          opId: 'stray',
+          origin: 'local',
+          writes: [{ kind: 'meta', key: 'lane_backfill', value: 'done' }],
+        }),
+      /reserved|meta/i,
+    );
+    store.commit({ opId: 'p', origin: 'sync', writes: [msg('m1', 'person', 1)] });
+    const stamped = store.read(
+      q => q.get<{ ranked_at: number | null }>('SELECT ranked_at FROM thread_workflow')?.ranked_at,
+    );
+    assert.equal(stamped, T0, 'a thread that stays in Do now was still evaluated');
+    store.close();
+  } finally {
+    file.cleanup();
+  }
+});
