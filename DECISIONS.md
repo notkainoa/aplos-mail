@@ -1763,3 +1763,11 @@ Decision (owner, via the orchestrator, 2026-11-07, option A): `BUDGET_BYTES` in 
 
 How to apply: the budget is a growth alarm, not a limit of the shipped app (the desktop bundles the engine into one `dist/main/engine.cjs`). Put new engine code in lazy folders (`packages/engine/src/ai/impl/**`) and keep the host bundle on static imports. Option B stays a ticket (not blocking): make the mail frame renderer (`packages/engine/src/mail/*`, which pulls `packages/mail-html/src/frame/reporter.ts`, 8.4 KB, into the core) lazy, to give the headroom back.
 
+
+## 2026-11-10: 3 budget rows move from dueBy 2026-11-10 to 2026-11-24 (plat-ci, before check:budgets turns red at UTC midnight)
+
+`check:budgets` fails an unmeasured row after its `dueBy`, which would make every PR's local-ci red from 2026-11-11 (UTC), as it did on 2026-11-07 for the earlier 21 rows (DECISIONS 2026-11-06). Three prov-gmail rows have no first measurement yet. Platform cannot take them: each needs a live Gmail run on the spare account (a live-run phase with the owner's sign-in) or the lane's own harness. Each date moves two weeks, to 2026-11-24; limits are NOT changed, and a lane that records a measurement earlier simply turns its row green.
+
+- `sync.live-units-per-minute` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
+- `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
+- `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
