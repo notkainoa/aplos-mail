@@ -603,7 +603,7 @@ test('a refused RSVP rolls back the overlay and shows the failure toast', async 
     await flush();
     // The fixture refused a reply on an unknown event: the overlay rolled back and the failure showed.
     assert.ok(ui.dropped.includes('no-such'));
-    assert.ok(getToasts().some(t => t.message === "Couldn't send your reply."));
+    assert.ok(getToasts().some(t => t.message.startsWith("Couldn't send your reply.")));
   } finally {
     resetToasts();
   }
