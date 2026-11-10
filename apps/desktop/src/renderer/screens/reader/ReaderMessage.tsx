@@ -5,7 +5,7 @@
  * plain-text body keeps its quoted history behind "Show quoted text" (O shows it too). The frame reports its height
  * and tracker count once per letter; the latest message's report tells the reader its letter is laid out.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { toIsoDateTime, useMessageBody, type Message, type MessageBody } from '../../data';
 import {
   MailFrame,
@@ -51,6 +51,8 @@ export interface ReaderMessageProps {
   readonly invite?: InviteView;
   /** The thread's subject: the card's own top line. Given to the first card only, and only when a written summary stands above. */
   readonly subject?: string;
+  /** The header's right side (Importance, bell, ⋯): the latest message's card only. */
+  readonly headActions?: ReactNode;
   /** The frame is laid out and measured. */
   readonly onFrame: (messageId: string, ready: MailFrameReady) => void;
   readonly onLoadImages: (messageId: string) => void;
@@ -136,6 +138,7 @@ export function ReaderMessage(props: ReaderMessageProps) {
       toLabel={toLabel(message, me)}
       subject={props.subject}
       recipients={fold ? undefined : <RecipientsLine message={message} me={me} />}
+      headActions={fold ? undefined : props.headActions}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
       fold={foldOf(fold)}

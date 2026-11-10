@@ -54,4 +54,45 @@ test.describe('reader card header', () => {
     await page.locator(BUTTON).click();
     await expect(page.getByRole('dialog', { name: 'Message details' })).toBeHidden();
   });
+
+  test('Importance: Enter opens the menu, a choice moves the thread with an Undo toast, Esc returns focus', async ({
+    page,
+  }) => {
+    await open(page);
+    const button = page.locator(`${LETTER} button[aria-haspopup="menu"]`, { hasText: 'Important' });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Importance' });
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    // Chosen by keyboard alone: the cursor starts on the checked item, ArrowDown moves it, Enter chooses.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Moved to Low importance')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Always do this for/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Undo/ })).toBeVisible();
+    await expect(
+      page.locator(`${LETTER} button[aria-haspopup="menu"]`, { hasText: 'Low importance' }),
+    ).toBeVisible();
+  });
+
+  test('the bell claims nothing while the engine is silent about it, and More lists the reader’s own actions by keyboard', async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(page.locator(`${LETTER} .aplos-bell`)).toHaveAttribute('aria-hidden', 'true');
+    await page.locator(`${LETTER} button[aria-label="More"]`).click();
+    const menu = page.getByRole('menu', { name: 'More' });
+    for (const name of ['Reply all', 'Later', 'Bookmark', 'Move to Trash'])
+      await expect(menu.getByRole('menuitem', { name: new RegExp(name) })).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await expect(menu).toHaveAttribute('aria-activedescendant', /.+/);
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  });
 });

@@ -8,149 +8,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
 import { createAppRegistry, DEFAULT_KEY_PREFS, type CommandContext } from '../../commands';
-import { connectDataLayer } from '../../data/connect';
-import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { harnessClock } from '../../data/clock';
-import { api, setClock, undoStack, type ThreadRow } from '../../data';
-import { dismissToast, pushToast } from '../../shell';
+import { undoStack } from '../../data';
+import { dismissToast } from '../../shell';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { setOpenThread } from '../../shell/store-thread';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
-import { createLetterController } from './letterController';
-import { createReaderActions, whileOpen, type ReaderDeps } from './readerActions';
+import { createReaderActions, whileOpen } from './readerActions';
 import { afterAccepted } from '../undoOperation';
 import { settleFocus } from './readerFocus';
 import { takeFocus } from './FindBar';
 import { commandsForReader } from './readerCommands';
 import { ReaderLetter, GONE_COPY } from './ReaderLetter';
 import { ReaderScreen, NO_THREAD_COPY } from './ReaderScreen';
-import { PLAIN_REPLY, freshUi, reduceUi, type ReaderUi, type ReplyRequest } from './readerUi';
+import { PLAIN_REPLY, freshUi, reduceUi, type ReaderUi } from './readerUi';
 
 const NO_CONTROLS = {
   suggest: () => undefined,
   later: () => undefined,
   done: () => undefined,
   reply: () => undefined,
+  replyAll: () => undefined,
+  bookmark: () => undefined,
+  trash: () => undefined,
+  lane: () => undefined,
   relayKey: () => false,
 };
 
-const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
-
-async function settle(flush: () => void) {
-  for (let i = 0; i < 20; i++) {
-    await nextTask();
-    flush();
-  }
-}
-
-/** Two earlier messages (a day apart) in front of a demo thread's one message, for the compact cards. */
-function seedEarlier(engine: ReturnType<typeof createFixtureEngine>, threadId: string): void {
-  const fx = engine.fixture;
-  const last = fx.store.get('Message', `${threadId}.m1`);
-  if (!last) return;
-  const bodies = [
-    'Kicking off: here is the brief we agreed on Friday. Please read it before Monday and tell me what is missing from it.',
-    'Thanks, that helps. Two things to keep in mind before we start.',
-  ];
-  bodies.forEach((body, index) => {
-    fx.write({ kind: 'Fixture/control' }, tx => {
-      tx.put('Message', {
-        ...last,
-        id: `${threadId}.e${index + 1}`,
-        rev: 0,
-        snippet: body,
-        date: last.date - (bodies.length - index) * 86_400_000,
-        seen: true,
-        attachments: [],
-      });
-    });
-  });
-}
-
-async function boot(seed?: string) {
-  const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
-  if (seed) seedEarlier(engine, seed);
-  const scheduler = createManualScheduler();
-  const connection = connectDataLayer({
-    session: engine.connect(),
-    scheduler,
-    timers: createManualTimers(defaultNow),
-  });
-  const { layer } = connection;
-  const home = layer.windows.acquire({ kind: 'home' });
-  for (const name of ['accounts', 'counts', 'settings'] as const) layer.session.want(name);
-  setClock(harnessClock);
-  await settle(() => scheduler.flush());
-  const doIds = () => {
-    const snap = home.snapshot();
-    const section = snap.sections.find(s => s.key === 'do');
-    return section
-      ? snap.ids.slice(section.start - snap.position, section.start - snap.position + section.count)
-      : [];
-  };
-  const threadWindow = async (threadId: string) => {
-    const window = layer.windows.acquire({ kind: 'thread', threadId });
-    await settle(() => scheduler.flush());
-    return window;
-  };
-  return { connection, home, doIds, threadWindow, flush: () => settle(() => scheduler.flush()) };
-}
-
-type World = Awaited<ReturnType<typeof boot>>;
-
-const text = (html: string) =>
-  html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-/** The deps the screen builds, over the real data layer, the home window as the list, and a letter buffer. */
-function depsOver(world: World, start: string, readyOnGo = true) {
-  const controller = createLetterController(createManualTimers(0));
-  const state = {
-    open: start,
-    left: 0,
-    gone: new Set<string>(),
-    findOpen: false,
-    replies: [] as string[],
-    requests: [] as Array<ReplyRequest | undefined>,
-    suggested: [] as string[],
-  };
-  controller.want(start);
-  controller.ready(start);
-  const go = (id: string) => {
-    state.open = id;
-    controller.want(id);
-    if (readyOnGo) controller.ready(id);
-  };
-  const deps: ReaderDeps = {
-    shown: () => controller.snapshot().letter,
-    wanted: () => state.open,
-    ids: () => world.home.snapshot().ids,
-    rowOf: id => world.home.snapshot().rows.get(id) as ThreadRow | undefined,
-    go,
-    reopen: go,
-    markGone: (id, gone) => void (gone ? state.gone.add(id) : state.gone.delete(id)),
-    leave: () => void state.left++,
-    closeFind: () => {
-      const was = state.findOpen;
-      state.findOpen = false;
-      return was;
-    },
-    act: args => api.thread.act(args),
-    push: pushToast,
-    dismiss: () => undefined,
-    undoLabel: (_id, fallback) => fallback,
-    reply: (id, request) => {
-      state.replies.push(id);
-      state.requests.push(request);
-    },
-    suggested: (id, action) => void state.suggested.push(`${id}:${action.verb}`),
-  };
-  return { deps, state, controller };
-}
+import { boot, depsOver, nextTask, text } from './readerTestKit';
 
 const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
   renderToStaticMarkup(
@@ -836,6 +721,29 @@ test('find: a second ⌘F reaches the field as a new key, and the field takes an
     takeFocus({ focus: () => void calls.push('focus'), select: () => void calls.push('select') });
     takeFocus(null);
     assert.deepEqual(calls, ['focus', 'select']);
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the Importance menu moves the thread one end to the other with Home’s toast, and the reader stays on it', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const first = world.doIds()[0]!;
+    const { deps, state } = depsOver(world, first);
+    createReaderActions(deps).lane('low');
+    assert.equal(state.open, first, 'the reader stays on the thread it moved');
+    assert.equal(state.left, 0);
+    const toast = getToasts().find(t => t.message === 'Moved to Low importance');
+    assert.ok(toast, 'the move is told in plain words');
+    assert.equal(toast.undoable, true);
+    assert.deepEqual(
+      toast.actions?.map(a => a.id),
+      ['always', 'undo'],
+    );
+    assert.match(toast.actions?.[0]?.label ?? '', /^Always do this for /);
+    await world.flush();
   } finally {
     world.connection.close();
   }
