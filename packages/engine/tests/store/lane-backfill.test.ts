@@ -179,3 +179,34 @@ test("the catch-up waits out the owner's own commits, and a store without laneFo
     file.cleanup();
   }
 });
+
+test('only a sync commit carries a batch, and a marker in an unknown format restarts the walk', () => {
+  const file = tempDb();
+  try {
+    const before = openStore(file.open(), { now: () => T0 });
+    before.commit(setup());
+    before.commit({ opId: 'old', origin: 'sync', writes: [newsletter('m1', 'news', 1)] });
+    before.close();
+
+    const after = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
+    const stray = (origin: 'system' | 'import') => ({
+      opId: `stray-${origin}`,
+      origin,
+      writes: [msg(`s-${origin}`, `s-${origin}`, 5)],
+    });
+    after.commit(stray('system'));
+    after.commit(stray('import'));
+    assert.equal(lanesOf(after).news, 'do/heuristic', 'system and import commits rank nothing old');
+    // A marker written by some other build: the next sync commit starts over instead of treating it as finished.
+    after.close();
+    const db = file.open();
+    db.prepare("INSERT INTO meta(key, value) VALUES('lane_backfill', 'v2:whatever')").run();
+    db.close();
+    const again = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
+    again.commit({ opId: 'tick', origin: 'sync', writes: [msg('m9', 'fresh', 9)] });
+    assert.equal(lanesOf(again).news, 'low/heuristic');
+    again.close();
+  } finally {
+    file.cleanup();
+  }
+});
