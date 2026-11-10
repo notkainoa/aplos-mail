@@ -155,6 +155,13 @@ export const Message = z.object({
   bodyKind: z.optional(openEnum(['html', 'text'])),
   inReplyTo: z.optional(line(1_000)),
   references: z.optional(z.array(line(1_000))),
+  /**
+   * The notification fact for the reader's bell (ui-reader REQUEST 2026-11-10): `sent` when the engine's
+   * notifier posted a banner for this message, `suppressed` when it was dropped (notifications off, Focus),
+   * absent when no notification was attempted (non-Inbox mail, backfill, pre-field data). Read-only; a
+   * mute/notify toggle is a separate design question.
+   */
+  notified: z.optional(openEnum(['sent', 'suppressed'])),
 });
 export type Message = z.infer<typeof Message>;
 
