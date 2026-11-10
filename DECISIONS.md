@@ -1771,3 +1771,7 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-units-per-minute` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
+
+## 2026-11-10: Home keeps the Low importance band visible at zero (ui-home)
+
+A band hidden at 0 left no way into Low importance, which the owner reported as "no Low importance section". Home now shows the band while it has other mail: 0 on the right, a click or Return-free open (an empty band is not a keyboard cursor stop, so the cursor never settles on nothing) into the sheet's "No low-importance mail" with "Back to Home". This departs from "empty sections don't render" (DESIGN 7.2) for this one band, on purpose. The cause of the mixed list itself (the app never switched the lane rules on) is fixed in the engine and host PR.

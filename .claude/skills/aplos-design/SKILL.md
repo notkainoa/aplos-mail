@@ -88,7 +88,7 @@ Rules:
 - The keyboard cursor is `--puck` plus a 2 px accent bar on the leading edge. Never use opacity for text.
 - Disabled text is `--dim` and disabled icons are `--faint`.
 - Dark-theme large fills (the swipe underlay) are capped at a 70 % mix over paper. Small commit chips are solid.
-- No avatars or monograms in mail, ever. The account switcher's monogram is the only one.
+- No avatars or monograms in mail, ever. The account switcher's monogram is the only one. EXCEPTION (owner, 2026-11-10, DESIGN §16): the reader email card and the one-by-one card show calm recipient monogram circles (`--raised` fill, `--ink-2` letter, `--paper` ring), never a remote avatar URL or photo; no other screen gains them.
 
 ### Type: ten roles, nothing else
 
@@ -124,7 +124,7 @@ Rules:
   - Pane inset 8 (`--shell-pad`), radius 12.
   - Pane header 48.
   - List column `min(720px, 100% − 2 gutters)` (`--list-w`). Sender column 152 (148 on Home).
-  - Reader column 640 (`--reader-w`), with no card.
+  - Reader column 640 (`--reader-w`). The email sits in one card (subject top line, hairline, header row, body, attachments) by owner request 2026-11-10 (DESIGN §16); the summary stays big above it.
   - Composer page 640.
   - Ask dock 360 (320 under a 1180 px window, resizable 300–440).
   - Palette 600 wide, 16vh from the top, results at most 420.
@@ -390,7 +390,7 @@ Empty states are one plain sentence plus at most one action (DESIGN §7.14). Err
 - **Avec patterns (DESIGN §13):**
   - the floating bottom action cluster and the big Reply pill;
   - the deck with the next card's sliver;
-  - "Important ▾" in the reader header;
+  - "Important ▾" as a bare dropdown in the reader header (the reader card's Importance menu with "Always do this for [sender]" and Undo is allowed by owner request 2026-11-10, DESIGN §16);
   - the 3D toss (`rotateY`);
   - full-card colour floods;
   - a count badge plus a comma list for low importance;
