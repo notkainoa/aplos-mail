@@ -211,7 +211,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
     <ReaderMessage
       key={m.id}
       message={m}
-      subject={m.id === firstId ? subjectOf(row) : undefined}
+      subject={m.id === firstId && summaryFor(row).state === 'ready' ? subjectOf(row) : undefined}
       me={me}
       cursor={cursor}
       expanded={ui.expanded}

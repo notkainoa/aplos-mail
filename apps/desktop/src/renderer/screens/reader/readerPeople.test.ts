@@ -49,6 +49,18 @@ test('circles: the owner first, duplicates once, To then Cc', () => {
   );
 });
 
+test('every address of the owner is one circle', () => {
+  const both = new Set(['alex@studio.example', 'alex@home.example']);
+  const people = recipientCircles(
+    message({ to: [ALEX], cc: [{ name: 'Alex', address: 'alex@home.example' }] }),
+    both,
+  );
+  assert.deepEqual(
+    people.map(p => p.name),
+    ['You'],
+  );
+});
+
 test('mail that arrived without the owner on it still went to them; a sent message did not', () => {
   const arrived = recipientCircles(message({ to: [MINA] }), ME);
   assert.deepEqual(
@@ -69,6 +81,14 @@ test('the phrase names who the circles stand for', () => {
     'you, Mina Cho',
   );
   assert.equal(recipientsPhrase([]), 'no one');
+  const many = ['a', 'b', 'c', 'd', 'e'].map(n =>
+    personOf({ name: n, address: `${n}@x.example` }, ME),
+  );
+  assert.equal(
+    recipientsPhrase(many),
+    'a, b, c and 2 more',
+    'a long list never becomes a paragraph',
+  );
   assert.ok(MAX_CIRCLES >= 3);
 });
 

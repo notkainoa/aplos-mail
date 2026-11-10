@@ -5,7 +5,7 @@
  * Circles are monograms drawn from a data attribute by CSS (so the button's visible text is just "To", and its name starts
  * with it); no remote avatar is ever loaded by the renderer.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Message } from '../../data';
 import { Icon } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
@@ -94,11 +94,25 @@ export function MessageDetails({ message, me }: RecipientsLineProps) {
   );
 }
 
+/** The popover is placed once, so it closes when the letter scrolls under it (a scroll inside the popover is its own). */
+function useCloseOnScroll(open: boolean, close: () => void): void {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onScroll = (event: Event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest('.aplos-details')) close();
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, [open, close]);
+}
+
 /** "To", the circles and the chevron, with the details popover they open. */
 export function RecipientsLine({ message, me }: RecipientsLineProps) {
   const people = recipientCircles(message, me);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
+  useCloseOnScroll(open, () => setOpen(false));
   return (
     <span className="aplos-recipients">
       <button

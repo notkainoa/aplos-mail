@@ -37,7 +37,8 @@ export function personOf(address: Address, me: ReadonlySet<string>): Person {
   const mine = me.has(address.address.toLowerCase());
   const name = mine ? 'You' : nameOf(address);
   return {
-    key: (address.address || name).toLowerCase(),
+    // Every address of the owner is one person.
+    key: mine ? 'you' : (address.address || name).toLowerCase(),
     name,
     address: address.address,
     // The owner's circle carries the first letter of the name their own header gives them, else of "You".
@@ -68,10 +69,12 @@ export function recipientCircles(message: Message, me: ReadonlySet<string>): rea
   return meFirst(arrived ? [...listed, you] : listed);
 }
 
-/** "you, Mina Cho" (or "no one"): who the circles stand for, for the button's accessible name after "To". */
+/** "you, Mina Cho and 4 more" (or "no one"): who the circles stand for, for the button's accessible name after "To". */
 export function recipientsPhrase(people: readonly Person[]): string {
-  const names = people.map(p => (p.name.toLowerCase() === 'you' ? 'you' : p.name));
-  return names.length > 0 ? names.join(', ') : 'no one';
+  const shown = people.slice(0, MAX_CIRCLES).map(p => (p.me ? 'you' : p.name));
+  if (shown.length === 0) return 'no one';
+  const rest = people.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
 
 function sameAddresses(a: readonly Address[], b: readonly Address[]): boolean {

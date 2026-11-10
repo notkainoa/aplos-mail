@@ -193,6 +193,12 @@
   position: relative;
   margin-top: var(--space-4);
 }
+/* Without cards the head is flush with the article, so its rail sits where every other card's does. */
+.aplos-reader[data-cards='off']
+  .ui-thread-message[data-titled='true'][data-cursor='true']
+  .ui-thread-message__head::before {
+  left: calc(-1 * var(--space-5));
+}
 /* On a card with a top line the cursor rail marks the head, not the subject. */
 .ui-thread-message[data-titled='true'][data-cursor='true']::before {
   content: none;

@@ -49,7 +49,7 @@ export interface ReaderMessageProps {
   };
   /** The invitation this message carries (an invite email). */
   readonly invite?: InviteView;
-  /** The thread's subject: the card's own top line. Given to the first card only. */
+  /** The thread's subject: the card's own top line. Given to the first card only, and only when a written summary stands above. */
   readonly subject?: string;
   /** The frame is laid out and measured. */
   readonly onFrame: (messageId: string, ready: MailFrameReady) => void;

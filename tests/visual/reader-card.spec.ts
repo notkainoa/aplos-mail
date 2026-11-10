@@ -43,6 +43,8 @@ test.describe('reader card header', () => {
     await expect(popover).toBeHidden();
     await expect(button).toBeFocused();
     await expect(button).toHaveAttribute('aria-expanded', 'false');
+    // Esc was the popover's: the real shell did not also take it as "back" and leave the reader.
+    await expect(page.locator(LETTER)).toBeVisible();
   });
 
   test('a click opens it and a second click closes it', async ({ page }) => {

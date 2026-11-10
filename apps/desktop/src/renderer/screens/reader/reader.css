@@ -302,6 +302,8 @@
 
 .aplos-details {
   box-sizing: border-box;
+  max-height: calc(100vh - 2 * var(--shell-pad));
+  overflow-y: auto;
   min-width: calc(var(--space-10) * 5);
   max-width: min(calc(var(--space-10) * 7), 90vw);
   padding: var(--space-1) var(--space-5);
@@ -347,4 +349,9 @@
     background-color: var(--hover);
     color: var(--ink-2);
   }
+}
+
+/* Without cards the circles sit on the pane itself, so their ring is the pane's colour. */
+.aplos-reader[data-cards='off'] .aplos-circle {
+  --circle-ring: var(--canvas);
 }
