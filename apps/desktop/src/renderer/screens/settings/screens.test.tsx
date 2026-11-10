@@ -9,7 +9,7 @@ import { APP_SETTINGS, copyProblem } from '../../commands/internal';
 import { createController } from './controller';
 import { anchorScroll, scrollWithoutTarget } from './SettingsScreen';
 import { SETTING_ROWS } from './paletteEntries';
-import type { SettingsApiPort } from './ports';
+import type { SettingsApiPort, WriteFailure } from './ports';
 import { AddKeyDialog } from './overlays';
 import { CANARY, ALEX } from './preview/fixtures';
 import { dataOf, HOST, STATES, staticScreen, withCanary } from './preview/states';
@@ -171,7 +171,7 @@ describe('secrets never reach the screen (U7 acceptance 3)', () => {
   });
 
   test('a failed save puts one Retry line up and keeps no key', async () => {
-    let failure: { op: string; retry(): void } | null = null;
+    let failure = null as WriteFailure | null;
     const ports = {
       aiSetKey: async () => {
         throw new Error(`rejected ${CANARY}`);
@@ -201,7 +201,7 @@ describe('write failure and destructive steps', () => {
     const calls: unknown[] = [];
     let attempts = 0;
     const overlays: unknown[] = [];
-    let failure: { op: string; retry(): void } | null = null;
+    let failure = null as WriteFailure | null;
     const ports = {
       settingsSet: async (p: unknown) => {
         calls.push(p);
