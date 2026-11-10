@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { listenerCaller } from '@aplos/contract/access';
+import { ContractError } from '@aplos/contract/contract-error';
 import type { EngineMethodName, Input, Output } from '@aplos/contract';
 import { createLogger } from '../../src/diag/log';
 import { sha256Hex } from '../../src/diag/sha256';
@@ -159,13 +160,33 @@ test('revoke still answers ok when the token file will not remove, and logs a wa
 });
 
 test('a failed grant commit whose cleanup also fails still surfaces the commit error', async () => {
-  const w = await world({ removeRejects: true });
+  const w = await world();
   try {
+    // A store whose commit throws a distinct typed error: if the caller got the remove rejection instead,
+    // it would arrive as a plain internal error — 'unavailable' can only be the commit's.
+    const wrapped: StorePort = Object.create(Object.getPrototypeOf(w.store));
+    Object.assign(wrapped, w.store, {
+      commit: () => {
+        throw new ContractError({ type: 'unavailable', message: 'commit exploded' });
+      },
+    });
+    const engine = await createEngine({
+      store: wrapped,
+      clock: w.clock,
+      log: createLogger({ sink: { write: () => undefined }, salt: 's', clock: w.clock }),
+      ports: {
+        clientTokens: {
+          issue: () => Promise.resolve({ path: 'run/clients/x.token' }),
+          remove: () => Promise.reject(new Error('remove exploded')),
+        },
+      },
+    });
     await assert.rejects(
-      w.call('Clients/grant', { name: '', kind: 'cli', scopes: ['read'] }),
-      (e: { type?: string }) => typeof e.type === 'string',
+      engine.connect().call('Clients/grant', { name: 'x', kind: 'cli', scopes: ['read'] }),
+      (e: { type?: string }) => e.type === 'unavailable',
       'the caller sees the commit error, not the cleanup failure',
     );
+    await engine.close();
   } finally {
     await w.engine.close();
   }
