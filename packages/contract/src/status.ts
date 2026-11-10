@@ -59,6 +59,8 @@ export const reasonCodes = [
   'permission.mailModify',
   'permission.filters',
   'permission.calendar',
+  /** The account granted read-only calendar access and an event was created, changed, deleted or answered: Settings → Calendar offers "Enable editing" (`Account/grantPermissions` with `enable: 'calendarWrite'`). */
+  'permission.calendarWrite',
   'permission.settings',
   'config.apiDisabled',
   'config.clientMissing',

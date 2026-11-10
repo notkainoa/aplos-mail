@@ -2,7 +2,7 @@
 import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
 import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { api, setClock, type Event } from '../../data';
+import { api, setClock, type Account, type Calendar, type Event } from '../../data';
 import { harnessClock } from '../../data/clock';
 import {
   entriesFor,
@@ -24,6 +24,7 @@ export function ctxFor(
   plans = demoWorld.plans,
   calendars = demoWorld.calendars,
   state?: CalendarState,
+  accounts: readonly Account[] = demoWorld.accounts,
 ): CalendarContext {
   const period = periodOf('week', THU, 0);
   const entries = entriesFor({
@@ -41,6 +42,7 @@ export function ctxFor(
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    accounts,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
     calendarsReady: true,
@@ -52,7 +54,8 @@ export function ctxFor(
 export function ctxAt(
   state: CalendarState,
   events: readonly Event[] = demoWorld.events,
-  calendars = demoWorld.calendars,
+  calendars: readonly Calendar[] = demoWorld.calendars,
+  accounts: readonly Account[] = demoWorld.accounts,
 ): CalendarContext {
   const period = periodOf(shownView(state), state.anchor, 0);
   const entries = entriesFor({
@@ -70,6 +73,7 @@ export function ctxAt(
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(),
     calendars,
+    accounts,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
     calendarsReady: true,
@@ -138,29 +142,53 @@ export function testUi(): EffectUi & {
   overrides: Map<string, boolean>;
   settled: string[];
   failed: string[];
+  reopened: Array<{ id: string; note: string }>;
+  /** Whether `reopenEditor` reports the editor opened; false makes a conflict fall back to the toast. */
+  reopenOpens: boolean;
+  /** The event ids `closeDetail` was asked to close. */
+  closedFor: string[];
+  closed: number;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
-  return {
+  const reopened: Array<{ id: string; note: string }> = [];
+  const closedFor: string[] = [];
+  let closed = 0;
+  const self = {
     applied,
     dropped,
     overrides,
     settled,
     failed,
+    reopened,
+    reopenOpens: true,
+    closedFor,
+    get closed() {
+      return closed;
+    },
     optimistic: () => undefined,
-    settle: id => applied.push(id),
-    rollback: id => dropped.push(id),
-    shown: (id, shown) => void overrides.set(id, shown),
-    shownSettled: id => settled.push(id),
-    shownFailed: id => {
+    settle: (id: string) => applied.push(id),
+    rollback: (id: string) => dropped.push(id),
+    shown: (id: string, shown: boolean) => void overrides.set(id, shown),
+    shownSettled: (id: string) => settled.push(id),
+    shownFailed: (id: string) => {
       overrides.delete(id);
       failed.push(id);
     },
     focus: () => undefined,
+    reopenEditor: (eventId: string, note: string) => {
+      reopened.push({ id: eventId, note });
+      return self.reopenOpens;
+    },
+    closeDetail: (eventId: string) => {
+      closedFor.push(eventId);
+      closed += 1;
+    },
   };
+  return self;
 }
 
 export function ports(): EffectPorts {
@@ -171,6 +199,7 @@ export function ports(): EffectPorts {
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
+    enableEditing: () => Promise.resolve(),
     openThread: () => undefined,
     openUrl: () => undefined,
     copyText: () => undefined,
