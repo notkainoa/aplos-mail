@@ -197,6 +197,10 @@ function controlsOf(actions: ReaderActions): LetterControls {
     later: actions.later,
     done: actions.done,
     reply: actions.reply,
+    replyAll: actions.replyAll,
+    bookmark: actions.bookmark,
+    trash: actions.trash,
+    lane: actions.lane,
     relayKey: relayToShell,
   };
 }

@@ -10,6 +10,7 @@ import {
   type HostFacts,
   type HostPorts,
 } from '@aplos/engine';
+import { laneFor } from '@aplos/engine/ai/lanes';
 import { createLogger, type LogSink } from '@aplos/engine/diag/log';
 import { hashAddress } from '@aplos/engine/diag/redact';
 import {
@@ -371,7 +372,12 @@ function openDatabaseFile(options: ComposeOptions): StorePort {
   mkdirSync(options.dataDir, { recursive: true, mode: 0o700 });
   const db = (options.openDatabase ?? openSqlite)(join(options.dataDir, 'mail.db'));
   try {
-    return openStore(db, { extensions: laneExtensions(), now: () => options.clock.now() });
+    return openStore(db, {
+      extensions: laneExtensions(),
+      // Without this the store never ranks a thread and Home shows every one of them under Do now.
+      ingest: { laneFor },
+      now: () => options.clock.now(),
+    });
   } catch (error) {
     db.close();
     throw error;
@@ -456,6 +462,7 @@ function engineOptions(
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,
+      calendar: accounts.calendarPort,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),
     },
