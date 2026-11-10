@@ -3,7 +3,7 @@
  * move Home's ⌥↑ and ⌥↓ make. A thread in Do now or Important updates is Important; one in Low importance is Low.
  * Choosing the other end moves the thread there with the same absolute `lane` action Home uses.
  */
-import type { ThreadRow } from '../../data';
+import type { Message, ThreadRow } from '../../data';
 import { laneOf, type MovableLane } from '../home/homeModel';
 
 /** The menu's two choices. */
@@ -35,10 +35,22 @@ export function laneForChoice(row: ThreadRow, choice: Importance): MovableLane |
   return choice === 'low' ? 'low' : 'update';
 }
 
-/** Whether an email triggered a notification. `unknown` until the engine says (REQUEST to eng-contract, STATUS 2026-11-10). */
+/** Whether an email triggered a notification: `unknown` when the engine did not say (mail older than its notification log). */
 export type NotificationState = 'notified' | 'silent' | 'unknown';
 
-/** The bell's state for a thread. No row field carries it yet, so it is always `unknown`; it will read that field. */
-export function notificationOf(_row: ThreadRow): NotificationState {
-  return 'unknown';
+/**
+ * The bell's state for a message, from the engine's `Message.notification`: `sent` is a notification that posted;
+ * `suppressed` (dropped at post time: notifications off, Focus) and `none` (never notified) are both a slashed bell;
+ * absent, or a value a newer engine added, claims nothing.
+ */
+export function notificationOf(message: Pick<Message, 'notification'>): NotificationState {
+  switch (message.notification) {
+    case 'sent':
+      return 'notified';
+    case 'suppressed':
+    case 'none':
+      return 'silent';
+    default:
+      return 'unknown';
+  }
 }

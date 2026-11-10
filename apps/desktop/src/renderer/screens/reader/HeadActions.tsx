@@ -5,7 +5,7 @@
  * actions the reader already has handlers for. Every control is a real button with a name, and Esc closes a menu.
  */
 import { useId, useRef, useState } from 'react';
-import type { ThreadRow } from '../../data';
+import type { Message, ThreadRow } from '../../data';
 import { Button, Icon } from '../../ui/buttons-keys';
 import type { MenuEntry, SuggestedAction } from '../../ui/props';
 import { Menu } from '../../ui/surfaces';
@@ -34,6 +34,8 @@ export interface HeadControls {
 /** Props for `HeadActions`. */
 export interface HeadActionsProps {
   readonly row: ThreadRow;
+  /** The message whose header this is (the latest): the bell reports whether it notified. */
+  readonly message: Message;
   /** The filled suggestion's verb and icon, for the menu's first row. */
   readonly suggestion: SuggestedAction;
   readonly controls: HeadControls;
@@ -106,7 +108,7 @@ const BELL: Readonly<Record<NotificationState, { icon: 'bell' | 'bell-off'; labe
   unknown: { icon: 'bell', label: '' },
 };
 
-/** The bell: a status mark, not a control. Slashed when the email did not notify; while that is unknown it is a plain, unnamed outline bell that claims nothing. */
+/** The bell: a status mark, not a control. Slashed when the email did not notify; while the engine has not said it is a plain, unnamed outline bell that claims nothing. */
 function NotificationBell({ state }: { readonly state: NotificationState }) {
   const { icon, label } = BELL[state];
   if (state === 'unknown')
@@ -217,7 +219,7 @@ export function HeadActions(props: HeadActionsProps) {
   return (
     <>
       <ImportanceMenu row={props.row} controls={props.controls} />
-      <NotificationBell state={notificationOf(props.row)} />
+      <NotificationBell state={notificationOf(props.message)} />
       <MoreMenu {...props} />
     </>
   );

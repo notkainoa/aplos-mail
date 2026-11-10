@@ -226,6 +226,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         m.id === latest.id ? (
           <HeadActions
             row={row}
+            message={m}
             suggestion={barSuggestion(suggestionFor(row))}
             controls={controls}
           />
