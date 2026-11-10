@@ -20,7 +20,8 @@ import { pushToast, dismissToast, runToastAction } from '../../shell';
 import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
-import { buildItems, initialKey, orderLayout, type HomeLayout } from './homeModel';
+import { buildItems, initialKey, layoutOf, orderLayout, type HomeLayout } from './homeModel';
+import { HomeList } from './HomeList';
 import { HomeScreen } from './HomeScreen';
 import { accountsAreKnown } from './HomeStates';
 import { offerLives } from './useHomeActions';
@@ -159,6 +160,56 @@ test('Home renders Do now, Important updates, the Low band, Follow up in that or
     assert.ok(
       !html.includes('Back from Later') || html.indexOf('Back from Later') > html.indexOf('Do now'),
     );
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('with no Low mail the band still shows, at 0, so Low importance can always be opened', async () => {
+  const world = await boot();
+  try {
+    const view = { ...world.home.snapshot(), low: { count: 0, names: [], moreSenders: 0 } };
+    const none = () => undefined;
+    const html = renderToStaticMarkup(
+      createElement(HomeList, {
+        view,
+        layout: layoutOf(view),
+        cursorKey: null,
+        density: 'comfortable',
+        accounts: [],
+        demoted: false,
+        picked: new Set(),
+        handlers: {
+          select: none,
+          open: none,
+          rowAction: none,
+          suggested: none,
+          later: none,
+          done: none,
+          more: none,
+          openLow: none,
+          oneByOne: none,
+          clearFromHome: none,
+        },
+      }),
+    );
+    assert.equal(html.match(/class="ui-low-band"/g)?.length, 1, 'the band is there at zero');
+    assert.match(text(html), /Low importance 0/);
+    const empty = { ...view, sections: [] };
+    const bare = renderToStaticMarkup(
+      createElement(HomeList, {
+        ...({} as never),
+        view: empty,
+        layout: layoutOf(empty),
+        handlers: {} as never,
+        picked: new Set(),
+        accounts: [],
+        density: 'comfortable',
+        demoted: false,
+        cursorKey: null,
+      }),
+    );
+    assert.doesNotMatch(bare, /ui-low-band/, 'an empty Home has no band');
   } finally {
     world.connection.close();
   }
