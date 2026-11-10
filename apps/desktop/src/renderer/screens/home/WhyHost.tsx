@@ -70,7 +70,7 @@ function useLaneKeys(lane: Lane | null, onMove: (direction: 'up' | 'down') => vo
 export function restoreListFocus(
   find: (selector: string) => { focus(options?: FocusOptions): void } | null,
 ): void {
-  find('[role="listbox"]')?.focus({ preventScroll: true });
+  (find('[role="listbox"]') ?? find('.aplos-one-by-one__card'))?.focus({ preventScroll: true });
 }
 
 /** The answer is for a thread the cursor has left: the popover must not open for the old row. */

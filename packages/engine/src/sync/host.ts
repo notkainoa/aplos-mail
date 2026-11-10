@@ -50,6 +50,7 @@ import {
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
 import { attachmentBytes, openThreadRemote, originalRemote } from './host-read';
+import { calendarTargetOf, createCalendarPort } from '../calendar/write-port';
 import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
@@ -709,6 +710,9 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
   remove(account: AccountId, remoteDraftId: string, expectedMessageId?: string): Promise<void> {
     return removeRemoteDraft(account, this.draftTarget(account), remoteDraftId, expectedMessageId);
   }
+
+  /** Event writes, routed to the named account's calendar. A separate object: `remove` is taken by drafts. */
+  readonly calendarPort = createCalendarPort(account => calendarTargetOf(this.actors.get(account)));
 
   private draftTarget(account: AccountId): DraftTarget | undefined {
     const entry = this.actors.get(account);
