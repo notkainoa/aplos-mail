@@ -95,6 +95,21 @@ export function standInPorts(
     async listenerSet(enabled) {
       set({ listener: { enabled } });
     },
+    async clientsGrant(input) {
+      const client = {
+        id: `client-${Date.now()}`,
+        name: input.name,
+        kind: input.kind,
+        scopes: [...input.scopes],
+        createdAt: Date.now(),
+        tokenPath: `/Users/someone/Library/Application Support/Aplos Mail/run/clients/${Date.now()}.token`,
+      };
+      set({ clients: [...(get().clients ?? []), client] });
+      return client;
+    },
+    async workflowStatus() {
+      return get().workflow ?? { enabled: false, available: false };
+    },
     async clientsRevoke(id) {
       set({ clients: get().clients?.filter(c => c.id !== id) });
     },

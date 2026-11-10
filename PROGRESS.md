@@ -654,3 +654,7 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Settings → Help & about: the diagnostics dialog now has Save report (the one filled button; `Diagnostics/export` then main's `File/save`) next to Copy report; a Verbose logging switch (`Diagnostics/verbose`) whose row shows the engine's switch-off time; a Your data group with Export my data (`Data/export`, then `File/save`). Closing the save dialog is not an error; a failed step shows the usual line with Retry.
 - Data layer (ui-shell's files, additive): `api.diagnostics.export|verbose`, `api.data.export`, `api.workflow.*`, `api.file.save`; the stand-in answers `File/save` as canceled.
 - Limit: the engine has no read for the verbose state, so a fresh Settings screen starts at off.
+
+## ui-settings: Add a tool, Revoke asks first, Device sync row (2026-11-10)
+- Settings → General → Tools on this Mac: an Add a tool dialog (name, kind, permissions, read ticked by default, plain warnings for Send and settings) calls `Clients/grant`; the next step shows the key file's path ONCE with Copy path and a plain note. The path is the dialog's own state: it is not in Settings' data or view, and the tool joins the list without it. Aplos never has the key itself on screen (the token never crosses the contract). Revoke now asks first.
+- Device sync: one calm row from `Workflow/status`; no control is drawn while `available` is false (the engine says "later version"). Enable, code and join are not built until the engine says available.

@@ -141,3 +141,19 @@
   font-variant-numeric: var(--num-small);
   color: var(--dim);
 }
+
+.settings-tool-form,
+.settings-tool-key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-tool-scopes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
