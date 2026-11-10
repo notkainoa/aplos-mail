@@ -115,6 +115,15 @@ export const COUNT_KEYS: readonly string[] = [
   // gmail.adapter-send-find: the adapter's own send and findSent on real Gmail (0/1).
   'sentHeaderTokenKept',
   'findSentByToken',
+  // gmail.archive-delta-cost: the mark/measure phases — history pages walked (2 units each), the
+  // records and distinct messages a delta touched, and 0/1 flags. Never an id or a cursor.
+  'marked',
+  'historyPages',
+  'historyRecords',
+  'messagesTouched',
+  'historyExpired',
+  'pagesCapped',
+  'baselineUpdated',
   // Answers that were 200 with an empty body (a list with no items): ok, not an error.
   'emptyAnswers',
 ];
