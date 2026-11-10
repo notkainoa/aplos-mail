@@ -70,6 +70,12 @@ export function scopeWarnings(scopes: readonly ToolScope[]): readonly string[] {
   return TOOL_SCOPES.filter(s => s.warning && scopes.includes(s.id)).map(s => s.warning!);
 }
 
+/** A tool as the list holds it: the key file's path is shown once, by the dialog, and kept nowhere else. */
+export function withoutKeyPath<T extends { tokenPath?: string }>(client: T): Omit<T, 'tokenPath'> {
+  const { tokenPath: _path, ...rest } = client;
+  return rest;
+}
+
 export const TOOL_KEY_NOTE =
   'The tool reads its key from this file. Aplos never shows the key itself. Anyone who can read the file can act as this tool, so keep it private. This path is shown once.';
 
@@ -84,7 +90,7 @@ export function revokeConfirm(name: string): { question: string; consequence: st
 
 /** The device-sync row: one calm sentence, and whether any control can exist yet. */
 export function workflowLine(status: WorkflowInfo | undefined): string {
-  if (!status) return 'Keep Done, Later and reminders in step between your Macs.';
+  if (!status) return 'Keeps Done and Later in step between Macs.';
   if (!status.available) return 'Device sync comes in a later version.';
-  return status.enabled ? 'On. Done, Later and reminders follow you between your Macs.' : 'Off.';
+  return status.enabled ? 'On. Done and Later follow you between Macs.' : 'Off.';
 }

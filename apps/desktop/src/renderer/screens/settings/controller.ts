@@ -32,7 +32,13 @@ import {
   type KeyFields,
 } from './keyboard.model';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
-import type { AccountWrite, ClientEntry, ToolKind, ToolScope } from './settings.model';
+import {
+  withoutKeyPath,
+  type AccountWrite,
+  type ClientEntry,
+  type ToolKind,
+  type ToolScope,
+} from './settings.model';
 import type { Confirmation, SettingsView } from './view';
 
 export interface ControllerDeps {
@@ -599,6 +605,8 @@ export function createController(deps: ControllerDeps) {
       });
     },
     openAddTool() {
+      // The dialog shows the shared failure slot: another action's line must not appear inside it.
+      deps.fail(null);
       deps.setView({ addTool: true });
     },
     closeAddTool() {
@@ -608,24 +616,23 @@ export function createController(deps: ControllerDeps) {
      * Allows a tool. The new tool joins the list without its key file's path; the path goes back to the dialog once
      * and is kept nowhere else. Resolves with the client (for the dialog) or null when the engine refused.
      */
-    async grantClient(input: {
-      name: string;
-      kind: ToolKind;
-      scopes: readonly ToolScope[];
-    }): Promise<ClientEntry | null> {
-      if (view().busy.grant) return null;
+    async grantClient(
+      input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
+      onGranted: (client: ClientEntry) => void,
+    ): Promise<boolean> {
+      if (view().busy.grant) return false;
       busy('grant', true);
-      let client: ClientEntry | null = null;
-      await guard('allow that tool', async () => {
+      // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
+      const ok = await guard('allow that tool', async () => {
         const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
-        client = granted;
-        const { tokenPath: _path, ...listed } = granted;
+        onGranted(granted);
+        const listed = withoutKeyPath(granted);
         deps.setData({
           clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
         });
       });
       busy('grant', false);
-      return client;
+      return ok;
     },
     async openDiagnostics() {
       // The dialog shows the shared failure slot: another action's line must not appear inside it.

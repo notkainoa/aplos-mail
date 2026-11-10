@@ -169,12 +169,19 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
         <Row
           section="general"
           anchor="addTool"
-          description="Name it and choose what it may do."
+          description={enabled ? 'Name it and choose what it may do.' : 'Turn on tools first.'}
           control={
-            <Button variant="text" label="Add a tool" onPress={() => actions.openAddTool()} />
+            <Button
+              variant="text"
+              label="Add a tool"
+              disabled={!enabled}
+              onPress={() => actions.openAddTool()}
+            />
           }
         />
-      ) : null}
+      ) : (
+        <NotAvailable section="general" anchor="addTool" />
+      )}
       {!clientsOn ? (
         <NotAvailable section="general" anchor="tools" />
       ) : !enabled ? (

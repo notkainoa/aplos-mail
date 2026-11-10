@@ -26,6 +26,7 @@ import {
   actThenList,
   mergeAccounts,
   mergePatch,
+  withoutKeyPath,
   type AccountWrite,
   type AiModelInfo,
 } from './settings.model';
@@ -82,7 +83,7 @@ export function dataPorts(): SettingsApiPort {
     aiProviders: async () => (await api.ai.providers({})).list,
     aiUsage: () => api.ai.usage({}),
     listenerGet: () => api.listener.get({}),
-    clientsList: async () => (await api.clients.list({})).list,
+    clientsList: async () => (await api.clients.list({})).list.map(withoutKeyPath),
     queueList: async () => (await api.queue.list({})).list,
     calendarsGet: async () => (await api.calendar.get({})).list,
   };

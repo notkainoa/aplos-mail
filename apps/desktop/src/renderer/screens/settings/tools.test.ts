@@ -12,6 +12,7 @@ import {
   scopeWarnings,
   toggleScope,
   toolDraftReady,
+  withoutKeyPath,
   workflowLine,
   type ClientEntry,
 } from './settings.model';
@@ -81,12 +82,13 @@ describe('ui-settings: Add a tool', () => {
         return granted(input.name);
       },
     });
-    const client = await h.actions.grantClient({
-      name: '  Terminal helper ',
-      kind: 'cli',
-      scopes: ['read'],
-    });
-    assert.equal(client?.tokenPath, PATH, 'the dialog gets the path once');
+    let shown = null as ClientEntry | null;
+    const ok = await h.actions.grantClient(
+      { name: '  Terminal helper ', kind: 'cli', scopes: ['read'] },
+      client => (shown = client),
+    );
+    assert.equal(ok, true);
+    assert.equal(shown?.tokenPath, PATH, 'the dialog gets the path once');
     assert.deepEqual(
       asked,
       [{ name: 'Terminal helper', kind: 'cli', scopes: ['read'] }],
@@ -102,26 +104,50 @@ describe('ui-settings: Add a tool', () => {
     assert.equal(h.view().busy.grant, false);
   });
 
-  test('grant: a refusal says so with Retry and returns nothing; a second press while it runs is ignored', async () => {
+  test('grant: a refusal says so; its Retry still hands the path to the dialog; a second press while it runs is ignored', async () => {
+    let attempts = 0;
     const bad = harness({
-      clientsGrant: async () => {
-        throw new Error('refused');
+      clientsGrant: async input => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('refused');
+        return granted(input.name);
       },
     });
-    assert.equal(await bad.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }), null);
+    let shown = null as ClientEntry | null;
+    const first = await bad.actions.grantClient(
+      { name: 'X', kind: 'cli', scopes: ['read'] },
+      client => (shown = client),
+    );
+    assert.equal(first, false);
     assert.equal(bad.failures.at(-1)?.op, 'allow that tool');
     assert.equal(bad.view().busy.grant, false);
+    bad.failures.at(-1)?.retry();
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(
+      (shown as ClientEntry | null)?.tokenPath,
+      PATH,
+      'the retried grant shows its path',
+    );
 
     const resolvers: ((c: ClientEntry) => void)[] = [];
     const slow = harness({ clientsGrant: () => new Promise(r => resolvers.push(r)) });
-    const first = slow.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] });
+    const one = slow.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }, () => {});
     assert.equal(
-      await slow.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }),
-      null,
+      await slow.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }, () => {}),
+      false,
     );
     resolvers[0](granted('X'));
-    await first;
+    await one;
     assert.equal(resolvers.length, 1, 'one grant, not two');
+  });
+
+  test("opening Add a tool clears another action's failure line, and a list read never keeps a key path", () => {
+    const h = harness({});
+    h.actions.openAddTool();
+    assert.equal(h.failures.at(-1), null, 'the dialog starts without a stale line');
+    assert.equal(h.view().addTool, true);
+    const row = { ...granted('Listed') };
+    assert.equal('tokenPath' in withoutKeyPath(row), false);
   });
 
   test('Revoke asks first; only the answer revokes, and the tool leaves the list', async () => {
@@ -145,7 +171,7 @@ describe('ui-settings: Add a tool', () => {
       workflowLine({ enabled: false, available: false }),
       'Device sync comes in a later version.',
     );
-    assert.match(workflowLine(undefined), /between your Macs/);
+    assert.match(workflowLine(undefined), /between Macs/);
     const markup = renderToStaticMarkup(staticScreen(STATES['device-sync-later']));
     assert.match(markup, /Device sync comes in a later version\./);
     assert.doesNotMatch(markup, /set-general-deviceSync[^]*role="switch"/);

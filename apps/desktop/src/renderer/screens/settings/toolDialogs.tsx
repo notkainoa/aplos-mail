@@ -3,7 +3,7 @@
  * component's own state: it is dropped when the dialog closes and is never written to Settings' state, a log or the
  * clipboard unless the owner presses Copy path (DESIGN 7.10; ARCH 12.3).
  */
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { Button } from '../../ui/buttons-keys';
 import { Checkbox, TextField } from '../../ui/controls';
 import { Dialog, Puck, Text } from '../../ui/surfaces';
@@ -27,16 +27,19 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
   const [copied, setCopied] = useState<'yes' | 'no' | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // While the engine is answering the dialog stays: closing now would lose the key file's path, shown once.
   const close = () => {
+    if (busy) return;
     setGranted(null);
     actions.closeAddTool();
   };
   const submit = async () => {
     if (!toolDraftReady(draft) || busy) return;
     setBusy(true);
-    const client = await actions.grantClient(draft);
+    await actions.grantClient(draft, client =>
+      setGranted({ name: client.name, path: client.tokenPath }),
+    );
     setBusy(false);
-    if (client) setGranted({ name: client.name, path: client.tokenPath });
   };
   const copy = async () => {
     try {
@@ -47,13 +50,22 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
     }
   };
 
+  // Return on a checkbox would toggle it; in this form Return is the Allow tool key, from anywhere.
+  const submitFromCheckbox = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    if (!(event.target instanceof HTMLElement) || event.target.getAttribute('role') !== 'checkbox')
+      return;
+    event.preventDefault();
+    void submit();
+  };
+
   if (granted)
     return (
       <Dialog
         open
         size="md"
         title={`“${granted.name}” is allowed`}
-        initialFocusId="set-tool-done"
+        initialFocusId="set-tool-path"
         onClose={close}
         footer={
           <>
@@ -90,11 +102,13 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
           <Text variant="small" tone="ink">
             {TOOL_KEY_NOTE}
           </Text>
-          {copied ? (
-            <Text variant="small" tone="dim">
-              {copied === 'yes' ? 'Copied.' : 'Could not copy. Select the path and copy it.'}
-            </Text>
-          ) : null}
+          <span role="status">
+            {copied ? (
+              <Text variant="small" tone="dim">
+                {copied === 'yes' ? 'Copied.' : 'Could not copy. Select the path and copy it.'}
+              </Text>
+            ) : null}
+          </span>
         </div>
       </Dialog>
     );
@@ -109,7 +123,14 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
       onClose={close}
       footer={
         <>
-          <Button variant="text" label="Cancel" keys="Esc" keyHint="always" onPress={close} />
+          <Button
+            variant="text"
+            label="Cancel"
+            keys="Esc"
+            keyHint="always"
+            disabled={busy}
+            onPress={close}
+          />
           <Button
             variant="filled"
             label="Allow tool"
@@ -122,7 +143,7 @@ export function AddToolDialog({ actions, failure }: Pick<SectionProps, 'actions'
         </>
       }
     >
-      <div className="settings-tool-form">
+      <div className="settings-tool-form" onKeyDownCapture={submitFromCheckbox}>
         {failure ? <FailureLine failure={failure} /> : null}
         <TextField
           id="set-tool-name"
