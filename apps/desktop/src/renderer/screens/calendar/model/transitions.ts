@@ -415,7 +415,9 @@ function updateSave(
           title,
           start: isoOfTime(times.start),
           end: isoOfTime(times.end),
-          ...(change.fields.allDay !== undefined ? { allDay: change.fields.allDay } : {}),
+          ...('fields' in change && change.fields.allDay !== undefined
+            ? { allDay: change.fields.allDay }
+            : {}),
         },
         ...(more && more.length > 0 ? { more } : {}),
       },

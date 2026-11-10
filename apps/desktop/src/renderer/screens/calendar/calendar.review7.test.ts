@@ -65,11 +65,11 @@ const moveFx: CalendarEffect = {
 
 test('review7: the write gate never asks a non-Google or a demo account', () => {
   for (const over of [
-    { provider: 'microsoft', grantedScopes: [] },
-    { provider: 'imap', grantedScopes: [] },
-    { provider: 'jmap', grantedScopes: [] },
-    { demo: true, grantedScopes: [] },
-  ] as const) {
+    { provider: 'microsoft', grantedScopes: [] as string[] },
+    { provider: 'imap', grantedScopes: [] as string[] },
+    { provider: 'jmap', grantedScopes: [] as string[] },
+    { demo: true, grantedScopes: [] as string[] },
+  ]) {
     const ctx = ctxFor(undefined, undefined, undefined, undefined, [account(over)]);
     const t = update(
       S(),

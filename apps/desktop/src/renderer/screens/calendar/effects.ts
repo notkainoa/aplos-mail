@@ -9,7 +9,7 @@
  * No React: the container binds the ports to `api.*` and the state setters; tests drive it with the real data layer
  * and stand-in toasts.
  */
-import { NotImplementedError, type EventChange } from '@aplos/contract';
+import type { EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
 import { toErrorBody } from '../../data/client';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
@@ -474,13 +474,10 @@ export function livePorts(): EffectPorts {
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
-    // TODO(calendarWrite): `Account/grantPermissions` takes `{accountId}` only — the contract has no
-    // `enable:'calendarWrite'` yet (providers #393/#394 pending; REQUESTed for the contract lane). Calling
-    // it as-is would ask the read scopes again, so the port rejects until the contract carries `enable`.
+    // The same connect sheet as the read grant, asking for calendar editing too (`enable: 'calendarWrite'` is the only
+    // way Aplos ever asks for it); the account's grantedScopes gains the scope when the sheet finishes.
     enableEditing: accountId =>
-      Promise.reject(
-        new NotImplementedError(`Account/grantPermissions enable:'calendarWrite' for ${accountId}`),
-      ),
+      api.account.grantPermissions({ accountId, enable: 'calendarWrite' }).then(() => undefined),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
     // Main opens it through its external() gate (http, https or mailto, no credentials; anything else is refused).
     openUrl: url => {
