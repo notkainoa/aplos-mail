@@ -128,3 +128,16 @@ test('ReaderMessage is one component with one ThreadMessage, so a fold never rem
   assert.equal(source.match(/^export function /gm)?.length, 1, 'one exported component');
   assert.doesNotMatch(source, /FoldedMessage|FullMessage/, 'no second component type per state');
 });
+
+test('reader.css is balanced: every block closes (a merge once left one open and nested the card rules under it)', () => {
+  const css = readFileSync(new URL('./reader.css', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/"[^"\n]*"|'[^'\n]*'/g, '');
+  let depth = 0;
+  for (const ch of css) {
+    if (ch === '{') depth += 1;
+    if (ch === '}') depth -= 1;
+    assert.ok(depth >= 0, 'a block closes that was never opened');
+  }
+  assert.equal(depth, 0, 'every block closes');
+});
