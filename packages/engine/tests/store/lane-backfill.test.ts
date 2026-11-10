@@ -27,13 +27,17 @@ const newsletter = (id: string, thread: string, minutes: number) =>
     hdr: { bulk: true, list: true },
   });
 
-const setup = [{ opId: 'setup', origin: 'sync', writes: [accountWrite, ...folderWrites] }] as const;
+const setup = () => ({
+  opId: 'setup',
+  origin: 'sync' as const,
+  writes: [accountWrite, ...folderWrites],
+});
 
 test('threads stored before laneFor existed are re-ranked on the next commit, and user ranks are left alone', () => {
   const file = tempDb();
   try {
     const before = openStore(file.open(), { now: () => T0 });
-    before.commit(setup[0]);
+    before.commit(setup());
     before.commit({
       opId: 'old',
       origin: 'sync',
@@ -81,7 +85,7 @@ test('the catch-up runs a bounded batch per commit and then stops', () => {
   const file = tempDb();
   try {
     const before = openStore(file.open(), { now: () => T0 });
-    before.commit(setup[0]);
+    before.commit(setup());
     const threads = Array.from({ length: 450 }, (_, i) => `t${i}`);
     before.commit({
       opId: 'many',
@@ -118,7 +122,7 @@ test('the catch-up marker is reserved: no commit can write it, and a rank that s
   const file = tempDb();
   try {
     const store = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
-    store.commit(setup[0]);
+    store.commit(setup());
     assert.throws(
       () =>
         store.commit({
@@ -143,7 +147,7 @@ test("the catch-up waits out the owner's own commits, and a store without laneFo
   const file = tempDb();
   try {
     const before = openStore(file.open(), { now: () => T0 });
-    before.commit(setup[0]);
+    before.commit(setup());
     before.commit({ opId: 'old', origin: 'sync', writes: [newsletter('m1', 'news', 1)] });
     before.commit({ opId: 'more', origin: 'sync', writes: [msg('m2', 'person', 2)] });
     const marker = (store: StorePort) =>
