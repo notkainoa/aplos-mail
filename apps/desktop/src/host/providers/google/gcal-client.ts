@@ -69,10 +69,8 @@ export class GcalClient {
     return `${req.path}${qs ? `?${qs}` : ''}`;
   }
 
-  private signal(req: GcalRequest): AbortSignal {
-    const signals = [this.ctx.signal, this.deps.closed];
-    if (req.timeoutMs !== undefined) signals.push(AbortSignal.timeout(req.timeoutMs));
-    return AbortSignal.any(signals);
+  private signal(): AbortSignal {
+    return AbortSignal.any([this.ctx.signal, this.deps.closed]);
   }
 
   /** One governed call. Throws `ProviderError` (classified) or `PausedError`; resolves with the parsed JSON. */
@@ -84,7 +82,7 @@ export class GcalClient {
     const cost = gcalCost(req.method);
     const asked = this.ctx.clock.now();
     return this.ctx.governor.run(
-      { budget: 'gcal', lane: req.lane, kind, method: req.method, cost, signal: this.signal(req) },
+      { budget: 'gcal', lane: req.lane, kind, method: req.method, cost, signal: this.signal() },
       async io => {
         const started = this.ctx.clock.now();
         const waitMs = started - asked;
@@ -99,6 +97,9 @@ export class GcalClient {
           });
           throw error;
         };
+        // The request's own deadline starts when it is sent, not while it waits in the governor.
+        const deadline =
+          req.timeoutMs !== undefined ? AbortSignal.timeout(req.timeoutMs) : undefined;
         let response: Response;
         try {
           response = await this.deps.fetch(`${API}${this.target(req)}`, {
@@ -111,16 +112,18 @@ export class GcalClient {
               ...(req.ifMatch !== undefined ? { 'if-match': req.ifMatch } : {}),
             },
             ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
-            signal: io.signal,
+            signal: deadline ? AbortSignal.any([io.signal, deadline]) : io.signal,
           });
         } catch (error) {
+          // Our own deadline is a network timeout: for a write, the answer is lost and the outcome uncertain.
           if (io.signal.aborted) throw io.signal.reason ?? error;
+          const timedOut = deadline?.aborted === true;
           return fail(
             googleError({
               method: req.method,
               kind,
               now: this.ctx.clock.now(),
-              network: networkKind(error),
+              network: timedOut ? 'timeout' : networkKind(error),
               item: req.item,
             }),
           );

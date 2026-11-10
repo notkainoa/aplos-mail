@@ -83,8 +83,12 @@ function prepare(account: AccountId, target: CalendarTarget | undefined, method:
       message: 'Aplos could not tell which account to change.',
     });
   }
-  if (!hasCalendarWrite(ctx.account.grantedScopes) && target.writeRefused())
+  // One list decides (the account's granted scopes); `writeRefused` only records the gap on the actor. Only Google's
+  // adapter is held to Google's scope — another provider's calendar half decides for itself.
+  if (ctx.account.provider === 'google' && !hasCalendarWrite(ctx.account.grantedScopes)) {
+    target.writeRefused();
     throw writePermissionError();
+  }
   return { calendar, ctx, target };
 }
 

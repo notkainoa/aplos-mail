@@ -25,6 +25,7 @@ export const WRITE_SCOPES = [SCOPE.calendarList, SCOPE.calendarEvents];
 export interface WriteRigOptions {
   scopes?: string[];
   newId?: () => string;
+  writeTimeoutMs?: number;
 }
 
 export async function writeRig(options: WriteRigOptions = {}) {
@@ -68,8 +69,19 @@ export async function writeRig(options: WriteRigOptions = {}) {
   const requests: { method: string; url: string; ifMatch: string | null; body?: string }[] = [];
   // Test hook: answer the next write with this status and body instead of the emulator (Google's own error text).
   const forced: { status: number; body: string }[] = [];
+  // Test hooks for a write whose answer never arrives: it LANDS on the emulator and then the connection drops, or it hangs.
+  const faults: ('dropAnswer' | 'hang')[] = [];
   const spy: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
+    const fault = req.method !== 'GET' && faults.length > 0 ? faults.shift() : undefined;
+    if (fault === 'hang')
+      return new Promise<Response>((_, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason)),
+      );
+    if (fault === 'dropAnswer') {
+      await emu.fetch(input, init);
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+    }
     const next = req.method !== 'GET' && forced.length > 0 ? forced.shift() : undefined;
     if (next)
       return new Response(next.body, {
@@ -90,6 +102,7 @@ export async function writeRig(options: WriteRigOptions = {}) {
     userAgent: 'prov-cal-tests',
     closed: new AbortController().signal,
     ...(options.newId ? { newId: options.newId } : {}),
+    ...(options.writeTimeoutMs ? { writeTimeoutMs: options.writeTimeoutMs } : {}),
   });
   const adapter = { calendar } as unknown as ProviderAdapter;
   const store = new RigStore(account, () => clock.now());
@@ -171,6 +184,7 @@ export async function writeRig(options: WriteRigOptions = {}) {
     calendarId: account.address,
     requests,
     forced,
+    faults,
     logLines: () => JSON.stringify(log.lines),
     refused: () => refused,
     seedCalendars,

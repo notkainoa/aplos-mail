@@ -46,6 +46,7 @@ interface ApiAttendee {
 /** The slice of Google's event JSON the writes read back; the whole object is kept for `raw` by the mapper. */
 interface ApiEvent {
   id?: string;
+  status?: string;
   etag?: string;
   attendees?: ApiAttendee[];
 }
@@ -59,6 +60,8 @@ export interface EventMapping {
 export interface CalendarWriteDeps extends GcalDeps {
   /** A fresh event id for a create. Tests inject a fixed one; the default is 128 random bits. */
   newId?: () => string;
+  /** Every write's deadline in ms (default 20 s); tests shorten it. */
+  writeTimeoutMs?: number;
 }
 
 const invalid = (message: string, reasonCode: string) =>
@@ -85,11 +88,13 @@ function apiTime(t: EventTime, patch: boolean): ApiDateTime {
 
 function apiAttendee(a: Attendee, current: ApiAttendee | undefined): ApiAttendee {
   // A guest already on the event keeps their answer (and the self flag); only new guests start unanswered.
+  // Start from the guest Google already has (resource, comment, additionalGuests, answer…) and overlay only what
+  // the caller edits: the name and the optional flag.
   return {
+    ...current,
     email: a.address,
     ...(a.name ? { displayName: a.name } : {}),
-    ...(a.optional ? { optional: true } : {}),
-    ...(current?.responseStatus ? { responseStatus: current.responseStatus } : {}),
+    optional: a.optional === true,
   };
 }
 
@@ -146,6 +151,16 @@ const WRITE_TIMEOUT_MS = 20_000;
 const path = (calendarRemoteId: string, eventId?: string) =>
   `/calendars/${encodeURIComponent(calendarRemoteId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ''}`;
 
+/**
+ * An idempotent write the governor may have sent more than once and never saw an answer for: the event may exist, so the
+ * caller is told it is uncertain instead of "nothing was changed".
+ */
+function uncertain(error: unknown): unknown {
+  if (error instanceof ProviderError && error.error.class === 'transient')
+    return new ProviderError({ ...error.error, uncertain: true }, error.scope);
+  return error;
+}
+
 const statusOf = (error: unknown): number | undefined =>
   error instanceof ProviderError ? error.error.status : undefined;
 
@@ -181,7 +196,7 @@ export function createCalendarWrites(
       lane: 'interactive',
       kind: req.kind,
       // Writes get a bound: a hung request fails instead of holding the op forever (MED, #394).
-      ...(req.http ? { timeoutMs: WRITE_TIMEOUT_MS } : {}),
+      ...(req.http ? { timeoutMs: deps.writeTimeoutMs ?? WRITE_TIMEOUT_MS } : {}),
       ...(req.eventId ? { item: req.eventId } : {}),
     });
   }
@@ -242,7 +257,7 @@ export function createCalendarWrites(
       return saved(calendar, made);
     } catch (error) {
       // 409: an earlier send of this same create landed after all — answer with what is there.
-      if (statusOf(error) !== 409) throw error;
+      if (statusOf(error) !== 409) throw uncertain(error);
       return saved(calendar, await read(ctx, calendar, eventId));
     }
   }
@@ -302,9 +317,13 @@ export function createCalendarWrites(
         });
       } catch (error) {
         const status = statusOf(error);
-        if (status === 412) return conflict(ctx, calendar, eventId);
-        // Already gone (404/410) is the state the caller wanted.
-        if (status !== 404 && status !== 410) throw error;
+        if (status === 412) {
+          // The first DELETE may have landed and only its answer been lost: if the event is gone, that is saved.
+          const now = await tryRead(ctx, calendar, eventId);
+          if (now !== undefined && now.status !== 'cancelled')
+            return conflict(ctx, calendar, eventId);
+        } else if (status !== 404 && status !== 410) throw uncertain(error);
+        // Already gone (404/410, or 412 on a cancelled event) is the state the caller wanted.
       }
       if (!instance) return { kind: 'saved', upserts: [], removals: [ref.remoteId] };
       // One occurrence of a series: Google keeps a cancelled override, which hides it; read it back.
@@ -322,11 +341,10 @@ export function createCalendarWrites(
       const guests = current.attendees ?? [];
       const me = guests.find(a => a.self === true);
       if (!me) throw invalid('You are not on this event’s guest list.', 'event.notAGuest');
-      // A no-op answers saved before the staleness check: on a busy meeting another guest's RSVP bumps the
-      // etag, but nothing needs writing when my answer is already the target (MED, #394).
+      // No staleness pre-check: on a busy meeting another guest's answer bumps the etag all the time. The PATCH
+      // carries If-Match on the copy just read and changes only my answer in it; nothing to write when it is already
+      // the target (MED, #394).
       if (me.responseStatus === response) return saved(calendar, current);
-      if (ref.etag !== undefined && current.etag !== undefined && current.etag !== ref.etag)
-        return conflict(ctx, calendar, eventId);
       const attendees = guests.map(a => (a === me ? { ...a, responseStatus: response } : a));
       try {
         const made = await call(ctx, {

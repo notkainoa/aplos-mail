@@ -249,7 +249,8 @@ const CALENDAR_CONNECT_SCOPES = scopesForFeatures('calendarList', 'calendarEvent
 /**
  * The optional scopes a connect asks for (the connect's `optionalScopes` dep): the calendar pair on a NEW sign-in,
  * undefined on anything else so the mode's default applies (a reconnect keeps the held ones, a re-grant asks every
- * requestable scope — the deferred `calendar.events` write scope is never asked in round 1).
+ * requestable scope; the deferred `calendar.events` write scope is asked only by an explicit `grantPermissions` with
+ * `enable: 'calendarWrite'`, which the connect reads from the request itself, never from this callback).
  */
 export const connectOptionalScopes = (req: {
   mode: 'new' | 'reconnect' | 'grantPermissions';

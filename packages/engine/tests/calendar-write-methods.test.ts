@@ -274,3 +274,30 @@ test('a create names its event from the op id: the same op is the same event, an
   assert.equal(ids[0], a);
   assert.equal(ids[1], a);
 });
+
+test('a series edit opened from one occurrence moves the series by the same offset, not to that day', async () => {
+  const w = await world();
+  const hour = 3_600_000;
+  const thatDay = Date.UTC(2026, 9, 28, 17, 0);
+  await w.call('Event/set', {
+    opId: 'rb1',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261028T170000Z',
+      scope: 'series',
+      fields: {
+        start: { type: 'utc', utc: thatDay + hour },
+        end: { type: 'utc', utc: thatDay + hour + 30 * 60_000 },
+        allDay: false,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as {
+    remoteId: string;
+    recurrenceId?: string;
+    fields: { start?: { utc: number }; end?: { utc: number } };
+  };
+  // The master's own slot (Oct 27 17:00 UTC) moves one hour later; it does not jump to Oct 28.
+  assert.equal(sent.fields.start?.utc, Date.UTC(2026, 9, 27, 18, 0));
+  assert.equal(sent.fields.end?.utc, Date.UTC(2026, 9, 27, 18, 30));
+});

@@ -506,3 +506,153 @@ test('an edit of an event deleted elsewhere says it is gone, not that it changed
   );
   r.close();
 });
+
+test('a create whose answer is lost is reported uncertain, and replaying the same op makes one event', async () => {
+  const r = await writeRig();
+  await r.seedCalendars();
+  const change = {
+    calendarRemoteId: r.calendarId,
+    newRemoteId: await eventIdForOp(r.account.id, 'op-lost'),
+    scope: 'occurrence' as const,
+    notify: true,
+    fields: {
+      summary: 'Dinner',
+      start: START,
+      end: END,
+      attendees: [
+        {
+          address: 'friend@example.test',
+          response: 'needsAction' as const,
+          organizer: false,
+          self: false,
+        },
+      ],
+    },
+  };
+  // The POST lands on Google, then the connection drops before the answer arrives.
+  r.faults.push('dropAnswer');
+  await assert.rejects(
+    r.port.put(r.account.id, change),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.uncertain',
+  );
+  assert.equal((await r.remoteEvents()).filter(e => e.summary === 'Dinner').length, 1);
+  // The caller replays the same op: it names the same event, finds it, and does not invite twice.
+  const again = saved(await r.port.put(r.account.id, change));
+  assert.equal(again.upserts[0]!.summary, 'Dinner');
+  assert.equal((await r.remoteEvents()).filter(e => e.summary === 'Dinner').length, 1);
+  assert.equal(r.emu.calendar.sentUpdates.filter(u => u.recipients.length > 0).length, 1);
+  r.close();
+});
+
+test('a write that never gets an answer is cut off by its deadline and reported uncertain', async () => {
+  const r = await writeRig({ writeTimeoutMs: 40 });
+  const seeded = r.emu.calendar.addEvent(r.calendarId, {
+    summary: 'Slow',
+    start: { dateTime: '2026-11-12T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  });
+  await r.seedCalendars();
+  r.faults.push('hang');
+  await assert.rejects(
+    r.port.put(r.account.id, {
+      calendarRemoteId: r.calendarId,
+      remoteId: seeded.id,
+      scope: 'series',
+      fields: { summary: 'Slow (renamed)' },
+    }),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.uncertain',
+  );
+  r.close();
+});
+
+test('an occurrence with no stored exception is edited against the version just read, not blind', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const master = r.emu.calendar.addEvent(cal, {
+    summary: 'Daily',
+    start: { dateTime: '2026-11-09T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-09T09:30:00-08:00', timeZone: 'America/Los_Angeles' },
+    recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
+  });
+  await r.seedCalendars();
+  saved(
+    await r.port.put(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: master.id,
+      recurrenceId: '20261111T170000Z',
+      scope: 'occurrence',
+      fields: { summary: 'Daily (mine)' },
+    }),
+  );
+  const patch = r.requests.filter(q => q.method === 'PATCH').at(-1)!;
+  assert.ok(patch.ifMatch, 'the patch carries the instance version it just read');
+  r.close();
+});
+
+test('a delete whose first send landed and whose retry meets 412 is saved, not a conflict', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const one = r.emu.calendar.addEvent(cal, {
+    summary: 'Cancelled twice',
+    start: { dateTime: '2026-11-13T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-13T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  });
+  await r.seedCalendars();
+  r.emu.calendar.removeEvent(cal, one.id);
+  r.forced.push({
+    status: 412,
+    body: JSON.stringify({
+      error: { code: 412, message: 'Precondition Failed', errors: [{ reason: 'conditionNotMet' }] },
+    }),
+  });
+  const gone = saved(
+    await r.port.remove(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: one.id,
+      etag: one.etag,
+      scope: 'series',
+    }),
+  );
+  assert.deepEqual(gone.removals, [one.id]);
+  r.close();
+});
+
+test('adding a guest keeps the resource, comment and extra guests Google holds for the others', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const seeded = r.emu.calendar.addEvent(cal, {
+    summary: 'Panel',
+    start: { dateTime: '2026-11-12T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    attendees: [
+      {
+        email: 'peer@example.test',
+        responseStatus: 'accepted',
+        comment: 'bringing a friend',
+        additionalGuests: 1,
+      },
+    ],
+  });
+  await r.seedCalendars();
+  saved(
+    await r.port.put(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: seeded.id,
+      scope: 'series',
+      fields: {
+        attendees: [
+          { address: 'peer@example.test', response: 'needsAction', organizer: false, self: false },
+          { address: 'new@example.test', response: 'needsAction', organizer: false, self: false },
+        ],
+      },
+    }),
+  );
+  const sent = JSON.parse(r.requests.filter(q => q.method === 'PATCH').at(-1)!.body!) as {
+    attendees: Record<string, unknown>[];
+  };
+  const peer = sent.attendees.find(a => a.email === 'peer@example.test')!;
+  assert.equal(peer.comment, 'bringing a friend');
+  assert.equal(peer.additionalGuests, 1);
+  assert.equal(peer.responseStatus, 'accepted');
+  r.close();
+});
