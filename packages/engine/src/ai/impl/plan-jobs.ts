@@ -35,7 +35,7 @@ export async function planJob(
   if (have.open.length) return;
   const x = await extractThread(services, accountId, remoteThreadId);
   if (x === 'empty') return;
-  writePlans(services, accountId, remoteThreadId, inputHash, x);
+  writePlans(services, accountId, remoteThreadId, x);
 }
 
 const REPLY_SYSTEM = `You draft a short reply for the mailbox owner, in the owner's own voice.
