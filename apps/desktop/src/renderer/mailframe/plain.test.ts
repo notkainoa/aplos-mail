@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { frameDocument } from './document';
-import { FRAME_DARK, FRAME_PAPER, PLAIN_LIGHT_SURFACE, isPlainSurface, sheetOf } from './paper';
+import { FRAME_DARK, FRAME_PAPER, sheetOf } from './paper';
 import { isPlainBody } from './plain';
 import { sanitiseBody } from './sanitise';
 
@@ -34,44 +34,52 @@ test('plain: paragraphs, bold, links and lists; rich: styles, colours, images, t
     assert.equal(plainOf(rich), false, rich);
 });
 
-test('a plain email paints the sentinel surface in the light theme and the card surface in the dark one', () => {
-  const light = frameDocument(PLAIN, 'block', undefined, false).srcdoc;
-  assert.match(
-    light,
-    new RegExp(`body\\{margin:0;background:${PLAIN_LIGHT_SURFACE};color:${FRAME_PAPER.ink}`),
-  );
-  assert.match(light, /name="color-scheme" content="light"/);
-  const dark = frameDocument(PLAIN, 'block', undefined, true).srcdoc;
-  assert.match(
-    dark,
-    new RegExp(`body\\{margin:0;background:${FRAME_DARK.surface};color:${FRAME_DARK.ink}`),
-  );
-  assert.match(dark, /name="color-scheme" content="dark"/);
-  assert.match(dark, new RegExp(`a\\{color:${FRAME_DARK.accent}\\}`));
+test('a plain email paints the card’s own colours: paper in the light theme, the dark surface in the dark one', () => {
+  const light = frameDocument(PLAIN, 'block', undefined, false);
+  assert.equal(light.plain, true);
+  assert.match(light.srcdoc, new RegExp(`body\\{margin:0;background:${FRAME_PAPER.paper};`));
+  assert.match(light.srcdoc, /name="color-scheme" content="light"/);
+  const dark = frameDocument(PLAIN, 'block', undefined, true);
+  assert.equal(dark.plain, true);
+  assert.match(dark.srcdoc, new RegExp(`body\\{margin:0;background:${FRAME_DARK.surface};`));
+  assert.match(dark.srcdoc, new RegExp(`color:${FRAME_DARK.ink}`));
+  assert.match(dark.srcdoc, /name="color-scheme" content="dark"/);
+  assert.match(dark.srcdoc, new RegExp(`a\\{color:${FRAME_DARK.accent}\\}`));
 });
 
-test('a rich email keeps its light paper in both themes, with no sentinel', () => {
+test('a rich email keeps its light paper in both themes, with no plain treatment', () => {
   for (const darkTheme of [false, true]) {
-    const doc = frameDocument(NEWSLETTER, 'block', undefined, darkTheme).srcdoc;
-    assert.match(doc, /name="color-scheme" content="light"/);
-    assert.doesNotMatch(doc, new RegExp(PLAIN_LIGHT_SURFACE));
-    assert.doesNotMatch(doc, new RegExp(`background:${FRAME_DARK.surface}`));
+    const built = frameDocument(NEWSLETTER, 'block', undefined, darkTheme);
+    assert.equal(built.plain, false);
+    assert.match(built.srcdoc, /name="color-scheme" content="light"/);
+    assert.doesNotMatch(built.srcdoc, new RegExp(`background:${FRAME_DARK.surface}`));
   }
 });
 
-test('the host draws a plain email on the card (no inset, no rounding, in the name column) and a rich one on paper', () => {
-  assert.equal(isPlainSurface(PLAIN_LIGHT_SURFACE), true);
-  assert.equal(isPlainSurface(FRAME_DARK.surface), true);
-  assert.equal(isPlainSurface('#ece8df'), false);
-  assert.equal(
-    isPlainSurface(FRAME_PAPER.paper),
-    false,
-    'paper itself (no background) is not the sentinel',
-  );
-  const plain = sheetOf(PLAIN_LIGHT_SURFACE);
-  assert.equal(plain.padding, '0');
-  assert.equal(plain.borderRadius, '0');
-  assert.match(plain.marginLeft ?? '', /--plain-indent/);
-  assert.equal(sheetOf(FRAME_DARK.surface).colorScheme, 'dark');
-  assert.deepEqual(sheetOf('#ece8df'), { background: FRAME_PAPER.paper, colorScheme: 'light' });
+test('a mail that merely paints the dark surface or paper as its own body colour is still rich: it keeps its paper ring', () => {
+  for (const colour of [FRAME_DARK.surface, FRAME_PAPER.paper, '#fffffe']) {
+    const html = `<body bgcolor="${colour}"><style>p{color:#c00}</style><p>Hello</p><img src="https://example.com/x.png" alt="x"></body>`;
+    for (const darkTheme of [false, true]) {
+      const built = frameDocument(html, 'block', undefined, darkTheme);
+      assert.equal(built.plain, false, `${colour} dark=${darkTheme}`);
+      // The host decision: not plain, so the colour the mail chose changes nothing about its sheet.
+      assert.deepEqual(sheetOf(built.plain, colour), {
+        background: FRAME_PAPER.paper,
+        colorScheme: 'light',
+      });
+    }
+  }
+});
+
+test('the host draws a trusted-plain email on the card (no inset, no rounding, in the name column) and anything else on paper', () => {
+  const light = sheetOf(true, FRAME_PAPER.paper);
+  assert.equal(light.padding, '0');
+  assert.equal(light.borderRadius, '0');
+  assert.match(light.marginLeft ?? '', /--plain-indent/);
+  assert.equal(light.colorScheme, 'light');
+  assert.equal(sheetOf(true, FRAME_DARK.surface).colorScheme, 'dark');
+  assert.deepEqual(sheetOf(false, '#ece8df'), {
+    background: FRAME_PAPER.paper,
+    colorScheme: 'light',
+  });
 });

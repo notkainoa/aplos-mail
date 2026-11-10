@@ -2,7 +2,7 @@
 // use the sealed `aplos-mail://` frame (contract MailFrame.srcdoc, FR-34; plan 30 section 4.4 source 1).
 
 import { highlight } from './highlight';
-import { FRAME_DARK, FRAME_PAPER, PLAIN_LIGHT_SURFACE } from './paper';
+import { FRAME_DARK, FRAME_PAPER } from './paper';
 import { isPlainBody } from './plain';
 import { sanitiseBody } from './sanitise';
 import type { ImagePolicy } from './types';
@@ -43,7 +43,7 @@ function hostCss(mark: string, plain: boolean, dark: boolean): string {
   return [
     '@layer aplos;@layer aplos{',
     `:root{color-scheme:${dark ? 'dark' : 'light'};--aplos-read-size:${p.fontSize};--aplos-read-leading:${p.lineHeight}}`,
-    `body{margin:0;${plain ? `background:${dark ? d.surface : PLAIN_LIGHT_SURFACE};` : ''}color:${dark ? d.ink : p.ink};font-family:${p.fontFamily};font-size:var(--aplos-read-size);line-height:var(--aplos-read-leading);overflow-wrap:anywhere}`,
+    `body{margin:0;${plain ? `background:${dark ? d.surface : p.paper};letter-spacing:${p.letterSpacing};` : ''}color:${dark ? d.ink : p.ink};font-family:${p.fontFamily};font-size:var(--aplos-read-size);line-height:var(--aplos-read-leading);overflow-wrap:anywhere}`,
     `img,table{max-width:100%}`,
     `pre,.aplos-flat{white-space:pre-wrap}`,
     `a{color:${dark ? d.accent : p.accent}}`,
@@ -64,6 +64,8 @@ function markAttribute(): string {
 export interface FrameDocument {
   /** The full `srcdoc` string. */
   srcdoc: string;
+  /** The email is plain (`isPlainBody`): decided here, from the sanitiser's output, never from a colour the email chose. */
+  plain: boolean;
   /** Remote resources removed or blocked. */
   blocked: number;
   /** Tracking pixels among them ("N trackers removed"). */
@@ -94,5 +96,5 @@ export function frameDocument(
     `<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="${dark ? 'dark' : 'light'}">` +
     `<style>${hostCss(mark, plain, dark)}</style></head>` +
     `<body${body.bodyAttributes}>${highlight(body.html, findQuery, mark)}</body></html>`;
-  return { srcdoc, blocked: body.blocked, trackers: body.trackers, notices: body.notices };
+  return { srcdoc, plain, blocked: body.blocked, trackers: body.trackers, notices: body.notices };
 }

@@ -51,13 +51,13 @@ const BODY_RULE = `html:root>body{${important([
 
 /**
  * A plain email (plain.ts): drawn straight on the reader's card in the app's own type and colours, with no box of its
- * own. The values are the app's tokens (apps/desktop `ui/tokens.json`; tests/plain.test.ts fails if they drift). Light:
- * the body paints a sentinel surface, the paper colour off by one blue step, which the host reads as "draw me on the
- * card" (renderer `mailframe/paper.ts`); dark follows the app's theme through `prefers-color-scheme`, which Electron
- * ties to it (`nativeTheme`). The body's padding is the host's to give, so it is none here.
+ * own. The values are the app's tokens (apps/desktop `ui/tokens.json`; tests/plain.test.ts fails if they drift). Light is
+ * the paper colour; dark follows the app's theme through `prefers-color-scheme`, which Electron ties to it
+ * (`nativeTheme`). The body's padding is the host's to give, so it is none here. Whether a letter is plain is NOT told by
+ * these colours: the reporter reports the root's `data-aplos-plain` marker, which only the sanitiser sets.
  */
 export const PLAIN_LIGHT = {
-  surface: '#fffffe',
+  surface: '#ffffff',
   ink: '#1d1e21',
   dim: '#63666c',
   accent: '#0b5394',
@@ -69,9 +69,17 @@ export const PLAIN_DARK = {
   accent: '#88aee0',
   rule: '#0e0f10',
 } as const;
+/** The `read` type role (tokens.json): the app's own message type. */
+export const PLAIN_TYPE = {
+  family: '-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif',
+  size: '15px',
+  line: '26px',
+  weight: 400,
+  tracking: '-0.12px',
+} as const;
 const PLAIN = 'html[data-aplos-plain]';
 const PLAIN_CSS = [
-  `${PLAIN} body{padding:0;background:${PLAIN_LIGHT.surface};color:${PLAIN_LIGHT.ink};font:15px/26px -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif}`,
+  `${PLAIN} body{padding:0;background:${PLAIN_LIGHT.surface};color:${PLAIN_LIGHT.ink};font:${PLAIN_TYPE.weight} ${PLAIN_TYPE.size}/${PLAIN_TYPE.line} ${PLAIN_TYPE.family};letter-spacing:${PLAIN_TYPE.tracking}}`,
   `${PLAIN} a{color:${PLAIN_LIGHT.accent}}`,
   `@media (prefers-color-scheme:dark){${PLAIN}{color-scheme:dark}`,
   `${PLAIN} body{background:${PLAIN_DARK.surface};color:${PLAIN_DARK.ink}}`,

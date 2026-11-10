@@ -1,5 +1,5 @@
 // The host side of the reporter protocol (PROTOCOL.md). The reporter is the engine's `packages/mail-html/assets/
-// reporter.js` (ARCHITECTURE 10): it posts `{token, h, w, bg, ready, marks}` to `parent` and nothing else. Pure: every
+// reporter.js` (ARCHITECTURE 10): it posts `{token, h, w, bg, ready, marks, plain}` to `parent` and nothing else. Pure: every
 // check takes the event and what the host expects, so spoofed messages are unit-tested without a browser.
 
 import { FRAME_PAPER } from './paper';
@@ -55,6 +55,8 @@ export interface SizeReport {
   ready: boolean;
   /** Find marks in the letter (the sanitiser's `mark.aplos-find`), 0-100,000. */
   marks: number;
+  /** The letter's root carries the sanitiser's `data-aplos-plain` (a mail cannot set it); false when the reporter says nothing. */
+  plain: boolean;
 }
 
 /** The minimal shape of a `MessageEvent` the host reads. */
@@ -118,7 +120,9 @@ export function clampHeight(value: unknown): number | null {
 }
 
 /** The reporter's one message: exactly these own fields, every one present. Anything else rejects the message. */
-const FIELDS: ReadonlySet<string> = new Set(['token', 'h', 'w', 'bg', 'ready', 'marks']);
+const FIELDS: ReadonlySet<string> = new Set(['token', 'h', 'w', 'bg', 'ready', 'marks', 'plain']);
+/** The six every report has; `plain` is the seventh the current reporter adds (an older reporter's six are still accepted). */
+const REQUIRED_FIELDS = 6;
 
 function isPlainObject(value: unknown): value is object {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -129,12 +133,16 @@ function isPlainObject(value: unknown): value is object {
 /**
  * A plain object's own data fields copied into a null-prototype record, so nothing is read through a prototype (a
  * polluted `Object.prototype` cannot fill a missing field) and no getter runs. Null for anything else, for symbol
- * keys, and unless the own fields are exactly the reporter's six.
+ * keys, and unless the own fields are the reporter's six, or its seven with `plain`.
  */
 function ownFields(value: unknown): Record<string, unknown> | null {
   if (!isPlainObject(value) || Object.getOwnPropertySymbols(value).length > 0) return null;
   const names = Object.getOwnPropertyNames(value);
-  if (names.length !== FIELDS.size || names.some(name => !FIELDS.has(name))) return null;
+  if (
+    (names.length !== REQUIRED_FIELDS && names.length !== FIELDS.size) ||
+    names.some(name => !FIELDS.has(name))
+  )
+    return null;
   const fields = Object.create(null) as Record<string, unknown>;
   for (const name of names) {
     const descriptor = Object.getOwnPropertyDescriptor(value, name);
@@ -169,8 +177,15 @@ function sizeReport(
   if (typeof data.bg !== 'string' || typeof data.ready !== 'boolean' || !isMarks(data.marks)) {
     return null;
   }
+  if (data.plain !== undefined && typeof data.plain !== 'boolean') return null;
   if (!widthMatches(data.w, typeof width === 'function' ? width() : width)) return null;
-  return { height, bg: parseBg(data.bg), ready: data.ready, marks: data.marks };
+  return {
+    height,
+    bg: parseBg(data.bg),
+    ready: data.ready,
+    marks: data.marks,
+    plain: data.plain === true,
+  };
 }
 
 /**

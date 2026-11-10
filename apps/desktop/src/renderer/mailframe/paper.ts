@@ -25,6 +25,7 @@ export const FRAME_PAPER = {
   fontFamily: tokens.font.sans.$value.map(f => (f.includes(' ') ? `"${f}"` : f)).join(', '),
   fontSize: read.fontSize,
   lineHeight: read.lineHeight,
+  letterSpacing: read.letterSpacing,
 } as const;
 
 interface DarkToken {
@@ -50,24 +51,16 @@ export const FRAME_DARK = {
 } as const;
 
 /**
- * The sentinel a plain email's body paints in the light theme: the paper colour off by one blue step, so the host can tell
- * a plain email (drawn straight on the card) from a rich one that merely sets no background. A plain email in the dark
- * theme paints `FRAME_DARK.surface`, which is already its own signal.
- */
-export const PLAIN_LIGHT_SURFACE = `${FRAME_PAPER.paper.slice(0, -2)}fe`;
-
-/** Whether the reported body colour is a plain email's. */
-export function isPlainSurface(bg: string): boolean {
-  const low = bg.toLowerCase();
-  return low === PLAIN_LIGHT_SURFACE || low === FRAME_DARK.surface.toLowerCase();
-}
-
-/**
  * What the iframe element itself is painted with. A rich email keeps the light paper in its inset ring (a sheet on the dark
- * pane). A plain email is the card itself: the card's surface, no ring or inset, in the name's column
- * (`--plain-indent`), with no border or rounding of its own.
+ * pane). A plain email is the card itself: the card's surface, no ring or inset, in the name's column (`--plain-indent`),
+ * with no border or rounding of its own. `plain` MUST come from a trusted signal (the stand-in frame's own document, or the
+ * sealed frame's marker on the root, which only the sanitiser sets); a colour the mail can choose is never one. The dark
+ * surface is then read from the colour, because the plain CSS is the only thing that paints it.
  */
-export function sheetOf(bg: string): {
+export function sheetOf(
+  plain: boolean,
+  bg: string,
+): {
   readonly background: string;
   readonly colorScheme: 'light' | 'dark';
   readonly padding?: string;
@@ -75,11 +68,11 @@ export function sheetOf(bg: string): {
   readonly marginLeft?: string;
   readonly borderRadius?: string;
 } {
-  if (!isPlainSurface(bg)) return { background: FRAME_PAPER.paper, colorScheme: 'light' };
-  const darkSheet = bg.toLowerCase() === FRAME_DARK.surface.toLowerCase();
+  if (!plain) return { background: FRAME_PAPER.paper, colorScheme: 'light' };
+  const dark = bg.toLowerCase() === FRAME_DARK.surface.toLowerCase();
   return {
-    background: darkSheet ? FRAME_DARK.surface : FRAME_PAPER.paper,
-    colorScheme: darkSheet ? 'dark' : 'light',
+    background: dark ? FRAME_DARK.surface : FRAME_PAPER.paper,
+    colorScheme: dark ? 'dark' : 'light',
     padding: '0',
     width: 'calc(100% - var(--plain-indent, 0px))',
     marginLeft: 'var(--plain-indent, 0px)',

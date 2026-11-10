@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { render } from '../src/index';
 import { PLAIN_ATTRIBUTE } from '../src/plain';
-import { PLAIN_DARK, PLAIN_LIGHT, READING_CSS } from '../src/reading-css';
+import { PLAIN_DARK, PLAIN_LIGHT, PLAIN_TYPE, READING_CSS } from '../src/reading-css';
 
 // A plain email (owner request 2026-11-10) is drawn straight on the card in the app's type and colours: the frame marks its
 // root, and the reading CSS gives that root the app's light and dark values. A newsletter, or anything that sets its own
@@ -79,10 +79,10 @@ describe('a plain email', () => {
 });
 
 describe('the reading CSS for a plain email', () => {
-  it('paints the app’s colours in light and, under prefers-color-scheme, in dark; no body padding; the sentinel surface', () => {
+  it('paints the app’s colours in light and, under prefers-color-scheme, in dark; no body padding; the card’s own surface', () => {
     assert.match(
       READING_CSS,
-      /html\[data-aplos-plain\] body\{padding:0;background:#fffffe;color:#1d1e21/,
+      /html\[data-aplos-plain\] body\{padding:0;background:#ffffff;color:#1d1e21/,
     );
     assert.match(
       READING_CSS,
@@ -99,9 +99,7 @@ describe('the reading CSS for a plain email', () => {
       string,
       { $value: string; $extensions: { aplos: { dark: string } } }
     >;
-    // The light sentinel is the paper colour off by one blue step (renderer mailframe/paper.ts derives it the same way).
-    assert.match(colour.paper.$value, /^#[0-9a-f]{6}$/i);
-    assert.equal(PLAIN_LIGHT.surface, `${colour.paper.$value.slice(0, -2)}fe`);
+    assert.equal(PLAIN_LIGHT.surface, colour.paper.$value);
     assert.equal(PLAIN_LIGHT.ink, colour.ink.$value);
     assert.equal(PLAIN_LIGHT.dim, colour.dim.$value);
     assert.equal(PLAIN_LIGHT.accent, colour.accent.$value);
@@ -110,5 +108,38 @@ describe('the reading CSS for a plain email', () => {
     assert.equal(PLAIN_DARK.dim, colour.dim.$extensions.aplos.dark);
     assert.equal(PLAIN_DARK.accent, colour.accent.$extensions.aplos.dark);
     assert.equal(PLAIN_DARK.rule, colour.sunken.$extensions.aplos.dark);
+  });
+
+  it('sets the app’s own message type (the `read` role in tokens.json), not the frame’s default', () => {
+    const path = fileURLToPath(
+      new URL('../../../apps/desktop/src/renderer/ui/tokens.json', import.meta.url),
+    );
+    const tokens = JSON.parse(readFileSync(path, 'utf8')) as {
+      type: { read: { $value: Record<string, string | number> } };
+      font: { sans: { $value: string[] } };
+    };
+    const read = tokens.type.read.$value;
+    assert.equal(PLAIN_TYPE.size, read.fontSize);
+    assert.equal(PLAIN_TYPE.line, read.lineHeight);
+    assert.equal(PLAIN_TYPE.weight, read.fontWeight);
+    assert.equal(PLAIN_TYPE.tracking, read.letterSpacing);
+    const family = tokens.font.sans.$value.map(f => (f.includes(' ') ? `"${f}"` : f)).join(',');
+    assert.equal(PLAIN_TYPE.family, family);
+  });
+
+  it('judges plainness by the same markers as the renderer’s stand-in frame (a copy that must not drift)', () => {
+    const list = (file: string) => {
+      const text = readFileSync(file, 'utf8');
+      const block = /COLOUR_MARKERS = \[([\s\S]*?)\] as const/.exec(text)?.[1] ?? '';
+      return [...block.matchAll(/'([^']+)'/g)].map(m => m[1]);
+    };
+    const here = list(fileURLToPath(new URL('../src/plain.ts', import.meta.url)));
+    const there = list(
+      fileURLToPath(
+        new URL('../../../apps/desktop/src/renderer/mailframe/plain.ts', import.meta.url),
+      ),
+    );
+    assert.ok(here.length >= 9, `read ${here.length} markers`);
+    assert.deepEqual(there, here);
   });
 });

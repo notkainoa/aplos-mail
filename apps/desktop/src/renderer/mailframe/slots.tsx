@@ -156,7 +156,7 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
         tabIndex={-1}
         srcDoc={built.srcdoc}
         onLoad={onLoad}
-        style={{ ...FRAME, ...sheetOf(bg), height }}
+        style={{ ...FRAME, ...sheetOf(built.plain, bg), height }}
       />
     </div>
   );
@@ -170,6 +170,8 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
   const { source, hidden } = props;
   const [height, setHeight] = useState(1);
   const [bg, setBg] = useState(FRAME_PAPER.paper);
+  // The sanitiser's own marker, reported by the frame: the only thing that may flush a letter onto the card.
+  const [plain, setPlain] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
   const onMeasured = useLatest(props.onMeasured);
   useSealedMailKeys(ref, { shown: !hidden, onKey: props.onKey });
@@ -177,12 +179,14 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
   useEffect(() => {
     // A new letter starts on the paper: the previous letter's colour must not draw the next one until it reports.
     setBg(FRAME_PAPER.paper);
+    setPlain(false);
     const listener = createReportListener({
       frame: () => ref.current,
       token: source.token,
       setHeight,
       onFirst: report => {
         setBg(report.bg);
+        setPlain(report.plain);
         onMeasured.current(source, {
           height: report.height,
           bg: report.bg,
@@ -206,7 +210,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       allow=""
       tabIndex={-1}
       src={source.url}
-      style={{ ...FRAME, ...sheetOf(bg), height, ...(hidden ? HIDDEN : null) }}
+      style={{ ...FRAME, ...sheetOf(plain, bg), height, ...(hidden ? HIDDEN : null) }}
     />
   );
 }

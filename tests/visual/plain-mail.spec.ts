@@ -40,8 +40,8 @@ for (const theme of THEMES)
       expect(f!.padding, 'no inner padding block').toBe('0px');
       expect(f!.radius, 'no rounded panel').toBe('0px');
       expect(f!.bodyBorder, 'no inner border').toBe('0px');
-      // The sentinel surface is the card's own colour (a one-step difference in blue is invisible).
-      expect(f!.bodyBackground).toBe(theme === 'dark' ? 'rgb(33, 34, 37)' : 'rgb(255, 255, 254)');
+      // The card's own colour, in each theme.
+      expect(f!.bodyBackground).toBe(theme === 'dark' ? 'rgb(33, 34, 37)' : 'rgb(255, 255, 255)');
       expect(f!.bodyColor).toBe(theme === 'dark' ? 'rgb(236, 236, 237)' : 'rgb(29, 30, 33)');
     });
 
@@ -52,6 +52,6 @@ for (const theme of THEMES)
       ).toBeVisible();
       const f = await frameFacts(page, '.aplos-reader__letter[data-paper="true"]');
       expect(f).not.toBeNull();
-      expect(f!.bodyBackground).not.toMatch(/^rgb\(255, 255, 254\)|^rgb\(33, 34, 37\)/);
+      expect(f!.bodyBackground, 'a newsletter paints its own surface').not.toBe('rgb(33, 34, 37)');
     });
   });
