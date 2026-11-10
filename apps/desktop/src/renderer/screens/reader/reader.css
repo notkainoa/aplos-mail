@@ -355,3 +355,13 @@
 .aplos-reader[data-cards='off'] .aplos-circle {
   --circle-ring: var(--canvas);
 }
+
+/* The bell in the card's head: a status mark in --dim at the icon button's size, never a control, so hover changes nothing. */
+.aplos-bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  color: var(--dim);
+}

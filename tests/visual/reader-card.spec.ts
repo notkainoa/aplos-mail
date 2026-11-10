@@ -54,4 +54,42 @@ test.describe('reader card header', () => {
     await page.locator(BUTTON).click();
     await expect(page.getByRole('dialog', { name: 'Message details' })).toBeHidden();
   });
+
+  test('Importance: Enter opens the menu, a choice moves the thread with an Undo toast, Esc returns focus', async ({
+    page,
+  }) => {
+    await open(page);
+    const button = page.locator(`${LETTER} button[aria-haspopup="menu"]`, { hasText: 'Important' });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Importance' });
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    await menu.getByRole('menuitemradio', { name: 'Low importance' }).click();
+    await expect(page.getByText('Moved to Low importance')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Always do this for/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Undo/ })).toBeVisible();
+    await expect(
+      page.locator(`${LETTER} button[aria-haspopup="menu"]`, { hasText: 'Low importance' }),
+    ).toBeVisible();
+  });
+
+  test('the bell is a mark with a name, and More lists the reader’s own actions', async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(page.locator(`${LETTER} .aplos-bell[role="img"]`)).toHaveAttribute(
+      'aria-label',
+      /.+/,
+    );
+    await page.locator(`${LETTER} button[aria-label="More"]`).click();
+    const menu = page.getByRole('menu', { name: 'More' });
+    for (const name of ['Reply all', 'Later', 'Bookmark', 'Move to Trash'])
+      await expect(menu.getByRole('menuitem', { name: new RegExp(name) })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  });
 });
