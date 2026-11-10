@@ -27,6 +27,9 @@ const RICH: Record<string, string> = {
   'a body background': '<body bgcolor="#112233"><p>Hello</p></body>',
   'a body style': '<body style="background:#112233"><p>Hello</p></body>',
   'a cell fill': '<table><tr><td bgcolor="#eee">Hello</td></tr></table>',
+  'a font face': '<p><font face="Comic Sans MS">Hello</font></p>',
+  'a font size': '<p><font size="7">Hello</font></p>',
+  'a highlight': '<p>Hello <mark>there</mark></p>',
   'a layout table': '<table><tr><td>Hello</td></tr></table>',
   'an image': '<p>Hello <img src="https://example.com/logo.png" alt="Logo"></p>',
 };
@@ -96,6 +99,9 @@ describe('the reading CSS for a plain email', () => {
       string,
       { $value: string; $extensions: { aplos: { dark: string } } }
     >;
+    // The light sentinel is the paper colour off by one blue step (renderer mailframe/paper.ts derives it the same way).
+    assert.match(colour.paper.$value, /^#[0-9a-f]{6}$/i);
+    assert.equal(PLAIN_LIGHT.surface, `${colour.paper.$value.slice(0, -2)}fe`);
     assert.equal(PLAIN_LIGHT.ink, colour.ink.$value);
     assert.equal(PLAIN_LIGHT.dim, colour.dim.$value);
     assert.equal(PLAIN_LIGHT.accent, colour.accent.$value);

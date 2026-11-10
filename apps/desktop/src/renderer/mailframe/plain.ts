@@ -9,6 +9,9 @@ const COLOUR_MARKERS = [
   ' color=', // <font color>, <hr color>
   ' bgcolor=', // table and cell fills
   ' background=', // legacy background images
+  ' face=', // <font face>: the mail's own typeface
+  ' size=', // <font size>, <hr size>: the mail's own type size
+  '<mark', // a highlight in a colour of its own
   '<table', // layout tables
   '<img', // logos and photos are drawn for a white sheet, and a blocked image keeps its placeholder
 ] as const;

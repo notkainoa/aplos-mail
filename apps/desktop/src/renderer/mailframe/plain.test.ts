@@ -26,6 +26,8 @@ test('plain: paragraphs, bold, links and lists; rich: styles, colours, images, t
     '<p style="color:red">x</p>',
     '<font color="red">x</font>',
     '<body bgcolor="#123456"><p>x</p></body>',
+    '<font face="Comic Sans MS">x</font>',
+    '<p>x <mark>y</mark></p>',
     '<table><tr><td>x</td></tr></table>',
     '<p>x <img src="https://example.com/a.png" alt="a"></p>',
   ])

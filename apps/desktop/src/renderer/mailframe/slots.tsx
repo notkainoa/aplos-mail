@@ -175,6 +175,8 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
   useSealedMailKeys(ref, { shown: !hidden, onKey: props.onKey });
 
   useEffect(() => {
+    // A new letter starts on the paper: the previous letter's colour must not draw the next one until it reports.
+    setBg(FRAME_PAPER.paper);
     const listener = createReportListener({
       frame: () => ref.current,
       token: source.token,
