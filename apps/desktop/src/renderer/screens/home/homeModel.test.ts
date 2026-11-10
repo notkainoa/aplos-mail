@@ -11,6 +11,8 @@ import { primaryOf, senderOf, subjectOf, summaryOf } from './homeRows';
 import {
   LOW_KEY,
   buildItems,
+  layoutOf as layoutOfView,
+  showsLowBand,
   compareDoNow,
   compareFollow,
   compareUpdate,
@@ -130,7 +132,35 @@ test('cursor stops run Do now, Back from Later, Important updates, the Low band,
     layoutOf({ do: ['d'], fromLater: ['l'], update: ['u'], follow: ['f'], lowCount: 4 }),
   );
   assert.deepEqual(items.map(keyOf), ['d', 'l', 'u', LOW_KEY, 'f']);
-  assert.deepEqual(buildItems(layoutOf({ lowCount: 0, do: ['d'] })).map(keyOf), ['d']);
+});
+
+const homeOf = (total: number, low: number) => ({
+  total,
+  low: { count: low, names: [], moreSenders: 0 },
+  sections: [],
+});
+
+test('the Low band shows at zero while the view has mail, judged on the view totals, not on the windowed ids', () => {
+  // The owner saw one mixed list with no way into Low importance; an empty band still opens the sheet's empty state.
+  // `sections: []` is a window that holds no ids yet: the totals still say Home has mail.
+  assert.equal(showsLowBand(layoutOfView(homeOf(5, 0))), true);
+  assert.equal(showsLowBand(layoutOfView(homeOf(0, 3))), true);
+  assert.equal(
+    showsLowBand(layoutOfView(homeOf(0, 0))),
+    false,
+    'an empty Home is the handled line',
+  );
+});
+
+test('an empty band is a cursor stop to walk onto, but the cursor never settles on it', () => {
+  const shown = (ids: string[]) => ({ ...layoutOf({ do: ids }), lowShown: true });
+  const before = buildItems(shown(['a', 'u']));
+  assert.deepEqual(before.map(keyOf), ['a', 'u', LOW_KEY]);
+  assert.equal(before.at(-1)?.kind === 'low' && before.at(-1)?.kind === 'low', true);
+  const after = buildItems(shown(['a']));
+  assert.equal(settleCursor(before, after, 'u'), 'a', 'the row above, not the empty band');
+  assert.equal(stepCursor(after, 'a', 1), LOW_KEY, 'but J reaches it, and Return opens the sheet');
+  assert.deepEqual(buildItems(layoutOf({ lowCount: 2, do: ['a'] })).map(keyOf), ['a', LOW_KEY]);
 });
 
 test('the cursor starts on Do now, else Important updates, else Follow up, else the band', () => {

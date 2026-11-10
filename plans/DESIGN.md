@@ -218,7 +218,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 - **As marks** (8 px dots, chip outlines, 2 px calendar event rules, sidebar calendar swatches), each colour is at least 5.00:1 on the pane in light (4.59 on the shell) and 6.59:1 in dark [V: `c.py`].
 - **Account dots on rows** show only when two or more accounts are connected (decision 16). With one account they are hidden. The account always appears in the row tooltip and on hover over the reader's sender line.
 - **Calendar event fills** use the colour at 12 % (light) or 20 % (dark), composited over `--canvas` and never transparent, so grid lines never cross the text. Titles are `--ink`. Times are `--dim` in light and `--ink-2` in dark.
-- **No avatars in mail.** Rainbow letter avatars are removed (`renderer/bridge.ts:20` `avatarColor`) [V], and neither rows nor the reader show a monogram. The only monogram is the account switcher's, ink on `--raised`.
+- **No avatars in mail** (except the reader card's calm recipient monogram circles, owner override 2026-11-10, §16). Rainbow letter avatars are removed (`renderer/bridge.ts:20` `avatarColor`) [V], and neither rows nor the reader show a monogram. The only monogram is the account switcher's, ink on `--raised`.
 
 ### 4.3 Type
 
@@ -687,9 +687,9 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
    ┌ Reply to Jordan…                                                       R ┐
 ```
 
-One 640 px column, top to bottom, with no card and nothing beside it:
+One 640 px column, top to bottom, with no card and nothing beside it (superseded for the email itself by the owner override of 2026-11-10 in §16: the email sits in one card):
 
-1. **Sender line.** The name in `title`, "to you and Mina Cho" in `--dim`, and on the right a due chip, if any, plus the time. There is no monogram. Hovering the name shows the address, the account, and the history with this sender (labelled as history, not trust).
+1. **Sender line** (the reader card header keeps this order and adds recipient monogram circles by owner override 2026-11-10, §16). The name in `title`, "to you and Mina Cho" in `--dim`, and on the right a due chip, if any, plus the time. There is no monogram. Hovering the name shows the address, the account, and the history with this sender (labelled as history, not trust).
 2. **The big serif summary**, the same text as on Home. Hovering it shows "Summary by Groq".
 3. **One action row.** The suggestion as the filled button (`Reply · Space`, or "Add to calendar" when a plan is the right next step), then Later and Done as text buttons. If the suggestion isn't a reply, R still replies. This removes the three "Reply" controls and the 54 px pill [V: baseline §6.2].
 4. **The thread.**
@@ -699,7 +699,7 @@ One 640 px column, top to bottom, with no card and nothing beside it:
    - The latest message has its header and a `read` body, then attachments.
 5. **A quiet "Reply to Jordan…" field** (`ReplyStub`) with an R keycap.
 
-- **Elsewhere:** bookmark, trash, forward and "Why it's here" live in ⋯ and ⌘K. "Why it's here" is one sentence, a quote from the mail, and the ⌥↑ / ⌥↓ lane corrections. "Important ▾" is gone from the header (`Reader.tsx:149-150`). The pane header shows previous/next, ⋯, Ask and the calendar button.
+- **Elsewhere:** bookmark, trash, forward and "Why it's here" live in ⋯ and ⌘K. "Why it's here" is one sentence, a quote from the mail, and the ⌥↑ / ⌥↓ lane corrections. "Important ▾" is gone from the header (`Reader.tsx:149-150`), except the reader card's Importance menu the owner asked for on 2026-11-10 (§16). The pane header shows previous/next, ⋯, Ask and the calendar button.
 - **Threads.** J/K moves between threads with `swap` and the double buffer. ⌘F finds in the message.
 - **HTML mail** renders in a sandboxed iframe with no scripts, on a light surface that keeps the email's own background even in dark mode. Plain text follows the theme. Remote images are off by default, with "Load images from this sender" (`gaps/electron-email-html-isolation.md`).
 - **States:**
@@ -1209,6 +1209,8 @@ The first version of this spec, written earlier on 2026-10-27, used the **Skypap
 The owner reviewed those screens as HTML mockups and asked for a calmer, more beautiful app. Drawn at full size, the sky was the loudest surface in the product and read as a different app (`mockups/NOTES.md`, revision 1 finding 1), and the owner disliked the stripe. Revision 2 replaced the look with Paper: a neutral gray shell, one white pane, roomier type, no decoration, a simpler reader, reply and compose, a regrouped sidebar and the hover rule. Revision 2b recorded the owner's answers: no app icon in the app, no page titles, the calendar button back, the name Paper, account dots only with two or more accounts, and the website redesign deferred to a new logo. Revision 3 is the owner's own design for Home's sections.
 
 The change list for those revisions is `mockups/DESIGN-CHANGES.md`. It is history now; this document is the spec. Appendices A and B record the original proposal scoring and grafts under the proposal's own name.
+
+**2026-11-10 owner override (reader card, one by one).** The owner asked, by name and with three reference images, for a "go one by one" card redesign. It knowingly supersedes three lines above for the reader and the one-by-one view only: (1) "no avatars or monograms in mail" (§3/§13): the card header may show calm monogram circles for sender and recipients (`--raised` fill, `--ink-2` letter, `--paper` ring), never a remote avatar URL or photo; (2) "Important ▾ in the reader header" is gone (§7.5, §13 row 10): the reader header may carry an Importance menu (Important / Low importance via the existing lane action, "Always do this for [sender]", Undo toast), a notification bell and ⋯, because the owner asked for them; (3) "the reader has no card" (§7.5): the email now sits in one card (subject on top, hairline, header row, body through MailFrame, attachments), while the summary stays big above it. Everything else stays binding: Space/Reply/Done/Later, the pinned action bar and the docked Ask are unchanged, and the owner skipped the "New 6" counter, left tick-marks and the "Full email" button. The bell shows the neutral slashed state until eng-contract adds a notification field (REQUEST routed 2026-11-10). ui-reader adds the matching DECISIONS line in its PR 1.
 
 ---
 
