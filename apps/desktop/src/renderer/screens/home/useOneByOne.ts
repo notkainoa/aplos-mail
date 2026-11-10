@@ -25,7 +25,7 @@ import {
 import type { Density } from '../../ui/props';
 import type { HomeSnapshot } from './homeActions';
 import { homeRunContext } from './homeCommands';
-import { laneOf, stepLane, type SectionKey } from './homeModel';
+import { laneOf, stepLane, type MovableLane, type SectionKey } from './homeModel';
 import { rowDomId } from './HomeList';
 import { densityOf, failurePhrase, senderOf, subjectOf } from './homeRows';
 import { commandsForOneByOne, type OneByOneControls } from './oneByOneCommands';
@@ -98,6 +98,10 @@ export interface OneByOne {
   readonly actions: ReturnType<typeof useHomeActionState>['actions'];
   readonly rejected: { readonly op: string; readonly onRetry: () => void } | undefined;
   readonly lane: OneByOneControls['lane'];
+  /** The Importance menu: the thread moves straight to this lane, and the walk steps on. */
+  readonly laneTo: (to: MovableLane) => void;
+  /** The thread showing, in the reader (Return, O, R). */
+  readonly open: () => void;
   readonly exit: () => void;
 }
 
@@ -177,6 +181,16 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     },
     [actions, acted],
   );
+  const laneTo = useCallback(
+    (to: MovableLane) => {
+      const { key, rowOf } = snapshot.current;
+      const current = key === null ? undefined : rowOf(key);
+      // Any move out of the lane the thread is in takes it out of Do now, so the walk steps on.
+      if (current && laneOf(current) !== null && laneOf(current) !== to) acted(current.id);
+      actions.laneTo(to);
+    },
+    [actions, acted],
+  );
   const controls = useMemo<OneByOneControls>(
     () => ({
       step,
@@ -231,6 +245,8 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     actions,
     rejected,
     lane,
+    laneTo,
+    open: controls.open,
     exit,
   };
 }
