@@ -33,7 +33,7 @@ describe("ReconnectSheet 'enableEditing'", () => {
     assert.match(html, /ui-dialog__title[^>]*>Turn on editing for alex\.moreno@example\.com</);
     assert.match(
       textOf(html),
-      /Aplos will ask Google for permission to change events\. Your calendar stays as it is until you allow it\./,
+      /Aplos will ask Google for permission to change events\. Nothing changes unless you ask\./,
     );
     assert.match(textOf(html), /Waiting for Google in your browser…/);
     assert.doesNotMatch(textOf(html), /Reconnect|Grant access|read your Gmail/);

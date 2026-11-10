@@ -70,7 +70,7 @@ export function ReconnectSheet({
         grant
           ? `Aplos needs permission to read your ${PROVIDER_MAIL[provider]}.`
           : editing
-            ? `Aplos will ask ${name} for permission to change events. Your calendar stays as it is until you allow it.`
+            ? `Aplos will ask ${name} for permission to change events. Nothing changes unless you ask.`
             : 'Nothing resyncs, and your changes on this Mac are kept.'
       }
       size="sm"

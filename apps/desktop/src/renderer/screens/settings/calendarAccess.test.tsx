@@ -215,6 +215,17 @@ describe('Settings → Calendar editing (Enable editing)', () => {
     assert.deepEqual(seen, [{ id: ALEX.id, mode: 'enableEditing' }]);
   });
 
+  test('the account row is focusable programmatically: tabindex -1 on its settings anchor', () => {
+    // DESIGN 11.2: when "Enable editing" unmounts under focus (editing flips on), the screen hands
+    // the row that focus — the anchor wrapper must be a programmatic focus target.
+    const html = render({ accounts: [ALEX] }, 'calendar');
+    assert.match(
+      html,
+      /<div class="settings-anchor" data-setting-anchor="calendarPermission"[^>]*tabindex="-1"[^>]*>\s*<div class="ui-setting-row"/,
+    );
+    assert.match(html, /id="set-calendar-calendarPermission-acct-alex"/);
+  });
+
   test('the sheet copy in enableEditing mode', () => {
     const html = renderToStaticMarkup(
       staticScreen({
@@ -227,7 +238,7 @@ describe('Settings → Calendar editing (Enable editing)', () => {
     assert.match(html, /Turn on editing for alex\.moreno@example\.com/);
     assert.match(
       html,
-      /Aplos will ask Google for permission to change events\. Your calendar stays as it is until you allow it\./,
+      /Aplos will ask Google for permission to change events\. Nothing changes unless you ask\./,
     );
   });
 });
