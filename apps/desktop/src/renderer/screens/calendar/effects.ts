@@ -13,7 +13,12 @@ import type { EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
 import type { CommandId, EventScope } from '../../ui/props';
-import { rsvpMessage, type CalendarEffect, type OptimisticChange } from './calendar.model';
+import {
+  rsvpMessage,
+  type CalendarEffect,
+  type OptimisticChange,
+  type ToastPlan,
+} from './calendar.model';
 import { writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -80,6 +85,17 @@ const newOpId = (): string => crypto.randomUUID();
 const UNDO_ACTION: PushedToast['actions'] = [
   { id: 'undo', label: 'Undo', commandId: 'app.undo' as CommandId },
 ];
+
+/**
+ * A write-through receipt (`undoable:false`, the providers' 2026-11-10 shape 9: no hold, no undo window
+ * yet): the Undo toast pushed on keydown becomes the plain confirmation in place — dismissed and
+ * re-pushed, so it loses the Undo action and the 8 s life, like 'Link copied'. One notice per operation
+ * still holds (the id is the opId). `message` is the sent wording, as for a hold that ended.
+ */
+function demoteUndoToast(opId: string, toast: ToastPlan): void {
+  dismissToast(opId);
+  pushToast({ id: opId, kind: toast.kind, message: toast.message, undoable: false });
+}
 
 /** The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). */
 function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
@@ -152,8 +168,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           entryIds: optimisticIds(fx.optimistic),
           call: () =>
             ports.eventSet({ opId, change: fx.change }).then(out => {
-              // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
-              if (
+              if (out.receipt.undoable === false) {
+                if (fx.toast) demoteUndoToast(opId, fx.toast);
+              } else if (
+                // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
                 fx.toast?.held !== undefined &&
                 (out.receipt.undoUntil === undefined || out.receipt.undoUntil <= getNow())
               )
@@ -186,8 +204,14 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             ports
               .eventRsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope })
               .then(receipt => {
+                if (receipt.undoable === false)
+                  demoteUndoToast(opId, {
+                    kind: 'done',
+                    message: rsvpMessage(fx.answer, fx.organizer, 'sent'),
+                    undoable: false,
+                  });
                 // No hold (nothing left to tell guests): the toast says it went.
-                if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
+                else if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
                   updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
                 return receipt.appliedState;
               }),
@@ -210,7 +234,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           undoable: true,
         });
       ports.calendarSet({ opId, id: fx.id, shown: fx.shown }).then(
-        () => ui.shownSettled(fx.id),
+        out => {
+          if (out.receipt.undoable === false && fx.toast) demoteUndoToast(opId, fx.toast);
+          ui.shownSettled(fx.id);
+        },
         () => {
           // A refused toggle rolls the local `shown` back at once; the toast offers Retry.
           ui.shownFailed(fx.id);
@@ -281,9 +308,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           opId,
           entryIds: [fx.id],
           call: () =>
-            ports
-              .eventHide({ opId, ids: [fx.id], hidden: true })
-              .then(receipt => receipt.appliedState),
+            ports.eventHide({ opId, ids: [fx.id], hidden: true }).then(receipt => {
+              if (receipt.undoable === false) demoteUndoToast(opId, fx.toast);
+              return receipt.appliedState;
+            }),
           failure: 'Couldn’t hide it.',
         },
         ui,
