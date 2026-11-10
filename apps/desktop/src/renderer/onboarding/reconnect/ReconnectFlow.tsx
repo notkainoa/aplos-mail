@@ -6,6 +6,8 @@
  * What it does, once mounted: it starts `Account/reconnect` (or `Account/grantPermissions` for a missing permission)
  * at once, shows `ReconnectSheet` "Waiting for Google in your browser…", and follows the flow's `connect` frames.
  * - Connected: the sheet closes, a "Reconnected" toast goes through the shell's `pushToast`, and `onClose('reconnected')`.
+ *   The 'enableEditing' sheet raises no toast: the account row flipping to "Editing on" is the confirmation, and
+ *   a consent that left the events scope unticked must not announce a reconnect that never happened.
  * - Failed: the sheet says why in a plain sentence with Try again (`copy.ts`); the wrong Google account names the
  *   address to choose.
  * - Cancel, Esc or the scrim: `Account/cancelConnect`, then `onClose('cancelled')`. A frame that arrives after that,
@@ -25,6 +27,7 @@ import {
   initialReconnect,
   MISSING_ACCOUNT_WAIT_MS,
   missingAccountClose,
+  reconnectedToast,
   reduceReconnect,
   runReconnectEffect,
   sheetView,
@@ -162,12 +165,13 @@ function Run({
     (outcome: ReconnectOutcome) => {
       // Unmounted from outside (the window went away): nobody is left to tell.
       if (!mounted.current) return;
-      if (outcome === 'reconnected') {
+      const message = outcome === 'reconnected' ? reconnectedToast(stateRef.current) : null;
+      if (message) {
         try {
           pushToast({
             id: `reconnect-${accountId}`,
             kind: 'info',
-            message: 'Reconnected',
+            message,
             undoable: false,
           });
         } catch {

@@ -38,9 +38,11 @@ export const FRAME_MODE: Readonly<Record<ReconnectCall, 'reconnect' | 'grantPerm
 export const sheetMode = (call: ReconnectCall): SheetMode =>
   call === 'grantPermissions' ? 'grant' : 'reconnect';
 
-/** The engine call behind a `SheetMode`: 'grant' and 'enableEditing' are both `Account/grantPermissions`. */
+/** The engine call behind a `SheetMode`: 'grant' and 'enableEditing' are both `Account/grantPermissions`;
+ * anything else — an absent or unknown mode, which `openSheet`'s unchecked args can carry — is the
+ * narrower `Account/reconnect`. */
 export function callForSheetMode(mode: SheetMode): ReconnectCall {
-  return mode === 'reconnect' ? 'reconnect' : 'grantPermissions';
+  return mode === 'grant' || mode === 'enableEditing' ? 'grantPermissions' : 'reconnect';
 }
 
 /** The extra the call carries for a `SheetMode`: only 'enableEditing' widens the re-consent to the events scope (`Account/grantPermissions {enable: 'calendarWrite'}`, #393); a plain 'grant' asks read scopes only. */
@@ -144,6 +146,16 @@ export type SheetPhase = 'idle' | 'waiting' | 'failed' | 'closed';
 
 /** What `onClose` reports. */
 export type ReconnectOutcome = 'reconnected' | 'cancelled' | 'failed';
+
+/**
+ * The toast a 'reconnected' close raises (DESIGN 7.13): "Reconnected" after a real reconnect or a
+ * permission grant, none after the editing ask — its account row flipping to "Editing on" is the
+ * confirmation there, and a consent that left the events scope unticked must not announce a reconnect
+ * that never happened.
+ */
+export function reconnectedToast(state: Pick<ReconnectState, 'enable'>): 'Reconnected' | null {
+  return state.enable === 'calendarWrite' ? null : 'Reconnected';
+}
 
 /** A settled `connect` frame kept until its flow's id is known. */
 export interface SettledFrame {

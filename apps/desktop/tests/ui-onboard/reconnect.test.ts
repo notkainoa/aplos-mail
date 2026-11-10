@@ -11,6 +11,7 @@ import {
   enableForSheetMode,
   initialReconnect,
   reconnectOffer,
+  reconnectedToast,
   reduceReconnect,
   runReconnectEffect,
   sheetView,
@@ -19,6 +20,7 @@ import {
   type ReconnectEvent,
   type ReconnectPorts,
   type ReconnectState,
+  type SheetMode,
 } from '../../src/renderer/onboarding/reconnect/reconnect.model';
 
 const NOW = new Date(2026, 9, 29, 10, 0).getTime();
@@ -285,6 +287,24 @@ describe('the sheet: idle → waiting → failed | reconnected → closed', () =
       retried.effects[0]?.type === 'start' && retried.effects[0].enable,
       'calendarWrite',
     );
+  });
+
+  test('callForSheetMode fails closed: an absent or unknown mode is the narrower reconnect', () => {
+    // openSheet casts its args without a runtime check, so a missing or mistyped mode must never
+    // widen the call to Account/grantPermissions.
+    for (const mode of [undefined, '', 'bogus'] as const) {
+      assert.equal(callForSheetMode(mode as SheetMode), 'reconnect', `mode ${String(mode)}`);
+    }
+    assert.equal(callForSheetMode('reconnect'), 'reconnect');
+    assert.equal(callForSheetMode('grant'), 'grantPermissions');
+    assert.equal(callForSheetMode('enableEditing'), 'grantPermissions');
+  });
+
+  test("a 'reconnected' close of the editing ask raises no 'Reconnected' toast; reconnect and grant keep it", () => {
+    // For 'enableEditing' the row flipping to "Editing on" is the confirmation — and a consent that
+    // left the events scope unticked must not announce a reconnect that never happened.
+    assert.equal(reconnectedToast({ enable: 'calendarWrite' }), null);
+    assert.equal(reconnectedToast({}), 'Reconnected');
   });
 });
 
