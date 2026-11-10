@@ -51,6 +51,43 @@ const receipt = (ctx: MethodContext, opId: string): Receipt => ({
 const notFoundCal = () =>
   new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
 
+const notFoundEvent = () =>
+  new ContractError({ type: 'notFound', message: 'This event is no longer available.' });
+
+/** The calendar a write targets: it must exist for the named account and accept changes. */
+function writableCalendar(ctx: MethodContext, accountId: string, calRemote: string): CalRow {
+  const row = calRow(ctx, accountId, calRemote);
+  if (!row) throw notFoundCal();
+  if (row.read_only === 1)
+    throw new ContractError({
+      type: 'unsupported',
+      message: 'This calendar is read-only, so events on it cannot be changed.',
+      reasonCode: 'calendar.readOnly',
+    });
+  return row;
+}
+
+/** The synced version of the event a write is based on (`If-Match`), so a change made elsewhere since is a conflict. */
+function baseEtag(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId?: string },
+  scope: string,
+): string | undefined {
+  const occurrence = scope === 'occurrence' && ref.recurrenceId ? ref.recurrenceId : undefined;
+  const row = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, occurrence);
+  // An occurrence without an exception row of its own has no version of its own yet.
+  if (!row && !occurrence) throw notFoundEvent();
+  return row?.etag ?? undefined;
+}
+
+/** The change landed elsewhere first: the saved write already holds the newer copy, so the screen can show it. */
+const changedElsewhere = () =>
+  new ContractError({
+    type: 'conflict',
+    message: 'This event changed elsewhere. The newer version is shown; make your change again.',
+    reasonCode: 'calendar.conflict',
+  });
+
 interface HiddenRow {
   [k: string]: string | number | null;
   calendar_id: number;
@@ -145,8 +182,8 @@ function eventRow(
     : "e.remote_id = ? AND e.master_remote_id IS NULL AND e.recurrence_id = ''";
   const params: (string | number)[] = recId ? [remote, remote, recId] : [remote];
   return ctx.services.store.read(q =>
-    q.get<EvtRow & { cal_row: number }>(
-      `SELECT e.id, e.calendar_id, e.remote_id, e.recurrence_id, e.master_remote_id, e.status,
+    q.get<EvtRow & { cal_row: number; etag: string | null }>(
+      `SELECT e.id, e.calendar_id, e.remote_id, e.recurrence_id, e.master_remote_id, e.status, e.etag,
               e.recurrence, e.start_utc, e.end_utc, e.all_day, e.data, c.id AS cal_row
        FROM events e JOIN calendars c ON c.id = e.calendar_id
        WHERE c.account_id = ? AND c.remote_id = ? AND ${on}`,
@@ -282,6 +319,7 @@ async function setEvent(
   const notify = args.notify;
   if (change.type === 'create') {
     const cal = parseCalendarIdIn(change.calendarId, accountIds(ctx));
+    writableCalendar(ctx, cal.accountId, cal.remoteId);
     const result = await ctx.services.calendar.put(cal.accountId, {
       calendarRemoteId: cal.remoteId,
       scope: 'occurrence',
@@ -291,23 +329,26 @@ async function setEvent(
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }
   const ref = parseEventIdIn(change.id, accountIds(ctx));
+  writableCalendar(ctx, ref.accountId, ref.calRemote);
+  const etag = baseEtag(ctx, ref, change.scope);
+  const target = {
+    calendarRemoteId: ref.calRemote,
+    remoteId: ref.remote,
+    ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+    ...(etag ? { etag } : {}),
+  };
   if (change.type === 'destroy') {
     const result = await ctx.services.calendar.remove(ref.accountId, {
-      calendarRemoteId: ref.calRemote,
-      remoteId: ref.remote,
-      ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+      ...target,
       scope: change.scope,
       notify,
     });
-    if (result.kind === 'conflict')
-      throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+    if (result.kind === 'conflict') throw changedElsewhere();
     auditCall(ctx, 'Event/set', args.opId);
     return { receipt: receipt(ctx, args.opId) };
   }
   const result = await ctx.services.calendar.put(ref.accountId, {
-    calendarRemoteId: ref.calRemote,
-    remoteId: ref.remote,
-    ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+    ...target,
     scope: change.scope,
     fields: toPortFields(change.fields),
     notify,
@@ -322,8 +363,7 @@ async function savedEvent(
   accountId: string,
   calRemote: string,
 ): Promise<Output<'Event/set'>> {
-  if (result.kind === 'conflict')
-    throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  if (result.kind === 'conflict') throw changedElsewhere();
   auditCall(ctx, 'Event/set', opId);
   // The port committed the saved facts; read the first upsert back for the response. A saved override's
   // contract id names its master plus the recurrence key (`masterRemoteId ?? remoteId`, then `@recId`).
@@ -337,19 +377,21 @@ async function savedEvent(
 
 async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Output<'Event/rsvp'>> {
   const ref = parseEventIdIn(args.id, accountIds(ctx));
+  writableCalendar(ctx, ref.accountId, ref.calRemote);
+  const etag = baseEtag(ctx, ref, args.scope);
   const result = await ctx.services.calendar.rsvp(
     ref.accountId,
     {
       calendarRemoteId: ref.calRemote,
       remoteId: ref.remote,
       ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+      ...(etag ? { etag } : {}),
       scope: args.scope,
     },
     args.response,
     { notify: args.notify ?? true },
   );
-  if (result.kind === 'conflict')
-    throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  if (result.kind === 'conflict') throw changedElsewhere();
   auditCall(ctx, 'Event/rsvp', args.opId);
   return receipt(ctx, args.opId);
 }

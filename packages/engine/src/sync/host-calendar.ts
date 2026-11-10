@@ -1,5 +1,5 @@
 import { ContractError } from '@aplos/contract/contract-error';
-import { NotSentError } from '../ports/base';
+import { NotSentError, ProviderError } from '../ports/base';
 import type { AccountId } from '../ports/base';
 import type {
   CalendarAdapter,
@@ -10,6 +10,9 @@ import type {
   EventRef,
 } from '../ports';
 import type { AdapterContext, ProviderAdapter } from '../ports/provider';
+import type { StorePort } from '../ports';
+import { eventFactWrites } from './calendar-facts';
+import { writeFailure } from './host-calendar-errors';
 
 /**
  * `CalendarPort`: event writes, addressed by account. The host looks up the started account's entry for exactly the
@@ -27,6 +30,8 @@ export const GOOGLE_CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/cale
 /** What a calendar write needs from a started account. */
 export interface CalendarTarget {
   adapter: ProviderAdapter;
+  store: StorePort;
+  newId(): string;
   context(): AdapterContext;
   /** Records the gap on the actor (`Account.missingPermissions` `calendarWrite`); false when the grant has the scope. */
   writeRefused(): boolean;
@@ -37,13 +42,19 @@ export function calendarTargetOf(
   entry:
     | {
         adapter: ProviderAdapter;
-        actor: { context(): AdapterContext; calendarWriteRefused(): boolean };
+        actor: {
+          deps: { store: StorePort; newId(): string };
+          context(): AdapterContext;
+          calendarWriteRefused(): boolean;
+        };
       }
     | undefined,
 ): CalendarTarget | undefined {
   if (!entry) return undefined;
   return {
     adapter: entry.adapter,
+    store: entry.actor.deps.store,
+    newId: () => entry.actor.deps.newId(),
     context: () => entry.actor.context(),
     writeRefused: () => entry.actor.calendarWriteRefused(),
   };
@@ -81,12 +92,15 @@ function calendarOf(target: CalendarTarget, method: string): CalendarAdapter {
   });
 }
 
+/** What `prepare` resolved: the adapter's calendar half, the account's context and the target it came from. */
+interface Prepared {
+  calendar: CalendarAdapter;
+  ctx: AdapterContext;
+  target: CalendarTarget;
+}
+
 /** Resolves the checks every write shares; throws before any request when one fails. */
-function prepare(
-  account: AccountId,
-  target: CalendarTarget | undefined,
-  method: string,
-): { calendar: CalendarAdapter; ctx: AdapterContext } {
+function prepare(account: AccountId, target: CalendarTarget | undefined, method: string): Prepared {
   if (!target) throw notStarted(method);
   const calendar = calendarOf(target, method);
   const ctx = target.context();
@@ -99,32 +113,105 @@ function prepare(
   }
   if (!ctx.account.grantedScopes.includes(GOOGLE_CALENDAR_WRITE_SCOPE) && target.writeRefused())
     throw writePermissionError();
-  return { calendar, ctx };
+  return { calendar, ctx, target };
+}
+
+/** Google keeps each exception of a series under its own id; deleting the series takes them with it. */
+function overridesOf(
+  store: StorePort,
+  accountId: string,
+  calendarRemoteId: string,
+  masters: readonly string[],
+): string[] {
+  if (!masters.length) return [];
+  return store.read(q =>
+    q
+      .all<{ remote_id: string }>(
+        `SELECT DISTINCT e.remote_id FROM events e JOIN calendars c ON c.id = e.calendar_id
+         WHERE c.account_id = ? AND c.remote_id = ? AND e.master_remote_id IN (SELECT value FROM json_each(?))`,
+        accountId,
+        calendarRemoteId,
+        JSON.stringify(masters),
+      )
+      .map(r => r.remote_id),
+  );
+}
+
+/**
+ * Commits what the provider confirmed (its event rows, or the removal), in the same shape a sync step would, so the
+ * local calendar shows the saved event at once. A conflict also commits the event as it is now: the caller is told the
+ * event changed elsewhere and the screen already holds the newer version.
+ */
+function commitFacts(
+  { target, ctx }: Prepared,
+  calendarRemoteId: string,
+  result: CalendarWriteResult,
+): void {
+  const facts =
+    result.kind === 'saved'
+      ? result
+      : { upserts: result.current ? [result.current] : [], removals: [] };
+  const writes = eventFactWrites(ctx.account.id, calendarRemoteId, {
+    upserts: facts.upserts,
+    removals: [
+      ...facts.removals,
+      ...overridesOf(target.store, ctx.account.id, calendarRemoteId, facts.removals),
+    ],
+  });
+  if (writes.length)
+    target.store.commit({ opId: target.newId(), origin: 'local', changes: 'fine', writes });
+}
+
+/** Runs one adapter write: scope-gated, committed on a result, and every failure turned into an honest answer. */
+async function run(
+  account: AccountId,
+  target: CalendarTarget | undefined,
+  method: string,
+  calendarRemoteId: string,
+  write: (calendar: CalendarAdapter, ctx: AdapterContext) => Promise<CalendarWriteResult>,
+): Promise<CalendarWriteResult> {
+  const prepared = prepare(account, target, method);
+  let result: CalendarWriteResult;
+  try {
+    result = await write(prepared.calendar, prepared.ctx);
+  } catch (error) {
+    // The grant lost the scope after the check (revoked, or a stale account row): same answer as the check.
+    if (error instanceof ProviderError && error.error.class === 'permission') {
+      target?.writeRefused();
+      throw writePermissionError();
+    }
+    throw writeFailure(error);
+  }
+  commitFacts(prepared, calendarRemoteId, result);
+  return result;
 }
 
 export function createCalendarPort(
   targetFor: (account: AccountId) => CalendarTarget | undefined,
 ): CalendarPort {
   return {
-    async put(account: AccountId, change: EventChange): Promise<CalendarWriteResult> {
-      const { calendar, ctx } = prepare(account, targetFor(account), 'calendar.put');
-      return calendar.put(change, ctx);
+    put(account: AccountId, change: EventChange): Promise<CalendarWriteResult> {
+      return run(account, targetFor(account), 'calendar.put', change.calendarRemoteId, (c, ctx) =>
+        c.put(change, ctx),
+      );
     },
-    async remove(
+    remove(
       account: AccountId,
       ref: EventRef & { scope: EditScope; notify?: boolean },
     ): Promise<CalendarWriteResult> {
-      const { calendar, ctx } = prepare(account, targetFor(account), 'calendar.remove');
-      return calendar.remove(ref, ctx);
+      return run(account, targetFor(account), 'calendar.remove', ref.calendarRemoteId, (c, ctx) =>
+        c.remove(ref, ctx),
+      );
     },
-    async rsvp(
+    rsvp(
       account: AccountId,
       ref: EventRef & { scope: EditScope },
       response: 'accepted' | 'declined' | 'tentative',
       opts: { notify: boolean },
     ): Promise<CalendarWriteResult> {
-      const { calendar, ctx } = prepare(account, targetFor(account), 'calendar.rsvp');
-      return calendar.rsvp(ref, response, opts, ctx);
+      return run(account, targetFor(account), 'calendar.rsvp', ref.calendarRemoteId, (c, ctx) =>
+        c.rsvp(ref, response, opts, ctx),
+      );
     },
   };
 }
