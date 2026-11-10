@@ -158,4 +158,21 @@ export async function actThenList(
 
 /** The diagnostics note above the preview: what it holds and what it never does. */
 export const DIAGNOSTICS_NOTE =
-  'This report holds versions, counts and error codes. It holds no mail, no addresses and no keys, and it is never uploaded. Copy report puts it on your clipboard.';
+  'This report holds versions, counts and error codes. It holds no mail, no addresses and no keys, and it is never uploaded. Save report writes it to a file; Copy report puts it on your clipboard.';
+
+/** Verbose logging is on while the engine's switch-off time is still ahead (no time given: until it is turned off). */
+export function verboseOn(verbose: { readonly until?: number } | undefined, now: number): boolean {
+  return verbose !== undefined && (verbose.until === undefined || verbose.until > now);
+}
+
+/** The verbose-logging row's sentence: what it does, and when it turns itself off. */
+export function verboseLine(verbose: { readonly until?: number } | undefined, now: number): string {
+  if (!verboseOn(verbose, now))
+    return 'Headers only, never mail. Turns itself off after 15 minutes.';
+  if (verbose?.until === undefined) return 'On. Headers only, never mail.';
+  const at = new Date(verbose.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `On until ${at}. Headers only, never mail.`;
+}
+
+export const DATA_EXPORT_LINE = 'Accounts, settings and drafts in one file. No keys.';
+export const DATA_EXPORTED_LINE = 'Saved. It holds no passwords, keys or tokens.';

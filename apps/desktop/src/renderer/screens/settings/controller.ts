@@ -596,7 +596,7 @@ export function createController(deps: ControllerDeps) {
       });
     },
     async openDiagnostics() {
-      deps.setView({ diagnostics: true, diagnosticsCopied: false });
+      deps.setView({ diagnostics: true, diagnosticsCopied: false, diagnosticsSaved: false });
       busy('diagnostics', true);
       try {
         deps.setData({ bundle: await ports.diagnosticsPreview() });
@@ -611,7 +611,7 @@ export function createController(deps: ControllerDeps) {
       busy('diagnostics', false);
     },
     closeDiagnostics() {
-      deps.setView({ diagnostics: false, diagnosticsCopied: false });
+      deps.setView({ diagnostics: false, diagnosticsCopied: false, diagnosticsSaved: false });
       deps.setData({ bundle: undefined });
     },
     copyDiagnostics() {
@@ -620,9 +620,36 @@ export function createController(deps: ControllerDeps) {
       // A failure stays inside the open dialog (the page line is behind it), so the dialog stays up on a miss.
       return guard('copy the report', async () => {
         await ports.diagnosticsCopy();
-        deps.setView({ diagnosticsCopied: true });
+        deps.setView({ diagnosticsCopied: true, diagnosticsSaved: false });
         host.announce?.('Copied.');
       }).finally(() => busy('diagnostics', false));
+    },
+    saveDiagnostics() {
+      if (view().busy.diagnostics) return Promise.resolve(false);
+      busy('diagnostics', true);
+      // Closing the save dialog is an answer, not a failure: nothing is said and the report stays open.
+      return guard('save the report', async () => {
+        const { canceled } = await ports.diagnosticsSave();
+        if (canceled) return;
+        deps.setView({ diagnosticsSaved: true, diagnosticsCopied: false });
+        host.announce?.('Saved.');
+      }).finally(() => busy('diagnostics', false));
+    },
+    setVerbose(on: boolean) {
+      return guard('change verbose logging', async () => {
+        const { until } = await ports.verboseSet(on);
+        deps.setData({ verbose: on ? { until } : undefined });
+      });
+    },
+    exportData() {
+      if (view().busy.dataExport) return Promise.resolve(false);
+      busy('dataExport', true);
+      return guard('export your data', async () => {
+        const { canceled } = await ports.dataExport();
+        if (canceled) return;
+        deps.setView({ dataExported: true });
+        host.announce?.('Saved.');
+      }).finally(() => busy('dataExport', false));
     },
     openQueue() {
       deps.setView({ queue: true });

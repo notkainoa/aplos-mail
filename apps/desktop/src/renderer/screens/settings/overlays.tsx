@@ -206,28 +206,35 @@ function DiagnosticsDialog({
         <>
           <Button
             variant="text"
-            label={view.diagnosticsCopied ? 'Close' : 'Cancel'}
+            label={view.diagnosticsCopied || view.diagnosticsSaved ? 'Close' : 'Cancel'}
             keys="Esc"
             keyHint="always"
             onPress={() => actions.closeDiagnostics()}
           />
           <Button
-            variant="filled"
+            variant="text"
             label="Copy report"
+            disabled={!data.bundle}
+            busy={view.busy.diagnostics === true}
+            onPress={() => void actions.copyDiagnostics()}
+          />
+          <Button
+            variant="filled"
+            label="Save report"
             keys="Return"
             keyHint="always"
             disabled={!data.bundle}
             busy={view.busy.diagnostics === true}
-            onPress={() => void actions.copyDiagnostics()}
+            onPress={() => void actions.saveDiagnostics()}
           />
         </>
       }
     >
       <div className="settings-report">
         {failure ? <FailureLine failure={failure} /> : null}
-        {view.diagnosticsCopied ? (
+        {view.diagnosticsCopied || view.diagnosticsSaved ? (
           <Text variant="small" tone="dim">
-            Copied.
+            {view.diagnosticsSaved ? 'Saved.' : 'Copied.'}
           </Text>
         ) : null}
         {!data.bundle ? <Text variant="small">Preparing the report.</Text> : null}

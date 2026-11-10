@@ -430,6 +430,18 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ bundle: bundle() }),
     view: { diagnostics: true, diagnosticsCopied: true },
   },
+  'diagnostics-saved': {
+    title: 'Help, diagnostics preview after the save',
+    section: 'help',
+    data: dataOf({ bundle: bundle() }),
+    view: { diagnostics: true, diagnosticsSaved: true },
+  },
+  'help-verbose-on': {
+    title: 'Help, verbose logging on until a set time; data exported',
+    section: 'help',
+    data: dataOf({ verbose: { until: NOW + 12 * 60_000 } }),
+    view: { dataExported: true },
+  },
   'queue-inspector': {
     title: 'Help, the queue inspector',
     section: 'help',

@@ -138,6 +138,8 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   row('help', 'showWelcome', 'Show welcome', ['onboarding', 'setup', 'intro']),
   row('help', 'demoLoad', 'Load demo mail', ['sample', 'try']),
   row('help', 'diagnostics', 'Export diagnostics', ['report', 'logs', 'support']),
+  row('help', 'verboseLogging', 'Verbose logging', ['log', 'debug', 'headers', 'support']),
+  row('help', 'exportData', 'Export my data', ['download', 'backup', 'save', 'json', 'privacy']),
   row('help', 'queue', 'Queue inspector', ['pending', 'retry', 'discard', 'failed', 'outbox']),
   row('help', 'devDetails', 'Developer details', ['model names', 'scores', 'debug']),
 ];
