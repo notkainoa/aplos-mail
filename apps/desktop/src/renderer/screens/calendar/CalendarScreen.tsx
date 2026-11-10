@@ -68,6 +68,7 @@ import {
   type ShownOverride,
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
+import { useOpenPlanTarget } from './useOpenPlanTarget';
 import {
   createTurnGate,
   inCalendarSurface,
@@ -344,6 +345,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     [run],
   );
   applyRef.current = apply;
+  useOpenPlanTarget(apply, entries);
 
   // Return: CalendarGrid opens its selection itself and the registry's calendar.open runs on the same key; the
   // first of the two in one turn acts (keys.ts). A double-click is its own turn.
