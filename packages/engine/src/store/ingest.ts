@@ -44,13 +44,42 @@ export function ingest(run: CommitRun) {
 /** The current threads of the messages this commit wrote or gave a body; deleted ones drop out. */
 function rankedThreads(run: CommitRun): number[] {
   const ids = [...run.ingested.keys(), ...run.bodied];
-  if (!ids.length) return [];
-  return run
+  const fresh = ids.length
+    ? run
+        .q(
+          'SELECT DISTINCT thread_id AS id FROM messages WHERE id IN (SELECT value FROM json_each(?)) ORDER BY 1',
+        )
+        .all<{ id: number }>(JSON.stringify(ids))
+        .map(r => r.id)
+    : [];
+  return [...new Set([...fresh, ...unrankedThreads(run)])];
+}
+
+/** Threads ranked per commit while mail that synced before `laneFor` was wired is caught up. */
+const BACKFILL_BATCH = 200;
+const BACKFILL_KEY = 'lane_backfill';
+
+/**
+ * The next batch of threads that were stored before `laneFor` ran (they still hold the schema default lane), found by
+ * walking thread ids with a cursor kept in `meta`. A batch rides on an ordinary sync commit, so a big mailbox never
+ * stalls start-up; once the walk ends the marker reads `done` and later commits pay one lookup.
+ */
+function unrankedThreads(run: CommitRun): number[] {
+  const mark = run.q('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(BACKFILL_KEY);
+  if (mark?.value === 'done') return [];
+  const ids = run
     .q(
-      'SELECT DISTINCT thread_id AS id FROM messages WHERE id IN (SELECT value FROM json_each(?)) ORDER BY 1',
+      'SELECT thread_id AS id FROM thread_workflow WHERE thread_id > ? AND ranked_at IS NULL ORDER BY thread_id LIMIT ?',
     )
-    .all<{ id: number }>(JSON.stringify(ids))
+    .all<{ id: number }>(Number(mark?.value ?? 0), BACKFILL_BATCH)
     .map(r => r.id);
+  const next = ids.length < BACKFILL_BATCH ? 'done' : String(ids[ids.length - 1]);
+  run
+    .q(
+      'INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    )
+    .run(BACKFILL_KEY, next);
+  return ids;
 }
 
 interface WorkflowRow {

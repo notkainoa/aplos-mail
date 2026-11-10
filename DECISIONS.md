@@ -1771,3 +1771,11 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-units-per-minute` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
+
+## 2026-11-10: Home lanes were never switched on in the app; the Low band shows at zero (ui-home)
+
+The owner saw one mixed Home with no Low importance. Cause: `host/compose.ts` opened the store without `ingest: { laneFor }`, so no thread was ever ranked and all stayed in the schema-default lane `do`. Decisions:
+
+- The host passes `laneFor` through a new `@aplos/engine/ai/lanes` subpath export, so the rules stay out of the engine core bundle (450,018 of 470,000 after the change).
+- `store/ingest.ts` ranks mail stored before the wiring in bounded batches of 200 threads per sync commit (a cursor in `meta`, key `lane_backfill`, ends at `done`). Only `rank_source = 'heuristic'` threads change; user, rule and AI ranks are never touched.
+- Home keeps the Low importance band visible at 0 while Home has other mail, so the entry is always there; Return or a click opens the sheet with "No low-importance mail". An empty band is not a keyboard cursor stop. This departs from "empty sections don't render" (DESIGN 7.2) on purpose, because a hidden band is what made Low importance undiscoverable; the owner's question is the reason.
