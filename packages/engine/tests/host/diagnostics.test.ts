@@ -344,3 +344,19 @@ test('checkBundle accepts a fully populated bundle and rejects smuggled fields',
       ).providerMessage = 'provider said secret'),
   );
 });
+
+test('verbose with no argument reads the stored deadline — window and listener both', async () => {
+  const w = await world();
+  try {
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'unset reads empty');
+    await w.call('Diagnostics/verbose', { on: true });
+    const want = w.clock.now() + 15 * 60_000;
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), { until: want });
+    const admin = w.asClient('c5', ['read', 'admin']);
+    assert.deepEqual(await admin.call('Diagnostics/verbose', {}), { until: want });
+    await w.call('Diagnostics/verbose', { on: false });
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {});
+  } finally {
+    await w.engine.close();
+  }
+});
