@@ -14,6 +14,11 @@
  * - `Account.calendarListedAt` (stamped when the account's calendar list was first read, even an empty one;
  *   absent until then, so accounts predating the field read "Syncing…" until their next list);
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
+ *
+ * Editing is a separate, additive answer (`calendarEditingOf` / `calendarWriteRefused`): `grantedScopes`
+ * holding the `calendar.events` scope means the account may write, and a `missingPermissions` row with
+ * `capability` 'calendarWrite' names a write the engine refused — never the 'calendar' (read) gap above and
+ * never a reconnect of its own (Settings → Calendar's "Enable editing" row is its only home).
  */
 import type { Account, Calendar } from '../../data';
 import type { TagColor } from '../../ui/props';
@@ -56,6 +61,20 @@ export type CalendarAccess =
   | { readonly kind: 'none'; readonly line: string; readonly action: null }
   /** A halted account says nothing about its calendar: the status slot and the account row already do. */
   | { readonly kind: 'unknown'; readonly line: null; readonly action: null };
+
+/** The scope Google grants only by the explicit "Enable editing" re-consent (`Account/grantPermissions {enable: 'calendarWrite'}`, #393): it is never part of sign-in, reconnect or a plain grant. */
+export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+/** Whether this account may create, change and delete events: 'on' when the grant holds the events scope, 'off' while it reads only, `null` for accounts with no calendar claim (demo, non-Google). */
+export function calendarEditingOf(account: Account): 'on' | 'off' | null {
+  if (account.demo || account.provider !== 'google') return null;
+  return account.grantedScopes?.includes(CALENDAR_EVENTS_SCOPE) === true ? 'on' : 'off';
+}
+
+/** A write was refused for lack of the events scope (`permission.calendarWrite`): the only `missingPermissions` row that asks for editing, and only until the grant lands — never a standing nag and never the 'calendar' (read) gap. */
+export function calendarWriteRefused(account: Account): boolean {
+  return account.missingPermissions?.some(m => m.capability === 'calendarWrite') === true;
+}
 
 const SYNCING: CalendarAccess = {
   kind: 'syncing',
