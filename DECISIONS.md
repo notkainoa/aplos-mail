@@ -1772,6 +1772,14 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
 
+## 2026-11-10: the reader's email card (owner request; ui-reader)
+
+Context: the owner asked, by name, for the reader / one-by-one email to be one rounded card with the subject on its top line and a header row with the sender, time, "To" with overlapping recipient circles and a chevron (details popover), and on the right an Importance menu, a bell and ⋯ (sketch images A, B and C of 2026-11-10). DESIGN 3, 6 and 13 and the aplos-design skill forbid "avatars or monograms in mail", "Important ▾ in the reader header" and a card-less reader.
+
+Decision: the owner's request wins over those lines for this card only. The circles are monograms (never a remote avatar loaded by the renderer); the details popover lists only what `Message` carries (From, To, Cc, Bcc, Reply-to when it differs, Date); the bell shows a neutral state until the engine reports whether the email notified. The summary stays big above the card; Space, Reply, Later, Done and the docked Ask are unchanged. Not built (owner skipped): the "New 6" counter, the left tick-marks, the "Full email" button.
+
+How to apply: plans/DESIGN.md section 16 holds the superseding entry (integrator, 2026-11-10); the code follows it in #391 (card header and details popover), #396 (Importance menu, bell, ⋯) and #403 (the one-by-one view mounts the same card). No other screen gains avatars, monograms or an Important menu.
+
 ## 2026-11-10: Home keeps the Low importance band visible at zero (ui-home)
 
 A band hidden at 0 left no way into Low importance, which the owner reported as "no Low importance section". Home now shows the band while it has other mail: 0 on the right, a click or Return-free open (an empty band is not a keyboard cursor stop, so the cursor never settles on nothing) into the sheet's "No low-importance mail" with "Back to Home". This departs from "empty sections don't render" (DESIGN 7.2) for this one band, on purpose. The cause of the mixed list itself (the app never switched the lane rules on) is fixed in the engine and host PR.

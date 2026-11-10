@@ -110,7 +110,11 @@ test('reader.css styles option a only; off draws what DESIGN 7.5 first drew', ()
   const css = readFileSync(new URL('./reader.css', import.meta.url), 'utf8');
   assert.match(css, /\[data-cards='a'\] \.ui-thread-message \{/, 'A: each message is a card');
   assert.doesNotMatch(css, /data-cards='b'/, 'option B is gone');
-  assert.doesNotMatch(css, /\[data-cards='off'\] /, 'no rule targets off');
+  assert.deepEqual(
+    css.match(/\[data-cards='off'\] [^{]*\{/g),
+    ["[data-cards='off'] .aplos-circle {"],
+    "the only 'off' rule gives the new circles the pane's ring",
+  );
   assert.doesNotMatch(
     css,
     /var\(--elev-card\)/,
