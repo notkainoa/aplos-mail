@@ -207,12 +207,14 @@ function onEdit(state: CalendarState, _action: ActionOf<'edit'>, ctx: CalendarCo
  * `calendar.conflict` on an editor save: select the event and re-run 'edit' against the newer copy
  * already in the store, but take only the state — its locked/editing-gate notices would double the
  * conflict's own sentence (review7 5). Unhandled when no editor can open, so the notice stands alone.
+ * An editor already open owns its draft: a late conflict never swaps it out (review8 2).
  */
 function onReopenEditor(
   state: CalendarState,
   action: ActionOf<'reopenEditor'>,
   ctx: CalendarContext,
 ): Transition {
+  if (state.editor !== null) return unhandled(state);
   const sel = onSelect(state, { type: 'select', id: action.eventId });
   const t = onEdit(sel.state, { type: 'edit' }, ctx);
   if (t.state === sel.state || t.state.editor === null) return done(sel.state, [], false);

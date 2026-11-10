@@ -741,8 +741,7 @@ const FIXTURES: Record<string, Fixture> = {
     accounts: [ALEX_ACCOUNT, JORDAN_READ],
   },
   'write-conflict-reopened': {
-    title:
-      'Design review save raced a remote change: the editor re-opens on the newer copy with why, Undo-free',
+    title: 'Design review save raced a remote change: the editor re-opened on the newer copy',
     state: {
       view: 'week',
       selectedId: 'design',

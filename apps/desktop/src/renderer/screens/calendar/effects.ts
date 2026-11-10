@@ -145,16 +145,25 @@ export function cancelPendingRetries(): void {
 /**
  * The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). A
  * 'delayed' retry arms as the notice lands — Retry goes at once, and the notice leaving the stack
- * (dismissed, faded, evicted) or the screen unmounting cancels the pending write (review7 9).
+ * (dismissed, faded, evicted) or the screen unmounting cancels the pending write (review7 9). The
+ * retry runs once: the timer's own firing spends the notice's Retry and takes the notice down with
+ * it, so a later click can never duplicate the write (review8 1).
  */
 function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
   const id = `${opId}:failed`;
   let disarm: (() => void) | undefined;
+  let spent = false;
+  const retryOnce = (): void => {
+    if (spent) return;
+    spent = true;
+    disarm?.();
+    dismissToast(id);
+    retry();
+  };
   if (failure.retry === 'delayed' && failure.retryAfterMs !== undefined) {
     const timer = setTimeout(() => {
       if (disarm === undefined) return; // disarmed before it could fire
-      disarm();
-      retry();
+      retryOnce();
     }, failure.retryAfterMs);
     const self = (): void => {
       if (disarm === undefined) return;
@@ -177,8 +186,7 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
     undoable: false,
     onAction: actionId => {
       if (actionId !== 'retry') return;
-      disarm?.();
-      retry();
+      retryOnce();
     },
   });
 }
@@ -371,6 +379,8 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           failure: 'Couldn’t add it to the calendar.',
           goneEventId: fx.optimistic.id,
           accountId: fx.accountId,
+          // Confirming a plan creates the event: a lost answer must not offer a blind Retry (review8 3).
+          blindRetryUnsafe: true,
         },
         ui,
         ports,
