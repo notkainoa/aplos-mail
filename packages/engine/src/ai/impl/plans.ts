@@ -278,7 +278,7 @@ function allDayPlan(
 const MIN_PLAN_MS = -366 * 86_400_000;
 const MAX_PLAN_MS = 5 * 366 * 86_400_000;
 
-function planFrom(e: unknown, now: number, zone: string | undefined): ParsedPlan | undefined {
+function planFrom(e: unknown, now: number, _zone: string | undefined): ParsedPlan | undefined {
   if (typeof e !== 'object' || e === null) return undefined;
   const o = e as Record<string, unknown>;
   const title = typeof o.title === 'string' ? o.title.trim().slice(0, 1_000) : '';
@@ -289,7 +289,8 @@ function planFrom(e: unknown, now: number, zone: string | undefined): ParsedPlan
       : {}),
     ...(typeof o.quote === 'string' && o.quote ? { quote: o.quote.slice(0, 1_000) } : {}),
   };
-  const tz = typeof o.timeZone === 'string' && isKnownZone(o.timeZone) ? o.timeZone : zone;
+  // A bare local time only parses when the model itself names a real zone — never the owner's.
+  const tz = typeof o.timeZone === 'string' && isKnownZone(o.timeZone) ? o.timeZone : undefined;
   const start = parseWhen(typeof o.start === 'string' ? o.start : '', tz);
   const end = parseWhen(typeof o.end === 'string' ? o.end : '', tz);
   const inRange = (u: number) => u >= now + MIN_PLAN_MS && u <= now + MAX_PLAN_MS;
@@ -435,7 +436,6 @@ export function writePlans(
       ...(p.endUtc !== undefined ? { endUtc: p.endUtc } : {}),
       ...(p.endDate !== undefined ? { endDate: p.endDate } : {}),
       allDay: p.allDay,
-      ...(x.mail ? {} : {}),
       model: x.model,
       ...(p.location ? { location: p.location } : {}),
     })),

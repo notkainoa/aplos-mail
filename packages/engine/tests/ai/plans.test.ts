@@ -156,6 +156,7 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
   const puts: Array<{ remoteId?: string }> = [];
   const calendar = {
     put: async (_account: string, req: { remoteId?: string }) => {
+      assert.equal(req.remoteId, undefined, 'a create carries no remoteId (it is not a PATCH)');
       puts.push(req);
       return { kind: 'saved' as const, upserts: [{ remoteId: 'ev-1' }], removals: [] };
     },
@@ -169,8 +170,21 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
           end: '2026-11-14T11:00:00Z',
           allDay: false,
         },
+        { title: 'Zero day', start: '2026-11-14', end: '2026-11-14', allDay: true },
         { title: 'Bad date', start: '2026-13-45', end: '2026-13-46', allDay: true },
         { title: 'Fuzzy', start: 'Nov 14', end: 'Nov 14', allDay: false },
+        {
+          title: 'No zone',
+          start: '2026-11-14T10:00:00',
+          end: '2026-11-14T11:00:00',
+          allDay: false,
+        },
+        {
+          title: 'Ancient',
+          start: '2001-03-04T10:00:00Z',
+          end: '2001-03-04T11:00:00Z',
+          allDay: false,
+        },
       ],
     }),
   );
@@ -193,9 +207,11 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
   });
   await consentNow(w);
   const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
-  // The invalid dates are dropped at parse time — only the good plan is stored.
-  assert.equal(out.plans.length, 1);
+  // Invalid dates are dropped at parse time; the zero-length all-day plan keeps start+1d.
+  assert.equal(out.plans.length, 2);
   assert.equal(out.plans[0].title, 'Garden day');
+  assert.equal(out.plans[1].title, 'Zero day');
+  assert.deepEqual(out.plans[1].end, { type: 'date', date: '2026-11-15' });
   const confirmed = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   assert.equal(puts.length, 1);
   assert.match(confirmed.eventId, /^acct-1:primary\/ev-1$/);
@@ -261,8 +277,8 @@ test('Plan/confirm: a refused put releases the claim; a second opId can then con
 });
 
 test('Event/extract: concurrent calls share one provider call; the mail budget keeps the newest message', async () => {
-  const calls: Array<{ messages: Array<{ content: string }> }> = [];
-  const t: AiTransport = {
+  const calls: AiTransport extends { chat: (r: infer R) => unknown } ? Array<R> : never = [];
+  const t: AiTransport & { calls: typeof calls } = {
     calls,
     async chat(req) {
       calls.push(req);
@@ -296,7 +312,7 @@ test('Event/extract: concurrent calls share one provider call; the mail budget k
   ]);
   assert.equal(t.calls.length, 1, 'two callers shared the in-flight extraction');
   assert.equal(a.plans.length, b.plans.length);
-  const userMsg = t.calls[0].messages[t.calls[0].messages.length - 1].content;
+  const userMsg = t.calls[0].messages[t.calls[0].messages.length - 1].content!;
   assert.ok(userMsg.includes('Saturday'), 'the newest message is inside the budget, not cut');
   assert.ok(
     !userMsg.includes('We are gathering'),
@@ -338,4 +354,54 @@ test('a plan settle write never accepts open, and never confirms without an even
       store.commit({ opId: `b${Math.random()}`, origin: 'local', writes: [w as never] }),
     );
   file.cleanup();
+});
+
+test('Plan/confirm: a second opId cannot take a claimed plan; thread delete purges replydraft/followup meta', async () => {
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async () => ({ kind: 'saved' as const, upserts: [{ remoteId: 'ev-9' }], removals: [] }),
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  const done = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+  );
+  assert.equal(done.eventId, 'acct-1:primary/ev-9');
+  // meta purge on threadDelete
+  w.store.commit({
+    opId: 'm1',
+    origin: 'local',
+    writes: [
+      { kind: 'meta', key: 'replydraft:acct-1:T-plans', value: 'x' } as never,
+      { kind: 'meta', key: 'replydraft:acct-1:other', value: 'y' } as never,
+    ],
+  });
+  w.store.commit({
+    opId: 'td',
+    origin: 'local',
+    writes: [{ kind: 'threadDelete', accountId: 'acct-1', remoteThreadId: 'T-plans' } as never],
+  });
+  const keys = w.store.read(q => q.all<{ k: string }>('SELECT key AS k FROM meta').map(r => r.k));
+  assert.ok(!keys.includes('replydraft:acct-1:T-plans'), 'the thread replydraft row is gone');
+  assert.ok(keys.includes('replydraft:acct-1:other'), 'another thread row survives');
+  w.file.cleanup();
 });
