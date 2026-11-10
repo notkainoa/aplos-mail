@@ -14,6 +14,12 @@
  * - `Account.calendarListedAt` (stamped when the account's calendar list was first read, even an empty one;
  *   absent until then, so accounts predating the field read "Syncing…" until their next list);
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
+ *
+ * Editing is a separate, additive answer (`calendarEditingOf` / `calendarWriteRefused` over `editingOn`):
+ * `grantedScopes` holding the `calendar.events` scope — or the umbrella `calendar` scope — means the
+ * account may write, and a `missingPermissions` row with `capability` 'calendarWrite' names a write the
+ * engine refused — never the 'calendar' (read) gap above and never a reconnect of its own (Settings →
+ * Calendar's "Enable editing" row is its only home).
  */
 import type { Account, Calendar } from '../../data';
 import type { TagColor } from '../../ui/props';
@@ -134,6 +140,56 @@ export function calendarAccessOf(
   return account.calendarListedAt === undefined
     ? SYNCING
     : { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null };
+}
+
+/** The one place the write scope's wire string lives (providers' 2026-11-10 shape 1). */
+export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+/** The umbrella grant: `calendar` carries `calendar.events` inside it, so it is editing on too. */
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+
+/** The 'Turn on editing' line and its action, shared by the detail and the notice (DESIGN 10). */
+export const EDITING_COPY = {
+  notice: 'Turn on editing to change events on this calendar.',
+  action: 'Enable editing',
+} as const;
+
+/**
+ * Whether the account's grant carries the calendar write scope (`grantedScopes`, shape 1). An account
+ * the screen cannot see claims nothing either way, so `undefined` reads as on: a write that should have
+ * been gated still surfaces `permission.calendarWrite` through the failure path.
+ */
+export function editingOn(account: Pick<Account, 'grantedScopes'> | undefined): boolean {
+  return (
+    account === undefined ||
+    account.grantedScopes.includes(CALENDAR_EVENTS_SCOPE) ||
+    account.grantedScopes.includes(CALENDAR_SCOPE)
+  );
+}
+
+/**
+ * The account behind `accountId` when its grant lacks the write scope; undefined means editing is on.
+ * Only a Google, non-demo account can even hold the scope — `calendarAccessOf`'s own exemption — so a
+ * Microsoft, IMAP, JMAP, demo or stand-in account is never gated by this check (review7).
+ */
+export function editingOff(
+  accounts: readonly Account[],
+  accountId: string | undefined,
+): Account | undefined {
+  const account = accounts.find(a => a.id === accountId);
+  if (account === undefined || account.demo || account.provider !== 'google') return undefined;
+  return editingOn(account) ? undefined : account;
+}
+
+/** Whether this account may create, change and delete events, as Settings → Calendar's tri-state: 'on' when the grant carries the write scope (`editingOn`, so the umbrella grant counts too), 'off' while it reads only, `null` for accounts with no calendar claim (demo, non-Google). */
+export function calendarEditingOf(account: Account): 'on' | 'off' | null {
+  if (account.demo || account.provider !== 'google') return null;
+  return editingOn(account) ? 'on' : 'off';
+}
+
+/** A write was refused for lack of the events scope (`permission.calendarWrite`): the only `missingPermissions` row that asks for editing, and only until the grant lands — never a standing nag and never the 'calendar' (read) gap. */
+export function calendarWriteRefused(account: Account): boolean {
+  return account.missingPermissions?.some(m => m.capability === 'calendarWrite') === true;
 }
 
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];

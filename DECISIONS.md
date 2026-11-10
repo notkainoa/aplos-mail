@@ -1772,6 +1772,15 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
 
+## 2026-11-10 — eng-contract: Message.notification (the reader bell) and no Contact/photo yet
+
+Context: ui-reader's REQUEST (owner request: a bell in the card header that is slashed when the email did NOT notify; circles are monograms).
+
+Decision: `Message.notification?: 'sent' | 'suppressed' | 'none'`, additive and optional, set by `Message/get` from the notification outbox row (`notifications.state`): pending, claimed and posted are `sent`; dropped (Focus, the OS refused, or the mail was read or moved out of the Inbox before the banner posted) is `suppressed`; no row is `none`, which includes notifications turned off for the account (no row is ever written) and the baseline sync. A pending row reports `sent` before the banner has posted and may still become `suppressed`. The outbox keeps rows 30 days, so a message older than that carries no field (unknown, not `none`) and the bell stays neutral. Within v:1, an open enum, no `currentVersion` change.
+
+`Contact/photo` is NOT added now. Avatars would mean fetching a remote image or reading a contacts photo for every sender, which is a privacy and egress decision (the renderer never loads a remote URL). Monograms stay; if the owner wants avatars, the method is designed then (bytes or a `data:` URL, from sources already on this Mac).
+
+How to apply: the reader shows the bell from `notification` (absent: neutral outline bell, no claim). Engine side is `mail/rows.ts` (eng-html's file, approval requested on the PR); fixture marks unread inbound demo mail `sent`.
 ## 2026-11-10 — prov-cal: Google Calendar WRITING (create, edit, delete, RSVP) behind an explicit "Enable editing" re-consent
 
 Owner approved building calendar writes ("do all that"); round one was deliberately read-only (DECISIONS 2026-11-06, #345). This entry records the scope and consent design. Observed, chosen and unknown are kept apart.
@@ -1805,3 +1814,7 @@ A band hidden at 0 left no way into Low importance, which the owner reported as 
 ## 2026-11-10: Low band at zero is judged on view totals and reachable by Return (ui-home)
 
 Follow-up to the entry above, from the review of #388 (merged before these fixes landed). The band's visibility now comes from the view's totals (`layoutOf` reads `total` and `low.count`, the same test as the empty Home) instead of the windowed ids, so section headers and the band can never disagree. An empty band is a cursor stop (J/K walk onto it, Return opens "No low-importance mail", so the Return in its tooltip is true), but the cursor never settles on it by itself: when the row under the cursor leaves, it goes to the row above. `LowBand`'s optional `commandId` (#402) is not needed by Home.
+
+## 2026-11-10: Home's Do now, Important updates and Low importance only hold threads someone wrote to you (ui-home)
+
+Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox, so a thread the owner started and nobody had answered sat in Do now (and also in Follow up). `views/sections.ts` now requires `threads.last_inbound_date IS NOT NULL` on the three lane cursors (the sidebar count and the Low sheet read the same cursors); Follow up is unchanged. A thread where the owner answered last but someone wrote before still follows its lane, as before. The slow reference in `tests/views/reference.ts` carries the same rule, and `tests/views/home-sent-only.test.ts` fails without it.

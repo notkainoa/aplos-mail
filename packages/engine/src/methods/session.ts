@@ -30,7 +30,7 @@ const ENGINE_CAPABILITIES: Readonly<Record<string, boolean>> = {
   listener: false,
   clients: false,
   mcp: false,
-  diagnostics: false,
+  diagnostics: true,
   queueInspector: false,
   transcribe: false,
   workflowSync: false,

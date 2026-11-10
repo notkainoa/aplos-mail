@@ -42,6 +42,7 @@ import {
   commandEnabled,
   commandTarget,
   defaultCalendarId,
+  detailIsFor,
   EMPTY_OVERLAY,
   entriesFor,
   eventsRange,
@@ -77,7 +78,13 @@ import {
   takesInviteAnswerKey,
   type ElementLike,
 } from './keys';
-import { livePorts, runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
+import {
+  cancelPendingRetries,
+  livePorts,
+  runCalendarEffect,
+  type EffectPorts,
+  type EffectUi,
+} from './effects';
 import { calendarSidebar } from './sidebar';
 import { calendarListedKey } from './accountCalendarState';
 
@@ -251,6 +258,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       events: new Map(events.map(e => [e.id, e])),
       plans: new Map(plans.map(p => [p.id, p])),
       calendars,
+      accounts,
       loadedThrough: range.to,
       defaultCalendarId: defaultId,
       calendarsReady: loaded !== undefined,
@@ -266,6 +274,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       events,
       plans,
       calendars,
+      accounts,
       range.to,
       defaultId,
       loaded,
@@ -288,6 +297,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   stateRef.current = state;
 
   const ports: EffectPorts = useMemo(livePorts, []);
+  // `apply` is defined below (run → ui → apply would be circular); the ref is assigned each render.
+  const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
   const ui: EffectUi = useMemo(
     () => ({
       optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
@@ -308,11 +319,18 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
           return next;
         }),
       focus: (target: 'grid' | 'rail') => setFocus(f => ({ target, seq: (f?.seq ?? 0) + 1 })),
+      reopenEditor: (eventId: string, note: string) =>
+        applyRef.current({ type: 'reopenEditor', eventId, note }),
+      closeDetail: (eventId: string) => {
+        if (detailIsFor(stateRef.current, eventId)) applyRef.current({ type: 'close' });
+      },
     }),
     [],
   );
 
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
+  // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
+  useEffect(() => cancelPendingRetries, []);
   const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);
@@ -325,6 +343,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     },
     [run],
   );
+  applyRef.current = apply;
 
   // Return: CalendarGrid opens its selection itself and the registry's calendar.open runs on the same key; the
   // first of the two in one turn acts (keys.ts). A double-click is its own turn.

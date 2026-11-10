@@ -11,9 +11,18 @@
  */
 import type { EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
+import { toErrorBody } from '../../data/client';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
+import { getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { CommandId, EventScope } from '../../ui/props';
-import { rsvpMessage, type CalendarEffect, type OptimisticChange } from './calendar.model';
+import {
+  rsvpMessage,
+  type CalendarEffect,
+  type OptimisticChange,
+  type ToastPlan,
+} from './calendar.model';
+import { EDITING_COPY } from './accountCalendarState';
+import { writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
 export interface EffectPorts {
@@ -43,6 +52,8 @@ export interface EffectPorts {
     readonly ids: string[];
     readonly hidden: boolean;
   }): Promise<Receipt>;
+  /** `Account/grantPermissions {accountId, enable:'calendarWrite'}`: opens the same connect sheet; the account's `grantedScopes` gains the write scope when it finishes. */
+  enableEditing(accountId: string): Promise<void>;
   openThread(threadId: string): void;
   openUrl(url: string): void;
   copyText(text: string): void;
@@ -64,6 +75,14 @@ export interface EffectUi {
   shownFailed(id: string): void;
   /** Move focus after the change. */
   focus(target: 'grid' | 'rail'): void;
+  /**
+   * `calendar.conflict` on an editor save: re-open the editor on the newer copy already in the store,
+   * carrying `note` as its error line. True when the editor opened; false when the row cannot be
+   * edited (locked, gated, gone), so the caller falls back to the notice (review7 5).
+   */
+  reopenEditor(eventId: string, note: string): boolean;
+  /** `calendar.eventGone`: close the detail only when it shows `eventId` — never an unrelated one (review7 4). */
+  closeDetail(eventId: string): void;
 }
 
 const newOpId = (): string => crypto.randomUUID();
@@ -73,15 +92,101 @@ const UNDO_ACTION: PushedToast['actions'] = [
   { id: 'undo', label: 'Undo', commandId: 'app.undo' as CommandId },
 ];
 
-function failureToast(opId: string, message: string, retry: () => void): void {
+/**
+ * A write-through receipt (`undoable:false`, the providers' 2026-11-10 shape 9: no hold, no undo window
+ * yet): the Undo toast pushed on keydown becomes the plain confirmation in place — dismissed and
+ * re-pushed, so it loses the Undo action and the 8 s life, like 'Link copied'. One notice per operation
+ * still holds (the id is the opId). `message` is the sent wording, as for a hold that ended.
+ */
+function demoteUndoToast(opId: string, toast: ToastPlan): void {
+  dismissToast(opId);
+  pushToast({ id: opId, kind: toast.kind, message: toast.message, undoable: false });
+}
+
+/** The calm 'Turn on editing' notice with the Enable editing action (shape 3): a notice, not an error banner. */
+function editingNotice(ports: EffectPorts, accountId: string | undefined): void {
   pushToast({
-    id: `${opId}:failed`,
+    id: `editing:${accountId ?? 'unknown'}`,
     kind: 'info',
-    message,
-    actions: [{ id: 'retry', label: 'Retry' }],
+    message: EDITING_COPY.notice,
+    // No account behind the write: the line alone — never an Enable editing that opens nothing (review7 8).
+    ...(accountId === undefined
+      ? {}
+      : {
+          actions: [{ id: 'enable', label: EDITING_COPY.action }],
+          onAction: (actionId: string) => {
+            if (actionId !== 'enable') return;
+            void ports.enableEditing(accountId).then(undefined, error => {
+              pushToast({
+                id: newOpId(),
+                kind: 'info',
+                message: toErrorBody(error).message,
+                undoable: false,
+              });
+            });
+          },
+        }),
+    undoable: false,
+  });
+}
+
+/**
+ * Delayed retries waiting out a server's `retryAfterMs`: each entry cancels its pending write and its
+ * toast watcher, so neither a dismissal nor the screen going away leaves a surprise write to fire
+ * later (review7 9). The container calls `cancelPendingRetries` on unmount.
+ */
+const pendingRetries = new Set<() => void>();
+
+/** The screen going away cancels every delayed retry still waiting: no write fires behind its back. */
+export function cancelPendingRetries(): void {
+  for (const disarm of [...pendingRetries]) disarm();
+}
+
+/**
+ * The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). A
+ * 'delayed' retry arms as the notice lands — Retry goes at once, and the notice leaving the stack
+ * (dismissed, faded, evicted) or the screen unmounting cancels the pending write (review7 9). The
+ * retry runs once: the timer's own firing spends the notice's Retry and takes the notice down with
+ * it, so a later click can never duplicate the write (review8 1).
+ */
+function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
+  const id = `${opId}:failed`;
+  let disarm: (() => void) | undefined;
+  let spent = false;
+  const retryOnce = (): void => {
+    if (spent) return;
+    spent = true;
+    disarm?.();
+    dismissToast(id);
+    retry();
+  };
+  if (failure.retry === 'delayed' && failure.retryAfterMs !== undefined) {
+    const timer = setTimeout(() => {
+      if (disarm === undefined) return; // disarmed before it could fire
+      retryOnce();
+    }, failure.retryAfterMs);
+    const self = (): void => {
+      if (disarm === undefined) return;
+      disarm = undefined;
+      clearTimeout(timer);
+      off();
+      pendingRetries.delete(self);
+    };
+    disarm = self;
+    const off = subscribeToasts(() => {
+      if (!getToasts().some(t => t.id === id)) self();
+    });
+    pendingRetries.add(self);
+  }
+  pushToast({
+    id,
+    kind: 'info',
+    message: failure.message,
+    ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
     undoable: false,
     onAction: actionId => {
-      if (actionId === 'retry') retry();
+      if (actionId !== 'retry') return;
+      retryOnce();
     },
   });
 }
@@ -94,6 +199,37 @@ interface WriteSpec {
   readonly call: () => Promise<State | null>;
   /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
   readonly failure?: string;
+  /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
+  readonly reopenEditorId?: string;
+  /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
+  readonly goneEventId?: string;
+  /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
+  readonly accountId?: string;
+  /** A blind retry could duplicate the write or re-notify guests (a create, an RSVP): unknown codes get none. */
+  readonly blindRetryUnsafe?: boolean;
+}
+
+/** Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the code's own follow-up. */
+function writeFailed(
+  spec: WriteSpec,
+  ui: EffectUi,
+  ports: EffectPorts,
+  error: unknown,
+  retry: () => void,
+): void {
+  spec.entryIds.forEach(id => ui.rollback(id));
+  dismissToast(spec.opId);
+  if (!spec.failure) return;
+  const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
+  // The conflict's sentence lands once: the re-opened editor's own line, or the toast when no
+  // editor can re-open — never both (review7 5).
+  const reopened =
+    failure.reopenEditor === true &&
+    spec.reopenEditorId !== undefined &&
+    ui.reopenEditor(spec.reopenEditorId, failure.message);
+  if (failure.enableEditing) editingNotice(ports, spec.accountId);
+  else if (!reopened) failureToast(spec.opId, failure, retry);
+  if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
@@ -102,14 +238,10 @@ function optimisticIds(change: OptimisticChange): string[] {
 }
 
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
-function runWrite(spec: WriteSpec, ui: EffectUi, retry: () => void): void {
+function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
   spec.call().then(
     at => spec.entryIds.forEach(id => ui.settle(id, at)),
-    () => {
-      spec.entryIds.forEach(id => ui.rollback(id));
-      dismissToast(spec.opId);
-      if (spec.failure) failureToast(spec.opId, spec.failure, retry);
-    },
+    error => writeFailed(spec, ui, ports, error, retry),
   );
 }
 
@@ -133,8 +265,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           entryIds: optimisticIds(fx.optimistic),
           call: () =>
             ports.eventSet({ opId, change: fx.change }).then(out => {
-              // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
-              if (
+              if (out.receipt.undoable === false) {
+                if (fx.toast) demoteUndoToast(opId, fx.toast);
+              } else if (
+                // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
                 fx.toast?.held !== undefined &&
                 (out.receipt.undoUntil === undefined || out.receipt.undoUntil <= getNow())
               )
@@ -142,8 +276,13 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               return out.receipt.appliedState;
             }),
           failure: fx.failure,
+          reopenEditorId: fx.reopenEditorId,
+          goneEventId: fx.change.type === 'create' ? undefined : fx.change.id,
+          accountId: fx.accountId,
+          blindRetryUnsafe: fx.change.type === 'create',
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -166,14 +305,24 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             ports
               .eventRsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope })
               .then(receipt => {
+                if (receipt.undoable === false)
+                  demoteUndoToast(opId, {
+                    kind: 'done',
+                    message: rsvpMessage(fx.answer, fx.organizer, 'sent'),
+                    undoable: false,
+                  });
                 // No hold (nothing left to tell guests): the toast says it went.
-                if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
+                else if (receipt.undoUntil === undefined || receipt.undoUntil <= getNow())
                   updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
                 return receipt.appliedState;
               }),
           failure: fx.failure,
+          goneEventId: fx.id,
+          accountId: fx.accountId,
+          blindRetryUnsafe: true,
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -190,7 +339,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           undoable: true,
         });
       ports.calendarSet({ opId, id: fx.id, shown: fx.shown }).then(
-        () => ui.shownSettled(fx.id),
+        out => {
+          if (out.receipt.undoable === false && fx.toast) demoteUndoToast(opId, fx.toast);
+          ui.shownSettled(fx.id);
+        },
         () => {
           // A refused toggle rolls the local `shown` back at once; the toast offers Retry.
           ui.shownFailed(fx.id);
@@ -225,8 +377,13 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               })
               .then(out => out.receipt.appliedState),
           failure: 'Couldn’t add it to the calendar.',
+          goneEventId: fx.optimistic.id,
+          accountId: fx.accountId,
+          // Confirming a plan creates the event: a lost answer must not offer a blind Retry (review8 3).
+          blindRetryUnsafe: true,
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -242,6 +399,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             ports.planDismiss({ opId, ids: [fx.planId] }).then(receipt => receipt.appliedState),
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -261,16 +419,33 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           opId,
           entryIds: [fx.id],
           call: () =>
-            ports
-              .eventHide({ opId, ids: [fx.id], hidden: true })
-              .then(receipt => receipt.appliedState),
+            ports.eventHide({ opId, ids: [fx.id], hidden: true }).then(receipt => {
+              if (receipt.undoable === false) demoteUndoToast(opId, fx.toast);
+              return receipt.appliedState;
+            }),
           failure: 'Couldn’t hide it.',
+          goneEventId: fx.id,
+          accountId: fx.accountId,
         },
         ui,
+        ports,
         retry,
       );
       return;
     }
+    case 'editingNotice':
+      editingNotice(ports, fx.accountId);
+      return;
+    case 'enableEditing':
+      void ports.enableEditing(fx.accountId).then(undefined, error => {
+        pushToast({
+          id: newOpId(),
+          kind: 'info',
+          message: toErrorBody(error).message,
+          undoable: false,
+        });
+      });
+      return;
     case 'openThread':
       ports.openThread(fx.threadId);
       return;
@@ -299,6 +474,10 @@ export function livePorts(): EffectPorts {
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
+    // The same connect sheet as the read grant, asking for calendar editing too (`enable: 'calendarWrite'` is the only
+    // way Aplos ever asks for it); the account's grantedScopes gains the scope when the sheet finishes.
+    enableEditing: accountId =>
+      api.account.grantPermissions({ accountId, enable: 'calendarWrite' }).then(() => undefined),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
     // Main opens it through its external() gate (http, https or mailto, no credentials; anything else is refused).
     openUrl: url => {

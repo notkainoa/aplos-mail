@@ -47,8 +47,12 @@ export interface LoggerOptions {
   /** Per-install salt (kept in the store's `meta`); without it address hashes could be reversed by a dictionary. */
   salt: string;
   clock: { now(): number };
-  /** Minimum level written; `info` by default. The verbose protocol log turns on `debug`. */
-  level?: LogLevel;
+  /**
+   * Minimum level written; `info` by default. The verbose protocol log turns on `debug`: pass a thunk read per
+   * event so `Diagnostics/verbose` (its 15 minutes live in `meta.verbose_until`) takes effect without a restart.
+   * A thunk answer that is not a level reads as `info`.
+   */
+  level?: LogLevel | (() => LogLevel);
 }
 
 const rank = (level: LogLevel) => logLevels.indexOf(level);
@@ -204,7 +208,10 @@ function cleanContext(context: unknown): LogContext {
 
 export function createLogger({ sink, salt, clock, level = 'info' }: LoggerOptions): RootLogger {
   const stats: LoggerStats = { lines: 0, droppedFields: 0, failures: 0 };
-  const min = rank(level);
+  const min = () => {
+    const at = rank(typeof level === 'function' ? level() : level);
+    return at < 0 ? rank('info') : at;
+  };
   const events: Record<string, { level: LogLevel; fields: Record<string, LogFieldSpec> }> =
     logEvents;
 
@@ -215,7 +222,7 @@ export function createLogger({ sink, salt, clock, level = 'info' }: LoggerOption
         stats.failures++;
         return;
       }
-      if (rank(spec.level) < min) return;
+      if (rank(spec.level) < min()) return;
       let dropped = 0;
       const drop = () => {
         dropped++;
@@ -250,7 +257,7 @@ export function createLogger({ sink, salt, clock, level = 'info' }: LoggerOption
     return {
       event: (id, fields) => write(context, id, fields),
       with: more => make({ ...context, ...cleanContext(more) }),
-      enabled: l => rank(l) >= min,
+      enabled: l => rank(l) >= min(),
     };
   }
 

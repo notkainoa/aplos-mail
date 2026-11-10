@@ -321,5 +321,30 @@ export interface DataApi {
     readonly preview: ClientApi['diagnostics']['preview'];
     /** `Diagnostics/copy` (main): copies the engine's bundle, or main's host-only one when the engine is unreachable or parked. */
     readonly copy: ClientApi['diagnostics']['copy'];
+    /** `Diagnostics/export`: the same bundle as a file blob; pass it to `api.file.save`. */
+    readonly export: ClientApi['diagnostics']['export'];
+    /** `Diagnostics/verbose {on}`: the verbose protocol log (headers only), off by itself at `until`. */
+    readonly verbose: ClientApi['diagnostics']['verbose'];
+  };
+  /** Your own data (Settings → Help & about; UI-only method). */
+  readonly data: {
+    /** `Data/export`: accounts, settings, drafts and conversations as a file blob, no credentials; pass it to `api.file.save`. */
+    readonly export: ClientApi['data']['export'];
+  };
+  /** Device sync (Settings → Connected tools; not available yet). */
+  readonly workflow: {
+    /** `Workflow/status`: whether device sync is on and available. */
+    readonly status: ClientApi['workflow']['status'];
+    /** `Workflow/enable {code?}`: turn on device sync. */
+    readonly enable: ClientApi['workflow']['enable'];
+    /** `Workflow/code`: the pairing code for another Mac. */
+    readonly code: ClientApi['workflow']['code'];
+    /** `Workflow/disable`: turn off device sync. */
+    readonly disable: ClientApi['workflow']['disable'];
+  };
+  /** Files, served by main. */
+  readonly file: {
+    /** `File/save {blobId, name}`: the save dialog, then the blob's bytes to the chosen path. */
+    readonly save: ClientApi['file']['save'];
   };
 }
