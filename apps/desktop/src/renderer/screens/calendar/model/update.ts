@@ -1,6 +1,7 @@
 /** The one reducer: every key, click and drag of the screen goes through `update` (DESIGN 5 rule 1: state first, then effects). */
 import { toIsoDate } from '../../../data';
 import { periodOf, stepAnchor } from './period';
+import { editingOff } from '../accountCalendarState';
 import { draftFromEvent, draftFromRange, newDraft, patchDraft } from './editor';
 import { lockedMessage } from './rsvp';
 import { planIdOf, walk } from './entries';
@@ -99,13 +100,14 @@ function onEscape(state: CalendarState): Transition {
   return unhandled(state);
 }
 
-function menuHide(s: CalendarState, id: string): Transition {
+function menuHide(s: CalendarState, id: string, ctx: CalendarContext): Transition {
   return done({ ...closed(s), selectedId: null }, [
     {
       kind: 'eventHide',
       id,
       optimistic: { id, remove: true },
       toast: { kind: 'info', message: 'Hidden in Aplos', undoable: true },
+      accountId: ctx.events.get(id)?.accountId,
     },
   ]);
 }
@@ -137,7 +139,7 @@ function onMenu(state: CalendarState, action: ActionOf<'menu'>, ctx: CalendarCon
     changeReply: () =>
       done({ ...s, rsvp: { eventId: entry.id, answer: entry.myReply ?? null, changing: true } }),
     notNow: () => menuNotNow(s, entry.id),
-    hide: () => menuHide(s, entry.id),
+    hide: () => menuHide(s, entry.id, ctx),
     copyLink: () => menuCopyLink(s, entry.id, ctx),
   };
   return items[action.item]();
@@ -195,7 +197,28 @@ function onEdit(state: CalendarState, _action: ActionOf<'edit'>, ctx: CalendarCo
   const calendar = ctx.calendars.find(c => c.id === event.calendarId);
   if (!event.can.edit || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
+  // The grant lacks the write scope: E gets the calm notice, not an editor whose save would fail (shape 3).
+  if (editingOff(ctx.accounts, event.accountId))
+    return done(state, [{ kind: 'editingNotice', accountId: event.accountId }]);
   return done({ ...closed(state), selectedId: target.id, editor: draftFromEvent(event) });
+}
+
+/**
+ * `calendar.conflict` on an editor save: select the event and re-run 'edit' against the newer copy
+ * already in the store, but take only the state — its locked/editing-gate notices would double the
+ * conflict's own sentence (review7 5). Unhandled when no editor can open, so the notice stands alone.
+ * An editor already open owns its draft: a late conflict never swaps it out (review8 2).
+ */
+function onReopenEditor(
+  state: CalendarState,
+  action: ActionOf<'reopenEditor'>,
+  ctx: CalendarContext,
+): Transition {
+  if (state.editor !== null) return unhandled(state);
+  const sel = onSelect(state, { type: 'select', id: action.eventId });
+  const t = onEdit(sel.state, { type: 'edit' }, ctx);
+  if (t.state === sel.state || t.state.editor === null) return done(sel.state, [], false);
+  return done({ ...t.state, editor: { ...t.state.editor, error: action.note } });
 }
 
 function onEditorPatch(state: CalendarState, action: ActionOf<'editor'>): Transition {
@@ -221,12 +244,16 @@ function onConfirmPlan(
   const entry = detailEntry(state, ctx);
   const planId = entry ? planIdOf(entry.id) : null;
   if (!entry || !planId) return unhandled(state);
+  const accountId = ctx.calendars.find(c => c.id === ctx.defaultCalendarId)?.accountId;
+  if (editingOff(ctx.accounts, accountId))
+    return done({ ...closed(state) }, [{ kind: 'editingNotice', accountId }]);
   return done({ ...closed(state), selectedId: null }, [
     {
       kind: 'planConfirm',
       planId,
       calendarId: ctx.defaultCalendarId,
       optimistic: { id: entry.id, remove: true },
+      accountId,
     },
   ]);
 }
@@ -328,6 +355,11 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   editor: onEditorPatch,
   editorSave: (s, _a, ctx) => saveEditor(s, ctx),
   editorCancel: s => done({ ...s, editor: null }),
+  // The conflict notice lands on the re-opened editor's own line (writeErrors, calendar.conflict).
+  editorNote: (s, a) =>
+    s.editor ? done({ ...s, editor: { ...s.editor, error: a.message } }) : unhandled(s),
+  reopenEditor: onReopenEditor,
+  enableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
   delete: (s, _a, ctx) => deleteTransition(s, ctx),
   move: (s, a, ctx) => moveTransition(s, ctx, a.id, a.start, a.end),
   resize: onResize,
