@@ -373,8 +373,12 @@ export function saveEditor(
   const change = draftChange(draft, original, scoped, zone);
   const next = { ...closed(state), editor: null };
   if (!change) return done(next);
-  // The grant lacks the write scope: the save gets the calm notice, not a doomed write (shape 3).
-  const gate = editingGate(changeAccount(change, original, ctx), ctx, next);
+  // The grant lacks the write scope: the save gets the calm notice, not a doomed write — and the
+  // editor keeps the draft, like draftProblem's line does, so the typed work is not lost (review7 3).
+  const gate = editingGate(changeAccount(change, original, ctx), ctx, {
+    ...closed(state),
+    editor: draft,
+  });
   if (gate) return gate;
   if (change.type === 'create') return createSave(next, ctx, draft, change);
   return updateSave(next, ctx, draft, original, change, scoped, zone);
@@ -405,7 +409,14 @@ function updateSave(
       change,
       optimistic: {
         id: draft.eventId ?? '',
-        patch: { title, start: isoOfTime(times.start), end: isoOfTime(times.end) },
+        // allDay rides with the times the way seriesShift patches its siblings: an All day toggle
+        // redraws in the strip (or off it) at once, not when the write settles (review7 2).
+        patch: {
+          title,
+          start: isoOfTime(times.start),
+          end: isoOfTime(times.end),
+          ...(change.fields.allDay !== undefined ? { allDay: change.fields.allDay } : {}),
+        },
         ...(more && more.length > 0 ? { more } : {}),
       },
       toast: {
