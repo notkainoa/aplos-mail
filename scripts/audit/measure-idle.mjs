@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Idle-budget measurement (plan 40 Q3 deliverable 6; fills budgets.json rows idle.engine-rss,
 // idle.cpu-10min and idle.wakeups). macOS only. Usage:
-//   node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--json] [--out file.json]
+//   node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--json] [--out file.json]
 //
 // Launches the packaged app the way apps/desktop/scripts/verify-hardening-real-engine.mjs does:
 // APLOS_TEST=1 + APLOS_ENGINE=real, a fresh mkdtemp APLOS_DATA_DIR and a random loopback
@@ -14,20 +14,30 @@
 // fallback for a window that ignores it). On macOS window-all-closed does not quit, so the app then
 // sits in resident mode: no window, engine still running. If closing the windows quits the app it is
 // relaunched once and measured with its window hidden, and the report says so in `mode`.
-// Then for --minutes it runs `ps -o pid=,rss=,pcpu=,time= -p <engine,main,renderers>` every --interval
+// After a --settle-second wait (default 60, so startup and first-sync work is not counted as idle),
+// for --minutes it runs `ps -o pid=,rss=,pcpu=,time= -p <engine,main,renderers>` every --interval
 // seconds (pid= is added to the plan's column list so one call covers all of them) and ends with a
-// single `top -l 2 -pid <engine> -stats pid,cpu,idlew`, reading the second sample's idle wake-ups per
-// second. powermetrics needs sudo, so energy stays a hand check (the plan's note). MB is MiB: ps rss
-// is in KB. The engine is the main pid's --type=utility child; the pick prefers the
-// node.mojom.NodeService marker verify-release.mjs asserts on, then the --aplos-engine=real argument,
-// then a sole utility child, then the lowest pid — `enginePickedBy` records which.
+// single `top -l 6 -pid <engine> -stats pid,cpu,idlew`, reporting the median and max idle wake-ups
+// per second over samples 2-6 (the first sample is invalid for CPU per man top). powermetrics needs
+// sudo, so energy stays a hand check (the plan's note). RSS here is `ps rss`, not Activity Monitor's
+// footprint — fine for tighten-only budgets. MB is MiB: ps rss is in KB. The engine is the main
+// pid's --type=utility child; the pick prefers the --aplos-engine=real argument (together with the
+// engine's --service-name when present), then the node.mojom.NodeService marker verify-release.mjs
+// asserts on, then a sole utility child, then the lowest pid — `enginePickedBy` records which. All
+// DevTools http and WebSocket I/O carries a 5 s deadline, so a wedged debugging port fails clearly
+// instead of hanging the run.
 // Reports engine RSS (median and max over the samples), CPU percent for the whole window (ps cputime
 // delta over wall time, never the instantaneous pcpu), wake-ups/sec, and main plus renderer RSS for
-// context. --json prints { idleEngineRssMb, idleCpuPercent, idleWakeupsPerSec, ... }; --out writes the
-// same object. Exit 0 when measured, 1 when the app or engine could not be measured, 2 on usage or
-// environment errors. The finally always SIGTERMs then SIGKILLs the app, sweeps its descendants found
-// by ppid (never a command-line match) and removes the temp dir; an exit handler does the same sweep
-// so a crash leaves no process or directory behind.
+// context. --json prints { idleEngineRssMb, idleCpuPercent, idleWakeupsPerSec, ... }; --out writes
+// the same object. A run where the app died mid-window or the measured window came out under 80% of
+// --minutes is `complete:false` — still reported and written to --out, but the table prints an
+// INCOMPLETE line and the exit code is 1 so a partial window can never pass a budget. Exit 0 on a
+// complete measured run, 1 on an incomplete or unmeasurable one, 2 on usage or environment errors.
+// The finally always SIGTERMs then SIGKILLs the app and sweeps every pid it ever saw as the app's
+// own descendant — kept in a set because a dead parent's helpers reparent to launchd at once and a
+// late ppid scan would never find them again (never a command-line match, so other apps on this Mac
+// stay safe) — and removes the temp dir; an exit handler does the same sweep so a crash leaves no
+// process or directory behind.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,18 +45,22 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const usage =
-  'usage: node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--json] [--out file.json]';
+  'usage: node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--json] [--out file.json]';
 // KB per MB: ps rss prints kilobytes, so rssKb / 1024 is MiB — the same MB measure-budgets uses.
 const kbPerMb = 1024;
 const tempPrefix = 'aplos-idle-';
 const readyLine = 'engine: real engine ready';
 const devToolsPort = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/;
+const engineServiceName = /--service-name=Aplos Mail Engine/;
 const releaseRefusalExit = 78;
 const engineReadyTimeoutMs = 45_000;
 const pageWaitMs = 90_000;
 const closeWaitMs = 15_000;
-const residentSettleMs = 2_000;
+const quitGraceMs = 2_000;
 const sigtermWaitMs = 15_000;
+const devToolsIoTimeoutMs = 5_000;
+const maxOutputLines = 500;
+const topSampleCount = 6;
 
 // ---------- pure functions (unit-tested in tests/measure-idle.test.mjs) ----------
 
@@ -127,53 +141,63 @@ export function rendererPids(rows, mainPid) {
 
 /**
  * The engine utility process: a direct child of the app main pid whose command line carries
- * --type=utility. Prefers the node.mojom.NodeService marker (the one verify-release.mjs asserts on),
- * then the --aplos-engine=real argument the fork passes, then a sole utility child, then the lowest
- * pid (the engine is forked at boot, before any later utility child). Returns { pid, how } or null;
- * `how` records which rule picked it for the report.
+ * --type=utility. Prefers the engine-specific markers — the --aplos-engine=real argument the fork
+ * passes, strongest together with the engine's --service-name — then the generic
+ * node.mojom.NodeService marker (which any node utility child could carry), then a sole utility
+ * child, then the lowest pid (the engine is forked at boot, before any later utility child).
+ * Returns { pid, how } or null; `how` records which rule picked it for the report.
  */
 export function chooseEngineProcess(rows, mainPid) {
   const utilities = childrenOf(rows, mainPid).filter(row => row.command.includes('--type=utility'));
   if (!utilities.length) return null;
-  const marker = utilities.find(row => row.command.includes('node.mojom.NodeService'));
-  if (marker) return { pid: marker.pid, how: 'node.mojom.NodeService marker' };
+  const named = utilities.find(
+    row => row.command.includes('--aplos-engine=real') && engineServiceName.test(row.command),
+  );
+  if (named) return { pid: named.pid, how: '--service-name and --aplos-engine=real markers' };
   const real = utilities.find(row => row.command.includes('--aplos-engine=real'));
   if (real) return { pid: real.pid, how: '--aplos-engine=real argument' };
+  const marker = utilities.find(row => row.command.includes('node.mojom.NodeService'));
+  if (marker) return { pid: marker.pid, how: 'node.mojom.NodeService marker' };
   if (utilities.length === 1) return { pid: utilities[0].pid, how: 'the only utility child' };
   const lowest = utilities.reduce((a, b) => (a.pid < b.pid ? a : b));
   return { pid: lowest.pid, how: `lowest pid of ${utilities.length} utility children` };
 }
 
 /**
- * The second `top -l 2 -stats pid,cpu,idlew` sample's row for `pid`: { cpu, idlew } or null. The
- * header of the second table names the columns; when a wider row appears (a COMMAND column holds
- * spaces) the named columns are read from the right. A dead pid still prints the header, just no row.
+ * Every post-first `top -l N -stats pid,cpu,idlew` sample's row for `pid`, as a list of
+ * { cpu, idlew } in sample order. The first table is skipped: per man top it is invalid for CPU.
+ * Each table's header names the columns; when a wider row appears (a COMMAND column holds spaces)
+ * the named columns are read from the right. A dead pid still prints headers, just no rows.
  */
-export function parseTopSample(text, pid) {
+export function parseTopSamples(text, pid) {
   const lines = String(text).split('\n');
   const headers = [];
   lines.forEach((line, index) => {
     const names = line.trim().split(/\s+/);
     if (names[0] === 'PID' && names.includes('IDLEW')) headers.push({ index, names });
   });
-  const second = headers[1];
-  if (!second) return null;
-  const idlewAt = second.names.indexOf('IDLEW');
-  const cpuAt = second.names.indexOf('%CPU');
-  if (idlewAt < 0 || cpuAt < 0) return null;
-  for (const line of lines.slice(second.index + 1)) {
-    const fields = line.trim().split(/\s+/);
-    if (fields[0] !== String(pid)) continue;
-    if (fields.length < second.names.length) return null;
-    // A COMMAND column widens the row past the header count, so columns after it are read from
-    // the right instead of the left.
-    const at = nameAt =>
-      fields.length === second.names.length
-        ? fields[nameAt]
-        : fields[fields.length - (second.names.length - nameAt)];
-    return { cpu: parseFloat(at(cpuAt)), idlew: parseFloat(at(idlewAt)) };
+  const samples = [];
+  for (let h = 1; h < headers.length; h++) {
+    const header = headers[h];
+    const sectionEnd = headers[h + 1]?.index ?? lines.length;
+    const idlewAt = header.names.indexOf('IDLEW');
+    const cpuAt = header.names.indexOf('%CPU');
+    if (idlewAt < 0 || cpuAt < 0) continue;
+    for (const line of lines.slice(header.index + 1, sectionEnd)) {
+      const fields = line.trim().split(/\s+/);
+      if (fields[0] !== String(pid)) continue;
+      if (fields.length < header.names.length) break;
+      // A COMMAND column widens the row past the header count, so columns after it are read from
+      // the right instead of the left.
+      const at = nameAt =>
+        fields.length === header.names.length
+          ? fields[nameAt]
+          : fields[fields.length - (header.names.length - nameAt)];
+      samples.push({ cpu: parseFloat(at(cpuAt)), idlew: parseFloat(at(idlewAt)) });
+      break;
+    }
   }
-  return null;
+  return samples;
 }
 
 /** Median of a list of numbers; NaN for an empty one. */
@@ -197,15 +221,16 @@ const numberFlag = (flag, value, minimum) => {
   return number;
 };
 
-/** CLI args -> { app, minutes, interval, json, out }; throws on anything unexpected. */
+/** CLI args -> { app, minutes, interval, settle, json, out }; throws on anything unexpected. */
 export function parseArgs(argv) {
-  const options = { app: null, minutes: 10, interval: 5, json: false, out: null };
+  const options = { app: null, minutes: 10, interval: 5, settle: 60, json: false, out: null };
   const args = [...argv];
   while (args.length) {
     const arg = args.shift();
     if (arg === '--json') options.json = true;
-    else if (arg === '--minutes') options.minutes = numberFlag(arg, args.shift(), 0);
+    else if (arg === '--minutes') options.minutes = numberFlag(arg, args.shift(), 1);
     else if (arg === '--interval') options.interval = numberFlag(arg, args.shift(), 1);
+    else if (arg === '--settle') options.settle = numberFlag(arg, args.shift(), 0);
     else if (arg === '--out') {
       options.out = args.shift();
       if (!options.out) throw new Error('--out needs a file');
@@ -223,6 +248,11 @@ export function shown(value, unit = '') {
   return `${value}${unit}`;
 }
 
+/** The last `maxLines` of `lines` — run.output keeps only a tail so a chatty app cannot grow it. */
+export function tailLines(lines, maxLines = maxOutputLines) {
+  return lines.length > maxLines ? lines.slice(-maxLines) : lines;
+}
+
 // ---------- running ----------
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -231,25 +261,45 @@ const ps = args => spawnSync('ps', args, { encoding: 'utf8' }).stdout ?? '';
 const psTree = () => parsePsTree(ps(['-axo', 'pid=,ppid=,command=']));
 
 const spawned = new Set();
+// Every pid this run ever saw as its own process or descendant: main, engine, renderers and
+// anything found under them by ppid. The cleanup sweep kills exactly these pids — never a name or
+// command-line match — so a helper reparented to launchd still dies and other apps stay safe.
+const seenPids = new Set();
 let dataDir;
 
-/** SIGKILLs every process we spawned and its descendants found by ppid, then removes the temp dir. */
-function killNow() {
-  for (const child of spawned) {
-    if (child.exitCode !== null) continue;
-    for (const pid of descendantsOf(psTree(), child.pid)) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Already gone.
-      }
+/** Adds child.pid and its current ppid-descendants to seenPids. */
+function noteDescendants(child) {
+  if (child.pid) seenPids.add(child.pid);
+  for (const pid of descendantsOf(psTree(), child.pid)) seenPids.add(pid);
+}
+
+/** SIGKILLs every pid ever seen; dead ones throw ESRCH and are ignored. */
+function sweepSeenPids() {
+  for (const pid of seenPids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // Already gone.
     }
+  }
+}
+
+/**
+ * Crash net, synchronous for process.on('exit'): collect the descendants, kill the parents, scan
+ * once more for anything born in between, then sweep every pid ever seen — even when a child
+ * already exited, because its helpers may live on reparented to launchd.
+ */
+function killNow() {
+  for (const child of spawned) noteDescendants(child);
+  for (const child of spawned) {
     try {
       child.kill('SIGKILL');
     } catch {
       // Already gone.
     }
   }
+  for (const child of spawned) noteDescendants(child);
+  sweepSeenPids();
   removeDataDir();
 }
 
@@ -273,32 +323,24 @@ function watchCrashes() {
 
 async function stopApp(child) {
   // Descendants are collected before SIGTERM too: a child the app's death orphans is reparented to
-  // launchd at once, and a later ppid scan would never find it again.
-  const descendants = new Set();
-  const collect = () => {
-    for (const pid of descendantsOf(psTree(), child.pid)) descendants.add(pid);
-  };
+  // launchd at once, and a later ppid scan would never find it again. The seen-pids sweep runs even
+  // when the app already exited on its own (child.exitCode set), reaching helpers a ppid scan can
+  // no longer see.
+  noteDescendants(child);
   if (child.exitCode === null) {
-    collect();
     child.kill('SIGTERM');
     const deadline = Date.now() + sigtermWaitMs;
     while (child.exitCode === null && Date.now() < deadline) await delay(200);
-    collect();
+    noteDescendants(child);
     if (child.exitCode === null) child.kill('SIGKILL');
     await delay(500);
-    collect();
   }
-  for (const pid of descendants) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
-  }
+  noteDescendants(child);
+  sweepSeenPids();
 }
 
 /** Spawns the app binary exactly like verify-hardening-real-engine.mjs and watches its output. */
-function launchApp(exe) {
+export function launchApp(exe) {
   const child = spawn(exe, ['--remote-debugging-port=0'], {
     env: {
       ...process.env,
@@ -318,11 +360,14 @@ function launchApp(exe) {
   for (const stream of [child.stdout, child.stderr])
     stream.on('data', chunk => {
       const text = chunk.toString();
-      run.output.push(text);
+      run.output = tailLines(run.output.concat(text.split('\n')));
       const match = text.match(devToolsPort);
       if (match) run.port = Number(match[1]);
       if (text.includes(readyLine)) run.resolveReady();
     });
+  child.on('error', error => {
+    run.rejectReady(new Error(`the app could not be launched: ${error?.message ?? error}`));
+  });
   child.on('exit', code => {
     const reason =
       code === releaseRefusalExit
@@ -344,11 +389,27 @@ async function waitEngineReady(run) {
   ]);
 }
 
+/** A clear, tagged error for a DevTools I/O deadline; callers rethrow it past their soft catches. */
+const devToolsTimeout = message => Object.assign(new Error(message), { devToolsTimeout: true });
+
+/** fetch() with a hard deadline; a timeout raises a clear tagged error instead of a bare AbortError. */
+export async function devToolsFetch(url, options = {}, timeoutMs = devToolsIoTimeoutMs) {
+  try {
+    return await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    if (error?.name === 'TimeoutError')
+      throw devToolsTimeout(`DevTools request timed out after ${timeoutMs} ms: ${url}`);
+    throw error;
+  }
+}
+
 async function listTargets(run) {
   if (!run.port) return [];
   try {
-    return await (await fetch(`http://127.0.0.1:${run.port}/json/list`)).json();
-  } catch {
+    return await (await devToolsFetch(`http://127.0.0.1:${run.port}/json/list`)).json();
+  } catch (error) {
+    // A wedged DevTools port is fatal; a refused one just means the app is not up yet.
+    if (error?.devToolsTimeout) throw error;
     return [];
   }
 }
@@ -365,12 +426,31 @@ async function pageTargets(run, timeoutMs) {
 }
 
 /** Runtime.evaluate on one page target over its own WebSocket (the verify script's CDP pattern). */
-async function evaluateOn(target, expression) {
+export async function evaluateOn(target, expression, timeoutMs = devToolsIoTimeoutMs) {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   try {
-    await new Promise((res, rej) => {
-      ws.addEventListener('open', res, { once: true });
-      ws.addEventListener('error', rej, { once: true });
+    await new Promise((resolveOpen, rejectOpen) => {
+      const timer = setTimeout(() => {
+        rejectOpen(
+          devToolsTimeout(`CDP WebSocket to ${target.id} did not open within ${timeoutMs} ms`),
+        );
+      }, timeoutMs);
+      ws.addEventListener(
+        'open',
+        () => {
+          clearTimeout(timer);
+          resolveOpen();
+        },
+        { once: true },
+      );
+      ws.addEventListener(
+        'error',
+        () => {
+          clearTimeout(timer);
+          rejectOpen(new Error(`CDP WebSocket to ${target.id} failed to open`));
+        },
+        { once: true },
+      );
     });
     const answered = new Promise(res => {
       ws.addEventListener('message', event => {
@@ -400,8 +480,9 @@ async function closeAllWindows(run) {
   for (const page of await pageTargets(run, pageWaitMs)) {
     try {
       await evaluateOn(page, 'window.close()');
-    } catch {
-      // The target closed or refused the socket; the poll below decides.
+    } catch (error) {
+      // A wedged CDP channel is fatal; a refused socket just means the target already closed.
+      if (error?.devToolsTimeout) throw error;
     }
   }
   let left = await pagesRemaining(run, closeWaitMs);
@@ -409,9 +490,13 @@ async function closeAllWindows(run) {
     for (const page of await listTargets(run)) {
       if (page.type !== 'page') continue;
       try {
-        await fetch(`http://127.0.0.1:${run.port}/json/close/${page.id}`, { method: 'PUT' });
-      } catch {
-        // DevTools http went away with the app; the poll below decides.
+        await devToolsFetch(`http://127.0.0.1:${run.port}/json/close/${page.id}`, {
+          method: 'PUT',
+        });
+      } catch (error) {
+        // DevTools http going away with the app is fine — the poll below decides — but a wedged
+        // port is fatal.
+        if (error?.devToolsTimeout) throw error;
       }
     }
     left = await pagesRemaining(run, 10_000);
@@ -430,13 +515,16 @@ function appVersion(appPath) {
   return run.status === 0 && version ? version : 'unknown';
 }
 
-async function measure(options, exe, appPath) {
-  const notes = [];
+/**
+ * Launches the app, waits for the engine, closes every window and waits out --settle. Relaunches
+ * once with the window hidden when closing the windows quit the app. Returns { run, mode }.
+ */
+async function launchResident(options, exe, notes) {
   let run = launchApp(exe);
   await waitEngineReady(run);
   let mode = 'resident';
   const remaining = await closeAllWindows(run);
-  await delay(residentSettleMs);
+  await delay(quitGraceMs);
   if (run.child.exitCode !== null) {
     notes.push('closing the windows quit the app; relaunched and measured with the window hidden');
     mode = 'window-hidden';
@@ -447,100 +535,170 @@ async function measure(options, exe, appPath) {
     mode = 'window-open';
   }
 
-  const pick = chooseEngineProcess(psTree(), run.child.pid);
-  if (!pick)
-    throw new Error('no --type=utility child of the app main pid (is the real engine running?)');
-  let enginePid = pick.pid;
-  const rendererIds = rendererPids(psTree(), run.child.pid);
-  const pids = [...new Set([enginePid, run.child.pid, ...rendererIds])];
+  // The settle wait lets startup and first-sync work finish before the first sample counts.
+  if (options.settle > 0) {
+    if (!options.json)
+      console.error(`settling ${options.settle} s so startup work is not counted as idle`);
+    await delay(options.settle * 1000);
+  }
+  if (run.child.exitCode !== null)
+    throw new Error(`the app exited (code ${run.child.exitCode}) during the settle period`);
+  return { run, mode };
+}
 
-  const readings = [];
-  const mainKb = [];
-  const rendererKb = [];
-  let restarts = 0;
+/**
+ * One ps sample per --interval across the --minutes window; follows a restarted engine pid.
+ * Returns { readings, mainKb, rendererKb, restarts, exitedEarly, enginePid }.
+ */
+async function sampleWindow(options, run, enginePid, pids, rendererIds, notes) {
+  const state = { readings: [], mainKb: [], rendererKb: [], restarts: 0, exitedEarly: false };
   const endAt = Date.now() + options.minutes * 60_000;
   for (;;) {
     const at = Date.now();
+    // Every pid ever seen goes into seenPids so cleanup can reach it even after reparenting.
+    noteDescendants(run.child);
+    for (const pid of pids) seenPids.add(pid);
     let rows = parsePsSample(ps(['-o', 'pid=,rss=,pcpu=,time=', '-p', pids.join(',')]));
     if (!rows.has(enginePid) && run.child.exitCode === null) {
       // The supervisor restarts a dead engine; follow it and let the CPU window restart.
       const next = chooseEngineProcess(psTree(), run.child.pid);
       if (next && next.pid !== enginePid) {
         notes.push(`engine restarted during the window: pid ${enginePid} -> ${next.pid}`);
-        restarts++;
+        state.restarts++;
         enginePid = next.pid;
         pids.push(enginePid);
+        seenPids.add(enginePid);
         rows = parsePsSample(ps(['-o', 'pid=,rss=,pcpu=,time=', '-p', pids.join(',')]));
       }
     }
     const engine = rows.get(enginePid);
-    if (engine) readings.push({ at, pid: enginePid, rssKb: engine.rssKb, cputime: engine.cputime });
+    if (engine)
+      state.readings.push({ at, pid: enginePid, rssKb: engine.rssKb, cputime: engine.cputime });
     const main = rows.get(run.child.pid);
-    if (main) mainKb.push(main.rssKb);
+    if (main) state.mainKb.push(main.rssKb);
     const rendererSum = rendererIds.reduce((sum, pid) => sum + (rows.get(pid)?.rssKb ?? 0), 0);
-    if (rendererIds.length) rendererKb.push(rendererSum);
+    if (rendererIds.length) state.rendererKb.push(rendererSum);
     if (!options.json)
       console.error(
-        `sample ${readings.length} · engine ${engine ? shown(round(engine.rssKb / kbPerMb, 1), ' MB') : 'gone'} · pid ${enginePid}`,
+        `sample ${state.readings.length} · engine ${engine ? shown(round(engine.rssKb / kbPerMb, 1), ' MB') : 'gone'} · pid ${enginePid}`,
       );
     if (run.child.exitCode !== null) {
       notes.push(`the app exited (code ${run.child.exitCode}) part-way through the window`);
+      state.exitedEarly = true;
       break;
     }
     const left = endAt - Date.now();
     if (left <= 0) break;
     await delay(Math.min(options.interval * 1000, left));
   }
+  return { ...state, enginePid };
+}
 
-  const top = spawnSync('top', ['-l', '2', '-pid', String(enginePid), '-stats', 'pid,cpu,idlew'], {
-    encoding: 'utf8',
-    timeout: 30_000,
-  }).stdout;
-  const wakeups = parseTopSample(top ?? '', enginePid);
-  if (!wakeups) notes.push('top printed no second sample for the engine; wake-ups not measured');
-  if (!readings.length) throw new Error('the engine never answered a ps sample');
+/**
+ * Resident-mode re-check after the window: a page target recreated mid-window (e.g. by app
+ * 'activate') flips the mode to 'window-open' with a note; the run is not failed for it.
+ */
+async function recheckResident(run, mode, notes) {
+  if (mode !== 'resident' || run.child.exitCode !== null) return mode;
+  try {
+    const reopened = (await listTargets(run)).filter(target => target.type === 'page');
+    if (!reopened.length) return mode;
+    notes.push(
+      `${reopened.length} page target(s) reopened during the window; the run was not fully resident`,
+    );
+    return 'window-open';
+  } catch (error) {
+    notes.push(`the post-window DevTools check failed (${error?.message ?? error})`);
+    return mode;
+  }
+}
 
-  // The CPU window covers only the current engine pid: a restart resets cputime, so readings from a
+/** One `top -l 6` run; the engine's idle wake-ups/sec of samples 2-6 (sample 1 is invalid). */
+function engineWakeups(enginePid, notes) {
+  const top = spawnSync(
+    'top',
+    ['-l', String(topSampleCount), '-pid', String(enginePid), '-stats', 'pid,cpu,idlew'],
+    { encoding: 'utf8', timeout: 60_000 },
+  ).stdout;
+  const samples = parseTopSamples(top ?? '', enginePid).map(sample => sample.idlew);
+  if (!samples.length)
+    notes.push('top printed no post-first samples for the engine; wake-ups not measured');
+  return samples;
+}
+
+/** The JSON/table report from the finished window state. */
+function buildReport(options, appPath, mode, pick, state, wakeupSamples, notes) {
+  const { readings, mainKb, rendererKb, restarts, exitedEarly, enginePid } = state;
+  // The CPU window covers only the final engine pid: a restart resets cputime, so readings from a
   // previous pid would mix lifetimes.
-  const lastPid = readings.at(-1).pid;
-  const cpuReadings = readings.filter(r => r.pid === lastPid);
-  const wallSeconds = (cpuReadings.at(-1).at - cpuReadings[0].at) / 1000;
+  const cpuReadings = readings.filter(r => r.pid === enginePid);
+  const windowSeconds = (readings.at(-1).at - readings[0].at) / 1000;
+  const cpuWallSeconds = (cpuReadings.at(-1).at - cpuReadings[0].at) / 1000;
   const cpu =
     cpuReadings.length >= 2
-      ? cpuPercent(cpuReadings[0].cputime, cpuReadings.at(-1).cputime, wallSeconds)
+      ? cpuPercent(cpuReadings[0].cputime, cpuReadings.at(-1).cputime, cpuWallSeconds)
       : null;
   const rssMb = readings.map(r => r.rssKb / kbPerMb);
-  const report = {
+  const expectedSeconds = options.minutes * 60;
+  // A partial window is reported but can never pass a budget: under 80% of --minutes measured (or
+  // the app dying mid-window) means complete:false and exit 1.
+  const complete = !exitedEarly && windowSeconds >= 0.8 * expectedSeconds;
+  return {
     app: appPath,
     appVersion: appVersion(appPath),
     mode,
+    complete,
     samples: readings.length,
-    windowSeconds: round(wallSeconds, 1),
+    settleSeconds: options.settle,
+    windowSeconds: round(windowSeconds, 1),
+    windowExpectedSeconds: expectedSeconds,
     enginePid,
     enginePickedBy: pick.how,
     engineRestarts: restarts,
     idleEngineRssMb: round(median(rssMb), 1),
     idleEngineRssMaxMb: round(Math.max(...rssMb), 1),
     idleCpuPercent: cpu === null ? null : round(cpu, 2),
-    idleWakeupsPerSec: wakeups?.idlew ?? null,
+    idleWakeupsPerSec: wakeupSamples.length ? round(median(wakeupSamples), 1) : null,
+    idleWakeupsPerSecMax: wakeupSamples.length ? round(Math.max(...wakeupSamples), 1) : null,
     mainRssMb: mainKb.length ? round(median(mainKb) / kbPerMb, 1) : null,
     rendererRssMb: rendererKb.length ? round(median(rendererKb) / kbPerMb, 1) : 0,
     notes,
   };
-  return report;
+}
+
+async function measure(options, exe, appPath) {
+  const notes = [];
+  const launched = await launchResident(options, exe, notes);
+  const { run } = launched;
+  const pick = chooseEngineProcess(psTree(), run.child.pid);
+  if (!pick)
+    throw new Error('no --type=utility child of the app main pid (is the real engine running?)');
+  const rendererIds = rendererPids(psTree(), run.child.pid);
+  const pids = [...new Set([pick.pid, run.child.pid, ...rendererIds])];
+  const state = await sampleWindow(options, run, pick.pid, pids, rendererIds, notes);
+  const mode = await recheckResident(run, launched.mode, notes);
+  const wakeupSamples = engineWakeups(state.enginePid, notes);
+  if (!state.readings.length) throw new Error('the engine never answered a ps sample');
+  return buildReport(options, appPath, mode, pick, state, wakeupSamples, notes);
 }
 
 function printReport(report) {
   console.log(`measure-idle: ${report.app}`);
   console.log(`app version: ${report.appVersion} · mode: ${report.mode}`);
+  if (!report.complete)
+    console.log(
+      `INCOMPLETE    only ${report.windowSeconds} s of the ${report.windowExpectedSeconds} s window was measured; these are partial results, not a budget pass`,
+    );
   console.log(
-    `samples: ${report.samples} over ${report.windowSeconds} s · engine pid ${report.enginePid} (${report.enginePickedBy})`,
+    `samples: ${report.samples} over ${report.windowSeconds} s · settle ${report.settleSeconds} s · engine pid ${report.enginePid} (${report.enginePickedBy})`,
   );
   console.log(
     `engine RSS    median ${shown(report.idleEngineRssMb, ' MB')}   max ${shown(report.idleEngineRssMaxMb, ' MB')}`,
   );
   console.log(`engine CPU    ${shown(report.idleCpuPercent, ' %')} of wall-clock (cputime delta)`);
-  console.log(`wake-ups      ${shown(report.idleWakeupsPerSec, ' /s')} (top -l 2 second sample)`);
+  console.log(
+    `wake-ups      median ${shown(report.idleWakeupsPerSec, ' /s')}   max ${shown(report.idleWakeupsPerSecMax, ' /s')} (top -l ${topSampleCount}, samples 2-${topSampleCount})`,
+  );
   console.log(
     `context       main ${shown(report.mainRssMb, ' MB')}   renderers ${shown(report.rendererRssMb, ' MB')} (median)`,
   );
@@ -573,6 +731,7 @@ async function main() {
     if (options.out) writeFileSync(options.out, `${JSON.stringify(report, null, 2)}\n`);
     if (options.json) console.log(JSON.stringify(report));
     else printReport(report);
+    if (!report.complete) code = 1;
   } catch (error) {
     console.error(`measure-idle: ${error?.message ?? error}`);
     code = 1;

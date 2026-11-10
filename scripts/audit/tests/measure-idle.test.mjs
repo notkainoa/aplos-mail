@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -9,13 +11,17 @@ import {
   cputimeSeconds,
   cpuPercent,
   descendantsOf,
+  devToolsFetch,
+  evaluateOn,
+  launchApp,
   median,
   parseArgs,
   parsePsSample,
   parsePsTree,
-  parseTopSample,
+  parseTopSamples,
   rendererPids,
   shown,
+  tailLines,
 } from '../measure-idle.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -92,23 +98,52 @@ describe('measure-idle ps parsing', () => {
 });
 
 describe('measure-idle engine pick', () => {
-  it('picks the node.mojom.NodeService utility child of the main pid', () => {
-    const pick = chooseEngineProcess(parsePsTree(psTreeFixture), 100);
-    assert.equal(pick.pid, 201);
-    assert.match(pick.how, /node\.mojom\.NodeService/);
+  const utility = (pid, extra = '') => ({
+    pid,
+    ppid: 100,
+    command: `/Applications/${helper} --type=utility ${extra}`,
   });
 
-  it('falls back to the --aplos-engine=real argument, the sole child, then the lowest pid', () => {
-    const utility = (pid, extra = '') => ({
-      pid,
-      ppid: 100,
-      command: `/Applications/${helper} --type=utility ${extra}`,
-    });
-    const byArg = chooseEngineProcess(
-      [utility(201, '--utility-sub-type=other'), utility(202, '--aplos-engine=real')],
+  it('prefers the utility child carrying both the service name and --aplos-engine=real', () => {
+    const pick = chooseEngineProcess(parsePsTree(psTreeFixture), 100);
+    assert.equal(pick.pid, 201);
+    assert.match(pick.how, /service-name/);
+  });
+
+  it('prefers --aplos-engine=real over the generic node.mojom.NodeService marker', () => {
+    const pick = chooseEngineProcess(
+      [
+        utility(201, '--utility-sub-type=node.mojom.NodeService'),
+        utility(202, '--aplos-engine=real'),
+      ],
       100,
     );
-    assert.equal(byArg.pid, 202);
+    assert.equal(pick.pid, 202);
+    assert.match(pick.how, /aplos-engine=real/);
+  });
+
+  it('prefers the named engine service when several children carry --aplos-engine=real', () => {
+    const pick = chooseEngineProcess(
+      [
+        utility(203, '--aplos-engine=real'),
+        utility(204, '--aplos-engine=real --service-name=Aplos Mail Engine (new)'),
+      ],
+      100,
+    );
+    assert.equal(pick.pid, 204);
+    assert.match(pick.how, /service-name/);
+  });
+
+  it('falls back to the node.mojom marker, the sole child, then the lowest pid', () => {
+    const marker = chooseEngineProcess(
+      [
+        utility(201, '--utility-sub-type=other'),
+        utility(202, '--utility-sub-type=node.mojom.NodeService'),
+      ],
+      100,
+    );
+    assert.equal(marker.pid, 202);
+    assert.match(marker.how, /node\.mojom\.NodeService/);
     const sole = chooseEngineProcess([utility(201)], 100);
     assert.equal(sole.pid, 201);
     assert.match(sole.how, /only utility child/);
@@ -141,16 +176,40 @@ PID    %CPU IDLEW
 `;
 
 describe('measure-idle top parsing', () => {
-  it("reads the second sample's row for the pid", () => {
-    const text = topBlock('12.0', '40') + '\n' + topBlock('0.3', '7');
-    assert.deepEqual(parseTopSample(text, 555), { cpu: 0.3, idlew: 7 });
+  it('returns every post-first sample for the pid in order', () => {
+    const pairs = [
+      ['12.0', '40'],
+      ['0.3', '7'],
+      ['0.4', '9'],
+      ['0.2', '5'],
+      ['0.5', '11'],
+      ['0.1', '3'],
+    ];
+    const text = pairs.map(([cpu, idlew]) => topBlock(cpu, idlew)).join('\n');
+    assert.deepEqual(parseTopSamples(text, 555), [
+      { cpu: 0.3, idlew: 7 },
+      { cpu: 0.4, idlew: 9 },
+      { cpu: 0.2, idlew: 5 },
+      { cpu: 0.5, idlew: 11 },
+      { cpu: 0.1, idlew: 3 },
+    ]);
   });
 
-  it('returns null without a second table or when the pid is gone', () => {
-    assert.equal(parseTopSample(topBlock('1.0', '2'), 555), null);
+  it('returns an empty list without a second table or when the pid is gone', () => {
+    assert.deepEqual(parseTopSamples(topBlock('1.0', '2'), 555), []);
     const two = topBlock('1.0', '2') + '\n' + 'Processes: 1 total\n\nPID    %CPU IDLEW\n';
-    assert.equal(parseTopSample(two, 555), null);
-    assert.equal(parseTopSample('', 555), null);
+    assert.deepEqual(parseTopSamples(two, 555), []);
+    assert.deepEqual(parseTopSamples('', 555), []);
+  });
+
+  it('skips a later table where the pid printed no row', () => {
+    const text =
+      topBlock('1.0', '2') +
+      '\n' +
+      topBlock('0.3', '7') +
+      '\n' +
+      'Processes: 1 total\n\nPID    %CPU IDLEW\n556    0.1  4\n';
+    assert.deepEqual(parseTopSamples(text, 555), [{ cpu: 0.3, idlew: 7 }]);
   });
 
   it('reads the named columns from the right when a COMMAND column widens the row', () => {
@@ -158,7 +217,7 @@ describe('measure-idle top parsing', () => {
 555    Aplos Mail Engine (new)   0.4  9
 `;
     const text = topBlock('1.0', '1') + '\n' + wide;
-    assert.deepEqual(parseTopSample(text, 555), { cpu: 0.4, idlew: 9 });
+    assert.deepEqual(parseTopSamples(text, 555), [{ cpu: 0.4, idlew: 9 }]);
   });
 });
 
@@ -190,12 +249,24 @@ describe('measure-idle arguments', () => {
       app: 'Aplos Mail.app',
       minutes: 10,
       interval: 5,
+      settle: 60,
       json: false,
       out: null,
     });
     assert.deepEqual(
-      parseArgs(['a.app', '--json', '--minutes', '2', '--interval', '3', '--out', 'x.json']),
-      { app: 'a.app', minutes: 2, interval: 3, json: true, out: 'x.json' },
+      parseArgs([
+        'a.app',
+        '--json',
+        '--minutes',
+        '2',
+        '--interval',
+        '3',
+        '--settle',
+        '0',
+        '--out',
+        'x.json',
+      ]),
+      { app: 'a.app', minutes: 2, interval: 3, settle: 0, json: true, out: 'x.json' },
     );
   });
 
@@ -204,8 +275,83 @@ describe('measure-idle arguments', () => {
     assert.throws(() => parseArgs(['a.app', '--nope']), /unknown argument/);
     assert.throws(() => parseArgs(['a.app', 'b.app']), /unexpected argument/);
     assert.throws(() => parseArgs(['a.app', '--minutes', 'x']), /--minutes/);
+    assert.throws(() => parseArgs(['a.app', '--minutes', '0']), /--minutes/);
+    assert.throws(() => parseArgs(['a.app', '--minutes', '-1']), /--minutes/);
+    assert.throws(() => parseArgs(['a.app', '--minutes', 'NaN']), /--minutes/);
     assert.throws(() => parseArgs(['a.app', '--interval', '0']), /--interval/);
+    assert.throws(() => parseArgs(['a.app', '--settle', '-1']), /--settle/);
+    assert.throws(() => parseArgs(['a.app', '--settle', 'x']), /--settle/);
     assert.throws(() => parseArgs(['a.app', '--out']), /--out needs a file/);
+  });
+});
+
+describe('measure-idle retained output', () => {
+  it('keeps only the last lines so a chatty app cannot grow memory', () => {
+    assert.deepEqual(tailLines(['a', 'b', 'c'], 2), ['b', 'c']);
+    assert.deepEqual(tailLines(['a'], 2), ['a']);
+    const kept = tailLines(
+      Array.from({ length: 600 }, (_, index) => `line ${index}`),
+      500,
+    );
+    assert.equal(kept.length, 500);
+    assert.equal(kept[0], 'line 100');
+    assert.equal(kept.at(-1), 'line 599');
+  });
+});
+
+describe('measure-idle launch', () => {
+  it('rejects the ready promise when the binary cannot be spawned', async () => {
+    const run = launchApp('/no/such/aplos-mail-binary');
+    await assert.rejects(run.engineReady, /could not be launched/);
+  });
+});
+
+describe('measure-idle devtools io', () => {
+  it('fetches a responding DevTools endpoint', async () => {
+    const server = createServer((request, response) => response.end('[]'));
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${server.address().port}/json/list`;
+      const response = await devToolsFetch(url, {}, 1_000);
+      assert.deepEqual(await response.json(), []);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  it('times out with a clear error on a hung DevTools endpoint', async () => {
+    const server = createServer(() => {}); // accepts the request and never answers
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${server.address().port}/json/list`;
+      await assert.rejects(
+        devToolsFetch(url, {}, 50),
+        error => error.devToolsTimeout === true && /timed out after 50 ms/.test(error.message),
+      );
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  it('times out a WebSocket that never finishes opening', async () => {
+    const sockets = new Set();
+    const server = createTcpServer(socket => sockets.add(socket)); // holds the socket, says nothing
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const target = {
+        id: 'p1',
+        webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/cdp`,
+      };
+      await assert.rejects(
+        evaluateOn(target, 'window.close()', 50),
+        error => error.devToolsTimeout === true && /did not open within 50 ms/.test(error.message),
+      );
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    }
   });
 });
 
@@ -225,5 +371,13 @@ describe('measure-idle cli', () => {
     const bad = spawnSync(process.execPath, [script, '--bogus'], { encoding: 'utf8' });
     assert.equal(bad.status, 2);
     assert.match(bad.stderr, /unknown argument/);
+  });
+
+  it('exits 2 on --minutes below 1, before any launch', () => {
+    const run = spawnSync(process.execPath, [script, 'a.app', '--minutes', '0'], {
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /--minutes needs a number of at least 1/);
   });
 });
