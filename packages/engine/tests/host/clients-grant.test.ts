@@ -25,6 +25,7 @@ async function world(opts: { withTokens?: boolean } = {}) {
   });
   const log = createLogger({ sink: { write: () => undefined }, salt: 'grant-test', clock });
   const issued: { clientId: string; token: string }[] = [];
+  const removed: string[] = [];
   const engine = await createEngine({
     store,
     clock,
@@ -38,6 +39,9 @@ async function world(opts: { withTokens?: boolean } = {}) {
                 issued.push({ clientId, token });
                 return { path: `run/clients/${clientId}.token` };
               },
+              remove: async (clientId: string) => {
+                removed.push(clientId);
+              },
             },
           },
   });
@@ -50,7 +54,7 @@ async function world(opts: { withTokens?: boolean } = {}) {
     scopes: string[],
     via: 'socket' | 'http' | 'mcp' = 'socket',
   ) => engine.connect(listenerCaller({ id, kind, scopes }, via) as never);
-  return { engine, store, clock, db: file.open(), call, asClient, issued };
+  return { engine, store, clock, db: file.open(), call, asClient, issued, removed };
 }
 
 test('grant inserts the row with the token hash, hands the plaintext to the host, lists the client', async () => {
@@ -90,9 +94,10 @@ test('grant inserts the row with the token hash, hands the plaintext to the host
     const { list } = await w.call('Clients/list', {});
     assert.equal(list.length, 1);
     assert.equal(list[0]!.tokenPath, undefined);
-    // Revoke then works on the granted row.
+    // Revoke then works on the granted row — and the token file is removed with it.
     await w.call('Clients/revoke', { id: client.id });
     assert.equal((await w.call('Clients/list', {})).list[0]!.revokedAt, w.clock.now());
+    assert.deepEqual(w.removed, [client.id], 'revoke removes the token file');
   } finally {
     await w.engine.close();
   }
@@ -121,6 +126,7 @@ test('a failed issue leaves no client row', async () => {
       ports: {
         clientTokens: {
           issue: () => Promise.reject(new Error('disk full')),
+          remove: () => Promise.resolve(),
         },
       },
     });
@@ -129,6 +135,19 @@ test('a failed issue leaves no client row', async () => {
     );
     assert.equal((w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n, 0);
     await engine.close();
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('a failed grant commit removes the token file it issued', async () => {
+  const w = await world();
+  try {
+    // An invalid write makes the commit throw after issue — the file must not linger.
+    await assert.rejects(w.call('Clients/grant', { name: '', kind: 'cli', scopes: ['read'] }));
+    assert.equal(w.issued.length, 1);
+    assert.deepEqual(w.removed, [w.issued[0]!.clientId], 'the orphan file was removed');
+    assert.equal((w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n, 0);
   } finally {
     await w.engine.close();
   }

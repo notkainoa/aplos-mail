@@ -86,7 +86,10 @@ function audit(args: Input<'Clients/audit'>, ctx: MethodContext): Output<'Client
   return { list };
 }
 
-function revoke(args: Input<'Clients/revoke'>, ctx: MethodContext): Output<'Clients/revoke'> {
+async function revoke(
+  args: Input<'Clients/revoke'>,
+  ctx: MethodContext,
+): Promise<Output<'Clients/revoke'>> {
   const known = ctx.services.store.read(
     q => q.get('SELECT 1 AS one FROM clients WHERE id = ?', args.id) !== undefined,
   );
@@ -100,6 +103,14 @@ function revoke(args: Input<'Clients/revoke'>, ctx: MethodContext): Output<'Clie
       ...auditWrites(ctx.caller, 'Clients/revoke', args.id),
     ],
   });
+  // The row is revoked, so no transport authenticates the token again — the file can go. Removing it is
+  // best effort: the revoke already happened, so a file that will not delete must never error the call.
+  if (!isAbsent(ctx.services.clientTokens))
+    try {
+      await ctx.services.clientTokens.remove(args.id);
+    } catch {
+      ctx.services.log.event('client.token_remove_failed', { client: args.id, error: 'fs' });
+    }
   return { ok: true };
 }
 
@@ -116,27 +127,33 @@ async function grant(
   const token = hex(ctx.services.randomBytes(32));
   const scopes = [...new Set(args.scopes)] as Client['scopes'];
   const createdAt = ctx.services.clock.now();
-  // The token file lands first: a failed issue leaves no row; a failed commit leaves an inert file whose
-  // hash matches no row, which a transport can never authenticate.
+  // The token file lands first: a failed issue leaves no row, and a failed commit drops the file too.
   const { path } = await ctx.services.clientTokens.issue(id, token);
-  ctx.services.store.commit({
-    opId: `client-grant-${id}-${nonce(ctx)}`,
-    origin: 'local',
-    writes: [
-      {
-        kind: 'client',
-        id,
-        grant: {
-          name: args.name,
-          clientKind: args.kind,
-          tokenHash: sha256Hex(token),
-          scopes,
-          createdAt,
+  try {
+    ctx.services.store.commit({
+      opId: `client-grant-${id}-${nonce(ctx)}`,
+      origin: 'local',
+      writes: [
+        {
+          kind: 'client',
+          id,
+          grant: {
+            name: args.name,
+            clientKind: args.kind,
+            tokenHash: sha256Hex(token),
+            scopes,
+            createdAt,
+          },
         },
-      },
-      ...auditWrites(ctx.caller, 'Clients/grant', id),
-    ],
-  });
+        ...auditWrites(ctx.caller, 'Clients/grant', id),
+      ],
+    });
+  } catch (error) {
+    // A committed row must never lack its token file; a failed commit leaves only the file, so drop it —
+    // but the caller's error is the commit's, never a cleanup failure.
+    await ctx.services.clientTokens.remove(id).catch(() => undefined);
+    throw error;
+  }
   return {
     client: { id, name: args.name, kind: args.kind, scopes, createdAt, tokenPath: path },
   };

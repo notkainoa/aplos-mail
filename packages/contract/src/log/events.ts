@@ -423,6 +423,10 @@ export const logEvents = {
     client: f.id(),
     change: f.oneOf(['paired', 'revoked', 'scopes']),
   }),
+  'client.token_remove_failed': event('warn', ['eng-host'], {
+    client: f.id(),
+    error: f.code(),
+  }),
 
   // Updates (plan 40).
   'update.checked': event('info', ['plat-release'], {

@@ -300,4 +300,6 @@ export interface AccountActorDeps {
  */
 export interface ClientTokens {
   issue(clientId: string, token: string): Promise<{ path: string }>;
+  /** Removes a client's token file (revoke, or cleaning up a grant whose commit failed). Missing is fine. */
+  remove(clientId: string): Promise<void>;
 }
