@@ -114,8 +114,6 @@ function checkAttribute(
   if (name === 'background') return checkImage(value, false, options, problems);
   if (name === 'style' && element === 'body') problems.push(...bodyStyleProblems(value));
   if (name === 'style') return checkCss(value, options, problems, true);
-  // The frame's own marker for a plain email (plain.ts): the root carries it empty, and no element but the root may.
-  if (element === 'html' && name === 'data-aplos-plain' && value === '') return;
   if (name === 'target' && value === '_blank') return;
   if (name === 'rel' && value === 'noopener noreferrer') return;
   problems.push(`attribute ${name}="${value.slice(0, 60)}" on <${element}>`);

@@ -1,7 +1,6 @@
 import type { MailHtml, MailHtmlInput, MailHtmlResult } from '@aplos/engine/ports/content';
 import { countMatches, createFinder, type Finder } from './find';
 import { ImageBook } from './images';
-import { isPlainWalk, PLAIN_ATTRIBUTE } from './plain';
 import { READING_CSS } from './reading-css';
 import { sanitizeHtml, type WalkOutput } from './sanitize';
 
@@ -9,7 +8,7 @@ import { sanitizeHtml, type WalkOutput } from './sanitize';
 // change: it is part of each rendered body's cache key, so a fix reaches mail already stored.
 // A message over the size limits (sanitize.ts LIMITS) is cut, and the frame says so at the cut.
 
-export const MAIL_HTML_VERSION = 'mail-html/8';
+export const MAIL_HTML_VERSION = 'mail-html/7';
 
 /**
  * Always this doctype, whatever the mail declared: HTML 4.01 Transitional WITH its system identifier, which Chromium
@@ -63,7 +62,7 @@ function renderHtml(
   const walk = sanitizeHtml(html, images, finder, false, input.quotesOpen === true);
   const document = [
     READING_DOCTYPE,
-    `<html${walk.htmlAttributes}${isPlainWalk(walk) ? ` ${PLAIN_ATTRIBUTE}` : ''}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,
+    `<html${walk.htmlAttributes}><head><meta charset="utf-8"><style>${READING_CSS}</style></head>`,
     `<body${walk.bodyAttributes}>${walk.body}${walk.clipped ? CLIPPED_NOTE : ''}</body></html>`,
   ].join('');
   return {

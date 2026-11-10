@@ -1,32 +1,13 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { STATES, type Theme } from './states';
 import { openState } from './support/gallery';
 
 // The one-by-one card against the owner's sketch (2026-11-10, items 1 to 6), in both themes, in the real shell on the
 // stand-in engine: nothing above the card, no subject row, no rail, the header row in the sketch's order with one
-// hairline under it, a plain email drawn straight on the card (a newsletter keeps its paper), the bar unchanged.
+// hairline under it, the bar unchanged. (A plain email on the card is its own PR, plain-mail.spec.)
 const ONE = STATES.find(s => s.id === 'one-by-one')!;
-const NEWSLETTER = STATES.find(s => s.id === 'reader-images-blocked')!;
 const CARD = '.aplos-one-by-one__card';
 const THEMES: readonly Theme[] = ['light', 'dark'];
-
-async function frameFacts(page: Page, scope: string) {
-  return page.evaluate(selector => {
-    const frame = document.querySelector<HTMLIFrameElement>(`${selector} iframe`);
-    const doc = frame?.contentDocument;
-    if (!frame || !doc?.body) return null;
-    const own = getComputedStyle(frame);
-    const body = getComputedStyle(doc.body);
-    return {
-      padding: own.paddingLeft,
-      radius: own.borderTopLeftRadius,
-      bodyBackground: body.backgroundColor,
-      bodyColor: body.color,
-      bodyFont: body.fontFamily,
-      bodyBorder: body.borderTopWidth,
-    };
-  }, scope);
-}
 
 for (const theme of THEMES)
   test.describe(`the card against the sketch, ${theme}`, () => {
@@ -95,31 +76,6 @@ for (const theme of THEMES)
       expect(head!.width, 'the hairline runs the card width inside its padding').toBeGreaterThan(
         card!.width - 60,
       );
-    });
-
-    test('5: a plain email is drawn straight on the card in the app body type and colour', async ({
-      page,
-    }) => {
-      await openState(page, ONE, { theme });
-      await expect(page.locator(`${CARD} iframe`).first()).toBeVisible();
-      const f = await frameFacts(page, CARD);
-      expect(f).not.toBeNull();
-      expect(f!.padding, 'no inner padding block').toBe('0px');
-      expect(f!.radius, 'no rounded panel').toBe('0px');
-      expect(f!.bodyBorder, 'no inner border').toBe('0px');
-      // The sentinel surface is the card's own colour (a one-step difference in blue is invisible).
-      expect(f!.bodyBackground).toBe(theme === 'dark' ? 'rgb(33, 34, 37)' : 'rgb(255, 255, 254)');
-      expect(f!.bodyColor).toBe(theme === 'dark' ? 'rgb(236, 236, 237)' : 'rgb(29, 30, 33)');
-    });
-
-    test('5: a newsletter keeps its paper frame', async ({ page }) => {
-      await openState(page, NEWSLETTER, { theme });
-      await expect(
-        page.locator('.aplos-reader__letter[data-paper="true"] iframe').first(),
-      ).toBeVisible();
-      const f = await frameFacts(page, '.aplos-reader__letter[data-paper="true"]');
-      expect(f).not.toBeNull();
-      expect(f!.bodyBackground).not.toMatch(/^rgb\(255, 255, 254\)|^rgb\(33, 34, 37\)/);
     });
 
     test('6: the bar and the keys are unchanged; the Reply stub is not under the card', async ({

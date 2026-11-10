@@ -49,38 +49,6 @@ const BODY_RULE = `html:root>body{${important([
   'display:block',
 ])}}`;
 
-/**
- * A plain email (plain.ts): drawn straight on the reader's card in the app's own type and colours, with no box of its
- * own. The values are the app's tokens (apps/desktop `ui/tokens.json`; tests/plain.test.ts fails if they drift). Light:
- * the body paints a sentinel surface, the paper colour off by one blue step, which the host reads as "draw me on the
- * card" (renderer `mailframe/paper.ts`); dark follows the app's theme through `prefers-color-scheme`, which Electron
- * ties to it (`nativeTheme`). The body's padding is the host's to give, so it is none here.
- */
-export const PLAIN_LIGHT = {
-  surface: '#fffffe',
-  ink: '#1d1e21',
-  dim: '#63666c',
-  accent: '#0b5394',
-} as const;
-export const PLAIN_DARK = {
-  surface: '#212225',
-  ink: '#ececed',
-  dim: '#9a9da4',
-  accent: '#88aee0',
-  rule: '#0e0f10',
-} as const;
-const PLAIN = 'html[data-aplos-plain]';
-const PLAIN_CSS = [
-  `${PLAIN} body{padding:0;background:${PLAIN_LIGHT.surface};color:${PLAIN_LIGHT.ink};font:15px/26px -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif}`,
-  `${PLAIN} a{color:${PLAIN_LIGHT.accent}}`,
-  `@media (prefers-color-scheme:dark){${PLAIN}{color-scheme:dark}`,
-  `${PLAIN} body{background:${PLAIN_DARK.surface};color:${PLAIN_DARK.ink}}`,
-  `${PLAIN} a{color:${PLAIN_DARK.accent}}`,
-  `${PLAIN} blockquote{border-left-color:${PLAIN_DARK.rule};color:${PLAIN_DARK.dim}}`,
-  `${PLAIN} details.aplos-quote>summary{color:${PLAIN_DARK.dim}}`,
-  `${PLAIN} details.aplos-quote>summary::before{background:${PLAIN_DARK.rule}}}`,
-].join('\n');
-
 export const READING_CSS = [
   ':root{color-scheme:light}',
   // The frame is sized to the letter, so the letter must size itself: the root and body keep an auto height,
@@ -108,5 +76,4 @@ export const READING_CSS = [
   'details.aplos-quote>summary::-webkit-details-marker{display:none}',
   'details.aplos-quote>summary::before{content:"\\2026";display:inline-block;padding:0 8px;margin-right:6px;border-radius:6px;background:#eef0f3}',
   'img.aplos-blocked{background:#f1f2f4;border-radius:4px}',
-  PLAIN_CSS,
 ].join('\n');
