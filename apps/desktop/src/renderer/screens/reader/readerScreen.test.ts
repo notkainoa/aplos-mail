@@ -49,15 +49,13 @@ const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
     }),
   );
 
-test('the letter shows its parts in order inside one column: summary, thread, stub, then the pinned bar; no sender line on top', async () => {
+test('the letter is the email card, then the stub and the pinned bar: no summary, due chip or subject above or inside it (owner sketch 2026-11-10)', async () => {
   const world = await boot();
   try {
     const id = world.doIds()[0]!;
     await world.threadWindow(id);
     const html = renderLetter(id);
     const parts = [
-      'ui-reader-head__summary',
-      'ui-reader-head__rule',
       'aplos-reader__thread',
       'ui-thread-message__head',
       'ui-reply-stub',
@@ -70,12 +68,17 @@ test('the letter shows its parts in order inside one column: summary, thread, st
     assert.deepEqual(
       [...parts].sort((a, b) => a - b),
       parts,
-      'summary, hairline, thread, stub, actions',
+      'thread, stub, actions',
+    );
+    assert.doesNotMatch(
+      html,
+      /ui-reader-head|ui-summary|ui-thread-message__subject|data-kind="due"/,
+      'nothing sits above the card: no summary, due chip or subject row',
     );
     assert.doesNotMatch(
       html.slice(0, html.indexOf('aplos-reader__thread')),
-      /ui-reader-head__(from|name|to|when)|<time/,
-      'no sender or time above the thread: they live in the message cards',
+      /<time/,
+      'no sender or time above the thread: they live in the message card',
     );
     assert.doesNotMatch(
       html,
@@ -554,7 +557,7 @@ test('find is a bar above the thread that carries its query, only on the letter 
     assert.match(open, /aplos-reader__find/);
     assert.match(open, /value="invoice"/);
     assert.ok(
-      open.indexOf('aplos-reader__find') < open.indexOf('ui-reader-head__summary'),
+      open.indexOf('aplos-reader__find') < open.indexOf('aplos-reader__thread'),
       'above the letter',
     );
     assert.doesNotMatch(render(true, null), /aplos-reader__find/);

@@ -179,41 +179,13 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* The card's own top line (owner request 2026-11-10): the subject, then a hairline; the head row sits under it. */
-.ui-thread-message__subject {
-  margin: 0 0 var(--space-3);
-  padding-bottom: var(--space-4);
+/* The card's head (owner sketch 2026-11-10): the sender's mark, who, when, then the screen's "To" circles; the actions take
+   the right side, and one full-width hairline separates the head from the body. Nothing here moves on hover. */
+.ui-thread-message__head:has(> .ui-thread-message__line[data-layout='card']) {
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-5);
   box-shadow: 0 var(--hairline) 0 var(--line);
-  color: var(--ink);
-  font: var(--type-title);
-  letter-spacing: var(--track-title);
-  overflow-wrap: anywhere;
 }
-.ui-thread-message__subject + .ui-thread-message__head {
-  position: relative;
-  margin-top: var(--space-4);
-}
-/* Without cards the head is flush with the article, so its rail sits where every other card's does. */
-.aplos-reader:not([data-cards='a'])
-  .ui-thread-message[data-titled='true'][data-cursor='true']
-  .ui-thread-message__head::before {
-  left: calc(-1 * var(--space-5));
-}
-/* On a card with a top line the cursor rail marks the head, not the subject. */
-.ui-thread-message[data-titled='true'][data-cursor='true']::before {
-  content: none;
-}
-.ui-thread-message[data-titled='true'][data-cursor='true'] .ui-thread-message__head::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: calc(-1 * var(--space-3));
-  width: var(--thread-rail);
-  height: var(--control-xs);
-  border-radius: var(--radius-pill);
-  background-color: var(--accent);
-}
-/* The card's head: who, when, then the screen's "To" circles; the actions take the right side. Nothing here moves on hover. */
 .ui-thread-message__line[data-layout='card'] {
   align-items: center;
 }

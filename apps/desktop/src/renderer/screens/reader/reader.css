@@ -9,6 +9,8 @@
   flex-direction: column;
 }
 .aplos-reader {
+  /* The sender mark's width and its gap: where a plain body's text starts (below). */
+  --plain-indent: calc(var(--control-xs) + var(--space-2));
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -136,10 +138,6 @@
 .aplos-reader:not([data-cards='off']) .aplos-reader__thread {
   margin-top: var(--space-6);
 }
-.aplos-reader[data-cards='a'] .ui-reader-head__summary,
-.aplos-reader[data-cards='a'] .ui-reader-head__due {
-  padding-inline: var(--space-6);
-}
 /* Attachments read as small cards: the chip keeps its size and its failed tint, and takes the card's surface. */
 .aplos-reader:not([data-cards='off'])
   .ui-thread-message__attachments
@@ -198,9 +196,9 @@
 .aplos-reader[data-cards='a'] .aplos-reader__messages > .ui-thread-message:first-child {
   margin-top: 0;
 }
+/* Owner sketch 2026-11-10: no blue rail beside the sender; the card is the thing in hand. */
 .aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true']::before {
-  top: var(--space-6);
-  left: var(--space-3);
+  content: none;
 }
 .aplos-reader[data-cards='a'] .ui-thread-message__attachments {
   padding-top: var(--space-5);
@@ -362,4 +360,48 @@
   width: var(--control-sm);
   height: var(--control-sm);
   color: var(--dim);
+}
+
+/* ---------- The sender's mark and the plain body's column (owner sketch 2026-11-10) ----------
+   A 24 px rounded square with the sender's initial before the name. A plain email (the frame reports its sentinel
+   surface, mailframe/paper.ts) is drawn straight on the card in the app's own body type, indented to the name's column;
+   `--plain-indent` is the mark's width and its gap. */
+.aplos-sender-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  background-color: var(--sunken);
+  color: var(--ink-2);
+  font: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: var(--track-caption);
+}
+.aplos-sender-mark::before {
+  content: attr(data-mark);
+}
+
+/* ---------- Go one by one: the card fills the pane (owner sketch 2026-11-10) ----------
+   The email is one tall rounded card down to the pinned bar, with no Reply stub under it (Reply is on the bar). */
+.aplos-reader[data-stage='one-by-one']
+  .aplos-reader__letter[data-paper='true']
+  > .aplos-reader__thread {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__messages {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__messages > .ui-thread-message:last-child {
+  flex: 1 0 auto;
+}
+.aplos-reader[data-stage='one-by-one'] .ui-reply-stub {
+  display: none;
 }

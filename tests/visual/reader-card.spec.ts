@@ -14,11 +14,12 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('reader card header', () => {
-  test('the subject is the first card top line and the head carries sender, time and the To circles', async ({
+  test('the head carries the sender mark, name, time and the To circles; there is no subject row or summary above', async ({
     page,
   }) => {
     await open(page);
-    await expect(page.locator(`${LETTER} .ui-thread-message__subject`)).toHaveCount(1);
+    await expect(page.locator(`${LETTER} .ui-thread-message__subject`)).toHaveCount(0);
+    await expect(page.locator(`${LETTER} .ui-reader-head`)).toHaveCount(0);
     const head = page.locator(`${LETTER} .ui-thread-message`).last();
     await expect(head.locator('.ui-thread-message__from')).toBeVisible();
     await expect(head.locator('.ui-thread-message__when')).toBeVisible();
