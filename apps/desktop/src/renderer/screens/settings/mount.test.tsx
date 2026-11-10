@@ -10,7 +10,7 @@ import type { Account, AiProvider } from '../../data';
 import { clearAvailability, publishAvailability, rowAvailable } from './availability';
 import { createController } from './controller';
 import { entryFor, isConditional, SETTING_ROWS } from './paletteEntries';
-import type { SettingsApiPort, SettingsData, SettingsHost } from './ports';
+import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import { mergeAccounts, type AccountWrite } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import {
@@ -53,7 +53,7 @@ function harness(
   let view: SettingsView = { ...INITIAL_VIEW };
   let data: SettingsData = dataAt(over.data);
   const accountOverlays: (Readonly<Record<string, AccountWrite>> | null)[] = [];
-  const failures: ({ op: string; retry(): void; dismiss(): void } | null)[] = [];
+  const failures: (WriteFailure | null)[] = [];
   const actions = createController({
     ports: (over.ports ?? {}) as SettingsApiPort,
     host: over.host ?? {},
@@ -136,7 +136,7 @@ describe('optimistic Account/set', () => {
     assert.deepEqual(h.accountOverlays, [{ [ALEX.id]: { aiAllowed: false } }, null]);
     const failure = h.failures.at(-1);
     assert.equal(failure?.op, 'save that account setting');
-    failure!.retry();
+    failure!.retry?.();
     await new Promise(r => setTimeout(r, 0));
     assert.equal(calls.length, 2);
     assert.deepEqual(h.accountOverlays.at(-1), null);

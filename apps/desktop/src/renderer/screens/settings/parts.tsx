@@ -10,7 +10,7 @@ import { Button, Icon, Tooltip } from '../../ui/buttons-keys';
 import { ErrorLine, SectionHeader } from '../../ui/list';
 import { Menu, Text } from '../../ui/surfaces';
 import { SettingRow } from '../../ui/settings';
-import type { CommandAction, SettingRowProps } from '../../ui/props';
+import type { CommandAction, ErrorLineKind, SettingRowProps } from '../../ui/props';
 import type { WriteFailure } from './ports';
 import { NOT_AVAILABLE, type Option } from './settings.model';
 import { rowSpec } from './paletteEntries';
@@ -195,13 +195,22 @@ export function Select({
  * column); inside the diagnostics dialog it is one report row.
  */
 export function FailureLine({ failure }: { failure: WriteFailure }) {
+  // A failure with its own sentence, or one a Retry could double, draws as a reason line; the plain
+  // rejected write keeps "Couldn't <op>." with Retry.
+  const kind: ErrorLineKind =
+    failure.line !== undefined || failure.retry === undefined
+      ? {
+          kind: 'reason',
+          text: failure.line ?? `Couldn’t ${failure.op}.`,
+          retryable: failure.retry !== undefined,
+        }
+      : { kind: 'writeRejected', op: failure.op };
   return (
     <div className="settings-failure">
       <ErrorLine
-        kind="writeRejected"
-        op={failure.op}
+        {...kind}
         placement="settings"
-        onAction={action => (action === 'retry' ? failure.retry() : failure.dismiss())}
+        onAction={action => (action === 'retry' ? failure.retry?.() : failure.dismiss())}
       />
       <Button variant="text" size="sm" label="Dismiss" onPress={() => failure.dismiss()} />
     </div>
