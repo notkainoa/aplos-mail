@@ -11,6 +11,7 @@ import {
   calendarAccessOf,
   calendarEditingOf,
   calendarWriteRefused,
+  EDITING_COPY,
 } from '../../calendar/accountCalendarState';
 import { Group, NotAvailable, Row, Select } from '../parts';
 import {
@@ -53,7 +54,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
           const editing = access?.kind === 'on' ? calendarEditingOf(a) : null;
           const refused = editing === 'off' && calendarWriteRefused(a);
           const line = refused
-            ? CALENDAR_EDITING_COPY.refused
+            ? EDITING_COPY.notice
             : editing
               ? `${access?.line ?? ''} · ${
                   editing === 'on' ? CALENDAR_EDITING_COPY.on : CALENDAR_EDITING_COPY.off
@@ -64,7 +65,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
           const action = refused
             ? { label: CALENDAR_EDITING_COPY.turnOn, mode: 'enableEditing' as const }
             : editing === 'off'
-              ? { label: CALENDAR_EDITING_COPY.enable, mode: 'enableEditing' as const }
+              ? { label: EDITING_COPY.action, mode: 'enableEditing' as const }
               : access?.action;
           return (
             <Row

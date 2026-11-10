@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Account } from '../../data';
+import { EDITING_COPY } from '../calendar/accountCalendarState';
 import { dataOf, staticScreen } from './preview/states';
 import { ALEX, DEMO, editingOn, IMAP, JORDAN, needsReauth, writeRefused } from './preview/fixtures';
 import type { SettingsHost } from './ports';
@@ -158,9 +159,10 @@ describe('Settings → Calendar editing (Enable editing)', () => {
     assert.doesNotMatch(stale, /Turn on editing to change events|Turn on editing</);
   });
 
-  test('a refused write: "Turn on editing to change events" in attention, one Turn on editing action', () => {
+  test('a refused write: the shared Turn on editing notice in attention, one Turn on editing action', () => {
     const html = render({ accounts: [writeRefused(ALEX)] }, 'calendar');
-    assert.match(html, /Turn on editing to change events/);
+    // The line is the Calendar screen's own notice, verbatim — identical wording in both places.
+    assert.ok(html.includes(EDITING_COPY.notice), EDITING_COPY.notice);
     assert.match(html, /data-tone="attention"/);
     assert.match(html, /aria-label="alex\.moreno@example\.com: Turn on editing"/);
     assert.doesNotMatch(html, /Calendar on · 2 calendars · Editing/);

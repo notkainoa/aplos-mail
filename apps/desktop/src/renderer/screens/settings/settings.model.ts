@@ -298,14 +298,13 @@ const PERMISSION_SENTENCES: Record<string, string> = {
   'permission.settings': 'Aplos needs permission to read your Gmail settings.',
 };
 
-/** Settings → Calendar's editing row, in DESIGN 10's voice: quiet states carry no trailing period. */
+/** Settings → Calendar's editing row, in DESIGN 10's voice: quiet states carry no trailing period. The
+ * refused-write line and the quiet action's label come from the Calendar screen's `EDITING_COPY` so the
+ * wording is identical in both places. */
 export const CALENDAR_EDITING_COPY = {
   on: 'Editing on',
   off: 'Editing off',
-  /** The quiet action while editing is simply off. */
-  enable: 'Enable editing',
-  /** The refused-write row's line and its action's label. */
-  refused: 'Turn on editing to change events',
+  /** The refused-write row's action label. */
   turnOn: 'Turn on editing',
 } as const;
 
