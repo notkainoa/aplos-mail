@@ -44,8 +44,14 @@ test('every Google scope requested in the source tree is in the manifest', () =>
       found.add(hit[0]);
   }
   assert.ok(found.size > 0, 'the scan should find the legacy request');
+  // Google's umbrella calendar scope is never requested by Aplos; the calendar screen only recognises it when an older
+  // grant already holds it (accountCalendarState.ts `editingOn`), so it may appear in the renderer and nowhere else.
+  const recognisedOnly = new Set(['https://www.googleapis.com/auth/calendar']);
   for (const scope of found)
-    assert.ok(known.has(scope), `${scope} is requested but not in the manifest`);
+    assert.ok(
+      known.has(scope) || recognisedOnly.has(scope),
+      `${scope} is requested but not in the manifest`,
+    );
 });
 
 test('the authorization scope parameter is the manifest, and the legacy request matches it', () => {
