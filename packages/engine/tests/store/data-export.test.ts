@@ -100,6 +100,12 @@ function seed(db: ReturnType<ReturnType<typeof tempDb>['open']>) {
   db.prepare(
     `INSERT INTO clients(id, name, kind, token_hash, scopes, created_at) VALUES('c1', 'tool', 'cli', ?, '[]', 1)`,
   ).run(TOKEN_CANARY);
+  // Credential-adjacent account fields the column list deliberately excludes.
+  db.prepare('UPDATE accounts SET oauth_client = ?, status_detail = ? WHERE id = ?').run(
+    'oauth-client-secret-canary',
+    'provider said: refresh canary-token refused',
+    'a1',
+  );
   db.prepare(
     `INSERT INTO messages(id, account_id, thread_id, remote_id, subject, date, internal_date, flags,
        first_seen_seq, rev) VALUES(5, 'a1', 7, 'm5', 'mail subject stays', 20, 20, 0, 1, 1)`,
@@ -132,6 +138,8 @@ test('the export blob carries the owner data, parsed JSON columns and no credent
     assert.equal(text.includes(TOKEN_CANARY), false, 'a token hash reached the export');
     assert.equal(text.includes('mail subject stays'), false, 'message rows are not in the export');
     assert.equal(text.includes('token_hash'), false);
+    assert.equal(text.includes('oauth-client-secret-canary'), false, 'oauth_client stayed out');
+    assert.equal(text.includes('canary-token'), false, 'status_detail stayed out');
   } finally {
     await w.engine.close();
   }

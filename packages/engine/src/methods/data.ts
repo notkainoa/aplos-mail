@@ -1,4 +1,5 @@
 import type { Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { BLOB_FILE_LIMITS } from '../ports/content';
 import { type AreaHandlers, type MethodContext } from './types';
 
@@ -96,6 +97,11 @@ async function dataExport(
   const raw = build(ctx);
   const big = raw.byteLength > MAX_BYTES;
   const bytes = big ? await gzip(raw) : raw;
+  if (bytes.byteLength > MAX_BYTES)
+    throw new ContractError({
+      type: 'tooLarge',
+      message: 'Your data is too large to export as one file.',
+    });
   const name = big ? `${NAME}.gz` : NAME;
   const put = await ctx.services.blobs.put({
     caller: ctx.caller,
