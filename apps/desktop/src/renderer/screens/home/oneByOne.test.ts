@@ -26,7 +26,6 @@ import { menuEntries } from './HomeMenu';
 import { isStaleWhy, restoreListFocus } from './WhyHost';
 import { OneByOneFinish } from './OneByOneStates';
 import { OneByOneScreen } from './OneByOneScreen';
-import { senderOf } from './homeRows';
 import { commandsForOneByOne, type OneByOneControls } from './oneByOneCommands';
 import { doNowQueue, liveDoNow, type DoNowIds } from './oneByOneQueue';
 import {
@@ -418,17 +417,18 @@ test('the finish is one calm line with a quiet way back, and the walk shows noth
   assert.match(empty, /Nothing to go through(?!\.)/);
 });
 
-test('the view renders the first Do-now thread as one letter, with no list around it', async () => {
+test('the view renders the first Do-now thread as one email card, with no list around it', async () => {
   resetToasts();
   const world = await boot();
   try {
     const first = doNowQueue(doNow(world), rowOf(world))[0]!;
-    const sender = senderOf(rowOf(world)(first)!);
     const html = renderToStaticMarkup(
       createElement(OneByOneScreen, { onExit: () => undefined, onOpen: () => undefined }),
     );
-    assert.ok(html.includes(sender), 'the first thread’s sender');
-    assert.equal((html.match(/role="option"/g) ?? []).length, 1, 'one letter');
+    assert.match(html, /class="aplos-one-by-one__card"/, 'the card the menus hang from');
+    assert.equal((html.match(/class="aplos-reader__letter"/g) ?? []).length, 1, 'one letter');
+    assert.ok(html.includes(`data-thread="${first}"`), 'the first thread’s letter');
+    assert.ok(!html.includes('role="option"'), 'no focus letter or list row');
     assert.ok(!html.includes('Do now'), 'no section label');
   } finally {
     world.connection.close();

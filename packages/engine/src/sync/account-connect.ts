@@ -186,6 +186,7 @@ export function existingAccountFlow(
   deps: FlowDeps,
   mode: 'reconnect' | 'grantPermissions',
   accountId: string,
+  enable?: 'calendarWrite',
 ): ConnectFlow {
   const stored = storedIdentity(deps.store, accountId);
   if (!stored) throw notFound();
@@ -201,6 +202,8 @@ export function existingAccountFlow(
       loginHint: stored.address,
       address: stored.address,
       ...(stored.subject ? { expectedSubject: stored.subject } : {}),
+      // Only the explicit re-grant carries it; a plain reconnect can never widen the grant.
+      ...(mode === 'grantPermissions' && enable ? { enable } : {}),
     },
     accept: async result => {
       // Read again: the account may have changed or gone while the browser was open.

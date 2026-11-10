@@ -107,11 +107,12 @@ export const account = area('account', {
     output: ConnectStart,
   },
   'Account/grantPermissions': {
-    summary: 'Full re-consent for missing scopes (installed apps cannot do incremental auth).',
+    summary:
+      'Full re-consent for missing scopes (installed apps cannot do incremental auth). `enable: calendarWrite` is the only way Aplos ever asks for permission to create, change and delete calendar events; without it the re-consent never asks for more than reading.',
     kind: 'command',
     scope: 'admin',
     audit: true,
-    input: z.object({ accountId: Id }),
+    input: z.object({ accountId: Id, enable: z.optional(choice(['calendarWrite'])) }),
     output: ConnectStart,
   },
   'Account/cancelConnect': {

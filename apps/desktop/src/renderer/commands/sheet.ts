@@ -56,6 +56,14 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
 
 /** Pointer gestures DESIGN §8 lists beside the keys; they have no binding to generate from. */
 export const SHEET_POINTER_ROWS: Readonly<Record<string, readonly SheetRow[]>> = {
+  lists: [
+    {
+      id: 'list.openClick',
+      label: 'Open the selected email',
+      keys: 'Click it again',
+      kind: 'pointer',
+    },
+  ],
   calendar: [
     { id: 'calendar.solo', label: 'Show only this calendar', keys: '⌥-click', kind: 'pointer' },
     { id: 'calendar.zoom', label: 'Zoom', keys: 'Pinch or ⌘-scroll', kind: 'pointer' },

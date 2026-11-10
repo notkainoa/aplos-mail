@@ -44,13 +44,60 @@ export function ingest(run: CommitRun) {
 /** The current threads of the messages this commit wrote or gave a body; deleted ones drop out. */
 function rankedThreads(run: CommitRun): number[] {
   const ids = [...run.ingested.keys(), ...run.bodied];
-  if (!ids.length) return [];
-  return run
+  const fresh = ids.length
+    ? run
+        .q(
+          'SELECT DISTINCT thread_id AS id FROM messages WHERE id IN (SELECT value FROM json_each(?)) ORDER BY 1',
+        )
+        .all<{ id: number }>(JSON.stringify(ids))
+        .map(r => r.id)
+    : [];
+  return [...new Set([...fresh, ...unrankedThreads(run)])];
+}
+
+/** Threads ranked per commit while mail that synced before `laneFor` was wired is caught up. */
+const BACKFILL_BATCH = 100;
+const BACKFILL_KEY = 'lane_backfill';
+const BACKFILL_START = 'n:9007199254740991:9007199254740991';
+
+/**
+ * The next batch of threads that were stored before `laneFor` ran (they still hold the schema default lane). The walk
+ * keeps its place in `meta`: first the threads Home can show, newest first (`n:<last_date>:<id>`), so the first commit
+ * fixes the top of Home; then everything else by thread id (`a:<id>`); then `done`. A batch rides on an ordinary sync
+ * commit, so a big mailbox never stalls start-up, and once the walk ends later commits pay one lookup.
+ */
+function unrankedThreads(run: CommitRun): number[] {
+  // Only a sync commit carries a batch: never the owner's own action (an archive must stay quick), nor an import,
+  // a system commit or an AI executor commit.
+  if (run.input.origin !== 'sync') return [];
+  const mark = run.q('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(BACKFILL_KEY);
+  if (mark?.value === 'done') return [];
+  // A marker this code did not write (a newer or damaged format) restarts the walk, never ends it unseen.
+  const known = mark !== undefined && /^(n:\d+:\d+|a:\d+)$/.test(mark.value);
+  const [phase, x = '0', y = '0'] = (known ? mark.value : BACKFILL_START).split(':');
+  const newest = phase === 'n';
+  const ids = run
     .q(
-      'SELECT DISTINCT thread_id AS id FROM messages WHERE id IN (SELECT value FROM json_each(?)) ORDER BY 1',
+      newest
+        ? `SELECT thread_id AS id, last_date AS d FROM thread_workflow WHERE status = 'new' AND ranked_at IS NULL
+          AND (last_date < ?1 OR (last_date = ?1 AND thread_id < ?2)) ORDER BY last_date DESC, thread_id DESC LIMIT ?3`
+        : `SELECT thread_id AS id, last_date AS d FROM thread_workflow WHERE thread_id > ?1 AND ranked_at IS NULL
+          ORDER BY thread_id LIMIT ?3`,
     )
-    .all<{ id: number }>(JSON.stringify(ids))
-    .map(r => r.id);
+    .all<{ id: number; d: number }>(Number(x), Number(y), BACKFILL_BATCH);
+  const last = ids[ids.length - 1];
+  const full = ids.length === BACKFILL_BATCH && last !== undefined;
+  const next = full
+    ? `${phase}:${newest ? `${last.d}:${last.id}` : last.id}`
+    : newest
+      ? 'a:0'
+      : 'done';
+  run
+    .q(
+      'INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    )
+    .run(BACKFILL_KEY, next);
+  return ids.map(r => r.id);
 }
 
 interface WorkflowRow {
@@ -85,7 +132,11 @@ function rankThread(run: CommitRun, threadId: number, laneFor: LaneFor) {
     result.lane === wf.lane &&
     result.importance === wf.importance &&
     (due === undefined || due === wf.due_date);
-  if (same) return;
+  if (same) {
+    // Evaluated and unchanged: stamp it, so the back-fill does not pick it again and "never ranked" stays meaningful.
+    run.q('UPDATE thread_workflow SET ranked_at = ? WHERE thread_id = ?').run(run.now(), threadId);
+    return;
+  }
   run
     .q(
       `UPDATE thread_workflow SET lane = ?, importance = ?, ranked_at = ?,
