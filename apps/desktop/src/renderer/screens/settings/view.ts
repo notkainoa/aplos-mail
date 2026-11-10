@@ -12,7 +12,8 @@ export type Confirmation =
   | { readonly kind: 'removeAccount'; readonly accountId: string; readonly address: string }
   | { readonly kind: 'removeDemo' }
   | { readonly kind: 'removeKey'; readonly provider: ProviderId }
-  | { readonly kind: 'discardQueueItem'; readonly id: string; readonly label: string };
+  | { readonly kind: 'discardQueueItem'; readonly id: string; readonly label: string }
+  | { readonly kind: 'revokeClient'; readonly id: string; readonly name: string };
 
 export interface SettingsView {
   /** A running or finished provider test, by provider; it overrides the status the engine reports. */
@@ -39,6 +40,8 @@ export interface SettingsView {
   readonly diagnosticsSaved: boolean;
   /** "Export my data" just saved a file; its row says so until Settings is left. */
   readonly dataExported: boolean;
+  /** The Add a tool dialog is open. The key file's path is the dialog's own state and never lives here. */
+  readonly addTool: boolean;
   /** Help shows the queue inspector instead of its rows. */
   readonly queue: boolean;
   /** Local server addresses as typed, before they are saved. */
@@ -62,6 +65,7 @@ export const INITIAL_VIEW: SettingsView = {
   diagnosticsCopied: false,
   diagnosticsSaved: false,
   dataExported: false,
+  addTool: false,
   queue: false,
   addressDraft: {},
   addressError: {},

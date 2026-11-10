@@ -17,12 +17,14 @@ import {
   providerName,
   removeAccountConfirm,
   removeKeyConfirm,
+  revokeConfirm,
   REMOVE_DEMO_CONFIRM,
   type ConsentView,
 } from './settings.model';
 import type { SectionProps } from './sections/types';
 import type { Confirmation } from './view';
 import { FailureLine } from './parts';
+import { AddToolDialog } from './toolDialogs';
 
 export function Overlays({ data, view, actions, host, failure }: SectionProps): ReactNode {
   const c = view.confirm;
@@ -52,6 +54,7 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
           onCancel={() => actions.cancelConfirm()}
         />
       ) : null}
+      {view.addTool ? <AddToolDialog {...{ actions, failure }} /> : null}
       {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
     </>
   );
@@ -172,8 +175,15 @@ function ConfirmDialog({
         ? REMOVE_DEMO_CONFIRM
         : confirm.kind === 'removeKey'
           ? removeKeyConfirm(data.settings, confirm.provider)
-          : discardConfirm(confirm.label);
-  const label = confirm.kind === 'discardQueueItem' ? 'Discard' : 'Remove';
+          : confirm.kind === 'revokeClient'
+            ? revokeConfirm(confirm.name)
+            : discardConfirm(confirm.label);
+  const label =
+    confirm.kind === 'discardQueueItem'
+      ? 'Discard'
+      : confirm.kind === 'revokeClient'
+        ? 'Revoke'
+        : 'Remove';
   return (
     <Confirm
       presentation="dialog"

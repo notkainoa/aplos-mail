@@ -270,7 +270,7 @@ export function SettingsScreen({
 
   return (
     <div className="settings-screen" ref={root} data-section={section}>
-      {failure && !rest.view.diagnostics ? (
+      {failure && !rest.view.diagnostics && !rest.view.addTool ? (
         <div className="settings-failure-row">
           <FailureLine failure={failure} />
         </div>
