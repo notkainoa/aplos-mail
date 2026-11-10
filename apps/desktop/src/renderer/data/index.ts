@@ -961,6 +961,26 @@ export const api: DataApi = {
       forward('diagnostics', 'preview', args)) as DataApi['diagnostics']['preview'],
     copy: ((...args: unknown[]) =>
       forward('diagnostics', 'copy', args)) as DataApi['diagnostics']['copy'],
+    export: ((...args: unknown[]) =>
+      forward('diagnostics', 'export', args)) as DataApi['diagnostics']['export'],
+    verbose: ((...args: unknown[]) =>
+      forward('diagnostics', 'verbose', args)) as DataApi['diagnostics']['verbose'],
+  },
+  data: {
+    export: ((...args: unknown[]) => forward('data', 'export', args)) as DataApi['data']['export'],
+  },
+  workflow: {
+    status: ((...args: unknown[]) =>
+      forward('workflow', 'status', args)) as DataApi['workflow']['status'],
+    enable: ((...args: unknown[]) =>
+      forward('workflow', 'enable', args)) as DataApi['workflow']['enable'],
+    code: ((...args: unknown[]) =>
+      forward('workflow', 'code', args)) as DataApi['workflow']['code'],
+    disable: ((...args: unknown[]) =>
+      forward('workflow', 'disable', args)) as DataApi['workflow']['disable'],
+  },
+  file: {
+    save: ((...args: unknown[]) => forward('file', 'save', args)) as DataApi['file']['save'],
   },
   conversation: {
     destroy: ((...args: unknown[]) =>

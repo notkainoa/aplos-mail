@@ -35,6 +35,10 @@ export interface SettingsView {
   readonly diagnostics: boolean;
   /** The report was just copied; the dialog says "Copied." until it is closed. */
   readonly diagnosticsCopied: boolean;
+  /** The report was just saved to a file; the dialog says "Saved." until it is closed. */
+  readonly diagnosticsSaved: boolean;
+  /** "Export my data" just saved a file; its row says so until Settings is left. */
+  readonly dataExported: boolean;
   /** Help shows the queue inspector instead of its rows. */
   readonly queue: boolean;
   /** Local server addresses as typed, before they are saved. */
@@ -56,6 +60,8 @@ export const INITIAL_VIEW: SettingsView = {
   addAccount: false,
   diagnostics: false,
   diagnosticsCopied: false,
+  diagnosticsSaved: false,
+  dataExported: false,
   queue: false,
   addressDraft: {},
   addressError: {},
