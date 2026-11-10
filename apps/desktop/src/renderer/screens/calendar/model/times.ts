@@ -42,14 +42,26 @@ export function wallOf(ms: EpochMs, timeZone?: string, seconds = false): string 
 
 const hasSeconds = (local: string): boolean => (local.split('T')[1] ?? '').split(':').length > 2;
 
-/** The instant `ms` written the way `like` is written: `utc` stays `utc`, `floating` keeps its zone. */
-export function timeLike(like: EventTime, ms: EpochMs): EventTime {
-  if (like.type === 'floating')
+/** This machine's IANA zone: the stamp a floating write needs when neither the time nor its event carries one. */
+export function localZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/**
+ * The instant `ms` written the way `like` is written: `utc` stays `utc`, `floating` keeps its zone — and
+ * a floating time never leaves without one (Google refuses `event.timeZoneRequired`): a zone-less
+ * `floating` gains `fallbackZone` (the series/event zone), else this machine's zone, the same zone its
+ * `local` was always read in.
+ */
+export function timeLike(like: EventTime, ms: EpochMs, fallbackZone?: string): EventTime {
+  if (like.type === 'floating') {
+    const zone = like.timeZone ?? fallbackZone ?? localZone();
     return {
       type: 'floating',
-      local: wallOf(ms, like.timeZone, hasSeconds(like.local)),
-      ...(like.timeZone ? { timeZone: like.timeZone } : {}),
+      local: wallOf(ms, zone, hasSeconds(like.local)),
+      timeZone: zone,
     };
+  }
   return { type: 'utc', utc: ms };
 }
 
@@ -102,9 +114,9 @@ export function shiftInZone(t: EventTime, deltaMs: number, timeZone?: string): E
 }
 
 /** A new time as the event stores it: a date as given, else the instant in the event's own type and zone. */
-function written(like: EventTime, next: EventTime): EventTime {
+function written(like: EventTime, next: EventTime, fallbackZone?: string): EventTime {
   if (next.type === 'date' || like.type === 'date') return next;
-  return timeLike(like, msOf(next));
+  return timeLike(like, msOf(next), fallbackZone);
 }
 
 /**
@@ -117,7 +129,8 @@ export function timeChange(
   next: { readonly start: EventTime; readonly end: EventTime },
 ): { id: string; fields: Pick<Partial<EventFields>, 'start' | 'end'> } {
   const fields: Pick<Partial<EventFields>, 'start' | 'end'> = {};
-  if (!sameInstant(next.start, event.start)) fields.start = written(event.start, next.start);
-  if (!sameInstant(next.end, event.end)) fields.end = written(event.end, next.end);
+  if (!sameInstant(next.start, event.start))
+    fields.start = written(event.start, next.start, event.timeZone);
+  if (!sameInstant(next.end, event.end)) fields.end = written(event.end, next.end, event.timeZone);
   return { id: event.id, fields };
 }

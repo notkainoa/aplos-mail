@@ -39,6 +39,7 @@ import type {
   EmptyView,
   GridView,
 } from './calendar.model';
+import { EDITING_COPY } from './accountCalendarState';
 import { stackDomMatch } from './keys';
 
 /** The one pane-header tool on Calendar (DESIGN 7.1): New event, N. Ask and the calendar button are the shell's. */
@@ -369,6 +370,7 @@ function Surfaces(props: {
         {vm.popover && detailProps ? (
           <div className="cal-screen__popover">
             <EventDetail {...detailProps} presentation="popover" onClose={close} />
+            {vm.editing ? <EditingNote editing={vm.editing} dispatch={dispatch} /> : null}
           </div>
         ) : null}
       </Popover>
@@ -411,6 +413,32 @@ function Surfaces(props: {
         ) : null}
       </Popover>
     </>
+  );
+}
+
+/**
+ * The open detail's 'Turn on editing' line and its Enable editing action (shape 3): one small dim line
+ * under the detail, the same pattern the accounts block uses for a state and its action — contextual to
+ * the event, so a read-only account carries no banner and no standing nag.
+ */
+function EditingNote({
+  editing,
+  dispatch,
+}: {
+  editing: { accountId: string };
+  dispatch: (action: CalendarAction) => void;
+}) {
+  return (
+    <div className="cal-editing">
+      <span className="cal-editing__line">{EDITING_COPY.notice}</span>
+      <Button
+        variant="text"
+        size="sm"
+        label={EDITING_COPY.action}
+        ariaLabel={EDITING_COPY.action}
+        onPress={() => dispatch({ type: 'enableEditing', accountId: editing.accountId })}
+      />
+    </div>
   );
 }
 
@@ -484,6 +512,7 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
               tabIndex={-1}
             >
               <EventDetail {...detailProps} presentation="rail" />
+              {vm.editing ? <EditingNote editing={vm.editing} dispatch={dispatch} /> : null}
             </aside>
           ) : null}
           {vm.empty ? <EmptyPanel empty={vm.empty} dispatch={dispatch} /> : null}

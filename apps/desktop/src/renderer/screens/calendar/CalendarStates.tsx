@@ -21,7 +21,7 @@ import {
 } from '../../data';
 import { CalendarList, MiniMonth } from '../../ui/calendar';
 import type { CalendarEventData } from '../../ui/props';
-import { Pane } from '../../ui/surfaces';
+import { Pane, Toast } from '../../ui/surfaces';
 import { ErrorLine } from '../../ui/list';
 import {
   defaultCalendarId,
@@ -44,6 +44,7 @@ import {
   type Overlay,
 } from './calendar.model';
 import { CALENDAR_PANE_TOOLS, CalendarView } from './CalendarView';
+import { CALENDAR_EVENTS_SCOPE } from './accountCalendarState';
 import { calendarSidebar } from './sidebar';
 
 const noop = () => {};
@@ -116,6 +117,13 @@ function googleAccount(id: string, address: string, over: Partial<Account> = {})
 
 const ALEX_ACCOUNT = googleAccount('acct-alex', 'alex.moreno@example.com', {
   name: 'Alex Moreno',
+  // A connected Google account in the demo world holds the write grant, so the editing gate stays quiet.
+  grantedScopes: [CALENDAR_EVENTS_SCOPE],
+});
+/** Read access, no write grant: the sidebar stays quiet but an event's detail offers 'Turn on editing'. */
+const JORDAN_READ = googleAccount('acct-jordan', 'jordan.lee@example.com', {
+  name: 'Jordan Lee',
+  colorTag: 'hill',
 });
 const JORDAN_NO_CALENDAR = googleAccount('acct-jordan', 'jordan.lee@example.com', {
   name: 'Jordan Lee',
@@ -274,6 +282,14 @@ const Q4_REVIEW = ev('q4', 'Q4 review', WORK, '2026-10-30', '11:00', '12:00', {
     'Walk through the Q4 deck and agree on next quarter’s priorities. Bring the revised numbers.',
 });
 
+/** Jordan's readable calendar and its event: the account's grant lacks the write scope (write states). */
+const JORDAN_CAL = calendar('jordan-work', 'Jordan’s Work', 'hill', {
+  accountId: 'acct-jordan',
+});
+const JORDAN_SYNC = ev('jordansync', 'Team sync', JORDAN_CAL, '2026-10-29', '13:00', '13:30', {
+  description: 'Weekly sync across the two teams.',
+});
+
 const WEEK: readonly Event[] = [
   ev('brunch', 'Brunch with Mom', FAMILY, '2026-10-25', '10:00', '11:30'),
   ev('samples', 'Type samples with Mina', HOLLOW, '2026-10-26', '13:00', '14:00'),
@@ -398,6 +414,8 @@ interface Fixture {
   calendarsLoaded?: boolean;
   /** Draw a pane state instead of the grid: 'loading' (the opening moment) or 'error' (the failed events window). */
   pane?: 'loading' | 'error';
+  /** A notice toast over the pane, as the shell's stack would show it (the write failure surfaces). */
+  toast?: { message: string; actions?: readonly { id: string; label: string }[] };
 }
 
 function PreviewCalendar({ fixture }: { fixture: Fixture }) {
@@ -433,6 +451,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    accounts: fixture.accounts ?? [ALEX_ACCOUNT],
     loadedThrough: eventsRange({ from: periodFrom, to: periodTo }, now).to,
     defaultCalendarId: defaultId,
     calendarsReady: true,
@@ -495,6 +514,19 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
           <CalendarView vm={viewModel(state, ctx)} dispatch={dispatch} />
         )}
       </Pane>
+      {fixture.toast ? (
+        <div className="calp-toast">
+          <Toast
+            id="calp-notice"
+            kind="info"
+            message={fixture.toast.message}
+            actions={fixture.toast.actions ?? []}
+            undoable={false}
+            onAction={noop}
+            onDismiss={noop}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -700,6 +732,33 @@ const FIXTURES: Record<string, Fixture> = {
     events: [...WORST, ...STANDUPS],
     plans: [],
   },
+  'write-turn-on-editing': {
+    title:
+      'Team sync is Jordan’s, and the grant lacks the write scope: Turn on editing to change events · Enable editing',
+    state: { view: 'week', selectedId: 'jordansync', detailId: 'jordansync' },
+    events: [...WEEK, JORDAN_SYNC],
+    calendars: [...CALENDARS, JORDAN_CAL],
+    accounts: [ALEX_ACCOUNT, JORDAN_READ],
+  },
+  'write-conflict-reopened': {
+    title: 'Design review save raced a remote change: the editor re-opened on the newer copy',
+    state: {
+      view: 'week',
+      selectedId: 'design',
+      editor: {
+        ...draftFromEvent(DESIGN_REVIEW),
+        error: "This event changed somewhere else. Your changes weren't saved.",
+      },
+    },
+  },
+  'write-uncertain': {
+    title:
+      'The write’s answer was lost: "We couldn’t confirm that went through. Check your calendar before trying again." — no Retry',
+    state: { view: 'week', selectedId: 'design' },
+    toast: {
+      message: "We couldn't confirm that went through. Check your calendar before trying again.",
+    },
+  },
 };
 
 export interface CalendarPreviewState {
@@ -725,6 +784,7 @@ export const calendarStates: Record<string, CalendarPreviewState> = Object.fromE
 export const demoWorld = {
   calendars: CALENDARS,
   events: WEEK,
+  accounts: [ALEX_ACCOUNT],
   plans: [LAUNCH_PREP],
   worst: WORST,
   holidays: HOLIDAYS,
