@@ -107,3 +107,12 @@ test('ListHeaders.authenticated reaches the store write only as a real boolean, 
     assert.equal(verdict(hostile), undefined, JSON.stringify(hostile));
   assert.equal(verdict(true, 'no uri here'), undefined, 'no stored List-Unsubscribe, no verdict');
 });
+
+test('hdr.list marks a real List-Id only: a lone List-Unsubscribe never fakes a list', () => {
+  const lone = messageWrite(ACCOUNT, 'me@mail.example', facts(undefined, URLS));
+  assert.equal(lone.hdr?.list, false, 'List-Unsubscribe alone is not a list header');
+  const listed = facts(undefined, URLS);
+  listed.list = { ...listed.list, listId: 'list.example' };
+  const withId = messageWrite(ACCOUNT, 'me@mail.example', listed);
+  assert.equal(withId.hdr?.list, true, 'List-Id (with or without List-Unsubscribe) sets the bit');
+});
