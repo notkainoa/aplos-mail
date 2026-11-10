@@ -93,7 +93,7 @@ test('the catch-up runs a bounded batch per commit and then stops', () => {
     const after = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
     const low = () => Object.values(lanesOf(after)).filter(v => v === 'low/heuristic').length;
     const counts: number[] = [];
-    for (const n of [1, 2, 3]) {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
       after.commit({ opId: `tick${n}`, origin: 'sync', writes: [msg(`x${n}`, `x${n}`, 1000 + n)] });
       counts.push(low());
       if (n === 1) {
@@ -102,11 +102,11 @@ test('the catch-up runs a bounded batch per commit and then stops', () => {
         assert.equal(lanes.t0, 'do/heuristic', 'the oldest waits for a later batch');
       }
     }
-    // The first batch of 300 holds the commit's own new thread too (it stays `do`), so 299 newsletters are Low.
+    // The first batch of 100 holds the commit's own new thread too (it stays `do`), so 99 newsletters are Low.
     assert.deepEqual(
       counts,
-      [299, 450, 450],
-      "one batch per commit, then only a commit's own mail",
+      [99, 199, 299, 399, 450, 450],
+      'one batch per commit, then only its own mail',
     );
     after.close();
   } finally {
@@ -134,6 +134,43 @@ test('the catch-up marker is reserved: no commit can write it, and a rank that s
     );
     assert.equal(stamped, T0, 'a thread that stays in Do now was still evaluated');
     store.close();
+  } finally {
+    file.cleanup();
+  }
+});
+
+test("the catch-up waits out the owner's own commits, and a store without laneFor never starts it", () => {
+  const file = tempDb();
+  try {
+    const before = openStore(file.open(), { now: () => T0 });
+    before.commit(setup[0]);
+    before.commit({ opId: 'old', origin: 'sync', writes: [newsletter('m1', 'news', 1)] });
+    before.commit({ opId: 'more', origin: 'sync', writes: [msg('m2', 'person', 2)] });
+    const marker = (store: StorePort) =>
+      store.read(q =>
+        q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'lane_backfill'"),
+      );
+    assert.equal(marker(before), undefined, 'without laneFor the walk never starts');
+    before.close();
+
+    const after = openStore(file.open(), { now: () => T0, ingest: { laneFor } });
+    after.commit({
+      opId: 'pin',
+      origin: 'local',
+      writes: [
+        {
+          kind: 'workflow',
+          accountId: ACCOUNT,
+          remoteThreadId: 'person',
+          patch: { status: 'done' },
+        },
+      ],
+    });
+    assert.equal(lanesOf(after).news, 'do/heuristic', 'a local commit ranks nothing old');
+    assert.equal(marker(after), undefined, 'and does not move the cursor');
+    after.commit({ opId: 'tick', origin: 'sync', writes: [msg('m3', 'fresh', 3)] });
+    assert.equal(lanesOf(after).news, 'low/heuristic', 'the next sync commit carries the batch');
+    after.close();
   } finally {
     file.cleanup();
   }

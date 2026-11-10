@@ -56,7 +56,7 @@ function rankedThreads(run: CommitRun): number[] {
 }
 
 /** Threads ranked per commit while mail that synced before `laneFor` was wired is caught up. */
-const BACKFILL_BATCH = 300;
+const BACKFILL_BATCH = 100;
 const BACKFILL_KEY = 'lane_backfill';
 
 /**
@@ -66,6 +66,8 @@ const BACKFILL_KEY = 'lane_backfill';
  * commit, so a big mailbox never stalls start-up, and once the walk ends later commits pay one lookup.
  */
 function unrankedThreads(run: CommitRun): number[] {
+  // Never inside the owner's own action (an archive must stay quick); the next sync commit carries the batch.
+  if (run.local) return [];
   const mark = run.q('SELECT value FROM meta WHERE key = ?').get<{ value: string }>(BACKFILL_KEY);
   if (mark?.value === 'done') return [];
   const [phase, x = '0', y = '0'] = (mark?.value ?? 'n:9007199254740991:9007199254740991').split(
