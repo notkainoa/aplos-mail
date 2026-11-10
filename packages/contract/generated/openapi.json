@@ -10356,6 +10356,17 @@
               "maxLength": 1000,
               "pattern": "^[^\\r\\n]*$"
             }
+          },
+          "notification": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["sent", "suppressed", "none"]
+              },
+              {
+                "type": "string"
+              }
+            ]
           }
         },
         "required": [

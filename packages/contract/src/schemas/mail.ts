@@ -155,6 +155,13 @@ export const Message = z.object({
   bodyKind: z.optional(openEnum(['html', 'text'])),
   inReplyTo: z.optional(line(1_000)),
   references: z.optional(z.array(line(1_000))),
+  /**
+   * What the notifier did with this message (the reader's bell): `sent` it was queued or posted as a banner, `suppressed`
+   * it was dropped at post time (notifications off for the account, Focus), `none` it never notified (read before it
+   * arrived, the baseline sync, backfill, mail you sent). Absent when unknown: the record is kept 30 days, so older mail
+   * carries no claim either way.
+   */
+  notification: z.optional(openEnum(['sent', 'suppressed', 'none'])),
 });
 export type Message = z.infer<typeof Message>;
 
