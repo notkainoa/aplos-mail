@@ -102,21 +102,20 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
   );
 }
 
-const BELL: Readonly<Record<NotificationState, { icon: 'bell' | 'bell-off'; label: string }>> = {
+const BELL: Readonly<
+  Record<Exclude<NotificationState, 'unknown'>, { icon: 'bell' | 'bell-off'; label: string }>
+> = {
   notified: { icon: 'bell', label: 'This email notified you' },
   silent: { icon: 'bell-off', label: 'This email did not notify you' },
-  unknown: { icon: 'bell', label: '' },
 };
 
-/** The bell: a status mark, not a control. Slashed when the email did not notify; while the engine has not said it is a plain, unnamed outline bell that claims nothing. */
+/**
+ * The bell: a status mark, not a control. A bell when the email notified, a slashed bell when it did not. While the engine
+ * has not said (mail older than its notification log) there is no bell at all: a plain bell would read as "notified".
+ */
 function NotificationBell({ state }: { readonly state: NotificationState }) {
+  if (state === 'unknown') return null;
   const { icon, label } = BELL[state];
-  if (state === 'unknown')
-    return (
-      <span className="aplos-bell" aria-hidden="true" data-state={state}>
-        <Icon name={icon} />
-      </span>
-    );
   return (
     <span className="aplos-bell" role="img" aria-label={label} title={label} data-state={state}>
       <Icon name={icon} />

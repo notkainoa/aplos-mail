@@ -34,7 +34,7 @@ const render = (notification?: string) =>
     }),
   );
 
-test('the bell: sent is a bell, none and suppressed a slashed bell, absent an unnamed mark', () => {
+test('the bell: sent is a bell, none and suppressed a slashed bell, absent no bell', () => {
   assert.match(render('sent'), /aria-label="This email notified you"[^>]*data-state="notified"/);
   assert.match(
     render('none'),
@@ -42,8 +42,12 @@ test('the bell: sent is a bell, none and suppressed a slashed bell, absent an un
   );
   assert.match(render('suppressed'), /data-icon="bell-off"/);
   const unknown = render(undefined);
-  assert.match(unknown, /class="aplos-bell" aria-hidden="true" data-state="unknown"/);
-  assert.doesNotMatch(unknown, /did not notify|notified you/);
+  assert.doesNotMatch(
+    unknown,
+    /aplos-bell/,
+    'no bell when the engine did not say: a plain bell would read as notified',
+  );
+  assert.match(unknown, /aria-label="More"/, 'the rest of the header stays');
 });
 
 test('Importance, the bell and More are all there, in that order', () => {

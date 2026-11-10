@@ -35,13 +35,13 @@ export function laneForChoice(row: ThreadRow, choice: Importance): MovableLane |
   return choice === 'low' ? 'low' : 'update';
 }
 
-/** Whether an email triggered a notification: `unknown` when the engine did not say (mail older than its notification log). */
+/** Whether an email triggered a notification: `unknown` when the engine did not say (mail older than its notification log): no bell is drawn. */
 export type NotificationState = 'notified' | 'silent' | 'unknown';
 
 /**
  * The bell's state for a message, from the engine's `Message.notification`: `sent` is a notification that posted;
  * `suppressed` (dropped at post time: notifications off, Focus) and `none` (never notified) are both a slashed bell;
- * absent, or a value a newer engine added, claims nothing.
+ * absent, or a value a newer engine added, is `unknown` and draws no bell.
  */
 export function notificationOf(message: Pick<Message, 'notification'>): NotificationState {
   switch (message.notification) {
