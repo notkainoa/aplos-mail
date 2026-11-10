@@ -61,7 +61,8 @@ export function Row({ list, id, nowMs, onAction }: RowProps) {
         picking: list.bulk.picking,
         rejected,
         handlers: {
-          onSelect: () => cursor.setCursor(id),
+          // A click on the row the cursor is already on opens it; a click elsewhere only moves the cursor there.
+          onSelect: () => (cursor.key === id ? actions.open(id) : cursor.setCursor(id)),
           onOpen: () => actions.open(id),
           onAction: commandId => (onAction ?? defaultAction(actions))(commandId, id),
         },

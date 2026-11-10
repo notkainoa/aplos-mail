@@ -88,6 +88,8 @@ export interface HomeActions {
   done(key?: string): void;
   later(key?: string): void;
   lane(direction: 'up' | 'down'): void;
+  /** The Importance menu's move: straight to a lane (the same absolute `lane` action as ⌥↑ / ⌥↓), on the row under the cursor. */
+  laneTo(to: MovableLane): void;
   /** Move to Trash (#); the toast offers Undo. With picks it asks first. */
   trash(key?: string): void;
   /** Bookmark or remove the bookmark on the row under the cursor. */
@@ -236,7 +238,16 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const target = targetOf(snapshot);
     const from = target && target.section !== 'follow' ? laneOf(target.row) : null;
     const to = from ? stepLane(from, direction) : null;
-    if (!target || !to) return;
+    if (target && to) moveToLane(snapshot, target, to);
+  }
+
+  function laneTo(to: MovableLane): void {
+    const snapshot = deps.snapshot();
+    const target = targetOf(snapshot);
+    if (target && target.section !== 'follow') moveToLane(snapshot, target, to);
+  }
+
+  function moveToLane(snapshot: HomeSnapshot, target: Target, to: MovableLane): void {
     startHold(snapshot);
     // The absolute lane, not `laneStep`: the overlay can place a row in a named lane at once, and a retry is idempotent.
     const { opId, receipt } = deps.act({
@@ -387,6 +398,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     done,
     later,
     lane,
+    laneTo,
     trash,
     bookmark,
     suggested,

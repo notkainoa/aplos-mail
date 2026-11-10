@@ -44,6 +44,7 @@ export const RESERVED_META = new Set([
   'change_floor_seq',
   'install_salt',
   'created_at',
+  'lane_backfill',
 ]);
 const ORIGINS = new Set<string>(['sync', 'local', 'import', 'system']);
 

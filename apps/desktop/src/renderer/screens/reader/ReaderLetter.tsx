@@ -16,6 +16,7 @@ import { subjectOf } from '../home/homeRows';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
+import { HeadActions, type HeadControls } from './HeadActions';
 import { inviteOf, type InviteView } from './invite';
 import { ReaderMessage } from './ReaderMessage';
 import {
@@ -46,10 +47,7 @@ export interface PopOut {
 }
 
 /** What the letter's buttons and the frame's keys call. The screen implements them. */
-export interface LetterControls {
-  readonly suggest: () => void;
-  readonly later: () => void;
-  readonly done: () => void;
+export interface LetterControls extends HeadControls {
   readonly reply: () => void;
   /** Pop out of the inline reply to the compose page. */
   readonly popOut?: (pop: PopOut) => void;
@@ -223,6 +221,15 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
               onToggle: () => dispatch({ type: 'toggleMessage', id: m.id }),
               onFocus: () => dispatch({ type: 'focusMessage', id: m.id }),
             }
+      }
+      headActions={
+        m.id === latest.id ? (
+          <HeadActions
+            row={row}
+            suggestion={barSuggestion(suggestionFor(row))}
+            controls={controls}
+          />
+        ) : undefined
       }
       invite={invite?.messageId === m.id ? invite.view : undefined}
       imagesLoaded={ui.imagesLoaded.includes(m.id)}
