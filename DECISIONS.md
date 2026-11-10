@@ -1772,6 +1772,14 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
 
+## 2026-11-10: Home lanes were never switched on in the app (ui-home)
+
+The owner saw one mixed Home with no Low importance. Cause: `host/compose.ts` opened the store without `ingest: { laneFor }`, so no thread was ever ranked and all stayed in the schema-default lane `do`. Decisions:
+
+- The host passes `laneFor` through a new `@aplos/engine/ai/lanes` subpath export, so the rules stay out of the engine core bundle (450,018 of 470,000 after the change).
+- `store/ingest.ts` ranks mail stored before the wiring in bounded batches of 100 threads per sync commit (only in sync commits: never in the owner's own actions, so an archive stays quick, nor in import, system or AI executor commits): first the threads Home can show, newest first, so the first commit fixes the top of Home; then the rest by thread id; the place is kept in `meta` (key `lane_backfill`, ends at `done`). Only `rank_source = 'heuristic'` threads change; user, rule and AI ranks are never touched.
+- Known limit: the catch-up is one pass. If a build ever opens the store without `laneFor` again, mail synced in that window is not re-ranked; `lane_backfill` is a reserved meta key, so no commit can reset or skip it, and a thread that `laneFor` leaves in Do now is still stamped `ranked_at`.
+
 ## 2026-11-10: the reader's email card (owner request; ui-reader)
 
 Context: the owner asked, by name, for the reader / one-by-one email to be one rounded card with the subject on its top line and a header row with the sender, time, "To" with overlapping recipient circles and a chevron (details popover), and on the right an Importance menu, a bell and ⋯ (sketch images A, B and C of 2026-11-10). DESIGN 3, 6 and 13 and the aplos-design skill forbid "avatars or monograms in mail", "Important ▾ in the reader header" and a card-less reader.
