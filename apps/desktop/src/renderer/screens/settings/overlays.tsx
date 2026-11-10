@@ -9,6 +9,7 @@ import { ConsentCard } from '../../ui/onboarding';
 import { TextField } from '../../ui/controls';
 import { Confirm, Dialog, Text } from '../../ui/surfaces';
 import {
+  adminGrantConfirm,
   bundleSections,
   consentView,
   CONSENT_SENT,
@@ -46,6 +47,9 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
         />
       ) : null}
       {view.consentCard ? <ConsentDialog {...{ data, consent, actions }} /> : null}
+      {view.addTool ? <AddToolDialog {...{ actions, failure }} /> : null}
+      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
+      {/* The confirm is last so it stacks over a dialog it questions (the admin grant). */}
       {c ? (
         <ConfirmDialog
           confirm={c}
@@ -54,8 +58,6 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
           onCancel={() => actions.cancelConfirm()}
         />
       ) : null}
-      {view.addTool ? <AddToolDialog {...{ actions, failure }} /> : null}
-      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
     </>
   );
 }
@@ -157,6 +159,39 @@ function ConsentDialog({
   );
 }
 
+function confirmText(
+  confirm: Confirmation,
+  data: SectionProps['data'],
+): { question: string; consequence: string } {
+  switch (confirm.kind) {
+    case 'removeAccount':
+      return removeAccountConfirm(confirm.address);
+    case 'removeDemo':
+      return REMOVE_DEMO_CONFIRM;
+    case 'removeKey':
+      return removeKeyConfirm(data.settings, confirm.provider);
+    case 'revokeClient':
+      return revokeConfirm(confirm.name);
+    case 'grantAdmin':
+      return adminGrantConfirm(confirm.name);
+    case 'discardQueueItem':
+      return discardConfirm(confirm.label);
+  }
+}
+
+function confirmLabel(kind: Confirmation['kind']): string {
+  switch (kind) {
+    case 'discardQueueItem':
+      return 'Discard';
+    case 'revokeClient':
+      return 'Revoke';
+    case 'grantAdmin':
+      return 'Give admin access';
+    default:
+      return 'Remove';
+  }
+}
+
 function ConfirmDialog({
   confirm,
   data,
@@ -168,29 +203,14 @@ function ConfirmDialog({
   onConfirm(): void;
   onCancel(): void;
 }) {
-  const text =
-    confirm.kind === 'removeAccount'
-      ? removeAccountConfirm(confirm.address)
-      : confirm.kind === 'removeDemo'
-        ? REMOVE_DEMO_CONFIRM
-        : confirm.kind === 'removeKey'
-          ? removeKeyConfirm(data.settings, confirm.provider)
-          : confirm.kind === 'revokeClient'
-            ? revokeConfirm(confirm.name)
-            : discardConfirm(confirm.label);
-  const label =
-    confirm.kind === 'discardQueueItem'
-      ? 'Discard'
-      : confirm.kind === 'revokeClient'
-        ? 'Revoke'
-        : 'Remove';
+  const text = confirmText(confirm, data);
   return (
     <Confirm
       presentation="dialog"
       destructive
       question={text.question}
       consequence={text.consequence}
-      confirmLabel={label}
+      confirmLabel={confirmLabel(confirm.kind)}
       onConfirm={onConfirm}
       onCancel={onCancel}
     />

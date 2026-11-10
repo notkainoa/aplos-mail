@@ -13,7 +13,9 @@ export type Confirmation =
   | { readonly kind: 'removeDemo' }
   | { readonly kind: 'removeKey'; readonly provider: ProviderId }
   | { readonly kind: 'discardQueueItem'; readonly id: string; readonly label: string }
-  | { readonly kind: 'revokeClient'; readonly id: string; readonly name: string };
+  | { readonly kind: 'revokeClient'; readonly id: string; readonly name: string }
+  /** Allow pressed with 'admin' ticked: the draft and its answer wait in the controller, not here. */
+  | { readonly kind: 'grantAdmin'; readonly name: string };
 
 export interface SettingsView {
   /** A running or finished provider test, by provider; it overrides the status the engine reports. */
