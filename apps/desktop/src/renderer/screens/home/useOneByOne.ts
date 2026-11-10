@@ -4,7 +4,7 @@
  * showing, so the toasts, Undo and the Remind offer are Home's), attaches its keys to the CommandRegistry, and sets the
  * pane header's back button and "Home  3 of 9" crumb.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useHold,
   useHome,
@@ -25,7 +25,7 @@ import {
 import type { Density } from '../../ui/props';
 import type { HomeSnapshot } from './homeActions';
 import { homeRunContext } from './homeCommands';
-import { laneOf, stepLane, type SectionKey } from './homeModel';
+import { laneOf, stepLane, type MovableLane, type SectionKey } from './homeModel';
 import { rowDomId } from './HomeList';
 import { densityOf, failurePhrase, senderOf, subjectOf } from './homeRows';
 import { commandsForOneByOne, type OneByOneControls } from './oneByOneCommands';
@@ -41,9 +41,13 @@ function ignore(): void {
   return undefined;
 }
 
-/** The element of the thread showing: the focus letter, which is also where the menus and Why hang from. */
+/**
+ * Where the menus, Why and the date presets hang from: the card's header actions (Importance, bell, ⋯) when it has them,
+ * else the card. A small anchor means a press anywhere else in the card closes them (a popover ignores presses in its anchor).
+ */
 function letterOf(key: string | null): HTMLElement | null {
-  return key === null ? null : document.getElementById(rowDomId(key));
+  const card = key === null ? null : document.getElementById(rowDomId(key));
+  return card?.querySelector<HTMLElement>('.ui-thread-message__actions') ?? card;
 }
 
 /** Props for `OneByOneScreen`. */
@@ -98,6 +102,10 @@ export interface OneByOne {
   readonly actions: ReturnType<typeof useHomeActionState>['actions'];
   readonly rejected: { readonly op: string; readonly onRetry: () => void } | undefined;
   readonly lane: OneByOneControls['lane'];
+  /** The Importance menu: the thread moves straight to this lane, and the walk steps on. */
+  readonly laneTo: (to: MovableLane) => void;
+  /** The thread showing, in the reader (Return, O, R). */
+  readonly open: () => void;
   readonly exit: () => void;
 }
 
@@ -177,6 +185,16 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     },
     [actions, acted],
   );
+  const laneTo = useCallback(
+    (to: MovableLane) => {
+      const { key, rowOf } = snapshot.current;
+      const current = key === null ? undefined : rowOf(key);
+      // Any move out of the lane the thread is in takes it out of Do now, so the walk steps on.
+      if (current && laneOf(current) !== null && laneOf(current) !== to) acted(current.id);
+      actions.laneTo(to);
+    },
+    [actions, acted],
+  );
   const controls = useMemo<OneByOneControls>(
     () => ({
       step,
@@ -207,6 +225,10 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
   );
   usePaneHeaderPart(part);
 
+  const showingId = row?.id;
+  // A ⋯ menu belongs to the thread it was opened on: stepping on closes it for good, so walking back never reopens it.
+  useEffect(() => setMenu(null), [showingId]);
+
   const failure = row ? home.failures.get(row.id) : undefined;
   const rejected = useMemo(
     () => (failure && row ? retryOf(failure, row.id, acted) : undefined),
@@ -231,6 +253,8 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     actions,
     rejected,
     lane,
+    laneTo,
+    open: controls.open,
     exit,
   };
 }

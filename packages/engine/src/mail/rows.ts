@@ -1,5 +1,6 @@
 import type { Input, Message, Output } from '@aplos/contract';
 import type { MethodContext } from '../methods/types';
+import { KEEP_DONE_MS } from '../outbox/notifications';
 import { FLAG, PART } from '../store/commit';
 import type { StoreReader } from '../store/port';
 import { findMessage, type MessageRef } from './message';
@@ -105,6 +106,25 @@ function labelsOf(q: StoreReader, rowId: number): string[] {
     .map(f => `${f.a}:${f.r}`);
 }
 
+/** The notifier's outcome for one message (`Message.notification`); unknown once the outbox row may have been pruned. */
+function notificationOf(
+  q: StoreReader,
+  rowId: number,
+  date: number,
+  now: number,
+): Message['notification'] {
+  const state = q.get<{ state: string }>(
+    'SELECT state FROM notifications WHERE message_id = ?',
+    rowId,
+  )?.state;
+  if (state === undefined) return now - date > KEEP_DONE_MS ? undefined : 'none';
+  return state === 'dropped' ? 'suppressed' : 'sent';
+}
+
+function notificationField(value: Message['notification']) {
+  return value ? { notification: value } : {};
+}
+
 function optional(row: MessageDbRow) {
   const bcc = addresses(row.bcc_json);
   const replyTo = addresses(row.reply_to);
@@ -121,7 +141,7 @@ function optional(row: MessageDbRow) {
   };
 }
 
-function messageOf(q: StoreReader, ref: MessageRef): Message | undefined {
+function messageOf(q: StoreReader, ref: MessageRef, now: number): Message | undefined {
   const row = q.get<MessageDbRow>(
     `SELECT m.*, EXISTS(SELECT 1 FROM bodies b WHERE b.message_id = m.id) AS has_body FROM messages m WHERE m.id = ?`,
     ref.rowId,
@@ -145,18 +165,20 @@ function messageOf(q: StoreReader, ref: MessageRef): Message | undefined {
     attachments: attachmentsOf(q, ref.rowId),
     bodyState: bodyState(row),
     ...optional(row),
+    ...notificationField(notificationOf(q, ref.rowId, row.date, now)),
   };
 }
 
 export function getMessages(args: Input<'Message/get'>, ctx: MethodContext): Output<'Message/get'> {
-  const { store } = ctx.services;
+  const { store, clock } = ctx.services;
+  const now = clock.now();
   return store.read(q => {
     const accounts = q.all<{ id: string }>('SELECT id FROM accounts').map(a => a.id);
     const list: Message[] = [];
     const notFound: string[] = [];
     for (const id of args.ids) {
       const ref = findMessage(q, id, accounts);
-      const message = ref ? messageOf(q, ref) : undefined;
+      const message = ref ? messageOf(q, ref, now) : undefined;
       if (message) list.push(message);
       else notFound.push(id);
     }

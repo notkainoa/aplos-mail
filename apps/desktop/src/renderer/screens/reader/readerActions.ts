@@ -8,7 +8,9 @@
 import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
 import { UNDO_ACTION, afterAccepted, undoHandler } from '../undoOperation';
-import { failurePhrase } from '../home/homeRows';
+import { failurePhrase, senderOf } from '../home/homeRows';
+import type { MovableLane } from '../home/homeModel';
+import { LANE_LABEL } from './readerLane';
 import { suggestionFor } from './readerRows';
 import type { CursorDirection } from './model/threadCursor';
 import { afterRemoval, stepThread } from './readerModel';
@@ -65,6 +67,8 @@ export interface ReaderActions {
   later(): void;
   trash(): void;
   bookmark(): void;
+  /** The Importance menu: moves the thread to a lane (the same absolute move as Home's ⌥↑ / ⌥↓); the reader stays on it. */
+  lane(to: MovableLane): void;
   /** Z: undoes the newest change; a Done, Later or Trash of this reading brings its thread back, however it is undone. */
   undo(): void;
   /** Space: the filled button's action. */
@@ -207,6 +211,32 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     );
   }
 
+  /** "Always do this for X": the same move, as a sender rule. A refusal says so instead of going unheard. */
+  function setRule(id: string, to: MovableLane): void {
+    const action = { type: 'lane', lane: to, alsoForSender: true } as const;
+    const { opId, receipt } = deps.act({ ids: [id], action });
+    failOnReject(opId, action, receipt);
+  }
+
+  function lane(to: MovableLane): void {
+    const row = current();
+    if (!row) return;
+    const action = { type: 'lane', lane: to } as const;
+    const { opId, receipt } = deps.act({ ids: [row.id], action });
+    deps.push({
+      id: opId,
+      kind: 'info',
+      message: `Moved to ${LANE_LABEL[to]}`,
+      undoable: true,
+      actions: [{ id: 'always', label: `Always do this for ${senderOf(row)}` }, UNDO_ACTION],
+      onAction: actionId => {
+        if (actionId === 'always') setRule(row.id, to);
+        else undoHandler(opId, undone(opId))(actionId);
+      },
+    });
+    failOnReject(opId, action, receipt);
+  }
+
   function replyWith(request: ReplyRequest): void {
     const id = deps.shown();
     if (id !== null) deps.reply(id, request);
@@ -221,6 +251,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     later,
     trash,
     bookmark,
+    lane,
     undo: () => {
       const outcome = undoStack.undoLast();
       if (outcome?.kind !== 'operation') return;

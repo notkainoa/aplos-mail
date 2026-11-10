@@ -234,6 +234,28 @@ test("an actor's sync commit reaches a window as a state frame (the actors commi
   });
 });
 
+test('synced mail is sorted into Home lanes: newsletters and automated mail land in Low, not all in Do now', async t => {
+  const w = world(t, 40);
+  await withHost(w, async host => {
+    const { accountId } = await connectOwner(w, host);
+    await pump(w, () => accountBaselineDone(host, accountId), 'the baseline');
+    const lanes = () =>
+      host.engine.services.store.read(q =>
+        q
+          .all<{ lane: string; n: number }>(
+            'SELECT lane, count(*) AS n FROM thread_workflow GROUP BY lane ORDER BY lane',
+          )
+          .map(r => `${r.lane}:${r.n}`),
+      );
+    const low = () =>
+      host.engine.services.store.read(
+        q =>
+          q.get<{ n: number }>("SELECT count(*) AS n FROM thread_workflow WHERE lane = 'low'")?.n,
+      );
+    assert.ok((low() ?? 0) > 0, `some synced thread is Low importance, got ${lanes().join(' ')}`);
+  });
+});
+
 function accountBaselineDone(host: Awaited<ReturnType<typeof composeEngineHost>>, id: string) {
   return host.engine.services.store.read(
     q =>

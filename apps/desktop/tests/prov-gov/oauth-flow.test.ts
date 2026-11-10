@@ -13,6 +13,9 @@ import { decideCallback, openLoopback, sameSecret } from '../../src/host/provide
 import { challengeFor, verifierBytes } from '../../src/host/providers/oauth/pkce';
 import {
   connectScopes,
+  explicitScopes,
+  googleScopeManifest,
+  googleScopeParam,
   identityScopes,
   scopesForFeatures,
 } from '../../src/host/providers/oauth/scopes';
@@ -601,6 +604,72 @@ test('grantPermissions asks for every requestable scope, or the ones the caller 
     SCOPE.calendarList,
     settingsScope,
   ]);
+});
+
+test('Enable editing: an explicit re-grant adds the write scope and the calendar list, and nothing else', async () => {
+  const held = [mailScope, eventsReadonly, SCOPE.calendarList];
+  const r = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: { grantedScopes: () => held, optionalScopes: () => undefined },
+  });
+  const result = await r.connect(
+    { mode: 'grantPermissions', expectedSubject: 'sub-1', enable: 'calendarWrite' },
+    r.ctx,
+  );
+  // Held scopes are kept; the opt-in adds the write scope only. Gmail filters (not held, not asked for) stay out.
+  assert.deepEqual(askedScopes(r), [
+    ...identityScopes,
+    mailScope,
+    SCOPE.calendarList,
+    eventsReadonly,
+    eventsWrite,
+  ]);
+  assert.ok(!askedScopes(r).includes(settingsScope));
+  assert.ok(result.grantedScopes.includes(eventsWrite));
+  assert.equal(result.capabilities.calendar, true);
+  assert.equal(result.capabilities.filters, false);
+});
+
+test('the write scope is asked for by nothing but the explicit opt-in on a re-grant', async () => {
+  const held = [mailScope, SCOPE.calendarList, eventsReadonly];
+  const attempts: { label: string; req: ConnectRequest }[] = [
+    { label: 'new', req: { mode: 'new', enable: 'calendarWrite' } },
+    {
+      label: 'reconnect',
+      req: { mode: 'reconnect', expectedSubject: 'sub-1', enable: 'calendarWrite' },
+    },
+    { label: 'plain re-grant', req: { mode: 'grantPermissions', expectedSubject: 'sub-1' } },
+  ];
+  for (const { label, req } of attempts) {
+    const r = emulatorRig({
+      vault: memoryVault(oldBundle),
+      deps: { grantedScopes: () => held, optionalScopes: () => undefined },
+    });
+    await r.connect(req, r.ctx);
+    assert.ok(!askedScopes(r).includes(eventsWrite), `${label} must not ask for the write scope`);
+  }
+});
+
+test('an opt-in this build does not know is refused before Google is asked', async () => {
+  const r = emulatorRig({
+    vault: memoryVault(oldBundle),
+    deps: { grantedScopes: () => [mailScope] },
+  });
+  const req = {
+    mode: 'grantPermissions',
+    expectedSubject: 'sub-1',
+    enable: 'everything',
+  } as unknown as ConnectRequest;
+  await assert.rejects(r.connect(req, r.ctx), /Not a known opt-in/);
+  assert.equal(r.browser.opened.length, 0);
+});
+
+test('the write scope stays deferred in the manifest and is explicit-only', () => {
+  const entry = googleScopeManifest.find(e => e.scope === eventsWrite);
+  assert.equal(entry?.deferred, true);
+  assert.equal(entry?.required, false);
+  assert.ok(!googleScopeParam().split(' ').includes(eventsWrite));
+  assert.deepEqual(explicitScopes('calendarWrite'), [SCOPE.calendarList, eventsWrite]);
 });
 
 // ---------- with the real governor ----------
