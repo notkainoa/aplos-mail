@@ -24,7 +24,8 @@ export interface HeadControls {
   readonly suggest: () => void;
   readonly later: () => void;
   readonly done: () => void;
-  readonly replyAll: () => void;
+  /** Absent where the view has no reply-all of its own (one by one): the ⋯ menu then leaves the row out. */
+  readonly replyAll?: () => void;
   readonly bookmark: () => void;
   readonly trash: () => void;
   readonly lane: (to: MovableLane) => void;
@@ -38,23 +39,33 @@ export interface HeadActionsProps {
   readonly controls: HeadControls;
 }
 
+const noop = () => undefined;
+
 const IMPORTANCE_ENTRIES: readonly MenuEntry[] = (['important', 'low'] as const).map(choice => ({
   kind: 'item',
   id: choice,
   label: IMPORTANCE_LABEL[choice],
 }));
 
-/** A button that opens a Menu under it: the open flag, the anchor and the ids the two need to point at each other. */
-function useMenuButton() {
+/**
+ * A button that opens a Menu under it: the open flag, the anchor, the ids the two need to point at each other and the
+ * keyboard cursor (the Menu is controlled: Arrow keys move `active` and Enter chooses it). It opens on `first`.
+ */
+function useMenuButton(first: string) {
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(first);
   const ref = useRef<HTMLButtonElement>(null);
   const id = useId();
-  return { open, ref, id, toggle: () => setOpen(value => !value), close: () => setOpen(false) };
+  const toggle = () => {
+    setActive(first);
+    setOpen(value => !value);
+  };
+  return { open, ref, id, active, setActive, toggle, close: () => setOpen(false) };
 }
 
 function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'controls'>) {
   const at = importanceOf(row);
-  const menu = useMenuButton();
+  const menu = useMenuButton(at ?? 'important');
   if (at === null) return null;
   const choose = (choice: Importance) => {
     menu.close();
@@ -80,6 +91,8 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
         label="Importance"
         entries={IMPORTANCE_ENTRIES}
         checkedId={at}
+        activeId={menu.active}
+        onActiveChange={menu.setActive}
         onSelect={id => choose(id === 'low' ? 'low' : 'important')}
         onClose={menu.close}
       />
@@ -90,12 +103,18 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
 const BELL: Readonly<Record<NotificationState, { icon: 'bell' | 'bell-off'; label: string }>> = {
   notified: { icon: 'bell', label: 'This email notified you' },
   silent: { icon: 'bell-off', label: 'This email did not notify you' },
-  unknown: { icon: 'bell', label: 'Notification status is not reported yet' },
+  unknown: { icon: 'bell', label: '' },
 };
 
-/** The bell: a status mark, not a control. Slashed when the email did not notify; neutral while that is unknown. */
+/** The bell: a status mark, not a control. Slashed when the email did not notify; while that is unknown it is a plain, unnamed outline bell that claims nothing. */
 function NotificationBell({ state }: { readonly state: NotificationState }) {
   const { icon, label } = BELL[state];
+  if (state === 'unknown')
+    return (
+      <span className="aplos-bell" aria-hidden="true" data-state={state}>
+        <Icon name={icon} />
+      </span>
+    );
   return (
     <span className="aplos-bell" role="img" aria-label={label} title={label} data-state={state}>
       <Icon name={icon} />
@@ -104,7 +123,18 @@ function NotificationBell({ state }: { readonly state: NotificationState }) {
 }
 
 /** The ⋯ menu: the actions the reader has handlers for, each with its key from the registry. */
-export function moreEntries(row: ThreadRow, suggestion: SuggestedAction): readonly MenuEntry[] {
+export function moreEntries(
+  row: ThreadRow,
+  suggestion: SuggestedAction,
+  canReplyAll: boolean,
+): readonly MenuEntry[] {
+  const replyAll: MenuEntry = {
+    kind: 'item',
+    id: 'replyAll',
+    label: 'Reply all',
+    icon: 'reply-all',
+    commandId: 'mail.replyAll',
+  };
   const done: MenuEntry = {
     kind: 'item',
     id: 'done',
@@ -120,13 +150,7 @@ export function moreEntries(row: ThreadRow, suggestion: SuggestedAction): readon
       icon: suggestion.icon,
       commandId: 'mail.suggested',
     },
-    {
-      kind: 'item',
-      id: 'replyAll',
-      label: 'Reply all',
-      icon: 'reply-all',
-      commandId: 'mail.replyAll',
-    },
+    ...(canReplyAll ? [replyAll] : []),
     { kind: 'item', id: 'later', label: 'Later', icon: 'clock', commandId: 'mail.later' },
     ...(suggestion.isDone ? [] : [done]),
     { kind: 'separator' },
@@ -150,10 +174,10 @@ export function moreEntries(row: ThreadRow, suggestion: SuggestedAction): readon
 }
 
 function MoreMenu({ row, suggestion, controls }: HeadActionsProps) {
-  const menu = useMenuButton();
+  const menu = useMenuButton('suggested');
   const run: Readonly<Record<string, () => void>> = {
     suggested: controls.suggest,
-    replyAll: controls.replyAll,
+    replyAll: controls.replyAll ?? noop,
     later: controls.later,
     done: controls.done,
     bookmark: controls.bookmark,
@@ -175,7 +199,9 @@ function MoreMenu({ row, suggestion, controls }: HeadActionsProps) {
         open={menu.open}
         anchor={menu.ref.current}
         label="More"
-        entries={moreEntries(row, suggestion)}
+        entries={moreEntries(row, suggestion, controls.replyAll !== undefined)}
+        activeId={menu.active}
+        onActiveChange={menu.setActive}
         onSelect={id => {
           menu.close();
           run[id]?.();
