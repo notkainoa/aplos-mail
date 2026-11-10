@@ -212,6 +212,11 @@ describe('ui-settings: Add a tool', () => {
     assert.ok(markup.includes(PATH.replace(/ /g, ' ')), 'the path is shown');
     assert.match(markup, /Aplos never shows the key itself/);
     assert.match(markup, /shown once/);
+    assert.match(
+      markup,
+      /Any app running as you on this Mac can read the file/,
+      'the trust boundary',
+    );
     assert.match(markup, />Copy path</);
     assert.equal((markup.match(/data-variant="filled"/g) ?? []).length, 1);
   });
@@ -226,5 +231,10 @@ describe('ui-settings: Add a tool', () => {
     const revoke = renderToStaticMarkup(staticScreen(STATES['tool-revoke-confirm']));
     assert.match(revoke, /Revoke “Terminal assistant”\?/);
     assert.match(revoke, />Revoke</);
+    // The engine reports a revoke whose key file could not be deleted as a success, so no copy may claim it is gone.
+    const words = `${revokeConfirm('X').question} ${revokeConfirm('X').consequence}`;
+    assert.match(words, /stops working right away and its open connections close/);
+    assert.doesNotMatch(words, /delet|remov|erase|gone|wiped/i);
+    assert.ok(revoke.includes('stops working right away'), 'the dialog shows that sentence');
   });
 });

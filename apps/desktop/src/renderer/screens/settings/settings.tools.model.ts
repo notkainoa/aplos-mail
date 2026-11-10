@@ -85,7 +85,7 @@ export function withoutKeyPath<T extends { tokenPath?: string }>(client: T): Omi
 }
 
 export const TOOL_KEY_NOTE =
-  'The tool reads its key from this file. Aplos never shows the key itself. Anyone who can read the file can act as this tool, so keep it private. This path is shown once.';
+  'The tool reads its key from this file. Aplos never shows the key itself. Any app running as you on this Mac can read the file, so keep it private. This path is shown once.';
 
 /** The Revoke question: what stops and that it is quick. */
 export function revokeConfirm(name: string): { question: string; consequence: string } {
