@@ -10,6 +10,7 @@
     "./store": "./src/store/index.ts",
     "./store/*": "./src/store/*.ts",
     "./diag/*": "./src/diag/*.ts",
+    "./ai/lanes": "./src/ai/lanes.ts",
     "./clock/loop": "./src/clock/loop.ts",
     "./clock/system": "./src/clock/system.ts",
     "./sync/account-read": "./src/sync/account-read.ts",
