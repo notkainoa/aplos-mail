@@ -1829,3 +1829,7 @@ Decision: the sketch wins over DESIGN section 16 (the first owner-override parag
 Also by the sketch: the card is nearly as wide as the pane and fills its height in Go one by one, with no Reply stub under it (Reply is on the pinned bar).
 
 How to apply: the integrator amends DESIGN section 16 and 7.5 accordingly (the Integrator owns plans/DESIGN.md). No other screen changes.
+
+## 2026-11-10: Home's Do now, Important updates and Low importance only hold threads someone wrote to you (ui-home)
+
+Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox, so a thread the owner started and nobody had answered sat in Do now (and also in Follow up). `views/sections.ts` now requires `threads.last_inbound_date IS NOT NULL` on the three lane cursors (the sidebar count and the Low sheet read the same cursors); Follow up is unchanged. A thread where the owner answered last but someone wrote before still follows its lane, as before. The slow reference in `tests/views/reference.ts` carries the same rule, and `tests/views/home-sent-only.test.ts` fails without it.

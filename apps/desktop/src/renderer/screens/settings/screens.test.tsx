@@ -471,7 +471,7 @@ describe('states, copy and design rules', () => {
 
   test('every capability that is off reads "Not available yet" with no dead control', () => {
     const general = render('capabilities-off');
-    assert.equal((general.match(/Not available yet/g) ?? []).length, 4);
+    assert.equal((general.match(/Not available yet/g) ?? []).length, 5);
     assert.doesNotMatch(
       general,
       /role="switch"[^>]*aria-checked="true"[^>]*aria-labelledby="set-general-(allowTools|openAtLogin|menuBar)"/,
