@@ -14,6 +14,12 @@
  * - `Account.calendarListedAt` (stamped when the account's calendar list was first read, even an empty one;
  *   absent until then, so accounts predating the field read "Syncing…" until their next list);
  * - `Calendar/get`'s list, undefined until it answers (that is honestly "Syncing…", not "No calendars").
+ *
+ * Editing is a separate, additive answer (`calendarEditingOf` / `calendarWriteRefused` over `editingOn`):
+ * `grantedScopes` holding the `calendar.events` scope — or the umbrella `calendar` scope — means the
+ * account may write, and a `missingPermissions` row with `capability` 'calendarWrite' names a write the
+ * engine refused — never the 'calendar' (read) gap above and never a reconnect of its own (Settings →
+ * Calendar's "Enable editing" row is its only home).
  */
 import type { Account, Calendar } from '../../data';
 import type { TagColor } from '../../ui/props';
@@ -173,6 +179,17 @@ export function editingOff(
   const account = accounts.find(a => a.id === accountId);
   if (account === undefined || account.demo || account.provider !== 'google') return undefined;
   return editingOn(account) ? undefined : account;
+}
+
+/** Whether this account may create, change and delete events, as Settings → Calendar's tri-state: 'on' when the grant carries the write scope (`editingOn`, so the umbrella grant counts too), 'off' while it reads only, `null` for accounts with no calendar claim (demo, non-Google). */
+export function calendarEditingOf(account: Account): 'on' | 'off' | null {
+  if (account.demo || account.provider !== 'google') return null;
+  return editingOn(account) ? 'on' : 'off';
+}
+
+/** A write was refused for lack of the events scope (`permission.calendarWrite`): the only `missingPermissions` row that asks for editing, and only until the grant lands — never a standing nag and never the 'calendar' (read) gap. */
+export function calendarWriteRefused(account: Account): boolean {
+  return account.missingPermissions?.some(m => m.capability === 'calendarWrite') === true;
 }
 
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];
