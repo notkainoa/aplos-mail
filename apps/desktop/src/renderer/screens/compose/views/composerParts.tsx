@@ -55,6 +55,7 @@ export function useSharedComposerProps(
     recipients: (
       <RecipientRows
         fields={state.fields}
+        accountId={state.context.accountId}
         onChange={edit}
         showCc={controls.showCc}
         onShowCc={() => controls.setShowCc(true)}

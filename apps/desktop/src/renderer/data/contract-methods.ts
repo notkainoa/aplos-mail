@@ -226,6 +226,12 @@ export const CONTRACT_METHODS = {
     gaps: [],
     notes: 'a plain call; the answer carries the time it switches itself off',
   },
+  'contact.suggest': {
+    method: 'Contact/suggest',
+    kind: 'call',
+    gaps: [],
+    notes: 'a query over local data; no provider call',
+  },
   'data.export': {
     method: 'Data/export',
     kind: 'call',
