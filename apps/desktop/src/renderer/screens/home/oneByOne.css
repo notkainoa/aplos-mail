@@ -1,5 +1,4 @@
-/* The one-by-one view (DESIGN 7.2): one focus letter at a time, centred in the pane's reading column. No card chrome
-   beyond the letter itself. The letter arrives with a short fade (`swap`); reduced motion shortens it via the tokens. */
+/* The one-by-one view (DESIGN 7.2): one email at a time as the reader's own card (screens/reader), under the pane header. */
 /* The slot only has a min-height, so the view's own 100% would resolve to auto and leave the letter at the top. */
 .aplos-screen:has(> .aplos-one-by-one) {
   height: 100%;
@@ -15,17 +14,19 @@
   padding: var(--pane-head) 0 var(--space-10);
 }
 
-.aplos-one-by-one__stage {
-  box-sizing: border-box;
-  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
-  margin: 0 auto;
-  animation: aplos-one-by-one-in var(--dur-swap) var(--ease-out) both;
+/* The email card (the reader's own letter): it fills the pane under the header and rests its pinned bar on the bottom edge. */
+.aplos-one-by-one:has(> .aplos-one-by-one__card) {
+  justify-content: flex-start;
+  padding: 0;
 }
-
-@keyframes aplos-one-by-one-in {
-  from {
-    opacity: 0;
-  }
+/* The card takes focus when a menu or Why closes on it; it is a container, not a control, so it shows no ring. */
+.aplos-one-by-one__card:focus-visible {
+  outline: none;
+}
+.aplos-one-by-one__card {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
 }
 
 /* "Why it's here" could not be read: one line inside the popover. */

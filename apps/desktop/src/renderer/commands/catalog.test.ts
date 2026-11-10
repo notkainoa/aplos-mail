@@ -434,3 +434,11 @@ test('Done and Later stay off in the Done place whatever keys they are remapped 
     .map(e => e.id);
   assert.ok(!palette.includes('mail.done') && !palette.includes('mail.later'));
 });
+
+test('the sheet says how to open a selected email: Return or O, and a second click', () => {
+  const lists = buildSheet(wiredRegistry()).find(s => s.id === 'lists');
+  const open = lists?.rows.find(r => r.id === 'mail.open');
+  assert.match(open?.keys ?? '', /Return/);
+  assert.match(open?.keys ?? '', /O/);
+  assert.ok(lists?.rows.some(r => r.kind === 'pointer' && r.keys === 'Click it again'));
+});
