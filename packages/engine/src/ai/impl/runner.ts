@@ -5,7 +5,7 @@ import { hexId } from '../../sync/connect-sessions';
 import { backgroundGate } from './gate';
 import { budgetOpen } from './runtime';
 import { executeJob } from './execute';
-import { nextFollowAt, type JobRow } from './jobs';
+import { featureOf, nextFollowAt, type JobRow } from './jobs';
 
 /**
  * The `jobs` deadline source's fire (ARCH 8.1): drains due queued jobs in priority order, 1-2 concurrent, behind the
@@ -166,15 +166,17 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       pauseDue(services, now, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime());
       return;
     }
-    // The gate covers the whole pass: no consent, AI off or a trains-on-inputs pick pauses the queue.
-    const gate = backgroundGate(services, 'summaries');
-    if (!gate.ok) {
-      if (gate.reasonCode === 'ai.accountExcluded') {
-        // Per-account gates are checked inside executeJob; run the pass.
-      } else {
-        pauseDue(services, now, now + PAUSE_MS);
-        return;
-      }
+    // The gate pauses the queue only when every due kind's own feature is closed: a broken Summaries
+    // provider must not sit in front of open Plans or Drafts work (per-executor gates still re-check
+    // the feature and the job's account before any mail is read).
+    const features = [...new Set(rows.filter(r => r.kind !== 'wake').map(r => featureOf(r.kind)))];
+    const open = features.filter(f => {
+      const g = backgroundGate(services, f);
+      return g.ok || g.reasonCode === 'ai.accountExcluded';
+    });
+    if (features.length && !open.length) {
+      pauseDue(services, now, now + PAUSE_MS);
+      return;
     }
     let claimed = 0;
     await Promise.all(

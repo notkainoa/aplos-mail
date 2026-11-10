@@ -20,6 +20,12 @@ export async function planJob(
   const accountId = String(payload.accountId ?? '');
   const remoteThreadId = String(payload.remoteThreadId ?? '');
   const inputHash = String(payload.inputHash ?? '');
+  const gate = backgroundGate(services, 'plans', accountId);
+  if (!gate.ok)
+    throw new AiCallError(
+      gate.reasonCode === 'ai.accountExcluded' ? 'gatePermanent' : 'gatePaused',
+      gate.reasonCode,
+    );
   const have = services.store.read(q => {
     const info = priorityOf(q, accountId, remoteThreadId);
     if (!info) return undefined;
@@ -70,10 +76,22 @@ export async function suggestReplyJob(
     } catch {
       action = undefined;
     }
-    return { info, action };
+    const pending = s
+      ? false
+      : !!q.get(
+          "SELECT 1 AS one FROM jobs WHERE key = ? AND state IN ('queued','running','failed')",
+          `summary:${accountId}:${remoteThreadId}:${inputHash}`,
+        );
+    return { info, action, pending };
   });
   if (!work) throw new AiCallError('gatePermanent', 'ai.threadGone');
-  if (work.action?.kind !== 'reply') return;
+  // No ready summary for this input yet: wait for the one in flight, or settle when none is coming —
+  // a non-reply suggestion never spends a provider call either way.
+  if (!work.action) {
+    if (work.pending) throw new AiCallError('gatePaused', 'ai.summaryPending');
+    return;
+  }
+  if (work.action.kind !== 'reply') return;
   const mail = services.store.read(q => threadMail(q, accountId, work.info.threadRowId));
   if (!mail.length) throw new AiCallError('gatePermanent', 'ai.threadEmpty');
   const turn = await meteredChat(
