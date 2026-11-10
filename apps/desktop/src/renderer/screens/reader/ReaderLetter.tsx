@@ -12,6 +12,7 @@ import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
 import type { SuggestedAction } from '../../ui/props';
 import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
+import { subjectOf } from '../home/homeRows';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
@@ -205,10 +206,12 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
   const earlier = data.messages.slice(0, -1);
   const latest = data.messages[data.messages.length - 1];
   if (!latest) return null;
+  const firstId = data.messages[0]?.id;
   const message = (m: Message, cursor: boolean) => (
     <ReaderMessage
       key={m.id}
       message={m}
+      subject={m.id === firstId && summaryFor(row).state === 'ready' ? subjectOf(row) : undefined}
       me={me}
       cursor={cursor}
       expanded={ui.expanded}
