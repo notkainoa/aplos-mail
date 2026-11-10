@@ -256,26 +256,45 @@ export function tailLines(lines, maxLines = maxOutputLines) {
 // ---------- running ----------
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
+const safeJson = text => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
 const round = (number, places) => Math.round(number * 10 ** places) / 10 ** places;
-const ps = args => spawnSync('ps', args, { encoding: 'utf8' }).stdout ?? '';
+const ps = args => spawnSync('ps', args, { encoding: 'utf8', timeout: 10_000 }).stdout ?? '';
 const psTree = () => parsePsTree(ps(['-axo', 'pid=,ppid=,command=']));
 
 const spawned = new Set();
 // Every pid this run ever saw as its own process or descendant: main, engine, renderers and
 // anything found under them by ppid. The cleanup sweep kills exactly these pids — never a name or
 // command-line match — so a helper reparented to launchd still dies and other apps stay safe.
-const seenPids = new Set();
+// Each pid is stored with its start time (`ps -o lstart=`): the OS may hand a dead helper's number to an
+// unrelated process, and the sweep only signals a pid whose start time still matches.
+const seenPids = new Map();
 let dataDir;
+
+const startOf = pid => ps(['-o', 'lstart=', '-p', String(pid)]).trim();
+
+/** Remembers a pid and when it started, once. */
+function rememberPid(pid) {
+  if (!pid || seenPids.has(pid)) return;
+  const started = startOf(pid);
+  if (started) seenPids.set(pid, started);
+}
 
 /** Adds child.pid and its current ppid-descendants to seenPids. */
 function noteDescendants(child) {
-  if (child.pid) seenPids.add(child.pid);
-  for (const pid of descendantsOf(psTree(), child.pid)) seenPids.add(pid);
+  rememberPid(child.pid);
+  for (const pid of descendantsOf(psTree(), child.pid)) rememberPid(pid);
 }
 
-/** SIGKILLs every pid ever seen; dead ones throw ESRCH and are ignored. */
+/** SIGKILLs every pid ever seen that still has the start time it had then; dead ones are ignored. */
 function sweepSeenPids() {
-  for (const pid of seenPids) {
+  for (const [pid, started] of seenPids) {
+    if (startOf(pid) !== started) continue;
     try {
       process.kill(pid, 'SIGKILL');
     } catch {
@@ -454,12 +473,17 @@ export async function evaluateOn(target, expression, timeoutMs = devToolsIoTimeo
     });
     const answered = new Promise(res => {
       ws.addEventListener('message', event => {
-        const message = JSON.parse(event.data);
-        if (message.id === 1) res(message);
+        const message = safeJson(event.data);
+        if (message?.id === 1) res(message);
       });
     });
     ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression } }));
-    await Promise.race([answered, delay(10_000)]);
+    let timer;
+    const deadline = new Promise(res => {
+      timer = setTimeout(res, 10_000);
+    });
+    await Promise.race([answered, deadline]);
+    clearTimeout(timer);
   } finally {
     ws.close();
   }
@@ -509,7 +533,7 @@ function appVersion(appPath) {
   const run = spawnSync(
     '/usr/libexec/PlistBuddy',
     ['-c', 'Print:CFBundleShortVersionString', join(appPath, 'Contents', 'Info.plist')],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', timeout: 10_000 },
   );
   const version = (run.stdout ?? '').trim();
   return run.status === 0 && version ? version : 'unknown';
@@ -557,7 +581,7 @@ async function sampleWindow(options, run, enginePid, pids, rendererIds, notes) {
     const at = Date.now();
     // Every pid ever seen goes into seenPids so cleanup can reach it even after reparenting.
     noteDescendants(run.child);
-    for (const pid of pids) seenPids.add(pid);
+    for (const pid of pids) rememberPid(pid);
     let rows = parsePsSample(ps(['-o', 'pid=,rss=,pcpu=,time=', '-p', pids.join(',')]));
     if (!rows.has(enginePid) && run.child.exitCode === null) {
       // The supervisor restarts a dead engine; follow it and let the CPU window restart.
@@ -567,7 +591,7 @@ async function sampleWindow(options, run, enginePid, pids, rendererIds, notes) {
         state.restarts++;
         enginePid = next.pid;
         pids.push(enginePid);
-        seenPids.add(enginePid);
+        rememberPid(enginePid);
         rows = parsePsSample(ps(['-o', 'pid=,rss=,pcpu=,time=', '-p', pids.join(',')]));
       }
     }
@@ -642,7 +666,11 @@ function buildReport(options, appPath, mode, pick, state, wakeupSamples, notes) 
   const expectedSeconds = options.minutes * 60;
   // A partial window is reported but can never pass a budget: under 80% of --minutes measured (or
   // the app dying mid-window) means complete:false and exit 1.
-  const complete = !exitedEarly && windowSeconds >= 0.8 * expectedSeconds;
+  const expectedReadings = Math.ceil(expectedSeconds / options.interval);
+  const complete =
+    !exitedEarly &&
+    windowSeconds >= 0.8 * expectedSeconds &&
+    readings.length >= 0.8 * expectedReadings;
   return {
     app: appPath,
     appVersion: appVersion(appPath),
