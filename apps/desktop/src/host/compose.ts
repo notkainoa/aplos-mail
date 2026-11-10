@@ -36,6 +36,7 @@ import { storeLookup } from '@aplos/engine/sync/lookup';
 import { openBlobFiles } from './blobs';
 import { createLogSink, logDir } from './logsink';
 import { runNotificationLoop, type PostNotification } from './notifications';
+import { createClientTokens } from './transports/auth';
 import { watchPowerResume, type PowerSource, type WakeClock } from './power';
 import { createGoogleProvider } from './providers/google/adapter';
 import { googleWorkflowChannel, googleWorkflowMerged } from './providers/google/workflow-host';
@@ -458,6 +459,7 @@ function engineOptions(
       drafts: accounts,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),
+      clientTokens: options.ports?.clientTokens ?? createClientTokens({ dataDir: options.dataDir }),
     },
   };
 }

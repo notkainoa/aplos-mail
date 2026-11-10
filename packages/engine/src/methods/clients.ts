@@ -1,18 +1,24 @@
 import type { Client, Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import { sha256Hex } from '../diag/sha256';
 import { auditWrites } from '../host/audit';
-import { nonce, notImplemented, type AreaHandlers, type MethodContext } from './types';
+import { isAbsent } from '../runtime/engine';
+import { nonce, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `clients` area, owned by lane `eng-host`. `Clients/list` and `Clients/audit` read `clients` and `audit_log`;
  * `Clients/revoke` stamps `revoked_at` (open connections close within a second once a transport polls it).
- * `Clients/grant` stays a stub: the token file is the host's write and has no path on the real engine yet.
+ * `Clients/grant` mints a 256-bit token, stores only its SHA-256 in `clients`, and hands the plaintext to the
+ * host's `clientTokens` port for the 0600 file — the token never crosses the contract, and without the port
+ * there is no grant at all.
  */
 
 type AuditEntry = Output<'Clients/audit'>['list'][number];
 
 /** The audited methods whose target is a client id, safe to show to whoever reads the audit. */
-const TARGET_IS_CLIENT: ReadonlySet<string> = new Set(['Clients/revoke']);
+const TARGET_IS_CLIENT: ReadonlySet<string> = new Set(['Clients/revoke', 'Clients/grant']);
+
+const hex = (bytes: Uint8Array) => [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
 
 interface ClientRow {
   [key: string]: string | number | null | Uint8Array;
@@ -97,9 +103,48 @@ function revoke(args: Input<'Clients/revoke'>, ctx: MethodContext): Output<'Clie
   return { ok: true };
 }
 
+async function grant(
+  args: Input<'Clients/grant'>,
+  ctx: MethodContext,
+): Promise<Output<'Clients/grant'>> {
+  if (isAbsent(ctx.services.clientTokens))
+    throw new ContractError({
+      type: 'unavailable',
+      message: 'This part of Aplos is not running yet.',
+    });
+  const id = `cl_${hex(ctx.services.randomBytes(16))}`;
+  const token = hex(ctx.services.randomBytes(32));
+  const scopes = [...new Set(args.scopes)] as Client['scopes'];
+  const createdAt = ctx.services.clock.now();
+  // The token file lands first: a failed issue leaves no row; a failed commit leaves an inert file whose
+  // hash matches no row, which a transport can never authenticate.
+  const { path } = await ctx.services.clientTokens.issue(id, token);
+  ctx.services.store.commit({
+    opId: `client-grant-${id}-${nonce(ctx)}`,
+    origin: 'local',
+    writes: [
+      {
+        kind: 'client',
+        id,
+        grant: {
+          name: args.name,
+          clientKind: args.kind,
+          tokenHash: sha256Hex(token),
+          scopes,
+          createdAt,
+        },
+      },
+      ...auditWrites(ctx.caller, 'Clients/grant', id),
+    ],
+  });
+  return {
+    client: { id, name: args.name, kind: args.kind, scopes, createdAt, tokenPath: path },
+  };
+}
+
 export const handlers: AreaHandlers<'clients'> = {
   'Clients/list': list,
-  'Clients/grant': notImplemented('Clients/grant'),
+  'Clients/grant': grant,
   'Clients/revoke': revoke,
   'Clients/audit': audit,
 };
