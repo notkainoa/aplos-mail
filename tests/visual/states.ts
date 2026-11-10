@@ -640,7 +640,6 @@ export const STATES: readonly VisualState[] = [
     design: '7.2, 7.4',
     mockup: 'home.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'one-by-one-middle',
@@ -650,7 +649,6 @@ export const STATES: readonly VisualState[] = [
     design: '7.2, 7.4',
     mockup: 'home.html (default)',
     filled: 1,
-    summary: 'ready',
   },
   {
     id: 'one-by-one-done',

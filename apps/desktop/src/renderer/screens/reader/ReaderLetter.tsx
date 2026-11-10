@@ -12,9 +12,9 @@ import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
 import type { SuggestedAction } from '../../ui/props';
 import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
-import { subjectOf } from '../home/homeRows';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
+import { EventOffers } from './EventOffer';
 import { FindBar } from './FindBar';
 import { HeadActions, type HeadControls } from './HeadActions';
 import { inviteOf, type InviteView } from './invite';
@@ -63,6 +63,8 @@ export interface ReaderLetterProps {
   readonly ui: ReaderUi;
   readonly dispatch: (event: UiEvent) => void;
   readonly controls: LetterControls;
+  /** The card treatment: 'a' (the default) is the email card with nothing above it (owner sketch 2026-11-10); 'off' keeps DESIGN 7.5's column, with the big summary on top. */
+  readonly cards?: 'a' | 'off';
   /** The letter's body is laid out and measured (or it is gone or failed, which is an answer too). */
   readonly onReady: (threadId: string) => void;
 }
@@ -204,12 +206,12 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
   const earlier = data.messages.slice(0, -1);
   const latest = data.messages[data.messages.length - 1];
   if (!latest) return null;
-  const firstId = data.messages[0]?.id;
+  // Rendered on and off paper alike, so the measured letter is the one that is promoted (no jump).
+  const offers = <EventOffers row={row} hasInvite={invite !== null} />;
   const message = (m: Message, cursor: boolean) => (
     <ReaderMessage
       key={m.id}
       message={m}
-      subject={m.id === firstId && summaryFor(row).state === 'ready' ? subjectOf(row) : undefined}
       me={me}
       cursor={cursor}
       expanded={ui.expanded}
@@ -251,13 +253,16 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
           onClose={() => dispatch({ type: 'closeFind' })}
         />
       ) : null}
-      <ReaderHead due={dueOf(row)} summary={summaryFor(row)} />
+      {props.cards === 'off' ? <ReaderHead due={dueOf(row)} summary={summaryFor(row)} /> : null}
+      {offers && props.cards === 'off' ? offers : null}
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
           {earlier.map(m => message(m, ui.cursor === m.id))}
-          {message(latest, ui.cursor === null || ui.cursor === latest.id)}
+          {message(latest, ui.cursor === latest.id)}
         </div>
+        {/* The card has nothing above it (owner sketch 2026-11-10): its offers sit under it; the card-less column keeps them under the summary. */}
+        {offers && props.cards !== 'off' ? offers : null}
         <ReplyArea
           threadId={props.threadId}
           messageId={latest.id}
