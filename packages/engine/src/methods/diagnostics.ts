@@ -1,4 +1,5 @@
 import type { Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
 import { nonce, type AreaHandlers, type MethodContext } from './types';
 
@@ -28,6 +29,13 @@ function verbose(
   args: Input<'Diagnostics/verbose'>,
   ctx: MethodContext,
 ): Output<'Diagnostics/verbose'> {
+  // A listener may switch the protocol log OFF (safe, least privilege) but only the owner turns it on or
+  // extends it — otherwise a tool could lengthen a window it never opened and keep the noisy log running.
+  if (args.on && ctx.caller.kind === 'listener')
+    throw new ContractError({
+      type: 'forbidden',
+      message: 'Only the app can turn verbose logging on.',
+    });
   const until = args.on ? ctx.services.clock.now() + VERBOSE_MS : undefined;
   ctx.services.store.commit({
     opId: `diagnostics-verbose-${nonce(ctx)}`,

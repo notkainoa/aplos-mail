@@ -215,6 +215,26 @@ test('verbose writes the 15-minute flag the host reads, deletes it on off, survi
   }
 });
 
+test('a listener can switch verbose off but never on or extend', async () => {
+  const w = await world();
+  try {
+    await w.call('Diagnostics/verbose', { on: true });
+    const admin = w.asClient('c4', ['read', 'admin']);
+    await assert.rejects(
+      admin.call('Diagnostics/verbose', { on: true }),
+      (e: { type?: string }) => e.type === 'forbidden',
+      'a tool cannot open or stretch the noisy window',
+    );
+    // Off stays allowed for any admin listener — it only ever shrinks the log.
+    await admin.call('Diagnostics/verbose', { on: false });
+    const flag = w.db.prepare("SELECT value FROM meta WHERE key = 'verbose_until'").get() as
+      { value: string } | undefined;
+    assert.equal(flag, undefined);
+  } finally {
+    await w.engine.close();
+  }
+});
+
 test('the log level thunk turns debug on for exactly the verbose window', () => {
   const clock = manualClock();
   let verboseUntil = 0;

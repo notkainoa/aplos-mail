@@ -1,4 +1,5 @@
 import type { DiagnosticsBundle } from '@aplos/contract';
+import { logCodePattern } from '@aplos/contract/log/events';
 import { cleanCode, hashAddress } from '../redact';
 import { contractError } from '../../runtime/errors';
 import type { EngineServices } from '../../runtime/services';
@@ -141,41 +142,78 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
 // ---- the production gate (FR-32): the bundle is checked on every call, not only in dev/tests ----
 
 const HEX16 = /^[0-9a-f]{16}$/;
-const LINE = /^[^\r\n]{0,500}$/;
+/** Every string but `versions.app` is a catalog-shaped code — the same allowlist the logger enforces. */
+const FREE_TEXT = 'bundle.versions.app';
 
-/** One forbidden-path check: no field named providerMessage or item may exist anywhere in the bundle. */
-const FORBIDDEN_KEYS = new Set(['providerMessage', 'item', 'provider_message']);
+/**
+ * The keys the bundle may carry, per object. Anything the schema grows into is added here AND in
+ * `StrictDiagnosticsBundle`; a key outside the list fails the gate, so a future field cannot smuggle
+ * free text in under a name nobody checked.
+ */
+const ALLOWED: Record<string, ReadonlySet<string>> = {
+  '': new Set([
+    'generatedAt',
+    'versions',
+    'engine',
+    'accounts',
+    'queues',
+    'errors',
+    'storage',
+    'crashes',
+  ]),
+  versions: new Set(['app', 'api', 'schema', 'sqlite']),
+  engine: new Set(['state', 'uptimeMs', 'eventLoopP99Ms', 'parkedReason']),
+  'accounts[]': new Set([
+    'accountHash',
+    'provider',
+    'state',
+    'reasonCode',
+    'cursorAgeMs',
+    'lastSyncAt',
+    'reconnectBy',
+    'budgets',
+  ]),
+  'budgets[]': new Set(['budget', 'target', 'cooldownUntil', 'dailyBlockUntil']),
+  queues: new Set(['ops', 'jobs', 'submissions', 'failed']),
+  storage: new Set(['dbBytes', 'walBytes', 'ftsBacklog', 'bodyBytes', 'attachmentBytes']),
+  crashes: new Set(['count', 'lastAt']),
+};
 
-const checkStrings = (value: unknown, path: string): void => {
+const checkValue = (value: unknown, path: string, pathKey: string): void => {
   if (typeof value === 'string') {
-    if (path.endsWith('accountHash')) {
+    if (path.endsWith('.accountHash')) {
       if (!HEX16.test(value)) throw new Error(`${path}: not a salted hash`);
-    } else if (!LINE.test(value)) throw new Error(`${path}: line too long or multiline`);
+    } else if (path !== FREE_TEXT && !logCodePattern.test(value))
+      throw new Error(`${path}: not a code`);
     return;
   }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) && !Number.isFinite(value))
-      throw new Error(`${path}: not a safe number`);
+    if (!Number.isSafeInteger(value)) throw new Error(`${path}: not a safe int`);
     return;
   }
-  if (Array.isArray(value)) return value.forEach((v, i) => checkStrings(v, `${path}[${i}]`));
+  if (Array.isArray(value)) {
+    const itemKey = `${pathKey}[]`;
+    return value.forEach((v, i) => checkValue(v, `${path}[${i}]`, itemKey));
+  }
   if (value && typeof value === 'object') {
+    const allowed = ALLOWED[pathKey];
+    if (!allowed) throw new Error(`${path}: unknown object`);
     for (const [key, v] of Object.entries(value)) {
-      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}.${key}: forbidden field in a bundle`);
-      checkStrings(v, `${path}.${key}`);
+      if (!allowed.has(key)) throw new Error(`${path}.${key}: not in the bundle`);
+      checkValue(v, `${path}.${key}`, key);
     }
   }
 };
 
 /**
- * The strict production check the host applies in dev (`StrictDiagnosticsBundle`), in a form the
- * zod-free engine can run on every call: every account identity is a 16-hex salted hash, no string is
- * longer or freer than a code-shaped line, and no provider-error or item field exists anywhere. Throws
- * `internal` — a malformed bundle must never leave in production either.
+ * The production check `StrictDiagnosticsBundle` applies in the host, in a form the zod-free engine can run on
+ * every call: the object's keys are exactly the bundle's, every string but `versions.app` is a catalog code,
+ * account identities are 16-hex salted hashes, numbers are safe ints. Throws `internal` — a malformed bundle
+ * must never leave in production either.
  */
 export function checkBundle(bundle: DiagnosticsBundle): void {
   try {
-    checkStrings(bundle, 'bundle');
+    checkValue(bundle, 'bundle', '');
   } catch (error) {
     throw contractError({ type: 'internal', message: String(error) });
   }

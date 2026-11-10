@@ -187,14 +187,31 @@ function installSalt(store: StorePort): string {
  * protocol log), `info` otherwise. A read failure or a store that is not open yet answers `info` — verbose never
  * turns on by accident.
  */
-function verboseLevel(store: StorePort, clock: ComposeOptions['clock']) {
+/** The verbose window's length (`Diagnostics/verbose`), and how often the meta row is re-read per log event. */
+const VERBOSE_MS = 15 * 60_000;
+const VERBOSE_CACHE_MS = 1_000;
+
+/**
+ * The logger's per-event level for the protocol log: the persisted deadline is read at most once a second (a
+ * SQLite read on every log event was the cost Opus flagged), a deadline more than VERBOSE_MS out answers info
+ * (a clock set back cannot stretch the window), and any store error fails closed to info.
+ */
+export function verboseLevel(store: StorePort, clock: ComposeOptions['clock']) {
+  let checkedAt = -Infinity;
+  let until = 0;
   return (): 'debug' | 'info' => {
     try {
-      const raw = store.read(
-        q => q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'verbose_until'")?.value,
-      );
-      const until = raw === undefined ? 0 : Number(raw);
-      return Number.isFinite(until) && until > clock.now() ? 'debug' : 'info';
+      const now = clock.now();
+      if (now - checkedAt >= VERBOSE_CACHE_MS) {
+        const raw = store.read(
+          q =>
+            q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'verbose_until'")?.value,
+        );
+        const next = raw === undefined ? 0 : Number(raw);
+        until = Number.isFinite(next) ? next : 0;
+        checkedAt = now;
+      }
+      return until > now && until - now <= VERBOSE_MS ? 'debug' : 'info';
     } catch {
       return 'info';
     }
