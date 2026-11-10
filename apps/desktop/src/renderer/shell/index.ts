@@ -88,13 +88,17 @@ export class NotImplementedError extends Error {
 export interface SheetArgs {
   /**
    * The weekly Gmail reconnect (DESIGN 7.1, ReconnectSheet): 'reconnect' for `needsReauth`
-   * and `health.reconnectBy` within 24 hours, 'grant' for `needsPermission`. The sheet calls
-   * `api.account.reconnect` ('reconnect') or `api.account.grantPermissions` ('grant') and
-   * follows that flow's `connect` frames by `connectId` (the frame's `mode` is
-   * `reconnect` or `grantPermissions`); the shell passes `mode` on as
-   * `ReconnectSheetProps.mode` for the copy.
+   * and `health.reconnectBy` within 24 hours, 'grant' for `needsPermission`, 'enableEditing'
+   * for Settings → Calendar's "Enable editing". The sheet calls `api.account.reconnect`
+   * ('reconnect') or `api.account.grantPermissions` ('grant'; 'enableEditing' adds
+   * `enable: 'calendarWrite'` for the events scope) and follows that flow's `connect`
+   * frames by `connectId` (the frame's `mode` is `reconnect` or `grantPermissions`);
+   * the shell passes `mode` on as `ReconnectSheetProps.mode` for the copy.
    */
-  reconnect: { readonly accountId: AccountId; readonly mode: 'reconnect' | 'grant' };
+  reconnect: {
+    readonly accountId: AccountId;
+    readonly mode: 'reconnect' | 'grant' | 'enableEditing';
+  };
   /**
    * The AI consent card as a sheet (plan 30 4.5 #1: Settings → AI "Review" after a provider
    * change, or `Consent.needsReconsent`). Provider and model default to the Summaries choice in
