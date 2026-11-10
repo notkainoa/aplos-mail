@@ -229,8 +229,18 @@
   padding-right: 0;
 }
 
+/* The harness states' notice toast, where the shell's stack would put it: bottom centre, above the pane. */
+.calp-toast {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+}
+
 /* The harness states' stand-in window and sidebar (CalendarStates): the real sidebar is ui-shell's. */
 .calp-window {
+  position: relative;
   height: 100%;
   display: flex;
   background: var(--shell);

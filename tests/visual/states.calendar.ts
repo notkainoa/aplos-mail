@@ -283,4 +283,34 @@ export const calendarStates: readonly VisualState[] = [
     mockup: 'calendar-week.html (month)',
     filled: 0,
   },
+  {
+    id: 'write-turn-on-editing',
+    frame: 'shell',
+    title:
+      'Calendar: Team sync is Jordan’s, the grant lacks the write scope — Turn on editing, Enable editing',
+    components: [...DETAIL, 'Button'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-event.html (detail)',
+    filled: 0,
+  },
+  {
+    id: 'write-conflict-reopened',
+    frame: 'shell',
+    title:
+      'Calendar: the save raced a remote change — the editor re-opens on the newer copy with why',
+    components: [...GRID, 'Dialog'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-event.html (editor)',
+    filled: 1,
+  },
+  {
+    id: 'write-uncertain',
+    frame: 'shell',
+    title:
+      'Calendar: the write’s answer was lost — check your calendar before trying again, no Retry',
+    components: [...GRID, 'Toast'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
 ];
