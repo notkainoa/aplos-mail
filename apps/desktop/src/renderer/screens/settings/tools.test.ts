@@ -11,6 +11,7 @@ import { STATES, staticScreen } from './preview/states';
 import {
   EMPTY_TOOL_DRAFT,
   revokeConfirm,
+  TOOL_KEY_NOTE,
   kindNote,
   scopeWarnings,
   toggleScope,
@@ -226,5 +227,18 @@ describe('ui-settings: Add a tool', () => {
     const revoke = renderToStaticMarkup(staticScreen(STATES['tool-revoke-confirm']));
     assert.match(revoke, /Revoke “Terminal assistant”\?/);
     assert.match(revoke, />Revoke</);
+  });
+});
+
+describe('key file honesty (security read of #419)', () => {
+  test('the key file note says any program running as the owner can read the file', () => {
+    assert.match(TOOL_KEY_NOTE, /Any program running as you can read the file/);
+    assert.match(TOOL_KEY_NOTE, /shown once/);
+  });
+
+  test('Revoke never claims the key file is gone: it may still be on this Mac', () => {
+    const { consequence } = revokeConfirm('Notes');
+    assert.match(consequence, /may still be on this Mac/);
+    assert.doesNotMatch(consequence, /\b(deleted|removed|gone|erased)\b/i);
   });
 });
