@@ -38,6 +38,8 @@ export function calendarOnLine(count: number): string {
 export interface CalendarAccessAction {
   readonly label: string;
   readonly mode: 'reconnect' | 'grant';
+  /** 'calendarWrite' on a grant asks the Enable-editing consent; absent for the read grant. */
+  readonly enable?: 'calendarWrite';
 }
 
 export type CalendarAccess =

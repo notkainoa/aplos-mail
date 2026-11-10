@@ -325,6 +325,8 @@ async function setEvent(
       scope: 'occurrence',
       fields: toPortFields(change.fields),
       notify,
+      // The event id derives from the op id, so a re-sent create meets 409, not a duplicate.
+      opId: args.opId,
     });
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }
@@ -347,13 +349,66 @@ async function setEvent(
     auditCall(ctx, 'Event/set', args.opId);
     return { receipt: receipt(ctx, args.opId) };
   }
+  const fields = toPortFields(change.fields);
+  // A 'series' edit opened from one occurrence carries that occurrence's new times; the series must move by
+  // the DELTA, not to the occurrence's absolute times (MED, #394: a naive patch would drag the whole series
+  // to the clicked instance's slot).
+  if (change.scope === 'series' && ref.recurrenceId) rebaseSeriesTimes(ctx, ref, fields);
   const result = await ctx.services.calendar.put(ref.accountId, {
     ...target,
     scope: change.scope,
-    fields: toPortFields(change.fields),
+    fields,
     notify,
   });
   return savedEvent(ctx, args.opId, result, ref.accountId, ref.calRemote);
+}
+
+/**
+ * Rebase `fields.start`/`end` onto the master when a series edit was opened from one occurrence: the user's
+ * new times describe THE OCCURRENCE, so the master's stored times shift by the same delta (keeps the
+ * master's own slot, duration and zone). `utc` and `date` times rebase; a `floating` time passes through.
+ */
+function rebaseSeriesTimes(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
+  if (!start || (start.type !== 'utc' && start.type !== 'date')) return;
+  const master = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
+  if (!master) throw notFoundEvent();
+  const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
+  const occStart =
+    occ?.start_utc ??
+    instant(recurrenceIdToTime(ref.recurrenceId), zone(ctx, ref.accountId, ref.calRemote));
+  const day = 86_400_000;
+  if (start.type === 'utc') {
+    const delta = start.utc - occStart;
+    const end = fields.end;
+    fields.start = { type: 'utc', utc: master.start_utc + delta };
+    // A duration change applies as the new span from the shifted start; an unchanged end rides the delta.
+    fields.end =
+      end?.type === 'utc'
+        ? { type: 'utc', utc: master.start_utc + delta + (end.utc - start.utc) }
+        : { type: 'utc', utc: master.end_utc + delta };
+    return;
+  }
+  // All-day: the delta is whole days of the master's stored epoch dates.
+  const deltaMs = Math.round((Date.parse(`${start.date}T00:00:00Z`) - occStart) / day) * day;
+  const iso = (epoch: number) => new Date(epoch).toISOString().slice(0, 10);
+  const newStartMs = master.start_utc + deltaMs;
+  const end = fields.end;
+  fields.start = { type: 'date', date: iso(newStartMs) };
+  fields.end =
+    end?.type === 'date'
+      ? {
+          type: 'date',
+          date: iso(
+            newStartMs +
+              (Date.parse(`${end.date}T00:00:00Z`) - Date.parse(`${start.date}T00:00:00Z`)),
+          ),
+        }
+      : { type: 'date', date: iso(master.end_utc + deltaMs) };
 }
 
 async function savedEvent(
