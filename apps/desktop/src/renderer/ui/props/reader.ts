@@ -54,8 +54,8 @@ export interface ThreadMessageProps {
   from: string;
   /** `--dim` recipients phrase, e.g. "to you, Mina Cho". */
   toLabel: string;
-  /** The thread's subject, on the card's own top line above a hairline (owner request 2026-11-10: the whole email on one card). Absent: no top line. The screen gives it to the thread's first card, and only while a written summary stands above (with no summary the subject already is the top line, so it is not shown twice); that card may be a fold, and the subject sits outside its toggle button. */
-  subject?: string;
+  /** The mark before the name in the card header (the sender's avatar square). Only on a card that is not foldable. */
+  leading?: ReactNode;
   /** Replaces the `toLabel` phrase in the head: the screen's "To" with its recipient circles and the chevron that opens the details. Only on a card that is not foldable (a fold's head is one button, and a button cannot hold another). */
   recipients?: ReactNode;
   /** The head's right side: the screen's Importance menu, bell and ⋯. Same rule as `recipients`. */

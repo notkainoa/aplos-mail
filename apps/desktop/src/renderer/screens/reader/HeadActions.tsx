@@ -213,12 +213,12 @@ function MoreMenu({ row, suggestion, controls }: HeadActionsProps) {
   );
 }
 
-/** Importance, the bell and ⋯, in that order. */
+/** The bell, Importance and ⋯, in that order (owner sketch 2026-11-10). */
 export function HeadActions(props: HeadActionsProps) {
   return (
     <>
-      <ImportanceMenu row={props.row} controls={props.controls} />
       <NotificationBell state={notificationOf(props.message)} />
+      <ImportanceMenu row={props.row} controls={props.controls} />
       <MoreMenu {...props} />
     </>
   );
