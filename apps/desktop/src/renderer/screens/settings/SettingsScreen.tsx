@@ -10,6 +10,7 @@ import { Puck } from '../../ui/surfaces';
 import { Overlays } from './overlays';
 import { FailureLine, MissingAnchor } from './parts';
 import { navItems } from './settings.model';
+import { focusRowId, focusRowTarget } from './rowFocus';
 import type { WriteFailure } from './ports';
 import { Accounts } from './sections/accounts';
 import { Ai } from './sections/ai';
@@ -148,6 +149,49 @@ export function SettingsScreen({
   const { data } = rest;
   const dataVersion = screenDataVersion(data);
 
+  // DESIGN 11.2: focus is never lost on commit. A row's control can leave the DOM while it holds focus —
+  // Calendar → Accounts' "Enable editing" unmounts once the account flips to "Editing on" — and the
+  // browser drops focus on the page. Remember the row the focused control sat in, so the commit below
+  // can hand its focus to that row instead. Focus is tracked by events, not commits: the sheet's own
+  // restore can land between two of them.
+  const lastFocus = useRef<{ rowId: string | null; el: Element } | null>(null);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const active = document.activeElement;
+    if (active && el.contains(active))
+      lastFocus.current = { rowId: focusRowId(active), el: active };
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Element)
+        lastFocus.current = { rowId: focusRowId(event.target), el: event.target };
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      // Focus went to a real element outside the screen, or to the page while its control still
+      // stood: the row is owed nothing. A control leaving the DOM fires this inside the detached
+      // subtree, which never reaches the screen, so the record survives for the check below.
+      const next = event.relatedTarget;
+      if (next instanceof Node || (event.target as Element).isConnected) lastFocus.current = null;
+    };
+    el.addEventListener('focusin', onFocusIn);
+    el.addEventListener('focusout', onFocusOut);
+    return () => {
+      el.removeEventListener('focusin', onFocusIn);
+      el.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
+
+  // After a commit that took the focused control away — an accounts update flipping an editing row —
+  // focus sits on the page: give it to the row the control lived in. Never while focus is held
+  // elsewhere or on a control that still stands.
+  useEffect(() => {
+    const el = root.current;
+    const lost = lastFocus.current;
+    if (!el || !lost?.rowId || lost.el.isConnected) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    focusRowTarget(lost.rowId, el)?.focus({ preventScroll: true });
+  });
+
   // A deep link lands on its row; a plain section switch starts at the top. Anything else keeps its place.
   useEffect(() => {
     const el = root.current;
@@ -226,7 +270,7 @@ export function SettingsScreen({
 
   return (
     <div className="settings-screen" ref={root} data-section={section}>
-      {failure && !rest.view.diagnostics ? (
+      {failure && !rest.view.diagnostics && !rest.view.addTool ? (
         <div className="settings-failure-row">
           <FailureLine failure={failure} />
         </div>

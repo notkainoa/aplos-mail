@@ -4,8 +4,6 @@
  * fill them with stand-ins.
  *
  * REQUESTS (also in the lane report):
- * - ui-shell: a real save path for the report — `Diagnostics/export` plus main's save dialog (`File/save`) — is in
- *   the contract but not on `DataApi`, so `diagnosticsCopy` is the only way out today and the dialog says so.
  * - ui-onboard: `renderReconnect` is `<ReconnectFlow accountId mode onClose>` and `showWelcome` is
  *   `renderer/onboarding/showWelcome`; both are supplied by whoever mounts Settings.
  */
@@ -18,6 +16,9 @@ import type {
   ClientEntry,
   ListenerInfo,
   QueueEntry,
+  ToolKind,
+  ToolScope,
+  WorkflowInfo,
 } from './settings.model';
 import type { AiProvider } from '../../data';
 
@@ -35,11 +36,20 @@ export interface SettingsData {
   readonly usage?: AiUsageInfo;
   readonly listener?: ListenerInfo;
   readonly clients?: readonly ClientEntry[];
+  /** Device sync, loaded with the General section. */
+  readonly workflow?: WorkflowInfo;
   readonly queue?: readonly QueueEntry[];
   /** The diagnostics preview, once asked for. */
   readonly bundle?: BundleInfo;
+  /** Verbose logging, once the owner turned it on here: `until` is when the engine switches it off by itself. The engine has no read for it, so a fresh screen starts at off. */
+  readonly verbose?: { readonly until?: number };
   /** `Calendar/get`'s list, loaded while the accounts or calendar section is open; undefined until it answers. */
   readonly calendars?: readonly Calendar[];
+}
+
+/** What a save dialog answered: the owner either picked a place or closed it. */
+export interface SaveResult {
+  readonly canceled: boolean;
 }
 
 /** The contract calls Settings makes, each by the contract method's own shape. */
@@ -63,9 +73,23 @@ export interface SettingsApiPort {
   consentRevoke(): Promise<void>;
   listenerSet(enabled: boolean): Promise<void>;
   clientsRevoke(id: string): Promise<void>;
+  /** `Clients/grant`: the new tool, with `tokenPath` (where its key file is). The key itself never crosses the contract. */
+  clientsGrant(input: {
+    name: string;
+    kind: ToolKind;
+    scopes: readonly ToolScope[];
+  }): Promise<ClientEntry>;
+  /** `Workflow/status`: whether device sync exists yet, and whether it is on. */
+  workflowStatus(): Promise<WorkflowInfo>;
   diagnosticsPreview(): Promise<BundleInfo>;
-  /** Copies the report to the clipboard (there is no save-to-file port yet). */
+  /** Copies the report to the clipboard. */
   diagnosticsCopy(): Promise<void>;
+  /** `Diagnostics/export`, then main's save dialog (`File/save`); `canceled` when the owner closed the dialog. */
+  diagnosticsSave(): Promise<SaveResult>;
+  /** `Diagnostics/verbose {on}`: the answer carries when it switches itself off. */
+  verboseSet(on: boolean): Promise<{ until?: number }>;
+  /** `Data/export`, then main's save dialog (`File/save`). */
+  dataExport(): Promise<SaveResult>;
   queueRetry(id: string): Promise<void>;
   queueDiscard(id: string): Promise<void>;
   /** Reads for the sections that need them; each is asked for only when its section is open. */
@@ -86,8 +110,12 @@ export interface SettingsHost {
   toast?(message: string): void;
   /** Puts a local change on the shared undo stack (Z). */
   pushUndo?(entry: { label: string; undo(): void | Promise<void> }): void;
-  /** The reconnect flow, mounted by ui-onboard (`ReconnectFlow`). */
-  renderReconnect?(accountId: string, mode: 'reconnect' | 'grant', onClose: () => void): ReactNode;
+  /** The reconnect flow, mounted by ui-onboard (`ReconnectFlow`). 'enableEditing' is Settings → Calendar's ask for the events scope. */
+  renderReconnect?(
+    accountId: string,
+    mode: 'reconnect' | 'grant' | 'enableEditing',
+    onClose: () => void,
+  ): ReactNode;
   /** "Add an account" inline, ui-onboard's account component. */
   renderAddAccount?(onClose: () => void): ReactNode;
   /** Opens the onboarding window beside the mail window, changing nothing (`showWelcome`). */

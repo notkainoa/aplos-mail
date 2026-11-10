@@ -1,12 +1,26 @@
 /** Settings → Calendar: the connected accounts' calendar access first, then week start and what is added from
  * mail (DESIGN 7.10). The Accounts block is never silent: every account gets its state line and action from
  * `calendarAccessOf` — grant for "Calendar not allowed yet", reconnect for "Needs sign-in again" — and with no
- * accounts it says so and offers Add account. */
+ * accounts it says so and offers Add account. An account whose calendar is on gets the editing half from
+ * `calendarEditingOf`: quiet "Enable editing" while it is off (a refused write reads "Turn on editing" in
+ * attention tone instead), nothing once it is on. */
 import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
-import { CALENDAR_ACCESS_COPY, calendarAccessOf } from '../../calendar/accountCalendarState';
+import {
+  CALENDAR_ACCESS_COPY,
+  calendarAccessOf,
+  calendarEditingOf,
+  calendarWriteRefused,
+  EDITING_COPY,
+} from '../../calendar/accountCalendarState';
 import { Group, NotAvailable, Row, Select } from '../parts';
-import { hasCapability, tagColor, WEEK_START_OPTIONS, withCurrent } from '../settings.model';
+import {
+  CALENDAR_EDITING_COPY,
+  hasCapability,
+  tagColor,
+  WEEK_START_OPTIONS,
+  withCurrent,
+} from '../settings.model';
 import type { SectionProps } from './types';
 
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -34,7 +48,25 @@ export function Calendar({ data, actions, host }: SectionProps) {
       ) : (
         data.accounts.map((a, i) => {
           const access = calendarAccessOf(a, data.calendars);
-          const attention = access?.kind === 'not-allowed' || access?.kind === 'needs-signin';
+          // Editing is an add-on on the 'on' state only: "· Editing off" with Enable editing, "· Editing
+          // on" with nothing. A refused write (calendarWrite row) replaces the line with its own words
+          // and labels the same action "Turn on editing" — attention tone, but not an error banner.
+          const editing = access?.kind === 'on' ? calendarEditingOf(a) : null;
+          const refused = editing === 'off' && calendarWriteRefused(a);
+          const line = refused
+            ? EDITING_COPY.notice
+            : editing
+              ? `${access?.line ?? ''} · ${
+                  editing === 'on' ? CALENDAR_EDITING_COPY.on : CALENDAR_EDITING_COPY.off
+                }`
+              : access?.line;
+          const attention =
+            refused || access?.kind === 'not-allowed' || access?.kind === 'needs-signin';
+          const action = refused
+            ? { label: CALENDAR_EDITING_COPY.turnOn, mode: 'enableEditing' as const }
+            : editing === 'off'
+              ? { label: EDITING_COPY.action, mode: 'enableEditing' as const }
+              : access?.action;
           return (
             <Row
               key={a.id}
@@ -43,15 +75,15 @@ export function Calendar({ data, actions, host }: SectionProps) {
               idSuffix={a.id}
               label={a.name || a.address}
               mark={tagColor(a, i)}
-              description={access?.line ?? undefined}
+              description={line ?? undefined}
               descriptionTone={attention ? 'attention' : 'default'}
               control={
-                access?.action && host.renderReconnect ? (
+                action && host.renderReconnect ? (
                   <Button
                     variant="text"
-                    label={access.action.label}
-                    ariaLabel={`${a.name || a.address}: ${access.action.label}`}
-                    onPress={() => actions.startReconnect(a.id, access.action!.mode)}
+                    label={action.label}
+                    ariaLabel={`${a.name || a.address}: ${action.label}`}
+                    onPress={() => actions.startReconnect(a.id, action.mode)}
                   />
                 ) : undefined
               }

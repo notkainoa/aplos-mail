@@ -21,6 +21,8 @@ import {
   clients,
   consent,
   DEMO,
+  editingOn,
+  IMAP,
   JORDAN,
   models,
   needsReauth,
@@ -30,6 +32,7 @@ import {
   reconnectIn,
   session,
   usage,
+  writeRefused,
 } from './fixtures';
 import { standInPorts } from './standin';
 
@@ -161,6 +164,26 @@ export const STATES: Record<string, StateSpec> = {
     section: 'calendar',
     data: dataOf({ calendars: [] }),
   },
+  'calendar-editing-off': {
+    title: 'Calendar, editing off on both accounts: Enable editing',
+    section: 'calendar',
+    data: dataOf({ accounts: [ALEX, JORDAN] }),
+  },
+  'calendar-editing-on': {
+    title: 'Calendar, the events scope granted: Editing on, no action',
+    section: 'calendar',
+    data: dataOf({ accounts: [editingOn(ALEX)] }),
+  },
+  'calendar-editing-refused': {
+    title: 'Calendar, a write was refused: Turn on editing (attention)',
+    section: 'calendar',
+    data: dataOf({ accounts: [writeRefused(ALEX)] }),
+  },
+  'calendar-editing-na': {
+    title: 'Calendar, demo and non-Google accounts claim nothing about editing',
+    section: 'calendar',
+    data: dataOf({ accounts: [DEMO, IMAP] }),
+  },
   'calendar-no-accounts': {
     title: 'Calendar, no accounts yet',
     section: 'calendar',
@@ -257,6 +280,12 @@ export const STATES: Record<string, StateSpec> = {
     section: 'accounts',
     data: dataOf({ accounts: [needsReauth(ALEX)] }),
     view: { reconnect: { accountId: ALEX.id, mode: 'reconnect' } },
+  },
+  'reconnect-sheet-editing': {
+    title: 'Reconnect sheet, turning on calendar editing',
+    section: 'calendar',
+    data: dataOf(),
+    view: { reconnect: { accountId: ALEX.id, mode: 'enableEditing' } },
   },
   'ai-default': { title: 'AI, Groq from the environment', section: 'ai', data: dataOf() },
   'ai-testing': {
@@ -430,6 +459,18 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ bundle: bundle() }),
     view: { diagnostics: true, diagnosticsCopied: true },
   },
+  'diagnostics-saved': {
+    title: 'Help, diagnostics preview after the save',
+    section: 'help',
+    data: dataOf({ bundle: bundle() }),
+    view: { diagnostics: true, diagnosticsSaved: true },
+  },
+  'help-verbose-on': {
+    title: 'Help, verbose logging on until a set time; data exported',
+    section: 'help',
+    data: dataOf({ verbose: { until: NOW + 12 * 60_000 } }),
+    view: { dataExported: true },
+  },
   'queue-inspector': {
     title: 'Help, the queue inspector',
     section: 'help',
@@ -444,6 +485,24 @@ export const STATES: Record<string, StateSpec> = {
       queue: true,
       confirm: { kind: 'discardQueueItem', id: 'q-send', label: 'Message to 1 person' },
     },
+  },
+  'tool-add': {
+    title: 'General, Add a tool',
+    section: 'general',
+    data: dataOf({ listener: { enabled: true }, clients: [] }),
+    view: { addTool: true },
+  },
+  'tool-revoke-confirm': {
+    title: 'General, revoking a tool asks first',
+    section: 'general',
+    data: tools(),
+    view: { confirm: { kind: 'revokeClient', id: 'client-cli', name: 'Terminal assistant' } },
+  },
+  'device-sync-later': {
+    title: 'General, device sync is not available yet',
+    section: 'general',
+    anchor: 'deviceSync',
+    data: dataOf({ workflow: { enabled: false, available: false } }),
   },
   'tools-on': {
     title: 'General, tools allowed on this Mac',

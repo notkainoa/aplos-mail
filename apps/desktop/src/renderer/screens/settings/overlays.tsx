@@ -17,12 +17,14 @@ import {
   providerName,
   removeAccountConfirm,
   removeKeyConfirm,
+  revokeConfirm,
   REMOVE_DEMO_CONFIRM,
   type ConsentView,
 } from './settings.model';
 import type { SectionProps } from './sections/types';
 import type { Confirmation } from './view';
 import { FailureLine } from './parts';
+import { AddToolDialog } from './toolDialogs';
 
 export function Overlays({ data, view, actions, host, failure }: SectionProps): ReactNode {
   const c = view.confirm;
@@ -52,6 +54,7 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
           onCancel={() => actions.cancelConfirm()}
         />
       ) : null}
+      {view.addTool ? <AddToolDialog {...{ actions, failure }} /> : null}
       {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
     </>
   );
@@ -172,8 +175,15 @@ function ConfirmDialog({
         ? REMOVE_DEMO_CONFIRM
         : confirm.kind === 'removeKey'
           ? removeKeyConfirm(data.settings, confirm.provider)
-          : discardConfirm(confirm.label);
-  const label = confirm.kind === 'discardQueueItem' ? 'Discard' : 'Remove';
+          : confirm.kind === 'revokeClient'
+            ? revokeConfirm(confirm.name)
+            : discardConfirm(confirm.label);
+  const label =
+    confirm.kind === 'discardQueueItem'
+      ? 'Discard'
+      : confirm.kind === 'revokeClient'
+        ? 'Revoke'
+        : 'Remove';
   return (
     <Confirm
       presentation="dialog"
@@ -201,33 +211,42 @@ function DiagnosticsDialog({
       size="md"
       title="Export diagnostics"
       description={DIAGNOSTICS_NOTE}
+      initialFocusId="set-diag-save"
       onClose={() => actions.closeDiagnostics()}
       footer={
         <>
           <Button
             variant="text"
-            label={view.diagnosticsCopied ? 'Close' : 'Cancel'}
+            label={view.diagnosticsCopied || view.diagnosticsSaved ? 'Close' : 'Cancel'}
             keys="Esc"
             keyHint="always"
             onPress={() => actions.closeDiagnostics()}
           />
           <Button
-            variant="filled"
+            variant="text"
             label="Copy report"
+            disabled={!data.bundle}
+            busy={view.busy.diagnostics === true}
+            onPress={() => void actions.copyDiagnostics()}
+          />
+          <Button
+            variant="filled"
+            id="set-diag-save"
+            label="Save report"
             keys="Return"
             keyHint="always"
             disabled={!data.bundle}
             busy={view.busy.diagnostics === true}
-            onPress={() => void actions.copyDiagnostics()}
+            onPress={() => void actions.saveDiagnostics()}
           />
         </>
       }
     >
       <div className="settings-report">
         {failure ? <FailureLine failure={failure} /> : null}
-        {view.diagnosticsCopied ? (
+        {view.diagnosticsCopied || view.diagnosticsSaved ? (
           <Text variant="small" tone="dim">
-            Copied.
+            {view.diagnosticsSaved ? 'Saved.' : 'Copied.'}
           </Text>
         ) : null}
         {!data.bundle ? <Text variant="small">Preparing the report.</Text> : null}

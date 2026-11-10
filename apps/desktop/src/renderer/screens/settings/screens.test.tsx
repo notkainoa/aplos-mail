@@ -124,7 +124,7 @@ describe('secrets never reach the screen (U7 acceptance 3)', () => {
     assert.match(dialog, /Export diagnostics/);
     assert.match(dialog, />Copy report</);
     assert.match(dialog, /puts it on your clipboard/);
-    assert.doesNotMatch(dialog, /where to save it|>Save report</);
+    assert.match(dialog, />Save report</);
     assert.match(dialog, /a1b2c3d4/); // the salted hash, short
     assert.doesNotMatch(dialog, /alex\.moreno@example\.com/);
   });
@@ -471,14 +471,15 @@ describe('states, copy and design rules', () => {
 
   test('every capability that is off reads "Not available yet" with no dead control', () => {
     const general = render('capabilities-off');
-    assert.equal((general.match(/Not available yet/g) ?? []).length, 4);
+    assert.equal((general.match(/Not available yet/g) ?? []).length, 5);
     assert.doesNotMatch(
       general,
       /role="switch"[^>]*aria-checked="true"[^>]*aria-labelledby="set-general-(allowTools|openAtLogin|menuBar)"/,
     );
     const help = render('capabilities-off-help');
-    assert.equal((help.match(/Not available yet/g) ?? []).length, 2);
-    assert.doesNotMatch(help, />Export<|>Open</);
+    assert.equal((help.match(/Not available yet/g) ?? []).length, 3);
+    assert.doesNotMatch(help, />Preview<|>Open</);
+    assert.doesNotMatch(help, /role="switch"[^>]*set-help-verboseLogging/);
   });
 
   test('Keyboard: the registry list, recording, conflict and refusal states', () => {

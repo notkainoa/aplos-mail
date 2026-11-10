@@ -32,7 +32,13 @@ import {
   type KeyFields,
 } from './keyboard.model';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
-import type { AccountWrite } from './settings.model';
+import {
+  withoutKeyPath,
+  type AccountWrite,
+  type ClientEntry,
+  type ToolKind,
+  type ToolScope,
+} from './settings.model';
 import type { Confirmation, SettingsView } from './view';
 
 export interface ControllerDeps {
@@ -270,7 +276,7 @@ export function createController(deps: ControllerDeps) {
       dropAccountOverlay(id);
       return ok;
     },
-    startReconnect(accountId: string, mode: 'reconnect' | 'grant') {
+    startReconnect(accountId: string, mode: 'reconnect' | 'grant' | 'enableEditing') {
       deps.setView({ reconnect: { accountId, mode } });
     },
     closeReconnect() {
@@ -589,14 +595,51 @@ export function createController(deps: ControllerDeps) {
       const ok = await guard('change that setting', () => ports.listenerSet(enabled));
       if (ok) deps.setData({ listener: { ...(data().listener ?? {}), enabled } });
     },
+    askRevokeClient(id: string, name: string) {
+      deps.setView({ confirm: { kind: 'revokeClient', id, name } });
+    },
     revokeClient(id: string) {
       return guard('revoke that tool', async () => {
         await ports.clientsRevoke(id);
         deps.setData({ clients: (data().clients ?? []).filter(c => c.id !== id) });
       });
     },
+    openAddTool() {
+      // The dialog shows the shared failure slot: another action's line must not appear inside it.
+      deps.fail(null);
+      deps.setView({ addTool: true });
+    },
+    closeAddTool() {
+      // A failed grant's Retry must not outlive the dialog: it would make a tool whose key path nobody sees.
+      if (deps.failure?.()?.op === 'allow that tool') deps.fail(null);
+      deps.setView({ addTool: false });
+    },
+    /**
+     * Allows a tool. The new tool joins the list without its key file's path; the path goes back to the dialog once
+     * and is kept nowhere else. Resolves with the client (for the dialog) or null when the engine refused.
+     */
+    async grantClient(
+      input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
+      onGranted: (client: ClientEntry) => void,
+    ): Promise<boolean> {
+      if (view().busy.grant) return false;
+      busy('grant', true);
+      // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
+      const ok = await guard('allow that tool', async () => {
+        const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
+        onGranted(granted);
+        const listed = withoutKeyPath(granted);
+        deps.setData({
+          clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
+        });
+      });
+      busy('grant', false);
+      return ok;
+    },
     async openDiagnostics() {
-      deps.setView({ diagnostics: true, diagnosticsCopied: false });
+      // The dialog shows the shared failure slot: another action's line must not appear inside it.
+      deps.fail(null);
+      deps.setView({ diagnostics: true, diagnosticsCopied: false, diagnosticsSaved: false });
       busy('diagnostics', true);
       try {
         deps.setData({ bundle: await ports.diagnosticsPreview() });
@@ -611,7 +654,10 @@ export function createController(deps: ControllerDeps) {
       busy('diagnostics', false);
     },
     closeDiagnostics() {
-      deps.setView({ diagnostics: false, diagnosticsCopied: false });
+      // A copy or save line belongs to the dialog; it does not stay on the page once the report is closed.
+      if (['copy the report', 'save the report'].includes(deps.failure?.()?.op ?? ''))
+        deps.fail(null);
+      deps.setView({ diagnostics: false, diagnosticsCopied: false, diagnosticsSaved: false });
       deps.setData({ bundle: undefined });
     },
     copyDiagnostics() {
@@ -620,9 +666,39 @@ export function createController(deps: ControllerDeps) {
       // A failure stays inside the open dialog (the page line is behind it), so the dialog stays up on a miss.
       return guard('copy the report', async () => {
         await ports.diagnosticsCopy();
-        deps.setView({ diagnosticsCopied: true });
+        deps.setView({ diagnosticsCopied: true, diagnosticsSaved: false });
         host.announce?.('Copied.');
       }).finally(() => busy('diagnostics', false));
+    },
+    saveDiagnostics() {
+      if (view().busy.diagnostics) return Promise.resolve(false);
+      busy('diagnostics', true);
+      // Closing the save dialog is an answer, not a failure: nothing is said and the report stays open.
+      return guard('save the report', async () => {
+        const { canceled } = await ports.diagnosticsSave();
+        if (canceled) return;
+        deps.setView({ diagnosticsSaved: true, diagnosticsCopied: false });
+        host.announce?.('Saved.');
+      }).finally(() => busy('diagnostics', false));
+    },
+    setVerbose(on: boolean) {
+      // One call at a time: two in flight could answer out of order and leave the switch saying the opposite.
+      if (view().busy.verbose) return Promise.resolve(false);
+      busy('verbose', true);
+      return guard('change verbose logging', async () => {
+        const { until } = await ports.verboseSet(on);
+        deps.setData({ verbose: on ? { until } : undefined });
+      }).finally(() => busy('verbose', false));
+    },
+    exportData() {
+      if (view().busy.dataExport) return Promise.resolve(false);
+      busy('dataExport', true);
+      return guard('export your data', async () => {
+        const { canceled } = await ports.dataExport();
+        if (canceled) return;
+        deps.setView({ dataExported: true });
+        host.announce?.('Saved.');
+      }).finally(() => busy('dataExport', false));
     },
     openQueue() {
       deps.setView({ queue: true });
@@ -667,6 +743,8 @@ export function createController(deps: ControllerDeps) {
         }
         case 'discardQueueItem':
           return guard('discard that item', () => ports.queueDiscard(c.id));
+        case 'revokeClient':
+          return self.revokeClient(c.id);
       }
     },
   };

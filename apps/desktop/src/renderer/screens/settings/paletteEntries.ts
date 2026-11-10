@@ -51,6 +51,8 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'assistants',
   ]),
   row('general', 'tools', 'Connected tools', ['revoke', 'clients', 'permissions']),
+  row('general', 'addTool', 'Add a tool', ['grant', 'allow', 'cli', 'mcp', 'key', 'token']),
+  row('general', 'deviceSync', 'Device sync', ['workflow', 'macs', 'pairing', 'code']),
   // Mail
   row('mail', 'undoSend', 'Undo send', ['delay', 'unsend', 'seconds']),
   row('mail', 'followUp', 'Follow up', ['nudge', 'no reply', 'days']),
@@ -138,6 +140,8 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   row('help', 'showWelcome', 'Show welcome', ['onboarding', 'setup', 'intro']),
   row('help', 'demoLoad', 'Load demo mail', ['sample', 'try']),
   row('help', 'diagnostics', 'Export diagnostics', ['report', 'logs', 'support']),
+  row('help', 'verboseLogging', 'Verbose logging', ['log', 'debug', 'headers', 'support']),
+  row('help', 'exportData', 'Export my data', ['download', 'backup', 'save', 'json', 'privacy']),
   row('help', 'queue', 'Queue inspector', ['pending', 'retry', 'discard', 'failed', 'outbox']),
   row('help', 'devDetails', 'Developer details', ['model names', 'scores', 'debug']),
 ];

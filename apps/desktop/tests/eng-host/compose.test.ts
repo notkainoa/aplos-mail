@@ -627,7 +627,7 @@ test("compose reaches the engine's own connect sessions: close disposes the map 
   );
 });
 
-test('verboseLevel: deadline survives a restart, stale deadline and store errors stay off, clock setback guarded', () => {
+test('verboseLevel: deadline survives a restart, stale deadline and store errors stay off, clock setback guarded', async () => {
   // A planted deadline is honoured until it passes; one >15 min out (clock was set back) is not.
   const mk = (until: number | undefined) => ({
     read: ((fn: (q: { get: () => unknown }) => unknown) =>
@@ -635,13 +635,12 @@ test('verboseLevel: deadline survives a restart, stale deadline and store errors
         ? fn({ get: () => undefined })
         : fn({ get: () => ({ value: String(until) }) })) as never,
   });
-  let now = 1_000;
-  const clock = { now: () => now };
-  const on = verboseLevel(mk(now + 5_000) as never, clock);
+  const clock = fakeClock(1_000);
+  const on = verboseLevel(mk(clock.now() + 5_000) as never, clock);
   assert.equal(on(), 'debug');
-  now += 6_000;
+  await clock.set(1_000 + 6_000);
   assert.equal(on(), 'info', 'past the deadline it is off');
-  const far = verboseLevel(mk(now + 20 * 60_000) as never, clock);
+  const far = verboseLevel(mk(clock.now() + 20 * 60_000) as never, clock);
   assert.equal(far(), 'info', 'a deadline further than 15 min out is a clock-setback, not verbose');
   const err = verboseLevel(
     {
