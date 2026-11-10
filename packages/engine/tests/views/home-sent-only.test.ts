@@ -5,6 +5,7 @@ import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { compileView } from '../../src/views/registry';
 import type { ViewEnv } from '../../src/views/specs';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg } from '../store/helpers';
+import { incoming, patch, worldEngine } from './harness';
 
 /*
  * A thread the owner started and nobody has answered is not new mail. Every thread starts `new`, and the first sync
@@ -66,6 +67,46 @@ test('a thread the owner started stays out of Do now; mail someone sent to the o
   assert.deepEqual(homeIds('do'), [`${ACCOUNT}:theirs`]);
 });
 
-test('and the Sent-only thread is still in Follow up once nobody has answered it', () => {
+test('unchanged by the fix: the Sent-only thread is still in Follow up once nobody has answered it', () => {
   assert.deepEqual(homeIds('follow', true), [`${ACCOUNT}:mine`]);
+});
+
+// Through the real engine (`View/query`). The Sent-only threads are put in every lane first, so the Update and Low
+// assertions can fail: a thread in lane `low` that the cursor let through would show up there.
+test('a Sent-only thread is in no Home lane whichever lane it holds; an answered one is in its lane', async () => {
+  const t = await worldEngine(3, 0);
+  try {
+    const lanes = ['do', 'update', 'low'] as const;
+    const mine = (lane: string) => `lonely-${lane}`;
+    const heard = (lane: string) => `heard-${lane}`;
+    t.commit(
+      lanes.flatMap(lane => [
+        incoming(heard(lane)),
+        {
+          ...incoming(mine(lane), { folder: 'SENT', seen: true }),
+          from: { address: 'owner@mail.example', name: 'Owner' },
+          to: [{ address: 'friend@mail.example' }],
+          flags: { seen: true, flagged: false, draft: false, fromMe: true },
+        },
+      ]),
+      'sync',
+    );
+    t.commit(
+      lanes
+        .flatMap(lane => [mine(lane), heard(lane)])
+        .map(id => patch(`acct-1:${id}`, { rankSource: 'user', lane: id.split('-')[1] })),
+    );
+    for (const lane of lanes) {
+      const ids = (
+        await t.call('View/query', { spec: { kind: 'homeSection', section: lane }, limit: 50 })
+      ).ids;
+      assert.ok(ids.includes(`acct-1:${heard(lane)}`), `mail from someone stays in ${lane}`);
+      assert.ok(
+        !ids.includes(`acct-1:${mine(lane)}`),
+        `a Sent-only thread is not new mail in ${lane}`,
+      );
+    }
+  } finally {
+    await t.close();
+  }
 });
