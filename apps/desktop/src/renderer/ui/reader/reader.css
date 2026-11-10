@@ -184,7 +184,7 @@
 .ui-thread-message__head:has(> .ui-thread-message__line[data-layout='card']) {
   padding-bottom: var(--space-3);
   margin-bottom: var(--space-5);
-  box-shadow: 0 var(--hairline) 0 var(--line);
+  box-shadow: 0 var(--hairline) 0 var(--line-strong);
 }
 .ui-thread-message__line[data-layout='card'] {
   align-items: center;

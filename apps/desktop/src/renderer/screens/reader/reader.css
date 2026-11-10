@@ -413,3 +413,10 @@
 .aplos-reader[data-stage='one-by-one'] .aplos-reader__thread {
   margin-top: 0;
 }
+
+/* In the dark theme the marks are a soft lift of the card, not the near-black --sunken (opaque, so overlapping circles stay clean). */
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-circle,
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-sender-mark {
+  --circle-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
+  background-color: var(--circle-fill);
+}
