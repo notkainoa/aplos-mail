@@ -87,3 +87,18 @@ test('a listener reads status but the secret methods stay window-only', async ()
     await w.engine.close();
   }
 });
+
+test('a listener disable lands an audit row naming the client', async () => {
+  const w = await world();
+  try {
+    w.db.prepare("INSERT INTO meta(key, value) VALUES('workflow_sync', '1')").run();
+    await w.asClient('c9', ['read', 'admin']).call('Workflow/disable', {});
+    const rows = w.db
+      .prepare("SELECT method, client_id FROM audit_log WHERE method = 'Workflow/disable'")
+      .all() as { method: string; client_id: string }[];
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.client_id, 'c9');
+  } finally {
+    await w.engine.close();
+  }
+});

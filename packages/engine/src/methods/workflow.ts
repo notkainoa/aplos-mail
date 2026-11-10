@@ -1,5 +1,6 @@
 import type { Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import { auditWrites } from '../host/audit';
 import { type AreaHandlers, type MethodContext } from './types';
 
 /**
@@ -28,7 +29,10 @@ function disable(_args: Input<'Workflow/disable'>, ctx: MethodContext): Output<'
     ctx.services.store.commit({
       opId: `workflow-disable-${ctx.services.clock.now()}`,
       origin: 'local',
-      writes: [{ kind: 'meta', key: KEY, value: '0' }],
+      writes: [
+        { kind: 'meta', key: KEY, value: '0' },
+        ...auditWrites(ctx.caller, 'Workflow/disable'),
+      ],
     });
   return { enabled: false };
 }
