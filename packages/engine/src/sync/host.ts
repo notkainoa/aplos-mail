@@ -50,7 +50,7 @@ import {
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
 import { attachmentBytes, openThreadRemote, originalRemote } from './host-read';
-import { calendarTargetOf, createCalendarPort } from './host-calendar';
+import { calendarTargetOf, createCalendarPort } from '../calendar/write-port';
 import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';

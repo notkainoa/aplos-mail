@@ -31,7 +31,7 @@ import {
 } from '../ports';
 import { LANES } from './budgets';
 import { stepWrites } from './facts';
-import { GOOGLE_CALENDAR_WRITE_SCOPE } from './host-calendar';
+import { GOOGLE_CALENDAR_WRITE_SCOPE } from '../calendar/write-port';
 import { peerClaimLive } from './lease';
 import { flushable, parseOpPayload, pendingOp, readOps, settleWrites, type OpRow } from './ops';
 import { readFailures, readMemory, readStates } from './persist';

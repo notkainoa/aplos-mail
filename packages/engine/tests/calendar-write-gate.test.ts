@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ContractError } from '@aplos/contract/contract-error';
 import { NotSentError, type CalendarAdapter, type EventChange } from '../src/ports';
-import { GOOGLE_CALENDAR_WRITE_SCOPE } from '../src/sync/host-calendar';
+import { GOOGLE_CALENDAR_WRITE_SCOPE } from '../src/calendar/write-port';
 import { ACCOUNT, FakeAdapter, connectResult, disk, settle, world } from './sync-actor-helpers';
 
 // The write gate (prov-cal): event writes need a scope that reading does not, so a read-only grant is refused before
