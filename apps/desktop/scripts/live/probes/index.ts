@@ -1,5 +1,6 @@
 import type { LiveProvider, SmokeProbe, Tier } from '../types';
 import { adapterSendFind } from './gmail-adapter-send';
+import { archiveDeltaCost } from './gmail-archive-delta';
 import { authResultsShape } from './gmail-auth-results';
 import { calendarReadSync } from './gcal-r';
 import { draftMessageIdAfterEdit } from './gmail-draft-message-id';
@@ -10,6 +11,7 @@ import { sendMessageId } from './gmail-send-message-id';
 export const PROBES: readonly SmokeProbe[] = [
   profileAndLabels,
   inboxWindowMetadata,
+  archiveDeltaCost,
   authResultsShape,
   draftMessageIdAfterEdit,
   sendMessageId,
