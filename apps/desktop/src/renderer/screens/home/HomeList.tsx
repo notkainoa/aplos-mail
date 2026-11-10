@@ -6,7 +6,7 @@
 import type { Account, HomeSectionView, HomeView, ThreadId, ThreadRow } from '../../data';
 import type { CommandAction, Density, ListboxBinding, SectionHeaderProps } from '../../ui/props';
 import { FocusLetter, FocusSlot, ListBox, ListGroup, ListRow, LowBand } from '../../ui/list';
-import { LOW_KEY, type HomeLayout, type SectionKey } from './homeModel';
+import { LOW_KEY, showsLowBand, type HomeLayout, type SectionKey } from './homeModel';
 import {
   dateOf,
   dueOf,
@@ -204,7 +204,7 @@ function Section(props: HomeListProps & { name: 'update' | 'follow' }) {
 
 function Band(props: HomeListProps) {
   const { low } = props.view;
-  if (low.count === 0) return null;
+  if (!showsLowBand(props.layout)) return null;
   return (
     <LowBand
       id={LOW_DOM_ID}
