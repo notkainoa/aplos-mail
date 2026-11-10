@@ -13,7 +13,6 @@
     "./ai/lanes": "./src/ai/lanes.ts",
     "./clock/loop": "./src/clock/loop.ts",
     "./clock/system": "./src/clock/system.ts",
-    "./ai/lanes": "./src/ai/lanes.ts",
     "./sync/account-read": "./src/sync/account-read.ts",
     "./sync/connect-sessions": "./src/sync/connect-sessions.ts",
     "./sync/governor": "./src/sync/governor.ts",
