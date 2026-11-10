@@ -129,6 +129,9 @@ export interface SettingsHost {
 /** Where a failed write goes: one inline line with Retry, the control back at its old value. */
 export interface WriteFailure {
   readonly op: string;
-  retry(): void;
+  /** A whole sentence in place of "Couldn't <op>.", for a failure whose outcome could not be confirmed. */
+  readonly line?: string;
+  /** Absent when a second try could repeat a write that may already have landed: then the line draws no Retry. */
+  retry?(): void;
   dismiss(): void;
 }

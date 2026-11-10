@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { ContractError } from '@aplos/contract';
 import { AddToolDialog } from './toolDialogs';
 import { createController } from './controller';
 import type { SettingsApiPort, SettingsData, WriteFailure } from './ports';
@@ -10,15 +11,18 @@ import { clients, NOW } from './preview/fixtures';
 import { STATES, staticScreen } from './preview/states';
 import {
   EMPTY_TOOL_DRAFT,
+  grantUnconfirmed,
   revokeConfirm,
   TOOL_KEY_NOTE,
   kindNote,
   scopeWarnings,
   toggleScope,
   toolDraftReady,
+  TOOL_SCOPES,
   withoutKeyPath,
   workflowLine,
   type ClientEntry,
+  type ToolScope,
 } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 
@@ -70,6 +74,23 @@ describe('ui-settings: Add a tool', () => {
     assert.deepEqual(toggleScope(['read'], 'send', true), ['read', 'send']);
     assert.deepEqual(toggleScope(['send', 'read'], 'read', false), ['send']);
     assert.deepEqual(toggleScope(['admin'], 'draft', true), ['draft', 'admin'], 'list order');
+  });
+
+  test('the permission list names exactly the scopes Clients/grant accepts', () => {
+    // Compile-time: a new contract scope misses a key here and fails typecheck until it is drawn.
+    const everyScope: Record<ToolScope, true> = {
+      read: true,
+      triage: true,
+      draft: true,
+      send: true,
+      ai: true,
+      admin: true,
+    };
+    assert.deepEqual(
+      TOOL_SCOPES.map(s => s.id),
+      Object.keys(everyScope),
+      'the list covers the contract enum once each, in order',
+    );
   });
 
   test('Send and settings carry a plain warning while they are ticked, and nothing else does', () => {
@@ -128,7 +149,7 @@ describe('ui-settings: Add a tool', () => {
     assert.equal(first, false);
     assert.equal(bad.failures.at(-1)?.op, 'allow that tool');
     assert.equal(bad.view().busy.grant, false);
-    bad.failures.at(-1)?.retry();
+    bad.failures.at(-1)?.retry?.();
     await new Promise(r => setTimeout(r, 0));
     assert.equal(
       (shown as ClientEntry | null)?.tokenPath,
@@ -148,6 +169,42 @@ describe('ui-settings: Add a tool', () => {
     assert.equal(resolvers.length, 1, 'one grant, not two');
   });
 
+  test('a grant failure the engine may have committed offers no Retry and re-reads the list', async () => {
+    assert.equal(
+      grantUnconfirmed(new ContractError({ type: 'unavailable', message: 'gone' })),
+      true,
+    );
+    assert.equal(
+      grantUnconfirmed(new ContractError({ type: 'notImplemented', message: 'later' })),
+      true,
+    );
+    assert.equal(grantUnconfirmed({ body: { type: 'unavailable', message: 'gone' } }), true);
+    assert.equal(grantUnconfirmed(new Error('refused')), false);
+    assert.equal(grantUnconfirmed(new ContractError({ type: 'validation', message: 'no' })), false);
+    assert.equal(grantUnconfirmed('unavailable'), false);
+
+    let listed = 0;
+    const h = harness({
+      clientsGrant: async () => {
+        throw new ContractError({ type: 'unavailable', message: 'gone' });
+      },
+      clientsList: async () => {
+        listed += 1;
+        return [granted('Maybe allowed')];
+      },
+    });
+    const ok = await h.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }, () => {});
+    assert.equal(ok, false);
+    const failure = h.failures.at(-1);
+    assert.equal(failure?.op, 'allow that tool', 'the grant failure writes the shared line');
+    assert.equal(failure?.retry, undefined, 'a retry could make a second tool');
+    assert.match(failure?.line ?? '', /couldn’t confirm that the tool was allowed/i);
+    assert.equal(listed, 1, 'the list is re-read so a committed grant becomes visible');
+    const shown = h.data().clients?.find(c => c.name === 'Maybe allowed');
+    assert.ok(shown, 'the engine-committed tool is now in the list');
+    assert.equal('tokenPath' in shown, false, 'a refreshed row keeps no key path');
+  });
+
   test("opening Add a tool clears another action's failure line, and a list read never keeps a key path", () => {
     const h = harness({});
     h.actions.openAddTool();
@@ -155,6 +212,152 @@ describe('ui-settings: Add a tool', () => {
     assert.equal(h.view().addTool, true);
     const row = { ...granted('Listed') };
     assert.equal('tokenPath' in withoutKeyPath(row), false);
+  });
+
+  test("Allow with 'admin' asks first; only the answer grants, and the dialog still gets the path", async () => {
+    const calls: unknown[] = [];
+    const h = harness({
+      clientsGrant: async input => {
+        calls.push(input);
+        return granted(input.name);
+      },
+    });
+    let shown = null as ClientEntry | null;
+    const first = h.actions.grantClient(
+      { name: ' Admin helper ', kind: 'cli', scopes: ['read', 'admin'] },
+      client => (shown = client),
+    );
+    assert.deepEqual(calls, [], 'nothing is granted before the answer');
+    assert.deepEqual(h.view().confirm, { kind: 'grantAdmin', name: 'Admin helper' });
+
+    // Cancel leaves the draft under the still-open dialog and ends the waiting call; Allow asks again.
+    h.actions.cancelConfirm();
+    assert.equal(await first, false, 'a cancelled ask settles the call');
+    assert.equal(h.view().confirm, null);
+    assert.deepEqual(calls, []);
+    const second = h.actions.grantClient(
+      { name: ' Admin helper ', kind: 'cli', scopes: ['read', 'admin'] },
+      client => (shown = client),
+    );
+    const ok = await h.actions.runConfirm({
+      kind: 'grantAdmin',
+      name: 'Admin helper',
+    });
+    assert.equal(ok, true);
+    assert.equal(await second, true);
+    assert.deepEqual(calls, [{ name: 'Admin helper', kind: 'cli', scopes: ['read', 'admin'] }]);
+    assert.equal(shown?.tokenPath, PATH, 'the dialog gets the key path once');
+    assert.ok(
+      h.data().clients?.some(c => c.id === 'client-new' && !('tokenPath' in c)),
+      'the listed tool keeps no path',
+    );
+  });
+
+  test("a confirmed admin grant keeps the call open while it runs, so the busy dialog can't be closed", async () => {
+    const resolvers: ((c: ClientEntry) => void)[] = [];
+    const h = harness({
+      clientsGrant: () => new Promise<ClientEntry>(r => resolvers.push(r)),
+    });
+    let shown = null as ClientEntry | null;
+    let answered = false;
+    const pending = h.actions.grantClient(
+      { name: 'Admin helper', kind: 'cli', scopes: ['read', 'admin'] },
+      client => (shown = client),
+    );
+    void pending.then(() => (answered = true));
+    const confirmRun = h.actions.runConfirm({ kind: 'grantAdmin', name: 'Admin helper' });
+    await new Promise(r => setTimeout(r, 0));
+    assert.equal(resolvers.length, 1, 'the answered ask is granting');
+    assert.equal(answered, false, 'still open mid-grant — close stays refused until it settles');
+    resolvers[0]!(granted('Admin helper'));
+    assert.equal(await confirmRun, true);
+    assert.equal(await pending, true);
+    assert.equal(shown?.tokenPath, PATH, 'the path still reaches the dialog after an admin grant');
+  });
+
+  test('cancelling the admin ask ends the call with no grant and the dialog still standing', async () => {
+    const calls: unknown[] = [];
+    const h = harness({
+      clientsGrant: async input => {
+        calls.push(input);
+        return granted(input.name);
+      },
+    });
+    h.actions.openAddTool();
+    const pending = h.actions.grantClient(
+      { name: 'Admin helper', kind: 'cli', scopes: ['read', 'admin'] },
+      () => {},
+    );
+    h.actions.cancelConfirm();
+    assert.equal(await pending, false, 'the call settles so the dialog re-enables');
+    assert.equal(h.view().addTool, true, 'the dialog never closed — the draft is intact');
+    assert.deepEqual(calls, []);
+  });
+
+  test('closing the add dialog drops a parked admin ask: a later answer grants nothing', async () => {
+    const calls: unknown[] = [];
+    const h = harness({
+      clientsGrant: async input => {
+        calls.push(input);
+        return granted(input.name);
+      },
+    });
+    h.actions.openAddTool();
+    const pending = h.actions.grantClient(
+      { name: 'Admin helper', kind: 'cli', scopes: ['read', 'admin'] },
+      () => {},
+    );
+    h.actions.closeAddTool();
+    assert.equal(await pending, false, 'the waiting call ends with its dialog');
+    assert.equal(h.view().confirm, null, 'the question dies with the dialog');
+    assert.equal(
+      await h.actions.runConfirm({ kind: 'grantAdmin', name: 'Admin helper' }),
+      false,
+      'a late answer has nothing to grant',
+    );
+    assert.deepEqual(calls, [], 'no tool is minted');
+  });
+
+  test('leaving the page drops a parked admin ask and its question', async () => {
+    const h = harness({ clientsGrant: async input => granted(input.name) });
+    const pending = h.actions.grantClient(
+      { name: 'Admin helper', kind: 'cli', scopes: ['read', 'admin'] },
+      () => {},
+    );
+    assert.equal(h.view().confirm?.kind, 'grantAdmin');
+    h.actions.leave();
+    assert.equal(await pending, false);
+    assert.equal(h.view().confirm, null);
+  });
+
+  test('a throw handing a committed grant back is not a grant failure: no line, still listed', async () => {
+    let grants = 0;
+    const h = harness({
+      clientsGrant: async input => {
+        grants += 1;
+        return granted(input.name);
+      },
+    });
+    const ok = await h.actions.grantClient({ name: 'X', kind: 'cli', scopes: ['read'] }, () => {
+      throw new Error('dialog gone');
+    });
+    assert.equal(ok, true, 'the grant itself succeeded');
+    assert.equal(grants, 1);
+    assert.equal(h.failures.at(-1) ?? null, null, 'no Retry could mint a second tool');
+    assert.ok(
+      h.data().clients?.some(c => c.id === 'client-new' && !('tokenPath' in c)),
+      'the tool still joins the list without its path',
+    );
+  });
+
+  test("a grant without 'admin' never asks twice", async () => {
+    const h = harness({ clientsGrant: async input => granted(input.name) });
+    const ok = await h.actions.grantClient(
+      { name: 'Helper', kind: 'cli', scopes: ['read', 'send'] },
+      () => {},
+    );
+    assert.equal(ok, true);
+    assert.equal(h.view().confirm, null);
   });
 
   test('Revoke asks first; only the answer revokes, and the tool leaves the list', async () => {
@@ -222,11 +425,21 @@ describe('ui-settings: Add a tool', () => {
     assert.match(add, /Add a tool/);
     assert.match(add, />Allow tool</);
     assert.match(add, /Read your mail and calendar/);
+    assert.match(
+      add,
+      /role="status"/,
+      'the permission warnings have a live region mounted before any is ticked',
+    );
     assert.equal((add.match(/data-variant="filled"/g) ?? []).length, 1);
     assert.doesNotMatch(add, /!/);
     const revoke = renderToStaticMarkup(staticScreen(STATES['tool-revoke-confirm']));
     assert.match(revoke, /Revoke “Terminal assistant”\?/);
     assert.match(revoke, />Revoke</);
+    const admin = renderToStaticMarkup(staticScreen(STATES['tool-admin-confirm']));
+    assert.match(admin, /Give “Terminal assistant” admin access\?/);
+    assert.match(admin, /change this app’s settings, accounts and other tools/);
+    assert.match(admin, />Give admin access</);
+    assert.match(admin, />Cancel</);
   });
 });
 

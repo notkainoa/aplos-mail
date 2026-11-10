@@ -130,7 +130,7 @@ describe('Turn on for existing accounts (the bulk write)', () => {
     assert.equal(failure?.op, 'turn on mail for AI on jordan.lee@example.com');
     // Retry writes only the refused account, and its success clears this path's own line.
     calls.length = 0;
-    failure!.retry();
+    failure!.retry?.();
     await new Promise(r => setTimeout(r, 0));
     assert.deepEqual(calls, [JORDAN.id]);
     assert.equal(h.failure(), null);
@@ -275,7 +275,7 @@ describe('the one failure slot: a write clears only the line it wrote', () => {
       },
     });
     assert.equal(await h.actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send'), false);
-    h.failure()!.retry();
+    h.failure()!.retry?.();
     await new Promise(r => setTimeout(r, 0));
     assert.equal(attempts, 2);
     assert.equal(h.failure(), null);

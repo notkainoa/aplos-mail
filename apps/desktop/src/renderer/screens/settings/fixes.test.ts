@@ -143,7 +143,7 @@ describe('ui-settings: third review fixes', () => {
     assert.equal(await h.actions.set({ ui: { singleKeys: false } }), false);
     assert.equal(h.overlays.at(-1), null, 'the refusal took the patch down');
     const lines = h.failures.length;
-    h.failures.at(-1)!.retry();
+    h.failures.at(-1)!.retry?.();
     assert.deepEqual(
       h.overlays.at(-1),
       { ui: { singleKeys: false } },
