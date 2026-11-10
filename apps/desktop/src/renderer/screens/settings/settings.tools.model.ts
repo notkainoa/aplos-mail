@@ -102,7 +102,7 @@ export function adminGrantConfirm(name: string): { question: string; consequence
   return {
     question: `Give “${name}” admin access?`,
     consequence:
-      'It can change this app’s settings and other tools. You can revoke it at any time.',
+      'It can change this app’s settings, accounts and other tools. You can revoke it at any time.',
   };
 }
 

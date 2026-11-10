@@ -115,13 +115,13 @@ export function AddToolDialog({
           <Text variant="small" tone="ink">
             {TOOL_KEY_NOTE}
           </Text>
-          <span role="status">
+          <div role="status">
             {copied ? (
               <Text variant="small" tone="dim">
                 {copied === 'yes' ? 'Copied.' : 'Could not copy. Select the path and copy it.'}
               </Text>
             ) : null}
-          </span>
+          </div>
         </div>
       </Dialog>
     );
@@ -191,7 +191,7 @@ export function AddToolDialog({
           ))}
         </fieldset>
         {/* Always mounted, so a warning that appears as a box is ticked is announced (DESIGN 11.3). */}
-        <span role="status">
+        <div role="status">
           {[...scopeWarnings(draft.scopes), kindNote(draft.kind, draft.scopes)]
             .filter((w): w is string => w !== null)
             .map(w => (
@@ -199,7 +199,7 @@ export function AddToolDialog({
                 {w}
               </Text>
             ))}
-        </span>
+        </div>
       </div>
     </Dialog>
   );

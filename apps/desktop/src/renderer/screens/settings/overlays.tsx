@@ -3,7 +3,7 @@
  * and the diagnostics preview. Each is driven by the view state, so any of them can be drawn on purpose. The page
  * under a dialog keeps its place; the topmost surface owns the filled button (DESIGN 3, principle 6).
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../ui/buttons-keys';
 import { ConsentCard } from '../../ui/onboarding';
 import { TextField } from '../../ui/controls';
@@ -30,6 +30,22 @@ import { AddToolDialog } from './toolDialogs';
 export function Overlays({ data, view, actions, host, failure }: SectionProps): ReactNode {
   const c = view.confirm;
   const consent = consentView(data.consent, data.settings);
+  /* While a confirm is stacked over the Add a tool dialog (the admin ask), the lower dialog goes inert
+   * and out of the accessibility tree — two aria-modal dialogs would both answer a virtual cursor.
+   * inert drops the focus the dialog held, so when the confirm closes the dialog takes it back if
+   * nothing else did. */
+  const addToolWrap = useRef<HTMLDivElement | null>(null);
+  const confirmWasOpen = useRef(false);
+  useEffect(() => {
+    const confirmJustClosed = confirmWasOpen.current && c === null;
+    confirmWasOpen.current = c !== null;
+    if (!confirmJustClosed || !view.addTool) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    addToolWrap.current
+      ?.querySelector<HTMLElement>('[role="dialog"]')
+      ?.focus({ preventScroll: true });
+  });
   return (
     <>
       {view.reconnect
@@ -47,7 +63,11 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
         />
       ) : null}
       {view.consentCard ? <ConsentDialog {...{ data, consent, actions }} /> : null}
-      {view.addTool ? <AddToolDialog {...{ actions, failure }} /> : null}
+      {view.addTool ? (
+        <div ref={addToolWrap} inert={c !== null} aria-hidden={c !== null ? true : undefined}>
+          <AddToolDialog {...{ actions, failure }} />
+        </div>
+      ) : null}
       {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
       {/* The confirm is last so it stacks over a dialog it questions (the admin grant). */}
       {c ? (

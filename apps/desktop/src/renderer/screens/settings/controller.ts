@@ -257,11 +257,20 @@ export function createController(deps: ControllerDeps) {
   /** Bumped by leave(), so a provider test that lands after the page was left writes nothing. */
   let testGeneration = 0;
 
-  /** The admin-scope grant whose owner has not answered yet: the draft plus the dialog's answer-back. */
+  /** The admin-scope grant whose owner has not answered yet: the draft, the dialog's answer-back, and how
+   * the `grantClient` call that parked it settles — it stays open for the whole ask so the dialog stays
+   * busy and cannot be closed with the one-time key path still undelivered. */
   let pendingAdminGrant: {
     input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] };
     onGranted: (client: ClientEntry) => void;
+    settle: (ok: boolean) => void;
   } | null = null;
+
+  /** Ends a parked admin ask, if any: its waiting `grantClient` call answers false. */
+  const dropPendingAdminGrant = (): void => {
+    pendingAdminGrant?.settle(false);
+    pendingAdminGrant = null;
+  };
 
   /** Re-reads the tool list so a grant the engine may have committed becomes visible; quiet on a miss. */
   async function refreshClients(): Promise<void> {
@@ -280,16 +289,26 @@ export function createController(deps: ControllerDeps) {
     if (view().busy.grant) return false;
     busy('grant', true);
     let unconfirmedRefresh: Promise<void> | null = null;
-    // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
+    /* Only `Clients/grant` is guarded: once it resolves the tool exists, so handing it back is best-effort
+     * and a throw there must not read as a failed grant — the line's Retry would mint a second one. A
+     * refused grant's Retry re-runs the step, so it still delivers the key path to the dialog. */
     const ok = await guard(
       'allow that tool',
       async () => {
         const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
-        onGranted(granted);
-        const listed = withoutKeyPath(granted);
-        deps.setData({
-          clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
-        });
+        try {
+          onGranted(granted);
+        } catch {
+          /* the dialog dropped its answer-back; the path is simply not shown */
+        }
+        try {
+          const listed = withoutKeyPath(granted);
+          deps.setData({
+            clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
+          });
+        } catch {
+          /* the next list read picks the tool up */
+        }
       },
       (error, retry) => {
         if (!grantUnconfirmed(error))
@@ -490,9 +509,11 @@ export function createController(deps: ControllerDeps) {
       testGeneration += 1;
       for (const cancel of addressTimers.values()) cancel();
       addressTimers.clear();
-      pendingAdminGrant = null;
+      dropPendingAdminGrant();
       deps.fail(null);
       deps.setView({
+        // An unanswered admin ask does not outlive the page.
+        ...(view().confirm?.kind === 'grantAdmin' ? { confirm: null } : {}),
         testing: {},
         addKey: null,
         addressDraft: {},
@@ -675,24 +696,31 @@ export function createController(deps: ControllerDeps) {
     closeAddTool() {
       // A failed grant's Retry must not outlive the dialog: it would make a tool whose key path nobody sees.
       if (deps.failure?.()?.op === 'allow that tool') deps.fail(null);
-      deps.setView({ addTool: false });
+      // A parked admin ask dies with its dialog, and so does the question drawing over it.
+      dropPendingAdminGrant();
+      deps.setView({
+        addTool: false,
+        ...(view().confirm?.kind === 'grantAdmin' ? { confirm: null } : {}),
+      });
     },
     /**
      * Allows a tool. 'admin' asks twice: Allow opens the shared confirm (Cancel is the default), and only its
      * answer grants. The new tool joins the list without its key file's path; the path goes back to the dialog
-     * once and is kept nowhere else. Resolves false when the engine refused — or while the admin ask is up.
+     * once and is kept nowhere else. Resolves when the flow is over — a refusal or a cancelled ask is false —
+     * so the dialog stays busy for the whole admin ask and the one-time key path cannot be lost mid-flow.
      */
     async grantClient(
       input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
       onGranted: (client: ClientEntry) => void,
     ): Promise<boolean> {
-      if (view().busy.grant) return false;
+      if (view().busy.grant || pendingAdminGrant) return false;
       if (input.scopes.includes('admin')) {
         // The draft and where its key path goes wait here, not in view state: the add dialog stays mounted
-        // under the question, so cancelling leaves the form exactly as it was.
-        pendingAdminGrant = { input, onGranted };
+        // and busy under the question, so cancelling leaves the form exactly as it was.
         deps.setView({ confirm: { kind: 'grantAdmin', name: input.name.trim() } });
-        return false;
+        return new Promise<boolean>(resolve => {
+          pendingAdminGrant = { input, onGranted, settle: resolve };
+        });
       }
       return doGrant(input, onGranted);
     },
@@ -779,7 +807,7 @@ export function createController(deps: ControllerDeps) {
 
     /* ───────────── Confirmations ───────────── */
     cancelConfirm() {
-      pendingAdminGrant = null;
+      dropPendingAdminGrant();
       deps.setView({ confirm: null });
     },
     /** The destructive step runs only here, after Cancel was passed over on purpose. */
@@ -809,7 +837,10 @@ export function createController(deps: ControllerDeps) {
         case 'grantAdmin': {
           const pending = pendingAdminGrant;
           pendingAdminGrant = null;
-          return pending ? doGrant(pending.input, pending.onGranted) : false;
+          if (!pending) return false;
+          const ok = await doGrant(pending.input, pending.onGranted);
+          pending.settle(ok);
+          return ok;
         }
       }
     },

@@ -150,7 +150,9 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
 
   // DESIGN 11.2: a revoke leaves the DOM the confirm's answer was standing on, and focus lands on the
   // page. Once the question's own focus restore has run, hand it to the next tool row still standing
-  // (else the one before, else Add a tool) — never when focus is elsewhere.
+  // (else the one before, else Add a tool) — never when focus is elsewhere. The row takes the focus,
+  // not its Revoke button: a focused Revoke would answer a stray Return with another destructive
+  // question. Tab from the row reaches the button.
   const drawnRows = useRef<readonly string[] | null>(null);
   const toolRowIds = tools.map(t => `${rowId('general', 'tools')}-${t.id}`);
   useEffect(() => {
@@ -161,9 +163,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
     if (active && active !== document.body && active !== document.documentElement) return;
     const target = removedRowTarget(before, toolRowIds, rowId('general', 'addTool'));
     const row = target === null ? null : focusRowTarget(target, document);
-    (row?.querySelector<HTMLElement>('button:not([disabled])') ?? row)?.focus({
-      preventScroll: true,
-    });
+    row?.focus({ preventScroll: true });
   });
 
   return (
