@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { api, useAccounts, useAccountsLoaded, useConsent, useSettings } from '../data';
 import { ReconnectFlow } from '../onboarding/reconnect/ReconnectFlow';
-import { callForSheetMode } from '../onboarding/reconnect/reconnect.model';
+import { callForSheetMode, enableForSheetMode } from '../onboarding/reconnect/reconnect.model';
 import { ConsentCard } from '../ui/onboarding';
 import { Dialog } from '../ui/surfaces';
 import { RECONNECT_FAILED_COPY, SAVE_FAILED_COPY } from './failure-copy';
@@ -89,12 +89,13 @@ function ReconnectHost({ args }: { readonly args: ReconnectArgs }) {
   useEffect(() => {
     if (gone) closeSheet();
   }, [gone]);
-  // The entry point's mode wins (`openSheet('reconnect', {mode: 'grant'})` grants even on a healthy account).
+  // The entry point's mode wins (`openSheet('reconnect', {mode: 'grant'})` grants even on a healthy account;
+  // 'enableEditing' is the same grant call plus `enable: 'calendarWrite'`).
   return (
     <ReconnectFlow
       accountId={args.accountId}
       call={callForSheetMode(args.mode)}
-      {...(args.enable ? { enable: args.enable } : {})}
+      {...(enableForSheetMode(args.mode) ? { enable: 'calendarWrite' as const } : {})}
       onClose={() => closeSheet()}
     />
   );

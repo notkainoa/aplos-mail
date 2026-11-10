@@ -124,6 +124,8 @@ export const COUNT_KEYS: readonly string[] = [
   'historyExpired',
   'pagesCapped',
   'baselineUpdated',
+  'unmeasured',
+  'archivedThreads',
   // Answers that were 200 with an empty body (a list with no items): ok, not an error.
   'emptyAnswers',
 ];

@@ -30,7 +30,7 @@ function headerBits(facts: MessageFacts, self: string): HeaderBits {
   const me = self.toLowerCase();
   const bits: HeaderBits = {
     bulk: precedence === 'bulk' || precedence === 'list' || precedence === 'junk',
-    list: facts.list.listId !== undefined || facts.list.listUnsubscribe !== undefined,
+    list: facts.list.listId !== undefined,
     autoSubmitted:
       facts.list.autoSubmitted !== undefined && facts.list.autoSubmitted.toLowerCase() !== 'no',
     noreply: facts.from !== undefined && NOREPLY.test(facts.from.address),
