@@ -7,7 +7,7 @@ import { FLAG } from '../../store/commit';
 import { readBody } from '../../store/bodies';
 import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
-import { eventIdForOp, parseCalendarIdIn } from '../../calendar/project';
+import { parseCalendarIdIn } from '../../calendar/project';
 import { fromWall, isKnownZone } from '../../calendar/recurrence/zone';
 import { usableZone } from '../../clock/zone';
 import { requireScope } from '@aplos/contract/access';
@@ -647,18 +647,20 @@ const planFields = (
 
 /**
  * Confirm is a three-step transaction: `claim` (open → confirming under this opId, in its own commit so two
- * callers can't both pass), `put` with an opId-derived remote id (a retried put lands on the same remote
- * event — #394's prov-cal writes use the same `eventIdForOp`), then `settle` to confirmed with the event's
- * wire id. A call that dies mid-way is safe to retry with the same opId; a different opId hits `conflict`.
+ * callers can't both pass), `put`, then `settle` to confirmed with the event's wire id. A definite refusal
+ * releases the claim back to `open`; an uncertain failure keeps it so a same-opId retry resolves it. A call
+ * that dies mid-way is retried with the same opId; a different opId hits `conflict`. Remote-id idempotency
+ * (`newRemoteId`/`eventIdForOp`) lands with #394 — this PR rebases on it when merged.
  */
 export async function confirmPlan(
   args: Input<'Plan/confirm'>,
   ctx: MethodContext,
 ): Promise<Output<'Plan/confirm'>> {
   const { services } = ctx;
-  // Title/description overrides carry untrusted mail text into the calendar — the Event/set scope ('send'),
-  // not triage. Everything else about confirming stays at this method's own scope.
-  if (args.fields?.title || args.fields?.description) requireScope(ctx.caller, 'send');
+  // Title, description and location overrides carry untrusted mail text into the calendar — the
+  // Event/set scope ('send'), not triage. Everything else about confirming stays at this method's scope.
+  if (args.fields?.title || args.fields?.description || args.fields?.location)
+    requireScope(ctx.caller, 'send');
   const plan = services.store.read(q => findPlan(q, args));
   if (!plan)
     throw new ContractError({ type: 'notFound', message: 'This plan is no longer available.' });
@@ -689,15 +691,39 @@ export async function confirmPlan(
         ...auditWrites(ctx.caller, 'Plan/confirm', args.id),
       ],
     });
-  const result = await services.calendar.put(calAccountId, {
-    calendarRemoteId: calRemote,
-    scope: 'occurrence',
-    remoteId: eventIdForOp(args.opId),
-    fields: planFields(row, args),
-    notify: false,
-  });
-  if (result.kind === 'conflict')
+  const release = () =>
+    services.store.commit({
+      opId: `${args.opId}:release`,
+      origin: 'local',
+      writes: [
+        {
+          kind: 'plan',
+          action: 'release',
+          id: row.id,
+          accountId: row.account_id,
+          opId: args.opId,
+        },
+      ],
+    });
+  let result;
+  try {
+    result = await services.calendar.put(calAccountId, {
+      calendarRemoteId: calRemote,
+      scope: 'occurrence',
+      fields: planFields(row, args),
+      notify: false,
+    });
+  } catch (error) {
+    // Thrown before the request left (permission refused, account not started, invalid): nothing was
+    // created, so hand the plan back. Anything else may have landed — keep the claim; a same-opId
+    // retry resolves it.
+    if (error instanceof ContractError && error.type !== 'unavailable') release();
+    throw error;
+  }
+  if (result.kind === 'conflict') {
+    release();
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  }
   const first = result.upserts[0];
   if (!first)
     throw new ContractError({

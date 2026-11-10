@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { EngineMethodName, Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
@@ -156,7 +157,7 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
   const calendar = {
     put: async (_account: string, req: { remoteId?: string }) => {
       puts.push(req);
-      return { kind: 'saved' as const, upserts: [{ remoteId: req.remoteId }], removals: [] };
+      return { kind: 'saved' as const, upserts: [{ remoteId: 'ev-1' }], removals: [] };
     },
   };
   const t = stubTransport(
@@ -197,7 +198,7 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
   assert.equal(out.plans[0].title, 'Garden day');
   const confirmed = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   assert.equal(puts.length, 1);
-  assert.match(confirmed.eventId, /^acct-1:primary\/aplos-c1$/);
+  assert.match(confirmed.eventId, /^acct-1:primary\/ev-1$/);
   const again = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   // The replay answers from the stored row — no second provider call.
   assert.equal(again.eventId, confirmed.eventId);
@@ -221,4 +222,120 @@ test('Event/extract: a dismissed proposal is not re-created on the next extract 
   );
   assert.equal(t.calls.length, 1, 'the model ran once');
   w.file.cleanup();
+});
+
+test('Plan/confirm: a refused put releases the claim; a second opId can then confirm', async () => {
+  const calls: Array<unknown> = [];
+  const calendar = {
+    put: async (_a: string, req: unknown) => {
+      calls.push(req);
+      if (calls.length === 1)
+        throw new ContractError({ type: 'permission', message: 'Enable editing first.' });
+      return { kind: 'saved' as const, upserts: [{ remoteId: 'ev-1' }], removals: [] };
+    },
+  };
+  const w = await world(stubTransport(EVENT_ANSWER), { calendar });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'Primary',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(() => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }));
+  // The refusal released the claim — a fresh opId proceeds instead of "being confirmed elsewhere".
+  const again = await w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id });
+  assert.equal(again.eventId, 'acct-1:primary/ev-1');
+  w.file.cleanup();
+});
+
+test('Event/extract: concurrent calls share one provider call; the mail budget keeps the newest message', async () => {
+  const calls: Array<{ messages: Array<{ content: string }> }> = [];
+  const t: AiTransport = {
+    calls,
+    async chat(req) {
+      calls.push(req);
+      return {
+        content: EVENT_ANSWER,
+        toolCalls: [],
+        usage: { prompt: 10, completion: 10 },
+      };
+    },
+    transcribe: () => Promise.resolve({ text: '' }),
+    models: () => Promise.resolve({ list: [], live: false }),
+    check: () => Promise.resolve(),
+    setKey: () => Promise.resolve('keychain' as const),
+    removeKey: () => Promise.resolve('none' as const),
+    keySource: () => 'env' as const,
+  };
+  const w = await world(t);
+  seed(w);
+  // Second message pushes the thread over the 12k budget — the newest text must survive the cut.
+  w.store.commit({
+    opId: 'big',
+    origin: 'sync',
+    writes: [
+      msg('m-big', 'T-plans', 9, { snippet: `this Saturday at 10 am ${'x'.repeat(12_100)}` }),
+    ],
+  });
+  await consentNow(w);
+  const [a, b] = await Promise.all([
+    w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' }),
+    w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' }),
+  ]);
+  assert.equal(t.calls.length, 1, 'two callers shared the in-flight extraction');
+  assert.equal(a.plans.length, b.plans.length);
+  const userMsg = t.calls[0].messages[t.calls[0].messages.length - 1].content;
+  assert.ok(userMsg.includes('Saturday'), 'the newest message is inside the budget, not cut');
+  assert.ok(
+    !userMsg.includes('We are gathering'),
+    'the oldest message is what the budget dropped (newest-first fill)',
+  );
+  w.file.cleanup();
+});
+
+test('a plan settle write never accepts open, and never confirms without an eventId', () => {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed: true },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-p', 5),
+      {
+        kind: 'plan',
+        action: 'put',
+        accountId: 'acct-1',
+        remoteThreadId: 'T-p',
+        inputHash: 'h',
+        title: 'x',
+        startUtc: 1,
+        endUtc: 2,
+        allDay: false,
+        model: 'm',
+      } as never,
+    ],
+  });
+  for (const w of [
+    { kind: 'plan', action: 'settle', id: 1, accountId: 'acct-1', state: 'open' },
+    { kind: 'plan', action: 'settle', id: 1, accountId: 'acct-1', state: 'confirmed' },
+  ])
+    assert.throws(() =>
+      store.commit({ opId: `b${Math.random()}`, origin: 'local', writes: [w as never] }),
+    );
+  file.cleanup();
 });

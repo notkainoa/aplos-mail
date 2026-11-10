@@ -58,7 +58,7 @@ export interface SummaryWrite {
  */
 export interface PlanWrite {
   kind: 'plan';
-  action: 'put' | 'claim' | 'settle';
+  action: 'put' | 'claim' | 'release' | 'settle';
   /** `settle`: the numeric row id. */
   id?: number;
   accountId?: string;
@@ -320,6 +320,19 @@ function planClaim(write: PlanWrite, tx: CommitExtensionTx): void {
     });
 }
 
+/** `release`: a failed confirm hands the plan back to `open` — only the opId that claimed it may. */
+function planRelease(write: PlanWrite, tx: CommitExtensionTx): void {
+  if (!Number.isInteger(write.id) || typeof write.accountId !== 'string' || !write.opId) bad();
+  const r = tx.run(
+    `UPDATE plans SET state = 'open', op_id = NULL, rev = rev + 1
+     WHERE id = ? AND account_id = ? AND state = 'confirming' AND op_id = ?`,
+    write.id!,
+    write.accountId!,
+    write.opId!,
+  );
+  if (r.changes) tx.mark('Plan', `${write.accountId}:plan-${write.id}`, 'u');
+}
+
 function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
   if (!Number.isInteger(write.id) || typeof write.accountId !== 'string') bad();
   if (write.state !== 'confirmed' && write.state !== 'dismissed') bad();
@@ -344,6 +357,7 @@ function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
 function plan(write: PlanWrite, tx: CommitExtensionTx): void {
   if (write.action === 'put') planPut(write, tx);
   else if (write.action === 'claim') planClaim(write, tx);
+  else if (write.action === 'release') planRelease(write, tx);
   else if (write.action === 'settle') planSettle(write, tx);
   else bad();
 }

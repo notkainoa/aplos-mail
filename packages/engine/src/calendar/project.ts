@@ -120,18 +120,6 @@ export function instant(t: EventTime, zone: string): number {
   return fromWall(Date.parse(`${t.local}Z`), tz);
 }
 
-/** The remote event id a write derives from the operation's `opId`, so a retried `put` lands on the same
- * remote event instead of creating a second one (Plan/confirm, prov-cal create writes). Provider-legal:
- * lowercase, 5-120 chars. */
-export const eventIdForOp = (opId: string): string => {
-  const slug = opId
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-  return `aplos-${slug || 'event'}`;
-};
-
 /** The canonical `recurrence_id` back to an `EventTime` (the occurrence's original start). */
 export function recurrenceIdToTime(recurrenceId: string): EventTime {
   if (recurrenceId.length === 8)
