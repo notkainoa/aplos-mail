@@ -1,4 +1,5 @@
 import type { Input, Output } from '@aplos/contract';
+import { BLOB_FILE_LIMITS } from '../ports/content';
 import { type AreaHandlers, type MethodContext } from './types';
 
 /**
@@ -29,7 +30,8 @@ function build(ctx: MethodContext): Uint8Array {
       .all<Record<string, string | number | null>>(
         `SELECT id, provider, address, display_name, capabilities, granted_scopes, status,
                 status_reason_code, baseline_done_at, token_granted_at, refresh_expires_at,
-                remote_subject, ai_allowed, settings, created_at FROM accounts ORDER BY id`,
+                remote_subject, ai_allowed, settings, color_tag, notifications, created_at
+         FROM accounts ORDER BY id`,
       )
       .map(row => ({
         ...row,
@@ -62,6 +64,9 @@ function build(ctx: MethodContext): Uint8Array {
         format: 'aplos-data-export',
         version: 1,
         exportedAt: ctx.services.clock.now(),
+        notes: [
+          'draft attachment blobIds are engine-local references; attachment bytes are not part of this export.',
+        ],
         settings,
         accounts,
         workflow,
@@ -72,21 +77,36 @@ function build(ctx: MethodContext): Uint8Array {
   });
 }
 
+/** One blob's ceiling (`ports/content.ts`); over it the export gzip-compresses and the name gains `.gz`. */
+const MAX_BYTES = BLOB_FILE_LIMITS.maxBytes;
+
+const gzip = (bytes: Uint8Array): Promise<Uint8Array> =>
+  new Response(
+    new Blob([bytes.slice().buffer as ArrayBuffer])
+      .stream()
+      .pipeThrough(new CompressionStream('gzip')),
+  )
+    .arrayBuffer()
+    .then(b => new Uint8Array(b));
+
 async function dataExport(
   _args: Input<'Data/export'>,
   ctx: MethodContext,
 ): Promise<Output<'Data/export'>> {
-  const bytes = build(ctx);
+  const raw = build(ctx);
+  const big = raw.byteLength > MAX_BYTES;
+  const bytes = big ? await gzip(raw) : raw;
+  const name = big ? `${NAME}.gz` : NAME;
   const put = await ctx.services.blobs.put({
     caller: ctx.caller,
     connectionId: ctx.connectionId,
     kind: 'upload',
     bytes,
-    mime: 'application/json',
-    name: NAME,
+    mime: big ? 'application/gzip' : 'application/json',
+    name,
     signal: ctx.signal,
   });
-  return { blobId: put.blobId, name: NAME, size: put.size };
+  return { blobId: put.blobId, name, size: put.size };
 }
 
 export const handlers: AreaHandlers<'data'> = {

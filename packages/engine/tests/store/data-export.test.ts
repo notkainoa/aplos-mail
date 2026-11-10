@@ -164,6 +164,57 @@ test('a listener can neither call Data/export nor read the blob it made; an mcp 
   }
 });
 
+test('an export over the blob ceiling gzip-compresses into .json.gz and still round-trips', async () => {
+  const w = await world();
+  try {
+    const big = 'x'.repeat(26 * 1024 * 1024);
+    w.db
+      .prepare(`INSERT INTO conversations(id, pos, data) VALUES('big', 2, ?)`)
+      .run(JSON.stringify({ turns: [{ role: 'user', text: big }] }));
+    const out = await w.call('Data/export', {});
+    assert.equal(out.name, 'aplos-data.json.gz');
+    const got = await w.call('Blob/get', { blobId: out.blobId });
+    assert.ok(got.bytes.byteLength < 1024 * 1024, 'a repetitive export compresses hard');
+    const doc = JSON.parse(
+      new TextDecoder().decode(
+        new Uint8Array(
+          await new Response(
+            new Blob([got.bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
+          ).arrayBuffer(),
+        ),
+      ),
+    ) as Exported;
+    assert.equal(doc.format, 'aplos-data-export');
+    assert.equal(
+      (doc.conversations[0]!.data as { turns: { text: string }[] }).turns[0]!.text.length,
+      big.length,
+    );
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('account colour and notification switches ride along', async () => {
+  const w = await world();
+  try {
+    w.db
+      .prepare(
+        `INSERT INTO accounts(id, provider, address, capabilities, status, color_tag, notifications,
+           created_at, updated_at)
+         VALUES('a2', 'google', 'owner@mail.example', '{}', 'ok', 'rose', 0, 1, 1)`,
+      )
+      .run();
+    const out = await w.call('Data/export', {});
+    const got = await w.call('Blob/get', { blobId: out.blobId });
+    const doc = JSON.parse(new TextDecoder().decode(got.bytes)) as Exported;
+    assert.equal(doc.accounts[0]!.color_tag, 'rose');
+    assert.equal(doc.accounts[0]!.notifications, 0);
+    assert.ok(Array.isArray((doc as { notes?: string[] }).notes));
+  } finally {
+    await w.engine.close();
+  }
+});
+
 test('an empty store still exports a well-formed document', async () => {
   const w = await world();
   try {
