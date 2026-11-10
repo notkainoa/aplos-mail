@@ -34,16 +34,28 @@ interface HeadLineProps {
   /** The card layout: who, when, then the screen's "To"; `actions` take the right side. Else who, the dim phrase, when. */
   readonly recipients: ReactNode;
   readonly actions: ReactNode;
+  /** The card layout's mark before the name (the sender's avatar square). */
+  readonly leading: ReactNode;
   /** The folded card's first sentence or two; absent while open. */
   readonly excerpt: string | undefined;
 }
 
 /** Who, when and (folded) the excerpt: the content of a message's head, which a fold wraps in its one button. */
-function HeadLine({ fromId, from, date, toLabel, recipients, actions, excerpt }: HeadLineProps) {
+function HeadLine({
+  fromId,
+  from,
+  date,
+  toLabel,
+  recipients,
+  actions,
+  leading,
+  excerpt,
+}: HeadLineProps) {
   const card = recipients !== undefined || actions !== undefined;
   return (
     <>
       <span className="ui-thread-message__line" data-layout={card ? 'card' : undefined}>
+        {card ? leading : null}
         <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
         </span>
@@ -72,7 +84,7 @@ export function ThreadMessage({
   id,
   from,
   toLabel,
-  subject,
+  leading,
   recipients,
   headActions,
   date,
@@ -97,6 +109,7 @@ export function ThreadMessage({
       toLabel={toLabel}
       recipients={fold ? undefined : recipients}
       actions={fold ? undefined : headActions}
+      leading={fold ? undefined : leading}
       excerpt={folded ? excerpt : undefined}
     />
   );
@@ -106,15 +119,9 @@ export function ThreadMessage({
       id={id}
       className="ui-thread-message"
       data-cursor={cursor ? 'true' : undefined}
-      data-titled={subject ? 'true' : undefined}
       data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
       aria-labelledby={fromId}
     >
-      {subject ? (
-        <h2 className="ui-thread-message__subject" dir="auto">
-          {subject}
-        </h2>
-      ) : null}
       <header className="ui-thread-message__head">
         {fold ? (
           <button
