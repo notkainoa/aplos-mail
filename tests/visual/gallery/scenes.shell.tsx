@@ -131,6 +131,9 @@ interface FrameProps {
   children?: ReactNode;
 }
 
+/** The scenes draw the sidebar open, in a plain (non-macOS, non-fullscreen) window, so baselines stay as they were. */
+const WINDOW_CHROME = { fullscreen: false, collapsed: false } as const;
+
 function Frame({
   screen = 'home',
   state = OK_STATE,
@@ -146,8 +149,11 @@ function Frame({
       screen={screen}
       counts={counts(hidden)}
       minimised={minimised}
+      chrome={WINDOW_CHROME}
+      mac={false}
       onNavigate={noop}
       onCompose={noop}
+      onToggleSidebar={noop}
       accountSwitcher={
         <AccountMenu
           accounts={ACCOUNTS}

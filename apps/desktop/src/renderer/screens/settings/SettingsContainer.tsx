@@ -68,6 +68,12 @@ export function dataPorts(): SettingsApiPort {
     clientsRevoke: async id => void (await api.clients.revoke({ id })),
     diagnosticsPreview: () => api.diagnostics.preview({}),
     diagnosticsCopy: async () => void (await api.diagnostics.copy({})),
+    diagnosticsSave: async () => saveBlob(await api.diagnostics.export({})),
+    verboseSet: async on => {
+      const { until } = await api.diagnostics.verbose({ on });
+      return { until };
+    },
+    dataExport: async () => saveBlob(await api.data.export({})),
     queueRetry: async id => void (await api.queue.retry({ id })),
     queueDiscard: async id => void (await api.queue.discard({ id })),
     aiProviders: async () => (await api.ai.providers({})).list,
@@ -77,6 +83,12 @@ export function dataPorts(): SettingsApiPort {
     queueList: async () => (await api.queue.list({})).list,
     calendarsGet: async () => (await api.calendar.get({})).list,
   };
+}
+
+/** The file blob an export made goes to main's save dialog under its own name. */
+async function saveBlob(blob: { blobId: string; name: string }): Promise<{ canceled: boolean }> {
+  const { canceled } = await api.file.save({ blobId: blob.blobId, name: blob.name });
+  return { canceled };
 }
 
 export interface SettingsContainerProps {
