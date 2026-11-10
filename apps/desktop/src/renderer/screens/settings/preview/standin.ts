@@ -95,6 +95,21 @@ export function standInPorts(
     async listenerSet(enabled) {
       set({ listener: { enabled } });
     },
+    async clientsGrant(input) {
+      const client = {
+        id: `client-${Date.now()}`,
+        name: input.name,
+        kind: input.kind,
+        scopes: [...input.scopes],
+        createdAt: Date.now(),
+        tokenPath: `/Users/someone/Library/Application Support/Aplos Mail/run/clients/${Date.now()}.token`,
+      };
+      set({ clients: [...(get().clients ?? []), client] });
+      return client;
+    },
+    async workflowStatus() {
+      return get().workflow ?? { enabled: false, available: false };
+    },
     async clientsRevoke(id) {
       set({ clients: get().clients?.filter(c => c.id !== id) });
     },
@@ -102,6 +117,17 @@ export function standInPorts(
       return get().bundle!;
     },
     async diagnosticsCopy() {},
+    async diagnosticsSave() {
+      return { canceled: false };
+    },
+    async verboseSet(on) {
+      const until = on ? Date.now() + 15 * 60_000 : undefined;
+      set({ verbose: on ? { until } : undefined });
+      return { until };
+    },
+    async dataExport() {
+      return { canceled: false };
+    },
     async queueRetry(id) {
       set({ queue: get().queue?.filter(q => q.id !== id) });
     },

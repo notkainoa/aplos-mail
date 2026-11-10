@@ -117,8 +117,8 @@ export interface ReconnectSheetProps {
   onCancel: () => void;
   /** Try again after a failure. */
   onRetry: () => void;
-  /** 'reconnect' (default) = the weekly reconnect copy; 'grant' = a missing permission ("Aplos needs permission to read your Gmail", `needsPermission`), the shell's `openSheet('reconnect', {mode})`. */
-  mode?: 'reconnect' | 'grant';
+  /** 'reconnect' (default) = the weekly reconnect copy; 'grant' = a missing permission ("Aplos needs permission to read your Gmail", `needsPermission`); 'enableEditing' = the calendar-write ask ("Aplos will ask Google for permission to change events"), the shell's `openSheet('reconnect', {mode})`. */
+  mode?: 'reconnect' | 'grant' | 'enableEditing';
 }
 
 /** State of one first-sync checkpoint (DESIGN §7.12): done `--ink-2`, paused `--dusk`, failed `--stamp`; 'current' carries the `status` motion; 'partial' = a capped pass. */
