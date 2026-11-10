@@ -33,6 +33,15 @@ const DAY = 86_400_000;
 const notHidden: Pred = ['coalesce(w.hidden_from_home, 0) = 0'];
 const shown: Pred = [visible('w.thread_id')];
 
+/**
+ * A thread with no inbound message (you started it and nobody answered: Sent only) is not new mail in any lane; it
+ * belongs under Follow up once it is old enough. Every thread starts `new`, so the lanes must test for it.
+ */
+// A subquery, not `t.`: the count and key lookups read `thread_workflow w` without the join to `threads t`.
+const hasInbound: Pred = [
+  'EXISTS (SELECT 1 FROM threads it WHERE it.id = w.thread_id AND it.last_inbound_date IS NOT NULL)',
+];
+
 /** New mail in one lane, band and importance; `dated` picks rows with or without a due date. */
 function laneCursor(
   lane: string,
@@ -45,6 +54,7 @@ function laneCursor(
   const preds: Pred[] = [
     ['w.status = ?', 'new'],
     ['w.lane = ?', lane],
+    hasInbound,
     ['w.due_band = ?', band],
     ['w.importance = ?', importance],
     [dated ? 'w.due_date IS NOT NULL' : 'w.due_date IS NULL'],
