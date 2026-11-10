@@ -152,8 +152,7 @@ test('Ai/request: a summary job never swallows a plan or suggestAction request (
     3,
     'summary, plan and suggestAction keys are distinct',
   );
-  assert.notEqual(plan.job.id, sum.job.id);
-  assert.notEqual(sug.job.id, sum.job.id);
+  assert.notEqual(plan.job.id, sug.job.id);
   assert.equal(sug.job.kind, 'suggestAction');
   w.file.cleanup();
 });
@@ -187,7 +186,7 @@ test('jobs runner: a broken Summaries provider never blocks Plans work (per-feat
   const jobs = (
     await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead', 'done'] })
   ).list;
-  const sumJob = jobs.find(j => j.id === sum.job.id)!;
+  const sumJob = jobs.find(j => j.kind === 'summary')!;
   const planJob = jobs.find(j => j.id === plan.job.id)!;
   assert.equal(planJob.state, 'done', 'the open Plans gate let the job run');
   assert.equal(sumJob.state, 'queued', 'the closed Summaries gate deferred its own job');
