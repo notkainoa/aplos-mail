@@ -389,3 +389,20 @@
 .aplos-reader__offer .ui-text {
   margin: 0;
 }
+
+/* One text edge in card style A: the block's text lines up with the summary's. */
+.aplos-reader[data-cards='a'] .aplos-reader__offer {
+  padding-inline: var(--space-6);
+}
+/* Words from the email can be long: one line each, the title up to two. */
+.aplos-reader__offer-text .ui-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aplos-reader__offer-text h2.ui-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}

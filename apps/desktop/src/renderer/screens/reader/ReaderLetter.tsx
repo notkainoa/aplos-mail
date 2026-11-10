@@ -253,7 +253,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         />
       ) : null}
       <ReaderHead due={dueOf(row)} summary={summaryFor(row)} />
-      {props.paper ? <EventOffers row={row} hasInvite={invite !== null} /> : null}
+      <EventOffers row={row} hasInvite={invite !== null} />
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
