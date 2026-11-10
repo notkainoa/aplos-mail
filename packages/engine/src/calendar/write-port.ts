@@ -11,7 +11,6 @@ import type {
 } from '../ports';
 import type { AdapterContext, ProviderAdapter } from '../ports/provider';
 import type { StorePort } from '../ports';
-import { eventFactWrites } from '../sync/calendar-facts';
 import { writeFailure } from './write-errors';
 
 /**
@@ -142,11 +141,13 @@ function overridesOf(
  * local calendar shows the saved event at once. A conflict also commits the event as it is now: the caller is told the
  * event changed elsewhere and the screen already holds the newer version.
  */
-function commitFacts(
+async function commitFacts(
   { target, ctx }: Prepared,
   calendarRemoteId: string,
   result: CalendarWriteResult,
-): void {
+): Promise<void> {
+  // Loaded on first write, not at startup: the facts-to-rows mapping sits in the calendar sync chunk (bundle budget).
+  const { eventFactWrites } = await import('../sync/calendar-facts');
   const facts =
     result.kind === 'saved'
       ? result
@@ -182,7 +183,7 @@ async function run(
     }
     throw writeFailure(error);
   }
-  commitFacts(prepared, calendarRemoteId, result);
+  await commitFacts(prepared, calendarRemoteId, result);
   return result;
 }
 
