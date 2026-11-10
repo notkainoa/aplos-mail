@@ -4,8 +4,9 @@
  * jobs or Ask); it never asks a model, never writes to the calendar and never invents one. Pure: the screen reads the
  * `Plan` rows and draws `EventOffer`.
  */
-import { toIsoDateTime, type Account, type Plan } from '../../data';
+import type { Account, Plan } from '../../data';
 import { dayOf } from '../../ui/calendar/dates';
+import { isoOfTime, msOf } from '../calendar/model/period';
 import { inviteWhen } from './invite';
 
 /** What one offer says. */
@@ -22,11 +23,14 @@ export interface OfferView {
 /** At most this many offers show under one summary; the rest stay in the calendar's "From mail" entries. */
 export const MAX_OFFERS = 2;
 
-function startIso(plan: Pick<Plan, 'start'>): string {
-  const t = plan.start;
-  if (t.type === 'utc') return toIsoDateTime(t.utc);
-  if (t.type === 'date') return `${t.date}T00:00:00`;
-  return t.local;
+type PlanTime = Plan['start'];
+
+/**
+ * A plan time as the calendar draws it: a zoned floating time becomes the machine's own moment, so the offer names the
+ * same day and hour as the grid entry the button opens (a plan with its own time zone differs from the machine's).
+ */
+function drawn(t: PlanTime): PlanTime {
+  return t.type === 'date' ? t : { type: 'utc', utc: msOf(t) };
 }
 
 export function offerOf(plan: Plan, subject: string): OfferView {
@@ -34,9 +38,9 @@ export function offerOf(plan: Plan, subject: string): OfferView {
   return {
     planId: plan.id,
     title: plan.title.trim() || subject,
-    when: inviteWhen(plan),
+    when: inviteWhen({ start: drawn(plan.start), end: drawn(plan.end), allDay: plan.allDay }),
     ...(place ? { place } : {}),
-    date: dayOf(startIso(plan)),
+    date: dayOf(isoOfTime(plan.start)),
   };
 }
 
@@ -55,7 +59,7 @@ export function offersShown(
 export function offersOf(plans: readonly Plan[], subject: string): readonly OfferView[] {
   return plans
     .filter(p => p.state === 'open')
-    .sort((a, b) => startIso(a).localeCompare(startIso(b)))
+    .sort((a, b) => msOf(a.start) - msOf(b.start))
     .slice(0, MAX_OFFERS)
     .map(p => offerOf(p, subject));
 }
