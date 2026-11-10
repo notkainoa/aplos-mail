@@ -411,6 +411,7 @@ function offStates(): VisualState[] {
       design: '7.5',
       mockup: 'reader.html (default)',
       filled: 1,
+      summary: 'ready',
     },
     {
       id: 'compose-card-off-new',

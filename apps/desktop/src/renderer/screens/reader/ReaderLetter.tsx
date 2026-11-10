@@ -11,14 +11,21 @@ import type { MailFrameKey, MailFrameReady } from '../../mailframe';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
 import type { SuggestedAction } from '../../ui/props';
-import { ReaderActions, ReplyStub } from '../../ui/reader';
+import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
 import { FindBar } from './FindBar';
 import { HeadActions, type HeadControls } from './HeadActions';
 import { inviteOf, type InviteView } from './invite';
 import { ReaderMessage } from './ReaderMessage';
-import { loadingLabel, myAddresses, replyName, suggestionFor } from './readerRows';
+import {
+  dueOf,
+  loadingLabel,
+  myAddresses,
+  replyName,
+  suggestionFor,
+  summaryFor,
+} from './readerRows';
 import { expandEvent, walkableIds, type ReaderUi, type UiEvent } from './readerUi';
 import { useLetterData, type LetterData } from './useLetterData';
 
@@ -55,6 +62,8 @@ export interface ReaderLetterProps {
   readonly ui: ReaderUi;
   readonly dispatch: (event: UiEvent) => void;
   readonly controls: LetterControls;
+  /** The card treatment: 'a' (the default) is the email card with nothing above it (owner sketch 2026-11-10); 'off' keeps DESIGN 7.5's column, with the big summary on top. */
+  readonly cards?: 'a' | 'off';
   /** The letter's body is laid out and measured (or it is gone or failed, which is an answer too). */
   readonly onReady: (threadId: string) => void;
 }
@@ -241,6 +250,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
           onClose={() => dispatch({ type: 'closeFind' })}
         />
       ) : null}
+      {props.cards === 'off' ? <ReaderHead due={dueOf(row)} summary={summaryFor(row)} /> : null}
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">

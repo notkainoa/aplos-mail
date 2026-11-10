@@ -37,7 +37,12 @@ const NO_CONTROLS = {
 
 import { boot, depsOver, nextTask, text } from './readerTestKit';
 
-const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
+const renderLetter = (
+  id: string,
+  over: Partial<ReaderUi> = {},
+  paper = true,
+  cards?: 'a' | 'off',
+) =>
   renderToStaticMarkup(
     createElement(ReaderLetter, {
       threadId: id,
@@ -45,6 +50,7 @@ const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
       ui: { ...freshUi(id), ...over },
       dispatch: () => undefined,
       controls: NO_CONTROLS,
+      cards,
       onReady: () => undefined,
     }),
   );
@@ -747,6 +753,22 @@ test('the Importance menu moves the thread one end to the other with Home’s to
     );
     assert.match(toast.actions?.[0]?.label ?? '', /^Always do this for /);
     await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the summary head shows only in the card-less column (cards off); the default card has nothing above it', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    await world.threadWindow(id);
+    assert.doesNotMatch(renderLetter(id), /ui-reader-head/, 'the default card: nothing above');
+    assert.match(
+      renderLetter(id, {}, true, 'off'),
+      /ui-reader-head__summary/,
+      'off keeps the summary',
+    );
   } finally {
     world.connection.close();
   }

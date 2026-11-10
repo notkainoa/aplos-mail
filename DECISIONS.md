@@ -1814,3 +1814,18 @@ A band hidden at 0 left no way into Low importance, which the owner reported as 
 ## 2026-11-10: Low band at zero is judged on view totals and reachable by Return (ui-home)
 
 Follow-up to the entry above, from the review of #388 (merged before these fixes landed). The band's visibility now comes from the view's totals (`layoutOf` reads `total` and `low.count`, the same test as the empty Home) instead of the windowed ids, so section headers and the band can never disagree. An empty band is a cursor stop (J/K walk onto it, Return opens "No low-importance mail", so the Return in its tooltip is true), but the cursor never settles on it by itself: when the row under the cursor leaves, it goes to the row above. `LowBand`'s optional `commandId` (#402) is not needed by Home.
+
+## 2026-11-10: the one-by-one card follows the owner's second sketch, which overrides DESIGN section 16 on five points (ui-reader)
+
+Context: the owner's feedback on the one-by-one card, relayed by the orchestrator, 2026-11-10: "They say it does not follow their design closely enough. Treat their sketch as the exact spec" (`df6a1482-0483-40bf-8a55-d48f8f2404ff.png`, in the owner's attachments); "REMOVE the summary headline above the card and the 'Due tomorrow' chip. Nothing sits above the card except the existing top bar"; "REMOVE the subject title row inside the card and its divider"; "REMOVE the blue vertical line to the left of the sender name"; "Sender avatar: the small rounded square before the name in the sketch"; "bell (slashed when it did not notify), then 'Important ⌄', then ⋯"; "no white container for plain emails ... in the app's own body font, size and text colour in BOTH light and dark mode. Keep the light 'paper' frame only for rich HTML"; "If the sketch and earlier decisions conflict, follow the sketch."
+
+Decision: the sketch wins over DESIGN section 16 (the first owner-override paragraph of 2026-11-10) and over DESIGN 7.5 on these points, for the email card only:
+1. **The summary and the due chip are no longer above the card, and the subject is not on the card.** Section 16 said the summary stays big above the card and the subject sits on its top line. The default card (`data-cards='a'`) draws neither; the card-less column (`data-cards='off'`, DESIGN 7.5 as first written) keeps the summary head.
+2. **The sender mark is a rounded square, not a circle.** Section 16 says monogram circles; the recipient circles after "To" stay circles, and the sender's mark before the name is a 24 px rounded square with the sender's initial (the sketch draws a square). Still a monogram: no remote avatar is ever loaded.
+3. **Header order is bell, Importance, ⋯** (section 16 listed Importance, bell, ⋯).
+4. **No cursor rail beside the sender;** the message ↑/↓ walks to takes a quiet accent edge instead.
+5. **Plain mail on the card, in both themes** (own PR: mail-html plain email): a plain email (no author colours, styles, images or layout tables) is drawn straight on the card in the app's own type and colours, including dark, instead of on light paper. DESIGN 7.5 says "HTML mail on light paper in both themes": that now holds only for rich mail.
+
+Also by the sketch: the card is nearly as wide as the pane and fills its height in Go one by one, with no Reply stub under it (Reply is on the pinned bar).
+
+How to apply: the integrator amends DESIGN section 16 and 7.5 accordingly (the Integrator owns plans/DESIGN.md). No other screen changes.
