@@ -4,9 +4,11 @@ import { nonce, type AreaHandlers, type MethodContext } from './types';
 
 /**
  * The `diagnostics` area, owned by lane `eng-host`. `preview` and `export` build the content-free bundle
- * (`diag/bundle/build.ts`; the host re-checks it against `StrictDiagnosticsBundle` before it may leave).
- * `verbose` persists `meta.verbose_until` for the 15-minute protocol log: the host reads it for the log
- * level, so an engine restart ends a window that was still open and a stale one never turns logging on.
+ * (`diag/bundle/build.ts`) and run its production gate (`checkBundle`, FR-32 — zod cannot enter the engine,
+ * so the strict shape the host applies in dev is enforced here on every call).
+ * `verbose` persists `meta.verbose_until` as an absolute deadline for the 15-minute protocol log: the host
+ * reads it for the log level at every event, so a restart inside the window keeps logging until the deadline
+ * — the window is the deadline, not the process — and a stale one never turns logging on.
  */
 
 /** The verbose protocol log's auto-off window (contract: "switching itself off after 15 minutes"). */
@@ -14,9 +16,13 @@ const VERBOSE_MS = 15 * 60_000;
 const KEY = 'verbose_until';
 const BUNDLE_NAME = 'aplos-diagnostics.json';
 
-/** The bundle builder loads on first use (`diag/bundle/` is a lazy dir — engine core is inside its budget). */
-const bundle = async (ctx: MethodContext) =>
-  (await import('../diag/bundle/build')).buildBundle(ctx.services, ctx.services.clock.now());
+/** The bundle builder loads on first use (`diag/bundle/` is a lazy dir) and is strict-checked every call. */
+const bundle = async (ctx: MethodContext) => {
+  const built = await import('../diag/bundle/build');
+  const out = built.buildBundle(ctx.services, ctx.services.clock.now());
+  built.checkBundle(out);
+  return out;
+};
 
 function verbose(
   args: Input<'Diagnostics/verbose'>,

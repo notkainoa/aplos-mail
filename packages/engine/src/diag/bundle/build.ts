@@ -1,5 +1,6 @@
 import type { DiagnosticsBundle } from '@aplos/contract';
 import { cleanCode, hashAddress } from '../redact';
+import { contractError } from '../../runtime/errors';
 import type { EngineServices } from '../../runtime/services';
 
 /**
@@ -57,7 +58,8 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
 
     const accounts = q.all<AccountRow>(
       `SELECT a.id, a.provider, a.status, a.status_reason_code, a.refresh_expires_at,
-              (SELECT MAX(s.updated_at) FROM sync_state s WHERE s.account_id = a.id) AS last_sync_at
+              (SELECT MAX(s.updated_at) FROM sync_state s WHERE s.account_id = a.id
+                AND s.scope NOT LIKE 'cal:%' AND s.scope NOT IN ('workflow', 'calendars')) AS last_sync_at
        FROM accounts a ORDER BY a.id`,
     );
     const budgets = q.all<BudgetRow>(
@@ -134,4 +136,47 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
       crashes: { count: 0 },
     };
   });
+}
+
+// ---- the production gate (FR-32): the bundle is checked on every call, not only in dev/tests ----
+
+const HEX16 = /^[0-9a-f]{16}$/;
+const LINE = /^[^\r\n]{0,500}$/;
+
+/** One forbidden-path check: no field named providerMessage or item may exist anywhere in the bundle. */
+const FORBIDDEN_KEYS = new Set(['providerMessage', 'item', 'provider_message']);
+
+const checkStrings = (value: unknown, path: string): void => {
+  if (typeof value === 'string') {
+    if (path.endsWith('accountHash')) {
+      if (!HEX16.test(value)) throw new Error(`${path}: not a salted hash`);
+    } else if (!LINE.test(value)) throw new Error(`${path}: line too long or multiline`);
+    return;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) && !Number.isFinite(value))
+      throw new Error(`${path}: not a safe number`);
+    return;
+  }
+  if (Array.isArray(value)) return value.forEach((v, i) => checkStrings(v, `${path}[${i}]`));
+  if (value && typeof value === 'object') {
+    for (const [key, v] of Object.entries(value)) {
+      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}.${key}: forbidden field in a bundle`);
+      checkStrings(v, `${path}.${key}`);
+    }
+  }
+};
+
+/**
+ * The strict production check the host applies in dev (`StrictDiagnosticsBundle`), in a form the
+ * zod-free engine can run on every call: every account identity is a 16-hex salted hash, no string is
+ * longer or freer than a code-shaped line, and no provider-error or item field exists anywhere. Throws
+ * `internal` — a malformed bundle must never leave in production either.
+ */
+export function checkBundle(bundle: DiagnosticsBundle): void {
+  try {
+    checkStrings(bundle, 'bundle');
+  } catch (error) {
+    throw contractError({ type: 'internal', message: String(error) });
+  }
 }
