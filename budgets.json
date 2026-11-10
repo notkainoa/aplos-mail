@@ -752,7 +752,7 @@
       "unit": "units/min",
       "stat": "never above",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
-      "dueBy": "2026-11-10",
+      "dueBy": "2026-11-24",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -767,7 +767,7 @@
       "unit": "s",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
-      "dueBy": "2026-11-10",
+      "dueBy": "2026-11-24",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -797,7 +797,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md PV3 acceptance",
-      "dueBy": "2026-11-10",
+      "dueBy": "2026-11-24",
       "maxAgeDays": null,
       "lastMeasured": null
     }

@@ -1,11 +1,9 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-06 from `revamp` `969ecf79`, includes the go-live flip, the
-Session/Settings engine stubs, the close-handshake fix, and every hand-check fix batch:
-chrome #318/#319, Settings resilience #320, first-sync window + progress #316, OAuth return
-#321/#329, Calendar/Event reads #315/#330/#332, Search auth/coalescing #317/#322/#324,
-Settings data sources #313 — plus #345 calendar OAuth scopes and #346 real Google Calendar
-read-sync, so Calendar now shows real events after a one-time re-consent):
+The app to check (built 2026-11-10 from `revamp` `825ee2a0`, includes the go-live flip and every
+earlier fix batch plus: calendar accounts UI + "No calendars" vs "Syncing…" #356/#364/#365, and
+the real AI path #369–#383 — Ask with citations, background summaries, follow-up nudges, the
+consent card, Settings → AI provider setup):
 
 `~/Applications-test/Aplos Mail (revamp).app`
 
@@ -74,7 +72,11 @@ doesn't and where it stopped.
 
 - [ ] Search (⌘K or the Search screen) for a word in a real subject.
   Expected: the right letters come back; no spinner that never ends.
-- [ ] Open the Ask dock and ask something trivial (or just look at the consent gate).
+- [ ] Open the Ask dock and ask something trivial.
+  Expected: real AI is wired now. If you haven't granted the consent card yet, it asks first —
+  approve it. Ask then answers with citations (links back to the letters it used). If a feature
+  says "isn't ready — add a key or pick another provider", that's the honest missing-key state:
+  Settings → AI → Add key under Groq fixes it.
 - [ ] Today shows the day's agenda; Calendar shows day/week/month.
   Expected (updated 2026-11-06, #345+#346 merged): real Google Calendar read-sync is wired, but it
   needs a one-time re-consent first. Your current grant holds mail scopes only, so:
@@ -87,7 +89,11 @@ doesn't and where it stopped.
      (250 per step), then the other calendars every 15–30 min. The grid fills in as pages commit.
   Until the re-consent, an empty grid with that permission row is correct; "Couldn't load this
   list" or an error banner is not. RSVP needs a synced event you can respond to — out of this check.
-- [ ] Settings opens; the AI section lets you pick providers/models; the account switcher works.
+- [ ] Settings opens; Settings → AI lists all nine providers with per-feature pickers (Ask,
+  Summaries, Drafts, Plans, Voice). Your GROQ_API_KEY in `~/.config/aplos-mail/.env` is already
+  picked up on a normal launch — Groq should read as ready without pasting anything; pasting a
+  key in Settings overrides it. The "Summarise in the background" consent card lives here too.
+- [ ] The account switcher works.
 
 ## 7. Compose and send to yourself (2 min)
 
@@ -114,7 +120,7 @@ doesn't and where it stopped.
 
 ---
 
-## Known gaps today (agent run, 2026-11-06, build at 969ecf79)
+## Known gaps today (agent run, 2026-11-10, build at 825ee2a0)
 
 - Everything your last pass flagged is merged and re-verified packaged: Settings renders all
   sections (Help now lives in Settings → Help & about), Calendar loads its day/week/month
@@ -127,6 +133,13 @@ doesn't and where it stopped.
   on-screen first-sync UI have no automated live check — this list is the check.
 - Small UI nit already sent to the UI lane: with an expired sign-in, Search shows two stacked
   banners ("Couldn't load this list." plus the sign-in message).
+- AI was verified with NO provider key: Settings → AI lists all nine providers with honest
+  "isn't ready — add a key" per-feature copy, the consent/privacy section renders, and Ask
+  refuses politely with zero network calls. A real paid-key Ask round-trip, citations, and the
+  background summaries queue have no automated check — you're the first live run.
+- `APLOS_TEST_KEYCHAIN=login` caveat for future agent runs only (not you): a keychain item
+  created by an older build makes the ACL prompt appear and the windowless app then hangs on it;
+  test runs now leave it off.
 - The guarded runner's send-to-self probe is once a day and the owner has skipped the live send
   gate; the draft probe leaves one `aplos-live-probe` draft in the test account's Drafts —
   discard it by hand when you're next in there.
