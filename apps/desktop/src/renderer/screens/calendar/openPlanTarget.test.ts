@@ -34,7 +34,10 @@ test('the offer names the day the calendar draws, for a floating plan in another
     end: { type: 'floating', local: '2026-11-12T01:30:00', timeZone: 'Asia/Tokyo' },
   } as const;
   const offer = offerOf(plan as never, 's');
-  assert.equal(offer.date, dayOf(isoOfTime(plan.start as never)), 'the same day the grid uses');
+  const moment = new Date(Date.UTC(2026, 10, 11, 15, 30)); // 00:30 on the 12th in Tokyo, whatever this machine's zone is
+  const local = `${moment.getFullYear()}-${String(moment.getMonth() + 1).padStart(2, '0')}-${String(moment.getDate()).padStart(2, '0')}`;
+  assert.equal(offer.date, local, "the day the grid draws it on, in this machine's zone");
+  assert.equal(offer.date, dayOf(isoOfTime(plan.start as never)));
   assert.ok(
     offer.when.startsWith(longDay(offer.date as never)),
     'and the when line names that day',

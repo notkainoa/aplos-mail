@@ -25,9 +25,10 @@ export function useOpenPlanTarget(
   const planId = target?.planId;
   useEffect(() => {
     if (seq === null || date === undefined || picked.current === seq) return;
+    if (Date.now() - (target?.at ?? 0) > PLAN_WAIT_MS) return void consumeCalendarTarget(seq);
     picked.current = seq;
     apply({ type: 'pick', date: date as IsoDate });
-  }, [seq, date, apply]);
+  }, [seq, date, target?.at, apply]);
   useEffect(() => {
     if (seq === null || planId === undefined || picked.current !== seq) return;
     const id = planEntryId(planId);

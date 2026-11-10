@@ -395,7 +395,8 @@
   padding-inline: var(--space-6);
 }
 /* Words from the email can be long: one line each, the title up to two. */
-.aplos-reader__offer-text .ui-text {
+.aplos-reader__offer-text .ui-text,
+.aplos-reader__offer-text .ui-text__body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
