@@ -38,6 +38,8 @@ test('every Google scope requested in the source tree is in the manifest', () =>
   const found = new Set<string>();
   for (const file of sourceFiles(src)) {
     if (file.includes('src/host/providers/oauth/')) continue;
+    // Tests name scopes to prove what the UI recognises; only shipped code can request one.
+    if (/\.test\.tsx?$/.test(file)) continue;
     for (const hit of readFileSync(file, 'utf8').matchAll(
       /https:\/\/www\.googleapis\.com\/auth\/[\w.]+/g,
     ))
