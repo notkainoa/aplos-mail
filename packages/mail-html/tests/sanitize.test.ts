@@ -256,7 +256,11 @@ describe('elements and attributes', () => {
     inputs.push('<!doctype html public "-//IETF//DTD HTML 2.0//EN"><p>x</p>', '<!--c--><p>x</p>');
     inputs.push('\ufeff<!DOCTYPE html SYSTEM "about:legacy-compat"><p>x</p>', '<![CDATA[x]]>');
     for (const input of inputs) {
-      assert.ok(html(input).document.startsWith(`${READING_DOCTYPE}<html>`), input);
+      assert.ok(
+        html(input).document.startsWith(`${READING_DOCTYPE}<html`) &&
+          /^<html[ >]/.test(html(input).document.slice(READING_DOCTYPE.length)),
+        input,
+      );
       assert.equal(html(input).document.match(/<!doctype/gi)?.length, 1, input);
     }
   });
@@ -419,10 +423,14 @@ describe('elements and attributes', () => {
     );
     assert.ok(result.document.indexOf('<meta charset="utf-8">') < 1_024 - 25);
     assert.equal(result.document.includes('\u001b'), false);
-    assert.ok(result.document.startsWith(`${READING_DOCTYPE}<html><head><meta charset="utf-8">`));
+    // A plain mail's root also carries the frame's own marker (plain.ts).
+    assert.match(
+      result.document.slice(READING_DOCTYPE.length),
+      /^<html( data-aplos-plain)?><head><meta charset="utf-8">/,
+    );
     assert.match(
       html('<html lang="pt-BR" dir="RTL"><p>x</p>').document,
-      /^<!DOCTYPE HTML PUBLIC "-\/\/W3C\/\/DTD HTML 4\.01 Transitional\/\/EN" "[^"]+"><html lang="pt-BR" dir="RTL"><head>/,
+      /^<!DOCTYPE HTML PUBLIC "-\/\/W3C\/\/DTD HTML 4\.01 Transitional\/\/EN" "[^"]+"><html lang="pt-BR" dir="RTL"( data-aplos-plain)?><head>/,
     );
   });
 });
