@@ -353,7 +353,8 @@ async function setEvent(
   // A 'series' edit opened from one occurrence carries that occurrence's new times; the series must move by
   // the DELTA, not to the occurrence's absolute times (MED, #394: a naive patch would drag the whole series
   // to the clicked instance's slot).
-  if (change.scope === 'series' && ref.recurrenceId) rebaseSeriesTimes(ctx, ref, fields);
+  if (change.scope === 'series' && ref.recurrenceId)
+    rebaseSeriesTimes(ctx, { ...ref, recurrenceId: ref.recurrenceId }, fields);
   const result = await ctx.services.calendar.put(ref.accountId, {
     ...target,
     scope: change.scope,
@@ -375,8 +376,9 @@ function rebaseSeriesTimes(
 ): void {
   const start = fields.start;
   if (!start || (start.type !== 'utc' && start.type !== 'date')) return;
-  const master = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
-  if (!master) throw notFoundEvent();
+  const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
+  if (!stored || stored.start_utc === null || stored.end_utc === null) throw notFoundEvent();
+  const master = { start_utc: stored.start_utc, end_utc: stored.end_utc };
   const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
   const occStart =
     occ?.start_utc ??
