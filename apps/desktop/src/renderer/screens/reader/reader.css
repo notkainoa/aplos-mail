@@ -267,6 +267,7 @@
 }
 .aplos-circles {
   display: inline-flex;
+  flex-direction: row-reverse;
   align-items: center;
   padding-left: var(--space-2);
 }
@@ -278,8 +279,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: var(--space-5);
-  height: var(--space-5);
+  width: var(--control-xs);
+  height: var(--control-xs);
   margin-left: calc(-1 * var(--space-2));
   border-radius: var(--radius-pill);
   background-color: var(--circle-fill);
@@ -294,7 +295,6 @@
 }
 :root[data-theme='dark'] .aplos-circle {
   --circle-ring: var(--raised);
-  --circle-fill: var(--hover);
 }
 
 .aplos-details {

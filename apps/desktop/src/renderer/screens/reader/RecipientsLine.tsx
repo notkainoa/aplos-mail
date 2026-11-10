@@ -31,20 +31,23 @@ function Circle({ person }: { readonly person: Person }) {
   );
 }
 
-/** Up to three circles, then one "+N" circle for the rest. */
+/**
+ * Up to three circles, then one "+N" circle for the rest. They overlap with the first on top, so each monogram stays
+ * readable: the DOM runs last to first and the row is laid out in reverse.
+ */
 function Circles({ people }: { readonly people: readonly Person[] }) {
   const shown = people.slice(0, MAX_CIRCLES);
   const rest = people.length - shown.length;
   return (
     <span className="aplos-circles" aria-hidden="true">
-      {shown.map(person => (
-        <Circle key={person.key} person={person} />
-      ))}
       {rest > 0 ? (
         <span className="aplos-circle" data-more="true">
           +{rest}
         </span>
       ) : null}
+      {[...shown].reverse().map(person => (
+        <Circle key={person.key} person={person} />
+      ))}
     </span>
   );
 }
