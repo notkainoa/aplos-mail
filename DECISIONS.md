@@ -1833,3 +1833,24 @@ How to apply: the integrator amends DESIGN section 16 and 7.5 accordingly (the I
 ## 2026-11-10: Home's Do now, Important updates and Low importance only hold threads someone wrote to you (ui-home)
 
 Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox, so a thread the owner started and nobody had answered sat in Do now (and also in Follow up). `views/sections.ts` now requires `threads.last_inbound_date IS NOT NULL` on the three lane cursors (the sidebar count and the Low sheet read the same cursors); Follow up is unchanged. A thread where the owner answered last but someone wrote before still follows its lane, as before. The slow reference in `tests/views/reference.ts` carries the same rule, and `tests/views/home-sent-only.test.ts` fails without it.
+
+## 2026-11-10: 16 budget rows move from dueBy 2026-11-13 to 2026-11-27 (plat-ci, before check:budgets turns red at UTC midnight on 2026-11-14)
+
+`check:budgets` fails an unmeasured row after its `dueBy`, which would turn every PR's local-ci red from 2026-11-14 (UTC), as on 2026-11-07 (DECISIONS 2026-11-06) and would have on 2026-11-11 (2026-11-10, first entry). These rows have no first measurement yet and platform cannot take them from here. Dates move two weeks; limits are NOT changed; an owner that records a measurement earlier simply turns its row green.
+
+- `ui.triage-key-to-state` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.triage-key-to-paint` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.triage-key-to-paint-cap` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.triage-burst` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.open-cached-letter` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.jk-prefetched` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.palette-open` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.palette-filter` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.scroll-10k-rows` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.cold-start-shell` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.home-interactive` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `idle.engine-rss` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
+- `idle.cpu-10min` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
+- `idle.wakeups` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
+- `ui.home-100k-first-rows` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- `ui.scroll-100k-frame` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
