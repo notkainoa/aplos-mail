@@ -198,6 +198,16 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
     diagnostics: {
       preview: args => c.diagnostics.preview(args),
       copy: args => c.diagnostics.copy(args),
+      export: args => c.diagnostics.export(args),
+      verbose: args => c.diagnostics.verbose(args),
     },
+    data: { export: args => c.data.export(args) },
+    workflow: {
+      status: args => c.workflow.status(args),
+      enable: args => c.workflow.enable(args),
+      code: args => c.workflow.code(args),
+      disable: args => c.workflow.disable(args),
+    },
+    file: { save: args => c.file.save(args) },
   };
 }

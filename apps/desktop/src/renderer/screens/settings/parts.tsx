@@ -30,11 +30,17 @@ type RowProps = Omit<SettingRowProps, 'id' | 'label' | 'control' | 'paletteId'> 
   readonly control?: ReactNode | ((labelId: string) => ReactNode);
 };
 
-/** A SettingRow that carries its palette anchor: ⌘K scrolls to it and focuses its control (DESIGN 7.10). */
+/** A SettingRow that carries its palette anchor: ⌘K scrolls to it and focuses its control (DESIGN 7.10).
+ * `tabIndex={-1}` lets the screen hand the row the focus a removed control dropped (DESIGN 11.2). */
 export function Row({ section, anchor, label, control, idSuffix, ...rest }: RowProps) {
   const id = idSuffix ? `${rowId(section, anchor)}-${idSuffix}` : rowId(section, anchor);
   return (
-    <div className="settings-anchor" data-setting-anchor={anchor} data-setting-section={section}>
+    <div
+      className="settings-anchor"
+      data-setting-anchor={anchor}
+      data-setting-section={section}
+      tabIndex={-1}
+    >
       <SettingRow
         {...rest}
         id={id}

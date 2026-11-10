@@ -3,7 +3,16 @@ import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { EmptyLine } from '../../../ui/list';
 import { Group, NotAvailable, Row } from '../parts';
-import { demoControls, hasCapability, queueRows, versionLine } from '../settings.model';
+import {
+  DATA_EXPORT_LINE,
+  DATA_EXPORTED_LINE,
+  demoControls,
+  hasCapability,
+  queueRows,
+  verboseLine,
+  verboseOn,
+  versionLine,
+} from '../settings.model';
 import type { SectionProps } from './types';
 
 export function Help(props: SectionProps) {
@@ -57,16 +66,32 @@ export function Help(props: SectionProps) {
         ) : null}
       </Group>
 
+      <Group id="set-help-data" label="Your data">
+        <Row
+          section="help"
+          anchor="exportData"
+          description={view.dataExported ? DATA_EXPORTED_LINE : DATA_EXPORT_LINE}
+          control={
+            <Button
+              variant="text"
+              label="Export"
+              busy={view.busy.dataExport === true}
+              onPress={() => void actions.exportData()}
+            />
+          }
+        />
+      </Group>
+
       <Group id="set-help-support" label="Support">
         {hasCapability(data.session, 'diagnostics') ? (
           <Row
             section="help"
             anchor="diagnostics"
-            description="A report with no mail in it. You see it before it is copied."
+            description="A report with no mail in it. Preview it first."
             control={
               <Button
                 variant="text"
-                label="Export"
+                label="Preview"
                 busy={view.busy.diagnostics === true}
                 onPress={() => void actions.openDiagnostics()}
               />
@@ -74,6 +99,23 @@ export function Help(props: SectionProps) {
           />
         ) : (
           <NotAvailable section="help" anchor="diagnostics" />
+        )}
+        {hasCapability(data.session, 'diagnostics') ? (
+          <Row
+            section="help"
+            anchor="verboseLogging"
+            description={verboseLine(data.verbose, data.now)}
+            control={id => (
+              <Switch
+                label="Verbose logging"
+                labelledBy={id}
+                checked={verboseOn(data.verbose, data.now)}
+                onChange={on => void actions.setVerbose(on)}
+              />
+            )}
+          />
+        ) : (
+          <NotAvailable section="help" anchor="verboseLogging" />
         )}
         {hasCapability(data.session, 'queueInspector') ? (
           <Row

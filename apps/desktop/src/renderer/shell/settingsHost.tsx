@@ -38,7 +38,7 @@ export interface SettingsHostDeps {
   dismissToast(id: string): void;
   /** Puts a local change on the data layer's shared undo stack (Z). */
   pushUndoEntry(entry: LocalUndo): UndoHandle;
-  openReconnect(accountId: string, mode: 'reconnect' | 'grant'): void;
+  openReconnect(accountId: string, mode: 'reconnect' | 'grant' | 'enableEditing'): void;
   openAddAccount(): void;
   showWelcome(): Promise<WelcomeResult>;
 }
