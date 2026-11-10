@@ -259,14 +259,97 @@ export const eventsPlan: ViewCompiler = (spec, env): ViewPlan => {
   };
 };
 
-export const plansPlan: ViewCompiler = (): ViewPlan => ({
-  kind: 'plans',
-  rowType: 'Plan',
-  layout: () => ({ total: 0, sections: [] }),
-  rows: () => [],
-  locate: () => undefined,
-  statements: () => [],
-});
+interface PlanWindowRow {
+  [k: string]: string | number | null;
+  id: number;
+  account_id: string;
+  remote_id: string;
+  start_utc: number | null;
+  start_date: string | null;
+  end_utc: number | null;
+  end_date: string | null;
+  all_day: number;
+}
+
+/**
+ * The `plans` window (prov-cal): open proposals from the `plans` table, oldest start first, optionally a
+ * thread and always an overlap of `[from, to)` when the grid asks for a range. Same keyset paging shape as
+ * `eventsPlan`; a `Plan` change row re-renders through `statements`.
+ */
+export const plansPlan: ViewCompiler = (spec, env): ViewPlan => {
+  const s = spec as { kind: 'plans'; threadId?: string; from?: number; to?: number };
+  const startMs = (r: PlanWindowRow): number =>
+    r.all_day ? instant({ type: 'date', date: r.start_date! }, env.zone) : r.start_utc!;
+  const endMs = (r: PlanWindowRow): number => {
+    const end = r.all_day ? instant({ type: 'date', date: r.end_date! }, env.zone) : r.end_utc!;
+    const start = startMs(r);
+    // A zero-length all-day plan still covers its day for the grid's overlap test.
+    return end <= start ? start + 86_400_000 : end;
+  };
+  const load = (q: StoreReader) => {
+    const rows = q
+      .all<PlanWindowRow>(
+        `SELECT p.id, p.account_id, t.remote_id, p.start_utc, p.start_date, p.end_utc, p.end_date,
+                p.all_day
+         FROM plans p JOIN threads t ON t.id = p.thread_id WHERE p.state = 'open' ORDER BY p.id`,
+      )
+      .map(r => ({
+        id: `${r.account_id}:plan-${r.id}`,
+        at: startMs(r),
+        end: endMs(r),
+        threadId: `${r.account_id}:${r.remote_id}`,
+      }))
+      .filter(
+        r =>
+          (!s.threadId || r.threadId === s.threadId) &&
+          (s.from === undefined || r.end > s.from) &&
+          (s.to === undefined || r.at < s.to),
+      );
+    rows.sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+    return rows;
+  };
+  const memo = new WeakMap<StoreReader, ReturnType<typeof load>>();
+  const list = (q: StoreReader) => {
+    let m = memo.get(q);
+    if (!m) {
+      m = load(q);
+      memo.set(q, m);
+    }
+    return m;
+  };
+  return {
+    kind: 'plans',
+    rowType: 'Plan',
+    layout: (q): ViewLayout => ({ total: list(q).length, sections: [] }),
+    rows: (q, after, limit): ViewRow[] => {
+      const l = list(q);
+      const found = after
+        ? l.findIndex(
+            r =>
+              r.at > (after.key[0] as number) ||
+              (r.at === after.key[0] && r.id > String(after.key[1])),
+          )
+        : 0;
+      const startAt = found < 0 ? (after ? l.length : 0) : found;
+      return l.slice(startAt, startAt + limit).map(r => ({
+        id: r.id,
+        at: { part: 0, key: [r.at, r.id] },
+      }));
+    },
+    locate: (q, id) => {
+      const index = list(q).findIndex(r => r.id === id);
+      if (index < 0) return undefined;
+      const r = list(q)[index]!;
+      return { index, at: { part: 0, key: [r.at, r.id] } };
+    },
+    statements: (_q): Statement[] => [
+      {
+        sql: 'SELECT id, account_id, thread_id, start_utc, start_date, end_utc, end_date, all_day, state FROM plans',
+        params: [],
+      },
+    ],
+  };
+};
 
 // Self-register at this module's import time — the lazy chunk runs this once (import caching), so
 // registerViewKind's double-registration guard is still honored.
