@@ -190,13 +190,16 @@ export function AddToolDialog({
             />
           ))}
         </fieldset>
-        {[...scopeWarnings(draft.scopes), kindNote(draft.kind, draft.scopes)]
-          .filter((w): w is string => w !== null)
-          .map(w => (
-            <Text key={w} variant="small" tone="ink">
-              {w}
-            </Text>
-          ))}
+        {/* Always mounted, so a warning that appears as a box is ticked is announced (DESIGN 11.3). */}
+        <span role="status">
+          {[...scopeWarnings(draft.scopes), kindNote(draft.kind, draft.scopes)]
+            .filter((w): w is string => w !== null)
+            .map(w => (
+              <Text key={w} variant="small" tone="ink">
+                {w}
+              </Text>
+            ))}
+        </span>
       </div>
     </Dialog>
   );
