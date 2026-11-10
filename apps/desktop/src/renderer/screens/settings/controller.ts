@@ -33,6 +33,8 @@ import {
 } from './keyboard.model';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import {
+  grantUnconfirmed,
+  GRANT_UNCONFIRMED_LINE,
   withoutKeyPath,
   type AccountWrite,
   type ClientEntry,
@@ -108,16 +110,24 @@ export function createController(deps: ControllerDeps) {
    * never clears another's refusal. */
   const guardFails = new Map<string, OwnFailure>();
 
-  /** Runs a write; on rejection the failure line offers Retry for the same step. */
-  async function guard(op: string, run: () => Promise<void>): Promise<boolean> {
+  /**
+   * Runs a write; on rejection the failure line offers Retry for the same step. `failure` can answer a
+   * different line for a rejection Retry would make worse (a grant that may have committed anyway).
+   */
+  async function guard(
+    op: string,
+    run: () => Promise<void>,
+    failure?: (error: unknown, retry: () => void) => WriteFailure,
+  ): Promise<boolean> {
     let own = guardFails.get(op);
     if (!own) guardFails.set(op, (own = ownFailure()));
     try {
       await run();
       own.clearIfOwn();
       return true;
-    } catch {
-      own.write({ op, retry: () => void guard(op, run), dismiss: () => deps.fail(null) });
+    } catch (error) {
+      const retry = () => void guard(op, run, failure);
+      own.write(failure?.(error, retry) ?? { op, retry, dismiss: () => deps.fail(null) });
       return false;
     }
   }
@@ -246,6 +256,58 @@ export function createController(deps: ControllerDeps) {
   const addressTimers = new Map<LocalId, () => void>();
   /** Bumped by leave(), so a provider test that lands after the page was left writes nothing. */
   let testGeneration = 0;
+
+  /** The admin-scope grant whose owner has not answered yet: the draft plus the dialog's answer-back. */
+  let pendingAdminGrant: {
+    input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] };
+    onGranted: (client: ClientEntry) => void;
+  } | null = null;
+
+  /** Re-reads the tool list so a grant the engine may have committed becomes visible; quiet on a miss. */
+  async function refreshClients(): Promise<void> {
+    try {
+      deps.setData({ clients: (await ports.clientsList()).map(withoutKeyPath) });
+    } catch {
+      /* the list keeps what it had */
+    }
+  }
+
+  /** The guarded `Clients/grant` itself; `onGranted` hands the new tool (with its key path) back to the dialog. */
+  async function doGrant(
+    input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
+    onGranted: (client: ClientEntry) => void,
+  ): Promise<boolean> {
+    if (view().busy.grant) return false;
+    busy('grant', true);
+    let unconfirmedRefresh: Promise<void> | null = null;
+    // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
+    const ok = await guard(
+      'allow that tool',
+      async () => {
+        const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
+        onGranted(granted);
+        const listed = withoutKeyPath(granted);
+        deps.setData({
+          clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
+        });
+      },
+      (error, retry) => {
+        if (!grantUnconfirmed(error))
+          return { op: 'allow that tool', retry, dismiss: () => deps.fail(null) };
+        // The grant may have committed before the engine stopped answering: a Retry could make a second
+        // tool, so the line offers none and says to check the list — re-read so a landed grant shows.
+        unconfirmedRefresh = refreshClients();
+        return {
+          op: 'allow that tool',
+          line: GRANT_UNCONFIRMED_LINE,
+          dismiss: () => deps.fail(null),
+        };
+      },
+    );
+    busy('grant', false);
+    await unconfirmedRefresh;
+    return ok;
+  }
 
   const self = {
     set,
@@ -428,6 +490,7 @@ export function createController(deps: ControllerDeps) {
       testGeneration += 1;
       for (const cancel of addressTimers.values()) cancel();
       addressTimers.clear();
+      pendingAdminGrant = null;
       deps.fail(null);
       deps.setView({
         testing: {},
@@ -615,26 +678,23 @@ export function createController(deps: ControllerDeps) {
       deps.setView({ addTool: false });
     },
     /**
-     * Allows a tool. The new tool joins the list without its key file's path; the path goes back to the dialog once
-     * and is kept nowhere else. Resolves with the client (for the dialog) or null when the engine refused.
+     * Allows a tool. 'admin' asks twice: Allow opens the shared confirm (Cancel is the default), and only its
+     * answer grants. The new tool joins the list without its key file's path; the path goes back to the dialog
+     * once and is kept nowhere else. Resolves false when the engine refused — or while the admin ask is up.
      */
     async grantClient(
       input: { name: string; kind: ToolKind; scopes: readonly ToolScope[] },
       onGranted: (client: ClientEntry) => void,
     ): Promise<boolean> {
       if (view().busy.grant) return false;
-      busy('grant', true);
-      // `onGranted` is inside the guarded step, so the failure line's Retry delivers the key path to the dialog too.
-      const ok = await guard('allow that tool', async () => {
-        const granted = await ports.clientsGrant({ ...input, name: input.name.trim() });
-        onGranted(granted);
-        const listed = withoutKeyPath(granted);
-        deps.setData({
-          clients: [...(data().clients ?? []).filter(c => c.id !== listed.id), listed],
-        });
-      });
-      busy('grant', false);
-      return ok;
+      if (input.scopes.includes('admin')) {
+        // The draft and where its key path goes wait here, not in view state: the add dialog stays mounted
+        // under the question, so cancelling leaves the form exactly as it was.
+        pendingAdminGrant = { input, onGranted };
+        deps.setView({ confirm: { kind: 'grantAdmin', name: input.name.trim() } });
+        return false;
+      }
+      return doGrant(input, onGranted);
     },
     async openDiagnostics() {
       // The dialog shows the shared failure slot: another action's line must not appear inside it.
@@ -719,6 +779,7 @@ export function createController(deps: ControllerDeps) {
 
     /* ───────────── Confirmations ───────────── */
     cancelConfirm() {
+      pendingAdminGrant = null;
       deps.setView({ confirm: null });
     },
     /** The destructive step runs only here, after Cancel was passed over on purpose. */
@@ -745,6 +806,11 @@ export function createController(deps: ControllerDeps) {
           return guard('discard that item', () => ports.queueDiscard(c.id));
         case 'revokeClient':
           return self.revokeClient(c.id);
+        case 'grantAdmin': {
+          const pending = pendingAdminGrant;
+          pendingAdminGrant = null;
+          return pending ? doGrant(pending.input, pending.onGranted) : false;
+        }
       }
     },
   };
