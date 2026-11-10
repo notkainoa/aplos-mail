@@ -3384,7 +3384,7 @@
     "/call/Diagnostics/verbose": {
       "post": {
         "operationId": "Diagnostics_verbose",
-        "summary": "Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off.",
+        "summary": "Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off. A tool may only turn it off — turning it on is the owner’s. With no `on` it just answers the current deadline.",
         "tags": ["diagnostics"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
@@ -7878,8 +7878,7 @@
           "on": {
             "type": "boolean"
           }
-        },
-        "required": ["on"]
+        }
       },
       "Diagnostics_verbose_output": {
         "type": "object",
