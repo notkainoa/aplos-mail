@@ -368,6 +368,30 @@
   color: var(--dim);
 }
 
+/* "Add to calendar" for an event found in the email: a quiet --raised block under the summary, text on the left and a
+   text button on the right. It never carries the filled button (the pinned bar owns it) and never an AI mark. */
+.aplos-reader__offers {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.aplos-reader__offer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+.aplos-reader__offer-text {
+  display: grid;
+  gap: var(--space-half);
+  min-width: 0;
+}
+.aplos-reader__offer .ui-text {
+  margin: 0;
 /* ---------- The sender's mark and the plain body's column (owner sketch 2026-11-10) ----------
    A 24 px rounded square with the sender's initial before the name. A plain email (the frame reports its sentinel
    surface, mailframe/paper.ts) is drawn straight on the card in the app's own body type, indented to the name's column;
