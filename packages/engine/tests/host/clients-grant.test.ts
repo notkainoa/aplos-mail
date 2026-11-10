@@ -16,14 +16,19 @@ import { tempDb } from '../store/helpers';
  * so a tool can never mint another tool (FR-5's class of reach).
  */
 
-async function world(opts: { withTokens?: boolean } = {}) {
+async function world(opts: { withTokens?: boolean; removeRejects?: boolean } = {}) {
   const file = tempDb();
   const clock = manualClock();
   const store: StorePort = openStore(file.open(), {
     now: () => clock.now(),
     extensions: laneExtensions(),
   });
-  const log = createLogger({ sink: { write: () => undefined }, salt: 'grant-test', clock });
+  const events: string[] = [];
+  const log = createLogger({
+    sink: { write: r => events.push(r.event) },
+    salt: 'grant-test',
+    clock,
+  });
   const issued: { clientId: string; token: string }[] = [];
   const removed: string[] = [];
   const engine = await createEngine({
@@ -40,6 +45,7 @@ async function world(opts: { withTokens?: boolean } = {}) {
                 return { path: `run/clients/${clientId}.token` };
               },
               remove: async (clientId: string) => {
+                if (opts.removeRejects) throw new Error('remove exploded');
                 removed.push(clientId);
               },
             },
@@ -54,7 +60,7 @@ async function world(opts: { withTokens?: boolean } = {}) {
     scopes: string[],
     via: 'socket' | 'http' | 'mcp' = 'socket',
   ) => engine.connect(listenerCaller({ id, kind, scopes }, via) as never);
-  return { engine, store, clock, db: file.open(), call, asClient, issued, removed };
+  return { engine, store, clock, db: file.open(), call, asClient, issued, removed, events };
 }
 
 test('grant inserts the row with the token hash, hands the plaintext to the host, lists the client', async () => {
@@ -135,6 +141,31 @@ test('a failed issue leaves no client row', async () => {
     );
     assert.equal((w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n, 0);
     await engine.close();
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('revoke still answers ok when the token file will not remove, and logs a warn', async () => {
+  const w = await world({ removeRejects: true });
+  try {
+    const { client } = await w.call('Clients/grant', { name: 'c', kind: 'cli', scopes: ['read'] });
+    assert.deepEqual(await w.call('Clients/revoke', { id: client.id }), { ok: true });
+    assert.equal((await w.call('Clients/list', {})).list[0]!.revokedAt, w.clock.now());
+    assert.ok(w.events.includes('client.token_remove_failed'), 'the failed remove is logged');
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('a failed grant commit whose cleanup also fails still surfaces the commit error', async () => {
+  const w = await world({ removeRejects: true });
+  try {
+    await assert.rejects(
+      w.call('Clients/grant', { name: '', kind: 'cli', scopes: ['read'] }),
+      (e: { type?: string }) => typeof e.type === 'string',
+      'the caller sees the commit error, not the cleanup failure',
+    );
   } finally {
     await w.engine.close();
   }
