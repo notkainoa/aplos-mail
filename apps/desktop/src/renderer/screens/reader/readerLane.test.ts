@@ -26,6 +26,10 @@ test('a choice moves to the other end only; back from Low lands in Important upd
   assert.equal(laneForChoice(row('from-a-newer-engine'), 'low'), null);
 });
 
-test('the bell makes no claim until the engine reports a notification', () => {
-  assert.equal(notificationOf(row('do')), 'unknown');
+test('the bell: sent is a bell, suppressed and none are slashed, absent or unknown claims nothing', () => {
+  assert.equal(notificationOf({ notification: 'sent' }), 'notified');
+  assert.equal(notificationOf({ notification: 'suppressed' }), 'silent');
+  assert.equal(notificationOf({ notification: 'none' }), 'silent');
+  assert.equal(notificationOf({}), 'unknown', 'mail older than the notification log');
+  assert.equal(notificationOf({ notification: 'a-newer-value' }), 'unknown');
 });

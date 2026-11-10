@@ -1,6 +1,6 @@
 /** The screen's state, its actions and effects, and the selectors the reducer, the commands and the view share. */
 import type { EventChange } from '@aplos/contract';
-import type { Calendar, EpochMs, Event, Plan } from '../../../data';
+import type { Account, Calendar, EpochMs, Event, Plan } from '../../../data';
 import type {
   CalendarEventData,
   CalendarView,
@@ -84,6 +84,8 @@ export interface CalendarContext {
   readonly events: ReadonlyMap<string, Event>;
   readonly plans: ReadonlyMap<string, Plan>;
   readonly calendars: readonly Calendar[];
+  /** The accounts events and calendars belong to: `grantedScopes` gates editing (shape 1). */
+  readonly accounts: readonly Account[];
   /** `Calendar/get` has answered at least once. Until then the grid is loading, never empty (review1 12). */
   readonly calendarsReady: boolean;
   /**
@@ -127,6 +129,11 @@ export type CalendarAction =
     }
   | { type: 'editorSave' }
   | { type: 'editorCancel' }
+  | { type: 'editorNote'; message: string }
+  /** `calendar.conflict` on a save: re-open the editor on the newer copy with `note` as its error line. */
+  | { type: 'reopenEditor'; eventId: string; note: string }
+  /** The detail's 'Enable editing' button: opens the grant sheet for this account. */
+  | { type: 'enableEditing'; accountId: string }
   | { type: 'delete' }
   | { type: 'move'; id: string; start: IsoDateTime; end: IsoDateTime }
   | { type: 'resize'; id: string; end: IsoDateTime }
@@ -172,6 +179,10 @@ export type CalendarEffect =
       undoLabel: string;
       /** The sentence if it is refused: "Couldn't move Q4 review." */
       failure: string;
+      /** An editor save's event: on `calendar.conflict` the editor re-opens on the newer copy (writeErrors). */
+      reopenEditorId?: string;
+      /** The account the write goes to: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
     }
   | {
       kind: 'rsvp';
@@ -182,11 +193,31 @@ export type CalendarEffect =
       answer: RsvpAnswer;
       organizer?: string;
       failure: string;
+      /** The account the reply goes to: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
     }
+  /** The owner tried to change something on an account whose grant lacks the write scope: the calm notice. */
+  | { kind: 'editingNotice'; accountId?: string }
+  /** The detail's Enable editing button: opens the grant sheet for this account. */
+  | { kind: 'enableEditing'; accountId: string }
   | { kind: 'calendarSet'; id: string; shown: boolean; toast?: ToastPlan }
-  | { kind: 'planConfirm'; planId: string; calendarId: string | null; optimistic: OptimisticChange }
+  | {
+      kind: 'planConfirm';
+      planId: string;
+      calendarId: string | null;
+      optimistic: OptimisticChange;
+      /** The calendar the plan would join: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
+    }
   | { kind: 'planDismiss'; planId: string; optimistic: OptimisticChange }
-  | { kind: 'eventHide'; id: string; optimistic: OptimisticChange; toast: ToastPlan }
+  | {
+      kind: 'eventHide';
+      id: string;
+      optimistic: OptimisticChange;
+      toast: ToastPlan;
+      /** The event's account: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
+    }
   | { kind: 'openThread'; threadId: string }
   | { kind: 'openUrl'; url: string }
   | { kind: 'copy'; text: string; toast: ToastPlan }
@@ -220,6 +251,14 @@ export function railEntry(
   if (shownView(state) !== 'day') return undefined;
   const day = entriesOnDay(ctx.entries, state.anchor);
   return day.find(e => e.id === state.selectedId) ?? day[0];
+}
+
+/**
+ * `calendar.eventGone` closes the detail only when it is the gone event's own: the open popover or
+ * the RSVP choice names it — never an unrelated detail (review7 4).
+ */
+export function detailIsFor(state: CalendarState, eventId: string): boolean {
+  return state.detailId === eventId || state.rsvp?.eventId === eventId;
 }
 
 /** The open detail: the popover's entry, or the day rail's. */

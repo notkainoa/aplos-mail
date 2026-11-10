@@ -1772,6 +1772,15 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 - `sync.live-first-rows` (prov-gmail): needs the live first-sync run on the spare account; due date moved to 2026-11-24, limit unchanged.
 - `sync.archive-2000-units` (prov-gmail): needs the archive harness run on the lane's fixture; due date moved to 2026-11-24, limit unchanged.
 
+## 2026-11-10 — eng-contract: Message.notification (the reader bell) and no Contact/photo yet
+
+Context: ui-reader's REQUEST (owner request: a bell in the card header that is slashed when the email did NOT notify; circles are monograms).
+
+Decision: `Message.notification?: 'sent' | 'suppressed' | 'none'`, additive and optional, set by `Message/get` from the notification outbox row (`notifications.state`): pending, claimed and posted are `sent`; dropped (Focus, the OS refused, or the mail was read or moved out of the Inbox before the banner posted) is `suppressed`; no row is `none`, which includes notifications turned off for the account (no row is ever written) and the baseline sync. A pending row reports `sent` before the banner has posted and may still become `suppressed`. The outbox keeps rows 30 days, so a message older than that carries no field (unknown, not `none`) and the bell stays neutral. Within v:1, an open enum, no `currentVersion` change.
+
+`Contact/photo` is NOT added now. Avatars would mean fetching a remote image or reading a contacts photo for every sender, which is a privacy and egress decision (the renderer never loads a remote URL). Monograms stay; if the owner wants avatars, the method is designed then (bytes or a `data:` URL, from sources already on this Mac).
+
+How to apply: the reader shows the bell from `notification` (absent: neutral outline bell, no claim). Engine side is `mail/rows.ts` (eng-html's file, approval requested on the PR); fixture marks unread inbound demo mail `sent`.
 ## 2026-11-10 — prov-cal: Google Calendar WRITING (create, edit, delete, RSVP) behind an explicit "Enable editing" re-consent
 
 Owner approved building calendar writes ("do all that"); round one was deliberately read-only (DECISIONS 2026-11-06, #345). This entry records the scope and consent design. Observed, chosen and unknown are kept apart.

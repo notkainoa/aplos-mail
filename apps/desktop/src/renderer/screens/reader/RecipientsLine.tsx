@@ -94,16 +94,24 @@ export function MessageDetails({ message, me }: RecipientsLineProps) {
   );
 }
 
-/** The popover is placed once, so it closes when the letter scrolls under it (a scroll inside the popover is its own). */
+/**
+ * The popover is placed once, so it closes when the reader scrolls the letter under it by wheel or touch (a scroll inside
+ * the popover is its own). Layout settling (a frame growing) also fires scroll events, so only the user's gesture counts.
+ */
 function useCloseOnScroll(open: boolean, close: () => void): void {
   useEffect(() => {
     if (!open) return undefined;
-    const onScroll = (event: Event) => {
+    const onGesture = (event: Event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target?.closest('.aplos-details')) close();
     };
-    window.addEventListener('scroll', onScroll, true);
-    return () => window.removeEventListener('scroll', onScroll, true);
+    const options = { capture: true, passive: true } as const;
+    window.addEventListener('wheel', onGesture, options);
+    window.addEventListener('touchmove', onGesture, options);
+    return () => {
+      window.removeEventListener('wheel', onGesture, options);
+      window.removeEventListener('touchmove', onGesture, options);
+    };
   }, [open, close]);
 }
 
