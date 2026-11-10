@@ -66,6 +66,9 @@ export function dataPorts(): SettingsApiPort {
     consentRevoke: async () => void (await api.consent.revoke({ scope: 'background' })),
     listenerSet: async enabled => void (await api.listener.set({ enabled })),
     clientsRevoke: async id => void (await api.clients.revoke({ id })),
+    clientsGrant: async input =>
+      (await api.clients.grant({ ...input, scopes: [...input.scopes] })).client,
+    workflowStatus: () => api.workflow.status({}),
     diagnosticsPreview: () => api.diagnostics.preview({}),
     diagnosticsCopy: async () => void (await api.diagnostics.copy({})),
     diagnosticsSave: async () => saveBlob(await api.diagnostics.export({})),
@@ -288,6 +291,7 @@ export function useSettingsState(
     if (section === 'general') {
       quiet(ports.listenerGet().then(listener => keep({ listener })));
       quiet(ports.clientsList().then(clients => keep({ clients })));
+      quiet(ports.workflowStatus().then(workflow => keep({ workflow })));
     }
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));

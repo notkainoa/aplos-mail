@@ -1,0 +1,90 @@
+/**
+ * The pure rules of "Tools on this Mac": what a tool may be allowed to do (in plain words), when the Add form can
+ * be submitted, what the device-sync row says. The grant itself goes through `Clients/grant`; the key file's path
+ * is shown once by the dialog and is never part of this state (ARCH 12.3).
+ */
+import type { Output } from '../../data';
+
+export type WorkflowInfo = Output<'Workflow/status'>;
+
+export type ToolKind = 'cli' | 'mcp' | 'preview' | 'phone';
+export type ToolScope = 'read' | 'triage' | 'draft' | 'send' | 'ai' | 'admin';
+
+export const TOOL_KIND_ITEMS: readonly { id: ToolKind; label: string }[] = [
+  { id: 'cli', label: 'Command line' },
+  { id: 'mcp', label: 'MCP' },
+  { id: 'preview', label: 'Preview' },
+  { id: 'phone', label: 'Phone' },
+];
+
+export interface ToolScopeChoice {
+  readonly id: ToolScope;
+  readonly label: string;
+  /** Shown only while the choice is ticked, for the permissions that act for you. */
+  readonly warning?: string;
+}
+
+export const TOOL_SCOPES: readonly ToolScopeChoice[] = [
+  { id: 'read', label: 'Read your mail and calendar' },
+  { id: 'triage', label: 'Move mail: Done, Later, Trash' },
+  { id: 'draft', label: 'Write drafts' },
+  { id: 'send', label: 'Send mail', warning: 'Send lets this tool send mail as you.' },
+  { id: 'ai', label: 'Use your AI providers' },
+  {
+    id: 'admin',
+    label: 'Change settings and tools',
+    warning: 'This tool could change these settings, including who else is allowed.',
+  },
+];
+
+/** What a new tool starts with: it may read, nothing more. */
+export const DEFAULT_TOOL_SCOPES: readonly ToolScope[] = ['read'];
+
+export interface ToolDraft {
+  readonly name: string;
+  readonly kind: ToolKind;
+  readonly scopes: readonly ToolScope[];
+}
+
+export const EMPTY_TOOL_DRAFT: ToolDraft = {
+  name: '',
+  kind: 'cli',
+  scopes: DEFAULT_TOOL_SCOPES,
+};
+
+/** The Add button needs a name and at least one permission, the same two rules the engine enforces. */
+export function toolDraftReady(draft: ToolDraft): boolean {
+  return draft.name.trim() !== '' && draft.scopes.length > 0;
+}
+
+/** The scopes in the order the list shows them, however they were ticked. */
+export function toggleScope(scopes: readonly ToolScope[], id: ToolScope, on: boolean): ToolScope[] {
+  const next = new Set(scopes);
+  if (on) next.add(id);
+  else next.delete(id);
+  return TOOL_SCOPES.map(s => s.id).filter(s => next.has(s));
+}
+
+/** The sentences under the ticked permissions that act for you. */
+export function scopeWarnings(scopes: readonly ToolScope[]): readonly string[] {
+  return TOOL_SCOPES.filter(s => s.warning && scopes.includes(s.id)).map(s => s.warning!);
+}
+
+export const TOOL_KEY_NOTE =
+  'The tool reads its key from this file. Aplos never shows the key itself. Anyone who can read the file can act as this tool, so keep it private. This path is shown once.';
+
+/** The Revoke question: what stops and that it is quick. */
+export function revokeConfirm(name: string): { question: string; consequence: string } {
+  return {
+    question: `Revoke “${name}”?`,
+    consequence:
+      'It stops working right away and its open connections close. You can allow it again, with a new key file.',
+  };
+}
+
+/** The device-sync row: one calm sentence, and whether any control can exist yet. */
+export function workflowLine(status: WorkflowInfo | undefined): string {
+  if (!status) return 'Keep Done, Later and reminders in step between your Macs.';
+  if (!status.available) return 'Device sync comes in a later version.';
+  return status.enabled ? 'On. Done, Later and reminders follow you between your Macs.' : 'Off.';
+}
