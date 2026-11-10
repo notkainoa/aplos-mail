@@ -6,6 +6,8 @@ import { ctxFor, THU } from './calendar.testkit';
 import { demoWorld } from './CalendarStates';
 import { offerOf } from '../reader/offerModel';
 import { PLAN_WAIT_MS } from './useOpenPlanTarget';
+import { isoOfTime } from './model/period';
+import { dayOf, longDay } from '../../ui/calendar/dates';
 
 test("picking the offer's day then opening its entry opens the plan detail; no effect writes anything", () => {
   const plan = demoWorld.plans.find(p => p.id === 'launch')!;
@@ -24,6 +26,21 @@ test("picking the offer's day then opening its entry opens the plan detail; no e
   );
 });
 
-test('a plan that never shows (added or dismissed since the offer) is given up on after a short wait', () => {
-  assert.ok(PLAN_WAIT_MS > 0 && PLAN_WAIT_MS <= 10_000);
+test('the offer names the day the calendar draws, for a floating plan in another time zone', () => {
+  // 00:30 on the 12th in Tokyo is the 11th on the US West Coast: the grid entry and the offer must agree.
+  const plan = {
+    ...demoWorld.plans[0]!,
+    start: { type: 'floating', local: '2026-11-12T00:30:00', timeZone: 'Asia/Tokyo' },
+    end: { type: 'floating', local: '2026-11-12T01:30:00', timeZone: 'Asia/Tokyo' },
+  } as const;
+  const offer = offerOf(plan as never, 's');
+  assert.equal(offer.date, dayOf(isoOfTime(plan.start as never)), 'the same day the grid uses');
+  assert.ok(
+    offer.when.startsWith(longDay(offer.date as never)),
+    'and the when line names that day',
+  );
+});
+
+test('a plan that never shows is given up on after a short wait', () => {
+  assert.ok(PLAN_WAIT_MS >= 1_000 && PLAN_WAIT_MS <= 10_000);
 });
