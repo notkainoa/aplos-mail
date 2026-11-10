@@ -92,7 +92,7 @@ export function revokeConfirm(name: string): { question: string; consequence: st
   return {
     question: `Revoke “${name}”?`,
     consequence:
-      'It stops working right away and its open connections close. Its key file stops working too, but it may still be on this Mac, so delete it if you no longer need it. You can allow the tool again with a new key file.',
+      'It stops working right away and its open connections close. The key file no longer opens anything, but it may still be on this Mac. You can allow the tool again with a new key file.',
   };
 }
 
