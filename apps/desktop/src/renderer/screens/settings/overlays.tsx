@@ -3,12 +3,13 @@
  * and the diagnostics preview. Each is driven by the view state, so any of them can be drawn on purpose. The page
  * under a dialog keeps its place; the topmost surface owns the filled button (DESIGN 3, principle 6).
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../ui/buttons-keys';
 import { ConsentCard } from '../../ui/onboarding';
 import { TextField } from '../../ui/controls';
 import { Confirm, Dialog, Text } from '../../ui/surfaces';
 import {
+  adminGrantConfirm,
   bundleSections,
   consentView,
   CONSENT_SENT,
@@ -17,16 +18,34 @@ import {
   providerName,
   removeAccountConfirm,
   removeKeyConfirm,
+  revokeConfirm,
   REMOVE_DEMO_CONFIRM,
   type ConsentView,
 } from './settings.model';
 import type { SectionProps } from './sections/types';
 import type { Confirmation } from './view';
 import { FailureLine } from './parts';
+import { AddToolDialog } from './toolDialogs';
 
 export function Overlays({ data, view, actions, host, failure }: SectionProps): ReactNode {
   const c = view.confirm;
   const consent = consentView(data.consent, data.settings);
+  /* While a confirm is stacked over the Add a tool dialog (the admin ask), the lower dialog goes inert
+   * and out of the accessibility tree — two aria-modal dialogs would both answer a virtual cursor.
+   * inert drops the focus the dialog held, so when the confirm closes the dialog takes it back if
+   * nothing else did. */
+  const addToolWrap = useRef<HTMLDivElement | null>(null);
+  const confirmWasOpen = useRef(false);
+  useEffect(() => {
+    const confirmJustClosed = confirmWasOpen.current && c === null;
+    confirmWasOpen.current = c !== null;
+    if (!confirmJustClosed || !view.addTool) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    addToolWrap.current
+      ?.querySelector<HTMLElement>('[role="dialog"]')
+      ?.focus({ preventScroll: true });
+  });
   return (
     <>
       {view.reconnect
@@ -44,6 +63,13 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
         />
       ) : null}
       {view.consentCard ? <ConsentDialog {...{ data, consent, actions }} /> : null}
+      {view.addTool ? (
+        <div ref={addToolWrap} inert={c !== null} aria-hidden={c !== null ? true : undefined}>
+          <AddToolDialog {...{ actions, failure }} />
+        </div>
+      ) : null}
+      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
+      {/* The confirm is last so it stacks over a dialog it questions (the admin grant). */}
       {c ? (
         <ConfirmDialog
           confirm={c}
@@ -52,7 +78,6 @@ export function Overlays({ data, view, actions, host, failure }: SectionProps): 
           onCancel={() => actions.cancelConfirm()}
         />
       ) : null}
-      {view.diagnostics ? <DiagnosticsDialog {...{ data, view, actions, failure }} /> : null}
     </>
   );
 }
@@ -154,6 +179,39 @@ function ConsentDialog({
   );
 }
 
+function confirmText(
+  confirm: Confirmation,
+  data: SectionProps['data'],
+): { question: string; consequence: string } {
+  switch (confirm.kind) {
+    case 'removeAccount':
+      return removeAccountConfirm(confirm.address);
+    case 'removeDemo':
+      return REMOVE_DEMO_CONFIRM;
+    case 'removeKey':
+      return removeKeyConfirm(data.settings, confirm.provider);
+    case 'revokeClient':
+      return revokeConfirm(confirm.name);
+    case 'grantAdmin':
+      return adminGrantConfirm(confirm.name);
+    case 'discardQueueItem':
+      return discardConfirm(confirm.label);
+  }
+}
+
+function confirmLabel(kind: Confirmation['kind']): string {
+  switch (kind) {
+    case 'discardQueueItem':
+      return 'Discard';
+    case 'revokeClient':
+      return 'Revoke';
+    case 'grantAdmin':
+      return 'Give admin access';
+    default:
+      return 'Remove';
+  }
+}
+
 function ConfirmDialog({
   confirm,
   data,
@@ -165,22 +223,14 @@ function ConfirmDialog({
   onConfirm(): void;
   onCancel(): void;
 }) {
-  const text =
-    confirm.kind === 'removeAccount'
-      ? removeAccountConfirm(confirm.address)
-      : confirm.kind === 'removeDemo'
-        ? REMOVE_DEMO_CONFIRM
-        : confirm.kind === 'removeKey'
-          ? removeKeyConfirm(data.settings, confirm.provider)
-          : discardConfirm(confirm.label);
-  const label = confirm.kind === 'discardQueueItem' ? 'Discard' : 'Remove';
+  const text = confirmText(confirm, data);
   return (
     <Confirm
       presentation="dialog"
       destructive
       question={text.question}
       consequence={text.consequence}
-      confirmLabel={label}
+      confirmLabel={confirmLabel(confirm.kind)}
       onConfirm={onConfirm}
       onCancel={onCancel}
     />

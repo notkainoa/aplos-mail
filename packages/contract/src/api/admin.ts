@@ -77,11 +77,11 @@ export const diagnostics = area('diagnostics', {
   },
   'Diagnostics/verbose': {
     summary:
-      'Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off.',
+      'Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off. A tool may only turn it off — turning it on is the owner’s. With no `on` it just answers the current deadline.',
     kind: 'command',
     scope: 'admin',
     audit: true,
-    input: z.object({ on: bool() }),
+    input: z.object({ on: z.optional(bool()) }),
     output: z.object({ until: z.optional(EpochMs) }),
   },
 });

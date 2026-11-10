@@ -50,6 +50,8 @@ import {
 } from './store-thread';
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
+import { getCalendarTarget, subscribeCalendarTarget } from './store-calendar';
+import type { CalendarTarget } from './store-calendar';
 import type { ComposeRequest } from './store-compose';
 import type { ContextName, SettingRoute, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
@@ -415,6 +417,20 @@ export function useComposeRequest(): ComposeRequest | null {
 }
 
 export type { ComposeRequest, ComposeTarget } from './store-compose';
+
+// ---------------------------------------------------------------------------
+// Open the Calendar on a plan found in mail (additive): the reader's "Add to calendar" offer
+// ---------------------------------------------------------------------------
+
+/** Shows the Calendar on a plan's day with the plan open; the Calendar's own confirm flow does the adding. */
+export { openCalendarOnPlan, consumeCalendarTarget } from './store-calendar';
+
+/** The pending "open this plan" request, live; null when none. The Calendar handles it, then calls `consumeCalendarTarget(seq)`. */
+export function useCalendarTarget(): CalendarTarget | null {
+  return useSyncExternalStore(subscribeCalendarTarget, getCalendarTarget, getCalendarTarget);
+}
+
+export type { CalendarTarget } from './store-calendar';
 
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {

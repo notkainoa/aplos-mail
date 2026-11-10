@@ -1,14 +1,17 @@
 /** Settings → General: appearance, keys and gestures, the window, and the tools allowed on this Mac (DESIGN 7.10). */
+import { useEffect, useRef } from 'react';
 import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { Puck } from '../../../ui/surfaces';
-import { Group, NotAvailable, Row, Select } from '../parts';
+import { Group, NotAvailable, Row, rowId, Select } from '../parts';
+import { focusRowTarget, removedRowTarget } from '../rowFocus';
 import {
   DENSITY_ITEMS,
   densityFromUi,
   densityToUi,
   hasCapability,
   listenerLine,
+  workflowLine,
   SWIPE_OPTIONS,
   THEME_ITEMS,
   toolRows,
@@ -133,6 +136,7 @@ export function General({ data, actions }: SectionProps) {
       </Group>
 
       <Tools {...{ data, actions }} />
+      <DeviceSync {...{ data }} />
     </>
   );
 }
@@ -143,6 +147,25 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
   const clientsOn = hasCapability(data.session, 'clients');
   const enabled = data.listener?.enabled === true;
   const tools = toolRows(data.clients, data.now);
+
+  // DESIGN 11.2: a revoke leaves the DOM the confirm's answer was standing on, and focus lands on the
+  // page. Once the question's own focus restore has run, hand it to the next tool row still standing
+  // (else the one before, else Add a tool) — never when focus is elsewhere. The row takes the focus,
+  // not its Revoke button: a focused Revoke would answer a stray Return with another destructive
+  // question. Tab from the row reaches the button.
+  const drawnRows = useRef<readonly string[] | null>(null);
+  const toolRowIds = tools.map(t => `${rowId('general', 'tools')}-${t.id}`);
+  useEffect(() => {
+    const before = drawnRows.current;
+    drawnRows.current = toolRowIds;
+    if (before === null) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    const target = removedRowTarget(before, toolRowIds, rowId('general', 'addTool'));
+    const row = target === null ? null : focusRowTarget(target, document);
+    row?.focus({ preventScroll: true });
+  });
+
   return (
     <Group id="set-general-tools-group" label="Tools on this Mac">
       {listenerOn ? (
@@ -162,6 +185,23 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
         />
       ) : (
         <NotAvailable section="general" anchor="allowTools" />
+      )}
+      {clientsOn ? (
+        <Row
+          section="general"
+          anchor="addTool"
+          description={enabled ? 'Name it and choose what it may do.' : 'Turn on tools first.'}
+          control={
+            <Button
+              variant="text"
+              label="Add a tool"
+              disabled={!enabled}
+              onPress={() => actions.openAddTool()}
+            />
+          }
+        />
+      ) : (
+        <NotAvailable section="general" anchor="addTool" />
       )}
       {!clientsOn ? (
         <NotAvailable section="general" anchor="tools" />
@@ -191,12 +231,21 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
               <Button
                 variant="text"
                 label="Revoke"
-                onPress={() => void actions.revokeClient(t.id)}
+                onPress={() => actions.askRevokeClient(t.id, t.name)}
               />
             }
           />
         ))
       )}
+    </Group>
+  );
+}
+
+/** Device sync: one calm row. The engine says whether it exists yet; no control is drawn until it does (STATUS, ui-settings DECIDED). */
+function DeviceSync({ data }: Pick<SectionProps, 'data'>) {
+  return (
+    <Group id="set-general-sync" label="Your Macs">
+      <Row section="general" anchor="deviceSync" description={workflowLine(data.workflow)} />
     </Group>
   );
 }

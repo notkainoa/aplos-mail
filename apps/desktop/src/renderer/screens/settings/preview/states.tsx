@@ -486,6 +486,30 @@ export const STATES: Record<string, StateSpec> = {
       confirm: { kind: 'discardQueueItem', id: 'q-send', label: 'Message to 1 person' },
     },
   },
+  'tool-add': {
+    title: 'General, Add a tool',
+    section: 'general',
+    data: dataOf({ listener: { enabled: true }, clients: [] }),
+    view: { addTool: true },
+  },
+  'tool-admin-confirm': {
+    title: 'General, admin access asks twice',
+    section: 'general',
+    data: tools(),
+    view: { addTool: true, confirm: { kind: 'grantAdmin', name: 'Terminal assistant' } },
+  },
+  'tool-revoke-confirm': {
+    title: 'General, revoking a tool asks first',
+    section: 'general',
+    data: tools(),
+    view: { confirm: { kind: 'revokeClient', id: 'client-cli', name: 'Terminal assistant' } },
+  },
+  'device-sync-later': {
+    title: 'General, device sync is not available yet',
+    section: 'general',
+    anchor: 'deviceSync',
+    data: dataOf({ workflow: { enabled: false, available: false } }),
+  },
   'tools-on': {
     title: 'General, tools allowed on this Mac',
     section: 'general',

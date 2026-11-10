@@ -201,6 +201,7 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
       export: args => c.diagnostics.export(args),
       verbose: args => c.diagnostics.verbose(args),
     },
+    contact: { suggest: args => c.contact.suggest(args) },
     data: { export: args => c.data.export(args) },
     workflow: {
       status: args => c.workflow.status(args),

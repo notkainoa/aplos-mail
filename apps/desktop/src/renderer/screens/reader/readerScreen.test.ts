@@ -37,7 +37,12 @@ const NO_CONTROLS = {
 
 import { boot, depsOver, nextTask, text } from './readerTestKit';
 
-const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
+const renderLetter = (
+  id: string,
+  over: Partial<ReaderUi> = {},
+  paper = true,
+  cards?: 'a' | 'off',
+) =>
   renderToStaticMarkup(
     createElement(ReaderLetter, {
       threadId: id,
@@ -45,19 +50,18 @@ const renderLetter = (id: string, over: Partial<ReaderUi> = {}, paper = true) =>
       ui: { ...freshUi(id), ...over },
       dispatch: () => undefined,
       controls: NO_CONTROLS,
+      cards,
       onReady: () => undefined,
     }),
   );
 
-test('the letter shows its parts in order inside one column: summary, thread, stub, then the pinned bar; no sender line on top', async () => {
+test('the letter is the email card, then the stub and the pinned bar: no summary, due chip or subject above or inside it (owner sketch 2026-11-10)', async () => {
   const world = await boot();
   try {
     const id = world.doIds()[0]!;
     await world.threadWindow(id);
     const html = renderLetter(id);
     const parts = [
-      'ui-reader-head__summary',
-      'ui-reader-head__rule',
       'aplos-reader__thread',
       'ui-thread-message__head',
       'ui-reply-stub',
@@ -70,12 +74,17 @@ test('the letter shows its parts in order inside one column: summary, thread, st
     assert.deepEqual(
       [...parts].sort((a, b) => a - b),
       parts,
-      'summary, hairline, thread, stub, actions',
+      'thread, stub, actions',
+    );
+    assert.doesNotMatch(
+      html,
+      /ui-reader-head|ui-summary|ui-thread-message__subject|data-kind="due"/,
+      'nothing sits above the card: no summary, due chip or subject row',
     );
     assert.doesNotMatch(
       html.slice(0, html.indexOf('aplos-reader__thread')),
-      /ui-reader-head__(from|name|to|when)|<time/,
-      'no sender or time above the thread: they live in the message cards',
+      /<time/,
+      'no sender or time above the thread: they live in the message card',
     );
     assert.doesNotMatch(
       html,
@@ -554,7 +563,7 @@ test('find is a bar above the thread that carries its query, only on the letter 
     assert.match(open, /aplos-reader__find/);
     assert.match(open, /value="invoice"/);
     assert.ok(
-      open.indexOf('aplos-reader__find') < open.indexOf('ui-reader-head__summary'),
+      open.indexOf('aplos-reader__find') < open.indexOf('aplos-reader__thread'),
       'above the letter',
     );
     assert.doesNotMatch(render(true, null), /aplos-reader__find/);
@@ -744,6 +753,22 @@ test('the Importance menu moves the thread one end to the other with Home’s to
     );
     assert.match(toast.actions?.[0]?.label ?? '', /^Always do this for /);
     await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('the summary head shows only in the card-less column (cards off); the default card has nothing above it', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    await world.threadWindow(id);
+    assert.doesNotMatch(renderLetter(id), /ui-reader-head/, 'the default card: nothing above');
+    assert.match(
+      renderLetter(id, {}, true, 'off'),
+      /ui-reader-head__summary/,
+      'off keeps the summary',
+    );
   } finally {
     world.connection.close();
   }
