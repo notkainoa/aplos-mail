@@ -26,8 +26,8 @@ export const DAY_MS = 86_400_000;
 /** Which engine call the sheet makes. */
 export type ReconnectCall = 'reconnect' | 'grantPermissions';
 
-/** `ReconnectSheet`'s `mode` prop: the weekly copy or the missing-permission copy. */
-export type SheetMode = 'reconnect' | 'grant';
+/** `ReconnectSheet`'s `mode` prop: the weekly copy, the missing-permission copy or the editing ask. */
+export type SheetMode = 'reconnect' | 'grant' | 'enableEditing';
 
 /** The `connect` frame's `mode` each call reports under. */
 export const FRAME_MODE: Readonly<Record<ReconnectCall, 'reconnect' | 'grantPermissions'>> = {
@@ -38,9 +38,16 @@ export const FRAME_MODE: Readonly<Record<ReconnectCall, 'reconnect' | 'grantPerm
 export const sheetMode = (call: ReconnectCall): SheetMode =>
   call === 'grantPermissions' ? 'grant' : 'reconnect';
 
-/** The engine call behind a `SheetMode`: a caller's 'grant' is `Account/grantPermissions`. */
+/** The engine call behind a `SheetMode`: 'grant' and 'enableEditing' are both `Account/grantPermissions`;
+ * anything else — an absent or unknown mode, which `openSheet`'s unchecked args can carry — is the
+ * narrower `Account/reconnect`. */
 export function callForSheetMode(mode: SheetMode): ReconnectCall {
-  return mode === 'grant' ? 'grantPermissions' : 'reconnect';
+  return mode === 'grant' || mode === 'enableEditing' ? 'grantPermissions' : 'reconnect';
+}
+
+/** The extra the call carries for a `SheetMode`: only 'enableEditing' widens the re-consent to the events scope (`Account/grantPermissions {enable: 'calendarWrite'}`, #393); a plain 'grant' asks read scopes only. */
+export function enableForSheetMode(mode: SheetMode): 'calendarWrite' | undefined {
+  return mode === 'enableEditing' ? 'calendarWrite' : undefined;
 }
 
 /** The account facts the decision reads; the contract's `Account` is assignable to it. */
@@ -53,7 +60,7 @@ export interface ReconnectAccount {
     readonly reconnectBy?: number;
   };
   /** Features that lack a permission while mail still works. */
-  readonly missingPermissions?: readonly unknown[];
+  readonly missingPermissions?: readonly { readonly capability?: string }[];
 }
 
 /** Why Reconnect is offered. */
@@ -96,7 +103,9 @@ export function reconnectOffer(account: ReconnectAccount, now: number): Reconnec
   if (state === 'needsReauth') return offer('reconnect', 'needsReauth');
   if (state === 'needsPermission') return offer('grantPermissions', 'needsPermission');
   if (state === 'offline') return null;
-  if ((account.missingPermissions?.length ?? 0) > 0)
+  // A refused calendar write's 'calendarWrite' row is not a reconnect offer: it has its own entry
+  // point (Settings → Calendar's "Enable editing", sheet mode 'enableEditing') and never nags here.
+  if (account.missingPermissions?.some(m => m.capability !== 'calendarWrite'))
     return offer('grantPermissions', 'missingPermission');
   if (reconnectIsDue(reconnectBy, now)) return offer('reconnect', 'dueSoon');
   return null;
@@ -138,6 +147,16 @@ export type SheetPhase = 'idle' | 'waiting' | 'failed' | 'closed';
 /** What `onClose` reports. */
 export type ReconnectOutcome = 'reconnected' | 'cancelled' | 'failed';
 
+/**
+ * The toast a 'reconnected' close raises (DESIGN 7.13): "Reconnected" after a real reconnect or a
+ * permission grant, none after the editing ask — its account row flipping to "Editing on" is the
+ * confirmation there, and a consent that left the events scope unticked must not announce a reconnect
+ * that never happened.
+ */
+export function reconnectedToast(state: Pick<ReconnectState, 'enable'>): 'Reconnected' | null {
+  return state.enable === 'calendarWrite' ? null : 'Reconnected';
+}
+
 /** A settled `connect` frame kept until its flow's id is known. */
 export interface SettledFrame {
   readonly connectId: string;
@@ -151,6 +170,8 @@ export interface ReconnectState {
   readonly accountId: string;
   /** The address being reconnected: the sheet's title and `login_hint`. */
   readonly address: string;
+  /** The 'enableEditing' sheet's extra: `Account/grantPermissions` asks for the events scope too. */
+  readonly enable?: 'calendarWrite';
   /** Request counter; an answer for an older request is cancelled when it arrives. */
   readonly attempt: number;
   /** The flow the sheet is waiting on; null until the call answers. */
@@ -189,6 +210,7 @@ export type ReconnectEffect =
       readonly call: ReconnectCall;
       readonly accountId: string;
       readonly attempt: number;
+      readonly enable?: 'calendarWrite';
     }
   | { readonly type: 'cancelConnect'; readonly connectId: string }
   /** Tell the parent the sheet is gone. "Reconnected" also raises the toast. */
@@ -203,12 +225,14 @@ export function initialReconnect(input: {
   accountId: string;
   address: string;
   call?: ReconnectCall;
+  enable?: 'calendarWrite';
 }): ReconnectState {
   return {
     phase: 'idle',
     call: input.call ?? 'reconnect',
     accountId: input.accountId,
     address: input.address,
+    ...(input.enable ? { enable: input.enable } : {}),
     attempt: 0,
     connectId: null,
     outcome: null,
@@ -263,7 +287,15 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
       const attempt = state.attempt + 1;
       return {
         state: { ...state, phase: 'waiting', attempt, connectId: null, early: [] },
-        effects: [{ type: 'start', call: state.call, accountId: state.accountId, attempt }],
+        effects: [
+          {
+            type: 'start',
+            call: state.call,
+            accountId: state.accountId,
+            attempt,
+            ...(state.enable ? { enable: state.enable } : {}),
+          },
+        ],
       };
     }
 
@@ -332,7 +364,15 @@ export function reduceReconnect(state: ReconnectState, event: ReconnectEvent): R
       const { reason: _old, ...rest } = state;
       return {
         state: { ...rest, phase: 'waiting', attempt, connectId: null, early: [] },
-        effects: [{ type: 'start', call: state.call, accountId: state.accountId, attempt }],
+        effects: [
+          {
+            type: 'start',
+            call: state.call,
+            accountId: state.accountId,
+            attempt,
+            ...(state.enable ? { enable: state.enable } : {}),
+          },
+        ],
       };
     }
   }
@@ -349,7 +389,10 @@ export function sheetView(state: ReconnectState): {
   return {
     open: state.phase !== 'closed',
     state: state.phase === 'failed' ? 'failed' : 'waiting',
-    mode: sheetMode(state.call),
+    mode:
+      state.call === 'grantPermissions' && state.enable === 'calendarWrite'
+        ? 'enableEditing'
+        : sheetMode(state.call),
     address: state.address,
     ...(state.phase === 'failed' && state.reason ? { reason: state.reason } : {}),
   };
@@ -359,8 +402,11 @@ export function sheetView(state: ReconnectState): {
 export interface ReconnectPorts {
   /** `Account/reconnect {accountId}`: the engine passes the stored address as `login_hint`. */
   reconnect(input: { accountId: string }): Promise<{ connectId: string }>;
-  /** `Account/grantPermissions {accountId}`: full re-consent for the missing scopes. */
-  grantPermissions(input: { accountId: string }): Promise<{ connectId: string }>;
+  /** `Account/grantPermissions {accountId, enable?}`: full re-consent for the missing scopes; `enable: 'calendarWrite'` asks for the events scope on top. */
+  grantPermissions(input: {
+    accountId: string;
+    enable?: 'calendarWrite';
+  }): Promise<{ connectId: string }>;
   /** `Account/cancelConnect {connectId}`: idempotent. */
   cancelConnect(input: { connectId: string }): Promise<unknown>;
 }
@@ -374,7 +420,10 @@ export async function runReconnectEffect(
   switch (effect.type) {
     case 'start':
       try {
-        const input = { accountId: effect.accountId };
+        const input = {
+          accountId: effect.accountId,
+          ...(effect.enable ? { enable: effect.enable } : {}),
+        };
         const out =
           effect.call === 'grantPermissions'
             ? await ports.grantPermissions(input)

@@ -4,7 +4,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { HARNESS_NOW_MS, type Account, type Calendar } from '../../data';
-import { calendarAccessOf, calendarListedKey, calendarOnLine } from './accountCalendarState';
+import {
+  CALENDAR_EVENTS_SCOPE,
+  calendarAccessOf,
+  calendarEditingOf,
+  calendarListedKey,
+  calendarOnLine,
+  calendarWriteRefused,
+} from './accountCalendarState';
 
 const NOW = HARNESS_NOW_MS;
 
@@ -247,6 +254,63 @@ describe('calendarAccessOf', () => {
   test('calendarOnLine: the exact words', () => {
     assert.equal(calendarOnLine(1), 'Calendar on · 1 calendar');
     assert.equal(calendarOnLine(4), 'Calendar on · 4 calendars');
+  });
+});
+
+describe('calendarEditingOf', () => {
+  test('the events scope in grantedScopes means on; a read-only grant means off', () => {
+    assert.equal(calendarEditingOf(account({ grantedScopes: [CALENDAR_EVENTS_SCOPE] })), 'on');
+    assert.equal(
+      calendarEditingOf(
+        account({
+          grantedScopes: ['https://www.googleapis.com/auth/calendar.events.readonly'],
+        }),
+      ),
+      'off',
+      'the read scope alone is not editing',
+    );
+    assert.equal(calendarEditingOf(account()), 'off');
+  });
+
+  test('demo and non-Google accounts claim nothing (null)', () => {
+    assert.equal(
+      calendarEditingOf(
+        account({ demo: true, provider: 'demo', grantedScopes: [CALENDAR_EVENTS_SCOPE] }),
+      ),
+      null,
+    );
+    assert.equal(
+      calendarEditingOf(account({ provider: 'imap', grantedScopes: [CALENDAR_EVENTS_SCOPE] })),
+      null,
+    );
+  });
+});
+
+describe('calendarWriteRefused', () => {
+  test('a refused write leaves a calendarWrite row — and it is not the read gap', () => {
+    const refused = account({
+      missingPermissions: [{ capability: 'calendarWrite', reasonCode: 'permission.calendarWrite' }],
+    });
+    assert.equal(calendarWriteRefused(refused), true);
+    // The calendar read stays "on": a calendarWrite-only row is never 'Calendar not allowed yet'.
+    const access = calendarAccessOf(refused, [calendar('c', 'acct-1')]);
+    assert.equal(access?.kind, 'on');
+    assert.equal(access?.line, 'Calendar on · 1 calendar');
+    assert.equal(access?.action, null);
+    assert.equal(calendarAccessOf(refused, [])?.kind, 'none');
+  });
+
+  test('other rows still count as the read gap or nothing; the write row is never a standing nag', () => {
+    assert.equal(calendarWriteRefused(account()), false);
+    assert.equal(calendarWriteRefused(missingCalendar()), false);
+    const both = account({
+      missingPermissions: [
+        { capability: 'calendar', reasonCode: 'permission.calendar' },
+        { capability: 'calendarWrite', reasonCode: 'permission.calendarWrite' },
+      ],
+    });
+    assert.equal(calendarWriteRefused(both), true);
+    assert.equal(calendarAccessOf(both, [])?.kind, 'not-allowed', 'the read gap still wins');
   });
 });
 

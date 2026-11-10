@@ -86,8 +86,12 @@ export interface SettingsHost {
   toast?(message: string): void;
   /** Puts a local change on the shared undo stack (Z). */
   pushUndo?(entry: { label: string; undo(): void | Promise<void> }): void;
-  /** The reconnect flow, mounted by ui-onboard (`ReconnectFlow`). */
-  renderReconnect?(accountId: string, mode: 'reconnect' | 'grant', onClose: () => void): ReactNode;
+  /** The reconnect flow, mounted by ui-onboard (`ReconnectFlow`). 'enableEditing' is Settings → Calendar's ask for the events scope. */
+  renderReconnect?(
+    accountId: string,
+    mode: 'reconnect' | 'grant' | 'enableEditing',
+    onClose: () => void,
+  ): ReactNode;
   /** "Add an account" inline, ui-onboard's account component. */
   renderAddAccount?(onClose: () => void): ReactNode;
   /** Opens the onboarding window beside the mail window, changing nothing (`showWelcome`). */
