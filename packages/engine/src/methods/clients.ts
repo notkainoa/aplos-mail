@@ -103,8 +103,14 @@ async function revoke(
       ...auditWrites(ctx.caller, 'Clients/revoke', args.id),
     ],
   });
-  // The row is revoked, so no transport authenticates the token again — the file can go.
-  if (!isAbsent(ctx.services.clientTokens)) await ctx.services.clientTokens.remove(args.id);
+  // The row is revoked, so no transport authenticates the token again — the file can go. Removing it is
+  // best effort: the revoke already happened, so a file that will not delete must never error the call.
+  if (!isAbsent(ctx.services.clientTokens))
+    try {
+      await ctx.services.clientTokens.remove(args.id);
+    } catch {
+      ctx.services.log.event('client.token_remove_failed', { client: args.id, error: 'fs' });
+    }
   return { ok: true };
 }
 
@@ -121,8 +127,7 @@ async function grant(
   const token = hex(ctx.services.randomBytes(32));
   const scopes = [...new Set(args.scopes)] as Client['scopes'];
   const createdAt = ctx.services.clock.now();
-  // The token file lands first: a failed issue leaves no row; a failed commit leaves an inert file whose
-  // hash matches no row, which a transport can never authenticate.
+  // The token file lands first: a failed issue leaves no row, and a failed commit drops the file too.
   const { path } = await ctx.services.clientTokens.issue(id, token);
   try {
     ctx.services.store.commit({
@@ -144,8 +149,9 @@ async function grant(
       ],
     });
   } catch (error) {
-    // A committed row must never lack its token file; a failed commit leaves only the file, so drop it.
-    await ctx.services.clientTokens.remove(id);
+    // A committed row must never lack its token file; a failed commit leaves only the file, so drop it —
+    // but the caller's error is the commit's, never a cleanup failure.
+    await ctx.services.clientTokens.remove(id).catch(() => undefined);
     throw error;
   }
   return {

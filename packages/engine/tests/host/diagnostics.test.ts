@@ -270,3 +270,77 @@ test('a level thunk that answers garbage reads as info, never throws', () => {
   log.event('sync.gmail.request', { method: 'x', durationMs: 1 });
   assert.equal(records.length, 0, 'an unknown level is info, so debug stays off');
 });
+
+test('checkBundle accepts a fully populated bundle and rejects smuggled fields', async () => {
+  const { checkBundle } = await import('../../src/diag/bundle/build');
+  const full = {
+    generatedAt: 1,
+    versions: {
+      app: '0.1.0 (build 42)',
+      api: '1',
+      schema: '7',
+      sqlite: '3.46',
+      os: 'macOS 26',
+      electron: '37',
+    },
+    engine: { state: 'ready', uptimeMs: 5, eventLoopP99Ms: 1.5, parkedReason: 'sleep' },
+    accounts: [
+      {
+        accountHash: 'a'.repeat(16),
+        provider: 'google',
+        state: 'ok',
+        reasonCode: 'auth.expired',
+        cursorAgeMs: 10,
+        lastSyncAt: 9,
+        reconnectBy: 99,
+        budgets: [
+          {
+            budget: 'google.rate',
+            target: 2.5,
+            unitsPerMinute: 55.5,
+            cooldownUntil: 4,
+            dailyBlockUntil: 6,
+          },
+        ],
+      },
+    ],
+    queues: { ops: 1, jobs: 2, submissions: 3, failed: 4 },
+    errors: [
+      {
+        at: 3,
+        error: {
+          class: 'permission',
+          provider: 'google',
+          method: 'sync.pull',
+          reason: 'rate.limited',
+          status: 429,
+          code: 'quota',
+          retryAfterMs: 30.5,
+          resumeAt: 40.25,
+          concurrency: true,
+          uncertain: false,
+          missingScopes: ['mail.read', 'calendar'],
+        },
+      },
+    ],
+    storage: { dbBytes: 1, walBytes: 2, ftsBacklog: 3, bodyBytes: 4, attachmentBytes: 5 },
+    crashes: { count: 1, lastAt: 2 },
+  };
+  checkBundle(full as never); // every field the strict schema knows passes
+  const bad = (mutate: (b: Record<string, unknown>) => void) => {
+    const copy = JSON.parse(JSON.stringify(full)) as Record<string, unknown>;
+    mutate(copy);
+    assert.throws(() => checkBundle(copy as never));
+  };
+  bad(b => ((b.engine as Record<string, unknown>).note = 'x'));
+  bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).email = 'a@b.c'));
+  bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).accountHash = 'not-hex!'));
+  bad(b => ((b.storage as Record<string, unknown>).dbBytes = 1.5));
+  bad(b => ((b.engine as Record<string, unknown>).state = 'has space'));
+  bad(
+    b =>
+      ((
+        ((b.errors as unknown[])[0] as Record<string, unknown>).error as Record<string, unknown>
+      ).providerMessage = 'provider said secret'),
+  );
+});

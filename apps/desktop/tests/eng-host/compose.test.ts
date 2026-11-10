@@ -12,7 +12,7 @@ import { hashAddress } from '@aplos/engine/diag/redact';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { connectSessionsOf } from '@aplos/engine/sync/connect-sessions';
 import { fakeClock } from '../../../../packages/engine/src/clock/fake';
-import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
+import { composeEngineHost, verboseLevel, type ComposeOptions } from '../../src/host/compose';
 import type { WakeClock } from '../../src/host/power';
 import { openSqlite } from '../../src/host/sqlite';
 import { DraftBridge } from '../prov-gmail/draft-bridge';
@@ -625,4 +625,31 @@ test("compose reaches the engine's own connect sessions: close disposes the map 
     before,
     'compose disposed the map the engine used (a second copy of the module would find nothing)',
   );
+});
+
+test('verboseLevel: deadline survives a restart, stale deadline and store errors stay off, clock setback guarded', () => {
+  // A planted deadline is honoured until it passes; one >15 min out (clock was set back) is not.
+  const mk = (until: number | undefined) => ({
+    read: ((fn: (q: { get: () => unknown }) => unknown) =>
+      until === undefined
+        ? fn({ get: () => undefined })
+        : fn({ get: () => ({ value: String(until) }) })) as never,
+  });
+  let now = 1_000;
+  const clock = { now: () => now };
+  const on = verboseLevel(mk(now + 5_000) as never, clock);
+  assert.equal(on(), 'debug');
+  now += 6_000;
+  assert.equal(on(), 'info', 'past the deadline it is off');
+  const far = verboseLevel(mk(now + 20 * 60_000) as never, clock);
+  assert.equal(far(), 'info', 'a deadline further than 15 min out is a clock-setback, not verbose');
+  const err = verboseLevel(
+    {
+      read: () => {
+        throw new Error('closed');
+      },
+    } as never,
+    clock,
+  );
+  assert.equal(err(), 'info', 'a store error fails closed');
 });

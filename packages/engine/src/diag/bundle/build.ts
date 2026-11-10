@@ -142,8 +142,8 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
 // ---- the production gate (FR-32): the bundle is checked on every call, not only in dev/tests ----
 
 const HEX16 = /^[0-9a-f]{16}$/;
-/** Every string but `versions.app` is a catalog-shaped code — the same allowlist the logger enforces. */
-const FREE_TEXT = 'bundle.versions.app';
+/** Version fields carry real strings ('macOS 26.1', '0.1.0 (build 42)'); every other string is a code. */
+const FREE_TEXT = /^bundle\.versions\./;
 
 /**
  * The keys the bundle may carry, per object. Anything the schema grows into is added here AND in
@@ -161,7 +161,7 @@ const ALLOWED: Record<string, ReadonlySet<string>> = {
     'storage',
     'crashes',
   ]),
-  versions: new Set(['app', 'api', 'schema', 'sqlite']),
+  versions: new Set(['app', 'api', 'schema', 'sqlite', 'os', 'electron']),
   engine: new Set(['state', 'uptimeMs', 'eventLoopP99Ms', 'parkedReason']),
   'accounts[]': new Set([
     'accountHash',
@@ -173,22 +173,47 @@ const ALLOWED: Record<string, ReadonlySet<string>> = {
     'reconnectBy',
     'budgets',
   ]),
-  'budgets[]': new Set(['budget', 'target', 'cooldownUntil', 'dailyBlockUntil']),
+  'budgets[]': new Set(['budget', 'target', 'unitsPerMinute', 'cooldownUntil', 'dailyBlockUntil']),
+  'errors[]': new Set(['at', 'error']),
+  error: new Set([
+    'class',
+    'provider',
+    'method',
+    'reason',
+    'status',
+    'code',
+    'retryAfterMs',
+    'resumeAt',
+    'concurrency',
+    'uncertain',
+    'missingScopes',
+  ]),
   queues: new Set(['ops', 'jobs', 'submissions', 'failed']),
   storage: new Set(['dbBytes', 'walBytes', 'ftsBacklog', 'bodyBytes', 'attachmentBytes']),
   crashes: new Set(['count', 'lastAt']),
 };
 
+/** Fields the schema types as any number (rates, percentages); everything else must be a safe int. */
+const ANY_NUMBER = new Set([
+  'eventLoopP99Ms',
+  'target',
+  'unitsPerMinute',
+  'retryAfterMs',
+  'resumeAt',
+]);
+
 const checkValue = (value: unknown, path: string, pathKey: string): void => {
   if (typeof value === 'string') {
     if (path.endsWith('.accountHash')) {
       if (!HEX16.test(value)) throw new Error(`${path}: not a salted hash`);
-    } else if (path !== FREE_TEXT && !logCodePattern.test(value))
+    } else if (!FREE_TEXT.test(path) && !logCodePattern.test(value))
       throw new Error(`${path}: not a code`);
     return;
   }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) throw new Error(`${path}: not a safe int`);
+    const key = path.slice(path.lastIndexOf('.') + 1);
+    if (!Number.isFinite(value) || (!ANY_NUMBER.has(key) && !Number.isSafeInteger(value)))
+      throw new Error(`${path}: not an allowed number`);
     return;
   }
   if (Array.isArray(value)) {

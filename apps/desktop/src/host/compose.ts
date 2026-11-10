@@ -182,11 +182,6 @@ function installSalt(store: StorePort): string {
   return store.read(q => q.get<{ value: string }>(sql))?.value ?? '';
 }
 
-/**
- * The log level under `Diagnostics/verbose`: `debug` while `meta.verbose_until` is in the future (the 15-minute
- * protocol log), `info` otherwise. A read failure or a store that is not open yet answers `info` — verbose never
- * turns on by accident.
- */
 /** The verbose window's length (`Diagnostics/verbose`), and how often the meta row is re-read per log event. */
 const VERBOSE_MS = 15 * 60_000;
 const VERBOSE_CACHE_MS = 1_000;
