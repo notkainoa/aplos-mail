@@ -79,11 +79,15 @@ test.describe('reader card header', () => {
     ).toBeVisible();
   });
 
-  test('the bell claims nothing while the engine is silent about it, and More lists the reader’s own actions by keyboard', async ({
+  test('the bell says whether the email notified, and More lists the reader’s own actions by keyboard', async ({
     page,
   }) => {
     await open(page);
-    await expect(page.locator(`${LETTER} .aplos-bell`)).toHaveAttribute('aria-hidden', 'true');
+    // The stand-in engine reports notifications (unread inbound mail is `sent`, the rest `none`): the bell names which.
+    await expect(page.locator(`${LETTER} .aplos-bell[role="img"]`)).toHaveAttribute(
+      'aria-label',
+      /^This email (notified|did not notify) you$/,
+    );
     await page.locator(`${LETTER} button[aria-label="More"]`).click();
     const menu = page.getByRole('menu', { name: 'More' });
     for (const name of ['Reply all', 'Later', 'Bookmark', 'Move to Trash'])
