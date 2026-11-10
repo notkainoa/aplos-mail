@@ -392,6 +392,8 @@
 }
 .aplos-reader__offer .ui-text {
   margin: 0;
+}
+
 /* ---------- The sender's mark and the plain body's column (owner sketch 2026-11-10) ----------
    A 24 px rounded square with the sender's initial before the name. A plain email (the frame reports its sentinel
    surface, mailframe/paper.ts) is drawn straight on the card in the app's own body type, indented to the name's column;

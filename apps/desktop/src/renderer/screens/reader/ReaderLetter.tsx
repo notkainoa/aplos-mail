@@ -206,6 +206,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
   const earlier = data.messages.slice(0, -1);
   const latest = data.messages[data.messages.length - 1];
   if (!latest) return null;
+  const offers = props.paper ? <EventOffers row={row} hasInvite={invite !== null} /> : null;
   const message = (m: Message, cursor: boolean) => (
     <ReaderMessage
       key={m.id}
@@ -252,13 +253,15 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         />
       ) : null}
       {props.cards === 'off' ? <ReaderHead due={dueOf(row)} summary={summaryFor(row)} /> : null}
-      {props.paper ? <EventOffers row={row} hasInvite={invite !== null} /> : null}
+      {offers && props.cards === 'off' ? offers : null}
       <section className="aplos-reader__thread" aria-label={countLabel(data.messages.length)}>
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
           {earlier.map(m => message(m, ui.cursor === m.id))}
           {message(latest, ui.cursor === latest.id)}
         </div>
+        {/* The card has nothing above it (owner sketch 2026-11-10): its offers sit under it; the card-less column keeps them under the summary. */}
+        {offers && props.cards !== 'off' ? offers : null}
         <ReplyArea
           threadId={props.threadId}
           messageId={latest.id}
