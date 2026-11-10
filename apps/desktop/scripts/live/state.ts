@@ -5,9 +5,10 @@ import { applicationSupportDir } from './vault';
 
 /**
  * The small state a phased probe leaves for its next phase (plan 20 5.4). Like the evidence file it is written from an
- * allowlist: a fixed set of key names, and values that are only a short lowercase hex string (a salted hash, a salt) or
- * one of a few shape words. No Message-ID, address, id or text can be stored, so the file is content-free even though
- * it sits on the Mac outside the repository, mode 0600 in a 0700 folder.
+ * allowlist: a fixed set of key names, and values that are only a short lowercase hex string (a salted hash, a salt),
+ * a decimal history cursor (`historyId`) or one of a few shape words. No Message-ID, address, id or text can be
+ * stored, so the file is content-free even though it sits on the Mac outside the repository, mode 0600 in a 0700
+ * folder.
  */
 
 /** Key names a probe may keep. Add a name here on purpose when a probe needs one. */
@@ -20,12 +21,16 @@ export const STATE_KEYS: readonly string[] = [
   'draftIdHash',
   'afterCreateShape',
   'afterSaveShape',
+  // gmail.archive-delta-cost: the Gmail history cursor its `mark` phase leaves for `measure`.
+  'historyId',
 ];
 /** The words a shape value may take. */
 export const SHAPE_WORDS: readonly string[] = ['ours', 'gmail', 'other', 'absent'];
 /** A salted hash is exactly 16 hex characters and a salt exactly 32: a 16-hex Gmail message id fits no other key. */
 const HASH = /^[0-9a-f]{16}$/;
 const SALT = /^[0-9a-f]{32}$/;
+/** A Gmail history cursor is a decimal string: digits only, so no token or id can hide in it. */
+const HISTORY_ID = /^\d{1,25}$/;
 
 export interface ProbeState {
   /** What the earlier phase saved, or undefined when nothing (or nothing valid) is there. */
@@ -36,11 +41,12 @@ export interface ProbeState {
 
 const ID = /^[a-z][a-z0-9.-]{0,60}$/;
 
-/** Each key has its own kind of value: `salt` 32 hex, a `...Hash` 16 hex, a `...Shape` one of the shape words. */
+/** Each key has its own kind of value: `salt` 32 hex, a `...Hash` 16 hex, a `...Shape` one of the shape words, `historyId` digits. */
 function allowedValue(key: string, value: string): boolean {
   if (key === 'salt') return SALT.test(value);
   if (key.endsWith('Hash')) return HASH.test(value);
   if (key.endsWith('Shape')) return SHAPE_WORDS.includes(value);
+  if (key === 'historyId') return HISTORY_ID.test(value);
   return false;
 }
 

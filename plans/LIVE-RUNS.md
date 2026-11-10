@@ -104,3 +104,13 @@ Guard unchanged. The guard accepts only the simple media upload of `messages.sen
 ### Before re-running `gmail.adapter-send-find` after an unclear result
 
 The probe's evidence names how a failed run ended in its `Error classes` line: `guard` (the guard refused the request: nothing left), `network` (the send ended UNCERTAIN: the bytes may have gone out), `server` (a 5xx), `other`. After `network`, or whenever `messages.send POST x1` shows under Requests but `sent` is missing, the operator checks the agent account's Sent folder BY HAND (search `aplos-live-probe-adapter`) before any rerun, and reruns only when no probe message of that day is there. The probe itself never retries the send and fails closed when its duplicate check cannot run (`server`, zero sends).
+
+## Probe: `gmail.archive-delta-cost` (tier R, two phases, read-only)
+
+Measures the budgets.json row `sync.archive-2000-units` ("a 2,000-thread archive made in Gmail web costs under 100 sync units") and doubles as the live delta-cost check for any change made outside the app.
+
+1. **mark**: `npx tsx apps/desktop/scripts/live/run.ts --provider gmail --tier R --account agent --phase mark --expect-sha <sha>` stores the profile `historyId` in the probe's state file (a decimal cursor; the one non-hash value the state allowlist holds). Reports `marked` 1 plus `messagesTotal`/`threadsTotal`.
+2. **the owner makes the change in Gmail web** on the spare account — for the budget row, archive about 2,000 threads (select a page, archive, repeat). Any outside change works; the count is what matters, not the kind.
+3. **measure**: the same command with `--phase measure` walks `users.history.list` from the stored cursor — the same call the syncer's incremental step makes — and reports `historyPages` (2 units a call, so `historyPages x 2` plus 1 for the profile re-mark is the cost the row records), `historyRecords`, `messagesTouched` (distinct ids counted, never kept), `pagesCapped` (1 when the walk hit the 40-page cap, a partial measurement and a fail), `baselineUpdated` (the fresh cursor stored for the next delta) and `stateMissing` (no `mark` ran first). A cursor Gmail forgot answers `historyExpired` 1 and fails: run `mark` again.
+
+A normal tier R run (no `--phase`) skips the probe; a stored mark adds nothing to it.
