@@ -11,8 +11,8 @@ import type {
 } from '../ports';
 import type { AdapterContext, ProviderAdapter } from '../ports/provider';
 import type { StorePort } from '../ports';
-import { eventFactWrites } from './calendar-facts';
-import { writeFailure } from './host-calendar-errors';
+import { eventFactWrites } from '../sync/calendar-facts';
+import { writeFailure } from './write-errors';
 
 /**
  * `CalendarPort`: event writes, addressed by account. The host looks up the started account's entry for exactly the

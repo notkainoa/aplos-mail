@@ -7,7 +7,7 @@ import {
 import {
   calendarTargetOf,
   createCalendarPort,
-} from '../../../../packages/engine/src/sync/host-calendar';
+} from '../../../../packages/engine/src/calendar/write-port';
 import { createGoogleCalendar } from '../../src/host/providers/google/calendar';
 import {
   ACCOUNT_ID,
