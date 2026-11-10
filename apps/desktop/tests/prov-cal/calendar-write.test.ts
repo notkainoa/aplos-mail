@@ -394,3 +394,37 @@ test('another account cannot reach this calendar through the port', async () => 
   assert.equal(r.requests.length, 0);
   r.close();
 });
+
+test('adding a guest keeps the answers the others already gave', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const seeded = r.emu.calendar.addEvent(cal, {
+    summary: 'Offsite',
+    start: { dateTime: '2026-11-12T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    attendees: [{ email: 'peer@example.test', responseStatus: 'accepted' }],
+  });
+  await r.seedCalendars();
+  saved(
+    await r.port.put(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: seeded.id,
+      scope: 'series',
+      fields: {
+        attendees: [
+          { address: 'peer@example.test', response: 'needsAction', organizer: false, self: false },
+          { address: 'new@example.test', response: 'needsAction', organizer: false, self: false },
+        ],
+      },
+    }),
+  );
+  const answers = Object.fromEntries(
+    (r.emu.calendar.getEvent(cal, seeded.id)!.attendees ?? []).map(a => [
+      a.email,
+      a.responseStatus,
+    ]),
+  );
+  assert.equal(answers['peer@example.test'], 'accepted');
+  assert.equal(answers['new@example.test'], 'needsAction');
+  r.close();
+});
