@@ -9,9 +9,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { chromium } = require(
-  process.env.PLAYWRIGHT || '/Users/knewton/.t3/aplos-research/tools/node_modules/playwright',
-);
+// Playwright comes from PLAYWRIGHT (a path to its package) or from the repo's own install.
+const { chromium } = require(process.env.PLAYWRIGHT || 'playwright');
 const args = process.argv.slice(2);
 const at = args.indexOf('--base');
 const BASE = (at >= 0 ? args.splice(at, 2)[1] : 'http://127.0.0.1:5394').replace(/\/$/, '');

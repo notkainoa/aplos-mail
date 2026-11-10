@@ -51,6 +51,8 @@ describe('highlight and keys', () => {
   test('a name being typed highlights the first match; a typed address highlights nothing', () => {
     assert.equal(initialActive('jo', list), ids[0]);
     assert.equal(initialActive('jordan@', list), undefined, 'Return must commit what was typed');
+    assert.equal(initialActive('jordan＠x', list), undefined, 'the fullwidth ＠ of an IME counts');
+    assert.equal(initialActive('jordan﹫x', list), undefined, 'so does the small ﹫');
     assert.equal(initialActive('jo', []), undefined);
   });
 

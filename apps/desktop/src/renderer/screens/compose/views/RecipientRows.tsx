@@ -45,7 +45,8 @@ function OneRow(props: {
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const listboxId = `${useId()}-${props.row}`;
   const entries = useRecipientSuggest(query, props.accountId, props.suggest);
-  const list = closedFor === query ? [] : toSuggestions(entries, props.recipients);
+  const list =
+    query.trim() === '' || closedFor === query ? [] : toSuggestions(entries, props.recipients);
   const active =
     arrowed !== undefined && list.some(r => r.id === arrowed)
       ? arrowed
@@ -100,6 +101,11 @@ function OneRow(props: {
         ccButton={props.ccButton}
         autoFocus={props.autoFocus}
       />
+      <span className="ui-recipient-field__sr" role="status">
+        {list.length > 0
+          ? `${list.length} ${list.length === 1 ? 'suggestion' : 'suggestions'}`
+          : ''}
+      </span>
     </div>
   );
 }

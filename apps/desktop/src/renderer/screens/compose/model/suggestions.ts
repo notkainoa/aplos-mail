@@ -4,7 +4,7 @@
  * the mail provider anything. No React, no clock: the debounce lives in `runtime/useRecipientSuggest`.
  */
 import type { Recipient } from '../../../ui/props';
-import { isValidAddress } from './recipients';
+import { containsAt, isValidAddress } from './recipients';
 
 /** Wait this long after the last keystroke before asking: typing a name asks once, not once per letter. */
 export const SUGGEST_DEBOUNCE_MS = 120;
@@ -40,10 +40,10 @@ export function toSuggestions(
 
 /**
  * The highlight before any arrow key: the first match while a name is being typed, nothing once the typed text holds
- * an "@" (a whole address is being written, and Return must commit what was typed, not swap it for a neighbour).
+ * an "@" (a whole address is being written, and Return must commit what was typed, not swap it for a neighbour; the fullwidth ＠ of a Japanese IME counts).
  */
 export function initialActive(query: string, list: readonly Recipient[]): string | undefined {
-  return query.includes('@') ? undefined : list[0]?.id;
+  return containsAt(query) ? undefined : list[0]?.id;
 }
 
 /** The highlight after an arrow key: down from nothing is the first, up from nothing is the last; both wrap. */
