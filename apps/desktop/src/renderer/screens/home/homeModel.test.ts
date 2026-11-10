@@ -11,6 +11,7 @@ import { primaryOf, senderOf, subjectOf, summaryOf } from './homeRows';
 import {
   LOW_KEY,
   buildItems,
+  showsLowBand,
   compareDoNow,
   compareFollow,
   compareUpdate,
@@ -130,6 +131,14 @@ test('cursor stops run Do now, Back from Later, Important updates, the Low band,
     layoutOf({ do: ['d'], fromLater: ['l'], update: ['u'], follow: ['f'], lowCount: 4 }),
   );
   assert.deepEqual(items.map(keyOf), ['d', 'l', 'u', LOW_KEY, 'f']);
+});
+
+test('the Low band shows at zero while Home has mail, but only a band with mail is a cursor stop', () => {
+  // The owner saw one mixed list with no way into Low importance; an empty band still opens the sheet's empty state.
+  assert.equal(showsLowBand(layoutOf({ lowCount: 0, do: ['d'] })), true);
+  assert.equal(showsLowBand(layoutOf({ lowCount: 0, follow: ['f'] })), true);
+  assert.equal(showsLowBand(layoutOf({ lowCount: 3 })), true);
+  assert.equal(showsLowBand(layoutOf({ lowCount: 0 })), false, 'an empty Home is the handled line');
   assert.deepEqual(buildItems(layoutOf({ lowCount: 0, do: ['d'] })).map(keyOf), ['d']);
 });
 
