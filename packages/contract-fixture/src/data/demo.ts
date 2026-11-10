@@ -594,6 +594,7 @@ export function demoData(
       attachments,
       bodyState: 'present',
       bodyKind: 'html',
+      notification: !row.fromMe && unread ? 'sent' : 'none',
     });
     out.bodies[messageId] = row.body;
   });

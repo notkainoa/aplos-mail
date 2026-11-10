@@ -12,9 +12,9 @@ export interface ScopeEntry {
   /** What the owner is told before Google's screen opens. */
   consent: string;
   /**
-   * Declared but never requested until its round ships (calendar.events is round 2, writes; least privilege —
-   * the consent screen must never promise "create, change and delete" for a sync that only reads). A grant that
-   * already holds a deferred scope keeps it on a reconnect; it is just never newly asked for.
+   * Never part of a default request (least privilege — the consent screen must never promise "create, change and
+   * delete" for a sync that only reads). It is asked for only when the owner opts in by name (`explicitScopes`:
+   * Settings → Calendar → "Enable editing"). A grant that already holds a deferred scope keeps it on a reconnect.
    */
   deferred?: true;
 }
@@ -57,6 +57,25 @@ export const googleScopeManifest: readonly ScopeEntry[] = [
     consent: 'See, create, change and delete events on your calendars.',
   },
 ];
+
+/**
+ * The opt-ins `Account/grantPermissions` may name (`ConnectRequest.enable`) and the optional features each asks for.
+ * A deferred scope is requestable ONLY here, together with whatever it needs to be useful: `calendarWrite` adds
+ * the calendar list (a write grant alone does not make the calendar capability true) and the write scope — never
+ * mail filters or anything else that was not asked for.
+ */
+export const explicitEnables = {
+  calendarWrite: ['calendarList', 'calendarEventsWrite'],
+} as const satisfies Record<string, readonly ScopeFeature[]>;
+
+export type ExplicitEnable = keyof typeof explicitEnables;
+
+/** The scopes an explicit opt-in adds to a sign-in. */
+export function explicitScopes(enable: ExplicitEnable): string[] {
+  // The wire is open: a value this build does not know is refused before Google is asked, never guessed at.
+  if (!Object.hasOwn(explicitEnables, enable)) throw new Error(`Not a known opt-in: ${enable}`);
+  return scopesForFeatures(...explicitEnables[enable]);
+}
 
 /** The `scope` parameter of the authorization URL: never carries a `deferred` entry. */
 export function googleScopeParam(): string {

@@ -74,7 +74,8 @@ export interface AccountRuntime extends AccountHealth {
    * `Account.missingPermissions` row, so `Account/get` copies it: `reasonCode` is the copy key (`permission.calendar` for the calendar half).
    */
   missingPermissions?: {
-    capability: keyof Capabilities;
+    /** `calendarWrite` is the opt-in editing gap (read access is fine); the rest are `Capabilities` keys. */
+    capability: keyof Capabilities | 'calendarWrite';
     reasonCode: ReasonCode;
     missingScopes: string[];
   }[];
@@ -288,4 +289,15 @@ export interface AccountActorDeps {
   deviceId: DeviceId;
   /** Focus, visible window and battery, from `eng-host`'s power and window signals. */
   env: () => PlanEnv;
+}
+
+/**
+ * Where a newly granted client's token lands (`Clients/grant`, host-5): the host writes the one-time
+ * plaintext to a file only that tool can read (0600 under the run directory) and answers the path the
+ * `Client.tokenPath` field reports. The engine keeps only the token's SHA-256; the plaintext never
+ * crosses the contract. Implemented by `eng-host` (`host/transports/auth.ts`); absent, `Clients/grant`
+ * is `unavailable` — a grant without its token file would be a row no tool could use.
+ */
+export interface ClientTokens {
+  issue(clientId: string, token: string): Promise<{ path: string }>;
 }
