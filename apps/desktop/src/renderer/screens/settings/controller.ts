@@ -596,6 +596,8 @@ export function createController(deps: ControllerDeps) {
       });
     },
     async openDiagnostics() {
+      // The dialog shows the shared failure slot: another action's line must not appear inside it.
+      deps.fail(null);
       deps.setView({ diagnostics: true, diagnosticsCopied: false, diagnosticsSaved: false });
       busy('diagnostics', true);
       try {
@@ -611,6 +613,9 @@ export function createController(deps: ControllerDeps) {
       busy('diagnostics', false);
     },
     closeDiagnostics() {
+      // A copy or save line belongs to the dialog; it does not stay on the page once the report is closed.
+      if (['copy the report', 'save the report'].includes(deps.failure?.()?.op ?? ''))
+        deps.fail(null);
       deps.setView({ diagnostics: false, diagnosticsCopied: false, diagnosticsSaved: false });
       deps.setData({ bundle: undefined });
     },

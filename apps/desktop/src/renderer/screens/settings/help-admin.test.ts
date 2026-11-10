@@ -24,6 +24,7 @@ function harness({ ports }: { ports: Partial<SettingsApiPort> }) {
     overlay: () => {},
     accountOverlay: () => {},
     fail: failure => void failures.push(failure),
+    failure: () => failures.at(-1) ?? null,
   });
   return { actions, view: () => view, data: () => data, failures };
 }
@@ -62,6 +63,8 @@ describe('ui-settings: help and support', () => {
     });
     await bad.actions.saveDiagnostics();
     assert.equal(bad.failures.at(-1)?.op, 'save the report');
+    bad.actions.closeDiagnostics();
+    assert.equal(bad.failures.at(-1), null, "the dialog's line does not stay on the page");
     assert.equal(bad.view().busy.diagnostics, false);
   });
 
