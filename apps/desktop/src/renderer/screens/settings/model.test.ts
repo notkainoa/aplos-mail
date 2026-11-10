@@ -132,6 +132,33 @@ describe('reconnect rule (DESIGN 7.10, U7 acceptance 8)', () => {
     );
   });
 
+  test('a needsPermission with reasonCode permission.calendarWrite has its own sentence', () => {
+    const cal = {
+      ...ALEX,
+      health: {
+        status: { state: 'needsPermission' as const, missingScopes: ['calendar.events'] },
+        reasonCode: 'permission.calendarWrite',
+      },
+    };
+    assert.equal(
+      accountRows([cal], NOW)[0].description,
+      'Aplos needs your permission to change events on your Google Calendar.',
+    );
+  });
+
+  test('a refused write alone is not a needs-reconnect account: no Reconnect, no nag line', () => {
+    const refused = {
+      ...ALEX,
+      missingPermissions: [
+        { capability: 'calendarWrite' as const, reasonCode: 'permission.calendarWrite' as const },
+      ],
+    };
+    const row = accountRows([refused], NOW)[0];
+    assert.equal(row.reconnect, undefined);
+    assert.equal(row.tone, 'default');
+    assert.equal(row.description, 'Connected · synced 2 min ago');
+  });
+
   test('one name per account, a provider word only for Google and demo', () => {
     const r = accountRows(
       [ALEX, DEMO, account({ id: 'x', address: 'a@example.com', provider: 'imap' })],

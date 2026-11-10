@@ -292,9 +292,22 @@ function connectedLine(account: Account, now: number): string {
 
 const PERMISSION_SENTENCES: Record<string, string> = {
   'permission.calendar': 'Aplos needs permission to use your Google Calendar.',
+  'permission.calendarWrite':
+    'Aplos needs your permission to change events on your Google Calendar.',
   'permission.filters': 'Aplos needs permission to manage your Gmail filters.',
   'permission.settings': 'Aplos needs permission to read your Gmail settings.',
 };
+
+/** Settings → Calendar's editing row, in DESIGN 10's voice: quiet states carry no trailing period. */
+export const CALENDAR_EDITING_COPY = {
+  on: 'Editing on',
+  off: 'Editing off',
+  /** The quiet action while editing is simply off. */
+  enable: 'Enable editing',
+  /** The refused-write row's line and its action's label. */
+  refused: 'Turn on editing to change events',
+  turnOn: 'Turn on editing',
+} as const;
 
 /** One account's row: its state in DESIGN 7.1's words, and the Reconnect it offers. */
 export function accountRow(account: Account, index: number, now: number): AccountRow {
