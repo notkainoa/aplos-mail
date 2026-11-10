@@ -26,6 +26,7 @@ import {
   actThenList,
   mergeAccounts,
   mergePatch,
+  withoutKeyPath,
   type AccountWrite,
   type AiModelInfo,
 } from './settings.model';
@@ -66,6 +67,9 @@ export function dataPorts(): SettingsApiPort {
     consentRevoke: async () => void (await api.consent.revoke({ scope: 'background' })),
     listenerSet: async enabled => void (await api.listener.set({ enabled })),
     clientsRevoke: async id => void (await api.clients.revoke({ id })),
+    clientsGrant: async input =>
+      (await api.clients.grant({ ...input, scopes: [...input.scopes] })).client,
+    workflowStatus: () => api.workflow.status({}),
     diagnosticsPreview: () => api.diagnostics.preview({}),
     diagnosticsCopy: async () => void (await api.diagnostics.copy({})),
     diagnosticsSave: async () => saveBlob(await api.diagnostics.export({})),
@@ -79,7 +83,7 @@ export function dataPorts(): SettingsApiPort {
     aiProviders: async () => (await api.ai.providers({})).list,
     aiUsage: () => api.ai.usage({}),
     listenerGet: () => api.listener.get({}),
-    clientsList: async () => (await api.clients.list({})).list,
+    clientsList: async () => (await api.clients.list({})).list.map(withoutKeyPath),
     queueList: async () => (await api.queue.list({})).list,
     calendarsGet: async () => (await api.calendar.get({})).list,
   };
@@ -288,6 +292,7 @@ export function useSettingsState(
     if (section === 'general') {
       quiet(ports.listenerGet().then(listener => keep({ listener })));
       quiet(ports.clientsList().then(clients => keep({ clients })));
+      quiet(ports.workflowStatus().then(workflow => keep({ workflow })));
     }
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));
