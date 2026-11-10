@@ -199,7 +199,8 @@ function homeLists(r: Ref, a?: string) {
     r.imp(x) - r.imp(y) ||
     byteOrder(x.due ?? '~', y.due ?? '~') ||
     r.wfNewest(x, y);
-  const newIn = (lane: string) => onHome.filter(t => t.status === 'new' && t.lane === lane);
+  const newIn = (lane: string) =>
+    onHome.filter(t => t.status === 'new' && t.lane === lane && t.inbound !== null);
   const cutoff = r.env.now - r.env.followUpDays * 86_400_000;
   const sent = new Set(
     r
