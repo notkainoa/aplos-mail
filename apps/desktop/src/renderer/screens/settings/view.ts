@@ -26,7 +26,10 @@ export interface SettingsView {
   /** The consent card for background summaries is open. */
   readonly consentCard: boolean;
   /** The reconnect flow is open for this account. */
-  readonly reconnect: { readonly accountId: string; readonly mode: 'reconnect' | 'grant' } | null;
+  readonly reconnect: {
+    readonly accountId: string;
+    readonly mode: 'reconnect' | 'grant' | 'enableEditing';
+  } | null;
   readonly addAccount: boolean;
   /** The diagnostics preview dialog is open. */
   readonly diagnostics: boolean;

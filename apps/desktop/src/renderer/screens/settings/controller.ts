@@ -270,7 +270,7 @@ export function createController(deps: ControllerDeps) {
       dropAccountOverlay(id);
       return ok;
     },
-    startReconnect(accountId: string, mode: 'reconnect' | 'grant') {
+    startReconnect(accountId: string, mode: 'reconnect' | 'grant' | 'enableEditing') {
       deps.setView({ reconnect: { accountId, mode } });
     },
     closeReconnect() {

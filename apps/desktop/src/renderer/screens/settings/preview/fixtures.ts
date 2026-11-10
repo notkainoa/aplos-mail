@@ -5,6 +5,7 @@
  */
 import type { Account, AiProvider, Calendar, Consent, Session, Settings } from '../../../data';
 import { HARNESS_NOW_MS } from '../../../data';
+import { CALENDAR_EVENTS_SCOPE } from '../../calendar/accountCalendarState';
 import type {
   AiModelInfo,
   AiUsageInfo,
@@ -139,6 +140,30 @@ export function needsReauth(a: Account): Account {
 export function reconnectIn(a: Account, ms: number): Account {
   return { ...a, health: { ...a.health, reconnectBy: NOW + ms } };
 }
+
+/** The grant that lets the account change events: the events scope sits in `grantedScopes`. */
+export function editingOn(a: Account): Account {
+  return { ...a, grantedScopes: [...a.grantedScopes, CALENDAR_EVENTS_SCOPE] };
+}
+
+/** A write was refused for lack of the events scope: the account carries the calendarWrite row. */
+export function writeRefused(a: Account): Account {
+  return {
+    ...a,
+    missingPermissions: [{ capability: 'calendarWrite', reasonCode: 'permission.calendarWrite' }],
+  };
+}
+
+/** A non-Google account: no calendar claim at all. */
+export const IMAP = account({
+  id: 'acct-river',
+  address: 'river.pale@example.net',
+  provider: 'imap',
+  colorTag: 'dusk',
+  capabilities: { ...capabilities, calendar: false },
+  lease: undefined,
+  calendarListedAt: undefined,
+});
 
 /** One calendar, for the calendar-access states `calendarAccessOf` reads (`Calendar/get`). */
 export function calendar(
