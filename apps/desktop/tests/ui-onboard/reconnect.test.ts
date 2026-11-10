@@ -7,6 +7,8 @@ import { describe, test } from 'node:test';
 import {
   DAY_MS,
   callFor,
+  callForSheetMode,
+  enableForSheetMode,
   initialReconnect,
   reconnectOffer,
   reduceReconnect,
@@ -84,6 +86,22 @@ describe('which accounts offer Reconnect, and which call', () => {
       'reconnect',
     );
     assert.equal(reconnectOffer(account({}, { missingPermissions: [] }), NOW), null);
+  });
+
+  test("a refused calendar write's calendarWrite row is no offer on its own; other rows still grant", () => {
+    // The calendarWrite-only account has its own entry point (Settings → Calendar's "Enable
+    // editing"); it is never a standing 'missingPermission' nag here.
+    const writeOnly = [{ capability: 'calendarWrite', reasonCode: 'permission.calendarWrite' }];
+    assert.equal(reconnectOffer(account({}, { missingPermissions: writeOnly }), NOW), null);
+    const withRead = [
+      { capability: 'calendarWrite', reasonCode: 'permission.calendarWrite' },
+      { capability: 'calendar', reasonCode: 'permission.calendar' },
+    ];
+    assert.equal(
+      reconnectOffer(account({}, { missingPermissions: withRead }), NOW)?.call,
+      'grantPermissions',
+      'a real read gap still offers the grant',
+    );
   });
 
   test('nothing is offered for demo mail, an administrator block, a build without Google set up, or offline', () => {
@@ -233,6 +251,40 @@ describe('the sheet: idle → waiting → failed | reconnected → closed', () =
     assert.equal(h.state.phase, 'waiting');
     h.send(frame('connected', { mode: 'grantPermissions' }));
     assert.equal(h.state.phase, 'closed');
+  });
+
+  test("the 'enableEditing' sheet mode is grantPermissions plus enable 'calendarWrite'; 'grant' carries none", () => {
+    assert.equal(callForSheetMode('enableEditing'), 'grantPermissions');
+    assert.equal(callForSheetMode('grant'), 'grantPermissions');
+    assert.equal(callForSheetMode('reconnect'), 'reconnect');
+    assert.equal(enableForSheetMode('enableEditing'), 'calendarWrite');
+    assert.equal(enableForSheetMode('grant'), undefined);
+    assert.equal(enableForSheetMode('reconnect'), undefined);
+    const initial = initialReconnect({
+      accountId: 'acc-1',
+      address: ADDRESS,
+      call: 'grantPermissions',
+      enable: 'calendarWrite',
+    });
+    const out = reduceReconnect(initial, { type: 'open' });
+    const state = out.state;
+    assert.deepEqual(out.effects, [
+      {
+        type: 'start',
+        call: 'grantPermissions',
+        accountId: 'acc-1',
+        attempt: 1,
+        enable: 'calendarWrite',
+      },
+    ]);
+    assert.equal(sheetView(state).mode, 'enableEditing');
+    // A retry keeps the same widened call.
+    const failed = reduceReconnect(state, { type: 'startFailed', attempt: 1 });
+    const retried = reduceReconnect(failed.state, { type: 'retry' });
+    assert.equal(
+      retried.effects[0]?.type === 'start' && retried.effects[0].enable,
+      'calendarWrite',
+    );
   });
 });
 
@@ -404,6 +456,36 @@ describe('reconnect-no-resync: no Sync/request, ever', () => {
       send(frame('connected', { mode: 'grantPermissions' }));
     });
     assert.deepEqual(grant.calls, ['Account/grantPermissions']);
+  });
+
+  test("the 'enableEditing' start asks grantPermissions with enable 'calendarWrite'; a plain grant does not", async () => {
+    const inputs: { accountId: string; enable?: 'calendarWrite' }[] = [];
+    const ports: ReconnectPorts = {
+      reconnect: async () => ({ connectId: 'c1' }),
+      grantPermissions: async input => {
+        inputs.push(input);
+        return { connectId: 'c1' };
+      },
+      cancelConnect: async () => ({ cancelled: true }),
+    };
+    const run = async (state: ReconnectState) => {
+      const out = reduceReconnect(state, { type: 'open' });
+      for (const effect of out.effects) await runReconnectEffect(effect, ports, () => {});
+      return out.state;
+    };
+    await run(
+      initialReconnect({
+        accountId: 'acc-1',
+        address: ADDRESS,
+        call: 'grantPermissions',
+        enable: 'calendarWrite',
+      }),
+    );
+    await run(initialReconnect({ accountId: 'acc-1', address: ADDRESS, call: 'grantPermissions' }));
+    assert.deepEqual(inputs, [
+      { accountId: 'acc-1', enable: 'calendarWrite' },
+      { accountId: 'acc-1' },
+    ]);
   });
 
   test('the effect vocabulary and the ports have no sync: every effect is start, cancelConnect or close', () => {
