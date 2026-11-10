@@ -31,6 +31,13 @@ export function accountRemove(run: CommitRun, w: AccountRemoveWrite) {
     )
     .run(id);
   run.q('DELETE FROM governor_state WHERE account_id = ?').run(id);
+  for (const r of run.q('SELECT id FROM plans WHERE account_id = ?').all<{ id: number }>(id))
+    run.markId('Plan', `${id}:plan-${r.id}`, 'd');
+  run
+    .q(
+      "DELETE FROM meta WHERE key LIKE 'replydraft:' || ? || ':%' OR key LIKE 'followup:' || ? || ':%'",
+    )
+    .run(id, id);
   run.q('DELETE FROM accounts WHERE id = ?').run(id); // cascades the rest
   // Clients re-read what they hold for the account: one `*` row per bulk type, a `d` row for the few folders.
   run.markId('Thread', id, '*');

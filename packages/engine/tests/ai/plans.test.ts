@@ -25,7 +25,7 @@ function stubTransport(answer: string): AiTransport & { calls: AiChatRequest[] }
   };
 }
 
-async function world(transport: AiTransport) {
+async function world(transport: AiTransport, ports?: { calendar: unknown }) {
   const file = tempDb();
   const clock = manualClock();
   const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
@@ -40,6 +40,7 @@ async function world(transport: AiTransport) {
       resident: true,
       capabilities: { desktop: true },
     },
+    ...(ports ? { ports: ports as never } : {}),
   });
   engine.services.ai.useTransport(transport);
   const window = engine.connect();
@@ -147,5 +148,77 @@ test('the plans window lists open proposals; a foreign-account wire id cannot di
   );
   const win2 = await w.call('View/watch', { spec: { kind: 'plans' } });
   assert.deepEqual(win2.ids, [], 'dismissed plans leave the window');
+  w.file.cleanup();
+});
+
+test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, bad dates never reach the table', async () => {
+  const puts: Array<{ remoteId?: string }> = [];
+  const calendar = {
+    put: async (_account: string, req: { remoteId?: string }) => {
+      puts.push(req);
+      return { kind: 'saved' as const, upserts: [{ remoteId: req.remoteId }], removals: [] };
+    },
+  };
+  const t = stubTransport(
+    JSON.stringify({
+      events: [
+        {
+          title: 'Garden day',
+          start: '2026-11-14T10:00:00Z',
+          end: '2026-11-14T11:00:00Z',
+          allDay: false,
+        },
+        { title: 'Bad date', start: '2026-13-45', end: '2026-13-46', allDay: true },
+        { title: 'Fuzzy', start: 'Nov 14', end: 'Nov 14', allDay: false },
+      ],
+    }),
+  );
+  const w = await world(t, { calendar });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'Primary',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  // The invalid dates are dropped at parse time — only the good plan is stored.
+  assert.equal(out.plans.length, 1);
+  assert.equal(out.plans[0].title, 'Garden day');
+  const confirmed = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  assert.equal(puts.length, 1);
+  assert.match(confirmed.eventId, /^acct-1:primary\/aplos-c1$/);
+  const again = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  // The replay answers from the stored row — no second provider call.
+  assert.equal(again.eventId, confirmed.eventId);
+  assert.equal(puts.length, 1);
+  w.file.cleanup();
+});
+
+test('Event/extract: a dismissed proposal is not re-created on the next extract (no provider call)', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await w.call('Plan/dismiss', { opId: 'd1', ids: [out.plans[0].id] });
+  const again = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
+  assert.equal(again.plans.length, 1);
+  assert.equal(
+    again.plans[0].state,
+    'dismissed',
+    'the stored dismissed plan is returned, not re-extracted',
+  );
+  assert.equal(t.calls.length, 1, 'the model ran once');
   w.file.cleanup();
 });

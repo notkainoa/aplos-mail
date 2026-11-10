@@ -7,7 +7,10 @@ import { FLAG } from '../../store/commit';
 import { readBody } from '../../store/bodies';
 import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
-import { parseCalendarIdIn } from '../../calendar/project';
+import { eventIdForOp, parseCalendarIdIn } from '../../calendar/project';
+import { fromWall, isKnownZone } from '../../calendar/recurrence/zone';
+import { usableZone } from '../../clock/zone';
+import { requireScope } from '@aplos/contract/access';
 import { auditWrites } from '../../host/audit';
 import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
@@ -46,13 +49,14 @@ interface PlanRow {
   location: string | null;
   state: string;
   event_id: string | null;
+  op_id: string | null;
   rev: number;
   input_hash: string;
 }
 
 const PLAN_COLS = `p.id, p.account_id, p.thread_id, t.remote_id, p.message_remote_id, p.from_name, p.quote,
   p.title, p.start_utc, p.start_date, p.end_utc, p.end_date, p.all_day, p.time_zone, p.location,
-  p.state, p.event_id, p.rev, p.input_hash`;
+  p.state, p.event_id, p.op_id, p.rev, p.input_hash`;
 
 function planOf(r: PlanRow): Plan {
   const start = r.all_day
@@ -108,6 +112,16 @@ export const openPlans = (q: StoreReader, threadRowId: number, inputHash?: strin
     ...(inputHash ? [threadRowId, inputHash] : [threadRowId]),
   );
 
+/** Every stored proposal for one input hash, any state — the extraction marker that keeps a re-run or a
+ * dismissed proposal from calling the model again. */
+export const plansForHash = (q: StoreReader, threadRowId: number, inputHash: string) =>
+  q.all<PlanRow>(
+    `SELECT ${PLAN_COLS} FROM plans p JOIN threads t ON t.id = p.thread_id
+     WHERE p.thread_id = ? AND p.input_hash = ? ORDER BY p.id`,
+    threadRowId,
+    inputHash,
+  );
+
 export interface ThreadMail {
   remoteId: string;
   subject: string;
@@ -150,7 +164,8 @@ export function threadMail(q: StoreReader, accountId: string, threadRowId: numbe
   );
   const out: ThreadMail[] = [];
   let used = 0;
-  for (const m of rows) {
+  // Newest first: the newest message is never the one the budget cuts on a long thread.
+  for (const m of rows.slice().reverse()) {
     const body = readBody(q, accountId, m.remote_id);
     const raw = body?.text ?? (body?.html ? plain(body.html) : (m.snippet ?? ''));
     const text = raw.slice(0, Math.max(0, MAX_THREAD_CHARS - used)).trim();
@@ -164,7 +179,7 @@ export function threadMail(q: StoreReader, accountId: string, threadRowId: numbe
     });
     if (used >= MAX_THREAD_CHARS) break;
   }
-  return out;
+  return out.reverse();
 }
 
 /** A date or clock time the mail text names — without one, the model sees nothing (most mail never reaches it). */
@@ -196,7 +211,74 @@ interface ParsedPlan {
   quote?: string;
 }
 
-function planFrom(e: unknown): ParsedPlan | undefined {
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})?$/;
+
+/** A `YYYY-MM-DD` only when it is a real calendar date — `Date.parse` accepts 2026-13-45, this does not. */
+function realDate(m: RegExpExecArray | null): string | undefined {
+  if (!m) return undefined;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const ms = Date.UTC(y, mo - 1, d);
+  const back = new Date(ms);
+  return back.getUTCFullYear() === y && back.getUTCMonth() === mo - 1 && back.getUTCDate() === d
+    ? `${m[1]}-${m[2]}-${m[3]}`
+    : undefined;
+}
+
+/**
+ * An event instant from a model string: strict ISO 8601, a real calendar date and either an explicit
+ * offset (`Z` or `+-HH:MM`) or a valid plan time zone — "Nov 14" or a bare local time without one is
+ * dropped, never guessed in the host zone.
+ */
+function parseWhen(
+  s: string,
+  zone: string | undefined,
+): { utc?: number; date?: string } | undefined {
+  const d = realDate(ISO_DATE.exec(s));
+  if (d) return { date: d };
+  const m = ISO_DATE_TIME.exec(s);
+  if (!m || !realDate(m)) return undefined;
+  const [, , , , hh = '0', mm = '0', ss = '0', off] = m;
+  const local = `${m[0].slice(0, 10)}T${hh}:${mm}:${ss}`;
+  if (off) {
+    const utc = Date.parse(`${local}${off === 'Z' ? 'Z' : off}`);
+    return Number.isFinite(utc) ? { utc } : undefined;
+  }
+  if (zone && isKnownZone(zone)) return { utc: fromWall(Date.parse(`${local}Z`), zone) };
+  return undefined;
+}
+
+interface Extras {
+  location?: string;
+  quote?: string;
+}
+
+/** An all-day plan: real dates, and an end at least start + 1 day (Google rejects a zero-length all-day event). */
+function allDayPlan(
+  title: string,
+  start: { utc?: number; date?: string } | undefined,
+  end: { utc?: number; date?: string } | undefined,
+  inRange: (u: number) => boolean,
+  extras: Extras,
+): ParsedPlan | undefined {
+  const sd = start?.date;
+  const ed = end?.date;
+  if (!sd) return undefined;
+  const day = 86_400_000;
+  const sdMs = Date.parse(`${sd}T00:00:00Z`);
+  const eMs = ed ? Date.parse(`${ed}T00:00:00Z`) : sdMs;
+  const fixed = eMs >= sdMs + day ? ed! : new Date(sdMs + day).toISOString().slice(0, 10);
+  return inRange(sdMs)
+    ? { title, allDay: true, startDate: sd, endDate: fixed, ...extras }
+    : undefined;
+}
+
+/** Sane range for a proposed event: a year back, five ahead. Outside it, the model is misreading. */
+const MIN_PLAN_MS = -366 * 86_400_000;
+const MAX_PLAN_MS = 5 * 366 * 86_400_000;
+
+function planFrom(e: unknown, now: number, zone: string | undefined): ParsedPlan | undefined {
   if (typeof e !== 'object' || e === null) return undefined;
   const o = e as Record<string, unknown>;
   const title = typeof o.title === 'string' ? o.title.trim().slice(0, 1_000) : '';
@@ -207,27 +289,22 @@ function planFrom(e: unknown): ParsedPlan | undefined {
       : {}),
     ...(typeof o.quote === 'string' && o.quote ? { quote: o.quote.slice(0, 1_000) } : {}),
   };
-  const start = typeof o.start === 'string' ? o.start : '';
-  const end = typeof o.end === 'string' ? o.end : '';
-  if (o.allDay === true) {
-    const sd = /^\d{4}-\d{2}-\d{2}/.exec(start)?.[0];
-    const ed = /^\d{4}-\d{2}-\d{2}/.exec(end || start)?.[0];
-    return sd && ed && ed >= sd
-      ? { title, allDay: true, startDate: sd, endDate: ed, ...extras }
-      : undefined;
-  }
-  const su = Date.parse(start);
-  if (!Number.isFinite(su)) return undefined;
-  let eu = Date.parse(end);
-  if (!Number.isFinite(eu) || eu <= su) eu = su + 3_600_000;
+  const tz = typeof o.timeZone === 'string' && isKnownZone(o.timeZone) ? o.timeZone : zone;
+  const start = parseWhen(typeof o.start === 'string' ? o.start : '', tz);
+  const end = parseWhen(typeof o.end === 'string' ? o.end : '', tz);
+  const inRange = (u: number) => u >= now + MIN_PLAN_MS && u <= now + MAX_PLAN_MS;
+  if (o.allDay === true) return allDayPlan(title, start, end, inRange, extras);
+  const su = start?.utc;
+  if (su === undefined || !inRange(su)) return undefined;
+  const eu = end?.utc !== undefined && end.utc > su ? end.utc : su + 3_600_000;
   return { title, allDay: false, startUtc: su, endUtc: eu, ...extras };
 }
 
-function parsePlans(raw: string): ParsedPlan[] {
+function parsePlans(raw: string, now: number, zone: string | undefined): ParsedPlan[] {
   try {
     const v = JSON.parse(raw) as { events?: unknown };
     if (!Array.isArray(v?.events)) return [];
-    return v.events.slice(0, MAX_PLANS).flatMap(e => planFrom(e) ?? []);
+    return v.events.slice(0, MAX_PLANS).flatMap(e => planFrom(e, now, zone) ?? []);
   } catch {
     return [];
   }
@@ -312,7 +389,7 @@ export async function extractThread(
       maxTokens: 1_200,
     },
   );
-  const parsed = parsePlans(turn.content);
+  const parsed = parsePlans(turn.content, now, usableZone(timeZone));
   return {
     threadRowId: work.id,
     mail: work.mail,
@@ -334,7 +411,13 @@ export function writePlans(
   const moved = services.store.read(q => inputHashOf(q, x.threadRowId).hash !== x.inputHash);
   if (moved) return services.store.read(q => openPlans(q, x.threadRowId)).map(planOf);
   const opId = `ai-plan-${remoteThreadId}-${x.inputHash}-${hexId(services.randomBytes, 'p')}`;
-  const first = x.mail.find(m => m.text || m.subject);
+  const firstQuote = x.plans.find(p => p.quote)?.quote;
+  const first =
+    x.mail.find(
+      m => firstQuote && (m.text.includes(firstQuote) || m.subject.includes(firstQuote)),
+    ) ??
+    x.mail.find(m => DATEISH.test(m.subject) || DATEISH.test(m.text)) ??
+    x.mail[0];
   services.store.commit({
     opId,
     origin: 'system',
@@ -360,7 +443,21 @@ export function writePlans(
   return services.store.read(q => openPlans(q, x.threadRowId)).map(planOf);
 }
 
-/** `Event/extract`: interactive find-in-thread; existing open plans for the same input win. */
+const inFlight = new Map<string, Promise<Plan[]>>();
+
+async function extractOnce(
+  services: EngineServices,
+  key: string,
+  run: () => Promise<Plan[]>,
+): Promise<Plan[]> {
+  const had = inFlight.get(key);
+  if (had) return had;
+  const p = run().finally(() => inFlight.delete(key));
+  inFlight.set(key, p);
+  return p;
+}
+
+/** `Event/extract`: interactive find-in-thread; proposals stored for this input (any state) win. */
 export async function extract(
   args: Input<'Event/extract'>,
   ctx: MethodContext,
@@ -388,15 +485,15 @@ export async function extract(
   // Spam/Trash mail never reaches a provider — a quiet empty answer, like the job's skip.
   if (t.banned) return { plans: [], receipt: receipt(ctx, args.opId) };
   const { hash } = services.store.read(q => inputHashOf(q, t.id));
-  const existing = services.store.read(q => openPlans(q, t.id, hash)).map(planOf);
+  const existing = services.store.read(q => plansForHash(q, t.id, hash)).map(planOf);
   if (existing.length) return { plans: existing, receipt: receipt(ctx, args.opId) };
   try {
-    const x = await extractThread(services, parts.accountId, parts.remoteId, args.timeZone);
-    if (x === 'empty') return { plans: [], receipt: receipt(ctx, args.opId) };
-    return {
-      plans: writePlans(services, parts.accountId, parts.remoteId, x),
-      receipt: receipt(ctx, args.opId),
-    };
+    const plans = await extractOnce(services, `${t.id}:${hash}`, async () => {
+      const x = await extractThread(services, parts.accountId, parts.remoteId, args.timeZone);
+      if (x === 'empty') return [];
+      return writePlans(services, parts.accountId, parts.remoteId, x);
+    });
+    return { plans, receipt: receipt(ctx, args.opId) };
   } catch (error) {
     if (error instanceof ContractError) throw error;
     const code = error instanceof AiCallError ? error.message : 'ai.failed';
@@ -548,37 +645,66 @@ const planFields = (
     : {}),
 });
 
+/**
+ * Confirm is a three-step transaction: `claim` (open → confirming under this opId, in its own commit so two
+ * callers can't both pass), `put` with an opId-derived remote id (a retried put lands on the same remote
+ * event — #394's prov-cal writes use the same `eventIdForOp`), then `settle` to confirmed with the event's
+ * wire id. A call that dies mid-way is safe to retry with the same opId; a different opId hits `conflict`.
+ */
 export async function confirmPlan(
   args: Input<'Plan/confirm'>,
   ctx: MethodContext,
 ): Promise<Output<'Plan/confirm'>> {
   const { services } = ctx;
+  // Title/description overrides carry untrusted mail text into the calendar — the Event/set scope ('send'),
+  // not triage. Everything else about confirming stays at this method's own scope.
+  if (args.fields?.title || args.fields?.description) requireScope(ctx.caller, 'send');
   const plan = services.store.read(q => findPlan(q, args));
   if (!plan)
     throw new ContractError({ type: 'notFound', message: 'This plan is no longer available.' });
-  if (plan.row.state !== 'open')
+  const row = plan.row;
+  if (row.state === 'confirmed') {
+    if (row.op_id === args.opId && row.event_id)
+      return { eventId: row.event_id, receipt: receipt(ctx, args.opId) };
+    throw new ContractError({ type: 'conflict', message: 'This plan was already confirmed.' });
+  }
+  if (row.state === 'dismissed')
+    throw new ContractError({ type: 'conflict', message: 'This plan was already dismissed.' });
+  if (row.state === 'confirming' && row.op_id !== args.opId)
     throw new ContractError({
       type: 'conflict',
-      message: 'This plan was already confirmed or dismissed.',
+      message: 'This plan is being confirmed elsewhere.',
     });
-  const target = services.store.read(q => resolveCalendar(q, plan.row, args.calendarId));
+  const target = services.store.read(q => resolveCalendar(q, row, args.calendarId));
   if (!target)
     throw new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
   const { calAccountId, calRemote } = target;
-  const row = plan.row;
-  const fields = planFields(row, args);
+  // Claim in its own commit — the UPDATE is the lock; a concurrent claim for a different op loses here.
+  if (row.state === 'open')
+    services.store.commit({
+      opId: `${args.opId}:claim`,
+      origin: 'local',
+      writes: [
+        { kind: 'plan', action: 'claim', id: row.id, accountId: row.account_id, opId: args.opId },
+        ...auditWrites(ctx.caller, 'Plan/confirm', args.id),
+      ],
+    });
   const result = await services.calendar.put(calAccountId, {
     calendarRemoteId: calRemote,
     scope: 'occurrence',
-    fields,
+    remoteId: eventIdForOp(args.opId),
+    fields: planFields(row, args),
     notify: false,
   });
   if (result.kind === 'conflict')
     throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
   const first = result.upserts[0];
-  const eventId = first
-    ? `${calAccountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`
-    : undefined;
+  if (!first)
+    throw new ContractError({
+      type: 'internal',
+      message: 'The calendar did not return the saved event.',
+    });
+  const eventId = `${calAccountId}:${calRemote}/${first.masterRemoteId ?? first.remoteId}${first.recurrenceId ? `@${first.recurrenceId}` : ''}`;
   services.store.commit({
     opId: args.opId,
     origin: 'local',
@@ -589,15 +715,9 @@ export async function confirmPlan(
         id: row.id,
         accountId: row.account_id,
         state: 'confirmed',
-        ...(eventId ? { eventId } : {}),
+        eventId,
       },
-      ...auditWrites(ctx.caller, 'Plan/confirm', args.id),
     ],
   });
-  if (!eventId)
-    throw new ContractError({
-      type: 'internal',
-      message: 'The event was saved but its id was not returned.',
-    });
   return { eventId, receipt: receipt(ctx, args.opId) };
 }

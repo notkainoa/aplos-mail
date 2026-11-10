@@ -3,8 +3,9 @@ import { hexId } from '../../sync/connect-sessions';
 import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
 import { meteredChat } from './runtime';
-import { priorityOf } from './jobs';
-import { extractThread, threadMail, writePlans, openPlans } from './plans';
+import { inputHashOf, priorityOf } from './jobs';
+import { usableZone } from '../../clock/zone';
+import { extractThread, plansForHash, threadMail, writePlans } from './plans';
 
 /**
  * The remaining `jobs` kinds (ARCH 8.1): `plan` writes extracted plans to the `plans` table (the same
@@ -29,11 +30,16 @@ export async function planJob(
   const have = services.store.read(q => {
     const info = priorityOf(q, accountId, remoteThreadId);
     if (!info) return undefined;
-    return { info, open: openPlans(q, info.threadRowId, inputHash) };
+    return { info, open: plansForHash(q, info.threadRowId, inputHash) };
   });
   if (!have) throw new AiCallError('gatePermanent', 'ai.threadGone');
   if (have.open.length) return;
-  const x = await extractThread(services, accountId, remoteThreadId);
+  const x = await extractThread(
+    services,
+    accountId,
+    remoteThreadId,
+    usableZone(services.views?.zone),
+  );
   if (x === 'empty') return;
   writePlans(services, accountId, remoteThreadId, x);
 }
@@ -92,6 +98,8 @@ export async function suggestReplyJob(
     return;
   }
   if (work.action.kind !== 'reply') return;
+  const moved = services.store.read(q => inputHashOf(q, work.info.threadRowId).hash !== inputHash);
+  if (moved) return;
   const mail = services.store.read(q => threadMail(q, accountId, work.info.threadRowId));
   if (!mail.length) throw new AiCallError('gatePermanent', 'ai.threadEmpty');
   const turn = await meteredChat(
