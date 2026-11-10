@@ -2,6 +2,7 @@ import type {
   AccountActorHost,
   BlobFiles,
   CalendarPort,
+  ClientTokens,
   Clock,
   DeadlineRegistry,
   DraftSyncPort,
@@ -68,6 +69,8 @@ export interface EngineServices {
   unsubscribe: UnsubscribePort;
   /** The data key that seals credentials, unwrapped by the host (`eng-host`). */
   keys: KeyProvider;
+  /** Writes a granted client's token to its 0600 file (`host/transports/auth.ts`, `eng-host`). Absent: `Clients/grant` is `unavailable`. */
+  clientTokens: ClientTokens;
   /** Durable blob bytes (`host/blobs.ts`, `eng-host`); only the blob runtime calls it. Absent: `Blob/*` is `unavailable`. */
   blobFiles: BlobFiles;
   /** The attachment file cache (`host/files.ts`, eng-store); `Attachment/get` and `attachment` blob handles call it. Absent: `Attachment/get` is `unavailable`. */

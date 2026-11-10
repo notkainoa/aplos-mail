@@ -37,6 +37,7 @@ import { storeLookup } from '@aplos/engine/sync/lookup';
 import { openBlobFiles } from './blobs';
 import { createLogSink, logDir } from './logsink';
 import { runNotificationLoop, type PostNotification } from './notifications';
+import { createClientTokens } from './transports/auth';
 import { watchPowerResume, type PowerSource, type WakeClock } from './power';
 import { createGoogleProvider } from './providers/google/adapter';
 import { googleWorkflowChannel, googleWorkflowMerged } from './providers/google/workflow-host';
@@ -179,6 +180,25 @@ function lateStore(raw: StorePort): { port: StorePort; use(store: StorePort): vo
 function installSalt(store: StorePort): string {
   const sql = "SELECT value FROM meta WHERE key = 'install_salt'";
   return store.read(q => q.get<{ value: string }>(sql))?.value ?? '';
+}
+
+/**
+ * The log level under `Diagnostics/verbose`: `debug` while `meta.verbose_until` is in the future (the 15-minute
+ * protocol log), `info` otherwise. A read failure or a store that is not open yet answers `info` — verbose never
+ * turns on by accident.
+ */
+function verboseLevel(store: StorePort, clock: ComposeOptions['clock']) {
+  return (): 'debug' | 'info' => {
+    try {
+      const raw = store.read(
+        q => q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'verbose_until'")?.value,
+      );
+      const until = raw === undefined ? 0 : Number(raw);
+      return Number.isFinite(until) && until > clock.now() ? 'debug' : 'info';
+    } catch {
+      return 'info';
+    }
+  };
 }
 
 const holdsAccount = (store: StorePort, id: string) =>
@@ -465,6 +485,7 @@ function engineOptions(
       calendar: accounts.calendarPort,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),
+      clientTokens: options.ports?.clientTokens ?? createClientTokens({ dataDir: options.dataDir }),
     },
   };
 }
@@ -504,7 +525,12 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   const raw = openDatabaseFile(options);
   steps.push(() => raw.close());
   const salt = installSalt(raw);
-  const log = createLogger({ sink, salt, clock: options.clock });
+  const log = createLogger({
+    sink,
+    salt,
+    clock: options.clock,
+    level: verboseLevel(raw, options.clock),
+  });
   const late = lateStore(raw);
   const loop = createTimerLoop({ clock: options.clock, log });
   const accounts = buildActors(options, late.port, log, loop);
