@@ -1,0 +1,117 @@
+/**
+ * Who a message went to (owner request 2026-11-10): the circles are the people on To and Cc with the owner first,
+ * "You" is added for mail that arrived without their address on it, and the details rows carry only what the message
+ * has (Reply-to only when it differs from the sender, Bcc only when present).
+ * Run: cd apps/desktop && npx tsx --test src/renderer/screens/reader/readerPeople.test.ts
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { Message } from '../../data';
+import {
+  MAX_CIRCLES,
+  detailDate,
+  detailRows,
+  personOf,
+  recipientCircles,
+  recipientsPhrase,
+} from './readerPeople';
+
+const ME = new Set(['alex@studio.example']);
+const JORDAN = { name: 'Jordan Park', address: 'jordan@studio.example' };
+const MINA = { name: 'Mina Cho', address: 'mina@studio.example' };
+const ALEX = { name: 'Alex Morgan', address: 'Alex@Studio.example' };
+
+function message(over: Partial<Message>): Message {
+  return {
+    id: 'm1',
+    from: JORDAN,
+    to: [ALEX],
+    cc: [],
+    date: Date.UTC(2026, 10, 10, 17, 10),
+    fromMe: false,
+    ...over,
+  } as Message;
+}
+
+test('a person is a monogram of the first letter; the owner reads "You" with their own initial', () => {
+  assert.equal(personOf(JORDAN, ME).initial, 'J');
+  assert.equal(personOf({ name: '', address: 'zed@x.example' }, ME).initial, 'Z');
+  assert.equal(personOf({ name: '“Édith”', address: 'e@x.example' }, ME).initial, 'É');
+  const me = personOf(ALEX, ME);
+  assert.deepEqual([me.name, me.initial, me.me], ['You', 'A', true]);
+});
+
+test('circles: the owner first, duplicates once, To then Cc', () => {
+  const people = recipientCircles(message({ to: [JORDAN, ALEX], cc: [MINA, JORDAN] }), ME);
+  assert.deepEqual(
+    people.map(p => p.name),
+    ['You', 'Jordan Park', 'Mina Cho'],
+  );
+});
+
+test('every address of the owner is one circle', () => {
+  const both = new Set(['alex@studio.example', 'alex@home.example']);
+  const people = recipientCircles(
+    message({ to: [ALEX], cc: [{ name: 'Alex', address: 'alex@home.example' }] }),
+    both,
+  );
+  assert.deepEqual(
+    people.map(p => p.name),
+    ['You'],
+  );
+});
+
+test('mail that arrived without the owner on it still went to them; a sent message did not', () => {
+  const arrived = recipientCircles(message({ to: [MINA] }), ME);
+  assert.deepEqual(
+    arrived.map(p => p.name),
+    ['You', 'Mina Cho'],
+  );
+  assert.equal(arrived[0]?.address, 'alex@studio.example');
+  const sent = recipientCircles(message({ fromMe: true, to: [MINA] }), ME);
+  assert.deepEqual(
+    sent.map(p => p.name),
+    ['Mina Cho'],
+  );
+});
+
+test('the phrase names who the circles stand for', () => {
+  assert.equal(
+    recipientsPhrase(recipientCircles(message({ to: [ALEX, MINA] }), ME)),
+    'you, Mina Cho',
+  );
+  assert.equal(recipientsPhrase([]), 'no one');
+  const many = ['a', 'b', 'c', 'd', 'e'].map(n =>
+    personOf({ name: n, address: `${n}@x.example` }, ME),
+  );
+  assert.equal(
+    recipientsPhrase(many),
+    'a, b, c and 2 more',
+    'a long list never becomes a paragraph',
+  );
+  assert.ok(MAX_CIRCLES >= 3);
+});
+
+test('details: From, To, Cc, Date; Bcc and Reply-to only when present, Reply-to only when it differs', () => {
+  const plain = detailRows(message({ to: [ALEX], cc: [MINA] }), ME);
+  assert.deepEqual(
+    plain.map(r => r.label),
+    ['From', 'To', 'Cc', 'Date'],
+  );
+  const same = detailRows(message({ replyTo: [JORDAN] }), ME);
+  assert.ok(
+    !same.some(r => r.label === 'Reply-to'),
+    'the sender replying to themselves is no news',
+  );
+  const full = detailRows(message({ bcc: [MINA], replyTo: [MINA] }), ME);
+  assert.deepEqual(
+    full.map(r => r.label),
+    ['From', 'To', 'Bcc', 'Reply-to', 'Date'],
+  );
+});
+
+test('the date reads "Nov 10, 9:10 AM" and takes the year when it is another year', () => {
+  const ms = new Date(2026, 10, 10, 9, 10).getTime();
+  assert.equal(detailDate(ms, new Date(2026, 10, 12).getTime()), 'Nov 10, 9:10 AM');
+  assert.equal(detailDate(ms, new Date(2027, 0, 5).getTime()), 'Nov 10, 2026, 9:10 AM');
+});
