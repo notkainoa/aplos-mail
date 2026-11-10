@@ -1775,3 +1775,7 @@ How to apply: the budget is a growth alarm, not a limit of the shipped app (the 
 ## 2026-11-10: Home keeps the Low importance band visible at zero (ui-home)
 
 A band hidden at 0 left no way into Low importance, which the owner reported as "no Low importance section". Home now shows the band while it has other mail: 0 on the right, a click or Return-free open (an empty band is not a keyboard cursor stop, so the cursor never settles on nothing) into the sheet's "No low-importance mail" with "Back to Home". This departs from "empty sections don't render" (DESIGN 7.2) for this one band, on purpose. The cause of the mixed list itself (the app never switched the lane rules on) is fixed in the engine and host PR.
+
+## 2026-11-10: Low band at zero is judged on view totals and reachable by Return (ui-home)
+
+Follow-up to the entry above, from the review of #388 (merged before these fixes landed). The band's visibility now comes from the view's totals (`layoutOf` reads `total` and `low.count`, the same test as the empty Home) instead of the windowed ids, so section headers and the band can never disagree. An empty band is a cursor stop (J/K walk onto it, Return opens "No low-importance mail", so the Return in its tooltip is true), but the cursor never settles on it by itself: when the row under the cursor leaves, it goes to the row above. `LowBand`'s optional `commandId` (#402) is not needed by Home.

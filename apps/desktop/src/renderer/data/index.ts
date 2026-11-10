@@ -386,7 +386,7 @@ export interface UseHomeOptions {
 export interface HomeView {
   /** Do now, Important updates, Follow up, always all three in order; render those with `visible`. The Low band sits between Important updates and Follow up (DESIGN 7.2). */
   readonly sections: readonly HomeSectionView[];
-  /** The Low importance band; count 0 hides it. */
+  /** The Low importance band; at count 0 it still shows while the view has other mail, and opens "No low-importance mail". */
   readonly low: LowBandView;
   /** Rows by id (thread rows). */
   readonly rows: ReadonlyMap<ThreadId, ThreadRow>;
