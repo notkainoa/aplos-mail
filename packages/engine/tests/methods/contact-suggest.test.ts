@@ -178,3 +178,30 @@ test('Contact/suggest: a shared address keeps every count and every name; accent
   );
   file.cleanup();
 });
+
+test('Contact/suggest: LIKE metacharacters are literal; a mixed-case owned address is excluded', () => {
+  const caps = { ...accountWrite, address: 'Owner@Mail.Example' } as const;
+  const { services, file } = world([
+    caps,
+    ...folderWrites.map(f => ({ ...f })),
+    msg('i1', 'T-1', 1, { from: { address: '100%@mail.example' } }),
+    msg('i2', 'T-2', 2, { from: { address: 'under_score@mail.example' } }),
+    msg('i3', 'T-3', 3, { from: { address: 'back\\slash@mail.example' } }),
+    msg('i4', 'T-4', 4, { from: { address: 'owner@mail.example' } }),
+  ]);
+  // "100%" matches the literal address only; % is not a wildcard here.
+  assert.deepEqual(
+    suggest({ query: '100%', limit: 10 }, services).list.map(r => r.address),
+    ['100%@mail.example'],
+  );
+  // "_" matches the literal underscore, not any character.
+  assert.deepEqual(
+    suggest({ query: 'under_score', limit: 10 }, services).list.map(r => r.address),
+    ['under_score@mail.example'],
+  );
+  // The owner's own address never surfaces even when accounts.address is mixed-case in the table.
+  assert.ok(
+    !suggest({ query: '', limit: 10 }, services).list.some(r => r.address === 'owner@mail.example'),
+  );
+  file.cleanup();
+});

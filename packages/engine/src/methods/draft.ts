@@ -42,14 +42,14 @@ export function suggest(
       ? q.all<CorrRow>(
           `SELECT address, name, sent_to AS sent, received_from AS received, last_sent_at AS last
            FROM correspondents WHERE account_id = ? AND (address LIKE ? ESCAPE '\\' OR name IS NOT NULL)
-             AND address NOT IN (SELECT address FROM accounts)`,
+             AND address NOT IN (SELECT lower(address) FROM accounts)`,
           args.accountId,
           like,
         )
       : q.all<CorrRow>(
           `SELECT address, name, sent_to AS sent, received_from AS received, last_sent_at AS last
            FROM correspondents WHERE (address LIKE ? ESCAPE '\\' OR name IS NOT NULL)
-             AND address NOT IN (SELECT address FROM accounts)`,
+             AND address NOT IN (SELECT lower(address) FROM accounts)`,
           like,
         ),
   );
