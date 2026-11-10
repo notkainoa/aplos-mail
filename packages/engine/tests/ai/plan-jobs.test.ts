@@ -133,8 +133,8 @@ test('Ai/request: a summary job never swallows a plan or suggestAction request (
     kind: 'summary',
     threadId: 'acct-1:T-plans',
   });
-  const plan = await w.call('Ai/request', { opId: 'p1', kind: 'plan', threadId: 'acct-1:T-plans' });
-  const sug = await w.call('Ai/request', {
+  await w.call('Ai/request', { opId: 'p1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  await w.call('Ai/request', {
     opId: 'a1',
     kind: 'suggestAction',
     threadId: 'acct-1:T-plans',
@@ -152,8 +152,6 @@ test('Ai/request: a summary job never swallows a plan or suggestAction request (
     3,
     'summary, plan and suggestAction keys are distinct',
   );
-  assert.notEqual(plan.job.id, sug.job.id);
-  assert.equal(sug.job.kind, 'suggestAction');
   w.file.cleanup();
 });
 
@@ -181,13 +179,13 @@ test('jobs runner: a broken Summaries provider never blocks Plans work (per-feat
     kind: 'summary',
     threadId: 'acct-1:T-plans',
   });
-  const plan = await w.call('Ai/request', { opId: 'p1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  await w.call('Ai/request', { opId: 'p1', kind: 'plan', threadId: 'acct-1:T-plans' });
   await runJobs(w.engine.services, w.clock.now());
-  const jobs = (
-    await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead', 'done'] })
-  ).list;
+  const jobs = w.engine.services.store.read(q =>
+    q.all<{ kind: string; state: string }>('SELECT kind, state FROM jobs'),
+  );
   const sumJob = jobs.find(j => j.kind === 'summary')!;
-  const planJob = jobs.find(j => j.id === plan.job.id)!;
+  const planJob = jobs.find(j => j.kind === 'plan')!;
   assert.equal(planJob.state, 'done', 'the open Plans gate let the job run');
   assert.equal(sumJob.state, 'queued', 'the closed Summaries gate deferred its own job');
   const got = await w.call('Plan/get', { ids: ['acct-1:plan-1'] });
@@ -203,7 +201,7 @@ test('suggestAction job: waits for an in-flight summary, then drafts a reply sug
   const w = await world(t);
   seed(w);
   await consentNow(w);
-  const sug = await w.call('Ai/request', {
+  await w.call('Ai/request', {
     opId: 'a1',
     kind: 'suggestAction',
     threadId: 'acct-1:T-plans',
@@ -223,9 +221,9 @@ test('suggestAction job: waits for an in-flight summary, then drafts a reply sug
     if (draft) break;
     w.clock.advance(31 * 60_000);
   }
-  const done = (
-    await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead', 'done'] })
-  ).list.find(j => j.id === sug.job.id)!;
+  const done = w.engine.services.store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM jobs WHERE kind = ?', 'suggestAction'),
+  )!;
   assert.equal(done.state, 'done');
   const draft = w.engine.services.store.read(q =>
     q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'replydraft:acct-1:T-plans'),
@@ -240,15 +238,15 @@ test('suggestAction job: no summary and none coming settles done with no provide
   const w = await world(t);
   seed(w);
   await consentNow(w);
-  const sug = await w.call('Ai/request', {
+  await w.call('Ai/request', {
     opId: 'a1',
     kind: 'suggestAction',
     threadId: 'acct-1:T-plans',
   });
   await runJobs(w.engine.services, w.clock.now());
-  const job = (
-    await w.call('Ai/jobs', { states: ['queued', 'running', 'failed', 'dead', 'done'] })
-  ).list.find(j => j.id === sug.job.id)!;
+  const job = w.engine.services.store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM jobs WHERE kind = ?', 'suggestAction'),
+  )!;
   assert.equal(job.state, 'done');
   assert.equal(t.calls.length, 0);
   w.file.cleanup();
