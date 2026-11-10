@@ -1,5 +1,4 @@
 import type { Input, Output } from '@aplos/contract';
-import { buildBundle } from '../diag/bundle/build';
 import { auditWrites } from '../host/audit';
 import { nonce, type AreaHandlers, type MethodContext } from './types';
 
@@ -15,7 +14,9 @@ const VERBOSE_MS = 15 * 60_000;
 const KEY = 'verbose_until';
 const BUNDLE_NAME = 'aplos-diagnostics.json';
 
-const bundle = (ctx: MethodContext) => buildBundle(ctx.services, ctx.services.clock.now());
+/** The bundle builder loads on first use (`diag/bundle/` is a lazy dir — engine core is inside its budget). */
+const bundle = async (ctx: MethodContext) =>
+  (await import('../diag/bundle/build')).buildBundle(ctx.services, ctx.services.clock.now());
 
 function verbose(
   args: Input<'Diagnostics/verbose'>,
@@ -37,7 +38,7 @@ function verbose(
 export const handlers: AreaHandlers<'diagnostics'> = {
   'Diagnostics/preview': (_args, ctx) => bundle(ctx),
   'Diagnostics/export': async (_args, ctx) => {
-    const bytes = new TextEncoder().encode(JSON.stringify(bundle(ctx)));
+    const bytes = new TextEncoder().encode(JSON.stringify(await bundle(ctx)));
     const put = await ctx.services.blobs.put({
       caller: ctx.caller,
       connectionId: ctx.connectionId,

@@ -131,7 +131,11 @@ const lazyModules = [
 ];
 // Whole folders that are lazy: eng-ai's implementation (ask loop, jobs runner, prompts, usage) is reached only through
 // `import()` from the thin dispatchers in `ai/module.ts` and `methods/`, so a new file there needs no entry above.
-const lazyDirs = [join(src, 'ai', 'impl') + sep];
+const lazyDirs = [
+  join(src, 'ai', 'impl') + sep,
+  // eng-host's diagnostics bundle builder loads on first Diagnostics/* call (`import()` in methods/diagnostics.ts).
+  join(src, 'diag', 'bundle') + sep,
+];
 const isLazyFile = (file: string) => {
   const abs = resolve(file);
   return lazyModules.includes(abs) || lazyDirs.some(dir => abs.startsWith(dir));
