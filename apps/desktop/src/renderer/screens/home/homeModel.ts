@@ -131,6 +131,16 @@ function rowsOf(ids: readonly ThreadId[], section: SectionKey): HomeItem[] {
   return ids.map(id => ({ kind: 'row', id, section }));
 }
 
+/**
+ * Whether the Low band shows: when it holds mail, and also at 0 while Home has other mail, so Low importance is always
+ * one click away and opens the sheet's "No low-importance mail". An empty band is not a cursor stop (the cursor never
+ * settles on nothing), and an empty Home shows the handled line instead.
+ */
+export function showsLowBand(layout: HomeLayout): boolean {
+  const others = [layout.do, layout.fromLater, layout.update, layout.follow];
+  return layout.lowCount > 0 || others.some(ids => ids.length > 0);
+}
+
 /** Every cursor stop, top to bottom: Do now, Back from Later, Important updates, the Low band, Follow up. */
 export function buildItems(layout: HomeLayout): HomeItem[] {
   const low: HomeItem[] = layout.lowCount > 0 ? [{ kind: 'low' }] : [];
