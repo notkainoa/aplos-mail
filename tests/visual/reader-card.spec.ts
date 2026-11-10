@@ -100,4 +100,19 @@ test.describe('reader card header', () => {
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
   });
+
+  test('↑ moves the cursor to the earlier card, which shows a quiet accent edge; the latest shows none until then', async ({
+    page,
+  }) => {
+    await open(page);
+    const cards = page.locator(`${LETTER} .ui-thread-message`);
+    const edge = (index: number) =>
+      cards.nth(index).evaluate(el => getComputedStyle(el).boxShadow.includes('inset'));
+    expect(await edge((await cards.count()) - 1), 'the latest card starts without an edge').toBe(
+      false,
+    );
+    await page.keyboard.press('ArrowUp');
+    await expect(cards.nth((await cards.count()) - 2)).toHaveAttribute('data-cursor', 'true');
+    expect(await edge((await cards.count()) - 2)).toBe(true);
+  });
 });

@@ -245,7 +245,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         {/* The messages without the reply: a layout hook for the cards (reader.css `data-cards`). */}
         <div className="aplos-reader__messages">
           {earlier.map(m => message(m, ui.cursor === m.id))}
-          {message(latest, ui.cursor === null || ui.cursor === latest.id)}
+          {message(latest, ui.cursor === latest.id)}
         </div>
         <ReplyArea
           threadId={props.threadId}

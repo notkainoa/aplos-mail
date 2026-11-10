@@ -10,7 +10,7 @@
 }
 .aplos-reader {
   /* The sender mark's width and its gap: where a plain body's text starts (below). */
-  --plain-indent: calc(var(--control-xs) + var(--space-2));
+  --plain-indent: 0px;
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -196,9 +196,15 @@
 .aplos-reader[data-cards='a'] .aplos-reader__messages > .ui-thread-message:first-child {
   margin-top: 0;
 }
-/* Owner sketch 2026-11-10: no blue rail beside the sender; the card is the thing in hand. */
+/* Owner sketch 2026-11-10: no blue rail beside the sender. The card ↑/↓ walks to takes a quiet accent edge instead, so the
+   message O acts on is always seen; the latest message (where the cursor starts) shows nothing until a key moves it. */
 .aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true']::before {
   content: none;
+}
+.aplos-reader[data-cards='a'] .ui-thread-message[data-cursor='true'] {
+  box-shadow:
+    var(--elev-pane),
+    inset 0 0 0 var(--hairline) var(--accent);
 }
 .aplos-reader[data-cards='a'] .ui-thread-message__attachments {
   padding-top: var(--space-5);
@@ -419,4 +425,12 @@
 :root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-sender-mark {
   --circle-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
   background-color: var(--circle-fill);
+}
+
+/* Only a message with the card head (the sender's mark) indents its plain body to the name's column. */
+.aplos-reader
+  .ui-thread-message:has(
+    > .ui-thread-message__head > .ui-thread-message__line[data-layout='card']
+  ) {
+  --plain-indent: calc(var(--control-xs) + var(--space-2));
 }
