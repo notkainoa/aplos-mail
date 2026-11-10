@@ -191,7 +191,17 @@ function detailEditing(
   ctx: CalendarContext,
 ): { accountId: string } | null {
   if (detail?.kind !== 'event') return null;
-  const account = editingOff(ctx.accounts, ctx.events.get(detail.id)?.accountId);
+  const event = ctx.events.get(detail.id);
+  if (!event) return null;
+  // Only where the missing scope is all that stands between the owner and a change: an event
+  // without a write the grant would unlock (or one on a read-only calendar, where only an
+  // invite's reply can still be written) carries no standing nag (review7 6).
+  const calendar = ctx.calendars.find(c => c.id === event.calendarId);
+  const writable =
+    event.can.rsvp ||
+    (!calendar?.readOnly && (event.can.edit || event.can.move || event.can.delete));
+  if (!writable) return null;
+  const account = editingOff(ctx.accounts, event.accountId);
   return account ? { accountId: account.id } : null;
 }
 

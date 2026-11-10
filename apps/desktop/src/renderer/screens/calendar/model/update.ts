@@ -100,13 +100,14 @@ function onEscape(state: CalendarState): Transition {
   return unhandled(state);
 }
 
-function menuHide(s: CalendarState, id: string): Transition {
+function menuHide(s: CalendarState, id: string, ctx: CalendarContext): Transition {
   return done({ ...closed(s), selectedId: null }, [
     {
       kind: 'eventHide',
       id,
       optimistic: { id, remove: true },
       toast: { kind: 'info', message: 'Hidden in Aplos', undoable: true },
+      accountId: ctx.events.get(id)?.accountId,
     },
   ]);
 }
@@ -138,7 +139,7 @@ function onMenu(state: CalendarState, action: ActionOf<'menu'>, ctx: CalendarCon
     changeReply: () =>
       done({ ...s, rsvp: { eventId: entry.id, answer: entry.myReply ?? null, changing: true } }),
     notNow: () => menuNotNow(s, entry.id),
-    hide: () => menuHide(s, entry.id),
+    hide: () => menuHide(s, entry.id, ctx),
     copyLink: () => menuCopyLink(s, entry.id, ctx),
   };
   return items[action.item]();
@@ -202,6 +203,22 @@ function onEdit(state: CalendarState, _action: ActionOf<'edit'>, ctx: CalendarCo
   return done({ ...closed(state), selectedId: target.id, editor: draftFromEvent(event) });
 }
 
+/**
+ * `calendar.conflict` on an editor save: select the event and re-run 'edit' against the newer copy
+ * already in the store, but take only the state — its locked/editing-gate notices would double the
+ * conflict's own sentence (review7 5). Unhandled when no editor can open, so the notice stands alone.
+ */
+function onReopenEditor(
+  state: CalendarState,
+  action: ActionOf<'reopenEditor'>,
+  ctx: CalendarContext,
+): Transition {
+  const sel = onSelect(state, { type: 'select', id: action.eventId });
+  const t = onEdit(sel.state, { type: 'edit' }, ctx);
+  if (t.state === sel.state || t.state.editor === null) return done(sel.state, [], false);
+  return done({ ...t.state, editor: { ...t.state.editor, error: action.note } });
+}
+
 function onEditorPatch(state: CalendarState, action: ActionOf<'editor'>): Transition {
   if (!state.editor) return unhandled(state);
   return done({ ...state, editor: patchDraft(state.editor, action.patch) });
@@ -234,6 +251,7 @@ function onConfirmPlan(
       planId,
       calendarId: ctx.defaultCalendarId,
       optimistic: { id: entry.id, remove: true },
+      accountId,
     },
   ]);
 }
@@ -338,6 +356,7 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   // The conflict notice lands on the re-opened editor's own line (writeErrors, calendar.conflict).
   editorNote: (s, a) =>
     s.editor ? done({ ...s, editor: { ...s.editor, error: a.message } }) : unhandled(s),
+  reopenEditor: onReopenEditor,
   enableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
   delete: (s, _a, ctx) => deleteTransition(s, ctx),
   move: (s, a, ctx) => moveTransition(s, ctx, a.id, a.start, a.end),

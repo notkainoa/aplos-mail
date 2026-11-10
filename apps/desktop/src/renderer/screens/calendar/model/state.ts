@@ -130,6 +130,8 @@ export type CalendarAction =
   | { type: 'editorSave' }
   | { type: 'editorCancel' }
   | { type: 'editorNote'; message: string }
+  /** `calendar.conflict` on a save: re-open the editor on the newer copy with `note` as its error line. */
+  | { type: 'reopenEditor'; eventId: string; note: string }
   /** The detail's 'Enable editing' button: opens the grant sheet for this account. */
   | { type: 'enableEditing'; accountId: string }
   | { type: 'delete' }
@@ -199,9 +201,23 @@ export type CalendarEffect =
   /** The detail's Enable editing button: opens the grant sheet for this account. */
   | { kind: 'enableEditing'; accountId: string }
   | { kind: 'calendarSet'; id: string; shown: boolean; toast?: ToastPlan }
-  | { kind: 'planConfirm'; planId: string; calendarId: string | null; optimistic: OptimisticChange }
+  | {
+      kind: 'planConfirm';
+      planId: string;
+      calendarId: string | null;
+      optimistic: OptimisticChange;
+      /** The calendar the plan would join: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
+    }
   | { kind: 'planDismiss'; planId: string; optimistic: OptimisticChange }
-  | { kind: 'eventHide'; id: string; optimistic: OptimisticChange; toast: ToastPlan }
+  | {
+      kind: 'eventHide';
+      id: string;
+      optimistic: OptimisticChange;
+      toast: ToastPlan;
+      /** The event's account: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
+    }
   | { kind: 'openThread'; threadId: string }
   | { kind: 'openUrl'; url: string }
   | { kind: 'copy'; text: string; toast: ToastPlan }
@@ -235,6 +251,14 @@ export function railEntry(
   if (shownView(state) !== 'day') return undefined;
   const day = entriesOnDay(ctx.entries, state.anchor);
   return day.find(e => e.id === state.selectedId) ?? day[0];
+}
+
+/**
+ * `calendar.eventGone` closes the detail only when it is the gone event's own: the open popover or
+ * the RSVP choice names it — never an unrelated detail (review7 4).
+ */
+export function detailIsFor(state: CalendarState, eventId: string): boolean {
+  return state.detailId === eventId || state.rsvp?.eventId === eventId;
 }
 
 /** The open detail: the popover's entry, or the day rail's. */
