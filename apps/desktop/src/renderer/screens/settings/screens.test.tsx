@@ -222,7 +222,7 @@ describe('write failure and destructive steps', () => {
     assert.equal(await actions.set({ mail: { undoSendSeconds: 20 } }, 'change undo send'), false);
     assert.deepEqual(overlays, [{ mail: { undoSendSeconds: 20 } }, null]);
     assert.equal(failure!.op, 'change undo send');
-    failure!.retry();
+    failure!.retry?.();
     await new Promise(r => setTimeout(r, 0));
     assert.equal(calls.length, 2);
   });
