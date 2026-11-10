@@ -405,3 +405,11 @@
 .aplos-reader[data-stage='one-by-one'] .ui-reply-stub {
   display: none;
 }
+/* The card is as wide as the sketch draws it: nearly the pane, under the top bar, instead of the 640 px reading column. */
+.aplos-reader[data-stage='one-by-one'] {
+  width: min(calc(100% - 2 * var(--space-7)), calc(var(--space-10) * 18));
+  padding-top: var(--space-2);
+}
+.aplos-reader[data-stage='one-by-one'] .aplos-reader__thread {
+  margin-top: 0;
+}
