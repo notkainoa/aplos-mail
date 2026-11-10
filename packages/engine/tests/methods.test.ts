@@ -124,9 +124,10 @@ test('dispatch denies by default: scope, host-only, uiOnly, secret and MCP are c
   // Every MCP tool is past the gate, whatever its handler does; the first one still a stub is reached and says so.
   const outcomes = await Promise.all(mcpMethods.map(m => outcomeOf(m, mcp)));
   outcomes.forEach((outcome, i) => assert.ok(!forbidden(outcome), `${mcpMethods[i]} is reachable`));
+  // Every MCP tool is past the gate, whatever its handler does; a stub still answers `notImplemented`.
+  // Once the last stub is implemented nothing remains to check here.
   const stub = mcpMethods.find((_, i) => reached(outcomes[i]));
-  assert.ok(stub, 'a stub MCP method is left to check');
-  await assert.rejects(dispatch(stub, {}, mcp), reached);
+  if (stub) await assert.rejects(dispatch(stub, {}, mcp), reached);
 });
 
 test('every engine method is refused to a caller that holds no scope', async () => {
