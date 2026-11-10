@@ -127,3 +127,54 @@ test("Contact/suggest: the account filter keeps one account's rows; disconnect p
   );
   file.cleanup();
 });
+
+test('Contact/suggest: a shared address keeps every count and every name; accents and owned addresses behave', () => {
+  const second = {
+    ...accountWrite,
+    id: 'acct-2',
+    address: 'two@mail.example',
+  } as const;
+  const { services, file } = world([
+    accountWrite,
+    second,
+    ...folderWrites.map(f => ({ ...f })),
+    ...folderWrites.map(f => ({ ...f, accountId: 'acct-2' })),
+    // acct-1 knows the address as "Amy" with two inbound; acct-2 as "Zamy" with one.
+    msg('i1', 'T-1', 1, { from: { address: 'shared@mail.example', name: 'Amy One' } }),
+    msg('i2', 'T-1', 2, { from: { address: 'shared@mail.example', name: 'Amy One' } }),
+    {
+      ...msg('j1', 'T-9', 3, { from: { address: 'shared@mail.example', name: 'Zamy Two' } }),
+      accountId: 'acct-2',
+    } as never,
+    // An accented name, reachable by its lowercase prefix.
+    msg('i3', 'T-2', 4, { from: { address: 'x@mail.example', name: 'Élodie Martin' } }),
+    // Mail between the owner's own accounts: neither address may surface.
+    msg('i4', 'T-3', 5, { from: { address: 'two@mail.example' } }),
+  ]);
+  // "amy" matches only the Amy variant but keeps both accounts' counts (2 + 1).
+  const amy = suggest({ query: 'amy', limit: 10 }, services).list;
+  assert.equal(amy.length, 1);
+  assert.equal(amy[0].receivedFrom, 3);
+  assert.equal(amy[0].name, 'Amy One');
+  // "zam" picks the Zamy display name with the same totals.
+  const zam = suggest({ query: 'zam', limit: 10 }, services).list;
+  assert.equal(zam.length, 1);
+  assert.equal(zam[0].name, 'Zamy Two');
+  assert.equal(zam[0].receivedFrom, 3);
+  // Accented word prefix folds in JS, not the SQL prefilter.
+  const elo = suggest({ query: 'élo', limit: 10 }, services).list;
+  assert.deepEqual(
+    elo.map(r => r.address),
+    ['x@mail.example'],
+  );
+  // The owner's second account address is never suggested, scoped or not.
+  assert.ok(
+    !suggest({ query: '', limit: 10 }, services).list.some(r => r.address === 'two@mail.example'),
+  );
+  assert.ok(
+    !suggest({ query: '', accountId: 'acct-2', limit: 10 }, services).list.some(
+      r => r.address === 'owner@mail.example',
+    ),
+  );
+  file.cleanup();
+});

@@ -14,60 +14,74 @@ interface CorrRow {
   last: number | null;
 }
 
-/** LIKE-escape for the prefix pre-filter; the exact name-word rule is applied in JS below. */
+/** LIKE-escape for the address-prefix pre-filter; the name-word rule is applied in JS below. */
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, c => `\\${c}`);
 
+const wordMatch = (name: string | null, query: string) =>
+  (name ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .some(w => w.startsWith(query));
+
 /**
- * `Contact/suggest` (the `correspondents` table, ARCH 3.2): who the owner wrote to and heard from. With an
- * `accountId` only that account's rows count; without one the counts sum per address across accounts (R2G-3).
- * Ranking is by how much — `sent_to * 2 + received_from`, then the most recent sent mail, then the address —
- * matching the start of the address or of any word in the name. Read-only, no network, no AI.
+ * `Contact/suggest` (the `correspondents` table, ARCH 3.2): who the owner wrote to and heard from. Rows are read
+ * per account and folded together in JS, so a shared address keeps every account's counts and every name it was
+ * seen under — the query matches the start of the address or of any word of any of those names (SQLite `LIKE`
+ * does not fold non-ASCII case, so names are matched here, not in SQL). Addresses of any connected account are
+ * never suggested back to the owner. Ranking: `sent_to * 2 + received_from`, then most recent sent mail, then
+ * the address. Read-only, no network, no AI.
  */
 export function suggest(
   args: Input<'Contact/suggest'>,
   services: EngineServices,
 ): Output<'Contact/suggest'> {
   const query = args.query.trim().toLowerCase();
-  const like = `%${likeEscape(query)}%`;
+  const like = `${likeEscape(query)}%`;
   const rows = services.store.read(q =>
     args.accountId
       ? q.all<CorrRow>(
           `SELECT address, name, sent_to AS sent, received_from AS received, last_sent_at AS last
-           FROM correspondents WHERE account_id = ? AND (address LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')`,
+           FROM correspondents WHERE account_id = ? AND (address LIKE ? ESCAPE '\\' OR name IS NOT NULL)
+             AND address NOT IN (SELECT address FROM accounts)`,
           args.accountId,
-          like,
           like,
         )
       : q.all<CorrRow>(
-          `SELECT address, max(name) AS name, sum(sent_to) AS sent, sum(received_from) AS received,
-                  max(last_sent_at) AS last
-           FROM correspondents WHERE (address LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\') GROUP BY address`,
-          like,
+          `SELECT address, name, sent_to AS sent, received_from AS received, last_sent_at AS last
+           FROM correspondents WHERE (address LIKE ? ESCAPE '\\' OR name IS NOT NULL)
+             AND address NOT IN (SELECT address FROM accounts)`,
           like,
         ),
   );
-  const starts = (r: CorrRow) =>
-    !query ||
-    r.address.startsWith(query) ||
-    (r.name ?? '')
-      .toLowerCase()
-      .split(/\s+/)
-      .some(w => w.startsWith(query));
+  const byAddr = new Map<
+    string,
+    { sent: number; received: number; last: number; names: string[] }
+  >();
+  for (const r of rows) {
+    const a = byAddr.get(r.address) ?? { sent: 0, received: 0, last: 0, names: [] };
+    a.sent += r.sent;
+    a.received += r.received;
+    a.last = Math.max(a.last, r.last ?? 0);
+    if (r.name) a.names.push(r.name);
+    byAddr.set(r.address, a);
+  }
+  const matches = (address: string, names: string[]) =>
+    !query || address.startsWith(query) || names.some(n => wordMatch(n, query));
   return {
-    list: rows
-      .filter(starts)
+    list: [...byAddr]
+      .filter(([address, a]) => matches(address, a.names))
       .sort(
-        (a, b) =>
+        ([aa, a], [bb, b]) =>
           b.sent * 2 + b.received - (a.sent * 2 + a.received) ||
-          (b.last ?? 0) - (a.last ?? 0) ||
-          a.address.localeCompare(b.address),
+          b.last - a.last ||
+          aa.localeCompare(bb),
       )
       .slice(0, args.limit ?? 8)
-      .map(r => ({
-        address: r.address,
-        ...(r.name ? { name: r.name } : {}),
-        sentTo: r.sent,
-        receivedFrom: r.received,
+      .map(([address, a]) => ({
+        address,
+        ...(a.names.length ? { name: a.names.find(n => wordMatch(n, query)) ?? a.names[0] } : {}),
+        sentTo: a.sent,
+        receivedFrom: a.received,
       })),
   };
 }
