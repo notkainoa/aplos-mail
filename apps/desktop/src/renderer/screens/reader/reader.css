@@ -272,7 +272,7 @@
   padding-left: var(--space-2);
 }
 .aplos-circle {
-  --circle-ring: var(--paper);
+  --circle-ring: var(--canvas);
   --circle-fill: var(--sunken);
   box-sizing: border-box;
   display: inline-flex;
@@ -296,7 +296,10 @@
 .aplos-circle[data-me='true'] {
   color: var(--ink);
 }
-:root[data-theme='dark'] .aplos-circle {
+.aplos-reader[data-cards='a'] .aplos-circle {
+  --circle-ring: var(--paper);
+}
+:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-circle {
   --circle-ring: var(--raised);
 }
 
@@ -349,9 +352,4 @@
     background-color: var(--hover);
     color: var(--ink-2);
   }
-}
-
-/* Without cards the circles sit on the pane itself, so their ring is the pane's colour. */
-.aplos-reader[data-cards='off'] .aplos-circle {
-  --circle-ring: var(--canvas);
 }

@@ -194,7 +194,7 @@
   margin-top: var(--space-4);
 }
 /* Without cards the head is flush with the article, so its rail sits where every other card's does. */
-.aplos-reader[data-cards='off']
+.aplos-reader:not([data-cards='a'])
   .ui-thread-message[data-titled='true'][data-cursor='true']
   .ui-thread-message__head::before {
   left: calc(-1 * var(--space-5));
