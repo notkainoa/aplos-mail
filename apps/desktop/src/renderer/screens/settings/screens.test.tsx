@@ -477,7 +477,7 @@ describe('states, copy and design rules', () => {
       /role="switch"[^>]*aria-checked="true"[^>]*aria-labelledby="set-general-(allowTools|openAtLogin|menuBar)"/,
     );
     const help = render('capabilities-off-help');
-    assert.equal((help.match(/Not available yet/g) ?? []).length, 2);
+    assert.equal((help.match(/Not available yet/g) ?? []).length, 3);
     assert.doesNotMatch(help, />Preview<|>Open</);
     assert.doesNotMatch(help, /role="switch"[^>]*set-help-verboseLogging/);
   });

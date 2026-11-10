@@ -167,12 +167,11 @@ export function verboseOn(verbose: { readonly until?: number } | undefined, now:
 
 /** The verbose-logging row's sentence: what it does, and when it turns itself off. */
 export function verboseLine(verbose: { readonly until?: number } | undefined, now: number): string {
-  if (!verboseOn(verbose, now))
-    return 'Headers only, never mail. Turns itself off after 15 minutes.';
+  if (!verboseOn(verbose, now)) return 'Headers only, never mail. Turns off in 15 minutes.';
   if (verbose?.until === undefined) return 'On. Headers only, never mail.';
   const at = new Date(verbose.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `On until ${at}. Headers only, never mail.`;
 }
 
-export const DATA_EXPORT_LINE = 'Accounts, settings and drafts in one file. No keys.';
+export const DATA_EXPORT_LINE = 'Accounts, settings, drafts, Ask conversations. No keys.';
 export const DATA_EXPORTED_LINE = 'Saved. It holds no passwords, keys or tokens.';

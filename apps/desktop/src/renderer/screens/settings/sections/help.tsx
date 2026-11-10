@@ -114,7 +114,9 @@ export function Help(props: SectionProps) {
               />
             )}
           />
-        ) : null}
+        ) : (
+          <NotAvailable section="help" anchor="verboseLogging" />
+        )}
         {hasCapability(data.session, 'queueInspector') ? (
           <Row
             section="help"

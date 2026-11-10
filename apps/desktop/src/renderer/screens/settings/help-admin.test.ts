@@ -80,7 +80,7 @@ describe('ui-settings: help and support', () => {
     assert.equal(verboseOn(h.data().verbose, 1_000), true);
     assert.equal(verboseOn(h.data().verbose, 1_000 + 15 * 60_000), false, 'off at the time given');
     assert.match(verboseLine(h.data().verbose, 1_000), /^On until .+Headers only/);
-    assert.match(verboseLine(h.data().verbose, 2_000_000), /after 15 minutes/);
+    assert.match(verboseLine(h.data().verbose, 2_000_000), /in 15 minutes/);
     await h.actions.setVerbose(false);
     assert.equal(h.data().verbose, undefined);
 
@@ -94,6 +94,29 @@ describe('ui-settings: help and support', () => {
     await bad.actions.setVerbose(true);
     assert.equal(bad.data().verbose, undefined, 'the switch stays off when the engine refused');
     assert.equal(bad.failures.at(-1)?.op, 'change verbose logging');
+
+    const keeps = harness({
+      ports: {
+        verboseSet: async on => {
+          if (!on) throw new Error('nope');
+          return { until: 5_000_000 };
+        },
+      },
+    });
+    await keeps.actions.setVerbose(true);
+    await keeps.actions.setVerbose(false);
+    assert.equal(verboseOn(keeps.data().verbose, 1_000), true, 'still on when turning off failed');
+
+    const resolvers: ((r: { until?: number }) => void)[] = [];
+    const slow = harness({
+      ports: { verboseSet: () => new Promise(r => resolvers.push(r)) },
+    });
+    const first = slow.actions.setVerbose(true);
+    assert.equal(await slow.actions.setVerbose(false), false, 'a second toggle waits');
+    resolvers[0]({ until: 9_000_000 });
+    await first;
+    assert.equal(resolvers.length, 1);
+    assert.equal(slow.view().busy.verbose, false);
   });
 
   test('help.exportData – Export my data saves once at a time; a refusal says so with Retry', async () => {

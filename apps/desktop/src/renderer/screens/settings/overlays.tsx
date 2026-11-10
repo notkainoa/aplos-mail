@@ -201,6 +201,7 @@ function DiagnosticsDialog({
       size="md"
       title="Export diagnostics"
       description={DIAGNOSTICS_NOTE}
+      initialFocusId="set-diag-save"
       onClose={() => actions.closeDiagnostics()}
       footer={
         <>
@@ -220,6 +221,7 @@ function DiagnosticsDialog({
           />
           <Button
             variant="filled"
+            id="set-diag-save"
             label="Save report"
             keys="Return"
             keyHint="always"

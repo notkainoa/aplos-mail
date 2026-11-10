@@ -636,10 +636,13 @@ export function createController(deps: ControllerDeps) {
       }).finally(() => busy('diagnostics', false));
     },
     setVerbose(on: boolean) {
+      // One call at a time: two in flight could answer out of order and leave the switch saying the opposite.
+      if (view().busy.verbose) return Promise.resolve(false);
+      busy('verbose', true);
       return guard('change verbose logging', async () => {
         const { until } = await ports.verboseSet(on);
         deps.setData({ verbose: on ? { until } : undefined });
-      });
+      }).finally(() => busy('verbose', false));
     },
     exportData() {
       if (view().busy.dataExport) return Promise.resolve(false);
