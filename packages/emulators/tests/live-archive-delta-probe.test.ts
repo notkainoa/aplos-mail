@@ -17,7 +17,7 @@ import { PROBES } from '../../../apps/desktop/scripts/live/probes';
 import { createProbeState } from '../../../apps/desktop/scripts/live/state';
 import { unitCost } from '../../../apps/desktop/scripts/live/pacer';
 import {
-  ARCHIVE_MIN_TOUCHED,
+  ARCHIVE_MIN_THREADS,
   ARCHIVE_ROW_LIMIT_UNITS,
   HISTORY_PAGE_UNITS,
   MAX_PAGES,
@@ -32,6 +32,7 @@ const PROBE_ID = 'gmail.archive-delta-cost';
 interface Rig {
   emu: GmailEmulator;
   stateDir: string;
+  urls: string[];
   run(phase?: string): Promise<{
     counts: Record<string, number>;
     requests: RequestCount[];
@@ -64,13 +65,17 @@ async function rig(threads = 10, faults?: FaultHook): Promise<Rig> {
       timeoutMs: 5000,
     },
   );
+  const urls: string[] = [];
   const deps: RunDeps = {
     env: {
       APLOS_LIVE_VAULT: vault,
       APLOS_GOOGLE_CLIENT_ID: CLIENT.clientId,
       APLOS_GOOGLE_CLIENT_SECRET: CLIENT.clientSecret,
     },
-    fetch: emu.fetch,
+    fetch: (input, init) => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return emu.fetch(input, init);
+    },
     readSecret,
     now: () => clock.now(),
     sleep: ms => clock.advance(ms),
@@ -82,6 +87,7 @@ async function rig(threads = 10, faults?: FaultHook): Promise<Rig> {
   return {
     emu,
     stateDir,
+    urls,
     async run(phase) {
       const outcome = await runLive(
         {
@@ -141,7 +147,7 @@ test('mark stores the cursor; measure on a quiet mailbox is unmeasured, never a 
 });
 
 test('mark, a Gmail-web-style archive of 2,000 threads, then measure records the delta cost', async () => {
-  const r = await rig(2100);
+  const r = await rig(3100);
   await r.run('mark');
   const from = r.emu.log.length;
   bigDelta(r.emu);
@@ -154,9 +160,10 @@ test('mark, a Gmail-web-style archive of 2,000 threads, then measure records the
     'archive plus relabel can write two records for one message',
   );
   assert.ok(
-    out.counts.messagesTouched >= 2000,
-    `the delta reaches the row's minimum, got ${out.counts.messagesTouched}`,
+    out.counts.archivedThreads >= 2000,
+    `the archive reaches the row's minimum, got ${out.counts.archivedThreads}`,
   );
+  assert.ok(out.counts.messagesTouched >= out.counts.archivedThreads);
   assert.equal(out.counts.pagesCapped, 0);
   assert.equal(out.counts.baselineUpdated, 1);
   assert.equal(calls(out.requests, 'gmail.users.history.list'), out.counts.historyPages);
@@ -178,6 +185,53 @@ test('mark, a Gmail-web-style archive of 2,000 threads, then measure records the
   const again = await r.run('measure');
   assert.equal(again.status, 'fail');
   assert.equal(again.counts.unmeasured, 1);
+});
+
+test('noise that never archives cannot reach the floor: ~1,000 archived threads fails unmeasured', async () => {
+  const r = await rig(2100);
+  await r.run('mark');
+  const archived = r.emu.mailbox.archiveThreads(1000);
+  const label = r.emu.mailbox.listLabels().find(l => l.type === 'user')!.id;
+  const all = r.emu.mailbox.selectThreads({}).map(t => t.id);
+  r.emu.mailbox.relabel({ threadIds: all }, [label], []);
+
+  const out = await r.run('measure');
+  assert.equal(out.status, 'fail');
+  assert.equal(out.counts.unmeasured, 1);
+  assert.ok(
+    out.counts.messagesTouched > 2000,
+    `the noise is bigger than the floor and still not an archive: ${out.counts.messagesTouched}`,
+  );
+  assert.equal(out.counts.archivedThreads, archived.length);
+  assert.equal(out.counts.baselineUpdated, undefined, 'the cursor stays for the real archive');
+});
+
+test('the measure request carries the adapter historyTypes and exact fields mask', async () => {
+  const r = await rig(3100);
+  await r.run('mark');
+  bigDelta(r.emu);
+  const out = await r.run('measure');
+  assert.equal(out.status, 'pass');
+
+  const historyUrls = r.urls.map(u => new URL(u)).filter(u => u.pathname.endsWith('/history'));
+  assert.ok(historyUrls.length >= 1);
+  const url = historyUrls[0]!;
+  assert.deepEqual(url.searchParams.getAll('historyTypes').sort(), [
+    'labelAdded',
+    'labelRemoved',
+    'messageAdded',
+    'messageDeleted',
+  ]);
+  // google/history.ts:52 — the exact mask the incremental sync sends.
+  assert.equal(
+    url.searchParams.get('fields'),
+    'history(id,messagesAdded(message(id,threadId,labelIds)),' +
+      'messagesDeleted(message(id,threadId,labelIds)),' +
+      'labelsAdded(message(id,threadId,labelIds),labelIds),' +
+      'labelsRemoved(message(id,threadId,labelIds),labelIds)),nextPageToken,historyId',
+  );
+  assert.equal(url.searchParams.get('maxResults'), '500');
+  assert.match(url.searchParams.get('startHistoryId') ?? '', /^\d+$/);
 });
 
 test('a rate limit on history.list fails with the class and no retry', async () => {
@@ -202,13 +256,14 @@ test('a rate limit on history.list fails with the class and no retry', async () 
 });
 
 test('a delta past the page cap is a partial cost: pagesCapped, fail, and the cursor is kept', async () => {
-  const r = await rig(600);
+  const r = await rig(3100);
   await r.run('mark');
   const cursor = (await createProbeState(r.stateDir, PROBE_ID).load())?.historyId;
   const label = r.emu.mailbox.listLabels().find(l => l.type === 'user')!.id;
   const all = r.emu.mailbox.selectThreads({}).map(t => t.id);
   const msgs = r.emu.mailbox.messageCount;
-  // Add and remove the label: two records per message per round, enough to pass the page cap.
+  // Over 2,000 inbox threads archive, so the floor alone would pass: only the cap stops re-mark.
+  r.emu.mailbox.archiveThreads(r.emu.mailbox.threadCount);
   const rounds = Math.ceil((MAX_PAGES * 500) / (2 * msgs)) + 1;
   for (let i = 0; i < rounds; i++) {
     r.emu.mailbox.relabel({ threadIds: all }, [label], []);
@@ -236,7 +291,7 @@ test('the probe constants agree with budgets.json and the pacer table', async ()
     MAX_PAGES * HISTORY_PAGE_UNITS + PROFILE_UNITS < ARCHIVE_ROW_LIMIT_UNITS,
     'even a capped walk spends less than the row',
   );
-  assert.ok(ARCHIVE_MIN_TOUCHED <= 2000 && ARCHIVE_MIN_TOUCHED > 0);
+  assert.equal(ARCHIVE_MIN_THREADS, 2000);
 });
 
 test('measure without a mark fails with stateMissing; an expired cursor reports historyExpired', async () => {
@@ -252,7 +307,7 @@ test('measure without a mark fails with stateMissing; an expired cursor reports 
   assert.equal(expired.counts.historyExpired, 1);
 
   // A fresh mark and a big enough delta recover: the failed run left no false baseline.
-  const r2 = await rig(2100);
+  const r2 = await rig(3100);
   await r2.run('mark');
   bigDelta(r2.emu);
   const recovered = await r2.run('measure');

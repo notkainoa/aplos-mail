@@ -11,9 +11,10 @@ import { getJson, ProbeHttpError } from './http';
  * `fields` mask the adapter's incremental step sends (google/history.ts), and counts pages,
  * records and the distinct messages touched, never an id. The run's pacer prices every page
  * (history.list is 2 units a call) in its own evidence, so `historyPages` is the number the
- * budget row records. A walk that reaches under ARCHIVE_MIN_TOUCHED messages fails `unmeasured`:
- * a skipped or half-done archive must never read as a pass, and the cursor is kept so the rest of
- * the archive still counts. A walk stopped by the page cap is a partial cost and also fails, and
+ * budget row records. A walk with under ARCHIVE_MIN_THREADS archived threads — distinct
+ * threadIds of `labelsRemoved` entries that took off INBOX — fails `unmeasured`: a skipped,
+ * half-done or merely relabelled mailbox must never read as a pass, and the cursor is kept so
+ * the rest of the archive still counts. A walk stopped by the page cap is a partial cost and also fails, and
  * only a pass stores the fresh profile historyId as the baseline for the next delta. A cursor
  * Gmail has forgotten answers 404: the probe reports `historyExpired`, fails, and a fresh `mark`
  * is needed.
@@ -22,10 +23,10 @@ import { getJson, ProbeHttpError } from './http';
 /** The limit of the row being measured, budgets.json `sync.archive-2000-units` (a test pins it). */
 export const ARCHIVE_ROW_LIMIT_UNITS = 100;
 /**
- * A pass needs at least this many distinct touched messages: a 2,000-thread archive changes at
- * least one message per thread, so anything smaller was a partial or missing archive.
+ * A pass needs at least this many distinct ARCHIVED threads: the row measures a 2,000-thread
+ * archive, so label churn or other noise that never removes INBOX can never reach the floor.
  */
-export const ARCHIVE_MIN_TOUCHED = 2000;
+export const ARCHIVE_MIN_THREADS = 2000;
 const PAGE = 500;
 /** history.list costs 2 units a page; the re-mark's getProfile costs 1 (both pinned by a test). */
 export const HISTORY_PAGE_UNITS = 2;
@@ -49,8 +50,15 @@ function failed(error: unknown, result: ProbeResult): ProbeResult {
   return result;
 }
 
-/** Every message id one history record names, folded into a distinct-id set that leaves nothing. */
-function collectMessages(record: unknown, touched: Set<string>): void {
+/**
+ * Every message id one history record names folds into `touched`; a `labelsRemoved` entry that
+ * takes INBOX off a message also names an ARCHIVED thread — the signal the row actually measures.
+ */
+function collectMessages(
+  record: unknown,
+  touched: Set<string>,
+  archivedThreads: Set<string>,
+): void {
   if (typeof record !== 'object' || record === null) return;
   const lists = record as Record<string, unknown>;
   for (const key of ['messagesAdded', 'messagesDeleted', 'labelsAdded', 'labelsRemoved']) {
@@ -59,6 +67,15 @@ function collectMessages(record: unknown, touched: Set<string>): void {
     for (const entry of list) {
       const id = (entry as { message?: { id?: unknown } }).message?.id;
       if (typeof id === 'string') touched.add(id);
+    }
+  }
+  const removed = lists.labelsRemoved;
+  if (!Array.isArray(removed)) return;
+  for (const entry of removed) {
+    const stub = entry as { labelIds?: unknown; message?: { threadId?: unknown } };
+    const labels = Array.isArray(stub.labelIds) ? stub.labelIds : [];
+    if (labels.includes('INBOX') && typeof stub.message?.threadId === 'string') {
+      archivedThreads.add(stub.message.threadId);
     }
   }
 }
@@ -96,6 +113,7 @@ async function measurePhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
   }
   result.counts.stateMissing = 0;
   const touched = new Set<string>();
+  const archivedThreads = new Set<string>();
   let pageToken: string | undefined;
   const started = ctx.now();
   try {
@@ -110,7 +128,7 @@ async function measurePhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
       result.counts.historyPages = (result.counts.historyPages ?? 0) + 1;
       const items = Array.isArray(page.json.history) ? page.json.history : [];
       result.counts.historyRecords = (result.counts.historyRecords ?? 0) + items.length;
-      for (const item of items) collectMessages(item, touched);
+      for (const item of items) collectMessages(item, touched, archivedThreads);
       pageToken = typeof page.json.nextPageToken === 'string' ? page.json.nextPageToken : undefined;
     } while (pageToken !== undefined && (result.counts.historyPages ?? 0) < MAX_PAGES);
   } catch (error) {
@@ -124,6 +142,7 @@ async function measurePhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
   }
   result.timingsMs.list = ctx.now() - started;
   result.counts.messagesTouched = touched.size;
+  result.counts.archivedThreads = archivedThreads.size;
   result.counts.historyExpired = 0;
   result.counts.pagesCapped = pageToken === undefined ? 0 : 1;
   // A capped walk is a partial measurement; the cursor stays so a rerun still sees the delta.
@@ -131,8 +150,8 @@ async function measurePhase(ctx: ProbeContext, result: ProbeResult): Promise<voi
     result.status = 'fail';
     return;
   }
-  // Under the floor the archive was skipped or half-done: fail, keep the cursor for the rest.
-  if (touched.size < ARCHIVE_MIN_TOUCHED) {
+  // Under the floor the archive was skipped, half-done or not an archive at all: keep the cursor.
+  if (archivedThreads.size < ARCHIVE_MIN_THREADS) {
     result.counts.unmeasured = 1;
     result.status = 'fail';
     return;
