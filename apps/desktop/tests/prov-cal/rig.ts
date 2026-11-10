@@ -4,10 +4,8 @@ import {
   calendarListWrites,
   parseSyncSet,
 } from '../../../../packages/engine/src/sync/calendar-facts';
-import {
-  calendarTargetOf,
-  createCalendarPort,
-} from '../../../../packages/engine/src/calendar/write-port';
+import { createCalendarPort } from '../../../../packages/engine/src/calendar/write-port';
+import { calendarTargetOf } from '../../../../packages/engine/src/calendar/write-target';
 import { createGoogleCalendar } from '../../src/host/providers/google/calendar';
 import {
   ACCOUNT_ID,

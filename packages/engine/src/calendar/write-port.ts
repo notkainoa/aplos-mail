@@ -9,9 +9,17 @@ import type {
   EventChange,
   EventRef,
 } from '../ports';
-import type { AdapterContext, ProviderAdapter } from '../ports/provider';
+import type { AdapterContext } from '../ports/provider';
 import type { StorePort } from '../ports';
+import type { CalendarTarget } from './write-target';
+import { hasCalendarWrite } from './write-scope';
 import { writeFailure } from './write-errors';
+
+export {
+  CALENDAR_WRITE_SCOPES,
+  GOOGLE_CALENDAR_WRITE_SCOPE,
+  hasCalendarWrite,
+} from './write-scope';
 
 /**
  * `CalendarPort`: event writes, addressed by account. The host looks up the started account's entry for exactly the
@@ -22,57 +30,6 @@ import { writeFailure } from './write-errors';
  * code the UI turns into "Enable editing". The scope is never requested by a write: only the owner's explicit
  * `Account/grantPermissions` with `enable: 'calendarWrite'` adds it.
  */
-
-/** Google's event write scope (`oauth/scopes.ts` `calendarEventsWrite`; pinned by a test). */
-export const GOOGLE_CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
-
-/**
- * Every grant that satisfies a write: the narrow `calendar.events` scope OR the `calendar` umbrella an older
- * grant may already hold. One list for every gate (`prepare` here, the actor's `calendarWriteRefused`) so a
- * holder of the umbrella is never refused a write it can make; the gap still reports `calendar.events`,
- * the least the owner can add.
- */
-export const CALENDAR_WRITE_SCOPES = [
-  GOOGLE_CALENDAR_WRITE_SCOPE,
-  'https://www.googleapis.com/auth/calendar',
-] as const;
-
-/** True when the grant covers calendar writes (any scope in `CALENDAR_WRITE_SCOPES`). */
-export const hasCalendarWrite = (grantedScopes: readonly string[]) =>
-  CALENDAR_WRITE_SCOPES.some(s => grantedScopes.includes(s));
-
-/** What a calendar write needs from a started account. */
-export interface CalendarTarget {
-  adapter: ProviderAdapter;
-  store: StorePort;
-  newId(): string;
-  context(): AdapterContext;
-  /** Records the gap on the actor (`Account.missingPermissions` `calendarWrite`); false when the grant has the scope. */
-  writeRefused(): boolean;
-}
-
-/** A started account's entry as a write target; undefined when the account is not started. */
-export function calendarTargetOf(
-  entry:
-    | {
-        adapter: ProviderAdapter;
-        actor: {
-          deps: { store: StorePort; newId(): string };
-          context(): AdapterContext;
-          calendarWriteRefused(): boolean;
-        };
-      }
-    | undefined,
-): CalendarTarget | undefined {
-  if (!entry) return undefined;
-  return {
-    adapter: entry.adapter,
-    store: entry.actor.deps.store,
-    newId: () => entry.actor.deps.newId(),
-    context: () => entry.actor.context(),
-    writeRefused: () => entry.actor.calendarWriteRefused(),
-  };
-}
 
 /** The reason the caller sees when the grant only reads. Plain words: no scope URL, no provider text. */
 const READ_ONLY_MESSAGE =
