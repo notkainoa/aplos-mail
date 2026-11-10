@@ -1824,3 +1824,7 @@ A band hidden at 0 left no way into Low importance, which the owner reported as 
 ## 2026-11-10: Low band at zero is judged on view totals and reachable by Return (ui-home)
 
 Follow-up to the entry above, from the review of #388 (merged before these fixes landed). The band's visibility now comes from the view's totals (`layoutOf` reads `total` and `low.count`, the same test as the empty Home) instead of the windowed ids, so section headers and the band can never disagree. An empty band is a cursor stop (J/K walk onto it, Return opens "No low-importance mail", so the Return in its tooltip is true), but the cursor never settles on it by itself: when the row under the cursor leaves, it goes to the row above. `LowBand`'s optional `commandId` (#402) is not needed by Home.
+
+## 2026-11-10: Home's Do now, Important updates and Low importance only hold threads someone wrote to you (ui-home)
+
+Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox, so a thread the owner started and nobody had answered sat in Do now (and also in Follow up). `views/sections.ts` now requires `threads.last_inbound_date IS NOT NULL` on the three lane cursors (the sidebar count and the Low sheet read the same cursors); Follow up is unchanged. A thread where the owner answered last but someone wrote before still follows its lane, as before. The slow reference in `tests/views/reference.ts` carries the same rule, and `tests/views/home-sent-only.test.ts` fails without it.
