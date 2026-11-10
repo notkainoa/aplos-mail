@@ -19,6 +19,10 @@
   justify-content: flex-start;
   padding: 0;
 }
+/* The card takes focus when a menu or Why closes on it; it is a container, not a control, so it shows no ring. */
+.aplos-one-by-one__card:focus-visible {
+  outline: none;
+}
 .aplos-one-by-one__card {
   display: flex;
   flex: 1 0 auto;

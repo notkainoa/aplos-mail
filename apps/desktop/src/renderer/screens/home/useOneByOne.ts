@@ -4,7 +4,7 @@
  * showing, so the toasts, Undo and the Remind offer are Home's), attaches its keys to the CommandRegistry, and sets the
  * pane header's back button and "Home  3 of 9" crumb.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useHold,
   useHome,
@@ -41,9 +41,13 @@ function ignore(): void {
   return undefined;
 }
 
-/** The element of the thread showing: the focus letter, which is also where the menus and Why hang from. */
+/**
+ * Where the menus, Why and the date presets hang from: the card's header actions (Importance, bell, ⋯) when it has them,
+ * else the card. A small anchor means a press anywhere else in the card closes them (a popover ignores presses in its anchor).
+ */
 function letterOf(key: string | null): HTMLElement | null {
-  return key === null ? null : document.getElementById(rowDomId(key));
+  const card = key === null ? null : document.getElementById(rowDomId(key));
+  return card?.querySelector<HTMLElement>('.ui-thread-message__actions') ?? card;
 }
 
 /** Props for `OneByOneScreen`. */
@@ -220,6 +224,10 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     [index, of, exit],
   );
   usePaneHeaderPart(part);
+
+  const showingId = row?.id;
+  // A ⋯ menu belongs to the thread it was opened on: stepping on closes it for good, so walking back never reopens it.
+  useEffect(() => setMenu(null), [showingId]);
 
   const failure = row ? home.failures.get(row.id) : undefined;
   const rejected = useMemo(

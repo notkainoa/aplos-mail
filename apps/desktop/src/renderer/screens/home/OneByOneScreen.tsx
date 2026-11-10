@@ -5,6 +5,7 @@
  * screen `{ label: 'one by one' }`. Each thread is the reader's own email card (`ReaderStage`): the whole letter, the header, the pinned bar; Space, Reply,
  * Later and Done keep their Home behaviour (Reply opens the reader).
  */
+import { ErrorLine } from '../../ui/list';
 import { ListFailed } from '../lists/ListStates';
 import { Reopenable } from '../lists/Reopenable';
 import { HomeMenu, type HomeMenuChoice } from './HomeMenu';
@@ -96,7 +97,15 @@ function OneByOneBody(props: OneByOneScreenProps) {
   return (
     <div className="aplos-one-by-one" data-screen="one-by-one">
       {/* The card's box is where the ⋯ menu, Why and the date presets hang from (`letterOf`); it is one node for every thread, so the stage keeps its buffer. */}
-      <div className="aplos-one-by-one__card" id={rowDomId(row.id)}>
+      <div className="aplos-one-by-one__card" id={rowDomId(row.id)} tabIndex={-1}>
+        {view.rejected ? (
+          <ErrorLine
+            kind="writeRejected"
+            op={view.rejected.op}
+            placement="column"
+            onAction={() => view.rejected?.onRetry()}
+          />
+        ) : null}
         <ReaderStage open={row.id} controls={controlsOf(view)} />
       </div>
       <Overlays view={view} />
