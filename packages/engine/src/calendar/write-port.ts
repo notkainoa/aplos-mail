@@ -179,6 +179,28 @@ async function commitFacts(
     target.store.commit({ opId: target.newId(), origin: 'local', changes: 'fine', writes });
 }
 
+/**
+ * The calendar must exist for this account and accept changes (Google `accessRole` reader / freeBusyReader is stored as
+ * `read_only`). Checked here as well as in `Event/set`, so every caller of the port (a confirmed plan too) is held to it.
+ */
+function assertWritableCalendar({ target, ctx }: Prepared, calendarRemoteId: string): void {
+  const row = target.store.read(q =>
+    q.get<{ read_only: number | null }>(
+      'SELECT read_only FROM calendars WHERE account_id = ? AND remote_id = ?',
+      ctx.account.id,
+      calendarRemoteId,
+    ),
+  );
+  if (!row)
+    throw new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
+  if (row.read_only === 1)
+    throw new ContractError({
+      type: 'unsupported',
+      message: 'This calendar is read-only, so events on it cannot be changed.',
+      reasonCode: 'calendar.readOnly',
+    });
+}
+
 /** Runs one adapter write: scope-gated, committed on a result, and every failure turned into an honest answer. */
 async function run(
   account: AccountId,
@@ -188,6 +210,7 @@ async function run(
   write: (calendar: CalendarAdapter, ctx: AdapterContext) => Promise<CalendarWriteResult>,
 ): Promise<CalendarWriteResult> {
   const prepared = prepare(account, target, method);
+  assertWritableCalendar(prepared, calendarRemoteId);
   let result: CalendarWriteResult;
   try {
     result = await write(prepared.calendar, prepared.ctx);

@@ -4,6 +4,7 @@ import { SCOPE } from '@aplos/emulators';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { CalendarWriteResult, EventFacts } from '@aplos/engine/ports';
 import { GMAIL_SCOPES } from '../prov-gmail/harness';
+import { eventIdForOp } from '../../../../packages/engine/src/calendar/event-id';
 import { READ_SCOPES, writeRig } from './rig';
 
 // Google Calendar writes (prov-cal): create, edit, delete and RSVP through the engine's CalendarPort over the
@@ -94,10 +95,11 @@ test('create with notify emails the guests (sendUpdates=all)', async () => {
 });
 
 test('a create sent twice with the same id makes one event: the 409 is answered by reading it back', async () => {
-  const r = await writeRig({ newId: () => 'abcdefghijklmnopqrstuv0123' });
+  const r = await writeRig();
   await r.seedCalendars();
   const change = {
     calendarRemoteId: r.calendarId,
+    newRemoteId: await eventIdForOp(r.account.id, 'op-1'),
     scope: 'occurrence' as const,
     fields: { summary: 'Once', start: START, end: END },
   };
@@ -426,5 +428,81 @@ test('adding a guest keeps the answers the others already gave', async () => {
   );
   assert.equal(answers['peer@example.test'], 'accepted');
   assert.equal(answers['new@example.test'], 'needsAction');
+  r.close();
+});
+
+test('a refused write never lets Google quote the event into the log or the error', async () => {
+  const r = await writeRig();
+  await r.seedCalendars();
+  r.forced.push({
+    status: 400,
+    body: JSON.stringify({
+      error: {
+        code: 400,
+        message: 'Invalid value for summary: Secret merger plan',
+        errors: [{ reason: 'invalid' }],
+      },
+    }),
+  });
+  await assert.rejects(
+    r.port.put(r.account.id, {
+      calendarRemoteId: r.calendarId,
+      scope: 'occurrence',
+      fields: { summary: 'Secret merger plan', start: START, end: END },
+    }),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.body.reasonCode === 'calendar.rejected' &&
+      !JSON.stringify(e.body).includes('Secret'),
+  );
+  assert.ok(!r.logLines().includes('Secret'));
+  r.close();
+});
+
+test('the all-day flag must agree with the shape of the times', async () => {
+  const r = await writeRig();
+  await r.seedCalendars();
+  await assert.rejects(
+    r.port.put(r.account.id, {
+      calendarRemoteId: r.calendarId,
+      scope: 'occurrence',
+      fields: { summary: 'x', allDay: true, start: START, end: END },
+    }),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'event.allDayMismatch',
+  );
+  assert.equal(r.requests.filter(q => q.method === 'POST').length, 0);
+  r.close();
+});
+
+test('an edit of an event deleted elsewhere says it is gone, not that it changed', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const seeded = r.emu.calendar.addEvent(cal, {
+    summary: 'Gone soon',
+    start: { dateTime: '2026-11-12T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  });
+  await r.seedCalendars();
+  r.emu.calendar.removeEvent(cal, seeded.id);
+  const answer = await r.port
+    .put(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: seeded.id,
+      etag: seeded.etag,
+      scope: 'series',
+      fields: { summary: 'Too late' },
+    })
+    .then(
+      v => v,
+      (e: unknown) => e,
+    );
+  // Either a conflict that shows the cancelled copy or an honest "no longer on the calendar": never a silent save.
+  assert.ok(
+    (answer instanceof ContractError && answer.body.reasonCode === 'calendar.eventGone') ||
+      (typeof answer === 'object' &&
+        answer !== null &&
+        (answer as { kind?: string }).kind === 'conflict'),
+    JSON.stringify(answer),
+  );
   r.close();
 });

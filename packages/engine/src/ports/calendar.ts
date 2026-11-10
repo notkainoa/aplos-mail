@@ -75,8 +75,11 @@ export interface EventChange {
   scope: EditScope;
   fields: Partial<EventFields>;
   notify?: boolean;
-  /** The caller's op id on a create: the event id is derived from it, so a re-sent create meets 409 instead of duplicating. */
-  opId?: string;
+  /**
+   * A create only: the exact remote id to give the new event (`calendar/event-id.ts`, derived from the op id), so a
+   * re-sent create names the same event and meets "already exists" instead of duplicating. Absent: the adapter picks one.
+   */
+  newRemoteId?: string;
 }
 
 /** D24; `changeTag` is CalDAV's ctag, to skip unchanged collections. */

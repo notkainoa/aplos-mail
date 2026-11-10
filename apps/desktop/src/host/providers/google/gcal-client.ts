@@ -16,6 +16,11 @@ import { gcalCost, type GcalMethod } from './costs';
 
 const API = 'https://www.googleapis.com/calendar/v3';
 
+function withoutProviderText(refused: ProviderError): ProviderError {
+  const { providerMessage: _text, ...rest } = refused.error;
+  return new ProviderError(rest, refused.scope);
+}
+
 export interface GcalDeps {
   fetch: typeof fetch;
   userAgent: string;
@@ -83,7 +88,10 @@ export class GcalClient {
       async io => {
         const started = this.ctx.clock.now();
         const waitMs = started - asked;
-        const fail = (error: ProviderError): never => {
+        const fail = (refused: ProviderError): never => {
+          // A write's refusal can quote what was written (a title, a guest address) in Google's own text: it
+          // never reaches the log or the error, only the class, status and reason do.
+          const error = kind === 'read' ? refused : withoutProviderText(refused);
           this.ctx.log.event('sync.gcal.request_refused', {
             error: error.error,
             units: cost,

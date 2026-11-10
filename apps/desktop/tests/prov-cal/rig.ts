@@ -68,8 +68,16 @@ export async function writeRig(options: WriteRigOptions = {}) {
   };
   // Every request the adapter sends, so a test can show what did (not) go out.
   const requests: { method: string; url: string; ifMatch: string | null; body?: string }[] = [];
+  // Test hook: answer the next write with this status and body instead of the emulator (Google's own error text).
+  const forced: { status: number; body: string }[] = [];
   const spy: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
+    const next = req.method !== 'GET' && forced.length > 0 ? forced.shift() : undefined;
+    if (next)
+      return new Response(next.body, {
+        status: next.status,
+        headers: { 'content-type': 'application/json' },
+      });
     requests.push({
       method: req.method,
       url: req.url,
@@ -164,6 +172,8 @@ export async function writeRig(options: WriteRigOptions = {}) {
     account,
     calendarId: account.address,
     requests,
+    forced,
+    logLines: () => JSON.stringify(log.lines),
     refused: () => refused,
     seedCalendars,
     events,

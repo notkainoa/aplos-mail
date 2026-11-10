@@ -248,3 +248,29 @@ test('an rsvp carries the stored version and, by default, tells the organizer', 
   assert.equal(response, 'tentative');
   assert.equal(opts.notify, true);
 });
+
+test('a create names its event from the op id: the same op is the same event, another op or account is not', async () => {
+  const { eventIdForOp } = await import('../src/calendar/event-id');
+  const a = await eventIdForOp('acct-1', 'op-1');
+  assert.match(a, /^[0-9a-v]{26}$/);
+  assert.equal(a, await eventIdForOp('acct-1', 'op-1'));
+  assert.notEqual(a, await eventIdForOp('acct-1', 'op-2'));
+  assert.notEqual(a, await eventIdForOp('acct-2', 'op-1'));
+
+  const w = await world();
+  const create = {
+    type: 'create' as const,
+    calendarId: 'acct-1:primary',
+    fields: {
+      title: 'x',
+      start: { type: 'utc' as const, utc: 1_800_000_000_000 },
+      end: { type: 'utc' as const, utc: 1_800_003_600_000 },
+      allDay: false,
+    },
+  };
+  await w.call('Event/set', { opId: 'op-1', change: create });
+  await w.call('Event/set', { opId: 'op-1', change: create });
+  const ids = w.calls.map(c => (c.args[1] as { newRemoteId?: string }).newRemoteId);
+  assert.equal(ids[0], a);
+  assert.equal(ids[1], a);
+});

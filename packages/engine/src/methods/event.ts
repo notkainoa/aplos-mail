@@ -1,6 +1,7 @@
 import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
+import { eventIdForOp } from '../calendar/event-id';
 import {
   calendarFromRow,
   eventFromRow,
@@ -326,7 +327,7 @@ async function setEvent(
       fields: toPortFields(change.fields),
       notify,
       // The event id derives from the op id, so a re-sent create meets 409, not a duplicate.
-      opId: args.opId,
+      newRemoteId: await eventIdForOp(cal.accountId, args.opId),
     });
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { ContractError } from '@aplos/contract/contract-error';
 import { ProviderError } from '@aplos/engine/ports';
 import type {
@@ -71,17 +70,6 @@ function randomEventId(): string {
   return Array.from(bytes, b => '0123456789abcdefghijklmnopqrstuv'[b % 32]).join('');
 }
 
-/**
- * The event id for a create, derived from the op id (HIGH, #394): a re-sent create names the SAME event, so a
- * request whose answer was lost meets 409 instead of making a second event. Deterministic, 17 base32hex chars.
- */
-export function eventIdForOp(opId: string): string {
-  const digest = createHash('sha256').update(`gcal-event:${opId}`).digest();
-  return Array.from(digest.subarray(0, 17), b => '0123456789abcdefghijklmnopqrstuv'[b % 32]).join(
-    '',
-  );
-}
-
 /** `EventTime` to Google's start/end object. */
 function apiTime(t: EventTime, patch: boolean): ApiDateTime {
   if (t.type === 'date') return { date: t.date, ...(patch ? { dateTime: null } : {}) };
@@ -116,6 +104,10 @@ function eventBody(
       'Set the start and end when changing between all-day and timed.',
       'event.timesRequired',
     );
+  // The all-day flag and the shape of the times must agree, or Google would store something the caller did not mean.
+  for (const t of [f.start, f.end])
+    if (t && f.allDay !== undefined && (t.type === 'date') !== f.allDay)
+      throw invalid('The times do not match the all-day setting.', 'event.allDayMismatch');
   const byEmail = new Map((current ?? []).map(a => [a.email?.toLowerCase(), a]));
   return {
     ...(f.summary !== undefined ? { summary: f.summary } : {}),
@@ -222,7 +214,10 @@ export function createCalendarWrites(
     try {
       const current = map.facts(calendar, await read(ctx, calendar, eventId));
       return { kind: 'conflict', ...(current ? { current } : {}) };
-    } catch {
+    } catch (error) {
+      // Gone since: say so (the caller sees "no longer on the calendar"), not "changed elsewhere".
+      const status = statusOf(error);
+      if (status === 404 || status === 410) throw error;
       return { kind: 'conflict' };
     }
   }
@@ -231,8 +226,8 @@ export function createCalendarWrites(
     const f = change.fields;
     if (f.summary === undefined || f.start === undefined || f.end === undefined)
       throw invalid('Give the event a title, a start and an end.', 'event.fieldsRequired');
-    // An op-named id makes a re-sent create idempotent (409 → read back); no op id falls back to random.
-    const eventId = change.opId ? eventIdForOp(change.opId) : newId();
+    // An op-derived id makes a re-sent create idempotent (409 → read back); without one the id is random.
+    const eventId = change.newRemoteId ?? newId();
     const body = { id: eventId, ...eventBody(f, false) };
     const calendar = change.calendarRemoteId;
     try {
