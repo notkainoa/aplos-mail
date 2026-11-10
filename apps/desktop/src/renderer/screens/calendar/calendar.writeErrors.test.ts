@@ -109,7 +109,7 @@ test('writeErrors: calendar.unavailable says nothing changed and retries', async
   }
 });
 
-test('writeErrors: calendar.unavailable with retryAfterMs delays the retry', async () => {
+test('writeErrors: calendar.unavailable with retryAfterMs arms the retry with the notice', async () => {
   resetToasts();
   const real = global.setTimeout;
   const delays: number[] = [];
@@ -138,9 +138,11 @@ test('writeErrors: calendar.unavailable with retryAfterMs delays the retry', asy
     });
     const toast = lastToast();
     assert.equal(toast?.message, "Couldn't reach Google Calendar. Nothing changed.");
-    runToastAction(toast!.id, 'retry');
+    // The write retries itself after retryAfterMs; Retry goes at once instead (review7 9).
     assert.deepEqual(delays, [2_000]);
-    assert.equal(calls, 1, 'the retry waits out retryAfterMs');
+    assert.equal(calls, 1, 'the write still waits out retryAfterMs');
+    runToastAction(toast!.id, 'retry');
+    assert.equal(calls, 2, 'Retry runs the write at once');
   } finally {
     global.setTimeout = real;
     resetToasts();

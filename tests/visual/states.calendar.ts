@@ -198,7 +198,8 @@ export const calendarStates: readonly VisualState[] = [
     components: [...GRID],
     design: '7.1, 7.8',
     mockup: 'calendar-week.html (default)',
-    filled: 0,
+    // The bare week behind the block draws the empty panel's filled New event (DESIGN 7.14).
+    filled: 1,
   },
   {
     id: 'sidebar-accounts-no-calendars',
@@ -207,7 +208,7 @@ export const calendarStates: readonly VisualState[] = [
     components: [...GRID],
     design: '7.1, 7.8',
     mockup: 'calendar-week.html (default)',
-    filled: 0,
+    filled: 1,
   },
   {
     id: 'sidebar-accounts-pending',
@@ -216,7 +217,7 @@ export const calendarStates: readonly VisualState[] = [
     components: [...GRID],
     design: '7.1, 7.8',
     mockup: 'calendar-week.html (default)',
-    filled: 0,
+    filled: 1,
   },
   {
     id: 'sidebar-accounts-none',
@@ -225,7 +226,7 @@ export const calendarStates: readonly VisualState[] = [
     components: [...GRID],
     design: '7.1, 7.8',
     mockup: 'calendar-week.html (default)',
-    filled: 0,
+    filled: 1,
   },
   {
     id: 'cal-loading',
