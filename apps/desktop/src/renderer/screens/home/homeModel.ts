@@ -19,7 +19,10 @@ export const LOW_KEY = 'band:low';
 /** One cursor stop: a thread row or the Low band. */
 export type HomeItem =
   | { readonly kind: 'row'; readonly id: ThreadId; readonly section: SectionKey }
-  | { readonly kind: 'low' };
+  | {
+      readonly kind: 'low';
+      /** The band holds no mail: it opens the empty sheet, but the cursor never settles on it. */ readonly empty?: boolean;
+    };
 
 /** What the screen lays out: the ids of each section in rendered order, and how many threads the Low band holds. */
 export interface HomeLayout {
@@ -28,10 +31,12 @@ export interface HomeLayout {
   readonly update: readonly ThreadId[];
   readonly follow: readonly ThreadId[];
   readonly lowCount: number;
+  /** Whether the band shows (see `showsLowBand`); absent means only while it holds mail. */
+  readonly lowShown?: boolean;
 }
 
 /** The layout of a live Home view: each section's ids and the Low band's count. */
-export function layoutOf(home: Pick<HomeView, 'sections' | 'low'>): HomeLayout {
+export function layoutOf(home: Pick<HomeView, 'sections' | 'low' | 'total'>): HomeLayout {
   const bySection = (key: 'do' | 'update' | 'follow') =>
     home.sections.find(section => section.key === key);
   return {
@@ -40,6 +45,7 @@ export function layoutOf(home: Pick<HomeView, 'sections' | 'low'>): HomeLayout {
     update: bySection('update')?.ids ?? [],
     follow: bySection('follow')?.ids ?? [],
     lowCount: home.low.count,
+    lowShown: home.low.count > 0 || home.total > 0,
   };
 }
 
@@ -132,18 +138,19 @@ function rowsOf(ids: readonly ThreadId[], section: SectionKey): HomeItem[] {
 }
 
 /**
- * Whether the Low band shows: when it holds mail, and also at 0 while Home has other mail, so Low importance is always
- * one click away and opens the sheet's "No low-importance mail". An empty band is not a cursor stop (the cursor never
- * settles on nothing), and an empty Home shows the handled line instead.
+ * Whether the Low band shows: when it holds mail, and also at 0 while the view has other mail (`layoutOf` reads the
+ * view's totals, the same test as the empty Home), so Low importance is always one Return or click away and opens the
+ * sheet's "No low-importance mail". An empty Home shows the handled line instead.
  */
 export function showsLowBand(layout: HomeLayout): boolean {
-  const others = [layout.do, layout.fromLater, layout.update, layout.follow];
-  return layout.lowCount > 0 || others.some(ids => ids.length > 0);
+  return layout.lowShown ?? layout.lowCount > 0;
 }
 
 /** Every cursor stop, top to bottom: Do now, Back from Later, Important updates, the Low band, Follow up. */
 export function buildItems(layout: HomeLayout): HomeItem[] {
-  const low: HomeItem[] = layout.lowCount > 0 ? [{ kind: 'low' }] : [];
+  const low: HomeItem[] = showsLowBand(layout)
+    ? [{ kind: 'low', empty: layout.lowCount === 0 }]
+    : [];
   return [
     ...rowsOf(layout.do, 'do'),
     ...rowsOf(layout.fromLater, 'fromLater'),
@@ -186,7 +193,14 @@ export function settleCursor(
   if (key === null) return initialKey(after);
   if (indexOfKey(after, key) >= 0) return key;
   const was = Math.max(0, indexOfKey(before, key));
-  return keyAt(after, Math.min(was, after.length - 1));
+  const at = Math.min(was, after.length - 1);
+  const landing = after[at];
+  // An empty band is a stop to walk onto, never a place for the cursor to settle: take the row above, else below.
+  if (landing?.kind === 'low' && landing.empty) {
+    const row = after[at - 1]?.kind === 'row' ? at - 1 : after.findIndex(i => i.kind === 'row');
+    if (row >= 0) return keyAt(after, row);
+  }
+  return keyAt(after, at);
 }
 
 /** One step of J/K or the arrows; stops at the ends. */

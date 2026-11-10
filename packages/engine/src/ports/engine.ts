@@ -74,7 +74,8 @@ export interface AccountRuntime extends AccountHealth {
    * `Account.missingPermissions` row, so `Account/get` copies it: `reasonCode` is the copy key (`permission.calendar` for the calendar half).
    */
   missingPermissions?: {
-    capability: keyof Capabilities;
+    /** `calendarWrite` is the opt-in editing gap (read access is fine); the rest are `Capabilities` keys. */
+    capability: keyof Capabilities | 'calendarWrite';
     reasonCode: ReasonCode;
     missingScopes: string[];
   }[];

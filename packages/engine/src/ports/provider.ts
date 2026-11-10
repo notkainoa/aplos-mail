@@ -415,6 +415,12 @@ export interface ConnectRequest {
   /** Reconnect: the identity's `sub`; a different one is refused (`auth`, reason `wrongAccount`, D25). */
   expectedSubject?: string;
   address?: string;
+  /**
+   * `grantPermissions` only: the one explicit opt-in to a permission beyond reading (`Account/grantPermissions`
+   * `enable`). `calendarWrite` adds Google's `calendar.events` scope to that sign-in and nothing else. A flow never
+   * asks for it otherwise, and `new` and `reconnect` ignore it, so editing access can only come from this one tap.
+   */
+  enable?: 'calendarWrite';
   preset?: 'gmail' | 'outlook' | 'icloud' | 'fastmail' | 'yahoo' | 'generic';
   server?: { imap?: HostPort; smtp?: HostPort; jmapSession?: string; caldav?: string };
   /**
