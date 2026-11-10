@@ -262,6 +262,16 @@ function askEditScope(
 /** Pending creates get distinct temp ids even with identical fields, or the second would replace the first (review1 10). */
 let nextTempSeq = 0;
 
+/** The zone a timed write is made in: the target calendar's, else the event's own (series zone). */
+function zoneFor(
+  draft: EditorDraft,
+  original: Event | undefined,
+  ctx: CalendarContext,
+): string | undefined {
+  const calendar = ctx.calendars.find(c => c.id === (draft.calendarId ?? original?.calendarId));
+  return calendar?.timeZone ?? original?.timeZone;
+}
+
 /** A new event's optimistic entry and its create write: the temp id stands in until the receipt lands. */
 function createSave(
   state: CalendarState,
@@ -270,7 +280,7 @@ function createSave(
   change: Extract<EventChange, { type: 'create' }>,
 ): Transition {
   const calendar = ctx.calendars.find(c => c.id === change.calendarId);
-  const times = draftTimes(draft);
+  const times = draftTimes(draft, calendar?.timeZone);
   const tempId = `new:${++nextTempSeq}:${draft.date}:${draft.start}:${draft.title.trim()}`;
   const entry: CalendarEventData = {
     id: tempId,
@@ -325,13 +335,14 @@ export function saveEditor(
     if (ask) return ask;
   }
   const scoped = scope ?? 'occurrence';
-  const change = draftChange(draft, original, scoped);
+  const zone = zoneFor(draft, original, ctx);
+  const change = draftChange(draft, original, scoped, zone);
   const next = { ...closed(state), editor: null };
   if (!change) return done(next);
   if (change.type === 'create') return createSave(next, ctx, draft, change);
   const entry = entryById(ctx, draft.eventId);
   const title = draft.title.trim();
-  const times = draftTimes(draft);
+  const times = draftTimes(draft, zone);
   // "All events": the same whole-series change the engine makes, mirrored on the loaded rows — shifted times,
   // and the changed text fields too (a series rename retitles every occurrence, not just the edited one).
   const more =
