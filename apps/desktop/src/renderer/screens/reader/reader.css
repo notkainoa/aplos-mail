@@ -393,6 +393,23 @@
 .aplos-reader__offer .ui-text {
   margin: 0;
 }
+/* One text edge in card style A: the offer's text lines up with the summary's. */
+.aplos-reader[data-cards='a'] .aplos-reader__offer {
+  padding-inline: var(--space-6);
+}
+/* Words from the email can be long: one line each, the title up to two. */
+.aplos-reader__offer-text .ui-text,
+.aplos-reader__offer-text .ui-text__body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aplos-reader__offer-text h2.ui-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
 
 /* ---------- The sender's mark and the plain body's column (owner sketch 2026-11-10) ----------
    A 24 px rounded square with the sender's initial before the name. A plain email (the frame reports its sentinel

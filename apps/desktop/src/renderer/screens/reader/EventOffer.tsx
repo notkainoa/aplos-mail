@@ -22,14 +22,14 @@ export function EventOfferCard({
   return (
     <section className="aplos-reader__offer" aria-labelledby={titleId}>
       <div className="aplos-reader__offer-text">
-        <Text variant="label" tone="ink" as="h3" id={titleId}>
+        <Text variant="label" tone="ink" as="h2" id={titleId}>
           {offer.title}
         </Text>
-        <Text variant="small" tone="ink-2" icon="clock">
+        <Text variant="small" tone="dim" icon="clock">
           {offer.when}
         </Text>
         {offer.place ? (
-          <Text variant="small" tone="ink-2" icon="pin">
+          <Text variant="small" tone="dim" icon="pin">
             {offer.place}
           </Text>
         ) : null}
@@ -39,7 +39,7 @@ export function EventOfferCard({
   );
 }
 
-/** The offers for one thread; nothing at all when there are none or the account is left out of AI. */
+/** The offers for one thread; nothing at all (and no plans window opened) when the account is left out of AI. */
 export function EventOffers({
   row,
   hasInvite,
@@ -48,7 +48,6 @@ export function EventOffers({
   readonly hasInvite: boolean;
 }) {
   const accounts = useAccounts();
-  const plans = useView({ kind: 'plans', threadId: row.id });
   if (
     !offersShown(
       accounts.find(a => a.id === row.accountId),
@@ -56,8 +55,13 @@ export function EventOffers({
     )
   )
     return null;
+  return <OffersFor row={row} />;
+}
+
+function OffersFor({ row }: { readonly row: Pick<ThreadRow, 'id' | 'subject'> }) {
+  const plans = useView({ kind: 'plans', threadId: row.id });
   const found = plans.ids.flatMap(id => plans.rows.get(id) ?? []);
-  const offers = offersOf(found, row.subject);
+  const offers = offersOf(found, row.subject.trim() || 'No subject');
   if (offers.length === 0) return null;
   return (
     <div className="aplos-reader__offers">
