@@ -206,7 +206,8 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
   const earlier = data.messages.slice(0, -1);
   const latest = data.messages[data.messages.length - 1];
   if (!latest) return null;
-  const offers = props.paper ? <EventOffers row={row} hasInvite={invite !== null} /> : null;
+  // Rendered on and off paper alike, so the measured letter is the one that is promoted (no jump).
+  const offers = <EventOffers row={row} hasInvite={invite !== null} />;
   const message = (m: Message, cursor: boolean) => (
     <ReaderMessage
       key={m.id}
