@@ -102,6 +102,17 @@ export function standInPorts(
       return get().bundle!;
     },
     async diagnosticsCopy() {},
+    async diagnosticsSave() {
+      return { canceled: false };
+    },
+    async verboseSet(on) {
+      const until = on ? Date.now() + 15 * 60_000 : undefined;
+      set({ verbose: on ? { until } : undefined });
+      return { until };
+    },
+    async dataExport() {
+      return { canceled: false };
+    },
     async queueRetry(id) {
       set({ queue: get().queue?.filter(q => q.id !== id) });
     },

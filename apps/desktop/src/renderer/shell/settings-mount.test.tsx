@@ -123,6 +123,13 @@ test('the reconnect row opens the shell reconnect sheet with its account and mod
   assert.equal(closed, 1);
 });
 
+test("the 'Enable editing' row hands 'enableEditing' to the shell's reconnect sheet", () => {
+  const { host, calls } = recorded();
+  const piece = handOff(host.renderReconnect?.('acct-1', 'enableEditing', () => {}));
+  runHandOff(piece.open, piece.onClose);
+  assert.deepEqual(calls, ['reconnect acct-1 enableEditing']);
+});
+
 test('Add an account opens the shell dialog instead of drawing its own', () => {
   const { host, calls } = recorded();
   let closed = 0;

@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Account } from '../../data';
+import { EDITING_COPY } from '../calendar/accountCalendarState';
 import { dataOf, staticScreen } from './preview/states';
-import { ALEX, JORDAN, needsReauth } from './preview/fixtures';
+import { ALEX, DEMO, editingOn, IMAP, JORDAN, needsReauth, writeRefused } from './preview/fixtures';
 import type { SettingsHost } from './ports';
 
 const render = (over: Parameters<typeof dataOf>[0], section: 'accounts' | 'calendar') =>
@@ -137,6 +138,110 @@ describe('Settings → Calendar accounts block', () => {
     const weekStart = html.indexOf('Week starts on');
     assert.ok(accounts > -1 && weekStart > -1);
     assert.ok(accounts < weekStart, 'the accounts block comes first');
+  });
+});
+
+describe('Settings → Calendar editing (Enable editing)', () => {
+  test('editing off: "Calendar on · N calendars · Editing off" with Enable editing', () => {
+    const html = render({ accounts: [ALEX] }, 'calendar');
+    assert.match(html, /Calendar on · 2 calendars · Editing off/);
+    assert.match(html, />Enable editing</);
+    assert.match(html, /aria-label="alex\.moreno@example\.com: Enable editing"/);
+    assert.doesNotMatch(html, /data-tone="attention"/);
+  });
+
+  test('editing on: "· Editing on" and no action — not even on a refused write left stale', () => {
+    const on = render({ accounts: [editingOn(ALEX)] }, 'calendar');
+    assert.match(on, /Calendar on · 2 calendars · Editing on/);
+    assert.doesNotMatch(on, /Enable editing|Turn on editing/);
+    const stale = render({ accounts: [editingOn(writeRefused(ALEX))] }, 'calendar');
+    assert.match(stale, /Editing on/);
+    assert.doesNotMatch(stale, /Turn on editing to change events|Turn on editing</);
+  });
+
+  test('a refused write: the shared Turn on editing notice in attention, one Turn on editing action', () => {
+    const html = render({ accounts: [writeRefused(ALEX)] }, 'calendar');
+    // The line is the Calendar screen's own notice, verbatim — identical wording in both places.
+    assert.ok(html.includes(EDITING_COPY.notice), EDITING_COPY.notice);
+    assert.match(html, /data-tone="attention"/);
+    assert.match(html, /aria-label="alex\.moreno@example\.com: Turn on editing"/);
+    assert.doesNotMatch(html, /Calendar on · 2 calendars · Editing/);
+    // Not an error banner, not a reconnect, no stacked duplicate control.
+    assert.doesNotMatch(
+      html,
+      /Calendar not allowed yet|Allow calendar access|>Reconnect|ui-error-line/,
+    );
+    assert.equal((html.match(/>Turn on editing</g) ?? []).length, 1);
+  });
+
+  test('a read-only account that never wrote gets no nag, only the quiet Enable editing', () => {
+    const html = render({ accounts: [ALEX] }, 'calendar');
+    assert.doesNotMatch(html, /Turn on editing to change events/);
+    assert.doesNotMatch(html, /data-tone="attention"/);
+    assert.equal((html.match(/>Enable editing</g) ?? []).length, 1);
+  });
+
+  test('demo and non-Google accounts claim nothing about editing', () => {
+    const html = render({ accounts: [DEMO, IMAP] }, 'calendar');
+    assert.doesNotMatch(html, /Editing o(n|ff)|Enable editing|Turn on editing/);
+  });
+
+  test('the Accounts section keeps "Calendar on · N calendars" and gains no new button', () => {
+    const html = render({ accounts: [ALEX, writeRefused(JORDAN)] }, 'accounts');
+    assert.match(html, /Calendar on · 2 calendars/);
+    assert.match(html, /Calendar on · 1 calendar/);
+    assert.doesNotMatch(html, /Editing o(n|ff)|Enable editing|Turn on editing/);
+    // A calendarWrite-only row is not a needs-reconnect account either.
+    assert.doesNotMatch(html, />Reconnect|Turn on editing to change events/);
+  });
+
+  test('the action opens the shell sheet in enableEditing mode (startReconnect → renderReconnect)', () => {
+    const seen: { id: string; mode: string }[] = [];
+    const host: SettingsHost = {
+      renderReconnect: (accountId, mode, _onClose) => {
+        seen.push({ id: accountId, mode });
+        return null;
+      },
+    };
+    renderToStaticMarkup(
+      staticScreen(
+        {
+          title: '',
+          section: 'calendar',
+          data: dataOf({ accounts: [ALEX] }),
+          view: { reconnect: { accountId: ALEX.id, mode: 'enableEditing' } },
+        },
+        host,
+      ),
+    );
+    assert.deepEqual(seen, [{ id: ALEX.id, mode: 'enableEditing' }]);
+  });
+
+  test('the account row is focusable programmatically: tabindex -1 on its settings anchor', () => {
+    // DESIGN 11.2: when "Enable editing" unmounts under focus (editing flips on), the screen hands
+    // the row that focus — the anchor wrapper must be a programmatic focus target.
+    const html = render({ accounts: [ALEX] }, 'calendar');
+    assert.match(
+      html,
+      /<div class="settings-anchor" data-setting-anchor="calendarPermission"[^>]*tabindex="-1"[^>]*>\s*<div class="ui-setting-row"/,
+    );
+    assert.match(html, /id="set-calendar-calendarPermission-acct-alex"/);
+  });
+
+  test('the sheet copy in enableEditing mode', () => {
+    const html = renderToStaticMarkup(
+      staticScreen({
+        title: '',
+        section: 'calendar',
+        data: dataOf({ accounts: [ALEX] }),
+        view: { reconnect: { accountId: ALEX.id, mode: 'enableEditing' } },
+      }),
+    );
+    assert.match(html, /Turn on editing for alex\.moreno@example\.com/);
+    assert.match(
+      html,
+      /Aplos will ask Google for permission to change events\. Nothing changes unless you ask\./,
+    );
   });
 });
 

@@ -69,7 +69,7 @@ test('there is one file per engine area and nothing else besides the table and i
 
 test('a stub rejects with notImplemented, and an unknown method with unsupported', async () => {
   await assert.rejects(
-    dispatch('Data/export', {}, ctx),
+    dispatch('Event/extract', {}, ctx),
     (e: unknown) => e instanceof NotImplementedError && e.type === 'notImplemented',
   );
   await assert.rejects(

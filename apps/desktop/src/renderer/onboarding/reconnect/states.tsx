@@ -29,8 +29,17 @@ type StateEntry = { title: string; render: () => JSX.Element; height?: number };
 const ADDRESS = 'jordan.lee@example.com';
 
 /** A sheet's state after real events, so the pictures cannot drift from the machine. */
-function sheetAfter(call: ReconnectCall, events: readonly ReconnectEvent[]): ReconnectState {
-  let state = initialReconnect({ accountId: 'acc-jordan', address: ADDRESS, call });
+function sheetAfter(
+  call: ReconnectCall,
+  events: readonly ReconnectEvent[],
+  enable?: 'calendarWrite',
+): ReconnectState {
+  let state = initialReconnect({
+    accountId: 'acc-jordan',
+    address: ADDRESS,
+    call,
+    ...(enable ? { enable } : {}),
+  });
   for (const event of [
     { type: 'open' } as const,
     { type: 'started', attempt: 1, connectId: 'c1' } as const,
@@ -192,6 +201,10 @@ export const reconnectStates: Record<string, StateEntry> = {
   'reconnect-grant-permissions': {
     title: 'Reconnect sheet: a missing permission (grant mode, waiting)',
     render: () => sheet(sheetAfter('grantPermissions', [])),
+  },
+  'reconnect-enable-editing': {
+    title: 'Reconnect sheet: turning on calendar editing (enableEditing mode, waiting)',
+    render: () => sheet(sheetAfter('grantPermissions', [], 'calendarWrite')),
   },
   /* The block in the mail window's proportions (hill-climb winners: the sidebar aside the pane where the status
      slot lives, and the centred 'settle' placement for the block itself; the sidebar's contents belong to ui-shell). */
