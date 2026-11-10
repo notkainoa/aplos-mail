@@ -5,7 +5,9 @@
  * the shell closes it with a "Reconnected" toast.
  *
  * `mode` 'grant' is the missing-permission case (`needsPermission`): its own title, "Aplos needs permission to
- * read your Gmail.", and "Grant access" in place of "Try again". The wait is the same.
+ * read your Gmail.", and "Grant access" in place of "Try again". `mode` 'enableEditing' is the calendar-write
+ * ask (Settings → Calendar's "Enable editing"): "Aplos will ask Google for permission to change events." The
+ * wait is the same.
  */
 import { useId } from 'react';
 import type { ComponentPropsMap } from '../props';
@@ -30,6 +32,7 @@ export function ReconnectSheet({
   const cancelId = useId();
   const name = PROVIDER_NAME[provider];
   const grant = mode === 'grant';
+  const editing = mode === 'enableEditing';
   const waiting = `Waiting for ${name} in your browser…`;
   const footer = (
     <>
@@ -45,7 +48,7 @@ export function ReconnectSheet({
         <PartButton
           id={retryId}
           variant="filled"
-          label={grant ? 'Grant access' : 'Try again'}
+          label={grant ? 'Grant access' : editing ? 'Turn on editing' : 'Try again'}
           keys="Return"
           keyHint="always"
           onPress={() => onRetry()}
@@ -56,11 +59,19 @@ export function ReconnectSheet({
   return (
     <Dialog
       open={open}
-      title={grant ? `Grant access for ${address}` : `Reconnect ${address}`}
+      title={
+        grant
+          ? `Grant access for ${address}`
+          : editing
+            ? `Turn on editing for ${address}`
+            : `Reconnect ${address}`
+      }
       description={
         grant
           ? `Aplos needs permission to read your ${PROVIDER_MAIL[provider]}.`
-          : 'Nothing resyncs, and your changes on this Mac are kept.'
+          : editing
+            ? `Aplos will ask ${name} for permission to change events. Your calendar stays as it is until you allow it.`
+            : 'Nothing resyncs, and your changes on this Mac are kept.'
       }
       size="sm"
       footer={footer}
@@ -86,7 +97,9 @@ export function ReconnectSheet({
             <PartIcon name="alert" size="sm" />
             <span>
               {reason ??
-                `${name} didn’t finish ${grant ? 'granting access' : 'the sign-in'}. Your mail is safe on this Mac.`}
+                (editing
+                  ? `${name} didn’t finish granting access. Your calendar stays as it is.`
+                  : `${name} didn’t finish ${grant ? 'granting access' : 'the sign-in'}. Your mail is safe on this Mac.`)}
             </span>
           </p>
         )}
