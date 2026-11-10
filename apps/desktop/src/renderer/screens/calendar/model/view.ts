@@ -47,6 +47,7 @@ import {
 } from './period';
 import { DAY_MS } from './units';
 import { canSendReply } from './rsvp';
+import { editingOff } from '../accountCalendarState';
 import {
   detailMenu,
   entryById,
@@ -112,6 +113,12 @@ export interface CalendarViewModel {
     entryId: string;
   } | null;
   readonly editor: EditorView | null;
+  /**
+   * The open detail's 'Turn on editing' line and Enable editing action: the account id when that event's
+   * grant lacks the write scope (shape 3). Contextual to the event, so a read-only account carries no
+   * standing nag — no banner, no sidebar line.
+   */
+  readonly editing: { accountId: string } | null;
   /** DESIGN 7.14: "Nothing scheduled" with New event · N, on an empty day. */
   readonly emptyAction: boolean;
   /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
@@ -178,6 +185,16 @@ function emptyView(
   return sentence === null ? null : { sentence, next: nextUpcoming(state, ctx, period) };
 }
 
+/** The open detail's 'Turn on editing' line: the account when its grant lacks the write scope (shape 3). */
+function detailEditing(
+  detail: CalendarEventData | null,
+  ctx: CalendarContext,
+): { accountId: string } | null {
+  if (detail?.kind !== 'event') return null;
+  const account = editingOff(ctx.accounts, ctx.events.get(detail.id)?.accountId);
+  return account ? { accountId: account.id } : null;
+}
+
 export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarViewModel {
   const shown = shownView(state);
   const period = periodOf(shown, state.anchor, ctx.weekStartsOn);
@@ -219,6 +236,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
             canSend: canSendReply(live, detail),
           }
         : null,
+    editing: detailEditing(detail, ctx),
     more: detail ? detailMenu(detail, ctx) : [],
     moreOpen: state.moreOpen && detail !== null,
     stack:

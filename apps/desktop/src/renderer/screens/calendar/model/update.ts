@@ -1,6 +1,7 @@
 /** The one reducer: every key, click and drag of the screen goes through `update` (DESIGN 5 rule 1: state first, then effects). */
 import { toIsoDate } from '../../../data';
 import { periodOf, stepAnchor } from './period';
+import { editingOff } from '../accountCalendarState';
 import { draftFromEvent, draftFromRange, newDraft, patchDraft } from './editor';
 import { lockedMessage } from './rsvp';
 import { planIdOf, walk } from './entries';
@@ -195,6 +196,9 @@ function onEdit(state: CalendarState, _action: ActionOf<'edit'>, ctx: CalendarCo
   const calendar = ctx.calendars.find(c => c.id === event.calendarId);
   if (!event.can.edit || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
+  // The grant lacks the write scope: E gets the calm notice, not an editor whose save would fail (shape 3).
+  if (editingOff(ctx.accounts, event.accountId))
+    return done(state, [{ kind: 'editingNotice', accountId: event.accountId }]);
   return done({ ...closed(state), selectedId: target.id, editor: draftFromEvent(event) });
 }
 
@@ -221,6 +225,9 @@ function onConfirmPlan(
   const entry = detailEntry(state, ctx);
   const planId = entry ? planIdOf(entry.id) : null;
   if (!entry || !planId) return unhandled(state);
+  const accountId = ctx.calendars.find(c => c.id === ctx.defaultCalendarId)?.accountId;
+  if (editingOff(ctx.accounts, accountId))
+    return done({ ...closed(state) }, [{ kind: 'editingNotice', accountId }]);
   return done({ ...closed(state), selectedId: null }, [
     {
       kind: 'planConfirm',
@@ -331,6 +338,7 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   // The conflict notice lands on the re-opened editor's own line (writeErrors, calendar.conflict).
   editorNote: (s, a) =>
     s.editor ? done({ ...s, editor: { ...s.editor, error: a.message } }) : unhandled(s),
+  enableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
   delete: (s, _a, ctx) => deleteTransition(s, ctx),
   move: (s, a, ctx) => moveTransition(s, ctx, a.id, a.start, a.end),
   resize: onResize,

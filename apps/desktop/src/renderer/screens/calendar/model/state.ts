@@ -1,6 +1,6 @@
 /** The screen's state, its actions and effects, and the selectors the reducer, the commands and the view share. */
 import type { EventChange } from '@aplos/contract';
-import type { Calendar, EpochMs, Event, Plan } from '../../../data';
+import type { Account, Calendar, EpochMs, Event, Plan } from '../../../data';
 import type {
   CalendarEventData,
   CalendarView,
@@ -84,6 +84,8 @@ export interface CalendarContext {
   readonly events: ReadonlyMap<string, Event>;
   readonly plans: ReadonlyMap<string, Plan>;
   readonly calendars: readonly Calendar[];
+  /** The accounts events and calendars belong to: `grantedScopes` gates editing (shape 1). */
+  readonly accounts: readonly Account[];
   /** `Calendar/get` has answered at least once. Until then the grid is loading, never empty (review1 12). */
   readonly calendarsReady: boolean;
   /**
@@ -128,6 +130,8 @@ export type CalendarAction =
   | { type: 'editorSave' }
   | { type: 'editorCancel' }
   | { type: 'editorNote'; message: string }
+  /** The detail's 'Enable editing' button: opens the grant sheet for this account. */
+  | { type: 'enableEditing'; accountId: string }
   | { type: 'delete' }
   | { type: 'move'; id: string; start: IsoDateTime; end: IsoDateTime }
   | { type: 'resize'; id: string; end: IsoDateTime }
@@ -175,6 +179,8 @@ export type CalendarEffect =
       failure: string;
       /** An editor save's event: on `calendar.conflict` the editor re-opens on the newer copy (writeErrors). */
       reopenEditorId?: string;
+      /** The account the write goes to: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
     }
   | {
       kind: 'rsvp';
@@ -185,7 +191,13 @@ export type CalendarEffect =
       answer: RsvpAnswer;
       organizer?: string;
       failure: string;
+      /** The account the reply goes to: `permission.calendarWrite` offers Enable editing on it. */
+      accountId?: string;
     }
+  /** The owner tried to change something on an account whose grant lacks the write scope: the calm notice. */
+  | { kind: 'editingNotice'; accountId?: string }
+  /** The detail's Enable editing button: opens the grant sheet for this account. */
+  | { kind: 'enableEditing'; accountId: string }
   | { kind: 'calendarSet'; id: string; shown: boolean; toast?: ToastPlan }
   | { kind: 'planConfirm'; planId: string; calendarId: string | null; optimistic: OptimisticChange }
   | { kind: 'planDismiss'; planId: string; optimistic: OptimisticChange }

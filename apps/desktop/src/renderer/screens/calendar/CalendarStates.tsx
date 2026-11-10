@@ -44,6 +44,7 @@ import {
   type Overlay,
 } from './calendar.model';
 import { CALENDAR_PANE_TOOLS, CalendarView } from './CalendarView';
+import { CALENDAR_EVENTS_SCOPE } from './accountCalendarState';
 import { calendarSidebar } from './sidebar';
 
 const noop = () => {};
@@ -116,6 +117,8 @@ function googleAccount(id: string, address: string, over: Partial<Account> = {})
 
 const ALEX_ACCOUNT = googleAccount('acct-alex', 'alex.moreno@example.com', {
   name: 'Alex Moreno',
+  // A connected Google account in the demo world holds the write grant, so the editing gate stays quiet.
+  grantedScopes: [CALENDAR_EVENTS_SCOPE],
 });
 const JORDAN_NO_CALENDAR = googleAccount('acct-jordan', 'jordan.lee@example.com', {
   name: 'Jordan Lee',
@@ -433,6 +436,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    accounts: fixture.accounts ?? [ALEX_ACCOUNT],
     loadedThrough: eventsRange({ from: periodFrom, to: periodTo }, now).to,
     defaultCalendarId: defaultId,
     calendarsReady: true,
@@ -725,6 +729,7 @@ export const calendarStates: Record<string, CalendarPreviewState> = Object.fromE
 export const demoWorld = {
   calendars: CALENDARS,
   events: WEEK,
+  accounts: [ALEX_ACCOUNT],
   plans: [LAUNCH_PREP],
   worst: WORST,
   holidays: HOLIDAYS,

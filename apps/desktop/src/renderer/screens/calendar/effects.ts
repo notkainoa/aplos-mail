@@ -9,8 +9,9 @@
  * No React: the container binds the ports to `api.*` and the state setters; tests drive it with the real data layer
  * and stand-in toasts.
  */
-import type { EventChange } from '@aplos/contract';
+import { NotImplementedError, type EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
+import { toErrorBody } from '../../data/client';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
 import type { CommandId, EventScope } from '../../ui/props';
 import {
@@ -19,6 +20,7 @@ import {
   type OptimisticChange,
   type ToastPlan,
 } from './calendar.model';
+import { EDITING_COPY } from './accountCalendarState';
 import { writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -49,6 +51,8 @@ export interface EffectPorts {
     readonly ids: string[];
     readonly hidden: boolean;
   }): Promise<Receipt>;
+  /** `Account/grantPermissions {accountId, enable:'calendarWrite'}`: opens the same connect sheet; the account's `grantedScopes` gains the write scope when it finishes. */
+  enableEditing(accountId: string): Promise<void>;
   openThread(threadId: string): void;
   openUrl(url: string): void;
   copyText(text: string): void;
@@ -97,6 +101,28 @@ function demoteUndoToast(opId: string, toast: ToastPlan): void {
   pushToast({ id: opId, kind: toast.kind, message: toast.message, undoable: false });
 }
 
+/** The calm 'Turn on editing' notice with the Enable editing action (shape 3): a notice, not an error banner. */
+function editingNotice(ports: EffectPorts, accountId: string | undefined): void {
+  pushToast({
+    id: `editing:${accountId ?? 'unknown'}`,
+    kind: 'info',
+    message: EDITING_COPY.notice,
+    actions: [{ id: 'enable', label: EDITING_COPY.action }],
+    undoable: false,
+    onAction: actionId => {
+      if (actionId !== 'enable' || accountId === undefined) return;
+      void ports.enableEditing(accountId).then(undefined, error => {
+        pushToast({
+          id: newOpId(),
+          kind: 'info',
+          message: toErrorBody(error).message,
+          undoable: false,
+        });
+      });
+    },
+  });
+}
+
 /** The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). */
 function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
   pushToast({
@@ -124,6 +150,27 @@ interface WriteSpec {
   readonly failure?: string;
   /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
   readonly reopenEditorId?: string;
+  /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
+  readonly accountId?: string;
+}
+
+/** Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the code's own follow-up. */
+function writeFailed(
+  spec: WriteSpec,
+  ui: EffectUi,
+  ports: EffectPorts,
+  error: unknown,
+  retry: () => void,
+): void {
+  spec.entryIds.forEach(id => ui.rollback(id));
+  dismissToast(spec.opId);
+  if (!spec.failure) return;
+  const failure = writeFailureOf(error, spec.failure);
+  if (failure.enableEditing) editingNotice(ports, spec.accountId);
+  else failureToast(spec.opId, failure, retry);
+  if (failure.reopenEditor && spec.reopenEditorId)
+    ui.reopenEditor(spec.reopenEditorId, failure.message);
+  if (failure.closeDetail) ui.closeDetail();
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
@@ -132,19 +179,10 @@ function optimisticIds(change: OptimisticChange): string[] {
 }
 
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
-function runWrite(spec: WriteSpec, ui: EffectUi, retry: () => void): void {
+function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
   spec.call().then(
     at => spec.entryIds.forEach(id => ui.settle(id, at)),
-    error => {
-      spec.entryIds.forEach(id => ui.rollback(id));
-      dismissToast(spec.opId);
-      if (!spec.failure) return;
-      const failure = writeFailureOf(error, spec.failure);
-      failureToast(spec.opId, failure, retry);
-      if (failure.reopenEditor && spec.reopenEditorId)
-        ui.reopenEditor(spec.reopenEditorId, failure.message);
-      if (failure.closeDetail) ui.closeDetail();
-    },
+    error => writeFailed(spec, ui, ports, error, retry),
   );
 }
 
@@ -180,8 +218,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             }),
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
+          accountId: fx.accountId,
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -216,8 +256,10 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
                 return receipt.appliedState;
               }),
           failure: fx.failure,
+          accountId: fx.accountId,
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -274,6 +316,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           failure: 'Couldn’t add it to the calendar.',
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -289,6 +332,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             ports.planDismiss({ opId, ids: [fx.planId] }).then(receipt => receipt.appliedState),
         },
         ui,
+        ports,
         retry,
       );
       return;
@@ -315,10 +359,24 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           failure: 'Couldn’t hide it.',
         },
         ui,
+        ports,
         retry,
       );
       return;
     }
+    case 'editingNotice':
+      editingNotice(ports, fx.accountId);
+      return;
+    case 'enableEditing':
+      void ports.enableEditing(fx.accountId).then(undefined, error => {
+        pushToast({
+          id: newOpId(),
+          kind: 'info',
+          message: toErrorBody(error).message,
+          undoable: false,
+        });
+      });
+      return;
     case 'openThread':
       ports.openThread(fx.threadId);
       return;
@@ -347,6 +405,13 @@ export function livePorts(): EffectPorts {
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
+    // TODO(calendarWrite): `Account/grantPermissions` takes `{accountId}` only — the contract has no
+    // `enable:'calendarWrite'` yet (providers #393/#394 pending; REQUESTed for the contract lane). Calling
+    // it as-is would ask the read scopes again, so the port rejects until the contract carries `enable`.
+    enableEditing: accountId =>
+      Promise.reject(
+        new NotImplementedError(`Account/grantPermissions enable:'calendarWrite' for ${accountId}`),
+      ),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
     // Main opens it through its external() gate (http, https or mailto, no credentials; anything else is refused).
     openUrl: url => {

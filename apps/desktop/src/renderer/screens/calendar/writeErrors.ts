@@ -10,6 +10,7 @@
  */
 import type { ErrorBody } from '../../data';
 import { toErrorBody } from '../../data/client';
+import { EDITING_COPY } from './accountCalendarState';
 
 /** The refusal's `ErrorBody`: a `ContractError`'s `.body`, an `OperationFailedError`'s `.error`, else a plain failure. */
 function bodyOf(error: unknown): ErrorBody {
@@ -36,6 +37,8 @@ export interface WriteFailure {
   readonly reopenEditor?: boolean;
   /** `calendar.eventGone`: the event left the calendar — close its detail. */
   readonly closeDetail?: boolean;
+  /** `permission.calendarWrite`: the grant lacks the write scope — the notice offers Enable editing. */
+  readonly enableEditing?: boolean;
 }
 
 /** The plain sentences, keyed by `body.reasonCode` (a `validation` failure names its field's code the same way). */
@@ -73,6 +76,8 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
  */
 export function writeFailureOf(error: unknown, fallback: string): WriteFailure {
   const body = bodyOf(error);
+  if (body.reasonCode === 'permission.calendarWrite')
+    return { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
   if (body.reasonCode === 'calendar.unavailable')
     return {
       message: "Couldn't reach Google Calendar. Nothing changed.",

@@ -136,6 +136,33 @@ export function calendarAccessOf(
     : { kind: 'none', line: CALENDAR_ACCESS_COPY.none, action: null };
 }
 
+/** The one place the write scope's wire string lives (providers' 2026-11-10 shape 1). */
+export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+
+/** The 'Turn on editing' line and its action, shared by the detail and the notice (DESIGN 10). */
+export const EDITING_COPY = {
+  notice: 'Turn on editing to change events on this calendar.',
+  action: 'Enable editing',
+} as const;
+
+/**
+ * Whether the account's grant carries the calendar write scope (`grantedScopes`, shape 1). An account
+ * the screen cannot see claims nothing either way, so `undefined` reads as on: a write that should have
+ * been gated still surfaces `permission.calendarWrite` through the failure path.
+ */
+export function editingOn(account: Pick<Account, 'grantedScopes'> | undefined): boolean {
+  return account === undefined || account.grantedScopes.includes(CALENDAR_EVENTS_SCOPE);
+}
+
+/** The account behind `accountId` when its grant lacks the write scope; undefined means editing is on. */
+export function editingOff(
+  accounts: readonly Account[],
+  accountId: string | undefined,
+): Account | undefined {
+  const account = accounts.find(a => a.id === accountId);
+  return editingOn(account) ? undefined : account;
+}
+
 const ACCOUNT_TAGS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];
 
 /** The account's colour dot: its own colour tag, else the same stable pick the Accounts rows use. */

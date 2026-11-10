@@ -2,7 +2,7 @@
 import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
 import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { api, setClock, type Event } from '../../data';
+import { api, setClock, type Account, type Calendar, type Event } from '../../data';
 import { harnessClock } from '../../data/clock';
 import {
   entriesFor,
@@ -24,6 +24,7 @@ export function ctxFor(
   plans = demoWorld.plans,
   calendars = demoWorld.calendars,
   state?: CalendarState,
+  accounts: readonly Account[] = demoWorld.accounts,
 ): CalendarContext {
   const period = periodOf('week', THU, 0);
   const entries = entriesFor({
@@ -41,6 +42,7 @@ export function ctxFor(
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(plans.map(p => [p.id, p])),
     calendars,
+    accounts,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
     calendarsReady: true,
@@ -52,7 +54,8 @@ export function ctxFor(
 export function ctxAt(
   state: CalendarState,
   events: readonly Event[] = demoWorld.events,
-  calendars = demoWorld.calendars,
+  calendars: readonly Calendar[] = demoWorld.calendars,
+  accounts: readonly Account[] = demoWorld.accounts,
 ): CalendarContext {
   const period = periodOf(shownView(state), state.anchor, 0);
   const entries = entriesFor({
@@ -70,6 +73,7 @@ export function ctxAt(
     events: new Map(events.map(e => [e.id, e])),
     plans: new Map(),
     calendars,
+    accounts,
     loadedThrough: eventsRange(period, NOW).to,
     defaultCalendarId: 'work',
     calendarsReady: true,
@@ -183,6 +187,7 @@ export function ports(): EffectPorts {
     planConfirm: args => api.plan.confirm(args),
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
+    enableEditing: () => Promise.resolve(),
     openThread: () => undefined,
     openUrl: () => undefined,
     copyText: () => undefined,

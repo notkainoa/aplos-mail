@@ -8,6 +8,7 @@ import type {
   IsoDateTime,
   RsvpAnswer,
 } from '../../../ui/props';
+import { editingOff } from '../accountCalendarState';
 import { draftChange, draftProblem, draftTimes, type EditorDraft } from './editor';
 import { isoOfTime } from './period';
 import { shiftInZone, timeChange, wallDeltaMs } from './times';
@@ -117,6 +118,9 @@ export function moveTransition(
   const calendar = ctx.calendars.find(c => c.id === event.calendarId);
   if (!event.can.move || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
+  // The grant lacks the write scope: the attempt gets the calm notice, not a doomed write (shape 3).
+  if (editingOff(ctx.accounts, event.accountId))
+    return done(state, [{ kind: 'editingNotice', accountId: event.accountId }]);
   if (event.recurring && !scope)
     return done(decideScope(state, entry, 'move', { kind: 'move', start, end }));
   const startUtc = new Date(start).getTime();
@@ -149,6 +153,7 @@ export function moveTransition(
       },
       undoLabel: `Moved ${entry.title}`,
       failure: failureFor('move', entry.title),
+      accountId: event.accountId,
     },
   ]);
 }
@@ -167,6 +172,8 @@ export function deleteTransition(
   const calendar = ctx.calendars.find(c => c.id === event.calendarId);
   if (!event.can.delete || calendar?.readOnly)
     return done(state, [{ kind: 'notice', message: lockedMessage(event, calendar) }]);
+  if (editingOff(ctx.accounts, event.accountId))
+    return done(state, [{ kind: 'editingNotice', accountId: event.accountId }]);
   if (event.recurring && !scope)
     return done(
       decideScope({ ...state, editor: null }, entry, 'delete', {
@@ -191,6 +198,7 @@ export function deleteTransition(
         toast: { kind: 'trash', message: 'Event deleted', undoable: true },
         undoLabel: 'Event deleted',
         failure: failureFor('delete', entry.title),
+        accountId: event.accountId,
       },
       { kind: 'focus', target: 'grid' },
     ],
@@ -207,6 +215,8 @@ export function rsvpTransition(
   const event = entry ? ctx.events.get(entry.id) : undefined;
   if (!live || !entry || !event || !canSendReply(live, entry) || live.answer === null)
     return done(state, [], false);
+  if (editingOff(ctx.accounts, event.accountId))
+    return done(state, [{ kind: 'editingNotice', accountId: event.accountId }]);
   if (event.recurring && !scope)
     return done(decideScope(state, entry, 'reply', { kind: 'reply', answer: live.answer }));
   return sendReply(state, entry, event, live.answer, scope ?? 'occurrence');
@@ -244,6 +254,7 @@ export function sendReply(
         patch: { myReply: answer, unanswered: false, ...(guests ? { guests } : {}) },
       },
       failure: `Couldn't send your reply to ${entry.title}.`,
+      accountId: event.accountId,
     },
   ]);
 }
@@ -308,8 +319,31 @@ function createSave(
       },
       undoLabel: `Added ${entry.title}`,
       failure: `Couldn't add ${entry.title}.`,
+      accountId: calendar?.accountId,
     },
   ]);
+}
+
+/** The account a save writes to: the target calendar's for a create, the event's for an update. */
+function changeAccount(
+  change: EventChange,
+  original: Event | undefined,
+  ctx: CalendarContext,
+): string | undefined {
+  return change.type === 'create'
+    ? ctx.calendars.find(c => c.id === change.calendarId)?.accountId
+    : original?.accountId;
+}
+
+/** The 'Turn on editing' notice when the account behind `accountId` lacks the write scope, else null. */
+function editingGate(
+  accountId: string | undefined,
+  ctx: CalendarContext,
+  next: CalendarState,
+): Transition | null {
+  return editingOff(ctx.accounts, accountId)
+    ? done(next, [{ kind: 'editingNotice', accountId }])
+    : null;
 }
 
 /** The event being edited left the window while the dialog was open: close with why, no write (review2 2). */
@@ -339,7 +373,23 @@ export function saveEditor(
   const change = draftChange(draft, original, scoped, zone);
   const next = { ...closed(state), editor: null };
   if (!change) return done(next);
+  // The grant lacks the write scope: the save gets the calm notice, not a doomed write (shape 3).
+  const gate = editingGate(changeAccount(change, original, ctx), ctx, next);
+  if (gate) return gate;
   if (change.type === 'create') return createSave(next, ctx, draft, change);
+  return updateSave(next, ctx, draft, original, change, scoped, zone);
+}
+
+/** An existing event's optimistic patch and its update write; `series` mirrors the shift on loaded rows. */
+function updateSave(
+  next: CalendarState,
+  ctx: CalendarContext,
+  draft: EditorDraft,
+  original: Event | undefined,
+  change: EventChange,
+  scoped: EventScope,
+  zone?: string,
+): Transition {
   const entry = entryById(ctx, draft.eventId);
   const title = draft.title.trim();
   const times = draftTimes(draft, zone);
@@ -367,6 +417,7 @@ export function saveEditor(
       undoLabel: `Changed ${title}`,
       failure: failureFor('change', entry?.title ?? title),
       reopenEditorId: draft.eventId,
+      accountId: original?.accountId,
     },
   ]);
 }

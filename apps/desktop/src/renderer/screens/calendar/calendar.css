@@ -207,6 +207,28 @@
   color: var(--dim);
 }
 
+/* The detail's 'Turn on editing' line: one small dim line, hairline above, the Enable editing text button
+   under it — the same pattern as the accounts block's state and action, so hover moves nothing. */
+.cal-editing {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+}
+
+.cal-editing__line {
+  display: block;
+  color: var(--dim);
+}
+
+/* The action's words start where the line above starts, like the accounts block's action. */
+.cal-editing .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* The harness states' stand-in window and sidebar (CalendarStates): the real sidebar is ui-shell's. */
 .calp-window {
   height: 100%;
