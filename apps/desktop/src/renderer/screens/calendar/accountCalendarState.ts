@@ -139,6 +139,9 @@ export function calendarAccessOf(
 /** The one place the write scope's wire string lives (providers' 2026-11-10 shape 1). */
 export const CALENDAR_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
+/** The umbrella grant: `calendar` carries `calendar.events` inside it, so it is editing on too. */
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+
 /** The 'Turn on editing' line and its action, shared by the detail and the notice (DESIGN 10). */
 export const EDITING_COPY = {
   notice: 'Turn on editing to change events on this calendar.',
@@ -151,15 +154,24 @@ export const EDITING_COPY = {
  * been gated still surfaces `permission.calendarWrite` through the failure path.
  */
 export function editingOn(account: Pick<Account, 'grantedScopes'> | undefined): boolean {
-  return account === undefined || account.grantedScopes.includes(CALENDAR_EVENTS_SCOPE);
+  return (
+    account === undefined ||
+    account.grantedScopes.includes(CALENDAR_EVENTS_SCOPE) ||
+    account.grantedScopes.includes(CALENDAR_SCOPE)
+  );
 }
 
-/** The account behind `accountId` when its grant lacks the write scope; undefined means editing is on. */
+/**
+ * The account behind `accountId` when its grant lacks the write scope; undefined means editing is on.
+ * Only a Google, non-demo account can even hold the scope — `calendarAccessOf`'s own exemption — so a
+ * Microsoft, IMAP, JMAP, demo or stand-in account is never gated by this check (review7).
+ */
 export function editingOff(
   accounts: readonly Account[],
   accountId: string | undefined,
 ): Account | undefined {
   const account = accounts.find(a => a.id === accountId);
+  if (account === undefined || account.demo || account.provider !== 'google') return undefined;
   return editingOn(account) ? undefined : account;
 }
 
