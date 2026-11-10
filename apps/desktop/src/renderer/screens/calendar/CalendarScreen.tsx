@@ -288,6 +288,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   stateRef.current = state;
 
   const ports: EffectPorts = useMemo(livePorts, []);
+  // `apply` is defined below (run → ui → apply would be circular); the ref is assigned each render.
+  const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
   const ui: EffectUi = useMemo(
     () => ({
       optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
@@ -308,6 +310,17 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
           return next;
         }),
       focus: (target: 'grid' | 'rail') => setFocus(f => ({ target, seq: (f?.seq ?? 0) + 1 })),
+      reopenEditor: (eventId: string, note: string) => {
+        applyRef.current({ type: 'select', id: eventId });
+        applyRef.current({ type: 'edit' });
+        // The newer copy is already in the store; when it cannot be edited the notice stands alone.
+        applyRef.current(
+          stateRef.current.editor ? { type: 'editorNote', message: note } : { type: 'close' },
+        );
+      },
+      closeDetail: () => {
+        applyRef.current({ type: 'close' });
+      },
     }),
     [],
   );
@@ -325,6 +338,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     },
     [run],
   );
+  applyRef.current = apply;
 
   // Return: CalendarGrid opens its selection itself and the registry's calendar.open runs on the same key; the
   // first of the two in one turn acts (keys.ts). A double-click is its own turn.

@@ -127,6 +127,7 @@ export type CalendarAction =
     }
   | { type: 'editorSave' }
   | { type: 'editorCancel' }
+  | { type: 'editorNote'; message: string }
   | { type: 'delete' }
   | { type: 'move'; id: string; start: IsoDateTime; end: IsoDateTime }
   | { type: 'resize'; id: string; end: IsoDateTime }
@@ -172,6 +173,8 @@ export type CalendarEffect =
       undoLabel: string;
       /** The sentence if it is refused: "Couldn't move Q4 review." */
       failure: string;
+      /** An editor save's event: on `calendar.conflict` the editor re-opens on the newer copy (writeErrors). */
+      reopenEditorId?: string;
     }
   | {
       kind: 'rsvp';

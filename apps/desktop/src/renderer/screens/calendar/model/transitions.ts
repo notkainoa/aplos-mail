@@ -355,6 +355,7 @@ export function saveEditor(
       },
       undoLabel: `Changed ${title}`,
       failure: failureFor('change', entry?.title ?? title),
+      reopenEditorId: draft.eventId,
     },
   ]);
 }

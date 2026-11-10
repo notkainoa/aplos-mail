@@ -14,6 +14,7 @@ import { api, getNow, type Receipt, type State } from '../../data';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
 import type { CommandId, EventScope } from '../../ui/props';
 import { rsvpMessage, type CalendarEffect, type OptimisticChange } from './calendar.model';
+import { writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
 export interface EffectPorts {
@@ -64,6 +65,13 @@ export interface EffectUi {
   shownFailed(id: string): void;
   /** Move focus after the change. */
   focus(target: 'grid' | 'rail'): void;
+  /**
+   * `calendar.conflict` on an editor save: re-open the editor on the newer copy already in the store,
+   * carrying `note` as its error line; closes with the notice instead when the row cannot be edited.
+   */
+  reopenEditor(eventId: string, note: string): void;
+  /** `calendar.eventGone`: the event the detail showed is gone — close it. */
+  closeDetail(): void;
 }
 
 const newOpId = (): string => crypto.randomUUID();
@@ -73,15 +81,19 @@ const UNDO_ACTION: PushedToast['actions'] = [
   { id: 'undo', label: 'Undo', commandId: 'app.undo' as CommandId },
 ];
 
-function failureToast(opId: string, message: string, retry: () => void): void {
+/** The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). */
+function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
   pushToast({
     id: `${opId}:failed`,
     kind: 'info',
-    message,
-    actions: [{ id: 'retry', label: 'Retry' }],
+    message: failure.message,
+    ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
     undoable: false,
     onAction: actionId => {
-      if (actionId === 'retry') retry();
+      if (actionId !== 'retry') return;
+      if (failure.retry === 'delayed' && failure.retryAfterMs !== undefined)
+        setTimeout(retry, failure.retryAfterMs);
+      else retry();
     },
   });
 }
@@ -94,6 +106,8 @@ interface WriteSpec {
   readonly call: () => Promise<State | null>;
   /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
   readonly failure?: string;
+  /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
+  readonly reopenEditorId?: string;
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
@@ -105,10 +119,15 @@ function optimisticIds(change: OptimisticChange): string[] {
 function runWrite(spec: WriteSpec, ui: EffectUi, retry: () => void): void {
   spec.call().then(
     at => spec.entryIds.forEach(id => ui.settle(id, at)),
-    () => {
+    error => {
       spec.entryIds.forEach(id => ui.rollback(id));
       dismissToast(spec.opId);
-      if (spec.failure) failureToast(spec.opId, spec.failure, retry);
+      if (!spec.failure) return;
+      const failure = writeFailureOf(error, spec.failure);
+      failureToast(spec.opId, failure, retry);
+      if (failure.reopenEditor && spec.reopenEditorId)
+        ui.reopenEditor(spec.reopenEditorId, failure.message);
+      if (failure.closeDetail) ui.closeDetail();
     },
   );
 }
@@ -142,6 +161,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               return out.receipt.appliedState;
             }),
           failure: fx.failure,
+          reopenEditorId: fx.reopenEditorId,
         },
         ui,
         retry,

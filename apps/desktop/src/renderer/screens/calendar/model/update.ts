@@ -328,6 +328,9 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   editor: onEditorPatch,
   editorSave: (s, _a, ctx) => saveEditor(s, ctx),
   editorCancel: s => done({ ...s, editor: null }),
+  // The conflict notice lands on the re-opened editor's own line (writeErrors, calendar.conflict).
+  editorNote: (s, a) =>
+    s.editor ? done({ ...s, editor: { ...s.editor, error: a.message } }) : unhandled(s),
   delete: (s, _a, ctx) => deleteTransition(s, ctx),
   move: (s, a, ctx) => moveTransition(s, ctx, a.id, a.start, a.end),
   resize: onResize,

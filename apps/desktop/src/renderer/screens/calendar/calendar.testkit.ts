@@ -138,18 +138,26 @@ export function testUi(): EffectUi & {
   overrides: Map<string, boolean>;
   settled: string[];
   failed: string[];
+  reopened: Array<{ id: string; note: string }>;
+  closed: number;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
+  const reopened: Array<{ id: string; note: string }> = [];
+  let closed = 0;
   return {
     applied,
     dropped,
     overrides,
     settled,
     failed,
+    reopened,
+    get closed() {
+      return closed;
+    },
     optimistic: () => undefined,
     settle: id => applied.push(id),
     rollback: id => dropped.push(id),
@@ -160,6 +168,10 @@ export function testUi(): EffectUi & {
       failed.push(id);
     },
     focus: () => undefined,
+    reopenEditor: (eventId, note) => reopened.push({ id: eventId, note }),
+    closeDetail: () => {
+      closed += 1;
+    },
   };
 }
 
