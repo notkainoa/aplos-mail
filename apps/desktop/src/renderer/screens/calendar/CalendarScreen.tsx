@@ -42,6 +42,7 @@ import {
   commandEnabled,
   commandTarget,
   defaultCalendarId,
+  detailIsFor,
   EMPTY_OVERLAY,
   entriesFor,
   eventsRange,
@@ -77,7 +78,13 @@ import {
   takesInviteAnswerKey,
   type ElementLike,
 } from './keys';
-import { livePorts, runCalendarEffect, type EffectPorts, type EffectUi } from './effects';
+import {
+  cancelPendingRetries,
+  livePorts,
+  runCalendarEffect,
+  type EffectPorts,
+  type EffectUi,
+} from './effects';
 import { calendarSidebar } from './sidebar';
 import { calendarListedKey } from './accountCalendarState';
 
@@ -312,22 +319,18 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
           return next;
         }),
       focus: (target: 'grid' | 'rail') => setFocus(f => ({ target, seq: (f?.seq ?? 0) + 1 })),
-      reopenEditor: (eventId: string, note: string) => {
-        applyRef.current({ type: 'select', id: eventId });
-        applyRef.current({ type: 'edit' });
-        // The newer copy is already in the store; when it cannot be edited the notice stands alone.
-        applyRef.current(
-          stateRef.current.editor ? { type: 'editorNote', message: note } : { type: 'close' },
-        );
-      },
-      closeDetail: () => {
-        applyRef.current({ type: 'close' });
+      reopenEditor: (eventId: string, note: string) =>
+        applyRef.current({ type: 'reopenEditor', eventId, note }),
+      closeDetail: (eventId: string) => {
+        if (detailIsFor(stateRef.current, eventId)) applyRef.current({ type: 'close' });
       },
     }),
     [],
   );
 
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
+  // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
+  useEffect(() => cancelPendingRetries, []);
   const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);

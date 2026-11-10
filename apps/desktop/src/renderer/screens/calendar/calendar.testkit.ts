@@ -143,6 +143,10 @@ export function testUi(): EffectUi & {
   settled: string[];
   failed: string[];
   reopened: Array<{ id: string; note: string }>;
+  /** Whether `reopenEditor` reports the editor opened; false makes a conflict fall back to the toast. */
+  reopenOpens: boolean;
+  /** The event ids `closeDetail` was asked to close. */
+  closedFor: string[];
   closed: number;
 } {
   const applied: string[] = [];
@@ -151,32 +155,40 @@ export function testUi(): EffectUi & {
   const settled: string[] = [];
   const failed: string[] = [];
   const reopened: Array<{ id: string; note: string }> = [];
+  const closedFor: string[] = [];
   let closed = 0;
-  return {
+  const self = {
     applied,
     dropped,
     overrides,
     settled,
     failed,
     reopened,
+    reopenOpens: true,
+    closedFor,
     get closed() {
       return closed;
     },
     optimistic: () => undefined,
-    settle: id => applied.push(id),
-    rollback: id => dropped.push(id),
-    shown: (id, shown) => void overrides.set(id, shown),
-    shownSettled: id => settled.push(id),
-    shownFailed: id => {
+    settle: (id: string) => applied.push(id),
+    rollback: (id: string) => dropped.push(id),
+    shown: (id: string, shown: boolean) => void overrides.set(id, shown),
+    shownSettled: (id: string) => settled.push(id),
+    shownFailed: (id: string) => {
       overrides.delete(id);
       failed.push(id);
     },
     focus: () => undefined,
-    reopenEditor: (eventId, note) => reopened.push({ id: eventId, note }),
-    closeDetail: () => {
+    reopenEditor: (eventId: string, note: string) => {
+      reopened.push({ id: eventId, note });
+      return self.reopenOpens;
+    },
+    closeDetail: (eventId: string) => {
+      closedFor.push(eventId);
       closed += 1;
     },
   };
+  return self;
 }
 
 export function ports(): EffectPorts {

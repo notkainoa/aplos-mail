@@ -13,6 +13,7 @@ import { NotImplementedError, type EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
 import { toErrorBody } from '../../data/client';
 import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
+import { getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { CommandId, EventScope } from '../../ui/props';
 import {
   rsvpMessage,
@@ -76,11 +77,12 @@ export interface EffectUi {
   focus(target: 'grid' | 'rail'): void;
   /**
    * `calendar.conflict` on an editor save: re-open the editor on the newer copy already in the store,
-   * carrying `note` as its error line; closes with the notice instead when the row cannot be edited.
+   * carrying `note` as its error line. True when the editor opened; false when the row cannot be
+   * edited (locked, gated, gone), so the caller falls back to the notice (review7 5).
    */
-  reopenEditor(eventId: string, note: string): void;
-  /** `calendar.eventGone`: the event the detail showed is gone — close it. */
-  closeDetail(): void;
+  reopenEditor(eventId: string, note: string): boolean;
+  /** `calendar.eventGone`: close the detail only when it shows `eventId` — never an unrelated one (review7 4). */
+  closeDetail(eventId: string): void;
 }
 
 const newOpId = (): string => crypto.randomUUID();
@@ -107,35 +109,76 @@ function editingNotice(ports: EffectPorts, accountId: string | undefined): void 
     id: `editing:${accountId ?? 'unknown'}`,
     kind: 'info',
     message: EDITING_COPY.notice,
-    actions: [{ id: 'enable', label: EDITING_COPY.action }],
+    // No account behind the write: the line alone — never an Enable editing that opens nothing (review7 8).
+    ...(accountId === undefined
+      ? {}
+      : {
+          actions: [{ id: 'enable', label: EDITING_COPY.action }],
+          onAction: (actionId: string) => {
+            if (actionId !== 'enable') return;
+            void ports.enableEditing(accountId).then(undefined, error => {
+              pushToast({
+                id: newOpId(),
+                kind: 'info',
+                message: toErrorBody(error).message,
+                undoable: false,
+              });
+            });
+          },
+        }),
     undoable: false,
-    onAction: actionId => {
-      if (actionId !== 'enable' || accountId === undefined) return;
-      void ports.enableEditing(accountId).then(undefined, error => {
-        pushToast({
-          id: newOpId(),
-          kind: 'info',
-          message: toErrorBody(error).message,
-          undoable: false,
-        });
-      });
-    },
   });
 }
 
-/** The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). */
+/**
+ * Delayed retries waiting out a server's `retryAfterMs`: each entry cancels its pending write and its
+ * toast watcher, so neither a dismissal nor the screen going away leaves a surprise write to fire
+ * later (review7 9). The container calls `cancelPendingRetries` on unmount.
+ */
+const pendingRetries = new Set<() => void>();
+
+/** The screen going away cancels every delayed retry still waiting: no write fires behind its back. */
+export function cancelPendingRetries(): void {
+  for (const disarm of [...pendingRetries]) disarm();
+}
+
+/**
+ * The refusal toast: Retry only when the mapped failure may still go through (`writeFailureOf`). A
+ * 'delayed' retry arms as the notice lands — Retry goes at once, and the notice leaving the stack
+ * (dismissed, faded, evicted) or the screen unmounting cancels the pending write (review7 9).
+ */
 function failureToast(opId: string, failure: WriteFailure, retry: () => void): void {
+  const id = `${opId}:failed`;
+  let disarm: (() => void) | undefined;
+  if (failure.retry === 'delayed' && failure.retryAfterMs !== undefined) {
+    const timer = setTimeout(() => {
+      if (disarm === undefined) return; // disarmed before it could fire
+      disarm();
+      retry();
+    }, failure.retryAfterMs);
+    const self = (): void => {
+      if (disarm === undefined) return;
+      disarm = undefined;
+      clearTimeout(timer);
+      off();
+      pendingRetries.delete(self);
+    };
+    disarm = self;
+    const off = subscribeToasts(() => {
+      if (!getToasts().some(t => t.id === id)) self();
+    });
+    pendingRetries.add(self);
+  }
   pushToast({
-    id: `${opId}:failed`,
+    id,
     kind: 'info',
     message: failure.message,
     ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
     undoable: false,
     onAction: actionId => {
       if (actionId !== 'retry') return;
-      if (failure.retry === 'delayed' && failure.retryAfterMs !== undefined)
-        setTimeout(retry, failure.retryAfterMs);
-      else retry();
+      disarm?.();
+      retry();
     },
   });
 }
@@ -150,8 +193,12 @@ interface WriteSpec {
   readonly failure?: string;
   /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
   readonly reopenEditorId?: string;
+  /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
+  readonly goneEventId?: string;
   /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
   readonly accountId?: string;
+  /** A blind retry could duplicate the write or re-notify guests (a create, an RSVP): unknown codes get none. */
+  readonly blindRetryUnsafe?: boolean;
 }
 
 /** Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the code's own follow-up. */
@@ -165,12 +212,16 @@ function writeFailed(
   spec.entryIds.forEach(id => ui.rollback(id));
   dismissToast(spec.opId);
   if (!spec.failure) return;
-  const failure = writeFailureOf(error, spec.failure);
-  if (failure.enableEditing) editingNotice(ports, spec.accountId);
-  else failureToast(spec.opId, failure, retry);
-  if (failure.reopenEditor && spec.reopenEditorId)
+  const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
+  // The conflict's sentence lands once: the re-opened editor's own line, or the toast when no
+  // editor can re-open — never both (review7 5).
+  const reopened =
+    failure.reopenEditor === true &&
+    spec.reopenEditorId !== undefined &&
     ui.reopenEditor(spec.reopenEditorId, failure.message);
-  if (failure.closeDetail) ui.closeDetail();
+  if (failure.enableEditing) editingNotice(ports, spec.accountId);
+  else if (!reopened) failureToast(spec.opId, failure, retry);
+  if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
@@ -218,7 +269,9 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             }),
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
+          goneEventId: fx.change.type === 'create' ? undefined : fx.change.id,
           accountId: fx.accountId,
+          blindRetryUnsafe: fx.change.type === 'create',
         },
         ui,
         ports,
@@ -256,7 +309,9 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
                 return receipt.appliedState;
               }),
           failure: fx.failure,
+          goneEventId: fx.id,
           accountId: fx.accountId,
+          blindRetryUnsafe: true,
         },
         ui,
         ports,
@@ -314,6 +369,8 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               })
               .then(out => out.receipt.appliedState),
           failure: 'Couldn’t add it to the calendar.',
+          goneEventId: fx.optimistic.id,
+          accountId: fx.accountId,
         },
         ui,
         ports,
@@ -357,6 +414,8 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               return receipt.appliedState;
             }),
           failure: 'Couldn’t hide it.',
+          goneEventId: fx.id,
+          accountId: fx.accountId,
         },
         ui,
         ports,

@@ -74,7 +74,11 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
  * from the data layer's commands, or a `ContractError`), `fallback` the effect's own generic sentence
  * ("Couldn't move Q4 review."). Codes the table does not know keep the fallback and today's Retry.
  */
-export function writeFailureOf(error: unknown, fallback: string): WriteFailure {
+export function writeFailureOf(
+  error: unknown,
+  fallback: string,
+  blindRetryUnsafe = false,
+): WriteFailure {
   const body = bodyOf(error);
   if (body.reasonCode === 'permission.calendarWrite')
     return { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
@@ -86,5 +90,9 @@ export function writeFailureOf(error: unknown, fallback: string): WriteFailure {
     };
   const known = body.reasonCode ? WRITE_FAILURE_COPY[body.reasonCode] : undefined;
   if (known) return { ...known, retry: 'none' };
+  // A create or a reply asked again blind could duplicate the event or re-notify guests: an
+  // unknown code gets no Retry, just the honest check-your-calendar line (review7 7).
+  if (blindRetryUnsafe)
+    return { message: `${fallback} Check your calendar before trying again.`, retry: 'none' };
   return { message: fallback, retry: 'now' };
 }
