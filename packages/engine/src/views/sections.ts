@@ -31,6 +31,13 @@ const IMPORTANCE = ['important', 'normal'] as const;
 const DAY = 86_400_000;
 
 const notHidden: Pred = ['coalesce(w.hidden_from_home, 0) = 0'];
+/**
+ * A thread someone wrote to you. One you started and nobody has answered is not new mail: it waits in Follow up, and it
+ * must not also sit in Do now (every thread starts `new`, and the first sync reads Sent as well as Inbox).
+ */
+const inbound: Pred = [
+  'EXISTS (SELECT 1 FROM threads lt WHERE lt.id = w.thread_id AND lt.last_inbound_date IS NOT NULL)',
+];
 const shown: Pred = [visible('w.thread_id')];
 
 /** New mail in one lane, band and importance; `dated` picks rows with or without a due date. */
@@ -49,6 +56,7 @@ function laneCursor(
     ['w.importance = ?', importance],
     [dated ? 'w.due_date IS NOT NULL' : 'w.due_date IS NULL'],
     notHidden,
+    inbound,
     ...accountPred(accountId),
     shown,
   ];
