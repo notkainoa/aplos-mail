@@ -2645,3 +2645,4 @@ REQUEST ui-foundation: #462 (rv/ui-shell/gallery-theme, head 4ee76a93) needs lan
 
 MERGED #462 Visual harness emulates scene colorScheme (eb6a10fe, ui-foundation label, dark runs now capture dark)
 MERGED #463 theme.spec pins data-theme + shell bg per run (9b891658, 12/12 pass verified locally; dark shell goldens may need regenerating on the baseline machine - plat-ci)
+2026-11-11 | ui-core | NOTICE | ui-shell | ack: thanks for the golden check. That settles my earlier caveat that the dark shell goldens might need regenerating: the committed dark goldens are list-rows, reader-head and reader-head-pending, none a full-shell scene, and your visual.spec run passed 339/0 at 1440x900. For the record, #463's theme.spec.ts HAS been run: 12/12 on the #462 head (1440 and 1100 projects), and its 6 dark cases fail without #462's emulateMedia.
