@@ -135,15 +135,16 @@ function followRun(q: StoreReader, env: ViewEnv, accountId?: string): Run {
 }
 
 /**
- * A participant who is not the owner: its address is no account's, and it never sent a non-draft from-me message (an
- * alias sends under its own address, which no account row names). The set is uncorrelated on purpose — SQLite builds
- * it once per statement instead of once per participant.
+ * A participant who is not the owner: its address is no account's (that set is uncorrelated, so SQLite builds it once
+ * per statement), and it sent no non-draft from-me message IN THIS THREAD (an alias sends under its own address, which no
+ * account row names; the same rule as `rows.ts`, so the band and `participants[].me` agree). The per-thread half is an
+ * index probe on the thread's own messages, so an alias that sent in one thread is still a plain participant in another.
  */
 const NON_OWNER = `lower(coalesce(json_extract(p.value, '$.address'), '')) NOT IN
-    (SELECT lower(ac.address) FROM accounts ac
-     UNION
-     SELECT lower(m.from_addr) FROM messages m
-      WHERE (m.flags & 16) != 0 AND (m.flags & 8) = 0 AND m.from_addr IS NOT NULL AND m.from_addr <> '')`;
+    (SELECT lower(ac.address) FROM accounts ac)
+    AND NOT EXISTS (SELECT 1 FROM messages m
+      WHERE m.thread_id = t.id AND (m.flags & 16) != 0 AND (m.flags & 8) = 0 AND m.from_addr <> ''
+        AND lower(m.from_addr) = lower(coalesce(json_extract(p.value, '$.address'), '')))`;
 
 /**
  * The newest non-owner sender's name of each row, in place of its id: the Low band's "Field Notes, Cedar Market and

@@ -230,32 +230,24 @@ function homeLists(r: Ref, a?: string) {
 
 const fromName = (t: RThread) => t.participants[0]?.name ?? t.participants[0]?.address ?? '';
 
-const OWN = new WeakMap<Ref, Set<string>>();
-
-/** Every address that ever sent a non-draft from-me message: the owner's aliases, which no account row names. */
-const ownSenders = (r: Ref) => {
-  let s = OWN.get(r);
-  if (!s) {
-    s = new Set(
-      r.d.threads
-        .flatMap(t => t.msgs)
-        .filter(m => m.fromAddr !== '' && (m.flags & 16) !== 0 && (m.flags & 8) === 0)
-        .map(m => m.fromAddr.toLowerCase()),
-    );
-    OWN.set(r, s);
-  }
-  return s;
-};
-
-/** A participant is not the owner when its address is no account's and sent no non-draft from-me message. */
-const nonOwner = (r: Ref, p: { address?: string }) => {
+/** A participant is not the owner when its address is no account's and sent no non-draft from-me message here. */
+const nonOwner = (r: Ref, t: RThread, p: { address?: string }) => {
   const addr = (p.address ?? '').toLowerCase();
-  return !r.d.accounts.some(a => a.address.toLowerCase() === addr) && !ownSenders(r).has(addr);
+  return (
+    !r.d.accounts.some(a => a.address.toLowerCase() === addr) &&
+    !t.msgs.some(
+      m =>
+        m.fromAddr !== '' &&
+        (m.flags & 16) !== 0 &&
+        (m.flags & 8) === 0 &&
+        m.fromAddr.toLowerCase() === addr,
+    )
+  );
 };
 
 /** The newest non-owner sender's name, else address, else the newest sender's (SENDER_NAME in views/sections). */
 const senderName = (r: Ref, t: RThread): string => {
-  const others = t.participants.filter(p => nonOwner(r, p));
+  const others = t.participants.filter(p => nonOwner(r, t, p));
   return (
     others.find(p => p.name != null)?.name ??
     others.find(p => p.address != null)?.address ??
@@ -295,7 +287,7 @@ function lowGroups(
 ): Expected {
   const groups = new Map<string, { name: string; ids: string[] }>();
   for (const t of homeLists(r, spec.accountId).low) {
-    const address = t.participants.find(p => nonOwner(r, p))?.address ?? senderName(r, t);
+    const address = t.participants.find(p => nonOwner(r, t, p))?.address ?? senderName(r, t);
     const g = groups.get(address) ?? { name: senderName(r, t), ids: [] };
     g.ids.push(t.id);
     groups.set(address, g);
