@@ -16,6 +16,7 @@ import type { EditorDraft } from './editor';
 import { entriesOnDay } from './entries';
 import { shownViewFor, type GridView } from './period';
 import { lockedMessage, type RsvpState } from './rsvp';
+import type { FailedHold } from '../FailedHolds';
 
 // ---------------------------------------------------------------------------
 // The screen's state and its one reducer
@@ -56,6 +57,8 @@ export interface CalendarState {
   readonly solo: string | null;
   /** The sidebar's month when paged away from the anchor; null follows the anchor. */
   readonly miniMonth: IsoYearMonth | null;
+  /** The failed-holds Review list (DESIGN 7.15): the Popover under the pane's quiet line. */
+  readonly holdsReview: boolean;
 }
 
 export function initialState(today: IsoDate, view: GridView = 'week'): CalendarState {
@@ -72,6 +75,7 @@ export function initialState(today: IsoDate, view: GridView = 'week'): CalendarS
     editor: null,
     solo: null,
     miniMonth: null,
+    holdsReview: false,
   };
 }
 
@@ -97,6 +101,12 @@ export interface CalendarContext {
   readonly loadedThrough: EpochMs;
   /** Where new events and confirmed plans go. */
   readonly defaultCalendarId: string | null;
+  /**
+   * Failed guest-notifying holds from `Queue/list` (`cal:<opId>` items in `failed`), minus any an
+   * in-session op-failure toast already owns (`useFailedHolds`; review20). The pane's quiet line
+   * shows only while this is non-empty.
+   */
+  readonly failedHolds: readonly FailedHold[];
 }
 
 export type CalendarAction =
@@ -144,7 +154,24 @@ export type CalendarAction =
   | { type: 'openSource' }
   | { type: 'openVideo' }
   | { type: 'toggleCalendar'; id: string }
-  | { type: 'soloCalendar'; id: string };
+  | { type: 'soloCalendar'; id: string }
+  /** The failed-holds line's Review button / its Popover's close (review19). */
+  | { type: 'holdsReview'; open: boolean }
+  /**
+   * The open list's last row left (its own action emptied it): close it AND move focus — the
+   * focused button and the Review anchor both just unmounted, so focus would drop to body
+   * (review21). A user's own close stays `holdsReview {open:false}`: the Popover puts focus back
+   * on its anchor itself.
+   */
+  | { type: 'holdsEmptied' }
+  /** A Review row's Retry: `Queue/retry` on the item id — the hold's own path, never `Event/set` again. */
+  | { type: 'holdRetry'; id: string; opId: string }
+  /** A Review row's Discard: `Queue/discard` on the queue item id. */
+  | { type: 'holdDiscard'; id: string }
+  /** A dead-grant row's Sign in again: opens the reconnect sheet on the item's own account. */
+  | { type: 'holdReconnect'; accountId: string }
+  /** A dead-grant row's Enable editing: asks for the item's own account's write scope. */
+  | { type: 'holdEnableEditing'; accountId: string };
 
 /** A toast to push: one operation, one notice (DESIGN 7.13). */
 export interface ToastPlan {
@@ -233,7 +260,16 @@ export type CalendarEffect =
   | { kind: 'openUrl'; url: string }
   | { kind: 'copy'; text: string; toast: ToastPlan }
   | { kind: 'notice'; message: string }
-  | { kind: 'focus'; target: 'grid' | 'rail' };
+  | { kind: 'focus'; target: 'grid' | 'rail' }
+  /**
+   * A Review row's Retry: `Queue/retry` on the item id — the failed hold re-sends, never a second
+   * `Event/set`. `opId` (`id` minus `cal:`) keys the refusal's toast.
+   */
+  | { kind: 'holdRetry'; id: string; opId: string }
+  /** A Review row's Discard: `Queue/discard` on the queue item id. */
+  | { kind: 'holdDiscard'; id: string }
+  /** A dead-grant row's Sign in again: the same sheet the sidebar's reconnect opens. */
+  | { kind: 'holdReconnect'; accountId: string };
 
 export interface Transition {
   readonly state: CalendarState;

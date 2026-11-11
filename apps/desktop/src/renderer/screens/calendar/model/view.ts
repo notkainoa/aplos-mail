@@ -1,5 +1,6 @@
 /** The view model CalendarScreen draws. */
 import { toIsoDate, toIsoDateTime, type Calendar } from '../../../data';
+import type { FailedHold } from '../FailedHolds';
 import type {
   CalendarEventData,
   CalendarView,
@@ -123,6 +124,12 @@ export interface CalendarViewModel {
   readonly emptyAction: boolean;
   /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
   readonly empty: EmptyView | null;
+  /**
+   * Failed guest-notifying holds from the queue (review20): the pane's quiet line ("N changes didn't
+   * send · Review") and its list. Always present — `FailedHolds` draws nothing on an empty `items`
+   * but must stay mounted so an emptied open list can close `holdsReview` itself (review22).
+   */
+  readonly failedHolds: { items: readonly FailedHold[]; open: boolean };
 }
 
 /** What an empty day or week says: one plain sentence, then what comes next from the loaded events. */
@@ -280,6 +287,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
     editor: state.editor ? editorView(state.editor, ctx) : null,
     emptyAction: ctx.calendarsReady && (shown === 'day' || shown === 'agenda'),
     empty: emptyView(shown, state, ctx, period, entries, dayCount),
+    failedHolds: { items: ctx.failedHolds, open: state.holdsReview },
   };
 }
 
