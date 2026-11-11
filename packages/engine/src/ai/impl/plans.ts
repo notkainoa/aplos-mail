@@ -541,9 +541,11 @@ export async function extract(
       // "Nothing found" is recorded for THIS input — the returned list is open plans across every
       // hash, so open proposals from older mail must not stop the marker (a re-extract of this input
       // would call the model again forever).
+      // "Nothing found" always answers the same way — the thread's open proposals — whether it came
+      // from the date filter, the model, or a marker replay, so identical mail never changes its answer.
       if (x === 'empty') {
         markEmpty(services, parts.accountId, parts.remoteId, hash);
-        return [];
+        return services.store.read(q => openPlans(q, t.id)).map(planOf);
       }
       const list = writePlans(services, parts.accountId, parts.remoteId, x);
       if (!x.plans.length) markEmpty(services, parts.accountId, parts.remoteId, hash);

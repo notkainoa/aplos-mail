@@ -393,3 +393,33 @@ test('Event/extract: open plans from older mail do not stop the nothing-found re
   assert.equal(t.calls.length, 2, 'the recorded empty answer for THIS hash skips the model');
   w.file.cleanup();
 });
+
+test('Event/extract: a date-filter empty with an older open plan answers the same list every call', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const first = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  assert.equal(first.plans.length, 1);
+  // The dated message disappears; an undated reply remains — the date filter keeps this off the model.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      { kind: 'messageDelete', accountId: 'acct-1', remoteId: 'm1' } as never,
+      msg('m2', 'T-plans', 6, { subject: 'Re: plans', snippet: 'sounds good, see you there' }),
+    ],
+  });
+  const second = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
+  assert.equal(second.plans.length, 1, 'the filter-empty path answers like the write path did');
+  assert.equal(second.plans[0].id, first.plans[0].id);
+  assert.equal(t.calls.length, 1, 'undated mail never reaches the model');
+  const third = await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
+  assert.deepEqual(
+    third.plans.map(p => p.id),
+    second.plans.map(p => p.id),
+    'a marker replay returns the same answer — identical mail, identical list',
+  );
+  assert.equal(t.calls.length, 1);
+  w.file.cleanup();
+});
