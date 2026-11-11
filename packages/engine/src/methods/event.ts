@@ -428,6 +428,14 @@ function rebaseSeriesTimes(
   // the same zone's wall clock: same offset from the master, same zone.
   const zoned = zoneOfFloating(start ?? end);
   if (zoned) return rebaseZoned(ctx, ref, fields, zoned);
+  // A wall-clock time with no zone Aplos knows cannot be moved by an offset: refuse rather than move the series by the
+  // occurrence's absolute time.
+  if (start?.type === 'floating' || end?.type === 'floating')
+    throw new ContractError({
+      type: 'unsupported',
+      message: 'Change the time of every event from the series itself.',
+      reasonCode: 'calendar.floatingSeries',
+    });
   if (start && start.type !== 'utc' && start.type !== 'date') return;
   if (!start && end?.type !== 'utc' && end?.type !== 'date') return;
   const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
