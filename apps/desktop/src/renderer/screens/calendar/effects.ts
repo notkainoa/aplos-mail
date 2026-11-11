@@ -294,13 +294,23 @@ function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts)
 const heldWrites = new Set<string>();
 
 /**
- * The event ids an accepted hold still guards (its op is queued/syncing): a second write on one is
- * refused at once — the engine would answer `calendar.holdPending` anyway, and refusing before the
- * optimistic change means nothing is ever merged over the still-held first write's layer (review16).
- * Module scope, like `pendingRetries`: the screen lives as long as the session; `releaseHeldWrites`
- * clears it on unmount, and `watchWrite` frees each id when its hold ends.
+ * The event ids a hold still guards, each marked by its write's op id: a hold-candidate write
+ * (`notify: true`, or an RSVP which notifies by default) marks its target at SUBMIT — a second
+ * press inside one round trip fails fast rather than submitting two full writes that interleave
+ * in the engine's hold queue and tell guests twice (review17). A refused second write answers
+ * `calendar.holdPending` before the optimistic change, so nothing is ever merged over the
+ * still-held first write's layer (review16). The mark frees on the write's rejection, on a
+ * receipt that came back unheld, and on the hold's terminal op state — and only the owning op
+ * may free it: a stale release must never unguard a newer write's live mark. Module scope, like
+ * `pendingRetries`: the screen lives as long as the session; `releaseHeldWrites` clears it on
+ * unmount.
  */
-const heldTargets = new Set<string>();
+const heldTargets = new Map<string, string>();
+
+/** Free `target`'s mark only while `opId` still owns it — a late release frees nothing of another's. */
+function unmarkHeldTarget(target: string | undefined, opId: string): void {
+  if (target !== undefined && heldTargets.get(target) === opId) heldTargets.delete(target);
+}
 
 /** The screen unmounting releases every guard — the next mount starts clean. */
 export function releaseHeldWrites(): void {
@@ -480,13 +490,6 @@ function optimisticIds(change: OptimisticChange): string[] {
  * except `failed`, which stays so a retried-then-synced hold can take its failure toast down.
  * `held` is the receipt's verdict: a held write settles its layer on the frame after `synced`.
  */
-/** The hold guards its target only while queued or sending; every later remote state frees it. */
-function updateHeldTarget(held: boolean, spec: WriteSpec, remote: OperationView['remote']): void {
-  if (!held || spec.target === undefined) return;
-  if (remote === 'queued' || remote === 'syncing') heldTargets.add(spec.target);
-  else if (remote !== null) heldTargets.delete(spec.target);
-}
-
 function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boolean): void {
   const watch = ports.watchOperation;
   if (!watch) return;
@@ -495,11 +498,30 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
   // real unsubscribe landed, so it still runs and never joins `pendingRetries`.
   const sub: { stop?: () => void } = {};
   let dead = false;
+  // This write still owns its target's mark: frames may free it before the watch ends (a failure,
+  // a send), and only the owner may release it — a stale `off` must never unguard a newer write's
+  // live mark (review17).
+  let ownsTarget = held && spec.target !== undefined && heldTargets.get(spec.target) === spec.opId;
+  // The hold guards its target only while queued or sending; every later remote state frees it.
+  const updateTarget = (remote: OperationView['remote']): void => {
+    if (!held || spec.target === undefined) return;
+    if (remote === 'queued' || remote === 'syncing') {
+      heldTargets.set(spec.target, spec.opId);
+      ownsTarget = true;
+    } else if (remote !== null) {
+      unmarkHeldTarget(spec.target, spec.opId);
+      ownsTarget = false;
+    }
+  };
   const off = (): void => {
     dead = true;
     pendingRetries.delete(off);
-    // The hold's life is over however the watch ends: the event is writable again.
-    if (spec.target !== undefined) heldTargets.delete(spec.target);
+    // The hold's life is over however the watch ends: the event is writable again — but only this
+    // write's own mark is freed.
+    if (ownsTarget) {
+      unmarkHeldTarget(spec.target, spec.opId);
+      ownsTarget = false;
+    }
     sub.stop?.();
   };
   // The same mapped refusal the submit path runs, at operation level: `failed` keeps the watch so a
@@ -561,7 +583,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
     const remote = view.remote ?? null;
     if (remote === lastRemote) return;
     lastRemote = remote;
-    updateHeldTarget(held, spec, remote);
+    updateTarget(remote);
     if (remote === 'failed') opRefused('failed', view);
     else if (remote === 'conflict') opRefused('conflict', view);
     else if (remote === 'cancelled') {
@@ -583,6 +605,13 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
 
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
 function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
+  // A write that can be held guards its target from SUBMIT, not from the receipt: a second press
+  // inside one round trip fails fast — two full writes interleaved in the engine's hold queue
+  // would tell guests twice (review17). Only where a watch exists to end the guard, else nothing
+  // would ever free the mark (review16).
+  const marked =
+    spec.target !== undefined && ports.watchOperation !== undefined ? spec.target : undefined;
+  if (marked !== undefined) heldTargets.set(marked, spec.opId);
   spec.call().then(
     out => {
       // A held write never settles at its receipt: the hold's own commit does not advance seq, so
@@ -590,16 +619,19 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       // change would snap back for the whole undo window. It settles at `synced` (then on the
       // frame after) inside `watchWrite`.
       if (!out.held) spec.entryIds.forEach(id => ui.settle(id, out.at, spec.opId));
-      // The hold exists from its receipt: guard the target while the op is alive — but only where
-      // a watch exists to end it, else nothing would ever free the mark.
-      if (out.held && spec.target !== undefined && ports.watchOperation)
-        heldTargets.add(spec.target);
+      // The receipt decides the mark's life: a held write's stays until its watch ends the hold;
+      // anything else frees it here — no hold ever existed.
+      if (!out.held) unmarkHeldTarget(marked, spec.opId);
       // Only a journaled op can ever surface an `operation` frame — the real engine has no
       // Operation row for a write-through receipt (`Operation/get` answers notFound), so watching
       // one would leak the subscription (review16).
       if (out.held || out.undoable) watchWrite(spec, ui, ports, out.held);
     },
-    error => writeFailed(spec, ui, ports, error, retry),
+    error => {
+      // A rejection accepted nothing: the submit-time mark dies with it, then the refusal runs.
+      unmarkHeldTarget(marked, spec.opId);
+      writeFailed(spec, ui, ports, error, retry);
+    },
   );
 }
 

@@ -291,3 +291,33 @@ test('review17: a refused Operation/retry keeps the failure persistent with its 
     resetToasts();
   }
 });
+
+test('review17: a second press inside one round trip fails fast — never two held writes', async () => {
+  await bootRecorded();
+  resetToasts();
+  try {
+    let calls = 0;
+    const hanging: EffectPorts = {
+      ...watchedPorts(),
+      // The first write's receipt never lands inside this test: the round trip stays open.
+      eventSet: () => {
+        calls += 1;
+        return new Promise(() => {});
+      },
+    };
+    runCalendarEffect(guestedFx('one'), hanging, testUi());
+    runCalendarEffect(guestedFx('two'), hanging, testUi());
+    // The mark exists from SUBMIT, not from the receipt: a double Save/drag inside one round
+    // trip must not submit a second Event/set beside it — two interleaved holds in the engine's
+    // queue would tell guests twice.
+    assert.equal(calls, 1, 'the second press was refused before any call');
+    assert.equal(
+      failedToast()?.message,
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+      'the fail-fast refusal is the holdPending sentence',
+    );
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
