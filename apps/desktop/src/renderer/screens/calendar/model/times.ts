@@ -50,8 +50,8 @@ export function localZone(): string {
 /**
  * The instant `ms` written the way `like` is written: `utc` stays `utc`, `floating` keeps its zone — and
  * a floating time never leaves without one (Google refuses `event.timeZoneRequired`): a zone-less
- * `floating` gains `fallbackZone` (the series/event zone), else this machine's zone, the same zone its
- * `local` was always read in.
+ * `floating` gains `fallbackZone` (the event's zone, else the write's), else this machine's zone,
+ * the same zone its `local` was always read in.
  */
 export function timeLike(like: EventTime, ms: EpochMs, fallbackZone?: string): EventTime {
   if (like.type === 'floating') {
@@ -123,14 +123,17 @@ function written(like: EventTime, next: EventTime, fallbackZone?: string): Event
  * The id and the `start` / `end` fields an update writes for new times; no field for a time that did not change.
  * The scope no longer shapes the write: under `series` the engine maps the occurrence's own new times to a
  * wall-clock shift of the master (DECISIONS 2026-11-04), so the fields are always the ones the user sees.
+ * A floating time with no zone of its own is stamped in the event's, else `zone` (the write's zone).
  */
 export function timeChange(
   event: Event,
   next: { readonly start: EventTime; readonly end: EventTime },
+  zone?: string,
 ): { id: string; fields: Pick<Partial<EventFields>, 'start' | 'end'> } {
   const fields: Pick<Partial<EventFields>, 'start' | 'end'> = {};
+  const fallback = event.timeZone ?? zone;
   if (!sameInstant(next.start, event.start))
-    fields.start = written(event.start, next.start, event.timeZone);
-  if (!sameInstant(next.end, event.end)) fields.end = written(event.end, next.end, event.timeZone);
+    fields.start = written(event.start, next.start, fallback);
+  if (!sameInstant(next.end, event.end)) fields.end = written(event.end, next.end, fallback);
   return { id: event.id, fields };
 }
