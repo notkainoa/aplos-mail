@@ -127,3 +127,37 @@ test('a delete whose answer is lost is reported uncertain, and repeating it is s
   assert.deepEqual(again.removals, [one.id]);
   r.close();
 });
+
+test('a guest’s RSVP names the account address when Google’s own entry for them has no email', async () => {
+  const r = await writeRig();
+  const invite = r.emu.calendar.addInvitation({
+    summary: 'No email',
+    start: { dateTime: '2026-11-12T13:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T14:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    organizer: { email: 'boss@example.test' },
+  });
+  await r.seedCalendars();
+  // The answer arrives with the owner's own entry stripped of its address.
+  r.forcedReads.push({
+    status: 200,
+    body: JSON.stringify({
+      id: invite.id,
+      etag: invite.etag,
+      organizer: { email: 'boss@example.test' },
+      attendees: [
+        { self: true, responseStatus: 'needsAction' },
+        { email: 'boss@example.test', responseStatus: 'accepted' },
+      ],
+    }),
+  });
+  await r.port.rsvp(
+    r.account.id,
+    { calendarRemoteId: r.calendarId, remoteId: invite.id, scope: 'series' },
+    'accepted',
+    { notify: false },
+  );
+  const patch = r.requests.filter(q => q.method === 'PATCH').at(-1)!;
+  const body = JSON.parse(patch.body!) as { attendees: { email?: string }[] };
+  assert.equal(body.attendees[0]!.email, r.account.address);
+  r.close();
+});

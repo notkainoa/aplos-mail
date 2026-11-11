@@ -369,7 +369,10 @@ export function createCalendarWrites(
       const organizer = current.organizer?.self === true;
       const body = organizer
         ? { attendees: guests.map(a => (a === me ? { ...a, responseStatus: response } : a)) }
-        : { attendeesOmitted: true, attendees: [{ email: me.email, responseStatus: response }] };
+        : {
+            attendeesOmitted: true,
+            attendees: [{ email: me.email ?? ctx.account.address, responseStatus: response }],
+          };
       try {
         const made = await call(ctx, {
           method: 'gcal.events.patch',

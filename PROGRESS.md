@@ -674,3 +674,7 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 
 ## ui-settings: the verbose switch opens as the engine says (2026-11-11)
 - Settings → Help & about reads `Diagnostics/verbose` with no `on` (#418, a query that changes nothing) when it opens, so Verbose logging shows on, with its switch-off time, if the engine already has it on. A switch-off time means on; none means off.
+
+## 2026-11-11 — prov-cal: guest RSVP falls back to the account address
+
+- A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
