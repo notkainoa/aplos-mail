@@ -494,12 +494,12 @@ test('review16: an operation-level failure runs the write’s own follow-ups (re
       },
     ]);
     assert.equal(failedToast(), undefined, 'the editor’s own line carries the sentence');
-    // calendar.eventGone closes the detail.
+    // calendar.eventGone closes the detail (the spec's goneEventId is the change's own id).
     const watch2 = watchStub();
     const spy2 = eventSetSpy({ receipt: heldReceipt() });
     const ui2 = testUi();
     runCalendarEffect(
-      moveFx({ goneEventId: 'climb' }),
+      moveFx(),
       { ...ports(), eventSet: spy2.port, watchOperation: watch2.port },
       ui2,
     );

@@ -386,6 +386,7 @@ function overlayUi() {
       overlay = overlayWith(overlay, writeId, change);
     },
     settle: () => undefined,
+    settleAfterFrame: () => undefined,
     rollback: (id, writeId) => {
       overlay = overlayDrop(overlay, writeId, id);
     },
