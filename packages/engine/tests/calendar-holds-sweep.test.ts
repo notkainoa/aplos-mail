@@ -420,3 +420,91 @@ test('a hold waiting for its account is past its undo window: it reads queued bu
   assert.equal(op.undoUntil, undefined);
   started = true;
 });
+
+const withScope = (
+  opId: string,
+  recurrence: string,
+  scope: 'series' | 'following' | 'occurrence',
+) => ({
+  opId,
+  notify: true,
+  change: {
+    type: 'update' as const,
+    id: `acct-1:primary/ev1@${recurrence}`,
+    scope,
+    fields: { title: 'Changed' },
+  },
+});
+
+test('an "All events" edit opened from one occurrence clashes with a hold on another occurrence', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', withScope('only-y', '20990103T170000Z', 'occurrence'));
+  // The real "All events" edit names the occurrence it was opened from (ev1@X) but has scope `series`.
+  await assert.rejects(
+    w.call('Event/set', withScope('all-x', '20990102T170000Z', 'series')),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
+  );
+});
+
+test('a following change clashes with a hold on a LATER occurrence, which the split rewrites', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', withScope('later-y', '20990103T170000Z', 'occurrence'));
+  await assert.rejects(
+    w.call('Event/set', withScope('from-x', '20990102T170000Z', 'following')),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
+  );
+});
+
+test('a replayed op id after its window closed does not advertise an Undo that has gone', async () => {
+  let started = false;
+  const w = await rig([
+    () =>
+      started
+        ? Promise.resolve(SAVED)
+        : Promise.reject(
+            new NotSentError({
+              class: 'transient',
+              provider: 'engine',
+              method: 'calendar.put',
+              reason: 'accountNotStarted',
+            }),
+          ),
+  ]);
+  const first = await w.call('Event/set', rename('rp-late', 'acct-1:primary/ev1'));
+  assert.equal(first.receipt.undoable, true);
+  w.clock.advance(9_000);
+  await settle();
+  const replay = await w.call('Event/set', rename('rp-late', 'acct-1:primary/ev1'));
+  assert.notEqual(replay.receipt.undoable, true, 'the window has closed');
+  assert.equal(replay.receipt.undoUntil, undefined);
+  started = true;
+});
+
+test('Operation/undo still cancels a queued hold after its window (it was never sent)', async () => {
+  const w = await rig([
+    () =>
+      Promise.reject(
+        new NotSentError({
+          class: 'transient',
+          provider: 'engine',
+          method: 'calendar.put',
+          reason: 'accountNotStarted',
+        }),
+      ),
+  ]);
+  await w.call('Event/set', rename('uq1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  const op = (await w.call('Operation/get', { opIds: ['uq1'] })).list[0]!;
+  assert.equal(op.state, 'queued');
+  assert.equal(op.undoable, false);
+  await w.call('Operation/undo', { opId: 'uq1', undoOpId: 'uq1-undo' });
+  assert.equal((await w.call('Operation/get', { opIds: ['uq1'] })).list[0]!.state, 'cancelled');
+  w.clock.advance(120_000);
+  await settle();
+  assert.deepEqual(
+    w.calls,
+    ['put'],
+    'only the one attempt that found no account; it was never sent',
+  );
+});

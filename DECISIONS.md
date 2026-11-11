@@ -1965,8 +1965,9 @@ Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rule
 ## 2026-11-11 — prov-cal: held calendar writes, two small rules from the third review
 
 - **Chosen:** undo of a hold that failed as `calendar.uncertain` is refused (`conflict`: "may already have been sent"). The change may already be at Google; recording it as "undone" would be a claim nobody can keep.
-- **Chosen:** a whole-series hold and a hold on one occurrence of the same event clash (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not.
+- **Chosen:** a whole-series hold (including an "All events" edit opened from one occurrence, which names that occurrence but has scope `series`) and a `following` hold (which rewrites every later occurrence) clash with a hold on any occurrence of the same event (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not. Only scope `occurrence` is about one occurrence, the way `targetId` picks Google's target.
 - **Open ticket (not a blocker):** a recurrence id with no `Z` is read in the calendar's zone for the "already started" check, not in the event's own zone.
+
 ## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
 
 Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).

@@ -191,8 +191,9 @@ function targetOf(call: HeldCall | undefined): { event: string; occurrence: stri
   if (!ref.remoteId) return undefined; // a create has no event yet
   return {
     event: [call.account, ref.calendarRemoteId, ref.remoteId].join('|'),
-    // A whole-series change (no recurrence id, or scope 'series') reaches every occurrence.
-    occurrence: ref.scope === 'series' ? '' : (ref.recurrenceId ?? ''),
+    // Only an `occurrence` change is about one occurrence (the way `targetId` picks Google's target). A whole-series
+    // change, even one opened from an occurrence, and a `following` change (which rewrites every later one) reach all.
+    occurrence: ref.scope === 'occurrence' ? (ref.recurrenceId ?? '') : '',
   };
 }
 
@@ -381,13 +382,16 @@ export function createHolds(deps: Deps) {
       };
       const same = readRecord(deps.store, spec.opId);
       // The same op id again is the same change (a replay): answer its receipt, never a second hold.
-      if (same)
+      if (same) {
+        // The receipt a screen would read now: no Undo advertised for a window that has closed.
+        const op = operationOf(same, deps.clock.now());
         return {
           opId: same.opId,
           appliedState: same.appliedState,
-          undoable: same.state === 'queued',
-          ...(same.state === 'queued' ? { undoUntil: same.undoUntil } : {}),
+          undoable: op.undoable,
+          ...(op.undoUntil !== undefined ? { undoUntil: op.undoUntil } : {}),
         };
+      }
       const target = targetOf(spec.call);
       if (
         target &&
