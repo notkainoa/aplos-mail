@@ -233,7 +233,7 @@ export function ListRow(props: ListRowProps) {
       </span>
       {unread ? <span className="ui-list-sr">Unread. </span> : null}
 
-      <span className="ui-list-row__sender" dir="auto">
+      <span className="ui-list-row__sender" dir="auto" title={sender}>
         {sender}
       </span>
 
