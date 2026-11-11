@@ -440,7 +440,13 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
     const remote = view?.remote ?? null;
     if (remote === lastRemote) return;
     lastRemote = remote;
-    if (!view) return;
+    // The store forgot the operation record (view === undefined): nothing is coming for this write
+    // — its patch (or a create's temp row) rolls back here rather than ride the grid forever.
+    if (!view) {
+      spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
+      off();
+      return;
+    }
     if (remote === 'failed') {
       writeFailed(
         spec,
