@@ -269,6 +269,17 @@ export function useFailedHolds(
 }
 
 /**
+ * A row button's accessible name: with two holds there are two 'Retry' buttons, so the name says
+ * which account's change it acts on (review21). The visible word stays part of the name — Button's
+ * `nameContainsVisibleText` rule.
+ */
+function holdActionName(verb: string, hold: FailedHold): string {
+  return hold.account !== undefined
+    ? `${verb} the change for ${hold.account}`
+    : `${verb} the change`;
+}
+
+/**
  * One Review row: 'A calendar change' (the items are content-free — none can name its event), the
  * account when the engine names one, the reason sentence, then the row's actions. Retry shows only
  * while the engine allows it: an uncertain hold offers Discard alone — a blind second send could
@@ -308,6 +319,11 @@ function HoldRow({
                 ? CALENDAR_ACCESS_COPY.signIn
                 : EDITING_COPY.action
             }
+            ariaLabel={
+              grantAction.recovery === 'reconnect'
+                ? `${CALENDAR_ACCESS_COPY.signIn} for ${hold.account ?? 'this account'}`
+                : `${EDITING_COPY.action} for ${hold.account ?? 'this account'}`
+            }
             onPress={() =>
               dispatch(
                 grantAction.recovery === 'reconnect'
@@ -322,6 +338,7 @@ function HoldRow({
             variant="text"
             size="sm"
             label="Retry"
+            ariaLabel={holdActionName('Retry', hold)}
             busy={hold.pending === true}
             onPress={() => dispatch({ type: 'holdRetry', id: hold.id, opId: hold.opId })}
           />
@@ -331,6 +348,7 @@ function HoldRow({
             variant="text"
             size="sm"
             label="Discard"
+            ariaLabel={holdActionName('Discard', hold)}
             busy={hold.pending === true}
             onPress={() => dispatch({ type: 'holdDiscard', id: hold.id })}
           />

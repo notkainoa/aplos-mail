@@ -282,6 +282,31 @@ test('review21: Enable editing asks for the item’s own account’s write scope
   assert.equal(enabled, 'acct-jordan');
 });
 
+test('review21: row actions name the account they act on', () => {
+  const html = row(failedHoldsOf([calItem()], new Set(), ACCOUNTS)[0]);
+  assert.match(html, /aria-label="Retry the change for Alex Moreno"/);
+  assert.match(html, /aria-label="Discard the change for Alex Moreno"/);
+});
+
+test('review21: a row with no account still names its change', () => {
+  const item = calItem();
+  delete (item as { accountId?: string }).accountId;
+  const html = row(failedHoldsOf([item], new Set(), ACCOUNTS)[0]);
+  assert.match(html, /aria-label="Retry the change"/);
+  assert.match(html, /aria-label="Discard the change"/);
+});
+
+test('review21: the grant action names its account too', () => {
+  const html = row(
+    failedHoldsOf(
+      [calItem({ problem: { reasonCode: 'auth.expired', message: 'expired' } })],
+      new Set(),
+      ACCOUNTS,
+    )[0],
+  );
+  assert.match(html, /aria-label="Sign in again for Alex Moreno"/);
+});
+
 test('review21: closed() resets the Review popover with every other surface', () => {
   const t = update(S({ holdsReview: true, moreOpen: true }), { type: 'today' }, ctxFor());
   assert.equal(t.state.holdsReview, false);
