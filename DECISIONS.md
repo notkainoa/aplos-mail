@@ -1941,3 +1941,9 @@ With the Ask dock open at the minimum window the Home pane is about 324px: the f
 Limit: with the dock dragged to 404px or more at the 900px window the pane is under 280px and no row or letter layout fits; that is the dock's maximum (ui-shell), not Home's.
 
 Review follow-up (ui-polish on #458): Later and Done keep their labels down to 380px of card content (about a 1100px window with Ask open) and go icon-only below it; every narrow-pane selector starts at `.aplos-list-column`, so only the Home, Later and list screens are restyled, never ui-foundation's shared component styles (the Low sheet, the gallery).
+
+## 2026-11-11: the focus letter's narrow-pane rules live in the component, once (ui-core/ui-polish decided)
+
+Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.
+
+Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
