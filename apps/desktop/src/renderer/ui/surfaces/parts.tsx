@@ -398,7 +398,7 @@ export type FloatPlacement = 'below-start' | 'below-end' | 'above-start' | 'left
 
 /** A space token in px. Tokens are emitted in rem (DESIGN 11.6), so a rem value is scaled by the root font size. */
 export function spaceToken(name: string): number {
-  if (typeof document === 'undefined') return 0;
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return 0;
   const root = getComputedStyle(document.documentElement);
   const raw = root.getPropertyValue(name).trim();
   const value = parseFloat(raw);
@@ -457,10 +457,10 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     return () => window.removeEventListener('resize', place);
   }, [open, place]);
 
-  // The first measure is taken while the surface still sits in flow, and a fixed surface near the window's edge can
-  // shrink to fit, so its size changes after it is placed (a long recipient list opened far from its anchor). Place it
-  // again whenever its size changes (the observer also reports once when it starts); the same size gives the same spot,
-  // so this settles.
+  // The first measure is taken while the surface still sits in flow at its container's width; once placed it is fixed
+  // and sized by its content, so its size changes after placement (a long recipient list opened far from its anchor).
+  // Place it again whenever its size changes (the observer also reports once when it starts); the same size gives the
+  // same spot, so this settles.
   const placed = coords !== null;
   useLayoutEffect(() => {
     const el = ref.current;
