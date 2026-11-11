@@ -303,8 +303,9 @@
    part you see is one circle wide ("+3"); a longer count grows into a pill that keeps every digit inside it ("+497"). */
 .aplos-circle[data-more='true'] {
   width: auto;
-  min-width: calc(var(--control-xs) + var(--space-2));
-  padding-left: var(--space-2);
+  min-width: calc(var(--control-xs) + var(--space-2) + var(--space-half));
+  /* The overlap plus the ring of the circle on top, so the "+" is never under that ring. */
+  padding-left: calc(var(--space-2) + var(--space-half));
   /* Physical sides, like the overlap's margin-left. */
   padding-right: var(--space-1);
 }
@@ -331,6 +332,11 @@
   min-width: calc(var(--space-10) * 5);
   max-width: min(calc(var(--space-10) * 7), 90vw);
   padding: var(--space-1) var(--space-5);
+}
+.aplos-details:focus-visible {
+  /* Drawn inside: the popover scrolls and would clip a ring drawn outside it. */
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-width));
 }
 .aplos-details__row {
   display: grid;

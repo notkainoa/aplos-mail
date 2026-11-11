@@ -30,11 +30,11 @@ test.describe('reader cards by keyboard', () => {
     await expect(toggle).toBeFocused();
   });
 
-  test('Tab to a card and O opens that card, not another', async ({ page }) => {
+  // Tab belongs to the shell's region navigation, so a card is reached by focusing its toggle (a click or .focus(), the
+  // same focus event a reader gives it); the cursor follows that focus and O acts on it.
+  test('focusing a card and pressing O opens that card, not another', async ({ page }) => {
     await open(page);
-    await page.locator(TOGGLES).first().focus();
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Tab');
+    await page.locator(TOGGLES).nth(2).focus();
     await expect(page.locator(TOGGLES).nth(2)).toBeFocused();
     await page.keyboard.press('o');
     await expect(page.locator(TOGGLES).nth(2)).toHaveAttribute('aria-expanded', 'true');

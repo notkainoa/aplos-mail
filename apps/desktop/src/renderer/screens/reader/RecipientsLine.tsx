@@ -86,7 +86,8 @@ function Row({ row }: { readonly row: DetailRow }) {
 /** The popover's content: one row per fact the message carries. */
 export function MessageDetails({ message, me }: RecipientsLineProps) {
   return (
-    <div className="aplos-details">
+    // A long list scrolls (reader.css), so the region takes focus: the keyboard can scroll it (axe scrollable-region-focusable).
+    <div className="aplos-details" role="group" aria-label="People on this message" tabIndex={0}>
       {detailRows(message, me).map(row => (
         <Row key={row.label} row={row} />
       ))}
