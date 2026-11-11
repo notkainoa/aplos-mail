@@ -29,6 +29,21 @@ export function miscSuite({ scenario }: SuiteTools) {
     parseDiagnosticsBundle(await c.call('Diagnostics/preview', {}));
   });
 
+  /** `Diagnostics/verbose` without `on` is a pure read of the deadline (Settings shows the real state on open). */
+  scenario('diagnostics/verbose-read', async (_e, c) => {
+    assert.equal((await c.call('Diagnostics/verbose', {})).until, undefined, 'off to begin with');
+    const { until } = await c.call('Diagnostics/verbose', { on: true });
+    assert.equal(typeof until, 'number');
+    assert.equal(
+      (await c.call('Diagnostics/verbose', {})).until,
+      until,
+      'a read answers the deadline',
+    );
+    assert.equal((await c.call('Diagnostics/verbose', {})).until, until, 'and does not move it');
+    assert.equal((await c.call('Diagnostics/verbose', { on: false })).until, undefined);
+    assert.equal((await c.call('Diagnostics/verbose', {})).until, undefined, 'off reads off');
+  });
+
   /** FR-34: only the stand-in may hand the reader a `srcdoc`, and then with its own CSP. */
   scenario('mail/srcdoc-stand-in-only', async (engine, c) => {
     const message = await new SampleContext(c.session, async () => {}).message();
