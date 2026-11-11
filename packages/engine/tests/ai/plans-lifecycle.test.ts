@@ -149,14 +149,68 @@ test('Plan/confirm: a refused put retried under the SAME opId confirms — one e
   w.file.cleanup();
 });
 
+test('Plan/confirm: two refused puts under the same opId release the claim every time', async () => {
+  let refuse = true;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        if (refuse)
+          throw new ContractError({ type: 'permission', message: 'Enable editing first.' });
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  const row = () =>
+    w.store.read(q =>
+      q.get<{ state: string; op_id: string | null }>('SELECT state, op_id FROM plans WHERE id = 1'),
+    )!;
+  for (const attempt of [1, 2]) {
+    await assert.rejects(
+      () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+      (e: unknown) => (e as { type?: string }).type === 'permission',
+    );
+    // The release commit carries a unique suffix: a replayed `c1:release` would leave the second
+    // refusal's claim stuck `confirming` forever.
+    assert.equal(row().state, 'open', `refusal ${attempt} hands the plan back`);
+    assert.equal(row().op_id, null);
+  }
+  refuse = false;
+  const done = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  assert.match(done.eventId, /^acct-1:primary\//, 'a later retry under the same op still confirms');
+  w.file.cleanup();
+});
+
 test('Plan/confirm: a dismiss that lands while the put is in flight refuses the confirm', async () => {
   const puts: { newRemoteId?: string }[] = [];
+  const removes: { remoteId?: string }[] = [];
   const w = await world(stubTransport(EVENT_ANSWER), {
     calendar: {
       put: async (_a: string, c: { newRemoteId?: string }) => {
         puts.push(c);
         await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
         return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+      remove: async (_a: string, ref: { remoteId?: string }) => {
+        removes.push(ref);
+        return { kind: 'saved' as const, upserts: [], removals: [{ remoteId: ref.remoteId }] };
       },
     },
   });
@@ -185,6 +239,8 @@ test('Plan/confirm: a dismiss that lands while the put is in flight refuses the 
   );
   const row = w.store.read(q => q.get<{ state: string }>('SELECT state FROM plans WHERE id = 1'))!;
   assert.equal(row.state, 'dismissed', 'the mid-flight dismiss stands');
+  assert.equal(removes.length, 1, 'the orphaned event is deleted — no plan can ever point at it');
+  assert.equal(removes[0].remoteId, puts[0].newRemoteId, 'the event the put created is removed');
   w.file.cleanup();
 });
 
@@ -329,9 +385,11 @@ test('Event/extract: open plans from older mail do not stop the nothing-found re
   assert.equal(t.calls.length, 2, 'the new input was extracted once');
   assert.equal(second.plans.length, 1, 'the older open plan is still returned');
   // The marker is per input hash — a third extract must NOT call the model even though the thread's
-  // open plan list was never empty.
+  // open plan list was never empty. Its answer mirrors the extract that recorded the marker: the
+  // thread's open proposals, so the marker hit is the same list the second call returned.
   const third = await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
-  assert.equal(third.plans.length, 0);
+  assert.equal(third.plans.length, 1, 'a recorded empty answer still returns the open plans');
+  assert.equal(third.plans[0].id, second.plans[0].id);
   assert.equal(t.calls.length, 2, 'the recorded empty answer for THIS hash skips the model');
   w.file.cleanup();
 });

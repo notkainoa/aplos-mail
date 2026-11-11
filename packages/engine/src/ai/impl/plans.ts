@@ -8,6 +8,7 @@ import { readBody } from '../../store/bodies';
 import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
 import { eventIdForOp } from '../../calendar/event-id';
+import type { EventFacts } from '../../ports/calendar';
 import { parseCalendarIdIn } from '../../calendar/project';
 import { fromWall, isKnownZone } from '../../calendar/recurrence/zone';
 import { usableZone } from '../../clock/zone';
@@ -522,14 +523,18 @@ export async function extract(
   const existing = services.store.read(q => plansForHash(q, t.id, hash)).map(planOf);
   if (existing.length) return { plans: existing, receipt: receipt(ctx, args.opId) };
   // A previous extraction of this exact input found nothing — recorded, so we don't call the model again.
+  // The marker hit answers like the write path did: the thread's open proposals, whatever hash wrote
+  // them, so a replayed empty extract returns the same list the extract that recorded it returned.
   const emptyKey = `plans-empty:${parts.accountId}:${parts.remoteId}`;
   if (
     hash &&
     services.store.read(q =>
       q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', emptyKey),
     )?.value === hash
-  )
-    return { plans: [], receipt: receipt(ctx, args.opId) };
+  ) {
+    const list = services.store.read(q => openPlans(q, t.id)).map(planOf);
+    return { plans: list, receipt: receipt(ctx, args.opId) };
+  }
   try {
     const plans = await extractOnce(services, `${t.id}:${hash}`, async () => {
       const x = await extractThread(services, parts.accountId, parts.remoteId, args.timeZone);
@@ -696,6 +701,9 @@ const planFields = (
     : {}),
 });
 
+const needsSendScope = (args: Input<'Plan/confirm'>) =>
+  Boolean(args.fields?.title || args.fields?.description || args.fields?.location);
+
 /**
  * Confirm is a three-step transaction: `claim` (open → confirming under this opId, in its own commit so two
  * callers can't both pass), `put` with `newRemoteId` derived from (calendar account, opId) so a retried
@@ -710,8 +718,7 @@ export async function confirmPlan(
   const { services } = ctx;
   // Title, description and location overrides carry untrusted mail text into the calendar — the
   // Event/set scope ('send'), not triage. Everything else about confirming stays at this method's scope.
-  if (args.fields?.title || args.fields?.description || args.fields?.location)
-    requireScope(ctx.caller, 'send');
+  if (needsSendScope(args)) requireScope(ctx.caller, 'send');
   const plan = services.store.read(q => findPlan(q, args));
   if (!plan)
     throw new ContractError({ type: 'notFound', message: 'This plan is no longer available.' });
@@ -821,9 +828,36 @@ export async function confirmPlan(
     q.get<{ state: string }>('SELECT state FROM plans WHERE id = ?', row.id),
   );
   if (after?.state !== 'confirmed')
-    throw new ContractError({
-      type: 'conflict',
-      message: 'This plan changed while it was being confirmed.',
-    });
+    await sweepOrphan(services, after?.state, calAccountId, calRemote, first);
   return { eventId, receipt: receipt(ctx, args.opId) };
+}
+
+/**
+ * The put landed but the settle could not: a still-claimed row keeps the event — its same-opId retry
+ * names and settles it — while anything else (a mid-flight dismiss, a released claim) leaves an event
+ * no plan can ever point at, so it is deleted best-effort. `newRemoteId` names only events a confirm
+ * could have created, never pre-existing user data. A refused delete still surfaces the conflict.
+ */
+async function sweepOrphan(
+  services: EngineServices,
+  state: string | undefined,
+  calAccountId: string,
+  calRemote: string,
+  first: EventFacts,
+): Promise<never> {
+  if (state !== 'confirming')
+    try {
+      await services.calendar.remove(calAccountId, {
+        calendarRemoteId: calRemote,
+        remoteId: first.masterRemoteId ?? first.remoteId,
+        scope: 'occurrence',
+        notify: false,
+      });
+    } catch {
+      // best-effort — the conflict below is the answer either way.
+    }
+  throw new ContractError({
+    type: 'conflict',
+    message: 'This plan changed while it was being confirmed.',
+  });
 }
