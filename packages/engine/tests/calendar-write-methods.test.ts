@@ -829,3 +829,27 @@ test('a utc change on a series whose zone is unknown, or on an all-day series, i
   );
   assert.deepEqual(w.calls, []);
 });
+
+test('a utc pair whose two ends read the same wall time across the fall-back keeps its hour, never zero length', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  // 01:30 PDT (08:30Z) to 01:30 PST (09:30Z): one real hour that reads 01:30 at both ends.
+  await w.call(
+    'Event/set',
+    seriesEdit('ev1', {
+      start: { type: 'utc', utc: Date.UTC(2026, 10, 1, 8, 30) },
+      end: { type: 'utc', utc: Date.UTC(2026, 10, 1, 9, 30) },
+    }),
+  );
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-31T01:30:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-31T02:30:00',
+    timeZone: LA,
+  });
+});
