@@ -302,4 +302,8 @@ export interface ClientTokens {
   issue(clientId: string, token: string): Promise<{ path: string }>;
   /** Removes a client's token file (revoke, or cleaning up a grant whose commit failed). Missing is fine. */
   remove(clientId: string): Promise<void>;
+  /** The absolute path a client's token file lives at, written or not — for `tokenPath` on a deduped grant. */
+  pathOf(clientId: string): string;
+  /** Whether the client's token file exists now — a deduped grant without its file gets a fresh grant. */
+  has(clientId: string): Promise<boolean>;
 }

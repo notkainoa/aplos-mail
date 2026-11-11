@@ -123,9 +123,30 @@ async function grant(
       type: 'unavailable',
       message: 'This part of Aplos is not running yet.',
     });
+  // A retry of the same grant (a double-click or a lost response) returns the live row instead of minting a
+  // duplicate tool — but only when name, kind AND the requested scopes all match (a wider or narrower ask
+  // is a different tool) and its token file is still there (a row without its file could never authenticate).
+  const scopes = [...new Set(args.scopes)] as Client['scopes'];
+  const existing = ctx.services.store.read(q =>
+    q.get<ClientRow>(
+      'SELECT id, name, kind, scopes, created_at, last_seen_at, revoked_at FROM clients WHERE name = ? AND kind = ? AND revoked_at IS NULL',
+      args.name,
+      args.kind,
+    ),
+  );
+  if (existing) {
+    const same = toClient(existing);
+    const asked = [...scopes].sort();
+    const held = [...same.scopes].sort();
+    if (
+      held.length === asked.length &&
+      held.every((s, i) => s === asked[i]) &&
+      (await ctx.services.clientTokens.has(existing.id))
+    )
+      return { client: { ...same, tokenPath: ctx.services.clientTokens.pathOf(existing.id) } };
+  }
   const id = `cl_${hex(ctx.services.randomBytes(16))}`;
   const token = hex(ctx.services.randomBytes(32));
-  const scopes = [...new Set(args.scopes)] as Client['scopes'];
   const createdAt = ctx.services.clock.now();
   // The token file lands first: a failed issue leaves no row, and a failed commit drops the file too.
   const { path } = await ctx.services.clientTokens.issue(id, token);

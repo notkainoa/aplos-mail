@@ -43,12 +43,15 @@ async function world(opts: { withTokens?: boolean; removeRejects?: boolean } = {
             clientTokens: {
               issue: async (clientId: string, token: string) => {
                 issued.push({ clientId, token });
-                return { path: `run/clients/${clientId}.token` };
+                return { path: `/data/run/clients/${clientId}.token` };
               },
               remove: async (clientId: string) => {
                 if (opts.removeRejects) throw new Error('remove exploded');
                 removed.push(clientId);
               },
+              pathOf: (clientId: string) => `/data/run/clients/${clientId}.token`,
+              has: async (clientId: string) =>
+                issued.some(i => i.clientId === clientId) && !removed.includes(clientId),
             },
           },
   });
@@ -75,7 +78,7 @@ test('grant inserts the row with the token hash, hands the plaintext to the host
     assert.match(client.id, /^cl_[0-9a-f]{32}$/);
     assert.deepEqual(client.scopes, ['read', 'draft'], 'scopes dedupe, order kept');
     assert.equal(client.createdAt, w.clock.now());
-    assert.equal(client.tokenPath, `run/clients/${client.id}.token`);
+    assert.equal(client.tokenPath, `/data/run/clients/${client.id}.token`);
     // Exactly one issue call, a 256-bit token, and only its SHA-256 at rest.
     assert.equal(w.issued.length, 1);
     const { token } = w.issued[0]!;
@@ -134,6 +137,8 @@ test('a failed issue leaves no client row', async () => {
         clientTokens: {
           issue: () => Promise.reject(new Error('disk full')),
           remove: () => Promise.resolve(),
+          pathOf: (clientId: string) => `/data/run/clients/${clientId}.token`,
+          has: () => Promise.resolve(false),
         },
       },
     });
@@ -178,6 +183,8 @@ test('a failed grant commit whose cleanup also fails still surfaces the commit e
         clientTokens: {
           issue: () => Promise.resolve({ path: 'run/clients/x.token' }),
           remove: () => Promise.reject(new Error('remove exploded')),
+          pathOf: (clientId: string) => `/data/run/clients/${clientId}.token`,
+          has: () => Promise.resolve(false),
         },
       },
     });
@@ -219,6 +226,36 @@ test('no caller but the app can grant: listener admin and mcp are refused before
     }
     assert.equal(w.issued.length, 0, 'no token was minted');
     assert.equal((w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n, 0);
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('a grant retry with the same name and kind returns the existing tool, no new row or file', async () => {
+  const w = await world();
+  try {
+    const first = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    const second = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    assert.equal(second.client.id, first.client.id, 'the retry returns the existing grant');
+    assert.equal(second.client.tokenPath, first.client.tokenPath, 'the retry shows the same path');
+    assert.match(second.client.tokenPath ?? '', /^\//, 'the path is absolute like the first grant');
+    assert.equal(w.issued.length, 1, 'no second token file was issued');
+    assert.equal(
+      (w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n,
+      1,
+      'still one row',
+    );
+    // Different scopes are a different tool — no dedupe.
+    const wider = await w.call('Clients/grant', {
+      name: 'dup',
+      kind: 'cli',
+      scopes: ['read', 'admin'],
+    });
+    assert.notEqual(wider.client.id, first.client.id);
+    // A revoked grant does not dedupe — a fresh grant mints a new row.
+    await w.call('Clients/revoke', { id: first.client.id });
+    const third = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    assert.notEqual(third.client.id, first.client.id);
   } finally {
     await w.engine.close();
   }

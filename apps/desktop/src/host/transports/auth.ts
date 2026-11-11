@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ClientTokens } from '@aplos/engine/ports';
@@ -23,6 +23,10 @@ export function createClientTokens(options: { dataDir: string }): ClientTokens {
     },
     async remove(clientId) {
       rmSync(join(dir, `${clientId}.token`), { force: true });
+    },
+    pathOf: clientId => join(dir, `${clientId}.token`),
+    async has(clientId) {
+      return existsSync(join(dir, `${clientId}.token`));
     },
   };
 }

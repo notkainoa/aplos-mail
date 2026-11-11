@@ -110,6 +110,8 @@ export interface DataApi {
     readonly put: ClientApi['blob']['put'];
     /** `Blob/get`: read a blob's bytes. */
     readonly get: ClientApi['blob']['get'];
+    /** `Blob/release`: free a blob the window owns once it no longer needs it. */
+    readonly release: ClientApi['blob']['release'];
   };
   /** Sync control. */
   readonly sync: {
