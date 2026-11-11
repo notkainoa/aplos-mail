@@ -10,14 +10,7 @@
  * and stand-in toasts.
  */
 import type { EventChange } from '@aplos/contract';
-import {
-  api,
-  getNow,
-  type ActResult,
-  type OperationView,
-  type Receipt,
-  type State,
-} from '../../data';
+import { api, type ActResult, type OperationView, type Receipt, type State } from '../../data';
 import { toErrorBody } from '../../data/client';
 import {
   dismissToast,
@@ -531,9 +524,13 @@ function retryOperation(watch: WatchedWrite, view: OperationView, ui: EffectUi):
   );
 }
 
-/** The receipt's hold is still open (`undoUntil` in the future): guests are not told yet. */
+/**
+ * A hold exists: the receipt keeps the write undoable behind an undo window — the clock is not
+ * the test (an undo-send of 0 s still queues a hold whose `undoUntil` lands at now, review15). An
+ * undoable receipt with no `undoUntil` is a journaled op, not a hold: it settles at its receipt.
+ */
 const isHeld = (receipt: Receipt): boolean =>
-  receipt.undoable !== false && receipt.undoUntil !== undefined && receipt.undoUntil > getNow();
+  receipt.undoable !== false && receipt.undoUntil !== undefined;
 
 export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: EffectUi): void {
   const retry = () => runCalendarEffect(fx, ports, ui);

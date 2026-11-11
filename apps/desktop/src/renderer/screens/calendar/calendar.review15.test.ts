@@ -1,0 +1,77 @@
+/**
+ * The review15 fixes, one test each, all modelling the REAL engine (`packages/engine`
+ * calendar/holds.ts, views/windows.ts): a held write's receipt is undoable behind `undoUntil`
+ * (a 0 s undo window included — the hold is queued all the same), its `appliedState` is already
+ * reached (the hold commit never moves `seq`), and a second hold on the same target is refused
+ * `calendar.holdPending` while the first is `queued` or `syncing`. The optimistic overlay is
+ * layered per write, so a refused write drops only what it added; a held write's layer outlives
+ * the `synced` op frame until the next window frame (reruns are throttled), bounded so a lost
+ * frame cannot ghost it. Operation-level failures stay until dealt with, their Retry is manual
+ * and the operation's own — never an auto-fired re-send of a guest-notifying write.
+ * Run: `cd apps/desktop && npx tsx --test 'src/renderer/screens/calendar/*.test.ts*'`.
+ */
+import './calendar.tz';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { EventChange } from '@aplos/contract';
+import type { Receipt } from '../../data';
+import { getToasts, resetToasts } from '../../shell/store-toast';
+import type { CalendarEffect } from './calendar.model';
+import { runCalendarEffect, type EffectPorts } from './effects';
+import { boot, NOW, ports, testUi } from './calendar.testkit';
+
+const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
+  opId: 'op-1',
+  appliedState: { dbEpoch: 'e', seq: 9 },
+  ...extra,
+});
+
+const task = () => new Promise<void>(resolve => setImmediate(resolve));
+
+const moveFx = (notify: boolean, over: Partial<CalendarEffect> = {}): CalendarEffect => ({
+  kind: 'eventSet',
+  change: {
+    type: 'update',
+    id: 'climb',
+    scope: 'occurrence',
+    fields: { title: 'Climbing, moved' },
+  },
+  optimistic: { id: 'climb', patch: { title: 'Climbing, moved' } },
+  ...(notify ? { notify: true } : {}),
+  toast: { kind: 'info', message: 'Moved Climbing', held: 'Moving Climbing', undoable: true },
+  undoLabel: 'Moved Climbing',
+  failure: 'Couldn’t move Climbing.',
+  ...over,
+});
+
+const eventSetSpy = (out: { receipt: Receipt } | { error: unknown }) => {
+  const calls: Array<{ change: EventChange; notify?: boolean }> = [];
+  const port: EffectPorts['eventSet'] = args => {
+    calls.push(args);
+    return 'error' in out ? Promise.reject(out.error) : Promise.resolve(out);
+  };
+  return { calls, port };
+};
+
+test('review15: a zero-second undo window still counts as held', async () => {
+  await boot();
+  resetToasts();
+  try {
+    // The owner's undo-send of 0 s queues a hold whose `undoUntil` lands AT now: a clock compare
+    // reads it unheld, so the receipt settle ran at the hold-time state (the overlay dropped at
+    // once) and the toast claimed 'sent' while the write still queued. The receipt is the truth.
+    const ui = testUi();
+    const spy = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW }),
+    });
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy.port }, ui);
+    await task();
+    assert.deepEqual(ui.applied, [], 'a queued hold never settles at its receipt');
+    const w = ui.watched[0]!;
+    assert.equal(w.held, true, 'the watch knows the write is held');
+    const toast = getToasts().find(t => t.undoable);
+    assert.equal(toast?.message, 'Moving Climbing', 'held wording while the hold is queued');
+  } finally {
+    resetToasts();
+  }
+});
