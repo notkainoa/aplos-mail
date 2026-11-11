@@ -40,6 +40,7 @@ import type {
   GridView,
 } from './calendar.model';
 import { EDITING_COPY } from './accountCalendarState';
+import { FailedHolds } from './FailedHolds';
 import { stackDomMatch } from './keys';
 
 /** The one pane-header tool on Calendar (DESIGN 7.1): New event, N. Ask and the calendar button are the shell's. */
@@ -500,6 +501,15 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
   return (
     <div ref={rootRef} className="cal-screen" data-view={vm.shown}>
       <ViewControls vm={vm} dispatch={dispatch} />
+      {vm.failedHolds ? (
+        <FailedHolds
+          holds={vm.failedHolds.items}
+          events={vm.events}
+          open={vm.failedHolds.open}
+          dispatch={dispatch}
+          announce={announce}
+        />
+      ) : null}
 
       {vm.shown === 'day' ? (
         <div className="cal-screen__day" data-rail={vm.rail ? 'true' : undefined}>

@@ -229,6 +229,61 @@
   padding-right: 0;
 }
 
+/* The failed-holds line (review19): one quiet line under the page head — dim words and a text action,
+   drawn only while a failed hold exists, so it is never a standing nag. */
+.cal-failed-holds {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-bottom: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-failed-holds .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* The Review list's rows: the event's title, the reason sentence, then the row's actions. */
+.cal-holds {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  min-width: 260px;
+  max-width: 340px;
+}
+
+.cal-hold {
+  padding: var(--space-2) var(--space-3);
+}
+
+.cal-hold + .cal-hold {
+  border-top: var(--hairline) solid var(--line);
+}
+
+.cal-hold__title {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+
+.cal-hold__reason {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-hold__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-half);
+}
+
 /* The harness states' notice toast, where the shell's stack would put it: bottom centre, above the pane. */
 .calp-toast {
   position: absolute;

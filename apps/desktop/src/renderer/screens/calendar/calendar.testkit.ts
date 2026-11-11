@@ -49,6 +49,7 @@ export function ctxFor(
     defaultCalendarId: 'work',
     calendarsReady: true,
     windowReady: true,
+    failedHolds: [],
   };
 }
 
@@ -80,6 +81,7 @@ export function ctxAt(
     defaultCalendarId: 'work',
     calendarsReady: true,
     windowReady: true,
+    failedHolds: [],
   };
 }
 
@@ -226,6 +228,7 @@ export function ports(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     operationRetry: args => api.operation.retry(args),
+    queueDiscard: args => api.queue.discard(args),
     enableEditing: () => Promise.resolve(),
     reconnect: () => undefined,
     openThread: () => undefined,

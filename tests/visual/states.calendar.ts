@@ -325,6 +325,26 @@ export const calendarStates: readonly VisualState[] = [
     filled: 0,
   },
   {
+    id: 'failed-holds-line',
+    title:
+      'A held write failed after its toast left: the pane’s quiet "1 change didn’t send · Review" line',
+    components: ['Button', 'Pane', 'CalendarGrid'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-week.html (failed holds)',
+    filled: 0,
+    frame: 'shell',
+  },
+  {
+    id: 'failed-holds-list',
+    title:
+      'The Review list: each failed hold’s event, its reason sentence, and its Retry and Discard',
+    components: ['Button', 'Popover', 'Pane', 'CalendarGrid'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-week.html (failed holds, Review open)',
+    filled: 0,
+    frame: 'shell',
+  },
+  {
     id: 'write-hold-refused',
     frame: 'shell',
     title:

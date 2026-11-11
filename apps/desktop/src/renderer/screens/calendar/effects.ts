@@ -37,6 +37,7 @@ import {
   type ToastPlan,
 } from './calendar.model';
 import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
+import { emitHoldsRefresh } from './FailedHolds';
 import { bodyOf, undoFailureMessage, writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -74,6 +75,8 @@ export interface EffectPorts {
    * id — never the write again (that would queue a second change beside it).
    */
   operationRetry(args: { readonly opId: string }): Promise<Receipt>;
+  /** `Queue/discard {id}`: drops a failed hold's queue item — the owner said the change stays unsent. */
+  queueDiscard(args: { readonly id: string }): Promise<unknown>;
   /**
    * The write's provider-side progress (`operation` frames): the listener runs once with the current
    * view, then on each change; the return unsubscribes. Absent in tests that never see a frame.
@@ -450,24 +453,44 @@ export function calendarUndoRefused(opId: string, error: unknown): void {
 function retryOperation(ports: EffectPorts, opId: string): void {
   // A stale Retry — the owner already sent the event again — answers nothing (review17).
   if (staleRetries.has(opId)) return;
-  void ports.operationRetry({ opId }).then(undefined, error => {
-    const body = bodyOf(error);
-    // A refused retry keeps the surface it came from — persistent, showing the refusal's own
-    // sentence in place of the first failure's. An actionless toast would fade 4 s later and
-    // leave the failed send invisible (review17). Terminal refusals — the op was undone, already
-    // sent, dropped from the queue, or must be checked by hand (conflict incl.
-    // calendar.checkFirst, notFound) — get Dismiss only: a Retry that can never succeed is worse
-    // than none. Transient refusals (unavailable, unknown) keep it (review18).
-    const terminal = body.type === 'conflict' || body.type === 'notFound';
-    opFailureToast(
-      opId,
-      {
-        message: body.message || 'Couldn’t send that change.',
-        retry: terminal ? 'none' : 'operation',
-      },
-      ports,
-    );
-  });
+  void ports.operationRetry({ opId }).then(
+    () => emitHoldsRefresh(),
+    error => {
+      emitHoldsRefresh();
+      const body = bodyOf(error);
+      // A refused retry keeps the surface it came from — persistent, showing the refusal's own
+      // sentence in place of the first failure's. An actionless toast would fade 4 s later and
+      // leave the failed send invisible (review17). Terminal refusals — the op was undone, already
+      // sent, dropped from the queue, or must be checked by hand (conflict incl.
+      // calendar.checkFirst, notFound) — get Dismiss only: a Retry that can never succeed is worse
+      // than none. Transient refusals (unavailable, unknown) keep it (review18).
+      const terminal = body.type === 'conflict' || body.type === 'notFound';
+      opFailureToast(
+        opId,
+        {
+          message: body.message || 'Couldn’t send that change.',
+          retry: terminal ? 'none' : 'operation',
+        },
+        ports,
+      );
+    },
+  );
+}
+
+/** A Review row's Discard: `Queue/discard` on the item id; a refusal gets one quiet sentence. */
+function discardHold(ports: EffectPorts, id: string): void {
+  void ports.queueDiscard({ id }).then(
+    () => emitHoldsRefresh(),
+    error => {
+      emitHoldsRefresh();
+      pushToast({
+        id: newOpId(),
+        kind: 'info',
+        message: bodyOf(error).message || 'Couldn’t discard that change.',
+        undoable: false,
+      });
+    },
+  );
 }
 
 /**
@@ -999,6 +1022,12 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     case 'notice':
       pushToast({ id: newOpId(), kind: 'info', message: fx.message, undoable: false });
       return;
+    case 'holdRetry':
+      retryOperation(ports, fx.opId);
+      return;
+    case 'holdDiscard':
+      discardHold(ports, fx.id);
+      return;
     case 'focus':
       ui.focus(fx.target);
       return;
@@ -1015,6 +1044,7 @@ export function livePorts(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     operationRetry: args => api.operation.retry(args),
+    queueDiscard: args => api.queue.discard(args),
     watchOperation: (opId, listener) => subscribeOperation(opId, listener),
     // The same connect sheet as the read grant, asking for calendar editing too (`enable: 'calendarWrite'` is the only
     // way Aplos ever asks for it); the account's grantedScopes gains the scope when the sheet finishes.

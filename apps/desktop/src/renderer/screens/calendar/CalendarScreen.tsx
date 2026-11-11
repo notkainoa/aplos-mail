@@ -72,6 +72,7 @@ import {
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
 import { useOpenPlanTarget } from './useOpenPlanTarget';
+import { useFailedHolds } from './FailedHolds';
 import {
   createTurnGate,
   inCalendarSurface,
@@ -241,6 +242,9 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
   const loaded = useCalendars(accountId, touched, calendarListedKey(accounts));
+  // Failed guest-notifying holds live in Queue/list between sessions (review19): refetched on mount
+  // and on every operation frame the window already receives (`touched`), never polled.
+  const { holds: failedHolds } = useFailedHolds(touched);
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>
@@ -293,6 +297,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       loadedThrough: range.to,
       defaultCalendarId: defaultId,
       calendarsReady: loaded !== undefined,
+      failedHolds,
       // Same conditions the render gates use below: while the pane draws nothing, no command may run.
       windowReady:
         eventsWindow.status !== 'failed' &&
@@ -310,6 +315,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       defaultId,
       loaded,
       eventsWindow.status,
+      failedHolds,
     ],
   );
 

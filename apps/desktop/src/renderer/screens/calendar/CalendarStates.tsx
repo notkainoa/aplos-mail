@@ -45,6 +45,7 @@ import {
 } from './calendar.model';
 import { CALENDAR_PANE_TOOLS, CalendarView } from './CalendarView';
 import { CALENDAR_EVENTS_SCOPE } from './accountCalendarState';
+import type { FailedHold } from './FailedHolds';
 import { calendarSidebar } from './sidebar';
 
 const noop = () => {};
@@ -416,6 +417,8 @@ interface Fixture {
   pane?: 'loading' | 'error';
   /** A notice toast over the pane, as the shell's stack would show it (the write failure surfaces). */
   toast?: { message: string; actions?: readonly { id: string; label: string }[] };
+  /** Failed calendar holds the pane's quiet line and Review list draw (review19). */
+  holds?: readonly FailedHold[];
 }
 
 function PreviewCalendar({ fixture }: { fixture: Fixture }) {
@@ -456,6 +459,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
     defaultCalendarId: defaultId,
     calendarsReady: true,
     windowReady: true,
+    failedHolds: fixture.holds ?? [],
   };
   const stateRef = useRef(state);
   const ctxRef = useRef(ctx);
@@ -783,6 +787,44 @@ const FIXTURES: Record<string, Fixture> = {
           "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
       },
     },
+  },
+  'failed-holds-line': {
+    title:
+      'The held change failed after its toast left: "1 change didn’t send · Review" under the page head',
+    state: { view: 'week' },
+    holds: [
+      {
+        id: 'op:op-hold-design',
+        opId: 'op-hold-design',
+        reason: "That change wasn't sent in time. Check the event, then send it again.",
+        canRetry: true,
+        canDiscard: true,
+        eventId: 'design',
+      },
+    ],
+  },
+  'failed-holds-list': {
+    title:
+      'Review open: Design review offers Retry and Discard, Lunch with Leah (a dead grant) Discard only',
+    state: { view: 'week', holdsReview: true },
+    holds: [
+      {
+        id: 'op:op-hold-design',
+        opId: 'op-hold-design',
+        reason: "That change wasn't sent in time. Check the event, then send it again.",
+        canRetry: true,
+        canDiscard: true,
+        eventId: 'design',
+      },
+      {
+        id: 'op:op-hold-lunch',
+        opId: 'op-hold-lunch',
+        reason: 'Sign in to Google again to send this change.',
+        canRetry: false,
+        canDiscard: true,
+        eventId: 'lunch',
+      },
+    ],
   },
 };
 
