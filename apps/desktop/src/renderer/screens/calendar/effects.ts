@@ -44,6 +44,8 @@ export interface EffectPorts {
   eventSet(args: {
     readonly opId: string;
     readonly change: EventChange;
+    /** `notify: true` asks the engine to hold the write for undo — sent only when guests are emailed. */
+    readonly notify?: boolean;
   }): Promise<{ readonly receipt: Receipt }>;
   eventRsvp(args: {
     readonly opId: string;
@@ -485,18 +487,26 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           entryIds: optimisticIds(fx.optimistic),
           addedIds: addedIdsOf(fx.optimistic),
           call: () =>
-            ports.eventSet({ opId, change: fx.change }).then(out => {
-              const held = isHeld(out.receipt);
-              if (out.receipt.undoable === false) {
-                if (fx.toast) demoteUndoToast(opId, fx.toast);
-              } else if (
-                // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
-                fx.toast?.held !== undefined &&
-                !held
-              )
-                updateToast(opId, { message: fx.toast.message });
-              return { at: out.receipt.appliedState, held };
-            }),
+            ports
+              .eventSet({
+                opId,
+                change: fx.change,
+                // The engine holds only `notify === true` (holdIfNotifying): sent exactly when the
+                // change emails other guests, never `false` — unset keeps the provider's own default.
+                ...(fx.notify === true ? { notify: true as const } : {}),
+              })
+              .then(out => {
+                const held = isHeld(out.receipt);
+                if (out.receipt.undoable === false) {
+                  if (fx.toast) demoteUndoToast(opId, fx.toast);
+                } else if (
+                  // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
+                  fx.toast?.held !== undefined &&
+                  !held
+                )
+                  updateToast(opId, { message: fx.toast.message });
+                return { at: out.receipt.appliedState, held };
+              }),
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
           draft: fx.draft,

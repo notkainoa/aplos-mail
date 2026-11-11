@@ -176,6 +176,12 @@ export type CalendarEffect =
       kind: 'eventSet';
       change: EventChange;
       optimistic: OptimisticChange;
+      /**
+       * `notify: true` when the change would email other guests — the engine only holds a write that
+       * tells guests (`holdIfNotifying`), so the flag goes exactly then and stays unset for
+       * guest-less events (`notify: false` would tell the provider NOT to email them — different).
+       */
+      notify?: boolean;
       /** Every write's own Undo toast (id = opId); `held` words it while the engine holds the write. */
       toast?: ToastPlan;
       undoLabel: string;
