@@ -109,18 +109,17 @@ export function detailDate(ms: number, now: number = Date.now()): string {
 }
 
 /**
- * The popover's rows (image C): From, To, Cc, Bcc and Reply-to only when present (Reply-to only when it differs from
- * the sender), then Date. Rows for facts the message does not carry are left out, never shown empty.
+ * The popover's rows (image C): From, Reply-to (only when it differs from the sender), Date, then To, Cc and Bcc (only when
+ * present), the long ones last. Rows for facts the message does not carry are left out, never shown empty.
  */
 export function detailRows(message: Message, me: ReadonlySet<string>): readonly DetailRow[] {
   const from = message.from ? people('From', [message.from], me) : [];
   const replyTo = message.replyTo ?? [];
   const differs = replyTo.length > 0 && !(message.from && sameAddresses(replyTo, [message.from]));
+  // The short facts first (who, who replies, when), then the lists that can run to hundreds of people: with a long To or Cc the
+  // Date must not be the last row of a long scroll.
   return [
     ...from,
-    ...people('To', message.to, me),
-    ...people('Cc', message.cc, me),
-    ...people('Bcc', message.bcc ?? [], me),
     ...(differs ? people('Reply-to', replyTo, me) : []),
     {
       kind: 'text',
@@ -128,5 +127,8 @@ export function detailRows(message: Message, me: ReadonlySet<string>): readonly 
       text: detailDate(message.date),
       iso: new Date(message.date).toISOString(),
     },
+    ...people('To', message.to, me),
+    ...people('Cc', message.cc, me),
+    ...people('Bcc', message.bcc ?? [], me),
   ];
 }

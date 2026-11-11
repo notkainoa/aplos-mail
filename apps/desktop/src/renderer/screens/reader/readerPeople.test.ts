@@ -92,11 +92,11 @@ test('the phrase names who the circles stand for', () => {
   assert.ok(MAX_CIRCLES >= 3);
 });
 
-test('details: From, To, Cc, Date; Bcc and Reply-to only when present, Reply-to only when it differs', () => {
+test('details: From, Date, then To and Cc (the long lists last); Bcc and Reply-to only when present, Reply-to only when it differs', () => {
   const plain = detailRows(message({ to: [ALEX], cc: [MINA] }), ME);
   assert.deepEqual(
     plain.map(r => r.label),
-    ['From', 'To', 'Cc', 'Date'],
+    ['From', 'Date', 'To', 'Cc'],
   );
   const same = detailRows(message({ replyTo: [JORDAN] }), ME);
   assert.ok(
@@ -106,7 +106,7 @@ test('details: From, To, Cc, Date; Bcc and Reply-to only when present, Reply-to 
   const full = detailRows(message({ bcc: [MINA], replyTo: [MINA] }), ME);
   assert.deepEqual(
     full.map(r => r.label),
-    ['From', 'To', 'Bcc', 'Reply-to', 'Date'],
+    ['From', 'Reply-to', 'Date', 'To', 'Bcc'],
   );
 });
 
@@ -114,4 +114,24 @@ test('the date reads "Nov 10, 9:10 AM" and takes the year when it is another yea
   const ms = new Date(2026, 10, 10, 9, 10).getTime();
   assert.equal(detailDate(ms, new Date(2026, 10, 12).getTime()), 'Nov 10, 9:10 AM');
   assert.equal(detailDate(ms, new Date(2027, 0, 5).getTime()), 'Nov 10, 2026, 9:10 AM');
+});
+
+test('a hundreds-long recipient list never pushes the Date down: it stays among the first rows', () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({
+    name: `Person ${i}`,
+    address: `p${i}@x.example`,
+  }));
+  const labels = detailRows(message({ to: many, cc: many.slice(0, 50) }), ME).map(r => r.label);
+  assert.deepEqual(labels.slice(0, 2), ['From', 'Date']);
+  assert.ok(labels.indexOf('Date') < labels.indexOf('To'));
+});
+
+test('right-to-left names: the monogram is the first letter of the name, whatever its direction', () => {
+  assert.equal(personOf({ name: 'محمد علي', address: 'm@x.example' }, ME).initial, 'م');
+  assert.equal(personOf({ name: 'שרה כהן', address: 's@x.example' }, ME).initial, 'ש');
+  assert.equal(
+    personOf({ name: '“محمد”', address: 'm2@x.example' }, ME).initial,
+    'م',
+    'quotes are skipped',
+  );
 });
