@@ -351,6 +351,40 @@ test('an invitation for an event that has already started is not sent unasked', 
   assert.equal(op.error?.reasonCode, 'calendar.late');
 });
 
+test('an edit of a weekly series that tells guests is sent when the window ends: a series is never already started', async () => {
+  const w = await rig();
+  const weekAgo = w.clock.now() - 7 * 86_400_000;
+  w.store.commit({
+    opId: 'series',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'event' as const,
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'weekly',
+        rows: [
+          {
+            status: 'confirmed',
+            etag: '"v1"',
+            startUtc: weekAgo,
+            endUtc: weekAgo + 1_800_000,
+            allDay: false,
+            recurrence: { rrule: ['RRULE:FREQ=WEEKLY'] },
+            data: JSON.stringify({ summary: 'Weekly sync', status: 'confirmed' }),
+          },
+        ],
+      },
+    ],
+  });
+  await w.call('Event/set', rename('wk1', 'acct-1:primary/weekly'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put'], 'sent by itself, no Retry needed');
+  const op = (await w.call('Operation/get', { opIds: ['wk1'] })).list[0]!;
+  assert.equal(op.state, 'synced');
+});
+
 test('a second change to an event that is still held is refused until the first is sent or undone', async () => {
   const w = await rig();
   await w.call('Event/set', rename('s1'));
