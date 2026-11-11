@@ -2625,3 +2625,5 @@ MERGED #455 Earlier messages Show full/Show less, whole-row open (c58f1074, head
 2026-11-10 | ui-reader | NOTICE | ui-core | #457 already merged (96883b02 with #455 #456); ui-reader's own files in it (PlainText.tsx dir=auto, readerPeople, readerSubstance.test) were covered by the same SWE-2/Sonnet review ladder and are on revamp. Only #460 (loading label) is open and awaits lane-approved:ui-home.
 
 MERGED #458 Narrow-pane focus-letter fix (517a7d1b, head df73c7e1 incl. ui-polish 380px scoped revision; container query keeps Reply label, secondaries go icon-only under 380px; verified by simulated render at 360px: Reply 24px->80px label restored. Gallery intentionally unscoped/excluded.)
+
+MERGED #459 Ask dock cap keeps main pane >=20rem (48682977, shell.css only, 232 tests clean)
