@@ -125,7 +125,7 @@ async function world(answer: CalendarWriteResult = { kind: 'saved', upserts: [],
       },
     ],
   });
-  return { call, calls };
+  return { call, calls, store };
 }
 
 const rejects = (promise: Promise<unknown>, type: string, reasonCode?: string) =>
@@ -475,4 +475,101 @@ test('a series resize from an occurrence (end only, zoned) shifts the master end
     'calendar.floatingSeries',
   );
   assert.equal(w.calls.length, 1, 'nothing was sent for the refused one');
+});
+
+test('a series time change moves by the WALL CLOCK: an occurrence moved across a daylight-saving change keeps its clock time', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  // The Nov 3 occurrence (10:00 PST, after the clocks went back) has an exception of its own.
+  w.store.commit({
+    opId: 'dst',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev1_20261103T180000Z',
+        rows: [
+          {
+            recurrenceId: '20261103T180000Z',
+            masterRemoteId: 'ev1',
+            status: 'confirmed',
+            etag: '"o2"',
+            startUtc: Date.UTC(2026, 10, 3, 18, 0),
+            endUtc: Date.UTC(2026, 10, 3, 18, 30),
+            allDay: false,
+            data: GEVENT('Daily (Nov 3)'),
+          },
+        ],
+      },
+    ],
+  });
+  // Moved to Oct 31 at the same 10:00 (PDT): the owner changed the day only.
+  await w.call('Event/set', {
+    opId: 'dst1',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261103T180000Z',
+      scope: 'series',
+      fields: {
+        start: { type: 'floating', local: '2026-10-31T10:00:00', timeZone: LA },
+        end: { type: 'floating', local: '2026-10-31T10:30:00', timeZone: LA },
+        allDay: false,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // Master Oct 27 10:00 LA moves three days earlier at 10:00 (not 09:00 or 11:00).
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-24T10:00:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-24T10:30:00',
+    timeZone: LA,
+  });
+});
+
+test('series times that cannot be moved by an offset are refused, and nothing reaches the port', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  const refused = (opId: string, fields: Record<string, unknown>) =>
+    rejects(
+      w.call('Event/set', {
+        opId,
+        change: {
+          type: 'update',
+          id: 'acct-1:primary/ev1@20261028T170000Z',
+          scope: 'series',
+          fields: { allDay: false, ...fields } as never,
+        },
+      }),
+      'unsupported',
+      'calendar.floatingSeries',
+    );
+  const at = (local: string, timeZone?: string) => ({
+    type: 'floating',
+    local,
+    ...(timeZone ? { timeZone } : {}),
+  });
+  await refused('x1', { start: at('2026-10-28T11:00:00') });
+  await refused('x2', { start: at('2026-10-28T11:00:00', 'Mars/Olympus') });
+  await refused('x3', {
+    start: at('2026-10-28T11:00:00', LA),
+    end: at('2026-10-28T20:00:00', 'Europe/London'),
+  });
+  // The series is in Los Angeles: a series edit in another zone would rewrite the whole series into it.
+  await refused('x4', {
+    start: at('2026-10-28T19:00:00', 'Europe/London'),
+    end: at('2026-10-28T19:30:00', 'Europe/London'),
+  });
+  // A utc start with a date end describes nothing one offset can move.
+  await refused('x5', {
+    start: { type: 'utc', utc: 1_800_000_000_000 },
+    end: { type: 'date', date: '2026-10-29' },
+  });
+  assert.deepEqual(w.calls, []);
 });

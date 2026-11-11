@@ -1,7 +1,7 @@
 import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
-import { fromWall, isKnownZone, toWall } from '../calendar/recurrence/zone';
+import { isKnownZone, toWall } from '../calendar/recurrence/zone';
 import { eventIdForOp } from '../calendar/event-id';
 import {
   calendarFromRow,
@@ -371,6 +371,51 @@ async function setEvent(
  * new times describe THE OCCURRENCE, so the master's stored times shift by the same delta (keeps the
  * master's own slot, duration and zone). `utc` and `date` times rebase; a `floating` time passes through.
  */
+/**
+ * A series time change that cannot be moved by an offset: the whole series would land on the clicked occurrence's slot,
+ * silently corrupting every future event, so it is refused with a plain sentence instead.
+ */
+const seriesTimeRefusal = () =>
+  new ContractError({
+    type: 'unsupported',
+    message: 'Edit the first event of the series to change the time of every event.',
+    reasonCode: 'calendar.floatingSeries',
+  });
+
+interface RebaseBase {
+  master: { start_utc: number; end_utc: number; zone?: string };
+  occStart: number;
+  occEnd: number;
+}
+
+/** The master's and the occurrence's stored times, the base every rebase measures from. */
+function rebaseBase(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+): RebaseBase {
+  const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
+  if (!stored || stored.start_utc === null || stored.end_utc === null) throw notFoundEvent();
+  let masterZone: string | undefined;
+  try {
+    const start = (JSON.parse(stored.data) as { start?: { timeZone?: unknown } }).start;
+    masterZone = typeof start?.timeZone === 'string' ? start.timeZone : undefined;
+  } catch {
+    masterZone = undefined;
+  }
+  const master = {
+    start_utc: stored.start_utc,
+    end_utc: stored.end_utc,
+    ...(masterZone ? { zone: masterZone } : {}),
+  };
+  const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
+  const occStart =
+    occ?.start_utc ??
+    instant(recurrenceIdToTime(ref.recurrenceId), zone(ctx, ref.accountId, ref.calRemote));
+  // The occurrence's own end: a stored override's, else its slot (the master's span from its start).
+  const occEnd = occ?.end_utc ?? occStart + (master.end_utc - master.start_utc);
+  return { master, occStart, occEnd };
+}
+
 function rebaseSeriesTimes(
   ctx: MethodContext,
   ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
@@ -378,64 +423,53 @@ function rebaseSeriesTimes(
 ): void {
   const start = fields.start;
   const end = fields.end;
-  // A zoned wall-clock time (what the Calendar screen sends) rebases as the instant it names, then goes back to
-  // the same zone's wall clock: same offset from the master, same zone.
-  const zoned = zoneOfFloating(start ?? end);
-  if (zoned) return rebaseZoned(ctx, ref, fields, zoned);
-  // A wall-clock time with no zone Aplos knows cannot be moved by an offset: refuse rather than move the series by the
-  // occurrence's absolute time.
-  if (start?.type === 'floating' || end?.type === 'floating')
-    throw new ContractError({
-      type: 'unsupported',
-      message: 'Change the time of every event from the series itself.',
-      reasonCode: 'calendar.floatingSeries',
-    });
-  if (start && start.type !== 'utc' && start.type !== 'date') return;
-  if (!start && end?.type !== 'utc' && end?.type !== 'date') return;
-  const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
-  if (!stored || stored.start_utc === null || stored.end_utc === null) throw notFoundEvent();
-  const master = { start_utc: stored.start_utc, end_utc: stored.end_utc };
-  const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
-  const occStart =
-    occ?.start_utc ??
-    instant(recurrenceIdToTime(ref.recurrenceId), zone(ctx, ref.accountId, ref.calRemote));
-  // The occurrence's own end: a stored override's, else its slot (the master's span from its start).
-  const occEnd = occ?.end_utc ?? occStart + (master.end_utc - master.start_utc);
-  if ((start ?? end)!.type === 'utc') rebaseUtc(master, occStart, occEnd, fields);
+  if (!start && !end) return;
+  // Mixed kinds (a utc start with a date end) describe nothing a single offset can move.
+  if (start && end && start.type !== end.type) throw seriesTimeRefusal();
+  const kind = (start ?? end)!.type;
+  if (kind === 'floating') return rebaseZoned(ctx, ref, fields);
+  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
+  if (kind === 'utc') rebaseUtc(master, occStart, occEnd, fields);
   else rebaseAllDay(master, occStart, occEnd, fields);
 }
 
-/** The zone of a floating time that names one the engine knows; undefined for any other time. */
-function zoneOfFloating(t: PortFields['start'] | undefined): string | undefined {
-  return t?.type === 'floating' && t.timeZone && isKnownZone(t.timeZone) ? t.timeZone : undefined;
-}
-
+/**
+ * Zoned wall-clock times (what the Calendar screen sends for a Google timed event). The shift is measured in the zone's
+ * WALL CLOCK, not in elapsed time, so an occurrence moved across a daylight-saving change keeps the clock time the
+ * owner picked: 10:00 stays 10:00 on the master's own day. Refused: a time with no zone, a zone Aplos does not know,
+ * a start and an end in different zones, and a zone other than the master's (the series would be rewritten into it).
+ */
 function rebaseZoned(
   ctx: MethodContext,
   ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
   fields: Partial<PortFields>,
-  tz: string,
 ): void {
-  const toUtc = (t: PortFields['start'] | undefined) =>
-    t?.type === 'floating' && t.timeZone === tz
-      ? fromWall(Date.parse(`${t.local}Z`), tz)
-      : undefined;
+  const start = fields.start?.type === 'floating' ? fields.start : undefined;
+  const end = fields.end?.type === 'floating' ? fields.end : undefined;
+  const tz = (start ?? end)?.timeZone;
+  if (!tz || !isKnownZone(tz) || (start && end && start.timeZone !== end.timeZone))
+    throw seriesTimeRefusal();
+  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
+  if (master.zone && master.zone !== tz) throw seriesTimeRefusal();
+  const wall = (local: string) => Date.parse(`${local}Z`);
   const local = (ms: number): PortFields['start'] => ({
     type: 'floating',
-    local: new Date(toWall(ms, tz)).toISOString().slice(0, 19),
+    local: new Date(ms).toISOString().slice(0, 19),
     timeZone: tz,
   });
-  const start = toUtc(fields.start);
-  const end = toUtc(fields.end);
-  // A mix of kinds or zones is not rebased (the caller sent something this does not model).
-  if ((fields.start && start === undefined) || (fields.end && end === undefined)) return;
-  const asUtc: Partial<PortFields> = {
-    ...(start !== undefined ? { start: { type: 'utc', utc: start } } : {}),
-    ...(end !== undefined ? { end: { type: 'utc', utc: end } } : {}),
-  };
-  rebaseSeriesTimes(ctx, ref, asUtc);
-  if (asUtc.start?.type === 'utc') fields.start = local(asUtc.start.utc);
-  if (asUtc.end?.type === 'utc') fields.end = local(asUtc.end.utc);
+  const masterStart = toWall(master.start_utc, tz);
+  const masterEnd = toWall(master.end_utc, tz);
+  const shift = start ? wall(start.local) - toWall(occStart, tz) : 0;
+  const newStart = masterStart + shift;
+  // A start move applies the owner's new span from the shifted start; an end-only resize shifts the master's end by
+  // how far the occurrence's own end moved; an unchanged end rides the start shift.
+  const newEnd = end
+    ? start
+      ? newStart + (wall(end.local) - wall(start.local))
+      : masterEnd + (wall(end.local) - toWall(occEnd, tz))
+    : masterEnd + shift;
+  fields.start = local(newStart);
+  fields.end = local(newEnd);
 }
 
 /** The `utc` rebasing: whole milliseconds against the master and occurrence's stored epochs. */
