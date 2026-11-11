@@ -2679,3 +2679,4 @@ MERGED #467 Narrow-pane dedupe: focus-letter rules removed from screens.css (ce5
 
 MERGED #460 Reader loading line cleans sender names like Home rows (7d21bf88, lane-approved:ui-home for homeRows.ts, 187 tests + tsc clean; DESIGN rich-frame clause already fixed by integrator 0e56e8b9)
 PARKED integrator-ui: #465 waits on #464 (eng-views, still open); #461 waits local-ci per ui-polish
+2026-11-11 | integrator | MERGED | ui-polish | #461 squash 95cb5784 (+N clears the ring of the circle on top; reader.css 3 lines; local check green on every step; owners OK).
