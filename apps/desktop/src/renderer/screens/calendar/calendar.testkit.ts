@@ -140,6 +140,8 @@ export const newEvent = (id: string, calendarId: string): Event =>
 export function testUi(): EffectUi & {
   applied: string[];
   dropped: string[];
+  /** Entries a held write asked to keep until the window frame after `synced`. */
+  pendingFrame: string[];
   overrides: Map<string, boolean>;
   settled: string[];
   failed: string[];
@@ -153,9 +155,12 @@ export function testUi(): EffectUi & {
   /** The event ids `closeDetail` was asked to close. */
   closedFor: string[];
   closed: number;
+  /** Bound ahead of the interface (review16): records the entries held for the frame after `synced`. */
+  settleAfterFrame(id: string, writeId: string): void;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
+  const pendingFrame: string[] = [];
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
@@ -166,6 +171,7 @@ export function testUi(): EffectUi & {
   const self = {
     applied,
     dropped,
+    pendingFrame,
     overrides,
     settled,
     failed,
@@ -179,6 +185,7 @@ export function testUi(): EffectUi & {
     },
     optimistic: () => undefined,
     settle: (id: string) => applied.push(id),
+    settleAfterFrame: (id: string) => pendingFrame.push(id),
     rollback: (id: string) => dropped.push(id),
     shown: (id: string, shown: boolean) => void overrides.set(id, shown),
     shownSettled: (id: string) => settled.push(id),

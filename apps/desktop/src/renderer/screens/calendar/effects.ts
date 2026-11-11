@@ -45,6 +45,8 @@ export interface EffectPorts {
   eventSet(args: {
     readonly opId: string;
     readonly change: EventChange;
+    /** `notify: true` asks the engine to hold the write for undo — sent only when guests are emailed. */
+    readonly notify?: boolean;
   }): Promise<{ readonly receipt: Receipt }>;
   eventRsvp(args: {
     readonly opId: string;
@@ -498,19 +500,27 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           opId,
           entryIds: optimisticIds(fx.optimistic),
           call: () =>
-            ports.eventSet({ opId, change: fx.change }).then(out => {
-              if (out.receipt.undoable === false) {
-                if (fx.toast) demoteUndoToast(opId, fx.toast);
-              } else if (
-                // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
-                fx.toast?.held !== undefined &&
-                (out.receipt.undoUntil === undefined || out.receipt.undoUntil <= getNow())
-              )
-                updateToast(opId, { message: fx.toast.message });
-              if (out.receipt.undoable !== false && out.receipt.undoUntil !== undefined)
-                heldWrites.add(opId);
-              return out.receipt.appliedState;
-            }),
+            ports
+              .eventSet({
+                opId,
+                change: fx.change,
+                // The engine holds only `notify === true` (holdIfNotifying): sent exactly when the
+                // change emails other guests, never `false` — unset keeps the provider's own default.
+                ...(fx.notify === true ? { notify: true as const } : {}),
+              })
+              .then(out => {
+                if (out.receipt.undoable === false) {
+                  if (fx.toast) demoteUndoToast(opId, fx.toast);
+                } else if (
+                  // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
+                  fx.toast?.held !== undefined &&
+                  (out.receipt.undoUntil === undefined || out.receipt.undoUntil <= getNow())
+                )
+                  updateToast(opId, { message: fx.toast.message });
+                if (out.receipt.undoable !== false && out.receipt.undoUntil !== undefined)
+                  heldWrites.add(opId);
+                return out.receipt.appliedState;
+              }),
           sentToast: fx.toast ? { kind: fx.toast.kind, message: fx.toast.message } : undefined,
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
