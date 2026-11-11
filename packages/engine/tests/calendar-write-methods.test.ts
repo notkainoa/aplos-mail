@@ -310,15 +310,16 @@ test('a create names its event from the op id: the same op is the same event, an
   assert.equal(ids[1], a);
 });
 
-test('a series edit opened from one occurrence moves the series by the same offset, not to that day', async () => {
+test('a series edit opened from one occurrence moves the series by the same offset, not to that day (no zone)', async () => {
   const w = await world();
+  seedSeries(w, 'plain', undefined); // a series with no zone: elapsed time is all there is
   const hour = 3_600_000;
   const thatDay = Date.UTC(2026, 9, 28, 17, 0);
   await w.call('Event/set', {
     opId: 'rb1',
     change: {
       type: 'update',
-      id: 'acct-1:primary/ev1@20261028T170000Z',
+      id: 'acct-1:primary/plain@20261028T170000Z',
       scope: 'series',
       fields: {
         start: { type: 'utc', utc: thatDay + hour },
@@ -339,12 +340,13 @@ test('a series edit opened from one occurrence moves the series by the same offs
 
 test('an end-only series edit opened from one occurrence resizes the master in place', async () => {
   const w = await world();
+  seedSeries(w, 'plain', undefined); // a series with no zone: elapsed time is all there is
   // The Oct 28 occurrence (17:00-17:30) is resized to end at 18:00: a +30min delta to its own end.
   await w.call('Event/set', {
     opId: 'rb2',
     change: {
       type: 'update',
-      id: 'acct-1:primary/ev1@20261028T170000Z',
+      id: 'acct-1:primary/plain@20261028T170000Z',
       scope: 'series',
       fields: { end: { type: 'utc', utc: Date.UTC(2026, 9, 28, 18, 0) }, allDay: false },
     },
@@ -628,4 +630,142 @@ test('a summer occurrence moved onto a winter day keeps its clock time on the ma
     local: '2026-10-29T10:30:00',
     timeZone: LA,
   });
+});
+
+const seedSeries = (w: Awaited<ReturnType<typeof world>>, id: string, zone: string | undefined) => {
+  const data = (title: string) =>
+    JSON.stringify({
+      summary: title,
+      start: { dateTime: '2026-10-27T10:00:00-07:00', ...(zone ? { timeZone: zone } : {}) },
+      end: { dateTime: '2026-10-27T10:30:00-07:00', ...(zone ? { timeZone: zone } : {}) },
+      status: 'confirmed',
+    });
+  w.store.commit({
+    opId: `seed-${id}`,
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: id,
+        rows: [
+          {
+            status: 'confirmed',
+            etag: '"m"',
+            recurrence: { rrule: ['RRULE:FREQ=DAILY;COUNT=9'] },
+            startUtc: Date.UTC(2026, 9, 27, 17, 0),
+            endUtc: Date.UTC(2026, 9, 27, 17, 30),
+            allDay: false,
+            data: data('Series'),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: `${id}_20261028T170000Z`,
+        rows: [
+          {
+            recurrenceId: '20261028T170000Z',
+            masterRemoteId: id,
+            status: 'confirmed',
+            etag: '"o"',
+            startUtc: Date.UTC(2026, 9, 28, 17, 0),
+            endUtc: Date.UTC(2026, 9, 28, 17, 30),
+            allDay: false,
+            data: data('Series (Oct 28)'),
+          },
+        ],
+      },
+    ],
+  });
+};
+
+const seriesEdit = (id: string, fields: Record<string, unknown>) => ({
+  opId: `se-${id}-${Math.random()}`,
+  change: {
+    type: 'update' as const,
+    id: `acct-1:primary/${id}@20261028T170000Z`,
+    scope: 'series' as const,
+    fields: { allDay: false, ...fields } as never,
+  },
+});
+
+test('utc times for a series that lives in a zone move on that zone’s wall clock, not elapsed time', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  // The Oct 28 10:00 PDT occurrence moved to Nov 1 18:00Z = 10:00 PST (the clocks went back on Nov 1).
+  const moved = Date.UTC(2026, 10, 1, 18, 0);
+  await w.call(
+    'Event/set',
+    seriesEdit('ev1', {
+      start: { type: 'utc', utc: moved },
+      end: { type: 'utc', utc: moved + 30 * 60_000 },
+    }),
+  );
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // Same clock time, four days later on the master's own day: Oct 31 10:00 LA (elapsed time would say 11:00).
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-31T10:00:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-31T10:30:00',
+    timeZone: LA,
+  });
+});
+
+test('a series with no zone moves by elapsed time, and is never rewritten into a zone', async () => {
+  const w = await world();
+  seedSeries(w, 'plain', undefined);
+  const moved = Date.UTC(2026, 10, 1, 18, 0);
+  await w.call(
+    'Event/set',
+    seriesEdit('plain', {
+      start: { type: 'utc', utc: moved },
+      end: { type: 'utc', utc: moved + 30 * 60_000 },
+    }),
+  );
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown } };
+  assert.deepEqual(sent.fields.start, { type: 'utc', utc: Date.UTC(2026, 9, 31, 18, 0) });
+  // A wall-clock time with no zone, or with one, would give the series a zone it never had: refused.
+  await rejects(
+    w.call(
+      'Event/set',
+      seriesEdit('plain', { start: { type: 'floating', local: '2026-11-01T10:00:00' } }),
+    ),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  await rejects(
+    w.call(
+      'Event/set',
+      seriesEdit('plain', {
+        start: { type: 'floating', local: '2026-11-01T10:00:00', timeZone: 'America/Los_Angeles' },
+      }),
+    ),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  assert.equal(w.calls.length, 1);
+});
+
+test('a series whose own zone the engine does not know is refused, not guessed at', async () => {
+  const w = await world();
+  seedSeries(w, 'mars', 'Mars/Base');
+  await rejects(
+    w.call(
+      'Event/set',
+      seriesEdit('mars', {
+        start: { type: 'floating', local: '2026-11-01T10:00:00', timeZone: 'Mars/Base' },
+      }),
+    ),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  assert.deepEqual(w.calls, []);
 });

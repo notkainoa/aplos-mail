@@ -427,10 +427,28 @@ function rebaseSeriesTimes(
   // Mixed kinds (a utc start with a date end) describe nothing a single offset can move.
   if (start && end && start.type !== end.type) throw seriesTimeRefusal();
   const kind = (start ?? end)!.type;
-  if (kind === 'floating') return rebaseZoned(ctx, ref, fields);
-  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
-  if (kind === 'utc') rebaseUtc(master, occStart, occEnd, fields);
-  else rebaseAllDay(master, occStart, occEnd, fields);
+  if (kind === 'floating') return rebaseZoned(rebaseBase(ctx, ref), fields);
+  const base = rebaseBase(ctx, ref);
+  if (kind === 'utc') {
+    // A series that lives in a zone moves on that zone's wall clock whatever form the request came in: elapsed time
+    // is an hour off across a daylight-saving change (Oct 28 10:00 PDT moved to Nov 1 10:00 PST). A series with no
+    // zone has only elapsed time to go by.
+    const tz = base.master.zone;
+    if (tz && isKnownZone(tz)) {
+      const floating = (t: PortFields['start'] | undefined): PortFields['start'] | undefined =>
+        t?.type === 'utc'
+          ? {
+              type: 'floating',
+              local: new Date(toWall(t.utc, tz)).toISOString().slice(0, 19),
+              timeZone: tz,
+            }
+          : t;
+      if (start) fields.start = floating(start);
+      if (end) fields.end = floating(end);
+      return rebaseZoned(base, fields);
+    }
+    rebaseUtc(base.master, base.occStart, base.occEnd, fields);
+  } else rebaseAllDay(base.master, base.occStart, base.occEnd, fields);
 }
 
 /**
@@ -439,18 +457,15 @@ function rebaseSeriesTimes(
  * owner picked: 10:00 stays 10:00 on the master's own day. Refused: a time with no zone, a zone Aplos does not know,
  * a start and an end in different zones, and a zone other than the master's (the series would be rewritten into it).
  */
-function rebaseZoned(
-  ctx: MethodContext,
-  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
-  fields: Partial<PortFields>,
-): void {
+function rebaseZoned(base: RebaseBase, fields: Partial<PortFields>): void {
   const start = fields.start?.type === 'floating' ? fields.start : undefined;
   const end = fields.end?.type === 'floating' ? fields.end : undefined;
   const tz = (start ?? end)?.timeZone;
   if (!tz || !isKnownZone(tz) || (start && end && start.timeZone !== end.timeZone))
     throw seriesTimeRefusal();
-  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
-  if (master.zone && master.zone !== tz) throw seriesTimeRefusal();
+  const { master, occStart, occEnd } = base;
+  // The series' own zone, or none: a series with no zone is not rewritten into one (it would quietly gain it).
+  if (master.zone !== tz) throw seriesTimeRefusal();
   const wall = (local: string) => Date.parse(`${local}Z`);
   const local = (ms: number): PortFields['start'] => ({
     type: 'floating',
