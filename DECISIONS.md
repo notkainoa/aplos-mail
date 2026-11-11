@@ -1957,3 +1957,9 @@ Review follow-up (ui-polish on #458): Later and Done keep their labels down to 3
 Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
+
+## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
+
+Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
+
+Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.
