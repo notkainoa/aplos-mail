@@ -7,14 +7,7 @@ import type { Migration } from '../migrate';
  * takes its plans with it; `input_hash` keys a plan job's output to the thread content it read.
  */
 const statements: string[] = [
-  `CREATE TABLE plans(id INTEGER PRIMARY KEY,
-account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,
-thread_id INTEGER NOT NULL REFERENCES threads ON DELETE CASCADE,
-input_hash TEXT NOT NULL, message_remote_id TEXT, from_name TEXT, quote TEXT, title TEXT NOT NULL,
-start_utc INTEGER, start_date TEXT, end_utc INTEGER, end_date TEXT,
-all_day INTEGER NOT NULL DEFAULT 0, time_zone TEXT, location TEXT,
-state TEXT NOT NULL DEFAULT 'open', event_id TEXT, op_id TEXT, model TEXT,
-rev INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL) STRICT`,
+  `CREATE TABLE plans(id INTEGER PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts ON DELETE CASCADE,thread_id INTEGER NOT NULL REFERENCES threads ON DELETE CASCADE,input_hash TEXT NOT NULL,message_remote_id TEXT,from_name TEXT,quote TEXT,title TEXT NOT NULL,start_utc INTEGER,start_date TEXT,end_utc INTEGER,end_date TEXT,all_day INTEGER NOT NULL DEFAULT 0,time_zone TEXT,location TEXT,state TEXT NOT NULL DEFAULT 'open',event_id TEXT,op_id TEXT,calendar_id TEXT,model TEXT,rev INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL) STRICT`,
   `CREATE INDEX plans_thread ON plans(thread_id, state)`,
   `CREATE INDEX plans_state ON plans(state)`,
 ];

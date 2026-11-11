@@ -6,6 +6,9 @@ import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
 import { type AiChatRequest, type AiTransport } from '../../src/ai/host';
+import type { Caller } from '../../src/methods/types';
+import '../../src/ai/impl/plan-writes';
+import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/plans';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock } from '../runtime.helpers';
 
@@ -176,20 +179,20 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
           allDay: false,
         },
         { title: 'Zero day', start: '2026-11-14', end: '2026-11-14', allDay: true },
-        { title: 'Bad date', start: '2026-13-45', end: '2026-13-46', allDay: true },
-        { title: 'Fuzzy', start: 'Nov 14', end: 'Nov 14', allDay: false },
-        {
-          title: 'No zone',
-          start: '2026-11-14T10:00:00',
-          end: '2026-11-14T11:00:00',
-          allDay: false,
-        },
         {
           title: 'Ancient',
           start: '2001-03-04T10:00:00Z',
           end: '2001-03-04T11:00:00Z',
           allDay: false,
         },
+        {
+          title: 'No zone',
+          start: '2026-11-14T10:00:00',
+          end: '2026-11-14T11:00:00',
+          allDay: false,
+        },
+        { title: 'Bad date', start: '2026-13-45', end: '2026-13-46', allDay: true },
+        { title: 'Fuzzy', start: 'Nov 14', end: 'Nov 14', allDay: false },
       ],
     }),
   );
@@ -211,12 +214,22 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
     ],
   });
   await consentNow(w);
-  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
-  // Invalid dates are dropped at parse time; the zero-length all-day plan keeps start+1d.
-  assert.equal(out.plans.length, 2);
+  const out = await w.call('Event/extract', {
+    opId: 'x1',
+    threadId: 'acct-1:T-plans',
+    timeZone: 'Europe/Oslo',
+  });
+  // 'Ancient' (third of five the parser sees) is dropped by the window clamp, 'Bad date' and 'Fuzzy' by the
+  // parser; 'No zone' lands because a bare local time reads in the owner's zone — Oslo is UTC+1 in November.
+  assert.equal(out.plans.length, 3);
   assert.equal(out.plans[0].title, 'Garden day');
   assert.equal(out.plans[1].title, 'Zero day');
   assert.deepEqual(out.plans[1].end, { type: 'date', date: '2026-11-15' });
+  assert.equal(out.plans[2].title, 'No zone');
+  assert.deepEqual(out.plans[2].start, {
+    type: 'utc',
+    utc: Date.parse('2026-11-14T09:00:00Z'),
+  });
   const confirmed = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   assert.equal(puts.length, 1);
   assert.match(confirmed.eventId, /^acct-1:primary\/[a-v0-9]{26}$/);
@@ -402,6 +415,7 @@ test('Plan/confirm: a second opId cannot take a claimed plan; thread delete purg
     origin: 'local',
     writes: [
       { kind: 'meta', key: 'replydraft:acct-1:T-plans', value: 'x' } as never,
+      { kind: 'meta', key: 'plans-empty:acct-1:T-plans', value: 'h' } as never,
       { kind: 'meta', key: 'replydraft:acct-1:other', value: 'y' } as never,
     ],
   });
@@ -412,6 +426,283 @@ test('Plan/confirm: a second opId cannot take a claimed plan; thread delete purg
   });
   const keys = w.store.read(q => q.all<{ k: string }>('SELECT key AS k FROM meta').map(r => r.k));
   assert.ok(!keys.includes('replydraft:acct-1:T-plans'), 'the thread replydraft row is gone');
+  assert.ok(!keys.includes('plans-empty:acct-1:T-plans'), 'the empty-extraction marker is gone');
   assert.ok(keys.includes('replydraft:acct-1:other'), 'another thread row survives');
   w.file.cleanup();
+});
+
+test('Plan/confirm: an uncertain put keeps the claim; any retry replays the stored op and calendar', async () => {
+  const puts: { newRemoteId?: string; calendarRemoteId?: string }[] = [];
+  let failOnce = true;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string; calendarRemoteId?: string }) => {
+        puts.push(c);
+        if (failOnce) {
+          failOnce = false;
+          throw new ContractError({ type: 'unavailable', message: 'the answer was lost' });
+        }
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'second',
+        name: 'S',
+        hidden: false,
+        readOnly: false,
+        primary: false,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id, calendarId: 'acct-1:primary' }),
+    (e: unknown) => (e as { type?: string }).type === 'unavailable',
+    'the uncertain put propagates and leaves the plan claimed',
+  );
+  // A NEW opId retrying a different calendar still replays the claimed remote id into the claimed calendar.
+  const done = await w.call('Plan/confirm', {
+    opId: 'c2',
+    id: out.plans[0].id,
+    calendarId: 'acct-1:second',
+  });
+  assert.equal(puts.length, 2);
+  assert.equal(
+    puts[1].newRemoteId,
+    puts[0].newRemoteId,
+    'a retry names the claimed remote event id',
+  );
+  assert.equal(puts[1].calendarRemoteId, 'primary', 'a changed calendarId cannot redirect a claim');
+  assert.match(done.eventId, /^acct-1:primary\//);
+  w.file.cleanup();
+});
+
+test('Plan/confirm: concurrent confirms create exactly one event', async () => {
+  const puts: { newRemoteId?: string }[] = [];
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        puts.push(c);
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  const results = await Promise.allSettled([
+    w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+    w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id }),
+  ]);
+  const ids = results.flatMap(r => (r.status === 'fulfilled' ? [r.value.eventId] : []));
+  assert.ok(ids.length >= 1, 'at least one confirm succeeds');
+  // Whichever of the loser-cases happened (claim race conflict, or the same remote id replayed), the
+  // claim lock plus the stable remote id mean exactly one event exists.
+  assert.equal(new Set(ids).size, 1, 'every success names the same event');
+  assert.equal(
+    new Set(puts.map(p => p.newRemoteId)).size,
+    1,
+    'one remote event, however many puts',
+  );
+  w.file.cleanup();
+});
+
+test('Plan/dismiss settles a plan left confirming by an uncertain put', async () => {
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async () => {
+        throw new ContractError({ type: 'unavailable', message: 'the answer was lost' });
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(() => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }));
+  await w.call('Plan/dismiss', { opId: 'd1', ids: [out.plans[0].id] });
+  const got = await w.call('Plan/get', { ids: [out.plans[0].id] });
+  assert.equal(got.list[0].state, 'dismissed', 'a confirming plan can be dismissed');
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+    'a dismissed plan stays dismissed',
+  );
+  w.file.cleanup();
+});
+
+test('Event/extract: an empty answer is remembered per input — the model is not called again', async () => {
+  const t = stubTransport('{"events":[]}');
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const first = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  assert.equal(first.plans.length, 0);
+  assert.equal(t.calls.length, 1);
+  const again = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
+  assert.equal(again.plans.length, 0);
+  assert.equal(t.calls.length, 1, 'the recorded empty answer skips the model');
+  // New mail is a new input — the marker no longer matches, so the model runs once more.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      msg('m2', 'T-plans', 6, { subject: 'Re: Garden day', snippet: 'and bring tools Sunday' }),
+    ],
+  });
+  await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
+  assert.equal(t.calls.length, 2, 'a changed input is extracted again');
+  w.file.cleanup();
+});
+
+test('writePlans: a set committed for this hash first wins — a concurrent writer inserts nothing', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const x = await extractThread(w.engine.services, 'acct-1', 'T-plans', 'UTC');
+  assert.notEqual(x, 'empty');
+  const a = writePlans(w.engine.services, 'acct-1', 'T-plans', x as Extracted);
+  const b = writePlans(w.engine.services, 'acct-1', 'T-plans', x as Extracted);
+  assert.deepEqual(b, a, 'the second writer returns the first set');
+  const rows = w.store.read(q => q.all<{ id: number }>('SELECT id FROM plans'));
+  assert.equal(rows.length, 1, 'one plan, not a duplicated set');
+  w.file.cleanup();
+});
+
+test('Plan/confirm: title, description and location overrides each need the send scope', async () => {
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => ({
+        kind: 'saved' as const,
+        upserts: [{ remoteId: c.newRemoteId }],
+        removals: [],
+      }),
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  const triage: Caller = { kind: 'window', scopes: ['read', 'triage', 'ai'] };
+  const triageWin = w.engine.connect(triage);
+  for (const fields of [
+    { title: 'Renamed' },
+    { description: 'Mail text as the event body' },
+    { location: 'Somewhere else' },
+  ])
+    await assert.rejects(
+      () => triageWin.call('Plan/confirm', { opId: `t-${fields}`, id: out.plans[0].id, fields }),
+      (e: unknown) => (e as { type?: string }).type === 'forbidden',
+      `a triage caller cannot override ${Object.keys(fields)}`,
+    );
+  // Without overrides the same caller confirms fine — the plan stays open until it does.
+  const done = (await triageWin.call('Plan/confirm', {
+    opId: 't-ok',
+    id: out.plans[0].id,
+  })) as Output<'Plan/confirm'>;
+  assert.match(done.eventId, /^acct-1:primary\//);
+  w.file.cleanup();
+});
+
+test('accountRemove purges the plan-side meta rows (replydraft, plans-empty)', () => {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed: true },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-plans', 5, { subject: 'Garden day', snippet: 'this Saturday at 10 am' }),
+      {
+        kind: 'plan',
+        action: 'put',
+        accountId: 'acct-1',
+        remoteThreadId: 'T-plans',
+        inputHash: 'h',
+        title: 'x',
+        startUtc: 1,
+        endUtc: 2,
+        allDay: false,
+        model: 'm',
+      } as never,
+      { kind: 'meta', key: 'replydraft:acct-1:T-plans', value: 'x' } as never,
+      { kind: 'meta', key: 'plans-empty:acct-1:T-plans', value: 'h' } as never,
+      { kind: 'meta', key: 'replydraft:acct-2:other', value: 'y' } as never,
+    ],
+  });
+  store.commit({
+    opId: 'rm',
+    origin: 'local',
+    writes: [{ kind: 'accountRemove', accountId: 'acct-1' } as never],
+  });
+  const keys = store.read(q => q.all<{ k: string }>('SELECT key AS k FROM meta').map(r => r.k));
+  assert.ok(!keys.includes('replydraft:acct-1:T-plans'), 'the account replydraft row is gone');
+  assert.ok(!keys.includes('plans-empty:acct-1:T-plans'), 'the empty-extraction marker is gone');
+  assert.ok(keys.includes('replydraft:acct-2:other'), 'another account row survives');
+  assert.equal(store.read(q => q.all('SELECT id FROM plans')).length, 0, 'the plan rows cascade');
+  file.cleanup();
 });

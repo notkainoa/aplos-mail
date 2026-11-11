@@ -5,7 +5,14 @@ import { backgroundGate } from './gate';
 import { meteredChat } from './runtime';
 import { inputHashOf, priorityOf } from './jobs';
 import { usableZone } from '../../clock/zone';
-import { extractThread, plansForHash, threadMail, writePlans } from './plans';
+import {
+  extractOnce,
+  extractThread,
+  markEmpty,
+  plansForHash,
+  threadMail,
+  writePlans,
+} from './plans';
 
 /**
  * The remaining `jobs` kinds (ARCH 8.1): `plan` writes extracted plans to the `plans` table (the same
@@ -34,14 +41,20 @@ export async function planJob(
   });
   if (!have) throw new AiCallError('gatePermanent', 'ai.threadGone');
   if (have.open.length) return;
-  const x = await extractThread(
-    services,
-    accountId,
-    remoteThreadId,
-    usableZone(services.views?.zone),
-  );
-  if (x === 'empty') return;
-  writePlans(services, accountId, remoteThreadId, x);
+  // Same in-flight key as `Event/extract` — a job and an interactive extract of this input share one
+  // model call and one write, and `writePlans` re-checks the hash at commit.
+  await extractOnce(services, `${have.info.threadRowId}:${inputHash}`, async () => {
+    const x = await extractThread(
+      services,
+      accountId,
+      remoteThreadId,
+      usableZone(services.views?.zone),
+    );
+    const list = x === 'empty' ? [] : writePlans(services, accountId, remoteThreadId, x);
+    if (!list.length)
+      markEmpty(services, accountId, remoteThreadId, x === 'empty' ? inputHash : x.inputHash);
+    return list;
+  });
 }
 
 const REPLY_SYSTEM = `You draft a short reply for the mailbox owner, in the owner's own voice.

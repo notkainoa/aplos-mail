@@ -63,8 +63,14 @@ export function threadDelete(run: CommitRun, w: ThreadDeleteWrite) {
   // `replydraft:<wire>` and `followup:<wire>[:<hash>]` both belong to this thread.
   const base = `${w.accountId}:${w.remoteThreadId}`;
   run
-    .q('DELETE FROM meta WHERE key IN (?, ?) OR substr(key, 1, ?) = ?')
-    .run(`replydraft:${base}`, `followup:${base}`, `followup:${base}:`.length, `followup:${base}:`);
+    .q('DELETE FROM meta WHERE key IN (?, ?, ?) OR substr(key, 1, ?) = ?')
+    .run(
+      `replydraft:${base}`,
+      `followup:${base}`,
+      `plans-empty:${base}`,
+      `followup:${base}:`.length,
+      `followup:${base}:`,
+    );
   run.q('DELETE FROM threads WHERE id = ?').run(row.id); // cascades messages, placements, workflow, lists
   run.touched.delete(row.id);
   run.mark('Thread', w.accountId, w.remoteThreadId, 'd');

@@ -255,3 +255,38 @@ test('correspondents are per account: one address in two accounts, purged with i
     }
   });
 });
+
+test('v6 to v7 keeps existing threads and creates plans with the claim columns', () => {
+  const file = tempDb();
+  try {
+    const db = file.open();
+    migrate(db, MIGRATIONS.slice(0, 6));
+    db.prepare(
+      `INSERT INTO accounts(id, provider, address, capabilities, status, created_at, updated_at)
+       VALUES('acct-1', 'google', 'a@b.c', '{}', 'ok', 0, 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO threads(account_id, remote_id, last_date, msg_count, unread_count, flagged, has_attach, rev)
+       VALUES('acct-1', 'T-1', 100, 1, 0, 0, 0, 1)`,
+    ).run();
+    db.close();
+
+    const db2 = file.open();
+    const applied = migrate(db2, MIGRATIONS);
+    assert.equal(applied.applied[applied.applied.length - 1], 7);
+    assert.equal(
+      db2.prepare("SELECT count(*) AS n FROM threads WHERE remote_id = 'T-1'").get()!.n,
+      1,
+      'the existing thread survives',
+    );
+    const cols = db2
+      .prepare('PRAGMA table_info(plans)')
+      .all()!
+      .map(c => c.name);
+    for (const c of ['op_id', 'calendar_id', 'input_hash', 'state'])
+      assert.ok(cols.includes(c), `plans.${c} exists`);
+    db2.close();
+  } finally {
+    file.cleanup();
+  }
+});

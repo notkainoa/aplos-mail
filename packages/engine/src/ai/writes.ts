@@ -1,5 +1,4 @@
 import type { CommitExtension, CommitExtensionTx } from '../store/port';
-import { ContractError } from '@aplos/contract/contract-error';
 import { StoreError } from '../store/port';
 
 declare module '../store/port' {
@@ -62,6 +61,8 @@ export interface PlanWrite {
   /** `settle`: the numeric row id. */
   id?: number;
   accountId?: string;
+  /** `claim`: the resolved calendar (`acct:remote`) pinned for this confirmation. */
+  calendarId?: string;
   remoteThreadId?: string;
   inputHash?: string;
   messageRemoteId?: string;
@@ -100,6 +101,19 @@ export interface ConversationWrite {
   pos?: number;
   data?: string;
   remove?: boolean;
+}
+
+/** The plan write handlers live in `ai/impl/plan-writes` (lazy; the core budget's seam). They register at
+ * module load — every plan write originates under `ai/impl`, which loads before its commits exist. */
+let planWriteImpl: ((write: PlanWrite, tx: CommitExtensionTx) => void) | undefined;
+export const registerPlanWrites = (fn: typeof planWriteImpl): void => {
+  planWriteImpl = fn;
+};
+
+function plan(write: PlanWrite, tx: CommitExtensionTx): void {
+  const impl = planWriteImpl;
+  if (!impl) throw new StoreError('invalid', 'ai write');
+  impl(write, tx);
 }
 
 const bad = (): never => {
@@ -264,102 +278,6 @@ function summary(write: SummaryWrite, tx: CommitExtensionTx): void {
     tx.now(),
   );
   tx.touchThread(write.accountId, write.remoteThreadId);
-}
-
-function planParams(write: PlanWrite, tx: CommitExtensionTx): number {
-  const threadId =
-    typeof write.accountId === 'string' && typeof write.remoteThreadId === 'string'
-      ? tx.threadRowId(write.accountId, write.remoteThreadId)
-      : undefined;
-  if (threadId === undefined || typeof write.title !== 'string' || !write.title) bad();
-  const timed = write.startUtc !== undefined && write.endUtc !== undefined;
-  const dated = write.startDate !== undefined && write.endDate !== undefined;
-  if (timed === dated) bad();
-  return threadId!;
-}
-
-function planPut(write: PlanWrite, tx: CommitExtensionTx): void {
-  const threadId = planParams(write, tx);
-  const r = tx.run(
-    `INSERT INTO plans(account_id, thread_id, input_hash, message_remote_id, from_name, quote, title,
-       start_utc, start_date, end_utc, end_date, all_day, time_zone, location, state, model, created_at)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
-    write.accountId!,
-    threadId!,
-    (write.inputHash ?? '').slice(0, 100),
-    write.messageRemoteId?.slice(0, 300) ?? null,
-    write.fromName?.slice(0, 200) ?? null,
-    write.quote?.slice(0, 1_000) ?? null,
-    write.title!.slice(0, 1_000),
-    write.startUtc ?? null,
-    write.startDate ?? null,
-    write.endUtc ?? null,
-    write.endDate ?? null,
-    write.allDay ? 1 : 0,
-    write.timeZone?.slice(0, 60) ?? null,
-    write.location?.slice(0, 2_000) ?? null,
-    write.model?.slice(0, 200) ?? null,
-    tx.now(),
-  );
-  if (r.changes) tx.mark('Plan', `${write.accountId}:plan-${r.lastInsertRowid}`, 'u');
-}
-
-function planClaim(write: PlanWrite, tx: CommitExtensionTx): void {
-  if (!Number.isInteger(write.id) || typeof write.accountId !== 'string' || !write.opId) bad();
-  const r = tx.run(
-    `UPDATE plans SET state = 'confirming', op_id = ?, rev = rev + 1
-     WHERE id = ? AND account_id = ? AND state = 'open'`,
-    write.opId!,
-    write.id!,
-    write.accountId!,
-  );
-  if (!r.changes)
-    throw new ContractError({
-      type: 'conflict',
-      message: 'This plan was already confirmed or dismissed.',
-    });
-}
-
-/** `release`: a failed confirm hands the plan back to `open` — only the opId that claimed it may. */
-function planRelease(write: PlanWrite, tx: CommitExtensionTx): void {
-  if (!Number.isInteger(write.id) || typeof write.accountId !== 'string' || !write.opId) bad();
-  const r = tx.run(
-    `UPDATE plans SET state = 'open', op_id = NULL, rev = rev + 1
-     WHERE id = ? AND account_id = ? AND state = 'confirming' AND op_id = ?`,
-    write.id!,
-    write.accountId!,
-    write.opId!,
-  );
-  if (r.changes) tx.mark('Plan', `${write.accountId}:plan-${write.id}`, 'u');
-}
-
-function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
-  if (!Number.isInteger(write.id) || typeof write.accountId !== 'string') bad();
-  if (write.state !== 'confirmed' && write.state !== 'dismissed') bad();
-  const accountId = write.accountId;
-  if (write.state === 'confirmed' && !write.eventId) bad();
-  const row = tx.get<{ account_id: string }>(
-    'SELECT account_id FROM plans WHERE id = ?',
-    write.id!,
-  );
-  const r = tx.run(
-    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), rev = rev + 1
-     WHERE id = ? AND account_id = ? AND state = ?`,
-    write.state!,
-    write.eventId ?? null,
-    write.id!,
-    accountId!,
-    write.state === 'confirmed' ? 'confirming' : 'open',
-  );
-  if (r.changes && row) tx.mark('Plan', `${row.account_id}:plan-${write.id}`, 'u');
-}
-
-function plan(write: PlanWrite, tx: CommitExtensionTx): void {
-  if (write.action === 'put') planPut(write, tx);
-  else if (write.action === 'claim') planClaim(write, tx);
-  else if (write.action === 'release') planRelease(write, tx);
-  else if (write.action === 'settle') planSettle(write, tx);
-  else bad();
 }
 
 function aiUsage(write: AiUsageWrite, tx: CommitExtensionTx): void {

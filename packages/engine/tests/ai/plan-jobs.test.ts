@@ -180,10 +180,17 @@ test('jobs runner: a broken Summaries provider never blocks Plans work (per-feat
     threadId: 'acct-1:T-plans',
   });
   await w.call('Ai/request', { opId: 'p1', kind: 'plan', threadId: 'acct-1:T-plans' });
-  await runJobs(w.engine.services, w.clock.now());
-  const jobs = w.engine.services.store.read(q =>
-    q.all<{ kind: string; state: string }>('SELECT kind, state FROM jobs'),
-  );
+  // The `jobs` deadline also fires on the request commits — its runner may claim a row mid-pass, so drain
+  // until both jobs settle instead of assuming our own runJobs owned the claim.
+  let jobs: { kind: string; state: string }[] = [];
+  for (let i = 0; i < 6; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    jobs = w.engine.services.store.read(q =>
+      q.all<{ kind: string; state: string }>('SELECT kind, state FROM jobs'),
+    );
+    if (!jobs.some(j => j.state === 'running')) break;
+    await new Promise(r => setTimeout(r, 0));
+  }
   const sumJob = jobs.find(j => j.kind === 'summary')!;
   const planJob = jobs.find(j => j.kind === 'plan')!;
   assert.equal(planJob.state, 'done', 'the open Plans gate let the job run');
@@ -249,5 +256,53 @@ test('suggestAction job: no summary and none coming settles done with no provide
   )!;
   assert.equal(job.state, 'done');
   assert.equal(t.calls.length, 0);
+  w.file.cleanup();
+});
+
+test('plan job: the owner zone reaches the prompt; the job shares the in-flight extraction', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  (w.engine.services.views as { zone: string }).zone = 'Europe/Oslo';
+  await w.call('Ai/request', { opId: 'r1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  // The job and an interactive extract of the same input share one provider call (the in-flight guard).
+  const ext = w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await Promise.all([runJobs(w.engine.services, w.clock.now()), ext]);
+  assert.equal(t.calls.length, 1, 'job and extract together spend one provider call');
+  const prompt = JSON.stringify(t.calls[0].messages.map(m => m.content));
+  assert.match(prompt, /Europe\/Oslo/, 'the owner zone goes to the model, not UTC');
+  w.file.cleanup();
+});
+
+test('suggestAction job: mail that moved since the request means no draft call', async () => {
+  const SUMMARY_REPLY =
+    '{"summary":"They asked a question.","action":{"kind":"reply","label":"Reply"}}';
+  const t = stubTransport([SUMMARY_REPLY, '{"draft":"unused"}']);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  await w.call('Ai/request', {
+    opId: 'a1',
+    kind: 'suggestAction',
+    threadId: 'acct-1:T-plans',
+  });
+  await w.call('Ai/request', { opId: 's1', kind: 'summary', threadId: 'acct-1:T-plans' });
+  await runJobs(w.engine.services, w.clock.now());
+  // The reply summary landed, but the thread moved before the suggestAction run — the stored input hash
+  // no longer matches, so the job must not draft against stale mail.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      msg('m2', 'T-plans', 6, { subject: 'Re: Garden day', snippet: 'and bring tools Sunday' }),
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const draft = w.engine.services.store.read(q =>
+    q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'replydraft:acct-1:T-plans'),
+  );
+  assert.equal(draft, undefined, 'no draft was written for stale mail');
+  assert.equal(t.calls.length, 1, 'only the summary call ran');
   w.file.cleanup();
 });
