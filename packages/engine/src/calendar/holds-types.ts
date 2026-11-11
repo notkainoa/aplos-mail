@@ -38,6 +38,8 @@ export interface HoldRecord {
   call?: HeldCall;
   state: 'queued' | 'syncing' | 'synced' | 'failed' | 'cancelled';
   createdAt: number;
+  /** When the hold last reached a finished state; sent and undone holds purge `HOLD_KEEP_MS` after it. */
+  finishedAt?: number;
   /** While `queued`: when the window ends and the write is sent. */
   undoUntil: number;
   appliedState: { dbEpoch: string; seq: number };
@@ -56,7 +58,10 @@ export interface CalendarHolds {
   retry(args: Input<'Operation/retry'>, caller: Caller): Promise<Receipt>;
 }
 
-/** Finished holds stay readable for `Operation/get` this long, then are purged. */
+/**
+ * Sent and undone holds stay readable for `Operation/get` this long after `finishedAt`, then are purged. A failed
+ * hold is never purged: it keeps its call until the owner retries or dismisses it.
+ */
 export const HOLD_KEEP_MS = 24 * 60 * 60 * 1000;
 /**
  * A hold whose window ended longer ago than this (the app was closed), or whose event has already started, is not sent on

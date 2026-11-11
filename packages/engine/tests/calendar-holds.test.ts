@@ -512,3 +512,114 @@ test('retry needs the scope of the method that made the change', async () => {
   );
   assert.deepEqual(w.calls, ['put'], 'the refused retry sent nothing');
 });
+
+test('a hold failed long after it was made stays readable and retriable; it is never purged', async () => {
+  const w = await rig();
+  await w.call('Event/set', withGuest('fl1'));
+  await w.engine.close();
+  w.clock.advance(3 * 24 * 60 * 60 * 1000); // made days ago, past the keep window
+  const again = await w.boot();
+  w.clock.advance(1_000);
+  await settle();
+  const op = (await again.call('Operation/get', { opIds: ['fl1'] })).list[0]!;
+  assert.equal(op.state, 'failed');
+  assert.equal(op.error?.reasonCode, 'calendar.late');
+  assert.match(
+    metaRow(w, 'fl1')!.value,
+    /friend@example\.test/,
+    'the failed hold keeps its call for Retry',
+  );
+  w.clock.advance(2 * 24 * 60 * 60 * 1000); // far past the keep window again
+  await settle();
+  assert.equal(
+    (await again.call('Operation/get', { opIds: ['fl1'] })).list[0]!.state,
+    'failed',
+    'a failed hold waits for a Retry or a dismiss; it is not purged',
+  );
+  await again.call('Operation/retry', { opId: 'fl1' });
+  assert.deepEqual(w.calls, ['put'], 'the kept call still sends');
+  await again.engine.close();
+});
+
+test('a sent hold is purged a day after it finished, not a day after it was made', async () => {
+  const w = await rig();
+  await w.call('Event/set', rename('pf1'));
+  await w.engine.close();
+  w.clock.advance(23 * 60 * 60 * 1000);
+  const again = await w.boot();
+  w.clock.advance(1_000);
+  await settle();
+  assert.equal((await again.call('Operation/get', { opIds: ['pf1'] })).list[0]!.state, 'failed');
+  await again.call('Operation/retry', { opId: 'pf1' }); // finishes ~23 h after it was made
+  assert.deepEqual(w.calls, ['put']);
+  w.clock.advance(23 * 60 * 60 * 1000); // 46 h after it was made, ~23 h after it finished
+  await settle();
+  assert.ok(metaRow(w, 'pf1'), 'kept: the keep window runs from finishedAt');
+  w.clock.advance(2 * 60 * 60 * 1000); // past a day since it finished
+  await settle();
+  assert.equal(metaRow(w, 'pf1'), undefined, 'purged a day after it finished');
+  await again.engine.close();
+});
+
+test('a series change is held against the next occurrence, not the series’ first slot', async () => {
+  const w = await rig();
+  w.store.commit({
+    opId: 'ser',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ser1',
+        rows: [
+          {
+            status: 'confirmed',
+            etag: '"s1"',
+            recurrence: { rrule: ['RRULE:FREQ=DAILY;COUNT=30'] },
+            startUtc: Date.UTC(2026, 9, 20, 17, 0), // began Oct 20, still runs to mid-November
+            endUtc: Date.UTC(2026, 9, 20, 17, 30),
+            allDay: false,
+            data: JSON.stringify({
+              summary: 'Daily',
+              status: 'confirmed',
+              start: { dateTime: '2026-10-20T17:00:00Z' },
+              end: { dateTime: '2026-10-20T17:30:00Z' },
+            }),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ser2',
+        rows: [
+          {
+            status: 'confirmed',
+            etag: '"s2"',
+            recurrence: { rrule: ['RRULE:FREQ=DAILY;COUNT=3'] },
+            startUtc: Date.UTC(2026, 9, 20, 18, 0), // ended Oct 22, all past
+            endUtc: Date.UTC(2026, 9, 20, 18, 30),
+            allDay: false,
+            data: JSON.stringify({
+              summary: 'Short',
+              status: 'confirmed',
+              start: { dateTime: '2026-10-20T18:00:00Z' },
+              end: { dateTime: '2026-10-20T18:30:00Z' },
+            }),
+          },
+        ],
+      },
+    ],
+  });
+  await w.call('Event/set', rename('ns1', 'acct-1:primary/ser1'));
+  await w.call('Event/set', rename('ns2', 'acct-1:primary/ser2'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put'], 'the ongoing series sends; the finished one does not');
+  const ops = await w.call('Operation/get', { opIds: ['ns1', 'ns2'] });
+  assert.equal(ops.list[0]!.state, 'synced');
+  assert.equal(ops.list[1]!.state, 'failed');
+  assert.equal(ops.list[1]!.error?.reasonCode, 'calendar.late');
+});

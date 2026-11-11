@@ -2,7 +2,9 @@ import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
 import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
-import { instant, recurrenceIdToTime } from './project';
+import { instant, recurrenceIdToTime, toWire } from './project';
+import { expand } from './recurrence/expand';
+import type { EventTime as EngineTime } from './recurrence/types';
 import type { Clock, Logger, StorePort } from '../ports';
 import { parseStored, withDefaults } from '../runtime/settings';
 import type { EngineServices } from '../runtime/services';
@@ -65,17 +67,21 @@ export function readAll(store: StorePort): { records: HoldRecord[]; unreadable: 
 /** True when the event this hold is about has already started: invitations for something under way are not sent unasked. */
 function startedBy(store: StorePort, call: HeldCall | undefined, now: number): boolean {
   if (!call) return false;
-  const start = startOf(store, call);
+  const start = startOf(store, call, now);
   return start !== undefined && start <= now;
 }
 
-function startOf(store: StorePort, call: HeldCall): number | undefined {
+function startOf(store: StorePort, call: HeldCall, now: number): number | undefined {
+  const ref = call.op === 'put' ? call.change : call.ref;
+  // A whole-series write matters while the series still has an occurrence to come: the master's stored slot is the
+  // FIRST occurrence, long past on an ongoing series, so the check is against the next one instead.
+  if (ref.scope === 'series' && ref.remoteId)
+    return nextOccurrence(store, call.account, ref.calendarRemoteId, ref.remoteId, now);
   if (call.op === 'put' && call.change.fields.start)
     return instant(call.change.fields.start, 'UTC');
-  const ref = call.op === 'put' ? call.change : call.ref;
   const remoteId = ref.remoteId;
   if (!remoteId) return undefined;
-  // One occurrence: its own original start; otherwise the stored start of the event.
+  // One occurrence, or the first of a 'following' change: its own original start.
   if (ref.recurrenceId) return instant(recurrenceIdToTime(ref.recurrenceId), 'UTC');
   return store.read(
     q =>
@@ -87,6 +93,74 @@ function startOf(store: StorePort, call: HeldCall): number | undefined {
         remoteId,
       )?.start_utc ?? undefined,
   );
+}
+
+/** How far ahead "next occurrence" looks: covers a yearly series. */
+const SERIES_AHEAD_MS = 732 * 86_400_000;
+
+/**
+ * The first occurrence of the series still to finish (one under way counts, so the range opens at `now`): its start is
+ * what "already started" is judged against. A series with nothing upcoming reads as its stored slot (past → late).
+ */
+function nextOccurrence(
+  store: StorePort,
+  accountId: string,
+  calRemote: string,
+  remoteId: string,
+  now: number,
+): number | undefined {
+  const row = store.read(q =>
+    q.get<{
+      start_utc: number | null;
+      end_utc: number | null;
+      all_day: number | null;
+      recurrence: string | null;
+      data: string;
+      time_zone: string | null;
+    }>(
+      `SELECT e.start_utc, e.end_utc, e.all_day, e.recurrence, e.data, c.time_zone
+       FROM events e JOIN calendars c ON c.id = e.calendar_id
+       WHERE c.account_id = ? AND c.remote_id = ? AND e.remote_id = ? AND e.recurrence_id = ''`,
+      accountId,
+      calRemote,
+      remoteId,
+    ),
+  );
+  if (!row || row.start_utc === null) return row?.start_utc ?? undefined;
+  if (!row.recurrence) return row.start_utc;
+  let g: { start?: { dateTime?: string; timeZone?: string }; end?: { dateTime?: string } };
+  let rec: { rrule?: string[]; rdate?: string[]; exdate?: string[] };
+  try {
+    g = JSON.parse(row.data) as typeof g;
+    rec = JSON.parse(row.recurrence) as typeof rec;
+  } catch {
+    return row.start_utc;
+  }
+  const zone = g.start?.timeZone ?? row.time_zone ?? 'UTC';
+  const iso = (epoch: number) => new Date(epoch).toISOString().slice(0, 10);
+  const time = (
+    v: { dateTime?: string; timeZone?: string } | undefined,
+    stored: number | null,
+  ): EngineTime =>
+    row.all_day === 1
+      ? { date: iso(stored ?? row.start_utc!) }
+      : v?.timeZone && v.dateTime
+        ? { local: v.dateTime.slice(0, 19), tzid: v.timeZone }
+        : { utc: stored ?? row.start_utc! };
+  const out = expand({
+    start: time(g.start, row.start_utc),
+    end: time(g.end, row.end_utc),
+    allDay: row.all_day === 1,
+    ...(g.start?.timeZone ? { tzid: g.start.timeZone } : {}),
+    rrule: rec.rrule,
+    rdate: rec.rdate,
+    exdate: rec.exdate,
+    range: { from: now, to: now + SERIES_AHEAD_MS },
+    floatingZone: zone,
+    limit: 4,
+  });
+  if (!out.ok || !out.occurrences.length) return row.start_utc;
+  return instant(toWire(out.occurrences[0]!.start), zone);
 }
 
 /** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
@@ -116,11 +190,16 @@ interface Deps {
 }
 
 function save(deps: Deps, record: HoldRecord): void {
-  // Finished for good (sent or undone): the guests' addresses leave storage with the call.
-  const kept =
-    record.state === 'synced' || record.state === 'cancelled'
-      ? (({ call: _call, ...rest }) => rest)(record)
+  // A finished transition is stamped: sent and undone holds purge `HOLD_KEEP_MS` after it, while a failed hold keeps
+  // its call (and guests' addresses) until the owner retries or dismisses it.
+  const stamped =
+    record.state === 'synced' || record.state === 'failed' || record.state === 'cancelled'
+      ? { ...record, finishedAt: deps.clock.now() }
       : record;
+  const kept =
+    stamped.state === 'synced' || stamped.state === 'cancelled'
+      ? (({ call: _call, ...rest }) => rest)(stamped)
+      : stamped;
   deps.store.commit({
     // A meta-only commit does not move `seq`, so the id carries its own uniqueness: a repeated id is skipped as already
     // applied, which once dropped a second save of the same state.
@@ -201,7 +280,8 @@ function nextDue(values: readonly string[]): number | undefined {
       soonest(0); // an unreadable row is purged by the next run
     else if (r.state === 'queued') soonest(r.undoUntil);
     else if (r.state === 'syncing') soonest(0);
-    else soonest(r.createdAt + HOLD_KEEP_MS);
+    // A failed hold stays until it is retried or dismissed — it is never purged.
+    else if (r.state !== 'failed') soonest((r.finishedAt ?? r.createdAt) + HOLD_KEEP_MS);
   }
   return next;
 }
@@ -336,7 +416,10 @@ export function createHolds(deps: Deps) {
               reasonCode: 'calendar.uncertain',
             },
           });
-        else if (r.state !== 'queued' && r.state !== 'syncing' && r.createdAt < now - HOLD_KEEP_MS)
+        else if (
+          (r.state === 'synced' || r.state === 'cancelled') &&
+          (r.finishedAt ?? r.createdAt) < now - HOLD_KEEP_MS
+        )
           deps.store.commit({
             opId: `calendar-hold:${r.opId}:purge:${globalThis.crypto.randomUUID()}`,
             origin: 'local',
