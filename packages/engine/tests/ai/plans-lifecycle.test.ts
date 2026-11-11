@@ -553,3 +553,71 @@ test('Plan/confirm: a shared opId cannot collide with an Event/set id; a read-ba
   assert.equal(removes.length, 0, 'a provider read-back of a pre-existing event is never swept');
   w.file.cleanup();
 });
+
+// Opus's end-to-end probe: an Event/set and a Plan/confirm that share an opId, a mid-flight dismiss,
+// and a provider-style 409 read-back. On the un-namespaced id this deleted the owner's event.
+test('PROBE: Plan/confirm reusing an Event/set opId + mid-flight dismiss must not delete the owner event', async () => {
+  const events = new Map<string, string>();
+  const removed: string[] = [];
+  let dismissDuringPlanPut = false;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string; fields?: { title?: string } }) => {
+        const id = c.newRemoteId!;
+        if (dismissDuringPlanPut)
+          await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
+        // Google 409 → the adapter reads back the existing event and answers saved.
+        if (!events.has(id)) events.set(id, c.fields?.title ?? '?');
+        return { kind: 'saved' as const, upserts: [{ remoteId: id, etag: 'e1' }], removals: [] };
+      },
+      remove: async (_a: string, ref: { remoteId?: string }) => {
+        removed.push(ref.remoteId!);
+        events.delete(ref.remoteId!);
+        return {
+          kind: 'saved' as const,
+          upserts: [],
+          removals: [{ remoteId: ref.remoteId! }],
+        };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  await w.call('Event/set', {
+    opId: 'X',
+    change: {
+      type: 'create',
+      calendarId: 'acct-1:primary',
+      fields: {
+        title: 'Owner event',
+        start: { type: 'utc', utc: 1_800_000_000_000 },
+        end: { type: 'utc', utc: 1_800_003_600_000 },
+        allDay: false,
+      },
+    },
+  } as never);
+  assert.equal(events.size, 1);
+  const ownerId = [...events.keys()][0];
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  dismissDuringPlanPut = true;
+  await assert.rejects(() => w.call('Plan/confirm', { opId: 'X', id: out.plans[0].id }));
+  assert.ok(events.has(ownerId), `owner event E must survive; removed=${JSON.stringify(removed)}`);
+  assert.equal(removed.length, 1, 'the orphaned plan event is still swept');
+  assert.notEqual(removed[0], ownerId, 'the sweep names only the plan-namespaced event');
+  w.file.cleanup();
+});

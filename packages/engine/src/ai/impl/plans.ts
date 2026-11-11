@@ -733,8 +733,8 @@ export async function confirmPlan(
   if (row.state === 'dismissed')
     throw new ContractError({ type: 'conflict', message: 'This plan was already dismissed.' });
   // A claimed (`confirming`) plan replays with what the claim recorded: whoever retries — the original
-  // op or a new one — names the SAME remote event (`eventIdForOp(calAccountId, row.op_id)`) in the SAME
-  // recorded calendar, so a lost answer or a different opId can never create a second event.
+  // op or a new one — names the SAME remote event (`eventIdForOp(calAccountId, 'plan:' + row.op_id)`)
+  // in the SAME recorded calendar, so a lost answer or a different opId can never create a second event.
   const claimedOp = row.state === 'confirming' ? (row.op_id ?? args.opId) : args.opId;
   const target = services.store.read(q =>
     resolveCalendar(
