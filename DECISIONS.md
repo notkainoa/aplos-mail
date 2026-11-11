@@ -1934,6 +1934,12 @@ Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by 
 
 How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
 
+## 2026-11-11: the reader's loading line names the sender like Home's row does (ui-reader, handoff from ui-home #454)
+
+Context: `loadingLabel` fell back to the raw `row.fromName` for a thread with no subject, so a worst-case sender name (the owner's own name when they answered last, bidi controls, runs of whitespace) leaked into "Loading …".
+
+Decision: the subject and the sender both go through Home's `cleanName`, and the sender is Home's `senderOf` (the other person, not the owner). A thread with neither still gets no label, and the caller says "this email".
+
 ## 2026-11-10: Narrow Home panes: nothing squashes or covers anything (ui-home, on ui-polish's review of #454)
 
 With the Ask dock open at the minimum window the Home pane is about 324px: the focus letter's Reply collapsed to a 24px stub over Later's icon, and a row's due chip and bookmark and attachment icons overlapped. `screens/screens.css` now makes the focus letter a size container: under 380px Later and Done keep only their icons (label and key stay for assistive tech and the tooltip), under 250px Reply also drops its Space cap, under 189px its label too (it keeps its icon and its name), and it never shrinks. (Thresholds are the card's content width.) Rows keep their trailing icons at their own width, give the sender a 48px floor and clip the middle column (summary and due chip) instead of letting it spill. Wide layouts are unchanged (same measured geometry at 1280px).

@@ -5,7 +5,7 @@
  */
 import { type Account, type Address, type Message, type ThreadRow } from '../../data';
 import type { ChipProps, SuggestedAction, SummaryContent } from '../../ui/props';
-import { dueOf, suggestionOf, summaryOf } from '../home/homeRows';
+import { cleanName, dueOf, senderOf, suggestionOf, summaryOf } from '../home/homeRows';
 import type { SectionKey } from '../home/homeModel';
 import { attachmentIcon } from './attachmentIcon';
 
@@ -157,10 +157,17 @@ export function trackersLine(trackers: number | undefined): string | null {
   return `${trackers} ${trackers === 1 ? 'tracker' : 'trackers'} removed`;
 }
 
-/** What the loading line says it is waiting for: "Loading Maple Library…" (DESIGN 5 rule 10), the subject else the sender. */
+/**
+ * What the loading line says it is waiting for: "Loading Maple Library…" (DESIGN 5 rule 10), the subject else the sender.
+ * Both go through Home's name cleaning, and the sender is the one Home's row shows (the other person, not the owner).
+ */
 export function loadingLabel(row: ThreadRow | undefined): string | null {
-  const name = row?.subject.trim() || row?.fromName?.trim();
-  return name ? `Loading ${name}…` : null;
+  if (!row) return null;
+  const subject = cleanName(row.subject);
+  if (subject) return `Loading ${subject}…`;
+  const hasSender =
+    cleanName(row.fromName) !== '' || row.participants.some(p => cleanName(p.name || p.address));
+  return hasSender ? `Loading ${senderOf(row)}…` : null;
 }
 
 /** What a download of one attachment is doing in this reading. */
