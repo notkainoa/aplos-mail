@@ -276,9 +276,12 @@
   align-items: center;
   padding-left: var(--space-2);
 }
+/* Positioned so the circles paint in DOM order (last to first), which puts the first person on top: an unpositioned
+   flex row paints its reversed items the other way, and each circle then hid the letter beside it. */
 .aplos-circle {
   --circle-ring: var(--canvas);
   --circle-fill: var(--sunken);
+  position: relative;
   box-sizing: border-box;
   display: inline-flex;
   flex: none;
@@ -296,17 +299,17 @@
   letter-spacing: var(--track-caption);
   font-variant-numeric: tabular-nums;
 }
-/* Positioned so the circles paint in DOM order (last to first), which puts the first person on top: an unpositioned
-   flex row paints its reversed items the other way, and each circle then hid the letter beside it. */
-.aplos-circle {
-  position: relative;
+/* Every circle but the first (the DOM's last) has its leading side under the one before it, so its letter sits in the
+   part you see. */
+.aplos-circle:not(:last-child) {
+  padding-left: var(--space-2);
 }
-/* "+N" is a count, so it may grow into a pill and keep every digit inside it ("+497"); its leading side sits under the
-   circle before it, so that side's padding clears the overlap. */
+/* "+N" is a count. Its leading side sits under the circle before it, so that side's padding clears the overlap and the
+   part you see is one circle wide ("+3"); a longer count grows into a pill that keeps every digit inside it ("+497"). */
 .aplos-circle[data-more='true'] {
   width: auto;
-  min-width: var(--control-xs);
-  padding-inline: calc(var(--space-1) + var(--space-2)) var(--space-1);
+  min-width: calc(var(--control-xs) + var(--space-2));
+  padding-inline: var(--space-2) var(--space-1);
 }
 .aplos-circle::before {
   content: attr(data-mark);
