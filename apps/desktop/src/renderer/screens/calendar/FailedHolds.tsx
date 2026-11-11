@@ -1,19 +1,18 @@
 /**
  * Failed calendar holds surfaced through Queue/list, and the pane's quiet line for them (DESIGN
- * 7.15; review19). A held guest-notifying write whose provider refused it after the receipt shows an
- * in-session persistent toast — but after a reload, or once the owner left Calendar, the screen has
- * no operation id and the toast is gone. The queue keeps the failure: an engine `op` item is
- * `id: 'op:<opId>'` with a `<method> <count>` label, so a hold is the item whose label names
- * `Event/set` or `Event/rsvp` (mail ops name `Thread/…` etc.). The stand-in's own queue writes
- * `<verb> N item(s)` labels, so the fixture shape `set|rsvp|hide|extract N item(s)` under the `send`
- * scope counts too.
+ * 7.15; review20). A held guest-notifying write whose send failed after the receipt shows an
+ * in-session persistent toast — but after a reload, or once the owner left Calendar, that toast is
+ * gone. The queue keeps the failure: the engine lists a hold that still needs the owner as a
+ * content-free `op` item `id: 'cal:<opId>'` with the fixed label 'Calendar change' — no title, no
+ * guest, no event id (listener clients read the list), so a row can never name its event.
  *
- * Retry is `Operation/retry` on the same op id — never `Event/set` again (a fresh write beside the
- * engine's hold would re-notify guests). Discard is `Queue/discard` on the item id.
+ * Retry is `Queue/retry` on the item id — the engine's own path for holds, which refuses an
+ * uncertain one (`calendar.checkFirst`); never `Event/set` again (a fresh write beside the engine's
+ * hold would re-notify guests). Discard is `Queue/discard` on the same id.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type JSX } from 'react';
 import type { QueueItem } from '@aplos/contract';
-import { api, useRow, type Event, type Operation } from '../../data';
+import { api, type Account } from '../../data';
 import { getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { Announce } from '../../ui/props';
 import { Button } from '../../ui/buttons-keys';
@@ -27,55 +26,41 @@ import type { CalendarAction } from './calendar.model';
 
 /** One failed hold the pane line and its Review list draw. */
 export interface FailedHold {
-  /** The Queue/list item id (`op:<opId>` on the real engine): `Queue/discard` takes it. */
+  /** The Queue/list item id (`cal:<opId>`): `Queue/retry` and `Queue/discard` take it. */
   readonly id: string;
-  /** The operation id: `Operation/retry` takes it — the id the hold itself keeps. */
+  /** The operation id the queue id wraps: the in-session failure toast owns `<opId>:failed`. */
   readonly opId: string;
-  /** The plain reason sentence (writeErrors' at-operation copy). */
+  /** The plain reason sentence (writeErrors' at-operation copy, else the engine's own words). */
   readonly reason: string;
+  /** The account the change is on — its name, else its address — resolved from the screen's accounts. */
+  readonly account?: string;
   readonly canRetry: boolean;
   readonly canDiscard: boolean;
-  /**
-   * The held change's event, when already known. `QueueItem` is deliberately content-free, so the
-   * queue names no event: the row resolves the op's target through `Operation/get` when this is unset
-   * (the harness states set it directly — they run no data layer).
-   */
-  readonly eventId?: string;
 }
 
-/** The operation id a queue `op` item wraps: `id` minus the `op:` prefix (the fixture has none). */
+/** The operation id a `cal:` queue item wraps: `id` minus the prefix (the id the hold itself keeps). */
 export function opIdOf(item: Pick<QueueItem, 'id'>): string {
-  return item.id.startsWith('op:') ? item.id.slice(3) : item.id;
+  return item.id.startsWith('cal:') ? item.id.slice(4) : item.id;
 }
-
-const EVENT_METHOD_LABEL = /^Event\//;
-const FIXTURE_EVENT_VERB = /^(set|rsvp|hide|extract) \d+ items?$/;
 
 /**
- * A queue item that is a failed calendar hold: an `op` in `failed` or `conflict` whose label names a
- * calendar method. Mail operations name theirs (`Thread/…`), so they never match; submissions and AI
- * jobs are other `kind`s. For the stand-in's verb-only labels the `send` scope keeps `Draft/set`
- * (scope `draft`) and the settings writes (`admin`) out.
+ * A queue item that is a failed calendar hold: `cal:<opId>` in `failed` — the engine's own id
+ * prefix, so a mail op (`op:…`), a job or a submission can never match, whatever their label. Only
+ * `failed` needs the owner: a `queued` hold is still inside its undo window (the write's own Undo
+ * toast covers it) and a `syncing` one is a send under way — neither "didn't send" yet. An
+ * uncertain failure is `failed` too; its `canRetry` is false, so its row offers Discard only.
  */
 export function isCalendarHoldItem(item: QueueItem): boolean {
-  if (item.kind !== 'op') return false;
-  if (item.state !== 'failed' && item.state !== 'conflict') return false;
-  if (EVENT_METHOD_LABEL.test(item.label)) return true;
-  return item.scope === 'send' && FIXTURE_EVENT_VERB.test(item.label);
+  return item.id.startsWith('cal:') && item.state === 'failed';
 }
 
 /**
- * The resolved op's own verdict, once `Operation/get` answers: a hold is an `Event/*` operation.
- * `undefined` (unanswered or gone) keeps the label's verdict — a hold may outlive the ops row.
+ * The sentence a failed hold reads: writeErrors' at-operation table where a reasonCode exists,
+ * else the engine's own words (a content-free item carries its plain sentence for exactly this).
  */
-export function isCalendarHoldOp(op: Operation | undefined): boolean | undefined {
-  if (!op) return undefined;
-  return op.kind === 'Event/set' || op.kind === 'Event/rsvp' || op.kind === 'Event/hide';
-}
-
-/** The sentence a failed hold reads: writeErrors' at-operation table; unknown codes get the plain fallback. */
-export function holdSentence(reasonCode: string | undefined): string {
-  const fallback = "This change wasn't sent.";
+export function holdSentence(item: Pick<QueueItem, 'problem'>): string {
+  const fallback = item.problem?.message || "This change wasn't sent.";
+  const reasonCode = item.problem?.reasonCode;
   if (!reasonCode) return fallback;
   return writeFailureOf(
     { error: { type: 'unavailable', message: fallback, reasonCode } },
@@ -90,6 +75,15 @@ export function failedHoldLine(count: number): string {
   return count === 1 ? "1 change didn't send" : `${count} changes didn't send`;
 }
 
+/** The account label a hold's row carries: the account's name, else its address. */
+export function holdAccount(
+  accounts: readonly Account[],
+  accountId: string | undefined,
+): string | undefined {
+  const account = accountId === undefined ? undefined : accounts.find(a => a.id === accountId);
+  return account ? account.name || account.address : undefined;
+}
+
 /**
  * The queue items that are failed holds, minus any an in-session persistent op-failure toast already
  * owns (`<opId>:failed`): while that toast lives the owner sees the failure once, not twice.
@@ -97,27 +91,24 @@ export function failedHoldLine(count: number): string {
 export function failedHoldsOf(
   items: readonly QueueItem[],
   toastIds: ReadonlySet<string>,
+  accounts: readonly Account[],
 ): FailedHold[] {
   const out: FailedHold[] = [];
   for (const item of items) {
     if (!isCalendarHoldItem(item)) continue;
     const opId = opIdOf(item);
     if (toastIds.has(`${opId}:failed`)) continue;
+    const account = holdAccount(accounts, item.accountId);
     out.push({
       id: item.id,
       opId,
-      reason: holdSentence(item.problem?.reasonCode),
+      reason: holdSentence(item),
+      ...(account !== undefined ? { account } : {}),
       canRetry: item.canRetry,
       canDiscard: item.canDiscard,
     });
   }
   return out;
-}
-
-/** The event title the hold's change was for: the resolved op's first target, else the quiet fallback. */
-export function holdTitle(op: Operation | undefined, events: ReadonlyMap<string, Event>): string {
-  const eventId = op?.targets?.[0];
-  return (eventId ? events.get(eventId)?.title : undefined) ?? 'An event';
 }
 
 // ---------------------------------------------------------------------------
@@ -143,12 +134,16 @@ export function emitHoldsRefresh(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * The failed holds the pane knows: `Queue/list` op items that are calendar holds, deduped against
- * the live toasts. `refreshKey` bumps on every operation frame the screen already receives, so a
- * provider-side settle (or a new failure) lands without polling; a retry or discard settling emits
- * `emitHoldsRefresh`. Never on a timer, and it never retries on its own.
+ * The failed holds the pane knows: `Queue/list` `cal:` items in `failed`, deduped against the live
+ * toasts, their accounts resolved from the ones the screen already has. `refreshKey` bumps on every
+ * operation frame the screen already receives, so a provider-side settle (or a new failure) lands
+ * without polling; a retry or discard settling emits `emitHoldsRefresh`. Never on a timer, and it
+ * never retries on its own.
  */
-export function useFailedHolds(refreshKey: string): {
+export function useFailedHolds(
+  refreshKey: string,
+  accounts: readonly Account[],
+): {
   holds: readonly FailedHold[];
   refresh: () => void;
 } {
@@ -172,23 +167,31 @@ export function useFailedHolds(refreshKey: string): {
     };
   }, [refreshKey, tick, toasts]);
 
-  const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)));
+  const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)), accounts);
   return { holds, refresh };
 }
 
-/** One Review row's title and actions (a resolved event id needs no data layer — the harness sets it). */
-function HoldRowView({
+/**
+ * One Review row: 'A calendar change' (the items are content-free — none can name its event), the
+ * account when the engine names one, the reason sentence, then the row's actions. Retry shows only
+ * while the engine allows it: an uncertain hold offers Discard alone — a blind second send could
+ * tell the guests twice.
+ */
+function HoldRow({
   hold,
-  title,
   dispatch,
 }: {
   hold: FailedHold;
-  title: string;
   dispatch: (action: CalendarAction) => void;
 }) {
   return (
     <li className="cal-hold">
-      <div className="cal-hold__title">{title}</div>
+      <div className="cal-hold__title">
+        A calendar change
+        {hold.account !== undefined ? (
+          <span className="cal-hold__account"> · {hold.account}</span>
+        ) : null}
+      </div>
       <div className="cal-hold__reason">{hold.reason}</div>
       <div className="cal-hold__actions">
         {hold.canRetry ? (
@@ -212,40 +215,6 @@ function HoldRowView({
   );
 }
 
-/** The row that resolves its op for the title: a non-Event kind was a label false positive. */
-function HoldRowResolved(props: {
-  hold: FailedHold;
-  events: ReadonlyMap<string, Event>;
-  dispatch: (action: CalendarAction) => void;
-}) {
-  const op = useRow('Operation', props.hold.opId);
-  if (isCalendarHoldOp(op) === false) return null;
-  return (
-    <HoldRowView hold={props.hold} title={holdTitle(op, props.events)} dispatch={props.dispatch} />
-  );
-}
-
-/** One Review row: the event's title (resolved through the op's target), the reason, the actions. */
-function HoldRow({
-  hold,
-  events,
-  dispatch,
-}: {
-  hold: FailedHold;
-  events: ReadonlyMap<string, Event>;
-  dispatch: (action: CalendarAction) => void;
-}) {
-  if (hold.eventId !== undefined)
-    return (
-      <HoldRowView
-        hold={hold}
-        title={events.get(hold.eventId)?.title ?? 'An event'}
-        dispatch={dispatch}
-      />
-    );
-  return <HoldRowResolved hold={hold} events={events} dispatch={dispatch} />;
-}
-
 /**
  * The line and its Review popover. Review is a plain text button — Tab reaches it, Return opens the
  * list, and the Popover's Esc puts focus back on it (role 'dialog'). The first appearance is
@@ -253,13 +222,11 @@ function HoldRow({
  */
 export function FailedHolds({
   holds,
-  events,
   open,
   dispatch,
   announce,
 }: {
   holds: readonly FailedHold[];
-  events: ReadonlyMap<string, Event>;
   open: boolean;
   dispatch: (action: CalendarAction) => void;
   announce?: Announce;
@@ -304,7 +271,7 @@ export function FailedHolds({
       >
         <ul className="cal-holds">
           {holds.map(hold => (
-            <HoldRow key={hold.id} hold={hold} events={events} dispatch={dispatch} />
+            <HoldRow key={hold.id} hold={hold} dispatch={dispatch} />
           ))}
         </ul>
       </Popover>

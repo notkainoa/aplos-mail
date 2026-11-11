@@ -102,8 +102,9 @@ export interface CalendarContext {
   /** Where new events and confirmed plans go. */
   readonly defaultCalendarId: string | null;
   /**
-   * Failed guest-notifying holds from `Queue/list`, minus any an in-session op-failure toast already
-   * owns (`useFailedHolds`; review19). The pane's quiet line shows only while this is non-empty.
+   * Failed guest-notifying holds from `Queue/list` (`cal:<opId>` items in `failed`), minus any an
+   * in-session op-failure toast already owns (`useFailedHolds`; review20). The pane's quiet line
+   * shows only while this is non-empty.
    */
   readonly failedHolds: readonly FailedHold[];
 }
@@ -156,7 +157,7 @@ export type CalendarAction =
   | { type: 'soloCalendar'; id: string }
   /** The failed-holds line's Review button / its Popover's close (review19). */
   | { type: 'holdsReview'; open: boolean }
-  /** A Review row's Retry: `Operation/retry` on the same op id, never `Event/set` again. */
+  /** A Review row's Retry: `Queue/retry` on the item id — the hold's own path, never `Event/set` again. */
   | { type: 'holdRetry'; id: string; opId: string }
   /** A Review row's Discard: `Queue/discard` on the queue item id. */
   | { type: 'holdDiscard'; id: string };
@@ -250,8 +251,8 @@ export type CalendarEffect =
   | { kind: 'notice'; message: string }
   | { kind: 'focus'; target: 'grid' | 'rail' }
   /**
-   * A Review row's Retry: `Operation/retry` on the same op id — the failed hold re-sends, never a
-   * second `Event/set`. `id` is the queue item the row came from.
+   * A Review row's Retry: `Queue/retry` on the item id — the failed hold re-sends, never a second
+   * `Event/set`. `opId` (`id` minus `cal:`) keys the refusal's toast.
    */
   | { kind: 'holdRetry'; id: string; opId: string }
   /** A Review row's Discard: `Queue/discard` on the queue item id. */

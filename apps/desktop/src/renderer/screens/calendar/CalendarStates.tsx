@@ -794,35 +794,35 @@ const FIXTURES: Record<string, Fixture> = {
     state: { view: 'week' },
     holds: [
       {
-        id: 'op:op-hold-design',
+        id: 'cal:op-hold-design',
         opId: 'op-hold-design',
         reason: "That change wasn't sent in time. Check the event, then send it again.",
+        account: 'Alex Moreno',
         canRetry: true,
         canDiscard: true,
-        eventId: 'design',
       },
     ],
   },
   'failed-holds-list': {
     title:
-      'Review open: Design review offers Retry and Discard, Lunch with Leah (a dead grant) Discard only',
+      'Review open: a late change offers Retry and Discard, a dead grant’s change Discard only (the items name no event)',
     state: { view: 'week', holdsReview: true },
     holds: [
       {
-        id: 'op:op-hold-design',
+        id: 'cal:op-hold-design',
         opId: 'op-hold-design',
         reason: "That change wasn't sent in time. Check the event, then send it again.",
+        account: 'Alex Moreno',
         canRetry: true,
         canDiscard: true,
-        eventId: 'design',
       },
       {
-        id: 'op:op-hold-lunch',
-        opId: 'op-hold-lunch',
+        id: 'cal:op-hold-jordan',
+        opId: 'op-hold-jordan',
         reason: 'Sign in to Google again to send this change.',
+        account: 'jordan.lee@example.com',
         canRetry: false,
         canDiscard: true,
-        eventId: 'lunch',
       },
     ],
   },

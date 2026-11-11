@@ -337,7 +337,7 @@ export const calendarStates: readonly VisualState[] = [
   {
     id: 'failed-holds-list',
     title:
-      'The Review list: each failed hold’s event, its reason sentence, and its Retry and Discard',
+      'The Review list: each failed change’s account and reason sentence, and its Retry and Discard',
     components: ['Button', 'Popover', 'Pane', 'CalendarGrid'],
     design: '7.8, 7.15',
     mockup: 'calendar-week.html (failed holds, Review open)',

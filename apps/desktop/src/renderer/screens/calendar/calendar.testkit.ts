@@ -228,6 +228,7 @@ export function ports(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     operationRetry: args => api.operation.retry(args),
+    queueRetry: args => api.queue.retry(args),
     queueDiscard: args => api.queue.discard(args),
     enableEditing: () => Promise.resolve(),
     reconnect: () => undefined,

@@ -248,7 +248,8 @@
   padding-right: 0;
 }
 
-/* The Review list's rows: the event's title, the reason sentence, then the row's actions. */
+/* The Review list's rows: 'A calendar change' and its account (the items are content-free), the
+   reason sentence, then the row's actions. */
 .cal-holds {
   list-style: none;
   margin: 0;
@@ -268,6 +269,10 @@
 .cal-hold__title {
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
+}
+
+.cal-hold__account {
+  color: var(--dim);
 }
 
 .cal-hold__reason {

@@ -504,7 +504,6 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
       {vm.failedHolds ? (
         <FailedHolds
           holds={vm.failedHolds.items}
-          events={vm.events}
           open={vm.failedHolds.open}
           dispatch={dispatch}
           announce={announce}

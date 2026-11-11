@@ -127,7 +127,7 @@ export interface CalendarViewModel {
   /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
   readonly empty: EmptyView | null;
   /**
-   * Failed guest-notifying holds from the queue (review19): the pane's quiet line ("N changes didn't
+   * Failed guest-notifying holds from the queue (review20): the pane's quiet line ("N changes didn't
    * send · Review") and its list; null while nothing failed — never a standing nag.
    */
   readonly failedHolds: { items: readonly FailedHold[]; line: string; open: boolean } | null;

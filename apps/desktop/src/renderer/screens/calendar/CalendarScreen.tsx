@@ -242,9 +242,9 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
   const loaded = useCalendars(accountId, touched, calendarListedKey(accounts));
-  // Failed guest-notifying holds live in Queue/list between sessions (review19): refetched on mount
+  // Failed guest-notifying holds live in Queue/list between sessions (review20): refetched on mount
   // and on every operation frame the window already receives (`touched`), never polled.
-  const { holds: failedHolds } = useFailedHolds(touched);
+  const { holds: failedHolds } = useFailedHolds(touched, accounts);
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>
