@@ -53,7 +53,7 @@ export function FocusLetter({
         </span>
       ) : null}
       <div className="ui-focus-letter__meta">
-        <span className="ui-focus-letter__sender" dir="auto">
+        <span className="ui-focus-letter__sender" dir="auto" title={sender}>
           {sender}
         </span>
         {due ? <Chip kind="due" due={due} format="short" /> : null}

@@ -147,7 +147,7 @@ describe('ListRow', () => {
         })}
       />,
     );
-    assert.match(m, /class="ui-list-row__sender" dir="auto"/);
+    assert.match(m, /class="ui-list-row__sender" dir="auto" title="[^"]+"/);
     assert.match(m, /class="ui-list-row__primary" dir="auto"/);
     assert.match(m, /class="ui-list-row__secondary" dir="auto"/);
   });
@@ -310,7 +310,11 @@ describe('FocusSlot and FocusLetter', () => {
       m,
       /^<div id="focus-jordan" role="option" aria-selected="true" class="ui-focus-letter"/,
     );
-    assert.match(m, /ui-focus-letter__sender" dir="auto">Jordan Park</);
+    assert.match(
+      m,
+      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park</,
+      'a name cut short in the card can still be read in full',
+    );
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
     assert.match(m, /10:00 AM<\/time>/);
     assert.match(
@@ -381,7 +385,7 @@ describe('FocusSlot and FocusLetter', () => {
       ),
     ].map(x => x[1]);
     assert.deepEqual(badges, ['.'], held);
-    assert.match(held, /class="ui-focus-letter__sender" dir="auto"/);
+    assert.match(held, /class="ui-focus-letter__sender" dir="auto" title="/);
   });
 
   test('rejected write shows on the card; worst-case sender and verb', () => {
