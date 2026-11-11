@@ -656,3 +656,113 @@ test('adding a guest keeps the resource, comment and extra guests Google holds f
   assert.equal(peer.responseStatus, 'accepted');
   r.close();
 });
+
+test('deleting one occurrence with no stored exception is guarded by the version just read', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const series = r.emu.calendar.addEvent(cal, {
+    summary: 'Gym',
+    start: { dateTime: '2026-11-09T07:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-09T08:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    recurrence: ['RRULE:FREQ=DAILY;COUNT=4'],
+  });
+  await r.seedCalendars();
+  saved(
+    await r.port.remove(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: series.id,
+      recurrenceId: '20261111T150000Z',
+      scope: 'occurrence',
+    }),
+  );
+  const del = r.requests.filter(q => q.method === 'DELETE').at(-1)!;
+  assert.ok(del.ifMatch, 'the delete carries the instance version it just read, not nothing');
+  r.close();
+});
+
+test('an RSVP still saves when another guest answered since the last sync', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const invite = r.emu.calendar.addInvitation({
+    summary: 'All hands',
+    start: { dateTime: '2026-11-12T13:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T14:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    organizer: { email: 'boss@example.test' },
+    guests: ['peer@example.test'],
+  });
+  await r.seedCalendars();
+  const before = invite.etag;
+  r.emu.calendar.respond(cal, invite.id, 'peer@example.test', 'accepted');
+  const result = saved(
+    await r.port.rsvp(
+      r.account.id,
+      { calendarRemoteId: cal, remoteId: invite.id, scope: 'series', etag: before },
+      'declined',
+      { notify: false },
+    ),
+  );
+  assert.equal(result.upserts[0]!.attendees.find(a => a.self)?.response, 'declined');
+  const answers = Object.fromEntries(
+    (r.emu.calendar.getEvent(cal, invite.id)!.attendees ?? []).map(a => [
+      a.email,
+      a.responseStatus,
+    ]),
+  );
+  assert.equal(answers['peer@example.test'], 'accepted', 'the other guest’s answer is untouched');
+  r.close();
+});
+
+test('a stale edit whose event is gone says gone; a failed read-back is still just a conflict', async () => {
+  const r = await writeRig();
+  const cal = r.calendarId;
+  const seeded = r.emu.calendar.addEvent(cal, {
+    summary: 'Briefing',
+    start: { dateTime: '2026-11-12T09:00:00-08:00', timeZone: 'America/Los_Angeles' },
+    end: { dateTime: '2026-11-12T10:00:00-08:00', timeZone: 'America/Los_Angeles' },
+  });
+  await r.seedCalendars();
+  const stale = {
+    status: 412,
+    body: JSON.stringify({
+      error: { code: 412, message: 'x', errors: [{ reason: 'conditionNotMet' }] },
+    }),
+  };
+  const gone = {
+    status: 404,
+    body: JSON.stringify({ error: { code: 404, message: 'x', errors: [{ reason: 'notFound' }] } }),
+  };
+  const edit = () =>
+    r.port.put(r.account.id, {
+      calendarRemoteId: cal,
+      remoteId: seeded.id,
+      etag: seeded.etag,
+      scope: 'series',
+      fields: { summary: 'Late' },
+    });
+  r.forced.push(stale);
+  r.forcedReads.push(gone);
+  await assert.rejects(
+    edit(),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.eventGone',
+  );
+  r.forced.push(stale);
+  r.forcedReads.push({ status: 500, body: '{}' });
+  assert.equal((await edit()).kind, 'conflict');
+  r.close();
+});
+
+test('the gate decides from the account’s granted scopes, whatever the actor says', async () => {
+  const r = await writeRig({ scopes: [...GMAIL_SCOPES, ...READ_SCOPES], actorRefuses: false });
+  await r.seedCalendars();
+  const before = r.requests.length;
+  await assert.rejects(
+    r.port.put(r.account.id, {
+      calendarRemoteId: r.calendarId,
+      scope: 'occurrence',
+      fields: { summary: 'x', start: START, end: END },
+    }),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'permission.calendarWrite',
+  );
+  assert.equal(r.requests.length, before, 'nothing went out');
+  r.close();
+});

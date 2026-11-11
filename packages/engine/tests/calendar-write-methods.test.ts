@@ -400,3 +400,34 @@ test('an end-only all-day series edit keeps the master start and shifts its end 
   assert.equal(sent.fields.start?.date, '2026-10-27');
   assert.equal(sent.fields.end?.date, '2026-10-30');
 });
+
+test('a series edit from an occurrence with zoned times moves the series by the offset, in the same zone', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  await w.call('Event/set', {
+    opId: 'rb2',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261028T170000Z',
+      scope: 'series',
+      fields: {
+        // The occurrence (Oct 28, 10:00 LA) moved to 11:00 LA, 30 minutes long.
+        start: { type: 'floating', local: '2026-10-28T11:00:00', timeZone: LA },
+        end: { type: 'floating', local: '2026-10-28T11:30:00', timeZone: LA },
+        allDay: false,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // The master (Oct 27, 10:00 LA) moves to 11:00 LA on ITS day, not to the clicked day.
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-27T11:00:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-27T11:30:00',
+    timeZone: LA,
+  });
+});

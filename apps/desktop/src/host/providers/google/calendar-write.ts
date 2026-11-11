@@ -145,8 +145,8 @@ export function targetId(ref: {
 
 const sendUpdates = (notify: boolean | undefined) => (notify === true ? 'all' : 'none');
 
-/** Every write call's deadline; reads stay unbounded (they already fail on governor/abort). */
-const WRITE_TIMEOUT_MS = 20_000;
+/** Every write call's deadline (30 s); reads stay unbounded (they already fail on governor/abort). */
+const WRITE_TIMEOUT_MS = 30_000;
 
 const path = (calendarRemoteId: string, eventId?: string) =>
   `/calendars/${encodeURIComponent(calendarRemoteId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ''}`;
@@ -305,13 +305,21 @@ export function createCalendarWrites(
       const calendar = ref.calendarRemoteId;
       const eventId = targetId(ref);
       const instance = eventId !== ref.remoteId;
+      // One occurrence with no stored version of its own is deleted against the version just read (a change made
+      // elsewhere since is a conflict, not a blind delete); an instance Google no longer has is already gone.
+      let base = ref.etag;
+      if (instance && base === undefined) {
+        const now = await tryRead(ctx, calendar, eventId);
+        if (now === undefined) return { kind: 'saved', upserts: [], removals: [] };
+        base = now.etag;
+      }
       try {
         await call(ctx, {
           method: 'gcal.events.delete',
           http: 'DELETE',
           calendar,
           eventId,
-          ifMatch: ref.etag,
+          ifMatch: base,
           notify: ref.notify,
           kind: 'idempotentWrite',
         });
