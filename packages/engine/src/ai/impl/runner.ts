@@ -72,7 +72,9 @@ function settle(
           ...(result.nextAt !== undefined ? { nextAt: result.nextAt } : {}),
         };
   services.store.commit({
-    opId: `ai-settle-${row.id}-${services.clock.now()}`,
+    // Unique per settle, like the claim's seq suffix: a replayed commit opId is a silent no-op, and
+    // without a nonce a second settle of this row inside the same clock tick would leave it `running`.
+    opId: `ai-settle-${row.id}-${services.clock.now()}-${hexId(services.randomBytes, 's')}`,
     origin: 'system',
     writes: [write],
   });

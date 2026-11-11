@@ -89,11 +89,13 @@ function planSettle(write: PlanWrite, tx: CommitExtensionTx): void {
   );
   const dismissed = write.state === 'dismissed' ? 1 : 0;
   const r = tx.run(
-    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), rev = rev + 1
+    `UPDATE plans SET state = ?, event_id = COALESCE(?, event_id), op_id = COALESCE(?, op_id),
+       rev = rev + 1
      WHERE id = ? AND account_id = ?
        AND ((state = 'confirming' AND ? = 0) OR (state IN ('open','confirming') AND ? = 1))`,
     write.state!,
     write.eventId ?? null,
+    write.opId ?? null,
     write.id!,
     accountId!,
     dismissed,

@@ -12,13 +12,18 @@ import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/pla
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock } from '../runtime.helpers';
 
-function stubTransport(answer: string): AiTransport & { calls: AiChatRequest[] } {
+function stubTransport(answer: string | string[]): AiTransport & { calls: AiChatRequest[] } {
   const calls: AiChatRequest[] = [];
+  const queue = [...(Array.isArray(answer) ? answer : [answer])];
   return {
     calls,
     async chat(req) {
       calls.push(req);
-      return { content: answer, toolCalls: [], usage: { prompt: 10, completion: 10 } };
+      return {
+        content: queue.length > 1 ? queue.shift()! : (queue[0] ?? ''),
+        toolCalls: [],
+        usage: { prompt: 10, completion: 10 },
+      };
     },
     transcribe: () => Promise.resolve({ text: '' }),
     models: () => Promise.resolve({ list: [], live: false }),
@@ -104,6 +109,11 @@ test('Event/extract: gated mail becomes open plans; a second call returns them (
   assert.equal(out.plans[0].title, 'Garden day');
   assert.equal(out.plans[0].state, 'open');
   assert.equal(t.calls.length, 1, 'one metered provider call');
+  assert.match(
+    t.calls[0].messages[0].content!,
+    /offset/i,
+    'the system prompt asks the model for a UTC offset (or zone)',
+  );
   const again = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
   assert.equal(again.plans.length, 1);
   assert.equal(t.calls.length, 1, 'existing open plans win without a second call');
@@ -492,6 +502,10 @@ test('Plan/confirm: an uncertain put keeps the claim; any retry replays the stor
   );
   assert.equal(puts[1].calendarRemoteId, 'primary', 'a changed calendarId cannot redirect a claim');
   assert.match(done.eventId, /^acct-1:primary\//);
+  // The completing opId owns the confirmed row — its retry replays the stored event, no third put.
+  const replay = await w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id });
+  assert.equal(replay.eventId, done.eventId, 'the completing op replays the stored event');
+  assert.equal(puts.length, 2, 'a replay never calls the provider');
   w.file.cleanup();
 });
 

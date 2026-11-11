@@ -8,6 +8,7 @@ import { backgroundGate } from './gate';
 import { followEligible, followUpDaysOf, lastSentHashOf, priorityOf, type JobRow } from './jobs';
 import { callMessage, meteredChat } from './runtime';
 import { planJob, suggestReplyJob } from './plan-jobs';
+import './ai-writes';
 
 /**
  * One claimed job's execution (ARCH 8.1): `summary` and `followup`. Mail goes to the provider as quoted untrusted text in a

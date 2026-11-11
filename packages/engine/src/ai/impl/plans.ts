@@ -533,8 +533,15 @@ export async function extract(
   try {
     const plans = await extractOnce(services, `${t.id}:${hash}`, async () => {
       const x = await extractThread(services, parts.accountId, parts.remoteId, args.timeZone);
-      const list = x === 'empty' ? [] : writePlans(services, parts.accountId, parts.remoteId, x);
-      if (!list.length) markEmpty(services, parts.accountId, parts.remoteId, hash);
+      // "Nothing found" is recorded for THIS input — the returned list is open plans across every
+      // hash, so open proposals from older mail must not stop the marker (a re-extract of this input
+      // would call the model again forever).
+      if (x === 'empty') {
+        markEmpty(services, parts.accountId, parts.remoteId, hash);
+        return [];
+      }
+      const list = writePlans(services, parts.accountId, parts.remoteId, x);
+      if (!x.plans.length) markEmpty(services, parts.accountId, parts.remoteId, hash);
       return list;
     });
     return { plans, receipt: receipt(ctx, args.opId) };
@@ -731,9 +738,11 @@ export async function confirmPlan(
     throw new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
   const { calAccountId, calRemote } = target;
   // Claim in its own commit — the UPDATE is the lock; a concurrent claim for a different op loses here.
+  // The commit opId is unique per attempt: a released claim that is retried under the same caller opId
+  // must re-run, which a replayed (already applied) commit could never do.
   if (row.state === 'open')
     services.store.commit({
-      opId: `${args.opId}:claim`,
+      opId: `${args.opId}:claim:${hexId(services.randomBytes, 'c')}`,
       origin: 'local',
       writes: [
         {
@@ -749,7 +758,7 @@ export async function confirmPlan(
     });
   const release = () =>
     services.store.commit({
-      opId: `${args.opId}:release`,
+      opId: `${args.opId}:release:${hexId(services.randomBytes, 'r')}`,
       origin: 'local',
       writes: [
         {
@@ -801,8 +810,20 @@ export async function confirmPlan(
         accountId: row.account_id,
         state: 'confirmed',
         eventId,
+        opId: args.opId,
       },
     ],
   });
+  // The settle only lands while the row is `confirming` — a dismiss that arrived while the put was in
+  // flight (or a claim a replayed commit skipped) leaves it untouched, so the write can no-op silently.
+  // Re-read and refuse rather than answer ok for a plan that was never confirmed.
+  const after = services.store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM plans WHERE id = ?', row.id),
+  );
+  if (after?.state !== 'confirmed')
+    throw new ContractError({
+      type: 'conflict',
+      message: 'This plan changed while it was being confirmed.',
+    });
   return { eventId, receipt: receipt(ctx, args.opId) };
 }

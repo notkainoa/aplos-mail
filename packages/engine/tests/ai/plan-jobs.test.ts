@@ -298,11 +298,90 @@ test('suggestAction job: mail that moved since the request means no draft call',
       msg('m2', 'T-plans', 6, { subject: 'Re: Garden day', snippet: 'and bring tools Sunday' }),
     ],
   });
+  // The job was deferred while the summary was in flight — advance past the pause so it really runs
+  // (without this the job is simply not due and the test proves nothing).
+  w.clock.advance(31 * 60_000);
   await runJobs(w.engine.services, w.clock.now());
+  const job = w.engine.services.store.read(q =>
+    q.get<{ state: string }>('SELECT state FROM jobs WHERE kind = ?', 'suggestAction'),
+  )!;
+  assert.equal(job.state, 'done', 'the job ran and settled — the stale-mail return did its work');
   const draft = w.engine.services.store.read(q =>
     q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'replydraft:acct-1:T-plans'),
   );
   assert.equal(draft, undefined, 'no draft was written for stale mail');
   assert.equal(t.calls.length, 1, 'only the summary call ran');
+  w.file.cleanup();
+});
+
+test('plan job: a recorded empty answer for this input skips the model; plans for the hash settle early', async () => {
+  const t = stubTransport('{"events":[]}');
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  await w.call('Ai/request', { opId: 'r1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(t.calls.length, 1, 'the job asked the model once');
+  const marker = w.engine.services.store.read(q =>
+    q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'plans-empty:acct-1:T-plans'),
+  );
+  assert.ok(marker?.value, 'the empty answer is recorded for this input hash');
+  // A forced rerun reads the marker and settles without a second model call. The jobs deadline may
+  // claim the row mid-pass, so drain until no runner holds it.
+  await w.call('Ai/request', {
+    opId: 'r2',
+    kind: 'plan',
+    threadId: 'acct-1:T-plans',
+    force: true,
+  });
+  let state = '';
+  for (let i = 0; i < 6; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    state = w.engine.services.store.read(q =>
+      q.get<{ state: string }>("SELECT state FROM jobs WHERE kind = 'plan'"),
+    )!.state;
+    if (state !== 'running') break;
+    await new Promise(r => setTimeout(r, 0));
+  }
+  assert.equal(t.calls.length, 1, 'the recorded empty answer skips the provider');
+  assert.equal(state, 'done');
+  w.file.cleanup();
+});
+
+test('plan job: plans already stored for this input hash settle the job with no provider call', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  await w.call('Ai/request', { opId: 'r1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  // Another writer landed a set for the job's input hash before it ran (an interactive extract).
+  const hash = w.engine.services.store.read(q => {
+    const p = q.get<{ payload: string }>("SELECT payload FROM jobs WHERE kind = 'plan'")!;
+    return (JSON.parse(p.payload) as { inputHash: string }).inputHash;
+  });
+  w.store.commit({
+    opId: 'ext-put',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'plan',
+        action: 'put',
+        accountId: 'acct-1',
+        remoteThreadId: 'T-plans',
+        inputHash: hash,
+        title: 'Garden day',
+        startUtc: 1,
+        endUtc: 2,
+        allDay: false,
+        model: 'test/stub',
+      } as never,
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const job = w.engine.services.store.read(q =>
+    q.get<{ state: string }>("SELECT state FROM jobs WHERE kind = 'plan'"),
+  )!;
+  assert.equal(job.state, 'done');
+  assert.equal(t.calls.length, 0, 'existing plans for the hash mean no model call');
   w.file.cleanup();
 });

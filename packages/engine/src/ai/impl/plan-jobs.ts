@@ -13,6 +13,7 @@ import {
   threadMail,
   writePlans,
 } from './plans';
+import './ai-writes';
 
 /**
  * The remaining `jobs` kinds (ARCH 8.1): `plan` writes extracted plans to the `plans` table (the same
@@ -37,10 +38,15 @@ export async function planJob(
   const have = services.store.read(q => {
     const info = priorityOf(q, accountId, remoteThreadId);
     if (!info) return undefined;
-    return { info, open: plansForHash(q, info.threadRowId, inputHash) };
+    const empty = q.get<{ value: string }>(
+      'SELECT value FROM meta WHERE key = ?',
+      `plans-empty:${accountId}:${remoteThreadId}`,
+    )?.value;
+    return { info, open: plansForHash(q, info.threadRowId, inputHash), empty };
   });
   if (!have) throw new AiCallError('gatePermanent', 'ai.threadGone');
-  if (have.open.length) return;
+  // Stored plans or a recorded empty answer for this input mean the model already ran — the job settles.
+  if (have.open.length || have.empty === inputHash) return;
   // Same in-flight key as `Event/extract` — a job and an interactive extract of this input share one
   // model call and one write, and `writePlans` re-checks the hash at commit.
   await extractOnce(services, `${have.info.threadRowId}:${inputHash}`, async () => {
@@ -50,9 +56,13 @@ export async function planJob(
       remoteThreadId,
       usableZone(services.views?.zone),
     );
-    const list = x === 'empty' ? [] : writePlans(services, accountId, remoteThreadId, x);
-    if (!list.length)
-      markEmpty(services, accountId, remoteThreadId, x === 'empty' ? inputHash : x.inputHash);
+    if (x === 'empty') {
+      markEmpty(services, accountId, remoteThreadId, inputHash);
+      return [];
+    }
+    const list = writePlans(services, accountId, remoteThreadId, x);
+    // The marker is per input hash, like `extract` — the written list covers every hash.
+    if (!x.plans.length) markEmpty(services, accountId, remoteThreadId, x.inputHash);
     return list;
   });
 }

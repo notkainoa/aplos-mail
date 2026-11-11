@@ -11,6 +11,7 @@ import { ftsPhrases } from '../../views/search';
 import type { AiChatMessage } from '../host';
 import { accountAllowed, allowedAccounts, interactiveModel } from './gate';
 import { callMessage, meteredChat } from './runtime';
+import './ai-writes';
 
 /**
  * Ask (ai-6's first slice): a user-initiated question over the mailbox. Retrieval is the store's own FTS plus the

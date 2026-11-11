@@ -9,6 +9,7 @@ import { hexId } from '../../sync/connect-sessions';
 import { accountAllowed } from './gate';
 import { enqueue, inputHashOf, jobOf, jobRow, priorityOf, type JobRow } from './jobs';
 import { callMessage } from './runtime';
+import './ai-writes';
 
 /**
  * The `ai` area's working half (lazy-loaded by `methods/ai.ts`): enqueue (`Ai/request`), the queue read
