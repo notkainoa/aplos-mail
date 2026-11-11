@@ -26,6 +26,8 @@ export interface WriteRigOptions {
   scopes?: string[];
   newId?: () => string;
   writeTimeoutMs?: number;
+  /** What the actor's `writeRefused()` answers (default: it records a gap exactly when the scope is missing). */
+  actorRefuses?: boolean;
 }
 
 export async function writeRig(options: WriteRigOptions = {}) {
@@ -70,9 +72,17 @@ export async function writeRig(options: WriteRigOptions = {}) {
   // Test hook: answer the next write with this status and body instead of the emulator (Google's own error text).
   const forced: { status: number; body: string }[] = [];
   // Test hooks for a write whose answer never arrives: it LANDS on the emulator and then the connection drops, or it hangs.
+  // Test hook: answer the next READ (GET) with this status instead of the emulator.
+  const forcedReads: { status: number; body: string }[] = [];
   const faults: ('dropAnswer' | 'hang')[] = [];
   const spy: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
+    const read = req.method === 'GET' && forcedReads.length > 0 ? forcedReads.shift() : undefined;
+    if (read)
+      return new Response(read.body, {
+        status: read.status,
+        headers: { 'content-type': 'application/json' },
+      });
     const fault = req.method !== 'GET' && faults.length > 0 ? faults.shift() : undefined;
     if (fault === 'hang')
       return new Promise<Response>((_, reject) =>
@@ -132,7 +142,7 @@ export async function writeRig(options: WriteRigOptions = {}) {
             context: ctx,
             calendarWriteRefused: () => {
               refused += 1;
-              return !scopes.includes(SCOPE.calendarEvents);
+              return options.actorRefuses ?? !scopes.includes(SCOPE.calendarEvents);
             },
           },
         })
@@ -185,6 +195,7 @@ export async function writeRig(options: WriteRigOptions = {}) {
     requests,
     forced,
     faults,
+    forcedReads,
     logLines: () => JSON.stringify(log.lines),
     refused: () => refused,
     seedCalendars,

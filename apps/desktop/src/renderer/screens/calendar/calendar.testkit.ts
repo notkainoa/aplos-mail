@@ -12,6 +12,7 @@ import {
   shownView,
   type CalendarContext,
   type CalendarState,
+  type EditorDraft,
 } from './calendar.model';
 import type { EffectPorts, EffectUi } from './effects';
 import { demoWorld } from './CalendarStates';
@@ -145,6 +146,10 @@ export function testUi(): EffectUi & {
   reopened: Array<{ id: string; note: string }>;
   /** Whether `reopenEditor` reports the editor opened; false makes a conflict fall back to the toast. */
   reopenOpens: boolean;
+  /** The drafts `restoreEditor` was asked to bring back, with each refusal's sentence. */
+  restored: Array<{ draft: EditorDraft; note: string }>;
+  /** Whether `restoreEditor` reports the editor opened; false makes a times refusal fall back to the toast. */
+  restoreOpens: boolean;
   /** The event ids `closeDetail` was asked to close. */
   closedFor: string[];
   closed: number;
@@ -155,6 +160,7 @@ export function testUi(): EffectUi & {
   const settled: string[] = [];
   const failed: string[] = [];
   const reopened: Array<{ id: string; note: string }> = [];
+  const restored: Array<{ draft: EditorDraft; note: string }> = [];
   const closedFor: string[] = [];
   let closed = 0;
   const self = {
@@ -165,6 +171,8 @@ export function testUi(): EffectUi & {
     failed,
     reopened,
     reopenOpens: true,
+    restored,
+    restoreOpens: true,
     closedFor,
     get closed() {
       return closed;
@@ -183,6 +191,10 @@ export function testUi(): EffectUi & {
       reopened.push({ id: eventId, note });
       return self.reopenOpens;
     },
+    restoreEditor: (draft: EditorDraft, note: string) => {
+      restored.push({ draft, note });
+      return self.restoreOpens;
+    },
     closeDetail: (eventId: string) => {
       closedFor.push(eventId);
       closed += 1;
@@ -200,6 +212,7 @@ export function ports(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     enableEditing: () => Promise.resolve(),
+    reconnect: () => undefined,
     openThread: () => undefined,
     openUrl: () => undefined,
     copyText: () => undefined,

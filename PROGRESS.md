@@ -675,3 +675,5 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 ## 2026-11-10 — prov-cal: held calendar writes (PR 3, `rv/prov-cal/calendar-holds`, stacked on #394)
 
 - `Event/set` and `Event/rsvp` that tell guests wait the undo window as a durable hold (`services.calendarHolds`); `Operation/undo`, `Operation/get` and `Operation/retry` reach it through `methods/operation.ts`; scope-checked like mail operations; survives a restart; 9 tests in `packages/engine/tests/calendar-holds.test.ts` (mutation-checked: scope check, the re-read before a send).
+## ui-settings: the verbose switch opens as the engine says (2026-11-11)
+- Settings → Help & about reads `Diagnostics/verbose` with no `on` (#418, a query that changes nothing) when it opens, so Verbose logging shows on, with its switch-off time, if the engine already has it on. A switch-off time means on; none means off.

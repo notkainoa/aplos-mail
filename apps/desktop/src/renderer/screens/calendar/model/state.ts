@@ -132,6 +132,8 @@ export type CalendarAction =
   | { type: 'editorNote'; message: string }
   /** `calendar.conflict` on a save: re-open the editor on the newer copy with `note` as its error line. */
   | { type: 'reopenEditor'; eventId: string; note: string }
+  /** A times refusal on a save: re-open the editor on the saved draft, `note` as its error line. */
+  | { type: 'restoreEditor'; draft: EditorDraft; note: string }
   /** The detail's 'Enable editing' button: opens the grant sheet for this account. */
   | { type: 'enableEditing'; accountId: string }
   | { type: 'delete' }
@@ -181,6 +183,8 @@ export type CalendarEffect =
       failure: string;
       /** An editor save's event: on `calendar.conflict` the editor re-opens on the newer copy (writeErrors). */
       reopenEditorId?: string;
+      /** An editor save's draft: a times refusal re-opens the editor on it, typed work intact (writeErrors). */
+      draft?: EditorDraft;
       /** The account the write goes to: `permission.calendarWrite` offers Enable editing on it. */
       accountId?: string;
     }

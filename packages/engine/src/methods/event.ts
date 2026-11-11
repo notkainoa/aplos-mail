@@ -1,6 +1,7 @@
 import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
+import { fromWall, isKnownZone, toWall } from '../calendar/recurrence/zone';
 import { eventIdForOp } from '../calendar/event-id';
 import { runCall } from '../calendar/holds-call';
 import type { HeldCall, HoldSpec } from '../calendar/holds-types';
@@ -423,6 +424,10 @@ function rebaseSeriesTimes(
 ): void {
   const start = fields.start;
   const end = fields.end;
+  // A zoned wall-clock time (what the Calendar screen sends) rebases as the instant it names, then goes back to
+  // the same zone's wall clock: same offset from the master, same zone.
+  const zoned = zoneOfFloating(start ?? end);
+  if (zoned) return rebaseZoned(ctx, ref, fields, zoned);
   if (start && start.type !== 'utc' && start.type !== 'date') return;
   if (!start && end?.type !== 'utc' && end?.type !== 'date') return;
   const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
@@ -436,6 +441,39 @@ function rebaseSeriesTimes(
   const occEnd = occ?.end_utc ?? occStart + (master.end_utc - master.start_utc);
   if ((start ?? end)!.type === 'utc') rebaseUtc(master, occStart, occEnd, fields);
   else rebaseAllDay(master, occStart, occEnd, fields);
+}
+
+/** The zone of a floating time that names one the engine knows; undefined for any other time. */
+function zoneOfFloating(t: PortFields['start'] | undefined): string | undefined {
+  return t?.type === 'floating' && t.timeZone && isKnownZone(t.timeZone) ? t.timeZone : undefined;
+}
+
+function rebaseZoned(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+  fields: Partial<PortFields>,
+  tz: string,
+): void {
+  const toUtc = (t: PortFields['start'] | undefined) =>
+    t?.type === 'floating' && t.timeZone === tz
+      ? fromWall(Date.parse(`${t.local}Z`), tz)
+      : undefined;
+  const local = (ms: number): PortFields['start'] => ({
+    type: 'floating',
+    local: new Date(toWall(ms, tz)).toISOString().slice(0, 19),
+    timeZone: tz,
+  });
+  const start = toUtc(fields.start);
+  const end = toUtc(fields.end);
+  // A mix of kinds or zones is not rebased (the caller sent something this does not model).
+  if ((fields.start && start === undefined) || (fields.end && end === undefined)) return;
+  const asUtc: Partial<PortFields> = {
+    ...(start !== undefined ? { start: { type: 'utc', utc: start } } : {}),
+    ...(end !== undefined ? { end: { type: 'utc', utc: end } } : {}),
+  };
+  rebaseSeriesTimes(ctx, ref, asUtc);
+  if (asUtc.start?.type === 'utc') fields.start = local(asUtc.start.utc);
+  if (asUtc.end?.type === 'utc') fields.end = local(asUtc.end.utc);
 }
 
 /** The `utc` rebasing: whole milliseconds against the master and occurrence's stored epochs. */

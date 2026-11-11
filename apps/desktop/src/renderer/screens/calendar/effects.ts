@@ -12,16 +12,24 @@
 import type { EventChange } from '@aplos/contract';
 import { api, getNow, type Receipt, type State } from '../../data';
 import { toErrorBody } from '../../data/client';
-import { dismissToast, openThread, pushToast, updateToast, type PushedToast } from '../../shell';
+import {
+  dismissToast,
+  openSheet,
+  openThread,
+  pushToast,
+  updateToast,
+  type PushedToast,
+} from '../../shell';
 import { getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { CommandId, EventScope } from '../../ui/props';
 import {
   rsvpMessage,
   type CalendarEffect,
+  type EditorDraft,
   type OptimisticChange,
   type ToastPlan,
 } from './calendar.model';
-import { EDITING_COPY } from './accountCalendarState';
+import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
 import { writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -54,6 +62,8 @@ export interface EffectPorts {
   }): Promise<Receipt>;
   /** `Account/grantPermissions {accountId, enable:'calendarWrite'}`: opens the same connect sheet; the account's `grantedScopes` gains the write scope when it finishes. */
   enableEditing(accountId: string): Promise<void>;
+  /** Opens the same sign-in sheet the sidebar's Sign in again opens (`openSheet('reconnect', {mode:'reconnect'})`). */
+  reconnect(accountId: string): void;
   openThread(threadId: string): void;
   openUrl(url: string): void;
   copyText(text: string): void;
@@ -81,6 +91,12 @@ export interface EffectUi {
    * edited (locked, gated, gone), so the caller falls back to the notice (review7 5).
    */
   reopenEditor(eventId: string, note: string): boolean;
+  /**
+   * A times refusal (`event.allDayMismatch`, `event.timesRequired`) on an editor save: re-open the
+   * editor on the saved draft itself — typed work kept, `note` as its error line. True when the
+   * editor opened; false while another draft owns it, so the caller falls back to the notice.
+   */
+  restoreEditor(draft: EditorDraft, note: string): boolean;
   /** `calendar.eventGone`: close the detail only when it shows `eventId` — never an unrelated one (review7 4). */
   closeDetail(eventId: string): void;
 }
@@ -124,6 +140,29 @@ function editingNotice(ports: EffectPorts, accountId: string | undefined): void 
                 undoable: false,
               });
             });
+          },
+        }),
+    undoable: false,
+  });
+}
+
+/**
+ * The dead-grant notice with the Sign in again action (a `needsReauth` / `auth.expired` write): one
+ * line plus the same sign-in the sidebar's account row runs. No account behind the write: the line
+ * alone — never a Sign in again that opens nothing.
+ */
+function reconnectNotice(ports: EffectPorts, accountId: string | undefined): void {
+  pushToast({
+    id: `reconnect:${accountId ?? 'unknown'}`,
+    kind: 'info',
+    message: 'Sign in to Google again to change events.',
+    ...(accountId === undefined
+      ? {}
+      : {
+          actions: [{ id: 'reconnect', label: CALENDAR_ACCESS_COPY.signIn }],
+          onAction: (actionId: string) => {
+            if (actionId !== 'reconnect') return;
+            ports.reconnect(accountId);
           },
         }),
     undoable: false,
@@ -201,6 +240,8 @@ interface WriteSpec {
   readonly failure?: string;
   /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
   readonly reopenEditorId?: string;
+  /** An editor save's draft: a times refusal re-opens the editor on it, typed work intact. */
+  readonly draft?: EditorDraft;
   /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
   readonly goneEventId?: string;
   /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
@@ -222,13 +263,18 @@ function writeFailed(
   if (!spec.failure) return;
   const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
   // The conflict's sentence lands once: the re-opened editor's own line, or the toast when no
-  // editor can re-open — never both (review7 5).
+  // editor can re-open — never both (review7 5). A times refusal is the same, on the saved draft.
   const reopened =
     failure.reopenEditor === true &&
     spec.reopenEditorId !== undefined &&
     ui.reopenEditor(spec.reopenEditorId, failure.message);
+  const restored =
+    failure.keepDraft === true &&
+    spec.draft !== undefined &&
+    ui.restoreEditor(spec.draft, failure.message);
   if (failure.enableEditing) editingNotice(ports, spec.accountId);
-  else if (!reopened) failureToast(spec.opId, failure, retry);
+  else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
+  else if (!reopened && !restored) failureToast(spec.opId, failure, retry);
   if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
@@ -277,6 +323,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             }),
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
+          draft: fx.draft,
           goneEventId: fx.change.type === 'create' ? undefined : fx.change.id,
           accountId: fx.accountId,
           blindRetryUnsafe: fx.change.type === 'create',
@@ -478,6 +525,8 @@ export function livePorts(): EffectPorts {
     // way Aplos ever asks for it); the account's grantedScopes gains the scope when the sheet finishes.
     enableEditing: accountId =>
       api.account.grantPermissions({ accountId, enable: 'calendarWrite' }).then(() => undefined),
+    // The same sheet the sidebar's Sign in again opens (CalendarAccounts' 'reconnect' action).
+    reconnect: accountId => openSheet('reconnect', { accountId, mode: 'reconnect' }),
     openThread: threadId => openThread(threadId, { from: 'calendar' }),
     // Main opens it through its external() gate (http, https or mailto, no credentials; anything else is refused).
     openUrl: url => {
