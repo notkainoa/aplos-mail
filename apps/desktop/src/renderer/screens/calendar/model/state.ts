@@ -176,6 +176,13 @@ export type CalendarEffect =
       kind: 'eventSet';
       change: EventChange;
       optimistic: OptimisticChange;
+      /**
+       * `notify: true` when the change would email other guests — the engine only holds a write that
+       * tells them (`holdIfNotifying`), and only a held write gives an undo window. Set by
+       * `notifiesGuests` (model/transitions.ts); effects send `notify: true` to `Event/set` then,
+       * never `false` (unset keeps the provider's own default).
+       */
+      notify?: boolean;
       /** Every write's own Undo toast (id = opId); `held` words it while the engine holds the write. */
       toast?: ToastPlan;
       undoLabel: string;

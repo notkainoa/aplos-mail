@@ -108,7 +108,22 @@ const failedToast = () => getToasts().find(t => t.id.endsWith(':failed'));
 const toastFor = (opId: string) => getToasts().find(t => t.id === opId);
 
 test('heldWrites: calendar.late and calendar.holdPending map to their sentences and retry kinds', () => {
-  const late = writeFailureOf(
+  const lateAtOp = writeFailureOf(
+    new OperationFailedError('op-l', {
+      type: 'unavailable',
+      message: 'engine words',
+      reasonCode: 'calendar.late',
+    }),
+    'Fallback.',
+    false,
+    true,
+  );
+  assert.equal(
+    lateAtOp.message,
+    "That change wasn't sent in time. Check the event, then send it again.",
+  );
+  assert.equal(lateAtOp.retry, 'operation', 'op-level: Operation/retry on the same op id');
+  const lateAtSubmit = writeFailureOf(
     new OperationFailedError('op-l', {
       type: 'unavailable',
       message: 'engine words',
@@ -117,10 +132,10 @@ test('heldWrites: calendar.late and calendar.holdPending map to their sentences 
     'Fallback.',
   );
   assert.equal(
-    late.message,
-    "That change wasn't sent in time. Check the event, then send it again.",
+    lateAtSubmit.retry,
+    'none',
+    'submit-time: nothing was accepted — no operation exists to retry (review16)',
   );
-  assert.equal(late.retry, 'operation');
   const pending = writeFailureOf(
     new OperationFailedError('op-p', {
       type: 'conflict',
@@ -131,13 +146,13 @@ test('heldWrites: calendar.late and calendar.holdPending map to their sentences 
   );
   assert.equal(
     pending.message,
-    "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+    "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
   );
-  assert.equal(pending.retry, 'none');
+  assert.equal(pending.retry, 'now', 'a submit-time refusal accepted nothing — re-running is safe');
   assert.equal(pending.keepDraft, true);
 });
 
-test('heldWrites: a holdPending refusal keeps the editor draft and a plain write shows no Retry', async () => {
+test('heldWrites: a holdPending refusal keeps the editor draft and a plain write offers a safe Retry', async () => {
   resetToasts();
   try {
     // An editor save: the sentence lands on the re-opened draft, typed work kept — never a toast too.
@@ -165,7 +180,7 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
     assert.deepEqual(ui.restored, [
       {
         draft: fx.draft,
-        note: "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+        note: "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
       },
     ]);
     assert.equal(failedToast(), undefined, 'no failure toast beside the re-opened draft');
@@ -175,7 +190,8 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
   }
   resetToasts();
   try {
-    // A drag, a menu write: no draft to keep — the sentence in a toast, no Retry.
+    // A drag, a menu write: no draft to keep — the sentence in a toast. Retry stays: a submit-time
+    // refusal accepted nothing, so re-running the write is safe (review16).
     const ui = testUi();
     runCalendarEffect(
       dinnerFx,
@@ -196,9 +212,12 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
     const toast = failedToast();
     assert.equal(
       toast?.message,
-      "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
     );
-    assert.equal(toast?.actions, undefined, 'no Retry while the earlier change is still queued');
+    assert.ok(
+      toast?.actions?.some(a => a.id === 'retry'),
+      'a safe Retry: nothing was accepted, so the write may run again',
+    );
     assert.deepEqual(ui.dropped, [DINNER]);
   } finally {
     resetToasts();
@@ -386,6 +405,7 @@ function overlayUi() {
       overlay = overlayWith(overlay, writeId, change);
     },
     settle: () => undefined,
+    settleAfterFrame: () => undefined,
     rollback: (id, writeId) => {
       overlay = overlayDrop(overlay, writeId, id);
     },
@@ -648,7 +668,7 @@ test('heldWrites: a throwing operation listener starves nobody, and unsubscribe 
   }
 });
 
-test('heldWrites: a rejected write’s calendar.late Retry calls Operation/retry, never the write again', async () => {
+test('heldWrites: a submit-time calendar.late shows the sentence with no action', async () => {
   const env = await bootRecorded();
   resetToasts();
   try {
@@ -676,23 +696,15 @@ test('heldWrites: a rejected write’s calendar.late Retry calls Operation/retry
       toast?.message,
       "That change wasn't sent in time. Check the event, then send it again.",
     );
-    assert.ok(
-      toast?.actions?.some(a => a.id === 'retry'),
-      'the late refusal still offers Retry',
-    );
-    runToastAction(toast!.id, 'retry');
-    await env.flush();
-    assert.equal(writes, 1, 'the write itself never ran again');
-    const opId = toast!.id.slice(0, -':failed'.length);
-    assert.deepEqual(
-      env.calls.filter(c => c.method === 'Operation/retry').map(c => c.args),
-      [{ opId }],
-      'Retry ran Operation/retry on the write’s own op id',
-    );
+    // `calendar.late` means the OPERATION missed its window — a submit-time refusal accepted
+    // nothing, so there is no operation to retry: the sentence stands alone (review16). A click
+    // re-running `Event/set` with a fresh op id would re-notify guests.
+    assert.deepEqual(toast?.actions ?? [], [], 'no operation exists to retry — no action');
+    assert.equal(writes, 1);
     assert.equal(
-      env.calls.filter(c => c.method === 'Event/set').length,
+      env.calls.filter(c => c.method === 'Operation/retry').length,
       0,
-      'no fresh Event/set beside the retry',
+      'nothing retried the op id that was never accepted',
     );
   } finally {
     resetToasts();

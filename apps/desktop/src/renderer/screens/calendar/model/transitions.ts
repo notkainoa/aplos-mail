@@ -37,6 +37,22 @@ export const done = (
   handled,
 });
 
+/**
+ * True when the change would email other guests — the engine only holds (and only then gives an
+ * undo window) a write that tells them. An event with attendees other than the owner, a create
+ * carrying attendees, or a delete of an event with guests; an update's new guest list counts too
+ * (guests added get invites, guests removed get cancellations). Guest-less writes go at once.
+ */
+export function notifiesGuests(change: EventChange, original?: Event): boolean {
+  if (change.type === 'create') return (change.fields.attendees?.length ?? 0) > 0;
+  const before = original?.attendees.some(a => !a.self) ?? false;
+  const after =
+    change.type === 'update' && change.fields.attendees !== undefined
+      ? change.fields.attendees.length > 0
+      : before;
+  return before || after;
+}
+
 /** Cancelling the scope question returns to the editor with the draft it stashed, edits intact (review1 6). */
 export function cancelScope(state: CalendarState): Transition {
   const p = state.scope?.pending;
@@ -142,10 +158,17 @@ export function moveTransition(
   const target = timeChange(event, next);
   if (Object.keys(target.fields).length === 0) return done({ ...state, scope: null });
   const more = scoped === 'series' ? seriesShift(ctx, event, target.fields) : undefined;
+  const change: EventChange = {
+    type: 'update',
+    id: target.id,
+    scope: scoped,
+    fields: target.fields,
+  };
   return done({ ...state, scope: null, selectedId: id }, [
     {
       kind: 'eventSet',
-      change: { type: 'update', id: target.id, scope: scoped, fields: target.fields },
+      change,
+      notify: notifiesGuests(change, event),
       optimistic: {
         id,
         patch: { start: toIsoDateTime(startUtc), end: toIsoDateTime(endUtc) },
@@ -200,6 +223,11 @@ export function deleteTransition(
       {
         kind: 'eventSet',
         change: { type: 'destroy', id: entry.id, scope: scope ?? 'occurrence' },
+        // Guests get the cancellation: the engine holds the delete so Undo still cancels it.
+        notify: notifiesGuests(
+          { type: 'destroy', id: entry.id, scope: scope ?? 'occurrence' },
+          event,
+        ),
         optimistic: { id: entry.id, remove: true },
         toast: { kind: 'trash', message: 'Event deleted', undoable: true },
         undoLabel: 'Event deleted',
@@ -320,6 +348,8 @@ function createSave(
     {
       kind: 'eventSet',
       change,
+      // Invites go out with the create: held, so Undo still pulls them back.
+      notify: notifiesGuests(change),
       optimistic: { id: tempId, add: entry },
       toast: {
         kind: 'info',
@@ -418,6 +448,7 @@ function updateSave(
     {
       kind: 'eventSet',
       change,
+      notify: notifiesGuests(change, original),
       optimistic: {
         id: draft.eventId ?? '',
         // allDay rides with the times the way seriesShift patches its siblings: an All day toggle

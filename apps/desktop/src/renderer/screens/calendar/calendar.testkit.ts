@@ -15,6 +15,7 @@ import {
   type EditorDraft,
 } from './calendar.model';
 import type { EffectPorts, EffectUi } from './effects';
+import { cancelPendingRetries, releaseHeldWrites } from './effects';
 import { demoWorld } from './CalendarStates';
 
 export const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -114,6 +115,12 @@ export async function settle(flush: () => void) {
   }
 }
 
+/** The module-level write guards start clean between tests, as an unmount leaves them. */
+export function resetWrites(): void {
+  cancelPendingRetries();
+  releaseHeldWrites();
+}
+
 export const calRef = (c: { id: string; name: string }) => ({
   id: c.id,
   name: c.name,
@@ -140,6 +147,8 @@ export const newEvent = (id: string, calendarId: string): Event =>
 export function testUi(): EffectUi & {
   applied: string[];
   dropped: string[];
+  /** Entries a held write asked to keep until the window frame after `synced`. */
+  pendingFrame: string[];
   overrides: Map<string, boolean>;
   settled: string[];
   failed: string[];
@@ -153,9 +162,12 @@ export function testUi(): EffectUi & {
   /** The event ids `closeDetail` was asked to close. */
   closedFor: string[];
   closed: number;
+  /** Bound ahead of the interface (review16): records the entries held for the frame after `synced`. */
+  settleAfterFrame(id: string, writeId: string): void;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
+  const pendingFrame: string[] = [];
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
@@ -166,6 +178,7 @@ export function testUi(): EffectUi & {
   const self = {
     applied,
     dropped,
+    pendingFrame,
     overrides,
     settled,
     failed,
@@ -179,6 +192,7 @@ export function testUi(): EffectUi & {
     },
     optimistic: () => undefined,
     settle: (id: string) => applied.push(id),
+    settleAfterFrame: (id: string) => pendingFrame.push(id),
     rollback: (id: string) => dropped.push(id),
     shown: (id: string, shown: boolean) => void overrides.set(id, shown),
     shownSettled: (id: string) => settled.push(id),

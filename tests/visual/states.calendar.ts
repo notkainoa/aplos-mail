@@ -332,6 +332,6 @@ export const calendarStates: readonly VisualState[] = [
     components: [...GRID, 'Dialog'],
     design: '7.8, 7.15, 10',
     mockup: 'calendar-event.html (editor)',
-    filled: 0,
+    filled: 1,
   },
 ];
