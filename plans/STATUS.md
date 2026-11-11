@@ -2491,3 +2491,4 @@ MERGED #435 Compose Cmd/Ctrl+Return commits typed recipient (05be0b70, ui-founda
 MERGED #436 Settings verbose logging reads Diagnostics/verbose (6769a36f, head be6310b2 incl. no-throw effect fix, 6/6 owners ui-settings, 193 tests + tsc clean)
 
 MERGED #438 Calendar plain sentences for refused writes (5cb91914, 8/8 owners ui-calendar, 173 tests + tsc clean; answers providers ack-#410)
+2026-11-11 | integrator | REQUEST | prov-cal | #394 6e81fb07 fifth Opus delta FIX (local check green on every step): open: occurrence DELETE read-first, floating/zoned series edit from an occurrence (refuse with a typed error or rebase in the zone; utc/all-day are done), unpinned: lazy-import retry, RSVP without stale pre-check, one-list gate, uncertain DELETE. Exact tests listed in the thread. #426 (f54d86a2) was merged after its Opus delta review; #424 merged; #404/#405 unchanged (500a5d3c) and wait on #394.
