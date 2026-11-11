@@ -1907,3 +1907,10 @@ Each row keeps its gate `record`: these are baselines from an empty profile, not
 
 - **Chosen:** the deadline source does not wake for a send that is under way in this process (it wakes for one a dead run left `syncing`). Before, an in-flight send made `next()` answer "now" for as long as it lasted, a busy loop on the one-second back-off.
 - **Chosen:** a wall-clock time with no zone of its own is read in the calendar's zone when deciding whether the event "has already started", the way the engine reads it everywhere else; read as UTC it could be hours off and send a change late, or hold one that is not late.
+## 2026-11-11: the one-by-one card is a reading column at most 680 px wide (ui-reader)
+
+Context: the owner's round-3 feedback on the one-by-one card ("that's good", two changes), relayed by the orchestrator: the card #421 drew nearly as wide as the pane is too wide; the reference (another app's screenshot, 2x) shows a card about 625 CSS px wide with about 470 px of body text; "a centered column roughly 620-680 CSS px wide at a normal window, shrinking with the window (keep a comfortable side margin, 16-24 px at narrow widths ... no horizontal scroll) and NEVER wider than a max reading width"; "add the max to the tokens/DESIGN.md as an owner decision".
+
+Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by one the card is `min(100% - 2 x clamp(16px, 3%, 24px), --card-w)`, centred; the header, its hairline and the pinned bar are the column's own. A plain body keeps the existing `--measure-read` (64ch, about 65 to 70 characters) inside the card; a rich email's paper frame uses the card's width and its images already scale to it. This amends the 2026-11-10 entry's "the card is nearly as wide as the pane" (and DESIGN section 16's amendment of 2026-11-11, which says the card fills the pane's width).
+
+How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
