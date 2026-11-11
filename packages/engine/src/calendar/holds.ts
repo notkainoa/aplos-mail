@@ -1,4 +1,4 @@
-import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
+import type { ErrorBody, Input, Operation, QueueItem, Receipt } from '@aplos/contract';
 import { NotSentError } from '../ports/base';
 import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
@@ -466,6 +466,47 @@ export function createHolds(deps: Deps) {
       if (inflight.has(r.opId)) throw conflict('That change is being sent.');
       await send(deps, r, inflight);
       return { opId: args.opId, appliedState: stateOf(deps.store), undoable: false };
+    },
+
+    /** The inspector's view: content-free (no title, no guest), only what still needs a send or the owner. */
+    list(): QueueItem[] {
+      return readAll(deps.store)
+        .records.filter(r => r.state === 'queued' || r.state === 'syncing' || r.state === 'failed')
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .map(r => ({
+          id: `cal:${r.opId}`,
+          kind: 'op' as const,
+          label: 'Calendar change',
+          ...(r.call ? { accountId: r.call.account } : {}),
+          state: r.state,
+          attempts: r.state === 'queued' ? 0 : 1,
+          ...(r.state === 'queued' ? { nextAt: Math.max(r.undoUntil, r.notBefore ?? 0) } : {}),
+          createdAt: r.createdAt,
+          ...(r.error
+            ? {
+                problem: {
+                  reasonCode: r.error.reasonCode ?? r.error.type,
+                  message: r.error.message,
+                },
+              }
+            : {}),
+          // An answer that was lost may already be at Google: the owner checks the calendar, and dismisses.
+          canRetry: r.state === 'failed' && r.error?.reasonCode !== 'calendar.uncertain',
+          canDiscard: r.state !== 'syncing',
+          scope: r.scope,
+        }));
+    },
+
+    dismiss(opId: string, caller: Caller): void {
+      const r = readRecord(deps.store, opId);
+      if (!r || r.state === 'synced' || r.state === 'cancelled')
+        throw new ContractError({
+          type: 'notFound',
+          message: 'This item is no longer in the queue.',
+        });
+      requireOriginating(caller, { scope: r.scope, method: r.method });
+      if (r.state === 'syncing') throw conflict('That change is already on its way to Google.');
+      save(deps, { ...r, state: 'cancelled' });
     },
 
     /** Sends every hold whose window has ended (also after a restart), fails the stale and the unfinished, purges the old. */

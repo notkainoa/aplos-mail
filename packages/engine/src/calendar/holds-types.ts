@@ -1,4 +1,4 @@
-import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
+import type { ErrorBody, Input, Operation, QueueItem, Receipt } from '@aplos/contract';
 import type { Caller } from '../methods/types';
 import type { AccountId, EditScope, EventChange, EventRef } from '../ports';
 
@@ -58,6 +58,10 @@ export interface CalendarHolds {
   get(opIds: readonly string[]): Promise<Operation[]>;
   undo(args: Input<'Operation/undo'>, caller: Caller): Promise<Receipt>;
   retry(args: Input<'Operation/retry'>, caller: Caller): Promise<Receipt>;
+  /** The holds that still need the owner or a send, as content-free Queue/list items (id `cal:<opId>`). */
+  list(): Promise<QueueItem[]>;
+  /** "Dismiss" in the inspector: a failed hold the owner has seen is dropped (its stored call with it); a waiting one is undone. */
+  dismiss(opId: string, caller: Caller): Promise<void>;
 }
 
 /**

@@ -68,5 +68,12 @@ export function createCalendarHolds(services: EngineServices): CalendarHolds {
       (await holds()).undo(args, caller),
     retry: async (args: Input<'Operation/retry'>, caller: Caller): Promise<Receipt> =>
       (await holds()).retry(args, caller),
+    // Nothing stored, nothing to list: the common case never loads the working half.
+    list: async () =>
+      store.read(q => q.get('SELECT 1 FROM meta WHERE key LIKE ?', `${PREFIX}%`))
+        ? (await holds()).list()
+        : [],
+    dismiss: async (opId: string, caller: Caller): Promise<void> =>
+      (await holds()).dismiss(opId, caller),
   };
 }
