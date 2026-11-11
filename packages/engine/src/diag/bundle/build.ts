@@ -1,5 +1,5 @@
 import type { DiagnosticsBundle } from '@aplos/contract';
-import { logCodePattern } from '@aplos/contract/log/events';
+import { logAddressHashPattern, logCodePattern } from '@aplos/contract/log/events';
 import { cleanCode, hashAddress } from '../redact';
 import { contractError } from '../../runtime/errors';
 import type { EngineServices } from '../../runtime/services';
@@ -56,6 +56,9 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
   return store.read(q => {
     const salt =
       q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'install_salt'")?.value ?? '';
+    // No install salt means every accountHash below is an unsalted digest of a real id — refuse rather
+    // than hand out derivable identifiers (FR-32's "only salted hashes" is a guarantee, not a format).
+    if (salt === '') throw new Error('install_salt is unset');
 
     const accounts = q.all<AccountRow>(
       `SELECT a.id, a.provider, a.status, a.status_reason_code, a.refresh_expires_at,
@@ -141,7 +144,6 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
 
 // ---- the production gate (FR-32): the bundle is checked on every call, not only in dev/tests ----
 
-const HEX16 = /^[0-9a-f]{16}$/;
 /** Version fields carry real strings ('macOS 26.1', '0.1.0 (build 42)'); every other string is a code. */
 const FREE_TEXT = /^bundle\.versions\./;
 
@@ -205,7 +207,7 @@ const ANY_NUMBER = new Set([
 const checkValue = (value: unknown, path: string, pathKey: string): void => {
   if (typeof value === 'string') {
     if (path.endsWith('.accountHash')) {
-      if (!HEX16.test(value)) throw new Error(`${path}: not a salted hash`);
+      if (!logAddressHashPattern.test(value)) throw new Error(`${path}: not a salted hash`);
     } else if (!FREE_TEXT.test(path) && !logCodePattern.test(value))
       throw new Error(`${path}: not a code`);
     return;
@@ -214,6 +216,8 @@ const checkValue = (value: unknown, path: string, pathKey: string): void => {
     const key = path.slice(path.lastIndexOf('.') + 1);
     if (!Number.isFinite(value) || (!ANY_NUMBER.has(key) && !Number.isSafeInteger(value)))
       throw new Error(`${path}: not an allowed number`);
+    // Everything the bundle carries is a count or an epoch — a negative is corruption, not data.
+    if (!ANY_NUMBER.has(key) && (value as number) < 0) throw new Error(`${path}: negative`);
     return;
   }
   if (Array.isArray(value)) {

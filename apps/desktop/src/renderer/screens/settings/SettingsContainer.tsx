@@ -95,9 +95,22 @@ export function dataPorts(): SettingsApiPort {
 }
 
 /** The file blob an export made goes to main's save dialog under its own name. */
-async function saveBlob(blob: { blobId: string; name: string }): Promise<{ canceled: boolean }> {
-  const { canceled } = await api.file.save({ blobId: blob.blobId, name: blob.name });
-  return { canceled };
+export async function saveBlob(
+  blob: { blobId: string; name: string },
+  calls: {
+    save: (a: { blobId: string; name: string }) => Promise<{ canceled?: boolean }>;
+    release: (a: { blobId: string }) => Promise<unknown>;
+  } = { save: a => api.file.save(a), release: a => api.blob.release(a) },
+): Promise<{ canceled: boolean }> {
+  const { canceled } = await calls.save({ blobId: blob.blobId, name: blob.name });
+  // The window owns the caller-bound blob — it frees it once the file is saved. A cancelled dialog keeps it.
+  if (!canceled)
+    try {
+      await calls.release({ blobId: blob.blobId });
+    } catch {
+      // Best effort: the next sweep finds the staged file if release ever fails.
+    }
+  return { canceled: canceled === true };
 }
 
 export interface SettingsContainerProps {
