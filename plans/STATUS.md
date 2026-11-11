@@ -2735,3 +2735,5 @@ MERGED #465 Home/Sent name who an owner-written thread waits on via ThreadRow.re
 03:13 REQUEST ui-shell: lane-approved:ui-shell on #474 for renderer/data/{hooks,index,operations}.ts and renderer/shell/{store-toast,index,KeysProviders} (additive: subscribeOperation isolation, conflict rows carry error, toast Undo refusal hook).
 03:13 REQUEST ui-foundation: lane-approved:ui-foundation on #474 for tests/visual/states.calendar.ts (held-write failure states).
 03:13 PARKED ui-screens: #474 waits on lane approvals (ui-shell, ui-foundation) and integrator-ui merge.
+
+PARKED #474 (ui-calendar held writes, e6df91ec, CLEAN): waits on lane-approved:ui-shell (renderer/data/* + shell/*) and lane-approved:ui-foundation (tests/visual/states.calendar.ts) - requests sent by ui-screens 03:13; will merge on labels
