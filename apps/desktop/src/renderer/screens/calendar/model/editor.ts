@@ -285,7 +285,7 @@ export function draftChange(
   if (!original || !d.eventId) return null;
   const fields: Partial<EventFields> = {};
   if (d.title.trim() !== original.title) fields.title = d.title.trim();
-  const target = timeChange(original, times);
+  const target = timeChange(original, times, zone);
   if (timesTouched(d, original)) {
     Object.assign(fields, target.fields);
     if (times.allDay !== original.allDay) fields.allDay = times.allDay;

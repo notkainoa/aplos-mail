@@ -50,7 +50,7 @@ const BLANK_LINES = /\n(?:[ \t]*\n)+/;
 function Paragraphs({ text, findQuery }: { text: string; findQuery?: string }) {
   const paragraphs = text.split(BLANK_LINES).filter(p => p.trim() !== '');
   return paragraphs.map((paragraph, i) => (
-    <p key={i}>
+    <p key={i} dir="auto">
       <Segments text={paragraph} findQuery={findQuery} />
     </p>
   ));

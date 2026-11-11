@@ -63,10 +63,32 @@ export function subjectOf(row: ThreadRow): string {
   return row.subject.trim() || 'No subject';
 }
 
-/** The sender column: the newest sender, or the subject's first words when the row has no name; never blank. */
+/**
+ * A name as a row may show it: control characters become spaces, bidi overrides, the soft hyphen and invisible marks are
+ * dropped (a spoofing vector), whitespace runs fold. Joiners (U+200C, U+200D) and the direction marks (U+200E, U+200F) stay: emoji families, Persian and mixed-direction names need them.
+ */
+function cleanName(text: string | undefined): string {
+  return (text ?? '')
+    .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
+    .replace(/[\u00ad\u061c\u200b\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * The sender column: the newest sender who is not the owner (the engine's `fromName` is the newest sender, which is the
+ * owner whenever they answered last), else the owner's own name, else the subject's first words; never blank.
+ */
 export function senderOf(row: ThreadRow): string {
-  const name = row.fromName || row.participants.find(p => !p.me)?.name || row.subject;
-  return name.trim() || 'No sender';
+  const from = cleanName(row.fromName);
+  // `fromName` is always `participants[0]`: it is the owner exactly when that participant is marked `me` (never judged
+  // by name, so a colleague who shares the owner's display name is still a sender).
+  if (from && row.participants[0]?.me !== true) return from;
+  const other = row.participants
+    .filter(p => !p.me)
+    .map(p => cleanName(p.name) || cleanName(p.address))
+    .find(name => name !== '');
+  return other || from || cleanName(row.subject) || 'No sender';
 }
 
 /** The main line of a row: the summary when it is ready, otherwise the subject (DESIGN 7.2 "No AI"). */
