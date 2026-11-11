@@ -1989,3 +1989,8 @@ Decision: the spec is rewritten — the card gets focus by click / `.focus()` an
 
 - **Chosen (integrator's decision):** Retry on a hold that failed as `calendar.uncertain` is refused (`conflict` / `calendar.checkFirst`: "Check your calendar: this change may already have gone through. Make it again if it is missing."). A create is idempotent (its event id is derived from the op), an edit is guarded by `If-Match`, but an RSVP email is not, so one rule covers all. A hold waiting for its account to start reads `queued` but no longer `undoable`, because its window has closed.
 - **What the owner can see, in one sentence each:** a failed calendar change is never sent again unless they press Retry; after a reload only a screen that kept the change's id can see it; and a change more than 15 minutes late, or for an event that has already started, also waits for Retry.
+
+## 2026-11-11 — eng-features: plan-confirmed events get their own id space
+
+- **Chosen:** a `Plan/confirm` create names its remote event `eventIdForOp(account, 'plan:' + opId)` — a prefix `Event/set` never uses — so a shared opId can never make a confirm read back (or its orphan sweep delete) an event the owner created another way. Safe to change now: calendar writes are still behind the owner's re-consent, so nothing live carries the old un-prefixed ids.
+- **Chosen:** the mid-flight orphan sweep deletes only when the returned remote id is the namespaced id this claim asked for, the adapter did not flag the answer a read-back (`inserted` is not `false`), and the row is not still `confirming`; the delete is conditional on the put's etag.

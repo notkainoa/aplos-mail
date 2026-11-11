@@ -385,3 +385,58 @@ test('plan job: plans already stored for this input hash settle the job with no 
   assert.equal(t.calls.length, 0, 'existing plans for the hash mean no model call');
   w.file.cleanup();
 });
+
+test('plan job: an empty answer records THIS hash even when an older open plan exists', async () => {
+  const t = stubTransport('{"events":[]}');
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  // An open proposal from an older input — the job's own extraction list is never empty, so only the
+  // model's answer for THIS hash (`x.plans.length`) can decide whether the marker is written.
+  w.store.commit({
+    opId: 'old-plan',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'plan',
+        action: 'put',
+        accountId: 'acct-1',
+        remoteThreadId: 'T-plans',
+        inputHash: 'older-input',
+        title: 'Older',
+        startUtc: 1,
+        endUtc: 2,
+        allDay: false,
+        model: 'test/stub',
+      } as never,
+    ],
+  });
+  await w.call('Ai/request', { opId: 'r1', kind: 'plan', threadId: 'acct-1:T-plans' });
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(t.calls.length, 1, 'the job asked the model once');
+  const hash = w.engine.services.store.read(q => {
+    const p = q.get<{ payload: string }>("SELECT payload FROM jobs WHERE kind = 'plan'")!;
+    return (JSON.parse(p.payload) as { inputHash: string }).inputHash;
+  });
+  const marker = w.engine.services.store.read(q =>
+    q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'plans-empty:acct-1:T-plans'),
+  );
+  assert.equal(marker?.value, hash, 'the empty answer is recorded under THIS input hash');
+  // A forced rerun reads the marker and never calls the model again.
+  await w.call('Ai/request', {
+    opId: 'r2',
+    kind: 'plan',
+    threadId: 'acct-1:T-plans',
+    force: true,
+  });
+  for (let i = 0; i < 6; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    const state = w.engine.services.store.read(q =>
+      q.get<{ state: string }>("SELECT state FROM jobs WHERE kind = 'plan'"),
+    )!.state;
+    if (state !== 'running') break;
+    await new Promise(r => setTimeout(r, 0));
+  }
+  assert.equal(t.calls.length, 1, 'the recorded empty answer for this hash skips the provider');
+  w.file.cleanup();
+});

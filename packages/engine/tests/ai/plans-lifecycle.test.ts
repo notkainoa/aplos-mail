@@ -149,14 +149,68 @@ test('Plan/confirm: a refused put retried under the SAME opId confirms — one e
   w.file.cleanup();
 });
 
+test('Plan/confirm: two refused puts under the same opId release the claim every time', async () => {
+  let refuse = true;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        if (refuse)
+          throw new ContractError({ type: 'permission', message: 'Enable editing first.' });
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  const row = () =>
+    w.store.read(q =>
+      q.get<{ state: string; op_id: string | null }>('SELECT state, op_id FROM plans WHERE id = 1'),
+    )!;
+  for (const attempt of [1, 2]) {
+    await assert.rejects(
+      () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+      (e: unknown) => (e as { type?: string }).type === 'permission',
+    );
+    // The release commit carries a unique suffix: a replayed `c1:release` would leave the second
+    // refusal's claim stuck `confirming` forever.
+    assert.equal(row().state, 'open', `refusal ${attempt} hands the plan back`);
+    assert.equal(row().op_id, null);
+  }
+  refuse = false;
+  const done = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  assert.match(done.eventId, /^acct-1:primary\//, 'a later retry under the same op still confirms');
+  w.file.cleanup();
+});
+
 test('Plan/confirm: a dismiss that lands while the put is in flight refuses the confirm', async () => {
   const puts: { newRemoteId?: string }[] = [];
+  const removes: { remoteId?: string }[] = [];
   const w = await world(stubTransport(EVENT_ANSWER), {
     calendar: {
       put: async (_a: string, c: { newRemoteId?: string }) => {
         puts.push(c);
         await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
         return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+      remove: async (_a: string, ref: { remoteId?: string }) => {
+        removes.push(ref);
+        return { kind: 'saved' as const, upserts: [], removals: [{ remoteId: ref.remoteId }] };
       },
     },
   });
@@ -185,6 +239,8 @@ test('Plan/confirm: a dismiss that lands while the put is in flight refuses the 
   );
   const row = w.store.read(q => q.get<{ state: string }>('SELECT state FROM plans WHERE id = 1'))!;
   assert.equal(row.state, 'dismissed', 'the mid-flight dismiss stands');
+  assert.equal(removes.length, 1, 'the orphaned event is deleted — no plan can ever point at it');
+  assert.equal(removes[0].remoteId, puts[0].newRemoteId, 'the event the put created is removed');
   w.file.cleanup();
 });
 
@@ -329,9 +385,239 @@ test('Event/extract: open plans from older mail do not stop the nothing-found re
   assert.equal(t.calls.length, 2, 'the new input was extracted once');
   assert.equal(second.plans.length, 1, 'the older open plan is still returned');
   // The marker is per input hash — a third extract must NOT call the model even though the thread's
-  // open plan list was never empty.
+  // open plan list was never empty. Its answer mirrors the extract that recorded the marker: the
+  // thread's open proposals, so the marker hit is the same list the second call returned.
   const third = await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
-  assert.equal(third.plans.length, 0);
+  assert.equal(third.plans.length, 1, 'a recorded empty answer still returns the open plans');
+  assert.equal(third.plans[0].id, second.plans[0].id);
   assert.equal(t.calls.length, 2, 'the recorded empty answer for THIS hash skips the model');
+  w.file.cleanup();
+});
+
+test('Event/extract: a date-filter empty with an older open plan answers the same list every call', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const first = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  assert.equal(first.plans.length, 1);
+  // The dated message disappears; an undated reply remains — the date filter keeps this off the model.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      { kind: 'messageDelete', accountId: 'acct-1', remoteId: 'm1' } as never,
+      msg('m2', 'T-plans', 6, { subject: 'Re: plans', snippet: 'sounds good, see you there' }),
+    ],
+  });
+  const second = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
+  assert.equal(second.plans.length, 1, 'the filter-empty path answers like the write path did');
+  assert.equal(second.plans[0].id, first.plans[0].id);
+  assert.equal(t.calls.length, 1, 'undated mail never reaches the model');
+  const third = await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
+  assert.deepEqual(
+    third.plans.map(p => p.id),
+    second.plans.map(p => p.id),
+    'a marker replay returns the same answer — identical mail, identical list',
+  );
+  assert.equal(t.calls.length, 1);
+  w.file.cleanup();
+});
+
+test('Plan/confirm: a row still confirming keeps the event for its same-opId retry (no sweep)', async () => {
+  const removes: { remoteId?: string }[] = [];
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => ({
+        kind: 'saved' as const,
+        upserts: [{ remoteId: c.newRemoteId, inserted: true }],
+        removals: [],
+      }),
+      remove: async (_a: string, ref: { remoteId?: string }) => {
+        removes.push(ref);
+        return { kind: 'saved' as const, upserts: [], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  // The settle commit's opId IS the caller's opId: a commit already recorded under 'c1' replays the
+  // settle away, leaving the row `confirming` — its event must stay for the retry to settle.
+  w.store.commit({
+    opId: 'c1',
+    origin: 'local',
+    writes: [{ kind: 'meta', key: 'some-key', value: 'v' } as never],
+  });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+  );
+  const row = w.store.read(q =>
+    q.get<{ state: string; op_id: string | null }>('SELECT state, op_id FROM plans WHERE id = 1'),
+  )!;
+  assert.equal(row.state, 'confirming', 'the claim stands for a retry');
+  assert.equal(removes.length, 0, 'a still-confirming row is never swept');
+  w.file.cleanup();
+});
+
+test('Plan/confirm: a shared opId cannot collide with an Event/set id; a read-back is never swept', async () => {
+  const puts: { newRemoteId?: string }[] = [];
+  const removes: { remoteId?: string; etag?: string }[] = [];
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        puts.push(c);
+        // The second put (the confirm's) is dismissed mid-flight and answers as a 409 read-back of
+        // the namespaced id — only `inserted: false` says it was NOT this call's insert.
+        if (puts.length === 2) {
+          await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
+          return {
+            kind: 'saved' as const,
+            upserts: [{ remoteId: c.newRemoteId, inserted: false, etag: 'e-foreign' }],
+            removals: [],
+          };
+        }
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+      remove: async (_a: string, ref: { remoteId?: string; etag?: string }) => {
+        removes.push(ref);
+        return { kind: 'saved' as const, upserts: [], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  // An Event/set under opId 'op-1' names its event from the bare op; a Plan/confirm under the same
+  // opId must name a DIFFERENT remote id (the `plan:` prefix), or a sweep could hit the owner's event.
+  await w.call('Event/set', {
+    opId: 'op-1',
+    change: {
+      type: 'create',
+      calendarId: 'acct-1:primary',
+      fields: {
+        title: 'Owner event',
+        start: { type: 'utc', utc: 1_800_000_000_000 },
+        end: { type: 'utc', utc: 1_800_003_600_000 },
+        allDay: false,
+      },
+    },
+  });
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'op-1', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+    'the mid-flight dismiss still refuses the confirm',
+  );
+  const { eventIdForOp } = await import('../../src/calendar/event-id');
+  assert.equal(
+    puts[0].newRemoteId,
+    await eventIdForOp('acct-1', 'op-1'),
+    'Event/set names the event from the bare opId',
+  );
+  assert.equal(
+    puts[1].newRemoteId,
+    await eventIdForOp('acct-1', 'plan:op-1'),
+    'Plan/confirm names its event in its own id space',
+  );
+  assert.equal(removes.length, 0, 'a provider read-back of a pre-existing event is never swept');
+  w.file.cleanup();
+});
+
+// Opus's end-to-end probe: an Event/set and a Plan/confirm that share an opId, a mid-flight dismiss,
+// and a provider-style 409 read-back. On the un-namespaced id this deleted the owner's event.
+test('PROBE: Plan/confirm reusing an Event/set opId + mid-flight dismiss must not delete the owner event', async () => {
+  const events = new Map<string, string>();
+  const removed: string[] = [];
+  let dismissDuringPlanPut = false;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string; fields?: { title?: string } }) => {
+        const id = c.newRemoteId!;
+        if (dismissDuringPlanPut)
+          await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
+        // Google 409 → the adapter reads back the existing event and answers saved.
+        if (!events.has(id)) events.set(id, c.fields?.title ?? '?');
+        return { kind: 'saved' as const, upserts: [{ remoteId: id, etag: 'e1' }], removals: [] };
+      },
+      remove: async (_a: string, ref: { remoteId?: string }) => {
+        removed.push(ref.remoteId!);
+        events.delete(ref.remoteId!);
+        return {
+          kind: 'saved' as const,
+          upserts: [],
+          removals: [{ remoteId: ref.remoteId! }],
+        };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  await w.call('Event/set', {
+    opId: 'X',
+    change: {
+      type: 'create',
+      calendarId: 'acct-1:primary',
+      fields: {
+        title: 'Owner event',
+        start: { type: 'utc', utc: 1_800_000_000_000 },
+        end: { type: 'utc', utc: 1_800_003_600_000 },
+        allDay: false,
+      },
+    },
+  } as never);
+  assert.equal(events.size, 1);
+  const ownerId = [...events.keys()][0];
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  dismissDuringPlanPut = true;
+  await assert.rejects(() => w.call('Plan/confirm', { opId: 'X', id: out.plans[0].id }));
+  assert.ok(events.has(ownerId), `owner event E must survive; removed=${JSON.stringify(removed)}`);
+  assert.equal(removed.length, 1, 'the orphaned plan event is still swept');
+  assert.notEqual(removed[0], ownerId, 'the sweep names only the plan-namespaced event');
   w.file.cleanup();
 });
