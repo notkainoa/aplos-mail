@@ -400,6 +400,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
     sub.stop?.();
   };
   const apply = (view: OperationView | undefined): void => {
+    if (dead) return;
     const remote = view?.remote ?? null;
     if (remote === lastRemote) return;
     lastRemote = remote;

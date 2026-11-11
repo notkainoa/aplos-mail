@@ -594,3 +594,41 @@ test('heldWrites: the toast\u2019s own Undo after the window says "That change w
     resetToasts();
   }
 });
+
+test('heldWrites: a throwing operation listener starves nobody, and unsubscribe stays gone', async () => {
+  const { control, flush, opId, engine } = await heldWrite();
+  const seen: string[] = [];
+  try {
+    const stopThrower = subscribeOperation(opId, () => {
+      seen.push('thrower');
+      throw new Error('listener bug');
+    });
+    const stopOk = subscribeOperation(opId, view => {
+      seen.push(`ok:${view?.remote ?? 'none'}`);
+    });
+    // The thrower's first call threw into nobody: both subscriptions still landed.
+    assert.equal(seen.filter(s => s === 'thrower').length, 1);
+    assert.equal(seen.filter(s => s.startsWith('ok:')).length, 1);
+    const op = engine.fixture.ops.get(opId)?.operation;
+    assert.ok(op);
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'syncing' } }],
+    });
+    await flush();
+    assert.equal(
+      seen.filter(s => s === 'ok:syncing').length,
+      1,
+      'the sibling still heard the frame past the throw',
+    );
+    stopThrower();
+    stopOk();
+    seen.length = 0;
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'synced' } }],
+    });
+    await flush();
+    assert.deepEqual(seen, [], 'unsubscribed listeners stay gone');
+  } finally {
+    resetToasts();
+  }
+});

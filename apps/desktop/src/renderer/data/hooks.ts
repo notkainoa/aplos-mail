@@ -281,8 +281,17 @@ export function createHooks(layer: DataLayer): DataRuntime {
     listener: (view: OperationView | undefined) => void,
   ): () => void {
     const store = operationStore(layer, opId);
-    listener(store.getSnapshot());
-    return store.subscribe(() => listener(store.getSnapshot()));
+    // A listener's own throw stays with it: never into emit(), where it would starve the listeners
+    // behind it and escape into the frame that notified (nothing sensitive is logged).
+    const notify = () => {
+      try {
+        listener(store.getSnapshot());
+      } catch {
+        /* the listener owns its errors */
+      }
+    };
+    notify();
+    return store.subscribe(notify);
   }
 
   function useHold(scope: string) {
