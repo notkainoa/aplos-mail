@@ -312,9 +312,48 @@ function unmarkHeldTarget(target: string | undefined, opId: string): void {
   if (target !== undefined && heldTargets.get(target) === opId) heldTargets.delete(target);
 }
 
+/**
+ * The event ids an open operation-failure toast was raised for: submitting a newer write on the
+ * same event retires the stale toast and disarms its Retry — re-sending the OLD change on top of
+ * the new one would skip the clash check (a stale delete could remove the newer-edited event)
+ * (review17). Entries leave when the watch resolves the failure or when a newer write retires it;
+ * `releaseHeldWrites` clears the map on unmount.
+ */
+const failedOps = new Map<string, Set<string>>();
+
+/** Op ids whose failure toast a newer write retired: their Retry must answer nothing. */
+const staleRetries = new Set<string>();
+
+function rememberFailedOp(spec: WriteSpec): void {
+  if (spec.goneEventId === undefined) return;
+  const ids = failedOps.get(spec.goneEventId) ?? new Set<string>();
+  ids.add(spec.opId);
+  failedOps.set(spec.goneEventId, ids);
+}
+
+function forgetFailedOp(spec: WriteSpec): void {
+  if (spec.goneEventId === undefined) return;
+  const ids = failedOps.get(spec.goneEventId);
+  if (ids?.delete(spec.opId) && ids.size === 0) failedOps.delete(spec.goneEventId);
+}
+
+/** The owner sent the event again: its older failures' toasts close and their Retries go inert. */
+function retireFailedOps(eventId: string | undefined): void {
+  if (eventId === undefined) return;
+  const ids = failedOps.get(eventId);
+  if (!ids) return;
+  failedOps.delete(eventId);
+  for (const opId of ids) {
+    staleRetries.add(opId);
+    dismissToast(`${opId}:failed`);
+  }
+}
+
 /** The screen unmounting releases every guard — the next mount starts clean. */
 export function releaseHeldWrites(): void {
   heldTargets.clear();
+  failedOps.clear();
+  staleRetries.clear();
 }
 
 /** The event a write's hold would guard — only a write that asks for one can clash. */
@@ -375,6 +414,8 @@ export function calendarUndoRefused(opId: string, error: unknown): void {
  * queue a second change. A refused retry is its own plain sentence (the engine's words are already safe).
  */
 function retryOperation(ports: EffectPorts, opId: string): void {
+  // A stale Retry — the owner already sent the event again — answers nothing (review17).
+  if (staleRetries.has(opId)) return;
   void ports.operationRetry({ opId }).then(undefined, error => {
     const body = toErrorBody(error);
     // A refused retry keeps the surface it came from — persistent with its Retry and Dismiss —
@@ -470,8 +511,12 @@ function writeFailed(
   if (failure.enableEditing) editingNotice(ports, spec.accountId);
   else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
   else if (!reopened && !restored)
-    if (atOperation) opFailureToast(spec.opId, failure, ports);
-    else failureToast(spec.opId, failure, retry);
+    if (atOperation) {
+      opFailureToast(spec.opId, failure, ports);
+      // Register the open failure by its event: a newer write on it retires this toast and its
+      // Retry, so a stale Operation/retry can never replay the old change (review17).
+      rememberFailedOp(spec);
+    } else failureToast(spec.opId, failure, retry);
   if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
@@ -559,6 +604,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
       // unheld write's overlay already dropped at its receipt.
       if (held) spec.entryIds.forEach(id => ui.settleAfterFrame(id, spec.opId));
       dismissToast(`${spec.opId}:failed`);
+      forgetFailedOp(spec);
       off();
     }
   };
@@ -591,6 +637,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
       spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
       dismissToast(spec.opId);
       dismissToast(`${spec.opId}:failed`);
+      forgetFailedOp(spec);
       off();
     } else if (remote === 'syncing') opSent(false, view);
     else if (remote === 'synced' || remote === 'applied') opSent(true, view);
@@ -605,6 +652,9 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
 
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
 function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
+  // A newer write on the event retires any still-open failure of an older one: its toast closes
+  // and its Retry disarms before this write ever lands (review17).
+  retireFailedOps(spec.goneEventId);
   // A write that can be held guards its target from SUBMIT, not from the receipt: a second press
   // inside one round trip fails fast — two full writes interleaved in the engine's hold queue
   // would tell guests twice (review17). Only where a watch exists to end the guard, else nothing

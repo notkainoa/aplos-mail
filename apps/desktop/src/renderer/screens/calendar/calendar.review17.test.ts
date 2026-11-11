@@ -321,3 +321,30 @@ test('review17: a second press inside one round trip fails fast — never two he
     resetToasts();
   }
 });
+
+test('review17: a new write on the event retires its stale failed-op toast and its Retry', async () => {
+  const { control, flush, calls } = await heldWrite(heldFailure('calendar.late'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    const stale = failedToast();
+    assert.ok(stale?.persistent, 'the failed hold is up');
+    // The owner edits the event again and sends it: the new write must retire the old op's
+    // failure toast — its Retry would re-send the OLD change on top of the new one, skipping
+    // the clash check (and a stale delete could remove the newer-edited event).
+    runCalendarEffect(guestedFx('two'), watchedPorts(), testUi());
+    await flush();
+    assert.equal(
+      getToasts().find(t => t.id === stale!.id),
+      undefined,
+      'the stale failure toast is gone',
+    );
+    const retries = () => calls.filter(c => c.method === 'Operation/retry').length;
+    runToastAction(stale!.id, 'retry');
+    await flush();
+    assert.equal(retries(), 0, 'the disarmed Retry is inert');
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
