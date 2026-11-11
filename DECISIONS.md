@@ -1877,3 +1877,19 @@ Follows the eng-contract DECIDED on the seam (STATUS 2026-11-10 13:58); eng-view
 - **Chosen: undo cancels, nothing else.** While `queued`, undo marks it `cancelled`: Google never hears of it, no guest is emailed, and the re-read before each send means an undo that lands while an earlier hold is sending still stops the next one. Once sending or sent, undo answers `conflict` ("has been sent, so it cannot be undone") instead of claiming to restore. Retry is offered for a failed hold and sends at once (the person pressed Retry), including a conflict at send time (`calendar.conflict`, the event changed during the window).
 - **Not built: an engine-side optimistic overlay.** A held create returns no `event` (nothing exists yet) and the local row is not touched during the window; the screen shows its own pending state from the receipt (`undoUntil`) and the calendar updates when the send is confirmed (the port commits the saved facts). Writing a placeholder row and rolling it back would need a pending marker on `events` (a schema change, `eng-store`) and a revert path that races the sync; the window is eight seconds. Revisit if the owner finds the pause noticeable.
 - **Engine core:** the always-loaded part is `holds-core.ts` (+2.2 KB, 464,005 of 470,000); the working half (`holds.ts`) is a lazy module listed in `tests/portability.test.ts`.
+## 2026-11-10: the three idle budget rows are recorded from the first resident-mode measurements (plat-ci)
+
+`scripts/audit/measure-idle.mjs` launches a packaged app headless in test mode on a FRESH, EMPTY data dir (no account, no mailbox, in-memory keychain), closes every window over CDP to reach resident mode, waits 60 s, samples the engine utility process for 10 minutes (`ps` every 5 s) and reads wake-ups from a 30 s `top` sample (median). Because the profile is empty, nothing syncs during the settle and the numbers are the lightest possible idle, not an idle with a signed-in mailbox: treat them as a floor. Two complete runs on one Mac (a shared agent Mac, not the owner's quiet machine), the hand-check build of revamp 665ea4fe (ad-hoc, `~/Applications-test`), 120 samples each, no engine restart:
+
+| Run | Script | Engine RSS median (max) | CPU over 600 s | Wake-ups per s |
+|---|---|---|---|---|
+| 1 | first version (wake-ups from 5 one-second samples) | 97.3 MB (122.6) | 0.77 percent | 2 |
+| 2 | PR head (30 one-second samples, median 4, max 7) | 123.1 MB (131.7) | 0.74 percent | 4 |
+
+The RSS medians differ by 26 MB between two identical runs, so one run is not a limit. `budgets.json` records run 2 (the PR-head script):
+
+- `idle.engine-rss` (eng-host): 123.1 MB, `ps` rss, not Activity Monitor's footprint.
+- `idle.cpu-10min` (eng-host): 0.74 percent of one core over the 600 s window (cputime delta over wall time).
+- `idle.wakeups` (eng-host): 4 per second (`top` IDLEW median of a 30 s sample).
+
+Each row keeps its gate `record`: these are baselines from an empty profile, not limits. Turning them into tighten-only limits needs headroom, repeated runs on the owner's Mac and a run with a synced account, which is eng-host's call. The engine process is found by the `node.mojom.NodeService` marker (the preferred `--aplos-engine=real` marker is not on the real utility's command line); only one such utility exists. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (about 11.5 minutes).

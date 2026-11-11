@@ -71,6 +71,19 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
   'calendar.readOnly': {
     message: "This calendar doesn't accept changes.",
   },
+  // A create's op id met an event that was deleted since: the same press must not quietly bring it back.
+  'calendar.opReused': {
+    message: 'That event was deleted. Create it again as a new event.',
+  },
+  // A series time change on a wall-clock time Aplos has no zone for: only the series itself can say.
+  'calendar.floatingSeries': {
+    message: 'Change the time of every event from the series itself.',
+  },
+  // "This and following" is never offered; only a stale surface reaches this.
+  'event.followingUnsupported': {
+    message:
+      "Changing this and all following events isn't available. Change this event, or every event.",
+  },
   'event.allDayMismatch': {
     message: "Those times didn't fit the event. Check the start and end, then try again.",
     keepDraft: true,
