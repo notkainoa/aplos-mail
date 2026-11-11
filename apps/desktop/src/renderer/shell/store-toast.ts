@@ -31,6 +31,7 @@ const toastStore = createStore<readonly ToastData[]>([]);
 const live = new Map<string, PushedToast>();
 let runCommand: ((commandId: string) => unknown) | null = null;
 let undoOperation: ((opId: string) => boolean) | null = null;
+let undoRefusal: ((opId: string, error: unknown) => void) | null = null;
 
 /** True for a toast that must never be silently replaced or evicted. */
 export function isUndoToast(toast: ToastData): boolean {
@@ -109,6 +110,18 @@ export function setToastUndoRunner(runner: ((opId: string) => boolean) | null): 
   undoOperation = runner;
 }
 
+/** Wires the surface a refused toast Undo reports to (a lane registers; nothing registered means a refusal stays silent, as before). */
+export function setToastUndoRefusal(
+  refusal: ((opId: string, error: unknown) => void) | null,
+): void {
+  undoRefusal = refusal;
+}
+
+/** Hands a refused toast Undo to the registered lane; KeysProviders' undo runner calls it. */
+export function toastUndoRefused(opId: string, error: unknown): void {
+  undoRefusal?.(opId, error);
+}
+
 /** True when the registry's result says the command ran. */
 function commandRan(result: unknown): boolean {
   return (
@@ -143,6 +156,7 @@ export function resetToasts(): void {
   live.clear();
   runCommand = null;
   undoOperation = null;
+  undoRefusal = null;
   publish();
 }
 

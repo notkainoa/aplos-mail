@@ -314,4 +314,24 @@ export const calendarStates: readonly VisualState[] = [
     mockup: 'calendar-week.html (default)',
     filled: 0,
   },
+  {
+    id: 'write-hold-failed-late',
+    frame: 'shell',
+    title:
+      'Calendar: the held change never left — check the event, then send it again; Retry sends the failed hold',
+    components: [...GRID, 'Toast'],
+    design: '7.8, 7.15, 10',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
+  {
+    id: 'write-hold-refused',
+    frame: 'shell',
+    title:
+      'Calendar: a second change while the earlier one is still waiting — the editor re-opens on the draft with why',
+    components: [...GRID, 'Dialog'],
+    design: '7.8, 7.15, 10',
+    mockup: 'calendar-event.html (editor)',
+    filled: 0,
+  },
 ];
