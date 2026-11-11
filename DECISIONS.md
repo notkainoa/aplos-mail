@@ -1969,6 +1969,12 @@ Context: two rule sets for the same narrow-pane behaviour landed within an hour 
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
 
+## 2026-11-11 — prov-cal: held calendar writes, two small rules from the third review
+
+- **Chosen:** undo of a hold that failed as `calendar.uncertain` is refused (`conflict`: "may already have been sent"). The change may already be at Google; recording it as "undone" would be a claim nobody can keep.
+- **Chosen:** a whole-series hold (including an "All events" edit opened from one occurrence, which names that occurrence but has scope `series`) and a `following` hold (which rewrites every later occurrence) clash with a hold on any occurrence of the same event (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not. Only scope `occurrence` is about one occurrence, the way `targetId` picks Google's target.
+- **Open ticket (not a blocker):** a recurrence id with no `Z` is read in the calendar's zone for the "already started" check, not in the event's own zone.
+
 ## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
 
 Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
@@ -1978,3 +1984,8 @@ Decision: the spec is rewritten — the card gets focus by click / `.focus()` an
 ## 2026-11-11: The Low band's owner test stays per thread, with the account half built once (ui-home, taking over eng-views' #475 on the integrator's review)
 
 #475 made the "sent a non-draft from-me message" half of `NON_OWNER` global to build it once per statement. That changed the rule: an alias that sent in thread A became the owner in thread B, where it only appears as a participant, so a shared or list address once replied from vanished from the Low band, and the band disagreed with `participants[].me` (`rows.ts`, still per thread). The rule stays per thread (the same as #464): the accounts set is uncorrelated (built once per statement) and the from-me half is a `NOT EXISTS` probe on the thread's own messages by `thread_id`. The slow oracle (`tests/views/reference.ts`) keeps the per-thread rule, and `people.test.ts` pins it with a two-thread case. Measured on a synthetic 4,000-thread Low band (four participants and an owner message each), best of 10 runs: about 190-250 ms against 323 ms for #464's correlated UNION and 170 ms for the wrong global set, on a loaded machine.
+
+## 2026-11-11 — prov-cal: Retry never repeats a change whose answer was lost
+
+- **Chosen (integrator's decision):** Retry on a hold that failed as `calendar.uncertain` is refused (`conflict` / `calendar.checkFirst`: "Check your calendar: this change may already have gone through. Make it again if it is missing."). A create is idempotent (its event id is derived from the op), an edit is guarded by `If-Match`, but an RSVP email is not, so one rule covers all. A hold waiting for its account to start reads `queued` but no longer `undoable`, because its window has closed.
+- **What the owner can see, in one sentence each:** a failed calendar change is never sent again unless they press Retry; after a reload only a screen that kept the change's id can see it; and a change more than 15 minutes late, or for an event that has already started, also waits for Retry.

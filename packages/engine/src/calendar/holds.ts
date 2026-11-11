@@ -185,11 +185,26 @@ function nextOccurrence(
 }
 
 /** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
-function targetOf(call: HeldCall | undefined): string | undefined {
+function targetOf(call: HeldCall | undefined): { event: string; occurrence: string } | undefined {
   if (!call) return undefined;
   const ref = call.op === 'put' ? call.change : call.ref;
   if (!ref.remoteId) return undefined; // a create has no event yet
-  return [call.account, ref.calendarRemoteId, ref.remoteId, ref.recurrenceId ?? ''].join('|');
+  return {
+    event: [call.account, ref.calendarRemoteId, ref.remoteId].join('|'),
+    // Only an `occurrence` change is about one occurrence (the way `targetId` picks Google's target). A whole-series
+    // change, even one opened from an occurrence, and a `following` change (which rewrites every later one) reach all.
+    occurrence: ref.scope === 'occurrence' ? (ref.recurrenceId ?? '') : '',
+  };
+}
+
+/** Two holds clash when they change the same event, and either is a whole-series change or both name one occurrence. */
+function clash(a: ReturnType<typeof targetOf>, b: ReturnType<typeof targetOf>): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.event === b.event &&
+    (a.occurrence === '' || b.occurrence === '' || a.occurrence === b.occurrence)
+  );
 }
 
 /** The owner's undo window (the same one mail sends use). */
@@ -232,13 +247,13 @@ function save(deps: Deps, record: HoldRecord): void {
   deps.changed();
   // Tell every window the operation moved (the same object `Operation/get` answers), best effort.
   try {
-    deps.frames.emit({ frame: 'operation', operation: operationOf(kept) });
+    deps.frames.emit({ frame: 'operation', operation: operationOf(kept, deps.clock.now()) });
   } catch {
     // A frame is a convenience; the record is already saved.
   }
 }
 
-function operationOf(r: HoldRecord): Operation {
+function operationOf(r: HoldRecord, now: number): Operation {
   return {
     opId: r.opId,
     kind: r.method,
@@ -246,8 +261,10 @@ function operationOf(r: HoldRecord): Operation {
     state: r.state,
     appliedState: r.appliedState,
     ...(r.error ? { error: r.error } : {}),
-    undoable: r.state === 'queued',
-    ...(r.state === 'queued' ? { undoUntil: r.undoUntil } : {}),
+    // Undoable while its window is open; a hold waiting for its account to start is past its window (it is still only
+    // queued, so undo still cancels it, but the Undo toast has long gone).
+    undoable: r.state === 'queued' && r.undoUntil > now,
+    ...(r.state === 'queued' && r.undoUntil > now ? { undoUntil: r.undoUntil } : {}),
     createdAt: r.createdAt,
     scope: r.scope,
   };
@@ -365,18 +382,21 @@ export function createHolds(deps: Deps) {
       };
       const same = readRecord(deps.store, spec.opId);
       // The same op id again is the same change (a replay): answer its receipt, never a second hold.
-      if (same)
+      if (same) {
+        // The receipt a screen would read now: no Undo advertised for a window that has closed.
+        const op = operationOf(same, deps.clock.now());
         return {
           opId: same.opId,
           appliedState: same.appliedState,
-          undoable: same.state === 'queued',
-          ...(same.state === 'queued' ? { undoUntil: same.undoUntil } : {}),
+          undoable: op.undoable,
+          ...(op.undoUntil !== undefined ? { undoUntil: op.undoUntil } : {}),
         };
+      }
       const target = targetOf(spec.call);
       if (
         target &&
         readAll(deps.store).records.some(
-          r => (r.state === 'queued' || r.state === 'syncing') && targetOf(r.call) === target,
+          r => (r.state === 'queued' || r.state === 'syncing') && clash(targetOf(r.call), target),
         )
       )
         throw new ContractError({
@@ -397,7 +417,7 @@ export function createHolds(deps: Deps) {
     get(opIds: readonly string[]): Operation[] {
       return opIds.flatMap(id => {
         const r = readRecord(deps.store, id);
-        return r ? [operationOf(r)] : [];
+        return r ? [operationOf(r, deps.clock.now())] : [];
       });
     },
 
@@ -413,6 +433,11 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled') throw conflict('This change was already undone.');
       if (r.state === 'syncing' || r.state === 'synced')
         throw conflict('This change has been sent, so it cannot be undone.');
+      // Its answer was lost: the change may already be at Google, so "undone" would be a claim nobody can keep.
+      if (r.state === 'failed' && r.error?.reasonCode === 'calendar.uncertain')
+        throw conflict(
+          'This change may already have been sent, so it cannot be undone. Check the calendar.',
+        );
       save(deps, { ...r, state: 'cancelled' });
       return { opId: args.undoOpId, appliedState: stateOf(deps.store), undoable: false };
     },
@@ -428,11 +453,15 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled')
         throw conflict('This change was undone, so it cannot be retried.');
       if (r.state !== 'failed') throw conflict('Only a failed change can be retried.');
-      // An uncertain change may already be at Google (and its guests told): a second send could tell them twice.
+      // An uncertain change may already be at Google (and its guests told): a second send could tell them twice. The
+      // owner checks the calendar and makes the change again if it is missing.
       if (r.error?.reasonCode === 'calendar.uncertain')
-        throw conflict(
-          'Check your calendar: this change may already have gone through. Make it again if it is missing.',
-        );
+        throw new ContractError({
+          type: 'conflict',
+          message:
+            'Check your calendar: this change may already have gone through. Make it again if it is missing.',
+          reasonCode: 'calendar.checkFirst',
+        });
       // Never beside a send already under way in this process (a second press while the first is out).
       if (inflight.has(r.opId)) throw conflict('That change is being sent.');
       await send(deps, r, inflight);
