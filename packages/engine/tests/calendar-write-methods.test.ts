@@ -769,3 +769,60 @@ test('a series whose own zone the engine does not know is refused, not guessed a
   );
   assert.deepEqual(w.calls, []);
 });
+
+test('a utc pair straddling the fall-back hour keeps its ELAPSED length, never end-before-start', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  // The Oct 28 occurrence moved to Nov 1 01:30-01:00 in the repeated hour: 08:30Z-09:00Z is a real 30 minutes,
+  // but its wall readings run 01:30 -> 01:00 (measuring the length in wall time writes end BEFORE start).
+  const startUtc = Date.UTC(2026, 10, 1, 8, 30);
+  const endUtc = Date.UTC(2026, 10, 1, 9, 0);
+  await w.call(
+    'Event/set',
+    seriesEdit('ev1', {
+      start: { type: 'utc', utc: startUtc },
+      end: { type: 'utc', utc: endUtc },
+    }),
+  );
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // The master keeps 10:00 on its own day moved by the wall shift; its end is the elapsed 30 minutes later.
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-31T01:30:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-31T02:00:00',
+    timeZone: LA,
+  });
+});
+
+test('a utc change on a series whose zone is unknown, or on an all-day series, is refused', async () => {
+  const w = await world();
+  seedSeries(w, 'mars2', 'Mars/Base');
+  const utcPair = {
+    start: { type: 'utc', utc: Date.UTC(2026, 10, 1, 18, 0) },
+    end: { type: 'utc', utc: Date.UTC(2026, 10, 1, 18, 30) },
+  };
+  await rejects(
+    w.call('Event/set', seriesEdit('mars2', utcPair)),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  // An all-day series (ev2) takes whole-day times only: instants have no safe offset for it.
+  await rejects(
+    w.call('Event/set', {
+      opId: 'utc-allday',
+      change: {
+        type: 'update',
+        id: 'acct-1:primary/ev2@20261028',
+        scope: 'series',
+        fields: { ...utcPair, allDay: true } as never,
+      },
+    }),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  assert.deepEqual(w.calls, []);
+});
