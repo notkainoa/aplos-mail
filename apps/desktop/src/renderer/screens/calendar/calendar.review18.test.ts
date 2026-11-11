@@ -103,7 +103,7 @@ async function heldWrite(fail?: {
 }) {
   const env = await bootRecorded();
   resetToasts();
-  if (fail) env.engine.fixture.failures.push(fail);
+  if (fail) env.engine.fixture.failures.push({ afterMs: 0, ...fail });
   const ui = testUi();
   runCalendarEffect(guestedFx('one'), watchedPorts(), ui);
   await env.flush();
