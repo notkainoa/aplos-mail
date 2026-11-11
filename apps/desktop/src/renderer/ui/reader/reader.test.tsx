@@ -227,7 +227,7 @@ describe('ThreadMessage', () => {
     );
   });
 
-  test('an earlier message is a compact card: one button with the excerpt, aria-expanded, no body', () => {
+  test('an earlier message is a compact card: its own first words, a visible Show full button, aria-expanded, no body', () => {
     const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
     const folded = render(
       <ThreadMessage
@@ -243,12 +243,14 @@ describe('ThreadMessage', () => {
     assert.match(folded, /data-fold="folded"/);
     assert.match(
       folded,
-      /<button type="button" class="ui-thread-message__toggle" aria-expanded="false"/,
+      /<button type="button" class="ui-thread-message__toggle" aria-expanded="false"[^>]*aria-label="Show full, message from Jordan Park"[^>]*aria-describedby="e1-excerpt"/,
     );
+    assert.match(folded, />Show full<\/span>/, 'the visible hint');
     assert.match(
       text(folded),
-      /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday…$/,
+      /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday… Show full$/,
     );
+    assert.match(folded, /id="e1-excerpt"/, 'the button is described by the excerpt');
     assert.doesNotMatch(folded, /ui-thread-message__body/, 'a folded card loads and draws no body');
     const open = render(
       <ThreadMessage
@@ -264,6 +266,9 @@ describe('ThreadMessage', () => {
     );
     assert.match(open, /data-fold="open"/);
     assert.match(open, /aria-expanded="true"/);
+    assert.match(open, /aria-label="Show less, message from Jordan Park"/);
+    assert.match(open, />Show less<\/span>/, 'the same place reads Show less once open');
+    assert.doesNotMatch(open, /aria-describedby/, 'no excerpt to describe it while open');
     assert.doesNotMatch(text(open), /never shown/);
     assert.match(text(open), /The whole brief\./);
   });
@@ -315,7 +320,7 @@ describe('ThreadMessage', () => {
     );
   });
 
-  test('the toggle is the same button, first in the head, folded or open (focus survives a fold)', () => {
+  test('the toggle is the same button, last in the head at the same place, folded or open (focus survives a fold)', () => {
     const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
     const card = (open: boolean) =>
       render(
@@ -323,6 +328,8 @@ describe('ThreadMessage', () => {
           id="e5"
           from="Jordan Park"
           toLabel="to you"
+          leading={<span className="mark" />}
+          recipients={open ? <span className="to" /> : undefined}
           date="2026-10-20T09:00:00-07:00"
           cursor={false}
           fold={{ ...fold, open }}
@@ -330,13 +337,31 @@ describe('ThreadMessage', () => {
           body={<p>All of it.</p>}
         />,
       );
-    const head = (markup: string) =>
-      markup.slice(markup.indexOf('<header'), markup.indexOf('<button') + 7);
-    assert.equal(head(card(false)), head(card(true)), 'one button at one place in the tree');
-    assert.match(
-      card(false),
-      /<header[^>]*><button type="button" class="ui-thread-message__toggle"/,
-    );
+    // Same tree position: after the line (and the excerpt's slot, null when open), the head's last child.
+    const children = (markup: string) => {
+      const head = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'));
+      return [
+        ...head.matchAll(
+          /<(span|button)(?: id="[^"]*")? (?:type="button" )?class="(ui-thread-message__(?:line|excerpt|toggle))"/g,
+        ),
+      ].map(m => m[2]);
+    };
+    assert.deepEqual(children(card(false)), [
+      'ui-thread-message__line',
+      'ui-thread-message__excerpt',
+      'ui-thread-message__toggle',
+    ]);
+    assert.deepEqual(children(card(true)), [
+      'ui-thread-message__line',
+      'ui-thread-message__toggle',
+    ]);
+    for (const markup of [card(false), card(true)])
+      assert.match(markup, /<\/span><button type="button" class="ui-thread-message__toggle"/);
+    // An opened earlier message has the card's header row: the mark, the name, the time, the To circles.
+    const open = card(true);
+    assert.match(open, /data-layout="card"/);
+    assert.match(open, /class="mark"/);
+    assert.match(open, /class="to"/);
   });
 
   test('a message you just sent carries the undo tray in place', () => {
