@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Idle-budget measurement (plan 40 Q3 deliverable 6; fills budgets.json rows idle.engine-rss,
 // idle.cpu-10min and idle.wakeups). macOS only. Usage:
-//   node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--json] [--out file.json]
+//   node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--wakeup-seconds 30] [--json] [--out file.json]
 //
 // Launches the packaged app the way apps/desktop/scripts/verify-hardening-real-engine.mjs does:
 // APLOS_TEST=1 + APLOS_ENGINE=real, a fresh mkdtemp APLOS_DATA_DIR and a random loopback
 // --remote-debugging-port on argv. Never `open`, never a visible window, and never the real keychain
 // or data dir (test mode uses Chromium's in-memory keychain and the given data dir;
-// APLOS_TEST_KEYCHAIN stays unset). A release build ignores APLOS_TEST and refuses the debug port
+// APLOS_TEST_KEYCHAIN, APLOS_TEST_SHOW_WINDOWS and APLOS_TEST_CDP_PORT are stripped from the child
+// env so a leaked parent setting can never show windows or touch the login keychain). A release
+// build ignores APLOS_TEST and refuses the debug port
 // with exit 78 — this needs a local build (npm run package -w @aplos/desktop).
 // Once "engine: real engine ready" is printed, every page window is closed over CDP
 // (Runtime.evaluate window.close(), like verify-resident.mjs; the /json/close endpoint is the
@@ -17,8 +19,9 @@
 // After a --settle-second wait (default 60, so startup and first-sync work is not counted as idle),
 // for --minutes it runs `ps -o pid=,rss=,pcpu=,time= -p <engine,main,renderers>` every --interval
 // seconds (pid= is added to the plan's column list so one call covers all of them) and ends with a
-// single `top -l 6 -pid <engine> -stats pid,cpu,idlew`, reporting the median and max idle wake-ups
-// per second over samples 2-6 (the first sample is invalid for CPU per man top). powermetrics needs
+// single `top -l <wakeup-seconds+1> -pid <engine> -stats pid,cpu,idlew`, reporting the median and
+// max idle wake-ups per second over samples 2..<wakeup-seconds+1> (the first sample is invalid for
+// CPU per man top); --wakeup-seconds defaults to 30 and must be at least 5. powermetrics needs
 // sudo, so energy stays a hand check (the plan's note). RSS here is `ps rss`, not Activity Monitor's
 // footprint — fine for tighten-only budgets. MB is MiB: ps rss is in KB. The engine is the main
 // pid's --type=utility child; the pick prefers the --aplos-engine=real argument (together with the
@@ -45,7 +48,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const usage =
-  'usage: node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--json] [--out file.json]';
+  'usage: node scripts/audit/measure-idle.mjs <path-to-Aplos Mail.app> [--minutes 10] [--interval 5] [--settle 60] [--wakeup-seconds 30] [--json] [--out file.json]';
 // KB per MB: ps rss prints kilobytes, so rssKb / 1024 is MiB — the same MB measure-budgets uses.
 const kbPerMb = 1024;
 const tempPrefix = 'aplos-idle-';
@@ -60,7 +63,7 @@ const quitGraceMs = 2_000;
 const sigtermWaitMs = 15_000;
 const devToolsIoTimeoutMs = 5_000;
 const maxOutputLines = 500;
-const topSampleCount = 6;
+const defaultWakeupSeconds = 30;
 
 // ---------- pure functions (unit-tested in tests/measure-idle.test.mjs) ----------
 
@@ -221,9 +224,17 @@ const numberFlag = (flag, value, minimum) => {
   return number;
 };
 
-/** CLI args -> { app, minutes, interval, settle, json, out }; throws on anything unexpected. */
+/** CLI args -> { app, minutes, interval, settle, wakeupSeconds, json, out }; throws on bad input. */
 export function parseArgs(argv) {
-  const options = { app: null, minutes: 10, interval: 5, settle: 60, json: false, out: null };
+  const options = {
+    app: null,
+    minutes: 10,
+    interval: 5,
+    settle: 60,
+    wakeupSeconds: defaultWakeupSeconds,
+    json: false,
+    out: null,
+  };
   const args = [...argv];
   while (args.length) {
     const arg = args.shift();
@@ -231,6 +242,7 @@ export function parseArgs(argv) {
     else if (arg === '--minutes') options.minutes = numberFlag(arg, args.shift(), 1);
     else if (arg === '--interval') options.interval = numberFlag(arg, args.shift(), 1);
     else if (arg === '--settle') options.settle = numberFlag(arg, args.shift(), 0);
+    else if (arg === '--wakeup-seconds') options.wakeupSeconds = numberFlag(arg, args.shift(), 5);
     else if (arg === '--out') {
       options.out = args.shift();
       if (!options.out) throw new Error('--out needs a file');
@@ -273,7 +285,7 @@ const spawned = new Set();
 // command-line match — so a helper reparented to launchd still dies and other apps stay safe.
 // Each pid is stored with its start time (`ps -o lstart=`): the OS may hand a dead helper's number to an
 // unrelated process, and the sweep only signals a pid whose start time still matches.
-const seenPids = new Map();
+export const seenPids = new Map();
 let dataDir;
 
 const startOf = pid => ps(['-o', 'lstart=', '-p', String(pid)]).trim();
@@ -285,8 +297,14 @@ function rememberPid(pid) {
   if (started) seenPids.set(pid, started);
 }
 
-/** Adds child.pid and its current ppid-descendants to seenPids. */
-function noteDescendants(child) {
+/**
+ * Adds child.pid and its current ppid-descendants to seenPids — only while the child is alive.
+ * Once it has exited its number is already reusable by the OS: recording it then would store an
+ * unrelated process with its own start time, and the sweep would SIGKILL an innocent process.
+ * Helpers the child leaves behind are already in seenPids from scans made while it lived.
+ */
+export function noteDescendants(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
   rememberPid(child.pid);
   for (const pid of descendantsOf(psTree(), child.pid)) rememberPid(pid);
 }
@@ -358,14 +376,24 @@ async function stopApp(child) {
   sweepSeenPids();
 }
 
-/** Spawns the app binary exactly like verify-hardening-real-engine.mjs and watches its output. */
-export function launchApp(exe) {
+/**
+ * Spawns the app binary exactly like verify-hardening-real-engine.mjs and watches its output.
+ * spawn() drops env entries whose value is undefined, so the APLOS_TEST_* overrides are explicitly
+ * undefined: a parent env leaking APLOS_TEST_SHOW_WINDOWS or APLOS_TEST_KEYCHAIN=login would show a
+ * window or touch the real login keychain, and a leaked APLOS_TEST_CDP_PORT would pin the debug
+ * port instead of letting argv's --remote-debugging-port=0 pick a random one. `dir` defaults to the
+ * run's mkdtemp APLOS_DATA_DIR and is a parameter only so tests can pass one.
+ */
+export function launchApp(exe, dir = dataDir) {
   const child = spawn(exe, ['--remote-debugging-port=0'], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,
+      APLOS_TEST_KEYCHAIN: undefined,
+      APLOS_TEST_SHOW_WINDOWS: undefined,
+      APLOS_TEST_CDP_PORT: undefined,
       APLOS_TEST: '1',
-      APLOS_DATA_DIR: dataDir,
+      APLOS_DATA_DIR: dir,
       APLOS_ENGINE: 'real',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -574,7 +602,7 @@ async function launchResident(options, exe, notes) {
  * One ps sample per --interval across the --minutes window; follows a restarted engine pid.
  * Returns { readings, mainKb, rendererKb, restarts, exitedEarly, enginePid }.
  */
-async function sampleWindow(options, run, enginePid, pids, rendererIds, notes) {
+async function sampleWindow({ options, run, enginePid, pids, rendererIds, notes }) {
   const state = { readings: [], mainKb: [], rendererKb: [], restarts: 0, exitedEarly: false };
   const endAt = Date.now() + options.minutes * 60_000;
   for (;;) {
@@ -637,12 +665,15 @@ async function recheckResident(run, mode, notes) {
   }
 }
 
-/** One `top -l 6` run; the engine's idle wake-ups/sec of samples 2-6 (sample 1 is invalid). */
-function engineWakeups(enginePid, notes) {
+/**
+ * One `top -l <seconds+1>` run; the engine's idle wake-ups/sec of samples 2..seconds+1 (sample 1 is
+ * invalid per man top). The spawn is bounded at seconds + 30 so a stuck top cannot hang the run.
+ */
+function engineWakeups(enginePid, seconds, notes) {
   const top = spawnSync(
     'top',
-    ['-l', String(topSampleCount), '-pid', String(enginePid), '-stats', 'pid,cpu,idlew'],
-    { encoding: 'utf8', timeout: 60_000 },
+    ['-l', String(seconds + 1), '-pid', String(enginePid), '-stats', 'pid,cpu,idlew'],
+    { encoding: 'utf8', timeout: (seconds + 30) * 1000 },
   ).stdout;
   const samples = parseTopSamples(top ?? '', enginePid).map(sample => sample.idlew);
   if (!samples.length)
@@ -651,13 +682,14 @@ function engineWakeups(enginePid, notes) {
 }
 
 /** The JSON/table report from the finished window state. */
-function buildReport(options, appPath, mode, pick, state, wakeupSamples, notes) {
+export function buildReport({ options, appPath, mode, pick, state, wakeupSamples, notes }) {
   const { readings, mainKb, rendererKb, restarts, exitedEarly, enginePid } = state;
   // The CPU window covers only the final engine pid: a restart resets cputime, so readings from a
   // previous pid would mix lifetimes.
   const cpuReadings = readings.filter(r => r.pid === enginePid);
   const windowSeconds = (readings.at(-1).at - readings[0].at) / 1000;
-  const cpuWallSeconds = (cpuReadings.at(-1).at - cpuReadings[0].at) / 1000;
+  const cpuWallSeconds =
+    cpuReadings.length >= 2 ? (cpuReadings.at(-1).at - cpuReadings[0].at) / 1000 : 0;
   const cpu =
     cpuReadings.length >= 2
       ? cpuPercent(cpuReadings[0].cputime, cpuReadings.at(-1).cputime, cpuWallSeconds)
@@ -688,6 +720,8 @@ function buildReport(options, appPath, mode, pick, state, wakeupSamples, notes) 
     idleCpuPercent: cpu === null ? null : round(cpu, 2),
     idleWakeupsPerSec: wakeupSamples.length ? round(median(wakeupSamples), 1) : null,
     idleWakeupsPerSecMax: wakeupSamples.length ? round(Math.max(...wakeupSamples), 1) : null,
+    wakeupSeconds: options.wakeupSeconds,
+    wakeupSamples: wakeupSamples.length,
     mainRssMb: mainKb.length ? round(median(mainKb) / kbPerMb, 1) : null,
     rendererRssMb: rendererKb.length ? round(median(rendererKb) / kbPerMb, 1) : 0,
     notes,
@@ -703,11 +737,18 @@ async function measure(options, exe, appPath) {
     throw new Error('no --type=utility child of the app main pid (is the real engine running?)');
   const rendererIds = rendererPids(psTree(), run.child.pid);
   const pids = [...new Set([pick.pid, run.child.pid, ...rendererIds])];
-  const state = await sampleWindow(options, run, pick.pid, pids, rendererIds, notes);
+  const state = await sampleWindow({
+    options,
+    run,
+    enginePid: pick.pid,
+    pids,
+    rendererIds,
+    notes,
+  });
   const mode = await recheckResident(run, launched.mode, notes);
-  const wakeupSamples = engineWakeups(state.enginePid, notes);
+  const wakeupSamples = engineWakeups(state.enginePid, options.wakeupSeconds, notes);
   if (!state.readings.length) throw new Error('the engine never answered a ps sample');
-  return buildReport(options, appPath, mode, pick, state, wakeupSamples, notes);
+  return buildReport({ options, appPath, mode, pick, state, wakeupSamples, notes });
 }
 
 function printReport(report) {
@@ -725,7 +766,7 @@ function printReport(report) {
   );
   console.log(`engine CPU    ${shown(report.idleCpuPercent, ' %')} of wall-clock (cputime delta)`);
   console.log(
-    `wake-ups      median ${shown(report.idleWakeupsPerSec, ' /s')}   max ${shown(report.idleWakeupsPerSecMax, ' /s')} (top -l ${topSampleCount}, samples 2-${topSampleCount})`,
+    `wake-ups      median ${shown(report.idleWakeupsPerSec, ' /s')}   max ${shown(report.idleWakeupsPerSecMax, ' /s')} (${report.wakeupSamples} samples over ${report.wakeupSeconds} s)`,
   );
   console.log(
     `context       main ${shown(report.mainRssMb, ' MB')}   renderers ${shown(report.rendererRssMb, ' MB')} (median)`,

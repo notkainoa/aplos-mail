@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createServer as createTcpServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  buildReport,
   childrenOf,
   chooseEngineProcess,
   cputimeSeconds,
@@ -15,11 +18,13 @@ import {
   evaluateOn,
   launchApp,
   median,
+  noteDescendants,
   parseArgs,
   parsePsSample,
   parsePsTree,
   parseTopSamples,
   rendererPids,
+  seenPids,
   shown,
   tailLines,
 } from '../measure-idle.mjs';
@@ -250,6 +255,7 @@ describe('measure-idle arguments', () => {
       minutes: 10,
       interval: 5,
       settle: 60,
+      wakeupSeconds: 30,
       json: false,
       out: null,
     });
@@ -263,10 +269,20 @@ describe('measure-idle arguments', () => {
         '3',
         '--settle',
         '0',
+        '--wakeup-seconds',
+        '15',
         '--out',
         'x.json',
       ]),
-      { app: 'a.app', minutes: 2, interval: 3, settle: 0, json: true, out: 'x.json' },
+      {
+        app: 'a.app',
+        minutes: 2,
+        interval: 3,
+        settle: 0,
+        wakeupSeconds: 15,
+        json: true,
+        out: 'x.json',
+      },
     );
   });
 
@@ -281,6 +297,8 @@ describe('measure-idle arguments', () => {
     assert.throws(() => parseArgs(['a.app', '--interval', '0']), /--interval/);
     assert.throws(() => parseArgs(['a.app', '--settle', '-1']), /--settle/);
     assert.throws(() => parseArgs(['a.app', '--settle', 'x']), /--settle/);
+    assert.throws(() => parseArgs(['a.app', '--wakeup-seconds', '4']), /--wakeup-seconds/);
+    assert.throws(() => parseArgs(['a.app', '--wakeup-seconds', 'x']), /--wakeup-seconds/);
     assert.throws(() => parseArgs(['a.app', '--out']), /--out needs a file/);
   });
 });
@@ -303,6 +321,120 @@ describe('measure-idle launch', () => {
   it('rejects the ready promise when the binary cannot be spawned', async () => {
     const run = launchApp('/no/such/aplos-mail-binary');
     await assert.rejects(run.engineReady, /could not be launched/);
+  });
+
+  it('strips window/keychain/CDP test vars from the child env', async () => {
+    // A stub app prints its own env as one JSON line; launchApp's --remote-debugging-port=0 argv is
+    // inert for it. The engine never reports ready, so the ready promise rejects on exit — that is
+    // fine, only the env matters here.
+    const dir = mkdtempSync(join(tmpdir(), 'aplos-idle-launch-'));
+    const stub = join(dir, 'stub');
+    writeFileSync(stub, '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.env));\n');
+    chmodSync(stub, 0o755);
+    const leaked = ['APLOS_TEST_KEYCHAIN', 'APLOS_TEST_SHOW_WINDOWS', 'APLOS_TEST_CDP_PORT'];
+    process.env.APLOS_TEST_KEYCHAIN = 'login';
+    process.env.APLOS_TEST_SHOW_WINDOWS = '1';
+    process.env.APLOS_TEST_CDP_PORT = '9222';
+    try {
+      const run = launchApp(stub, dir);
+      await new Promise(resolve => run.child.on('exit', resolve));
+      const env = JSON.parse(run.output.join('\n'));
+      for (const name of leaked) assert.equal(env[name], undefined, name);
+      assert.equal(env.APLOS_TEST, '1');
+      assert.equal(env.APLOS_ENGINE, 'real');
+      assert.equal(env.APLOS_DATA_DIR, dir);
+    } finally {
+      for (const name of leaked) delete process.env[name];
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('measure-idle pid tracking', () => {
+  it('records no pid for a child that already exited', () => {
+    // A dead child's pid may already belong to a different process; recording it would give the
+    // sweep a live, unrelated victim with a matching start time.
+    seenPids.clear();
+    noteDescendants({ pid: 424242, exitCode: 1, signalCode: null });
+    noteDescendants({ pid: 424243, exitCode: null, signalCode: 'SIGKILL' });
+    assert.equal(seenPids.size, 0);
+  });
+
+  it('records a live child pid with its start time', () => {
+    seenPids.clear();
+    noteDescendants({ pid: process.pid, exitCode: null, signalCode: null });
+    assert.ok(seenPids.has(process.pid));
+    seenPids.clear();
+  });
+});
+
+describe('measure-idle report', () => {
+  const options = {
+    app: 'a.app',
+    minutes: 10,
+    interval: 5,
+    settle: 60,
+    wakeupSeconds: 30,
+    json: true,
+    out: null,
+  };
+  const pick = { pid: 500, how: 'the only utility child' };
+  const reading = (at, pid, cputime = 0) => ({ at, pid, rssKb: 204800, cputime });
+  const span = (pid, count, stepMs, cputimeStep = 0, at0 = 0) =>
+    Array.from({ length: count }, (_, i) => reading(at0 + i * stepMs, pid, i * cputimeStep));
+  const state = readings => ({
+    readings,
+    mainKb: [100_000],
+    rendererKb: [50_000],
+    restarts: 0,
+    exitedEarly: false,
+    enginePid: 500,
+  });
+  const report = (reportState, over = {}) =>
+    buildReport({
+      options,
+      appPath: 'a.app',
+      mode: 'resident',
+      pick,
+      state: reportState,
+      wakeupSamples: [],
+      notes: [],
+      ...over,
+    });
+
+  it('completes only at 80% of the window and of the expected reading count', () => {
+    // 121 samples at 5 s span the whole 10-minute window; 'window-open' still completes.
+    const full = report(state(span(500, 121, 5000)), { mode: 'window-open' });
+    assert.equal(full.complete, true);
+    // A 95 s window is under 80% of 600 s.
+    assert.equal(report(state(span(500, 20, 5000))).complete, false);
+    // 95 samples over 658 s is a long enough window but under 0.8 * 120 readings.
+    assert.equal(report(state(span(500, 95, 7000))).complete, false);
+    // An app that died mid-window can never complete.
+    const died = { ...state(span(500, 121, 5000)), exitedEarly: true };
+    assert.equal(report(died).complete, false);
+  });
+
+  it('computes CPU only over the final engine pid after a restart', () => {
+    const readings = [
+      ...span(400, 5, 5000, 100), // the dead engine's cputime must not enter the window
+      reading(60_000, 500, 0),
+      reading(300_000, 500, 4.8),
+      reading(540_000, 500, 9.6),
+    ];
+    const restarted = { ...state(readings), restarts: 1, enginePid: 500 };
+    const r = report(restarted);
+    assert.equal(r.idleCpuPercent, 2); // (9.6 - 0) s cputime / 480 s wall * 100
+    assert.equal(r.engineRestarts, 1);
+    assert.equal(r.enginePid, 500);
+  });
+
+  it('reports the wake-up median, max and sample count', () => {
+    const r = report(state(span(500, 121, 5000)), { wakeupSamples: [3, 9, 5] });
+    assert.equal(r.idleWakeupsPerSec, 5);
+    assert.equal(r.idleWakeupsPerSecMax, 9);
+    assert.equal(r.wakeupSamples, 3);
+    assert.equal(r.wakeupSeconds, 30);
   });
 });
 

@@ -98,12 +98,15 @@ async function main() {
   await send('Runtime.enable');
   await send('Log.enable');
   // Every DevTools command has a deadline: one that is never answered (a window that cannot paint, a
-  // renderer stuck on a stale seed) resolves to { timedOut: true } after 8 s instead of hanging the sweep.
+  // renderer stuck on a stale seed) resolves to { timedOut: true } after 8 s instead of hanging the
+  // sweep, and is pushed into pageErrors so the row FAILs — an evaluate that timed out returns
+  // undefined, which would otherwise let empty text and a blank-pane check pass.
   function send(method, params = {}) {
     return new Promise(r => {
       const i = ++id;
       const timer = setTimeout(() => {
         pending.delete(i);
+        pageErrors.push(`devtools timeout: ${method}`);
         r({ timedOut: true, method });
       }, 8000);
       pending.set(i, m => {
@@ -189,8 +192,11 @@ async function main() {
         if(r.x>300&&r.width>0&&r.height>0&&e.children.length===0)n+=(e.textContent||'').trim().length;
       }return n})()`);
     // "Couldn't load" next to the Reconnect copy is the expected state of a seed whose token is dead.
+    // A pane that never reported (paneLen undefined — its evaluate timed out) or a page with no
+    // visible text counts as blank: both mean the screen did not paint.
     const reconnect = /sign in again/i.test(text);
-    const bad = (!reconnect && text.match(BAD)) || (paneLen < 8 ? ['blank pane'] : null);
+    const blank = !text.trim() || !Number.isFinite(paneLen) || paneLen < 8;
+    const bad = (!reconnect && text.match(BAD)) || (blank ? ['blank pane'] : null);
     const refused = output
       .slice(before)
       .join('')
