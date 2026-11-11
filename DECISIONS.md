@@ -1854,3 +1854,13 @@ Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox,
 - `idle.wakeups` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
 - `ui.home-100k-first-rows` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
 - `ui.scroll-100k-frame` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+
+## 2026-11-10: the three idle budget rows are recorded from the first resident-mode measurement (plat-ci)
+
+`scripts/audit/measure-idle.mjs` launches a packaged app headless in test mode (isolated data dir, in-memory keychain), closes every window over CDP to reach resident mode, waits 60 s for startup and first-sync work to settle, then samples the engine utility process for 10 minutes (`ps` every 5 s; wake-ups from `top -l 6`, median of samples 2 to 6). Measured on the hand-check build of revamp 665ea4fe (ad-hoc, `~/Applications-test`), complete window, 120 samples, no engine restart:
+
+- `idle.engine-rss` (eng-host): 97.3 MB median (122.6 MB max), `ps` rss, not Activity Monitor's footprint.
+- `idle.cpu-10min` (eng-host): 0.77 percent of one core over the 600 s window (cputime delta over wall time).
+- `idle.wakeups` (eng-host): 2 per second (`top` IDLEW, median).
+
+Each row keeps its gate `record`: these are baselines, not limits. Turning them into tighten-only limits needs headroom for a shared and busier Mac, which is eng-host's call; one run on one Mac is not enough to set a limit from. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (11 minutes).
