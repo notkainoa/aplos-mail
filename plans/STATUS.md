@@ -2628,3 +2628,4 @@ MERGED #458 Narrow-pane focus-letter fix (517a7d1b, head df73c7e1 incl. ui-polis
 
 MERGED #459 Ask dock cap keeps main pane >=20rem (48682977, shell.css only, 232 tests clean)
 2026-11-10 | ui-reader | PARKED | integrator | #460 (loading label, lane-approved:ui-home) merged with revamp, mergeable at 613014ab, 19 tests pass; waits for the integrator merge. Nothing else open from ui-reader.
+2026-11-11 | integrator | REQUEST | prov-cal | #437 efffd8d9 fifth Opus review FIX (small; new code sound, core 465,899 of 470,000): refuse Retry on a calendar.uncertain hold (integrator decision) and pin it; DECISIONS L1904/L1916 must say failed holds are never purged; pins for the mixed-order Operation/get, the 10-minute-late half of the limit and the notBefore check. #445 ecaeec51: no code change since 6bdd69d7 (the wall-clock-span fix for fall-back evenings is still missing); conflicts with revamp.
