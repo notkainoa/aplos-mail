@@ -94,6 +94,7 @@ function onEscape(state: CalendarState): Transition {
   if (state.scope) return cancelScope(state);
   if (state.moreOpen) return done({ ...state, moreOpen: false });
   if (state.stackIds) return done({ ...state, stackIds: null });
+  if (state.holdsReview) return done({ ...state, holdsReview: false });
   if (state.detailId) return done(closed(state), [{ kind: 'focus', target: 'grid' }]);
   if (state.rsvp) return done({ ...state, rsvp: null });
   if (state.selectedId) return done({ ...state, selectedId: null });
@@ -381,6 +382,17 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   openVideo: onOpenVideo,
   toggleCalendar: onToggleCalendar,
   soloCalendar: (s, a) => done({ ...closed(s), solo: s.solo === a.id ? null : a.id }),
+  // Opening the Review takes the same exclusive-surface rule as opening a detail (review21).
+  holdsReview: (s, a) => done({ ...(a.open ? closed(s) : s), holdsReview: a.open }),
+  // The list emptied under the open popover: close it and land focus on the grid, not body.
+  holdsEmptied: s => done({ ...s, holdsReview: false }, [{ kind: 'focus', target: 'grid' }]),
+  // The Review list stays open while a row's action settles; the row leaves in place, and the
+  // component closes the list itself once it is empty (review19).
+  holdRetry: (s, a) => done(s, [{ kind: 'holdRetry', id: a.id, opId: a.opId }]),
+  holdDiscard: (s, a) => done(s, [{ kind: 'holdDiscard', id: a.id }]),
+  holdReconnect: (s, a) => done(s, [{ kind: 'holdReconnect', accountId: a.accountId }]),
+  // The detail's own Enable editing effect: the same port, the same refusal toast.
+  holdEnableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
 };
 
 /** The one reducer: every key, click and drag of the screen goes through here (DESIGN 5 rule 1: state first, then effects). */

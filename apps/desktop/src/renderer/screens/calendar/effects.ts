@@ -37,6 +37,8 @@ import {
   type ToastPlan,
 } from './calendar.model';
 import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
+import { emitHoldsRefresh } from './FailedHolds';
+import { discardHold, releasePendingHolds, retryHold } from './holdEffects';
 import { bodyOf, undoFailureMessage, writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -74,6 +76,13 @@ export interface EffectPorts {
    * id — never the write again (that would queue a second change beside it).
    */
   operationRetry(args: { readonly opId: string }): Promise<Receipt>;
+  /**
+   * `Queue/retry {id}`: the engine's own retry for a `cal:` queue item — it sends the failed hold at
+   * once through the same op id and refuses an uncertain one (`calendar.checkFirst`).
+   */
+  queueRetry(args: { readonly id: string }): Promise<unknown>;
+  /** `Queue/discard {id}`: drops a failed hold's queue item — the owner said the change stays unsent. */
+  queueDiscard(args: { readonly id: string }): Promise<unknown>;
   /**
    * The write's provider-side progress (`operation` frames): the listener runs once with the current
    * view, then on each change; the return unsubscribes. Absent in tests that never see a frame.
@@ -356,6 +365,14 @@ const failedOps = new Map<string, Set<string>>();
 /** Op ids whose failure toast a newer write retired: their Retry must answer nothing. */
 const staleRetries = new Set<string>();
 
+/**
+ * Whether a newer write on the event already retired this op's failure (review21): its hold row
+ * shows Discard alone — a retry would re-send the older change over the newer one.
+ */
+export function isStaleRetry(opId: string): boolean {
+  return staleRetries.has(opId);
+}
+
 function rememberFailedOp(spec: WriteSpec): void {
   if (spec.goneEventId === undefined) return;
   const ids = failedOps.get(spec.goneEventId) ?? new Set<string>();
@@ -388,6 +405,7 @@ export function releaseHeldWrites(): void {
   failedOps.clear();
   staleRetries.clear();
   heldWrites.clear();
+  releasePendingHolds();
 }
 
 /** The event a write's hold would guard — only a write that asks for one can clash. */
@@ -450,24 +468,38 @@ export function calendarUndoRefused(opId: string, error: unknown): void {
 function retryOperation(ports: EffectPorts, opId: string): void {
   // A stale Retry — the owner already sent the event again — answers nothing (review17).
   if (staleRetries.has(opId)) return;
-  void ports.operationRetry({ opId }).then(undefined, error => {
-    const body = bodyOf(error);
-    // A refused retry keeps the surface it came from — persistent, showing the refusal's own
-    // sentence in place of the first failure's. An actionless toast would fade 4 s later and
-    // leave the failed send invisible (review17). Terminal refusals — the op was undone, already
-    // sent, dropped from the queue, or must be checked by hand (conflict incl.
-    // calendar.checkFirst, notFound) — get Dismiss only: a Retry that can never succeed is worse
-    // than none. Transient refusals (unavailable, unknown) keep it (review18).
-    const terminal = body.type === 'conflict' || body.type === 'notFound';
-    opFailureToast(
-      opId,
-      {
-        message: body.message || 'Couldn’t send that change.',
-        retry: terminal ? 'none' : 'operation',
-      },
-      ports,
-    );
-  });
+  void ports.operationRetry({ opId }).then(
+    () => emitHoldsRefresh(),
+    error => {
+      emitHoldsRefresh();
+      const body = bodyOf(error);
+      // A refused retry keeps the surface it came from — persistent, showing the refusal's own
+      // sentence in place of the first failure's. An actionless toast would fade 4 s later and
+      // leave the failed send invisible (review17). Terminal refusals — the op was undone, already
+      // sent, dropped from the queue, or must be checked by hand (conflict incl.
+      // calendar.checkFirst, notFound) — get Dismiss only: a Retry that can never succeed is worse
+      // than none. Transient refusals (unavailable, unknown) keep it (review18).
+      const terminal = body.type === 'conflict' || body.type === 'notFound';
+      opFailureToast(
+        opId,
+        {
+          message: body.message || 'Couldn’t send that change.',
+          retry: terminal ? 'none' : 'operation',
+        },
+        ports,
+      );
+    },
+  );
+}
+
+// The Review rows' Retry and Discard live in `holdEffects.ts` (review20; the file's size cap):
+// `Queue/retry` and `Queue/discard` on the `cal:` item id, quiet refusals in the `<opId>:failed`
+// toast. A stale Retry — the owner already sent the event again — answers nothing (review17), so
+// the entry point guards on `staleRetries` before delegating.
+
+/** The row's Retry, skipped when a newer write already retired this op's failure (review17). */
+function retryHeldItem(ports: EffectPorts, id: string, opId: string): void {
+  if (!staleRetries.has(opId)) retryHold(ports, id, opId);
 }
 
 /**
@@ -741,6 +773,11 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
 }
 
 export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: EffectUi): void {
+  // The failed-holds Review rows' effects run beside the write switch (they answer Queue, not Event).
+  if (fx.kind.startsWith('hold')) {
+    runHoldEffect(fx, ports);
+    return;
+  }
   const retry = () => runCalendarEffect(fx, ports, ui);
   switch (fx.kind) {
     case 'eventSet': {
@@ -1005,6 +1042,16 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
   }
 }
 
+/** A Review row's effects: the queue item's own Retry/Discard and a dead grant's fix (review21). */
+function runHoldEffect(fx: CalendarEffect, ports: EffectPorts): void {
+  if (fx.kind === 'holdRetry') return retryHeldItem(ports, fx.id, fx.opId);
+  if (fx.kind === 'holdDiscard') return discardHold(ports, fx.id);
+  if (fx.kind === 'holdReconnect') {
+    // The same sign-in sheet the sidebar's account row opens.
+    ports.reconnect(fx.accountId);
+  }
+}
+
 /** The live app's ports: `api.*` plus the shell's openers. */
 export function livePorts(): EffectPorts {
   return {
@@ -1015,6 +1062,8 @@ export function livePorts(): EffectPorts {
     planDismiss: args => api.plan.dismiss(args),
     eventHide: args => api.event.hide(args),
     operationRetry: args => api.operation.retry(args),
+    queueRetry: args => api.queue.retry(args),
+    queueDiscard: args => api.queue.discard(args),
     watchOperation: (opId, listener) => subscribeOperation(opId, listener),
     // The same connect sheet as the read grant, asking for calendar editing too (`enable: 'calendarWrite'` is the only
     // way Aplos ever asks for it); the account's grantedScopes gains the scope when the sheet finishes.

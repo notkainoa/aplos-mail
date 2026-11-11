@@ -72,6 +72,7 @@ import {
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
 import { useOpenPlanTarget } from './useOpenPlanTarget';
+import { useFailedHolds } from './FailedHolds';
 import {
   createTurnGate,
   inCalendarSurface,
@@ -85,6 +86,7 @@ import {
 import {
   calendarUndoRefused,
   cancelPendingRetries,
+  isStaleRetry,
   livePorts,
   releaseHeldWrites,
   runCalendarEffect,
@@ -92,6 +94,7 @@ import {
   type EffectPorts,
   type EffectUi,
 } from './effects';
+import { holdPending } from './holdEffects';
 import { calendarSidebar } from './sidebar';
 import { calendarListedKey } from './accountCalendarState';
 
@@ -241,6 +244,15 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
   const loaded = useCalendars(accountId, touched, calendarListedKey(accounts));
+  // Failed guest-notifying holds live in Queue/list between sessions (review20). Hold commits are
+  // meta-only and never move the window's seq, so the hook re-lists on a bounded timer while a
+  // `cal:` item is still queued or syncing, and on window focus (review21) — `touched` only carries
+  // provider writes the window does see. Only the pane's own account counts when the screen is scoped.
+  const { holds: failedHolds } = useFailedHolds(touched, accounts, {
+    accountId,
+    stale: isStaleRetry,
+    pending: holdPending,
+  });
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>
@@ -293,6 +305,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       loadedThrough: range.to,
       defaultCalendarId: defaultId,
       calendarsReady: loaded !== undefined,
+      failedHolds,
       // Same conditions the render gates use below: while the pane draws nothing, no command may run.
       windowReady:
         eventsWindow.status !== 'failed' &&
@@ -310,6 +323,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       defaultId,
       loaded,
       eventsWindow.status,
+      failedHolds,
     ],
   );
 
