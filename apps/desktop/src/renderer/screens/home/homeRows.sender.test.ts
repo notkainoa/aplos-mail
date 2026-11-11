@@ -63,3 +63,19 @@ test('one-letter, CJK, Arabic and emoji names pass through untouched', () => {
     assert.equal(senderOf(thread({ fromName: name, participants: [{ name }] })), name);
   }
 });
+
+test('the owner is matched by address too, and a name of only invisible characters falls through', () => {
+  const byAddress = thread({
+    fromName: 'owner@mail.example',
+    participants: [{ name: 'Kainoa Newton', address: 'owner@mail.example', me: true }, LEAH],
+  });
+  assert.equal(senderOf(byAddress), 'Leah Okafor');
+  assert.equal(
+    senderOf(thread({ fromName: '\u200b\u2060\ufeff', participants: [LEAH] })),
+    'Leah Okafor',
+  );
+  assert.equal(
+    senderOf(thread({ fromName: 'דני Cohen\u200f', participants: [] })),
+    'דני Cohen\u200f',
+  );
+});
