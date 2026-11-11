@@ -21,9 +21,9 @@
 }
 
 /* ---------- Narrow panes (the Ask dock open at the minimum window) ----------
-   Nothing in a Home row or the focus letter squashes or covers another part. The focus letter measures itself: under
-   560px its Later and Done keep only their icons (the label and the key stay for assistive tech and the tooltip), and
-   under 250px the Reply button also drops its Space cap; it never shrinks. Rows keep their trailing icons at their own
+   Nothing in a Home row or the focus letter squashes or covers another part. The focus letter measures its content box (the card minus its padding): under
+   560px its Later and Done keep only their icons (the label and the key stay for assistive tech and the tooltip), under 250px
+   the Reply button also drops its Space cap, and under 189px its label (it keeps its icon and its name); it never shrinks. Rows keep their trailing icons at their own
    width, give the sender a floor, and clip the middle column, which holds the summary and the due chip. */
 
 .ui-focus-letter {
@@ -54,6 +54,21 @@
 @container focus-letter (max-width: 250px) {
   .ui-focus-letter__suggest .ui-list-kbd {
     display: none;
+  }
+}
+@container focus-letter (max-width: 189px) {
+  .ui-focus-letter__suggest .ui-list-btn {
+    justify-content: center;
+    width: var(--ui-btn-h);
+    padding: 0;
+  }
+  .ui-focus-letter__suggest .ui-list-btn__label {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 .ui-list-row {
