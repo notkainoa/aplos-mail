@@ -25,7 +25,8 @@ const PROVIDERS = [
 const ENGINE_CAPABILITIES: Readonly<Record<string, boolean>> = {
   mailFrame: true,
   calendar: true,
-  calendarWrite: false,
+  // The engine can write events; WHICH accounts may is each account's grant (`Account.grantedScopes`).
+  calendarWrite: true,
   remoteSearch: false,
   listener: false,
   clients: false,
