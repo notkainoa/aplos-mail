@@ -1934,6 +1934,12 @@ Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by 
 
 How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
 
+## 2026-11-11: the reader's loading line names the sender like Home's row does (ui-reader, handoff from ui-home #454)
+
+Context: `loadingLabel` fell back to the raw `row.fromName` for a thread with no subject, so a worst-case sender name (the owner's own name when they answered last, bidi controls, runs of whitespace) leaked into "Loading …".
+
+Decision: the subject and the sender both go through Home's `cleanName`, and the sender is Home's `senderOf` (the other person, not the owner). A thread with neither still gets no label, and the caller says "this email".
+
 ## 2026-11-10: Narrow Home panes: nothing squashes or covers anything (ui-home, on ui-polish's review of #454)
 
 With the Ask dock open at the minimum window the Home pane is about 324px: the focus letter's Reply collapsed to a 24px stub over Later's icon, and a row's due chip and bookmark and attachment icons overlapped. `screens/screens.css` now makes the focus letter a size container: under 380px Later and Done keep only their icons (label and key stay for assistive tech and the tooltip), under 250px Reply also drops its Space cap, under 189px its label too (it keeps its icon and its name), and it never shrinks. (Thresholds are the card's content width.) Rows keep their trailing icons at their own width, give the sender a 48px floor and clip the middle column (summary and due chip) instead of letting it spill. Wide layouts are unchanged (same measured geometry at 1280px).
@@ -1957,3 +1963,8 @@ Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rule
 - **Chosen:** undo of a hold that failed as `calendar.uncertain` is refused (`conflict`: "may already have been sent"). The change may already be at Google; recording it as "undone" would be a claim nobody can keep.
 - **Chosen:** a whole-series hold and a hold on one occurrence of the same event clash (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not.
 - **Open ticket (not a blocker):** a recurrence id with no `Z` is read in the calendar's zone for the "already started" check, not in the event's own zone.
+## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
+
+Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
+
+Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.

@@ -67,7 +67,7 @@ export function subjectOf(row: ThreadRow): string {
  * A name as a row may show it: control characters become spaces, bidi overrides, the soft hyphen and invisible marks are
  * dropped (a spoofing vector), whitespace runs fold. Joiners (U+200C, U+200D) and the direction marks (U+200E, U+200F) stay: emoji families, Persian and mixed-direction names need them.
  */
-function cleanName(text: string | undefined): string {
+export function cleanName(text: string | undefined): string {
   return (text ?? '')
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
     .replace(/[\u00ad\u061c\u200b\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
