@@ -17,6 +17,7 @@ import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast'
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { notifiesGuests } from './model/transitions';
 import { operationUpdate, runCalendarEffect, type EffectPorts, type WatchedWrite } from './effects';
+import { undoFailureMessage } from './writeErrors';
 import { boot, ctxFor, NOW, ports, S, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
@@ -413,4 +414,21 @@ test('review14: a forgotten operation record rolls its overlay back, no ghost', 
   } finally {
     resetToasts();
   }
+});
+
+test('review14: an already-undone undo refusal gets its own sentence', () => {
+  // The engine answers conflict with either of two sentences (holds.ts): "was already undone" for
+  // a second press, "has been sent" once the window closed. Each must read differently — telling
+  // the owner a cancelled change "has already been sent" is simply false.
+  assert.equal(
+    undoFailureMessage({ type: 'conflict', message: 'This change was already undone.' }),
+    'That change was already undone.',
+  );
+  assert.equal(
+    undoFailureMessage({
+      type: 'conflict',
+      message: 'This change has been sent, so it cannot be undone.',
+    }),
+    'That change has already been sent.',
+  );
 });

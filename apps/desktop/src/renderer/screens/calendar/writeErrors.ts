@@ -174,11 +174,15 @@ export function writeFailureOf(
 }
 
 /**
- * A refused undo, after the hold: the engine answers `conflict` ("has been sent" — the window is
- * over), so the sentence is the plain one rather than the body's own wording. Other bodies show
- * their message.
+ * A refused undo, after the hold: the engine answers `conflict` in two cases — "has been sent"
+ * once the window closed, "was already undone" on a second press — so each gets its own sentence
+ * rather than the body's own wording. Other bodies show their message.
  */
 export function undoFailureMessage(error: unknown): string {
   const body = bodyOf(error);
-  return body.type === 'conflict' ? 'That change has already been sent.' : body.message;
+  if (body.type !== 'conflict') return body.message;
+  // `conflict` carries no reasonCode; the engine's two sentences are the only keys it leaves.
+  return body.message === 'This change was already undone.'
+    ? 'That change was already undone.'
+    : 'That change has already been sent.';
 }
