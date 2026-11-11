@@ -673,7 +673,7 @@ interface RichScene extends Omit<ReaderScene, 'thread' | 'seed' | 'bodies' | 'li
   readonly stalled?: DemoKey;
 }
 
-function richScene(options: RichScene): () => ReactElement {
+export function richScene(options: RichScene): () => ReactElement {
   const { open, also = [], walk, stalled, noSummary, failedFiles, ...scene } = options;
   const keys: readonly DemoKey[] = open ? [open, ...also] : also;
   const patches = keys.reduce<Record<string, BodyPatch>>(
@@ -693,7 +693,7 @@ function richScene(options: RichScene): () => ReactElement {
 }
 
 /** Scrolls the pane the open letter sits in to its end, where the Reply stub is. */
-const OPEN_DETAILS: Step = { click: '.aplos-recipients__button' };
+export const OPEN_DETAILS: Step = { click: '.aplos-recipients__button' };
 const SCROLL_TO_END: Step = {
   run: async () => {
     const letter = document.querySelector('.aplos-reader__letter[data-paper="true"]');
