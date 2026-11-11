@@ -26,6 +26,7 @@ import {
 } from '../../data';
 import {
   openSheet,
+  setToastUndoRefusal,
   useCommandTarget,
   usePaneHeaderPart,
   useRegisterCommands,
@@ -48,8 +49,8 @@ import {
   eventsRange,
   initialState,
   inviteOpen,
+  overlayDrop,
   overlayWith,
-  overlayWithout,
   periodOf,
   plansSpec,
   reached,
@@ -81,9 +82,11 @@ import {
   type ElementLike,
 } from './keys';
 import {
+  calendarUndoRefused,
   cancelPendingRetries,
   livePorts,
   runCalendarEffect,
+  undoLastCalendarChange,
   type EffectPorts,
   type EffectUi,
 } from './effects';
@@ -101,6 +104,8 @@ export interface CalendarScreenProps {
 interface Settling {
   readonly id: string;
   readonly at: State | null;
+  /** The write this entry's overlay contribution belongs to — a settle drops its share only. */
+  readonly writeId: string;
 }
 
 const focused = (): ElementLike | null =>
@@ -288,7 +293,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   useEffect(() => {
     const caughtUp = settling.filter(s => reached(eventsWindow.state, s.at));
     if (caughtUp.length === 0) return;
-    setOverlay(o => caughtUp.reduce((acc, s) => overlayWithout(acc, s.id), o));
+    setOverlay(o => caughtUp.reduce((acc, s) => overlayDrop(acc, s.writeId, s.id), o));
     setSettling(list => list.filter(s => !caughtUp.includes(s)));
   }, [eventsWindow.state, settling]);
 
@@ -303,9 +308,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
   const ui: EffectUi = useMemo(
     () => ({
-      optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
-      settle: (id: string, at: State | null) => setSettling(list => [...list, { id, at }]),
-      rollback: (id: string) => setOverlay(o => overlayWithout(o, id)),
+      optimistic: (writeId: string, change: OptimisticChange) =>
+        setOverlay(o => overlayWith(o, writeId, change)),
+      settle: (id: string, at: State | null, writeId: string) =>
+        setSettling(list => [...list, { id, at, writeId }]),
+      rollback: (id: string, writeId: string) => setOverlay(o => overlayDrop(o, writeId, id)),
       shown: (id: string, shown: boolean) =>
         setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
       shownSettled: (id: string) =>
@@ -335,6 +342,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
   // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
   useEffect(() => cancelPendingRetries, []);
+  // A toast's Undo refused on a held write says what Z says; the lane owns the surface while mounted.
+  useEffect(() => {
+    setToastUndoRefusal(calendarUndoRefused);
+    return () => setToastUndoRefusal(null);
+  }, []);
   const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);
@@ -362,9 +374,12 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
 
   // The catalog's calendar commands: keys, the palette and menus all land in the same reducer.
+  // `app.undo` is shadowed too: Z while the calendar is up runs the same shared undo stack, and a
+  // held write's refused undo says "That change was already sent" instead of dying quietly.
   const handlers = useMemo<CommandHandlerTable>(
-    () =>
-      Object.fromEntries(
+    () => ({
+      'app.undo': { run: () => undoLastCalendarChange() },
+      ...Object.fromEntries(
         CALENDAR_COMMAND_IDS.map(id => [
           id,
           {
@@ -382,6 +397,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
           },
         ]),
       ),
+    }),
     [apply, returnGate],
   );
   useRegisterCommands(handlers);

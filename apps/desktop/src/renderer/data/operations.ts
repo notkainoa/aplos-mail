@@ -150,7 +150,11 @@ export class Operations {
       action: record.action,
       targets,
       selector: record.selector,
-      error: record.error ?? (remote?.state === 'failed' ? (remote.error ?? null) : null),
+      error:
+        record.error ??
+        (remote?.state === 'failed' || remote?.state === 'conflict'
+          ? (remote.error ?? null)
+          : null),
       undoable: this.undoable(opId),
       undoUntil: record.undoUntil,
       retry: () => this.deps.retry(record),

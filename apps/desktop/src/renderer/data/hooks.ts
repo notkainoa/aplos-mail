@@ -31,6 +31,7 @@ import type {
   DataRuntime,
   FrameFilter,
   HomeView,
+  OperationView,
   RowState,
   UseFramesOptions,
   UseHomeOptions,
@@ -274,6 +275,25 @@ export function createHooks(layer: DataLayer): DataRuntime {
     return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   }
 
+  /** One operation without a component: the listener runs once with the current view, then on each change. */
+  function subscribeOperation(
+    opId: OpId,
+    listener: (view: OperationView | undefined) => void,
+  ): () => void {
+    const store = operationStore(layer, opId);
+    // A listener's own throw stays with it: never into emit(), where it would starve the listeners
+    // behind it and escape into the frame that notified (nothing sensitive is logged).
+    const notify = () => {
+      try {
+        listener(store.getSnapshot());
+      } catch {
+        /* the listener owns its errors */
+      }
+    };
+    notify();
+    return store.subscribe(notify);
+  }
+
   function useHold(scope: string) {
     const gate = layer.hold(scope);
     const version = () => gate.version;
@@ -378,6 +398,7 @@ export function createHooks(layer: DataLayer): DataRuntime {
 
   return {
     useOperation,
+    subscribeOperation,
     useView: useView as DataRuntime['useView'],
     useHome,
     useRow: useRow as DataRuntime['useRow'],
