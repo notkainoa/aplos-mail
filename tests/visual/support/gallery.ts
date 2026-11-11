@@ -18,6 +18,9 @@ export async function openState(
   { theme = 'light', contrast = false }: OpenOptions = {},
 ): Promise<void> {
   await page.clock.setFixedTime(new Date(FROZEN_NOW));
+  // The config pins the light scheme. The shell follows the system appearance (#450), so a dark run needs the
+  // media query to say dark too, or every full-shell scene draws light under `?theme=dark`.
+  await page.emulateMedia({ colorScheme: theme });
   const failures: string[] = [];
   page.on('pageerror', error => failures.push(error.message));
   await page.goto(galleryUrl(state, theme, contrast));

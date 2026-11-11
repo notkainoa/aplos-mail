@@ -54,11 +54,11 @@ export interface ThreadMessageProps {
   from: string;
   /** `--dim` recipients phrase, e.g. "to you, Mina Cho". */
   toLabel: string;
-  /** The mark before the name in the card header (the sender's avatar square). Only on a card that is not foldable. */
+  /** The mark before the name in the card header (the sender's avatar square), on every card: a folded earlier message keeps it in its compact row. */
   leading?: ReactNode;
-  /** Replaces the `toLabel` phrase in the head: the screen's "To" with its recipient circles and the chevron that opens the details. Only on a card that is not foldable (a fold's head is one button, and a button cannot hold another). */
+  /** Replaces the `toLabel` phrase in the head: the screen's "To" with its recipient circles and the chevron that opens the details. Shown only while the card is open (a folded earlier message is compact and keeps its `toLabel`). */
   recipients?: ReactNode;
-  /** The head's right side: the screen's Importance menu, bell and ⋯. Same rule as `recipients`. */
+  /** The head's right side: the screen's Importance menu, bell and ⋯. Never on a fold (the latest message's, which has none). */
   headActions?: ReactNode;
   /** Sent time. */
   date: IsoDateTime;

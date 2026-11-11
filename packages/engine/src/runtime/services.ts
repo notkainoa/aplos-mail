@@ -56,6 +56,11 @@ export interface EngineServices {
   send: SendPort;
   drafts: DraftSyncPort;
   calendar: CalendarPort;
+  /**
+   * Held calendar writes (`calendar/holds-core.ts`, set by the calendar module): writes that tell guests wait their undo
+   * window here. Optional; absent, every calendar write is sent at once and `methods/operation.ts` asks only the mail operations.
+   */
+  calendarHolds?: import('../calendar/holds-types').CalendarHolds;
   rules: RulesPort;
   clock: Clock;
   /** The one timer loop's registry (`eng-time`'s `clock/module.ts`, or the host). */

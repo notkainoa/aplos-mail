@@ -381,9 +381,51 @@ const newsletter: DemoThread = {
   ],
 };
 
+/* ------------------------------ (f) a crowd: many recipients, to pin the To circles and the details popover ------------------------------ */
+
+/** `count` invented guests on a `.example` domain, in a fixed order. */
+function guests(count: number): DemoPerson[] {
+  return Array.from({ length: count }, (_, index) => ({
+    name: `Guest ${index + 1} Example`,
+    address: `guest${index + 1}@crowd.example`,
+  }));
+}
+
+function crowdThread(key: string, subject: string, count: number): DemoThread {
+  return {
+    key,
+    subject,
+    lane: 'update',
+    summary: { state: 'none' },
+    messages: [
+      {
+        from: TOMAS,
+        to: [ALEX, ...guests(count)],
+        at: '2026-10-28T09:15:00-07:00',
+        text: 'The studio is open to everyone on Saturday from ten. Bring a friend, and a mug.\n\nTomas',
+      },
+    ],
+  };
+}
+
+/** Six recipients besides you: three circles and "+4" (the circles cap at three). */
+const crowd = crowdThread('crowd', 'Studio open day', 6);
+
+/** Five hundred recipients: the circles still stop at three and the details popover scrolls inside the window. */
+const crowd500 = crowdThread('crowd500', 'Studio open day, everyone', 500);
+
 /* ------------------------------ the set ------------------------------ */
 
-export const DEMO = { project, files, invite, oneliner, receipt, newsletter } as const;
+export const DEMO = {
+  project,
+  files,
+  invite,
+  oneliner,
+  receipt,
+  newsletter,
+  crowd,
+  crowd500,
+} as const;
 
 export type DemoKey = keyof typeof DEMO;
 
