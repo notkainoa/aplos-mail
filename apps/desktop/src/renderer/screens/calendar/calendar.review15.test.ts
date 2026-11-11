@@ -294,3 +294,43 @@ test('review15: an operation-level calendar.unavailable retries only by hand', a
     resetToasts();
   }
 });
+test('review15: an operation-level failure stays until the owner deals with it', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    // A ~4 s toast can expire before the owner sees the Retry: a failure on an accepted write
+    // is `persistent` (the store never times it out or evicts it) until its action or the owner
+    // dismisses it (review15).
+    let retries = 0;
+    const failed = view({
+      remote: 'failed',
+      error: {
+        type: 'conflict',
+        message: "This change wasn't sent in time. Check the event, then try again.",
+        reasonCode: 'calendar.late',
+      },
+      retry: () => {
+        retries += 1;
+        return { opId: 'op-1', receipt: Promise.resolve(receipt()) };
+      },
+    });
+    assert.equal(operationUpdate(watch(), failed, ui, ports()), 'done');
+    const toast = getToasts().find(t => t.id.endsWith(':failed'));
+    assert.equal(toast?.persistent, true, 'a failure the owner must answer never times out');
+    assert.deepEqual(
+      toast?.actions?.map(a => a.label),
+      ['Retry'],
+    );
+    assert.ok(toast);
+    runToastAction(toast.id, 'retry');
+    assert.equal(retries, 1, 'Retry is the operation’s own Operation/retry');
+    assert.equal(
+      getToasts().some(t => t.id === toast.id),
+      false,
+      'its own action dismisses it',
+    );
+  } finally {
+    resetToasts();
+  }
+});

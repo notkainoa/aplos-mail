@@ -362,6 +362,7 @@ function opFailureToast(opId: string, failure: WriteFailure, retryOp: () => void
       ? {}
       : { actions: [{ id: 'retry', label: 'Retry' }] }),
     undoable: false,
+    persistent: true,
     onAction: actionId => {
       if (actionId !== 'retry' || spent) return;
       spent = true;
