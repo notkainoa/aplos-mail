@@ -6,7 +6,13 @@ import type { Clock, Logger, StorePort } from '../ports';
 import { parseStored, withDefaults } from '../runtime/settings';
 import type { EngineServices } from '../runtime/services';
 import { runCall } from './holds-call';
-import type { HoldRecord, HoldSpec } from './holds-types';
+import {
+  HOLD_KEEP_MS,
+  HOLD_STALE_MS,
+  type HeldCall,
+  type HoldRecord,
+  type HoldSpec,
+} from './holds-types';
 
 /**
  * The working half of the calendar holds (lazy, loaded on the first held write or the first due hold). A hold is a
@@ -16,24 +22,51 @@ import type { HoldRecord, HoldSpec } from './holds-types';
  */
 
 export const HOLD_PREFIX = 'calendar.hold.';
-/** Finished records stay readable for `Operation/get` this long. */
-const KEEP_MS = 24 * 60 * 60 * 1000;
 
 const keyOf = (opId: string) => `${HOLD_PREFIX}${opId}`;
+
+function parse(value: string): HoldRecord | undefined {
+  try {
+    const r = JSON.parse(value) as Partial<HoldRecord>;
+    return typeof r?.opId === 'string' && typeof r.state === 'string'
+      ? (r as HoldRecord)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function readRecord(store: StorePort, opId: string): HoldRecord | undefined {
   const row = store.read(q =>
     q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', keyOf(opId)),
   );
-  return row ? (JSON.parse(row.value) as HoldRecord) : undefined;
+  return row ? parse(row.value) : undefined;
 }
 
-export function readAll(store: StorePort): HoldRecord[] {
-  return store
-    .read(q =>
-      q.all<{ value: string }>('SELECT value FROM meta WHERE key LIKE ?', `${HOLD_PREFIX}%`),
-    )
-    .map(r => JSON.parse(r.value) as HoldRecord);
+/** Every readable hold, and the keys of rows that are not (those are purged, never allowed to stall the loop). */
+export function readAll(store: StorePort): { records: HoldRecord[]; unreadable: string[] } {
+  const rows = store.read(q =>
+    q.all<{ key: string; value: string }>(
+      'SELECT key, value FROM meta WHERE key LIKE ?',
+      `${HOLD_PREFIX}%`,
+    ),
+  );
+  const records: HoldRecord[] = [];
+  const unreadable: string[] = [];
+  for (const row of rows) {
+    const r = parse(row.value);
+    if (r) records.push(r);
+    else unreadable.push(row.key);
+  }
+  return { records, unreadable };
+}
+
+/** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
+function targetOf(call: HeldCall | undefined): string | undefined {
+  if (!call) return undefined;
+  const ref = call.op === 'put' ? call.change : call.ref;
+  if (!ref.remoteId) return undefined; // a create has no event yet
+  return [call.account, ref.calendarRemoteId, ref.remoteId, ref.recurrenceId ?? ''].join('|');
 }
 
 /** The owner's undo window (the same one mail sends use). */
@@ -55,10 +88,17 @@ interface Deps {
 }
 
 function save(deps: Deps, record: HoldRecord): void {
+  // Finished for good (sent or undone): the guests' addresses leave storage with the call.
+  const kept =
+    record.state === 'synced' || record.state === 'cancelled'
+      ? (({ call: _call, ...rest }) => rest)(record)
+      : record;
   deps.store.commit({
-    opId: `calendar-hold:${record.opId}:${record.state}:${deps.store.seq()}`,
+    // A meta-only commit does not move `seq`, so the id carries its own uniqueness: a repeated id is skipped as already
+    // applied, which once dropped a second save of the same state.
+    opId: `calendar-hold:${record.opId}:${record.state}:${globalThis.crypto.randomUUID()}`,
     origin: 'local',
-    writes: [{ kind: 'meta', key: keyOf(record.opId), value: JSON.stringify(record) }],
+    writes: [{ kind: 'meta', key: keyOf(record.opId), value: JSON.stringify(kept) }],
   });
   deps.changed();
 }
@@ -86,15 +126,16 @@ function bodyOf(error: unknown): ErrorBody {
 
 /** Sends one hold now. Never throws: the outcome is the record's state. */
 async function send(deps: Deps, record: HoldRecord, inflight: Set<string>): Promise<void> {
+  if (!record.call) return;
   inflight.add(record.opId);
   try {
-    await sendNow(deps, record);
+    await sendNow(deps, { ...record, call: record.call });
   } finally {
     inflight.delete(record.opId);
   }
 }
 
-async function sendNow(deps: Deps, record: HoldRecord): Promise<void> {
+async function sendNow(deps: Deps, record: HoldRecord & { call: HeldCall }): Promise<void> {
   const syncing = { ...record, state: 'syncing' as const };
   delete syncing.error;
   save(deps, syncing);
@@ -122,10 +163,26 @@ async function sendNow(deps: Deps, record: HoldRecord): Promise<void> {
 
 const conflict = (message: string) => new ContractError({ type: 'conflict', message });
 
+/** The earliest moment a hold needs the loop: a window's end, an unfinished send (now), or a finished hold's purge. */
+function nextDue(values: readonly string[]): number | undefined {
+  let next: number | undefined;
+  const soonest = (at: number) => (next = next === undefined ? at : Math.min(next, at));
+  for (const value of values) {
+    const r = parse(value);
+    if (!r)
+      soonest(0); // an unreadable row is purged by the next run
+    else if (r.state === 'queued') soonest(r.undoUntil);
+    else if (r.state === 'syncing') soonest(0);
+    else soonest(r.createdAt + HOLD_KEEP_MS);
+  }
+  return next;
+}
+
 export function createHolds(deps: Deps) {
   // Sends in this process: a `syncing` record NOT in here is one a previous run never finished.
   const inflight = new Set<string>();
   return {
+    nextDue,
     async hold(spec: HoldSpec): Promise<Receipt> {
       const now = deps.clock.now();
       const record: HoldRecord = {
@@ -139,7 +196,28 @@ export function createHolds(deps: Deps) {
         undoUntil: now + (spec.windowMs ?? undoSeconds(deps.store) * 1000),
         appliedState: stateOf(deps.store),
       };
-      if (readRecord(deps.store, spec.opId)) throw conflict('This change was already made.');
+      const same = readRecord(deps.store, spec.opId);
+      // The same op id again is the same change (a replay): answer its receipt, never a second hold.
+      if (same)
+        return {
+          opId: same.opId,
+          appliedState: same.appliedState,
+          undoable: same.state === 'queued',
+          ...(same.state === 'queued' ? { undoUntil: same.undoUntil } : {}),
+        };
+      const target = targetOf(spec.call);
+      if (
+        target &&
+        readAll(deps.store).records.some(
+          r => (r.state === 'queued' || r.state === 'syncing') && targetOf(r.call) === target,
+        )
+      )
+        throw new ContractError({
+          type: 'conflict',
+          message:
+            'Your earlier change to this event has not been sent yet. Undo it, or wait a moment and try again.',
+          reasonCode: 'calendar.holdPending',
+        });
       save(deps, record);
       return {
         opId: spec.opId,
@@ -183,16 +261,38 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled')
         throw conflict('This change was undone, so it cannot be retried.');
       if (r.state !== 'failed') throw conflict('Only a failed change can be retried.');
+      if (r.error?.reasonCode === 'calendar.stale')
+        throw conflict('That change waited too long to be sent. Make it again.');
       await send(deps, r, inflight);
       return { opId: args.opId, appliedState: stateOf(deps.store), undoable: false };
     },
 
-    /** Sends every hold whose window has ended (also after a restart: a window that ran out while the app was closed). */
+    /** Sends every hold whose window has ended (also after a restart), fails the stale and the unfinished, purges the old. */
     async runDue(now: number): Promise<void> {
-      for (const r of readAll(deps.store)) {
+      const { records, unreadable } = readAll(deps.store);
+      for (const key of unreadable)
+        deps.store.commit({
+          opId: `calendar-hold:purge:${globalThis.crypto.randomUUID()}`,
+          origin: 'local',
+          writes: [{ kind: 'meta', key, value: null }],
+        });
+      for (const r of records) {
         // Re-read: an undo that landed while an earlier hold was sending must stop this one.
         const fresh = r.state === 'queued' ? readRecord(deps.store, r.opId) : r;
-        if (fresh?.state === 'queued' && fresh.undoUntil <= now) await send(deps, fresh, inflight);
+        if (fresh?.state === 'queued' && fresh.undoUntil <= now) {
+          if (now - fresh.undoUntil > HOLD_STALE_MS)
+            save(deps, {
+              ...fresh,
+              state: 'failed',
+              error: {
+                type: 'unavailable',
+                message:
+                  'This change waited too long while Aplos was closed, so it was not sent. Make it again.',
+                reasonCode: 'calendar.stale',
+              },
+            });
+          else await send(deps, fresh, inflight);
+        }
         // A send the previous run never finished may or may not have reached Google: never sent twice.
         else if (r.state === 'syncing' && !inflight.has(r.opId))
           save(deps, {
@@ -205,9 +305,9 @@ export function createHolds(deps: Deps) {
               reasonCode: 'calendar.uncertain',
             },
           });
-        else if (r.state !== 'queued' && r.createdAt < now - KEEP_MS)
+        else if (r.state !== 'queued' && r.state !== 'syncing' && r.createdAt < now - HOLD_KEEP_MS)
           deps.store.commit({
-            opId: `calendar-hold:${r.opId}:purge`,
+            opId: `calendar-hold:${r.opId}:purge:${globalThis.crypto.randomUUID()}`,
             origin: 'local',
             writes: [{ kind: 'meta', key: keyOf(r.opId), value: null }],
           });

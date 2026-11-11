@@ -19,8 +19,14 @@ export const handlers: AreaHandlers<'operation'> = {
     const held = holds ? args.opIds.filter(id => holds.has(id)) : [];
     const mail = ctx.services.threadOps.get(args.opIds.filter(id => !held.includes(id)));
     if (!holds || !held.length) return mail;
-    const list: Operation[] = [...mail.list, ...(await holds.get(held))];
-    return { list, notFound: mail.notFound };
+    // One list in the order asked, whichever side knows the id.
+    const known = new Map<string, Operation>(
+      [...mail.list, ...(await holds.get(held))].map(op => [op.opId, op]),
+    );
+    return {
+      list: args.opIds.flatMap(id => (known.has(id) ? [known.get(id)!] : [])),
+      notFound: mail.notFound,
+    };
   },
   'Operation/retry': (args, ctx) => {
     const holds = ctx.services.calendarHolds;

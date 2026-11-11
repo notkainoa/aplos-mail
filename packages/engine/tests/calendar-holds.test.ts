@@ -52,11 +52,11 @@ async function rig(answer: Answer = () => Promise.resolve(SAVED)) {
         readOnly: false,
         selected: true,
       },
-      {
-        kind: 'event',
+      ...['ev1', 'ev2'].map(remoteId => ({
+        kind: 'event' as const,
         accountId: 'acct-1',
         calendarRemoteId: 'primary',
-        remoteId: 'ev1',
+        remoteId,
         rows: [
           {
             status: 'confirmed',
@@ -67,18 +67,18 @@ async function rig(answer: Answer = () => Promise.resolve(SAVED)) {
             data: JSON.stringify({ summary: 'Standup', status: 'confirmed' }),
           },
         ],
-      },
+      })),
     ],
   });
   return { ...(await boot()), boot, clock, calls, store, setAnswer: (a: Answer) => (next = a) };
 }
 
-const rename = (opId: string) => ({
+const rename = (opId: string, id = 'acct-1:primary/ev1') => ({
   opId,
   notify: true,
   change: {
     type: 'update' as const,
-    id: 'acct-1:primary/ev1',
+    id,
     scope: 'series' as const,
     fields: { title: 'Renamed' },
   },
@@ -242,7 +242,7 @@ test('an undo that lands while an earlier hold is still sending stops the next o
       }),
   );
   await w.call('Event/set', rename('d1'));
-  await w.call('Event/set', rename('d2'));
+  await w.call('Event/set', rename('d2', 'acct-1:primary/ev2'));
   w.clock.advance(9_000);
   await settle();
   assert.deepEqual(w.calls, ['put'], 'the first is on its way, the second waits behind it');
@@ -254,4 +254,144 @@ test('an undo that lands while an earlier hold is still sending stops the next o
   assert.deepEqual(w.calls, ['put'], 'the undone change is never sent');
   assert.equal((await w.call('Operation/get', { opIds: ['d1'] })).list[0]!.state, 'synced');
   assert.equal((await w.call('Operation/get', { opIds: ['d2'] })).list[0]!.state, 'cancelled');
+});
+
+const withGuest = (opId: string, id = 'acct-1:primary/ev1') => ({
+  opId,
+  notify: true,
+  change: {
+    type: 'update' as const,
+    id,
+    scope: 'series' as const,
+    fields: { attendees: [{ address: 'friend@example.test' }] },
+  },
+});
+const metaRow = (w: Awaited<ReturnType<typeof rig>>, opId: string) =>
+  w.store.read(q =>
+    q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', `calendar.hold.${opId}`),
+  );
+
+test('two Retry presses send once: the second sees the first already sending', async () => {
+  let fail = true;
+  let release!: () => void;
+  const w = await rig(() =>
+    fail
+      ? Promise.reject(
+          new ContractError({
+            type: 'unavailable',
+            message: 'x',
+            reasonCode: 'calendar.unavailable',
+          }),
+        )
+      : new Promise<CalendarWriteResult>(resolve => {
+          release = () => resolve(SAVED);
+        }),
+  );
+  await w.call('Event/set', rename('rr1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal((await w.call('Operation/get', { opIds: ['rr1'] })).list[0]!.state, 'failed');
+  fail = false;
+  const first = w.call('Operation/retry', { opId: 'rr1' });
+  await settle();
+  // The retry's own `syncing` was saved (it once was dropped as a repeated commit id).
+  assert.equal((await w.call('Operation/get', { opIds: ['rr1'] })).list[0]!.state, 'syncing');
+  await assert.rejects(
+    w.call('Operation/retry', { opId: 'rr1' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'conflict',
+  );
+  release();
+  await first;
+  assert.deepEqual(
+    w.calls,
+    ['put', 'put'],
+    'one send for the first try, one for the retry, no more',
+  );
+});
+
+test('a hold whose window ended long ago is not sent on launch, and cannot be retried blindly', async () => {
+  const w = await rig();
+  await w.call('Event/set', rename('st1'));
+  await w.engine.close();
+  w.clock.advance(3 * 24 * 60 * 60 * 1000);
+  const again = await w.boot();
+  w.clock.advance(1_000);
+  await settle();
+  assert.deepEqual(w.calls, [], 'an edit made days ago is not sent');
+  const op = (await again.call('Operation/get', { opIds: ['st1'] })).list[0]!;
+  assert.equal(op.state, 'failed');
+  assert.equal(op.error?.reasonCode, 'calendar.stale');
+  await assert.rejects(
+    again.call('Operation/retry', { opId: 'st1' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'conflict',
+  );
+  await again.engine.close();
+});
+
+test('a second change to an event that is still held is refused until the first is sent or undone', async () => {
+  const w = await rig();
+  await w.call('Event/set', rename('s1'));
+  await assert.rejects(
+    w.call('Event/set', rename('s2')),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
+  );
+  await w.call('Operation/undo', { opId: 's1', undoOpId: 's1-undo' });
+  await w.call('Event/set', rename('s3'));
+  assert.equal((await w.call('Operation/get', { opIds: ['s3'] })).list[0]!.state, 'queued');
+});
+
+test('a replayed op id answers the same receipt and makes no second hold', async () => {
+  const w = await rig();
+  const first = await w.call('Event/set', rename('rp1'));
+  const again = await w.call('Event/set', rename('rp1'));
+  assert.equal(again.receipt.undoUntil, first.receipt.undoUntil);
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+});
+
+test('a finished hold keeps no guest address, and is purged after a day', async () => {
+  const w = await rig();
+  await w.call('Event/set', withGuest('pg1'));
+  assert.match(metaRow(w, 'pg1')!.value, /friend@example\.test/);
+  w.clock.advance(9_000);
+  await settle();
+  assert.doesNotMatch(metaRow(w, 'pg1')!.value, /friend@example\.test/, 'sent: the call is gone');
+
+  await w.call('Event/set', withGuest('pg2', 'acct-1:primary/ev1'));
+  await w.call('Operation/undo', { opId: 'pg2', undoOpId: 'pg2-undo' });
+  assert.doesNotMatch(metaRow(w, 'pg2')!.value, /friend@example\.test/, 'undone: the call is gone');
+
+  w.clock.advance(25 * 60 * 60 * 1000);
+  await settle();
+  assert.equal(metaRow(w, 'pg1'), undefined);
+  assert.equal(metaRow(w, 'pg2'), undefined);
+});
+
+test('an unreadable hold row never stalls the others, and is cleared', async () => {
+  const w = await rig();
+  w.store.commit({
+    opId: 'bad',
+    origin: 'local',
+    writes: [{ kind: 'meta', key: 'calendar.hold.bad', value: 'not json {' }],
+  });
+  await w.call('Event/set', rename('ok1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+  assert.equal(metaRow(w, 'bad'), undefined);
+});
+
+test('Operation/get answers in the order asked', async () => {
+  const w = await rig();
+  await w.call('Event/set', rename('o1'));
+  w.clock.advance(1_000);
+  await w.call('Operation/undo', { opId: 'o1', undoOpId: 'o1-undo' });
+  await w.call('Event/set', rename('o2'));
+  const got = await w.call('Operation/get', { opIds: ['o2', 'nope', 'o1'] });
+  assert.deepEqual(
+    got.list.map(o => o.opId),
+    ['o2', 'o1'],
+  );
+  assert.deepEqual(got.notFound, ['nope']);
 });

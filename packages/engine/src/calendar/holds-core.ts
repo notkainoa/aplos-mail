@@ -11,11 +11,6 @@ import type { CalendarHolds, HoldSpec } from './holds-types';
 
 const PREFIX = 'calendar.hold.';
 
-interface Stored {
-  state: string;
-  undoUntil: number;
-}
-
 export function createCalendarHolds(services: EngineServices): CalendarHolds {
   const { store, clock, log } = services;
   let working: ReturnType<typeof load> | undefined;
@@ -50,13 +45,9 @@ export function createCalendarHolds(services: EngineServices): CalendarHolds {
       const rows = store.read(q =>
         q.all<{ value: string }>('SELECT value FROM meta WHERE key LIKE ?', `${PREFIX}%`),
       );
-      let next: number | undefined;
-      for (const row of rows) {
-        const r = JSON.parse(row.value) as Stored;
-        const due = r.state === 'queued' ? r.undoUntil : r.state === 'syncing' ? 0 : undefined;
-        if (due !== undefined) next = next === undefined ? due : Math.min(next, due);
-      }
-      return next;
+      // No holds (the usual case): nothing to wake for, and the working half stays unloaded.
+      if (!rows.length) return undefined;
+      return (await holds()).nextDue(rows.map(r => r.value));
     },
     fire: async now => (await holds()).runDue(now),
   });

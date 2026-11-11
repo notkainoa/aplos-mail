@@ -34,7 +34,8 @@ export interface HoldRecord {
   /** The strongest scope the call required (always `send`: it can tell guests). `Operation/undo` needs it too (FR-3). */
   scope: 'send';
   targets: string[];
-  call: HeldCall;
+  /** Present until the hold is finished for good (sent or undone): then the guests' addresses are dropped from storage. */
+  call?: HeldCall;
   state: 'queued' | 'syncing' | 'synced' | 'failed' | 'cancelled';
   createdAt: number;
   /** While `queued`: when the window ends and the write is sent. */
@@ -54,3 +55,8 @@ export interface CalendarHolds {
   undo(args: Input<'Operation/undo'>, caller: Caller): Promise<Receipt>;
   retry(args: Input<'Operation/retry'>, caller: Caller): Promise<Receipt>;
 }
+
+/** Finished holds stay readable for `Operation/get` this long, then are purged. */
+export const HOLD_KEEP_MS = 24 * 60 * 60 * 1000;
+/** A hold whose window ended longer ago than this (the app was closed) is not sent: an edit made days ago is not what the owner means now. */
+export const HOLD_STALE_MS = 5 * 60 * 1000;
