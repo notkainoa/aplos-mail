@@ -84,6 +84,16 @@ export function holdAccount(
   return account ? account.name || account.address : undefined;
 }
 
+/** How `failedHoldsOf` narrows the queue's `cal:` items to what this pane may act on (review21). */
+export interface FailedHoldFilter {
+  /**
+   * The pane's account scope: only items the engine attributed to it count — a failed hold on
+   * another account must never draw this pane's line. An item the engine left unattributed matches
+   * no scoped pane; the all-accounts pane still lists it.
+   */
+  readonly accountId?: string;
+}
+
 /**
  * The queue items that are failed holds, minus any an in-session persistent op-failure toast already
  * owns (`<opId>:failed`): while that toast lives the owner sees the failure once, not twice.
@@ -92,10 +102,12 @@ export function failedHoldsOf(
   items: readonly QueueItem[],
   toastIds: ReadonlySet<string>,
   accounts: readonly Account[],
+  filter: FailedHoldFilter = {},
 ): FailedHold[] {
   const out: FailedHold[] = [];
   for (const item of items) {
     if (!isCalendarHoldItem(item)) continue;
+    if (filter.accountId !== undefined && item.accountId !== filter.accountId) continue;
     const opId = opIdOf(item);
     if (toastIds.has(`${opId}:failed`)) continue;
     const account = holdAccount(accounts, item.accountId);
@@ -143,6 +155,7 @@ export function emitHoldsRefresh(): void {
 export function useFailedHolds(
   refreshKey: string,
   accounts: readonly Account[],
+  filter: FailedHoldFilter = {},
 ): {
   holds: readonly FailedHold[];
   refresh: () => void;
@@ -167,7 +180,7 @@ export function useFailedHolds(
     };
   }, [refreshKey, tick, toasts]);
 
-  const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)), accounts);
+  const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)), accounts, filter);
   return { holds, refresh };
 }
 
