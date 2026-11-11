@@ -451,7 +451,17 @@ function EmptySent(): ReactElement {
   );
 }
 
+let fatalLayerConnected = false;
+
+/** The fatal screen's toast host reads the data layer (the undo-send notice), so one stand-in is connected first; the screen itself still draws from `kind`. */
+function connectFatalLayer(): void {
+  if (fatalLayerConnected) return;
+  connectStandInDataLayer({ scenario: 'demo', clock: 'real' });
+  fatalLayerConnected = true;
+}
+
 function FatalScene({ kind }: { kind: 'unreachable' | 'parked' }): ReactElement {
+  connectFatalLayer();
   return <FatalHost kind={kind} />;
 }
 
