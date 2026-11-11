@@ -7,6 +7,12 @@
   height: 100vh;
   min-height: 0;
   position: relative;
+  --shell-left: var(--sidebar-w);
+  --main-min: 20rem;
+  --dock-cap: max(
+    var(--dock-min),
+    calc(100vw - var(--shell-left) - var(--shell-pad) * 3 - var(--main-min))
+  );
   background: var(--shell);
   color: var(--ink);
   /* Window dragging (macOS hidden title bar): the gray shell gutter, the sidebar's empty areas, the collapsed
@@ -24,7 +30,20 @@
 
 /* Collapsed: the chrome strip sits across the top and the panes drop below it. */
 .aplos-shell[data-collapsed='true'] {
+  --shell-left: 0px;
   flex-direction: column;
+}
+
+/* The Ask dock never takes the main pane below 20rem: the list and the letter have no layout under it. The dock
+   shrinks first (the cap is its largest width for this window and sidebar), never below its own minimum. The
+   sidebar's share is the sidebar, nothing when collapsed, or the minimised rail; the pad is the three pane margins
+   (main left and right, dock right). The dock's own resize range (300 to 440) still applies inside the cap. */
+.aplos-shell[data-minimised='true'] {
+  --shell-left: calc(var(--control-lg) + var(--space-3));
+}
+.aplos-shell__row > .ui-pane[data-kind='dock'],
+.aplos-shell__row > .ui-pane[data-kind='dock'] .ui-ask-dock {
+  max-width: var(--dock-cap);
 }
 
 /* The panes' row; with no sidebar beside it (collapsed) it still fills the shell. */
