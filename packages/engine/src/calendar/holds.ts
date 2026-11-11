@@ -185,11 +185,25 @@ function nextOccurrence(
 }
 
 /** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
-function targetOf(call: HeldCall | undefined): string | undefined {
+function targetOf(call: HeldCall | undefined): { event: string; occurrence: string } | undefined {
   if (!call) return undefined;
   const ref = call.op === 'put' ? call.change : call.ref;
   if (!ref.remoteId) return undefined; // a create has no event yet
-  return [call.account, ref.calendarRemoteId, ref.remoteId, ref.recurrenceId ?? ''].join('|');
+  return {
+    event: [call.account, ref.calendarRemoteId, ref.remoteId].join('|'),
+    // A whole-series change (no recurrence id, or scope 'series') reaches every occurrence.
+    occurrence: ref.scope === 'series' ? '' : (ref.recurrenceId ?? ''),
+  };
+}
+
+/** Two holds clash when they change the same event, and either is a whole-series change or both name one occurrence. */
+function clash(a: ReturnType<typeof targetOf>, b: ReturnType<typeof targetOf>): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.event === b.event &&
+    (a.occurrence === '' || b.occurrence === '' || a.occurrence === b.occurrence)
+  );
 }
 
 /** The owner's undo window (the same one mail sends use). */
@@ -376,7 +390,7 @@ export function createHolds(deps: Deps) {
       if (
         target &&
         readAll(deps.store).records.some(
-          r => (r.state === 'queued' || r.state === 'syncing') && targetOf(r.call) === target,
+          r => (r.state === 'queued' || r.state === 'syncing') && clash(targetOf(r.call), target),
         )
       )
         throw new ContractError({
@@ -413,6 +427,11 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled') throw conflict('This change was already undone.');
       if (r.state === 'syncing' || r.state === 'synced')
         throw conflict('This change has been sent, so it cannot be undone.');
+      // Its answer was lost: the change may already be at Google, so "undone" would be a claim nobody can keep.
+      if (r.state === 'failed' && r.error?.reasonCode === 'calendar.uncertain')
+        throw conflict(
+          'This change may already have been sent, so it cannot be undone. Check the calendar.',
+        );
       save(deps, { ...r, state: 'cancelled' });
       return { opId: args.undoOpId, appliedState: stateOf(deps.store), undoable: false };
     },

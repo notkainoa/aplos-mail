@@ -1951,3 +1951,9 @@ Review follow-up (ui-polish on #458): Later and Done keep their labels down to 3
 Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
+
+## 2026-11-11 — prov-cal: held calendar writes, two small rules from the third review
+
+- **Chosen:** undo of a hold that failed as `calendar.uncertain` is refused (`conflict`: "may already have been sent"). The change may already be at Google; recording it as "undone" would be a claim nobody can keep.
+- **Chosen:** a whole-series hold and a hold on one occurrence of the same event clash (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not.
+- **Open ticket (not a blocker):** a recurrence id with no `Z` is read in the calendar's zone for the "already started" check, not in the event's own zone.

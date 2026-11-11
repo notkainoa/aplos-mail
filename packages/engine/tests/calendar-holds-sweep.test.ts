@@ -30,10 +30,14 @@ async function rig(answers: (() => Promise<CalendarWriteResult>)[], calendarZone
     remove: () => (calls.push('remove'), answer()),
     rsvp: () => (calls.push('rsvp'), answer()),
   };
-  const engine = await createEngine({ store, clock, log, ports: { calendar } });
-  const window = engine.connect();
-  const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
-    window.call(method, args) as Promise<Output<M>>;
+  const boot = async () => {
+    const engine = await createEngine({ store, clock, log, ports: { calendar } });
+    const window = engine.connect();
+    const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
+      window.call(method, args) as Promise<Output<M>>;
+    return { engine, window, call };
+  };
+  const { engine, window, call } = await boot();
   store.commit({ opId: 'a', origin: 'local', writes: [{ ...accountWrite }] });
   store.commit({
     opId: 'cal',
@@ -67,7 +71,7 @@ async function rig(answers: (() => Promise<CalendarWriteResult>)[], calendarZone
       })),
     ],
   });
-  return { call, calls, clock, store, engine, window };
+  return { call, calls, clock, store, engine, window, boot };
 }
 
 const rename = (opId: string, id: string) => ({
@@ -300,4 +304,75 @@ test('Operation/get answers in the asked order when mail operations and held one
     ['h2', 'mail1', 'h1'],
   );
   assert.deepEqual(got.notFound, ['nope']);
+});
+
+test('a far-future event held 10 minutes late is still sent; 20 minutes late it waits for Retry', async () => {
+  const w = await rig([]);
+  // The app is closed while the window runs out, so the hold comes due only at launch.
+  await w.call('Event/set', rename('on-time', 'acct-1:primary/ev1'));
+  await w.engine.close();
+  w.clock.advance(10 * 60_000);
+  const second = await w.boot();
+  w.clock.advance(1_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put'], 'ten minutes late is within the limit');
+
+  await second.call('Event/set', rename('too-late', 'acct-1:primary/ev2'));
+  await second.engine.close();
+  w.clock.advance(20 * 60_000);
+  const third = await w.boot();
+  w.clock.advance(1_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put'], 'twenty minutes late waits');
+  assert.equal(
+    (await third.call('Operation/get', { opIds: ['too-late'] })).list[0]!.error?.reasonCode,
+    'calendar.late',
+  );
+  await third.engine.close();
+});
+
+test('undo of a hold whose answer was lost is refused: the change may already be at Google', async () => {
+  const w = await rig([
+    () =>
+      Promise.reject(
+        new ContractError({ type: 'unavailable', message: 'x', reasonCode: 'calendar.uncertain' }),
+      ),
+  ]);
+  await w.call('Event/set', rename('un1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal(
+    (await w.call('Operation/get', { opIds: ['un1'] })).list[0]!.error?.reasonCode,
+    'calendar.uncertain',
+  );
+  await assert.rejects(
+    w.call('Operation/undo', { opId: 'un1', undoOpId: 'un1-undo' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'conflict',
+  );
+  assert.equal((await w.call('Operation/get', { opIds: ['un1'] })).list[0]!.state, 'failed');
+});
+
+const occurrence = (opId: string, recurrence: string) => ({
+  opId,
+  notify: true,
+  change: {
+    type: 'update' as const,
+    id: `acct-1:primary/ev1@${recurrence}`,
+    scope: 'occurrence' as const,
+    fields: { title: 'Just this one' },
+  },
+});
+
+test('a series change and an occurrence change of one event clash; two different occurrences do not', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', occurrence('o-a', '20990102T170000Z'));
+  await w.call('Event/set', occurrence('o-b', '20990103T170000Z')); // another occurrence: fine
+  await assert.rejects(
+    w.call('Event/set', rename('s-all', 'acct-1:primary/ev1')),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
+  );
+  await assert.rejects(
+    w.call('Event/set', occurrence('o-a2', '20990102T170000Z')),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
+  );
 });
