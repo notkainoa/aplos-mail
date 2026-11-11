@@ -334,7 +334,6 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
     id,
     kind: 'info',
     message: failure.message,
-    // An operation-level failure (`calendar.late`) offers Retry too: it is the operation's own.
     ...(failure.retry === 'none' && failure.opRetry !== true
       ? {}
       : { actions: [{ id: 'retry', label: 'Retry' }] }),
@@ -342,6 +341,31 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
     onAction: actionId => {
       if (actionId !== 'retry') return;
       retryOnce();
+    },
+  });
+}
+
+/**
+ * The toast for a failure the provider reported on an ACCEPTED write: `persistent` — a Retry the
+ * owner must still find after looking away (~4 s is too easy to miss for a change they believe is
+ * in) — and its Retry, when one is honest, is the operation's own `Operation/retry` on the same
+ * opId, manual only. Nothing here arms a timer: a `retryAfterMs` at this level means "try later",
+ * never an auto-fired re-send of a write that emails guests without a click (review15).
+ */
+function opFailureToast(opId: string, failure: WriteFailure, retryOp: () => void): void {
+  let spent = false;
+  pushToast({
+    id: `${opId}:failed`,
+    kind: 'info',
+    message: failure.message,
+    ...(failure.retry === 'none' && failure.opRetry !== true
+      ? {}
+      : { actions: [{ id: 'retry', label: 'Retry' }] }),
+    undoable: false,
+    onAction: actionId => {
+      if (actionId !== 'retry' || spent) return;
+      spent = true;
+      retryOp();
     },
   });
 }
@@ -568,19 +592,12 @@ export function operationUpdate(
       // `conflict` remote is unreachable on the hold path — the engine records a provider conflict
       // as `failed` + `calendar.conflict` — but if a store ever answers it, it stays terminal and
       // never offers a blind Retry (review7 7): blindRetryUnsafe holds it to the honest sentence.
-      const failure = writeFailureOf(view.error, watch.failure, view.remote === 'conflict');
+      const failure = writeFailureOf(view.error, watch.failure, view.remote === 'conflict', true);
       // The same follow-ups a submit-time refusal runs: re-open the editor, keep the draft, close
       // the gone event's detail, offer Enable editing or Sign in again — then the notice only when
       // none of them already carries the sentence.
       if (failureHandled(watch, failure, ui, ports)) return 'done';
-      if (failure.retry === 'none' && failure.opRetry !== true)
-        pushToast({
-          id: `${watch.opId}:failed`,
-          kind: 'info',
-          message: failure.message,
-          undoable: false,
-        });
-      else failureToast(watch.opId, failure, () => retryOperation(watch, view, ui));
+      opFailureToast(watch.opId, failure, () => retryOperation(watch, view, ui));
       return 'done';
     }
     case 'cancelled':

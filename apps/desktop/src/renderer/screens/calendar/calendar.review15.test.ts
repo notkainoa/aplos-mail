@@ -15,9 +15,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
 import type { OperationView, Receipt } from '../../data';
-import { getToasts, resetToasts } from '../../shell/store-toast';
+import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import type { CalendarEffect } from './calendar.model';
-import { operationUpdate, runCalendarEffect, type EffectPorts } from './effects';
+import { operationUpdate, runCalendarEffect, type EffectPorts, type WatchedWrite } from './effects';
 import { boot, NOW, ports, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
@@ -66,6 +66,17 @@ const view = (over: Partial<OperationView> = {}): OperationView => ({
   undoable: true,
   undoUntil: null,
   retry: () => ({ opId: 'op-1', receipt: Promise.resolve(receipt()) }),
+  ...over,
+});
+
+/** A held write's watch, the way `runWrite` hands it to HeldWrites. */
+const watch = (over: Partial<WatchedWrite> = {}): WatchedWrite => ({
+  opId: 'op-1',
+  entryIds: ['climb'],
+  at: { dbEpoch: 'e', seq: 9 },
+  held: true,
+  addedIds: [],
+  failure: 'Couldn’t move Climbing.',
   ...over,
 });
 
@@ -236,6 +247,49 @@ test('review15: a submit-time calendar.late shows its sentence with no Retry', a
     assert.deepEqual(toast?.actions ?? [], [], 'no operation exists to retry — no action');
     // And a click on any leftover action must not fire: nothing was accepted to re-send.
     assert.equal(spy.calls.length, 1);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review15: an operation-level calendar.unavailable retries only by hand', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    // The write was accepted; the provider then refused it with retryAfterMs. On the submit-time
+    // path that number arms a timer that re-fires on its own — here it would re-send a
+    // guest-notifying write untouched. Operation-level Retry is manual only (review15).
+    let retries = 0;
+    const failed = view({
+      remote: 'failed',
+      error: {
+        type: 'unavailable',
+        message: 'provider unreachable',
+        reasonCode: 'calendar.unavailable',
+        retryAfterMs: 1,
+      },
+      retry: () => {
+        retries += 1;
+        return { opId: 'op-1', receipt: Promise.resolve(receipt()) };
+      },
+    });
+    assert.equal(operationUpdate(watch(), failed, ui, ports()), 'done');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(retries, 0, 'nothing re-fires Operation/retry on a timer');
+    const toast = getToasts().find(t => t.id.endsWith(':failed'));
+    assert.equal(
+      toast?.message,
+      "Couldn't reach Google Calendar. The change hasn't been sent yet.",
+      'the write was accepted — only its send is owed',
+    );
+    assert.deepEqual(
+      toast?.actions?.map(a => a.label),
+      ['Retry'],
+    );
+    assert.ok(toast);
+    runToastAction(toast.id, 'retry');
+    assert.equal(retries, 1, 'the click runs Operation/retry on the same opId');
   } finally {
     resetToasts();
   }

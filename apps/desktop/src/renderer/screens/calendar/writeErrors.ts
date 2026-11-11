@@ -138,11 +138,15 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
  * The failure for a refused write: `error` is whatever the port rejected with (`OperationFailedError`
  * from the data layer's commands, or a `ContractError`), `fallback` the effect's own generic sentence
  * ("Couldn't move Q4 review."). Codes the table does not know keep the fallback and today's Retry.
+ * `atOperation` marks a failure the PROVIDER reported on an already-accepted write: "Nothing
+ * changed" copy is false there (the change is real — only its send is owed), and a `retryAfterMs`
+ * means "try later", never a timer that re-sends without a click (review15).
  */
 export function writeFailureOf(
   error: unknown,
   fallback: string,
   blindRetryUnsafe = false,
+  atOperation = false,
 ): WriteFailure {
   const body = bodyOf(error);
   if (body.reasonCode === 'permission.calendarWrite')
@@ -158,11 +162,19 @@ export function writeFailureOf(
   if (body.type === 'notImplemented')
     return { message: "Editing isn't available yet. Nothing was changed.", retry: 'none' };
   if (body.reasonCode === 'calendar.unavailable')
-    return {
-      message: "Couldn't reach Google Calendar. Nothing changed.",
-      retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
-      ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
-    };
+    return atOperation
+      ? {
+          // The write was accepted — the provider just could not be reached. Retry is the
+          // operation's own `Operation/retry`, manual only (review15).
+          message: "Couldn't reach Google Calendar. The change hasn't been sent yet.",
+          retry: 'none',
+          opRetry: true,
+        }
+      : {
+          message: "Couldn't reach Google Calendar. Nothing changed.",
+          retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
+          ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
+        };
   const known = body.reasonCode ? WRITE_FAILURE_COPY[body.reasonCode] : undefined;
   // `calendar.holdPending` accepted nothing, so a re-run is safe; the rest keep no Retry.
   if (known)
