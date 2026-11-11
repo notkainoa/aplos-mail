@@ -4,7 +4,6 @@ import {
   clipboard,
   ipcMain,
   MessageChannelMain,
-  nativeTheme,
   safeStorage,
   shell,
   utilityProcess,
@@ -41,7 +40,7 @@ import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
-import { popout } from './windows';
+import { hostTheme, popout } from './windows';
 
 /**
  * Main's half of the real engine path (lane eng-contract, contract-4), on only with `APLOS_ENGINE=real`. Main forks the
@@ -107,7 +106,7 @@ function hostEvent(raw: unknown) {
   if (event.type === 'badge' && !isTest) app.setBadgeCount(event.count);
   // An open enum: a theme a newer engine adds is ignored here.
   if (event.type === 'appearance' && themes.has(event.theme))
-    nativeTheme.themeSource = event.theme as 'light' | 'dark' | 'system';
+    hostTheme(event.theme as 'light' | 'dark' | 'system');
   if (event.type === 'openExternal') void Promise.resolve(openSignIn(event.url)).catch(() => {});
   if (event.type === 'reminder')
     notify(event.item.title, event.item.body ?? '', event.item.threadId);

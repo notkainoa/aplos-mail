@@ -142,7 +142,7 @@ const NON_OWNER = `lower(coalesce(json_extract(p.value, '$.address'), '')) NOT I
     (SELECT lower(ac.address) FROM accounts ac
      UNION
      SELECT lower(m.from_addr) FROM messages m
-      WHERE m.thread_id = t.id AND (m.flags & 16) != 0 AND (m.flags & 8) = 0 AND m.from_addr IS NOT NULL)`;
+      WHERE m.thread_id = t.id AND (m.flags & 16) != 0 AND (m.flags & 8) = 0 AND m.from_addr IS NOT NULL AND m.from_addr <> '')`;
 
 /**
  * The newest non-owner sender's name of each row, in place of its id: the Low band's "Field Notes, Cedar Market and
@@ -311,11 +311,16 @@ export function laterPlan(spec: Extract<ViewSpec, { kind: 'later' }>, env: ViewE
 
 // ------------------------------------------------------------ Low importance by sender
 
-/** The first participant who is not the owner, else the newest sender's name. */
-const SENDER_ROW = `json_array(${"t.account_id || ':' || t.remote_id"},
-  coalesce((SELECT json_extract(p.value, '$.address') FROM json_each(t.participants) p
-    WHERE ${NON_OWNER} LIMIT 1), ${SENDER_NAME}),
-  ${SENDER_NAME}, t.list_unsub IS NOT NULL)`;
+/**
+ * The first participant who is not the owner, else the newest sender's name. The address and the name are each worked
+ * out once per thread in the inner select: the owner test is a lookup, and running it again for every use of the
+ * name made the grouping several times slower on a thread with many participants.
+ */
+const SENDER_ROW = `(SELECT json_array(t.account_id || ':' || t.remote_id, coalesce(x.address, x.name), x.name,
+    t.list_unsub IS NOT NULL)
+  FROM (SELECT
+    (SELECT json_extract(p.value, '$.address') FROM json_each(t.participants) p WHERE ${NON_OWNER} LIMIT 1) AS address,
+    ${SENDER_NAME} AS name) x)`;
 
 export interface Group {
   address: string;

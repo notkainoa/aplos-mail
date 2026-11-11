@@ -226,7 +226,9 @@ test('the utility rewrites Mail/serve’s windowId from its port host before the
   send!({ kind: 'detach', windowId: 5 }, []);
   call(5, 'Mail/serve', { token: 't', path: '', windowId: 5 });
   await settle();
-  assert.deepEqual(asked, [
+  // The utility also seeds main's theme once after `ready` (a Settings/get on the control session, #453): not a relayed call.
+  const relayed = asked.filter(entry => (entry as { method: string }).method !== 'Settings/get');
+  assert.deepEqual(relayed, [
     { method: 'Mail/serve', args: { token: 't', path: '', windowId: 'w1' } },
     { method: 'Mail/serve', args: { token: 't', path: '', windowId: '' } },
     { method: 'Mail/serve', args: { token: 't', path: '', windowId: '' } },

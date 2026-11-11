@@ -247,6 +247,22 @@ function serveControl(
   );
 }
 
+/**
+ * Main holds no settings copy on this path: the stored theme is pushed once after `ready`, on the same host channel a
+ * `Settings/set` theme change uses, so `nativeTheme` follows an explicit Light/Dark from the first paint. A refused
+ * read is skipped: the next change still emits the event.
+ */
+async function seedAppearance(parent: UtilityParent, control: EngineSession): Promise<void> {
+  try {
+    const settings = (await control.call('Settings/get', {})) as { ui?: { theme?: unknown } };
+    const theme = settings.ui?.theme;
+    if (theme === 'light' || theme === 'dark' || theme === 'system')
+      parent.post({ kind: 'host', event: { type: 'appearance', theme } });
+  } catch {
+    // Not fatal: a later Settings/set still emits the event.
+  }
+}
+
 /** Starts listening on the parent port; `init` starts the engine, `quit` closes it and exits. */
 export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void {
   const { bridge, answer } = createBridge(parent);
@@ -269,6 +285,7 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
       position: () => ({ dbEpoch: store.dbEpoch, seq: store.seq() }),
     });
     parent.post({ kind: 'ready', dbEpoch: store.dbEpoch, seq: store.seq() });
+    void seedAppearance(parent, control);
   }
 
   async function quit() {

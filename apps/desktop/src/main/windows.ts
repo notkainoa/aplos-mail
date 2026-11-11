@@ -92,11 +92,15 @@ function focusMain(): Promise<BrowserWindow | undefined> {
 let activeBadge = -1,
   activeTheme: AppState['settings']['theme'] | undefined,
   syncingTheme = false;
+// The one theme mirror on both engine paths: the legacy AppState feeds it through applyAppearance, the real engine
+// through its `appearance` host event (seeded at every engine start — main holds no settings copy there).
+function hostTheme(theme: AppState['settings']['theme']) {
+  if (activeTheme === theme) return;
+  activeTheme = theme;
+  syncTheme(true);
+}
 function applyAppearance(state: AppState) {
-  if (activeTheme !== state.settings.theme) {
-    activeTheme = state.settings.theme;
-    syncTheme(true);
-  }
+  hostTheme(state.settings.theme);
   const badge = state.settings.zen
     ? 0
     : state.threads.filter(thread => thread.unread && thread.status === 'new').length;
@@ -458,6 +462,7 @@ export {
   command,
   focusMain,
   applyAppearance,
+  hostTheme,
   syncTheme,
   createWindow,
   popout,

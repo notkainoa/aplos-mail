@@ -157,3 +157,95 @@ test('the home Low band preview names non-owner senders, never the owner', () =>
     store.close();
   }
 });
+
+// ---- review of #464 (integrator Opus): rules whose undo used to stay green
+
+const low = (thread: string): StoreWrite => ({
+  kind: 'workflow',
+  accountId: ACCOUNT,
+  remoteThreadId: thread,
+  patch: { lane: 'low' },
+});
+
+test('recipients never carry a Bcc address', () => {
+  const store = setup([
+    msg('m1', 't1', 1, { from: { address: 'pat@mail.example', name: 'Pat' } }),
+    sent('m2', 't1', 2, { bcc: [{ address: 'secret@mail.example', name: 'Hidden' }] }),
+  ]);
+  try {
+    assert.deepEqual(row(store, 't1').recipients, [{ name: 'Pat', address: 'pat@mail.example' }]);
+  } finally {
+    store.close();
+  }
+});
+
+test('recipients follow the NEWEST message the owner sent', () => {
+  const store = setup([
+    sent('m1', 't1', 1, { to: [{ address: 'old@mail.example', name: 'Old' }] }),
+    sent('m2', 't1', 3, { to: [{ address: 'new@mail.example', name: 'New' }] }),
+    sent('m3', 't1', 2, { to: [{ address: 'mid@mail.example', name: 'Mid' }] }),
+  ]);
+  try {
+    assert.deepEqual(row(store, 't1').recipients, [{ name: 'New', address: 'new@mail.example' }]);
+  } finally {
+    store.close();
+  }
+});
+
+test('the Low band groups under the other person when the newest sender is the owner’s second account', () => {
+  const store = setup([
+    { ...accountWrite, id: 'acct-2', address: 'desk@mail.example' },
+    msg('m1', 't1', 1, { from: { address: 'crowd@news.example', name: 'Crowd' } }),
+    msg('m2', 't1', 2, { from: { address: 'desk@mail.example', name: 'Owner Elsewhere' } }),
+    low('t1'),
+  ]);
+  try {
+    const groups = store.read(q => lowGroups(q));
+    assert.deepEqual(
+      groups.map(g => [g.address, g.name]),
+      [['crowd@news.example', 'Crowd']],
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test('a draft sent from an address never hides a real sender of that address in the Low band', () => {
+  const store = setup([
+    msg('m1', 't1', 1, { from: { address: 'shared@list.example', name: 'List Team' } }),
+    sent('m2', 't1', 2, {
+      from: { address: 'shared@list.example', name: 'List Team' },
+      flags: { ...fromMeFlags, draft: true },
+    }),
+    low('t1'),
+  ]);
+  try {
+    const groups = store.read(q => lowGroups(q));
+    assert.deepEqual(
+      groups.map(g => g.address),
+      ['shared@list.example'],
+      'grouped by the address, which a hidden sender would have lost (it would fall back to the name)',
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test('an empty from address is not the owner: the Low band agrees with the row’s participants', () => {
+  const store = setup([
+    msg('m1', 't1', 1, { from: { address: 'xavier@news.example', name: 'Xavier' } }),
+    sent('m2', 't1', 2, {
+      from: { address: '', name: 'Weird' },
+      to: [{ address: 'xavier@news.example' }],
+    }),
+    low('t1'),
+  ]);
+  try {
+    assert.equal(row(store, 't1').participants.find(p => p.name === 'Weird')?.me, undefined);
+    const layout = store.read(q => compileView({ kind: 'home' }, ENV).layout(q));
+    const section = layout.sections.find(s => s.key === 'low');
+    assert.deepEqual(section?.senders, ['Weird']);
+  } finally {
+    store.close();
+  }
+});
