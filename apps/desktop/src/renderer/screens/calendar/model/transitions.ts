@@ -319,6 +319,7 @@ function createSave(
       },
       undoLabel: `Added ${entry.title}`,
       failure: `Couldn't add ${entry.title}.`,
+      draft,
       accountId: calendar?.accountId,
     },
   ]);
@@ -430,6 +431,7 @@ function updateSave(
       undoLabel: `Changed ${title}`,
       failure: failureFor('change', entry?.title ?? title),
       reopenEditorId: draft.eventId,
+      draft,
       accountId: original?.accountId,
     },
   ]);
