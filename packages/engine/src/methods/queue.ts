@@ -47,7 +47,7 @@ const targets = (raw: string) => {
   return '';
 };
 
-function list(args: Input<'Queue/list'>, ctx: MethodContext): Output<'Queue/list'> {
+async function list(args: Input<'Queue/list'>, ctx: MethodContext): Promise<Output<'Queue/list'>> {
   const kinds = args.kinds as readonly string[] | undefined;
   const want = (kind: QueueItem['kind']) => !kinds || kinds.includes(kind);
   const items = ctx.services.store.read(q => {
@@ -148,7 +148,9 @@ function list(args: Input<'Queue/list'>, ctx: MethodContext): Output<'Queue/list
       }
     return out;
   });
-  return { list: items };
+  // Calendar changes held for guests (prov-cal): content-free, listed beside the other ops.
+  const held = want('op') ? await ctx.services.calendarHolds?.list() : undefined;
+  return { list: held?.length ? [...items, ...held] : items };
 }
 
 function opScope(ctx: MethodContext, opId: string) {
@@ -171,7 +173,11 @@ async function retry(
   ctx: MethodContext,
 ): Promise<Output<'Queue/retry'>> {
   const id = args.id;
-  if (id.startsWith('op:')) {
+  if (id.startsWith('cal:')) {
+    needScope(ctx, 'send');
+    if (!ctx.services.calendarHolds?.has(id.slice(4))) throw notFound();
+    await ctx.redispatch('Operation/retry', { opId: id.slice(4) });
+  } else if (id.startsWith('op:')) {
     opScope(ctx, id.slice(3));
     // The action first: a refused retry leaves no audit row and burns no idempotency key.
     await ctx.redispatch('Operation/retry', { opId: id.slice(3) });
@@ -211,6 +217,14 @@ async function discard(
   ctx: MethodContext,
 ): Promise<Output<'Queue/discard'>> {
   const id = args.id;
+  if (id.startsWith('cal:')) {
+    const holds = ctx.services.calendarHolds;
+    if (!holds?.has(id.slice(4))) throw notFound();
+    needScope(ctx, 'send');
+    await holds.dismiss(id.slice(4), ctx.caller);
+    audit(ctx, 'Queue/discard', id);
+    return { ok: true };
+  }
   if (id.startsWith('op:')) {
     opScope(ctx, id.slice(3));
     const opState = ctx.services.store.read(
