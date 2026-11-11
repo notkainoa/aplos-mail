@@ -100,7 +100,6 @@ test('review19: an empty list draws no line', () => {
   assert.equal(vm.failedHolds, null);
   const withHolds = { ...ctxFor(), failedHolds: failedHoldsOf([calItem()], new Set(), []) };
   const vm2 = viewModel(S(), withHolds);
-  assert.equal(vm2.failedHolds?.line, "1 change didn't send");
   assert.equal(vm2.failedHolds?.items.length, 1);
 });
 

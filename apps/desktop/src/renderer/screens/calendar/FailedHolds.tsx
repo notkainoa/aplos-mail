@@ -262,7 +262,9 @@ export function useFailedHolds(
       live = false;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [refreshKey, tick, toasts, listDeps, watchMs]);
+    // `toasts` stays out of the deps: every app toast would re-list the queue — the dedupe set is
+    // computed at render from the live store anyway (review21).
+  }, [refreshKey, tick, listDeps, watchMs]);
 
   const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)), accounts, filter);
   return { holds, refresh };

@@ -1,6 +1,6 @@
 /** The view model CalendarScreen draws. */
-import { toIsoDate, toIsoDateTime, type Calendar, type Event } from '../../../data';
-import { failedHoldLine, type FailedHold } from '../FailedHolds';
+import { toIsoDate, toIsoDateTime, type Calendar } from '../../../data';
+import type { FailedHold } from '../FailedHolds';
 import type {
   CalendarEventData,
   CalendarView,
@@ -92,8 +92,6 @@ export interface CalendarViewModel {
   readonly gridLabel: string;
   readonly periodWord: 'day' | 'week' | 'month';
   readonly entries: readonly CalendarEventData[];
-  /** The loaded events by id: the failed-holds rows resolve their titles here (review19). */
-  readonly events: ReadonlyMap<string, Event>;
   readonly now: IsoDateTime;
   readonly weekStartsOn: 0 | 1;
   readonly selectedId: string | undefined;
@@ -130,7 +128,7 @@ export interface CalendarViewModel {
    * Failed guest-notifying holds from the queue (review20): the pane's quiet line ("N changes didn't
    * send · Review") and its list; null while nothing failed — never a standing nag.
    */
-  readonly failedHolds: { items: readonly FailedHold[]; line: string; open: boolean } | null;
+  readonly failedHolds: { items: readonly FailedHold[]; open: boolean } | null;
 }
 
 /** What an empty day or week says: one plain sentence, then what comes next from the loaded events. */
@@ -242,7 +240,6 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
     gridLabel: gridLabel(shown, period, state.anchor, dayCount),
     periodWord: periodWord(shown),
     entries,
-    events: ctx.events,
     now: toIsoDateTime(ctx.now),
     weekStartsOn: ctx.weekStartsOn,
     selectedId: entryById(ctx, state.selectedId)?.id,
@@ -290,13 +287,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
     emptyAction: ctx.calendarsReady && (shown === 'day' || shown === 'agenda'),
     empty: emptyView(shown, state, ctx, period, entries, dayCount),
     failedHolds:
-      ctx.failedHolds.length > 0
-        ? {
-            items: ctx.failedHolds,
-            line: failedHoldLine(ctx.failedHolds.length),
-            open: state.holdsReview,
-          }
-        : null,
+      ctx.failedHolds.length > 0 ? { items: ctx.failedHolds, open: state.holdsReview } : null,
   };
 }
 
