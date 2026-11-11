@@ -85,7 +85,19 @@ for (const theme of ['light', 'dark']) {
   await to.fill('');
   await to.pressSequentially('jon');
   await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    window.__prevented = null;
+    window.addEventListener('keydown', e => (window.__prevented = e.defaultPrevented));
+  });
+  check(
+    `${theme}: the typed text has a highlighted match to NOT pick`,
+    (await page.locator('[role=option][aria-selected=true]').count()) === 1,
+  );
   await to.press('Meta+Enter');
+  check(
+    `${theme}: the field prevented Cmd+Return, so the shell would not send`,
+    (await page.evaluate(() => window.__prevented)) === true,
+  );
   check(
     `${theme}: Cmd+Return with text typed commits that text, not the highlighted match`,
     (await page.getByTestId('to-list').textContent()) === 'joanna.pierce@example.com, jo, jon',

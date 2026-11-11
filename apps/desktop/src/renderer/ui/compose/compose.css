@@ -461,6 +461,7 @@
 }
 .ui-recipient-field__option-address {
   flex: none;
+  max-width: 100%;
   overflow: hidden;
   color: var(--dim);
   font: var(--type-small);
