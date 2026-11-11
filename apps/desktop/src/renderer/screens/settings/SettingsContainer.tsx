@@ -26,6 +26,7 @@ import {
   actThenList,
   mergeAccounts,
   mergePatch,
+  verboseFrom,
   withoutKeyPath,
   type AccountWrite,
   type AiModelInfo,
@@ -75,6 +76,10 @@ export function dataPorts(): SettingsApiPort {
     diagnosticsSave: async () => saveBlob(await api.diagnostics.export({})),
     verboseSet: async on => {
       const { until } = await api.diagnostics.verbose({ on });
+      return { until };
+    },
+    verboseGet: async () => {
+      const { until } = await api.diagnostics.verbose({});
       return { until };
     },
     dataExport: async () => saveBlob(await api.data.export({})),
@@ -293,6 +298,13 @@ export function useSettingsState(
       quiet(ports.listenerGet().then(listener => keep({ listener })));
       quiet(ports.clientsList().then(clients => keep({ clients })));
       quiet(ports.workflowStatus().then(workflow => keep({ workflow })));
+    }
+    if (section === 'help') {
+      quiet(
+        Promise.resolve()
+          .then(() => ports.verboseGet())
+          .then(r => keep({ verbose: verboseFrom(r) })),
+      );
     }
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));
