@@ -672,5 +672,8 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Settings → General → Tools on this Mac: an Add a tool dialog (name, kind, permissions, read ticked by default, plain warnings for Send and settings) calls `Clients/grant`; the next step shows the key file's path ONCE with Copy path and a plain note. The path is the dialog's own state: it is not in Settings' data or view, and the tool joins the list without it. Aplos never has the key itself on screen (the token never crosses the contract). Revoke now asks first.
 - Device sync: one calm row from `Workflow/status`; no control is drawn while `available` is false (the engine says "later version"). Enable, code and join are not built until the engine says available.
 
+## 2026-11-10 — prov-cal: held calendar writes (PR 3, `rv/prov-cal/calendar-holds`, stacked on #394)
+
+- `Event/set` and `Event/rsvp` that tell guests wait the undo window as a durable hold (`services.calendarHolds`); `Operation/undo`, `Operation/get` and `Operation/retry` reach it through `methods/operation.ts`; scope-checked like mail operations; survives a restart; 9 tests in `packages/engine/tests/calendar-holds.test.ts` (mutation-checked: scope check, the re-read before a send).
 ## ui-settings: the verbose switch opens as the engine says (2026-11-11)
 - Settings → Help & about reads `Diagnostics/verbose` with no `on` (#418, a query that changes nothing) when it opens, so Verbose logging shows on, with its switch-off time, if the engine already has it on. A switch-off time means on; none means off.

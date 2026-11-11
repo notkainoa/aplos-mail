@@ -3,6 +3,8 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
 import { isKnownZone, toWall } from '../calendar/recurrence/zone';
 import { eventIdForOp } from '../calendar/event-id';
+import { runCall } from '../calendar/holds-call';
+import type { HeldCall, HoldSpec } from '../calendar/holds-types';
 import {
   calendarFromRow,
   eventFromRow,
@@ -313,24 +315,58 @@ function hideEvents(args: Input<'Event/hide'>, ctx: MethodContext): Output<'Even
   return receipt(ctx, args.opId);
 }
 
+/**
+ * A write that tells guests (`notify`) waits its undo window as a hold when the engine has one: the receipt is
+ * undoable until `undoUntil` and `Operation/undo` cancels it before Google hears of it. Anything else goes at once.
+ */
+async function holdIfNotifying(
+  ctx: MethodContext,
+  spec: Omit<HoldSpec, 'windowMs'>,
+  notify: boolean | undefined,
+): Promise<Receipt | undefined> {
+  const holds = ctx.services.calendarHolds;
+  if (!holds || notify !== true) return undefined;
+  const receipt = await holds.hold(spec);
+  auditCall(ctx, spec.method, spec.opId);
+  return receipt;
+}
+
 async function setEvent(
   args: Input<'Event/set'>,
   ctx: MethodContext,
 ): Promise<Output<'Event/set'>> {
   const { change } = args;
   const notify = args.notify;
+  const spec = (targets: string[], call: HeldCall) => ({
+    opId: args.opId,
+    method: 'Event/set' as const,
+    targets,
+    call,
+  });
   if (change.type === 'create') {
     const cal = parseCalendarIdIn(change.calendarId, accountIds(ctx));
     writableCalendar(ctx, cal.accountId, cal.remoteId);
-    const result = await ctx.services.calendar.put(cal.accountId, {
-      calendarRemoteId: cal.remoteId,
-      scope: 'occurrence',
-      fields: toPortFields(change.fields),
-      notify,
-      // The event id derives from the op id, so a re-sent create meets 409, not a duplicate.
-      newRemoteId: await eventIdForOp(cal.accountId, args.opId),
-    });
-    return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
+    const call: HeldCall = {
+      op: 'put',
+      account: cal.accountId,
+      change: {
+        calendarRemoteId: cal.remoteId,
+        scope: 'occurrence',
+        fields: toPortFields(change.fields),
+        notify,
+        // The event id derives from the op id, so a re-sent create meets 409, not a duplicate.
+        newRemoteId: await eventIdForOp(cal.accountId, args.opId),
+      },
+    };
+    const held = await holdIfNotifying(ctx, spec([change.calendarId], call), notify);
+    if (held) return { receipt: held };
+    return savedEvent(
+      ctx,
+      args.opId,
+      await runCall(ctx.services.calendar, call),
+      cal.accountId,
+      cal.remoteId,
+    );
   }
   const ref = parseEventIdIn(change.id, accountIds(ctx));
   writableCalendar(ctx, ref.accountId, ref.calRemote);
@@ -342,11 +378,14 @@ async function setEvent(
     ...(etag ? { etag } : {}),
   };
   if (change.type === 'destroy') {
-    const result = await ctx.services.calendar.remove(ref.accountId, {
-      ...target,
-      scope: change.scope,
-      notify,
-    });
+    const call: HeldCall = {
+      op: 'remove',
+      account: ref.accountId,
+      ref: { ...target, scope: change.scope, notify },
+    };
+    const held = await holdIfNotifying(ctx, spec([change.id], call), notify);
+    if (held) return { receipt: held };
+    const result = await runCall(ctx.services.calendar, call);
     if (result.kind === 'conflict') throw changedElsewhere();
     auditCall(ctx, 'Event/set', args.opId);
     return { receipt: receipt(ctx, args.opId) };
@@ -357,13 +396,20 @@ async function setEvent(
   // to the clicked instance's slot).
   if (change.scope === 'series' && ref.recurrenceId)
     rebaseSeriesTimes(ctx, { ...ref, recurrenceId: ref.recurrenceId }, fields);
-  const result = await ctx.services.calendar.put(ref.accountId, {
-    ...target,
-    scope: change.scope,
-    fields,
-    notify,
-  });
-  return savedEvent(ctx, args.opId, result, ref.accountId, ref.calRemote);
+  const call: HeldCall = {
+    op: 'put',
+    account: ref.accountId,
+    change: { ...target, scope: change.scope, fields, notify },
+  };
+  const held = await holdIfNotifying(ctx, spec([change.id], call), notify);
+  if (held) return { receipt: held };
+  return savedEvent(
+    ctx,
+    args.opId,
+    await runCall(ctx.services.calendar, call),
+    ref.accountId,
+    ref.calRemote,
+  );
 }
 
 /**
@@ -550,18 +596,28 @@ async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Outp
   const ref = parseEventIdIn(args.id, accountIds(ctx));
   writableCalendar(ctx, ref.accountId, ref.calRemote);
   const etag = baseEtag(ctx, ref, args.scope);
-  const result = await ctx.services.calendar.rsvp(
-    ref.accountId,
-    {
+  const notify = args.notify ?? true;
+  const call: HeldCall = {
+    op: 'rsvp',
+    account: ref.accountId,
+    ref: {
       calendarRemoteId: ref.calRemote,
       remoteId: ref.remote,
       ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
       ...(etag ? { etag } : {}),
       scope: args.scope,
     },
-    args.response,
-    { notify: args.notify ?? true },
+    response: args.response,
+    opts: { notify },
+  };
+  // An answer that tells the organizer is held briefly like any change that tells someone; `notify: false` goes at once.
+  const held = await holdIfNotifying(
+    ctx,
+    { opId: args.opId, method: 'Event/rsvp', targets: [args.id], call },
+    notify,
   );
+  if (held) return held;
+  const result = await runCall(ctx.services.calendar, call);
   if (result.kind === 'conflict') throw changedElsewhere();
   auditCall(ctx, 'Event/rsvp', args.opId);
   return receipt(ctx, args.opId);
