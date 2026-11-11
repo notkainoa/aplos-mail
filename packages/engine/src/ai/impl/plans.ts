@@ -7,6 +7,7 @@ import { FLAG } from '../../store/commit';
 import { readBody } from '../../store/bodies';
 import { hexId } from '../../sync/connect-sessions';
 import { splitId } from '../../views/compile';
+import { eventIdForOp } from '../../calendar/event-id';
 import { parseCalendarIdIn } from '../../calendar/project';
 import { fromWall, isKnownZone } from '../../calendar/recurrence/zone';
 import { usableZone } from '../../clock/zone';
@@ -647,10 +648,10 @@ const planFields = (
 
 /**
  * Confirm is a three-step transaction: `claim` (open → confirming under this opId, in its own commit so two
- * callers can't both pass), `put`, then `settle` to confirmed with the event's wire id. A definite refusal
- * releases the claim back to `open`; an uncertain failure keeps it so a same-opId retry resolves it. A call
- * that dies mid-way is retried with the same opId; a different opId hits `conflict`. Remote-id idempotency
- * (`newRemoteId`/`eventIdForOp`) lands with #394 — this PR rebases on it when merged.
+ * callers can't both pass), `put` with `newRemoteId` derived from (calendar account, opId) so a retried
+ * create names the same remote event, then `settle` to confirmed with the event's wire id. A definite
+ * refusal releases the claim back to `open`; an uncertain failure keeps it so a same-opId retry resolves
+ * it. A call that dies mid-way is retried with the same opId; a different opId hits `conflict`.
  */
 export async function confirmPlan(
   args: Input<'Plan/confirm'>,
@@ -710,6 +711,9 @@ export async function confirmPlan(
     result = await services.calendar.put(calAccountId, {
       calendarRemoteId: calRemote,
       scope: 'occurrence',
+      // A retried create names the same remote event — the provider answers "already exists" instead
+      // of a second event, so a lost answer or a dead settle can never duplicate.
+      newRemoteId: await eventIdForOp(calAccountId, args.opId),
       fields: planFields(row, args),
       notify: false,
     });

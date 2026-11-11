@@ -155,10 +155,15 @@ test('the plans window lists open proposals; a foreign-account wire id cannot di
 test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, bad dates never reach the table', async () => {
   const puts: Array<{ remoteId?: string }> = [];
   const calendar = {
-    put: async (_account: string, req: { remoteId?: string }) => {
+    put: async (_account: string, req: { remoteId?: string; newRemoteId?: string }) => {
       assert.equal(req.remoteId, undefined, 'a create carries no remoteId (it is not a PATCH)');
+      assert.match(
+        req.newRemoteId ?? '',
+        /^[a-v0-9]{26}$/,
+        'the create names the remote event through newRemoteId',
+      );
       puts.push(req);
-      return { kind: 'saved' as const, upserts: [{ remoteId: 'ev-1' }], removals: [] };
+      return { kind: 'saved' as const, upserts: [{ remoteId: req.newRemoteId }], removals: [] };
     },
   };
   const t = stubTransport(
@@ -214,7 +219,7 @@ test('Plan/confirm: put lands once, a repeated opId replays the stored eventId, 
   assert.deepEqual(out.plans[1].end, { type: 'date', date: '2026-11-15' });
   const confirmed = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   assert.equal(puts.length, 1);
-  assert.match(confirmed.eventId, /^acct-1:primary\/ev-1$/);
+  assert.match(confirmed.eventId, /^acct-1:primary\/[a-v0-9]{26}$/);
   const again = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
   // The replay answers from the stored row — no second provider call.
   assert.equal(again.eventId, confirmed.eventId);
@@ -247,7 +252,8 @@ test('Plan/confirm: a refused put releases the claim; a second opId can then con
       calls.push(req);
       if (calls.length === 1)
         throw new ContractError({ type: 'permission', message: 'Enable editing first.' });
-      return { kind: 'saved' as const, upserts: [{ remoteId: 'ev-1' }], removals: [] };
+      const r = req as { newRemoteId?: string };
+      return { kind: 'saved' as const, upserts: [{ remoteId: r.newRemoteId }], removals: [] };
     },
   };
   const w = await world(stubTransport(EVENT_ANSWER), { calendar });
@@ -272,7 +278,7 @@ test('Plan/confirm: a refused put releases the claim; a second opId can then con
   await assert.rejects(() => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }));
   // The refusal released the claim — a fresh opId proceeds instead of "being confirmed elsewhere".
   const again = await w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id });
-  assert.equal(again.eventId, 'acct-1:primary/ev-1');
+  assert.match(again.eventId, /^acct-1:primary\/[a-v0-9]{26}$/);
   w.file.cleanup();
 });
 
@@ -359,7 +365,11 @@ test('a plan settle write never accepts open, and never confirms without an even
 test('Plan/confirm: a second opId cannot take a claimed plan; thread delete purges replydraft/followup meta', async () => {
   const w = await world(stubTransport(EVENT_ANSWER), {
     calendar: {
-      put: async () => ({ kind: 'saved' as const, upserts: [{ remoteId: 'ev-9' }], removals: [] }),
+      put: async (_a: string, c: { newRemoteId?: string }) => ({
+        kind: 'saved' as const,
+        upserts: [{ remoteId: c.newRemoteId }],
+        removals: [],
+      }),
     },
   });
   seed(w);
@@ -385,7 +395,7 @@ test('Plan/confirm: a second opId cannot take a claimed plan; thread delete purg
     () => w.call('Plan/confirm', { opId: 'c2', id: out.plans[0].id }),
     (e: unknown) => (e as { type?: string }).type === 'conflict',
   );
-  assert.equal(done.eventId, 'acct-1:primary/ev-9');
+  assert.match(done.eventId, /^acct-1:primary\/[a-v0-9]{26}$/);
   // meta purge on threadDelete
   w.store.commit({
     opId: 'm1',
