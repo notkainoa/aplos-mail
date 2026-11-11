@@ -365,8 +365,9 @@ function optimisticIds(change: OptimisticChange): string[] {
  * The write's provider-side life after the receipt (the `operation` frame, `watchOperation`): a `failed`
  * hold is a refusal like any other — the overlay rolls back and the mapped sentence lands once, its
  * Retry `Operation/retry` on the same op id; an owner's `cancelled` (Undo inside the window) rolls back
- * and closes the toast quietly; leaving `queued` ends the undo window, so the held toast demotes to the
- * sent wording. One remote state answers once (frames may repeat), and a terminal state ends the watch —
+ * and closes both toasts quietly; a terminal `conflict` is the same refusal with no way forward, so
+ * the watch ends there. Leaving `queued` ends the undo window, so the held toast demotes to the sent
+ * wording. One remote state answers once (frames may repeat), and a terminal state ends the watch —
  * except `failed`, which stays so a retried-then-synced hold can take its failure toast down.
  */
 function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
@@ -405,6 +406,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
     if (remote === 'cancelled') {
       spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
       dismissToast(spec.opId);
+      dismissToast(`${spec.opId}:failed`);
       off();
       return;
     }

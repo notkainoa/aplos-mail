@@ -492,3 +492,24 @@ test('stackedWrites: writes on one event roll back cleanly in any order', async 
     resetToasts();
   }
 });
+
+test('heldWrites: a cancelled frame after a failure takes the failure toast down too', async () => {
+  const { control, flush, engine, opId } = await heldWrite(heldFailure('calendar.late'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    assert.ok(failedToast(), 'the failure is up');
+    const op = engine.fixture.ops.get(opId)?.operation;
+    assert.ok(op);
+    // The provider cancels the failed op (a raced owner undo, a provider-side discard): the stale
+    // failure toast — its Retry would call Operation/retry on a dead op — must go with it.
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'cancelled' } }],
+    });
+    await flush();
+    assert.equal(failedToast(), undefined, 'no stale failure toast behind a cancel');
+    assert.equal(getToasts().length, 0, 'nothing left');
+  } finally {
+    resetToasts();
+  }
+});
