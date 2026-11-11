@@ -518,7 +518,10 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       // change would snap back for the whole undo window. It settles at `synced` (then on the
       // frame after) inside `watchWrite`.
       if (!out.held) spec.entryIds.forEach(id => ui.settle(id, out.at, spec.opId));
-      watchWrite(spec, ui, ports, out.held);
+      // Only a journaled op can ever surface an `operation` frame — the real engine has no
+      // Operation row for a write-through receipt (`Operation/get` answers notFound), so watching
+      // one would leak the subscription (review16).
+      if (out.held || out.undoable) watchWrite(spec, ui, ports, out.held);
     },
     error => writeFailed(spec, ui, ports, error, retry),
   );
