@@ -112,6 +112,16 @@ doesn't and where it stopped.
   Expected: a clear warning that a send is pending, with a real choice. If it just quits and loses
   the send, that's a bug — note it.
 
+## 8b. Low importance and Home sorting (3 min, after the build with #387, #388, #407, #413, #389)
+
+(Wording from ui-home; it never opens your real mailbox, so this check is yours.)
+
+1. Open the app and let it sync for a few minutes. The re-sort of mail you already have runs 100 threads per sync round, newest first, so the top of Home fixes first.
+2. Home should show Do now with real to-dos and Important updates, and a Low importance line under them that lists a few senders and a count. Click it, or press J until it is highlighted and Return: the by-sender sheet opens (→ twice marks all done).
+3. Mail you wrote yourself that nobody answered must not be in Do now.
+4. Anything you moved by hand or set a rule for stays where you put it.
+5. If step 2 still shows nothing after a few syncs, tell the Integrator the Low count on Home and whether Settings shows the account still importing.
+
 ## 9. Weekly reconnect note
 
 - The test sign-in grant lapses about every 7 days (current grant expires **2026-11-10**). If the
