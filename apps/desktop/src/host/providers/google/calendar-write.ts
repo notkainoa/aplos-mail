@@ -47,6 +47,7 @@ interface ApiAttendee {
 interface ApiEvent {
   id?: string;
   status?: string;
+  organizer?: { email?: string; self?: boolean };
   etag?: string;
   attendees?: ApiAttendee[];
 }
@@ -258,7 +259,15 @@ export function createCalendarWrites(
     } catch (error) {
       // 409: an earlier send of this same create landed after all — answer with what is there.
       if (statusOf(error) !== 409) throw uncertain(error);
-      return saved(calendar, await read(ctx, calendar, eventId));
+      const there = await read(ctx, calendar, eventId);
+      // The same op id met an event that was deleted since: that is not "your create landed", and nothing exists.
+      if (there.status === 'cancelled')
+        throw new ContractError({
+          type: 'conflict',
+          message: 'That event was deleted. Create it again as a new event.',
+          reasonCode: 'calendar.opReused',
+        });
+      return saved(calendar, there);
     }
   }
 
@@ -353,16 +362,23 @@ export function createCalendarWrites(
       // carries If-Match on the copy just read and changes only my answer in it; nothing to write when it is already
       // the target (MED, #394).
       if (me.responseStatus === response) return saved(calendar, current);
-      const attendees = guests.map(a => (a === me ? { ...a, responseStatus: response } : a));
+      // A guest answers for themself only: `attendeesOmitted` + their own entry changes just that answer, so
+      // another guest's answer can neither be raced nor re-sent. The organizer answering their own event keeps the
+      // whole list (Google only lets the organizer edit it) and tells no one: nobody needs to hear that the
+      // organizer accepts their own meeting.
+      const organizer = current.organizer?.self === true;
+      const body = organizer
+        ? { attendees: guests.map(a => (a === me ? { ...a, responseStatus: response } : a)) }
+        : { attendeesOmitted: true, attendees: [{ email: me.email, responseStatus: response }] };
       try {
         const made = await call(ctx, {
           method: 'gcal.events.patch',
           http: 'PATCH',
           calendar,
           eventId,
-          body: { attendees },
+          body,
           ifMatch: current.etag,
-          notify: opts.notify,
+          notify: organizer ? false : opts.notify,
           kind: 'write',
         });
         return saved(calendar, made);

@@ -431,3 +431,48 @@ test('a series edit from an occurrence with zoned times moves the series by the 
     timeZone: LA,
   });
 });
+
+test('a series resize from an occurrence (end only, zoned) shifts the master end by the same amount; an unknown zone is refused', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  await w.call('Event/set', {
+    opId: 'rb3',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261028T170000Z',
+      scope: 'series',
+      fields: {
+        // The occurrence ends 10:30 LA; dragged to 11:00 LA. Only the end is sent.
+        end: { type: 'floating', local: '2026-10-28T11:00:00', timeZone: LA },
+        allDay: false,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // The master keeps its own slot: its start is sent unchanged, in the same zone.
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-27T10:00:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-27T11:00:00',
+    timeZone: LA,
+  });
+
+  await rejects(
+    w.call('Event/set', {
+      opId: 'rb4',
+      change: {
+        type: 'update',
+        id: 'acct-1:primary/ev1@20261028T170000Z',
+        scope: 'series',
+        fields: { end: { type: 'floating', local: '2026-10-28T11:00:00' }, allDay: false },
+      },
+    }),
+    'unsupported',
+    'calendar.floatingSeries',
+  );
+  assert.equal(w.calls.length, 1, 'nothing was sent for the refused one');
+});
