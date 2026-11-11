@@ -135,8 +135,8 @@ export function ReaderMessage(props: ReaderMessageProps) {
       id={message.id}
       from={fromName(message, me)}
       toLabel={toLabel(message, me)}
-      leading={fold ? undefined : <SenderMark message={message} me={me} />}
-      recipients={fold ? undefined : <RecipientsLine message={message} me={me} />}
+      leading={<SenderMark message={message} me={me} />}
+      recipients={<RecipientsLine message={message} me={me} />}
       headActions={fold ? undefined : props.headActions}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
