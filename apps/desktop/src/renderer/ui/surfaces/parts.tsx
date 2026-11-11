@@ -396,10 +396,14 @@ export function PartButton(props: PartButtonProps) {
 
 export type FloatPlacement = 'below-start' | 'below-end' | 'above-start' | 'left' | 'right';
 
-function spaceToken(name: string): number {
-  if (typeof document === 'undefined') return 0;
-  const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
-  return Number.isFinite(value) ? value : 0;
+/** A space token in px. Tokens are emitted in rem (DESIGN 11.6), so a rem value is scaled by the root font size. */
+export function spaceToken(name: string): number {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return 0;
+  const root = getComputedStyle(document.documentElement);
+  const raw = root.getPropertyValue(name).trim();
+  const value = parseFloat(raw);
+  if (!Number.isFinite(value)) return 0;
+  return raw.endsWith('rem') ? value * (parseFloat(root.fontSize) || 16) : value;
 }
 
 /**
@@ -438,7 +442,9 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     if (placement === 'above-start' && y < pad) y = a.bottom + gap;
     x = Math.max(pad, Math.min(x, vw - w - pad));
     y = Math.max(pad, Math.min(y, vh - h - pad));
-    setCoords({ x: Math.round(x), y: Math.round(y) });
+    const next = { x: Math.round(x), y: Math.round(y) };
+    // The same spot keeps the same object, so a re-place that changes nothing does not render again.
+    setCoords(prev => (prev && prev.x === next.x && prev.y === next.y ? prev : next));
   }, [anchor, placement]);
 
   useLayoutEffect(() => {
@@ -451,10 +457,23 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     return () => window.removeEventListener('resize', place);
   }, [open, place]);
 
+  // The first measure is taken while the surface still sits in flow at its container's width; once placed it is fixed
+  // and sized by its content, so its size changes after placement (a long recipient list opened far from its anchor).
+  // Place it again whenever its size changes (the observer also reports once when it starts); the same size gives the
+  // same spot, so this settles.
+  const placed = coords !== null;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!open || !placed || !el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => place());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, placed, place]);
+
   const style = coords
     ? ({ '--float-x': `${coords.x}px`, '--float-y': `${coords.y}px` } as CSSProperties)
     : undefined;
-  return { ref, style, placed: coords !== null };
+  return { ref, style, placed };
 }
 
 /** An outside pointer press closes a floating surface; presses on its anchor are left to the anchor. Esc is each surface's own key handler. */
