@@ -77,7 +77,7 @@ export const diagnostics = area('diagnostics', {
   },
   'Diagnostics/verbose': {
     summary:
-      'Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off. A tool may only turn it off — turning it on is the owner’s. With no `on` it just answers the current deadline.',
+      'Turn the verbose protocol log (headers only) on, switching itself off after 15 minutes, or off. A tool may only turn it off — turning it on is the owner’s. With no `on` it is a query and just answers the current deadline; the method stays a command and only the writes are audited.',
     kind: 'command',
     scope: 'admin',
     audit: true,
