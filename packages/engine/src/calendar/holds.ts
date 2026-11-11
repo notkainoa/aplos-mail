@@ -2,7 +2,7 @@ import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
 import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
-import { instant, recurrenceIdToTime, toWire } from './project';
+import { instant, recurrenceIdToTime } from './project';
 import { expand } from './recurrence/expand';
 import type { EventTime as EngineTime } from './recurrence/types';
 import type { Clock, Logger, StorePort } from '../ports';
@@ -68,7 +68,7 @@ export function readAll(store: StorePort): { records: HoldRecord[]; unreadable: 
 function startedBy(store: StorePort, call: HeldCall | undefined, now: number): boolean {
   if (!call) return false;
   const start = startOf(store, call, now);
-  return start !== undefined && start <= now;
+  return start !== undefined && start < now;
 }
 
 function startOf(store: StorePort, call: HeldCall, now: number): number | undefined {
@@ -102,8 +102,9 @@ function startOf(store: StorePort, call: HeldCall, now: number): number | undefi
 const SERIES_AHEAD_MS = 732 * 86_400_000;
 
 /**
- * The first occurrence of the series still to finish (one under way counts, so the range opens at `now`): its start is
- * what "already started" is judged against. A series with nothing upcoming reads as its stored slot (past → late).
+ * Whether a series has anything left to change: `undefined` while an occurrence is under way or still to come (the
+ * write matters, send it), and the master's stored slot once nothing remains — a finished series reads as past, so
+ * "already started" still holds for it.
  */
 function nextOccurrence(
   store: StorePort,
@@ -163,7 +164,7 @@ function nextOccurrence(
     limit: 4,
   });
   if (!out.ok || !out.occurrences.length) return row.start_utc;
-  return instant(toWire(out.occurrences[0]!.start), zone);
+  return undefined;
 }
 
 /** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
