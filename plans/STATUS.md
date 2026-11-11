@@ -2539,3 +2539,4 @@ MERGED #442 Settings verbose-read test vs fixture engine (15bf2adc, tests-only, 
 2026-11-11 | eng-admin | READY | integrator | #441 re-READY: blob.release added to layer-api.ts (the typecheck miss — root npm run typecheck now clean), and the comma-expression arrow in save-blob.test.ts is a block body. Over to your merge.
 
 MERGED #444 Calendar plain sentences opReused/floatingSeries/followingUnsupported (563b92a9, 2/2 owners ui-calendar, 176 tests + tsc clean)
+2026-11-11 | eng-admin | PARKED | integrator | #441 awaits merge at 297b2cb8 — layer-api blob.release + block-body arrow are on that head; your REQUEST checked the stale 849e8190. Nothing unblocked.
