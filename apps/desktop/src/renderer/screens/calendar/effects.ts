@@ -456,15 +456,18 @@ export function operationUpdate(
   watch: WatchedWrite,
   view: OperationView | undefined,
   ui: EffectUi,
-  eventIds: ReadonlySet<string>,
   ports: EffectPorts,
 ): 'watching' | 'done' {
-  if (view === undefined) return 'done';
+  if (view === undefined) {
+    // The operation record was forgotten while the write still waited (evicted, or the engine
+    // never journaled one): roll the overlay back — a held create's tmp entry or a held edit's
+    // patch must not ghost the grid forever.
+    watch.entryIds.forEach(id => ui.rollback(id));
+    return 'done';
+  }
   // A re-watch after `Operation/retry`: the stale terminal row is still what the store answers —
   // ignore it until the operation reports a newer state.
   if (watch.since !== undefined && view === watch.since) return 'watching';
-  if (watch.addedIds.length > 0 && view.targets.some(id => eventIds.has(id)))
-    watch.addedIds.forEach(id => ui.rollback(id));
   switch (view.remote) {
     case 'failed': {
       watch.entryIds.forEach(id => ui.rollback(id));

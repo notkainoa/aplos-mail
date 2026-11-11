@@ -462,10 +462,6 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
   useSidebarSlot(sidebar);
 
-  // The watchers read the window's own id list so a held create's tmp entry drops the moment its
-  // real row lands (HeldWrites).
-  const eventIds = useMemo(() => new Set(eventsWindow.ids), [eventsWindow.ids]);
-
   if (eventsWindow.status === 'failed') return <ListFailed errorType={eventsWindow.error?.type} />;
   if (eventsWindow.status === 'opening' && events.length === 0) return null;
   return (
@@ -476,7 +472,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         announce={announce}
         focus={focus}
       />
-      <HeldWrites watches={watched} eventIds={eventIds} ui={ui} ports={ports} unwatch={unwatch} />
+      <HeldWrites watches={watched} ui={ui} ports={ports} unwatch={unwatch} />
     </>
   );
 }

@@ -51,7 +51,6 @@ const watch = (over: Partial<WatchedWrite> = {}): WatchedWrite => ({
   ...over,
 });
 
-const NONE = new Set<string>();
 const task = () => new Promise<void>(resolve => setImmediate(resolve));
 
 test('review13: queued and syncing hold the overlay; synced settles it', () => {
@@ -60,22 +59,16 @@ test('review13: queued and syncing hold the overlay; synced settles it', () => {
     const ui = testUi();
     const w = watch();
     for (const remote of [null, 'queued', 'syncing'] as const) {
-      assert.equal(operationUpdate(w, view({ remote }), ui, NONE, ports()), 'watching');
+      assert.equal(operationUpdate(w, view({ remote }), ui, ports()), 'watching');
       assert.deepEqual(ui.dropped, []);
     }
     // A held write skipped the receipt settle (its `appliedState` was already reached): `synced`
     // settles every entry — a create's tmp entry with it (review14).
-    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, ports()), 'done');
     assert.deepEqual(ui.applied, ['tmp-1']);
     const ui2 = testUi();
     assert.equal(
-      operationUpdate(
-        watch({ addedIds: ['tmp-1'] }),
-        view({ remote: 'synced' }),
-        ui2,
-        NONE,
-        ports(),
-      ),
+      operationUpdate(watch({ addedIds: ['tmp-1'] }), view({ remote: 'synced' }), ui2, ports()),
       'done',
     );
     assert.deepEqual(
@@ -106,7 +99,7 @@ test('review13: a late failure rolls back and Retry is the operation’s own, ne
         return actOk();
       },
     });
-    assert.equal(operationUpdate(w, failed, ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(w, failed, ui, ports()), 'done');
     assert.deepEqual(ui.dropped, ['tmp-1']);
     const toast = getToasts().find(t => t.id === 'op-1:failed');
     assert.equal(
@@ -144,7 +137,6 @@ test('review13: an uncertain operation failure keeps no Retry', () => {
         },
       }),
       ui,
-      NONE,
       ports(),
     );
     const toast = getToasts().find(t => t.id === 'op-1:failed');
@@ -162,10 +154,7 @@ test('review13: cancelled drops the entry quietly', () => {
   resetToasts();
   try {
     const ui = testUi();
-    assert.equal(
-      operationUpdate(watch(), view({ remote: 'cancelled' }), ui, NONE, ports()),
-      'done',
-    );
+    assert.equal(operationUpdate(watch(), view({ remote: 'cancelled' }), ui, ports()), 'done');
     assert.deepEqual(ui.dropped, ['tmp-1']);
     assert.equal(getToasts().length, 0, 'the Undo toast already told the owner');
   } finally {
@@ -173,28 +162,25 @@ test('review13: cancelled drops the entry quietly', () => {
   }
 });
 
-test('review13: a held create’s tmp entry drops the moment the real row lands', () => {
+test('review13: a held create’s tmp entry lasts until the send commits', () => {
   resetToasts();
   try {
     const ui = testUi();
     const w = watch({ entryIds: ['tmp-1'], addedIds: ['tmp-1'] });
-    // Still queued: nothing happens while the real row is absent.
+    // The real engine's create Operation targets the calendar id — `['work']`, never the new event
+    // id — so nothing can drop the tmp early: it shows through the whole hold.
     assert.equal(
-      operationUpdate(w, view({ remote: 'queued', targets: ['event-real'] }), ui, NONE, ports()),
+      operationUpdate(w, view({ remote: 'queued', targets: ['work'] }), ui, ports()),
       'watching',
     );
     assert.deepEqual(ui.dropped, []);
-    // The real row lands in the window while the send is still queued: the tmp drops at once.
+    assert.deepEqual(ui.applied, []);
+    // The send's commit is in the store before the `synced` frame: the tmp settles with the write.
     assert.equal(
-      operationUpdate(
-        w,
-        view({ remote: 'queued', targets: ['event-real'] }),
-        ui,
-        new Set(['event-real']),
-      ),
-      'watching',
+      operationUpdate(w, view({ remote: 'synced', targets: ['work'] }), ui, ports()),
+      'done',
     );
-    assert.deepEqual(ui.dropped, ['tmp-1'], 'no ghost duplicate beside the real row');
+    assert.deepEqual(ui.applied, ['tmp-1']);
   } finally {
     resetToasts();
   }
@@ -314,7 +300,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     assert.ok(op, 'the operation record exists');
     // The remote row lands through Operation/get: queued under the hold.
     assert.equal(op.remote, 'queued');
-    assert.equal(operationUpdate(w, op, ui, NONE, ports()), 'watching');
+    assert.equal(operationUpdate(w, op, ui, ports()), 'watching');
     // Undo inside the window cancels the held write at the provider queue.
     const toast = getToasts().find(t => t.undoable);
     assert.ok(toast);
@@ -322,7 +308,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     await flush();
     const cancelled = layer.operations.view(w.opId);
     assert.equal(cancelled?.remote, 'cancelled');
-    assert.equal(operationUpdate(w, cancelled, ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(w, cancelled, ui, ports()), 'done');
     assert.deepEqual(ui.dropped, [guest.id], 'the optimistic patch rolled back');
     // A second held write, let to sync, settles on its own.
     const ui2 = testUi();
@@ -333,7 +319,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     await flush();
     const synced = layer.operations.view(w2.opId);
     assert.equal(synced?.remote, 'synced');
-    assert.equal(operationUpdate(w2, synced, ui2, NONE, ports()), 'done');
+    assert.equal(operationUpdate(w2, synced, ui2, ports()), 'done');
     assert.deepEqual(ui2.applied, [guest.id]);
   } finally {
     resetToasts();

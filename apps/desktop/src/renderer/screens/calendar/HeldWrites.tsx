@@ -14,8 +14,6 @@ import { operationUpdate, type EffectPorts, type EffectUi, type WatchedWrite } f
 export interface HeldWritesProps {
   /** One entry per accepted write, removed when its watch is done. */
   readonly watches: readonly WatchedWrite[];
-  /** The events window's current ids: a held create's real row replaces its tmp entry on sight. */
-  readonly eventIds: ReadonlySet<string>;
   readonly ui: EffectUi;
   /** The write ports, for a failure's follow-up notices (Enable editing, Sign in again). */
   readonly ports: EffectPorts;
@@ -23,18 +21,11 @@ export interface HeldWritesProps {
   readonly unwatch: (watch: WatchedWrite) => void;
 }
 
-export function HeldWrites({ watches, eventIds, ui, ports, unwatch }: HeldWritesProps) {
+export function HeldWrites({ watches, ui, ports, unwatch }: HeldWritesProps) {
   return (
     <>
       {watches.map(watch => (
-        <HeldWrite
-          key={watch.opId}
-          watch={watch}
-          eventIds={eventIds}
-          ui={ui}
-          ports={ports}
-          unwatch={unwatch}
-        />
+        <HeldWrite key={watch.opId} watch={watch} ui={ui} ports={ports} unwatch={unwatch} />
       ))}
     </>
   );
@@ -42,14 +33,13 @@ export function HeldWrites({ watches, eventIds, ui, ports, unwatch }: HeldWrites
 
 function HeldWrite({
   watch,
-  eventIds,
   ui,
   ports,
   unwatch,
 }: Omit<HeldWritesProps, 'watches'> & { readonly watch: WatchedWrite }) {
   const view = useOperation(watch.opId);
   useEffect(() => {
-    if (operationUpdate(watch, view, ui, eventIds, ports) === 'done') unwatch(watch);
-  }, [view, eventIds, watch, ui, ports, unwatch]);
+    if (operationUpdate(watch, view, ui, ports) === 'done') unwatch(watch);
+  }, [view, watch, ui, ports, unwatch]);
   return null;
 }

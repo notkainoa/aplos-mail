@@ -27,8 +27,6 @@ const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
 
 const task = () => new Promise<void>(resolve => setImmediate(resolve));
 
-const NONE = new Set<string>();
-
 const view = (over: Partial<OperationView> = {}): OperationView => ({
   opId: 'op-1',
   state: 'confirmed',
@@ -174,8 +172,8 @@ test('review14: a held non-create write keeps its overlay until synced, not the 
     const w = ui.watched[0]!;
     assert.equal(w.held, true);
     for (const remote of ['queued', 'syncing'] as const)
-      assert.equal(operationUpdate(w, view({ remote }), ui, NONE, ports()), 'watching');
-    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
+      assert.equal(operationUpdate(w, view({ remote }), ui, ports()), 'watching');
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, ports()), 'done');
     assert.deepEqual(ui.applied, ['climb'], 'the send’s commit is in, the overlay settles');
   } finally {
     resetToasts();
@@ -245,26 +243,26 @@ test('review14: a retried watch ignores the stale failed row until a newer state
       },
     });
     const w = watch();
-    assert.equal(operationUpdate(w, stale, ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(w, stale, ui, ports()), 'done');
     runToastAction('op-1:failed', 'retry');
     await task();
     assert.equal(retries, 1);
     const rewatched = ui.watched[ui.watched.length - 1]!;
     // The same `failed` row still answers Operation/get until the next flush: keep watching,
     // never re-show the failure the owner just retried.
-    assert.equal(operationUpdate(rewatched, stale, ui, NONE, ports()), 'watching');
+    assert.equal(operationUpdate(rewatched, stale, ui, ports()), 'watching');
     assert.equal(
       getToasts().some(t => t.id === 'op-1:failed'),
       false,
       'the late toast did not pop straight back',
     );
     // A genuinely newer frame is handled normally — synced settles, a fresh failure surfaces.
-    assert.equal(operationUpdate(rewatched, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(rewatched, view({ remote: 'synced' }), ui, ports()), 'done');
     const again = view({
       remote: 'failed',
       error: { type: 'unavailable', message: 'not sent', reasonCode: 'calendar.late' },
     });
-    assert.equal(operationUpdate(rewatched, again, ui, NONE, ports()), 'done');
+    assert.equal(operationUpdate(rewatched, again, ui, ports()), 'done');
     assert.ok(
       getToasts().some(t => t.id === 'op-1:failed'),
       'a second failure still surfaces',
@@ -291,7 +289,6 @@ test('review14: an operation failure runs the write’s own follow-ups (reopen, 
           },
         }),
         ui,
-        NONE,
         ports(),
       ),
       'done',
@@ -315,7 +312,6 @@ test('review14: an operation failure runs the write’s own follow-ups (reopen, 
         error: { type: 'notFound', message: 'gone', reasonCode: 'calendar.eventGone' },
       }),
       ui,
-      NONE,
       ports(),
     );
     assert.deepEqual(ui.closedFor, ['ev-1']);
@@ -332,7 +328,6 @@ test('review14: an operation failure runs the write’s own follow-ups (reopen, 
         },
       }),
       ui,
-      NONE,
       ports(),
     );
     assert.equal(ui.restored.length, 1);
@@ -345,7 +340,6 @@ test('review14: an operation failure runs the write’s own follow-ups (reopen, 
         error: { type: 'needsReauth', message: 'grant dead' },
       }),
       ui,
-      NONE,
       ports(),
     );
     assert.ok(
@@ -395,13 +389,27 @@ test('review14: the Undo toast is dismissed on every terminal operation state', 
               },
             }
           : {};
-      assert.equal(operationUpdate(watch(), view({ remote, ...error }), ui, NONE, ports()), 'done');
+      assert.equal(operationUpdate(watch(), view({ remote, ...error }), ui, ports()), 'done');
       assert.equal(
         getToasts().some(t => t.id === 'op-1'),
         false,
         `${remote}: the original Undo toast is gone — one toast per operation`,
       );
     }
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review14: a forgotten operation record rolls its overlay back, no ghost', () => {
+  resetToasts();
+  try {
+    const ui = testUi();
+    const w = watch({ entryIds: ['tmp-1'], addedIds: ['tmp-1'] });
+    // `useOperation` answers undefined once the store forgets the record: the tmp entry (or the
+    // held patch) must roll back here, not ride the grid forever.
+    assert.equal(operationUpdate(w, undefined, ui, ports()), 'done');
+    assert.deepEqual(ui.dropped, ['tmp-1']);
   } finally {
     resetToasts();
   }
