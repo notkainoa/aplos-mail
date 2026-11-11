@@ -260,6 +260,30 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
 }
 
 /**
+ * A failure the provider reported AFTER the receipt (the `operation` frame): persistent — the shell
+ * keeps a failure the owner must answer, so an async refusal's Retry is not missed. The Retry sends
+ * `Operation/retry` on the same op id, by hand only: a timer would re-send a notifying write to
+ * guests with nobody's click behind it (review16).
+ */
+function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts): void {
+  pushToast({
+    id: `${opId}:failed`,
+    kind: 'info',
+    message: failure.message,
+    ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
+    undoable: false,
+    persistent: true,
+    ...(failure.retry === 'none'
+      ? {}
+      : {
+          onAction: (actionId: string) => {
+            if (actionId === 'retry') retryOperation(ports, opId);
+          },
+        }),
+  });
+}
+
+/**
  * The writes the owner held (`undoable` and an `undoUntil` on the receipt): for a refused undo, "That
  * change was already sent" is the honest sentence — the engine's `conflict` also covers "cannot be
  * undone", which means something different on writes that were never held. Module scope, like
@@ -372,18 +396,23 @@ interface WriteSpec {
   readonly blindRetryUnsafe?: boolean;
 }
 
-/** Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the code's own follow-up. */
+/**
+ * Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the
+ * code's own follow-up. `atOperation` marks a failure the provider reported after the receipt — its
+ * sentence says what is still owed and its toast is the persistent `Operation/retry` one.
+ */
 function writeFailed(
   spec: WriteSpec,
   ui: EffectUi,
   ports: EffectPorts,
   error: unknown,
   retry: () => void,
+  atOperation = false,
 ): void {
   spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
   dismissToast(spec.opId);
   if (!spec.failure) return;
-  const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
+  const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true, atOperation);
   // The conflict's sentence lands once: the re-opened editor's own line, or the toast when no
   // editor can re-open — never both (review7 5). A times refusal is the same, on the saved draft.
   const reopened =
@@ -397,13 +426,8 @@ function writeFailed(
   if (failure.enableEditing) editingNotice(ports, spec.accountId);
   else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
   else if (!reopened && !restored)
-    // 'operation' names its own retry (`Operation/retry` on this op id) wherever the code surfaces;
-    // the caller's `retry` re-runs the write — right for a rejected call, never for a failed hold.
-    failureToast(
-      spec.opId,
-      failure,
-      failure.retry === 'operation' ? () => retryOperation(ports, spec.opId) : retry,
-    );
+    if (atOperation) opFailureToast(spec.opId, failure, ports);
+    else failureToast(spec.opId, failure, retry);
   if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
@@ -459,6 +483,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
           },
         },
         () => retryOperation(ports, spec.opId),
+        true,
       );
       return;
     }
@@ -482,6 +507,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
           },
         },
         () => retryOperation(ports, spec.opId),
+        true,
       );
       off();
       return;

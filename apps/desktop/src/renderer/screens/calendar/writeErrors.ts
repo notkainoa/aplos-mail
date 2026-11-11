@@ -145,6 +145,14 @@ export function writeFailureOf(
   error: unknown,
   fallback: string,
   blindRetryUnsafe = false,
+  /**
+   * The failure came back on the operation AFTER the receipt (`operation` frame): the write was
+   * accepted, so its sentence says what is still owed and its Retry is `Operation/retry` on the
+   * same op id — manual only, never `retryAfterMs` (a timer would re-send a notifying write to
+   * guests with nobody's hand on it). At submit time nothing was accepted, so an op-level retry
+   * kind stands alone — there is no operation to retry.
+   */
+  atOperation = false,
 ): WriteFailure {
   const body = bodyOf(error);
   if (body.reasonCode === 'permission.calendarWrite')
@@ -160,13 +168,27 @@ export function writeFailureOf(
   if (body.type === 'notImplemented')
     return { message: "Editing isn't available yet. Nothing was changed.", retry: 'none' };
   if (body.reasonCode === 'calendar.unavailable')
-    return {
-      message: "Couldn't reach Google Calendar. Nothing changed.",
-      retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
-      ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
-    };
+    return atOperation
+      ? {
+          // The write was accepted — only its send is owed: Retry is `Operation/retry` on the same
+          // op id, never the write again and never on a timer (review16).
+          message: "Couldn't reach Google Calendar. The change hasn't been sent yet.",
+          retry: 'operation',
+        }
+      : {
+          message: "Couldn't reach Google Calendar. Nothing changed.",
+          retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
+          ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
+        };
   const known = body.reasonCode ? WRITE_FAILURE_COPY[body.reasonCode] : undefined;
-  if (known) return { ...known };
+  if (known)
+    return {
+      ...known,
+      // `operation` names a retry only an accepted write owns: a submit-time refusal carrying it
+      // (calendar.late) shows the sentence alone — a click would re-run `Event/set` with a fresh
+      // op id and re-notify guests (review16).
+      ...(known.retry === 'operation' && !atOperation ? { retry: 'none' as const } : {}),
+    };
   // A create or a reply asked again blind could duplicate the event or re-notify guests: an
   // unknown code gets no Retry, just the honest check-your-calendar line (review7 7).
   if (blindRetryUnsafe)

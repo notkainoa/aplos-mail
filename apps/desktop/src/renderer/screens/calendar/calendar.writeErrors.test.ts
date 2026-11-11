@@ -73,11 +73,12 @@ test('writeErrors: each reasonCode maps to its sentence and Retry decision', asy
       "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
       false,
     ],
-    // The Retry a refused write would get; after a receipt the same failure's Retry is `Operation/retry`.
+    // `calendar.late` means the OPERATION missed its window — a submit-time refusal accepted
+    // nothing, so the sentence stands alone (review16: only an operation-level late retries).
     [
       'calendar.late',
       "That change wasn't sent in time. Check the event, then send it again.",
-      true,
+      false,
     ],
     ['event.notAGuest', "You aren't on this event's guest list, so you can't reply.", false],
     ['event.timeZoneRequired', 'That event needs a time zone.', false],
