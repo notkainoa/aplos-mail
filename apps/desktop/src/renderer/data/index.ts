@@ -111,6 +111,7 @@ export class DataLayerNotConnectedError extends NotImplementedError {
 /** What `connectDataLayer()` installs: the implementation of every hook, `api`, the clock and the undo stack. */
 export interface DataRuntime {
   readonly useOperation: typeof useOperation;
+  readonly subscribeOperation: typeof subscribeOperation;
   readonly useView: typeof useView;
   readonly useHome: typeof useHome;
   readonly useRow: typeof useRow;
@@ -255,6 +256,17 @@ export interface RowFailure {
 /** Observe one operation; undefined once it is forgotten (after its toast closes). */
 export function useOperation(opId: OpId | undefined): OperationView | undefined {
   return connected('useOperation').useOperation(opId);
+}
+
+/**
+ * Observe one operation without a component (an effect watching its write's provider-side state). The
+ * listener runs once with the current view, then on each change; the return unsubscribes.
+ */
+export function subscribeOperation(
+  opId: OpId,
+  listener: (view: OperationView | undefined) => void,
+): () => void {
+  return connected('subscribeOperation').subscribeOperation(opId, listener);
 }
 
 // ---------------------------------------------------------------------------

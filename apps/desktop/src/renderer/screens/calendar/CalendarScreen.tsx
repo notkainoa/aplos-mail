@@ -84,6 +84,7 @@ import {
   cancelPendingRetries,
   livePorts,
   runCalendarEffect,
+  undoLastCalendarChange,
   type EffectPorts,
   type EffectUi,
 } from './effects';
@@ -362,9 +363,12 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
 
   // The catalog's calendar commands: keys, the palette and menus all land in the same reducer.
+  // `app.undo` is shadowed too: Z while the calendar is up runs the same shared undo stack, and a
+  // held write's refused undo says "That change was already sent" instead of dying quietly.
   const handlers = useMemo<CommandHandlerTable>(
-    () =>
-      Object.fromEntries(
+    () => ({
+      'app.undo': { run: () => undoLastCalendarChange() },
+      ...Object.fromEntries(
         CALENDAR_COMMAND_IDS.map(id => [
           id,
           {
@@ -382,6 +386,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
           },
         ]),
       ),
+    }),
     [apply, returnGate],
   );
   useRegisterCommands(handlers);
