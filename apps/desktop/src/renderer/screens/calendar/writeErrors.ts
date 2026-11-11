@@ -103,7 +103,8 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
   // so a plain re-run is safe once the first hold clears — and it is not the stale-copy conflict,
   // so the editor never re-opens for it.
   'calendar.holdPending': {
-    message: "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
+    message:
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
   },
   // A series time change in a zone other than the series' own (or one Aplos cannot name): it cannot be
   // re-timed here — Google Calendar can move the series, one occurrence can move alone.

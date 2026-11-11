@@ -58,7 +58,7 @@ test('review12: calendar.holdPending gets the earlier-change sentence and a safe
   );
   assert.equal(
     f.message,
-    "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
+    "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
   );
   assert.equal(f.retry, 'now', 'nothing was accepted, so re-running is safe');
   assert.notEqual(f.reopenEditor, true, 'not the stale-copy conflict: the editor stays closed');
@@ -88,7 +88,7 @@ test('review12: a holdPending refusal rolls back, toasts the sentence, and Retry
     const toast = getToasts().find(t => t.id.endsWith(':failed'));
     assert.equal(
       toast?.message,
-      "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
     );
     assert.ok(
       toast?.actions?.some(a => a.id === 'retry'),

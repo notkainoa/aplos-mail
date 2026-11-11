@@ -328,7 +328,7 @@ export const calendarStates: readonly VisualState[] = [
     id: 'write-hold-pending',
     frame: 'shell',
     title:
-      'Calendar: the earlier held change hasn’t been sent yet — try again in a few seconds, with Retry',
+      'Calendar: the earlier held change hasn’t been sent yet — undo it, or try again once it has, with Retry',
     components: [...GRID, 'Toast'],
     design: '7.8, 7.15',
     mockup: 'calendar-week.html (default)',

@@ -17,7 +17,7 @@ import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast'
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { notifiesGuests } from './model/transitions';
 import { operationUpdate, runCalendarEffect, type EffectPorts, type WatchedWrite } from './effects';
-import { undoFailureMessage } from './writeErrors';
+import { undoFailureMessage, writeFailureOf } from './writeErrors';
 import { boot, ctxFor, NOW, ports, S, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
@@ -431,4 +431,18 @@ test('review14: an already-undone undo refusal gets its own sentence', () => {
     }),
     'That change has already been sent.',
   );
+});
+
+test('review14: holdPending names Undo and the hold, not a guessed delay', () => {
+  // The earlier hold lasts 5–30 s, so "a few seconds" under-read it and hid the way out: the copy
+  // now offers Undo or waiting out the first send. Retry stays safe — nothing was accepted.
+  const f = writeFailureOf(
+    { type: 'conflict', message: 'held', reasonCode: 'calendar.holdPending' },
+    'Couldn’t change Renamed.',
+  );
+  assert.equal(
+    f.message,
+    "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+  );
+  assert.equal(f.retry, 'now');
 });

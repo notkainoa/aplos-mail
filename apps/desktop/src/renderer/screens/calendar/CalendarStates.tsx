@@ -770,11 +770,11 @@ const FIXTURES: Record<string, Fixture> = {
   },
   'write-hold-pending': {
     title:
-      'A second held change while the first still waits: "Your earlier change to this event hasn’t been sent yet. Try again in a few seconds." — Retry',
+      'A second held change while the first still waits: "Your earlier change to this event hasn’t been sent yet. Undo it, or try again once it has." — Retry',
     state: { view: 'week', selectedId: 'design' },
     toast: {
       message:
-        "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
+        "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
       actions: [{ id: 'retry', label: 'Retry' }],
     },
   },
