@@ -300,7 +300,11 @@ export function useSettingsState(
       quiet(ports.workflowStatus().then(workflow => keep({ workflow })));
     }
     if (section === 'help') {
-      quiet(ports.verboseGet().then(r => keep({ verbose: verboseFrom(r) })));
+      quiet(
+        Promise.resolve()
+          .then(() => ports.verboseGet())
+          .then(r => keep({ verbose: verboseFrom(r) })),
+      );
     }
     if (section === 'help' && view.queue) {
       quiet(ports.queueList().then(queue => keep({ queue })));
