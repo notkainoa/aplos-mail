@@ -309,7 +309,7 @@ test('two Retry presses send once: the second sees the first already sending', a
   );
 });
 
-test('a hold whose window ended long ago is not sent on launch, and cannot be retried blindly', async () => {
+test('a hold whose window ended long ago is not sent on launch; only an explicit Retry sends it', async () => {
   const w = await rig();
   await w.call('Event/set', rename('st1'));
   await w.engine.close();
@@ -317,15 +317,38 @@ test('a hold whose window ended long ago is not sent on launch, and cannot be re
   const again = await w.boot();
   w.clock.advance(1_000);
   await settle();
-  assert.deepEqual(w.calls, [], 'an edit made days ago is not sent');
+  assert.deepEqual(w.calls, [], 'an edit made days ago is not sent unasked');
   const op = (await again.call('Operation/get', { opIds: ['st1'] })).list[0]!;
   assert.equal(op.state, 'failed');
-  assert.equal(op.error?.reasonCode, 'calendar.stale');
-  await assert.rejects(
-    again.call('Operation/retry', { opId: 'st1' }),
-    (e: unknown) => e instanceof ContractError && e.type === 'conflict',
-  );
+  assert.equal(op.error?.reasonCode, 'calendar.late');
+  await again.call('Operation/retry', { opId: 'st1' });
+  assert.deepEqual(w.calls, ['put'], 'the owner pressed Retry: now it goes');
   await again.engine.close();
+});
+
+test('an invitation for an event that has already started is not sent unasked', async () => {
+  const w = await rig();
+  const startsSoon = w.clock.now() + 4_000;
+  await w.call('Event/set', {
+    opId: 'late1',
+    notify: true,
+    change: {
+      type: 'create',
+      calendarId: 'acct-1:primary',
+      fields: {
+        title: 'Starting now',
+        start: { type: 'utc', utc: startsSoon },
+        end: { type: 'utc', utc: startsSoon + 3_600_000 },
+        allDay: false,
+        attendees: [{ address: 'friend@example.test' }],
+      },
+    },
+  });
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, [], 'the meeting began while the change waited');
+  const op = (await w.call('Operation/get', { opIds: ['late1'] })).list[0]!;
+  assert.equal(op.error?.reasonCode, 'calendar.late');
 });
 
 test('a second change to an event that is still held is refused until the first is sent or undone', async () => {
@@ -394,4 +417,98 @@ test('Operation/get answers in the order asked', async () => {
     ['o2', 'o1'],
   );
   assert.deepEqual(got.notFound, ['nope']);
+});
+
+test('a second failure shows its own error, not the first one’s', async () => {
+  let n = 0;
+  const w = await rig(() =>
+    Promise.reject(
+      new ContractError({
+        type: 'unavailable',
+        message: `try ${++n}`,
+        reasonCode: 'calendar.unavailable',
+      }),
+    ),
+  );
+  await w.call('Event/set', rename('e1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal((await w.call('Operation/get', { opIds: ['e1'] })).list[0]!.error?.message, 'try 1');
+  await w.call('Operation/retry', { opId: 'e1' });
+  assert.equal((await w.call('Operation/get', { opIds: ['e1'] })).list[0]!.error?.message, 'try 2');
+});
+
+test('undo refuses a change that is already being sent', async () => {
+  let release!: () => void;
+  const w = await rig(
+    () =>
+      new Promise<CalendarWriteResult>(resolve => {
+        release = () => resolve(SAVED);
+      }),
+  );
+  await w.call('Event/set', rename('is1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal((await w.call('Operation/get', { opIds: ['is1'] })).list[0]!.state, 'syncing');
+  await assert.rejects(
+    w.call('Operation/undo', { opId: 'is1', undoOpId: 'is1-undo' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'conflict',
+  );
+  release();
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+});
+
+test('a retry in flight is not reported uncertain by the next sweep', async () => {
+  let fail = true;
+  let release!: () => void;
+  const w = await rig(() =>
+    fail
+      ? Promise.reject(
+          new ContractError({
+            type: 'unavailable',
+            message: 'x',
+            reasonCode: 'calendar.unavailable',
+          }),
+        )
+      : new Promise<CalendarWriteResult>(resolve => {
+          release = () => resolve(SAVED);
+        }),
+  );
+  await w.call('Event/set', rename('if1'));
+  w.clock.advance(9_000);
+  await settle();
+  fail = false;
+  const retrying = w.call('Operation/retry', { opId: 'if1' });
+  await settle();
+  // Another hold comes due and runs a sweep while the retry is still out.
+  await w.call('Event/set', rename('if2', 'acct-1:primary/ev2'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal((await w.call('Operation/get', { opIds: ['if1'] })).list[0]!.state, 'syncing');
+  release();
+  await retrying;
+  assert.equal((await w.call('Operation/get', { opIds: ['if1'] })).list[0]!.state, 'synced');
+});
+
+test('retry needs the scope of the method that made the change', async () => {
+  const w = await rig(() =>
+    Promise.reject(
+      new ContractError({ type: 'unavailable', message: 'x', reasonCode: 'calendar.unavailable' }),
+    ),
+  );
+  await w.call('Event/set', rename('rs1'));
+  w.clock.advance(9_000);
+  await settle();
+  const cheap = w.engine.connect({
+    kind: 'listener',
+    via: 'socket',
+    clientId: 'tool',
+    scopes: ['read', 'triage'],
+  });
+  await assert.rejects(
+    cheap.call('Operation/retry', { opId: 'rs1' }),
+    (e: unknown) => e instanceof ContractError && e.type === 'forbidden',
+  );
+  assert.deepEqual(w.calls, ['put'], 'the refused retry sent nothing');
 });

@@ -58,5 +58,8 @@ export interface CalendarHolds {
 
 /** Finished holds stay readable for `Operation/get` this long, then are purged. */
 export const HOLD_KEEP_MS = 24 * 60 * 60 * 1000;
-/** A hold whose window ended longer ago than this (the app was closed) is not sent: an edit made days ago is not what the owner means now. */
-export const HOLD_STALE_MS = 5 * 60 * 1000;
+/**
+ * A hold whose window ended longer ago than this (the app was closed), or whose event has already started, is not sent on
+ * its own: guests would get an invitation or a change for something that is over or long past. It waits for an explicit Retry.
+ */
+export const HOLD_LATE_MS = 15 * 60 * 1000;

@@ -2,13 +2,14 @@ import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
 import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
+import { instant, recurrenceIdToTime } from './project';
 import type { Clock, Logger, StorePort } from '../ports';
 import { parseStored, withDefaults } from '../runtime/settings';
 import type { EngineServices } from '../runtime/services';
 import { runCall } from './holds-call';
 import {
   HOLD_KEEP_MS,
-  HOLD_STALE_MS,
+  HOLD_LATE_MS,
   type HeldCall,
   type HoldRecord,
   type HoldSpec,
@@ -59,6 +60,33 @@ export function readAll(store: StorePort): { records: HoldRecord[]; unreadable: 
     else unreadable.push(row.key);
   }
   return { records, unreadable };
+}
+
+/** True when the event this hold is about has already started: invitations for something under way are not sent unasked. */
+function startedBy(store: StorePort, call: HeldCall | undefined, now: number): boolean {
+  if (!call) return false;
+  const start = startOf(store, call);
+  return start !== undefined && start <= now;
+}
+
+function startOf(store: StorePort, call: HeldCall): number | undefined {
+  if (call.op === 'put' && call.change.fields.start)
+    return instant(call.change.fields.start, 'UTC');
+  const ref = call.op === 'put' ? call.change : call.ref;
+  const remoteId = ref.remoteId;
+  if (!remoteId) return undefined;
+  // One occurrence: its own original start; otherwise the stored start of the event.
+  if (ref.recurrenceId) return instant(recurrenceIdToTime(ref.recurrenceId), 'UTC');
+  return store.read(
+    q =>
+      q.get<{ start_utc: number | null }>(
+        `SELECT e.start_utc FROM events e JOIN calendars c ON c.id = e.calendar_id
+         WHERE c.account_id = ? AND c.remote_id = ? AND e.remote_id = ? AND e.recurrence_id = ''`,
+        call.account,
+        ref.calendarRemoteId,
+        remoteId,
+      )?.start_utc ?? undefined,
+  );
 }
 
 /** What a hold changes: the same event (or occurrence) twice at once would make the second meet the first's new version. */
@@ -261,8 +289,8 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled')
         throw conflict('This change was undone, so it cannot be retried.');
       if (r.state !== 'failed') throw conflict('Only a failed change can be retried.');
-      if (r.error?.reasonCode === 'calendar.stale')
-        throw conflict('That change waited too long to be sent. Make it again.');
+      // Never beside a send already under way in this process (a second press while the first is out).
+      if (inflight.has(r.opId)) throw conflict('That change is being sent.');
       await send(deps, r, inflight);
       return { opId: args.opId, appliedState: stateOf(deps.store), undoable: false };
     },
@@ -283,15 +311,15 @@ export function createHolds(deps: Deps) {
         if (!r) continue;
         const fresh = r;
         if (fresh.state === 'queued' && fresh.undoUntil <= now) {
-          if (now - fresh.undoUntil > HOLD_STALE_MS)
+          if (now - fresh.undoUntil > HOLD_LATE_MS || startedBy(deps.store, fresh.call, now))
             save(deps, {
               ...fresh,
               state: 'failed',
               error: {
                 type: 'unavailable',
                 message:
-                  'This change waited too long while Aplos was closed, so it was not sent. Make it again.',
-                reasonCode: 'calendar.stale',
+                  'This change was not sent in time (Aplos was closed, or the event has already started). Check the event, then press Retry to send it now.',
+                reasonCode: 'calendar.late',
               },
             });
           else await send(deps, fresh, inflight);
