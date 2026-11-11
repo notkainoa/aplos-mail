@@ -64,18 +64,20 @@ test('review13: queued and syncing hold the overlay; synced settles it', () => {
       assert.deepEqual(ui.dropped, []);
     }
     // A held write skipped the receipt settle (its `appliedState` was already reached): `synced`
-    // settles every entry — a create's tmp entry with it (review14).
+    // settles every entry on the next window frame — a create's tmp entry with it (review14/15).
     assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, ports()), 'done');
+    ui.frame();
     assert.deepEqual(ui.applied, ['tmp-1']);
     const ui2 = testUi();
     assert.equal(
       operationUpdate(watch({ addedIds: ['tmp-1'] }), view({ remote: 'synced' }), ui2, ports()),
       'done',
     );
+    ui2.frame();
     assert.deepEqual(
       ui2.applied,
       ['tmp-1'],
-      'the held create settles its tmp entry against the receipt’s state',
+      'the held create settles its tmp entry once the window has rerun',
     );
   } finally {
     resetToasts();
@@ -211,11 +213,13 @@ test('review13: a held create’s tmp entry lasts until the send commits', () =>
     );
     assert.deepEqual(ui.dropped, []);
     assert.deepEqual(ui.applied, []);
-    // The send's commit is in the store before the `synced` frame: the tmp settles with the write.
+    // The send's commit is in the store before the `synced` frame; the throttled window rerun
+    // lands after it — the tmp settles with the write on that next frame (review15).
     assert.equal(
       operationUpdate(w, view({ remote: 'synced', targets: ['work'] }), ui, ports()),
       'done',
     );
+    ui.frame();
     assert.deepEqual(ui.applied, ['tmp-1']);
   } finally {
     resetToasts();
@@ -356,6 +360,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     const synced = layer.operations.view(w2.opId);
     assert.equal(synced?.remote, 'synced');
     assert.equal(operationUpdate(w2, synced, ui2, ports()), 'done');
+    ui2.frame();
     assert.deepEqual(ui2.applied, [guest.id]);
   } finally {
     resetToasts();

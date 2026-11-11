@@ -177,3 +177,34 @@ test('review15: a refused second write rolls back only its own layer', async () 
     resetToasts();
   }
 });
+
+test('review15: a held write’s layer outlives synced until the next window frame', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    const spy = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW + 60_000 }),
+    });
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy.port }, ui);
+    await task();
+    const w = ui.watched[0]!;
+    // The `synced` op frame lands while the throttled window rerun is still pending: settling at
+    // the receipt's (already-reached) state here drops the layer before the real row carries the
+    // send — the event snaps back for up to ~250 ms. It must wait out the next frame.
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, ports()), 'done');
+    assert.deepEqual(ui.applied, [], 'no settle yet: the window has not rerun');
+    assert.deepEqual(ui.pendingFrame.size, 1, 'the layer waits for the next frame');
+    assert.deepEqual(
+      ui.patchFor('climb'),
+      { title: 'Climbing, moved' },
+      'the overlay still shows the held change',
+    );
+    // The rerun lands with the send's commit: the real row carries the change, the layer drops.
+    ui.frame();
+    assert.deepEqual(ui.applied, ['climb'], 'the write settled on the newer frame');
+    assert.equal(ui.patchFor('climb'), undefined, 'the real row has arrived — the layer is gone');
+  } finally {
+    resetToasts();
+  }
+});

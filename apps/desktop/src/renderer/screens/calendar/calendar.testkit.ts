@@ -164,10 +164,15 @@ export function testUi(): EffectUi & {
   layers: Map<string, OptimisticChange>;
   /** The merged patch every live layer would show for `id` (a second write never sees another's rolled back). */
   patchFor(id: string): Partial<CalendarEventData> | undefined;
+  /** Writes a `synced` op left waiting for the next window frame (review15): `frame` delivers one. */
+  pendingFrame: Map<string, readonly string[]>;
+  /** A window frame newer than the `synced` one landed: the container drops the waiting layers. */
+  frame(): void;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
   const layers = new Map<string, OptimisticChange>();
+  const pendingFrame = new Map<string, readonly string[]>();
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
@@ -189,6 +194,14 @@ export function testUi(): EffectUi & {
     closedFor,
     watched,
     layers,
+    pendingFrame,
+    frame() {
+      for (const [writeId, entryIds] of pendingFrame) {
+        layers.delete(writeId);
+        applied.push(...entryIds);
+      }
+      pendingFrame.clear();
+    },
     patchFor(id: string) {
       let merged: Partial<CalendarEventData> | undefined;
       for (const layer of layers.values())
@@ -202,6 +215,8 @@ export function testUi(): EffectUi & {
     },
     optimistic: (change: OptimisticChange, writeId: string) => void layers.set(writeId, change),
     settle: (_writeId: string, entryIds: readonly string[]) => applied.push(...entryIds),
+    settleAfterFrame: (writeId: string, entryIds: readonly string[]) =>
+      void pendingFrame.set(writeId, entryIds),
     rollback: (writeId: string, entryIds: readonly string[]) => {
       layers.delete(writeId);
       dropped.push(...entryIds);

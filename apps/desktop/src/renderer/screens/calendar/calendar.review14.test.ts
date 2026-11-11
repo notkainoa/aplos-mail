@@ -175,6 +175,9 @@ test('review14: a held non-create write keeps its overlay until synced, not the 
     for (const remote of ['queued', 'syncing'] as const)
       assert.equal(operationUpdate(w, view({ remote }), ui, ports()), 'watching');
     assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, ports()), 'done');
+    // The op frame lands before the throttled window rerun: the overlay drops on the next
+    // window frame, not at `synced` itself (review15).
+    ui.frame();
     assert.deepEqual(ui.applied, ['climb'], 'the send’s commit is in, the overlay settles');
   } finally {
     resetToasts();

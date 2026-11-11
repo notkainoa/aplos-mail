@@ -90,6 +90,13 @@ export interface EffectUi {
   optimistic(change: OptimisticChange, writeId: string): void;
   /** Keep the write's layer until a window reaches the write's applied state. */
   settle(writeId: string, entryIds: readonly string[], at: State | null): void;
+  /**
+   * Keep the write's layer until a frame strictly newer than the one showing now arrives — the
+   * `synced` op frame lands ahead of the throttled window rerun (review15), so settling at the
+   * receipt's state would snap the change back for ~250 ms. Bounded: a lost frame drops the layer
+   * anyway, so it cannot ghost.
+   */
+  settleAfterFrame(writeId: string, entryIds: readonly string[]): void;
   /** Drop the write's layer (a refusal, an undo, a forgotten op). */
   rollback(writeId: string, entryIds: readonly string[]): void;
   /** A calendar's `shown` changed locally until `Calendar/get` is re-read. */
@@ -577,9 +584,10 @@ export function operationUpdate(
       dismissToast(watch.opId);
       return 'done';
     case 'synced':
-      // Every held write skipped the receipt settle; the send's commit is in by this frame, so the
-      // overlay settles now — a create's tmp entry drops with it, the real row committed already.
-      if (watch.held) ui.settle(watch.opId, watch.entryIds, watch.at);
+      // Every held write skipped the receipt settle; the send's commit is in by this frame, but
+      // the throttled window rerun lands after the op frame — hold the layer until the next
+      // window frame so the row never snaps back (review15). A create's tmp entry drops with it.
+      if (watch.held) ui.settleAfterFrame(watch.opId, watch.entryIds);
       dismissToast(watch.opId);
       return 'done';
     case 'applied':

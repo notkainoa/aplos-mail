@@ -47,6 +47,7 @@ import {
   eventsRange,
   initialState,
   inviteOpen,
+  newerFrame,
   overlayOf,
   periodOf,
   plansSpec,
@@ -101,7 +102,19 @@ export interface CalendarScreenProps {
 interface Settling {
   readonly writeId: string;
   readonly at: State | null;
+  /**
+   * `synced` holds: the op frame lands before the throttled window rerun that carries the send,
+   * so the layer drops on a frame strictly newer than the state seen at synced — `reached` would
+   * drop it at once and snap the change back (review15).
+   */
+  readonly strict?: boolean;
 }
+
+/**
+ * The bound on a `synced` hold's next-frame wait (review15): window reruns are throttled ~250 ms,
+ * so 2 s covers a lost frame — the layer drops anyway rather than ghost the grid forever.
+ */
+const SETTLE_FRAME_FALLBACK_MS = 2_000;
 
 const focused = (): ElementLike | null =>
   typeof document === 'undefined' ? null : (document.activeElement as ElementLike | null);
@@ -293,7 +306,13 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   // Drop a write's layer once the events window has caught up with it.
   useEffect(() => {
     const caughtUp = new Set(
-      settling.filter(s => reached(eventsWindow.state, s.at)).map(s => s.writeId),
+      settling
+        .filter(s =>
+          s.strict === true
+            ? newerFrame(eventsWindow.state, s.at)
+            : reached(eventsWindow.state, s.at),
+        )
+        .map(s => s.writeId),
     );
     if (caughtUp.size === 0) return;
     setLayers(m => {
@@ -309,27 +328,41 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
   stateRef.current = state;
+  // `settleAfterFrame` reads the window state current at the `synced` op frame (the ui memo is
+  // built once, so it cannot close over the per-frame value).
+  const windowStateRef = useRef<State | null>(null);
+  windowStateRef.current = eventsWindow.state;
 
   const ports: EffectPorts = useMemo(livePorts, []);
   // `apply` is defined below (run → ui → apply would be circular); the ref is assigned each render.
   const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
-  const ui: EffectUi = useMemo(
-    () => ({
+  const ui: EffectUi = useMemo(() => {
+    const dropLayer = (writeId: string): void => {
+      setLayers(m => {
+        if (!m.has(writeId)) return m;
+        const next = new Map(m);
+        next.delete(writeId);
+        return next;
+      });
+      setSettling(list => list.filter(s => s.writeId !== writeId));
+    };
+    return {
       optimistic: (change: OptimisticChange, writeId: string) =>
         setLayers(m => new Map(m).set(writeId, change)),
       settle: (writeId: string, _entryIds: readonly string[], at: State | null) =>
         setSettling(list =>
           list.some(s => s.writeId === writeId) ? list : [...list, { writeId, at }],
         ),
-      rollback: (writeId: string) => {
-        setLayers(m => {
-          if (!m.has(writeId)) return m;
-          const next = new Map(m);
-          next.delete(writeId);
-          return next;
-        });
-        setSettling(list => list.filter(s => s.writeId !== writeId));
+      settleAfterFrame: (writeId: string, _entryIds: readonly string[]) => {
+        setSettling(list =>
+          list.some(s => s.writeId === writeId)
+            ? list
+            : [...list, { writeId, at: windowStateRef.current, strict: true }],
+        );
+        // A lost frame must not ghost the layer: drop it on a bound, whichever lands first.
+        setTimeout(() => dropLayer(writeId), SETTLE_FRAME_FALLBACK_MS);
       },
+      rollback: (writeId: string) => dropLayer(writeId),
       shown: (id: string, shown: boolean) =>
         setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
       shownSettled: (id: string) =>
@@ -353,9 +386,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         if (detailIsFor(stateRef.current, eventId)) applyRef.current({ type: 'close' });
       },
       watch: (write: WatchedWrite) => setWatched(list => [...list, write]),
-    }),
-    [],
-  );
+    };
+  }, []);
   const unwatch = useCallback(
     (write: WatchedWrite) => setWatched(list => list.filter(w => w !== write)),
     [],

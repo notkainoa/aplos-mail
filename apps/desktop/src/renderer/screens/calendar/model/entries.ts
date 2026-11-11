@@ -307,6 +307,17 @@ export function reached(window: State | null, at: State | null): boolean {
   return window !== null && at !== null && (window.dbEpoch !== at.dbEpoch || window.seq >= at.seq);
 }
 
+/**
+ * True only for a frame strictly newer than `seen`: a `synced` op frame lands before the throttled
+ * window rerun that carries the send's commit, so settling at the state seen then would snap the
+ * change back until the rerun lands (review15).
+ */
+export function newerFrame(window: State | null, seen: State | null): boolean {
+  if (window === null) return false;
+  if (seen === null) return true;
+  return window.dbEpoch !== seen.dbEpoch || window.seq > seen.seq;
+}
+
 /** A calendar's local `shown` while `Calendar/set` and the `Calendar/get` re-read are in flight (review1 5). */
 export interface ShownOverride {
   readonly shown: boolean;
