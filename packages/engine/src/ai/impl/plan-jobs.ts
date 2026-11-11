@@ -9,6 +9,8 @@ import {
   extractOnce,
   extractThread,
   markEmpty,
+  openPlans,
+  planOf,
   plansForHash,
   threadMail,
   writePlans,
@@ -58,7 +60,9 @@ export async function planJob(
     );
     if (x === 'empty') {
       markEmpty(services, accountId, remoteThreadId, inputHash);
-      return [];
+      // Same answer `Event/extract` gives — an extract that joins this in-flight call sees the
+      // thread's open proposals, not an empty list.
+      return services.store.read(q => openPlans(q, have.info.threadRowId)).map(planOf);
     }
     const list = writePlans(services, accountId, remoteThreadId, x);
     // The marker is per input hash, like `extract` — the written list covers every hash.

@@ -216,9 +216,13 @@ export function createCalendarWrites(
     }
   };
 
-  const saved = (calendar: string, event: ApiEvent): CalendarWriteResult => {
+  const saved = (calendar: string, event: ApiEvent, inserted?: boolean): CalendarWriteResult => {
     const facts = map.facts(calendar, event);
-    return { kind: 'saved', upserts: facts ? [facts] : [], removals: [] };
+    return {
+      kind: 'saved',
+      upserts: facts ? [{ ...facts, ...(inserted === undefined ? {} : { inserted }) }] : [],
+      removals: [],
+    };
   };
 
   /** The event as it is now, for the "changed elsewhere" answer; a failed read-back still answers conflict. */
@@ -255,7 +259,7 @@ export function createCalendarWrites(
         notify: change.notify,
         kind: 'idempotentWrite',
       });
-      return saved(calendar, made);
+      return saved(calendar, made, true);
     } catch (error) {
       // 409: an earlier send of this same create landed after all — answer with what is there.
       if (statusOf(error) !== 409) throw uncertain(error);
@@ -267,7 +271,9 @@ export function createCalendarWrites(
           message: 'That event was deleted. Create it again as a new event.',
           reasonCode: 'calendar.opReused',
         });
-      return saved(calendar, there);
+      // Not inserted by this call: the read-back is an event that was already there (flagged so a
+      // caller that deletes on its own behalf never touches it).
+      return saved(calendar, there, false);
     }
   }
 

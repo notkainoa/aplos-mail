@@ -62,7 +62,7 @@ const PLAN_COLS = `p.id, p.account_id, p.thread_id, t.remote_id, p.message_remot
   p.title, p.start_utc, p.start_date, p.end_utc, p.end_date, p.all_day, p.time_zone, p.location,
   p.state, p.event_id, p.op_id, p.calendar_id, p.rev, p.input_hash`;
 
-function planOf(r: PlanRow): Plan {
+export function planOf(r: PlanRow): Plan {
   const start = r.all_day
     ? ({ type: 'date', date: r.start_date! } as const)
     : ({ type: 'utc', utc: r.start_utc! } as const);
@@ -785,8 +785,9 @@ export async function confirmPlan(
       calendarRemoteId: calRemote,
       scope: 'occurrence',
       // A retried create names the same remote event — the provider answers "already exists" instead
-      // of a second event, so a lost answer or a dead settle can never duplicate.
-      newRemoteId: await eventIdForOp(calAccountId, claimedOp),
+      // of a second event, so a lost answer or a dead settle can never duplicate. The `plan:` prefix
+      // gives confirms their own id space: an opId an Event/set already used can never collide.
+      newRemoteId: await eventIdForOp(calAccountId, `plan:${claimedOp}`),
       fields: planFields(row, args),
       notify: false,
     });
@@ -830,28 +831,37 @@ export async function confirmPlan(
     q.get<{ state: string }>('SELECT state FROM plans WHERE id = ?', row.id),
   );
   if (after?.state !== 'confirmed')
-    await sweepOrphan(services, after?.state, calAccountId, calRemote, first);
+    await sweepOrphan(services, after?.state, calAccountId, calRemote, claimedOp, first);
   return { eventId, receipt: receipt(ctx, args.opId) };
 }
 
 /**
  * The put landed but the settle could not: a still-claimed row keeps the event — its same-opId retry
  * names and settles it — while anything else (a mid-flight dismiss, a released claim) leaves an event
- * no plan can ever point at, so it is deleted best-effort. `newRemoteId` names only events a confirm
- * could have created, never pre-existing user data. A refused delete still surfaces the conflict.
+ * no plan can ever point at, so it is deleted best-effort. Only an event this call could have
+ * inserted is touched: it must carry this claim's plan-namespaced id (an id `Event/set` can never
+ * derive), the adapter must not have flagged it a read-back of something already there, and the
+ * delete is conditional on the put's etag. A refused delete still surfaces the conflict.
  */
 async function sweepOrphan(
   services: EngineServices,
   state: string | undefined,
   calAccountId: string,
   calRemote: string,
+  claimedOp: string,
   first: EventFacts,
 ): Promise<never> {
-  if (state !== 'confirming')
+  const remote = first.masterRemoteId ?? first.remoteId;
+  if (
+    state !== 'confirming' &&
+    remote === (await eventIdForOp(calAccountId, `plan:${claimedOp}`)) &&
+    first.inserted !== false
+  )
     try {
       await services.calendar.remove(calAccountId, {
         calendarRemoteId: calRemote,
-        remoteId: first.masterRemoteId ?? first.remoteId,
+        remoteId: remote,
+        ...(first.etag ? { etag: first.etag } : {}),
         scope: 'occurrence',
         notify: false,
       });
