@@ -1907,3 +1907,12 @@ Each row keeps its gate `record`: these are baselines from an empty profile, not
 
 - **Chosen:** the deadline source does not wake for a send that is under way in this process (it wakes for one a dead run left `syncing`). Before, an in-flight send made `next()` answer "now" for as long as it lasted, a busy loop on the one-second back-off.
 - **Chosen:** a wall-clock time with no zone of its own is read in the calendar's zone when deciding whether the event "has already started", the way the engine reads it everywhere else; read as UTC it could be hours off and send a change late, or hold one that is not late.
+
+## 2026-11-11 — prov-cal: held calendar writes, second Opus review (what is and is not guaranteed)
+
+- **Chosen: a hold announces every state it moves through** as an `operation` frame (queued, syncing, synced, failed, cancelled), the same object `Operation/get` answers, so an open window sees a failed invite without asking. After a reload a screen still needs the op id to ask; a list of failed calendar writes in `Queue/list` (kind `op`, content-free label "Calendar change", `canRetry` on failed, `canDiscard` while queued) is the follow-up eng-contract described (STATUS 2026-11-11 20:03), not built here.
+- **Chosen: Google accepting a change that this device then cannot record** (the `synced` save throws) is `failed` / `calendar.uncertain`, never "try again": a second send would tell the guests twice.
+- **Chosen: a hold that comes due before its account has started** (launch) waits and is looked at again 30 seconds later; nothing was sent, so it is not a failure. The 15-minute limit still ends a hold whose account never starts.
+- **Precision on privacy:** "no guest addresses kept" holds for FINISHED holds (sent or undone). Queued, sending and failed holds keep the full call, because a Retry needs it; failed holds are kept until retried or purged a day after they finished.
+- **Precision on the read-only calendar check:** it is made when the change is MADE (`Event/set`), not when the hold is sent; at send time the grant is checked again and Google's own refusal (403) is the backstop.
+- **Measured:** engine core 465,883 of 470,000 bytes (the earlier figure of 465,795 was before the series rules).

@@ -1,4 +1,5 @@
 import type { ErrorBody, Input, Operation, Receipt } from '@aplos/contract';
+import { NotSentError } from '../ports/base';
 import { requireOriginating } from '@aplos/contract/access';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
@@ -25,6 +26,8 @@ import {
  */
 
 export const HOLD_PREFIX = 'calendar.hold.';
+/** A hold whose account is not started yet is looked at again after this long. */
+const RETRY_AFTER_MS = 30_000;
 
 const keyOf = (opId: string) => `${HOLD_PREFIX}${opId}`;
 
@@ -204,6 +207,7 @@ interface Deps {
   clock: Clock;
   log: Logger;
   calendar: EngineServices['calendar'];
+  frames: EngineServices['frames'];
   changed(): void;
 }
 
@@ -226,6 +230,12 @@ function save(deps: Deps, record: HoldRecord): void {
     writes: [{ kind: 'meta', key: keyOf(record.opId), value: JSON.stringify(kept) }],
   });
   deps.changed();
+  // Tell every window the operation moved (the same object `Operation/get` answers), best effort.
+  try {
+    deps.frames.emit({ frame: 'operation', operation: operationOf(kept) });
+  } catch {
+    // A frame is a convenience; the record is already saved.
+  }
 }
 
 function operationOf(r: HoldRecord): Operation {
@@ -264,8 +274,21 @@ async function sendNow(deps: Deps, record: HoldRecord & { call: HeldCall }): Pro
   const syncing = { ...record, state: 'syncing' as const };
   delete syncing.error;
   save(deps, syncing);
+  let result: Awaited<ReturnType<typeof runCall>>;
   try {
-    const result = await runCall(deps.calendar, record.call);
+    result = await runCall(deps.calendar, record.call);
+  } catch (error) {
+    // The account is not started yet (a hold came due at launch): nothing was sent, so wait a moment and try again
+    // instead of reporting a failure. The 15-minute limit still ends a hold that never gets its account.
+    if (error instanceof NotSentError && error.error.reason === 'accountNotStarted') {
+      save(deps, { ...syncing, state: 'queued', notBefore: deps.clock.now() + RETRY_AFTER_MS });
+      return;
+    }
+    deps.log.event('rpc.failed', { method: record.method, reason: 'calendarHoldFailed' });
+    save(deps, { ...syncing, state: 'failed', error: bodyOf(error) });
+    return;
+  }
+  try {
     if (result.kind === 'conflict') {
       save(deps, {
         ...syncing,
@@ -280,9 +303,24 @@ async function sendNow(deps: Deps, record: HoldRecord & { call: HeldCall }): Pro
       return;
     }
     save(deps, { ...syncing, state: 'synced', appliedState: stateOf(deps.store) });
-  } catch (error) {
-    deps.log.event('rpc.failed', { method: record.method, reason: 'calendarHoldFailed' });
-    save(deps, { ...syncing, state: 'failed', error: bodyOf(error) });
+  } catch {
+    // Google ACCEPTED the change but this device could not record it: never "try again" (a second send would tell the
+    // guests twice), say it may have gone through.
+    deps.log.event('rpc.failed', { method: record.method, reason: 'calendarHoldRecord' });
+    try {
+      save(deps, {
+        ...syncing,
+        state: 'failed',
+        error: {
+          type: 'unavailable',
+          message:
+            'Google Calendar answered, but Aplos could not record it, so it cannot tell whether the change was saved. Check the calendar before trying again.',
+          reasonCode: 'calendar.uncertain',
+        },
+      });
+    } catch {
+      // The store is unwritable: the next sweep finds the record still `syncing` and reports it uncertain.
+    }
   }
 }
 
@@ -296,7 +334,7 @@ function nextDue(values: readonly string[], sending: ReadonlySet<string>): numbe
     const r = parse(value);
     if (!r)
       soonest(0); // an unreadable row is purged by the next run
-    else if (r.state === 'queued') soonest(r.undoUntil);
+    else if (r.state === 'queued') soonest(Math.max(r.undoUntil, r.notBefore ?? 0));
     // A send under way in this process needs no wake-up (its own finish moves the record on); one a dead run left does.
     else if (r.state === 'syncing') {
       if (!sending.has(r.opId)) soonest(0);
@@ -411,7 +449,7 @@ export function createHolds(deps: Deps) {
         const r = readRecord(deps.store, listed.opId);
         if (!r) continue;
         const fresh = r;
-        if (fresh.state === 'queued' && fresh.undoUntil <= now) {
+        if (fresh.state === 'queued' && fresh.undoUntil <= now && (fresh.notBefore ?? 0) <= now) {
           if (now - fresh.undoUntil > HOLD_LATE_MS || startedBy(deps.store, fresh.call, now))
             save(deps, {
               ...fresh,

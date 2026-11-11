@@ -17,7 +17,14 @@ export function createCalendarHolds(services: EngineServices): CalendarHolds {
   const changed = () => services.deadlines.changed('calendarHolds');
   function load() {
     return import('./holds').then(m =>
-      m.createHolds({ store, clock, log, calendar: services.calendar, changed }),
+      m.createHolds({
+        store,
+        clock,
+        log,
+        calendar: services.calendar,
+        frames: services.frames,
+        changed,
+      }),
     );
   }
   const holds = () => {

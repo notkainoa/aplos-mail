@@ -42,6 +42,8 @@ export interface HoldRecord {
   finishedAt?: number;
   /** While `queued`: when the window ends and the write is sent. */
   undoUntil: number;
+  /** Set when the account was not started at that moment: look again not before this (the window's end stays `undoUntil`). */
+  notBefore?: number;
   appliedState: { dbEpoch: string; seq: number };
   error?: ErrorBody;
 }

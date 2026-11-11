@@ -6,7 +6,8 @@ import { createLogger } from '../src/diag/log';
 import { createEngine, laneExtensions } from '../src/index';
 import type { CalendarPort, CalendarWriteResult } from '../src/ports';
 import { openStore } from '../src/store';
-import { manualClock } from './runtime.helpers';
+import { NotSentError } from '../src/ports';
+import { framesOf, manualClock } from './runtime.helpers';
 import { accountWrite, tempDb } from './store/helpers';
 
 // Two more guards of the held calendar writes (prov-cal), split from calendar-holds.test.ts: a sweep never overwrites
@@ -66,7 +67,7 @@ async function rig(answers: (() => Promise<CalendarWriteResult>)[], calendarZone
       })),
     ],
   });
-  return { call, calls, clock, store };
+  return { call, calls, clock, store, engine, window };
 }
 
 const rename = (opId: string, id: string) => ({
@@ -148,4 +149,113 @@ test('a wall-clock time with no zone is read in the calendar’s zone when decid
   await settle();
   assert.deepEqual(w.calls, ['put'], 'the event has not started, so the change is sent');
   assert.equal((await w.call('Operation/get', { opIds: ['zone1'] })).list[0]!.state, 'synced');
+});
+
+test('a hold more than 15 minutes late is not sent unasked, even for an event far in the future', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', rename('lt1', 'acct-1:primary/ev1')); // ev1 begins in 2099: only the age of the hold is late
+  w.clock.advance(20 * 60_000);
+  await settle();
+  assert.deepEqual(w.calls, []);
+  const op = (await w.call('Operation/get', { opIds: ['lt1'] })).list[0]!;
+  assert.equal(op.error?.reasonCode, 'calendar.late');
+  await w.call('Operation/retry', { opId: 'lt1' });
+  assert.deepEqual(w.calls, ['put'], 'sent on the owner’s explicit Retry');
+});
+
+test('a hold sent after a failed Retry carries no trace of the old error', async () => {
+  let finish!: () => void;
+  const w = await rig([
+    unavailable,
+    () =>
+      new Promise<CalendarWriteResult>(resolve => {
+        finish = () => resolve(SAVED);
+      }),
+  ]);
+  await w.call('Event/set', rename('er1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal(
+    (await w.call('Operation/get', { opIds: ['er1'] })).list[0]!.error?.reasonCode,
+    'calendar.unavailable',
+  );
+  const retrying = w.call('Operation/retry', { opId: 'er1' });
+  await settle();
+  assert.equal(
+    (await w.call('Operation/get', { opIds: ['er1'] })).list[0]!.error,
+    undefined,
+    'while it is being sent',
+  );
+  finish();
+  await retrying;
+  const done = (await w.call('Operation/get', { opIds: ['er1'] })).list[0]!;
+  assert.equal(done.state, 'synced');
+  assert.equal(done.error, undefined, 'and once it went through');
+});
+
+test('Google accepting a change that this device then cannot record is reported uncertain, never failed-to-retry', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', rename('rc1', 'acct-1:primary/ev1'));
+  const commit = w.store.commit.bind(w.store);
+  // Recording `synced` fails, once; every other write works.
+  let armed = true;
+  w.store.commit = ((input: Parameters<typeof commit>[0]) => {
+    if (armed && JSON.stringify(input.writes).includes('\\"state\\":\\"synced\\"')) {
+      armed = false;
+      throw new Error('disk full');
+    }
+    return commit(input);
+  }) as typeof w.store.commit;
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+  const op = (await w.call('Operation/get', { opIds: ['rc1'] })).list[0]!;
+  assert.equal(op.state, 'failed');
+  assert.equal(
+    op.error?.reasonCode,
+    'calendar.uncertain',
+    'a Retry here would tell the guests twice',
+  );
+});
+
+test('a hold that comes due before its account has started waits and is sent once it has', async () => {
+  let started = false;
+  const w = await rig([
+    () =>
+      started
+        ? Promise.resolve(SAVED)
+        : Promise.reject(
+            new NotSentError({
+              class: 'transient',
+              provider: 'engine',
+              method: 'calendar.put',
+              reason: 'accountNotStarted',
+            }),
+          ),
+    () => Promise.resolve(SAVED),
+  ]);
+  await w.call('Event/set', rename('ns1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.equal(
+    (await w.call('Operation/get', { opIds: ['ns1'] })).list[0]!.state,
+    'queued',
+    'not failed: nothing was sent',
+  );
+  started = true;
+  w.clock.advance(31_000);
+  await settle();
+  assert.equal((await w.call('Operation/get', { opIds: ['ns1'] })).list[0]!.state, 'synced');
+});
+
+test('every state a hold moves through is announced as an operation frame', async () => {
+  const w = await rig([]);
+  const frames = framesOf(w.window);
+  await w.call('Event/set', rename('fr1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  const states = frames
+    .filter(f => f.frame === 'operation' && f.operation.opId === 'fr1')
+    .map(f => (f.frame === 'operation' ? f.operation.state : ''));
+  assert.deepEqual(states, ['queued', 'syncing', 'synced']);
 });
