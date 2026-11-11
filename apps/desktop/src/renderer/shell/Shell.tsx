@@ -45,6 +45,7 @@ import { placeCounts, screenLabel, type PlaceId } from './nav';
 import { DIAGNOSTICS_FAILED_COPY, RESTART_FAILED_COPY } from './failure-copy';
 import { PlaceholderScreen } from './states';
 import { accountReconnectMode } from './status-map';
+import { setThemeChoice } from './theme';
 import {
   closeSheet,
   navigate,
@@ -409,6 +410,11 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const minimised = settings?.ui.sidebarMinimised === true;
+  const theme = settings?.ui.theme;
+  // The saved Theme setting drives `data-theme` (the entry already follows the system until it is known).
+  useEffect(() => {
+    if (theme) setThemeChoice(theme);
+  }, [theme]);
   // The sidebar↔strip swap drops the focused element's home: hand focus to the surviving landmark.
   const sidebarCollapsed = chrome.collapsed && !minimised;
   const lastCollapsed = useRef(sidebarCollapsed);
