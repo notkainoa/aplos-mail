@@ -15,6 +15,7 @@ import {
   type EditorDraft,
 } from './calendar.model';
 import type { EffectPorts, EffectUi } from './effects';
+import { cancelPendingRetries, releaseHeldWrites } from './effects';
 import { demoWorld } from './CalendarStates';
 
 export const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -112,6 +113,12 @@ export async function settle(flush: () => void) {
     await nextTask();
     flush();
   }
+}
+
+/** The module-level write guards start clean between tests, as an unmount leaves them. */
+export function resetWrites(): void {
+  cancelPendingRetries();
+  releaseHeldWrites();
 }
 
 export const calRef = (c: { id: string; name: string }) => ({

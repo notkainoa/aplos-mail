@@ -536,18 +536,27 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
       off();
     }
   };
+  // `seen` marks the op as once present in the store: an `undefined` view after it means the
+  // record was forgotten (Operations.add evicts at 200); before it, the row simply has not landed
+  // — an op that never arrived is not forgotten and must not roll back (review17).
+  let seen = false;
   const apply = (view: OperationView | undefined): void => {
     if (dead) return;
-    const remote = view?.remote ?? null;
-    if (remote === lastRemote) return;
-    lastRemote = remote;
-    // The store forgot the operation record (view === undefined): nothing is coming for this write
-    // — its patch (or a create's temp row) rolls back here rather than ride the grid forever.
+    // The store forgot the operation record: nothing is coming for this write — its patch (or a
+    // create's temp row) rolls back here rather than ride the grid forever, its held Undo toast
+    // closes, and `off` frees the guarded event and the subscription. This runs BEFORE the remote
+    // dedup: a forgotten record reads `remote: null`, and `null === lastRemote` would drop it.
     if (!view) {
+      if (!seen) return;
       spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
+      dismissToast(spec.opId);
       off();
       return;
     }
+    seen = true;
+    const remote = view.remote ?? null;
+    if (remote === lastRemote) return;
+    lastRemote = remote;
     updateHeldTarget(held, spec, remote);
     if (remote === 'failed') opRefused('failed', view);
     else if (remote === 'conflict') opRefused('conflict', view);

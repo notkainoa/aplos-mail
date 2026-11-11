@@ -51,10 +51,13 @@ const opView = (over: Partial<OperationView> = {}): OperationView => ({
   ...over,
 });
 
-/** A `watchOperation` port that hands every registered listener to the test. */
+/** A `watchOperation` port that hands every registered listener to the test. Like the real
+ * `subscribeOperation` it notifies once at subscribe: the journaled record exists from issue, so
+ * the first view is defined with `remote: null` (the `Operation` row lands later). */
 function watchStub() {
   const listeners = new Map<string, (view: OperationView | undefined) => void>();
   const port: NonNullable<EffectPorts['watchOperation']> = (opId, listener) => {
+    listener(opView());
     listeners.set(opId, listener);
     return () => listeners.delete(opId);
   };
