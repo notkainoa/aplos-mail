@@ -61,6 +61,20 @@ describe('a plain email', () => {
     assert.doesNotMatch(rootOf(documentOf(newsletter)), new RegExp(PLAIN_ATTRIBUTE));
   });
 
+  it('a mail that is otherwise plain but carries its own marker still gets exactly the bare marker on the root', () => {
+    for (const forged of [
+      `<html ${PLAIN_ATTRIBUTE}="x"><p>Hello</p></html>`,
+      `<html ${PLAIN_ATTRIBUTE}="x" lang="fr"><p>Salut</p></html>`,
+      `<html ${PLAIN_ATTRIBUTE}><p>Hello</p></html>`,
+    ]) {
+      const root = rootOf(documentOf(forged));
+      // The sanitiser's own marker, empty: the mail's value ("x") never reaches the root, and it appears once.
+      assert.match(root, /^<html( lang="fr")? data-aplos-plain>$/, root);
+      assert.equal(root.split(PLAIN_ATTRIBUTE).length - 1, 1, 'once');
+      assert.doesNotMatch(root, /data-aplos-plain=/);
+    }
+  });
+
   it('cannot be forced by the mail: its own marker is dropped, and a styled mail stays rich', () => {
     const forged = documentOf('<html data-aplos-plain><p style="color:red">Hi</p></html>');
     assert.doesNotMatch(rootOf(forged), new RegExp(PLAIN_ATTRIBUTE));

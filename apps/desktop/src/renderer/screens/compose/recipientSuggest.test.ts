@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { createHarness } from '../../data/harness';
 import { createSuggestLoop } from './runtime/suggestLoop';
 import {
+  freshEntries,
   initialActive,
   moveActive,
   SUGGEST_DEBOUNCE_MS,
@@ -81,6 +82,22 @@ describe('highlight and keys', () => {
     assert.equal(suggestKey('a', false, list, ids[0]), null);
     for (const key of ['ArrowDown', 'Tab', 'Escape'])
       assert.equal(suggestKey(key, false, [], undefined), null, `${key} with the list shut`);
+  });
+});
+
+describe('freshEntries', () => {
+  const answer = { entries: [JORDAN], asked: { query: 'jo', accountId: 'a1' } };
+
+  test('an answer shows only for the exact trimmed text and account it was asked for', () => {
+    assert.deepEqual(freshEntries(answer, 'jo', 'a1'), [JORDAN]);
+    assert.deepEqual(freshEntries(answer, ' jo ', 'a1'), [JORDAN], 'the text is compared trimmed');
+    assert.deepEqual(freshEntries(answer, 'jon', 'a1'), [], 'newer text: nothing until it answers');
+    assert.deepEqual(
+      freshEntries(answer, 'jo', 'a2'),
+      [],
+      "another From account: not this one's people",
+    );
+    assert.deepEqual(freshEntries(null, 'jo', 'a1'), []);
   });
 });
 

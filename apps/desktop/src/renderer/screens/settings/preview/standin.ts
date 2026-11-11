@@ -125,6 +125,9 @@ export function standInPorts(
       set({ verbose: on ? { until } : undefined });
       return { until };
     },
+    async verboseGet() {
+      return get().verbose ?? {};
+    },
     async dataExport() {
       return { canceled: false };
     },

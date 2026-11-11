@@ -63,6 +63,7 @@ import {
   type CalendarContext,
   type CalendarEffect,
   type CalendarState,
+  type EditorDraft,
   type OptimisticChange,
   type Overlay,
   type ShownOverride,
@@ -322,6 +323,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       focus: (target: 'grid' | 'rail') => setFocus(f => ({ target, seq: (f?.seq ?? 0) + 1 })),
       reopenEditor: (eventId: string, note: string) =>
         applyRef.current({ type: 'reopenEditor', eventId, note }),
+      restoreEditor: (draft: EditorDraft, note: string) =>
+        applyRef.current({ type: 'restoreEditor', draft, note }),
       closeDetail: (eventId: string) => {
         if (detailIsFor(stateRef.current, eventId)) applyRef.current({ type: 'close' });
       },
