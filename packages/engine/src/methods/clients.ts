@@ -123,6 +123,19 @@ async function grant(
       type: 'unavailable',
       message: 'This part of Aplos is not running yet.',
     });
+  // A retry of the same grant (a double-click or a lost response) returns the live row instead of minting a
+  // duplicate tool — its token file still authenticates it, and nothing new is written.
+  const existing = ctx.services.store.read(q =>
+    q.get<ClientRow>(
+      'SELECT id, name, kind, scopes, created_at, last_seen_at, revoked_at FROM clients WHERE name = ? AND kind = ? AND revoked_at IS NULL',
+      args.name,
+      args.kind,
+    ),
+  );
+  if (existing)
+    return {
+      client: { ...toClient(existing), tokenPath: `run/clients/${existing.id}.token` },
+    };
   const id = `cl_${hex(ctx.services.randomBytes(16))}`;
   const token = hex(ctx.services.randomBytes(32));
   const scopes = [...new Set(args.scopes)] as Client['scopes'];

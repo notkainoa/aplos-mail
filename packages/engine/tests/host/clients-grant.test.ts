@@ -223,3 +223,24 @@ test('no caller but the app can grant: listener admin and mcp are refused before
     await w.engine.close();
   }
 });
+
+test('a grant retry with the same name and kind returns the existing tool, no new row or file', async () => {
+  const w = await world();
+  try {
+    const first = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    const second = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    assert.equal(second.client.id, first.client.id, 'the retry returns the existing grant');
+    assert.equal(w.issued.length, 1, 'no second token file was issued');
+    assert.equal(
+      (w.db.prepare('SELECT COUNT(*) AS n FROM clients').get() as { n: number }).n,
+      1,
+      'still one row',
+    );
+    // A revoked grant does not dedupe — a fresh grant mints a new row.
+    await w.call('Clients/revoke', { id: first.client.id });
+    const third = await w.call('Clients/grant', { name: 'dup', kind: 'cli', scopes: ['read'] });
+    assert.notEqual(third.client.id, first.client.id);
+  } finally {
+    await w.engine.close();
+  }
+});

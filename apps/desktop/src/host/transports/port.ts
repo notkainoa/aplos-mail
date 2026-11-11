@@ -346,6 +346,7 @@ export const controlMethods: ReadonlySet<string> = new Set([
   'Counts/get',
   'Mail/serve',
   'Blob/get',
+  'Blob/release',
 ]);
 
 export type PowerEvent = 'resume' | 'unlock-screen';

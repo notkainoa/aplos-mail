@@ -238,7 +238,16 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
     const data = await blobBytes(String(args.blobId));
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('That window was closed.');
-    return method === 'File/save' ? saveBytes(win, name, data) : (await openBytes(name, data), ok);
+    if (method === 'File/open') return (await openBytes(name, data), ok);
+    const done = await saveBytes(win, name, data);
+    // The file is on disk now; the staging blob (a Data/export, say) is free to go.
+    if (done)
+      try {
+        await current.call('Blob/release', { blobId: String(args.blobId) }, 30_000);
+      } catch {
+        // Best effort: a release that fails leaves the sweep to find the file, never a saved file lost.
+      }
+    return done;
   }
   const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
   if (!name) throw new Error('This is not available on the new engine yet.');

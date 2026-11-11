@@ -377,3 +377,16 @@ test('verbose with no argument reads the stored deadline — window and listener
     await w.engine.close();
   }
 });
+
+test('a missing install salt refuses the bundle rather than emitting derivable hashes', async () => {
+  const w = await world();
+  try {
+    w.db.prepare("DELETE FROM meta WHERE key = 'install_salt'").run();
+    await assert.rejects(
+      w.call('Diagnostics/preview', {}),
+      (e: { type?: string }) => e.type === 'internal',
+    );
+  } finally {
+    await w.engine.close();
+  }
+});
