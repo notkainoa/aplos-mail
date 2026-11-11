@@ -119,6 +119,8 @@ interface FakeOptions {
   marks?: number;
   bodyPaint?: string;
   rootPaint?: string;
+  /** The root carries `data-aplos-plain`. */
+  plain?: boolean;
 }
 
 const captured: Record<string, boolean> = {};
@@ -144,6 +146,11 @@ class FakeElement {
   }
   getBoundingClientRect(): { height: number; top: number } {
     return { height: this.box, top: this.top };
+  }
+  /** The sanitiser's plain marker on the root (plain.ts). */
+  marked = false;
+  hasAttribute(name: string): boolean {
+    return name === 'data-aplos-plain' && this.marked;
   }
 }
 
@@ -190,6 +197,7 @@ function fakeWindow(options: FakeOptions = {}) {
     options.box ?? 500,
     options.rootPaint ?? 'rgba(0, 0, 0, 0)',
   );
+  root.marked = options.plain === true;
   const body = new FakeElement(
     options.bodyScroll ?? 300,
     0,
@@ -265,7 +273,7 @@ function run(fake: ReturnType<typeof fakeWindow>, source = REPORTER_SOURCE): voi
 }
 
 describe('reporter: behaviour in a fake DOM', () => {
-  it('posts exactly the six keys at body end', () => {
+  it('posts exactly the seven keys at body end', () => {
     const fake = fakeWindow({ marks: 3 });
     run(fake);
     assert.equal(fake.posted.length, 1);
@@ -276,6 +284,7 @@ describe('reporter: behaviour in a fake DOM', () => {
       'bg',
       'ready',
       'marks',
+      'plain',
     ]);
     assert.deepEqual(
       { ...fake.posted[0].message },
@@ -286,9 +295,22 @@ describe('reporter: behaviour in a fake DOM', () => {
         bg: 'rgb(255, 255, 255)',
         ready: false,
         marks: 3,
+        plain: false,
       },
     );
     assert.equal(fake.posted[0].target, '*');
+  });
+
+  it('reports plain only when the root carries the sanitiser’s marker, and never from the background colour', () => {
+    const marked = fakeWindow({ plain: true });
+    run(marked);
+    assert.equal(marked.posted[0].message.plain, true);
+    // A mail can paint any body colour, the host's sentinel included: the colour is no signal.
+    for (const bodyPaint of ['rgb(33, 34, 37)', 'rgb(255, 255, 254)']) {
+      const forged = fakeWindow({ bodyPaint });
+      run(forged);
+      assert.equal(forged.posted[0].message.plain, false, bodyPaint);
+    }
   });
 
   it('reports again on every listed event, when something changed', () => {
