@@ -7,6 +7,8 @@ import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
 import { followEligible, followUpDaysOf, lastSentHashOf, priorityOf, type JobRow } from './jobs';
 import { callMessage, meteredChat } from './runtime';
+import { planJob, suggestReplyJob } from './plan-jobs';
+import './ai-writes';
 
 /**
  * One claimed job's execution (ARCH 8.1): `summary` and `followup`. Mail goes to the provider as quoted untrusted text in a
@@ -378,6 +380,17 @@ export async function executeJob(
         return { state: 'done' };
       case 'followup':
         await writeFollowup(services, payload);
+        return { state: 'done' };
+      // `classify` rides the summary pipeline: the stored summary carries the lane, due date and action (E5).
+      case 'classify':
+        await summarize(services, payload);
+        return { state: 'done' };
+      case 'plan':
+        await planJob(services, payload);
+        return { state: 'done' };
+      // `suggestAction` is the drafts-feature job: a pre-drafted reply suggestion when the summary says reply.
+      case 'suggestAction':
+        await suggestReplyJob(services, payload);
         return { state: 'done' };
       default:
         return { state: 'failed', lastError: JSON.stringify({ reasonCode: 'ai.notImplemented' }) };

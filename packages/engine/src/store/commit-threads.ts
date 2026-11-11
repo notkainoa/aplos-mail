@@ -58,6 +58,20 @@ export function threadDelete(run: CommitRun, w: ThreadDeleteWrite) {
     run.mark('Message', w.accountId, m.remote_id, 'd');
   }
   run.markListChanges(run.lists(row.id), new Map());
+  // The thread's plans cascade with it; a `*` row re-reads the account's plans (coarser than per-row
+  // marks, correct — the deleted thread's plans answer notFound).
+  run.markId('Plan', w.accountId, '*');
+  // `replydraft:<wire>` and `followup:<wire>[:<hash>]` both belong to this thread.
+  const base = `${w.accountId}:${w.remoteThreadId}`;
+  run
+    .q('DELETE FROM meta WHERE key IN (?, ?, ?) OR substr(key, 1, ?) = ?')
+    .run(
+      `replydraft:${base}`,
+      `followup:${base}`,
+      `plans-empty:${base}`,
+      `followup:${base}:`.length,
+      `followup:${base}:`,
+    );
   run.q('DELETE FROM threads WHERE id = ?').run(row.id); // cascades messages, placements, workflow, lists
   run.touched.delete(row.id);
   run.mark('Thread', w.accountId, w.remoteThreadId, 'd');

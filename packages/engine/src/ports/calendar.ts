@@ -100,6 +100,13 @@ export interface EventFacts extends EventFields {
   remoteId: string;
   etag?: string;
   /**
+   * On a `put` result only: `true` when this call inserted the event, `false` when the answer is a
+   * read-back of an event that already existed (a create that met the provider's "already exists").
+   * Absent when the adapter cannot say. Callers that delete on the caller's behalf must never touch
+   * a row flagged `false`.
+   */
+  inserted?: boolean;
+  /**
    * Set on a Google or Graph override; stored as `events.master_remote_id` and joined on it, since an override can
    * arrive before its master. Absent on CalDAV, whose overrides share the master's `remoteId` (see `EventRef`).
    */

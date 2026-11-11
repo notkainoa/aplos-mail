@@ -249,3 +249,39 @@ test('an empty from address is not the owner: the Low band agrees with the rowâ€
     store.close();
   }
 });
+
+test('an alias that sent in one thread is still a plain sender in another: the owner rule is per thread', () => {
+  const store = setup([
+    // Thread A: the owner replied from a shared address.
+    msg('a1', 'tA', 1, { from: { address: 'crowd@news.example', name: 'Crowd' } }),
+    sent('a2', 'tA', 2, {
+      from: { address: 'shared@list.example', name: 'List Team' },
+      to: [{ address: 'crowd@news.example' }],
+    }),
+    // Thread B: the same address only wrote in, the owner never sent from it here.
+    msg('b1', 'tB', 3, { from: { address: 'shared@list.example', name: 'List Team' } }),
+    low('tA'),
+    low('tB'),
+  ]);
+  try {
+    const rowB = row(store, 'tB');
+    assert.equal(
+      rowB.participants[0]?.me,
+      undefined,
+      'the row says it is a plain participant in B',
+    );
+    const groups = store.read(q => lowGroups(q));
+    assert.deepEqual(
+      groups.map(g => [g.address, g.name, g.threadIds]),
+      [
+        ['shared@list.example', 'List Team', [`${ACCOUNT}:tB`]],
+        ['crowd@news.example', 'Crowd', [`${ACCOUNT}:tA`]],
+      ],
+      'B groups under the shared address and A under the other person',
+    );
+    const layout = store.read(q => compileView({ kind: 'home' }, ENV).layout(q));
+    assert.deepEqual(layout.sections.find(s => s.key === 'low')?.senders, ['List Team', 'Crowd']);
+  } finally {
+    store.close();
+  }
+});

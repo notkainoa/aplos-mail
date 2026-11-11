@@ -24,6 +24,14 @@ export interface JobRow {
   last_error: string | null;
 }
 
+/** Which background feature a job kind asks the gate for (consent covers all three, R2B-4). */
+export const featureOf = (kind: string): 'summaries' | 'plans' | 'drafts' =>
+  kind === 'plan'
+    ? 'plans'
+    : kind === 'followup' || kind === 'suggestAction'
+      ? 'drafts'
+      : 'summaries';
+
 const JOB_KINDS = new Set(['summary', 'classify', 'plan', 'suggestAction', 'followup']);
 
 /** The wire `AiJob` for one row. */

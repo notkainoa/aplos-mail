@@ -23,6 +23,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
+import { mountLegacyBanner } from './legacyBanner';
 import { answerPrepareClose } from './shell/closeHandshake';
 import { startSystemTheme } from './shell/theme';
 import { scenarioParam } from './onboarding/route';
@@ -193,6 +194,8 @@ async function bootOnboarding(): Promise<void> {
 async function bootLegacy(fallback = false): Promise<void> {
   stopCloseAnswer();
   if (fallback) document.title = 'Aplos Mail (legacy view)';
+  // The one place the legacy banner is mounted: the old version says so at the top of its window.
+  mountLegacyBanner();
   // eslint-disable-next-line aplos/boundaries
   await import('./legacy/main');
 }

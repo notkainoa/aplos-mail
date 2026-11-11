@@ -1981,7 +1981,16 @@ Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that car
 
 Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.
 
+## 2026-11-11: The Low band's owner test stays per thread, with the account half built once (ui-home, taking over eng-views' #475 on the integrator's review)
+
+#475 made the "sent a non-draft from-me message" half of `NON_OWNER` global to build it once per statement. That changed the rule: an alias that sent in thread A became the owner in thread B, where it only appears as a participant, so a shared or list address once replied from vanished from the Low band, and the band disagreed with `participants[].me` (`rows.ts`, still per thread). The rule stays per thread (the same as #464): the accounts set is uncorrelated (built once per statement) and the from-me half is a `NOT EXISTS` probe on the thread's own messages by `thread_id`. The slow oracle (`tests/views/reference.ts`) keeps the per-thread rule, and `people.test.ts` pins it with a two-thread case. Measured on a synthetic 4,000-thread Low band (four participants and an owner message each), best of 10 runs: about 190-250 ms against 323 ms for #464's correlated UNION and 170 ms for the wrong global set, on a loaded machine.
+
 ## 2026-11-11 — prov-cal: Retry never repeats a change whose answer was lost
 
 - **Chosen (integrator's decision):** Retry on a hold that failed as `calendar.uncertain` is refused (`conflict` / `calendar.checkFirst`: "Check your calendar: this change may already have gone through. Make it again if it is missing."). A create is idempotent (its event id is derived from the op), an edit is guarded by `If-Match`, but an RSVP email is not, so one rule covers all. A hold waiting for its account to start reads `queued` but no longer `undoable`, because its window has closed.
 - **What the owner can see, in one sentence each:** a failed calendar change is never sent again unless they press Retry; after a reload only a screen that kept the change's id can see it; and a change more than 15 minutes late, or for an event that has already started, also waits for Retry.
+
+## 2026-11-11 — eng-features: plan-confirmed events get their own id space
+
+- **Chosen:** a `Plan/confirm` create names its remote event `eventIdForOp(account, 'plan:' + opId)` — a prefix `Event/set` never uses — so a shared opId can never make a confirm read back (or its orphan sweep delete) an event the owner created another way. Safe to change now: calendar writes are still behind the owner's re-consent, so nothing live carries the old un-prefixed ids.
+- **Chosen:** the mid-flight orphan sweep deletes only when the returned remote id is the namespaced id this claim asked for, the adapter did not flag the answer a read-back (`inserted` is not `false`), and the row is not still `confirming`; the delete is conditional on the put's etag.

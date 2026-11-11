@@ -9,6 +9,7 @@ import {
   lastSentHashOf,
   priorityOf,
 } from './jobs';
+import './ai-writes';
 
 /**
  * The one-shot Setup backfill (ai-3): when the first-sync screen ends, queue a `summary` job for every thread that
