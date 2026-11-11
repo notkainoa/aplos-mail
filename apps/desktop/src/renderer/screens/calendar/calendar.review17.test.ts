@@ -260,3 +260,34 @@ test('review17: a retryable op failure offers Retry and Dismiss', async () => {
     resetToasts();
   }
 });
+
+test('review17: a refused Operation/retry keeps the failure persistent with its verbs', async () => {
+  const { control, flush, engine, opId } = await heldWrite(heldFailure('calendar.late'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    const toast = failedToast();
+    assert.ok(toast?.persistent, 'the failed hold is up');
+    // The op already left 'failed' engine-side (a provider-side retry synced it behind the
+    // toast's back — an earlier Operation/retry would be answered from the reply cache): the
+    // engine answers the stale click with its own conflict. The refusal must keep the surface
+    // it replaced — persistent, Retry and Dismiss still offered, the refusal sentence in
+    // place — never an actionless toast that fades 4 s later and leaves the failed send
+    // invisible.
+    const rec = engine.fixture.ops.get(opId);
+    assert.ok(rec);
+    rec.operation = { ...rec.operation, state: 'synced' };
+    runToastAction(toast!.id, 'retry');
+    await flush();
+    const again = failedToast();
+    assert.equal(again?.message, 'Only a failed change can be retried.', 'the refusal sentence');
+    assert.equal(again?.persistent, true, 'still a failure the owner must answer');
+    assert.deepEqual(
+      again?.actions?.map(a => a.id),
+      ['retry', 'dismiss'],
+    );
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});

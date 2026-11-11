@@ -367,12 +367,14 @@ export function calendarUndoRefused(opId: string, error: unknown): void {
 function retryOperation(ports: EffectPorts, opId: string): void {
   void ports.operationRetry({ opId }).then(undefined, error => {
     const body = toErrorBody(error);
-    pushToast({
-      id: `${opId}:failed`,
-      kind: 'info',
-      message: body.message || 'Couldn’t send that change.',
-      undoable: false,
-    });
+    // A refused retry keeps the surface it came from — persistent with its Retry and Dismiss —
+    // showing the refusal's own sentence in place of the first failure's. An actionless toast
+    // would fade 4 s later and leave the failed send invisible (review17).
+    opFailureToast(
+      opId,
+      { message: body.message || 'Couldn’t send that change.', retry: 'operation' },
+      ports,
+    );
   });
 }
 
