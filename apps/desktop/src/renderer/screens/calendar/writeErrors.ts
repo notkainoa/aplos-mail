@@ -85,11 +85,13 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, WriteFailure>> = {
     message: "That change wasn't sent in time. Check the event, then send it again.",
     retry: 'operation',
   },
-  // A second change to an event whose earlier change is still waiting to be sent: never retried (the
-  // queue clears itself); an editor save keeps the typed draft, like the times refusals.
+  // A second change to an event whose earlier change is still waiting to be sent: the hold can last
+  // the whole undo window, so the sentence names both ways out. Retry stays — a submit-time refusal
+  // accepted nothing, so re-running the write is safe; an editor save keeps the typed draft too.
   'calendar.holdPending': {
-    message: "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
-    retry: 'none',
+    message:
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+    retry: 'now',
     keepDraft: true,
   },
   // Only a stale screen reaches this: the UI hides edit actions on a read-only calendar already.
@@ -135,6 +137,19 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, WriteFailure>> = {
     retry: 'none',
   },
 };
+
+/**
+ * A refused Undo, keyed on the engine's two conflict sentences (`calendar/holds.ts`): "was already
+ * undone" for a second press, "has been sent" once the window closed — each reads differently, so
+ * the honest answer is keyed on the engine's own words.
+ */
+export function undoFailureMessage(body: ErrorBody): string {
+  if (body.type === 'conflict') {
+    if (body.message.includes('already undone')) return 'That change was already undone.';
+    if (body.message.includes('has been sent')) return 'That change was already sent.';
+  }
+  return body.message || 'Couldn’t undo that change.';
+}
 
 /**
  * The failure for a refused write: `error` is whatever the port rejected with (`OperationFailedError`

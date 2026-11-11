@@ -146,13 +146,13 @@ test('heldWrites: calendar.late and calendar.holdPending map to their sentences 
   );
   assert.equal(
     pending.message,
-    "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+    "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
   );
-  assert.equal(pending.retry, 'none');
+  assert.equal(pending.retry, 'now', 'a submit-time refusal accepted nothing — re-running is safe');
   assert.equal(pending.keepDraft, true);
 });
 
-test('heldWrites: a holdPending refusal keeps the editor draft and a plain write shows no Retry', async () => {
+test('heldWrites: a holdPending refusal keeps the editor draft and a plain write offers a safe Retry', async () => {
   resetToasts();
   try {
     // An editor save: the sentence lands on the re-opened draft, typed work kept — never a toast too.
@@ -180,7 +180,7 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
     assert.deepEqual(ui.restored, [
       {
         draft: fx.draft,
-        note: "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+        note: "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
       },
     ]);
     assert.equal(failedToast(), undefined, 'no failure toast beside the re-opened draft');
@@ -190,7 +190,8 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
   }
   resetToasts();
   try {
-    // A drag, a menu write: no draft to keep — the sentence in a toast, no Retry.
+    // A drag, a menu write: no draft to keep — the sentence in a toast. Retry stays: a submit-time
+    // refusal accepted nothing, so re-running the write is safe (review16).
     const ui = testUi();
     runCalendarEffect(
       dinnerFx,
@@ -211,9 +212,12 @@ test('heldWrites: a holdPending refusal keeps the editor draft and a plain write
     const toast = failedToast();
     assert.equal(
       toast?.message,
-      "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
     );
-    assert.equal(toast?.actions, undefined, 'no Retry while the earlier change is still queued');
+    assert.ok(
+      toast?.actions?.some(a => a.id === 'retry'),
+      'a safe Retry: nothing was accepted, so the write may run again',
+    );
     assert.deepEqual(ui.dropped, [DINNER]);
   } finally {
     resetToasts();

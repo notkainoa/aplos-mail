@@ -68,10 +68,11 @@ test('writeErrors: each reasonCode maps to its sentence and Retry decision', asy
     ['calendar.eventGone', 'That event is no longer on your calendar.', false],
     ['calendar.forbidden', 'Only the organizer can change this event.', false],
     ['calendar.rejected', "Google Calendar didn't accept that change.", false],
+    // Nothing was accepted, so the retry re-runs the write — safe (review16).
     [
       'calendar.holdPending',
-      "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
-      false,
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+      true,
     ],
     // `calendar.late` means the OPERATION missed its window — a submit-time refusal accepted
     // nothing, so the sentence stands alone (review16: only an operation-level late retries).

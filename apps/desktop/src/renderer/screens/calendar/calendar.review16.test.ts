@@ -419,7 +419,7 @@ test('review16: holdPending copy names Undo and the hold, and keeps a safe Retry
   // offers Undo or waiting out the first send. Retry stays — a submit-time refusal accepted
   // nothing, so re-running the write is safe.
   const failure = writeFailureOf(
-    { type: 'conflict', message: 'held', reasonCode: 'calendar.holdPending' },
+    { error: { type: 'conflict', message: 'held', reasonCode: 'calendar.holdPending' } },
     'Couldn’t change Renamed.',
   );
   assert.equal(

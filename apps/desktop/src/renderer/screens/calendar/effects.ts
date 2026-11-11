@@ -37,7 +37,7 @@ import {
   type ToastPlan,
 } from './calendar.model';
 import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
-import { bodyOf, writeFailureOf, type WriteFailure } from './writeErrors';
+import { bodyOf, undoFailureMessage, writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
 export interface EffectPorts {
@@ -293,8 +293,9 @@ const heldWrites = new Set<string>();
 
 /**
  * Z while the calendar is up (the screen's `app.undo` handler): the shared undo stack's newest change,
- * same as the default handler — plus a refused undo says something. A conflict on a held write means
- * the window ended and the change already went; anything else repeats the engine's own plain sentence.
+ * same as the default handler — plus a refused undo says something. A conflict on a held write names
+ * which of the engine's two refusals landed ("already undone" vs "already sent", holds.ts); anything
+ * else repeats the engine's own plain sentence.
  */
 export function undoLastCalendarChange(): void {
   const outcome = undoStack.undoLast();
@@ -305,9 +306,7 @@ export function undoLastCalendarChange(): void {
     pushToast({
       id: `${outcome.opId}:undo`,
       kind: 'info',
-      message: held
-        ? 'That change was already sent.'
-        : body.message || 'Couldn’t undo that change.',
+      message: held ? undoFailureMessage(body) : body.message || 'Couldn’t undo that change.',
       undoable: false,
     });
   });
@@ -315,8 +314,8 @@ export function undoLastCalendarChange(): void {
 
 /**
  * The toast's own Undo (the store's undo runner) refuses the same way Z does: a conflict on a held
- * write says "That change was already sent." Refusals for anything the lane did not hold stay silent —
- * mail's toasts behave exactly as before.
+ * write names the engine's sentence ("already undone" vs "already sent", holds.ts). Refusals for
+ * anything the lane did not hold stay silent — mail's toasts behave exactly as before.
  */
 export function calendarUndoRefused(opId: string, error: unknown): void {
   const body = bodyOf(error);
@@ -324,7 +323,7 @@ export function calendarUndoRefused(opId: string, error: unknown): void {
   pushToast({
     id: `${opId}:undo`,
     kind: 'info',
-    message: 'That change was already sent.',
+    message: undoFailureMessage(body),
     undoable: false,
   });
 }
