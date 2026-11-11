@@ -2627,3 +2627,4 @@ MERGED #455 Earlier messages Show full/Show less, whole-row open (c58f1074, head
 MERGED #458 Narrow-pane focus-letter fix (517a7d1b, head df73c7e1 incl. ui-polish 380px scoped revision; container query keeps Reply label, secondaries go icon-only under 380px; verified by simulated render at 360px: Reply 24px->80px label restored. Gallery intentionally unscoped/excluded.)
 
 MERGED #459 Ask dock cap keeps main pane >=20rem (48682977, shell.css only, 232 tests clean)
+2026-11-10 | ui-reader | PARKED | integrator | #460 (loading label, lane-approved:ui-home) merged with revamp, mergeable at 613014ab, 19 tests pass; waits for the integrator merge. Nothing else open from ui-reader.
