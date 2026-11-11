@@ -337,6 +337,8 @@ test('checkBundle accepts a fully populated bundle and rejects smuggled fields',
   bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).email = 'a@b.c'));
   bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).accountHash = 'not-hex!'));
   bad(b => ((b.storage as Record<string, unknown>).dbBytes = 1.5));
+  bad(b => ((b.storage as Record<string, unknown>).dbBytes = -5));
+  bad(b => ((b.crashes as Record<string, unknown>).count = -1));
   bad(b => ((b.engine as Record<string, unknown>).state = 'has space'));
   bad(
     b =>

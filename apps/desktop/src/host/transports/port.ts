@@ -337,7 +337,8 @@ export interface UtilityInit {
  * Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`).
  * `Mail/serve` is the `aplos-mail://` relay (html-5); the utility rewrites its `windowId` with `hostServeArgs`.
  * `Blob/get` is main's `File/save`/`File/open` (plans/engine/blob-area.md decision 6): main reads the bytes itself, so
- * 25 MB never has to sit in a renderer to be saved. Main is the `app` principal, as every window is.
+ * 25 MB never has to sit in a renderer to be saved. `Blob/release` frees an export's staging blob once its
+ * file is saved. Main is the `app` principal, as every window is.
  */
 export const controlMethods: ReadonlySet<string> = new Set([
   'Draft/get',

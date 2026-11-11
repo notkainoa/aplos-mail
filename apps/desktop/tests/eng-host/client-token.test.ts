@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import type { StorePort } from '@aplos/engine/store';
+import type { SqlValue } from '@aplos/engine/store/sql';
 import { createClientTokens, verify } from '../../src/host/transports/auth';
 import { openSqlite } from '../../src/host/sqlite';
 
@@ -65,8 +66,8 @@ test('verify against real SQLite: a revoked row answers undefined, a live row st
   ins.run('cl_live', 'live', 'cli', hash(live), '["read","admin"]', 1, null);
   ins.run('cl_dead', 'dead', 'cli', hash(dead), '["read"]', 1, 2);
   const store = {
-    read: (fn: (q: { all: (sql: string, ...p: unknown[]) => unknown[] }) => unknown) =>
-      fn({ all: (sql: string, ...p: unknown[]) => db.prepare(sql).all(...p) }),
+    read: (fn: (q: { all: (sql: string, ...p: SqlValue[]) => unknown[] }) => unknown) =>
+      fn({ all: (sql: string, ...p: SqlValue[]) => db.prepare(sql).all(...p) }),
   } as never;
   assert.deepEqual(verify(store, live), {
     clientId: 'cl_live',
