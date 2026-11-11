@@ -333,6 +333,11 @@
   max-width: min(calc(var(--space-10) * 7), 90vw);
   padding: var(--space-1) var(--space-5);
 }
+.aplos-details:focus-visible {
+  /* Drawn inside: the popover scrolls and would clip a ring drawn outside it. */
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-width));
+}
 .aplos-details__row {
   display: grid;
   grid-template-columns: var(--space-9) minmax(0, 1fr);
