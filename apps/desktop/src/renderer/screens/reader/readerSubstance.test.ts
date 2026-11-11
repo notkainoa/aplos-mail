@@ -95,9 +95,14 @@ test('PlainText: paragraphs; quoted history hidden until shown, then a quiet blo
   const shown = renderToStaticMarkup(
     createElement(PlainText, { text: BODY, quoted: ranges, showQuoted: true }),
   );
-  assert.match(shown, /<blockquote class="aplos-mailframe__quote"><p>Switched to the plain list/);
+  assert.match(
+    shown,
+    /<blockquote class="aplos-mailframe__quote"><p dir="auto">Switched to the plain list/,
+  );
   // A blank line is a paragraph break (the body spaces paragraphs), never an empty 26 px line.
-  assert.match(shown, /<p>Hi Alex,<\/p><p>The sample folds cleanly\.<\/p>/);
+  assert.match(shown, /<p dir="auto">Hi Alex,<\/p><p dir="auto">The sample folds cleanly\.<\/p>/);
+  // Each paragraph takes its own direction, so a right-to-left text reads and aligns right to left.
+  assert.equal(shown.match(/<p dir="auto">/g)?.length, shown.match(/<p[ >]/g)?.length);
   assert.doesNotMatch(shown, /&gt; /);
   const whole = renderToStaticMarkup(createElement(PlainText, { text: BODY }));
   assert.match(whole, /&gt; Switched/);
