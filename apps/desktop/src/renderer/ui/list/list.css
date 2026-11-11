@@ -885,6 +885,8 @@
   flex-direction: column;
   height: 100%;
   padding: var(--space-5) var(--space-5) var(--space-4) var(--space-6);
+  /* The letter's own width decides which secondary parts the action row shows (see the container queries below). */
+  container-type: inline-size;
   overflow: hidden;
   border-radius: var(--radius-lg);
   background-color: var(--paper);
@@ -939,11 +941,41 @@
 .ui-focus-letter__suggest {
   display: inline-flex;
   flex: 0 1 auto;
-  min-width: 0;
+  /* The main action keeps its label: it only gives way (label ellipsis) after every secondary hint has gone. */
+  min-width: calc(2 * var(--control-md));
   margin-right: auto;
 }
 .ui-focus-letter__suggest .ui-list-btn {
   flex: 0 1 auto;
+  min-width: 0;
+}
+.ui-focus-letter__actions > .ui-list-btn {
+  flex: none;
+}
+
+/* A narrow pane (the letter's own width, not the window's) gives up the secondary parts in a fixed order, so the main
+   action never collapses: Later and Done lose their key hints, then their words (icon only), and last the main
+   action's own hint. The widths are the actions row's content width at which the next part would no longer fit. */
+@container (max-width: 24.5rem) {
+  .ui-focus-letter__actions
+    .ui-list-btn:not([data-variant='filled'])
+    .ui-list-kbd:not([data-reveal='badge']) {
+    display: none;
+  }
+}
+@container (max-width: 20rem) {
+  .ui-focus-letter__actions .ui-list-btn:not([data-variant='filled']) {
+    width: var(--ui-btn-h);
+    padding: 0;
+  }
+  .ui-focus-letter__actions .ui-list-btn:not([data-variant='filled']) .ui-list-btn__label {
+    display: none;
+  }
+}
+@container (max-width: 15rem) {
+  .ui-focus-letter__actions .ui-list-btn[data-variant='filled'] .ui-list-kbd {
+    display: none;
+  }
 }
 
 /* ---------- Low-importance band ---------- */
