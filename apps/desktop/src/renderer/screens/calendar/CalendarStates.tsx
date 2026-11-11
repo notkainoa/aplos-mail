@@ -759,6 +759,25 @@ const FIXTURES: Record<string, Fixture> = {
       message: "We couldn't confirm that went through. Check your calendar before trying again.",
     },
   },
+  'write-late-retry': {
+    title:
+      'The held write missed its window: "This change wasn’t sent in time. Check the event, then try again." — Retry sends the same operation',
+    state: { view: 'week', selectedId: 'design' },
+    toast: {
+      message: "This change wasn't sent in time. Check the event, then try again.",
+      actions: [{ id: 'retry', label: 'Retry' }],
+    },
+  },
+  'write-hold-pending': {
+    title:
+      'A second held change while the first still waits: "Your earlier change to this event hasn’t been sent yet. Try again in a few seconds." — Retry',
+    state: { view: 'week', selectedId: 'design' },
+    toast: {
+      message:
+        "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
+      actions: [{ id: 'retry', label: 'Retry' }],
+    },
+  },
 };
 
 export interface CalendarPreviewState {

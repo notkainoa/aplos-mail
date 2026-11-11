@@ -314,4 +314,24 @@ export const calendarStates: readonly VisualState[] = [
     mockup: 'calendar-week.html (default)',
     filled: 0,
   },
+  {
+    id: 'write-late-retry',
+    frame: 'shell',
+    title:
+      'Calendar: the held write wasn’t sent in time — check the event, then try again, with Retry',
+    components: [...GRID, 'Toast'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
+  {
+    id: 'write-hold-pending',
+    frame: 'shell',
+    title:
+      'Calendar: the earlier held change hasn’t been sent yet — try again in a few seconds, with Retry',
+    components: [...GRID, 'Toast'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-week.html (default)',
+    filled: 0,
+  },
 ];
