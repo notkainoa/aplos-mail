@@ -573,3 +573,59 @@ test('series times that cannot be moved by an offset are refused, and nothing re
   });
   assert.deepEqual(w.calls, []);
 });
+
+test('a summer occurrence moved onto a winter day keeps its clock time on the master’s day', async () => {
+  const w = await world();
+  const LA = 'America/Los_Angeles';
+  // The Oct 31 occurrence (10:00 PDT) has an exception of its own.
+  w.store.commit({
+    opId: 'dst2',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev1_20261031T170000Z',
+        rows: [
+          {
+            recurrenceId: '20261031T170000Z',
+            masterRemoteId: 'ev1',
+            status: 'confirmed',
+            etag: '"o3"',
+            startUtc: Date.UTC(2026, 9, 31, 17, 0),
+            endUtc: Date.UTC(2026, 9, 31, 17, 30),
+            allDay: false,
+            data: GEVENT('Daily (Oct 31)'),
+          },
+        ],
+      },
+    ],
+  });
+  // Oct 31 10:00 PDT moved to Nov 2 10:00 PST (the clocks went back on Nov 1): two days later, same clock time.
+  await w.call('Event/set', {
+    opId: 'dst3',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261031T170000Z',
+      scope: 'series',
+      fields: {
+        start: { type: 'floating', local: '2026-11-02T10:00:00', timeZone: LA },
+        end: { type: 'floating', local: '2026-11-02T10:30:00', timeZone: LA },
+        allDay: false,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as { fields: { start?: unknown; end?: unknown } };
+  // The master (Oct 27 10:00 PDT) moves two days later at 10:00 (not 11:00).
+  assert.deepEqual(sent.fields.start, {
+    type: 'floating',
+    local: '2026-10-29T10:00:00',
+    timeZone: LA,
+  });
+  assert.deepEqual(sent.fields.end, {
+    type: 'floating',
+    local: '2026-10-29T10:30:00',
+    timeZone: LA,
+  });
+});
