@@ -1883,6 +1883,10 @@ The RSS medians differ by 26 MB between two identical runs, so one run is not a 
 
 Each row keeps its gate `record`: these are baselines from an empty profile, not limits. Turning them into tighten-only limits needs headroom, repeated runs on the owner's Mac and a run with a synced account, which is eng-host's call. The engine process is found by the `node.mojom.NodeService` marker (the preferred `--aplos-engine=real` marker is not on the real utility's command line); only one such utility exists. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (about 11.5 minutes).
 
+## 2026-11-10: Home rows name the other person, not the owner (ui-home, break-ui pass on sender names)
+
+The engine's `ThreadRow.fromName` is the newest sender of the thread, which is the owner whenever they answered last. `senderOf` (rows, "Always do this for …", the one-by-one and reader titles) now prefers the newest sender who is not the owner, then the owner's own name, then the subject; names lose control characters, bidi overrides and invisible marks and fold whitespace (joiners stay for emoji families and Persian). A thread the owner wrote entirely still shows their own name, because `ThreadRow` has no recipients to name instead (requested from eng-contract).
+
 ## 2026-11-11: the one-by-one card is a reading column at most 680 px wide (ui-reader)
 
 Context: the owner's round-3 feedback on the one-by-one card ("that's good", two changes), relayed by the orchestrator: the card #421 drew nearly as wide as the pane is too wide; the reference (another app's screenshot, 2x) shows a card about 625 CSS px wide with about 470 px of body text; "a centered column roughly 620-680 CSS px wide at a normal window, shrinking with the window (keep a comfortable side margin, 16-24 px at narrow widths ... no horizontal scroll) and NEVER wider than a max reading width"; "add the max to the tokens/DESIGN.md as an owner decision".
