@@ -95,6 +95,8 @@ export const ThreadRow = z.object({
   /** The newest sender's display name, for the palette context line and search rows. */
   fromName: line(200),
   participants: z.array(Participant).check(z.maxLength(6)),
+  /** The newest outbound message's To and Cc: who a Follow-up row waits on. Absent when the owner never wrote. */
+  recipients: z.optional(z.array(Participant).check(z.maxLength(6))),
   lastDate: EpochMs,
   lastInboundDate: z.optional(EpochMs),
   messageCount: Count,

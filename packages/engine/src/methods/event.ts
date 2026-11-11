@@ -1,7 +1,7 @@
 import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
-import { isKnownZone, toWall } from '../calendar/recurrence/zone';
+import { fromWall, isKnownZone, toWall } from '../calendar/recurrence/zone';
 import { eventIdForOp } from '../calendar/event-id';
 import { runCall } from '../calendar/holds-call';
 import type { HeldCall, HoldSpec } from '../calendar/holds-types';
@@ -429,7 +429,7 @@ const seriesTimeRefusal = () =>
   });
 
 interface RebaseBase {
-  master: { start_utc: number; end_utc: number; zone?: string };
+  master: { start_utc: number; end_utc: number; zone?: string; allDay: boolean };
   occStart: number;
   occEnd: number;
 }
@@ -451,6 +451,7 @@ function rebaseBase(
   const master = {
     start_utc: stored.start_utc,
     end_utc: stored.end_utc,
+    allDay: stored.all_day === 1,
     ...(masterZone ? { zone: masterZone } : {}),
   };
   const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
@@ -473,10 +474,40 @@ function rebaseSeriesTimes(
   // Mixed kinds (a utc start with a date end) describe nothing a single offset can move.
   if (start && end && start.type !== end.type) throw seriesTimeRefusal();
   const kind = (start ?? end)!.type;
-  if (kind === 'floating') return rebaseZoned(ctx, ref, fields);
-  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
-  if (kind === 'utc') rebaseUtc(master, occStart, occEnd, fields);
-  else rebaseAllDay(master, occStart, occEnd, fields);
+  if (kind === 'floating') return rebaseZoned(rebaseBase(ctx, ref), fields);
+  const base = rebaseBase(ctx, ref);
+  if (kind === 'utc') {
+    // An all-day series keeps whole-day times, and a zone Aplos cannot read cannot move on its own wall clock:
+    // neither has a safe offset for an instant-typed change.
+    if (base.master.allDay || (base.master.zone && !isKnownZone(base.master.zone)))
+      throw seriesTimeRefusal();
+    // A series that lives in a zone moves on that zone's wall clock whatever form the request came in: elapsed time
+    // is an hour off across a daylight-saving change (Oct 28 10:00 PDT moved to Nov 1 10:00 PST). A series with no
+    // zone has only elapsed time to go by.
+    const tz = base.master.zone;
+    if (tz) {
+      const floating = (t: PortFields['start'] | undefined): PortFields['start'] | undefined =>
+        t?.type === 'utc'
+          ? {
+              type: 'floating',
+              local: new Date(toWall(t.utc, tz)).toISOString().slice(0, 19),
+              timeZone: tz,
+            }
+          : t;
+      if (start) fields.start = floating(start);
+      if (end) fields.end = floating(end);
+      // The pair also carries its ELAPSED measure: the owner's wall reading is tried first (an 18:00-02:00 evening stays
+      // 18:00-02:00 across the fall-back night) and the elapsed one is used only when the wall reading collapses (01:30
+      // happens twice), which would write a zero-length or end-before-start change.
+      const span = start?.type === 'utc' && end?.type === 'utc' ? end.utc - start.utc : undefined;
+      const endDelta = end?.type === 'utc' && !start ? end.utc - base.occEnd : undefined;
+      return rebaseZoned(base, fields, {
+        ...(span !== undefined ? { span } : {}),
+        ...(endDelta !== undefined ? { endDelta } : {}),
+      });
+    }
+    rebaseUtc(base.master, base.occStart, base.occEnd, fields);
+  } else rebaseAllDay(base.master, base.occStart, base.occEnd, fields);
 }
 
 /**
@@ -486,17 +517,19 @@ function rebaseSeriesTimes(
  * a start and an end in different zones, and a zone other than the master's (the series would be rewritten into it).
  */
 function rebaseZoned(
-  ctx: MethodContext,
-  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+  base: RebaseBase,
   fields: Partial<PortFields>,
+  /** Measures of a request that arrived as utc instants: the span to apply, or the end's move — both elapsed time. */
+  elapsed?: { span?: number; endDelta?: number },
 ): void {
   const start = fields.start?.type === 'floating' ? fields.start : undefined;
   const end = fields.end?.type === 'floating' ? fields.end : undefined;
   const tz = (start ?? end)?.timeZone;
   if (!tz || !isKnownZone(tz) || (start && end && start.timeZone !== end.timeZone))
     throw seriesTimeRefusal();
-  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
-  if (master.zone && master.zone !== tz) throw seriesTimeRefusal();
+  const { master, occStart, occEnd } = base;
+  // The series' own zone, or none: a series with no zone is not rewritten into one (it would quietly gain it).
+  if (master.zone !== tz) throw seriesTimeRefusal();
   const wall = (local: string) => Date.parse(`${local}Z`);
   const local = (ms: number): PortFields['start'] => ({
     type: 'floating',
@@ -508,12 +541,23 @@ function rebaseZoned(
   const shift = start ? wall(start.local) - toWall(occStart, tz) : 0;
   const newStart = masterStart + shift;
   // A start move applies the owner's new span from the shifted start; an end-only resize shifts the master's end by
-  // how far the occurrence's own end moved; an unchanged end rides the start shift.
-  const newEnd = end
-    ? start
+  // how far the occurrence's own end moved; an unchanged end rides the start shift. For a request carried as utc
+  // instants the WALL measure is used too; the ELAPSED one (added on the timeline and read back onto the wall clock)
+  // only when the wall reading is zero or negative.
+  // Wall clock first; elapsed only when the wall reading is zero or negative (an end in the repeated hour).
+  const wallEnd = !end
+    ? masterEnd + shift
+    : start
       ? newStart + (wall(end.local) - wall(start.local))
-      : masterEnd + (wall(end.local) - toWall(occEnd, tz))
-    : masterEnd + shift;
+      : masterEnd + (wall(end.local) - toWall(occEnd, tz));
+  const newEnd =
+    !end || wallEnd > newStart
+      ? wallEnd
+      : elapsed?.span !== undefined
+        ? toWall(fromWall(newStart, tz) + elapsed.span, tz)
+        : elapsed?.endDelta !== undefined
+          ? toWall(master.end_utc + elapsed.endDelta, tz)
+          : wallEnd;
   fields.start = local(newStart);
   fields.end = local(newEnd);
 }

@@ -683,3 +683,7 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Tests `calendar.heldWrites.test.ts` (9, mutation-checked: watchWrite off → 6 fail; `calendar.late` out → table + late tests fail; keepDraft out → draft test fails; held-check off → late-undo test fails); gallery states `write-hold-failed-late` (toast + Retry) and `write-hold-refused` (editor re-opens on the draft) shot light/dark to `~/.local/share/aplos-mail-review/held-write-copy/<sha>/`.
 ## ui-calendar: review fixes — per-write overlays, conflict/cancel frames, toast-Undo refusal, watch hygiene (2026-11-11)
 - Overlay contributions are per write (`Overlay.writes` keyed by op id), so one write's rollback or refusal keeps a stacked write's patch; a `cancelled` frame after `failed` takes the `:failed` toast down; a terminal `conflict` frame gets the mapped refusal and releases the watch (OperationView carries conflict errors); the toast's own Undo refuses like Z via `setToastUndoRefusal` + `calendarUndoRefused` (held writes only); `subscribeOperation` isolates listener throws; 11 more held-write tests pin retry/replay/settle/unmount (cross-lane additive: data hooks/index/operations, shell store-toast/index/KeysProviders — ui-shell).
+
+## 2026-11-11 — prov-cal: guest RSVP falls back to the account address
+
+- A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
