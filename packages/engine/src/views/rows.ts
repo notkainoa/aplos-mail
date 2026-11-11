@@ -1,4 +1,5 @@
 import type { State, SuggestedAction, ThreadRow, WorkflowState } from '@aplos/contract';
+import { FLAG } from '../store';
 import type { SqlRow, StoreReader } from '../store';
 import { splitId } from './compile';
 import type { ViewEnv } from './specs';
@@ -150,19 +151,44 @@ function followOf(q: StoreReader, r: ThreadDbRow, env: ViewEnv): ThreadRow['foll
   return sent ? { since: r.last_date } : undefined;
 }
 
+interface SentRow extends SqlRow {
+  from_addr: string | null;
+  to_json: string | null;
+  cc_json: string | null;
+}
+
+/*
+ * The thread's non-draft from-me messages, newest first. A send from an alias keeps its own `from_addr` while carrying
+ * the from-me flag, so these senders are the owner's aliases; the newest one's To+Cc names who a Follow up waits on.
+ */
+function sentByOwner(q: StoreReader, rowid: number): SentRow[] {
+  return q.all<SentRow>(
+    `SELECT from_addr, to_json, cc_json FROM messages
+      WHERE thread_id = ? AND (flags & ${FLAG.draft | FLAG.fromMe}) = ${FLAG.fromMe}
+      ORDER BY internal_date DESC, id DESC`,
+    rowid,
+  );
+}
+
 function buildRow(
   q: StoreReader,
   r: ThreadDbRow,
   env: ViewEnv,
-  addresses: ReadonlyMap<string, string>,
+  ownAddresses: ReadonlySet<string>,
 ): ThreadRow {
   const people = parsePeople(r.participants);
-  const mine = addresses.get(r.account_id);
-  const participants = people.map(p => ({
+  const sent = sentByOwner(q, r.rowid);
+  const mine = new Set(ownAddresses);
+  for (const m of sent) if (m.from_addr) mine.add(m.from_addr.toLowerCase());
+  const person = (p: Person): ThreadRow['participants'][number] => ({
     ...(p.name ? { name: p.name } : {}),
     ...(p.address ? { address: p.address } : {}),
-    ...(mine && p.address?.toLowerCase() === mine ? { me: true } : {}),
-  }));
+    ...(p.address && mine.has(p.address.toLowerCase()) ? { me: true } : {}),
+  });
+  const participants = people.map(person);
+  const recipients = sent.length
+    ? [...parsePeople(sent[0].to_json), ...parsePeople(sent[0].cc_json)].slice(0, 6).map(person)
+    : [];
   const follow = followOf(q, r, env);
   return {
     id: contractId(r),
@@ -192,16 +218,15 @@ function buildRow(
     summary: summaryOf(q, r.rowid),
     fromLater: isFromLater(r, env.now),
     unsubscribe: r.list_unsub !== null,
+    ...(recipients.length ? { recipients } : {}),
     ...(follow ? { follow } : {}),
   };
 }
 
-/** Each account's own address (lower case), to mark the owner among a row's participants. */
-function accountAddresses(q: StoreReader): Map<string, string> {
-  return new Map(
-    q
-      .all<{ id: string; address: string }>('SELECT id, address FROM accounts')
-      .map(a => [a.id, a.address.toLowerCase()]),
+/** Every account's own address (lower case), to mark the owner among a row's participants and recipients. */
+function accountAddresses(q: StoreReader): Set<string> {
+  return new Set(
+    q.all<{ address: string }>('SELECT address FROM accounts').map(a => a.address.toLowerCase()),
   );
 }
 

@@ -13741,6 +13741,13 @@
               "$ref": "#/components/schemas/Participant"
             }
           },
+          "recipients": {
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            }
+          },
           "lastDate": {
             "$ref": "#/components/schemas/EpochMs"
           },

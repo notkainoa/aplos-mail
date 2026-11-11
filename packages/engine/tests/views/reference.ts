@@ -230,6 +230,31 @@ function homeLists(r: Ref, a?: string) {
 
 const fromName = (t: RThread) => t.participants[0]?.name ?? t.participants[0]?.address ?? '';
 
+/** A participant is not the owner when its address is no account's and sent no non-draft from-me message here. */
+const nonOwner = (r: Ref, t: RThread, p: { address?: string }) => {
+  const addr = (p.address ?? '').toLowerCase();
+  return (
+    !r.d.accounts.some(a => a.address.toLowerCase() === addr) &&
+    !t.msgs.some(
+      m =>
+        m.fromAddr !== '' &&
+        (m.flags & 16) !== 0 &&
+        (m.flags & 8) === 0 &&
+        m.fromAddr.toLowerCase() === addr,
+    )
+  );
+};
+
+/** The newest non-owner sender's name, else address, else the newest sender's (SENDER_NAME in views/sections). */
+const senderName = (r: Ref, t: RThread): string => {
+  const others = t.participants.filter(p => nonOwner(r, t, p));
+  return (
+    others.find(p => p.name != null)?.name ??
+    others.find(p => p.address != null)?.address ??
+    fromName(t)
+  );
+};
+
 function homeExpected(
   r: Ref,
   spec: Extract<ViewSpec, { kind: 'home' | 'homeSection' | 'oneByOne' }>,
@@ -243,7 +268,7 @@ function homeExpected(
       ]);
     return sectioned([[spec.section, ids(h[spec.section])]]);
   }
-  const senders = [...new Set(h.low.map(fromName).filter(Boolean))].slice(0, 3);
+  const senders = [...new Set(h.low.map(t => senderName(r, t)).filter(Boolean))].slice(0, 3);
   return sectioned(
     [
       ['do', ids(h.do)],
@@ -262,10 +287,8 @@ function lowGroups(
 ): Expected {
   const groups = new Map<string, { name: string; ids: string[] }>();
   for (const t of homeLists(r, spec.accountId).low) {
-    const me = r.d.accounts.find(x => x.id === t.account)?.address.toLowerCase();
-    const address =
-      t.participants.find(p => (p.address ?? '').toLowerCase() !== me)?.address ?? fromName(t);
-    const g = groups.get(address) ?? { name: fromName(t), ids: [] };
+    const address = t.participants.find(p => nonOwner(r, t, p))?.address ?? senderName(r, t);
+    const g = groups.get(address) ?? { name: senderName(r, t), ids: [] };
     g.ids.push(t.id);
     groups.set(address, g);
   }
