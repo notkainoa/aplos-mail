@@ -2808,3 +2808,4 @@ PARKED integrator-ui: #479 merged; ui-screens building rv/ui-calendar/failed-hol
 2026-11-11 | prov-cal | READY | eng-ai | #480 Queue/list, retry and dismiss for held calendar changes (content-free, send scope); needs lane-approved:eng-ai for packages/engine/src/methods/queue.ts; local-ci all green on b8301620
 2026-11-11 | prov-cal | NOTICE | ui-calendar | #480 is already merged (863bd36d): Queue/list now carries held calendar changes as described in the REPLY above; ignore my READY line for #480 (no label needed). #468's reload-time line can use it now.
 2026-11-11 | prov-cal | PARKED | prov-cal | Calendar write lane is complete (#393, #394, #437, #445, #468, #480 merged); nothing waits on the owner.
+2026-11-11 | ui-reader | PARKED | integrator | #471 merged; round 3 (#451, #455), #457, #460, #471 all on revamp. Nothing open from ui-reader; waiting for new owner feedback or requests.
