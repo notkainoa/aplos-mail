@@ -85,11 +85,13 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, WriteFailure>> = {
     message: "That change wasn't sent in time. Check the event, then send it again.",
     retry: 'operation',
   },
-  // A second change to an event whose earlier change is still waiting to be sent: never retried (the
-  // queue clears itself); an editor save keeps the typed draft, like the times refusals.
+  // A second change to an event whose earlier change is still waiting to be sent: the hold can last
+  // the whole undo window, so the sentence names both ways out. Retry stays — a submit-time refusal
+  // accepted nothing, so re-running the write is safe; an editor save keeps the typed draft too.
   'calendar.holdPending': {
-    message: "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
-    retry: 'none',
+    message:
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+    retry: 'now',
     keepDraft: true,
   },
   // Only a stale screen reaches this: the UI hides edit actions on a read-only calendar already.
@@ -137,6 +139,19 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, WriteFailure>> = {
 };
 
 /**
+ * A refused Undo, keyed on the engine's two conflict sentences (`calendar/holds.ts`): "was already
+ * undone" for a second press, "has been sent" once the window closed — each reads differently, so
+ * the honest answer is keyed on the engine's own words.
+ */
+export function undoFailureMessage(body: ErrorBody): string {
+  if (body.type === 'conflict') {
+    if (body.message.includes('already undone')) return 'That change was already undone.';
+    if (body.message.includes('has been sent')) return 'That change was already sent.';
+  }
+  return body.message || 'Couldn’t undo that change.';
+}
+
+/**
  * The failure for a refused write: `error` is whatever the port rejected with (`OperationFailedError`
  * from the data layer's commands, or a `ContractError`), `fallback` the effect's own generic sentence
  * ("Couldn't move Q4 review."). Codes the table does not know keep the fallback and today's Retry.
@@ -145,28 +160,66 @@ export function writeFailureOf(
   error: unknown,
   fallback: string,
   blindRetryUnsafe = false,
+  /**
+   * The failure came back on the operation AFTER the receipt (`operation` frame): the write was
+   * accepted, so its sentence says what is still owed and its Retry is `Operation/retry` on the
+   * same op id — manual only, never `retryAfterMs` (a timer would re-send a notifying write to
+   * guests with nobody's hand on it). At submit time nothing was accepted, so an op-level retry
+   * kind stands alone — there is no operation to retry.
+   */
+  atOperation = false,
 ): WriteFailure {
   const body = bodyOf(error);
   if (body.reasonCode === 'permission.calendarWrite')
-    return { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
-  // A dead grant signs in again before anything writes — never retried, however it arrives.
+    return atOperation
+      ? {
+          // The write was accepted — only its send is owed: Enable editing, then
+          // Operation/retry on the same op id (review18).
+          message: 'Turn on editing to send this change.',
+          retry: 'operation',
+          enableEditing: true,
+        }
+      : { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
+  // A dead grant signs in again before anything writes. At submit nothing was accepted, so no
+  // retry is offered; after the receipt the engine still holds the failed change, so the
+  // sentence says it is owed and Retry is Operation/retry on the same op id (review18).
   if (body.type === 'needsReauth' || body.reasonCode === 'auth.expired')
-    return {
-      message: 'Sign in to Google again to change events.',
-      retry: 'none',
-      reconnect: true,
-    };
+    return atOperation
+      ? {
+          message: 'Sign in to Google again to send this change.',
+          retry: 'operation',
+          reconnect: true,
+        }
+      : {
+          message: 'Sign in to Google again to change events.',
+          retry: 'none',
+          reconnect: true,
+        };
   // The engine's writes land with #394; until then a write answers `notImplemented` and no retry can help.
   if (body.type === 'notImplemented')
     return { message: "Editing isn't available yet. Nothing was changed.", retry: 'none' };
   if (body.reasonCode === 'calendar.unavailable')
-    return {
-      message: "Couldn't reach Google Calendar. Nothing changed.",
-      retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
-      ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
-    };
+    return atOperation
+      ? {
+          // The write was accepted — only its send is owed: Retry is `Operation/retry` on the same
+          // op id, never the write again and never on a timer (review16).
+          message: "Couldn't reach Google Calendar. The change hasn't been sent yet.",
+          retry: 'operation',
+        }
+      : {
+          message: "Couldn't reach Google Calendar. Nothing changed.",
+          retry: body.retryAfterMs === undefined ? 'now' : 'delayed',
+          ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
+        };
   const known = body.reasonCode ? WRITE_FAILURE_COPY[body.reasonCode] : undefined;
-  if (known) return { ...known };
+  if (known)
+    return {
+      ...known,
+      // `operation` names a retry only an accepted write owns: a submit-time refusal carrying it
+      // (calendar.late) shows the sentence alone — a click would re-run `Event/set` with a fresh
+      // op id and re-notify guests (review16).
+      ...(known.retry === 'operation' && !atOperation ? { retry: 'none' as const } : {}),
+    };
   // A create or a reply asked again blind could duplicate the event or re-notify guests: an
   // unknown code gets no Retry, just the honest check-your-calendar line (review7 7).
   if (blindRetryUnsafe)
