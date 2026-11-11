@@ -1864,3 +1864,6 @@ Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox,
 - `idle.wakeups` (eng-host): 2 per second (`top` IDLEW, median).
 
 Each row keeps its gate `record`: these are baselines, not limits. Turning them into tighten-only limits needs headroom for a shared and busier Mac, which is eng-host's call; one run on one Mac is not enough to set a limit from. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (11 minutes).
+
+- Diagnostics/verbose is now partly a query: called with no `on` it answers the stored deadline ({until?}) without writing, while the method stays a command and only the writes are audited.
+

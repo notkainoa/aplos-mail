@@ -25,7 +25,19 @@ import { loadCorpus } from '../../../../../../packages/mail-html/corpus/index';
 import { CORPUS } from '../corpus';
 import { URL_SANDBOX } from '../document';
 import { FALLBACK_KEYS } from '../keys';
-import { FRAME_PAPER } from '../paper';
+import { FRAME_DARK, FRAME_PAPER } from '../paper';
+
+/** A colour as the browser serialises it back from an inline style (the page's own, so no colour literal is built here). */
+function cssColour(page: Page, colour: string): Promise<string> {
+  return page.evaluate(value => {
+    const probe = document.createElement('i');
+    probe.style.background = value;
+    return probe.style.background;
+  }, colour);
+}
+
+/** The paper colour off by one blue step: a body colour a mail may choose, and no signal of anything. */
+const OFF_WHITE = `${FRAME_PAPER.paper.slice(0, -2)}fe`;
 import { parseBg } from '../protocol';
 
 const ORIGIN = 'http://mailframe.test';
@@ -39,7 +51,7 @@ const HOST_PAGE = `<!doctype html><html><head><meta charset="utf-8"></head><body
 /** An email background the host must pick up (a token value: the spec holds no raw colours). */
 const DARK = FRAME_PAPER.ink;
 /** The reporter's message keys, in its order. */
-const REPORT_KEYS = ['token', 'h', 'w', 'bg', 'ready', 'marks'];
+const REPORT_KEYS = ['token', 'h', 'w', 'bg', 'ready', 'marks', 'plain'];
 
 let bundle = '';
 
@@ -182,6 +194,10 @@ function hostState(page: Page) {
       sandbox: frame?.getAttribute('sandbox'),
       src: frame?.getAttribute('src'),
       height: frame?.style.height,
+      padding: frame?.style.padding,
+      background: frame?.style.background,
+      colorScheme: frame?.style.colorScheme,
+      radius: frame?.style.borderRadius,
       hidden: frame?.style.visibility === 'hidden',
       href: location.href,
       aplos: JSON.stringify((window as unknown as { aplos: unknown }).aplos),
@@ -190,7 +206,7 @@ function hostState(page: Page) {
   });
 }
 
-/** True when every post that reached the host is the genuine reporter's: its six keys, this token. */
+/** True when every post that reached the host is the genuine reporter's: its seven keys, this token. */
 function onlyReporterPosts(posted: unknown[], token: string): boolean {
   return posted.every(data => {
     if (typeof data !== 'object' || data === null) return false;
@@ -204,6 +220,60 @@ function sealedDocument(html: string, cids: string[] = []): string {
   if (result.bodyKind !== 'html' || !result.document) throw new Error('not an html body');
   return withReporter(result.document);
 }
+
+/** A plain letter reports `plain: true`; a rich one that paints the host's own surface colours as its body background never does. */
+const PLAIN_CASES: [string, string, boolean][] = [
+  [
+    'a plain letter',
+    '<p>Hello</p><p><b>Bold</b> and <a href="https://example.com/x">a link</a></p>',
+    true,
+  ],
+  [
+    'a rich letter painting the dark surface',
+    `<body bgcolor="${FRAME_DARK.surface}"><style>p{color:red}</style><p>Hello</p></body>`,
+    false,
+  ],
+  [
+    'a rich letter painting the off-white sentinel',
+    `<body style="background:${OFF_WHITE}"><p style="color:gray">Hello</p></body>`,
+    false,
+  ],
+  [
+    'a styled letter that forges the marker on its own html element',
+    `<html data-aplos-plain="x"><body bgcolor="${FRAME_DARK.surface}"><style>p{color:red}</style><p>Hello</p></body></html>`,
+    false,
+  ],
+  [
+    'a rich letter painting paper',
+    `<body bgcolor="${FRAME_PAPER.paper}"><table><tr><td>Hello</td></tr></table></body>`,
+    false,
+  ],
+];
+for (const [name, html, plain] of PLAIN_CASES)
+  test(`the real reporter reports plain from the sanitiser's marker, never from a colour: ${name}`, async ({
+    page,
+  }) => {
+    const server = new SealedServer();
+    const token = server.issue(sealedDocument(html), {}, []);
+    await openHost(page, server, `real/${token}`);
+    expect(await settled(page)).toBe(true);
+    const state = await hostState(page);
+    const posts = state.posted as Record<string, unknown>[];
+    expect(posts.length).toBeGreaterThan(0);
+    for (const post of posts) expect(post.plain).toBe(plain);
+    expect(onlyReporterPosts(state.posted, token)).toBe(true);
+    // The host's own styling follows the marker and nothing else: a rich letter keeps the light paper in its inset ring,
+    // whatever body colour it painted; only a plain one is flush on the card.
+    if (plain) {
+      expect(state.padding).toBe('0px');
+      expect(state.radius).toBe('0px');
+    } else {
+      expect(state.padding).toContain('--sheet-inset');
+      expect(state.background).toBe(await cssColour(page, FRAME_PAPER.paper));
+      expect(state.colorScheme).toBe('light');
+      expect(state.radius).not.toBe('0px');
+    }
+  });
 
 test('the real reporter sizes the host: height, bg and onReady once, from an opaque frame', async ({
   page,

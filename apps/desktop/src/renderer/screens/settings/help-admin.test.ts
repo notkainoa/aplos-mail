@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createController } from './controller';
 import type { SettingsApiPort, SettingsData, WriteFailure } from './ports';
-import { verboseLine, verboseOn } from './settings.model';
+import { verboseFrom, verboseLine, verboseOn } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 
 function harness({ ports }: { ports: Partial<SettingsApiPort> }) {
@@ -30,6 +30,18 @@ function harness({ ports }: { ports: Partial<SettingsApiPort> }) {
 }
 
 describe('ui-settings: help and support', () => {
+  test('help.verbose.read – the switch opens as the engine says: a switch-off time means on, none means off', () => {
+    assert.deepEqual(verboseFrom({ until: 5_000 }), { until: 5_000 });
+    assert.equal(verboseFrom({}), undefined);
+    assert.equal(verboseOn(verboseFrom({ until: 5_000 }), 1_000), true);
+    assert.equal(
+      verboseOn(verboseFrom({ until: 5_000 }), 6_000),
+      false,
+      'a time already past is off',
+    );
+    assert.equal(verboseOn(verboseFrom({}), 1_000), false);
+  });
+
   test('help.diagnostics.save – Save report exports then saves; closing the save dialog says nothing; a failure keeps the dialog open', async () => {
     const calls: string[] = [];
     const h = harness({

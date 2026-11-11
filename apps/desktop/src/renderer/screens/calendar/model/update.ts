@@ -221,6 +221,17 @@ function onReopenEditor(
   return done({ ...t.state, editor: { ...t.state.editor, error: action.note } });
 }
 
+/**
+ * A times refusal (`event.allDayMismatch`, `event.timesRequired`) on an editor save: the draft comes
+ * back as it was typed — never rebuilt from the store, which holds the pre-save event (the gate and
+ * `draftProblem` keep it the same way). An editor already open owns its draft: the notice falls back
+ * to the toast, like a late conflict (review8 2).
+ */
+function onRestoreEditor(state: CalendarState, action: ActionOf<'restoreEditor'>): Transition {
+  if (state.editor !== null) return unhandled(state);
+  return done({ ...closed(state), editor: { ...action.draft, error: action.note } });
+}
+
 function onEditorPatch(state: CalendarState, action: ActionOf<'editor'>): Transition {
   if (!state.editor) return unhandled(state);
   return done({ ...state, editor: patchDraft(state.editor, action.patch) });
@@ -359,6 +370,7 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   editorNote: (s, a) =>
     s.editor ? done({ ...s, editor: { ...s.editor, error: a.message } }) : unhandled(s),
   reopenEditor: onReopenEditor,
+  restoreEditor: onRestoreEditor,
   enableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
   delete: (s, _a, ctx) => deleteTransition(s, ctx),
   move: (s, a, ctx) => moveTransition(s, ctx, a.id, a.start, a.end),

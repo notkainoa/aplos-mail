@@ -17,6 +17,7 @@
     const fontsOf = getter(w.Document, 'fonts');
     const scrollOf = getter(w.Element, 'scrollHeight');
     const boxOf = w.Element.prototype.getBoundingClientRect;
+    const attr = w.Element.prototype.hasAttribute;
     const findAll = w.Document.prototype.querySelectorAll;
     const listen = w.EventTarget.prototype.addEventListener;
     const schedule = typeof w.requestAnimationFrame === 'function' ? w.requestAnimationFrame : null;
@@ -48,6 +49,7 @@
     let form = '';
     let total = 0;
     let marks = 0;
+    let plain = false;
     let ticket = 0;
     let armed = false;
     let until = 0;
@@ -108,6 +110,7 @@
           bg: background(root, body),
           ready: stateOf.call(d) === 'complete',
           marks: marks,
+          plain: plain,
         };
         const key = [message.h, message.w, message.ready, message.marks].join('|');
         calm = key === last;
@@ -182,6 +185,7 @@
       fonts.ready.then(recheck, recheck);
     }
     marks = size(findAll.call(d, 'mark.aplos-find').length, 100000);
+    plain = attr.call(rootOf.call(d), 'data-aplos-plain') === true;
     live = true;
     report();
     recheck();

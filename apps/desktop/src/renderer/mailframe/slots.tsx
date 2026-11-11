@@ -8,7 +8,8 @@ import { handleLinkClick } from './links';
 import { relayKey } from './keys';
 import { clampHeight, parseBg } from './protocol';
 import { createReportListener } from './reports';
-import { FRAME_PAPER } from './paper';
+import { useAppDark } from './appTheme';
+import { FRAME_PAPER, sheetOf } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
 import { useSealedMailKeys } from './useSealedMailKeys';
@@ -33,14 +34,15 @@ const HIDDEN: CSSProperties = {
   visibility: 'hidden',
   pointerEvents: 'none',
 };
-/** HTML mail sits on light paper in both themes (DESIGN 7.5); the email's own background, when it has one, paints over it. */
+/**
+ * HTML mail sits on light paper in both themes (DESIGN 7.5); the email's own background, when it has one, paints over it.
+ * The one exception is a plain email in the dark theme, which sits on the card's dark surface (`sheetOf`).
+ */
 const FRAME: CSSProperties = {
   display: 'block',
   boxSizing: 'content-box',
   width: 'calc(100% - 2 * var(--sheet-inset, 0px))',
   border: 0,
-  colorScheme: 'light',
-  background: FRAME_PAPER.paper,
   // The screen sets `--sheet-inset` where the paper is a sheet on a dark pane, so the text does not touch its edge.
   padding: 'var(--sheet-inset, 0px)',
 };
@@ -109,11 +111,13 @@ function Notices({ notices }: { notices: string[] }) {
  */
 export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc' }>>) {
   const { source, hidden } = props;
+  const dark = useAppDark();
   const built = useMemo(
-    () => frameDocument(source.html, source.imagePolicy, source.findQuery),
-    [source.html, source.imagePolicy, source.findQuery],
+    () => frameDocument(source.html, source.imagePolicy, source.findQuery, dark),
+    [source.html, source.imagePolicy, source.findQuery, dark],
   );
   const [height, setHeight] = useState(1);
+  const [bg, setBg] = useState(FRAME_PAPER.paper);
   const ref = useRef<HTMLIFrameElement>(null);
   const onKey = useLatest(props.onKey);
   const onMeasured = useLatest(props.onMeasured);
@@ -129,9 +133,11 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
     cleanup.current = wireDocument(doc, onKey, h => setHeight(fence.next(h)));
     const measured = fence.next(measureDocument(doc));
     setHeight(measured);
+    const tint = readBg(doc);
+    setBg(tint);
     onMeasured.current(source, {
       height: measured,
-      bg: readBg(doc),
+      bg: tint,
       blocked: built.blocked,
       trackers: built.trackers,
     });
@@ -150,7 +156,7 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
         tabIndex={-1}
         srcDoc={built.srcdoc}
         onLoad={onLoad}
-        style={{ ...FRAME, height }}
+        style={{ ...FRAME, ...sheetOf(built.plain, bg), height }}
       />
     </div>
   );
@@ -163,23 +169,32 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
 export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>) {
   const { source, hidden } = props;
   const [height, setHeight] = useState(1);
+  const [bg, setBg] = useState(FRAME_PAPER.paper);
+  // The sanitiser's own marker, reported by the frame: the only thing that may flush a letter onto the card.
+  const [plain, setPlain] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
   const onMeasured = useLatest(props.onMeasured);
   useSealedMailKeys(ref, { shown: !hidden, onKey: props.onKey });
 
   useEffect(() => {
+    // A new letter starts on the paper: the previous letter's colour must not draw the next one until it reports.
+    setBg(FRAME_PAPER.paper);
+    setPlain(false);
     const listener = createReportListener({
       frame: () => ref.current,
       token: source.token,
       setHeight,
-      onFirst: report =>
+      onFirst: report => {
+        setBg(report.bg);
+        setPlain(report.plain);
         onMeasured.current(source, {
           height: report.height,
           bg: report.bg,
           blocked: source.blocked,
           // TODO: map trackers separately once the contract carries a blocked-image count (sealed frames report one number).
           trackers: source.blocked,
-        }),
+        });
+      },
     });
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);
@@ -195,7 +210,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       allow=""
       tabIndex={-1}
       src={source.url}
-      style={{ ...FRAME, height, ...(hidden ? HIDDEN : null) }}
+      style={{ ...FRAME, ...sheetOf(plain, bg), height, ...(hidden ? HIDDEN : null) }}
     />
   );
 }
@@ -210,7 +225,7 @@ export function TextSlot(props: SlotProps<Extract<FrameSource, { kind: 'text' }>
     onMeasured.current(source, { height, bg: 'transparent', blocked: 0, trackers: 0 });
   }, [source, onMeasured]);
   return (
-    <div ref={ref} style={hidden ? HIDDEN : undefined}>
+    <div ref={ref} style={{ ...(hidden ? HIDDEN : null), paddingLeft: 'var(--plain-indent, 0px)' }}>
       <PlainText
         text={source.text}
         findQuery={findQuery}

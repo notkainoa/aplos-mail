@@ -651,4 +651,16 @@ test('verboseLevel: deadline survives a restart, stale deadline and store errors
     clock,
   );
   assert.equal(err(), 'info', 'a store error fails closed');
+  // The ~1 s cache: the row is re-read at most once a second, so within it the old answer stands.
+  let live: number | undefined = clock.now() + 5_000;
+  const mutable = {
+    read: (fn: (q: { get: () => unknown }) => unknown) =>
+      fn({ get: () => (live === undefined ? undefined : { value: String(live) }) }),
+  };
+  const cached = verboseLevel(mutable as never, clock);
+  assert.equal(cached(), 'debug');
+  live = undefined;
+  assert.equal(cached(), 'debug', 'within the cache window the old answer stands');
+  await clock.set(clock.now() + 1_001);
+  assert.equal(cached(), 'info', 'after it, the row is re-read');
 });
