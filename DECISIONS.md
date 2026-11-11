@@ -1854,6 +1854,7 @@ Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox,
 - `idle.wakeups` (eng-host): needs the packaged-app idle harness (apps/desktop real-engine path, 10 minute sampling), which platform has not built yet; due date moved to 2026-11-27, limit unchanged.
 - `ui.home-100k-first-rows` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
 - `ui.scroll-100k-frame` (ui-foundation): needs the ui-foundation perf harness run on the 10k and 100k fixtures (packaged build); due date moved to 2026-11-27, limit unchanged.
+- Diagnostics/verbose is now partly a query: called with no `on` it answers the stored deadline ({until?}) without writing, while the method stays a command and only the writes are audited.
 
 ## 2026-11-10: the three idle budget rows are recorded from the first resident-mode measurement (plat-ci)
 
@@ -1864,6 +1865,3 @@ Every thread starts `new`, and the first Gmail sync reads Sent as well as Inbox,
 - `idle.wakeups` (eng-host): 2 per second (`top` IDLEW, median).
 
 Each row keeps its gate `record`: these are baselines, not limits. Turning them into tighten-only limits needs headroom for a shared and busier Mac, which is eng-host's call; one run on one Mac is not enough to set a limit from. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (11 minutes).
-
-- Diagnostics/verbose is now partly a query: called with no `on` it answers the stored deadline ({until?}) without writing, while the method stays a command and only the writes are audited.
-
