@@ -14,7 +14,7 @@ import {
   type CalendarState,
   type EditorDraft,
 } from './calendar.model';
-import type { EffectPorts, EffectUi } from './effects';
+import type { EffectPorts, EffectUi, WatchedWrite } from './effects';
 import { demoWorld } from './CalendarStates';
 
 export const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -153,6 +153,8 @@ export function testUi(): EffectUi & {
   /** The event ids `closeDetail` was asked to close. */
   closedFor: string[];
   closed: number;
+  /** Every write handed to `ui.watch` (accepted receipts the tests then drive by hand). */
+  watched: WatchedWrite[];
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
@@ -162,6 +164,7 @@ export function testUi(): EffectUi & {
   const reopened: Array<{ id: string; note: string }> = [];
   const restored: Array<{ draft: EditorDraft; note: string }> = [];
   const closedFor: string[] = [];
+  const watched: WatchedWrite[] = [];
   let closed = 0;
   const self = {
     applied,
@@ -174,6 +177,7 @@ export function testUi(): EffectUi & {
     restored,
     restoreOpens: true,
     closedFor,
+    watched,
     get closed() {
       return closed;
     },
@@ -199,6 +203,7 @@ export function testUi(): EffectUi & {
       closedFor.push(eventId);
       closed += 1;
     },
+    watch: (write: WatchedWrite) => watched.push(write),
   };
   return self;
 }
@@ -213,6 +218,7 @@ export function ports(): EffectPorts {
     eventHide: args => api.event.hide(args),
     enableEditing: () => Promise.resolve(),
     reconnect: () => undefined,
+    operationUndo: opId => api.operation.undo({ opId }),
     openThread: () => undefined,
     openUrl: () => undefined,
     copyText: () => undefined,

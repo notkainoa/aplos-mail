@@ -62,9 +62,7 @@ test('receipts: undoable:false demotes the Undo toast to the plain sent notice',
   try {
     const ui = testUi();
     runCalendarEffect(eventSet, withEventSet(receipt({ undoable: false })), ui);
-    assert.ok(
-      getToasts().some(t => t.undoable && t.actions?.some(a => a.commandId === 'app.undo')),
-    );
+    assert.ok(getToasts().some(t => t.undoable && t.actions?.some(a => a.keysFrom === 'app.undo')));
     await new Promise(resolve => setImmediate(resolve));
     const toast = lastToast();
     assert.equal(toast?.message, 'Changed Cleaning');
@@ -88,7 +86,7 @@ test('receipts: an undoable receipt keeps the Undo toast and its wording', async
     const toast = lastToast();
     assert.equal(toast?.message, 'Changed Cleaning');
     assert.equal(toast?.undoable, true);
-    assert.ok(toast?.actions?.some(a => a.commandId === 'app.undo'));
+    assert.ok(toast?.actions?.some(a => a.keysFrom === 'app.undo'));
     assert.deepEqual(ui.applied, ['dental']);
   } finally {
     resetToasts();

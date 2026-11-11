@@ -506,7 +506,7 @@ test('one write is one Undo toast, undone by its own opId, not the newest', asyn
     await flush();
     const toasts = getToasts();
     assert.equal(toasts.length, 2);
-    assert.ok(toasts.every(t => t.undoable && t.actions?.[0]?.commandId === 'app.undo'));
+    assert.ok(toasts.every(t => t.undoable && t.actions?.[0]?.keysFrom === 'app.undo'));
     // Undo on the FIRST toast undoes the first write; B stays.
     runToastAction(toasts[0].id, 'undo');
     await flush();

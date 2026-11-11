@@ -172,3 +172,13 @@ export function writeFailureOf(
     return { message: `${fallback} Check your calendar before trying again.`, retry: 'none' };
   return { message: fallback, retry: 'now' };
 }
+
+/**
+ * A refused undo, after the hold: the engine answers `conflict` ("has been sent" — the window is
+ * over), so the sentence is the plain one rather than the body's own wording. Other bodies show
+ * their message.
+ */
+export function undoFailureMessage(error: unknown): string {
+  const body = bodyOf(error);
+  return body.type === 'conflict' ? 'That change has already been sent.' : body.message;
+}

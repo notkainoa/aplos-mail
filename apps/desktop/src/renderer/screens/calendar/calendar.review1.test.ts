@@ -194,7 +194,7 @@ test('review1: a calendar toggle pushes its Undo toast and settles the override'
     assert.ok(ui.settled.includes(cal.id));
     assert.equal(ui.failed.length, 0);
     const toast = getToasts().find(t => t.undoable);
-    assert.ok(toast && toast.actions?.[0]?.commandId === 'app.undo');
+    assert.ok(toast && toast.actions?.[0]?.keysFrom === 'app.undo');
   } finally {
     resetToasts();
   }

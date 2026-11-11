@@ -86,7 +86,9 @@ import {
   runCalendarEffect,
   type EffectPorts,
   type EffectUi,
+  type WatchedWrite,
 } from './effects';
+import { HeldWrites } from './HeldWrites';
 import { calendarSidebar } from './sidebar';
 import { calendarListedKey } from './accountCalendarState';
 
@@ -189,6 +191,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const [state, setState] = useState<CalendarState>(() => initialState(toIsoDate(now)));
   const [overlay, setOverlay] = useState<Overlay>(EMPTY_OVERLAY);
   const [settling, setSettling] = useState<readonly Settling[]>([]);
+  // Accepted writes whose operations are still being followed through the provider queue (HeldWrites).
+  const [watched, setWatched] = useState<readonly WatchedWrite[]>([]);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, ShownOverride>>(new Map());
 
@@ -328,7 +332,12 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       closeDetail: (eventId: string) => {
         if (detailIsFor(stateRef.current, eventId)) applyRef.current({ type: 'close' });
       },
+      watch: (write: WatchedWrite) => setWatched(list => [...list, write]),
     }),
+    [],
+  );
+  const unwatch = useCallback(
+    (write: WatchedWrite) => setWatched(list => list.filter(w => w !== write)),
     [],
   );
 
@@ -453,15 +462,22 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
   useSidebarSlot(sidebar);
 
+  // The watchers read the window's own id list so a held create's tmp entry drops the moment its
+  // real row lands (HeldWrites).
+  const eventIds = useMemo(() => new Set(eventsWindow.ids), [eventsWindow.ids]);
+
   if (eventsWindow.status === 'failed') return <ListFailed errorType={eventsWindow.error?.type} />;
   if (eventsWindow.status === 'opening' && events.length === 0) return null;
   return (
-    <CalendarView
-      vm={viewModel(state, ctx)}
-      dispatch={dispatch}
-      announce={announce}
-      focus={focus}
-    />
+    <>
+      <CalendarView
+        vm={viewModel(state, ctx)}
+        dispatch={dispatch}
+        announce={announce}
+        focus={focus}
+      />
+      <HeldWrites watches={watched} eventIds={eventIds} ui={ui} unwatch={unwatch} />
+    </>
   );
 }
 
