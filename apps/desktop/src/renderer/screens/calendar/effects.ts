@@ -308,6 +308,12 @@ interface WriteOutcome {
   readonly at: State | null;
   /** `undoUntil` in the future: a held write guests are not told about yet. */
   readonly held: boolean;
+  /**
+   * `receipt.undoable !== false`: an operation exists to follow — `Operation/undo` answering the id
+   * means the engine journaled one (a hold or a thread op). A plain accepted write has none:
+   * `Operation/get` answers notFound and a watch on it would never end.
+   */
+  readonly undoable: boolean;
 }
 
 interface WriteSpec {
@@ -383,14 +389,18 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       // moves `seq` — so settling here would snap the change back for the whole undo window:
       // every held write (not just a create) waits for `synced`, whose commit is in by then.
       if (!out.held) spec.entryIds.forEach(id => ui.settle(id, out.at));
-      ui.watch({
-        opId: spec.opId,
-        entryIds: spec.entryIds,
-        at: out.at,
-        held: out.held,
-        addedIds: spec.addedIds,
-        ...(spec.failure === undefined ? {} : { failure: spec.failure }),
-      });
+      // Watch only a write that HAS an operation: the real engine records none for a plain
+      // accepted write (`undoable: false`), so `Operation/get` answers notFound and the watcher
+      // (and its useOperation subscription) would leak, never landing a frame.
+      if (out.held || out.undoable)
+        ui.watch({
+          opId: spec.opId,
+          entryIds: spec.entryIds,
+          at: out.at,
+          held: out.held,
+          addedIds: spec.addedIds,
+          ...(spec.failure === undefined ? {} : { failure: spec.failure }),
+        });
     },
     error => writeFailed(spec, ui, ports, error, retry),
   );
@@ -515,7 +525,11 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
                   !held
                 )
                   updateToast(opId, { message: fx.toast.message });
-                return { at: out.receipt.appliedState, held };
+                return {
+                  at: out.receipt.appliedState,
+                  held,
+                  undoable: out.receipt.undoable !== false,
+                };
               }),
           failure: fx.failure,
           reopenEditorId: fx.reopenEditorId,
@@ -559,7 +573,11 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
                 // No hold (nothing left to tell guests): the toast says it went.
                 else if (!held)
                   updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
-                return { at: receipt.appliedState, held };
+                return {
+                  at: receipt.appliedState,
+                  held,
+                  undoable: receipt.undoable !== false,
+                };
               }),
           failure: fx.failure,
           goneEventId: fx.id,
@@ -624,6 +642,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
               .then(out => ({
                 at: out.receipt.appliedState,
                 held: isHeld(out.receipt),
+                undoable: out.receipt.undoable !== false,
               })),
           failure: 'Couldn’t add it to the calendar.',
           goneEventId: fx.optimistic.id,
@@ -649,6 +668,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
             ports.planDismiss({ opId, ids: [fx.planId] }).then(receipt => ({
               at: receipt.appliedState,
               held: isHeld(receipt),
+              undoable: receipt.undoable !== false,
             })),
         },
         ui,
@@ -675,7 +695,11 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           call: () =>
             ports.eventHide({ opId, ids: [fx.id], hidden: true }).then(receipt => {
               if (receipt.undoable === false) demoteUndoToast(opId, fx.toast);
-              return { at: receipt.appliedState, held: isHeld(receipt) };
+              return {
+                at: receipt.appliedState,
+                held: isHeld(receipt),
+                undoable: receipt.undoable !== false,
+              };
             }),
           failure: 'Couldn’t hide it.',
           goneEventId: fx.id,

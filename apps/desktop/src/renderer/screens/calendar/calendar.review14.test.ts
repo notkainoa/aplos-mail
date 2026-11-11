@@ -169,3 +169,48 @@ test('review14: a held non-create write keeps its overlay until synced, not the 
     resetToasts();
   }
 });
+
+test('review14: an unheld write registers no watch — the real engine has no Operation for it', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const spy = eventSetSpy({ receipt: receipt({ undoable: false }) });
+    const ui = testUi();
+    runCalendarEffect(moveFx(false), { ...ports(), eventSet: spy.port }, ui);
+    await task();
+    assert.deepEqual(ui.applied, ['climb'], 'the write settles at its receipt');
+    assert.equal(ui.watched.length, 0, 'Operation/get would answer notFound: nothing to watch');
+    // `undoable: false` hides too: an RSVP receipt that was not held.
+    const rsvpUi = testUi();
+    runCalendarEffect(
+      {
+        kind: 'rsvp',
+        id: 'q4',
+        response: 'accepted',
+        scope: 'occurrence',
+        optimistic: { id: 'q4', patch: {} },
+        answer: 'yes',
+        failure: 'Couldn’t send the reply.',
+      },
+      { ...ports(), eventRsvp: () => Promise.resolve(receipt({ undoable: false })) },
+      rsvpUi,
+    );
+    await task();
+    assert.equal(rsvpUi.watched.length, 0);
+    // And an undoable receipt still watches: the engine journaled an operation for it.
+    const undoableUi = testUi();
+    runCalendarEffect(
+      {
+        kind: 'planDismiss',
+        planId: 'launch',
+        optimistic: { id: 'launch', remove: true },
+      },
+      { ...ports(), planDismiss: () => Promise.resolve(receipt({ undoable: true })) },
+      undoableUi,
+    );
+    await task();
+    assert.equal(undoableUi.watched.length, 1);
+  } finally {
+    resetToasts();
+  }
+});
