@@ -14,12 +14,11 @@ const reader: Caller = { kind: 'listener', via: 'socket', clientId: 'c1', scopes
 const widerThanRead = engineMethods.filter(m => methodScope[m] !== 'read');
 const isType = (type: string) => (e: unknown) => e instanceof ContractError && e.type === type;
 
-test('the in-process connection serves the F5 table: stubs, unknown and desktop methods', async () => {
+test('the in-process connection serves the F5 table: unknown and desktop methods', async () => {
   const t = await testEngine();
   try {
     const s = t.engine.connect();
-    // A stub (the ai area's were until eng-ai landed them); Event/extract still is.
-    await assert.rejects(s.call('Event/extract', {}), isType('notImplemented'));
+    // No stub method remains — Event/extract (the last) is implemented.
     await assert.rejects(s.call('Thread/explode', {}), isType('unsupported'));
     await assert.rejects(
       s.call('File/save', { blobId: 'b', name: 'x.txt' }),
