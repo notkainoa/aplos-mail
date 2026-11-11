@@ -138,6 +138,14 @@ export interface WatchedWrite {
   readonly addedIds: readonly string[];
   /** The write's fallback sentence when its operation fails (a reasonCode's own line wins). */
   readonly failure?: string;
+  /** An editor save's event id: `calendar.conflict` re-opens the editor on the newer copy. */
+  readonly reopenEditorId?: string;
+  /** An editor save's draft: a times refusal re-opens the editor on it, typed work intact. */
+  readonly draft?: EditorDraft;
+  /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
+  readonly goneEventId?: string;
+  /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
+  readonly accountId?: string;
   /**
    * Set on a re-watch after `Operation/retry`: the previous terminal row still answers
    * `Operation/get` until the next flush, so the identical view object means "nothing newer yet" —
@@ -323,7 +331,19 @@ interface WriteOutcome {
   readonly undoable: boolean;
 }
 
-interface WriteSpec {
+/** What a write failure's follow-ups read, on the WriteSpec at submit time or its WatchedWrite after. */
+interface FailureContext {
+  /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
+  readonly reopenEditorId?: string;
+  /** An editor save's draft: a times refusal re-opens the editor on it, typed work intact. */
+  readonly draft?: EditorDraft;
+  /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
+  readonly goneEventId?: string;
+  /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
+  readonly accountId?: string;
+}
+
+interface WriteSpec extends FailureContext {
   readonly opId: string;
   /** Every overlay id the write covers (a series time shift patches a whole family); they settle and roll back together. */
   readonly entryIds: readonly string[];
@@ -333,16 +353,34 @@ interface WriteSpec {
   readonly call: () => Promise<WriteOutcome>;
   /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
   readonly failure?: string;
-  /** An editor save's event id: on `calendar.conflict` the editor re-opens on the newer copy. */
-  readonly reopenEditorId?: string;
-  /** An editor save's draft: a times refusal re-opens the editor on it, typed work intact. */
-  readonly draft?: EditorDraft;
-  /** The entry the write was about: `calendar.eventGone` closes the detail only when it shows this id. */
-  readonly goneEventId?: string;
-  /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
-  readonly accountId?: string;
   /** A blind retry could duplicate the write or re-notify guests (a create, an RSVP): unknown codes get none. */
   readonly blindRetryUnsafe?: boolean;
+}
+
+/**
+ * The follow-ups a write failure runs, shared between the submit-time refusal (`writeFailed`) and
+ * the operation watch's `failed`: the conflict's re-opened editor or the saved draft's restore, the
+ * grant notices (Enable editing, Sign in again), and the gone event's closed detail. True when one
+ * of them already carries the sentence — the caller then adds no toast of its own (review7 5).
+ */
+function failureHandled(
+  source: FailureContext,
+  failure: WriteFailure,
+  ui: EffectUi,
+  ports: EffectPorts,
+): boolean {
+  const reopened =
+    failure.reopenEditor === true &&
+    source.reopenEditorId !== undefined &&
+    ui.reopenEditor(source.reopenEditorId, failure.message);
+  const restored =
+    failure.keepDraft === true &&
+    source.draft !== undefined &&
+    ui.restoreEditor(source.draft, failure.message);
+  if (failure.enableEditing) editingNotice(ports, source.accountId);
+  else if (failure.reconnect) reconnectNotice(ports, source.accountId);
+  if (failure.closeDetail && source.goneEventId !== undefined) ui.closeDetail(source.goneEventId);
+  return failure.enableEditing === true || failure.reconnect === true || reopened || restored;
 }
 
 /** Runs one write's mapped failure: notice, Enable editing when the grant lacks the scope, then the code's own follow-up. */
@@ -357,20 +395,7 @@ function writeFailed(
   dismissToast(spec.opId);
   if (!spec.failure) return;
   const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
-  // The conflict's sentence lands once: the re-opened editor's own line, or the toast when no
-  // editor can re-open — never both (review7 5). A times refusal is the same, on the saved draft.
-  const reopened =
-    failure.reopenEditor === true &&
-    spec.reopenEditorId !== undefined &&
-    ui.reopenEditor(spec.reopenEditorId, failure.message);
-  const restored =
-    failure.keepDraft === true &&
-    spec.draft !== undefined &&
-    ui.restoreEditor(spec.draft, failure.message);
-  if (failure.enableEditing) editingNotice(ports, spec.accountId);
-  else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
-  else if (!reopened && !restored) failureToast(spec.opId, failure, retry);
-  if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
+  if (!failureHandled(spec, failure, ui, ports)) failureToast(spec.opId, failure, retry);
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
@@ -407,6 +432,12 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
           held: out.held,
           addedIds: spec.addedIds,
           ...(spec.failure === undefined ? {} : { failure: spec.failure }),
+          // The operation may still fail after the receipt: the same follow-ups a submit-time
+          // refusal runs travel with the watch (`failureHandled`).
+          ...(spec.reopenEditorId === undefined ? {} : { reopenEditorId: spec.reopenEditorId }),
+          ...(spec.draft === undefined ? {} : { draft: spec.draft }),
+          ...(spec.goneEventId === undefined ? {} : { goneEventId: spec.goneEventId }),
+          ...(spec.accountId === undefined ? {} : { accountId: spec.accountId }),
         });
     },
     error => writeFailed(spec, ui, ports, error, retry),
@@ -426,6 +457,7 @@ export function operationUpdate(
   view: OperationView | undefined,
   ui: EffectUi,
   eventIds: ReadonlySet<string>,
+  ports: EffectPorts,
 ): 'watching' | 'done' {
   if (view === undefined) return 'done';
   // A re-watch after `Operation/retry`: the stale terminal row is still what the store answers —
@@ -438,6 +470,10 @@ export function operationUpdate(
       watch.entryIds.forEach(id => ui.rollback(id));
       if (watch.failure === undefined) return 'done';
       const failure = writeFailureOf(view.error, watch.failure);
+      // The same follow-ups a submit-time refusal runs: re-open the editor, keep the draft, close
+      // the gone event's detail, offer Enable editing or Sign in again — then the notice only when
+      // none of them already carries the sentence.
+      if (failureHandled(watch, failure, ui, ports)) return 'done';
       if (failure.retry === 'none' && failure.opRetry !== true)
         pushToast({
           id: `${watch.opId}:failed`,

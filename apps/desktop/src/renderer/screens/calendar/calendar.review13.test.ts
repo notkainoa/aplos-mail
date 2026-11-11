@@ -60,16 +60,22 @@ test('review13: queued and syncing hold the overlay; synced settles it', () => {
     const ui = testUi();
     const w = watch();
     for (const remote of [null, 'queued', 'syncing'] as const) {
-      assert.equal(operationUpdate(w, view({ remote }), ui, NONE), 'watching');
+      assert.equal(operationUpdate(w, view({ remote }), ui, NONE, ports()), 'watching');
       assert.deepEqual(ui.dropped, []);
     }
     // A held write skipped the receipt settle (its `appliedState` was already reached): `synced`
     // settles every entry — a create's tmp entry with it (review14).
-    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE), 'done');
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
     assert.deepEqual(ui.applied, ['tmp-1']);
     const ui2 = testUi();
     assert.equal(
-      operationUpdate(watch({ addedIds: ['tmp-1'] }), view({ remote: 'synced' }), ui2, NONE),
+      operationUpdate(
+        watch({ addedIds: ['tmp-1'] }),
+        view({ remote: 'synced' }),
+        ui2,
+        NONE,
+        ports(),
+      ),
       'done',
     );
     assert.deepEqual(
@@ -100,7 +106,7 @@ test('review13: a late failure rolls back and Retry is the operation’s own, ne
         return actOk();
       },
     });
-    assert.equal(operationUpdate(w, failed, ui, NONE), 'done');
+    assert.equal(operationUpdate(w, failed, ui, NONE, ports()), 'done');
     assert.deepEqual(ui.dropped, ['tmp-1']);
     const toast = getToasts().find(t => t.id === 'op-1:failed');
     assert.equal(
@@ -139,6 +145,7 @@ test('review13: an uncertain operation failure keeps no Retry', () => {
       }),
       ui,
       NONE,
+      ports(),
     );
     const toast = getToasts().find(t => t.id === 'op-1:failed');
     assert.equal(
@@ -155,7 +162,10 @@ test('review13: cancelled drops the entry quietly', () => {
   resetToasts();
   try {
     const ui = testUi();
-    assert.equal(operationUpdate(watch(), view({ remote: 'cancelled' }), ui, NONE), 'done');
+    assert.equal(
+      operationUpdate(watch(), view({ remote: 'cancelled' }), ui, NONE, ports()),
+      'done',
+    );
     assert.deepEqual(ui.dropped, ['tmp-1']);
     assert.equal(getToasts().length, 0, 'the Undo toast already told the owner');
   } finally {
@@ -170,7 +180,7 @@ test('review13: a held create’s tmp entry drops the moment the real row lands'
     const w = watch({ entryIds: ['tmp-1'], addedIds: ['tmp-1'] });
     // Still queued: nothing happens while the real row is absent.
     assert.equal(
-      operationUpdate(w, view({ remote: 'queued', targets: ['event-real'] }), ui, NONE),
+      operationUpdate(w, view({ remote: 'queued', targets: ['event-real'] }), ui, NONE, ports()),
       'watching',
     );
     assert.deepEqual(ui.dropped, []);
@@ -304,7 +314,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     assert.ok(op, 'the operation record exists');
     // The remote row lands through Operation/get: queued under the hold.
     assert.equal(op.remote, 'queued');
-    assert.equal(operationUpdate(w, op, ui, NONE), 'watching');
+    assert.equal(operationUpdate(w, op, ui, NONE, ports()), 'watching');
     // Undo inside the window cancels the held write at the provider queue.
     const toast = getToasts().find(t => t.undoable);
     assert.ok(toast);
@@ -312,7 +322,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     await flush();
     const cancelled = layer.operations.view(w.opId);
     assert.equal(cancelled?.remote, 'cancelled');
-    assert.equal(operationUpdate(w, cancelled, ui, NONE), 'done');
+    assert.equal(operationUpdate(w, cancelled, ui, NONE, ports()), 'done');
     assert.deepEqual(ui.dropped, [guest.id], 'the optimistic patch rolled back');
     // A second held write, let to sync, settles on its own.
     const ui2 = testUi();
@@ -323,7 +333,7 @@ test('review13: the stand-in holds a guest write; undo cancels it and the sync l
     await flush();
     const synced = layer.operations.view(w2.opId);
     assert.equal(synced?.remote, 'synced');
-    assert.equal(operationUpdate(w2, synced, ui2, NONE), 'done');
+    assert.equal(operationUpdate(w2, synced, ui2, NONE, ports()), 'done');
     assert.deepEqual(ui2.applied, [guest.id]);
   } finally {
     resetToasts();

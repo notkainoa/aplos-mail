@@ -173,8 +173,8 @@ test('review14: a held non-create write keeps its overlay until synced, not the 
     const w = ui.watched[0]!;
     assert.equal(w.held, true);
     for (const remote of ['queued', 'syncing'] as const)
-      assert.equal(operationUpdate(w, view({ remote }), ui, NONE), 'watching');
-    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE), 'done');
+      assert.equal(operationUpdate(w, view({ remote }), ui, NONE, ports()), 'watching');
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
     assert.deepEqual(ui.applied, ['climb'], 'the send’s commit is in, the overlay settles');
   } finally {
     resetToasts();
@@ -244,30 +244,134 @@ test('review14: a retried watch ignores the stale failed row until a newer state
       },
     });
     const w = watch();
-    assert.equal(operationUpdate(w, stale, ui, NONE), 'done');
+    assert.equal(operationUpdate(w, stale, ui, NONE, ports()), 'done');
     runToastAction('op-1:failed', 'retry');
     await task();
     assert.equal(retries, 1);
     const rewatched = ui.watched[ui.watched.length - 1]!;
     // The same `failed` row still answers Operation/get until the next flush: keep watching,
     // never re-show the failure the owner just retried.
-    assert.equal(operationUpdate(rewatched, stale, ui, NONE), 'watching');
+    assert.equal(operationUpdate(rewatched, stale, ui, NONE, ports()), 'watching');
     assert.equal(
       getToasts().some(t => t.id === 'op-1:failed'),
       false,
       'the late toast did not pop straight back',
     );
     // A genuinely newer frame is handled normally — synced settles, a fresh failure surfaces.
-    assert.equal(operationUpdate(rewatched, view({ remote: 'synced' }), ui, NONE), 'done');
+    assert.equal(operationUpdate(rewatched, view({ remote: 'synced' }), ui, NONE, ports()), 'done');
     const again = view({
       remote: 'failed',
       error: { type: 'unavailable', message: 'not sent', reasonCode: 'calendar.late' },
     });
-    assert.equal(operationUpdate(rewatched, again, ui, NONE), 'done');
+    assert.equal(operationUpdate(rewatched, again, ui, NONE, ports()), 'done');
     assert.ok(
       getToasts().some(t => t.id === 'op-1:failed'),
       'a second failure still surfaces',
     );
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review14: an operation failure runs the write’s own follow-ups (reopen, close, grant)', async () => {
+  resetToasts();
+  try {
+    const ui = testUi();
+    // calendar.conflict re-opens the editor on the newer copy, exactly as a submit-time refusal.
+    assert.equal(
+      operationUpdate(
+        watch({ reopenEditorId: 'ev-1' }),
+        view({
+          remote: 'failed',
+          error: {
+            type: 'conflict',
+            message: 'changed',
+            reasonCode: 'calendar.conflict',
+          },
+        }),
+        ui,
+        NONE,
+        ports(),
+      ),
+      'done',
+    );
+    assert.deepEqual(ui.reopened, [
+      {
+        id: 'ev-1',
+        note: "This event changed somewhere else. Your changes weren't saved.",
+      },
+    ]);
+    assert.equal(
+      getToasts().some(t => t.id === 'op-1:failed'),
+      false,
+      'the editor’s own line carries the sentence, no second toast',
+    );
+    // calendar.eventGone closes the detail.
+    operationUpdate(
+      watch({ goneEventId: 'ev-1' }),
+      view({
+        remote: 'failed',
+        error: { type: 'notFound', message: 'gone', reasonCode: 'calendar.eventGone' },
+      }),
+      ui,
+      NONE,
+      ports(),
+    );
+    assert.deepEqual(ui.closedFor, ['ev-1']);
+    // A times refusal keeps the typed draft.
+    const draft = draftFromEvent(ctxFor().events.get('dental')!);
+    operationUpdate(
+      watch({ draft }),
+      view({
+        remote: 'failed',
+        error: {
+          type: 'validation',
+          message: 'times',
+          reasonCode: 'event.allDayMismatch',
+        },
+      }),
+      ui,
+      NONE,
+      ports(),
+    );
+    assert.equal(ui.restored.length, 1);
+    assert.equal(ui.restored[0]?.draft, draft);
+    // A dead grant offers Sign in again; a missing write scope offers Enable editing.
+    operationUpdate(
+      watch({ accountId: 'acct' }),
+      view({
+        remote: 'failed',
+        error: { type: 'needsReauth', message: 'grant dead' },
+      }),
+      ui,
+      NONE,
+      ports(),
+    );
+    assert.ok(
+      getToasts().some(t => t.id === 'reconnect:acct'),
+      'the reconnect notice, not a bare failure',
+    );
+    // And the watch itself carries the follow-up fields from the accepted write.
+    const save = update(
+      S({
+        editor: {
+          ...draftFromEvent(ctxFor().events.get('dental')!),
+          title: 'Cleaning again',
+        },
+      }),
+      { type: 'editorSave' },
+      ctxFor(),
+    );
+    const fx = save.effects.find(f => f.kind === 'eventSet')!;
+    const spy = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW + 60_000 }),
+    });
+    const ui2 = testUi();
+    runCalendarEffect(fx, { ...ports(), eventSet: spy.port }, ui2);
+    await task();
+    assert.equal(ui2.watched[0]?.reopenEditorId, 'dental');
+    assert.equal(ui2.watched[0]?.goneEventId, 'dental');
+    assert.ok(ui2.watched[0]?.draft !== undefined);
   } finally {
     resetToasts();
   }

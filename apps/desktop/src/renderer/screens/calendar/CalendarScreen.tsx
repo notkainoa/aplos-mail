@@ -476,7 +476,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         announce={announce}
         focus={focus}
       />
-      <HeldWrites watches={watched} eventIds={eventIds} ui={ui} unwatch={unwatch} />
+      <HeldWrites watches={watched} eventIds={eventIds} ui={ui} ports={ports} unwatch={unwatch} />
     </>
   );
 }
