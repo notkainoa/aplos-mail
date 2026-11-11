@@ -81,3 +81,22 @@ export function suggestKey(
   if (key === 'Escape') return { type: 'close' };
   return null;
 }
+
+/** What an answer was asked for: the trimmed text and the From account. */
+export interface SuggestAsked {
+  readonly query: string;
+  readonly accountId: string;
+}
+
+/**
+ * An answer counts only for the text and account it was asked for: while the next one is on its way nothing shows, so a
+ * stale list under newer text can never be picked by a quick Return.
+ */
+export function freshEntries(
+  answer: { readonly entries: readonly SuggestEntry[]; readonly asked: SuggestAsked } | null,
+  query: string,
+  accountId: string,
+): readonly SuggestEntry[] {
+  const fresh = answer?.asked.query === query.trim() && answer.asked.accountId === accountId;
+  return fresh ? answer.entries : [];
+}
