@@ -1942,6 +1942,10 @@ Limit: with the dock dragged to 404px or more at the 900px window the pane is un
 
 Review follow-up (ui-polish on #458): Later and Done keep their labels down to 380px of card content (about a 1100px window with Ask open) and go icon-only below it; every narrow-pane selector starts at `.aplos-list-column`, so only the Home, Later and list screens are restyled, never ui-foundation's shared component styles (the Low sheet, the gallery).
 
+## 2026-11-10: The focus letter's narrow-pane rules live with the component only (ui-home, on ui-core's note about #466 and #458)
+
+#466 gave `ui/list/list.css` its own narrow-pane order for the focus letter (Later and Done lose their hints, then their words, and the main action keeps its label at every width); #458 had added a second set in `screens/screens.css`. They mostly unioned, but #458 hid the main label at 189px and #466 does not. The focus-letter half of the screens.css block is deleted; the row rules stay (trailing icons at their own width, a sender floor, the middle column clipped), still scoped to `.aplos-list-column`. Checked at the 320px pane with the Ask dock open (letter 240px: no spill, Reply keeps its label, Later, Done and ⋯ as icons) and at a 1100px window (labels visible).
+
 ## 2026-11-11: the focus letter's narrow-pane rules live in the component, once (ui-core/ui-polish decided)
 
 Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.

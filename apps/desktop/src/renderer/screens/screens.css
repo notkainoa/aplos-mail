@@ -21,59 +21,11 @@
 }
 
 /* ---------- Narrow panes (the Ask dock open at the minimum window) ----------
-   Nothing in a Home row or the focus letter squashes or covers another part. The focus letter measures its content box (the card minus its padding): under
-   380px its Later and Done keep only their icons (the label and the key stay for assistive tech and the tooltip), under 250px
-   the Reply button also drops its Space cap, and under 189px its label (it keeps its icon and its name); it never shrinks. Rows keep their trailing icons at their own
-   width, give the sender a floor, and clip the middle column, which holds the summary and the due chip. Every selector
-   starts at `.aplos-list-column`, so only the screens' own lists are touched, never the shared component styles
-   (the Low sheet, the gallery). */
+   Nothing in a Home row squashes or covers another part: rows keep their trailing icons at their own width, give the
+   sender a floor, and clip the middle column, which holds the summary and the due chip. (The focus letter's own
+   narrow-pane behaviour lives with the component, in ui/list/list.css.) Every selector starts at `.aplos-list-column`,
+   so only the screens' own lists are touched, never the shared component styles (the Low sheet, the gallery). */
 
-.aplos-list-column .ui-focus-letter {
-  container: focus-letter / inline-size;
-}
-.aplos-list-column .ui-focus-letter__suggest,
-.aplos-list-column .ui-focus-letter__suggest .ui-list-btn {
-  flex: none;
-}
-@container focus-letter (max-width: 380px) {
-  .aplos-list-column .ui-focus-letter__actions > .ui-list-btn[data-variant='text'] {
-    flex: none;
-    justify-content: center;
-    width: var(--ui-btn-h);
-    padding: 0;
-  }
-  .aplos-list-column
-    .ui-focus-letter__actions
-    > .ui-list-btn[data-variant='text']
-    > :is(.ui-list-btn__label, .ui-list-kbd) {
-    position: absolute;
-    overflow: hidden;
-    width: 1px;
-    height: 1px;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-@container focus-letter (max-width: 250px) {
-  .aplos-list-column .ui-focus-letter__suggest .ui-list-kbd {
-    display: none;
-  }
-}
-@container focus-letter (max-width: 189px) {
-  .aplos-list-column .ui-focus-letter__suggest .ui-list-btn {
-    justify-content: center;
-    width: var(--ui-btn-h);
-    padding: 0;
-  }
-  .aplos-list-column .ui-focus-letter__suggest .ui-list-btn__label {
-    position: absolute;
-    overflow: hidden;
-    width: 1px;
-    height: 1px;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
 .aplos-list-column .ui-list-row {
   grid-template-columns:
     var(--space-4) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
