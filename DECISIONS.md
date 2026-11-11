@@ -1894,3 +1894,9 @@ Context: the owner's round-3 feedback on the one-by-one card ("that's good", two
 Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by one the card is `min(100% - 2 x clamp(16px, 3%, 24px), --card-w)`, centred; the header, its hairline and the pinned bar are the column's own. A plain body keeps the existing `--measure-read` (64ch, about 65 to 70 characters) inside the card; a rich email's paper frame uses the card's width and its images already scale to it. This amends the 2026-11-10 entry's "the card is nearly as wide as the pane" (and DESIGN section 16's amendment of 2026-11-11, which says the card fills the pane's width).
 
 How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
+
+## 2026-11-11: the reader's loading line names the sender like Home's row does (ui-reader, handoff from ui-home #454)
+
+Context: `loadingLabel` fell back to the raw `row.fromName` for a thread with no subject, so a worst-case sender name (the owner's own name when they answered last, bidi controls, runs of whitespace) leaked into "Loading …".
+
+Decision: the subject and the sender both go through Home's `cleanName`, and the sender is Home's `senderOf` (the other person, not the owner). A thread with neither still gets no label, and the caller says "this email".
