@@ -45,6 +45,7 @@ const watch = (over: Partial<WatchedWrite> = {}): WatchedWrite => ({
   opId: 'op-1',
   entryIds: ['tmp-1'],
   at: { dbEpoch: 'e', seq: 9 },
+  held: true,
   addedIds: [],
   failure: 'Couldn’t move Standup.',
   ...over,
@@ -62,14 +63,20 @@ test('review13: queued and syncing hold the overlay; synced settles it', () => {
       assert.equal(operationUpdate(w, view({ remote }), ui, NONE), 'watching');
       assert.deepEqual(ui.dropped, []);
     }
-    // Everything but a held create settled at the receipt; `synced` is only the watch's own end.
+    // A held write skipped the receipt settle (its `appliedState` was already reached): `synced`
+    // settles every entry — a create's tmp entry with it (review14).
     assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE), 'done');
-    assert.deepEqual(ui.applied, []);
+    assert.deepEqual(ui.applied, ['tmp-1']);
+    const ui2 = testUi();
     assert.equal(
-      operationUpdate(watch({ addedIds: ['tmp-1'] }), view({ remote: 'synced' }), ui, NONE),
+      operationUpdate(watch({ addedIds: ['tmp-1'] }), view({ remote: 'synced' }), ui2, NONE),
       'done',
     );
-    assert.deepEqual(ui.applied, ['tmp-1'], 'the held create settles against the receipt’s state');
+    assert.deepEqual(
+      ui2.applied,
+      ['tmp-1'],
+      'the held create settles its tmp entry against the receipt’s state',
+    );
   } finally {
     resetToasts();
   }

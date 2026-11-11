@@ -11,12 +11,12 @@ import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
-import type { Receipt } from '../../data';
+import type { OperationView, Receipt } from '../../data';
 import { resetToasts } from '../../shell/store-toast';
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { notifiesGuests } from './model/transitions';
-import { runCalendarEffect, type EffectPorts } from './effects';
-import { ctxFor, NOW, ports, S, testUi } from './calendar.testkit';
+import { operationUpdate, runCalendarEffect, type EffectPorts } from './effects';
+import { boot, ctxFor, NOW, ports, S, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
   opId: 'op-1',
@@ -25,6 +25,22 @@ const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
 });
 
 const task = () => new Promise<void>(resolve => setImmediate(resolve));
+
+const NONE = new Set<string>();
+
+const view = (over: Partial<OperationView> = {}): OperationView => ({
+  opId: 'op-1',
+  state: 'confirmed',
+  remote: null,
+  action: null,
+  targets: [],
+  selector: null,
+  error: null,
+  undoable: true,
+  undoUntil: null,
+  retry: () => ({ opId: 'op-1', receipt: Promise.resolve(receipt()) }),
+  ...over,
+});
 
 const moveFx = (notify: boolean): CalendarEffect => ({
   kind: 'eventSet',
@@ -51,6 +67,7 @@ const eventSetSpy = (out: { receipt: Receipt }) => {
 };
 
 test('review14: notify: true goes on Event/set exactly when guests are emailed', async () => {
+  await boot();
   resetToasts();
   try {
     // The model flags a drag, a save and a delete of an event with guests — never a guest-less one.
@@ -120,6 +137,34 @@ test('review14: notify: true goes on Event/set exactly when guests are emailed',
       undefined,
       'unset, so the provider keeps its own notify default',
     );
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review14: a held non-create write keeps its overlay until synced, not the receipt', async () => {
+  await boot();
+  resetToasts();
+  try {
+    // The real engine's held receipt: `appliedState` is ALREADY reached (the hold commit never
+    // moves `seq`), so settling there would snap the change back for the whole hold.
+    const spy = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW + 60_000 }),
+    });
+    const ui = testUi();
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy.port }, ui);
+    await task();
+    assert.deepEqual(
+      ui.applied,
+      [],
+      'no receipt settle: the overlay holds for the whole undo window',
+    );
+    const w = ui.watched[0]!;
+    assert.equal(w.held, true);
+    for (const remote of ['queued', 'syncing'] as const)
+      assert.equal(operationUpdate(w, view({ remote }), ui, NONE), 'watching');
+    assert.equal(operationUpdate(w, view({ remote: 'synced' }), ui, NONE), 'done');
+    assert.deepEqual(ui.applied, ['climb'], 'the send’s commit is in, the overlay settles');
   } finally {
     resetToasts();
   }

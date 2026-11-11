@@ -128,6 +128,12 @@ export interface WatchedWrite {
   readonly entryIds: readonly string[];
   /** The receipt's `appliedState`: `synced` settles the overlay against a window frame at it. */
   readonly at: State | null;
+  /**
+   * The write was held (its receipt's hold still open): the receipt settle was skipped — the hold's
+   * own commit never moves `seq`, so `appliedState` is already reached and settling there would
+   * snap the change back for the whole undo window. `synced` settles every entry instead.
+   */
+  readonly held: boolean;
   /** Overlay ids the write added (a held create's tmp entries): the real rows replace them on sight. */
   readonly addedIds: readonly string[];
   /** The write's fallback sentence when its operation fails (a reasonCode's own line wins). */
@@ -366,19 +372,22 @@ function addedIdsOf(change: OptimisticChange): string[] {
 
 /**
  * Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. An
- * accepted write — held or not — joins the watches so its operation's frames are answered: a held
- * create's tmp entry skips the receipt settle (no real row exists until the send confirms) and
- * stays visible until its watcher lands `synced`, `failed` or `cancelled`.
+ * accepted write — held or not — joins the watches so its operation's frames are answered. A held
+ * write skips the receipt settle entirely: its `appliedState` is already reached (the hold's own
+ * commit never moves `seq`), so every entry — a create's tmp included — settles at `synced`.
  */
 function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
   spec.call().then(
     out => {
-      if (!(out.held && spec.addedIds.length > 0))
-        spec.entryIds.forEach(id => ui.settle(id, out.at));
+      // A held write's receipt `appliedState` is already reached — the hold's own commit never
+      // moves `seq` — so settling here would snap the change back for the whole undo window:
+      // every held write (not just a create) waits for `synced`, whose commit is in by then.
+      if (!out.held) spec.entryIds.forEach(id => ui.settle(id, out.at));
       ui.watch({
         opId: spec.opId,
         entryIds: spec.entryIds,
         at: out.at,
+        held: out.held,
         addedIds: spec.addedIds,
         ...(spec.failure === undefined ? {} : { failure: spec.failure }),
       });
@@ -434,8 +443,9 @@ export function operationUpdate(
       });
       return 'done';
     case 'synced':
-      // Only a held create skipped the receipt settle (its tmp entries); everything else settled there.
-      watch.addedIds.forEach(id => ui.settle(id, watch.at));
+      // Every held write skipped the receipt settle; the send's commit is in by this frame, so the
+      // overlay settles now — a create's tmp entry drops with it, the real row committed already.
+      if (watch.held) watch.entryIds.forEach(id => ui.settle(id, watch.at));
       return 'done';
     case 'applied':
       // A local write never leaves the device: nothing more to watch.
