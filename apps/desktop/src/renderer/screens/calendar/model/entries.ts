@@ -241,51 +241,81 @@ export function planData(
   };
 }
 
+/** One write's share of the optimistic overlay: a patch, a removal or an addition on one entry. */
+export interface OverlayContribution {
+  readonly id: string;
+  readonly patch?: Partial<CalendarEventData>;
+  readonly remove?: boolean;
+  readonly add?: CalendarEventData;
+}
+
 /** Optimistic changes the container holds until the window catches up (DESIGN 5 rules 1 and 11). */
 export interface Overlay {
-  /** Field changes by entry id (a move, a resize, an answer). */
+  /** Field changes by entry id (a move, a resize, an answer), merged across pending writes. */
   readonly patch: ReadonlyMap<string, Partial<CalendarEventData>>;
   /** Entries gone at once (deleted, hidden, a confirmed or dismissed plan). */
   readonly removed: ReadonlySet<string>;
   /** Entries made here and not yet in the window (a create before its receipt). */
   readonly added: readonly CalendarEventData[];
+  /**
+   * Each pending write's contributions by write id (the op id), in the order the writes landed.
+   * Two writes can touch one entry: a rollback or a settle drops one write's share and the merged
+   * patch is rebuilt from what remains, so a still-pending write's change is never clobbered.
+   */
+  readonly writes: ReadonlyMap<string, readonly OverlayContribution[]>;
 }
 
-export const EMPTY_OVERLAY: Overlay = { patch: new Map(), removed: new Set(), added: [] };
+export const EMPTY_OVERLAY: Overlay = {
+  patch: new Map(),
+  removed: new Set(),
+  added: [],
+  writes: new Map(),
+};
 
-export function overlayWith(
-  overlay: Overlay,
-  change: {
-    id: string;
-    patch?: Partial<CalendarEventData>;
-    remove?: boolean;
-    add?: CalendarEventData;
-    /** Sibling changes of the same write (a series time shift moves every loaded occurrence). */
-    more?: readonly {
-      id: string;
-      patch?: Partial<CalendarEventData>;
-      remove?: boolean;
-      add?: CalendarEventData;
-    }[];
-  },
-): Overlay {
-  const patch = new Map(overlay.patch);
-  const removed = new Set(overlay.removed);
-  let added = overlay.added;
-  for (const c of [change, ...(change.more ?? [])]) {
-    if (c.patch) patch.set(c.id, { ...patch.get(c.id), ...c.patch });
-    if (c.remove) removed.add(c.id);
-    if (c.add) added = [...added.filter(a => a.id !== c.add?.id), c.add];
-  }
+/** Rebuilds the merged view from every pending write's contributions, in landing order. */
+function merged(writes: ReadonlyMap<string, readonly OverlayContribution[]>): {
+  patch: Map<string, Partial<CalendarEventData>>;
+  removed: Set<string>;
+  added: CalendarEventData[];
+} {
+  const patch = new Map<string, Partial<CalendarEventData>>();
+  const removed = new Set<string>();
+  const added: CalendarEventData[] = [];
+  for (const list of writes.values())
+    for (const c of list) {
+      if (c.patch) patch.set(c.id, { ...patch.get(c.id), ...c.patch });
+      if (c.remove) removed.add(c.id);
+      if (c.add) {
+        const at = added.findIndex(a => a.id === c.add?.id);
+        if (at >= 0) added[at] = c.add;
+        else added.push(c.add);
+      }
+    }
   return { patch, removed, added };
 }
 
-export function overlayWithout(overlay: Overlay, id: string): Overlay {
-  const patch = new Map(overlay.patch);
-  const removed = new Set(overlay.removed);
-  patch.delete(id);
-  removed.delete(id);
-  return { patch, removed, added: overlay.added.filter(a => a.id !== id) };
+export function overlayWith(
+  overlay: Overlay,
+  writeId: string,
+  change: OverlayContribution & {
+    /** Sibling changes of the same write (a series time shift moves every loaded occurrence). */
+    more?: readonly OverlayContribution[];
+  },
+): Overlay {
+  const writes = new Map(overlay.writes);
+  writes.set(writeId, [...(writes.get(writeId) ?? []), change, ...(change.more ?? [])]);
+  return { writes, ...merged(writes) };
+}
+
+/** Drops one write's contribution on one entry (that write's settle or refusal); the rest stay. */
+export function overlayDrop(overlay: Overlay, writeId: string, entryId: string): Overlay {
+  const list = overlay.writes.get(writeId);
+  if (list === undefined) return overlay;
+  const writes = new Map(overlay.writes);
+  const rest = list.filter(c => c.id !== entryId);
+  if (rest.length === 0) writes.delete(writeId);
+  else writes.set(writeId, rest);
+  return { writes, ...merged(writes) };
 }
 
 /**

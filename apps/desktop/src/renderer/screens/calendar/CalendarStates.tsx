@@ -468,7 +468,7 @@ function PreviewCalendar({ fixture }: { fixture: Fixture }) {
       stateRef.current = t.state;
       setState(t.state);
       for (const fx of t.effects) {
-        if ('optimistic' in fx) setOverlay(o => overlayWith(o, fx.optimistic));
+        if ('optimistic' in fx) setOverlay(o => overlayWith(o, 'preview', fx.optimistic));
         if (fx.kind === 'calendarSet')
           setCalendars(list => list.map(c => (c.id === fx.id ? { ...c, shown: fx.shown } : c)));
       }

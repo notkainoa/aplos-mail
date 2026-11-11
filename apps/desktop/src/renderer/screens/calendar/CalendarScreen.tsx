@@ -48,8 +48,8 @@ import {
   eventsRange,
   initialState,
   inviteOpen,
+  overlayDrop,
   overlayWith,
-  overlayWithout,
   periodOf,
   plansSpec,
   reached,
@@ -102,6 +102,8 @@ export interface CalendarScreenProps {
 interface Settling {
   readonly id: string;
   readonly at: State | null;
+  /** The write this entry's overlay contribution belongs to — a settle drops its share only. */
+  readonly writeId: string;
 }
 
 const focused = (): ElementLike | null =>
@@ -289,7 +291,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   useEffect(() => {
     const caughtUp = settling.filter(s => reached(eventsWindow.state, s.at));
     if (caughtUp.length === 0) return;
-    setOverlay(o => caughtUp.reduce((acc, s) => overlayWithout(acc, s.id), o));
+    setOverlay(o => caughtUp.reduce((acc, s) => overlayDrop(acc, s.writeId, s.id), o));
     setSettling(list => list.filter(s => !caughtUp.includes(s)));
   }, [eventsWindow.state, settling]);
 
@@ -304,9 +306,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
   const ui: EffectUi = useMemo(
     () => ({
-      optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
-      settle: (id: string, at: State | null) => setSettling(list => [...list, { id, at }]),
-      rollback: (id: string) => setOverlay(o => overlayWithout(o, id)),
+      optimistic: (writeId: string, change: OptimisticChange) =>
+        setOverlay(o => overlayWith(o, writeId, change)),
+      settle: (id: string, at: State | null, writeId: string) =>
+        setSettling(list => [...list, { id, at, writeId }]),
+      rollback: (id: string, writeId: string) => setOverlay(o => overlayDrop(o, writeId, id)),
       shown: (id: string, shown: boolean) =>
         setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
       shownSettled: (id: string) =>

@@ -89,12 +89,12 @@ export interface EffectPorts {
 
 /** The state setters an effect needs. */
 export interface EffectUi {
-  /** Apply the write's optimistic change at once (DESIGN 5 rule 1). */
-  optimistic(change: OptimisticChange): void;
-  /** Keep the overlay until a window reaches the write's applied state. */
-  settle(entryId: string, at: State | null): void;
-  /** Drop the overlay entry (a refusal, an undo). */
-  rollback(entryId: string): void;
+  /** Apply the write's optimistic change at once (DESIGN 5 rule 1), under the write's `writeId`. */
+  optimistic(writeId: string, change: OptimisticChange): void;
+  /** Keep the write's overlay contribution until a window reaches its applied state. */
+  settle(entryId: string, at: State | null, writeId: string): void;
+  /** Drop the write's overlay contribution (a refusal, an undo) — never another write's. */
+  rollback(entryId: string, writeId: string): void;
   /** A calendar's `shown` changed locally until `Calendar/get` is re-read. */
   shown(id: string, shown: boolean): void;
   /** The `Calendar/set` write returned: the next get is authoritative. */
@@ -329,7 +329,7 @@ function writeFailed(
   error: unknown,
   retry: () => void,
 ): void {
-  spec.entryIds.forEach(id => ui.rollback(id));
+  spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
   dismissToast(spec.opId);
   if (!spec.failure) return;
   const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
@@ -403,7 +403,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
       return;
     }
     if (remote === 'cancelled') {
-      spec.entryIds.forEach(id => ui.rollback(id));
+      spec.entryIds.forEach(id => ui.rollback(id, spec.opId));
       dismissToast(spec.opId);
       off();
       return;
@@ -436,7 +436,7 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
 function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
   spec.call().then(
     at => {
-      spec.entryIds.forEach(id => ui.settle(id, at));
+      spec.entryIds.forEach(id => ui.settle(id, at, spec.opId));
       watchWrite(spec, ui, ports);
     },
     error => writeFailed(spec, ui, ports, error, retry),
@@ -448,7 +448,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
   switch (fx.kind) {
     case 'eventSet': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(opId, fx.optimistic);
       if (fx.toast)
         pushToast({
           id: opId,
@@ -491,7 +491,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'rsvp': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(opId, fx.optimistic);
       pushToast({
         id: opId,
         kind: 'done',
@@ -567,7 +567,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'planConfirm': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(opId, fx.optimistic);
       runWrite(
         {
           opId,
@@ -594,7 +594,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'planDismiss': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(opId, fx.optimistic);
       runWrite(
         {
           opId,
@@ -610,7 +610,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'eventHide': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(opId, fx.optimistic);
       pushToast({
         id: opId,
         kind: fx.toast.kind,

@@ -27,6 +27,8 @@ import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { runCalendarEffect, undoLastCalendarChange, type EffectPorts } from './effects';
 import { writeFailureOf } from './writeErrors';
 import { boot, ctxFor, ports, S, settle, testUi } from './calendar.testkit';
+import { EMPTY_OVERLAY, overlayDrop, overlayWith, type Overlay } from './model/entries';
+import type { EffectUi } from './effects';
 
 const DINNER = 'demo-personal:ev-dinner'; // the stand-in's guested event: every write to it is held
 
@@ -341,6 +343,151 @@ test('heldWrites: a late failure through the real stand-in carries reasonCode on
       'a provider conflict after the receipt maps like a rejection',
     );
     assert.deepEqual(ui.dropped, [DINNER]);
+  } finally {
+    resetToasts();
+  }
+});
+
+/**
+ * An `EffectUi` bound to the real overlay functions, as CalendarScreen's `useState<Overlay>` is —
+ * the point of the stacked-writes tests is the merged patch, which a recording `testUi` cannot show.
+ */
+function overlayUi() {
+  let overlay: Overlay = EMPTY_OVERLAY;
+  const ui: EffectUi = {
+    optimistic: (writeId, change) => {
+      overlay = overlayWith(overlay, writeId, change);
+    },
+    settle: () => undefined,
+    rollback: (id, writeId) => {
+      overlay = overlayDrop(overlay, writeId, id);
+    },
+    shown: () => undefined,
+    shownSettled: () => undefined,
+    shownFailed: () => undefined,
+    focus: () => undefined,
+    reopenEditor: () => false,
+    restoreEditor: () => false,
+    closeDetail: () => undefined,
+  };
+  return { ui, overlay: () => overlay };
+}
+
+const titledFx = (title: string): CalendarEffect => ({
+  ...dinnerFx,
+  change: { type: 'update', id: DINNER, scope: 'occurrence', fields: { title } },
+  optimistic: { id: DINNER, patch: { title } },
+});
+
+test('stackedWrites: a refused second write leaves the first write’s overlay intact', async () => {
+  const { flush } = await bootRecorded();
+  resetToasts();
+  const { ui, overlay } = overlayUi();
+  try {
+    // A's held write lands optimistically and waits out the undo window.
+    runCalendarEffect(titledFx('A first'), watchedPorts(), ui);
+    await flush();
+    assert.equal(overlay().patch.get(DINNER)?.title, 'A first');
+    // B on the same event is refused (A's hold is still waiting): B's own contribution rolls back,
+    // A's pending patch must not go with it.
+    const refusing: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () =>
+        Promise.reject(
+          new OperationFailedError('op-b', {
+            type: 'conflict',
+            message: 'engine words',
+            reasonCode: 'calendar.holdPending',
+          }),
+        ),
+    };
+    runCalendarEffect(titledFx('B second'), refusing, ui);
+    await flush();
+    assert.equal(
+      overlay().patch.get(DINNER)?.title,
+      'A first',
+      'B’s rollback drops only B’s patch — A’s held change still shows',
+    );
+  } finally {
+    resetToasts();
+  }
+});
+
+test('stackedWrites: the first write’s cancelled frame leaves the second write’s overlay intact', async () => {
+  const { flush } = await bootRecorded();
+  resetToasts();
+  const { ui, overlay } = overlayUi();
+  try {
+    runCalendarEffect(titledFx('A first'), watchedPorts(), ui);
+    await flush();
+    const opA = undoStack.peek();
+    assert.ok(opA?.kind === 'operation');
+    // B is still in flight (its call has not answered) when A's hold is cancelled.
+    let releaseB: ((receipt: never) => void) | undefined;
+    const holding: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () => new Promise(resolve => (releaseB = resolve as typeof releaseB)),
+    };
+    runCalendarEffect(titledFx('B second'), holding, ui);
+    await api.operation.undo({ opId: opA.opId }).receipt;
+    await flush();
+    assert.equal(
+      overlay().patch.get(DINNER)?.title,
+      'B second',
+      'A’s rollback drops only A’s patch — B’s in-flight change still shows',
+    );
+    assert.ok(releaseB);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('stackedWrites: writes on one event roll back cleanly in any order', async () => {
+  const { flush } = await bootRecorded();
+  resetToasts();
+  const { ui, overlay } = overlayUi();
+  try {
+    runCalendarEffect(titledFx('A first'), watchedPorts(), ui);
+    await flush();
+    const opA = undoStack.peek();
+    assert.ok(opA?.kind === 'operation');
+    // B still in flight; C refused outright. C's rollback drops C only.
+    const refusing: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () =>
+        Promise.reject(
+          new OperationFailedError('op-c', {
+            type: 'conflict',
+            message: 'engine words',
+            reasonCode: 'calendar.holdPending',
+          }),
+        ),
+    };
+    let releaseB: ((receipt: never) => void) | undefined;
+    const holding: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () => new Promise(resolve => (releaseB = resolve as typeof releaseB)),
+    };
+    runCalendarEffect(titledFx('B second'), holding, ui);
+    runCalendarEffect(titledFx('C third'), refusing, ui);
+    await flush();
+    assert.equal(overlay().patch.get(DINNER)?.title, 'B second', 'C dropped, B still pending');
+    // B refuses as well: now only A's held change shows.
+    releaseB?.(
+      Promise.reject(
+        new OperationFailedError('op-b', {
+          type: 'conflict',
+          message: 'engine words',
+          reasonCode: 'calendar.holdPending',
+        }),
+      ) as never,
+    );
+    await flush();
+    assert.equal(overlay().patch.get(DINNER)?.title, 'A first', 'B dropped, A still pending');
+    // Then A's own cancel: nothing is left.
+    await api.operation.undo({ opId: opA.opId }).receipt;
+    await flush();
+    assert.equal(overlay().patch.get(DINNER), undefined, 'every write rolled back: no patch left');
   } finally {
     resetToasts();
   }
