@@ -259,3 +259,31 @@ test('every state a hold moves through is announced as an operation frame', asyn
     .map(f => (f.frame === 'operation' ? f.operation.state : ''));
   assert.deepEqual(states, ['queued', 'syncing', 'synced']);
 });
+
+test('Operation/get answers in the asked order when mail operations and held ones are mixed', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', rename('h1', 'acct-1:primary/ev1'));
+  await w.call('Event/set', rename('h2', 'acct-1:primary/ev2'));
+  // A mail operation, as the mail side would answer it.
+  const mail = {
+    opId: 'mail1',
+    kind: 'Thread/act',
+    targets: [],
+    state: 'synced' as const,
+    appliedState: { dbEpoch: 'e', seq: 1 },
+    undoable: false,
+    createdAt: 1,
+    scope: 'triage' as const,
+  };
+  const threadOps = w.engine.services.threadOps as unknown as { get: (ids: string[]) => unknown };
+  threadOps.get = (ids: string[]) => ({
+    list: ids.includes('mail1') ? [mail] : [],
+    notFound: ids.filter(id => id !== 'mail1'),
+  });
+  const got = await w.call('Operation/get', { opIds: ['h2', 'mail1', 'nope', 'h1'] });
+  assert.deepEqual(
+    got.list.map(o => o.opId),
+    ['h2', 'mail1', 'h1'],
+  );
+  assert.deepEqual(got.notFound, ['nope']);
+});
