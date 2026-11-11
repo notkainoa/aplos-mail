@@ -7,7 +7,7 @@
  */
 import { dismissToast, pushToast } from '../../shell';
 import type { EffectPorts } from './effects';
-import { emitHoldsRefresh, opIdOf } from './FailedHolds';
+import { emitHoldsRefresh, noteHoldRetried, opIdOf, releaseRetriedHolds } from './FailedHolds';
 import { bodyOf } from './writeErrors';
 import type { ErrorBody } from '../../data';
 
@@ -27,6 +27,7 @@ export function holdPending(id: string): boolean {
 /** The screen unmounting releases the guards, like `releaseHeldWrites` does for its own marks. */
 export function releasePendingHolds(): void {
   pendingHolds.clear();
+  releaseRetriedHolds();
 }
 
 /**
@@ -59,7 +60,9 @@ export function retryHold(ports: EffectPorts, id: string, opId: string): void {
     () => {
       pendingHolds.delete(id);
       dismissToast(`${opId}:failed`);
-      emitHoldsRefresh();
+      // Queue/retry resolves even when the resend failed again: the refreshed Queue/list
+      // decides whether the owner hears 'Still didn't send.' (review22).
+      noteHoldRetried(id);
     },
     error => {
       pendingHolds.delete(id);

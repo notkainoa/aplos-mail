@@ -10,10 +10,18 @@
  * uncertain one (`calendar.checkFirst`); never `Event/set` again (a fresh write beside the engine's
  * hold would re-notify guests). Discard is `Queue/discard` on the same id.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type JSX } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type JSX,
+  type RefObject,
+} from 'react';
 import type { QueueItem } from '@aplos/contract';
 import { api, type Account } from '../../data';
-import { getToasts, subscribeToasts } from '../../shell/store-toast';
+import { addToast, getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { Announce } from '../../ui/props';
 import { Button } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
@@ -46,6 +54,8 @@ export interface FailedHold {
   readonly stale?: boolean;
   /** Its own Retry or Discard is still in flight: the buttons hold busy, a second press is ignored. */
   readonly pending?: boolean;
+  /** `calendar.uncertain`: the answer was lost — the change may already be on Google (review22). */
+  readonly uncertain?: boolean;
   readonly canRetry: boolean;
   readonly canDiscard: boolean;
 }
@@ -160,6 +170,7 @@ export function failedHoldsOf(
       ...(account !== undefined ? { account } : {}),
       ...(item.accountId !== undefined ? { accountId: item.accountId } : {}),
       ...(recovery !== undefined ? { recovery } : {}),
+      ...(item.problem?.reasonCode === 'calendar.uncertain' ? { uncertain: true as const } : {}),
       ...(filter.stale?.(opId) === true ? { stale: true as const } : {}),
       ...(filter.pending?.(item.id) === true ? { pending: true as const } : {}),
       canRetry: item.canRetry,
@@ -188,11 +199,58 @@ export function emitHoldsRefresh(): void {
 }
 
 // ---------------------------------------------------------------------------
+// The Retry settle watch: `Queue/retry` resolves even when the resend fails
+// again, so a settled Retry's verdict comes from the refreshed Queue/list
+// (review22).
+// ---------------------------------------------------------------------------
+
+/** Item ids whose `Queue/retry` resolved; the refreshed list's verdict is still owed. */
+const retriedHolds = new Set<string>();
+
+/** A row's Retry settled: the next `Queue/list` says whether the send went through. */
+export function noteHoldRetried(id: string): void {
+  retriedHolds.add(id);
+  emitHoldsRefresh();
+}
+
+/** The screen unmounting releases the marks, like `releasePendingHolds` does for its own. */
+export function releaseRetriedHolds(): void {
+  retriedHolds.clear();
+}
+
+/**
+ * The refreshed list's verdict on settled retries. An item still `failed` — the resend failed
+ * again — gets one quiet notice under the op's `<opId>:failed` id (it owns the row while it lives,
+ * like the in-session failure toast does). An item that left the queue sent fine: nothing to say.
+ * A queued or syncing one is still sending — the watch's next list decides.
+ */
+function checkRetriedHolds(items: readonly QueueItem[]): void {
+  if (retriedHolds.size === 0) return;
+  for (const id of [...retriedHolds]) {
+    const item = items.find(i => i.id === id);
+    if (item !== undefined && (item.state === 'queued' || item.state === 'syncing')) continue;
+    retriedHolds.delete(id);
+    if (item?.state !== 'failed') continue;
+    addToast({
+      id: `${opIdOf(item)}:failed`,
+      kind: 'info',
+      message: "Still didn't send.",
+      actions: [{ id: 'dismiss', label: 'Dismiss' }],
+      undoable: false,
+      persistent: true,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The hook the container calls and the surface the pane draws
 // ---------------------------------------------------------------------------
 
 /** How often the watched queue is re-listed while a `cal:` item is still queued or syncing. */
 const HOLD_WATCH_MS = 5_000;
+
+/** How many times a rejected `Queue/list` may retry on the same bound before resting (review22). */
+const LIST_RETRY_CAP = 5;
 
 /** What `useFailedHolds` needs beyond the model: injectable in tests. */
 export interface FailedHoldsDeps {
@@ -244,17 +302,28 @@ export function useFailedHolds(
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // A rejected list's retry count for this run — reset by the first success, and a fresh
+    // effect run (a tick, a focus or a mount) starts it again (review22).
+    let misses = 0;
     const run = (): void => {
       const call = listDeps ?? (() => api.queue.list({ kinds: ['op'] }).then(r => r.list));
       void call().then(
         result => {
           if (!live) return;
+          misses = 0;
           setItems(result);
+          checkRetriedHolds(result);
           // A queued or syncing hold can still fail — re-list on a bound until none remain.
           if (holdsNeedWatch(result)) timer = setTimeout(run, watchMs);
         },
-        // The list failing is a quiet empty — the pane's own error line covers load failures.
-        () => undefined,
+        () => {
+          if (!live) return;
+          // A rejected list keeps the last good items and retries on the same bound — the
+          // engine being briefly unreachable must not kill the watch or the first list
+          // after a reload (review22). After the cap it rests until the next tick or focus.
+          misses += 1;
+          if (misses <= LIST_RETRY_CAP) timer = setTimeout(run, watchMs);
+        },
       );
     };
     run();
@@ -311,6 +380,11 @@ function HoldRow({
           ? 'You changed this event again. This older change can be discarded.'
           : hold.reason}
       </div>
+      {hold.uncertain === true ? (
+        <div className="cal-hold__note">
+          Discarding does not undo anything already on your Google calendar.
+        </div>
+      ) : null}
       <div className="cal-hold__actions">
         {grantAction !== undefined ? (
           <Button
@@ -360,6 +434,62 @@ function HoldRow({
   );
 }
 
+/** The Review list's popover, found from the box the rows live in. */
+function popoverOf(box: HTMLElement | null): HTMLElement | null {
+  return box === null ? null : box.closest<HTMLElement>('[role="dialog"]');
+}
+
+/**
+ * The Review list's open/emptied/row-left focus lifecycle (review22), run by `FailedHolds` from the
+ * box its rows live in:
+ *
+ * - `holdsEmptied` when the list empties under the open popover — the stale `holdsReview` flag
+ *   resets and focus lands on the grid, so the next failed hold can never pop the list open by
+ *   itself. It only fires now that the surface stays mounted to see the count reach zero.
+ * - On open, focus lands on the dialog container: `Popover` auto-focuses the first focusable,
+ *   which can be a destructive Discard on an uncertain or stale first row — Return on Review
+ *   then Return again would drop a change. Its own effect runs first, this lands after it.
+ * - A non-last row leaving under the open popover (its own Retry or Discard settled, or a toast
+ *   took it over) hands focus to the next row's first button — the previous row's when the last
+ *   left — never to body, where Esc would miss the popover's own handler.
+ */
+export function useReviewLifecycle(
+  box: RefObject<HTMLElement | null>,
+  holds: readonly FailedHold[],
+  open: boolean,
+  dispatch: (action: CalendarAction) => void,
+): void {
+  const prevIds = useRef<readonly string[]>([]);
+  const wasShown = useRef(false);
+  const shown = open && holds.length > 0;
+  useEffect(() => {
+    const before = prevIds.current;
+    prevIds.current = holds.map(h => h.id);
+    if (holds.length === 0) {
+      wasShown.current = false;
+      // An empty list leaves no popover: the last row's own action emptied it. `holdsEmptied`
+      // closes AND lands focus on the grid — the focused button just unmounted, so focus would
+      // otherwise drop to body and a stale `holdsReview` would pop the next hold's list open.
+      if (open) dispatch({ type: 'holdsEmptied' });
+      return;
+    }
+    const pop = popoverOf(box.current);
+    if (shown && !wasShown.current) {
+      pop?.focus({ preventScroll: true });
+    } else if (shown) {
+      const removed = before.findIndex(id => !holds.some(h => h.id === id));
+      const active = typeof document === 'undefined' ? null : document.activeElement;
+      const inside = active !== null && pop !== null && pop.contains(active);
+      if (removed >= 0 && !inside) {
+        const rows = box.current?.querySelectorAll<HTMLElement>('.cal-hold');
+        const row = rows ? rows[Math.min(removed, holds.length - 1)] : undefined;
+        row?.querySelector<HTMLElement>('button:not([disabled])')?.focus({ preventScroll: true });
+      }
+    }
+    wasShown.current = shown;
+  }, [box, holds, open, shown, dispatch]);
+}
+
 /**
  * The line and its Review popover. Review is a plain text button — Tab reaches it, Return opens the
  * list, and the Popover's Esc puts focus back on it (role 'dialog'). The first appearance is
@@ -377,23 +507,21 @@ export function FailedHolds({
   announce?: Announce;
 }): JSX.Element | null {
   const reviewRef = useRef<HTMLButtonElement | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
   const announced = useRef(false);
   const count = holds.length;
 
+  useReviewLifecycle(boxRef, holds, open, dispatch);
   useEffect(() => {
     if (count === 0) {
       announced.current = false;
-      // An empty list leaves no popover: the last row's own action emptied it. `holdsEmptied`
-      // closes AND lands focus on the grid — the focused button and the Review anchor are both
-      // about to unmount, so focus would otherwise drop to body (review21).
-      if (open) dispatch({ type: 'holdsEmptied' });
       return;
     }
     if (!announced.current) {
       announced.current = true;
       announce?.(failedHoldLine(count));
     }
-  }, [count, open, announce, dispatch]);
+  }, [count, announce]);
 
   if (count === 0) return null;
   return (
@@ -405,6 +533,7 @@ export function FailedHolds({
           size="sm"
           label="Review"
           ariaLabel={`Review ${failedHoldLine(count).toLowerCase()}`}
+          popup={{ kind: 'dialog', expanded: open, controls: 'cal-holds-list' }}
           ref={reviewRef}
           onPress={() => dispatch({ type: 'holdsReview', open: !open })}
         />
@@ -416,11 +545,14 @@ export function FailedHolds({
         anchor={reviewRef.current}
         onClose={() => dispatch({ type: 'holdsReview', open: false })}
       >
-        <ul className="cal-holds">
-          {holds.map(hold => (
-            <HoldRow key={hold.id} hold={hold} dispatch={dispatch} />
-          ))}
-        </ul>
+        <div ref={boxRef}>
+          <ul className="cal-holds" id="cal-holds-list">
+            {holds.map(hold => (
+              <HoldRow key={hold.id} hold={hold} dispatch={dispatch} />
+            ))}
+          </ul>
+          <p className="cal-holds__note">Discarding means this change is never sent.</p>
+        </div>
       </Popover>
     </>
   );

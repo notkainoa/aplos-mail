@@ -97,7 +97,9 @@ test('review19: the line counts once, announces plainly', () => {
 
 test('review19: an empty list draws no line', () => {
   const vm = viewModel(S(), ctxFor());
-  assert.equal(vm.failedHolds, null);
+  // Empty items draw nothing, but the surface stays mounted so an emptied open list can close
+  // itself (review22).
+  assert.equal(vm.failedHolds.items.length, 0);
   const withHolds = { ...ctxFor(), failedHolds: failedHoldsOf([calItem()], new Set(), []) };
   const vm2 = viewModel(S(), withHolds);
   assert.equal(vm2.failedHolds?.items.length, 1);

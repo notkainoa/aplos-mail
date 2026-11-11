@@ -832,6 +832,7 @@ const FIXTURES: Record<string, Fixture> = {
         opId: 'op-hold-uncertain',
         reason: "We couldn't confirm that went through. Check your calendar before trying again.",
         account: 'Alex Moreno',
+        uncertain: true,
         canRetry: false,
         canDiscard: true,
       },

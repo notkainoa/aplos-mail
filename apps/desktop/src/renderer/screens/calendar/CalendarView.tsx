@@ -501,14 +501,12 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
   return (
     <div ref={rootRef} className="cal-screen" data-view={vm.shown}>
       <ViewControls vm={vm} dispatch={dispatch} />
-      {vm.failedHolds ? (
-        <FailedHolds
-          holds={vm.failedHolds.items}
-          open={vm.failedHolds.open}
-          dispatch={dispatch}
-          announce={announce}
-        />
-      ) : null}
+      <FailedHolds
+        holds={vm.failedHolds.items}
+        open={vm.failedHolds.open}
+        dispatch={dispatch}
+        announce={announce}
+      />
 
       {vm.shown === 'day' ? (
         <div className="cal-screen__day" data-rail={vm.rail ? 'true' : undefined}>

@@ -289,6 +289,25 @@
   margin-top: var(--space-half);
 }
 
+/* What Discard does, next to its buttons: one plain consequence line (review22). */
+.cal-hold__note {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-holds__note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
 /* The harness states' notice toast, where the shell's stack would put it: bottom centre, above the pane. */
 .calp-toast {
   position: absolute;
