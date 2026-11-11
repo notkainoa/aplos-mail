@@ -2489,3 +2489,5 @@ Review notes for #159 (Opus MERGE on fe4e2099): abandoned() covers the permanent
 
 MERGED #435 Compose Cmd/Ctrl+Return commits typed recipient (05be0b70, ui-foundation label applied, 17 tests + tsc clean)
 MERGED #436 Settings verbose logging reads Diagnostics/verbose (6769a36f, head be6310b2 incl. no-throw effect fix, 6/6 owners ui-settings, 193 tests + tsc clean)
+
+MERGED #438 Calendar plain sentences for refused writes (5cb91914, 8/8 owners ui-calendar, 173 tests + tsc clean; answers providers ack-#410)
