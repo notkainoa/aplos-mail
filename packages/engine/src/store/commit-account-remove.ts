@@ -31,6 +31,20 @@ export function accountRemove(run: CommitRun, w: AccountRemoveWrite) {
     )
     .run(id);
   run.q('DELETE FROM governor_state WHERE account_id = ?').run(id);
+  // Plans cascade with the account; a `*` row re-reads the type like Thread's, cheaper than per-row marks.
+  run.markId('Plan', id, '*');
+  run
+    .q(
+      'DELETE FROM meta WHERE substr(key, 1, ?) = ? OR substr(key, 1, ?) = ? OR substr(key, 1, ?) = ?',
+    )
+    .run(
+      `replydraft:${id}:`.length,
+      `replydraft:${id}:`,
+      `followup:${id}:`.length,
+      `followup:${id}:`,
+      `plans-empty:${id}:`.length,
+      `plans-empty:${id}:`,
+    );
   run.q('DELETE FROM accounts WHERE id = ?').run(id); // cascades the rest
   // Clients re-read what they hold for the account: one `*` row per bulk type, a `d` row for the few folders.
   run.markId('Thread', id, '*');

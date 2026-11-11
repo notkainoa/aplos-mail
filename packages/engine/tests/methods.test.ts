@@ -67,11 +67,8 @@ test('there is one file per engine area and nothing else besides the table and i
   assert.deepEqual(files, [...engineAreas, 'index', 'types'].sort());
 });
 
-test('a stub rejects with notImplemented, and an unknown method with unsupported', async () => {
-  await assert.rejects(
-    dispatch('Event/extract', {}, ctx),
-    (e: unknown) => e instanceof NotImplementedError && e.type === 'notImplemented',
-  );
+test('an unknown method rejects with unsupported', async () => {
+  // No stub method remains — every engine method has a real handler (Event/extract was the last).
   await assert.rejects(
     dispatch('File/save', {}, ctx),
     (e: unknown) => e instanceof ContractError && e.type === 'unsupported',

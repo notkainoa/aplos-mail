@@ -1,0 +1,337 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { EngineMethodName, Input, Output } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
+import { createLogger } from '../../src/diag/log';
+import { createEngine, laneExtensions } from '../../src/index';
+import { openStore } from '../../src/store';
+import { type AiChatRequest, type AiTransport } from '../../src/ai/host';
+import '../../src/ai/impl/ai-writes';
+import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/plans';
+import { accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
+import { manualClock } from '../runtime.helpers';
+
+/**
+ * Confirm/extract lifecycle pins: claim replay after a refused put, a mid-flight dismiss, the
+ * write-level claim/release/settle guards, the writePlans stale-input fence, and the per-hash
+ * "nothing found" record. Each test fails if the guard it names is removed.
+ */
+function stubTransport(answer: string | string[]): AiTransport & { calls: AiChatRequest[] } {
+  const calls: AiChatRequest[] = [];
+  const queue = [...(Array.isArray(answer) ? answer : [answer])];
+  return {
+    calls,
+    async chat(req) {
+      calls.push(req);
+      return {
+        content: queue.length > 1 ? queue.shift()! : (queue[0] ?? ''),
+        toolCalls: [],
+        usage: { prompt: 10, completion: 10 },
+      };
+    },
+    transcribe: () => Promise.resolve({ text: '' }),
+    models: () => Promise.resolve({ list: [], live: false }),
+    check: () => Promise.resolve(),
+    setKey: () => Promise.resolve('keychain' as const),
+    removeKey: () => Promise.resolve('none' as const),
+    keySource: () => 'env' as const,
+  };
+}
+
+async function world(transport: AiTransport, ports?: { calendar: unknown }) {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  const log = createLogger({ sink: { write: () => undefined }, salt: 's', clock });
+  const engine = await createEngine({
+    store,
+    clock,
+    log,
+    host: {
+      appVersion: '9.9.9',
+      device: { id: 'd', name: 'd' },
+      resident: true,
+      capabilities: { desktop: true },
+    },
+    ...(ports ? { ports: ports as never } : {}),
+  });
+  engine.services.ai.useTransport(transport);
+  const window = engine.connect();
+  const call = <M extends EngineMethodName>(m: M, a: Input<M>) =>
+    window.call(m, a) as Promise<Output<M>>;
+  return { store, engine, call, clock, file };
+}
+
+const EVENT_ANSWER =
+  '{"events":[{"title":"Garden day","start":"2026-11-14T10:00:00Z","end":"2026-11-14T11:00:00Z","allDay":false,"location":"Community garden","quote":"this Saturday at 10 am"}]}';
+
+const seed = (w: Awaited<ReturnType<typeof world>>) =>
+  w.store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed: true },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-plans', 5, {
+        subject: 'Garden day',
+        snippet: 'We are gathering this Saturday at 10 am.',
+      }),
+    ],
+  });
+
+const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
+  await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
+  const got = await w.call('Consent/get', {});
+  return w.call('Consent/grant', {
+    scope: 'background',
+    version: got.currentVersion ?? got.version,
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+  });
+};
+
+test('Plan/confirm: a refused put retried under the SAME opId confirms — one event, row confirmed', async () => {
+  const puts: { newRemoteId?: string }[] = [];
+  let refused = true;
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        puts.push(c);
+        if (refused) {
+          refused = false;
+          throw new ContractError({ type: 'permission', message: 'Enable editing first.' });
+        }
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'permission',
+  );
+  // The refusal released the claim; the SAME opId must be able to claim again — its claim commit
+  // carries a unique suffix so the retry is not replayed away as a duplicate op.
+  const done = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  assert.equal(puts.length, 2);
+  const row = w.store.read(q =>
+    q.get<{ state: string; op_id: string | null; event_id: string | null }>(
+      'SELECT state, op_id, event_id FROM plans WHERE id = 1',
+    ),
+  )!;
+  assert.equal(row.state, 'confirmed', 'the retried confirm settles, not a silent open row');
+  assert.equal(row.op_id, 'c1');
+  const replay = await w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id });
+  assert.equal(replay.eventId, done.eventId);
+  assert.equal(puts.length, 2, 'the confirmed row replays without a provider call');
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c9', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+    'a new opId cannot confirm over the settled plan',
+  );
+  w.file.cleanup();
+});
+
+test('Plan/confirm: a dismiss that lands while the put is in flight refuses the confirm', async () => {
+  const puts: { newRemoteId?: string }[] = [];
+  const w = await world(stubTransport(EVENT_ANSWER), {
+    calendar: {
+      put: async (_a: string, c: { newRemoteId?: string }) => {
+        puts.push(c);
+        await w.call('Plan/dismiss', { opId: 'd-mid', ids: ['acct-1:plan-1'] });
+        return { kind: 'saved' as const, upserts: [{ remoteId: c.newRemoteId }], removals: [] };
+      },
+    },
+  });
+  seed(w);
+  w.store.commit({
+    opId: 'cal',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'calendar',
+        accountId: 'acct-1',
+        remoteId: 'primary',
+        name: 'P',
+        hidden: false,
+        readOnly: false,
+        primary: true,
+      },
+    ] as never[],
+  });
+  await consentNow(w);
+  const out = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  await assert.rejects(
+    () => w.call('Plan/confirm', { opId: 'c1', id: out.plans[0].id }),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+    'a settle that cannot land must not answer ok',
+  );
+  const row = w.store.read(q => q.get<{ state: string }>('SELECT state FROM plans WHERE id = 1'))!;
+  assert.equal(row.state, 'dismissed', 'the mid-flight dismiss stands');
+  w.file.cleanup();
+});
+
+test('plan claim/settle writes: the open-state lock holds and only the claiming op may release', () => {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed: true },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-p', 5),
+      {
+        kind: 'plan',
+        action: 'put',
+        accountId: 'acct-1',
+        remoteThreadId: 'T-p',
+        inputHash: 'h',
+        title: 'x',
+        startUtc: 1,
+        endUtc: 2,
+        allDay: false,
+        model: 'm',
+      } as never,
+    ],
+  });
+  const row = () =>
+    store.read(q =>
+      q.get<{ state: string; op_id: string | null; event_id: string | null }>(
+        'SELECT state, op_id, event_id FROM plans WHERE id = 1',
+      ),
+    )!;
+  const claim = (opId: string, commitOp: string) =>
+    store.commit({
+      opId: commitOp,
+      origin: 'local',
+      writes: [
+        {
+          kind: 'plan',
+          action: 'claim',
+          id: 1,
+          accountId: 'acct-1',
+          opId,
+          calendarId: 'acct-1:primary',
+        } as never,
+      ],
+    });
+  claim('opA', 'c-a');
+  assert.equal(row().state, 'confirming');
+  assert.equal(row().op_id, 'opA');
+  // The AND state='open' lock: a second claim on the claimed row throws conflict.
+  assert.throws(
+    () => claim('opB', 'c-b'),
+    (e: unknown) => (e as { type?: string }).type === 'conflict',
+  );
+  // Only the claiming op may release it.
+  store.commit({
+    opId: 'r-b',
+    origin: 'local',
+    writes: [
+      {
+        kind: 'plan',
+        action: 'release',
+        id: 1,
+        accountId: 'acct-1',
+        opId: 'opB',
+      } as never,
+    ],
+  });
+  assert.equal(row().state, 'confirming', 'another op cannot release the claim');
+  assert.equal(row().op_id, 'opA');
+  // A confirmed settle on a confirming row needs its event id and lands; but on an OPEN row it no-ops.
+  store.commit({
+    opId: 'r-a',
+    origin: 'local',
+    writes: [{ kind: 'plan', action: 'release', id: 1, accountId: 'acct-1', opId: 'opA' } as never],
+  });
+  assert.equal(row().state, 'open');
+  assert.equal(row().op_id, null);
+  store.commit({
+    opId: 's-open',
+    origin: 'local',
+    writes: [
+      {
+        kind: 'plan',
+        action: 'settle',
+        id: 1,
+        accountId: 'acct-1',
+        state: 'confirmed',
+        eventId: 'acct-1:primary/ev',
+      } as never,
+    ],
+  });
+  assert.equal(row().state, 'open', 'a confirmed settle cannot bypass the claim');
+  assert.equal(row().event_id, null);
+  file.cleanup();
+});
+
+test('writePlans: mail that moved between extract and write drops the stale set entirely', async () => {
+  const t = stubTransport(EVENT_ANSWER);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const x = await extractThread(w.engine.services, 'acct-1', 'T-plans', 'UTC');
+  assert.notEqual(x, 'empty');
+  // The thread changed while the model answered — the input hash no longer matches.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      msg('m2', 'T-plans', 6, { subject: 'Re: Garden day', snippet: 'and bring tools Sunday' }),
+    ],
+  });
+  const list = writePlans(w.engine.services, 'acct-1', 'T-plans', x as Extracted);
+  assert.equal(list.length, 0, 'nothing is written under a stale input hash');
+  assert.equal(
+    w.store.read(q => q.all<{ id: number }>('SELECT id FROM plans')).length,
+    0,
+    'no plan rows landed',
+  );
+  w.file.cleanup();
+});
+
+test('Event/extract: open plans from older mail do not stop the nothing-found record', async () => {
+  const t = stubTransport([EVENT_ANSWER, '{"events":[]}']);
+  const w = await world(t);
+  seed(w);
+  await consentNow(w);
+  const first = await w.call('Event/extract', { opId: 'x1', threadId: 'acct-1:T-plans' });
+  assert.equal(first.plans.length, 1);
+  // New mail moves the input hash; the open proposal from the older input stays listed.
+  w.store.commit({
+    opId: 'm2',
+    origin: 'sync',
+    writes: [
+      msg('m2', 'T-plans', 6, { subject: 'Re: Garden day', snippet: 'and bring tools Sunday' }),
+    ],
+  });
+  const second = await w.call('Event/extract', { opId: 'x2', threadId: 'acct-1:T-plans' });
+  assert.equal(t.calls.length, 2, 'the new input was extracted once');
+  assert.equal(second.plans.length, 1, 'the older open plan is still returned');
+  // The marker is per input hash — a third extract must NOT call the model even though the thread's
+  // open plan list was never empty.
+  const third = await w.call('Event/extract', { opId: 'x3', threadId: 'acct-1:T-plans' });
+  assert.equal(third.plans.length, 0);
+  assert.equal(t.calls.length, 2, 'the recorded empty answer for THIS hash skips the model');
+  w.file.cleanup();
+});

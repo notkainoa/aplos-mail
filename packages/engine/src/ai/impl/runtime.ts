@@ -5,6 +5,7 @@ import { AiCallError, type AiChatRequest, type AiChatTurn } from '../host';
 import { localDay } from '../providers';
 import type { AiFeature } from './gate';
 import { aiSettings } from './gate';
+import './ai-writes';
 
 /**
  * The metered provider call (ARCH 8.4): the only path `chat` traffic takes. `background` calls spend the daily cap;

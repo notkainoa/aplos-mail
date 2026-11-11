@@ -9,6 +9,7 @@ import { hexId } from '../../sync/connect-sessions';
 import { accountAllowed } from './gate';
 import { enqueue, inputHashOf, jobOf, jobRow, priorityOf, type JobRow } from './jobs';
 import { callMessage } from './runtime';
+import './ai-writes';
 
 /**
  * The `ai` area's working half (lazy-loaded by `methods/ai.ts`): enqueue (`Ai/request`), the queue read
@@ -18,12 +19,6 @@ import { callMessage } from './runtime';
 
 function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/request'> {
   const { store, clock } = ctx.services;
-  // Only the implemented kinds enqueue; asking for another kind fails honestly instead of dead-lettering.
-  if (args.kind !== 'summary')
-    throw new ContractError({
-      type: 'notImplemented',
-      message: 'That AI job is not built yet.',
-    });
   const parts = store.read(q => splitId(q, args.threadId));
   if (!parts)
     throw new ContractError({ type: 'notFound', message: 'That thread is not in Aplos.' });
@@ -33,8 +28,12 @@ function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/requ
   const { hash, messageCount } = store.read(q => inputHashOf(q, info.threadRowId));
   if (!messageCount)
     throw new ContractError({ type: 'notFound', message: 'That thread has no mail yet.' });
-  // Without force a thread that already holds a summary for this input is left alone.
-  const key = `summary:${parts.accountId}:${parts.remoteId}:${hash}`;
+  // The singleton key is per kind — `classify` shares the summary pipeline and its key; `plan` and
+  // `suggestAction` run alongside a summary job, not inside it. Look the existing row up by this kind's key.
+  const key =
+    args.kind === 'summary' || args.kind === 'classify'
+      ? `summary:${parts.accountId}:${parts.remoteId}:${hash}`
+      : `${args.kind}:${parts.accountId}:${parts.remoteId}:${hash}`;
   const existing = store.read(q =>
     q.get<JobRow>(
       'SELECT id, kind, key, priority, payload, state, attempts, next_at, last_error FROM jobs WHERE key = ?',
@@ -63,8 +62,9 @@ function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/requ
       receipt: { opId: args.opId, appliedState: { dbEpoch: store.dbEpoch, seq: store.seq() } },
     };
   }
-  // A summarized thread needs no job either, unless the caller forced a refresh.
-  if (!args.force && args.kind === 'summary') {
+  // A summarized thread needs no job either, unless the caller forced a refresh. `classify` shares the
+  // summary pipeline (its outputs live on the summary row), so it takes the same shortcut and key.
+  if (!args.force && (args.kind === 'summary' || args.kind === 'classify')) {
     const have = store.read(q =>
       q.get(
         'SELECT 1 AS one FROM summaries s JOIN threads t ON t.id = s.thread_id WHERE t.account_id = ? AND t.remote_id = ? AND s.input_hash = ?',
@@ -93,8 +93,7 @@ function request(args: Input<'Ai/request'>, ctx: MethodContext): Output<'Ai/requ
   }
   const row = enqueue(ctx.services, args.opId, {
     kind: args.kind,
-    key:
-      args.kind === 'summary' ? key : `${args.kind}:${parts.accountId}:${parts.remoteId}:${hash}`,
+    key,
     priority: info.priority,
     nextAt: clock.now(),
     payload: {

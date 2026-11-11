@@ -8,6 +8,7 @@ import { interactiveModel, accountAllowed } from './gate';
 import { lastSentHashOf } from './jobs';
 import { callMessage, meteredChat } from './runtime';
 import { localDay } from '../providers';
+import './ai-writes';
 
 /**
  * The interactive writer surface (`Ai/polish`, `Ai/draft`, `Ai/transcribe`, `Ai/followup`,
