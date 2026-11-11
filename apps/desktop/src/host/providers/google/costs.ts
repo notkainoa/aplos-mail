@@ -89,6 +89,9 @@ export const GCAL_COSTS = {
   'gcal.events.list': { base: 1 },
   'gcal.events.get': { base: 1 },
   'gcal.events.instances': { base: 1 },
+  'gcal.events.insert': { base: 1 },
+  'gcal.events.patch': { base: 1 },
+  'gcal.events.delete': { base: 1 },
 } as const satisfies GmailCostTable;
 
 export type GcalMethod = keyof typeof GCAL_COSTS;

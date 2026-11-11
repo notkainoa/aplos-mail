@@ -1,6 +1,8 @@
 import type { Event, Input, Output, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
+import { isKnownZone, toWall } from '../calendar/recurrence/zone';
+import { eventIdForOp } from '../calendar/event-id';
 import {
   calendarFromRow,
   eventFromRow,
@@ -50,6 +52,43 @@ const receipt = (ctx: MethodContext, opId: string): Receipt => ({
 
 const notFoundCal = () =>
   new ContractError({ type: 'notFound', message: 'This calendar is no longer available.' });
+
+const notFoundEvent = () =>
+  new ContractError({ type: 'notFound', message: 'This event is no longer available.' });
+
+/** The calendar a write targets: it must exist for the named account and accept changes. */
+function writableCalendar(ctx: MethodContext, accountId: string, calRemote: string): CalRow {
+  const row = calRow(ctx, accountId, calRemote);
+  if (!row) throw notFoundCal();
+  if (row.read_only === 1)
+    throw new ContractError({
+      type: 'unsupported',
+      message: 'This calendar is read-only, so events on it cannot be changed.',
+      reasonCode: 'calendar.readOnly',
+    });
+  return row;
+}
+
+/** The synced version of the event a write is based on (`If-Match`), so a change made elsewhere since is a conflict. */
+function baseEtag(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId?: string },
+  scope: string,
+): string | undefined {
+  const occurrence = scope === 'occurrence' && ref.recurrenceId ? ref.recurrenceId : undefined;
+  const row = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, occurrence);
+  // An occurrence without an exception row of its own has no version of its own yet.
+  if (!row && !occurrence) throw notFoundEvent();
+  return row?.etag ?? undefined;
+}
+
+/** The change landed elsewhere first: the saved write already holds the newer copy, so the screen can show it. */
+const changedElsewhere = () =>
+  new ContractError({
+    type: 'conflict',
+    message: 'This event changed elsewhere. The newer version is shown; make your change again.',
+    reasonCode: 'calendar.conflict',
+  });
 
 interface HiddenRow {
   [k: string]: string | number | null;
@@ -145,8 +184,8 @@ function eventRow(
     : "e.remote_id = ? AND e.master_remote_id IS NULL AND e.recurrence_id = ''";
   const params: (string | number)[] = recId ? [remote, remote, recId] : [remote];
   return ctx.services.store.read(q =>
-    q.get<EvtRow & { cal_row: number }>(
-      `SELECT e.id, e.calendar_id, e.remote_id, e.recurrence_id, e.master_remote_id, e.status,
+    q.get<EvtRow & { cal_row: number; etag: string | null }>(
+      `SELECT e.id, e.calendar_id, e.remote_id, e.recurrence_id, e.master_remote_id, e.status, e.etag,
               e.recurrence, e.start_utc, e.end_utc, e.all_day, e.data, c.id AS cal_row
        FROM events e JOIN calendars c ON c.id = e.calendar_id
        WHERE c.account_id = ? AND c.remote_id = ? AND ${on}`,
@@ -282,37 +321,210 @@ async function setEvent(
   const notify = args.notify;
   if (change.type === 'create') {
     const cal = parseCalendarIdIn(change.calendarId, accountIds(ctx));
+    writableCalendar(ctx, cal.accountId, cal.remoteId);
     const result = await ctx.services.calendar.put(cal.accountId, {
       calendarRemoteId: cal.remoteId,
       scope: 'occurrence',
       fields: toPortFields(change.fields),
       notify,
+      // The event id derives from the op id, so a re-sent create meets 409, not a duplicate.
+      newRemoteId: await eventIdForOp(cal.accountId, args.opId),
     });
     return savedEvent(ctx, args.opId, result, cal.accountId, cal.remoteId);
   }
   const ref = parseEventIdIn(change.id, accountIds(ctx));
-  if (change.type === 'destroy') {
-    const result = await ctx.services.calendar.remove(ref.accountId, {
-      calendarRemoteId: ref.calRemote,
-      remoteId: ref.remote,
-      ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
-      scope: change.scope,
-      notify,
-    });
-    if (result.kind === 'conflict')
-      throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
-    auditCall(ctx, 'Event/set', args.opId);
-    return { receipt: receipt(ctx, args.opId) };
-  }
-  const result = await ctx.services.calendar.put(ref.accountId, {
+  writableCalendar(ctx, ref.accountId, ref.calRemote);
+  const etag = baseEtag(ctx, ref, change.scope);
+  const target = {
     calendarRemoteId: ref.calRemote,
     remoteId: ref.remote,
     ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+    ...(etag ? { etag } : {}),
+  };
+  if (change.type === 'destroy') {
+    const result = await ctx.services.calendar.remove(ref.accountId, {
+      ...target,
+      scope: change.scope,
+      notify,
+    });
+    if (result.kind === 'conflict') throw changedElsewhere();
+    auditCall(ctx, 'Event/set', args.opId);
+    return { receipt: receipt(ctx, args.opId) };
+  }
+  const fields = toPortFields(change.fields);
+  // A 'series' edit opened from one occurrence carries that occurrence's new times; the series must move by
+  // the DELTA, not to the occurrence's absolute times (MED, #394: a naive patch would drag the whole series
+  // to the clicked instance's slot).
+  if (change.scope === 'series' && ref.recurrenceId)
+    rebaseSeriesTimes(ctx, { ...ref, recurrenceId: ref.recurrenceId }, fields);
+  const result = await ctx.services.calendar.put(ref.accountId, {
+    ...target,
     scope: change.scope,
-    fields: toPortFields(change.fields),
+    fields,
     notify,
   });
   return savedEvent(ctx, args.opId, result, ref.accountId, ref.calRemote);
+}
+
+/**
+ * Rebase `fields.start`/`end` onto the master when a series edit was opened from one occurrence: the user's
+ * new times describe THE OCCURRENCE, so the master's stored times shift by the same delta (keeps the
+ * master's own slot, duration and zone). `utc` and `date` times rebase; a `floating` time passes through.
+ */
+/**
+ * A series time change that cannot be moved by an offset: the whole series would land on the clicked occurrence's slot,
+ * silently corrupting every future event, so it is refused with a plain sentence instead.
+ */
+const seriesTimeRefusal = () =>
+  new ContractError({
+    type: 'unsupported',
+    message: 'Edit the first event of the series to change the time of every event.',
+    reasonCode: 'calendar.floatingSeries',
+  });
+
+interface RebaseBase {
+  master: { start_utc: number; end_utc: number; zone?: string };
+  occStart: number;
+  occEnd: number;
+}
+
+/** The master's and the occurrence's stored times, the base every rebase measures from. */
+function rebaseBase(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+): RebaseBase {
+  const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
+  if (!stored || stored.start_utc === null || stored.end_utc === null) throw notFoundEvent();
+  let masterZone: string | undefined;
+  try {
+    const start = (JSON.parse(stored.data) as { start?: { timeZone?: unknown } }).start;
+    masterZone = typeof start?.timeZone === 'string' ? start.timeZone : undefined;
+  } catch {
+    masterZone = undefined;
+  }
+  const master = {
+    start_utc: stored.start_utc,
+    end_utc: stored.end_utc,
+    ...(masterZone ? { zone: masterZone } : {}),
+  };
+  const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
+  const occStart =
+    occ?.start_utc ??
+    instant(recurrenceIdToTime(ref.recurrenceId), zone(ctx, ref.accountId, ref.calRemote));
+  // The occurrence's own end: a stored override's, else its slot (the master's span from its start).
+  const occEnd = occ?.end_utc ?? occStart + (master.end_utc - master.start_utc);
+  return { master, occStart, occEnd };
+}
+
+function rebaseSeriesTimes(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
+  const end = fields.end;
+  if (!start && !end) return;
+  // Mixed kinds (a utc start with a date end) describe nothing a single offset can move.
+  if (start && end && start.type !== end.type) throw seriesTimeRefusal();
+  const kind = (start ?? end)!.type;
+  if (kind === 'floating') return rebaseZoned(ctx, ref, fields);
+  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
+  if (kind === 'utc') rebaseUtc(master, occStart, occEnd, fields);
+  else rebaseAllDay(master, occStart, occEnd, fields);
+}
+
+/**
+ * Zoned wall-clock times (what the Calendar screen sends for a Google timed event). The shift is measured in the zone's
+ * WALL CLOCK, not in elapsed time, so an occurrence moved across a daylight-saving change keeps the clock time the
+ * owner picked: 10:00 stays 10:00 on the master's own day. Refused: a time with no zone, a zone Aplos does not know,
+ * a start and an end in different zones, and a zone other than the master's (the series would be rewritten into it).
+ */
+function rebaseZoned(
+  ctx: MethodContext,
+  ref: { accountId: string; calRemote: string; remote: string; recurrenceId: string },
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start?.type === 'floating' ? fields.start : undefined;
+  const end = fields.end?.type === 'floating' ? fields.end : undefined;
+  const tz = (start ?? end)?.timeZone;
+  if (!tz || !isKnownZone(tz) || (start && end && start.timeZone !== end.timeZone))
+    throw seriesTimeRefusal();
+  const { master, occStart, occEnd } = rebaseBase(ctx, ref);
+  if (master.zone && master.zone !== tz) throw seriesTimeRefusal();
+  const wall = (local: string) => Date.parse(`${local}Z`);
+  const local = (ms: number): PortFields['start'] => ({
+    type: 'floating',
+    local: new Date(ms).toISOString().slice(0, 19),
+    timeZone: tz,
+  });
+  const masterStart = toWall(master.start_utc, tz);
+  const masterEnd = toWall(master.end_utc, tz);
+  const shift = start ? wall(start.local) - toWall(occStart, tz) : 0;
+  const newStart = masterStart + shift;
+  // A start move applies the owner's new span from the shifted start; an end-only resize shifts the master's end by
+  // how far the occurrence's own end moved; an unchanged end rides the start shift.
+  const newEnd = end
+    ? start
+      ? newStart + (wall(end.local) - wall(start.local))
+      : masterEnd + (wall(end.local) - toWall(occEnd, tz))
+    : masterEnd + shift;
+  fields.start = local(newStart);
+  fields.end = local(newEnd);
+}
+
+/** The `utc` rebasing: whole milliseconds against the master and occurrence's stored epochs. */
+function rebaseUtc(
+  master: { start_utc: number; end_utc: number },
+  occStart: number,
+  occEnd: number,
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
+  const end = fields.end;
+  const delta = start?.type === 'utc' ? start.utc - occStart : 0;
+  const newStart = master.start_utc + delta;
+  fields.start = { type: 'utc', utc: newStart };
+  // A start move applies the user's new span from the shifted start; an end-only resize shifts the
+  // master's end by the delta to the occurrence's own end; an unchanged end rides the start delta.
+  fields.end =
+    end?.type === 'utc'
+      ? {
+          type: 'utc',
+          utc:
+            start?.type === 'utc'
+              ? newStart + (end.utc - start.utc)
+              : master.end_utc + (end.utc - occEnd),
+        }
+      : { type: 'utc', utc: master.end_utc + delta };
+}
+
+/** The all-day `date` rebasing: whole days against the stored epoch midnights. */
+function rebaseAllDay(
+  master: { start_utc: number; end_utc: number },
+  occStart: number,
+  occEnd: number,
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
+  const end = fields.end;
+  const day = 86_400_000;
+  const dateMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
+  const iso = (epoch: number) => new Date(epoch).toISOString().slice(0, 10);
+  const deltaMs =
+    start?.type === 'date' ? Math.round((dateMs(start.date) - occStart) / day) * day : 0;
+  const newStartMs = master.start_utc + deltaMs;
+  fields.start = { type: 'date', date: iso(newStartMs) };
+  fields.end =
+    end?.type === 'date'
+      ? {
+          type: 'date',
+          date: iso(
+            start?.type === 'date'
+              ? newStartMs + (dateMs(end.date) - dateMs(start.date))
+              : master.end_utc + Math.round((dateMs(end.date) - occEnd) / day) * day,
+          ),
+        }
+      : { type: 'date', date: iso(master.end_utc + deltaMs) };
 }
 
 async function savedEvent(
@@ -322,8 +534,7 @@ async function savedEvent(
   accountId: string,
   calRemote: string,
 ): Promise<Output<'Event/set'>> {
-  if (result.kind === 'conflict')
-    throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  if (result.kind === 'conflict') throw changedElsewhere();
   auditCall(ctx, 'Event/set', opId);
   // The port committed the saved facts; read the first upsert back for the response. A saved override's
   // contract id names its master plus the recurrence key (`masterRemoteId ?? remoteId`, then `@recId`).
@@ -337,19 +548,21 @@ async function savedEvent(
 
 async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Output<'Event/rsvp'>> {
   const ref = parseEventIdIn(args.id, accountIds(ctx));
+  writableCalendar(ctx, ref.accountId, ref.calRemote);
+  const etag = baseEtag(ctx, ref, args.scope);
   const result = await ctx.services.calendar.rsvp(
     ref.accountId,
     {
       calendarRemoteId: ref.calRemote,
       remoteId: ref.remote,
       ...(ref.recurrenceId ? { recurrenceId: ref.recurrenceId } : {}),
+      ...(etag ? { etag } : {}),
       scope: args.scope,
     },
     args.response,
     { notify: args.notify ?? true },
   );
-  if (result.kind === 'conflict')
-    throw new ContractError({ type: 'conflict', message: 'This event changed elsewhere.' });
+  if (result.kind === 'conflict') throw changedElsewhere();
   auditCall(ctx, 'Event/rsvp', args.opId);
   return receipt(ctx, args.opId);
 }

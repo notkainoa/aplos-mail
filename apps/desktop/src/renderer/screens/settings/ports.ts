@@ -41,7 +41,7 @@ export interface SettingsData {
   readonly queue?: readonly QueueEntry[];
   /** The diagnostics preview, once asked for. */
   readonly bundle?: BundleInfo;
-  /** Verbose logging, once the owner turned it on here: `until` is when the engine switches it off by itself. The engine has no read for it, so a fresh screen starts at off. */
+  /** Verbose logging as the engine last said: `until` is when it switches itself off. Read when Help opens, and set when the owner flips the switch. */
   readonly verbose?: { readonly until?: number };
   /** `Calendar/get`'s list, loaded while the accounts or calendar section is open; undefined until it answers. */
   readonly calendars?: readonly Calendar[];
@@ -88,6 +88,8 @@ export interface SettingsApiPort {
   diagnosticsSave(): Promise<SaveResult>;
   /** `Diagnostics/verbose {on}`: the answer carries when it switches itself off. */
   verboseSet(on: boolean): Promise<{ until?: number }>;
+  /** `Diagnostics/verbose` with no `on`: a query that answers the current switch-off time and changes nothing. */
+  verboseGet(): Promise<{ until?: number }>;
   /** `Data/export`, then main's save dialog (`File/save`). */
   dataExport(): Promise<SaveResult>;
   queueRetry(id: string): Promise<void>;
@@ -129,6 +131,9 @@ export interface SettingsHost {
 /** Where a failed write goes: one inline line with Retry, the control back at its old value. */
 export interface WriteFailure {
   readonly op: string;
-  retry(): void;
+  /** A whole sentence in place of "Couldn't <op>.", for a failure whose outcome could not be confirmed. */
+  readonly line?: string;
+  /** Absent when a second try could repeat a write that may already have landed: then the line draws no Retry. */
+  retry?(): void;
   dismiss(): void;
 }

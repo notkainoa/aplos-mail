@@ -128,6 +128,10 @@ const lazyModules = [
   // calendar-capable adapter pay for it.
   join(src, 'sync', 'actor-calendar.ts'),
   join(src, 'sync', 'calendar-facts.ts'),
+  // Calendar writes are rare: the port that runs them (and its error mapping) loads on the first write via
+  // `import()` in calendar/write-target.ts.
+  join(src, 'calendar', 'write-port.ts'),
+  join(src, 'calendar', 'write-errors.ts'),
 ];
 // Whole folders that are lazy: eng-ai's implementation (ask loop, jobs runner, prompts, usage) is reached only through
 // `import()` from the thin dispatchers in `ai/module.ts` and `methods/`, so a new file there needs no entry above.

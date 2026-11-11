@@ -33,6 +33,7 @@ function size(over: Record<string, unknown> = {}, event: Partial<ReportEvent> = 
       bg: 'rgb(244, 239, 230)',
       ready: true,
       marks: 0,
+      plain: false,
       ...over,
     },
     ...event,
@@ -40,18 +41,28 @@ function size(over: Record<string, unknown> = {}, event: Partial<ReportEvent> = 
 }
 
 describe('acceptReport', () => {
+  test('plain: the seventh field is a boolean; an older reporter’s six fields mean not plain; anything else is refused', () => {
+    assert.equal(acceptReport(size({ plain: true }), expect)?.plain, true);
+    const { plain: _plain, ...six } = size().data as Record<string, unknown>;
+    assert.equal(acceptReport(size({}, { data: six }), expect)?.plain, false);
+    for (const plain of ['true', 1, null, {}, []])
+      assert.equal(acceptReport(size({ plain }), expect), null, JSON.stringify(plain));
+  });
+
   test("accepts the reporter's message from the frame", () => {
     assert.deepEqual(acceptReport(size(), expect), {
       height: 812,
       bg: '#f4efe6',
       ready: true,
       marks: 0,
+      plain: false,
     });
     assert.deepEqual(acceptReport(size({ ready: false, marks: 3 }), expect), {
       height: 812,
       bg: '#f4efe6',
       ready: false,
       marks: 3,
+      plain: false,
     });
   });
 

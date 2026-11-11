@@ -215,6 +215,26 @@ test('verbose writes the 15-minute flag the host reads, deletes it on off, survi
   }
 });
 
+test('a listener can switch verbose off but never on or extend', async () => {
+  const w = await world();
+  try {
+    await w.call('Diagnostics/verbose', { on: true });
+    const admin = w.asClient('c4', ['read', 'admin']);
+    await assert.rejects(
+      admin.call('Diagnostics/verbose', { on: true }),
+      (e: { type?: string }) => e.type === 'forbidden',
+      'a tool cannot open or stretch the noisy window',
+    );
+    // Off stays allowed for any admin listener — it only ever shrinks the log.
+    await admin.call('Diagnostics/verbose', { on: false });
+    const flag = w.db.prepare("SELECT value FROM meta WHERE key = 'verbose_until'").get() as
+      { value: string } | undefined;
+    assert.equal(flag, undefined);
+  } finally {
+    await w.engine.close();
+  }
+});
+
 test('the log level thunk turns debug on for exactly the verbose window', () => {
   const clock = manualClock();
   let verboseUntil = 0;
@@ -249,4 +269,126 @@ test('a level thunk that answers garbage reads as info, never throws', () => {
   });
   log.event('sync.gmail.request', { method: 'x', durationMs: 1 });
   assert.equal(records.length, 0, 'an unknown level is info, so debug stays off');
+});
+
+test('checkBundle accepts a fully populated bundle and rejects smuggled fields', async () => {
+  const { checkBundle } = await import('../../src/diag/bundle/build');
+  const full = {
+    generatedAt: 1,
+    versions: {
+      app: '0.1.0 (build 42)',
+      api: 1,
+      schema: 7,
+      sqlite: '3.46',
+      os: 'macOS 26',
+      electron: '37',
+    },
+    engine: { state: 'ready', uptimeMs: 5, eventLoopP99Ms: 1.5, parkedReason: 'sleep' },
+    accounts: [
+      {
+        accountHash: 'a'.repeat(16),
+        provider: 'google',
+        state: 'ok',
+        reasonCode: 'auth.expired',
+        cursorAgeMs: 10,
+        lastSyncAt: 9,
+        reconnectBy: 99,
+        budgets: [
+          {
+            budget: 'google.rate',
+            target: 2.5,
+            unitsPerMinute: 55.5,
+            cooldownUntil: 4,
+            dailyBlockUntil: 6,
+          },
+        ],
+      },
+    ],
+    queues: { ops: 1, jobs: 2, submissions: 3, failed: 4 },
+    errors: [
+      {
+        at: 3,
+        error: {
+          class: 'permission',
+          provider: 'google',
+          method: 'sync.pull',
+          reason: 'rate.limited',
+          status: 429,
+          code: 'quota',
+          retryAfterMs: 30.5,
+          resumeAt: 40.25,
+          concurrency: true,
+          uncertain: false,
+          missingScopes: ['mail.read', 'calendar'],
+        },
+      },
+    ],
+    storage: { dbBytes: 1, walBytes: 2, ftsBacklog: 3, bodyBytes: 4, attachmentBytes: 5 },
+    crashes: { count: 1, lastAt: 2 },
+  };
+  checkBundle(full as never); // every field the strict schema knows passes
+  parseDiagnosticsBundle(full as never); // and the strict parse agrees
+  const bad = (mutate: (b: Record<string, unknown>) => void) => {
+    const copy = JSON.parse(JSON.stringify(full)) as Record<string, unknown>;
+    mutate(copy);
+    assert.throws(() => checkBundle(copy as never));
+  };
+  bad(b => ((b.engine as Record<string, unknown>).note = 'x'));
+  bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).email = 'a@b.c'));
+  bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).accountHash = 'not-hex!'));
+  bad(b => ((b.storage as Record<string, unknown>).dbBytes = 1.5));
+  bad(b => ((b.storage as Record<string, unknown>).dbBytes = -5));
+  bad(b => ((b.crashes as Record<string, unknown>).count = -1));
+  bad(b => ((b.engine as Record<string, unknown>).state = 'has space'));
+  bad(
+    b =>
+      ((
+        ((b.errors as unknown[])[0] as Record<string, unknown>).error as Record<string, unknown>
+      ).providerMessage = 'provider said secret'),
+  );
+});
+
+test('verbose with no argument reads the stored deadline — window and listener both', async () => {
+  const w = await world();
+  try {
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'unset reads empty');
+    await w.call('Diagnostics/verbose', { on: true });
+    const want = w.clock.now() + 15 * 60_000;
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), { until: want });
+    const admin = w.asClient('c5', ['read', 'admin']);
+    assert.deepEqual(await admin.call('Diagnostics/verbose', {}), { until: want });
+    // The read is a query, not a write — a listener reading must leave no audit row.
+    const reads = w.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM audit_log WHERE method = 'Diagnostics/verbose' AND client_id = 'c5'",
+      )
+      .get() as { n: number };
+    assert.equal(reads.n, 0, 'a verbose read audits nothing');
+    await w.call('Diagnostics/verbose', { on: false });
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {});
+    // A planted deadline past the window reads as off, not as an impossible deadline.
+    w.db
+      .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('verbose_until', ?)")
+      .run(String(w.clock.now() - 1));
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'expired reads off');
+    w.db
+      .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('verbose_until', ?)")
+      .run(String(w.clock.now() + 60 * 60_000));
+    assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'beyond the window reads off');
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('a missing install salt refuses the bundle rather than emitting derivable hashes', async () => {
+  const w = await world();
+  try {
+    w.db.prepare("DELETE FROM meta WHERE key = 'install_salt'").run();
+    await assert.rejects(
+      w.call('Diagnostics/preview', {}),
+      (e: { type?: string }) => e.type === 'internal',
+    );
+  } finally {
+    await w.engine.close();
+  }
 });

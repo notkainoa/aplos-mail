@@ -70,7 +70,18 @@ function rig(scopes: string[]) {
   w.store.commit({
     opId: 'grant',
     origin: 'system',
-    writes: [{ kind: 'account', id: ACCOUNT, grantedScopes: scopes, capabilities: caps(true) }],
+    writes: [
+      { kind: 'account', id: ACCOUNT, grantedScopes: scopes, capabilities: caps(true) },
+      ...(['primary', 'holidays'] as const).map(remoteId => ({
+        kind: 'calendar' as const,
+        accountId: ACCOUNT,
+        remoteId,
+        name: remoteId,
+        hidden: false,
+        readOnly: remoteId === 'holidays',
+        selected: true,
+      })),
+    ],
   });
   return { calls, d, w };
 }
@@ -182,4 +193,50 @@ test('an account that is not started is a provable non-write, not a permission g
   } finally {
     await d.cleanup();
   }
+});
+
+test('the port itself refuses a read-only or unknown calendar, for every caller', async () => {
+  const { calls, d, w } = rig([MAIL, CAL_LIST, GOOGLE_CALENDAR_WRITE_SCOPE]);
+  try {
+    await w.host.start(ACCOUNT);
+    await settle();
+    await assert.rejects(
+      w.host.calendarPort.put(ACCOUNT, { ...change, calendarRemoteId: 'holidays' }),
+      (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.readOnly',
+    );
+    await assert.rejects(
+      w.host.calendarPort.put(ACCOUNT, { ...change, calendarRemoteId: 'someone-elses' }),
+      (e: unknown) => e instanceof ContractError && e.type === 'notFound',
+    );
+    assert.equal(calls.put, 0);
+    await w.kill();
+  } finally {
+    await d.cleanup();
+  }
+});
+
+test('a calendar write chunk that fails to load answers a plain error, and the next write loads it again', async () => {
+  const { lazyCalendarPort } = await import('../src/calendar/write-target');
+  const real = await import('../src/calendar/write-port');
+  let loads = 0;
+  const port = lazyCalendarPort(
+    () => undefined,
+    () => {
+      loads += 1;
+      return loads === 1
+        ? Promise.reject(new Error('chunk 404 /secret/path'))
+        : Promise.resolve(real);
+    },
+  );
+  await assert.rejects(
+    port.put(ACCOUNT, change),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.type === 'unavailable' &&
+      e.body.reasonCode === 'calendar.unavailable' &&
+      !JSON.stringify(e.body).includes('secret'),
+  );
+  // Loaded this time: an account that is not started is a provable non-write (the real port answered).
+  await assert.rejects(port.put(ACCOUNT, change), (e: unknown) => e instanceof NotSentError);
+  assert.equal(loads, 2);
 });

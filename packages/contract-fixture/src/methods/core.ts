@@ -290,6 +290,11 @@ export function core(fx: Fixture) {
       };
     },
     'Diagnostics/verbose': ({ on }) => {
+      // No `on` is a pure read of the stored deadline, as in the real engine: nothing is written, an elapsed one reads off.
+      if (on === undefined) {
+        const stored = meta().verboseUntil;
+        return stored !== undefined && stored > fx.now ? { until: stored } : {};
+      }
       const until = on ? fx.now + 15 * 60_000 : undefined;
       fx.write({ kind: 'Diagnostics/verbose' }, tx =>
         tx.put('Meta', clean({ ...meta(), verboseUntil: until })),

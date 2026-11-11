@@ -2,7 +2,9 @@
 // with APLOS_TEST=1 + APLOS_ENGINE=real on a pre-seeded isolated data dir (copy of a signed-in
 // mailbox, .aplos-test marker added by the caller; the run MUTATES it (UI prefs, read state), so pass a
 // disposable copy only), drives every screen over CDP headless and
-// records a screenshot, the visible text and console errors for each. FAILS a screen on the legacy
+// records a screenshot, the visible text and console errors for each. Every DevTools command has an 8 s
+// deadline, so a stale seed that never reaches Home (it opens to onboarding) or a window that never
+// paints fails rows instead of hanging the run; screenshots then drop out and the text checks remain. FAILS a screen on the legacy
 // fatal copy, an 'aplos:invoke' refusal or a 'Couldn't load' state it notices.
 //
 // Usage:
@@ -79,6 +81,7 @@ async function main() {
     ws.addEventListener('error', rej, { once: true });
   });
   let id = 0;
+  let shotWarned = 0;
   const pending = new Map();
   const pageErrors = [];
   ws.addEventListener('message', e => {
@@ -94,10 +97,22 @@ async function main() {
   });
   await send('Runtime.enable');
   await send('Log.enable');
+  // Every DevTools command has a deadline: one that is never answered (a window that cannot paint, a
+  // renderer stuck on a stale seed) resolves to { timedOut: true } after 8 s instead of hanging the
+  // sweep, and is pushed into pageErrors so the row FAILs — an evaluate that timed out returns
+  // undefined, which would otherwise let empty text and a blank-pane check pass.
   function send(method, params = {}) {
     return new Promise(r => {
       const i = ++id;
-      pending.set(i, r);
+      const timer = setTimeout(() => {
+        pending.delete(i);
+        pageErrors.push(`devtools timeout: ${method}`);
+        r({ timedOut: true, method });
+      }, 8000);
+      pending.set(i, m => {
+        clearTimeout(timer);
+        r(m);
+      });
       ws.send(JSON.stringify({ id: i, method, params }));
     });
   }
@@ -147,6 +162,8 @@ async function main() {
     );
   const shot = async name => {
     const s = await send('Page.captureScreenshot', { format: 'png' });
+    if (s.timedOut && !shotWarned++)
+      console.error('sweep: screenshots unavailable (the window did not answer); text checks only');
     if (s.result?.data)
       writeFileSync(join(outDir, 'shots', `${name}.png`), Buffer.from(s.result.data, 'base64'));
   };
@@ -175,8 +192,11 @@ async function main() {
         if(r.x>300&&r.width>0&&r.height>0&&e.children.length===0)n+=(e.textContent||'').trim().length;
       }return n})()`);
     // "Couldn't load" next to the Reconnect copy is the expected state of a seed whose token is dead.
+    // A pane that never reported (paneLen undefined — its evaluate timed out) or a page with no
+    // visible text counts as blank: both mean the screen did not paint.
     const reconnect = /sign in again/i.test(text);
-    const bad = (!reconnect && text.match(BAD)) || (paneLen < 8 ? ['blank pane'] : null);
+    const blank = !text.trim() || !Number.isFinite(paneLen) || paneLen < 8;
+    const bad = (!reconnect && text.match(BAD)) || (blank ? ['blank pane'] : null);
     const refused = output
       .slice(before)
       .join('')

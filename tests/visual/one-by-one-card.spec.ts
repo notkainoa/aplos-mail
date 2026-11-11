@@ -13,11 +13,11 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('one by one: the email card', () => {
-  test('the card holds the subject, the header with Importance, the bell and More, and the pinned bar', async ({
+  test('the card holds the header with the bell, Importance and More, and the pinned bar', async ({
     page,
   }) => {
     await open(page);
-    await expect(page.locator(`${CARD} .ui-thread-message__subject`)).toHaveCount(1);
+    await expect(page.locator(`${CARD} .ui-thread-message__subject`)).toHaveCount(0);
     await expect(page.locator(`${CARD} .aplos-recipients__button`)).toBeVisible();
     await expect(page.locator(`${CARD} button[aria-label="More"]`)).toBeVisible();
     await expect(page.locator(`${CARD} .ui-reader-actions`)).toBeVisible();

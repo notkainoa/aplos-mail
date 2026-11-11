@@ -1,4 +1,3 @@
-import { NotImplementedError } from '@aplos/contract/contract-error';
 import { ProviderError } from '@aplos/engine/ports';
 import type {
   AdapterContext,
@@ -6,10 +5,7 @@ import type {
   CalendarAdapter,
   CalendarFacts,
   CalendarStepResult,
-  CalendarWriteResult,
-  EventChange,
   EventFacts,
-  EventRef,
   EventTime,
   PlanInput,
   PlannedStep,
@@ -18,13 +14,14 @@ import type {
   SyncState,
 } from '@aplos/engine/ports';
 import { RECURRENCE_ID_FORMAT } from '@aplos/engine/ports';
-import { GcalClient, type GcalDeps } from './gcal-client';
+import { createCalendarWrites, type CalendarWriteDeps } from './calendar-write';
+import { GcalClient } from './gcal-client';
 
 /**
  * The `calendar` of the Google adapter (prov-cal, ports.walk.md "Google Calendar (round 1)"): `calendarList` for the
  * list, `events.list` `singleEvents=false` with per-calendar sync tokens on the `gcal` budget. Masters and overrides
  * are returned as facts (`recurrenceId` canonical, `masterRemoteId` the `recurringEventId`, `raw` the provider JSON);
- * expansion is client-side. Writes (`put`, `remove`, `rsvp`) are round 2 — every one rejects `notImplemented`.
+ * expansion is client-side. Writes (`put`, `remove`, `rsvp`) live in `calendar-write.ts`.
  *
  * Which calendars to sync reaches `plan` over `provider_memory['cal.sync']`, written by the engine's calendar-list
  * commit (sync/calendar-facts.ts): the remote ids of the calendars the last list returned as selected and not hidden.
@@ -50,11 +47,12 @@ function jitter(id: string): number {
 const LIST_FIELDS =
   'kind,etag,nextPageToken,nextSyncToken,' +
   'items(id,etag,summary,summaryOverride,timeZone,colorId,accessRole,selected,hidden,primary,deleted)';
-const EVENT_FIELDS =
-  'kind,etag,nextPageToken,nextSyncToken,' +
-  'items(id,etag,iCalUID,status,htmlLink,summary,description,location,colorId,' +
+/** One event's fields: the mask of a single-event read or write, and what a list nests under `items(...)`. */
+const EVENT_ITEM_FIELDS =
+  'id,etag,iCalUID,status,htmlLink,summary,description,location,colorId,' +
   'creator,organizer,start,end,recurrence,recurringEventId,originalStartTime,transparency,visibility,' +
-  'attendees,guestsCanModify,conferenceData,hangoutLink,updated)';
+  'attendees,guestsCanModify,conferenceData,hangoutLink,updated';
+const EVENT_FIELDS = `kind,etag,nextPageToken,nextSyncToken,items(${EVENT_ITEM_FIELDS})`;
 
 // ---------- API JSON shapes (the fields the masks ask for) ----------
 
@@ -317,7 +315,7 @@ function calendarFacts(e: ApiCalendarListEntry): CalendarFacts | undefined {
 
 // ---------- the adapter ----------
 
-export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
+export function createGoogleCalendar(deps: CalendarWriteDeps): CalendarAdapter {
   const client = (ctx: AdapterContext) => new GcalClient(deps, ctx);
 
   /** Parse the `cal.sync` memory: every remembered calendar entry (syncable or not). */
@@ -546,18 +544,6 @@ export function createGoogleCalendar(deps: GcalDeps): CalendarAdapter {
       };
     },
 
-    put(_change: EventChange): Promise<CalendarWriteResult> {
-      return Promise.reject(new NotImplementedError('calendar.put'));
-    },
-
-    remove(
-      _ref: EventRef & { scope: 'occurrence' | 'series' | 'following'; notify?: boolean },
-    ): Promise<CalendarWriteResult> {
-      return Promise.reject(new NotImplementedError('calendar.remove'));
-    },
-
-    rsvp(): Promise<CalendarWriteResult> {
-      return Promise.reject(new NotImplementedError('calendar.rsvp'));
-    },
+    ...createCalendarWrites(deps, { fields: EVENT_ITEM_FIELDS, facts: eventFacts }),
   };
 }

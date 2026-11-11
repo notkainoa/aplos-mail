@@ -12,7 +12,7 @@ import { hashAddress } from '@aplos/engine/diag/redact';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { connectSessionsOf } from '@aplos/engine/sync/connect-sessions';
 import { fakeClock } from '../../../../packages/engine/src/clock/fake';
-import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
+import { composeEngineHost, verboseLevel, type ComposeOptions } from '../../src/host/compose';
 import type { WakeClock } from '../../src/host/power';
 import { openSqlite } from '../../src/host/sqlite';
 import { DraftBridge } from '../prov-gmail/draft-bridge';
@@ -625,4 +625,42 @@ test("compose reaches the engine's own connect sessions: close disposes the map 
     before,
     'compose disposed the map the engine used (a second copy of the module would find nothing)',
   );
+});
+
+test('verboseLevel: deadline survives a restart, stale deadline and store errors stay off, clock setback guarded', async () => {
+  // A planted deadline is honoured until it passes; one >15 min out (clock was set back) is not.
+  const mk = (until: number | undefined) => ({
+    read: ((fn: (q: { get: () => unknown }) => unknown) =>
+      until === undefined
+        ? fn({ get: () => undefined })
+        : fn({ get: () => ({ value: String(until) }) })) as never,
+  });
+  const clock = fakeClock(1_000);
+  const on = verboseLevel(mk(clock.now() + 5_000) as never, clock);
+  assert.equal(on(), 'debug');
+  await clock.set(1_000 + 6_000);
+  assert.equal(on(), 'info', 'past the deadline it is off');
+  const far = verboseLevel(mk(clock.now() + 20 * 60_000) as never, clock);
+  assert.equal(far(), 'info', 'a deadline further than 15 min out is a clock-setback, not verbose');
+  const err = verboseLevel(
+    {
+      read: () => {
+        throw new Error('closed');
+      },
+    } as never,
+    clock,
+  );
+  assert.equal(err(), 'info', 'a store error fails closed');
+  // The ~1 s cache: the row is re-read at most once a second, so within it the old answer stands.
+  let live: number | undefined = clock.now() + 5_000;
+  const mutable = {
+    read: (fn: (q: { get: () => unknown }) => unknown) =>
+      fn({ get: () => (live === undefined ? undefined : { value: String(live) }) }),
+  };
+  const cached = verboseLevel(mutable as never, clock);
+  assert.equal(cached(), 'debug');
+  live = undefined;
+  assert.equal(cached(), 'debug', 'within the cache window the old answer stands');
+  await clock.set(clock.now() + 1_001);
+  assert.equal(cached(), 'info', 'after it, the row is re-read');
 });

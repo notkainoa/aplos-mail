@@ -50,11 +50,11 @@ test('the bell: sent is a bell, none and suppressed a slashed bell, absent no be
   assert.match(unknown, /aria-label="More"/, 'the rest of the header stays');
 });
 
-test('Importance, the bell and More are all there, in that order', () => {
+test('the bell, Importance and More are all there, in that order (owner sketch 2026-11-10)', () => {
   const html = render('sent');
   const at = (text: string) => html.indexOf(text);
-  assert.ok(at('Important') >= 0 && at('Important') < at('aplos-bell'));
-  assert.ok(at('aplos-bell') < at('aria-label="More"'));
+  assert.ok(at('aplos-bell') >= 0 && at('aplos-bell') < at('Important'));
+  assert.ok(at('Important') < at('aria-label="More"'));
 });
 
 test('the ⋯ menu lists Reply all only where the view has it', () => {

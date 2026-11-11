@@ -165,6 +165,13 @@ export function verboseOn(verbose: { readonly until?: number } | undefined, now:
   return verbose !== undefined && (verbose.until === undefined || verbose.until > now);
 }
 
+/** The engine's answer as the screen keeps it: a switch-off time means on; no time means off. */
+export function verboseFrom(answer: {
+  readonly until?: number;
+}): { readonly until?: number } | undefined {
+  return answer.until === undefined ? undefined : { until: answer.until };
+}
+
 /** The verbose-logging row's sentence: what it does, and when it turns itself off. */
 export function verboseLine(verbose: { readonly until?: number } | undefined, now: number): string {
   if (!verboseOn(verbose, now)) return 'Headers only, never mail. Turns off in 15 minutes.';

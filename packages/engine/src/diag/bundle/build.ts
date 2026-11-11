@@ -1,4 +1,5 @@
 import type { DiagnosticsBundle } from '@aplos/contract';
+import { logAddressHashPattern, logCodePattern } from '@aplos/contract/log/events';
 import { cleanCode, hashAddress } from '../redact';
 import { contractError } from '../../runtime/errors';
 import type { EngineServices } from '../../runtime/services';
@@ -55,6 +56,9 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
   return store.read(q => {
     const salt =
       q.get<{ value: string }>("SELECT value FROM meta WHERE key = 'install_salt'")?.value ?? '';
+    // No install salt means every accountHash below is an unsalted digest of a real id — refuse rather
+    // than hand out derivable identifiers (FR-32's "only salted hashes" is a guarantee, not a format).
+    if (salt === '') throw new Error('install_salt is unset');
 
     const accounts = q.all<AccountRow>(
       `SELECT a.id, a.provider, a.status, a.status_reason_code, a.refresh_expires_at,
@@ -140,42 +144,105 @@ export function buildBundle(services: EngineServices, now: number): DiagnosticsB
 
 // ---- the production gate (FR-32): the bundle is checked on every call, not only in dev/tests ----
 
-const HEX16 = /^[0-9a-f]{16}$/;
-const LINE = /^[^\r\n]{0,500}$/;
+/** Version fields carry real strings ('macOS 26.1', '0.1.0 (build 42)'); every other string is a code. */
+const FREE_TEXT = /^bundle\.versions\./;
 
-/** One forbidden-path check: no field named providerMessage or item may exist anywhere in the bundle. */
-const FORBIDDEN_KEYS = new Set(['providerMessage', 'item', 'provider_message']);
+/**
+ * The keys the bundle may carry, per object. Anything the schema grows into is added here AND in
+ * `StrictDiagnosticsBundle`; a key outside the list fails the gate, so a future field cannot smuggle
+ * free text in under a name nobody checked.
+ */
+const ALLOWED: Record<string, ReadonlySet<string>> = {
+  '': new Set([
+    'generatedAt',
+    'versions',
+    'engine',
+    'accounts',
+    'queues',
+    'errors',
+    'storage',
+    'crashes',
+  ]),
+  versions: new Set(['app', 'api', 'schema', 'sqlite', 'os', 'electron']),
+  engine: new Set(['state', 'uptimeMs', 'eventLoopP99Ms', 'parkedReason']),
+  'accounts[]': new Set([
+    'accountHash',
+    'provider',
+    'state',
+    'reasonCode',
+    'cursorAgeMs',
+    'lastSyncAt',
+    'reconnectBy',
+    'budgets',
+  ]),
+  'budgets[]': new Set(['budget', 'target', 'unitsPerMinute', 'cooldownUntil', 'dailyBlockUntil']),
+  'errors[]': new Set(['at', 'error']),
+  error: new Set([
+    'class',
+    'provider',
+    'method',
+    'reason',
+    'status',
+    'code',
+    'retryAfterMs',
+    'resumeAt',
+    'concurrency',
+    'uncertain',
+    'missingScopes',
+  ]),
+  queues: new Set(['ops', 'jobs', 'submissions', 'failed']),
+  storage: new Set(['dbBytes', 'walBytes', 'ftsBacklog', 'bodyBytes', 'attachmentBytes']),
+  crashes: new Set(['count', 'lastAt']),
+};
 
-const checkStrings = (value: unknown, path: string): void => {
+/** Fields the schema types as any number (rates, percentages); everything else must be a safe int. */
+const ANY_NUMBER = new Set([
+  'eventLoopP99Ms',
+  'target',
+  'unitsPerMinute',
+  'retryAfterMs',
+  'resumeAt',
+]);
+
+const checkValue = (value: unknown, path: string, pathKey: string): void => {
   if (typeof value === 'string') {
-    if (path.endsWith('accountHash')) {
-      if (!HEX16.test(value)) throw new Error(`${path}: not a salted hash`);
-    } else if (!LINE.test(value)) throw new Error(`${path}: line too long or multiline`);
+    if (path.endsWith('.accountHash')) {
+      if (!logAddressHashPattern.test(value)) throw new Error(`${path}: not a salted hash`);
+    } else if (!FREE_TEXT.test(path) && !logCodePattern.test(value))
+      throw new Error(`${path}: not a code`);
     return;
   }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) && !Number.isFinite(value))
-      throw new Error(`${path}: not a safe number`);
+    const key = path.slice(path.lastIndexOf('.') + 1);
+    if (!Number.isFinite(value) || (!ANY_NUMBER.has(key) && !Number.isSafeInteger(value)))
+      throw new Error(`${path}: not an allowed number`);
+    // Everything the bundle carries is a count or an epoch — a negative is corruption, not data.
+    if (!ANY_NUMBER.has(key) && (value as number) < 0) throw new Error(`${path}: negative`);
     return;
   }
-  if (Array.isArray(value)) return value.forEach((v, i) => checkStrings(v, `${path}[${i}]`));
+  if (Array.isArray(value)) {
+    const itemKey = `${pathKey}[]`;
+    return value.forEach((v, i) => checkValue(v, `${path}[${i}]`, itemKey));
+  }
   if (value && typeof value === 'object') {
+    const allowed = ALLOWED[pathKey];
+    if (!allowed) throw new Error(`${path}: unknown object`);
     for (const [key, v] of Object.entries(value)) {
-      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}.${key}: forbidden field in a bundle`);
-      checkStrings(v, `${path}.${key}`);
+      if (!allowed.has(key)) throw new Error(`${path}.${key}: not in the bundle`);
+      checkValue(v, `${path}.${key}`, key);
     }
   }
 };
 
 /**
- * The strict production check the host applies in dev (`StrictDiagnosticsBundle`), in a form the
- * zod-free engine can run on every call: every account identity is a 16-hex salted hash, no string is
- * longer or freer than a code-shaped line, and no provider-error or item field exists anywhere. Throws
- * `internal` — a malformed bundle must never leave in production either.
+ * The production check `StrictDiagnosticsBundle` applies in the host, in a form the zod-free engine can run on
+ * every call: the object's keys are exactly the bundle's, every string but `versions.app` is a catalog code,
+ * account identities are 16-hex salted hashes, numbers are safe ints. Throws `internal` — a malformed bundle
+ * must never leave in production either.
  */
 export function checkBundle(bundle: DiagnosticsBundle): void {
   try {
-    checkStrings(bundle, 'bundle');
+    checkValue(bundle, 'bundle', '');
   } catch (error) {
     throw contractError({ type: 'internal', message: String(error) });
   }

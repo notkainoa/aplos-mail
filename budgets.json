@@ -16,7 +16,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.triage-key-to-paint",
@@ -32,7 +32,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.triage-key-to-paint-cap",
@@ -48,7 +48,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.triage-burst",
@@ -65,7 +65,7 @@
       "notes": "Pass or fail check; a 3x margin does not apply to a dropped key.",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.open-cached-letter",
@@ -80,7 +80,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.jk-prefetched",
@@ -95,7 +95,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.palette-open",
@@ -110,7 +110,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.palette-filter",
@@ -125,7 +125,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.scroll-10k-rows",
@@ -141,7 +141,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.cold-start-shell",
@@ -157,7 +157,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "ui.home-interactive",
@@ -173,7 +173,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "dueBy": "2026-11-27"
     },
     {
       "id": "store.first-page",
@@ -343,13 +343,13 @@
       "environment": "packaged build, owner's Mac; collected with ps and top (energy stays a hand check: powermetrics needs sudo)",
       "gate": "record",
       "calibration": "calibrate",
-      "value": null,
-      "unit": null,
+      "value": 123.1,
+      "unit": "MB",
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
-      "maxAgeDays": null,
-      "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-10",
+      "dueBy": "2026-11-27"
     },
     {
       "id": "idle.cpu-10min",
@@ -358,13 +358,13 @@
       "environment": "packaged build, owner's Mac; collected with ps and top (energy stays a hand check: powermetrics needs sudo)",
       "gate": "record",
       "calibration": "calibrate",
-      "value": null,
-      "unit": null,
+      "value": 0.74,
+      "unit": "%",
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
-      "maxAgeDays": null,
-      "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-10",
+      "dueBy": "2026-11-27"
     },
     {
       "id": "idle.wakeups",
@@ -373,13 +373,13 @@
       "environment": "packaged build, owner's Mac; collected with ps and top (energy stays a hand check: powermetrics needs sudo)",
       "gate": "record",
       "calibration": "calibrate",
-      "value": null,
-      "unit": null,
+      "value": 4,
+      "unit": "per s",
       "notes": "Recorded first, then limited so it cannot rise (the gate then becomes tighten-only). No number in the plans.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6 (resident-mode idle row)",
-      "maxAgeDays": null,
-      "lastMeasured": null,
-      "dueBy": "2026-11-13"
+      "maxAgeDays": 30,
+      "lastMeasured": "2026-11-10",
+      "dueBy": "2026-11-27"
     },
     {
       "id": "size.app-bundle",
@@ -692,7 +692,7 @@
       "unit": "ms",
       "stat": "at most",
       "source": "plans/30-ui-revamp.md U9 acceptance 2",
-      "dueBy": "2026-11-13",
+      "dueBy": "2026-11-27",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -707,7 +707,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/30-ui-revamp.md U9 acceptance 2",
-      "dueBy": "2026-11-13",
+      "dueBy": "2026-11-27",
       "maxAgeDays": null,
       "lastMeasured": null
     },

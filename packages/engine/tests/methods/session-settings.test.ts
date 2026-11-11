@@ -56,7 +56,12 @@ test('Session/get: the handshake facts, from the store, the clock and the host',
   assert.deepEqual(session.setup, {});
   assert.equal(session.capabilities.desktop, true, 'the host adds the desktop');
   assert.equal(session.capabilities.mailFrame, true, 'the engine adds its own');
-  assert.equal(session.capabilities.calendarWrite, false, 'and says no to what is not built');
+  assert.equal(
+    session.capabilities.calendarWrite,
+    true,
+    'the engine can write events (each grant decides)',
+  );
+  assert.equal(session.capabilities.remoteSearch, false, 'and says no to what is not built');
   assert.deepEqual(
     session.providers.map(p => [p.kind, p.available]),
     [

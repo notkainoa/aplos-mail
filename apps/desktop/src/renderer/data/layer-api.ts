@@ -51,6 +51,7 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
     blob: {
       put: (args, transfer) => c.blob.put(args, transfer),
       get: args => c.blob.get(args),
+      release: args => c.blob.release(args),
     },
     sync: { request: args => c.sync.request(args) },
     account: {

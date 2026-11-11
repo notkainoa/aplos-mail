@@ -150,17 +150,21 @@ export function calendarListWrites(
   return writes;
 }
 
-/** Everything one `CalendarStepResult` writes, in one commit with its `nextState` (F3, ports.walk.md). */
-export function calendarStepWrites(
-  result: CalendarStepResult,
-  ctx: CalendarWriteContext,
+/**
+ * The event rows and removals of one calendar's facts: a sync step's, or a confirmed write's (no `seenGen`, so the
+ * resync sweep never counts a written row as seen in a round).
+ */
+export function eventFactWrites(
+  accountId: AccountId,
+  calendarRemoteId: string,
+  facts: { upserts: readonly EventFacts[]; removals: readonly string[] },
+  seenGen?: number,
 ): StoreWrite[] {
-  const id = ctx.account.id;
   const writes: StoreWrite[] = [];
   // One row per (remoteId, recurrenceId): the store refuses a repeat within a commit, so a provider
   // listing the same event twice (a page race) keeps the last copy instead of wedging the calendar.
   const byRemote = new Map<string, Map<string, EventRow>>();
-  for (const f of result.upserts) {
+  for (const f of facts.upserts) {
     const rows = byRemote.get(f.remoteId) ?? new Map<string, EventRow>();
     rows.set(f.recurrenceId ?? '', eventRow(f));
     byRemote.set(f.remoteId, rows);
@@ -168,21 +172,25 @@ export function calendarStepWrites(
   for (const [remoteId, rows] of byRemote) {
     writes.push({
       kind: 'event',
-      accountId: id,
-      calendarRemoteId: ctx.calendarRemoteId,
+      accountId,
+      calendarRemoteId,
       remoteId,
       rows: [...rows.values()],
-      seenGen: result.nextState.generation,
+      ...(seenGen !== undefined ? { seenGen } : {}),
     });
   }
-  for (const remoteId of result.removals) {
-    writes.push({
-      kind: 'eventDelete',
-      accountId: id,
-      calendarRemoteId: ctx.calendarRemoteId,
-      remoteId,
-    });
-  }
+  for (const remoteId of facts.removals)
+    writes.push({ kind: 'eventDelete', accountId, calendarRemoteId, remoteId });
+  return writes;
+}
+
+/** Everything one `CalendarStepResult` writes, in one commit with its `nextState` (F3, ports.walk.md). */
+export function calendarStepWrites(
+  result: CalendarStepResult,
+  ctx: CalendarWriteContext,
+): StoreWrite[] {
+  const id = ctx.account.id;
+  const writes = eventFactWrites(id, ctx.calendarRemoteId, result, result.nextState.generation);
   if (result.scopeCovered && result.done) {
     writes.push({
       kind: 'eventSweep',

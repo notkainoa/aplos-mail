@@ -3,7 +3,7 @@
 // Run: npx tsx --test src/renderer/screens/settings/rowFocus.test.ts   (from apps/desktop)
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { focusRowId, focusRowTarget } from './rowFocus';
+import { focusRowId, focusRowTarget, removedRowTarget } from './rowFocus';
 
 /** A minimal stand-in for the few DOM calls the helpers make, so their choices are tested in Node. */
 function fakeRow(labelId: string) {
@@ -49,5 +49,50 @@ describe('focusRowTarget', () => {
     const root = rootWith([fakeRow('set-calendar-calendarPermission-acct-1')]);
     assert.equal(focusRowTarget('set-calendar-calendarPermission-acct-9', root), null);
     assert.equal(focusRowTarget(null, root), null);
+  });
+});
+
+describe('removedRowTarget', () => {
+  test('names the row that moved into the removed row’s place', () => {
+    assert.equal(
+      removedRowTarget(
+        ['set-general-tools-a', 'set-general-tools-b', 'set-general-tools-c'],
+        ['set-general-tools-a', 'set-general-tools-c'],
+        'set-general-addTool',
+      ),
+      'set-general-tools-c',
+      'the next row still standing',
+    );
+    assert.equal(
+      removedRowTarget(
+        ['set-general-tools-a', 'set-general-tools-b'],
+        ['set-general-tools-b'],
+        'set-general-addTool',
+      ),
+      'set-general-tools-b',
+      'the first row leaves the second in its place',
+    );
+  });
+
+  test('falls back to the previous row, then to the group’s stable row', () => {
+    assert.equal(
+      removedRowTarget(
+        ['set-general-tools-a', 'set-general-tools-b'],
+        ['set-general-tools-a'],
+        'set-general-addTool',
+      ),
+      'set-general-tools-a',
+      'the last row leaves the one before it',
+    );
+    assert.equal(
+      removedRowTarget(['set-general-tools-a'], [], 'set-general-addTool'),
+      'set-general-addTool',
+      'an emptied list lands on Add a tool',
+    );
+  });
+
+  test('is null when nothing left the list', () => {
+    assert.equal(removedRowTarget(['a', 'b'], ['a', 'b'], 'add'), null, 'no removal, no move');
+    assert.equal(removedRowTarget(['a'], ['a', 'b'], 'add'), null, 'a growth is not a removal');
   });
 });
