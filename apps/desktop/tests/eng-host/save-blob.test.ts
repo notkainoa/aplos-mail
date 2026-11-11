@@ -8,7 +8,10 @@ import { saveBlob } from '../../src/renderer/screens/settings/SettingsContainer'
  */
 const calls = (canceled: boolean, released: string[]) => ({
   save: () => Promise.resolve({ canceled }),
-  release: (a: { blobId: string }) => (released.push(a.blobId), Promise.resolve({})),
+  release: (a: { blobId: string }) => {
+    released.push(a.blobId);
+    return Promise.resolve({});
+  },
 });
 
 test('a saved export releases its blob; a cancelled dialog keeps it', async () => {
