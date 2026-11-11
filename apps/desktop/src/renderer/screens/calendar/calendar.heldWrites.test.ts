@@ -513,3 +513,46 @@ test('heldWrites: a cancelled frame after a failure takes the failure toast down
     resetToasts();
   }
 });
+
+test('heldWrites: a conflict frame is terminal like a failure — rollback, sentence, watch released', async () => {
+  const { control, flush, engine, opId, ui } = await heldWrite();
+  try {
+    const op = engine.fixture.ops.get(opId)?.operation;
+    assert.ok(op);
+    await control.replay({
+      frames: [
+        {
+          frame: 'operation',
+          operation: {
+            ...op,
+            state: 'conflict',
+            error: {
+              type: 'conflict',
+              message: 'provider conflict',
+              reasonCode: 'calendar.conflict',
+            },
+          },
+        },
+      ],
+    });
+    await flush();
+    assert.deepEqual(ui.dropped, [DINNER], 'the conflict rolls the overlay back like a failure');
+    assert.equal(
+      failedToast()?.message,
+      "This event changed somewhere else. Your changes weren't saved.",
+      'the mapped conflict sentence',
+    );
+    // Terminal: a later frame must not act (the watch was released).
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'cancelled' } }],
+    });
+    await flush();
+    assert.equal(
+      getToasts().filter(t => t.id.endsWith(':failed')).length,
+      1,
+      'still the one failure toast after the watch ended',
+    );
+  } finally {
+    resetToasts();
+  }
+});

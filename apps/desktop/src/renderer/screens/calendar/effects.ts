@@ -410,6 +410,23 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts): void {
       off();
       return;
     }
+    if (remote === 'conflict') {
+      // Terminal like a failure but with no way forward: the same mapped refusal, then the watch ends.
+      writeFailed(
+        spec,
+        ui,
+        ports,
+        {
+          error: view.error ?? {
+            type: 'conflict',
+            message: spec.failure ?? 'Couldn’t send that change.',
+          },
+        },
+        () => retryOperation(ports, spec.opId),
+      );
+      off();
+      return;
+    }
     if (remote === 'syncing' || remote === 'synced' || remote === 'applied') {
       // The undo window is over (a queued hold started sending, or the write went straight to the
       // provider): the held toast becomes the sent line, or goes quietly when the write has none.
