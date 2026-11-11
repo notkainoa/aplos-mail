@@ -765,7 +765,10 @@ const FIXTURES: Record<string, Fixture> = {
     state: { view: 'week', selectedId: 'design' },
     toast: {
       message: "That change wasn't sent in time. Check the event, then send it again.",
-      actions: [{ id: 'retry', label: 'Retry' }],
+      actions: [
+        { id: 'retry', label: 'Retry' },
+        { id: 'dismiss', label: 'Dismiss' },
+      ],
     },
   },
   'write-hold-refused': {

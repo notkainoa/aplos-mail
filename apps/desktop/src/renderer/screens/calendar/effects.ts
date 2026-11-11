@@ -261,25 +261,27 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
 
 /**
  * A failure the provider reported AFTER the receipt (the `operation` frame): persistent — the shell
- * keeps a failure the owner must answer, so an async refusal's Retry is not missed. The Retry sends
- * `Operation/retry` on the same op id, by hand only: a timer would re-send a notifying write to
- * guests with nobody's click behind it (review16).
+ * keeps a failure the owner must answer, so an async refusal's Retry is not missed. A persistent
+ * toast has no close affordance and is never evicted, so every one offers Dismiss — and Retry
+ * first when the mapped failure may still go through (review17). The Retry sends `Operation/retry`
+ * on the same op id, by hand only: a timer would re-send a notifying write to guests with nobody's
+ * click behind it (review16). Dismiss needs no callback of its own: the store closes the toast
+ * once `onAction` returns.
  */
 function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts): void {
   pushToast({
     id: `${opId}:failed`,
     kind: 'info',
     message: failure.message,
-    ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
+    actions: [
+      ...(failure.retry === 'none' ? [] : [{ id: 'retry', label: 'Retry' }]),
+      { id: 'dismiss', label: 'Dismiss' },
+    ],
     undoable: false,
     persistent: true,
-    ...(failure.retry === 'none'
-      ? {}
-      : {
-          onAction: (actionId: string) => {
-            if (actionId === 'retry') retryOperation(ports, opId);
-          },
-        }),
+    onAction: (actionId: string) => {
+      if (actionId === 'retry') retryOperation(ports, opId);
+    },
   });
 }
 

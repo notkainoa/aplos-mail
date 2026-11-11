@@ -18,7 +18,7 @@ import { harnessClock } from '../../data/clock';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import type { EventChange } from '@aplos/contract';
 import type { OperationView, Receipt } from '../../data';
-import { getToasts, resetToasts } from '../../shell/store-toast';
+import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import { runCalendarEffect, type EffectPorts } from './effects';
 import type { CalendarEffect } from './calendar.model';
 import { NOW, ports, resetWrites, settle, testUi } from './calendar.testkit';
@@ -127,8 +127,29 @@ const watchedPorts = (): EffectPorts => ({
   watchOperation: (opId, listener) => subscribeOperation(opId, listener),
 });
 
+const heldFailure = (reasonCode: string) => ({
+  mode: 'afterReceipt' as const,
+  type: 'unavailable',
+  message: 'engine words',
+  reasonCode,
+  afterMs: 500,
+});
+
 const failedToast = () => getToasts().find(t => t.id.endsWith(':failed'));
 const toastFor = (opId: string) => getToasts().find(t => t.id === opId);
+
+/** A held write on the guested event through the real stand-in; its operation id once confirmed. */
+async function heldWrite(fail?: ReturnType<typeof heldFailure>) {
+  const env = await bootRecorded();
+  resetToasts();
+  if (fail) env.engine.fixture.failures.push(fail);
+  const ui = testUi();
+  runCalendarEffect(guestedFx('one'), watchedPorts(), ui);
+  await env.flush();
+  const peek = undoStack.peek();
+  assert.ok(peek?.kind === 'operation', 'the held write joined the undo stack');
+  return { ...env, ui, opId: peek.opId };
+}
 
 test('review17: a forgotten op rolls back, frees the event and closes the held Undo toast', async () => {
   const env = await bootRecorded();
@@ -190,6 +211,50 @@ test('review17: an op that has not arrived yet is not forgotten — the watch st
       }),
     );
     assert.ok(failedToast(), 'the watch lived to see the op-level failure');
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
+
+test('review17: a non-retryable op failure still offers Dismiss — never pinned forever', async () => {
+  const { control, flush } = await heldWrite(heldFailure('calendar.forbidden'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    const toast = failedToast();
+    assert.equal(
+      toast?.message,
+      'Only the organizer can change this event.',
+      'the mapped sentence',
+    );
+    assert.equal(toast?.persistent, true, 'a failure the owner must answer never times out');
+    // A persistent toast has no close affordance and is never evicted: without a verb it would
+    // stay pinned until the app restarts. Dismiss is that verb — a plain one, no retry implied.
+    assert.deepEqual(
+      toast?.actions?.map(a => a.id),
+      ['dismiss'],
+    );
+    runToastAction(toast!.id, 'dismiss');
+    assert.equal(failedToast(), undefined, 'the owner can put it away');
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
+
+test('review17: a retryable op failure offers Retry and Dismiss', async () => {
+  const { control, flush } = await heldWrite(heldFailure('calendar.late'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    const toast = failedToast();
+    assert.equal(toast?.persistent, true);
+    assert.deepEqual(
+      toast?.actions?.map(a => a.id),
+      ['retry', 'dismiss'],
+      'Retry stays first; the owner can also decline it',
+    );
   } finally {
     resetWrites();
     resetToasts();

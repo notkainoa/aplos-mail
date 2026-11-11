@@ -343,7 +343,8 @@ test('review16: an operation-level failure stays until dealt with and retries on
     assert.equal(toast?.persistent, true, 'a failure the owner must answer never times out');
     assert.deepEqual(
       toast?.actions?.map(a => a.label),
-      ['Retry'],
+      ['Retry', 'Dismiss'],
+      'Retry sends the hold; Dismiss is the way out a persistent toast must always offer (review17)',
     );
     runToastAction(toast!.id, 'retry');
     assert.equal(retries.length, 1, 'the click runs Operation/retry on the same op id');
