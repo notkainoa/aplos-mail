@@ -2,6 +2,7 @@ import type { KeyboardEvent } from 'react';
 import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
 import { Btn } from './parts';
+import { recipientKey } from './recipientKeys';
 
 /** The To field's placeholder while it holds no one (owner review 2026-11-03); Cc and Bcc stay bare. */
 const TO_PLACEHOLDER = 'Add a name or email';
@@ -60,23 +61,20 @@ export function RecipientField(props: RecipientFieldProps) {
     open && activeSuggestionId ? `${listboxId}-${activeSuggestionId}` : undefined;
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.nativeEvent.isComposing) return;
-    // ⌘Return and Ctrl+Return send the message; they never pick a suggestion.
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) return;
-    if (event.key === 'Enter') {
-      if (activeSuggestionId && open) {
-        event.preventDefault();
-        onPickSuggestion?.(activeSuggestionId);
-      } else if (query.trim()) {
-        event.preventDefault();
-        onCommit(query);
-      }
-    } else if ((event.key === ',' || event.key === ';') && query.trim()) {
-      event.preventDefault();
-      onCommit(query);
-    } else if (event.key === 'Backspace' && query === '' && recipients.length > 0) {
-      onRemove(recipients[recipients.length - 1].id);
-    }
+    const action = recipientKey(
+      {
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        isComposing: event.nativeEvent.isComposing,
+      },
+      { query, recipients, open, activeSuggestionId },
+    );
+    if (!action) return;
+    if (action.type === 'remove') return onRemove(action.id);
+    event.preventDefault();
+    if (action.type === 'pick') onPickSuggestion?.(action.id);
+    else onCommit(query);
   }
 
   return (

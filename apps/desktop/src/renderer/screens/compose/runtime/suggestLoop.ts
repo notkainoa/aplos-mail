@@ -3,13 +3,12 @@
  * after a newer question (a slow answer for "jo" must never replace the one for "jord"). A failed ask shows nothing:
  * suggestions are a convenience and their absence is quiet (DESIGN 9).
  */
-import { SUGGEST_DEBOUNCE_MS, type SuggestEntry, type SuggestFn } from '../model/suggestions';
-
-/** What was asked: the trimmed text and the From account. */
-export interface SuggestAsked {
-  readonly query: string;
-  readonly accountId: string;
-}
+import {
+  SUGGEST_DEBOUNCE_MS,
+  type SuggestAsked,
+  type SuggestEntry,
+  type SuggestFn,
+} from '../model/suggestions';
 
 export interface SuggestLoopOptions {
   readonly suggest: SuggestFn;
