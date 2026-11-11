@@ -5,7 +5,14 @@
  */
 import { toIsoDateTime, type Draft, type Submission, type ThreadRow } from '../../data';
 import type { LaterUntil, ListRowProps } from '../../ui/props';
-import { listRowProps, primaryOf, senderOf, type RowContext } from '../home/homeRows';
+import {
+  joinNames,
+  listRowProps,
+  otherNames,
+  primaryOf,
+  senderOf,
+  type RowContext,
+} from '../home/homeRows';
 import type { ListConfig } from './listKinds';
 
 /** A row a mail list can hold. */
@@ -40,19 +47,11 @@ export function openKindOf(row: ListRowData): OpenKind {
   return isSubmission(row) ? 'submission' : 'thread';
 }
 
-const MAX_NAMES = 3;
-
-function joinNames(names: readonly string[]): string {
-  const shown = names.slice(0, MAX_NAMES).join(', ');
-  return names.length > MAX_NAMES ? `${shown} and ${names.length - MAX_NAMES} more` : shown;
-}
-
-/** Sent's who column: the people the thread went to, never the owner. */
+/** Sent's who column: the people the thread went to (the newest message the owner sent), never the owner. */
 export function recipientsOfThread(row: ThreadRow): string {
-  const names = row.participants
-    .filter(person => person.me !== true)
-    .map(person => (person.name || person.address || '').trim())
-    .filter(name => name.length > 0);
+  const to = otherNames(row.recipients);
+  if (to.length > 0) return joinNames(to);
+  const names = otherNames(row.participants);
   return names.length > 0 ? joinNames(names) : senderOf(row);
 }
 

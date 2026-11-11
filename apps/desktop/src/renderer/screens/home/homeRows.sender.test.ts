@@ -92,3 +92,42 @@ test("a colleague who shares the owner's display name is still a sender; the sof
     'LeahOkafor',
   );
 });
+
+// ThreadRow.recipients (the newest message the owner sent: To and Cc) names who a thread the owner wrote waits on.
+function sentThread(recipients: readonly { name?: string; address?: string; me?: boolean }[]) {
+  return {
+    subject: 'Dinner at 7?',
+    fromName: ME.name,
+    participants: [ME],
+    recipients,
+  } as unknown as ThreadRow;
+}
+
+test('a thread the owner wrote names who it waits on, never the owner', () => {
+  const owen = { name: 'Owen Park', address: 'owen@example.test' };
+  assert.equal(senderOf(sentThread([owen])), 'Owen Park');
+  assert.equal(senderOf(sentThread([{ address: 'owen@example.test' }])), 'owen@example.test');
+  assert.equal(
+    senderOf(sentThread([ME, owen])),
+    'Owen Park',
+    'the owner in Cc of their own message is skipped',
+  );
+  const crowd = ['Ada', 'Ben', 'Cleo', 'Dev', 'Eve'].map(name => ({ name }));
+  assert.equal(senderOf(sentThread(crowd)), 'Ada, Ben, Cleo and 2 more');
+  assert.equal(senderOf(sentThread([{ name: '‮Owen\u0000 Park' }])), 'Owen Park');
+});
+
+test('someone who wrote to the owner still wins over recipients; no recipients keeps the old fallback', () => {
+  const heard = {
+    subject: 'Dinner',
+    fromName: LEAH.name,
+    participants: [LEAH, ME],
+    recipients: [{ name: 'Priya Raman' }],
+  } as unknown as ThreadRow;
+  assert.equal(senderOf(heard), 'Leah Okafor');
+  assert.equal(senderOf(sentThread([])), 'Kainoa Newton');
+  assert.equal(
+    senderOf({ ...sentThread([]), recipients: undefined } as unknown as ThreadRow),
+    'Kainoa Newton',
+  );
+});

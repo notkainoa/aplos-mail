@@ -269,6 +269,24 @@ test('a Sent thread shows the recipients, not the owner', () => {
   assert.equal(listRowPropsFor(row, context(SENT_CONFIG)).sender, 'Studio team, jo@x.example');
 });
 
+test('a Sent thread prefers who the owner sent it to over who else wrote in it', () => {
+  const row = thread({
+    id: 's2',
+    fromName: 'Leah Okafor',
+    participants: [{ name: 'Leah Okafor' }, { name: 'Alex Morgan', me: true }],
+  });
+  const sent = {
+    ...row,
+    recipients: [
+      { name: 'Priya Raman' },
+      { name: 'Alex Morgan', me: true },
+      { address: 'jo@x.example' },
+    ],
+  } as ThreadRow;
+  assert.equal(recipientsOfThread(sent), 'Priya Raman, jo@x.example');
+  assert.equal(listRowPropsFor(sent, context(SENT_CONFIG)).sender, 'Priya Raman, jo@x.example');
+});
+
 test('a Draft row shows recipients, subject and the edited time; an empty draft says so', () => {
   const draft = {
     id: 'd1',
