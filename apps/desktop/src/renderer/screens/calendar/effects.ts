@@ -267,13 +267,28 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
  * on the same op id, by hand only: a timer would re-send a notifying write to guests with nobody's
  * click behind it (review16). Dismiss needs no callback of its own: the store closes the toast
  * once `onAction` returns.
+ *
+ * A grant failure keeps its own verb beside Retry (review18): `reconnect` runs the same sign-in
+ * the sidebar's account row does, `enable` asks for the write scope — no account behind the write
+ * means the line alone, never an action that opens nothing.
  */
-function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts): void {
+function opFailureToast(
+  opId: string,
+  failure: WriteFailure,
+  ports: EffectPorts,
+  accountId?: string,
+): void {
   pushToast({
     id: `${opId}:failed`,
     kind: 'info',
     message: failure.message,
     actions: [
+      ...(failure.reconnect === true && accountId !== undefined
+        ? [{ id: 'reconnect', label: CALENDAR_ACCESS_COPY.signIn }]
+        : []),
+      ...(failure.enableEditing === true && accountId !== undefined
+        ? [{ id: 'enable', label: EDITING_COPY.action }]
+        : []),
       ...(failure.retry === 'none' ? [] : [{ id: 'retry', label: 'Retry' }]),
       { id: 'dismiss', label: 'Dismiss' },
     ],
@@ -281,6 +296,16 @@ function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts)
     persistent: true,
     onAction: (actionId: string) => {
       if (actionId === 'retry') retryOperation(ports, opId);
+      else if (actionId === 'reconnect' && accountId !== undefined) ports.reconnect(accountId);
+      else if (actionId === 'enable' && accountId !== undefined)
+        void ports.enableEditing(accountId).then(undefined, error => {
+          pushToast({
+            id: newOpId(),
+            kind: 'info',
+            message: toErrorBody(error).message,
+            undoable: false,
+          });
+        });
     },
   });
 }
@@ -426,13 +451,20 @@ function retryOperation(ports: EffectPorts, opId: string): void {
   // A stale Retry — the owner already sent the event again — answers nothing (review17).
   if (staleRetries.has(opId)) return;
   void ports.operationRetry({ opId }).then(undefined, error => {
-    const body = toErrorBody(error);
-    // A refused retry keeps the surface it came from — persistent with its Retry and Dismiss —
-    // showing the refusal's own sentence in place of the first failure's. An actionless toast
-    // would fade 4 s later and leave the failed send invisible (review17).
+    const body = bodyOf(error);
+    // A refused retry keeps the surface it came from — persistent, showing the refusal's own
+    // sentence in place of the first failure's. An actionless toast would fade 4 s later and
+    // leave the failed send invisible (review17). Terminal refusals — the op was undone, already
+    // sent, dropped from the queue, or must be checked by hand (conflict incl.
+    // calendar.checkFirst, notFound) — get Dismiss only: a Retry that can never succeed is worse
+    // than none. Transient refusals (unavailable, unknown) keep it (review18).
+    const terminal = body.type === 'conflict' || body.type === 'notFound';
     opFailureToast(
       opId,
-      { message: body.message || 'Couldn’t send that change.', retry: 'operation' },
+      {
+        message: body.message || 'Couldn’t send that change.',
+        retry: terminal ? 'none' : 'operation',
+      },
       ports,
     );
   });
@@ -517,15 +549,20 @@ function writeFailed(
     failure.keepDraft === true &&
     spec.draft !== undefined &&
     ui.restoreEditor(spec.draft, failure.message);
-  if (failure.enableEditing) editingNotice(ports, spec.accountId);
-  else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
-  else if (!reopened && !restored)
-    if (atOperation) {
-      opFailureToast(spec.opId, failure, ports);
+  if (atOperation) {
+    // After the receipt every refusal is a failure the owner must answer — including a dead
+    // grant or a missing write scope: the persistent op toast says the change is still owed and
+    // keeps the grant verb beside the Operation/retry (review18). A refusal the editor already
+    // carries (re-opened or restored draft) needs no toast of its own.
+    if (!reopened && !restored) {
+      opFailureToast(spec.opId, failure, ports, spec.accountId);
       // Register the open failure by its event: a newer write on it retires this toast and its
       // Retry, so a stale Operation/retry can never replay the old change (review17).
       rememberFailedOp(spec);
-    } else failureToast(spec.opId, failure, retry);
+    }
+  } else if (failure.enableEditing) editingNotice(ports, spec.accountId);
+  else if (failure.reconnect) reconnectNotice(ports, spec.accountId);
+  else if (!reopened && !restored) failureToast(spec.opId, failure, retry);
   if (failure.closeDetail && spec.goneEventId !== undefined) ui.closeDetail(spec.goneEventId);
 }
 
@@ -661,9 +698,9 @@ function watchWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, held: boo
 
 /** Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. */
 function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () => void): void {
-  // A newer write on the event retires any still-open failure of an older one: its toast closes
-  // and its Retry disarms before this write ever lands (review17).
-  retireFailedOps(spec.goneEventId);
+  // A newer write on the event retires any still-open failure of an older one — but only once
+  // THIS write's receipt is accepted (below): retiring at submit would leave the owner with
+  // neither the old failure toast nor a successful new write when this one is rejected (review18).
   // A write that can be held guards its target from SUBMIT, not from the receipt: a second press
   // inside one round trip fails fast — two full writes interleaved in the engine's hold queue
   // would tell guests twice (review17). Only where a watch exists to end the guard, else nothing
@@ -677,6 +714,9 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       // The screen unmounted inside the round trip: the late receipt registers nothing — no
       // settle, no mark, no watch nothing could cancel (review17).
       if (epoch !== writesEpoch) return;
+      // The write was accepted: now it retires the event's older open failures — the old toast
+      // closes and its Retry disarms (review18).
+      retireFailedOps(spec.goneEventId);
       // A held write never settles at its receipt: the hold's own commit does not advance seq, so
       // `appliedState` is already reached and the frame test would drop the patch at once — the
       // change would snap back for the whole undo window. It settles at `synced` (then on the

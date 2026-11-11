@@ -171,14 +171,30 @@ export function writeFailureOf(
 ): WriteFailure {
   const body = bodyOf(error);
   if (body.reasonCode === 'permission.calendarWrite')
-    return { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
-  // A dead grant signs in again before anything writes — never retried, however it arrives.
+    return atOperation
+      ? {
+          // The write was accepted — only its send is owed: Enable editing, then
+          // Operation/retry on the same op id (review18).
+          message: 'Turn on editing to send this change.',
+          retry: 'operation',
+          enableEditing: true,
+        }
+      : { message: EDITING_COPY.notice, retry: 'none', enableEditing: true };
+  // A dead grant signs in again before anything writes. At submit nothing was accepted, so no
+  // retry is offered; after the receipt the engine still holds the failed change, so the
+  // sentence says it is owed and Retry is Operation/retry on the same op id (review18).
   if (body.type === 'needsReauth' || body.reasonCode === 'auth.expired')
-    return {
-      message: 'Sign in to Google again to change events.',
-      retry: 'none',
-      reconnect: true,
-    };
+    return atOperation
+      ? {
+          message: 'Sign in to Google again to send this change.',
+          retry: 'operation',
+          reconnect: true,
+        }
+      : {
+          message: 'Sign in to Google again to change events.',
+          retry: 'none',
+          reconnect: true,
+        };
   // The engine's writes land with #394; until then a write answers `notImplemented` and no retry can help.
   if (body.type === 'notImplemented')
     return { message: "Editing isn't available yet. Nothing was changed.", retry: 'none' };

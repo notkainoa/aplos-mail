@@ -288,9 +288,11 @@ test('review17: a refused Operation/retry keeps the failure persistent with its 
     const again = failedToast();
     assert.equal(again?.message, 'Only a failed change can be retried.', 'the refusal sentence');
     assert.equal(again?.persistent, true, 'still a failure the owner must answer');
+    // review18: this is a terminal refusal — the op already left 'failed' — so the surface keeps
+    // Dismiss only; Retry remains only for transient refusals (unavailable, unknown).
     assert.deepEqual(
       again?.actions?.map(a => a.id),
-      ['retry', 'dismiss'],
+      ['dismiss'],
     );
   } finally {
     resetWrites();
