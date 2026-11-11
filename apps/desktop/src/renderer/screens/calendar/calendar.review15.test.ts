@@ -208,3 +208,35 @@ test('review15: a held write’s layer outlives synced until the next window fra
     resetToasts();
   }
 });
+
+test('review15: a submit-time calendar.late shows its sentence with no Retry', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    // `calendar.late` means "the OPERATION missed its window" — its Retry is `Operation/retry`.
+    // A submit-time refusal carrying the code accepted nothing: there is no operation, so a
+    // Retry click would have run a fresh-opId `Event/set` — a second send that could re-notify
+    // guests (review15).
+    const spy = eventSetSpy({
+      error: {
+        type: 'conflict',
+        message: "This change wasn't sent in time. Check the event, then try again.",
+        reasonCode: 'calendar.late',
+      },
+    });
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy.port }, ui);
+    await task();
+    assert.equal(spy.calls.length, 1);
+    const toast = getToasts().find(t => t.id.endsWith(':failed'));
+    assert.equal(
+      toast?.message,
+      "This change wasn't sent in time. Check the event, then try again.",
+    );
+    assert.deepEqual(toast?.actions ?? [], [], 'no operation exists to retry — no action');
+    // And a click on any leftover action must not fire: nothing was accepted to re-send.
+    assert.equal(spy.calls.length, 1);
+  } finally {
+    resetToasts();
+  }
+});

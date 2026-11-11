@@ -430,7 +430,11 @@ function writeFailed(
   dismissToast(spec.opId);
   if (!spec.failure) return;
   const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
-  if (!failureHandled(spec, failure, ui, ports)) failureToast(spec.opId, failure, retry);
+  // `opRetry` names the OPERATION's own `Operation/retry` — a submit-time refusal accepted
+  // nothing, so there is no operation to retry and the sentence carries no action rather than
+  // a fresh-opId re-send that could notify guests twice (review15).
+  if (!failureHandled(spec, failure, ui, ports))
+    failureToast(spec.opId, { ...failure, opRetry: false }, retry);
 }
 
 /** Every entry an optimistic change covers: its own id and its `more` siblings'. */
