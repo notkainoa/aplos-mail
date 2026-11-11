@@ -1968,3 +1968,8 @@ Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rule
 Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
 
 Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.
+
+## 2026-11-11 — prov-cal: Retry never repeats a change whose answer was lost
+
+- **Chosen (integrator's decision):** Retry on a hold that failed as `calendar.uncertain` is refused (`conflict` / `calendar.checkFirst`: "Check your calendar: this change may already have gone through. Make it again if it is missing."). A create is idempotent (its event id is derived from the op), an edit is guarded by `If-Match`, but an RSVP email is not, so one rule covers all. A hold waiting for its account to start reads `queued` but no longer `undoable`, because its window has closed.
+- **What the owner can see, in one sentence each:** a failed calendar change is never sent again unless they press Retry; after a reload only a screen that kept the change's id can see it; and a change more than 15 minutes late, or for an event that has already started, also waits for Retry.

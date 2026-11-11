@@ -376,3 +376,47 @@ test('a series change and an occurrence change of one event clash; two different
     (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.holdPending',
   );
 });
+
+test('Retry on a hold whose answer was lost is refused: no second send, and the owner is told to check', async () => {
+  const w = await rig([
+    () =>
+      Promise.reject(
+        new ContractError({ type: 'unavailable', message: 'x', reasonCode: 'calendar.uncertain' }),
+      ),
+  ]);
+  await w.call('Event/set', rename('rt1', 'acct-1:primary/ev1'));
+  w.clock.advance(9_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+  await assert.rejects(
+    w.call('Operation/retry', { opId: 'rt1' }),
+    (e: unknown) => e instanceof ContractError && e.body.reasonCode === 'calendar.checkFirst',
+  );
+  assert.deepEqual(w.calls, ['put'], 'a Retry here would have told the guests twice');
+});
+
+test('a hold waiting for its account is past its undo window: it reads queued but no longer undoable', async () => {
+  let started = false;
+  const w = await rig([
+    () =>
+      started
+        ? Promise.resolve(SAVED)
+        : Promise.reject(
+            new NotSentError({
+              class: 'transient',
+              provider: 'engine',
+              method: 'calendar.put',
+              reason: 'accountNotStarted',
+            }),
+          ),
+  ]);
+  const { receipt } = await w.call('Event/set', rename('wt1', 'acct-1:primary/ev1'));
+  assert.equal(receipt.undoable, true);
+  w.clock.advance(9_000);
+  await settle();
+  const op = (await w.call('Operation/get', { opIds: ['wt1'] })).list[0]!;
+  assert.equal(op.state, 'queued');
+  assert.equal(op.undoable, false, 'the window has closed');
+  assert.equal(op.undoUntil, undefined);
+  started = true;
+});

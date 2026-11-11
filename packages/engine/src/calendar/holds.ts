@@ -246,13 +246,13 @@ function save(deps: Deps, record: HoldRecord): void {
   deps.changed();
   // Tell every window the operation moved (the same object `Operation/get` answers), best effort.
   try {
-    deps.frames.emit({ frame: 'operation', operation: operationOf(kept) });
+    deps.frames.emit({ frame: 'operation', operation: operationOf(kept, deps.clock.now()) });
   } catch {
     // A frame is a convenience; the record is already saved.
   }
 }
 
-function operationOf(r: HoldRecord): Operation {
+function operationOf(r: HoldRecord, now: number): Operation {
   return {
     opId: r.opId,
     kind: r.method,
@@ -260,8 +260,10 @@ function operationOf(r: HoldRecord): Operation {
     state: r.state,
     appliedState: r.appliedState,
     ...(r.error ? { error: r.error } : {}),
-    undoable: r.state === 'queued',
-    ...(r.state === 'queued' ? { undoUntil: r.undoUntil } : {}),
+    // Undoable while its window is open; a hold waiting for its account to start is past its window (it is still only
+    // queued, so undo still cancels it, but the Undo toast has long gone).
+    undoable: r.state === 'queued' && r.undoUntil > now,
+    ...(r.state === 'queued' && r.undoUntil > now ? { undoUntil: r.undoUntil } : {}),
     createdAt: r.createdAt,
     scope: r.scope,
   };
@@ -411,7 +413,7 @@ export function createHolds(deps: Deps) {
     get(opIds: readonly string[]): Operation[] {
       return opIds.flatMap(id => {
         const r = readRecord(deps.store, id);
-        return r ? [operationOf(r)] : [];
+        return r ? [operationOf(r, deps.clock.now())] : [];
       });
     },
 
@@ -447,11 +449,15 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled')
         throw conflict('This change was undone, so it cannot be retried.');
       if (r.state !== 'failed') throw conflict('Only a failed change can be retried.');
-      // An uncertain change may already be at Google (and its guests told): a second send could tell them twice.
+      // An uncertain change may already be at Google (and its guests told): a second send could tell them twice. The
+      // owner checks the calendar and makes the change again if it is missing.
       if (r.error?.reasonCode === 'calendar.uncertain')
-        throw conflict(
-          'Check your calendar: this change may already have gone through. Make it again if it is missing.',
-        );
+        throw new ContractError({
+          type: 'conflict',
+          message:
+            'Check your calendar: this change may already have gone through. Make it again if it is missing.',
+          reasonCode: 'calendar.checkFirst',
+        });
       // Never beside a send already under way in this process (a second press while the first is out).
       if (inflight.has(r.opId)) throw conflict('That change is being sent.');
       await send(deps, r, inflight);
