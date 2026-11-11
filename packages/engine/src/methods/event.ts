@@ -1,7 +1,7 @@
 import type { Event, Input, Output, Plan, Receipt } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
-import { isKnownZone, toWall } from '../calendar/recurrence/zone';
+import { fromWall, isKnownZone, toWall } from '../calendar/recurrence/zone';
 import { eventIdForOp } from '../calendar/event-id';
 import {
   calendarFromRow,
@@ -383,7 +383,7 @@ const seriesTimeRefusal = () =>
   });
 
 interface RebaseBase {
-  master: { start_utc: number; end_utc: number; zone?: string };
+  master: { start_utc: number; end_utc: number; zone?: string; allDay: boolean };
   occStart: number;
   occEnd: number;
 }
@@ -405,6 +405,7 @@ function rebaseBase(
   const master = {
     start_utc: stored.start_utc,
     end_utc: stored.end_utc,
+    allDay: stored.all_day === 1,
     ...(masterZone ? { zone: masterZone } : {}),
   };
   const occ = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote, ref.recurrenceId);
@@ -430,11 +431,15 @@ function rebaseSeriesTimes(
   if (kind === 'floating') return rebaseZoned(rebaseBase(ctx, ref), fields);
   const base = rebaseBase(ctx, ref);
   if (kind === 'utc') {
+    // An all-day series keeps whole-day times, and a zone Aplos cannot read cannot move on its own wall clock:
+    // neither has a safe offset for an instant-typed change.
+    if (base.master.allDay || (base.master.zone && !isKnownZone(base.master.zone)))
+      throw seriesTimeRefusal();
     // A series that lives in a zone moves on that zone's wall clock whatever form the request came in: elapsed time
     // is an hour off across a daylight-saving change (Oct 28 10:00 PDT moved to Nov 1 10:00 PST). A series with no
     // zone has only elapsed time to go by.
     const tz = base.master.zone;
-    if (tz && isKnownZone(tz)) {
+    if (tz) {
       const floating = (t: PortFields['start'] | undefined): PortFields['start'] | undefined =>
         t?.type === 'utc'
           ? {
@@ -445,7 +450,14 @@ function rebaseSeriesTimes(
           : t;
       if (start) fields.start = floating(start);
       if (end) fields.end = floating(end);
-      return rebaseZoned(base, fields);
+      // The pair's measure stays ELAPSED: its wall readings collapse across a daylight-saving change (01:30 happens
+      // twice), which would write a zero-length or end-before-start change.
+      const span = start?.type === 'utc' && end?.type === 'utc' ? end.utc - start.utc : undefined;
+      const endDelta = end?.type === 'utc' && !start ? end.utc - base.occEnd : undefined;
+      return rebaseZoned(base, fields, {
+        ...(span !== undefined ? { span } : {}),
+        ...(endDelta !== undefined ? { endDelta } : {}),
+      });
     }
     rebaseUtc(base.master, base.occStart, base.occEnd, fields);
   } else rebaseAllDay(base.master, base.occStart, base.occEnd, fields);
@@ -457,7 +469,12 @@ function rebaseSeriesTimes(
  * owner picked: 10:00 stays 10:00 on the master's own day. Refused: a time with no zone, a zone Aplos does not know,
  * a start and an end in different zones, and a zone other than the master's (the series would be rewritten into it).
  */
-function rebaseZoned(base: RebaseBase, fields: Partial<PortFields>): void {
+function rebaseZoned(
+  base: RebaseBase,
+  fields: Partial<PortFields>,
+  /** Measures of a request that arrived as utc instants: the span to apply, or the end's move — both elapsed time. */
+  elapsed?: { span?: number; endDelta?: number },
+): void {
   const start = fields.start?.type === 'floating' ? fields.start : undefined;
   const end = fields.end?.type === 'floating' ? fields.end : undefined;
   const tz = (start ?? end)?.timeZone;
@@ -477,12 +494,18 @@ function rebaseZoned(base: RebaseBase, fields: Partial<PortFields>): void {
   const shift = start ? wall(start.local) - toWall(occStart, tz) : 0;
   const newStart = masterStart + shift;
   // A start move applies the owner's new span from the shifted start; an end-only resize shifts the master's end by
-  // how far the occurrence's own end moved; an unchanged end rides the start shift.
-  const newEnd = end
-    ? start
-      ? newStart + (wall(end.local) - wall(start.local))
-      : masterEnd + (wall(end.local) - toWall(occEnd, tz))
-    : masterEnd + shift;
+  // how far the occurrence's own end moved; an unchanged end rides the start shift. For a request carried as utc
+  // instants the measure is ELAPSED (the pair's wall readings collapse across a daylight-saving change), so it is
+  // added on the timeline and read back onto the wall clock.
+  const newEnd = !end
+    ? masterEnd + shift
+    : elapsed?.span !== undefined
+      ? toWall(fromWall(newStart, tz) + elapsed.span, tz)
+      : elapsed?.endDelta !== undefined
+        ? toWall(master.end_utc + elapsed.endDelta, tz)
+        : start
+          ? newStart + (wall(end.local) - wall(start.local))
+          : masterEnd + (wall(end.local) - toWall(occEnd, tz));
   fields.start = local(newStart);
   fields.end = local(newEnd);
 }
