@@ -1883,6 +1883,12 @@ The RSS medians differ by 26 MB between two identical runs, so one run is not a 
 
 Each row keeps its gate `record`: these are baselines from an empty profile, not limits. Turning them into tighten-only limits needs headroom, repeated runs on the owner's Mac and a run with a synced account, which is eng-host's call. The engine process is found by the `node.mojom.NodeService` marker (the preferred `--aplos-engine=real` marker is not on the real utility's command line); only one such utility exists. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (about 11.5 minutes).
 
+## 2026-11-11: earlier messages in a thread get a visible Show full / Show less (ui-reader)
+
+Context: the owner's round-3 feedback: the compact earlier messages show a snippet but nothing says they open; "give each compact earlier message a visible 'Show full' ... button/indicator on the row ... make the whole row clickable and keyboard accessible ... an expanded earlier message gets a 'Show less'/collapse indicator in the same place ... Keep the thread-level summary where the design already puts it (don't add it back above the card)", and "AI summaries are per thread, not per message, so do NOT invent per-message summaries".
+
+Decision: a folded earlier message's row ends in "Show full" and a chevron; the whole row stays the click target (the one button is stretched over the card) and Enter, Space and O keep working; opening it shows the full message in place with the card's header row (sender mark, name, time, To circles) and the same button, now "Show less" with an up chevron, in the same place. The button is one DOM node, last in the head, folded or open, so focus survives a fold. The row's text stays the message's OWN first sentence or two (from its snippet; no body fetch, no AI); the thread summary is not shown per message and is not added above the card. The cursor edge and keys are unchanged. ThreadMessage (ui-foundation) restructures its fold head so the button is no longer the wrapper of the head (a button cannot hold the To button of the opened header).
+
 ## 2026-11-10: Home rows name the other person, not the owner (ui-home, break-ui pass on sender names)
 
 The engine's `ThreadRow.fromName` is the newest sender of the thread, which is the owner whenever they answered last. `senderOf` (rows, "Always do this for …", the one-by-one and reader titles) now prefers the newest sender who is not the owner, then the owner's own name, then the subject; names lose control characters, bidi overrides and invisible marks and fold whitespace (joiners stay for emoji families and Persian). A thread the owner wrote entirely still shows their own name, because `ThreadRow` has no recipients to name instead (requested from eng-contract).
@@ -1900,3 +1906,11 @@ How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and
 Context: `loadingLabel` fell back to the raw `row.fromName` for a thread with no subject, so a worst-case sender name (the owner's own name when they answered last, bidi controls, runs of whitespace) leaked into "Loading …".
 
 Decision: the subject and the sender both go through Home's `cleanName`, and the sender is Home's `senderOf` (the other person, not the owner). A thread with neither still gets no label, and the caller says "this email".
+
+## 2026-11-10: Narrow Home panes: nothing squashes or covers anything (ui-home, on ui-polish's review of #454)
+
+With the Ask dock open at the minimum window the Home pane is about 324px: the focus letter's Reply collapsed to a 24px stub over Later's icon, and a row's due chip and bookmark and attachment icons overlapped. `screens/screens.css` now makes the focus letter a size container: under 380px Later and Done keep only their icons (label and key stay for assistive tech and the tooltip), under 250px Reply also drops its Space cap, under 189px its label too (it keeps its icon and its name), and it never shrinks. (Thresholds are the card's content width.) Rows keep their trailing icons at their own width, give the sender a 48px floor and clip the middle column (summary and due chip) instead of letting it spill. Wide layouts are unchanged (same measured geometry at 1280px).
+
+Limit: with the dock dragged to 404px or more at the 900px window the pane is under 280px and no row or letter layout fits; that is the dock's maximum (ui-shell), not Home's.
+
+Review follow-up (ui-polish on #458): Later and Done keep their labels down to 380px of card content (about a 1100px window with Ask open) and go icon-only below it; every narrow-pane selector starts at `.aplos-list-column`, so only the Home, Later and list screens are restyled, never ui-foundation's shared component styles (the Low sheet, the gallery).

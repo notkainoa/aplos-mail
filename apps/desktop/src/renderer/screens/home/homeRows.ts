@@ -64,13 +64,13 @@ export function subjectOf(row: ThreadRow): string {
 }
 
 /**
- * A name as a row may show it: control characters become spaces, bidi overrides and invisible marks are dropped (a
- * spoofing vector), whitespace runs fold. Joiners (U+200C, U+200D) and the direction marks (U+200E, U+200F) stay: emoji families, Persian and mixed-direction names need them.
+ * A name as a row may show it: control characters become spaces, bidi overrides, the soft hyphen and invisible marks are
+ * dropped (a spoofing vector), whitespace runs fold. Joiners (U+200C, U+200D) and the direction marks (U+200E, U+200F) stay: emoji families, Persian and mixed-direction names need them.
  */
 export function cleanName(text: string | undefined): string {
   return (text ?? '')
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
-    .replace(/[\u200b\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
+    .replace(/[\u00ad\u061c\u200b\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -80,11 +80,10 @@ export function cleanName(text: string | undefined): string {
  * owner whenever they answered last), else the owner's own name, else the subject's first words; never blank.
  */
 export function senderOf(row: ThreadRow): string {
-  const mine = new Set(
-    row.participants.filter(p => p.me).flatMap(p => [cleanName(p.name), cleanName(p.address)]),
-  );
   const from = cleanName(row.fromName);
-  if (from && !mine.has(from)) return from;
+  // `fromName` is always `participants[0]`: it is the owner exactly when that participant is marked `me` (never judged
+  // by name, so a colleague who shares the owner's display name is still a sender).
+  if (from && row.participants[0]?.me !== true) return from;
   const other = row.participants
     .filter(p => !p.me)
     .map(p => cleanName(p.name) || cleanName(p.address))

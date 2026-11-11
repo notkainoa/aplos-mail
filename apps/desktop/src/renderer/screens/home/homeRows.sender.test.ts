@@ -79,3 +79,16 @@ test('the owner is matched by address too, and a name of only invisible characte
     'דני Cohen\u200f',
   );
 });
+
+test("a colleague who shares the owner's display name is still a sender; the soft hyphen and Arabic letter mark are dropped", () => {
+  const twin = { name: 'Kainoa Newton', address: 'kainoa.n@other.example' };
+  assert.equal(
+    senderOf(thread({ fromName: twin.name, participants: [twin, ME] })),
+    'Kainoa Newton',
+    'the newest sender is the colleague, not the owner',
+  );
+  assert.equal(
+    senderOf(thread({ fromName: 'Leah\u00adOka\u061cfor', participants: [LEAH] })),
+    'LeahOkafor',
+  );
+});
