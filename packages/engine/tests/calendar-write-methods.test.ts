@@ -205,6 +205,7 @@ test('a change another device made first is a conflict the caller can act on, no
       id: 'acct-1:primary/ev1',
       response: 'accepted',
       scope: 'series',
+      notify: false,
     }),
     'conflict',
     'calendar.conflict',
@@ -266,14 +267,16 @@ test('a read-only calendar, a missing calendar and a missing event never reach t
   assert.deepEqual(w.calls, []);
 });
 
-test('an rsvp carries the stored version and, by default, tells the organizer', async () => {
+test('an rsvp that tells no one goes at once with the stored version', async () => {
   const w = await world();
-  await w.call('Event/rsvp', {
+  const receipt = await w.call('Event/rsvp', {
     opId: 'v1',
     id: 'acct-1:primary/ev1',
     response: 'tentative',
     scope: 'series',
+    notify: false,
   });
+  assert.notEqual(receipt.undoable, true);
   const [ref, response, opts] = w.calls[0]!.args.slice(1) as [
     { etag?: string },
     string,
@@ -281,7 +284,7 @@ test('an rsvp carries the stored version and, by default, tells the organizer', 
   ];
   assert.equal(ref.etag, '"v1"');
   assert.equal(response, 'tentative');
-  assert.equal(opts.notify, true);
+  assert.equal(opts.notify, false);
 });
 
 test('a create names its event from the op id: the same op is the same event, another op or account is not', async () => {
