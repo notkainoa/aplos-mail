@@ -277,6 +277,25 @@ export const readerStates: readonly VisualState[] = [
     filled: 1,
   },
   {
+    id: 'reader-rich-crowd',
+    frame: 'shell',
+    title: 'Reader, rich: six recipients, the To circles stop at three and the rest is “+4”',
+    components: ['ThreadMessage'],
+    design: '7.5',
+    mockup: 'reader.html (default)',
+    filled: 1,
+  },
+  {
+    id: 'reader-rich-crowd-details',
+    frame: 'shell',
+    title:
+      'Reader, rich: five hundred recipients, the details popover stays inside the window and scrolls',
+    components: ['ThreadMessage', 'Popover'],
+    design: '7.5',
+    mockup: 'reader.html (default)',
+    filled: 1,
+  },
+  {
     id: 'reader-rich-attachments',
     frame: 'shell',
     title: 'Reader, rich: a PDF, a zip and a spreadsheet under the latest message',
