@@ -24,6 +24,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
 import { answerPrepareClose } from './shell/closeHandshake';
+import { startSystemTheme } from './shell/theme';
 import { scenarioParam } from './onboarding/route';
 import type { Client, EngineSession } from '@aplos/contract/client';
 import type { DataConnection } from './data/connect';
@@ -130,6 +131,7 @@ async function boot(): Promise<void> {
   const engine = await connectEngine();
   // Stand-in data is a development build's alone: a release never fetches the fixture.
   if (!engine && !import.meta.env.DEV) return bootLegacy(true);
+  startSystemTheme();
   if (engine) serveClose('mail');
   const [{ App }] = await Promise.all([import('./App'), loadMailStyles()]);
   if (engine) {
@@ -159,6 +161,7 @@ async function bootOnboarding(): Promise<void> {
   // The onboarding window needs only the data layer; the second client `connectEngine` hands back is unused here.
   const engine = await connectEngine();
   if (!engine && !import.meta.env.DEV) return bootLegacy(true);
+  startSystemTheme();
   if (engine) serveClose('onboarding');
   // One stylesheet first, then the onboarding window's layout file: the later one wins, so the order is the rule.
   await import('./ui/styles.css');
