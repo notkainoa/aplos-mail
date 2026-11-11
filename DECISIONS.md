@@ -1902,3 +1902,8 @@ Each row keeps its gate `record`: these are baselines from an empty profile, not
 - **Chosen: a finished hold keeps no guest addresses.** Once sent or undone its stored call is dropped; every finished hold is purged after a day (the source wakes for it), and an unreadable row is cleared instead of stalling the loop.
 - **Chosen: a replayed op id answers the same receipt** and makes no second hold; `Operation/get` answers in the order asked.
 - **Known limit:** after the app reloads, a failed hold is visible only to a screen that kept its op id (`Operation/get`); there is no list of failed calendar writes. A failed hold is kept for a day. If that proves too quiet, the follow-up is a notification or a list surface, which needs a contract addition.
+
+## 2026-11-11 — prov-cal: two more guards on held calendar writes
+
+- **Chosen:** the deadline source does not wake for a send that is under way in this process (it wakes for one a dead run left `syncing`). Before, an in-flight send made `next()` answer "now" for as long as it lasted, a busy loop on the one-second back-off.
+- **Chosen:** a wall-clock time with no zone of its own is read in the calendar's zone when deciding whether the event "has already started", the way the engine reads it everywhere else; read as UTC it could be hours off and send a change late, or hold one that is not late.

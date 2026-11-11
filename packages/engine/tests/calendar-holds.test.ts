@@ -495,7 +495,7 @@ test('undo refuses a change that is already being sent', async () => {
 
 test('a retry in flight is not reported uncertain by the next sweep', async () => {
   let fail = true;
-  let release!: () => void;
+  const releases: (() => void)[] = [];
   const w = await rig(() =>
     fail
       ? Promise.reject(
@@ -506,7 +506,7 @@ test('a retry in flight is not reported uncertain by the next sweep', async () =
           }),
         )
       : new Promise<CalendarWriteResult>(resolve => {
-          release = () => resolve(SAVED);
+          releases.push(() => resolve(SAVED));
         }),
   );
   await w.call('Event/set', rename('if1'));
@@ -520,7 +520,7 @@ test('a retry in flight is not reported uncertain by the next sweep', async () =
   w.clock.advance(9_000);
   await settle();
   assert.equal((await w.call('Operation/get', { opIds: ['if1'] })).list[0]!.state, 'syncing');
-  release();
+  for (const release of releases) release();
   await retrying;
   assert.equal((await w.call('Operation/get', { opIds: ['if1'] })).list[0]!.state, 'synced');
 });

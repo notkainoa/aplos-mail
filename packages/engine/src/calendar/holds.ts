@@ -71,18 +71,32 @@ function startedBy(store: StorePort, call: HeldCall | undefined, now: number): b
   return start !== undefined && start < now;
 }
 
+/** The calendar's own time zone (UTC when it has none). */
+function calendarZone(store: StorePort, accountId: string, calRemote: string): string {
+  return (
+    store.read(q =>
+      q.get<{ time_zone: string | null }>(
+        'SELECT time_zone FROM calendars WHERE account_id = ? AND remote_id = ?',
+        accountId,
+        calRemote,
+      ),
+    )?.time_zone ?? 'UTC'
+  );
+}
+
 function startOf(store: StorePort, call: HeldCall, now: number): number | undefined {
   const ref = call.op === 'put' ? call.change : call.ref;
   // A whole-series write matters while the series still has an occurrence to come: the master's stored slot is the
   // FIRST occurrence, long past on an ongoing series, so the check is against the next one instead.
   if (ref.scope === 'series' && ref.remoteId)
     return nextOccurrence(store, call.account, ref.calendarRemoteId, ref.remoteId, now);
-  if (call.op === 'put' && call.change.fields.start)
-    return instant(call.change.fields.start, 'UTC');
+  // A wall-clock time with no zone of its own is read in the calendar's zone, the way the engine reads it everywhere.
+  const zone = calendarZone(store, call.account, ref.calendarRemoteId);
+  if (call.op === 'put' && call.change.fields.start) return instant(call.change.fields.start, zone);
   const remoteId = ref.remoteId;
   if (!remoteId) return undefined;
   // One occurrence, or the first of a 'following' change: its own original start.
-  if (ref.recurrenceId) return instant(recurrenceIdToTime(ref.recurrenceId), 'UTC');
+  if (ref.recurrenceId) return instant(recurrenceIdToTime(ref.recurrenceId), zone);
   const row = store.read(q =>
     q.get<{ start_utc: number | null; recurrence: string | null }>(
       `SELECT e.start_utc, e.recurrence FROM events e JOIN calendars c ON c.id = e.calendar_id
@@ -275,7 +289,7 @@ async function sendNow(deps: Deps, record: HoldRecord & { call: HeldCall }): Pro
 const conflict = (message: string) => new ContractError({ type: 'conflict', message });
 
 /** The earliest moment a hold needs the loop: a window's end, an unfinished send (now), or a finished hold's purge. */
-function nextDue(values: readonly string[]): number | undefined {
+function nextDue(values: readonly string[], sending: ReadonlySet<string>): number | undefined {
   let next: number | undefined;
   const soonest = (at: number) => (next = next === undefined ? at : Math.min(next, at));
   for (const value of values) {
@@ -283,7 +297,10 @@ function nextDue(values: readonly string[]): number | undefined {
     if (!r)
       soonest(0); // an unreadable row is purged by the next run
     else if (r.state === 'queued') soonest(r.undoUntil);
-    else if (r.state === 'syncing') soonest(0);
+    // A send under way in this process needs no wake-up (its own finish moves the record on); one a dead run left does.
+    else if (r.state === 'syncing') {
+      if (!sending.has(r.opId)) soonest(0);
+    }
     // A failed hold stays until it is retried or dismissed — it is never purged.
     else if (r.state !== 'failed') soonest((r.finishedAt ?? r.createdAt) + HOLD_KEEP_MS);
   }
@@ -294,7 +311,7 @@ export function createHolds(deps: Deps) {
   // Sends in this process: a `syncing` record NOT in here is one a previous run never finished.
   const inflight = new Set<string>();
   return {
-    nextDue,
+    nextDue: (values: readonly string[]) => nextDue(values, inflight),
     async hold(spec: HoldSpec): Promise<Receipt> {
       const now = deps.clock.now();
       const record: HoldRecord = {
