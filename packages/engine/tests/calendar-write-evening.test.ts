@@ -320,3 +320,23 @@ test('spring-forward night: 01:30-03:30 (one hour elapsed, two on the wall) stay
     ['2026-03-05T01:30:00', '2026-03-05T03:30:00'],
   );
 });
+
+test('a utc end-only resize into the repeated hour falls back to the ELAPSED move of the end', async () => {
+  const w = await world();
+  // master Oct 27 01:00-01:30 PDT (08:00Z-08:30Z); the Nov 1 occurrence 01:00-01:30 PDT (08:00Z-08:30Z)
+  seed(
+    w,
+    'rep',
+    Date.UTC(2026, 9, 27, 8),
+    Date.UTC(2026, 9, 27, 8, 30),
+    '20261101T080000Z',
+    Date.UTC(2026, 10, 1, 8),
+    Date.UTC(2026, 10, 1, 8, 30),
+  );
+  // Its end dragged to 09:00Z = 01:00 PST: on the wall clock that is 01:00 again, a zero-length series (01:00-01:00).
+  // The elapsed move (+30 minutes) is what the owner meant: the master's end moves 30 minutes later, to 02:00.
+  assert.deepEqual(await go(w, 'rep', '20261101T080000Z', { end: u(2026, 10, 1, 9) }), [
+    '2026-10-27T01:00:00',
+    '2026-10-27T02:00:00',
+  ]);
+});
