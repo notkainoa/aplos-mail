@@ -382,7 +382,8 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   openVideo: onOpenVideo,
   toggleCalendar: onToggleCalendar,
   soloCalendar: (s, a) => done({ ...closed(s), solo: s.solo === a.id ? null : a.id }),
-  holdsReview: (s, a) => done({ ...s, holdsReview: a.open }),
+  // Opening the Review takes the same exclusive-surface rule as opening a detail (review21).
+  holdsReview: (s, a) => done({ ...(a.open ? closed(s) : s), holdsReview: a.open }),
   // The Review list stays open while a row's action settles; the row leaves in place, and the
   // component closes the list itself once it is empty (review19).
   holdRetry: (s, a) => done(s, [{ kind: 'holdRetry', id: a.id, opId: a.opId }]),

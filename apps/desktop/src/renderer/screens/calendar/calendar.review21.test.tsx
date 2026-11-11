@@ -282,6 +282,23 @@ test('review21: Enable editing asks for the item’s own account’s write scope
   assert.equal(enabled, 'acct-jordan');
 });
 
+test('review21: closed() resets the Review popover with every other surface', () => {
+  const t = update(S({ holdsReview: true, moreOpen: true }), { type: 'today' }, ctxFor());
+  assert.equal(t.state.holdsReview, false);
+  assert.equal(t.state.moreOpen, false);
+});
+
+test('review21: opening Review closes the other transient surfaces', () => {
+  const t = update(
+    S({ detailId: 'design', moreOpen: true }),
+    { type: 'holdsReview', open: true },
+    ctxFor(),
+  );
+  assert.equal(t.state.holdsReview, true);
+  assert.equal(t.state.detailId, null);
+  assert.equal(t.state.moreOpen, false);
+});
+
 test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {
   let calls = 0;
   const seen: number[] = [];

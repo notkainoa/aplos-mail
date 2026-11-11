@@ -60,9 +60,21 @@ export function cancelScope(state: CalendarState): Transition {
   return done({ ...state, scope: null, ...(draft ? { editor: draft } : {}) });
 }
 
-/** Close every transient surface (popover, its menu, the stack menu, the RSVP choice, a pending scope). */
+/**
+ * Close every transient surface (popover, its menu, the stack menu, the RSVP choice, a pending
+ * scope, the failed-holds Review popover): two `role="dialog"` surfaces must never stack — a
+ * Review popover open under an editor or an event detail would take no Escape of its own.
+ */
 export function closed(state: CalendarState): CalendarState {
-  return { ...state, detailId: null, moreOpen: false, stackIds: null, rsvp: null, scope: null };
+  return {
+    ...state,
+    detailId: null,
+    moreOpen: false,
+    stackIds: null,
+    rsvp: null,
+    scope: null,
+    holdsReview: false,
+  };
 }
 
 export function decideScope(
