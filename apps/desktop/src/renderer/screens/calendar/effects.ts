@@ -138,6 +138,13 @@ export interface WatchedWrite {
   readonly addedIds: readonly string[];
   /** The write's fallback sentence when its operation fails (a reasonCode's own line wins). */
   readonly failure?: string;
+  /**
+   * Set on a re-watch after `Operation/retry`: the previous terminal row still answers
+   * `Operation/get` until the next flush, so the identical view object means "nothing newer yet" —
+   * keep watching; never re-show the failure the owner just retried (the operation view is memoized,
+   * so a genuinely newer frame is always a different object).
+   */
+  readonly since?: OperationView;
 }
 
 const newOpId = (): string => crypto.randomUUID();
@@ -421,6 +428,9 @@ export function operationUpdate(
   eventIds: ReadonlySet<string>,
 ): 'watching' | 'done' {
   if (view === undefined) return 'done';
+  // A re-watch after `Operation/retry`: the stale terminal row is still what the store answers —
+  // ignore it until the operation reports a newer state.
+  if (watch.since !== undefined && view === watch.since) return 'watching';
   if (watch.addedIds.length > 0 && view.targets.some(id => eventIds.has(id)))
     watch.addedIds.forEach(id => ui.rollback(id));
   switch (view.remote) {
@@ -467,12 +477,12 @@ export function operationUpdate(
 
 /**
  * `Operation/retry {opId}` on a failed hold: the same operation goes at once, so it cannot duplicate
- * the write (a fresh `Event/set` could). The receipt resolving puts the watch back, so a second
- * provider failure surfaces again.
+ * the write (a fresh `Event/set` could). The receipt resolving puts the watch back — marked with the
+ * stale view it must out-wait, so the failure it just answered does not pop straight back.
  */
 function retryOperation(watch: WatchedWrite, view: OperationView, ui: EffectUi): void {
   view.retry().receipt.then(
-    () => ui.watch(watch),
+    () => ui.watch({ ...watch, since: view }),
     error =>
       pushToast({
         id: newOpId(),

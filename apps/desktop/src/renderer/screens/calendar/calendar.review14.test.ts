@@ -12,10 +12,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
 import type { OperationView, Receipt } from '../../data';
-import { resetToasts } from '../../shell/store-toast';
+import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { notifiesGuests } from './model/transitions';
-import { operationUpdate, runCalendarEffect, type EffectPorts } from './effects';
+import { operationUpdate, runCalendarEffect, type EffectPorts, type WatchedWrite } from './effects';
 import { boot, ctxFor, NOW, ports, S, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
@@ -39,6 +39,17 @@ const view = (over: Partial<OperationView> = {}): OperationView => ({
   undoable: true,
   undoUntil: null,
   retry: () => ({ opId: 'op-1', receipt: Promise.resolve(receipt()) }),
+  ...over,
+});
+
+/** A held write's watch, the way `runWrite` hands it to HeldWrites. */
+const watch = (over: Partial<WatchedWrite> = {}): WatchedWrite => ({
+  opId: 'op-1',
+  entryIds: ['ev-1'],
+  at: { dbEpoch: 'e', seq: 9 },
+  held: true,
+  addedIds: [],
+  failure: 'Couldn’t move Standup.',
   ...over,
 });
 
@@ -210,6 +221,53 @@ test('review14: an unheld write registers no watch — the real engine has no Op
     );
     await task();
     assert.equal(undoableUi.watched.length, 1);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review14: a retried watch ignores the stale failed row until a newer state lands', async () => {
+  resetToasts();
+  try {
+    const ui = testUi();
+    let retries = 0;
+    const stale = view({
+      remote: 'failed',
+      error: {
+        type: 'unavailable',
+        message: 'not sent',
+        reasonCode: 'calendar.late',
+      },
+      retry: () => {
+        retries += 1;
+        return { opId: 'op-1', receipt: Promise.resolve(receipt()) };
+      },
+    });
+    const w = watch();
+    assert.equal(operationUpdate(w, stale, ui, NONE), 'done');
+    runToastAction('op-1:failed', 'retry');
+    await task();
+    assert.equal(retries, 1);
+    const rewatched = ui.watched[ui.watched.length - 1]!;
+    // The same `failed` row still answers Operation/get until the next flush: keep watching,
+    // never re-show the failure the owner just retried.
+    assert.equal(operationUpdate(rewatched, stale, ui, NONE), 'watching');
+    assert.equal(
+      getToasts().some(t => t.id === 'op-1:failed'),
+      false,
+      'the late toast did not pop straight back',
+    );
+    // A genuinely newer frame is handled normally — synced settles, a fresh failure surfaces.
+    assert.equal(operationUpdate(rewatched, view({ remote: 'synced' }), ui, NONE), 'done');
+    const again = view({
+      remote: 'failed',
+      error: { type: 'unavailable', message: 'not sent', reasonCode: 'calendar.late' },
+    });
+    assert.equal(operationUpdate(rewatched, again, ui, NONE), 'done');
+    assert.ok(
+      getToasts().some(t => t.id === 'op-1:failed'),
+      'a second failure still surfaces',
+    );
   } finally {
     resetToasts();
   }

@@ -115,7 +115,7 @@ test('review13: a late failure rolls back and Retry is the operation’s own, ne
     await task();
     assert.equal(retries, 1, 'Operation/retry ran exactly once on the same opId');
     assert.ok(
-      ui.watched.some(x => x === w),
+      ui.watched.some(x => x.opId === w.opId),
       'the watch was put back so a second failure surfaces',
     );
   } finally {
