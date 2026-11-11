@@ -83,16 +83,19 @@ function startOf(store: StorePort, call: HeldCall, now: number): number | undefi
   if (!remoteId) return undefined;
   // One occurrence, or the first of a 'following' change: its own original start.
   if (ref.recurrenceId) return instant(recurrenceIdToTime(ref.recurrenceId), 'UTC');
-  return store.read(
-    q =>
-      q.get<{ start_utc: number | null }>(
-        `SELECT e.start_utc FROM events e JOIN calendars c ON c.id = e.calendar_id
-         WHERE c.account_id = ? AND c.remote_id = ? AND e.remote_id = ? AND e.recurrence_id = ''`,
-        call.account,
-        ref.calendarRemoteId,
-        remoteId,
-      )?.start_utc ?? undefined,
+  const row = store.read(q =>
+    q.get<{ start_utc: number | null; recurrence: string | null }>(
+      `SELECT e.start_utc, e.recurrence FROM events e JOIN calendars c ON c.id = e.calendar_id
+       WHERE c.account_id = ? AND c.remote_id = ? AND e.remote_id = ? AND e.recurrence_id = ''`,
+      call.account,
+      ref.calendarRemoteId,
+      remoteId,
+    ),
   );
+  // A recurring series starts in the past by definition (its master holds the FIRST occurrence): an edit of the whole
+  // series is never "already started", or every held edit of a weekly meeting would wait for a manual Retry.
+  if (row?.recurrence) return undefined;
+  return row?.start_utc ?? undefined;
 }
 
 /** How far ahead "next occurrence" looks: covers a yearly series. */
