@@ -1,5 +1,7 @@
 import type { CommitExtension } from '../store/port';
-import type { LaneModule } from '../runtime/services';
+import type { EngineServices, LaneModule } from '../runtime/services';
+import { isAbsent } from '../runtime/engine';
+import { createCalendarHolds } from './holds-core';
 import { registerLazyViewKind } from '../views/registry';
 
 /** Seam 1: lane `prov-cal`'s module, imported by the composition root (`src/index.ts`). */
@@ -15,6 +17,9 @@ const loadViews = () => import('./views');
 registerLazyViewKind('events', loadViews);
 registerLazyViewKind('plans', loadViews);
 
-export function createModule(): LaneModule {
-  return {};
+export function createModule(services: EngineServices): LaneModule {
+  // Held calendar writes (a write that tells guests waits its undo window): the thin core registers its deadline
+  // source; the working half loads on the first hold. A host without a deadline loop gets none (writes go at once).
+  if (isAbsent(services.deadlines) || isAbsent(services.calendar)) return {};
+  return { services: { calendarHolds: createCalendarHolds(services) } };
 }
