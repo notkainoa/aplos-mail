@@ -94,6 +94,7 @@ import {
   type EffectPorts,
   type EffectUi,
 } from './effects';
+import { holdPending } from './holdEffects';
 import { calendarSidebar } from './sidebar';
 import { calendarListedKey } from './accountCalendarState';
 
@@ -250,6 +251,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const { holds: failedHolds } = useFailedHolds(touched, accounts, {
     accountId,
     stale: isStaleRetry,
+    pending: holdPending,
   });
   const calendars = useMemo(
     () =>

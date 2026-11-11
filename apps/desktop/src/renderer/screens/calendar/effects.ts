@@ -38,7 +38,7 @@ import {
 } from './calendar.model';
 import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
 import { emitHoldsRefresh } from './FailedHolds';
-import { discardHold, retryHold } from './holdEffects';
+import { discardHold, releasePendingHolds, retryHold } from './holdEffects';
 import { bodyOf, undoFailureMessage, writeFailureOf, type WriteFailure } from './writeErrors';
 
 /** The contract calls an effect may make, bound by the container (or a test). */
@@ -405,6 +405,7 @@ export function releaseHeldWrites(): void {
   failedOps.clear();
   staleRetries.clear();
   heldWrites.clear();
+  releasePendingHolds();
 }
 
 /** The event a write's hold would guard — only a write that asks for one can clash. */

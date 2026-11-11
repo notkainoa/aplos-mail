@@ -39,6 +39,8 @@ export interface FailedHold {
    * Discard alone — a retry would re-send the older change over the newer one (review21).
    */
   readonly stale?: boolean;
+  /** Its own Retry or Discard is still in flight: the buttons hold busy, a second press is ignored. */
+  readonly pending?: boolean;
   readonly canRetry: boolean;
   readonly canDiscard: boolean;
 }
@@ -112,6 +114,8 @@ export interface FailedHoldFilter {
   readonly accountId?: string;
   /** Op ids a newer write on the same event already retired (effects' `staleRetries`). */
   readonly stale?: (opId: string) => boolean;
+  /** Queue item ids with a Retry or Discard still in flight (holdEffects' `pendingHolds`). */
+  readonly pending?: (id: string) => boolean;
 }
 
 /**
@@ -137,6 +141,7 @@ export function failedHoldsOf(
       reason: holdSentence(item),
       ...(account !== undefined ? { account } : {}),
       ...(filter.stale?.(opId) === true ? { stale: true as const } : {}),
+      ...(filter.pending?.(item.id) === true ? { pending: true as const } : {}),
       canRetry: item.canRetry,
       canDiscard: item.canDiscard,
     });
@@ -275,6 +280,7 @@ function HoldRow({
             variant="text"
             size="sm"
             label="Retry"
+            busy={hold.pending === true}
             onPress={() => dispatch({ type: 'holdRetry', id: hold.id, opId: hold.opId })}
           />
         ) : null}
@@ -283,6 +289,7 @@ function HoldRow({
             variant="text"
             size="sm"
             label="Discard"
+            busy={hold.pending === true}
             onPress={() => dispatch({ type: 'holdDiscard', id: hold.id })}
           />
         ) : null}

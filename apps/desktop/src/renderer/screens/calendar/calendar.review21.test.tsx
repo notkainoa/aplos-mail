@@ -32,6 +32,10 @@ import {
   useFailedHolds,
   type FailedHold,
 } from './FailedHolds';
+import { getToasts, resetToasts } from '../../shell/store-toast';
+import { runCalendarEffect, type EffectPorts } from './effects';
+import type { CalendarEffect } from './calendar.model';
+import { nextTask, testUi } from './calendar.testkit';
 import { account } from './accountCalendarState.test';
 import type { Account } from '../../data';
 
@@ -142,6 +146,76 @@ test('review21: a fresh hold keeps its Retry beside Discard', () => {
   const html = row(failedHoldsOf([calItem()], new Set(), ACCOUNTS)[0]);
   assert.match(html, />Retry</);
   assert.match(html, />Discard</);
+});
+
+/** Fake ports recording every call; `fail` makes the named port reject with `body`. */
+function fakePorts(fail?: { queueRetry?: unknown; queueDiscard?: unknown }) {
+  const calls: { method: string; args: unknown }[] = [];
+  const record =
+    (method: string, reject: unknown) =>
+    (args: unknown): Promise<unknown> => {
+      calls.push({ method, args });
+      return reject === undefined ? Promise.resolve({ ok: true }) : Promise.reject(reject);
+    };
+  const ports: EffectPorts = {
+    eventSet: record('Event/set', undefined) as EffectPorts['eventSet'],
+    eventRsvp: record('Event/rsvp', undefined) as EffectPorts['eventRsvp'],
+    calendarSet: record('Calendar/set', undefined) as EffectPorts['calendarSet'],
+    planConfirm: record('Plan/confirm', undefined) as EffectPorts['planConfirm'],
+    planDismiss: record('Plan/dismiss', undefined) as EffectPorts['planDismiss'],
+    eventHide: record('Event/hide', undefined) as EffectPorts['eventHide'],
+    operationRetry: record('Operation/retry', undefined) as EffectPorts['operationRetry'],
+    queueRetry: record('Queue/retry', fail?.queueRetry) as EffectPorts['queueRetry'],
+    queueDiscard: record('Queue/discard', fail?.queueDiscard) as EffectPorts['queueDiscard'],
+    enableEditing: () => Promise.resolve(),
+    reconnect: () => undefined,
+    openThread: () => undefined,
+    openUrl: () => undefined,
+    copyText: () => undefined,
+  };
+  return { ports, calls };
+}
+
+test('review21: a second Retry while the first is in flight sends nothing', async () => {
+  let release: (value: unknown) => void = () => {};
+  const { ports, calls } = fakePorts();
+  ports.queueRetry = args => {
+    calls.push({ method: 'Queue/retry', args });
+    return new Promise(resolve => (release = resolve));
+  };
+  const fx: CalendarEffect = { kind: 'holdRetry', id: 'cal:op-hold', opId: 'op-hold' };
+  runCalendarEffect(fx, ports, testUi());
+  runCalendarEffect(fx, ports, testUi());
+  assert.deepEqual(
+    calls.map(c => c.method),
+    ['Queue/retry'],
+  );
+  release({ ok: true });
+  await nextTask();
+});
+
+test('review21: an already-being-sent refusal stays quiet', async () => {
+  resetToasts();
+  const { ports } = fakePorts({
+    queueRetry: {
+      error: { type: 'conflict', message: 'Only a failed change can be retried.' },
+    },
+  });
+  runCalendarEffect({ kind: 'holdRetry', id: 'cal:op-hold', opId: 'op-hold' }, ports, testUi());
+  await nextTask();
+  // The first send already took it: no phantom failure toast beside the row that is leaving.
+  assert.equal(
+    getToasts().find(t => t.id === 'op-hold:failed'),
+    undefined,
+  );
+  resetToasts();
+});
+
+test('review21: a row with an action in flight holds its buttons busy', () => {
+  const hold = failedHoldsOf([calItem()], new Set(), ACCOUNTS, { pending: () => true })[0];
+  assert.equal(hold.pending, true);
+  const html = row(hold);
+  assert.match(html, /aria-busy="true"/);
 });
 
 test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {
