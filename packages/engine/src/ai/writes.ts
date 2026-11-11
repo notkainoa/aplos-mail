@@ -103,18 +103,24 @@ export interface ConversationWrite {
   remove?: boolean;
 }
 
-/** The plan write handlers live in `ai/impl/plan-writes` (lazy; the core budget's seam). They register at
- * module load — every plan write originates under `ai/impl`, which loads before its commits exist. */
-let planWriteImpl: ((write: PlanWrite, tx: CommitExtensionTx) => void) | undefined;
-export const registerPlanWrites = (fn: typeof planWriteImpl): void => {
-  planWriteImpl = fn;
-};
-
-function plan(write: PlanWrite, tx: CommitExtensionTx): void {
-  const impl = planWriteImpl;
-  if (!impl) throw new StoreError('invalid', 'ai write');
-  impl(write, tx);
+/** Write kinds only `ai/impl` commits (plan, summary, aiUsage, conversation) live in `ai/impl/ai-writes`
+ * — the core budget's seam. They register at module load; `job` stays here because `Queue/*` methods
+ * write it without ai loaded. */
+export interface AiWriteImpls {
+  plan: (write: PlanWrite, tx: CommitExtensionTx) => void;
+  summary: (write: SummaryWrite, tx: CommitExtensionTx) => void;
+  aiUsage: (write: AiUsageWrite, tx: CommitExtensionTx) => void;
+  conversation: (write: ConversationWrite, tx: CommitExtensionTx) => void;
 }
+let impls: AiWriteImpls | undefined;
+export const registerAiWrites = (i: AiWriteImpls): void => {
+  impls = i;
+};
+const aiWrite = (kind: keyof AiWriteImpls, write: never, tx: CommitExtensionTx): void => {
+  const i = impls;
+  if (!i) throw new StoreError('invalid', 'ai write');
+  i[kind](write, tx);
+};
 
 const bad = (): never => {
   throw new StoreError('invalid', 'ai write');
@@ -255,94 +261,18 @@ function job(write: JobWrite, tx: CommitExtensionTx): void {
   return jobMove(write, id, sid, tx);
 }
 
-function summary(write: SummaryWrite, tx: CommitExtensionTx): void {
-  const rowId = tx.threadRowId(write.accountId, write.remoteThreadId);
-  if (rowId === undefined) bad();
-  if (
-    typeof write.inputHash !== 'string' ||
-    !write.inputHash ||
-    typeof write.model !== 'string' ||
-    !write.model ||
-    typeof write.text !== 'string' ||
-    (write.state !== 'ready' && write.state !== 'stale' && write.state !== 'failed')
-  )
-    bad();
-  tx.run(
-    'INSERT OR REPLACE INTO summaries(thread_id, input_hash, model, text, action, state, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)',
-    rowId!,
-    write.inputHash,
-    write.model.slice(0, 200),
-    write.text,
-    write.action ?? null,
-    write.state,
-    tx.now(),
-  );
-  tx.touchThread(write.accountId, write.remoteThreadId);
-}
-
-function aiUsage(write: AiUsageWrite, tx: CommitExtensionTx): void {
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(write.day) ||
-    !write.provider ||
-    !write.model ||
-    (write.lane !== 'interactive' && write.lane !== 'background')
-  )
-    bad();
-  const n = (v: number | undefined) =>
-    v === undefined || (Number.isFinite(v) && v >= 0) ? Math.floor(v ?? 0) : bad();
-  tx.run(
-    'INSERT INTO ai_usage(day, provider, model, lane, requests, tokens_in, tokens_out) VALUES(?, ?, ?, ?, ?, ?, ?) ' +
-      'ON CONFLICT(day, provider, model, lane) DO UPDATE SET requests = requests + excluded.requests, ' +
-      'tokens_in = tokens_in + excluded.tokens_in, tokens_out = tokens_out + excluded.tokens_out',
-    write.day,
-    write.provider.slice(0, 60),
-    write.model.slice(0, 200),
-    write.lane,
-    n(write.requests ?? 1),
-    n(write.tokensIn),
-    n(write.tokensOut),
-  );
-}
-
-function conversation(write: ConversationWrite, tx: CommitExtensionTx): void {
-  if (typeof write.id !== 'string' || !write.id || write.id.length > 200) bad();
-  if (write.remove) {
-    if (
-      tx.run('DELETE FROM conversations WHERE id = ? OR id GLOB ?', write.id, `${write.id}:*`)
-        .changes
-    )
-      tx.mark('Conversation', write.id, 'd');
-    return;
-  }
-  if (typeof write.data !== 'string' || write.data.length > 200_000) bad();
-  const pos =
-    write.pos ??
-    tx.get<{ p: number | null }>(
-      'SELECT MAX(pos)+1 p FROM conversations WHERE id GLOB ?',
-      `${write.id}:*`,
-    )?.p ??
-    0;
-  tx.run(
-    'INSERT OR REPLACE INTO conversations(id, pos, data) VALUES(?, ?, ?)',
-    `${write.id}:${pos}`,
-    pos,
-    write.data!,
-  );
-  tx.mark('Conversation', write.id, 'u');
-}
-
 function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   switch (write.kind) {
     case 'job':
       return job(write as JobWrite, tx);
     case 'summary':
-      return summary(write as SummaryWrite, tx);
+      return aiWrite('summary', write as never, tx);
     case 'aiUsage':
-      return aiUsage(write as AiUsageWrite, tx);
+      return aiWrite('aiUsage', write as never, tx);
     case 'plan':
-      return plan(write as PlanWrite, tx);
+      return aiWrite('plan', write as never, tx);
     case 'conversation':
-      return conversation(write as ConversationWrite, tx);
+      return aiWrite('conversation', write as never, tx);
   }
 }
 

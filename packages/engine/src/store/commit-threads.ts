@@ -58,8 +58,9 @@ export function threadDelete(run: CommitRun, w: ThreadDeleteWrite) {
     run.mark('Message', w.accountId, m.remote_id, 'd');
   }
   run.markListChanges(run.lists(row.id), new Map());
-  for (const r of run.q('SELECT id FROM plans WHERE thread_id = ?').all<{ id: number }>(row.id))
-    run.markId('Plan', `${w.accountId}:plan-${r.id}`, 'd');
+  // The thread's plans cascade with it; a `*` row re-reads the account's plans (coarser than per-row
+  // marks, correct — the deleted thread's plans answer notFound).
+  run.markId('Plan', w.accountId, '*');
   // `replydraft:<wire>` and `followup:<wire>[:<hash>]` both belong to this thread.
   const base = `${w.accountId}:${w.remoteThreadId}`;
   run

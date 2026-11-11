@@ -567,6 +567,8 @@ async function rsvp(args: Input<'Event/rsvp'>, ctx: MethodContext): Promise<Outp
   return receipt(ctx, args.opId);
 }
 
+const plansImpl = () => import('../ai/impl/plans');
+
 export const handlers: AreaHandlers<'event'> = {
   'Calendar/get': getCalendars,
   'Calendar/set': setCalendar,
@@ -576,8 +578,8 @@ export const handlers: AreaHandlers<'event'> = {
   'Event/rsvp': rsvp,
   // The plan surface lazy-loads `ai/impl/plans` (the bundle budget's seam); the impl holds the gate, the
   // date-ish pre-filter and the model call. `Plan/*` writes stay local except `Plan/confirm`'s calendar put.
-  'Event/extract': async (args, ctx) => (await import('../ai/impl/plans')).extract(args, ctx),
-  'Plan/get': async (args, ctx) => (await import('../ai/impl/plans')).getPlans(args, ctx),
-  'Plan/confirm': async (args, ctx) => (await import('../ai/impl/plans')).confirmPlan(args, ctx),
-  'Plan/dismiss': async (args, ctx) => (await import('../ai/impl/plans')).dismissPlans(args, ctx),
+  'Event/extract': async (args, ctx) => (await plansImpl()).extract(args, ctx),
+  'Plan/get': async (args, ctx) => (await plansImpl()).getPlans(args, ctx),
+  'Plan/confirm': async (args, ctx) => (await plansImpl()).confirmPlan(args, ctx),
+  'Plan/dismiss': async (args, ctx) => (await plansImpl()).dismissPlans(args, ctx),
 };

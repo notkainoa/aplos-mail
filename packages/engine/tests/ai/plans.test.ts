@@ -7,7 +7,7 @@ import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
 import { type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import type { Caller } from '../../src/methods/types';
-import '../../src/ai/impl/plan-writes';
+import '../../src/ai/impl/ai-writes';
 import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/plans';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock } from '../runtime.helpers';

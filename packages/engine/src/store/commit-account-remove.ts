@@ -31,8 +31,8 @@ export function accountRemove(run: CommitRun, w: AccountRemoveWrite) {
     )
     .run(id);
   run.q('DELETE FROM governor_state WHERE account_id = ?').run(id);
-  for (const r of run.q('SELECT id FROM plans WHERE account_id = ?').all<{ id: number }>(id))
-    run.markId('Plan', `${id}:plan-${r.id}`, 'd');
+  // Plans cascade with the account; a `*` row re-reads the type like Thread's, cheaper than per-row marks.
+  run.markId('Plan', id, '*');
   run
     .q(
       'DELETE FROM meta WHERE substr(key, 1, ?) = ? OR substr(key, 1, ?) = ? OR substr(key, 1, ?) = ?',

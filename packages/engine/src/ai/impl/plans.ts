@@ -17,7 +17,7 @@ import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
 import { callMessage, meteredChat } from './runtime';
 import { inputHashOf } from './jobs';
-import './plan-writes';
+import './ai-writes';
 
 /**
  * Plans: dates and meetings AI finds in mail, stored as proposals (`plans` rows, schema 0007) the owner confirms
