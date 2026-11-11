@@ -19,7 +19,13 @@ import { createManualScheduler, createManualTimers } from '../../data/scheduler'
 import type { EventChange } from '@aplos/contract';
 import type { OperationView, Receipt } from '../../data';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
-import { runCalendarEffect, type EffectPorts } from './effects';
+import {
+  calendarUndoRefused,
+  cancelPendingRetries,
+  releaseHeldWrites,
+  runCalendarEffect,
+  type EffectPorts,
+} from './effects';
 import type { CalendarEffect } from './calendar.model';
 import { NOW, ports, resetWrites, settle, testUi } from './calendar.testkit';
 
@@ -343,6 +349,65 @@ test('review17: a new write on the event retires its stale failed-op toast and i
     runToastAction(stale!.id, 'retry');
     await flush();
     assert.equal(retries(), 0, 'the disarmed Retry is inert');
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
+
+test('review17: an unmounted screen ignores a late receipt — no mark, no watch', async () => {
+  const { flush } = await bootRecorded();
+  resetToasts();
+  try {
+    let resolveReceipt!: (value: { receipt: Receipt }) => void;
+    const ui = testUi();
+    const hanging: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () =>
+        new Promise(resolve => {
+          resolveReceipt = resolve;
+        }),
+    };
+    runCalendarEffect(guestedFx('one'), hanging, ui);
+    // The screen unmounts inside the round trip: the container releases the write guards.
+    cancelPendingRetries();
+    releaseHeldWrites();
+    // The receipt lands late. Its continuation must register nothing on the dead screen — no
+    // settle, no mark, no operation watch nothing could cancel.
+    resolveReceipt({
+      receipt: { opId: 'late-op', appliedState: { dbEpoch: 'e', seq: 1 } },
+    });
+    await flush();
+    assert.deepEqual(ui.applied, [], 'the late receipt settled nothing');
+    let calls = 0;
+    const second: EffectPorts = {
+      ...watchedPorts(),
+      eventSet: () => {
+        calls += 1;
+        return new Promise(() => {});
+      },
+    };
+    runCalendarEffect(guestedFx('two'), second, testUi());
+    assert.equal(calls, 1, 'the late receipt left the event unguarded');
+  } finally {
+    resetWrites();
+    resetToasts();
+  }
+});
+
+test('review17: unmount releases heldWrites — a stale op id is no longer held', async () => {
+  const env = await heldWrite();
+  try {
+    cancelPendingRetries();
+    releaseHeldWrites();
+    // A refused undo for the old screen's op id after unmount must answer nothing — the held
+    // wording belongs to a screen that is gone.
+    calendarUndoRefused(env.opId, { error: { type: 'conflict', message: 'gone' } });
+    assert.equal(
+      getToasts().find(t => t.id === `${env.opId}:undo`),
+      undefined,
+      'a stale op id answers nothing after unmount',
+    );
   } finally {
     resetWrites();
     resetToasts();

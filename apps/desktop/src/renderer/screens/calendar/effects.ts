@@ -294,6 +294,13 @@ function opFailureToast(opId: string, failure: WriteFailure, ports: EffectPorts)
 const heldWrites = new Set<string>();
 
 /**
+ * The screen's write generation: `releaseHeldWrites` bumps it on unmount, so a receipt (or a
+ * rejection) that lands for an older screen's write registers nothing — no settle, no mark, no
+ * operation watch nothing would ever cancel (review17).
+ */
+let writesEpoch = 0;
+
+/**
  * The event ids a hold still guards, each marked by its write's op id: a hold-candidate write
  * (`notify: true`, or an RSVP which notifies by default) marks its target at SUBMIT — a second
  * press inside one round trip fails fast rather than submitting two full writes that interleave
@@ -351,9 +358,11 @@ function retireFailedOps(eventId: string | undefined): void {
 
 /** The screen unmounting releases every guard — the next mount starts clean. */
 export function releaseHeldWrites(): void {
+  writesEpoch += 1;
   heldTargets.clear();
   failedOps.clear();
   staleRetries.clear();
+  heldWrites.clear();
 }
 
 /** The event a write's hold would guard — only a write that asks for one can clash. */
@@ -662,8 +671,12 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
   const marked =
     spec.target !== undefined && ports.watchOperation !== undefined ? spec.target : undefined;
   if (marked !== undefined) heldTargets.set(marked, spec.opId);
+  const epoch = writesEpoch;
   spec.call().then(
     out => {
+      // The screen unmounted inside the round trip: the late receipt registers nothing — no
+      // settle, no mark, no watch nothing could cancel (review17).
+      if (epoch !== writesEpoch) return;
       // A held write never settles at its receipt: the hold's own commit does not advance seq, so
       // `appliedState` is already reached and the frame test would drop the patch at once — the
       // change would snap back for the whole undo window. It settles at `synced` (then on the
@@ -678,6 +691,8 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       if (out.held || out.undoable) watchWrite(spec, ui, ports, out.held);
     },
     error => {
+      // The screen is gone: its marks were already released — no rollback, no refusal toast.
+      if (epoch !== writesEpoch) return;
       // A rejection accepted nothing: the submit-time mark dies with it, then the refusal runs.
       unmarkHeldTarget(marked, spec.opId);
       writeFailed(spec, ui, ports, error, retry);
