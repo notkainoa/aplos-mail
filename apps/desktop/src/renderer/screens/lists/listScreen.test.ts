@@ -191,10 +191,10 @@ test('every list renders its own rows: groups in All mail, recipients in Drafts 
     assert.match(drafts, /Re: A quieter home for our project/);
 
     const sent = renderToStaticMarkup(createElement(ListScreen, { which: 'sent' }));
-    assert.match(sent, /ui-list-row__sender" dir="auto">Studio team</);
+    assert.match(sent, /ui-list-row__sender" dir="auto" title="Studio team">Studio team</);
     assert.doesNotMatch(
       sent,
-      /ui-list-row__sender" dir="auto">Alex Morgan</,
+      /ui-list-row__sender" dir="auto" title="Alex Morgan">Alex Morgan</,
       'Sent shows who it went to, not the owner',
     );
 
