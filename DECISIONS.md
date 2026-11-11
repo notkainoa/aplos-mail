@@ -1969,8 +1969,19 @@ Context: two rule sets for the same narrow-pane behaviour landed within an hour 
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
 
+## 2026-11-11 — prov-cal: held calendar writes, two small rules from the third review
+
+- **Chosen:** undo of a hold that failed as `calendar.uncertain` is refused (`conflict`: "may already have been sent"). The change may already be at Google; recording it as "undone" would be a claim nobody can keep.
+- **Chosen:** a whole-series hold (including an "All events" edit opened from one occurrence, which names that occurrence but has scope `series`) and a `following` hold (which rewrites every later occurrence) clash with a hold on any occurrence of the same event (the second is refused `calendar.holdPending`); two holds on different occurrences of one event do not. Only scope `occurrence` is about one occurrence, the way `targetId` picks Google's target.
+- **Open ticket (not a blocker):** a recurrence id with no `Z` is read in the calendar's zone for the "already started" check, not in the event's own zone.
+
 ## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
 
 Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
 
 Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.
+
+## 2026-11-11 — prov-cal: Retry never repeats a change whose answer was lost
+
+- **Chosen (integrator's decision):** Retry on a hold that failed as `calendar.uncertain` is refused (`conflict` / `calendar.checkFirst`: "Check your calendar: this change may already have gone through. Make it again if it is missing."). A create is idempotent (its event id is derived from the op), an edit is guarded by `If-Match`, but an RSVP email is not, so one rule covers all. A hold waiting for its account to start reads `queued` but no longer `undoable`, because its window has closed.
+- **What the owner can see, in one sentence each:** a failed calendar change is never sent again unless they press Retry; after a reload only a screen that kept the change's id can see it; and a change more than 15 minutes late, or for an event that has already started, also waits for Retry.
