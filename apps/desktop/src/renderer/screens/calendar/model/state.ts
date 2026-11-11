@@ -157,6 +157,13 @@ export type CalendarAction =
   | { type: 'soloCalendar'; id: string }
   /** The failed-holds line's Review button / its Popover's close (review19). */
   | { type: 'holdsReview'; open: boolean }
+  /**
+   * The open list's last row left (its own action emptied it): close it AND move focus — the
+   * focused button and the Review anchor both just unmounted, so focus would drop to body
+   * (review21). A user's own close stays `holdsReview {open:false}`: the Popover puts focus back
+   * on its anchor itself.
+   */
+  | { type: 'holdsEmptied' }
   /** A Review row's Retry: `Queue/retry` on the item id — the hold's own path, never `Event/set` again. */
   | { type: 'holdRetry'; id: string; opId: string }
   /** A Review row's Discard: `Queue/discard` on the queue item id. */

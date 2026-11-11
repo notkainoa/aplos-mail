@@ -384,6 +384,8 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   soloCalendar: (s, a) => done({ ...closed(s), solo: s.solo === a.id ? null : a.id }),
   // Opening the Review takes the same exclusive-surface rule as opening a detail (review21).
   holdsReview: (s, a) => done({ ...(a.open ? closed(s) : s), holdsReview: a.open }),
+  // The list emptied under the open popover: close it and land focus on the grid, not body.
+  holdsEmptied: s => done({ ...s, holdsReview: false }, [{ kind: 'focus', target: 'grid' }]),
   // The Review list stays open while a row's action settles; the row leaves in place, and the
   // component closes the list itself once it is empty (review19).
   holdRetry: (s, a) => done(s, [{ kind: 'holdRetry', id: a.id, opId: a.opId }]),

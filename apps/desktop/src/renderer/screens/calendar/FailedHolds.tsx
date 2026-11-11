@@ -381,8 +381,10 @@ export function FailedHolds({
   useEffect(() => {
     if (count === 0) {
       announced.current = false;
-      // An empty list leaves no popover: the last row's own action emptied it.
-      if (open) dispatch({ type: 'holdsReview', open: false });
+      // An empty list leaves no popover: the last row's own action emptied it. `holdsEmptied`
+      // closes AND lands focus on the grid — the focused button and the Review anchor are both
+      // about to unmount, so focus would otherwise drop to body (review21).
+      if (open) dispatch({ type: 'holdsEmptied' });
       return;
     }
     if (!announced.current) {

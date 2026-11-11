@@ -324,6 +324,12 @@ test('review21: opening Review closes the other transient surfaces', () => {
   assert.equal(t.state.moreOpen, false);
 });
 
+test('review21: an emptied open list puts focus on the grid', () => {
+  const t = update(S({ holdsReview: true }), { type: 'holdsEmptied' }, ctxFor());
+  assert.equal(t.state.holdsReview, false);
+  assert.deepEqual(t.effects, [{ kind: 'focus', target: 'grid' }]);
+});
+
 test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {
   let calls = 0;
   const seen: number[] = [];
