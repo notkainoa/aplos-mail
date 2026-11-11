@@ -97,13 +97,27 @@ test('trackers: nothing when none, singular and plural otherwise', () => {
 });
 
 test('loading line: names the subject, else the sender, else nothing (the caller says "this email")', () => {
-  const row = (subject: string, fromName: string) => ({ subject, fromName }) as never;
+  const row = (subject: string, fromName: string, participants: unknown[] = []) =>
+    ({ subject, fromName, participants }) as never;
   assert.equal(
     loadingLabel(row('October illustrations', 'Drew Bell')),
     'Loading October illustrations…',
   );
   assert.equal(loadingLabel(row('  ', 'Drew Bell')), 'Loading Drew Bell…');
   assert.equal(loadingLabel(row('', '')), null);
+  const me = { name: 'Kainoa Newton', address: 'owner@mail.example', me: true };
+  const leah = { name: 'Leah Okafor', address: 'leah@harbor-table.example' };
+  assert.equal(
+    loadingLabel(row('', 'Kainoa Newton', [me, leah])),
+    'Loading Leah Okafor…',
+    'the owner answered last: the other person',
+  );
+  assert.equal(
+    loadingLabel(row('', '  \u202eLeah\u0000   Okafor  ')),
+    'Loading Leah Okafor…',
+    'bidi overrides and control characters are cleaned',
+  );
+  assert.equal(loadingLabel(row('Re:\u202e fish', 'x')), 'Loading Re: fish…');
   assert.equal(loadingLabel(undefined), null);
 });
 

@@ -1938,6 +1938,12 @@ Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by 
 
 How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
 
+## 2026-11-11: the reader's loading line names the sender like Home's row does (ui-reader, handoff from ui-home #454)
+
+Context: `loadingLabel` fell back to the raw `row.fromName` for a thread with no subject, so a worst-case sender name (the owner's own name when they answered last, bidi controls, runs of whitespace) leaked into "Loading …".
+
+Decision: the subject and the sender both go through Home's `cleanName`, and the sender is Home's `senderOf` (the other person, not the owner). A thread with neither still gets no label, and the caller says "this email".
+
 ## 2026-11-10: Narrow Home panes: nothing squashes or covers anything (ui-home, on ui-polish's review of #454)
 
 With the Ask dock open at the minimum window the Home pane is about 324px: the focus letter's Reply collapsed to a 24px stub over Later's icon, and a row's due chip and bookmark and attachment icons overlapped. `screens/screens.css` now makes the focus letter a size container: under 380px Later and Done keep only their icons (label and key stay for assistive tech and the tooltip), under 250px Reply also drops its Space cap, under 189px its label too (it keeps its icon and its name), and it never shrinks. (Thresholds are the card's content width.) Rows keep their trailing icons at their own width, give the sender a 48px floor and clip the middle column (summary and due chip) instead of letting it spill. Wide layouts are unchanged (same measured geometry at 1280px).
@@ -1955,3 +1961,9 @@ Review follow-up (ui-polish on #458): Later and Done keep their labels down to 3
 Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
+
+## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
+
+Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
+
+Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.

@@ -1,9 +1,12 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-10 from `revamp` `825ee2a0`, includes the go-live flip and every
-earlier fix batch plus: calendar accounts UI + "No calendars" vs "Syncing…" #356/#364/#365, and
-the real AI path #369–#383 — Ask with citations, background summaries, follow-up nudges, the
-consent card, Settings → AI provider setup):
+The app to check (built 2026-11-11 from `revamp` `0356802f`, includes the go-live flip and every
+earlier fix batch plus: calendar accounts UI + "No calendars" vs "Syncing…" #356/#364/#365, the
+real AI path #369–#383 — Ask with citations, background summaries, follow-up nudges, the consent
+card, Settings → AI provider setup — the one-by-one card #421/#426/#451, Home low-importance lanes
+#387–#402, calendar writes + Enable editing #393/#394/#410/#417, Settings Diagnostics/Export/Tools
+#416–#439, recipient suggestions #395, and the theme/menu/show-full fixes #448–#458; calendar
+holds #437 and #460+ landed after this build):
 
 `~/Applications-test/Aplos Mail (revamp).app`
 
@@ -25,6 +28,15 @@ It was never downloaded, so no quarantine warning is expected.
   Settings, onboarding are merged); a few older calls still answer "This screen is not on the new
   engine yet" — that's the last-mile gap being closed, not a new bug. Google sign-in in this build
   reads `~/.config/aplos-mail/.env` (already present on this Mac).
+
+  **Check the renderer before anything else.** The new renderer is what every item below is about,
+  and it only boots with `APLOS_ENGINE=real` until the go-live word makes it the default. A build
+  that starts without the engine bridge silently falls back to the LEGACY renderer — every check
+  after that is measuring the old app, not this build. The unmistakable tell is on Home: the new
+  renderer's one-by-one entry is **"Go one by one" (S)**; if Home shows **"Swipe through them"** you
+  are on the legacy renderer — quit and relaunch with `APLOS_ENGINE=real`. (In dark mode the legacy
+  app also draws a white left rail with invisible labels; that is a legacy artefact, not a bug to
+  report.)
 
 Everything below is a quick look, not a test suite. Tick what behaves; write down anything that
 doesn't and where it stopped.
