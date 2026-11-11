@@ -1908,3 +1908,7 @@ With the Ask dock open at the minimum window the Home pane is about 324px: the f
 Limit: with the dock dragged to 404px or more at the 900px window the pane is under 280px and no row or letter layout fits; that is the dock's maximum (ui-shell), not Home's.
 
 Review follow-up (ui-polish on #458): Later and Done keep their labels down to 380px of card content (about a 1100px window with Ask open) and go icon-only below it; every narrow-pane selector starts at `.aplos-list-column`, so only the Home, Later and list screens are restyled, never ui-foundation's shared component styles (the Low sheet, the gallery).
+
+## 2026-11-10: Follow up names who it waits on; Sent names who it went to (ui-home, on eng-views' ThreadRow.recipients)
+
+`ThreadRow.recipients` (the To and Cc of the newest message the owner sent, added by eng-views) lets a thread the owner wrote entirely read as the person being waited on instead of the owner's own name: `senderOf` uses the sender who is not the owner first, then `recipients` (owner removed, up to three names then "and N more"), then the owner, then the subject. Sent's "who" column now prefers `recipients` too (who the thread went to) before the other senders in the thread. The shared helpers `otherNames` and `joinNames` live in `screens/home/homeRows.ts`.
