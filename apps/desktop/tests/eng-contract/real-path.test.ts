@@ -61,6 +61,7 @@ function mainSide(t: TestContext, options: { now?: () => number } = {}) {
   const utilities: ReturnType<typeof inProcessUtility>[] = [];
   const requests: UtilityRequest[] = [];
   const desktop: DesktopFrame[] = [];
+  const hostEvents: unknown[] = [];
   const ups: boolean[] = [];
   const processState = createProcessState();
   const ports = portTracker(t);
@@ -78,7 +79,7 @@ function mainSide(t: TestContext, options: { now?: () => number } = {}) {
         utility.child,
         { dataDir: dir, appVersion: '0.3.0-test' },
         {
-          hostEvent: () => undefined,
+          hostEvent: event => hostEvents.push(event),
           request: async request => (requests.push(request), 'posted'),
         },
         timers,
@@ -102,7 +103,19 @@ function mainSide(t: TestContext, options: { now?: () => number } = {}) {
   });
   box.supervisor = supervisor;
   t.after(() => supervisor.close());
-  return { dir, clock, hosts, utilities, requests, desktop, ups, broker, supervisor, processState };
+  return {
+    dir,
+    clock,
+    hosts,
+    utilities,
+    requests,
+    desktop,
+    hostEvents,
+    ups,
+    broker,
+    supervisor,
+    processState,
+  };
 }
 
 test('real path: a window gets its own port, Session/get answers, main validates compose through Draft/get', async t => {
@@ -234,6 +247,34 @@ test('real path: killing the engine reconnects windows on the same dbEpoch with 
     'no reset: the window resumes, nothing is re-sent',
   );
   assert.ok(since.some(frame => frame.frame === 'desktop' && frame.event.type === 'engine'));
+});
+
+test('real path: the stored theme reaches main at every engine start, and a change follows at once', async t => {
+  const main = mainSide(t);
+  await (
+    await main.supervisor.start()
+  ).ready;
+  const appearance = () =>
+    main.hostEvents.filter(
+      (event): event is { type: 'appearance'; theme: string } =>
+        (event as { type?: string }).type === 'appearance',
+    );
+  await until(() => appearance().length === 1, 'the boot appearance seed');
+  assert.equal(appearance()[0].theme, 'system', 'default settings seed the system theme');
+
+  // A Settings/set theme change emits on the same channel main's `nativeTheme` follows.
+  const direct = main.hosts[0].engine.connect(windowCaller);
+  await direct.call('Settings/set', { opId: 'theme-1', patch: { ui: { theme: 'dark' } } });
+  direct.close();
+  await until(() => appearance().length === 2, 'the change event');
+  assert.equal(appearance()[1].theme, 'dark');
+
+  // An engine restart seeds the stored theme again: explicit Light/Dark survives it (ui-shell's #450 finding).
+  await main.utilities[0].crash();
+  await until(() => main.ups.length === 2, 'the restart');
+  assert.deepEqual(main.ups, [false, true]);
+  await until(() => appearance().length === 3, 'the restart seed');
+  assert.equal(appearance()[2].theme, 'dark', 'the stored theme, not a system fallback');
 });
 
 test('real path: the third engine stop within 60 s parks, with no further restart', async t => {
