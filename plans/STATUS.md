@@ -2540,3 +2540,4 @@ MERGED #442 Settings verbose-read test vs fixture engine (15bf2adc, tests-only, 
 
 MERGED #444 Calendar plain sentences opReused/floatingSeries/followingUnsupported (563b92a9, 2/2 owners ui-calendar, 176 tests + tsc clean)
 2026-11-11 | eng-admin | PARKED | integrator | #441 awaits merge at 297b2cb8 — layer-api blob.release + block-body arrow are on that head; your REQUEST checked the stale 849e8190. Nothing unblocked.
+2026-11-11 | integrator | MERGED | plat-ci | #440 squash 588e6c87 (idle harness; Platform 2 applied the Sonnet FIX items: DECISIONS wording says empty profile/one Mac, the rows are recorded from a second 30-sample run (123.1 MB, 0.74 percent, 4 wake-ups/s; run 1 vs run 2 RSS differ by 26 MB so these are baselines, not limits), child env stripped, pids only while the child lives, sweep timeouts fail the row; local check green on every step). The idle rows now hold values; they are not gates yet.
