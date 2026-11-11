@@ -82,10 +82,16 @@ function seriesShift(
   ctx: CalendarContext,
   event: Event,
   fields: Partial<EventFields>,
+  zone = event.timeZone,
 ): readonly OptimisticChange[] {
-  const zone = event.timeZone;
-  const dStart = fields.start ? wallDeltaMs(event.start, fields.start, zone) : 0;
-  const dEnd = fields.end ? wallDeltaMs(event.end, fields.end, zone) : 0;
+  // The shift runs in the zone the written times carry — the series zone the engine moves them in —
+  // so what the overlay shows is what the write will do.
+  const shiftZone =
+    (fields.start?.type === 'floating' ? fields.start.timeZone : undefined) ??
+    (fields.end?.type === 'floating' ? fields.end.timeZone : undefined) ??
+    zone;
+  const dStart = fields.start ? wallDeltaMs(event.start, fields.start, shiftZone) : 0;
+  const dEnd = fields.end ? wallDeltaMs(event.end, fields.end, shiftZone) : 0;
   // The series key is the dragged row's `seriesId` — or its own id when the master itself is dragged, so its
   // occurrences (whose `seriesId` names it) shift too.
   const key = event.seriesId ?? event.id;
@@ -95,8 +101,8 @@ function seriesShift(
     const patch: Partial<CalendarEventData> = {};
     if (fields.title !== undefined) patch.title = fields.title;
     if (fields.allDay !== undefined) patch.allDay = fields.allDay;
-    if (dStart) patch.start = isoOfTime(shiftInZone(e.start, dStart, zone));
-    if (dEnd) patch.end = isoOfTime(shiftInZone(e.end, dEnd, zone));
+    if (dStart) patch.start = isoOfTime(shiftInZone(e.start, dStart, shiftZone));
+    if (dEnd) patch.end = isoOfTime(shiftInZone(e.end, dEnd, shiftZone));
     if (Object.keys(patch).length > 0) out.push({ id: e.id, patch });
   }
   return out;
@@ -273,14 +279,18 @@ function askEditScope(
 /** Pending creates get distinct temp ids even with identical fields, or the second would replace the first (review1 10). */
 let nextTempSeq = 0;
 
-/** The zone a timed write is made in: the target calendar's, else the event's own (series zone). */
+/**
+ * The zone a timed write is made in: an update keeps the event's own — the series zone the engine
+ * moves a series in (a floating series change in any other zone is refused `calendar.floatingSeries`) —
+ * else the target calendar's. A create has no event of its own, so it takes the calendar's.
+ */
 function zoneFor(
   draft: EditorDraft,
   original: Event | undefined,
   ctx: CalendarContext,
 ): string | undefined {
   const calendar = ctx.calendars.find(c => c.id === (draft.calendarId ?? original?.calendarId));
-  return calendar?.timeZone ?? original?.timeZone;
+  return original?.timeZone ?? calendar?.timeZone;
 }
 
 /** A new event's optimistic entry and its create write: the temp id stands in until the receipt lands. */
@@ -402,7 +412,7 @@ function updateSave(
   // and the changed text fields too (a series rename retitles every occurrence, not just the edited one).
   const more =
     scoped === 'series' && original && change.type === 'update'
-      ? seriesShift(ctx, original, change.fields)
+      ? seriesShift(ctx, original, change.fields, zone)
       : undefined;
   return done({ ...next, selectedId: draft.eventId ?? null }, [
     {
