@@ -33,6 +33,7 @@ import { undoToastOperation } from '../../shell/KeysProviders';
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import {
   calendarUndoRefused,
+  cancelPendingRetries,
   runCalendarEffect,
   undoLastCalendarChange,
   type EffectPorts,
@@ -283,21 +284,35 @@ test('heldWrites: a retried hold that then syncs takes the failure toast down', 
 });
 
 test('heldWrites: repeated failed frames push exactly one toast per failed operation', async () => {
-  const { control, flush, engine, opId } = await heldWrite(heldFailure('calendar.late'));
+  const { control, flush, engine, opId, ui } = await heldWrite(heldFailure('calendar.late'));
   try {
     await control.advanceClock({ ms: 1_000 });
     await flush();
     assert.ok(failedToast());
-    // The same failure reaches the surface again (a second session's read, a replay): no second toast.
+    // The same failure reaches the surface again (a second session's read, a replay): no second
+    // toast, and no second rollback — the entry dropped once and stays dropped once.
     const op = engine.fixture.ops.get(opId)?.operation;
     assert.ok(op);
-    await control.replay({ frames: [{ frame: 'operation', operation: op }] });
+    // The view changes (a fresh error payload) but the remote state is the same 'failed' — the
+    // watcher must answer it once, not again.
+    await control.replay({
+      frames: [
+        {
+          frame: 'operation',
+          operation: {
+            ...op,
+            error: { ...op.error!, message: 'engine words, retold' },
+          },
+        },
+      ],
+    });
     await flush();
     assert.equal(
       getToasts().filter(t => t.id.endsWith(':failed')).length,
       1,
       'still one toast for the one failed operation',
     );
+    assert.deepEqual(ui.dropped, [DINNER], 'the replay did not roll the overlay back again');
   } finally {
     resetToasts();
   }
@@ -628,6 +643,115 @@ test('heldWrites: a throwing operation listener starves nobody, and unsubscribe 
     });
     await flush();
     assert.deepEqual(seen, [], 'unsubscribed listeners stay gone');
+  } finally {
+    resetToasts();
+  }
+});
+
+test('heldWrites: a rejected write’s calendar.late Retry calls Operation/retry, never the write again', async () => {
+  const env = await bootRecorded();
+  resetToasts();
+  try {
+    let writes = 0;
+    runCalendarEffect(
+      dinnerFx,
+      {
+        ...ports(),
+        eventSet: () => {
+          writes += 1;
+          return Promise.reject(
+            new OperationFailedError('op-x', {
+              type: 'unavailable',
+              message: 'engine words',
+              reasonCode: 'calendar.late',
+            }),
+          );
+        },
+      },
+      testUi(),
+    );
+    await env.flush();
+    const toast = failedToast();
+    assert.equal(
+      toast?.message,
+      "That change wasn't sent in time. Check the event, then send it again.",
+    );
+    assert.ok(
+      toast?.actions?.some(a => a.id === 'retry'),
+      'the late refusal still offers Retry',
+    );
+    runToastAction(toast!.id, 'retry');
+    await env.flush();
+    assert.equal(writes, 1, 'the write itself never ran again');
+    const opId = toast!.id.slice(0, -':failed'.length);
+    assert.deepEqual(
+      env.calls.filter(c => c.method === 'Operation/retry').map(c => c.args),
+      [{ opId }],
+      'Retry ran Operation/retry on the write’s own op id',
+    );
+    assert.equal(
+      env.calls.filter(c => c.method === 'Event/set').length,
+      0,
+      'no fresh Event/set beside the retry',
+    );
+  } finally {
+    resetToasts();
+  }
+});
+
+test('heldWrites: a provider-side retry that syncs takes the failure toast down', async () => {
+  const { control, flush, opId } = await heldWrite(heldFailure('calendar.late'));
+  try {
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    assert.ok(failedToast());
+    // The retry fires straight at the provider (another surface, a replayed press): the toast stays
+    // up — only the synced frame may take it down.
+    void api.operation.retry({ opId });
+    await flush();
+    assert.ok(failedToast(), 'still up: nothing pressed it away');
+    await control.advanceClock({ ms: 1_000 });
+    await flush();
+    assert.equal(failedToast(), undefined, 'the synced frame dismissed it');
+  } finally {
+    resetToasts();
+  }
+});
+
+test('heldWrites: a settled write releases its watch — a late failure does nothing', async () => {
+  const { control, flush, engine, opId, ui } = await heldWrite();
+  try {
+    const op = engine.fixture.ops.get(opId)?.operation;
+    assert.ok(op);
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'synced' } }],
+    });
+    await flush();
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'failed' } }],
+    });
+    await flush();
+    assert.equal(failedToast(), undefined, 'no failure surfaced after the watch settled');
+    assert.deepEqual(ui.dropped, [], 'no rollback after the watch settled');
+  } finally {
+    resetToasts();
+  }
+});
+
+test('heldWrites: cancelPendingRetries releases the watch — late frames do nothing', async () => {
+  const { control, flush, engine, opId, ui } = await heldWrite();
+  try {
+    // The screen went away mid-hold: its cleanup runs the outstanding offs, so a frame that lands
+    // later touches nothing.
+    cancelPendingRetries();
+    const op = engine.fixture.ops.get(opId)?.operation;
+    assert.ok(op);
+    await control.replay({
+      frames: [{ frame: 'operation', operation: { ...op, state: 'failed' } }],
+    });
+    await flush();
+    assert.equal(failedToast(), undefined, 'no failure surfaced after cleanup');
+    assert.deepEqual(ui.dropped, [], 'no rollback after cleanup');
   } finally {
     resetToasts();
   }
