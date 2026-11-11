@@ -239,15 +239,16 @@ test('review1: RSVP sends the scope and words the toast while held, then sent', 
       getToasts().some(t => t.message === 'Replied Yes to Theo'),
       false,
     );
-    // With no hold left the receipt's wording lands: the toast reads sent.
+    // With no hold left the receipt's wording lands: the toast reads sent. A different event —
+    // a second reply on the held one would be refused `calendar.holdPending` (review15).
     runCalendarEffect(
       {
         kind: 'rsvp',
-        id: 'q4',
+        id: 'sync',
         response: 'accepted',
         scope: 'occurrence',
         answer: 'yes',
-        optimistic: { id: 'q4', patch: { myReply: 'yes' } },
+        optimistic: { id: 'sync', patch: { myReply: 'yes' } },
         organizer: 'Theo',
         failure: "Couldn't send your reply.",
       },

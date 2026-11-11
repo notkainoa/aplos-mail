@@ -10,7 +10,14 @@
  * and stand-in toasts.
  */
 import type { EventChange } from '@aplos/contract';
-import { api, type ActResult, type OperationView, type Receipt, type State } from '../../data';
+import {
+  api,
+  type ActResult,
+  type ErrorBody,
+  type OperationView,
+  type Receipt,
+  type State,
+} from '../../data';
 import { toErrorBody } from '../../data/client';
 import {
   dismissToast,
@@ -75,12 +82,16 @@ export interface EffectPorts {
 
 /** The state setters an effect needs. */
 export interface EffectUi {
-  /** Apply the write's optimistic change at once (DESIGN 5 rule 1). */
-  optimistic(change: OptimisticChange): void;
-  /** Keep the overlay until a window reaches the write's applied state. */
-  settle(entryId: string, at: State | null): void;
-  /** Drop the overlay entry (a refusal, an undo). */
-  rollback(entryId: string): void;
+  /**
+   * Apply the write's optimistic change at once, as its own layer under `writeId` (DESIGN 5 rule
+   * 1): two writes can touch one entry (a second drag while the first is still held), and each
+   * write's rollback must take only its own layer — never the other write's patch (review15).
+   */
+  optimistic(change: OptimisticChange, writeId: string): void;
+  /** Keep the write's layer until a window reaches the write's applied state. */
+  settle(writeId: string, entryIds: readonly string[], at: State | null): void;
+  /** Drop the write's layer (a refusal, an undo, a forgotten op). */
+  rollback(writeId: string, entryIds: readonly string[]): void;
   /** A calendar's `shown` changed locally until `Calendar/get` is re-read. */
   shown(id: string, shown: boolean): void;
   /** The `Calendar/set` write returned: the next get is authoritative. */
@@ -139,6 +150,11 @@ export interface WatchedWrite {
   readonly goneEventId?: string;
   /** The account the write went to: `permission.calendarWrite` offers Enable editing on it. */
   readonly accountId?: string;
+  /**
+   * The engine's hold target (`targetOf` in holds.ts) while the write is held: a second held write
+   * on it is refused at once, and the mark is freed when the operation reaches a terminal state.
+   */
+  readonly target?: string;
   /**
    * Set on a re-watch after `Operation/retry`: the previous terminal row still answers
    * `Operation/get` until the next flush, so the identical view object means "nothing newer yet" —
@@ -253,9 +269,22 @@ function reconnectNotice(ports: EffectPorts, accountId: string | undefined): voi
  */
 const pendingRetries = new Set<() => void>();
 
+/**
+ * The targets of writes the engine still holds (`queued` or `syncing` — holds.ts refuses a second
+ * hold on either with `calendar.holdPending`). Mirroring them here lets a second held write fail
+ * fast: it submits nothing, and — the real fix — its optimistic layer is never laid over the first
+ * write's, so nothing merges and nothing can roll the pair back together (review15).
+ */
+const heldTargets = new Set<string>();
+
 /** The screen going away cancels every delayed retry still waiting: no write fires behind its back. */
 export function cancelPendingRetries(): void {
   for (const disarm of [...pendingRetries]) disarm();
+}
+
+/** The screen went away with holds still open: forget them — a stale mark must not refuse writes forever. */
+export function releaseHeldWrites(): void {
+  heldTargets.clear();
 }
 
 /**
@@ -336,18 +365,24 @@ interface FailureContext {
   readonly accountId?: string;
 }
 
-interface WriteSpec extends FailureContext {
+/** What a refusal needs that the effect knows at submit time: the WriteSpec minus the write itself. */
+interface RefusalSpec extends FailureContext {
   readonly opId: string;
+  /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
+  readonly failure?: string;
+  /** A blind retry could duplicate the write or re-notify guests (a create, an RSVP): unknown codes get none. */
+  readonly blindRetryUnsafe?: boolean;
+}
+
+interface WriteSpec extends RefusalSpec {
   /** Every overlay id the write covers (a series time shift patches a whole family); they settle and roll back together. */
   readonly entryIds: readonly string[];
   /** Overlay ids the write added (a create's tmp entries): a held one has no real row until the send confirms. */
   readonly addedIds: readonly string[];
   /** The overlay stays until a window reaches this state; `held` says the receipt's hold is still open. */
   readonly call: () => Promise<WriteOutcome>;
-  /** The refusal sentence; absent = a quiet dismissal (a plan's "Not now"). */
-  readonly failure?: string;
-  /** A blind retry could duplicate the write or re-notify guests (a create, an RSVP): unknown codes get none. */
-  readonly blindRetryUnsafe?: boolean;
+  /** The engine's hold target (holds.ts `targetOf`): a second held write on it is refused while this one waits. */
+  readonly target?: string;
 }
 
 /**
@@ -384,7 +419,7 @@ function writeFailed(
   error: unknown,
   retry: () => void,
 ): void {
-  spec.entryIds.forEach(id => ui.rollback(id));
+  ui.rollback(spec.opId, spec.entryIds);
   dismissToast(spec.opId);
   if (!spec.failure) return;
   const failure = writeFailureOf(error, spec.failure, spec.blindRetryUnsafe === true);
@@ -401,6 +436,47 @@ function addedIdsOf(change: OptimisticChange): string[] {
   return [change, ...(change.more ?? [])].filter(c => c.add !== undefined).map(c => c.id);
 }
 
+/** The engine's own body for a second hold on a still-held target (holds.ts `hold`). */
+const HOLD_PENDING_BODY: ErrorBody = {
+  type: 'conflict',
+  message:
+    'Your earlier change to this event has not been sent yet. Undo it, or wait a moment and try again.',
+  reasonCode: 'calendar.holdPending',
+};
+
+/**
+ * The event a held write targets, keyed by the local event id — holds.ts keys its own by the same
+ * event's remote identity, so a matching id here means the engine would refuse. Only a write that
+ * would itself be held can hit `calendar.holdPending`: `notify` unset goes straight to the
+ * provider, a create has no event yet, and a plan or a hide never notifies guests.
+ */
+function heldTargetOf(fx: CalendarEffect): string | null {
+  switch (fx.kind) {
+    case 'eventSet':
+      return fx.notify === true && fx.change.type !== 'create' ? fx.change.id : null;
+    case 'rsvp':
+      return fx.id;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The local `calendar.holdPending`: the same sentence the engine would give, nothing submitted and
+ * nothing patched. Refusing before the overlay is the point — the second write's layer never lands
+ * over the still-held first's, so its dismissal can never roll the pair back (review15).
+ */
+function refuseHeldWrite(
+  spec: RefusalSpec,
+  ui: EffectUi,
+  ports: EffectPorts,
+  retry: () => void,
+): void {
+  if (spec.failure === undefined) return;
+  const failure = writeFailureOf(HOLD_PENDING_BODY, spec.failure, spec.blindRetryUnsafe === true);
+  if (!failureHandled(spec, failure, ui, ports)) failureToast(spec.opId, failure, retry);
+}
+
 /**
  * Runs one write: overlay now, settle on the applied state, roll back and say so on a refusal. An
  * accepted write — held or not — joins the watches so its operation's frames are answered. A held
@@ -413,7 +489,9 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
       // A held write's receipt `appliedState` is already reached — the hold's own commit never
       // moves `seq` — so settling here would snap the change back for the whole undo window:
       // every held write (not just a create) waits for `synced`, whose commit is in by then.
-      if (!out.held) spec.entryIds.forEach(id => ui.settle(id, out.at));
+      if (!out.held) ui.settle(spec.opId, spec.entryIds, out.at);
+      // A held write's op is queued: its target refuses a second held write until the op ends.
+      if (out.held && spec.target !== undefined) heldTargets.add(spec.target);
       // Watch only a write that HAS an operation: the real engine records none for a plain
       // accepted write (`undoable: false`), so `Operation/get` answers notFound and the watcher
       // (and its useOperation subscription) would leak, never landing a frame.
@@ -424,6 +502,7 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
           at: out.at,
           held: out.held,
           addedIds: spec.addedIds,
+          ...(spec.target === undefined ? {} : { target: spec.target }),
           ...(spec.failure === undefined ? {} : { failure: spec.failure }),
           // The operation may still fail after the receipt: the same follow-ups a submit-time
           // refusal runs travel with the watch (`failureHandled`).
@@ -451,11 +530,17 @@ export function operationUpdate(
   ui: EffectUi,
   ports: EffectPorts,
 ): 'watching' | 'done' {
+  // The hold's target blocks a second held write exactly while the engine's record is `queued` or
+  // `syncing` (holds.ts): free it on every other state — a `failed` hold blocks nothing, and a
+  // retried op re-blocks the moment it queues again.
+  if (watch.target !== undefined)
+    if (view?.remote === 'queued' || view?.remote === 'syncing') heldTargets.add(watch.target);
+    else heldTargets.delete(watch.target);
   if (view === undefined) {
     // The operation record was forgotten while the write still waited (evicted, or the engine
     // never journaled one): roll the overlay back — a held create's tmp entry or a held edit's
     // patch must not ghost the grid forever.
-    watch.entryIds.forEach(id => ui.rollback(id));
+    ui.rollback(watch.opId, watch.entryIds);
     return 'done';
   }
   // A re-watch after `Operation/retry`: the stale terminal row is still what the store answers —
@@ -464,7 +549,7 @@ export function operationUpdate(
   switch (view.remote) {
     case 'failed':
     case 'conflict': {
-      watch.entryIds.forEach(id => ui.rollback(id));
+      ui.rollback(watch.opId, watch.entryIds);
       // One toast per operation: the Undo toast closes on every terminal state, not only on
       // `cancelled` — a held write that fails or conflicts would otherwise show both at once.
       dismissToast(watch.opId);
@@ -488,13 +573,13 @@ export function operationUpdate(
       return 'done';
     }
     case 'cancelled':
-      watch.entryIds.forEach(id => ui.rollback(id));
+      ui.rollback(watch.opId, watch.entryIds);
       dismissToast(watch.opId);
       return 'done';
     case 'synced':
       // Every held write skipped the receipt settle; the send's commit is in by this frame, so the
       // overlay settles now — a create's tmp entry drops with it, the real row committed already.
-      if (watch.held) watch.entryIds.forEach(id => ui.settle(id, watch.at));
+      if (watch.held) ui.settle(watch.opId, watch.entryIds, watch.at);
       dismissToast(watch.opId);
       return 'done';
     case 'applied':
@@ -537,7 +622,54 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
   switch (fx.kind) {
     case 'eventSet': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      const target = heldTargetOf(fx);
+      const spec: WriteSpec = {
+        opId,
+        entryIds: optimisticIds(fx.optimistic),
+        addedIds: addedIdsOf(fx.optimistic),
+        failure: fx.failure,
+        reopenEditorId: fx.reopenEditorId,
+        draft: fx.draft,
+        goneEventId: fx.change.type === 'create' ? undefined : fx.change.id,
+        accountId: fx.accountId,
+        blindRetryUnsafe: fx.change.type === 'create',
+        // The write marks its target while its receipt says held; the mark outlives `target`'s
+        // own null — a receipt could report a hold the check did not predict.
+        ...(fx.change.type === 'create' ? {} : { target: fx.change.id }),
+        call: () =>
+          ports
+            .eventSet({
+              opId,
+              change: fx.change,
+              // The engine holds only `notify === true` (holdIfNotifying): sent exactly when the
+              // change emails other guests, never `false` — unset keeps the provider's own default.
+              ...(fx.notify === true ? { notify: true as const } : {}),
+            })
+            .then(out => {
+              const held = isHeld(out.receipt);
+              if (out.receipt.undoable === false) {
+                if (fx.toast) demoteUndoToast(opId, fx.toast);
+              } else if (
+                // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
+                fx.toast?.held !== undefined &&
+                !held
+              )
+                updateToast(opId, { message: fx.toast.message });
+              return {
+                at: out.receipt.appliedState,
+                held,
+                undoable: out.receipt.undoable !== false,
+              };
+            }),
+      };
+      // The engine refuses a second held write on a still-held target (`calendar.holdPending`, a
+      // `queued` or `syncing` record): refuse it here first — the same sentence, nothing submitted,
+      // and the earlier write's layer never merges with a doomed patch (review15).
+      if (target !== null && heldTargets.has(target)) {
+        refuseHeldWrite(spec, ui, ports, retry);
+        return;
+      }
+      ui.optimistic(fx.optimistic, opId);
       if (fx.toast)
         pushToast({
           id: opId,
@@ -546,52 +678,48 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
           ...undoVerb(ports, opId),
           undoable: true,
         });
-      runWrite(
-        {
-          opId,
-          entryIds: optimisticIds(fx.optimistic),
-          addedIds: addedIdsOf(fx.optimistic),
-          call: () =>
-            ports
-              .eventSet({
-                opId,
-                change: fx.change,
-                // The engine holds only `notify === true` (holdIfNotifying): sent exactly when the
-                // change emails other guests, never `false` — unset keeps the provider's own default.
-                ...(fx.notify === true ? { notify: true as const } : {}),
-              })
-              .then(out => {
-                const held = isHeld(out.receipt);
-                if (out.receipt.undoable === false) {
-                  if (fx.toast) demoteUndoToast(opId, fx.toast);
-                } else if (
-                  // No hold left (nothing more to tell guests): the toast says it went, like the RSVP's.
-                  fx.toast?.held !== undefined &&
-                  !held
-                )
-                  updateToast(opId, { message: fx.toast.message });
-                return {
-                  at: out.receipt.appliedState,
-                  held,
-                  undoable: out.receipt.undoable !== false,
-                };
-              }),
-          failure: fx.failure,
-          reopenEditorId: fx.reopenEditorId,
-          draft: fx.draft,
-          goneEventId: fx.change.type === 'create' ? undefined : fx.change.id,
-          accountId: fx.accountId,
-          blindRetryUnsafe: fx.change.type === 'create',
-        },
-        ui,
-        ports,
-        retry,
-      );
+      runWrite(spec, ui, ports, retry);
       return;
     }
     case 'rsvp': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      const spec: WriteSpec = {
+        opId,
+        entryIds: [fx.id],
+        addedIds: [],
+        failure: fx.failure,
+        goneEventId: fx.id,
+        accountId: fx.accountId,
+        blindRetryUnsafe: true,
+        target: fx.id,
+        call: () =>
+          ports
+            .eventRsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope })
+            .then(receipt => {
+              const held = isHeld(receipt);
+              if (receipt.undoable === false)
+                demoteUndoToast(opId, {
+                  kind: 'done',
+                  message: rsvpMessage(fx.answer, fx.organizer, 'sent'),
+                  undoable: false,
+                });
+              // No hold (nothing left to tell guests): the toast says it went.
+              else if (!held)
+                updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
+              return {
+                at: receipt.appliedState,
+                held,
+                undoable: receipt.undoable !== false,
+              };
+            }),
+      };
+      // An answer emails the organizer, so the engine holds it like any notifying write — and a
+      // second answer while the first is still held hits the same `calendar.holdPending` (review15).
+      if (heldTargets.has(fx.id)) {
+        refuseHeldWrite(spec, ui, ports, retry);
+        return;
+      }
+      ui.optimistic(fx.optimistic, opId);
       pushToast({
         id: opId,
         kind: 'done',
@@ -599,40 +727,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
         ...undoVerb(ports, opId),
         undoable: true,
       });
-      runWrite(
-        {
-          opId,
-          entryIds: [fx.id],
-          addedIds: [],
-          call: () =>
-            ports
-              .eventRsvp({ opId, id: fx.id, response: fx.response, scope: fx.scope })
-              .then(receipt => {
-                const held = isHeld(receipt);
-                if (receipt.undoable === false)
-                  demoteUndoToast(opId, {
-                    kind: 'done',
-                    message: rsvpMessage(fx.answer, fx.organizer, 'sent'),
-                    undoable: false,
-                  });
-                // No hold (nothing left to tell guests): the toast says it went.
-                else if (!held)
-                  updateToast(opId, { message: rsvpMessage(fx.answer, fx.organizer, 'sent') });
-                return {
-                  at: receipt.appliedState,
-                  held,
-                  undoable: receipt.undoable !== false,
-                };
-              }),
-          failure: fx.failure,
-          goneEventId: fx.id,
-          accountId: fx.accountId,
-          blindRetryUnsafe: true,
-        },
-        ui,
-        ports,
-        retry,
-      );
+      runWrite(spec, ui, ports, retry);
       return;
     }
     case 'calendarSet': {
@@ -671,7 +766,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'planConfirm': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(fx.optimistic, opId);
       runWrite(
         {
           opId,
@@ -703,7 +798,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'planDismiss': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(fx.optimistic, opId);
       runWrite(
         {
           opId,
@@ -724,7 +819,7 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     }
     case 'eventHide': {
       const opId = newOpId();
-      ui.optimistic(fx.optimistic);
+      ui.optimistic(fx.optimistic, opId);
       pushToast({
         id: opId,
         kind: fx.toast.kind,

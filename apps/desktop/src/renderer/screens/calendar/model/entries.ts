@@ -289,6 +289,17 @@ export function overlayWithout(overlay: Overlay, id: string): Overlay {
 }
 
 /**
+ * The overlay a write's in-flight layers make together (the container keeps one layer per write,
+ * keyed by its opId, so a refused write's rollback drops only its own patch — review15). Later
+ * writes fold over earlier ones: a second move shows on top of the first.
+ */
+export function overlayOf(changes: Iterable<Parameters<typeof overlayWith>[1]>): Overlay {
+  let overlay = EMPTY_OVERLAY;
+  for (const change of changes) overlay = overlayWith(overlay, change);
+  return overlay;
+}
+
+/**
  * An overlay entry settles once a window frame reaches the write's applied state — or once the db epoch changed:
  * an engine reset means every row is re-read anyway, so holding the overlay would hide the fresh data (review1 8).
  */

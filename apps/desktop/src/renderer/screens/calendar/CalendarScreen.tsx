@@ -43,13 +43,11 @@ import {
   commandTarget,
   defaultCalendarId,
   detailIsFor,
-  EMPTY_OVERLAY,
   entriesFor,
   eventsRange,
   initialState,
   inviteOpen,
-  overlayWith,
-  overlayWithout,
+  overlayOf,
   periodOf,
   plansSpec,
   reached,
@@ -65,7 +63,6 @@ import {
   type CalendarState,
   type EditorDraft,
   type OptimisticChange,
-  type Overlay,
   type ShownOverride,
 } from './calendar.model';
 import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
@@ -83,6 +80,7 @@ import {
 import {
   cancelPendingRetries,
   livePorts,
+  releaseHeldWrites,
   runCalendarEffect,
   type EffectPorts,
   type EffectUi,
@@ -99,9 +97,9 @@ export interface CalendarScreenProps {
   readonly announce?: Announce;
 }
 
-/** An overlay entry stays until a window frame reaches the write's state (ARCH 9.2), or until it fails or is undone. */
+/** A write's overlay layer stays until a window frame reaches the write's state (ARCH 9.2), or until it fails or is undone. */
 interface Settling {
-  readonly id: string;
+  readonly writeId: string;
   readonly at: State | null;
 }
 
@@ -189,7 +187,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const now = useNow({ granularity: 'minute' });
   const settings = useSettings();
   const [state, setState] = useState<CalendarState>(() => initialState(toIsoDate(now)));
-  const [overlay, setOverlay] = useState<Overlay>(EMPTY_OVERLAY);
+  // One optimistic layer per write, keyed by its opId: a refused or undone write drops only its
+  // own layer — an earlier still-held write on the same event is never rolled back with it
+  // (review15). The visible overlay folds the live layers in order.
+  const [layers, setLayers] = useState<ReadonlyMap<string, OptimisticChange>>(new Map());
+  const overlay = useMemo(() => overlayOf(layers.values()), [layers]);
   const [settling, setSettling] = useState<readonly Settling[]>([]);
   // Accepted writes whose operations are still being followed through the provider queue (HeldWrites).
   const [watched, setWatched] = useState<readonly WatchedWrite[]>([]);
@@ -288,12 +290,18 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     ],
   );
 
-  // Drop overlay entries once the events window has caught up with their writes.
+  // Drop a write's layer once the events window has caught up with it.
   useEffect(() => {
-    const caughtUp = settling.filter(s => reached(eventsWindow.state, s.at));
-    if (caughtUp.length === 0) return;
-    setOverlay(o => caughtUp.reduce((acc, s) => overlayWithout(acc, s.id), o));
-    setSettling(list => list.filter(s => !caughtUp.includes(s)));
+    const caughtUp = new Set(
+      settling.filter(s => reached(eventsWindow.state, s.at)).map(s => s.writeId),
+    );
+    if (caughtUp.size === 0) return;
+    setLayers(m => {
+      const next = new Map(m);
+      for (const writeId of caughtUp) next.delete(writeId);
+      return next;
+    });
+    setSettling(list => list.filter(s => !caughtUp.has(s.writeId)));
   }, [eventsWindow.state, settling]);
 
   // The reducer reads the newest state and context even when several keys land in one frame.
@@ -307,9 +315,21 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const applyRef = useRef<(action: CalendarAction) => boolean>(() => false);
   const ui: EffectUi = useMemo(
     () => ({
-      optimistic: (change: OptimisticChange) => setOverlay(o => overlayWith(o, change)),
-      settle: (id: string, at: State | null) => setSettling(list => [...list, { id, at }]),
-      rollback: (id: string) => setOverlay(o => overlayWithout(o, id)),
+      optimistic: (change: OptimisticChange, writeId: string) =>
+        setLayers(m => new Map(m).set(writeId, change)),
+      settle: (writeId: string, _entryIds: readonly string[], at: State | null) =>
+        setSettling(list =>
+          list.some(s => s.writeId === writeId) ? list : [...list, { writeId, at }],
+        ),
+      rollback: (writeId: string) => {
+        setLayers(m => {
+          if (!m.has(writeId)) return m;
+          const next = new Map(m);
+          next.delete(writeId);
+          return next;
+        });
+        setSettling(list => list.filter(s => s.writeId !== writeId));
+      },
       shown: (id: string, shown: boolean) =>
         setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
       shownSettled: (id: string) =>
@@ -343,7 +363,13 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
 
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
   // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
-  useEffect(() => cancelPendingRetries, []);
+  useEffect(
+    () => () => {
+      cancelPendingRetries();
+      releaseHeldWrites();
+    },
+    [],
+  );
   const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);

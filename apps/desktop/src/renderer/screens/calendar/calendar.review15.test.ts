@@ -14,10 +14,10 @@ import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
-import type { Receipt } from '../../data';
+import type { OperationView, Receipt } from '../../data';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import type { CalendarEffect } from './calendar.model';
-import { runCalendarEffect, type EffectPorts } from './effects';
+import { operationUpdate, runCalendarEffect, type EffectPorts } from './effects';
 import { boot, NOW, ports, testUi } from './calendar.testkit';
 
 const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
@@ -28,7 +28,9 @@ const receipt = (extra: Partial<Receipt> = {}): Receipt => ({
 
 const task = () => new Promise<void>(resolve => setImmediate(resolve));
 
-const moveFx = (notify: boolean, over: Partial<CalendarEffect> = {}): CalendarEffect => ({
+type EventSetFx = Extract<CalendarEffect, { kind: 'eventSet' }>;
+
+const moveFx = (notify: boolean, over: Partial<EventSetFx> = {}): EventSetFx => ({
   kind: 'eventSet',
   change: {
     type: 'update',
@@ -53,6 +55,20 @@ const eventSetSpy = (out: { receipt: Receipt } | { error: unknown }) => {
   return { calls, port };
 };
 
+const view = (over: Partial<OperationView> = {}): OperationView => ({
+  opId: 'op-1',
+  state: 'confirmed',
+  remote: null,
+  action: null,
+  targets: [],
+  selector: null,
+  error: null,
+  undoable: true,
+  undoUntil: null,
+  retry: () => ({ opId: 'op-1', receipt: Promise.resolve(receipt()) }),
+  ...over,
+});
+
 test('review15: a zero-second undo window still counts as held', async () => {
   await boot();
   resetToasts();
@@ -71,6 +87,92 @@ test('review15: a zero-second undo window still counts as held', async () => {
     assert.equal(w.held, true, 'the watch knows the write is held');
     const toast = getToasts().find(t => t.undoable);
     assert.equal(toast?.message, 'Moving Climbing', 'held wording while the hold is queued');
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review15: a second write on a still-held event fails fast, before the overlay', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    // The first drag is held (guests are told only when its undo window ends).
+    const spy1 = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW + 60_000 }),
+    });
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy1.port }, ui);
+    await task();
+    assert.equal(ui.watched.length, 1, 'the first write is held and watched');
+    // Drag it again inside the undo window: the engine would answer `calendar.holdPending`
+    // (a `queued` record on the same target), so the screen refuses first — no submit, and the
+    // held write's patch is never merged then rolled back with the second's.
+    const spy2 = eventSetSpy({ receipt: receipt() });
+    runCalendarEffect(
+      moveFx(true, {
+        change: { type: 'update', id: 'climb', scope: 'occurrence', fields: { title: 'Twice' } },
+        optimistic: { id: 'climb', patch: { title: 'Twice' } },
+      }),
+      { ...ports(), eventSet: spy2.port },
+      ui,
+    );
+    await task();
+    assert.equal(spy2.calls.length, 0, 'nothing is submitted to be refused');
+    assert.deepEqual(ui.dropped, [], 'no rollback ran');
+    assert.deepEqual(
+      ui.patchFor('climb'),
+      { title: 'Climbing, moved' },
+      'the held write’s patch stays exactly as held',
+    );
+    const toast = getToasts().find(t => t.id.endsWith(':failed'));
+    assert.equal(
+      toast?.message,
+      "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
+    );
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review15: a refused second write rolls back only its own layer', async () => {
+  await boot();
+  resetToasts();
+  try {
+    const ui = testUi();
+    // The first drag is held; its op then synced, freeing the target — but a hold the screen
+    // forgot (a restart, another device) can still refuse the next write engine-side, so the
+    // two writes' patches must not share a rollback key.
+    const spy1 = eventSetSpy({
+      receipt: receipt({ undoable: true, undoUntil: NOW + 60_000 }),
+    });
+    runCalendarEffect(moveFx(true), { ...ports(), eventSet: spy1.port }, ui);
+    await task();
+    const w1 = ui.watched[0]!;
+    assert.equal(operationUpdate(w1, view({ remote: 'synced' }), ui, ports()), 'done');
+    const spy2 = eventSetSpy({
+      error: {
+        type: 'conflict',
+        message:
+          'Your earlier change to this event has not been sent yet. Undo it, or wait a moment and try again.',
+        reasonCode: 'calendar.holdPending',
+      },
+    });
+    runCalendarEffect(
+      moveFx(true, {
+        change: { type: 'update', id: 'climb', scope: 'occurrence', fields: { title: 'Twice' } },
+        optimistic: { id: 'climb', patch: { title: 'Twice' } },
+      }),
+      { ...ports(), eventSet: spy2.port },
+      ui,
+    );
+    await task();
+    assert.equal(spy2.calls.length, 1, 'the freed target let the write through to the engine');
+    assert.deepEqual(
+      ui.patchFor('climb'),
+      { title: 'Climbing, moved' },
+      'the earlier held patch survives the second write’s refusal',
+    );
+    assert.deepEqual(ui.dropped, ['climb'], 'only the refused write’s own layer rolled back');
   } finally {
     resetToasts();
   }

@@ -4,6 +4,7 @@ import { connectDataLayer } from '../../data/connect';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
 import { api, setClock, type Account, type Calendar, type Event } from '../../data';
 import { harnessClock } from '../../data/clock';
+import type { CalendarEventData } from '../../ui/props';
 import {
   entriesFor,
   eventsRange,
@@ -13,8 +14,9 @@ import {
   type CalendarContext,
   type CalendarState,
   type EditorDraft,
+  type OptimisticChange,
 } from './calendar.model';
-import type { EffectPorts, EffectUi, WatchedWrite } from './effects';
+import { releaseHeldWrites, type EffectPorts, type EffectUi, type WatchedWrite } from './effects';
 import { demoWorld } from './CalendarStates';
 
 export const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
@@ -94,6 +96,9 @@ export const S = (patch: Partial<CalendarState> = {}): CalendarState => ({
 export const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
 export async function boot() {
+  // A fresh screen: the container releases held-target marks on unmount — a test leaking one
+  // would make a later write refuse itself `calendar.holdPending` (review15).
+  releaseHeldWrites();
   const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
   const scheduler = createManualScheduler();
   const connection = connectDataLayer({
@@ -155,9 +160,14 @@ export function testUi(): EffectUi & {
   closed: number;
   /** Every write handed to `ui.watch` (accepted receipts the tests then drive by hand). */
   watched: WatchedWrite[];
+  /** The optimistic layers in flight, keyed by writeId like the container's map (review15). */
+  layers: Map<string, OptimisticChange>;
+  /** The merged patch every live layer would show for `id` (a second write never sees another's rolled back). */
+  patchFor(id: string): Partial<CalendarEventData> | undefined;
 } {
   const applied: string[] = [];
   const dropped: string[] = [];
+  const layers = new Map<string, OptimisticChange>();
   const overrides = new Map<string, boolean>();
   const settled: string[] = [];
   const failed: string[] = [];
@@ -178,12 +188,24 @@ export function testUi(): EffectUi & {
     restoreOpens: true,
     closedFor,
     watched,
+    layers,
+    patchFor(id: string) {
+      let merged: Partial<CalendarEventData> | undefined;
+      for (const layer of layers.values())
+        for (const change of [layer, ...(layer.more ?? [])])
+          if (change.id === id && change.patch !== undefined)
+            merged = { ...merged, ...change.patch };
+      return merged;
+    },
     get closed() {
       return closed;
     },
-    optimistic: () => undefined,
-    settle: (id: string) => applied.push(id),
-    rollback: (id: string) => dropped.push(id),
+    optimistic: (change: OptimisticChange, writeId: string) => void layers.set(writeId, change),
+    settle: (_writeId: string, entryIds: readonly string[]) => applied.push(...entryIds),
+    rollback: (writeId: string, entryIds: readonly string[]) => {
+      layers.delete(writeId);
+      dropped.push(...entryIds);
+    },
     shown: (id: string, shown: boolean) => void overrides.set(id, shown),
     shownSettled: (id: string) => settled.push(id),
     shownFailed: (id: string) => {
