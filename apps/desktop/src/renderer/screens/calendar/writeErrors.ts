@@ -12,16 +12,27 @@ import type { ErrorBody } from '../../data';
 import { toErrorBody } from '../../data/client';
 import { EDITING_COPY } from './accountCalendarState';
 
-/** The refusal's `ErrorBody`: a `ContractError`'s `.body`, an `OperationFailedError`'s `.error`, else a plain failure. */
+/** True for a value already shaped like an `ErrorBody` (`type` and `message` strings). */
+function isBody(value: unknown): value is ErrorBody {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ErrorBody).type === 'string' &&
+    typeof (value as ErrorBody).message === 'string'
+  );
+}
+
+/**
+ * The refusal's `ErrorBody`: an `OperationFailedError`'s `.error`, a `ContractError`'s `.body` (the
+ * error itself copies `type`/`message` but keeps `reasonCode` only on `.body`, so it is read first),
+ * a bare body like an operation frame's `error`, else a plain failure.
+ */
 function bodyOf(error: unknown): ErrorBody {
   const carried = (error as { error?: unknown } | null)?.error;
-  if (
-    typeof carried === 'object' &&
-    carried !== null &&
-    typeof (carried as ErrorBody).type === 'string' &&
-    typeof (carried as ErrorBody).message === 'string'
-  )
-    return carried as ErrorBody;
+  if (isBody(carried)) return carried;
+  const boxed = (error as { body?: unknown } | null)?.body;
+  if (isBody(boxed)) return boxed;
+  if (isBody(error)) return error;
   return toErrorBody(error);
 }
 
@@ -46,6 +57,13 @@ export interface WriteFailure {
   readonly keepDraft?: boolean;
   /** `needsReauth` / `auth.expired`: the grant is dead — the notice offers Sign in again. Never retried. */
   readonly reconnect?: boolean;
+  /**
+   * `calendar.late`: the failure landed on a held write's operation, after its receipt — the Retry
+   * the notice offers is that operation's own (`OperationView.retry`, `Operation/retry`), never a
+   * second write. Only meaningful where `retry` is 'none': a submit-time refusal has no operation
+   * to retry, so the sentence shows without the action.
+   */
+  readonly opRetry?: boolean;
 }
 
 /** The plain sentences, keyed by `body.reasonCode` (a `validation` failure names its field's code the same way). */
@@ -74,6 +92,18 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
   // A create's op id met an event that was deleted since: the same press must not quietly bring it back.
   'calendar.opReused': {
     message: 'That event was deleted. Create it again as a new event.',
+  },
+  // A held write that missed its window (Aplos was closed, or the event had already started): the
+  // operation failed — its own Retry sends it at once, a blind second write never runs.
+  'calendar.late': {
+    message: "This change wasn't sent in time. Check the event, then try again.",
+    opRetry: true,
+  },
+  // A second held change while an earlier one still waits: refused at submit, nothing was accepted,
+  // so a plain re-run is safe once the first hold clears — and it is not the stale-copy conflict,
+  // so the editor never re-opens for it.
+  'calendar.holdPending': {
+    message: "Your earlier change to this event hasn't been sent yet. Try again in a few seconds.",
   },
   // A series time change in a zone other than the series' own (or one Aplos cannot name): it cannot be
   // re-timed here — Google Calendar can move the series, one occurrence can move alone.
@@ -133,7 +163,9 @@ export function writeFailureOf(
       ...(body.retryAfterMs !== undefined ? { retryAfterMs: body.retryAfterMs } : {}),
     };
   const known = body.reasonCode ? WRITE_FAILURE_COPY[body.reasonCode] : undefined;
-  if (known) return { ...known, retry: 'none' };
+  // `calendar.holdPending` accepted nothing, so a re-run is safe; the rest keep no Retry.
+  if (known)
+    return { ...known, retry: body.reasonCode === 'calendar.holdPending' ? 'now' : 'none' };
   // A create or a reply asked again blind could duplicate the event or re-notify guests: an
   // unknown code gets no Retry, just the honest check-your-calendar line (review7 7).
   if (blindRetryUnsafe)
