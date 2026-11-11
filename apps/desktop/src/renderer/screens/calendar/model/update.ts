@@ -387,6 +387,9 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   // component closes the list itself once it is empty (review19).
   holdRetry: (s, a) => done(s, [{ kind: 'holdRetry', id: a.id, opId: a.opId }]),
   holdDiscard: (s, a) => done(s, [{ kind: 'holdDiscard', id: a.id }]),
+  holdReconnect: (s, a) => done(s, [{ kind: 'holdReconnect', accountId: a.accountId }]),
+  // The detail's own Enable editing effect: the same port, the same refusal toast.
+  holdEnableEditing: (s, a) => done(s, [{ kind: 'enableEditing', accountId: a.accountId }]),
 };
 
 /** The one reducer: every key, click and drag of the screen goes through here (DESIGN 5 rule 1: state first, then effects). */

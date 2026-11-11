@@ -17,7 +17,8 @@ import { getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { Announce } from '../../ui/props';
 import { Button } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
-import { writeFailureOf } from './writeErrors';
+import { writeFailureOf, type WriteFailure } from './writeErrors';
+import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
 import type { CalendarAction } from './calendar.model';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,10 @@ export interface FailedHold {
   readonly reason: string;
   /** The account the change is on — its name, else its address — resolved from the screen's accounts. */
   readonly account?: string;
+  /** The queue item's own account id: the grant action's Sign in again / Enable editing goes to it. */
+  readonly accountId?: string;
+  /** A dead grant's fix (writeErrors' flags): 'reconnect' signs in again, 'enableEditing' asks for the write scope. */
+  readonly recovery?: 'reconnect' | 'enableEditing';
   /**
    * A newer write on the event retired this change (effects' `staleRetries`): the row offers
    * Discard alone — a retry would re-send the older change over the newer one (review21).
@@ -75,19 +80,25 @@ export function holdsNeedWatch(items: readonly QueueItem[]): boolean {
 }
 
 /**
- * The sentence a failed hold reads: writeErrors' at-operation table where a reasonCode exists,
- * else the engine's own words (a content-free item carries its plain sentence for exactly this).
+ * The writeErrors' failure for a queue item's `problem`: the at-operation table where a reasonCode
+ * exists (a held write was accepted — only its send is owed), else a bare sentence in the engine's
+ * own words, which a content-free item carries for exactly this.
  */
-export function holdSentence(item: Pick<QueueItem, 'problem'>): string {
+function holdFailure(item: Pick<QueueItem, 'problem'>): WriteFailure {
   const fallback = item.problem?.message || "This change wasn't sent.";
   const reasonCode = item.problem?.reasonCode;
-  if (!reasonCode) return fallback;
+  if (!reasonCode) return { message: fallback, retry: 'operation' };
   return writeFailureOf(
     { error: { type: 'unavailable', message: fallback, reasonCode } },
     fallback,
     false,
     true,
-  ).message;
+  );
+}
+
+/** The sentence a failed hold reads. */
+export function holdSentence(item: Pick<QueueItem, 'problem'>): string {
+  return holdFailure(item).message;
 }
 
 /** The quiet line's text (DESIGN 10: plain words, no blame). */
@@ -135,11 +146,20 @@ export function failedHoldsOf(
     const opId = opIdOf(item);
     if (toastIds.has(`${opId}:failed`)) continue;
     const account = holdAccount(accounts, item.accountId);
+    const failure = holdFailure(item);
+    const recovery =
+      failure.reconnect === true && item.accountId !== undefined
+        ? ('reconnect' as const)
+        : failure.enableEditing === true && item.accountId !== undefined
+          ? ('enableEditing' as const)
+          : undefined;
     out.push({
       id: item.id,
       opId,
-      reason: holdSentence(item),
+      reason: failure.message,
       ...(account !== undefined ? { account } : {}),
+      ...(item.accountId !== undefined ? { accountId: item.accountId } : {}),
+      ...(recovery !== undefined ? { recovery } : {}),
       ...(filter.stale?.(opId) === true ? { stale: true as const } : {}),
       ...(filter.pending?.(item.id) === true ? { pending: true as const } : {}),
       canRetry: item.canRetry,
@@ -261,6 +281,10 @@ function HoldRow({
   hold: FailedHold;
   dispatch: (action: CalendarAction) => void;
 }) {
+  const grantAction =
+    hold.recovery !== undefined && hold.accountId !== undefined
+      ? { accountId: hold.accountId, recovery: hold.recovery }
+      : undefined;
   return (
     <li className="cal-hold">
       <div className="cal-hold__title">
@@ -275,6 +299,24 @@ function HoldRow({
           : hold.reason}
       </div>
       <div className="cal-hold__actions">
+        {grantAction !== undefined ? (
+          <Button
+            variant="text"
+            size="sm"
+            label={
+              grantAction.recovery === 'reconnect'
+                ? CALENDAR_ACCESS_COPY.signIn
+                : EDITING_COPY.action
+            }
+            onPress={() =>
+              dispatch(
+                grantAction.recovery === 'reconnect'
+                  ? { type: 'holdReconnect', accountId: grantAction.accountId }
+                  : { type: 'holdEnableEditing', accountId: grantAction.accountId },
+              )
+            }
+          />
+        ) : null}
         {hold.canRetry && hold.stale !== true ? (
           <Button
             variant="text"

@@ -805,7 +805,7 @@ const FIXTURES: Record<string, Fixture> = {
   },
   'failed-holds-list': {
     title:
-      'Review open: a late change offers Retry and Discard, a dead grant’s change Discard only (the items name no event)',
+      'Review open: a late change offers Retry and Discard, a dead grant’s adds Sign in again (the items name no event)',
     state: { view: 'week', holdsReview: true },
     holds: [
       {
@@ -813,6 +813,7 @@ const FIXTURES: Record<string, Fixture> = {
         opId: 'op-hold-design',
         reason: "That change wasn't sent in time. Check the event, then send it again.",
         account: 'Alex Moreno',
+        accountId: 'acct-alex',
         canRetry: true,
         canDiscard: true,
       },
@@ -820,7 +821,17 @@ const FIXTURES: Record<string, Fixture> = {
         id: 'cal:op-hold-jordan',
         opId: 'op-hold-jordan',
         reason: 'Sign in to Google again to send this change.',
-        account: 'jordan.lee@example.com',
+        account: 'Jordan Lee',
+        accountId: 'acct-jordan',
+        recovery: 'reconnect',
+        canRetry: true,
+        canDiscard: true,
+      },
+      {
+        id: 'cal:op-hold-uncertain',
+        opId: 'op-hold-uncertain',
+        reason: "We couldn't confirm that went through. Check your calendar before trying again.",
+        account: 'Alex Moreno',
         canRetry: false,
         canDiscard: true,
       },

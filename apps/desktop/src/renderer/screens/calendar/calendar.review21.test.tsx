@@ -34,8 +34,9 @@ import {
 } from './FailedHolds';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { runCalendarEffect, type EffectPorts } from './effects';
+import { update } from './calendar.model';
 import type { CalendarEffect } from './calendar.model';
-import { nextTask, testUi } from './calendar.testkit';
+import { ctxFor, nextTask, S, testUi } from './calendar.testkit';
 import { account } from './accountCalendarState.test';
 import type { Account } from '../../data';
 
@@ -216,6 +217,69 @@ test('review21: a row with an action in flight holds its buttons busy', () => {
   assert.equal(hold.pending, true);
   const html = row(hold);
   assert.match(html, /aria-busy="true"/);
+});
+
+test('review21: a dead grant offers Sign in again beside Retry', () => {
+  const hold = failedHoldsOf(
+    [calItem({ problem: { reasonCode: 'auth.expired', message: 'grant expired' } })],
+    new Set(),
+    ACCOUNTS,
+  )[0];
+  assert.equal(hold.recovery, 'reconnect');
+  assert.equal(hold.accountId, 'acct-alex');
+  const html = row(hold);
+  assert.match(html, />Sign in again</);
+  // The engine keeps canRetry true for a dead grant — Retry stays, it just re-fails until signed in.
+  assert.match(html, />Retry</);
+});
+
+test('review21: a missing write scope offers Enable editing beside Retry', () => {
+  const hold = failedHoldsOf(
+    [
+      calItem({
+        problem: { reasonCode: 'permission.calendarWrite', message: 'read-only grant' },
+      }),
+    ],
+    new Set(),
+    ACCOUNTS,
+  )[0];
+  assert.equal(hold.recovery, 'enableEditing');
+  const html = row(hold);
+  assert.match(html, />Enable editing</);
+  assert.match(html, />Retry</);
+});
+
+test('review21: an ordinary failure offers no grant action', () => {
+  const hold = failedHoldsOf([calItem()], new Set(), ACCOUNTS)[0];
+  assert.equal(hold.recovery, undefined);
+  assert.doesNotMatch(row(hold), /Sign in again|Enable editing/);
+});
+
+test('review21: Sign in again reconnects the item’s own account', () => {
+  const t = update(S(), { type: 'holdReconnect', accountId: 'acct-jordan' }, ctxFor());
+  assert.deepEqual(t.effects, [{ kind: 'holdReconnect', accountId: 'acct-jordan' }]);
+  let signedIn = '';
+  const { ports } = fakePorts();
+  ports.reconnect = accountId => {
+    signedIn = accountId;
+  };
+  runCalendarEffect(t.effects[0] as CalendarEffect, ports, testUi());
+  assert.equal(signedIn, 'acct-jordan');
+});
+
+test('review21: Enable editing asks for the item’s own account’s write scope', async () => {
+  const t = update(S(), { type: 'holdEnableEditing', accountId: 'acct-jordan' }, ctxFor());
+  // The detail's own Enable editing effect: the same port, the same refusal toast.
+  assert.deepEqual(t.effects, [{ kind: 'enableEditing', accountId: 'acct-jordan' }]);
+  let enabled = '';
+  const { ports } = fakePorts();
+  ports.enableEditing = accountId => {
+    enabled = accountId;
+    return Promise.resolve();
+  };
+  runCalendarEffect(t.effects[0] as CalendarEffect, ports, testUi());
+  await nextTask();
+  assert.equal(enabled, 'acct-jordan');
 });
 
 test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {

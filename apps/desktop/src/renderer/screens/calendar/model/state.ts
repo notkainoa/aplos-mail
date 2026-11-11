@@ -160,7 +160,11 @@ export type CalendarAction =
   /** A Review row's Retry: `Queue/retry` on the item id — the hold's own path, never `Event/set` again. */
   | { type: 'holdRetry'; id: string; opId: string }
   /** A Review row's Discard: `Queue/discard` on the queue item id. */
-  | { type: 'holdDiscard'; id: string };
+  | { type: 'holdDiscard'; id: string }
+  /** A dead-grant row's Sign in again: opens the reconnect sheet on the item's own account. */
+  | { type: 'holdReconnect'; accountId: string }
+  /** A dead-grant row's Enable editing: asks for the item's own account's write scope. */
+  | { type: 'holdEnableEditing'; accountId: string };
 
 /** A toast to push: one operation, one notice (DESIGN 7.13). */
 export interface ToastPlan {
@@ -256,7 +260,9 @@ export type CalendarEffect =
    */
   | { kind: 'holdRetry'; id: string; opId: string }
   /** A Review row's Discard: `Queue/discard` on the queue item id. */
-  | { kind: 'holdDiscard'; id: string };
+  | { kind: 'holdDiscard'; id: string }
+  /** A dead-grant row's Sign in again: the same sheet the sidebar's reconnect opens. */
+  | { kind: 'holdReconnect'; accountId: string };
 
 export interface Transition {
   readonly state: CalendarState;

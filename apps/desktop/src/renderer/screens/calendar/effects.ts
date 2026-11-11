@@ -773,6 +773,11 @@ function runWrite(spec: WriteSpec, ui: EffectUi, ports: EffectPorts, retry: () =
 }
 
 export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: EffectUi): void {
+  // The failed-holds Review rows' effects run beside the write switch (they answer Queue, not Event).
+  if (fx.kind.startsWith('hold')) {
+    runHoldEffect(fx, ports);
+    return;
+  }
   const retry = () => runCalendarEffect(fx, ports, ui);
   switch (fx.kind) {
     case 'eventSet': {
@@ -1031,15 +1036,19 @@ export function runCalendarEffect(fx: CalendarEffect, ports: EffectPorts, ui: Ef
     case 'notice':
       pushToast({ id: newOpId(), kind: 'info', message: fx.message, undoable: false });
       return;
-    case 'holdRetry':
-      retryHeldItem(ports, fx.id, fx.opId);
-      return;
-    case 'holdDiscard':
-      discardHold(ports, fx.id);
-      return;
     case 'focus':
       ui.focus(fx.target);
       return;
+  }
+}
+
+/** A Review row's effects: the queue item's own Retry/Discard and a dead grant's fix (review21). */
+function runHoldEffect(fx: CalendarEffect, ports: EffectPorts): void {
+  if (fx.kind === 'holdRetry') return retryHeldItem(ports, fx.id, fx.opId);
+  if (fx.kind === 'holdDiscard') return discardHold(ports, fx.id);
+  if (fx.kind === 'holdReconnect') {
+    // The same sign-in sheet the sidebar's account row opens.
+    ports.reconnect(fx.accountId);
   }
 }
 
