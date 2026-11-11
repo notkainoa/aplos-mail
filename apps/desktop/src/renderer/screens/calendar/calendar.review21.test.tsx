@@ -212,6 +212,24 @@ test('review21: an already-being-sent refusal stays quiet', async () => {
   resetToasts();
 });
 
+test('review21: a refused Discard reuses the <opId>:failed toast id', async () => {
+  resetToasts();
+  const { ports } = fakePorts({
+    queueDiscard: { error: { type: 'unavailable', message: 'offline' } },
+  });
+  const fx: CalendarEffect = { kind: 'holdDiscard', id: 'cal:op-hold' };
+  runCalendarEffect(fx, ports, testUi());
+  await nextTask();
+  runCalendarEffect(fx, ports, testUi());
+  await nextTask();
+  // The stable op-keyed id replaces, never stacks — a crypto.randomUUID id would pile them up.
+  assert.deepEqual(
+    getToasts().map(t => t.id),
+    ['op-hold:failed'],
+  );
+  resetToasts();
+});
+
 test('review21: a row with an action in flight holds its buttons busy', () => {
   const hold = failedHoldsOf([calItem()], new Set(), ACCOUNTS, { pending: () => true })[0];
   assert.equal(hold.pending, true);
