@@ -52,8 +52,17 @@ export function lazyCalendarPort(
   targetFor: (account: AccountId) => CalendarTarget | undefined,
 ): CalendarPort {
   let working: Promise<CalendarPort> | undefined;
-  const port = () =>
-    (working ??= import('./write-port').then(m => m.createCalendarPort(targetFor)));
+  const port = () => {
+    if (!working) {
+      // A failed load must not cache its rejection: the next write retries the import.
+      const loading = import('./write-port').then(m => m.createCalendarPort(targetFor));
+      working = loading;
+      loading.catch(() => {
+        if (working === loading) working = undefined;
+      });
+    }
+    return working;
+  };
   return {
     put: async (account: AccountId, change: EventChange): Promise<CalendarWriteResult> =>
       (await port()).put(account, change),

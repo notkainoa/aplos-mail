@@ -376,7 +376,9 @@ function rebaseSeriesTimes(
   fields: Partial<PortFields>,
 ): void {
   const start = fields.start;
-  if (!start || (start.type !== 'utc' && start.type !== 'date')) return;
+  const end = fields.end;
+  if (start && start.type !== 'utc' && start.type !== 'date') return;
+  if (!start && end?.type !== 'utc' && end?.type !== 'date') return;
   const stored = eventRow(ctx, ref.accountId, ref.calRemote, ref.remote);
   if (!stored || stored.start_utc === null || stored.end_utc === null) throw notFoundEvent();
   const master = { start_utc: stored.start_utc, end_utc: stored.end_utc };
@@ -384,31 +386,62 @@ function rebaseSeriesTimes(
   const occStart =
     occ?.start_utc ??
     instant(recurrenceIdToTime(ref.recurrenceId), zone(ctx, ref.accountId, ref.calRemote));
-  const day = 86_400_000;
-  if (start.type === 'utc') {
-    const delta = start.utc - occStart;
-    const end = fields.end;
-    fields.start = { type: 'utc', utc: master.start_utc + delta };
-    // A duration change applies as the new span from the shifted start; an unchanged end rides the delta.
-    fields.end =
-      end?.type === 'utc'
-        ? { type: 'utc', utc: master.start_utc + delta + (end.utc - start.utc) }
-        : { type: 'utc', utc: master.end_utc + delta };
-    return;
-  }
-  // All-day: the delta is whole days of the master's stored epoch dates.
-  const deltaMs = Math.round((Date.parse(`${start.date}T00:00:00Z`) - occStart) / day) * day;
-  const iso = (epoch: number) => new Date(epoch).toISOString().slice(0, 10);
-  const newStartMs = master.start_utc + deltaMs;
+  // The occurrence's own end: a stored override's, else its slot (the master's span from its start).
+  const occEnd = occ?.end_utc ?? occStart + (master.end_utc - master.start_utc);
+  if ((start ?? end)!.type === 'utc') rebaseUtc(master, occStart, occEnd, fields);
+  else rebaseAllDay(master, occStart, occEnd, fields);
+}
+
+/** The `utc` rebasing: whole milliseconds against the master and occurrence's stored epochs. */
+function rebaseUtc(
+  master: { start_utc: number; end_utc: number },
+  occStart: number,
+  occEnd: number,
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
   const end = fields.end;
+  const delta = start?.type === 'utc' ? start.utc - occStart : 0;
+  const newStart = master.start_utc + delta;
+  fields.start = { type: 'utc', utc: newStart };
+  // A start move applies the user's new span from the shifted start; an end-only resize shifts the
+  // master's end by the delta to the occurrence's own end; an unchanged end rides the start delta.
+  fields.end =
+    end?.type === 'utc'
+      ? {
+          type: 'utc',
+          utc:
+            start?.type === 'utc'
+              ? newStart + (end.utc - start.utc)
+              : master.end_utc + (end.utc - occEnd),
+        }
+      : { type: 'utc', utc: master.end_utc + delta };
+}
+
+/** The all-day `date` rebasing: whole days against the stored epoch midnights. */
+function rebaseAllDay(
+  master: { start_utc: number; end_utc: number },
+  occStart: number,
+  occEnd: number,
+  fields: Partial<PortFields>,
+): void {
+  const start = fields.start;
+  const end = fields.end;
+  const day = 86_400_000;
+  const dateMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
+  const iso = (epoch: number) => new Date(epoch).toISOString().slice(0, 10);
+  const deltaMs =
+    start?.type === 'date' ? Math.round((dateMs(start.date) - occStart) / day) * day : 0;
+  const newStartMs = master.start_utc + deltaMs;
   fields.start = { type: 'date', date: iso(newStartMs) };
   fields.end =
     end?.type === 'date'
       ? {
           type: 'date',
           date: iso(
-            newStartMs +
-              (Date.parse(`${end.date}T00:00:00Z`) - Date.parse(`${start.date}T00:00:00Z`)),
+            start?.type === 'date'
+              ? newStartMs + (dateMs(end.date) - dateMs(start.date))
+              : master.end_utc + Math.round((dateMs(end.date) - occEnd) / day) * day,
           ),
         }
       : { type: 'date', date: iso(master.end_utc + deltaMs) };

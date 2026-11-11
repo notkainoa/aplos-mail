@@ -88,6 +88,41 @@ async function world(answer: CalendarWriteResult = { kind: 'saved', upserts: [],
           },
         ],
       },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev2',
+        rows: [
+          {
+            status: 'confirmed',
+            etag: '"v2"',
+            recurrence: { rrule: ['RRULE:FREQ=DAILY;COUNT=3'] },
+            startUtc: Date.UTC(2026, 9, 27),
+            endUtc: Date.UTC(2026, 9, 28),
+            allDay: true,
+            data: GEVENT('All-day daily'),
+          },
+        ],
+      },
+      {
+        kind: 'event',
+        accountId: 'acct-1',
+        calendarRemoteId: 'primary',
+        remoteId: 'ev2_20261028',
+        rows: [
+          {
+            recurrenceId: '20261028',
+            masterRemoteId: 'ev2',
+            status: 'confirmed',
+            etag: '"o2"',
+            startUtc: Date.UTC(2026, 9, 28),
+            endUtc: Date.UTC(2026, 9, 29),
+            allDay: true,
+            data: GEVENT('All-day daily (moved)'),
+          },
+        ],
+      },
     ],
   });
   return { call, calls };
@@ -300,4 +335,68 @@ test('a series edit opened from one occurrence moves the series by the same offs
   // The master's own slot (Oct 27 17:00 UTC) moves one hour later; it does not jump to Oct 28.
   assert.equal(sent.fields.start?.utc, Date.UTC(2026, 9, 27, 18, 0));
   assert.equal(sent.fields.end?.utc, Date.UTC(2026, 9, 27, 18, 30));
+});
+
+test('an end-only series edit opened from one occurrence resizes the master in place', async () => {
+  const w = await world();
+  // The Oct 28 occurrence (17:00-17:30) is resized to end at 18:00: a +30min delta to its own end.
+  await w.call('Event/set', {
+    opId: 'rb2',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev1@20261028T170000Z',
+      scope: 'series',
+      fields: { end: { type: 'utc', utc: Date.UTC(2026, 9, 28, 18, 0) }, allDay: false },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as {
+    fields: { start?: { utc: number }; end?: { utc: number } };
+  };
+  // The master keeps its own start (Oct 27 17:00); its end shifts by the same +30min to 18:00.
+  assert.equal(sent.fields.start?.utc, Date.UTC(2026, 9, 27, 17, 0));
+  assert.equal(sent.fields.end?.utc, Date.UTC(2026, 9, 27, 18, 0));
+});
+
+test('an all-day series edit opened from one occurrence moves the series by whole days', async () => {
+  const w = await world();
+  // The Oct 28 all-day occurrence moves to Oct 29-30: a +1 day shift, same one-day span.
+  await w.call('Event/set', {
+    opId: 'rb3',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev2@20261028',
+      scope: 'series',
+      fields: {
+        start: { type: 'date', date: '2026-10-29' },
+        end: { type: 'date', date: '2026-10-30' },
+        allDay: true,
+      },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as {
+    fields: { start?: { date: string }; end?: { date: string } };
+  };
+  // The master's own slot (Oct 27-28) shifts one day; it does not jump to Oct 29.
+  assert.equal(sent.fields.start?.date, '2026-10-28');
+  assert.equal(sent.fields.end?.date, '2026-10-29');
+});
+
+test('an end-only all-day series edit keeps the master start and shifts its end by whole days', async () => {
+  const w = await world();
+  // The Oct 28 all-day occurrence (ends Oct 29) is extended to end Oct 31: a +2 day end delta.
+  await w.call('Event/set', {
+    opId: 'rb4',
+    change: {
+      type: 'update',
+      id: 'acct-1:primary/ev2@20261028',
+      scope: 'series',
+      fields: { end: { type: 'date', date: '2026-10-31' }, allDay: true },
+    },
+  });
+  const sent = w.calls[0]!.args[1] as {
+    fields: { start?: { date: string }; end?: { date: string } };
+  };
+  // The master keeps Oct 27; its end (Oct 28) shifts +2 days to Oct 30 — a three-day series.
+  assert.equal(sent.fields.start?.date, '2026-10-27');
+  assert.equal(sent.fields.end?.date, '2026-10-30');
 });
