@@ -181,7 +181,8 @@
 }
 /* The card's head (owner sketch 2026-11-10): the sender's mark, who, when, then the screen's "To" circles; the actions take
    the right side, and one full-width hairline separates the head from the body. Nothing here moves on hover. */
-.ui-thread-message__head:has(> .ui-thread-message__line[data-layout='card']) {
+.ui-thread-message:not([data-fold='folded'])
+  .ui-thread-message__head:has(.ui-thread-message__line[data-layout='card']) {
   padding-bottom: var(--space-3);
   margin-bottom: var(--space-5);
   box-shadow: 0 var(--hairline) 0 var(--line-strong);
@@ -203,31 +204,60 @@
   gap: var(--space-1);
   margin-left: auto;
 }
-/* A folded earlier message: one button holds who, when and the excerpt, and stretches over the whole card (a pseudo-element, so
-   nothing moves); once open only the head is the target, so links and attachments keep their own clicks. */
+/* An earlier message's head (owner feedback 2026-11-11): the line (who, when) and, folded, its own first words, with the fold
+   button as the grid's right column: "Show full" and a chevron on a folded row, "Show less" and a chevron once open. The one
+   button stays last in the DOM, so it is one node through a fold and keeps focus. A folded card's button is stretched by a
+   pseudo-element over the whole card (nothing moves), so the whole row is its target; once open only the button is, so links,
+   attachments and the body keep their own clicks. */
+.ui-thread-message__head[data-fold] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: center;
+}
+.ui-thread-message__head[data-fold] > .ui-thread-message__line {
+  grid-column: 1;
+  grid-row: 1;
+}
+.ui-thread-message__head[data-fold] > .ui-thread-message__excerpt {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
 .ui-thread-message[data-fold='folded'] .ui-thread-message__head {
   margin-bottom: 0;
 }
 .ui-thread-message__toggle {
   appearance: none;
-  display: block;
-  width: 100%;
-  min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  height: var(--control-xs);
   margin: 0;
-  padding: 0;
+  padding: 0 var(--space-2);
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-align: left;
+  color: var(--ink-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
   cursor: default;
 }
-
 .ui-thread-message[data-fold='folded'] .ui-thread-message__toggle::after {
   content: '';
   position: absolute;
   inset: 0;
+}
+/* A folded row's time sits at the right, just before the button; an opened earlier message has the card's header row, so its
+   time follows the name like the latest card's and only "Show less" is on the far right. */
+.ui-thread-message[data-fold='folded']
+  .ui-thread-message__head[data-fold]
+  .ui-thread-message__line[data-layout='card']
+  .ui-thread-message__when {
+  margin-left: auto;
 }
 .ui-thread-message__excerpt[data-empty='true'] {
   color: var(--dim);
@@ -248,6 +278,15 @@
 .ui-thread-message__toggle:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
+}
+/* On a folded card the whole row is the target, so the ring goes round the card, not the small button. */
+.ui-thread-message[data-fold='folded']:has(.ui-thread-message__toggle:focus-visible) {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+  border-radius: var(--radius-lg);
+}
+.ui-thread-message[data-fold='folded'] .ui-thread-message__toggle:focus-visible {
+  outline: none;
 }
 .ui-thread-message__images,
 .ui-thread-message__quoted {
@@ -458,7 +497,8 @@
 }
 
 @media (hover: hover) {
-  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from {
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from,
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__toggle {
     color: var(--ink);
   }
   .ui-reply-stub:hover {

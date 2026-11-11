@@ -215,11 +215,6 @@
 .aplos-reader[data-cards='a'] .ui-thread-message[data-fold='folded'] {
   padding-block: var(--space-5);
 }
-/* The ring is drawn on the card (not the button's box), so it never clips against the card's rounded corners. */
-.aplos-reader[data-cards='a'] .ui-thread-message__toggle:focus-visible {
-  outline-offset: var(--space-3);
-  border-radius: var(--radius-sm);
-}
 
 /* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons. */
 .ui-pane:has(.aplos-reader .ui-reader-actions) .ui-toast-stack {

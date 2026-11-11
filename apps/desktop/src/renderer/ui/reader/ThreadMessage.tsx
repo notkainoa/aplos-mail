@@ -2,10 +2,13 @@
 // One message as an `article` landmark: the header (who in `ui` 600, the dim "to" phrase, the time right),
 // "Load images from this sender" when remote images are blocked, the `read` body at 64ch, quoted text on O,
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
-// An earlier message is a compact card (owner review 2026-11-03): its head is one button (`aria-expanded`) that holds the
-// who, the time and, while folded, the plain-text first sentence or two; a click anywhere on a folded card (the button
-// stretches over it), Enter, Space or O on it opens it to the full message. Once open, only the head is the target, so
-// links, attachments and the body keep their own clicks.
+// An earlier message is a compact card (owner review 2026-11-03; owner feedback 2026-11-11): its row shows who, when and the
+// message's own first sentence or two (never an AI summary: those are per thread), with a visible "Show full" and a chevron
+// at the right. The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
+// click anywhere on a folded card, Enter, Space or O opens the full message in place with the same header row (the sender's
+// mark, the name, the time, the "To" circles) and the same button now reads "Show less". The button is one DOM node,
+// last in the head, folded or open, so keyboard focus survives a fold; once open only it is the target, so links,
+// attachments and the body keep their own clicks.
 
 import type { ReactNode, Ref } from 'react';
 import type { ThreadMessageProps } from '../props';
@@ -13,6 +16,7 @@ import { Chip } from '../list/Chip';
 import { Action } from '../list/internal/Action';
 import { formatFull, formatMessageTime } from '../list/internal/format';
 import { useTooltipText } from '../list/internal/keys';
+import { Icon } from '../buttons-keys';
 import { UndoTray } from './UndoTray';
 
 /** The excerpt's words when a message has no text to show (plain, dim, no exclamation mark). */
@@ -36,11 +40,13 @@ interface HeadLineProps {
   readonly actions: ReactNode;
   /** The card layout's mark before the name (the sender's avatar square). */
   readonly leading: ReactNode;
+  /** DOM id of the excerpt, so the fold button can describe itself with it. */
+  readonly excerptId: string;
   /** The folded card's first sentence or two; absent while open. */
   readonly excerpt: string | undefined;
 }
 
-/** Who, when and (folded) the excerpt: the content of a message's head, which a fold wraps in its one button. */
+/** Who, when and (folded) the excerpt: the content of a message's head. */
 function HeadLine({
   fromId,
   from,
@@ -49,9 +55,10 @@ function HeadLine({
   recipients,
   actions,
   leading,
+  excerptId,
   excerpt,
 }: HeadLineProps) {
-  const card = recipients !== undefined || actions !== undefined;
+  const card = leading !== undefined || recipients !== undefined || actions !== undefined;
   return (
     <>
       <span className="ui-thread-message__line" data-layout={card ? 'card' : undefined}>
@@ -59,7 +66,7 @@ function HeadLine({
         <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
         </span>
-        {card ? null : <span className="ui-thread-message__to">{toLabel}</span>}
+        {recipients === undefined ? <span className="ui-thread-message__to">{toLabel}</span> : null}
         <TimeText date={date} />
         {recipients}
         {actions === undefined ? null : (
@@ -68,6 +75,7 @@ function HeadLine({
       </span>
       {excerpt === undefined ? null : (
         <span
+          id={excerptId}
           className="ui-thread-message__excerpt"
           dir="auto"
           data-empty={excerpt === '' ? 'true' : undefined}
@@ -76,6 +84,38 @@ function HeadLine({
         </span>
       )}
     </>
+  );
+}
+
+interface FoldButtonProps {
+  readonly id: string;
+  readonly from: string;
+  readonly fold: NonNullable<ThreadMessageProps['fold']>;
+  /** The id of the folded row's excerpt. */
+  readonly describedBy: string | undefined;
+}
+
+/** "Show full" and a chevron on a folded row, "Show less" once open: the one button of an earlier message. */
+function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
+  const tip = useTooltipText();
+  const label = fold.open ? 'Show less' : 'Show full';
+  return (
+    <button
+      type="button"
+      className="ui-thread-message__toggle"
+      aria-expanded={fold.open}
+      aria-controls={fold.open ? `${id}-content` : undefined}
+      aria-label={`${label}, message from ${from}`}
+      aria-describedby={describedBy}
+      title={tip(fold.open ? 'Fold this message' : 'Open this message', fold.commandId)}
+      onFocus={fold.onFocus}
+      onClick={fold.onToggle}
+    >
+      <span className="ui-thread-message__toggle-label" aria-hidden="true">
+        {label}
+      </span>
+      <Icon name={fold.open ? 'chevron-up' : 'chevron-down'} size="sm" />
+    </button>
   );
 }
 
@@ -101,15 +141,18 @@ export function ThreadMessage({
   const tip = useTooltipText();
   const fromId = `${id}-from`;
   const folded = fold !== undefined && !fold.open;
+  const excerptId = `${id}-excerpt`;
   const head = (
     <HeadLine
       fromId={fromId}
       from={from}
       date={date}
       toLabel={toLabel}
-      recipients={fold ? undefined : recipients}
+      // A folded card is compact: no circles. An opened earlier message has the card's header row; its actions are the latest's.
+      recipients={folded ? undefined : recipients}
       actions={fold ? undefined : headActions}
-      leading={fold ? undefined : leading}
+      leading={leading}
+      excerptId={excerptId}
       excerpt={folded ? excerpt : undefined}
     />
   );
@@ -122,22 +165,16 @@ export function ThreadMessage({
       data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
       aria-labelledby={fromId}
     >
-      <header className="ui-thread-message__head">
+      <header className="ui-thread-message__head" data-fold={fold ? 'true' : undefined}>
+        {head}
         {fold ? (
-          <button
-            type="button"
-            className="ui-thread-message__toggle"
-            aria-expanded={fold.open}
-            aria-controls={`${id}-content`}
-            title={tip(fold.open ? 'Fold this message' : 'Open this message', fold.commandId)}
-            onFocus={fold.onFocus}
-            onClick={fold.onToggle}
-          >
-            {head}
-          </button>
-        ) : (
-          head
-        )}
+          <FoldButton
+            id={id}
+            from={from}
+            fold={fold}
+            describedBy={folded && excerpt !== undefined ? excerptId : undefined}
+          />
+        ) : null}
       </header>
 
       {remoteImages?.blocked ? (
