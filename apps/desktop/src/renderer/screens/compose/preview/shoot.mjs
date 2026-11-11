@@ -82,6 +82,14 @@ for (const theme of ['light', 'dark']) {
     `${theme}: a typed address with @ has no highlight`,
     (await page.locator('[role=option][aria-selected=true]').count()) === 0,
   );
+  await to.fill('');
+  await to.pressSequentially('jon');
+  await page.waitForTimeout(300);
+  await to.press('Meta+Enter');
+  check(
+    `${theme}: Cmd+Return with text typed commits that text, not the highlighted match`,
+    (await page.getByTestId('to-list').textContent()) === 'joanna.pierce@example.com, jo, jon',
+  );
   await page.close();
 }
 await browser.close();
