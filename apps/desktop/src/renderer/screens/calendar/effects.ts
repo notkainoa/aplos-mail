@@ -283,6 +283,22 @@ export function undoLastCalendarChange(): void {
 }
 
 /**
+ * The toast's own Undo (the store's undo runner) refuses the same way Z does: a conflict on a held
+ * write says "That change was already sent." Refusals for anything the lane did not hold stay silent —
+ * mail's toasts behave exactly as before.
+ */
+export function calendarUndoRefused(opId: string, error: unknown): void {
+  const body = bodyOf(error);
+  if (body.type !== 'conflict' || !heldWrites.has(opId)) return;
+  pushToast({
+    id: `${opId}:undo`,
+    kind: 'info',
+    message: 'That change was already sent.',
+    undoable: false,
+  });
+}
+
+/**
  * Retry of a failure the provider reported after the receipt: `Operation/retry` on the same op id
  * (`ports.operationRetry`), never the write again — a fresh `Event/set` beside the engine's hold would
  * queue a second change. A refused retry is its own plain sentence (the engine's words are already safe).

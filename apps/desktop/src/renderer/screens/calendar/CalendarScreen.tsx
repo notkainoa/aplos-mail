@@ -26,6 +26,7 @@ import {
 } from '../../data';
 import {
   openSheet,
+  setToastUndoRefusal,
   useCommandTarget,
   usePaneHeaderPart,
   useRegisterCommands,
@@ -81,6 +82,7 @@ import {
   type ElementLike,
 } from './keys';
 import {
+  calendarUndoRefused,
   cancelPendingRetries,
   livePorts,
   runCalendarEffect,
@@ -340,6 +342,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
   // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
   useEffect(() => cancelPendingRetries, []);
+  // A toast's Undo refused on a held write says what Z says; the lane owns the surface while mounted.
+  useEffect(() => {
+    setToastUndoRefusal(calendarUndoRefused);
+    return () => setToastUndoRefusal(null);
+  }, []);
   const apply = useCallback(
     (action: CalendarAction): boolean => {
       const t = update(stateRef.current, action, ctxRef.current);

@@ -22,9 +22,21 @@ import { api, OperationFailedError, setClock, subscribeOperation, undoStack } fr
 import { connectDataLayer } from '../../data/connect';
 import { harnessClock } from '../../data/clock';
 import { createManualScheduler, createManualTimers } from '../../data/scheduler';
-import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
+import {
+  getToasts,
+  resetToasts,
+  runToastAction,
+  setToastUndoRefusal,
+  setToastUndoRunner,
+} from '../../shell/store-toast';
+import { undoToastOperation } from '../../shell/KeysProviders';
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
-import { runCalendarEffect, undoLastCalendarChange, type EffectPorts } from './effects';
+import {
+  calendarUndoRefused,
+  runCalendarEffect,
+  undoLastCalendarChange,
+  type EffectPorts,
+} from './effects';
 import { writeFailureOf } from './writeErrors';
 import { boot, ctxFor, ports, S, settle, testUi } from './calendar.testkit';
 import { EMPTY_OVERLAY, overlayDrop, overlayWith, type Overlay } from './model/entries';
@@ -553,6 +565,32 @@ test('heldWrites: a conflict frame is terminal like a failure — rollback, sent
       'still the one failure toast after the watch ended',
     );
   } finally {
+    resetToasts();
+  }
+});
+
+test('heldWrites: the toast\u2019s own Undo after the window says "That change was already sent"', async () => {
+  const { engine, flush, opId } = await heldWrite();
+  setToastUndoRunner(undoToastOperation);
+  setToastUndoRefusal(calendarUndoRefused);
+  try {
+    // The hold went out behind the owner's back: clicking the toast's own Undo answers the same
+    // conflict Z gets — and the refusal must say the same sentence, not close silently.
+    engine.fixture.failures.push({
+      mode: 'reject',
+      type: 'conflict',
+      message: 'This change has been sent, so it cannot be undone.',
+      afterMs: 0,
+    });
+    runToastAction(opId, 'undo');
+    await flush();
+    assert.equal(
+      getToasts().find(t => t.id === `${opId}:undo`)?.message,
+      'That change was already sent.',
+    );
+  } finally {
+    setToastUndoRunner(null);
+    setToastUndoRefusal(null);
     resetToasts();
   }
 });

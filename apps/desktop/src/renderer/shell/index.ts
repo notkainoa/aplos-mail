@@ -245,7 +245,9 @@ export {
   releaseToast,
   runToastAction,
   setToastCommandRunner,
+  setToastUndoRefusal,
   setToastUndoRunner,
+  toastUndoRefused,
   TOAST_LIMIT,
   UNDO_TOAST_MS,
 } from './store-toast';

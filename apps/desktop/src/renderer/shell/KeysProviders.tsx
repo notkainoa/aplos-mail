@@ -24,7 +24,7 @@ import {
 } from '../commands';
 import { api, useSettings } from '../data';
 import { CommandKeysProvider, KeyHintsProvider, resolveShowKeys } from '../ui/buttons-keys';
-import { setToastCommandRunner, setToastUndoRunner, type Screen } from './index';
+import { setToastCommandRunner, setToastUndoRunner, toastUndoRefused, type Screen } from './index';
 import { useShellKeys } from './keys-dispatch';
 import { ShellRegistryProvider, shellRegistryFor } from './ShellRegistry';
 import { getKeyLayers, layerConditions, shellStack, subscribeKeyLayers } from './store-keys';
@@ -47,7 +47,7 @@ function noRun(): void {
 /** A toast's Undo: undoes that toast's own operation (its id), not the newest change. True once the data layer took the request. */
 export function undoToastOperation(opId: string): boolean {
   try {
-    api.operation.undo({ opId }).receipt.catch(() => undefined);
+    api.operation.undo({ opId }).receipt.catch(error => toastUndoRefused(opId, error));
     return true;
   } catch {
     return false;
