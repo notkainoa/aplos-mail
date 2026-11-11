@@ -452,14 +452,16 @@
   background: var(--puck);
 }
 .ui-recipient-field__option-name {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ui-recipient-field__option-address {
-  min-width: 0;
+  flex: none;
+  max-width: 100%;
   overflow: hidden;
   color: var(--dim);
   font: var(--type-small);
