@@ -1886,3 +1886,11 @@ Each row keeps its gate `record`: these are baselines from an empty profile, not
 ## 2026-11-10: Home rows name the other person, not the owner (ui-home, break-ui pass on sender names)
 
 The engine's `ThreadRow.fromName` is the newest sender of the thread, which is the owner whenever they answered last. `senderOf` (rows, "Always do this for …", the one-by-one and reader titles) now prefers the newest sender who is not the owner, then the owner's own name, then the subject; names lose control characters, bidi overrides and invisible marks and fold whitespace (joiners stay for emoji families and Persian). A thread the owner wrote entirely still shows their own name, because `ThreadRow` has no recipients to name instead (requested from eng-contract).
+
+## 2026-11-11: the one-by-one card is a reading column at most 680 px wide (ui-reader)
+
+Context: the owner's round-3 feedback on the one-by-one card ("that's good", two changes), relayed by the orchestrator: the card #421 drew nearly as wide as the pane is too wide; the reference (another app's screenshot, 2x) shows a card about 625 CSS px wide with about 470 px of body text; "a centered column roughly 620-680 CSS px wide at a normal window, shrinking with the window (keep a comfortable side margin, 16-24 px at narrow widths ... no horizontal scroll) and NEVER wider than a max reading width"; "add the max to the tokens/DESIGN.md as an owner decision".
+
+Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by one the card is `min(100% - 2 x clamp(16px, 3%, 24px), --card-w)`, centred; the header, its hairline and the pinned bar are the column's own. A plain body keeps the existing `--measure-read` (64ch, about 65 to 70 characters) inside the card; a rich email's paper frame uses the card's width and its images already scale to it. This amends the 2026-11-10 entry's "the card is nearly as wide as the pane" (and DESIGN section 16's amendment of 2026-11-11, which says the card fills the pane's width).
+
+How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
