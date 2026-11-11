@@ -23,8 +23,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { QueueItem } from '@aplos/contract';
-import { failedHoldsOf, holdsNeedWatch, useFailedHolds } from './FailedHolds';
+import {
+  FailedHolds,
+  failedHoldsOf,
+  holdsNeedWatch,
+  useFailedHolds,
+  type FailedHold,
+} from './FailedHolds';
 import { account } from './accountCalendarState.test';
 import type { Account } from '../../data';
 
@@ -116,6 +123,26 @@ function mount(el: React.ReactElement): () => void {
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const noop = () => {};
+
+const row = (hold: FailedHold, open = true) =>
+  renderToStaticMarkup(<FailedHolds holds={[hold]} open={open} dispatch={noop} />);
+
+test('review21: a hold a newer write retired shows Discard alone, with why', () => {
+  const holds = failedHoldsOf([calItem()], new Set(), ACCOUNTS, { stale: () => true });
+  assert.equal(holds[0].stale, true);
+  const html = row(holds[0]);
+  assert.doesNotMatch(html, />Retry</);
+  assert.match(html, />Discard</);
+  assert.match(html, /You changed this event again\. This older change can be discarded\./);
+});
+
+test('review21: a fresh hold keeps its Retry beside Discard', () => {
+  const html = row(failedHoldsOf([calItem()], new Set(), ACCOUNTS)[0]);
+  assert.match(html, />Retry</);
+  assert.match(html, />Discard</);
+});
 
 test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {
   let calls = 0;

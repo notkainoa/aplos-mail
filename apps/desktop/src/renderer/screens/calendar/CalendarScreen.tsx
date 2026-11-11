@@ -86,6 +86,7 @@ import {
 import {
   calendarUndoRefused,
   cancelPendingRetries,
+  isStaleRetry,
   livePorts,
   releaseHeldWrites,
   runCalendarEffect,
@@ -246,7 +247,10 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   // meta-only and never move the window's seq, so the hook re-lists on a bounded timer while a
   // `cal:` item is still queued or syncing, and on window focus (review21) — `touched` only carries
   // provider writes the window does see. Only the pane's own account counts when the screen is scoped.
-  const { holds: failedHolds } = useFailedHolds(touched, accounts, { accountId });
+  const { holds: failedHolds } = useFailedHolds(touched, accounts, {
+    accountId,
+    stale: isStaleRetry,
+  });
   const calendars = useMemo(
     () =>
       (loaded ?? []).map(c =>

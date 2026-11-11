@@ -365,6 +365,14 @@ const failedOps = new Map<string, Set<string>>();
 /** Op ids whose failure toast a newer write retired: their Retry must answer nothing. */
 const staleRetries = new Set<string>();
 
+/**
+ * Whether a newer write on the event already retired this op's failure (review21): its hold row
+ * shows Discard alone — a retry would re-send the older change over the newer one.
+ */
+export function isStaleRetry(opId: string): boolean {
+  return staleRetries.has(opId);
+}
+
 function rememberFailedOp(spec: WriteSpec): void {
   if (spec.goneEventId === undefined) return;
   const ids = failedOps.get(spec.goneEventId) ?? new Set<string>();

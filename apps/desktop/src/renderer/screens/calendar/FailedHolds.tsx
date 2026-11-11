@@ -34,6 +34,11 @@ export interface FailedHold {
   readonly reason: string;
   /** The account the change is on — its name, else its address — resolved from the screen's accounts. */
   readonly account?: string;
+  /**
+   * A newer write on the event retired this change (effects' `staleRetries`): the row offers
+   * Discard alone — a retry would re-send the older change over the newer one (review21).
+   */
+  readonly stale?: boolean;
   readonly canRetry: boolean;
   readonly canDiscard: boolean;
 }
@@ -105,6 +110,8 @@ export interface FailedHoldFilter {
    * no scoped pane; the all-accounts pane still lists it.
    */
   readonly accountId?: string;
+  /** Op ids a newer write on the same event already retired (effects' `staleRetries`). */
+  readonly stale?: (opId: string) => boolean;
 }
 
 /**
@@ -129,6 +136,7 @@ export function failedHoldsOf(
       opId,
       reason: holdSentence(item),
       ...(account !== undefined ? { account } : {}),
+      ...(filter.stale?.(opId) === true ? { stale: true as const } : {}),
       canRetry: item.canRetry,
       canDiscard: item.canDiscard,
     });
@@ -256,9 +264,13 @@ function HoldRow({
           <span className="cal-hold__account"> · {hold.account}</span>
         ) : null}
       </div>
-      <div className="cal-hold__reason">{hold.reason}</div>
+      <div className="cal-hold__reason">
+        {hold.stale === true
+          ? 'You changed this event again. This older change can be discarded.'
+          : hold.reason}
+      </div>
       <div className="cal-hold__actions">
-        {hold.canRetry ? (
+        {hold.canRetry && hold.stale !== true ? (
           <Button
             variant="text"
             size="sm"
