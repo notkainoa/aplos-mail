@@ -428,6 +428,11 @@ export function createHolds(deps: Deps) {
       if (r.state === 'cancelled')
         throw conflict('This change was undone, so it cannot be retried.');
       if (r.state !== 'failed') throw conflict('Only a failed change can be retried.');
+      // An uncertain change may already be at Google (and its guests told): a second send could tell them twice.
+      if (r.error?.reasonCode === 'calendar.uncertain')
+        throw conflict(
+          'Check your calendar: this change may already have gone through. Make it again if it is missing.',
+        );
       // Never beside a send already under way in this process (a second press while the first is out).
       if (inflight.has(r.opId)) throw conflict('That change is being sent.');
       await send(deps, r, inflight);

@@ -163,6 +163,15 @@ test('a hold more than 15 minutes late is not sent unasked, even for an event fa
   assert.deepEqual(w.calls, ['put'], 'sent on the owner’s explicit Retry');
 });
 
+test('a hold only 10 minutes late is still sent (the 15-minute limit is not shorter)', async () => {
+  const w = await rig([]);
+  await w.call('Event/set', rename('lt2', 'acct-1:primary/ev1'));
+  w.clock.advance(10 * 60_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put']);
+  assert.equal((await w.call('Operation/get', { opIds: ['lt2'] })).list[0]!.state, 'synced');
+});
+
 test('a hold sent after a failed Retry carries no trace of the old error', async () => {
   let finish!: () => void;
   const w = await rig([
@@ -216,6 +225,11 @@ test('Google accepting a change that this device then cannot record is reported 
     'calendar.uncertain',
     'a Retry here would tell the guests twice',
   );
+  // And it is refused: the owner checks the calendar and makes the change again if it is missing.
+  await assert.rejects(w.call('Operation/retry', { opId: 'rc1' }), /may already have gone through/);
+  w.clock.advance(60_000);
+  await settle();
+  assert.deepEqual(w.calls, ['put'], 'no second send, now or later');
 });
 
 test('a hold that comes due before its account has started waits and is sent once it has', async () => {
