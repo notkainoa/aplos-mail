@@ -15,7 +15,7 @@ the host is stricter than the reporter needs, and what is still owed by the engi
 | `sandbox`                      | `allow-same-origin` only, never `allow-scripts`                                                             | `allow-scripts allow-popups`, never `allow-same-origin`         |
 | CSP                            | inner `<meta>`, first in `<head>` after `x-dns-prefetch-control: off`, plus the host page's inherited CSP   | response header (host CSP is not inherited)                     |
 | Scripts in the frame           | none                                                                                                        | one hash-pinned reporter                                        |
-| Height and paper tint          | read by the host from `contentDocument`                                                                     | the reporter's `{token,h,w,bg,ready,marks}`, validated below    |
+| Height and paper tint          | read by the host from `contentDocument`                                                                     | the reporter's `{token,h,w,bg,ready,marks,plain}`, validated below    |
 | Keys with focus inside         | host listener on the frame document, short key list only                                                    | main's `before-input-event` relay, heard by `useSealedMailKeys` |
 | Links                          | host click listener cancels, opens outside                                                                  | `setWindowOpenHandler` in main, `will-frame-navigate` cancels   |
 | No report within 10 s          | "Couldn't load this email." with Try again (`deadline.ts`)                                                  | the same                                                        |
@@ -75,10 +75,13 @@ silent for good). There is no handshake and the host never posts to the frame. T
 `<details>` `toggle`, `fonts.ready` and a `ResizeObserver` on the root element, and only when `innerWidth > 0`:
 
 ```ts
-{ token: string, h: number, w: number, bg: string, ready: boolean, marks: number }
+{ token: string, h: number, w: number, bg: string, ready: boolean, marks: number, plain: boolean }
 // h = max(root.scrollHeight, body.scrollHeight) clamped to 0-1,000,000; w = innerWidth clamped to 0-100,000;
 // bg = getComputedStyle(body).backgroundColor cut to 64 chars; ready = readyState === 'complete';
 // marks = count of mark.aplos-find clamped to 0-100,000. All numbers rounded.
+// plain = documentElement has `data-aplos-plain`, which only the sanitiser sets (mail-html/src/plain.ts; a mail cannot, data-* is
+// dropped). It is the ONLY signal that lets the host draw a letter flush on the reader card; `bg` is a colour the mail chooses and
+// is never one. A report with the older six fields is accepted and means not plain.
 ```
 
 The host listens on `window` for `message` events and accepts one only when all of these hold (`protocol.ts`
