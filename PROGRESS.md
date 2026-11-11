@@ -667,3 +667,6 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 ## ui-settings: Add a tool, Revoke asks first, Device sync row (2026-11-10)
 - Settings → General → Tools on this Mac: an Add a tool dialog (name, kind, permissions, read ticked by default, plain warnings for Send and settings) calls `Clients/grant`; the next step shows the key file's path ONCE with Copy path and a plain note. The path is the dialog's own state: it is not in Settings' data or view, and the tool joins the list without it. Aplos never has the key itself on screen (the token never crosses the contract). Revoke now asks first.
 - Device sync: one calm row from `Workflow/status`; no control is drawn while `available` is false (the engine says "later version"). Enable, code and join are not built until the engine says available.
+
+## ui-settings: the verbose switch opens as the engine says (2026-11-11)
+- Settings → Help & about reads `Diagnostics/verbose` with no `on` (#418, a query that changes nothing) when it opens, so Verbose logging shows on, with its switch-off time, if the engine already has it on. A switch-off time means on; none means off.
