@@ -21,8 +21,10 @@
 import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import type { QueueItem } from '@aplos/contract';
-import { failedHoldsOf } from './FailedHolds';
+import { failedHoldsOf, holdsNeedWatch, useFailedHolds } from './FailedHolds';
 import { account } from './accountCalendarState.test';
 import type { Account } from '../../data';
 
@@ -62,4 +64,74 @@ test('review21: a scoped pane lists only its own account’s failed holds', () =
   );
   // No scope: every account's holds still list (the all-accounts pane).
   assert.equal(failedHoldsOf(items, new Set(), ACCOUNTS).length, 3);
+});
+
+test('review21: only a queued or syncing cal: item keeps the queue watched', () => {
+  assert.equal(holdsNeedWatch([calItem({ state: 'queued' })]), true);
+  assert.equal(holdsNeedWatch([calItem({ state: 'syncing' })]), true);
+  assert.equal(holdsNeedWatch([calItem({ state: 'failed' })]), false);
+  // A mail op or a job in flight is not the calendar lane's business.
+  assert.equal(holdsNeedWatch([calItem({ id: 'op:op-mail', state: 'queued' })]), false);
+  assert.equal(holdsNeedWatch([calItem({ id: 'job:7', state: 'queued' })]), false);
+});
+
+const glob = globalThis as {
+  document?: unknown;
+  window?: unknown;
+  IS_REACT_ACT_ENVIRONMENT?: boolean;
+};
+glob.IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Mount a null-rendering component on the bare fake container (useSealedMailKeys' pattern). */
+function mount(el: React.ReactElement): () => void {
+  const doc = {
+    nodeType: 9,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    visibilityState: 'visible',
+    activeElement: null,
+  };
+  const savedDocument = glob.document;
+  const savedWindow = glob.window;
+  glob.window = {
+    HTMLIFrameElement: class {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  glob.document = doc;
+  const container = {
+    ...doc,
+    nodeType: 1,
+    tagName: 'DIV',
+    textContent: '',
+    ownerDocument: doc,
+  } as unknown as Element;
+  const root = createRoot(container);
+  act(() => root.render(el));
+  return () => {
+    act(() => root.unmount());
+    glob.document = savedDocument;
+    glob.window = savedWindow;
+  };
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+test('review21: a queued hold that fails while the pane is mounted surfaces without a window frame', async () => {
+  let calls = 0;
+  const seen: number[] = [];
+  const list = () =>
+    Promise.resolve<readonly QueueItem[]>([
+      calItem({ state: calls++ === 0 ? 'queued' : 'failed' }),
+    ]);
+  function Probe() {
+    const { holds } = useFailedHolds('', ACCOUNTS, {}, { list, watchMs: 10 });
+    seen.push(holds.length);
+    return null;
+  }
+  const unmount = mount(<Probe />);
+  await act(() => sleep(60));
+  unmount();
+  assert.ok(calls > 1, 'the watch kept re-listing while the item was queued');
+  assert.equal(seen.at(-1), 1);
 });

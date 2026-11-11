@@ -242,9 +242,10 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const accounts = useAccounts();
   const accountsLoaded = useAccountsLoaded();
   const loaded = useCalendars(accountId, touched, calendarListedKey(accounts));
-  // Failed guest-notifying holds live in Queue/list between sessions (review20): refetched on mount
-  // and on every operation frame the window already receives (`touched`), never polled — and only
-  // the pane's own account counts when the screen is scoped (review21).
+  // Failed guest-notifying holds live in Queue/list between sessions (review20). Hold commits are
+  // meta-only and never move the window's seq, so the hook re-lists on a bounded timer while a
+  // `cal:` item is still queued or syncing, and on window focus (review21) — `touched` only carries
+  // provider writes the window does see. Only the pane's own account counts when the screen is scoped.
   const { holds: failedHolds } = useFailedHolds(touched, accounts, { accountId });
   const calendars = useMemo(
     () =>

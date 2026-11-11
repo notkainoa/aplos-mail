@@ -55,6 +55,19 @@ export function isCalendarHoldItem(item: QueueItem): boolean {
 }
 
 /**
+ * A `cal:` item the engine is still working on — queued (inside its undo window, or waiting out a
+ * `notBefore` of up to 15 minutes) or syncing: it can still flip to `failed`, and nothing else
+ * would fetch that (review21). Hold commits are meta-only — they never move the events window's
+ * `dbEpoch:seq` — and the operation frame only reached a live `subscribeOperation` watch, which
+ * died with the screen that mounted it.
+ */
+export function holdsNeedWatch(items: readonly QueueItem[]): boolean {
+  return items.some(
+    item => item.id.startsWith('cal:') && (item.state === 'queued' || item.state === 'syncing'),
+  );
+}
+
+/**
  * The sentence a failed hold reads: writeErrors' at-operation table where a reasonCode exists,
  * else the engine's own words (a content-free item carries its plain sentence for exactly this).
  */
@@ -145,17 +158,31 @@ export function emitHoldsRefresh(): void {
 // The hook the container calls and the surface the pane draws
 // ---------------------------------------------------------------------------
 
+/** How often the watched queue is re-listed while a `cal:` item is still queued or syncing. */
+const HOLD_WATCH_MS = 5_000;
+
+/** What `useFailedHolds` needs beyond the model: injectable in tests. */
+export interface FailedHoldsDeps {
+  /** The list call; `Queue/list {kinds: ['op']}` in the app. */
+  readonly list?: () => Promise<readonly QueueItem[]>;
+  /** The watch interval while a `cal:` item is queued or syncing; `HOLD_WATCH_MS` in the app. */
+  readonly watchMs?: number;
+}
+
 /**
  * The failed holds the pane knows: `Queue/list` `cal:` items in `failed`, deduped against the live
- * toasts, their accounts resolved from the ones the screen already has. `refreshKey` bumps on every
- * operation frame the screen already receives, so a provider-side settle (or a new failure) lands
- * without polling; a retry or discard settling emits `emitHoldsRefresh`. Never on a timer, and it
- * never retries on its own.
+ * toasts, their accounts resolved from the ones the screen already has, narrowed to the pane's
+ * account scope. `refreshKey` bumps on window frames and a retry or discard settling emits
+ * `emitHoldsRefresh`. A hold the engine is still working on would surface in neither — its
+ * meta-only commits never move the events window — so while the last list holds a queued or
+ * syncing `cal:` item the queue is re-listed on a bounded timer, and the list is re-fetched when
+ * the window regains focus or visibility (review21). It never retries on its own.
  */
 export function useFailedHolds(
   refreshKey: string,
   accounts: readonly Account[],
   filter: FailedHoldFilter = {},
+  deps: FailedHoldsDeps = {},
 ): {
   holds: readonly FailedHold[];
   refresh: () => void;
@@ -164,21 +191,45 @@ export function useFailedHolds(
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
   const toasts = useSyncExternalStore(subscribeToasts, getToasts, getToasts);
+  const listDeps = deps.list;
+  const watchMs = deps.watchMs ?? HOLD_WATCH_MS;
 
   useEffect(() => subscribeHoldsRefresh(refresh), [refresh]);
+  // A settle the queue alone can see: the window coming back to the front re-lists too.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+    const refetch = () => {
+      if (document.visibilityState !== 'hidden') refresh();
+    };
+    window.addEventListener('focus', refetch);
+    document.addEventListener('visibilitychange', refetch);
+    return () => {
+      window.removeEventListener('focus', refetch);
+      document.removeEventListener('visibilitychange', refetch);
+    };
+  }, [refresh]);
   useEffect(() => {
     let live = true;
-    void api.queue.list({ kinds: ['op'] }).then(
-      result => {
-        if (live) setItems(result.list);
-      },
-      // The list failing is a quiet empty — the pane's own error line covers load failures.
-      () => undefined,
-    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const run = (): void => {
+      const call = listDeps ?? (() => api.queue.list({ kinds: ['op'] }).then(r => r.list));
+      void call().then(
+        result => {
+          if (!live) return;
+          setItems(result);
+          // A queued or syncing hold can still fail — re-list on a bound until none remain.
+          if (holdsNeedWatch(result)) timer = setTimeout(run, watchMs);
+        },
+        // The list failing is a quiet empty — the pane's own error line covers load failures.
+        () => undefined,
+      );
+    };
+    run();
     return () => {
       live = false;
+      if (timer !== undefined) clearTimeout(timer);
     };
-  }, [refreshKey, tick, toasts]);
+  }, [refreshKey, tick, toasts, listDeps, watchMs]);
 
   const holds = failedHoldsOf(items, new Set(toasts.map(t => t.id)), accounts, filter);
   return { holds, refresh };
