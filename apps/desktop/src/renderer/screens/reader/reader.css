@@ -265,14 +265,18 @@
   margin-right: var(--space-half);
 }
 .aplos-circles {
+  isolation: isolate;
   display: inline-flex;
   flex-direction: row-reverse;
   align-items: center;
   padding-left: var(--space-2);
 }
+/* Positioned so the circles paint in DOM order (last to first), which puts the first person on top: an unpositioned
+   flex row paints its reversed items the other way, and each circle then hid the letter beside it. */
 .aplos-circle {
   --circle-ring: var(--canvas);
   --circle-fill: var(--sunken);
+  position: relative;
   box-sizing: border-box;
   display: inline-flex;
   flex: none;
@@ -288,6 +292,21 @@
   font: var(--type-caption);
   font-weight: 600;
   letter-spacing: var(--track-caption);
+  font-variant-numeric: tabular-nums;
+}
+/* Every circle but the first (the DOM's last) has its leading side under the one before it, so its letter sits in the
+   part you see. */
+.aplos-circle:not(:last-child) {
+  padding-left: var(--space-2);
+}
+/* "+N" is a count. Its leading side sits under the circle before it, so that side's padding clears the overlap and the
+   part you see is one circle wide ("+3"); a longer count grows into a pill that keeps every digit inside it ("+497"). */
+.aplos-circle[data-more='true'] {
+  width: auto;
+  min-width: calc(var(--control-xs) + var(--space-2));
+  padding-left: var(--space-2);
+  /* Physical sides, like the overlap's margin-left. */
+  padding-right: var(--space-1);
 }
 .aplos-circle::before {
   content: attr(data-mark);
@@ -304,8 +323,11 @@
 
 .aplos-details {
   box-sizing: border-box;
-  max-height: calc(100vh - 2 * var(--shell-pad));
+  /* A long recipient list scrolls inside a popover that still fits under the To button, instead of filling the window
+     and covering the header that opened it. */
+  max-height: 60vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   min-width: calc(var(--space-10) * 5);
   max-width: min(calc(var(--space-10) * 7), 90vw);
   padding: var(--space-1) var(--space-5);
@@ -449,10 +471,16 @@
 .aplos-reader[data-stage='one-by-one'] .ui-reply-stub {
   display: none;
 }
-/* The card is as wide as the sketch draws it: nearly the pane, under the top bar, instead of the 640 px reading column. */
+/* The card is a centred reading column (owner feedback 2026-11-11, reference card about 625 px): it shrinks with the pane,
+   keeps a 16 to 24 px side margin and never grows past `--card-w`, so a wide window leaves margins, not long lines. The
+   header, hairline and the pinned bar are the column's own, so they stay aligned to it. */
 .aplos-reader[data-stage='one-by-one'] {
-  width: min(calc(100% - 2 * var(--space-7)), calc(var(--space-10) * 18));
+  width: min(calc(100% - 2 * clamp(var(--space-4), 3%, var(--space-6))), var(--card-w));
   padding-top: var(--space-2);
+  /* The pinned bar's scrim reaches 24 px either side of the column, past the pane at a narrow width, and would make the pane
+     scroll sideways: it is clipped 8 px out (room for the cards' rings), a clip that is not a scroll container. */
+  overflow-x: clip;
+  overflow-clip-margin: var(--space-2);
 }
 .aplos-reader[data-stage='one-by-one'] .aplos-reader__thread {
   margin-top: 0;

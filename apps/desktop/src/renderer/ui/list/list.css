@@ -1105,6 +1105,10 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+/* Until a row is hovered the slot keeps its room (the sheet holds still) but drops its rule, so no empty band shows. */
+.ui-low-sheet__preview:empty {
+  box-shadow: none;
+}
 .ui-low-sheet__foot {
   display: flex;
   flex-wrap: wrap;
