@@ -1,4 +1,5 @@
 import type { Input, Operation, Receipt } from '@aplos/contract';
+import { ContractError } from '@aplos/contract/contract-error';
 import type { Caller } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
 import type { CalendarHolds, HoldSpec } from './holds-types';
@@ -24,7 +25,23 @@ export function createCalendarHolds(services: EngineServices): CalendarHolds {
       m.createHolds({ store, clock, log, calendar: services.calendar, changed }),
     );
   }
-  const holds = () => (working ??= load());
+  const holds = () => {
+    if (!working) {
+      // A failed load must not cache its rejection (the next call retries) and surfaces as a plain typed error.
+      const loading = load().catch(() => {
+        throw new ContractError({
+          type: 'unavailable',
+          message: 'Calendar undo could not start. Nothing was changed. Try again.',
+          reasonCode: 'calendar.unavailable',
+        });
+      });
+      working = loading;
+      loading.catch(() => {
+        if (working === loading) working = undefined;
+      });
+    }
+    return working;
+  };
 
   services.deadlines.register({
     id: 'calendarHolds',
