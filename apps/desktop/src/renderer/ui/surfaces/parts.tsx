@@ -442,7 +442,9 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     if (placement === 'above-start' && y < pad) y = a.bottom + gap;
     x = Math.max(pad, Math.min(x, vw - w - pad));
     y = Math.max(pad, Math.min(y, vh - h - pad));
-    setCoords({ x: Math.round(x), y: Math.round(y) });
+    const next = { x: Math.round(x), y: Math.round(y) };
+    // The same spot keeps the same object, so a re-place that changes nothing does not render again.
+    setCoords(prev => (prev && prev.x === next.x && prev.y === next.y ? prev : next));
   }, [anchor, placement]);
 
   useLayoutEffect(() => {
@@ -457,12 +459,12 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
 
   // The first measure is taken while the surface still sits in flow, and a fixed surface near the window's edge can
   // shrink to fit, so its size changes after it is placed (a long recipient list opened far from its anchor). Place it
-  // again whenever its size changes; the same size gives the same spot, so this settles.
+  // again whenever its size changes (the observer also reports once when it starts); the same size gives the same spot,
+  // so this settles.
   const placed = coords !== null;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!open || !placed || !el || typeof ResizeObserver === 'undefined') return undefined;
-    place();
     const observer = new ResizeObserver(() => place());
     observer.observe(el);
     return () => observer.disconnect();
