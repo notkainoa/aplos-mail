@@ -1,3 +1,4 @@
+import { ContractError } from '@aplos/contract/contract-error';
 import type { AccountId } from '../ports/base';
 import type {
   CalendarPort,
@@ -50,12 +51,22 @@ export function calendarTargetOf(
 
 export function lazyCalendarPort(
   targetFor: (account: AccountId) => CalendarTarget | undefined,
+  load: () => Promise<typeof import('./write-port')> = () => import('./write-port'),
 ): CalendarPort {
   let working: Promise<CalendarPort> | undefined;
   const port = () => {
     if (!working) {
-      // A failed load must not cache its rejection: the next write retries the import.
-      const loading = import('./write-port').then(m => m.createCalendarPort(targetFor));
+      // A failed load must not cache its rejection (the next write retries the import), and the caller gets a plain
+      // typed error: nothing was sent, so nothing changed.
+      const loading = load()
+        .then(m => m.createCalendarPort(targetFor))
+        .catch(() => {
+          throw new ContractError({
+            type: 'unavailable',
+            message: 'Calendar editing could not start. Nothing was changed. Try again.',
+            reasonCode: 'calendar.unavailable',
+          });
+        });
       working = loading;
       loading.catch(() => {
         if (working === loading) working = undefined;

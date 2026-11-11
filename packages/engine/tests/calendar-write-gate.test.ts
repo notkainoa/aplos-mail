@@ -214,3 +214,29 @@ test('the port itself refuses a read-only or unknown calendar, for every caller'
     await d.cleanup();
   }
 });
+
+test('a calendar write chunk that fails to load answers a plain error, and the next write loads it again', async () => {
+  const { lazyCalendarPort } = await import('../src/calendar/write-target');
+  const real = await import('../src/calendar/write-port');
+  let loads = 0;
+  const port = lazyCalendarPort(
+    () => undefined,
+    () => {
+      loads += 1;
+      return loads === 1
+        ? Promise.reject(new Error('chunk 404 /secret/path'))
+        : Promise.resolve(real);
+    },
+  );
+  await assert.rejects(
+    port.put(ACCOUNT, change),
+    (e: unknown) =>
+      e instanceof ContractError &&
+      e.type === 'unavailable' &&
+      e.body.reasonCode === 'calendar.unavailable' &&
+      !JSON.stringify(e.body).includes('secret'),
+  );
+  // Loaded this time: an account that is not started is a provable non-write (the real port answered).
+  await assert.rejects(port.put(ACCOUNT, change), (e: unknown) => e instanceof NotSentError);
+  assert.equal(loads, 2);
+});
