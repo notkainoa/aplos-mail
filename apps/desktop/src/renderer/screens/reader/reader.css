@@ -270,6 +270,7 @@
   margin-right: var(--space-half);
 }
 .aplos-circles {
+  isolation: isolate;
   display: inline-flex;
   flex-direction: row-reverse;
   align-items: center;
@@ -293,6 +294,19 @@
   font: var(--type-caption);
   font-weight: 600;
   letter-spacing: var(--track-caption);
+  font-variant-numeric: tabular-nums;
+}
+/* Positioned so the circles paint in DOM order (last to first), which puts the first person on top: an unpositioned
+   flex row paints its reversed items the other way, and each circle then hid the letter beside it. */
+.aplos-circle {
+  position: relative;
+}
+/* "+N" is a count, so it may grow into a pill and keep every digit inside it ("+497"); its leading side sits under the
+   circle before it, so that side's padding clears the overlap. */
+.aplos-circle[data-more='true'] {
+  width: auto;
+  min-width: var(--control-xs);
+  padding-inline: calc(var(--space-1) + var(--space-2)) var(--space-1);
 }
 .aplos-circle::before {
   content: attr(data-mark);
@@ -309,8 +323,11 @@
 
 .aplos-details {
   box-sizing: border-box;
-  max-height: calc(100vh - 2 * var(--shell-pad));
+  /* A long recipient list scrolls inside a popover that still fits under the To button, instead of filling the window
+     and covering the header that opened it. */
+  max-height: min(60vh, calc(100vh - 2 * var(--shell-pad)));
   overflow-y: auto;
+  overscroll-behavior: contain;
   min-width: calc(var(--space-10) * 5);
   max-width: min(calc(var(--space-10) * 7), 90vw);
   padding: var(--space-1) var(--space-5);
