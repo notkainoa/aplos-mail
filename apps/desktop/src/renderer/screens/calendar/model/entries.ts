@@ -326,6 +326,16 @@ export function reached(window: State | null, at: State | null): boolean {
   return window !== null && at !== null && (window.dbEpoch !== at.dbEpoch || window.seq >= at.seq);
 }
 
+/**
+ * The events window moved on from the state a held write synced at — a frame landed after it, so its
+ * row (or absence) is the engine's own answer. A held write's layer drops then, not at `synced`
+ * itself: the window's reruns are throttled (WINDOW_INTERVAL_MS), so the synced op frame can precede
+ * the frame that carries the provider state (review16).
+ */
+export function newerFrame(current: State | null, before: State | null): boolean {
+  return current !== null && current !== before;
+}
+
 /** A calendar's local `shown` while `Calendar/set` and the `Calendar/get` re-read are in flight (review1 5). */
 export interface ShownOverride {
   readonly shown: boolean;

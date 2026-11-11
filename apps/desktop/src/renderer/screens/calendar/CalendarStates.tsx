@@ -765,7 +765,10 @@ const FIXTURES: Record<string, Fixture> = {
     state: { view: 'week', selectedId: 'design' },
     toast: {
       message: "That change wasn't sent in time. Check the event, then send it again.",
-      actions: [{ id: 'retry', label: 'Retry' }],
+      actions: [
+        { id: 'retry', label: 'Retry' },
+        { id: 'dismiss', label: 'Dismiss' },
+      ],
     },
   },
   'write-hold-refused': {
@@ -776,7 +779,8 @@ const FIXTURES: Record<string, Fixture> = {
       selectedId: 'design',
       editor: {
         ...draftFromEvent(DESIGN_REVIEW),
-        error: "Your earlier change to this event hasn't been sent yet. Wait a moment, or undo it.",
+        error:
+          "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
       },
     },
   },

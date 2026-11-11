@@ -49,6 +49,7 @@ import {
   eventsRange,
   initialState,
   inviteOpen,
+  newerFrame,
   overlayDrop,
   overlayWith,
   periodOf,
@@ -85,6 +86,7 @@ import {
   calendarUndoRefused,
   cancelPendingRetries,
   livePorts,
+  releaseHeldWrites,
   runCalendarEffect,
   undoLastCalendarChange,
   type EffectPorts,
@@ -107,6 +109,22 @@ interface Settling {
   /** The write this entry's overlay contribution belongs to — a settle drops its share only. */
   readonly writeId: string;
 }
+
+/**
+ * A held write's layer at `synced`: it drops on the first events-window frame after the state it
+ * synced at — the synced op frame can land ahead of the throttled window rerun that carries the
+ * provider state (review16). `timer` is the bound: if no frame comes, the layer drops anyway.
+ */
+interface FrameDrop {
+  readonly id: string;
+  readonly writeId: string;
+  /** The window state at `synced` — the first frame past it drops the layer. */
+  readonly before: State | null;
+  readonly timer: number;
+}
+
+/** How long a held write's layer may outlive `synced` waiting on the window's next frame. */
+const SETTLE_FRAME_FALLBACK_MS = 2_000;
 
 const focused = (): ElementLike | null =>
   typeof document === 'undefined' ? null : (document.activeElement as ElementLike | null);
@@ -194,6 +212,9 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const [state, setState] = useState<CalendarState>(() => initialState(toIsoDate(now)));
   const [overlay, setOverlay] = useState<Overlay>(EMPTY_OVERLAY);
   const [settling, setSettling] = useState<readonly Settling[]>([]);
+  const [frameDrops, setFrameDrops] = useState<readonly FrameDrop[]>([]);
+  const frameDropsRef = useRef<readonly FrameDrop[]>([]);
+  frameDropsRef.current = frameDrops;
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, ShownOverride>>(new Map());
 
@@ -208,6 +229,9 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   // (DESIGN 7.14) without a second watch; `eventsRange` falls back to the plain period past the 62-day cap.
   const range = eventsRange(period, now);
   const eventsWindow = useView({ kind: 'events', from: range.from, to: range.to });
+  // `settleAfterFrame` (below) reads the state the synced op frame landed on, outside render.
+  const windowStateRef = useRef(eventsWindow.state);
+  windowStateRef.current = eventsWindow.state;
   const plansWindow = useView(plansSpec(period));
   const touched = eventsWindow.state
     ? `${eventsWindow.state.dbEpoch}:${eventsWindow.state.seq}`
@@ -297,6 +321,18 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
     setSettling(list => list.filter(s => !caughtUp.includes(s)));
   }, [eventsWindow.state, settling]);
 
+  // A held write's layer drops on the first events-window frame after `synced` (the synced op frame
+  // can land ahead of the window's throttled rerun): each entry keeps its patch — or a create its
+  // temp row — until the real row is in place. `newerFrame` needs only that a frame landed.
+  useEffect(() => {
+    if (frameDrops.length === 0) return;
+    const caught = frameDrops.filter(p => newerFrame(eventsWindow.state, p.before));
+    if (caught.length === 0) return;
+    caught.forEach(p => clearTimeout(p.timer));
+    setOverlay(o => caught.reduce((acc, p) => overlayDrop(acc, p.writeId, p.id), o));
+    setFrameDrops(list => list.filter(p => !caught.includes(p)));
+  }, [eventsWindow.state, frameDrops]);
+
   // The reducer reads the newest state and context even when several keys land in one frame.
   const stateRef = useRef(state);
   const ctxRef = useRef(ctx);
@@ -312,6 +348,21 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         setOverlay(o => overlayWith(o, writeId, change)),
       settle: (id: string, at: State | null, writeId: string) =>
         setSettling(list => [...list, { id, at, writeId }]),
+      settleAfterFrame: (id: string, writeId: string) => {
+        const before = windowStateRef.current;
+        const drop: FrameDrop = {
+          id,
+          writeId,
+          before,
+          // No frame within the bound: the layer drops anyway (the fallback never waits the real
+          // row out — a stuck window must not freeze the patch, review16).
+          timer: window.setTimeout(() => {
+            setFrameDrops(list => list.filter(p => p !== drop));
+            setOverlay(o => overlayDrop(o, writeId, id));
+          }, SETTLE_FRAME_FALLBACK_MS),
+        };
+        setFrameDrops(list => [...list, drop]);
+      },
       rollback: (id: string, writeId: string) => setOverlay(o => overlayDrop(o, writeId, id)),
       shown: (id: string, shown: boolean) =>
         setShownOverride(m => new Map(m).set(id, { shown, settled: false })),
@@ -340,8 +391,18 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   );
 
   const run = useCallback((fx: CalendarEffect) => runCalendarEffect(fx, ports, ui), [ports, ui]);
-  // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later (review7 9).
-  useEffect(() => cancelPendingRetries, []);
+  // A delayed retry waiting out retryAfterMs dies with the screen: no surprise write fires later
+  // (review7 9). A frame-drop still pending goes with it: the layer's own timer would fire a setState
+  // on a dead screen.
+  useEffect(
+    () => () => {
+      cancelPendingRetries();
+      // Held-target guards belong to this screen's session too (review16).
+      releaseHeldWrites();
+      for (const p of frameDropsRef.current) clearTimeout(p.timer);
+    },
+    [],
+  );
   // A toast's Undo refused on a held write says what Z says; the lane owns the surface while mounted.
   useEffect(() => {
     setToastUndoRefusal(calendarUndoRefused);
