@@ -36,7 +36,7 @@ const cases: readonly (readonly [string, string, string])[] = [
   [
     'unsupported',
     'calendar.floatingSeries',
-    'Change the time of every event from the series itself.',
+    'This repeating event runs in another time zone. Change it in Google Calendar, or edit one occurrence.',
   ],
   [
     'unsupported',

@@ -75,9 +75,11 @@ const WRITE_FAILURE_COPY: Readonly<Record<string, Omit<WriteFailure, 'retry'>>> 
   'calendar.opReused': {
     message: 'That event was deleted. Create it again as a new event.',
   },
-  // A series time change on a wall-clock time Aplos has no zone for: only the series itself can say.
+  // A series time change in a zone other than the series' own (or one Aplos cannot name): it cannot be
+  // re-timed here — Google Calendar can move the series, one occurrence can move alone.
   'calendar.floatingSeries': {
-    message: 'Change the time of every event from the series itself.',
+    message:
+      'This repeating event runs in another time zone. Change it in Google Calendar, or edit one occurrence.',
   },
   // "This and following" is never offered; only a stale surface reaches this.
   'event.followingUnsupported': {
