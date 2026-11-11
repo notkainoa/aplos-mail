@@ -75,20 +75,38 @@ export function cleanName(text: string | undefined): string {
     .trim();
 }
 
+const MAX_NAMES = 3;
+
+/** "Ada, Ben, Cleo and 2 more": at most three names, then how many are left. */
+export function joinNames(names: readonly string[]): string {
+  const shown = names.slice(0, MAX_NAMES).join(', ');
+  return names.length > MAX_NAMES ? `${shown} and ${names.length - MAX_NAMES} more` : shown;
+}
+
+/** The cleaned names (or addresses) of the people who are not the owner, in order, none blank. */
+export function otherNames(people: ThreadRow['participants'] | undefined): string[] {
+  return (people ?? [])
+    .filter(p => p.me !== true)
+    .map(p => cleanName(p.name) || cleanName(p.address))
+    .filter(name => name !== '');
+}
+
 /**
  * The sender column: the newest sender who is not the owner (the engine's `fromName` is the newest sender, which is the
- * owner whenever they answered last), else the owner's own name, else the subject's first words; never blank.
+ * owner whenever they answered last); for a thread the owner wrote entirely, who it went to (`recipients`, the newest
+ * message the owner sent), so Follow up names who is being waited on; else the owner's own name, else the subject's
+ * first words; never blank.
  */
 export function senderOf(row: ThreadRow): string {
   const from = cleanName(row.fromName);
   // `fromName` is always `participants[0]`: it is the owner exactly when that participant is marked `me` (never judged
   // by name, so a colleague who shares the owner's display name is still a sender).
   if (from && row.participants[0]?.me !== true) return from;
-  const other = row.participants
-    .filter(p => !p.me)
-    .map(p => cleanName(p.name) || cleanName(p.address))
-    .find(name => name !== '');
-  return other || from || cleanName(row.subject) || 'No sender';
+  const [other] = otherNames(row.participants);
+  if (other) return other;
+  const waitingOn = otherNames(row.recipients);
+  if (waitingOn.length > 0) return joinNames(waitingOn);
+  return from || cleanName(row.subject) || 'No sender';
 }
 
 /** The main line of a row: the summary when it is ready, otherwise the subject (DESIGN 7.2 "No AI"). */
