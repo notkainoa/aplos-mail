@@ -1894,6 +1894,10 @@ The RSS medians differ by 26 MB between two identical runs, so one run is not a 
 
 Each row keeps its gate `record`: these are baselines from an empty profile, not limits. Turning them into tighten-only limits needs headroom, repeated runs on the owner's Mac and a run with a synced account, which is eng-host's call. The engine process is found by the `node.mojom.NodeService` marker (the preferred `--aplos-engine=real` marker is not on the real utility's command line); only one such utility exists. Re-run with `node scripts/audit/measure-idle.mjs <app> --json` (about 11.5 minutes).
 
+## 2026-11-11 — prov-cal: a series' time change follows the series' own zone, whatever form the request takes
+
+- **Chosen:** a series edit opened from one occurrence shifts the master by the owner's change measured on the series' wall clock in the series' own zone. `utc` times for a series that has a zone are converted to that zone's wall clock first (otherwise an elapsed-time shift is an hour off across a daylight-saving change: Oct 28 10:00 PDT moved to Nov 1 10:00 PST put the master at 11:00). A series with no zone has only elapsed time to go by, so `utc` stays elapsed. A wall-clock time for a series with no zone, or in another zone than the series', or in a zone the engine does not know, is refused `calendar.floatingSeries` instead of rewriting the series into a zone it never had.
+- **Known UX gap (ticket for ui-calendar, not a blocker):** the Calendar screen builds wall-clock times in the calendar's zone, so a series whose own zone differs from the calendar's cannot have its time changed from an occurrence, and the refusal's sentence points at editing the series' first event. Say something truthful there, or send the series' own zone.
 ## 2026-11-11 — prov-cal: held calendar writes after the Opus review of #437
 
 - **Chosen: every save of a hold carries its own commit id.** A `meta`-only commit does not move the store's `seq`, and the old id used `seq`, so a second save of the same state (a Retry's `syncing`) was skipped as already applied; two Retry presses then both sent. Ids now carry a random part, and a second Retry sees `syncing` and answers `conflict`.
@@ -1951,7 +1955,6 @@ Review follow-up (ui-polish on #458): Later and Done keep their labels down to 3
 ## 2026-11-10: Follow up names who it waits on; Sent names who it went to (ui-home, on eng-views' ThreadRow.recipients)
 
 `ThreadRow.recipients` (the To and Cc of the newest message the owner sent, added by eng-views) lets a thread the owner wrote entirely read as the person being waited on instead of the owner's own name: `senderOf` uses the sender who is not the owner first, then `recipients` (owner removed, up to three names then "and N more"), then the owner, then the subject. Sent's "who" column now prefers `recipients` too (who the thread went to) before the other senders in the thread. The shared helpers `otherNames` and `joinNames` live in `screens/home/homeRows.ts`.
-
 ## 2026-11-11: Low band owner test in SQL, with a perf note (ui-home, on the #464 review)
 
 The Low band's "is this participant the owner" test (`NON_OWNER` in `views/sections.ts`: any account's address, or an address that sent a non-draft from-me message in the thread, empty addresses never counting) is a correlated lookup per participant. The sender-row expression now works out the other person's address and name once per thread instead of up to six times, and an empty `from_addr` no longer counts as the owner (the row builder and the reference never did). Measured on a synthetic 3,000-thread Low band with four participants each, best of 12 runs: about 180-250 ms against 267 ms before, on a loaded machine, so the gain is real but modest. The remaining cost grows with participants per thread (up to six on a real mailbox); if the 5,000-row `lowGroups` read ever shows in a real hand-check, the next step is one owner set per thread kept by the store at commit instead of a lookup at read.
@@ -1965,3 +1968,9 @@ The Low band's "is this participant the owner" test (`NON_OWNER` in `views/secti
 Context: two rule sets for the same narrow-pane behaviour landed within an hour — #458's in `screens/screens.css` scoped to `.aplos-list-column` (380/250/189 px) and #466's in `ui/list/list.css` on the component itself (24.5/20/15 rem). They union with no breakage except one conflict: #458 hides the Reply label under 189 px while #466's rule is that the main action keeps its label at every width.
 
 Decision (ui-core + ui-polish, addressed to ui-home): keep #466's component rules; delete the focus-letter part of #458's block in `screens/screens.css` — the `.aplos-list-column .ui-focus-letter` container line, the `__suggest` flex rules and the three `@container focus-letter` blocks — keeping the `.ui-list-row`/`__line`/`__meta` rules below it. Pinned by `tests/visual/focus-letter-narrow.spec.ts`; the Reply label never clips.
+
+## 2026-11-11: the reader-focus spec drops its Tab assertion (integrator decision)
+
+Context: `tests/visual/reader-focus.spec.ts` "Tab to a card and O opens that card" fails deterministically: shell region navigation owns Tab, so cards are not in the tab order (found in the post-#462 dark-run full-harness triage; ui-core request to integrator-ui and ui-reader).
+
+Decision: the spec is rewritten — the card gets focus by click / `.focus()` and O-to-open stays the assertion. Shell-region Tab navigation is the intended model; whether cards should join the tab order (roving tabindex) is a product/accessibility call for the owner, not a defect to fix in a test. The spec file is ui-foundation's (tests/visual); implementation goes to them or to ui-reader with `lane-approved:ui-foundation`.
