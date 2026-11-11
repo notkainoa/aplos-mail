@@ -496,8 +496,9 @@ function rebaseSeriesTimes(
           : t;
       if (start) fields.start = floating(start);
       if (end) fields.end = floating(end);
-      // The pair's measure stays ELAPSED: its wall readings collapse across a daylight-saving change (01:30 happens
-      // twice), which would write a zero-length or end-before-start change.
+      // The pair also carries its ELAPSED measure: the owner's wall reading is tried first (an 18:00-02:00 evening stays
+      // 18:00-02:00 across the fall-back night) and the elapsed one is used only when the wall reading collapses (01:30
+      // happens twice), which would write a zero-length or end-before-start change.
       const span = start?.type === 'utc' && end?.type === 'utc' ? end.utc - start.utc : undefined;
       const endDelta = end?.type === 'utc' && !start ? end.utc - base.occEnd : undefined;
       return rebaseZoned(base, fields, {
@@ -541,17 +542,22 @@ function rebaseZoned(
   const newStart = masterStart + shift;
   // A start move applies the owner's new span from the shifted start; an end-only resize shifts the master's end by
   // how far the occurrence's own end moved; an unchanged end rides the start shift. For a request carried as utc
-  // instants the measure is ELAPSED (the pair's wall readings collapse across a daylight-saving change), so it is
-  // added on the timeline and read back onto the wall clock.
-  const newEnd = !end
+  // instants the WALL measure is used too; the ELAPSED one (added on the timeline and read back onto the wall clock)
+  // only when the wall reading is zero or negative.
+  // Wall clock first; elapsed only when the wall reading is zero or negative (an end in the repeated hour).
+  const wallEnd = !end
     ? masterEnd + shift
-    : elapsed?.span !== undefined
-      ? toWall(fromWall(newStart, tz) + elapsed.span, tz)
-      : elapsed?.endDelta !== undefined
-        ? toWall(master.end_utc + elapsed.endDelta, tz)
-        : start
-          ? newStart + (wall(end.local) - wall(start.local))
-          : masterEnd + (wall(end.local) - toWall(occEnd, tz));
+    : start
+      ? newStart + (wall(end.local) - wall(start.local))
+      : masterEnd + (wall(end.local) - toWall(occEnd, tz));
+  const newEnd =
+    !end || wallEnd > newStart
+      ? wallEnd
+      : elapsed?.span !== undefined
+        ? toWall(fromWall(newStart, tz) + elapsed.span, tz)
+        : elapsed?.endDelta !== undefined
+          ? toWall(master.end_utc + elapsed.endDelta, tz)
+          : wallEnd;
   fields.start = local(newStart);
   fields.end = local(newEnd);
 }
