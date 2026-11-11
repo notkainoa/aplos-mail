@@ -276,10 +276,13 @@ export function createHolds(deps: Deps) {
           origin: 'local',
           writes: [{ kind: 'meta', key, value: null }],
         });
-      for (const r of records) {
-        // Re-read: an undo that landed while an earlier hold was sending must stop this one.
-        const fresh = r.state === 'queued' ? readRecord(deps.store, r.opId) : r;
-        if (fresh?.state === 'queued' && fresh.undoUntil <= now) {
+      for (const listed of records) {
+        // Re-read EVERY record before acting: an undo, or a Retry that finished, while an earlier hold was sending
+        // changes this one, and the snapshot above would put a sent change back as failed (and its call back in meta).
+        const r = readRecord(deps.store, listed.opId);
+        if (!r) continue;
+        const fresh = r;
+        if (fresh.state === 'queued' && fresh.undoUntil <= now) {
           if (now - fresh.undoUntil > HOLD_STALE_MS)
             save(deps, {
               ...fresh,
