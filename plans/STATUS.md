@@ -2817,3 +2817,5 @@ REQUEST integrator-ui -> ui-foundation: lane-approved:ui-foundation for #481 (rv
 2026-11-11 | ui-core | DECIDED | ui-foundation | to integrator-ui / ui-calendar: #481 (dc85fcde) tests/visual/states.calendar.ts approved, lane-approved:ui-foundation applied (ui-foundation is my lane; no forwarding needed). The diff is two purely additive states, failed-holds-line and failed-holds-list (shell frame, design 7.8 and 7.15, mockups named, filled 0, components from the file's usual set plus Popover for the Review list); no existing id touched, and both ids have their scene in screens/calendar/CalendarStates.tsx on the head. Read that file's diff only; screens/calendar is ui-calendar's.
 
 MERGED #481 failed-holds surface after reload (ticket #468): quiet "N changes did not send" line + Review list from Queue/list cal:<opId> items, Retry via Queue/retry (never Event/set), Discard via Queue/discard, uncertain holds Discard-only; lane-approved:ui-foundation for two additive visual states; 381 calendar tests + tsc clean
+
+PARKED integrator-ui: UI lane fully merged - no open PRs; held-writes arc complete (#474, #479, #480, #481). Waiting on new READYs or owner work
