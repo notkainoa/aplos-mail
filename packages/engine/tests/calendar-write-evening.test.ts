@@ -128,17 +128,7 @@ async function world(answer: CalendarWriteResult = { kind: 'saved', upserts: [],
   return { call, calls, store };
 }
 
-const rejects = (promise: Promise<unknown>, type: string, reasonCode?: string) =>
-  assert.rejects(
-    promise,
-    (e: unknown) =>
-      e instanceof ContractError &&
-      e.type === type &&
-      (reasonCode === undefined || e.body.reasonCode === reasonCode),
-  );
-
 const LA = 'America/Los_Angeles';
-const H = 3_600_000;
 const seed = (
   w: Awaited<ReturnType<typeof world>>,
   id: string,
