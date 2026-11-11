@@ -337,6 +337,8 @@ test('checkBundle accepts a fully populated bundle and rejects smuggled fields',
   bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).email = 'a@b.c'));
   bad(b => (((b.accounts as unknown[])[0] as Record<string, unknown>).accountHash = 'not-hex!'));
   bad(b => ((b.storage as Record<string, unknown>).dbBytes = 1.5));
+  bad(b => ((b.storage as Record<string, unknown>).dbBytes = -5));
+  bad(b => ((b.crashes as Record<string, unknown>).count = -1));
   bad(b => ((b.engine as Record<string, unknown>).state = 'has space'));
   bad(
     b =>
@@ -373,6 +375,19 @@ test('verbose with no argument reads the stored deadline — window and listener
       .prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('verbose_until', ?)")
       .run(String(w.clock.now() + 60 * 60_000));
     assert.deepEqual(await w.call('Diagnostics/verbose', {}), {}, 'beyond the window reads off');
+  } finally {
+    await w.engine.close();
+  }
+});
+
+test('a missing install salt refuses the bundle rather than emitting derivable hashes', async () => {
+  const w = await world();
+  try {
+    w.db.prepare("DELETE FROM meta WHERE key = 'install_salt'").run();
+    await assert.rejects(
+      w.call('Diagnostics/preview', {}),
+      (e: { type?: string }) => e.type === 'internal',
+    );
   } finally {
     await w.engine.close();
   }

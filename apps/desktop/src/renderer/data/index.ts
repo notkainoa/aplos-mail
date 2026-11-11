@@ -873,6 +873,8 @@ export const api: DataApi = {
   blob: {
     put: ((...args: unknown[]) => forward('blob', 'put', args)) as DataApi['blob']['put'],
     get: ((...args: unknown[]) => forward('blob', 'get', args)) as DataApi['blob']['get'],
+    release: ((...args: unknown[]) =>
+      forward('blob', 'release', args)) as DataApi['blob']['release'],
   },
   sync: {
     request: ((...args: unknown[]) =>

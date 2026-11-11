@@ -25,7 +25,7 @@ const json = (raw: string | null): unknown => {
 };
 
 function build(ctx: MethodContext): Uint8Array {
-  return ctx.services.store.read(q => {
+  const doc = ctx.services.store.read(q => {
     // Only these columns are exported: a credential-bearing column added later cannot leak through `SELECT *`.
     const accounts = q
       .all<Record<string, string | number | null>>(
@@ -60,22 +60,22 @@ function build(ctx: MethodContext): Uint8Array {
       .map(row => ({ ...row, data: json(row.data as string | null) }));
     const settings =
       json(q.get<{ data: string }>('SELECT data FROM settings WHERE id = 1')?.data ?? null) ?? {};
-    return new TextEncoder().encode(
-      JSON.stringify({
-        format: 'aplos-data-export',
-        version: 1,
-        exportedAt: ctx.services.clock.now(),
-        notes: [
-          'draft attachment blobIds are engine-local references; attachment bytes are not part of this export.',
-        ],
-        settings,
-        accounts,
-        workflow,
-        drafts,
-        conversations,
-      }),
-    );
+    return {
+      format: 'aplos-data-export',
+      version: 1,
+      exportedAt: ctx.services.clock.now(),
+      notes: [
+        'draft attachment blobIds are engine-local references; attachment bytes are not part of this export.',
+      ],
+      settings,
+      accounts,
+      workflow,
+      drafts,
+      conversations,
+    };
   });
+  // Stringify outside the read callback: the document stays a plain object while the store holds its lock.
+  return new TextEncoder().encode(JSON.stringify(doc));
 }
 
 /** One blob's ceiling (`ports/content.ts`); over it the export gzip-compresses and the name gains `.gz`. */
@@ -83,9 +83,7 @@ const MAX_BYTES = BLOB_FILE_LIMITS.maxBytes;
 
 const gzip = (bytes: Uint8Array): Promise<Uint8Array> =>
   new Response(
-    new Blob([bytes.slice().buffer as ArrayBuffer])
-      .stream()
-      .pipeThrough(new CompressionStream('gzip')),
+    new Blob([bytes.buffer as ArrayBuffer]).stream().pipeThrough(new CompressionStream('gzip')),
   )
     .arrayBuffer()
     .then(b => new Uint8Array(b));
