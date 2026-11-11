@@ -11,6 +11,7 @@ import './calendar.tz';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { OperationView, Receipt } from '../../data';
+import { pushToast } from '../../shell';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import type { CalendarEffect } from './calendar.model';
 import { operationUpdate, runCalendarEffect, type EffectPorts, type WatchedWrite } from './effects';
@@ -150,13 +151,48 @@ test('review13: an uncertain operation failure keeps no Retry', () => {
   }
 });
 
-test('review13: cancelled drops the entry quietly', () => {
+test('review13: cancelled drops the entry and closes its own Undo toast', () => {
   resetToasts();
   try {
     const ui = testUi();
+    // The owner pressed Undo: the toast that offered it must leave with the entry it covered.
+    pushToast({ id: 'op-1', kind: 'info', message: 'Moving Standup', undoable: true });
     assert.equal(operationUpdate(watch(), view({ remote: 'cancelled' }), ui, ports()), 'done');
     assert.deepEqual(ui.dropped, ['tmp-1']);
-    assert.equal(getToasts().length, 0, 'the Undo toast already told the owner');
+    assert.equal(
+      getToasts().some(t => t.id === 'op-1'),
+      false,
+      'cancelled dismisses the Undo toast it answers',
+    );
+    assert.equal(getToasts().length, 0, 'nothing new shows — the Undo already told the owner');
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review13: a late failure closes the Undo toast before its own notice', () => {
+  resetToasts();
+  try {
+    const ui = testUi();
+    pushToast({ id: 'op-1', kind: 'info', message: 'Moving Standup', undoable: true });
+    const failed = view({
+      remote: 'failed',
+      error: {
+        type: 'unavailable',
+        message: 'x',
+        reasonCode: 'calendar.late',
+      },
+    });
+    assert.equal(operationUpdate(watch(), failed, ui, ports()), 'done');
+    assert.equal(
+      getToasts().some(t => t.id === 'op-1'),
+      false,
+      'one toast per operation — the failure notice replaces the Undo',
+    );
+    assert.ok(
+      getToasts().some(t => t.id === 'op-1:failed'),
+      'the failure notice still shows',
+    );
   } finally {
     resetToasts();
   }

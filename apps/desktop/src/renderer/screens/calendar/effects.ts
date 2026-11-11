@@ -469,13 +469,17 @@ export function operationUpdate(
   // ignore it until the operation reports a newer state.
   if (watch.since !== undefined && view === watch.since) return 'watching';
   switch (view.remote) {
-    case 'failed': {
+    case 'failed':
+    case 'conflict': {
       watch.entryIds.forEach(id => ui.rollback(id));
       // One toast per operation: the Undo toast closes on every terminal state, not only on
       // `cancelled` — a held write that fails or conflicts would otherwise show both at once.
       dismissToast(watch.opId);
       if (watch.failure === undefined) return 'done';
-      const failure = writeFailureOf(view.error, watch.failure);
+      // `conflict` remote is unreachable on the hold path — the engine records a provider conflict
+      // as `failed` + `calendar.conflict` — but if a store ever answers it, it stays terminal and
+      // never offers a blind Retry (review7 7): blindRetryUnsafe holds it to the honest sentence.
+      const failure = writeFailureOf(view.error, watch.failure, view.remote === 'conflict');
       // The same follow-ups a submit-time refusal runs: re-open the editor, keep the draft, close
       // the gone event's detail, offer Enable editing or Sign in again — then the notice only when
       // none of them already carries the sentence.
@@ -493,17 +497,6 @@ export function operationUpdate(
     case 'cancelled':
       watch.entryIds.forEach(id => ui.rollback(id));
       dismissToast(watch.opId);
-      return 'done';
-    case 'conflict':
-      // Terminal too: roll back, and never offer a blind Retry on a conflict (review7 7).
-      watch.entryIds.forEach(id => ui.rollback(id));
-      dismissToast(watch.opId);
-      pushToast({
-        id: `${watch.opId}:failed`,
-        kind: 'info',
-        message: writeFailureOf(view.error, watch.failure ?? '', true).message,
-        undoable: false,
-      });
       return 'done';
     case 'synced':
       // Every held write skipped the receipt settle; the send's commit is in by this frame, so the
