@@ -236,26 +236,9 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
     if (method === 'File/open' && !SNIFFED_EXTENSIONS.has(extensionOf(name)))
       throw new Error('Save this attachment to inspect it before opening.');
     const data = await blobBytes(String(args.blobId));
-    /** The only blobs `File/save` may release after a successful save (the exports' server-set names). */
-    const EXPORT_NAMES = new Set([
-      'aplos-data.json',
-      'aplos-data.json.gz',
-      'aplos-diagnostics.json',
-    ]);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('That window was closed.');
-    if (method === 'File/open') return (await openBytes(name, data), ok);
-    const done = await saveBytes(win, name, data);
-    // The file is on disk now; a staging blob (the export files only — a draft attachment still needs its
-    // staged bytes) is free to go. A cancelled dialog keeps it.
-    if (!done.canceled && EXPORT_NAMES.has(name))
-      try {
-        const current = link();
-        if (current) await current.call('Blob/release', { blobId: String(args.blobId) }, 30_000);
-      } catch {
-        // Best effort: a release that fails leaves the sweep to find the file, never a saved file lost.
-      }
-    return done;
+    return method === 'File/save' ? saveBytes(win, name, data) : (await openBytes(name, data), ok);
   }
   const name = Object.hasOwn(legacyNames, method) ? legacyNames[method] : undefined;
   if (!name) throw new Error('This is not available on the new engine yet.');

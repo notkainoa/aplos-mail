@@ -107,6 +107,12 @@ export const CONTRACT_METHODS = {
     notes: 'transferable Uint8Array, never base64',
   },
   'blob.get': { method: 'Blob/get', kind: 'call', gaps: [], notes: '' },
+  'blob.release': {
+    method: 'Blob/release',
+    kind: 'call',
+    gaps: [],
+    notes: 'the window frees its own export blob once its file is saved',
+  },
   'sync.request': { method: 'Sync/request', kind: 'call', gaps: ['F9-16'], notes: '' },
   'account.connect': {
     method: 'Account/connect',
