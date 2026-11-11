@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { EngineMethodName, Input, Output } from '@aplos/contract';
-import { ContractError } from '@aplos/contract/contract-error';
 import { createLogger } from '../src/diag/log';
 import { createEngine, laneExtensions } from '../src/index';
 import type { CalendarPort, CalendarWriteResult } from '../src/ports';
