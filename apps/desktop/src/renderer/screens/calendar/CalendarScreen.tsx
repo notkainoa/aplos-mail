@@ -86,6 +86,7 @@ import {
   calendarUndoRefused,
   cancelPendingRetries,
   livePorts,
+  releaseHeldWrites,
   runCalendarEffect,
   undoLastCalendarChange,
   type EffectPorts,
@@ -396,6 +397,8 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   useEffect(
     () => () => {
       cancelPendingRetries();
+      // Held-target guards belong to this screen's session too (review16).
+      releaseHeldWrites();
       for (const p of frameDropsRef.current) clearTimeout(p.timer);
     },
     [],

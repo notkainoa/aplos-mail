@@ -14,7 +14,16 @@ import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
 import { OperationFailedError, type OperationView, type Receipt } from '../../data';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
-import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
+import {
+  draftFromEvent,
+  EMPTY_OVERLAY,
+  overlayDrop,
+  overlayWith,
+  update,
+  type CalendarEffect,
+  type OptimisticChange,
+  type Overlay,
+} from './calendar.model';
 import * as transitions from './model/transitions';
 import { calendarUndoRefused, runCalendarEffect, type EffectPorts } from './effects';
 import { writeFailureOf } from './writeErrors';
@@ -372,9 +381,20 @@ test('review16: a submit-time calendar.late shows its sentence with no action', 
 test('review16: a second write on a still-held event fails fast, before the overlay', async () => {
   await boot();
   resetToasts();
+  // The overlay is bound to the real per-write functions so the assertion can read WHAT merged —
+  // a refusal under the second write's own opId must leave the first write's layer standing.
+  let overlay: Overlay = EMPTY_OVERLAY;
+  const ui = {
+    ...testUi(),
+    optimistic: (writeId: string, change: OptimisticChange) => {
+      overlay = overlayWith(overlay, writeId, change);
+    },
+    rollback: (id: string, writeId: string) => {
+      overlay = overlayDrop(overlay, writeId, id);
+    },
+  };
+  const watch = watchStub();
   try {
-    const watch = watchStub();
-    const ui = testUi();
     // The first drag is held (guests are told only when its undo window ends).
     const spy1 = eventSetSpy({ receipt: heldReceipt() });
     runCalendarEffect(
@@ -402,14 +422,19 @@ test('review16: a second write on a still-held event fails fast, before the over
     );
     await task();
     assert.equal(spy2.calls.length, 0, 'nothing is submitted to be refused');
-    assert.deepEqual(ui.dropped, [], 'no rollback ran');
+    assert.equal(
+      overlay.patch.get('climb')?.title,
+      'Climbing, moved',
+      'the held write’s layer is untouched — never merged over, never rolled back',
+    );
+    assert.equal(overlay.writes.size, 1, 'only the held write’s layer exists');
     assert.equal(
       failedToast()?.message,
       "Your earlier change to this event hasn't been sent yet. Undo it, or try again once it has.",
     );
+  } finally {
     // Free the held target for the tests that follow.
     watch.fire(opView({ remote: 'synced' }));
-  } finally {
     resetToasts();
   }
 });
