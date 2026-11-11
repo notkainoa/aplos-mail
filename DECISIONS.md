@@ -1900,3 +1900,11 @@ Context: the owner's round-3 feedback on the one-by-one card ("that's good", two
 Decision: new token `layout.card-w` = 680px (`--card-w`, 42.5rem). In Go one by one the card is `min(100% - 2 x clamp(16px, 3%, 24px), --card-w)`, centred; the header, its hairline and the pinned bar are the column's own. A plain body keeps the existing `--measure-read` (64ch, about 65 to 70 characters) inside the card; a rich email's paper frame uses the card's width and its images already scale to it. This amends the 2026-11-10 entry's "the card is nearly as wide as the pane" (and DESIGN section 16's amendment of 2026-11-11, which says the card fills the pane's width).
 
 How to apply: the integrator amends DESIGN section 16's 2026-11-11 amendment and 4.x's layout table (`--card-w`); no other screen changes.
+
+## 2026-11-10: Narrow Home panes: nothing squashes or covers anything (ui-home, on ui-polish's review of #454)
+
+With the Ask dock open at the minimum window the Home pane is about 324px: the focus letter's Reply collapsed to a 24px stub over Later's icon, and a row's due chip and bookmark and attachment icons overlapped. `screens/screens.css` now makes the focus letter a size container: under 380px Later and Done keep only their icons (label and key stay for assistive tech and the tooltip), under 250px Reply also drops its Space cap, under 189px its label too (it keeps its icon and its name), and it never shrinks. (Thresholds are the card's content width.) Rows keep their trailing icons at their own width, give the sender a 48px floor and clip the middle column (summary and due chip) instead of letting it spill. Wide layouts are unchanged (same measured geometry at 1280px).
+
+Limit: with the dock dragged to 404px or more at the 900px window the pane is under 280px and no row or letter layout fits; that is the dock's maximum (ui-shell), not Home's.
+
+Review follow-up (ui-polish on #458): Later and Done keep their labels down to 380px of card content (about a 1100px window with Ask open) and go icon-only below it; every narrow-pane selector starts at `.aplos-list-column`, so only the Home, Later and list screens are restyled, never ui-foundation's shared component styles (the Low sheet, the gallery).
