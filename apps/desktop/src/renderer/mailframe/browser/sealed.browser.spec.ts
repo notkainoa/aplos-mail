@@ -239,6 +239,11 @@ const PLAIN_CASES: [string, string, boolean][] = [
     false,
   ],
   [
+    'a styled letter that forges the marker on its own html element',
+    `<html data-aplos-plain="x"><body bgcolor="${FRAME_DARK.surface}"><style>p{color:red}</style><p>Hello</p></body></html>`,
+    false,
+  ],
+  [
     'a rich letter painting paper',
     `<body bgcolor="${FRAME_PAPER.paper}"><table><tr><td>Hello</td></tr></table></body>`,
     false,
