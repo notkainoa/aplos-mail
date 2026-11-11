@@ -51,6 +51,16 @@ test.describe('earlier messages', () => {
     ).toBeVisible();
     await expect(card.locator('.aplos-recipients__button')).toBeVisible();
     await expect(card.locator('.ui-thread-message__body')).toBeVisible();
+    // The same header row as the latest card: the time follows the name, only "Show less" is on the far right.
+    const gaps = await card.evaluate(el => {
+      const r = (sel: string) => el.querySelector(sel)!.getBoundingClientRect();
+      return {
+        timeAfterName: r('.ui-thread-message__when').left - r('.ui-thread-message__from').right,
+        buttonAfterRecipients: r('.ui-thread-message__toggle').left - r('.aplos-recipients').right,
+      };
+    });
+    expect(gaps.timeAfterName, 'the time follows the name').toBeLessThan(24);
+    expect(gaps.buttonAfterRecipients, 'Show less is pushed to the far right').toBeGreaterThan(24);
     // The Importance, bell and ⋯ are the latest message's, not an earlier one's.
     await expect(card.locator('.ui-thread-message__actions')).toHaveCount(0);
     await toggle.click();

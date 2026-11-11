@@ -246,6 +246,11 @@ describe('ThreadMessage', () => {
       /<button type="button" class="ui-thread-message__toggle" aria-expanded="false"[^>]*aria-label="Show full, message from Jordan Park"[^>]*aria-describedby="e1-excerpt"/,
     );
     assert.match(folded, />Show full<\/span>/, 'the visible hint');
+    assert.doesNotMatch(
+      folded,
+      /aria-controls/,
+      'nothing to control while folded: the body is not mounted',
+    );
     assert.match(
       text(folded),
       /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday… Show full$/,
@@ -267,6 +272,7 @@ describe('ThreadMessage', () => {
     assert.match(open, /data-fold="open"/);
     assert.match(open, /aria-expanded="true"/);
     assert.match(open, /aria-label="Show less, message from Jordan Park"/);
+    assert.match(open, /aria-controls="e1-content"/);
     assert.match(open, />Show less<\/span>/, 'the same place reads Show less once open');
     assert.doesNotMatch(open, /aria-describedby/, 'no excerpt to describe it while open');
     assert.doesNotMatch(text(open), /never shown/);

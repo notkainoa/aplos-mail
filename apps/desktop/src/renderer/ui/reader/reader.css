@@ -240,7 +240,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--dim);
+  color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
   white-space: nowrap;
@@ -251,8 +251,10 @@
   position: absolute;
   inset: 0;
 }
-/* The fold button is on the line's far right; a folded row's time sits just before it. */
-.ui-thread-message__head[data-fold]
+/* A folded row's time sits at the right, just before the button; an opened earlier message has the card's header row, so its
+   time follows the name like the latest card's and only "Show less" is on the far right. */
+.ui-thread-message[data-fold='folded']
+  .ui-thread-message__head[data-fold]
   .ui-thread-message__line[data-layout='card']
   .ui-thread-message__when {
   margin-left: auto;

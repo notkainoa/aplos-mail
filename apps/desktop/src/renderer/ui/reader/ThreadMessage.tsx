@@ -104,7 +104,7 @@ function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
       type="button"
       className="ui-thread-message__toggle"
       aria-expanded={fold.open}
-      aria-controls={`${id}-content`}
+      aria-controls={fold.open ? `${id}-content` : undefined}
       aria-label={`${label}, message from ${from}`}
       aria-describedby={describedBy}
       title={tip(fold.open ? 'Fold this message' : 'Open this message', fold.commandId)}
