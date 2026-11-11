@@ -12,6 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { EventChange } from '@aplos/contract';
 import type { OperationView, Receipt } from '../../data';
+import { pushToast } from '../../shell';
 import { getToasts, resetToasts, runToastAction } from '../../shell/store-toast';
 import { draftFromEvent, update, type CalendarEffect } from './calendar.model';
 import { notifiesGuests } from './model/transitions';
@@ -372,6 +373,35 @@ test('review14: an operation failure runs the write’s own follow-ups (reopen, 
     assert.equal(ui2.watched[0]?.reopenEditorId, 'dental');
     assert.equal(ui2.watched[0]?.goneEventId, 'dental');
     assert.ok(ui2.watched[0]?.draft !== undefined);
+  } finally {
+    resetToasts();
+  }
+});
+
+test('review14: the Undo toast is dismissed on every terminal operation state', () => {
+  resetToasts();
+  try {
+    const ui = testUi();
+    for (const remote of ['failed', 'cancelled', 'conflict', 'synced'] as const) {
+      resetToasts();
+      pushToast({ id: 'op-1', kind: 'info', message: 'Moving Standup', undoable: true });
+      const error =
+        remote === 'failed' || remote === 'conflict'
+          ? {
+              error: {
+                type: 'unavailable' as const,
+                message: 'x',
+                reasonCode: 'calendar.late' as const,
+              },
+            }
+          : {};
+      assert.equal(operationUpdate(watch(), view({ remote, ...error }), ui, NONE, ports()), 'done');
+      assert.equal(
+        getToasts().some(t => t.id === 'op-1'),
+        false,
+        `${remote}: the original Undo toast is gone — one toast per operation`,
+      );
+    }
   } finally {
     resetToasts();
   }

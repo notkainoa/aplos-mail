@@ -468,6 +468,9 @@ export function operationUpdate(
   switch (view.remote) {
     case 'failed': {
       watch.entryIds.forEach(id => ui.rollback(id));
+      // One toast per operation: the Undo toast closes on every terminal state, not only on
+      // `cancelled` — a held write that fails or conflicts would otherwise show both at once.
+      dismissToast(watch.opId);
       if (watch.failure === undefined) return 'done';
       const failure = writeFailureOf(view.error, watch.failure);
       // The same follow-ups a submit-time refusal runs: re-open the editor, keep the draft, close
@@ -491,6 +494,7 @@ export function operationUpdate(
     case 'conflict':
       // Terminal too: roll back, and never offer a blind Retry on a conflict (review7 7).
       watch.entryIds.forEach(id => ui.rollback(id));
+      dismissToast(watch.opId);
       pushToast({
         id: `${watch.opId}:failed`,
         kind: 'info',
@@ -502,9 +506,11 @@ export function operationUpdate(
       // Every held write skipped the receipt settle; the send's commit is in by this frame, so the
       // overlay settles now — a create's tmp entry drops with it, the real row committed already.
       if (watch.held) watch.entryIds.forEach(id => ui.settle(id, watch.at));
+      dismissToast(watch.opId);
       return 'done';
     case 'applied':
-      // A local write never leaves the device: nothing more to watch.
+      // A local write never leaves the device: nothing more to watch — and its Undo still applies
+      // (the inverse restores the before-image), so the toast stays.
       return 'done';
     default:
       return 'watching';
