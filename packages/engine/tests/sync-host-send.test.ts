@@ -6,7 +6,10 @@ import {
   type SendReceipt,
   type SubmissionPayload,
 } from '../src/ports';
-import { NotSentError } from '../src/ports/base';
+import { NotSentError, PausedError } from '../src/ports/base';
+import type { BudgetId } from '../src/ports/base';
+import type { GovernorPort } from '../src/ports/governor';
+import { sendPortOf } from '../src/sync/host-send';
 import { ACCOUNT, ADDRESS, FakeAdapter, disk, world, type World } from './sync-actor-helpers';
 
 /**
@@ -91,9 +94,7 @@ function rig(adapters: Record<string, FakeAdapter>) {
 }
 
 const isNotStarted = (error: unknown) =>
-  error instanceof NotSentError &&
-  error.error.class === 'transient' &&
-  error.error.reason === 'accountNotStarted';
+  error instanceof PausedError && error.cls === 'transient' && error.reason === 'accountNotStarted';
 
 test('send routes to the named account adapter with its actor context and returns the result unchanged', async () => {
   const a = new SendAdapter();
@@ -120,7 +121,7 @@ test('send routes to the named account adapter with its actor context and return
   }
 });
 
-test('send and findSent for an account that is not started refuse transiently, having written nothing', async () => {
+test('send and findSent for an account that is not started pause transiently, so the outbox re-asks', async () => {
   const a = new SendAdapter();
   const { w, done } = rig({ [ACCOUNT]: a, [OTHER]: new SendAdapter() });
   try {
@@ -160,7 +161,44 @@ test('admission answers the mail budget send admission and refuses transiently w
     await w.host.start(ACCOUNT);
     const answer = w.host.sendPort.admission(ACCOUNT);
     assert.equal(answer.ok, true, `expected an open budget, got ${JSON.stringify(answer)}`);
+    // The refusal is the governor's own, asked with kind 'send': a send_limit holds only the send kind, so a port
+    // that skipped the governor or dropped the kind would answer ok here.
+    w.governor.observe(ACCOUNT, 'gmail', {
+      class: 'send_limit',
+      provider: 'google',
+      method: 'gmail.users.messages.send',
+      reason: 'userRateLimitExceeded',
+      status: 429,
+    });
+    const refused = w.host.sendPort.admission(ACCOUNT);
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.equal(refused.cls, 'send_limit');
   } finally {
     await done();
   }
+});
+
+test('a context naming another account is a permanent NotSentError, and nothing is sent', async () => {
+  const a = new SendAdapter();
+  const otherCtx = { account: { id: OTHER, address: `${OTHER}@example.test` } } as AdapterContext;
+  const port = sendPortOf(
+    () => ({ admission: () => ({ ok: true }) }) as unknown as GovernorPort,
+    new Map([
+      [
+        ACCOUNT,
+        {
+          adapter: a,
+          budget: 'gmail' as BudgetId,
+          actor: { context: () => otherCtx },
+        },
+      ],
+    ]),
+  );
+  const isMismatch = (e: unknown) =>
+    e instanceof NotSentError &&
+    e.error.class === 'permanent' &&
+    e.error.reason === 'accountMismatch';
+  await assert.rejects(port.send(ACCOUNT, submission()), isMismatch);
+  await assert.rejects(port.findSent(ACCOUNT, '<x@example.test>', 0), isMismatch);
+  assert.equal(a.seen.length, 0, 'the mismatched adapter was never called');
 });

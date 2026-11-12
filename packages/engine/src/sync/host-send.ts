@@ -1,8 +1,9 @@
+import { NotSentError, PausedError } from '../ports/base';
 import type { AccountId, BudgetId } from '../ports/base';
 import type { GovernorPort } from '../ports/governor';
 import type { SendPort } from '../ports/engine';
 import type { AdapterContext, ProviderAdapter } from '../ports/provider';
-import { contextFor, entryTarget, notStarted } from './host-drafts';
+import { entryTarget } from './host-drafts';
 
 export { entryTarget } from './host-drafts';
 
@@ -17,12 +18,41 @@ export interface SendEntry {
 }
 
 /**
+ * An account that is not started right now, for the send lane: a `transient` `PausedError`, never `NotSentError`.
+ * `settle` maps a `NotSentError` to `failed` with manual Retry; a non-`send_limit` pause returns the row to waiting
+ * and re-asks on the next poll (runner.ts `settlePaused`), which is what "the outbox re-asks" means. The budget is
+ * `oauth` — a not-started account is blocked on its own start, never on a mail rate budget it has no meter for.
+ */
+const sendNotStarted = (account: AccountId) =>
+  new PausedError(account, 'oauth', 'transient', 'accountNotStarted');
+
+/**
+ * The account's context checked against the account the caller named, as `contextFor` does — except a mismatch on
+ * the send lane provably wrote nothing, so it is a `permanent` `NotSentError` (settled `failed`), not the draft
+ * lane's `ProviderError` that the outbox would hold `uncertain` and retry forever.
+ */
+function sendContext(
+  account: AccountId,
+  target: { context(): AdapterContext },
+  method: string,
+): AdapterContext {
+  const ctx = target.context();
+  if (ctx.account.id !== account)
+    throw new NotSentError({
+      class: 'permanent',
+      provider: 'engine',
+      method,
+      reason: 'accountMismatch',
+    });
+  return ctx;
+}
+
+/**
  * The engine's `SendPort` for the real composition (plan 20 PV4): `send` and `findSent` reach the named account's
  * adapter under that account's actor context on the `interactive` lane, and `admission` answers the mail budget's
- * `send` admission (`send_limit` included) with no I/O. A call for an account that is not started refuses
- * `transient` (`accountNotStarted`): nothing was written, and the outbox re-asks on its next due sweep instead of
- * waiting on a pause that never ends. The account check inside `contextFor` and the refusal shape are the draft
- * port's (`host-drafts.ts`), shared here unchanged.
+ * `send` admission (`send_limit` included) with no I/O. A call for an account that is not started is a `transient`
+ * pause (`accountNotStarted`): nothing was written, and the outbox re-asks on its next poll instead of waiting on a
+ * pause that never ends or parking the row as `failed`.
  */
 export function sendPortOf(
   governor: () => GovernorPort,
@@ -37,13 +67,13 @@ export function sendPortOf(
     },
     async send(account, submission) {
       const target = targetOf(account);
-      if (!target) throw notStarted('send');
-      return target.adapter.send(submission, contextFor(account, target, 'send'));
+      if (!target) throw sendNotStarted(account);
+      return target.adapter.send(submission, sendContext(account, target, 'send'));
     },
     async findSent(account, internetId, since) {
       const target = targetOf(account);
-      if (!target) throw notStarted('findSent');
-      return target.adapter.findSent(internetId, since, contextFor(account, target, 'findSent'));
+      if (!target) throw sendNotStarted(account);
+      return target.adapter.findSent(internetId, since, sendContext(account, target, 'findSent'));
     },
   };
 }

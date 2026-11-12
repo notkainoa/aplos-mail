@@ -125,7 +125,7 @@ export function realHostPorts(): NonNullable<ComposeOptions['ports']> {
  * The production host ports. Real: the SQLite file, the network, the system clock, the rotating log, the Google
  * sign-in, the keychain-sealed token vault (main unwrapped the key), the mail sanitiser and the image proxy. Through
  * main: banners, the browser, power events. Left out for now (absent ports answer `unavailable`): the data key for the
- * Gmail workflow channel, `send`, and the window layer's focus facts (DECISIONS.md, contract-4).
+ * Gmail workflow channel and the window layer's focus facts (DECISIONS.md, contract-4).
  */
 export async function realComposeOptions(
   init: UtilityInit,
