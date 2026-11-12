@@ -708,3 +708,10 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - Engine core budget: the provider reads (`sync/host-read.ts`, now with `openedWrites`) load on the first read via `import()`, so core drops 469,026 → 468,276 B with S2 and R3 in.
 - Evidence: `packages/engine/tests/sync-host-open.test.ts` (3) and `apps/desktop/src/renderer/data/bodies.test.ts` (4); 5 of the 7 fail on the old code (the other two pin unchanged behaviour). Engine sync, mail and views suites: 549 pass.
 - Not done here (follow-ups in STATUS): S1 cancellation of stale interactive opens, S3 serving stored `cid:` parts locally, R4 reserving relay slots for documents, R5 the swallowed `Thread/open` failure.
+
+## 2026-11-12 — fix-bodies: review follow-ups to #486/#488 (Integrator LOWs 1-4)
+
+- `loadBody` (moved with `storedBody` from `mail/message.ts` into the lazy `mail/render.ts`): a message that still exists but got no body from its open now answers `paused` with the account pause's `until` as `resumeAt` (so the reader's #488 wake-up fires), else retryable `unavailable`; `notFound` only when the open removed it.
+- `sharedOpen` (lazy `sync/host-read.ts`): a thread whose last open left a body part behind is not read again by a prefetch, only by an open (cleared once an open comes back complete); the join key adds `knownCount` and the actor generation.
+- `real-ports.test.ts` pins the real `mailHtml` (identity and `MAIL_HTML_VERSION`) and that desktop's copies of the sanitiser's packages match its exact pins.
+- Engine core 468,277 → 467,904 B. 4 new engine tests (2 mail, 2 sync), all failing on the merged code.

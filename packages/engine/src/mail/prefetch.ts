@@ -2,9 +2,9 @@ import type { Input } from '@aplos/contract';
 import type { MethodContext } from '../methods/types';
 import type { EngineServices } from '../runtime/services';
 import type { StoreReader } from '../store/port';
-import { findMessage, storedBody, type MessageRef } from './message';
+import { findMessage, type MessageRef } from './message';
 import { readAllowList, readRemoteImages, resolveImagePolicy } from './policy';
-import { renderMessage } from './render';
+import { renderMessage, storedBody } from './render';
 
 // `MessageBody/prefetch`: on focus or hover, fetch bodies that are not stored on the prefetch lane and warm the LRU with
 // the render `Mail/frame` would make first (the sender's resolved `block` policy, no find, quotes closed). It answers

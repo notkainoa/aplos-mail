@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LogRecord } from '@aplos/contract';
 import { laneExtensions } from '@aplos/engine';
+import { MAIL_HTML_VERSION, mailHtml } from '@aplos/mail-html';
 import { openStore, type StoreWrite } from '@aplos/engine/store';
 import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
 import { openSqlite } from '../../src/host/sqlite';
@@ -114,10 +115,8 @@ test('the real path gives the engine its mail sanitiser and image proxy', async 
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bridge = { request: async () => undefined, power: new EventEmitter() };
   const composed = await realComposeOptions({ dataDir: dir, appVersion: '0.3.0-test' }, bridge);
-  const html = composed.ports?.html;
-  assert.equal(typeof html?.version, 'string', 'html port: a sanitiser with a version');
-  assert.ok(html?.version, 'html port: the version is not empty');
-  assert.equal(typeof html?.render, 'function', 'html port: render');
+  assert.equal(composed.ports?.html, mailHtml, 'html port: the real sanitiser, not a stand-in');
+  assert.equal(composed.ports?.html?.version, MAIL_HTML_VERSION);
   assert.equal(typeof composed.ports?.images?.fetch, 'function', 'images port: fetch');
 });
 
@@ -182,10 +181,21 @@ test('every third-party dependency of the bundled engine ships in the packaged a
     for (const dep of Object.keys(workspaceDeps(name))) {
       if (dep.startsWith('@aplos/')) walk(dep);
       else if (!(dep in desktop.dependencies)) missing.push(`${name} -> ${dep}`);
+      else if (
+        name === '@aplos/mail-html' &&
+        desktop.dependencies[dep] !== workspaceDeps(name)[dep]
+      )
+        missing.push(
+          `${name} -> ${dep} pinned ${workspaceDeps(name)[dep]}, desktop has ${desktop.dependencies[dep]}`,
+        );
     }
   };
   walk('@aplos/engine');
   walk('@aplos/mail-html');
   assert.ok(seen.has('@aplos/mail-html'), 'the sanitiser is part of the walk');
-  assert.deepEqual(missing, [], 'add these to apps/desktop/package.json dependencies');
+  assert.deepEqual(
+    missing,
+    [],
+    "add these to apps/desktop/package.json dependencies (the sanitiser's at its exact pins)",
+  );
 });

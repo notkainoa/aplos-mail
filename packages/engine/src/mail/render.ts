@@ -3,7 +3,9 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { MethodContext } from '../methods/types';
 import { renderKey, withReporter, type FrameRenderInput } from '@aplos/mail-html/frame';
 import type { EngineServices } from '../runtime/services';
-import { cidsOf, loadBody, type MessageRef } from './message';
+import { readBody } from '../store/bodies';
+import type { BodyRecord } from '../store/port';
+import { cidsOf, findMessage, messageGone, type MessageRef } from './message';
 import type { RequestedPolicy, ResolvedPolicy } from './policy';
 import type { CachedRender } from './state';
 
@@ -50,6 +52,47 @@ export function cacheKey(
     version,
     body: bodyIdentity(ref),
   });
+}
+
+export function storedBody(services: EngineServices, ref: MessageRef): BodyRecord | undefined {
+  return services.store.read(q => readBody(q, ref.accountId, ref.remoteId));
+}
+
+/**
+ * Why a message that still exists has no body after its thread was opened: a body part did not arrive, so the open
+ * stored nothing for it (fix-bodies R3). `paused` with the pause's end when the account is paused, so the reader asks
+ * again then; otherwise `unavailable`, which the next open retries. A message the open removed is `notFound`.
+ */
+function notFetched(services: EngineServices, ref: MessageRef): ContractError {
+  if (!services.store.read(q => findMessage(q, ref.id))) return messageGone();
+  const status = services.accounts.status(ref.accountId)?.status;
+  if (status?.state === 'paused')
+    return new ContractError({
+      type: 'paused',
+      message: 'Aplos is waiting before it tries this again.',
+      resumeAt: status.until,
+    });
+  return new ContractError({
+    type: 'unavailable',
+    message: 'This email did not finish downloading. Try again.',
+  });
+}
+
+/** The stored body, or the provider's after opening the thread on `lane` (`notFetched` when the open brought none). */
+export async function loadBody(
+  services: EngineServices,
+  ref: MessageRef,
+  lane: 'interactive' | 'prefetch' = 'interactive',
+): Promise<BodyRecord> {
+  const stored = storedBody(services, ref);
+  if (stored) return stored;
+  await services.accounts.openThread(ref.accountId, ref.threadRemoteId, {
+    ...(ref.remoteCount !== null ? { knownCount: ref.remoteCount } : {}),
+    lane,
+  });
+  const fetched = storedBody(services, ref);
+  if (!fetched) throw notFetched(services, ref);
+  return fetched;
 }
 
 /** The cached render, or a fresh one from the stored body (fetched on `lane` when it is not stored). */

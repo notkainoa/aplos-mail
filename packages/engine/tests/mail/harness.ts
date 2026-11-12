@@ -87,7 +87,10 @@ export async function mailWorld(options: WorldOptions = {}) {
   let image: ProxiedImage = { kind: 'image', mime: 'image/png', bytes: PNG };
   let imageFn: (() => Promise<ProxiedImage>) | undefined;
   let stream: (() => AsyncIterable<Uint8Array>) | undefined;
+  /** What `status(account)` answers: undefined (no runtime facts) unless a test sets a pause. */
+  let accountStatus: unknown;
   const accounts = {
+    status: () => accountStatus,
     async openThread(account: string, thread: string, opts?: { lane?: string }) {
       calls.opened.push(`${account} ${thread} ${opts?.lane}`);
       const writes: StoreWrite[] = [...remote].map(([remoteId, body]) => ({
@@ -154,6 +157,10 @@ export async function mailWorld(options: WorldOptions = {}) {
       const ref = store.read(q => findMessage(q, messageId));
       if (!ref) throw new Error(`no message ${messageId}`);
       return ref;
+    },
+    /** The account runtime `status` answers (an `AccountRuntime`-shaped object, or undefined). */
+    setAccountStatus(next: unknown) {
+      accountStatus = next;
     },
     setImage(next: ProxiedImage) {
       image = next;
