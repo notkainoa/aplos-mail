@@ -20,7 +20,7 @@ import { fakeClock, memoryVault, T0 } from './rig';
 // HTML letter through the composed host the way the reader does, with no network and no provider.
 
 const ACCOUNT = 'acct-demo';
-const LETTER = `${ACCOUNT}:m1`;
+const LETTER = `${ACCOUNT}:msg-redact-1`;
 
 function seedWrites(): StoreWrite[] {
   return [
@@ -43,8 +43,8 @@ function seedWrites(): StoreWrite[] {
     {
       kind: 'message',
       accountId: ACCOUNT,
-      remoteId: 'm1',
-      remoteThreadId: 't1',
+      remoteId: 'msg-redact-1',
+      remoteThreadId: 'thr-redact-1',
       from: { address: 'sender@demo.example', name: 'Sender' },
       to: [{ address: 'owner@demo.example' }],
       cc: [],
@@ -58,7 +58,7 @@ function seedWrites(): StoreWrite[] {
     {
       kind: 'body',
       accountId: ACCOUNT,
-      remoteId: 'm1',
+      remoteId: 'msg-redact-1',
       body: {
         html: '<table width="600"><tr><td><h1>Weekly notes</h1><p>Hello <b>there</b>.</p></td></tr></table>',
         text: 'Weekly notes\nHello there.',
@@ -151,7 +151,7 @@ test('without the sanitiser the letter fails and the log says why, with no mail 
     [{ method: 'MessageBody/get', reason: 'contract.unavailable' }],
   );
   const logged = JSON.stringify(records);
-  for (const secret of ['Weekly notes', 'sender@demo.example', 'm1', 't1'])
+  for (const secret of ['Weekly notes', 'sender@demo.example', 'msg-redact-1', 'thr-redact-1'])
     assert.ok(!logged.includes(secret), `the log never carries ${secret}`);
 });
 
