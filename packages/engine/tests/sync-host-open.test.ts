@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { AdapterContext, OpenedThread, ThreadOpenRef } from '../src/ports';
 import { readBody } from '../src/store/bodies';
 import { ACCOUNT, FakeAdapter, deferred, disk, fact, settle, world } from './sync-actor-helpers';
+import { msg } from './store/helpers';
 
 /**
  * `ActorHost.openThread` (fix-bodies, 2026-11-11). S2: one open of an email asked for the same thread twice on the
@@ -162,6 +163,35 @@ test('opens with a different known count do not share a read', async () => {
     assert.equal(adapter.opens.length, 2);
     gate.resolve({ messages: [], costUnits: 1 });
     await Promise.all([one, two]);
+  } finally {
+    await done();
+  }
+});
+
+test('a caller under a newer generation does not join the read an older fence started', async () => {
+  const { w, adapter, done } = await rig();
+  try {
+    const gates: ReturnType<typeof deferred<OpenedThread>>[] = [];
+    adapter.answer = () => {
+      const gate = deferred<OpenedThread>();
+      gates.push(gate);
+      return gate.promise;
+    };
+    const stale = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    const twin = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    await settle();
+    // A commit between asks moves the generation (seq only bumps on a commit that changed something): the facts the
+    // older read fenced against have moved on, so a caller that arrives now must not join it.
+    w.store.commit({ opId: 'bump', origin: 'sync', writes: [msg('m-bump', 't-bump', 0)] });
+    const fresh = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    await settle();
+    assert.equal(
+      adapter.opens.length,
+      2,
+      'the same-generation caller joined; the newer-generation caller read again',
+    );
+    for (const gate of gates) gate.resolve({ messages: [], costUnits: 1 });
+    await Promise.all([stale, twin, fresh]);
   } finally {
     await done();
   }
