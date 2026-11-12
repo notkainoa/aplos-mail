@@ -136,3 +136,10 @@ test('the saved index follows the cursor when the reader moved it', () => {
   assert.equal(point?.cursorId, 'd');
   assert.equal(point?.index, 303);
 });
+
+test('closing the reader to a named screen arms that screen, so its saved place survives', () => {
+  mountList('all', 'b', 60);
+  openThread('b', { from: 'all' });
+  closeThread('all');
+  assert.equal(takeReturnPoint('all')?.scrollTop, 60);
+});

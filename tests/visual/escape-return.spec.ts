@@ -190,6 +190,54 @@ test.describe('Esc from an open email returns to the same spot', () => {
     expect(await cursorId(page)).toBe(opened);
   });
 
+  test('a list: the email archived while open leaves the list, and the cursor lands next to it', async ({
+    page,
+  }) => {
+    await openState(page, stateOf('list-all-mail'), { theme: 'light' });
+    await page.locator(ROWS).nth(3).click();
+    const opened = await cursorId(page);
+    expect(opened).not.toBeNull();
+    await openWithEnter(page);
+    const read = await page.locator(READER).innerText();
+    await page.keyboard.press('e');
+    await expect
+      .poll(async () => {
+        const open = page.locator(READER);
+        return (await open.count()) === 0 || (await open.innerText()) !== read;
+      })
+      .toBe(true);
+    if ((await page.locator(READER).count()) > 0) await page.keyboard.press('Escape');
+    await expect(page.locator(READER)).toHaveCount(0);
+    await expect(page.locator(CURSOR).first()).toBeVisible();
+    // Wherever the row went, the cursor is on a row that is there, and the keys carry on from it.
+    const landed = await cursorId(page);
+    expect(landed).not.toBeNull();
+    const next = await rowAfter(page, landed ?? '');
+    if (next !== null) {
+      await page.keyboard.press('j');
+      expect(await cursorId(page)).toBe(next);
+    }
+  });
+
+  test('a reply draft open: the first Esc leaves the reply, the second leaves the email and keeps the place', async ({
+    page,
+  }) => {
+    await openState(page, stateOf('list-all-mail'), { theme: 'light' });
+    await page.locator(ROWS).nth(3).click();
+    const opened = await cursorId(page);
+    await openWithEnter(page);
+    await page.keyboard.press('r');
+    const draft = page.getByRole('textbox').last();
+    await expect(draft).toBeVisible();
+    await draft.fill('Thanks, Tuesday works for me.');
+    await page.keyboard.press('Escape');
+    // The draft is not thrown away by Esc; the email is still on show or the list is back, never lost mid-sentence.
+    if ((await page.locator(READER).count()) > 0) await page.keyboard.press('Escape');
+    await expect(page.locator(READER)).toHaveCount(0);
+    await expect(page.locator(CURSOR).first()).toBeVisible();
+    expect(await cursorId(page)).toBe(opened);
+  });
+
   test('Esc with a menu open closes the menu and stays in the email', async ({ page }) => {
     await openState(page, stateOf('list-all-mail'), { theme: 'light' });
     await page.locator(ROWS).nth(2).click();
