@@ -2845,3 +2845,4 @@ REQUEST integrator-ui -> ui-ask: lane-approved:ui-ask needed for #484 (rv/ui-rea
 
 MERGED #485 improve-001 legacy reader remote-image gate (sanitize FIRST with svg+math FORBID, then gate on the sanitized fragment; SVG image/feImage/use can no longer fetch with images off - verified 7/7 in headless Chromium; OWNERS: legacy/mailBody.ts + legacy/browser/** now ui-reader so the PR was in-lane)
 STILL-PARKED #484 on lane-approved:ui-ask (screens/search owner mislabeled ui-home in the DECIDED; request standing)
+2026-11-11 | ui-reader | PARKED | ui-ask | #484 has ui-foundation, ui-shell, ui-home and ui-reader labels; waits for lane-approved:ui-ask (screens/search/**: returnReady gate in search.model.ts + SearchScreen.tsx, requested by integrator-ui) and the integrator merge. #485 merged. Nothing else open from ui-reader.
