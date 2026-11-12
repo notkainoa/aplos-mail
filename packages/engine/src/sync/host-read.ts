@@ -60,7 +60,9 @@ export function sharedOpen(
 ): Promise<OpenedThread> {
   const opening = inFlight.get(store) ?? new Map<string, Promise<OpenedThread>>();
   inFlight.set(store, opening);
-  const key = `${opts.lane ?? 'interactive'} ${account} ${remoteThreadId}`;
+  // `knownCount` chooses the read the adapter makes (a lone message vs the thread) and the generation says which store
+  // facts fenced it, so both belong to what is shared, not just where it points.
+  const key = `${opts.lane ?? 'interactive'} ${account} ${remoteThreadId} ${opts.knownCount ?? '-'} ${entry.actor.context().generation}`;
   const going = opening.get(key);
   if (going) return going;
   const read = openThreadRemote(entry, store, newId, account, remoteThreadId, opts);

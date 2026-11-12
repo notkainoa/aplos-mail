@@ -95,6 +95,50 @@ test('a failed read fails every caller that joined it and is not kept', async ()
   }
 });
 
+test('the shared key holds knownCount and the generation that fenced the read', async () => {
+  const { w, adapter, done } = await rig();
+  try {
+    const gates: ReturnType<typeof deferred<OpenedThread>>[] = [];
+    adapter.answer = () => {
+      const gate = deferred<OpenedThread>();
+      gates.push(gate);
+      return gate.promise;
+    };
+    const whole = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    const hinted = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive', knownCount: 1 });
+    await settle();
+    assert.equal(adapter.opens.length, 2, 'a knownCount hint is a different read');
+    for (const gate of gates) gate.resolve({ messages: [], costUnits: 1 });
+    await Promise.all([whole, hinted]);
+
+    const stale = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    w.store.commit({
+      opId: 'bump',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'thread',
+          accountId: ACCOUNT,
+          remoteThreadId: 't-9',
+          complete: true,
+          remoteCount: 1,
+        },
+      ],
+    });
+    const fresh = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    await settle();
+    assert.equal(
+      adapter.opens.length,
+      3,
+      'a caller under a newer generation does not join the stale read',
+    );
+    for (const gate of gates.slice(2)) gate.resolve({ messages: [], costUnits: 1 });
+    await Promise.all([stale, fresh]);
+  } finally {
+    await done();
+  }
+});
+
 test('a message whose body part did not arrive is not stored, and the thread stays partial', async () => {
   const { w, adapter, done } = await rig();
   try {

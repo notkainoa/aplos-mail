@@ -1,6 +1,6 @@
 import { ContractError } from '@aplos/contract/contract-error';
 import { readBody } from '../store/bodies';
-import type { BodyRecord, StoreReader } from '../store/port';
+import type { BodyRecord, StorePort, StoreReader } from '../store/port';
 import type { EngineServices } from '../runtime/services';
 import { splitId } from '../views/compile';
 
@@ -69,7 +69,24 @@ export function storedBody(services: EngineServices, ref: MessageRef): BodyRecor
   return services.store.read(q => readBody(q, ref.accountId, ref.remoteId));
 }
 
-/** The stored body, or the provider's after opening the thread on `lane`; `notFound` when there is none to have. */
+/**
+ * When an open leaves a message partial (a body part did not arrive), its next open waits this long: the `paused`
+ * answer's `resumeAt` is the bound, so a letter that never resolves costs one `threads.get` per wait, not one per ask.
+ */
+const REOPEN_AFTER_MS = 30_000;
+const reopenAt = new WeakMap<StorePort, Map<string, number>>();
+
+const bodyPending = (until: number) =>
+  new ContractError({
+    type: 'paused',
+    message: 'This message is still arriving. It will be tried again shortly.',
+    resumeAt: until,
+  });
+
+/**
+ * The stored body, or the provider's after opening the thread on `lane`; `notFound` when the message is gone, `paused`
+ * with `resumeAt` while it is still a partial read the renderer can ask for again.
+ */
 export async function loadBody(
   services: EngineServices,
   ref: MessageRef,
@@ -77,13 +94,22 @@ export async function loadBody(
 ): Promise<BodyRecord> {
   const stored = storedBody(services, ref);
   if (stored) return stored;
+  const now = services.clock.now();
+  const key = `${ref.accountId} ${ref.remoteId}`;
+  const next = reopenAt.get(services.store)?.get(key) ?? 0;
+  if (now < next) throw bodyPending(next);
   await services.accounts.openThread(ref.accountId, ref.threadRemoteId, {
     ...(ref.remoteCount !== null ? { knownCount: ref.remoteCount } : {}),
     lane,
   });
   const fetched = storedBody(services, ref);
-  if (!fetched) throw messageGone();
-  return fetched;
+  if (fetched) return fetched;
+  if (!services.store.read(q => findMessage(q, ref.id))) throw messageGone();
+  const until = now + REOPEN_AFTER_MS;
+  const bounds = reopenAt.get(services.store) ?? new Map<string, number>();
+  bounds.set(key, until);
+  reopenAt.set(services.store, bounds);
+  throw bodyPending(until);
 }
 
 /** The inline parts' Content-IDs in the stored order: `cid/<n>` is `cids[n]`. */

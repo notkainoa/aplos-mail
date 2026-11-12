@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LogRecord } from '@aplos/contract';
 import { laneExtensions } from '@aplos/engine';
+import { MAIL_HTML_VERSION, mailHtml } from '@aplos/mail-html';
 import { openStore, type StoreWrite } from '@aplos/engine/store';
 import { composeEngineHost, type ComposeOptions } from '../../src/host/compose';
 import { openSqlite } from '../../src/host/sqlite';
@@ -119,6 +120,8 @@ test('the real path gives the engine its mail sanitiser and image proxy', async 
   assert.ok(html?.version, 'html port: the version is not empty');
   assert.equal(typeof html?.render, 'function', 'html port: render');
   assert.equal(typeof composed.ports?.images?.fetch, 'function', 'images port: fetch');
+  assert.equal(html, mailHtml, 'the html port is the workspace @aplos/mail-html, not a stand-in');
+  assert.equal(html?.version, MAIL_HTML_VERSION, 'the sanitiser reports its own version');
 });
 
 test('an HTML letter opens on the real port set: MessageBody/get and Mail/frame', async t => {
@@ -188,4 +191,18 @@ test('every third-party dependency of the bundled engine ships in the packaged a
   walk('@aplos/mail-html');
   assert.ok(seen.has('@aplos/mail-html'), 'the sanitiser is part of the walk');
   assert.deepEqual(missing, [], 'add these to apps/desktop/package.json dependencies');
+});
+
+test("desktop ships the sanitiser's pins at the pinned versions", () => {
+  // Presence is not enough: the packaged engine runs the desktop copies of the parser packages, so a version that
+  // drifted from the pin `@aplos/mail-html` was tested against is the same failure as a missing one, subtler.
+  const desktop = JSON.parse(readFileSync(join(ROOT, 'apps/desktop/package.json'), 'utf8')) as {
+    dependencies: Record<string, string>;
+  };
+  const pins = workspaceDeps('@aplos/mail-html');
+  assert.ok(Object.keys(pins).length > 0, 'the sanitiser pins its parser packages');
+  const shipped = Object.fromEntries(
+    Object.keys(pins).map(dep => [dep, desktop.dependencies[dep]]),
+  );
+  assert.deepEqual(shipped, pins, 'apps/desktop dependencies must equal the @aplos/mail-html pins');
 });

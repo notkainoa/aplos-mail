@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import { ContractError } from '@aplos/contract/contract-error';
 import { quotedRanges } from '../../src/mail/body';
 import { cacheKey } from '../../src/mail/render';
-import { frameOf, IDS, mailWorld, type World } from './harness';
+import { ACCOUNT, frameOf, IDS, mailWorld, type World } from './harness';
+import { msg } from '../store/helpers';
 
 // `MessageBody/get`, `Message/get` and `MessageBody/prefetch` over the store and a fake provider.
 
@@ -91,6 +92,41 @@ describe('MessageBody/get', () => {
           e instanceof ContractError &&
           e.type === 'notFound' &&
           e.message === 'This message is no longer available.',
+      );
+    }));
+
+  it('a letter still partial after its open answers paused with resumeAt, and the wait bounds re-opens', () =>
+    withWorld(async w => {
+      // A message whose body part never arrives: every open leaves the row without a body (fix-bodies R3).
+      w.store.commit({ opId: 'partial', origin: 'sync', writes: [msg('r5', 't5', 0)] });
+      const ask = () => w.windowA.call('MessageBody/get', { messageId: `${ACCOUNT}:r5` });
+      let resumeAt = 0;
+      await assert.rejects(ask(), (e: unknown) => {
+        assert.ok(e instanceof ContractError);
+        assert.equal(e.type, 'paused');
+        resumeAt = (e.body as { resumeAt?: number }).resumeAt ?? 0;
+        return resumeAt > 0;
+      });
+      assert.equal(w.calls.opened.length, 1);
+      await assert.rejects(
+        ask(),
+        (e: unknown) => e instanceof ContractError && e.type === 'paused',
+      );
+      assert.equal(w.calls.opened.length, 1, 'the wait bounds the next threads.get');
+      w.clock.advance(resumeAt - w.clock.now() + 1);
+      await assert.rejects(
+        ask(),
+        (e: unknown) => e instanceof ContractError && e.type === 'paused',
+      );
+      assert.equal(w.calls.opened.length, 2, 'past resumeAt the letter opens again');
+      w.store.commit({
+        opId: 'gone',
+        origin: 'sync',
+        writes: [{ kind: 'messageDelete', accountId: ACCOUNT, remoteId: 'r5' }],
+      });
+      await assert.rejects(
+        ask(),
+        (e: unknown) => e instanceof ContractError && e.type === 'notFound',
       );
     }));
 
