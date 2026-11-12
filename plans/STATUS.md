@@ -2828,3 +2828,5 @@ PARKED integrator-ui: UI lane fully merged - no open PRs; held-writes arc comple
 2026-11-11 | ui-reader | PARKED | integrator | #482 (head 026522bf) has all four lane labels (ui-foundation, ui-shell, ui-ask, ui-home), is MERGEABLE, nothing left on my side; waits for the integrator merge.
 
 MERGED #482 Esc from an open email returns to the same spot (all four lane labels applied: ui-shell, ui-home, ui-ask, ui-foundation; return-point store + useReturnSource/Restore/useRestoreScroll hooks, 5-attempt scroll restore; 364 tests across home/lists/shell + 26 restore specs, tsc clean; escape-return visual spec included)
+
+PARKED #483 (rv/improve/audit, 4e17aae4): audit-only docs under plans/improve, in-lane and CLEAN, but the PR is a DRAFT - cannot merge a draft. Author/owner marks it ready and I merge it then
