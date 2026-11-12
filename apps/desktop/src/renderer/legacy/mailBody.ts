@@ -74,17 +74,19 @@ type BodyOptions = { remote: boolean; spam: boolean; inline: Record<string, Atta
 function gateImages(node: HTMLTemplateElement, message: Message, options: BodyOptions): boolean {
   let hasRemoteImages = false;
   for (const image of node.content.querySelectorAll('img')) {
-    const source = image.getAttribute('src') ?? '';
-    if (/^https?:\/\//i.test(source)) hasRemoteImages = true;
+    const source = (image.getAttribute('src') ?? '').trim();
+    // The same rule that hides an image counts it: anything that is not inline data or a cid part is fetched from outside
+    // (https, protocol-relative `//host`, a relative path), so the "Load images" prompt shows for all of them.
+    const outside = !/^(?:data|cid):/i.test(source);
+    if (outside && source !== '') hasRemoteImages = true;
     if (options.spam) hideImage(image, 'Image hidden in Spam');
-    else if (source.startsWith('cid:')) {
+    else if (/^cid:/i.test(source)) {
       const attachment = message.attachments.find(item => item.contentId === contentId(source));
       const ready = attachment && (attachment.data ? attachment : options.inline[attachment.id]);
       if (ready?.data && ready.type.startsWith('image/'))
         image.setAttribute('src', `data:${ready.type};base64,${ready.data}`);
       else hideImage(image, 'Inline image unavailable');
-    } else if (!options.remote && !source.startsWith('data:'))
-      hideImage(image, 'Remote image hidden');
+    } else if (!options.remote && outside) hideImage(image, 'Remote image hidden');
   }
   return hasRemoteImages;
 }

@@ -150,4 +150,40 @@ test.describe('legacy reader: images off means no request', () => {
     expect(prepared.hasRemoteImages).toBe(false);
     expect(seen).toEqual([]);
   });
+
+  // Remote-looking sources the first gate missed: still hidden, and now counted, so "Load images" shows.
+  for (const [name, source] of [
+    ['protocol-relative', `//${TRACKER}/i.gif`],
+    ['a leading space', ` https://${TRACKER}/i.gif`],
+    ['upper-case scheme', `HTTPS://${TRACKER}/i.gif`],
+    ['a relative path', `/${TRACKER}/i.gif`],
+  ] as const) {
+    test(`an img with ${name} src is hidden and counted`, async ({ page }) => {
+      const seen = await openHost(page);
+      const prepared = await mount(page, `<img src="${source}">`, false);
+      expect(prepared.hasRemoteImages).toBe(true);
+      expect(prepared.body).not.toContain(TRACKER);
+      expect(toTracker(seen)).toEqual([]);
+    });
+  }
+
+  // Other ways to make a mail client fetch: each makes no request, with the markup gone from the prepared body.
+  for (const [name, html] of [
+    ['style url()', `<p style="background:url(https://${TRACKER}/s.gif)">x</p>`],
+    ['a style block', `<style>p{background:url(https://${TRACKER}/b.gif)}</style><p>x</p>`],
+    [
+      'srcset',
+      `<img srcset="https://${TRACKER}/a.gif 1x, https://${TRACKER}/b.gif 2x" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">`,
+    ],
+    ['background=', `<table background="https://${TRACKER}/t.gif"><tr><td>x</td></tr></table>`],
+    ['a base element', `<base href="https://${TRACKER}/"><img src="logo.gif">`],
+    ['link preload', `<link rel="preload" as="image" href="https://${TRACKER}/l.gif"><p>x</p>`],
+  ] as const) {
+    test(`${name} makes no request while images are off`, async ({ page }) => {
+      const seen = await openHost(page);
+      const prepared = await mount(page, html, false);
+      expect(prepared.body).not.toContain(TRACKER);
+      expect(toTracker(seen)).toEqual([]);
+    });
+  }
 });
