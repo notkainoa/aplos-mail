@@ -48,6 +48,7 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  returnReady,
   searchPage,
   submit,
   typeField,
@@ -238,9 +239,11 @@ function SearchBody(props: SearchBodyProps): ReactElement {
 
   // Read here, not above `Reopenable`: a Try again remount starts fresh instead of snapping back to the saved row.
   const restore = useReturnRestore(SEARCH_RETURN_KEY);
+  const resultIds = all.map(r => r.threadId);
   const cursor = useIdCursor(
-    all.map(r => r.threadId),
+    resultIds,
     restore,
+    returnReady(restore?.cursorId, resultIds, local.status),
   );
   const cursorRow = all.find(r => r.threadId === cursor.key);
   useReturnSource(SEARCH_RETURN_KEY, () => ({

@@ -389,9 +389,9 @@ export function openThread(id: ThreadId, options?: OpenThreadOptions): void {
   setScreen(OPEN_THREAD_SCREEN);
 }
 
-/** Clears the open thread and, when the thread screen is showing, goes back to the screen it was opened from (Home when none was recorded). */
-export function closeThread(): void {
-  leaveOpenThread();
+/** Clears the open thread and, when the thread screen is showing, goes back to the screen it was opened from (Home when none was recorded), or to `to` when given. */
+export function closeThread(to?: Screen): void {
+  leaveOpenThread(to);
 }
 
 /** The open thread's id, live; null when none. */
