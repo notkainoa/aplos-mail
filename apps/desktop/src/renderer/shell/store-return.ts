@@ -90,6 +90,11 @@ export function takeReturnPoint(key: string): ReturnPoint | null {
   return point;
 }
 
+/** Forgets the saved places, keeping the mounted surfaces registered (the account scope changed under them). */
+export function dropReturnPoints(): void {
+  points.clear();
+}
+
 /** Forgets everything (tests, and a lost window). */
 export function resetReturnPoints(): void {
   sources.clear();

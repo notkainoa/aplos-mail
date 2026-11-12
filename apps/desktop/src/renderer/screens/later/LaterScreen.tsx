@@ -6,7 +6,13 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { api, toIsoDate, useNow, useSettings, type AccountId } from '../../data';
-import { dismissToast, pushToast } from '../../shell';
+import {
+  dismissToast,
+  pushToast,
+  useReturnRestore,
+  useReturnSource,
+  type ReturnPoint,
+} from '../../shell';
 import { ListBox, ListGroup } from '../../ui/list';
 import type { ListboxBinding } from '../../ui/props';
 import { PageHead, Puck } from '../../ui/surfaces';
@@ -203,8 +209,22 @@ function LaterGroups({ list, groups, nowMs, drag, onAction }: LaterGroupsProps) 
   );
 }
 
+/** The tab Later was on when a thread opened over it. */
+const TAB_RETURN_KEY = 'later/tab';
+
+function restoredTab(point: ReturnPoint | null): Which {
+  return (point?.extra as { readonly which?: Which } | undefined)?.which ?? 'later';
+}
+
 export function LaterScreen(props: LaterScreenProps) {
-  const [which, setWhich] = useState<Which>('later');
+  const restore = useReturnRestore(TAB_RETURN_KEY);
+  const [which, setWhich] = useState<Which>(() => restoredTab(restore));
+  useReturnSource(TAB_RETURN_KEY, () => ({
+    cursorId: null,
+    order: [],
+    scrollTop: 0,
+    extra: { which },
+  }));
   return (
     <div className="aplos-list-column">
       <PageHead>

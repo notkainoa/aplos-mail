@@ -1,6 +1,6 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeThread, navigate, openThread } from './index';
+import { closeThread, navigate, openThread, setAccountScope } from './index';
 import {
   registerReturnSource,
   resetReturnPoints,
@@ -107,4 +107,22 @@ test('a surface that is not mounted keeps nothing, and the extras ride along', (
   assert.deepEqual(takeReturnPoint('home')?.extra, { lowOpen: true });
   assert.equal(takeReturnPoint('home/low')?.cursorId, 'b');
   assert.equal(takeReturnPoint('later'), null);
+});
+
+test('the reader popping out to the compose page and back keeps the saved place', () => {
+  mountList('all', 'b', 90);
+  openThread('b', { from: 'all' });
+  navigate({ label: 'compose' });
+  navigate({ label: 'thread' });
+  closeThread();
+  assert.equal(takeReturnPoint('all')?.scrollTop, 90);
+});
+
+test('another account selected while the reader is open drops the saved place', () => {
+  mountList('home', 'b', 90);
+  openThread('b', { from: 'home' });
+  setAccountScope('acct');
+  closeThread();
+  setAccountScope(null);
+  assert.equal(takeReturnPoint('home'), null);
 });

@@ -49,7 +49,7 @@ import {
   subscribeOpenThreadContext,
 } from './store-thread';
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
-import { saveReturnPoints } from './store-return';
+import { dropReturnPoints, saveReturnPoints } from './store-return';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import { getCalendarTarget, subscribeCalendarTarget } from './store-calendar';
 import type { CalendarTarget } from './store-calendar';
@@ -369,6 +369,8 @@ export function useAccountScope(): AccountId | null {
 
 /** Selects one account, or null for All accounts (what the AccountSwitcher's menu calls). */
 export function setAccountScope(accountId: AccountId | null): void {
+  // A place saved under one account's rows means nothing on another's.
+  dropReturnPoints();
   setScope(accountId);
 }
 
