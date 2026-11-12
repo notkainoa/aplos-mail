@@ -24,6 +24,7 @@ import type {
   ProviderFactory,
   SendReceipt,
   StepResult,
+  SubmissionPayload,
   SyncState,
   ThreadOpenRef,
   WorkflowChannel,
@@ -162,11 +163,15 @@ export class FakeAdapter implements ProviderAdapter {
     );
   }
 
-  async send(): Promise<SendReceipt> {
+  async send(_submission: SubmissionPayload, _ctx: AdapterContext): Promise<SendReceipt> {
     throw new Error('not in this fake');
   }
 
-  async findSent(): Promise<FindSentResult> {
+  async findSent(
+    _internetId: string,
+    _since: number,
+    _ctx: AdapterContext,
+  ): Promise<FindSentResult> {
     return { kind: 'absent', checkedAt: 0 };
   }
 

@@ -117,7 +117,7 @@ export interface ComposeOptions {
   keys?: KeyProvider;
   /** What `Session/get` says about this build and Mac. Absent: a bare build named 'This Mac'. */
   host?: HostFacts;
-  /** Ports the host has besides the ones composed here (`send`, `html`, `images`, ...). */
+  /** Ports the host has besides the ones composed here (`html`, `images`, ...). */
   ports?: Omit<HostPorts, 'accounts' | 'drafts' | 'deadlines' | 'keys'>;
   /** The single-instance lock: taken first, released last. Absent: no lock (`host/lock.ts` is not on this base). */
   lock?: () => ReleaseLock | Promise<ReleaseLock>;
@@ -495,6 +495,7 @@ function engineOptions(
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,
+      send: options.ports?.send ?? accounts.sendPort,
       calendar: accounts.calendarPort,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),

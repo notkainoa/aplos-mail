@@ -511,6 +511,13 @@ test('the engine gets a blob store in <dataDir>/blobs (0700)', async t => {
   });
 });
 
+test('the engine gets a real send port, so the outbox never answers unavailable', async t => {
+  const w = world(t);
+  await withHost(w, async host => {
+    assert.equal(isAbsent(host.engine.services.send), false);
+  });
+});
+
 test('an unsafe blob folder leaves Blob/* unavailable, logs a reason code only, and the host still starts', async t => {
   const w = world(t);
   const elsewhere = join(w.dir, 'elsewhere');
