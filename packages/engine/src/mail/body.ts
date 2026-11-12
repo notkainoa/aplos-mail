@@ -4,7 +4,7 @@ import type { BodyRecord } from '../store/port';
 import { htmlToText } from '../outbox/mime';
 import { loadBody, requireMessage } from './message';
 import { readAllowList, readRemoteImages, resolveImagePolicy } from './policy';
-import { renderMessage } from './render';
+import { logBodyFailure, renderMessage } from './render';
 
 // `MessageBody/get`: the plain-text rendering and quote ranges of a body, fetched on the interactive lane when it is
 // not stored. HTML is never returned: an HTML body is run through the sanitizer only for its counts (the same render
@@ -39,10 +39,11 @@ export function quotedRanges(body: BodyRecord, length: number): Body['quoted'] {
   return out;
 }
 
-export async function messageBody(
-  args: Input<'MessageBody/get'>,
-  ctx: MethodContext,
-): Promise<Body> {
+export function messageBody(args: Input<'MessageBody/get'>, ctx: MethodContext): Promise<Body> {
+  return logBodyFailure('MessageBody/get', ctx, () => readBody(args, ctx));
+}
+
+async function readBody(args: Input<'MessageBody/get'>, ctx: MethodContext): Promise<Body> {
   const { services } = ctx;
   const ref = requireMessage(services, args.messageId);
   const body = await loadBody(services, ref);

@@ -48,7 +48,11 @@
       ],
       // Today's renderer under src/renderer/legacy is being replaced; it still ships but its
       // dead-code shape is out of scope for the climb, so findings there stay suppressed.
-      "ignore": ["**/legacy/**"]
+      "ignore": ["**/legacy/**"],
+      // Imported by the bundled @aplos/mail-html, not by desktop code: build-main.mjs keeps
+      // third-party packages external, so they must ship from app.asar's node_modules
+      // (tests/eng-contract/real-ports.test.ts walks the list).
+      "ignoreDependencies": ["domhandler", "@csstools/css-tokenizer"]
     },
     "apps/web": {
       // Production entries: the three static entry pages. vite.config and scripts are

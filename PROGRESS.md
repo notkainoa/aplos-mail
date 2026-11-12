@@ -688,6 +688,11 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 
 - A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
 
+## 2026-11-11 — fix-bodies: HTML email bodies open on the real engine
+
+- Owner bug (release blocker): on the packaged real-engine build every email waited, then showed "Couldn't load this email." Cause: `realComposeOptions` never passed the `html` (sanitiser) or `images` (proxy) port, so every HTML body answered `unavailable` after its Gmail fetch; every engine test injects its own `mailHtml`, so nothing caught it. Wiring the port alone stopped the packaged engine at start: the sanitiser's parser packages were not in `apps/desktop` dependencies (the bundled engine leaves third-party packages external).
+- Fix: `realHostPorts()` (`html: mailHtml`, `images: createImageProxy()`), the three parser packages added to `apps/desktop/package.json`, and `MessageBody/get`, `Mail/frame`, `Mail/toggleQuotes` now log a `ContractError` as `rpc.failed` with `contract.<type>` only (in the lazy render chunk: engine core unchanged at 469,026 B).
+- Evidence: `tests/eng-contract/real-ports.test.ts` (real port set, an HTML letter through the composed host, the redacted log line, and a manifest walk of the bundled engine's third-party deps); fails on the old composition. Packaged ad-hoc build + headless CDP probe on isolated demo data with HTML bodies: before, every open showed the error; after, the sealed frame reports in 100-210 ms.
 ## 2026-11-11 — ui-reader: Esc from an open email returns to the same spot
 
 - Opening a thread now saves where the owner was (`shell/store-return.ts`): each mounted surface (Home, Low importance sheet, every list, Later, Done, a label, Search, the one-by-one walk) registers what it holds (cursor row, row order, scroll offset, plus extras: sheet open, search query). Esc/Back (`leaveOpenThread`) arms the return and the screen comes back from that point once; any other way of showing a screen (sidebar, command) drops it, so a later visit starts fresh.
