@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import type { EngineSession } from '@aplos/contract/client';
 import { appScopes } from '@aplos/contract/access';
 import { windowCaller, type HostFacts } from '@aplos/engine';
+import { mailHtml } from '@aplos/mail-html';
 import { systemClock } from '@aplos/engine/clock/system';
 import { composeEngineHost, type ComposedHost, type ComposeOptions } from '../host/compose';
 import { createAiHost } from '../host/ai/index';
+import { createImageProxy } from '../host/proxy/fetch';
 import { openSqlite } from '../host/sqlite';
 import type { AiProviderId } from '../host/ai/providers';
 import type { GoogleTokenBundle } from '../host/providers/oauth/token-source';
@@ -110,10 +112,20 @@ const AI_ENV_VARS = [
 ] as const;
 
 /**
+ * The ports the real path adds beyond the ones `composeEngineHost` builds: the mail sanitiser (`html`, which every HTML
+ * body needs for `MessageBody/get`, `Mail/frame` and prefetch) and the remote-image proxy (`images`, `Mail/serve`'s
+ * `img/<n>`). Without `html` every HTML letter answered `unavailable` and the reader showed "Couldn't load this
+ * email." (fix-bodies, 2026-11-11), so `tests/eng-contract/real-ports.test.ts` pins that both are here.
+ */
+export function realHostPorts(): NonNullable<ComposeOptions['ports']> {
+  return { html: mailHtml, images: createImageProxy() };
+}
+
+/**
  * The production host ports. Real: the SQLite file, the network, the system clock, the rotating log, the Google
- * sign-in, the keychain-sealed token vault (main unwrapped the key). Through main: banners, the browser, power events.
- * Left out for now (absent ports answer `unavailable`): the data key for the Gmail workflow channel, `send`, `html`,
- * `images`, and the window layer's focus facts (DECISIONS.md, contract-4).
+ * sign-in, the keychain-sealed token vault (main unwrapped the key), the mail sanitiser and the image proxy. Through
+ * main: banners, the browser, power events. Left out for now (absent ports answer `unavailable`): the data key for the
+ * Gmail workflow channel, `send`, and the window layer's focus facts (DECISIONS.md, contract-4).
  */
 export async function realComposeOptions(
   init: UtilityInit,
@@ -148,6 +160,7 @@ export async function realComposeOptions(
     }),
     postNotification: async item =>
       (await bridge.request({ op: 'notify', item })) === 'posted' ? 'posted' : 'dropped',
+    ports: realHostPorts(),
   };
 }
 

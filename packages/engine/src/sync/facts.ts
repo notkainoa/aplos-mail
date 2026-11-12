@@ -3,7 +3,6 @@ import type {
   AccountId,
   FlagDelta,
   MessageFacts,
-  OpenedThread,
   PlacementDelta,
   PlannedStep,
   RemoteDraftFact,
@@ -107,7 +106,7 @@ export function messageWrite(
   return write;
 }
 
-function messageWrites(
+export function messageWrites(
   accountId: AccountId,
   self: string,
   facts: MessageFacts,
@@ -397,37 +396,5 @@ export function stepWrites(result: StepResult, ctx: StepWriteContext): StoreWrit
     ...sweepWrites(account, result),
     ...trailingWrites(result, ctx),
   );
-  return writes;
-}
-
-/** An opened thread: full messages, bodies, `complete`, and messages the thread no longer has. */
-export function openedWrites(
-  account: AdapterAccount,
-  remoteThreadId: string,
-  opened: OpenedThread,
-): StoreWrite[] {
-  const id = account.id;
-  const writes: StoreWrite[] = [];
-  let size: number | undefined;
-  for (const m of opened.messages) {
-    const { body, ...facts } = m;
-    writes.push(...messageWrites(id, account.address, facts));
-    writes.push({
-      kind: 'body',
-      accountId: id,
-      remoteId: m.remoteId,
-      body: { text: body.text, html: body.html, cidMap: body.cidMap },
-    });
-    size = m.threadSize ?? size;
-  }
-  for (const remoteId of opened.removed ?? [])
-    writes.push({ kind: 'messageDelete', accountId: id, remoteId });
-  writes.push({
-    kind: 'thread',
-    accountId: id,
-    remoteThreadId,
-    complete: true,
-    remoteCount: size ?? opened.messages.length,
-  });
   return writes;
 }

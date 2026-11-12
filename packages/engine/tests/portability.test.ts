@@ -128,6 +128,9 @@ const lazyModules = [
   // calendar-capable adapter pay for it.
   join(src, 'sync', 'actor-calendar.ts'),
   join(src, 'sync', 'calendar-facts.ts'),
+  // The provider reads (a thread's open, an attachment, the raw original) load on the first read via `import()` in
+  // sync/host.ts (fix-bodies, 2026-11-11).
+  join(src, 'sync', 'host-read.ts'),
   // Calendar writes are rare: the port that runs them (and its error mapping) loads on the first write via
   // `import()` in calendar/write-target.ts.
   join(src, 'calendar', 'write-port.ts'),

@@ -688,9 +688,23 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 
 - A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
 
+## 2026-11-11 — fix-bodies: HTML email bodies open on the real engine
+
+- Owner bug (release blocker): on the packaged real-engine build every email waited, then showed "Couldn't load this email." Cause: `realComposeOptions` never passed the `html` (sanitiser) or `images` (proxy) port, so every HTML body answered `unavailable` after its Gmail fetch; every engine test injects its own `mailHtml`, so nothing caught it. Wiring the port alone stopped the packaged engine at start: the sanitiser's parser packages were not in `apps/desktop` dependencies (the bundled engine leaves third-party packages external).
+- Fix: `realHostPorts()` (`html: mailHtml`, `images: createImageProxy()`), the three parser packages added to `apps/desktop/package.json`, and `MessageBody/get`, `Mail/frame`, `Mail/toggleQuotes` now log a `ContractError` as `rpc.failed` with `contract.<type>` only (in the lazy render chunk: engine core unchanged at 469,026 B).
+- Evidence: `tests/eng-contract/real-ports.test.ts` (real port set, an HTML letter through the composed host, the redacted log line, and a manifest walk of the bundled engine's third-party deps); fails on the old composition. Packaged ad-hoc build + headless CDP probe on isolated demo data with HTML bodies: before, every open showed the error; after, the sealed frame reports in 100-210 ms.
 ## 2026-11-11 — ui-reader: Esc from an open email returns to the same spot
 
 - Opening a thread now saves where the owner was (`shell/store-return.ts`): each mounted surface (Home, Low importance sheet, every list, Later, Done, a label, Search, the one-by-one walk) registers what it holds (cursor row, row order, scroll offset, plus extras: sheet open, search query). Esc/Back (`leaveOpenThread`) arms the return and the screen comes back from that point once; any other way of showing a screen (sidebar, command) drops it, so a later visit starts fresh.
 - The cursor lands on the thread last read (the opened one, or where J and K got to). If that row left meanwhile (Done, archived), it takes the row that took its place, then the one above, then outwards (`restoreKey`); rows still loading never reset it to the first row.
 - One by one now opens threads `from` the walk (it used to say Home), and resumes on the same thread.
 - Tests: `store-return.test.ts`, `useIdCursor.restore.test.ts`, `oneByOneResume.test.ts`, and `tests/visual/escape-return.spec.ts` (scrolled list, Home, Low sheet, one by one, Done, and "Esc with a menu open closes only the menu"; five of six fail on the previous revamp head).
+
+## 2026-11-11 — fix-bodies: fewer and recoverable body loads (S2, R3, R2/R1 of plans/improve/reader-load-notes.md)
+
+- S2: `ActorHost.openThread` shares a read in flight per lane, account and thread (`sharedOpen`), so `Thread/open` and `MessageBody/get` no longer fetch the same thread twice on the interactive lane (one reserved Gmail slot, so the second waited for the first). An interactive open never joins a prefetch read.
+- R3: `openedWrites` no longer stores a body for a message whose parts did not arrive (`partial`), and leaves the thread `complete: false`, so the next open fetches it instead of showing a blank letter forever.
+- R2/R1 (renderer `BodyStore`): a failed letter is asked again when reopened, and a `paused` refusal is asked again after its `resumeAt` while the letter is open. Try again is unchanged.
+- Engine core budget: the provider reads (`sync/host-read.ts`, now with `openedWrites`) load on the first read via `import()`, so core drops 469,026 → 468,276 B with S2 and R3 in.
+- Evidence: `packages/engine/tests/sync-host-open.test.ts` (3) and `apps/desktop/src/renderer/data/bodies.test.ts` (4); 5 of the 7 fail on the old code (the other two pin unchanged behaviour). Engine sync, mail and views suites: 549 pass.
+- Not done here (follow-ups in STATUS): S1 cancellation of stale interactive opens, S3 serving stored `cid:` parts locally, R4 reserving relay slots for documents, R5 the swallowed `Thread/open` failure.
