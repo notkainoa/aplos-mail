@@ -49,6 +49,7 @@ import {
   subscribeOpenThreadContext,
 } from './store-thread';
 import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import { dropReturnPoints, saveReturnPoints } from './store-return';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import { getCalendarTarget, subscribeCalendarTarget } from './store-calendar';
 import type { CalendarTarget } from './store-calendar';
@@ -368,6 +369,8 @@ export function useAccountScope(): AccountId | null {
 
 /** Selects one account, or null for All accounts (what the AccountSwitcher's menu calls). */
 export function setAccountScope(accountId: AccountId | null): void {
+  // A place saved under one account's rows means nothing on another's.
+  dropReturnPoints();
   setScope(accountId);
 }
 
@@ -381,6 +384,7 @@ export function setAccountScope(accountId: AccountId | null): void {
  * walk them). Opening again from the reader itself (J, K) without options keeps the earlier place and list.
  */
 export function openThread(id: ThreadId, options?: OpenThreadOptions): void {
+  saveReturnPoints(id);
   setOpenThread(id, options);
   setScreen(OPEN_THREAD_SCREEN);
 }
@@ -405,6 +409,11 @@ export function useOpenThreadContext(): OpenThreadContext {
 }
 
 export type { OpenThreadContext, OpenThreadOptions };
+
+/** Where a surface was when a thread opened over it, so Esc puts it back (additive): `useReturnSource`, `useReturnRestore`, `useRestoreScroll`. */
+export { scrollTopOf, useRestoreScroll, useReturnRestore, useReturnSource } from './return';
+export { restoreKey, returnKeyOf } from './store-return';
+export type { ReturnPoint } from './store-return';
 
 // ---------------------------------------------------------------------------
 // The compose route (additive): the composer lane renders it on the `{ label: 'compose' }` screen
@@ -438,6 +447,8 @@ export type { CalendarTarget } from './store-calendar';
 export interface HomeShellProps {
   readonly accountId: AccountId | undefined;
   readonly onOpen: (id: ThreadId) => void;
+  /** Opens a thread from the one-by-one walk: Esc in the reader comes back to the walk, on that thread. */
+  readonly onOpenFromWalk: (id: ThreadId) => void;
   readonly onOneByOne: () => void;
 }
 
@@ -450,6 +461,7 @@ export function useHomeShellProps(): HomeShellProps {
     () => ({
       accountId: scope ?? undefined,
       onOpen: id => openThread(id, { from: 'home' }),
+      onOpenFromWalk: id => openThread(id, { from: ONE_BY_ONE_SCREEN }),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

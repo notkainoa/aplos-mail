@@ -8,6 +8,7 @@
  */
 import { parseSettingRoute } from '../commands';
 import { createStore } from './store-core';
+import { settleReturn } from './store-return';
 import type { SettingSection } from '../commands';
 import type { ShellRoute } from './index';
 
@@ -34,6 +35,9 @@ export interface RouteTarget {
   readonly seq: number;
 }
 
+/** Screens a visit to the reader passes through: showing one keeps the places saved for the return. */
+const KEEPS_RETURN: readonly string[] = ['thread', 'compose'];
+
 const screenStore = createStore<Screen>('home');
 const routeStore = createStore<RouteTarget | null>(null);
 let seq = 0;
@@ -48,6 +52,9 @@ function sameScreen(a: Screen, b: Screen): boolean {
  * opened, so showing any other screen drops it (a stale link must not steer the next visit).
  */
 export function setScreen(screen: Screen): void {
+  // Showing a screen other than through Esc in the reader drops the places saved for that return (the reader's own
+  // pop-out to the compose page is part of the same visit).
+  if (typeof screen === 'string' || !KEEPS_RETURN.includes(screen.label)) settleReturn(screen);
   if (screen !== 'settings' && routeStore.get()) routeStore.set(null);
   if (!sameScreen(screenStore.get(), screen)) screenStore.set(screen);
 }

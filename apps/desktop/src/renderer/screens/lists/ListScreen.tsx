@@ -4,6 +4,7 @@
  * Every key is the registry's.
  */
 import type { AccountId } from '../../data';
+import { returnKeyOf } from '../../shell';
 import { configFor, type ListWhich } from './listKinds';
 import { useListKeys } from './listCommands';
 import { MailListView } from './MailListView';
@@ -24,7 +25,8 @@ export interface ListScreenProps {
 }
 
 function ListBody({ which, ...options }: ListScreenProps) {
-  const list = useMailList(configFor(which), options);
+  const returnKey = returnKeyOf(which);
+  const list = useMailList(configFor(which), { ...options, returnKey });
   useListKeys(list.actions);
   return <MailListView list={list} />;
 }

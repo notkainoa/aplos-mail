@@ -22,10 +22,16 @@ import type { Account, AccountId, ErrorBody, ThreadId } from '../../data';
 import type { CommandId } from '../../ui/props';
 import {
   navigate,
+  returnKeyOf,
+  scrollTopOf,
   useAccountScope,
   useCommandTarget,
   useRegisterCommands,
+  useRestoreScroll,
+  useReturnRestore,
+  useReturnSource,
   useShellKeyLayer,
+  type ReturnPoint,
 } from '../../shell';
 import { accountMark, densityOf } from '../home/homeRows';
 import { requestPaletteOpen } from '../palette';
@@ -61,6 +67,7 @@ export interface SearchScreenProps {
 }
 
 const SEARCH_SCREEN = { label: 'Search' } as const;
+const SEARCH_RETURN_KEY = returnKeyOf(SEARCH_SCREEN);
 
 function errorBody(error: unknown): ErrorBody {
   return (
@@ -109,8 +116,17 @@ interface SearchBodyProps extends SearchScreenProps {
   readonly onState: (next: SearchState) => void;
 }
 
+/** The search as the owner left it when a result opened in the reader: query and tokens kept, a request still in flight forgotten (its frames went with the screen). */
+function restoredSearch(point: ReturnPoint | null): SearchState {
+  const saved = (point?.extra as { readonly search?: SearchState } | undefined)?.search;
+  if (saved === undefined) return initialSearch;
+  const inFlight = saved.remote.phase === 'starting' || saved.remote.phase === 'running';
+  return inFlight ? { ...saved, remote: { phase: 'idle' } } : saved;
+}
+
 export function SearchScreen(props: SearchScreenProps): ReactElement {
-  const [state, setState] = useState<SearchState>(initialSearch);
+  const saved = useReturnRestore(SEARCH_RETURN_KEY);
+  const [state, setState] = useState<SearchState>(() => restoredSearch(saved));
   return (
     <Reopenable>
       <SearchBody {...props} state={state} onState={setState} />
@@ -220,8 +236,20 @@ function SearchBody(props: SearchBodyProps): ReactElement {
   const all = useMemo(() => [...localRows, ...remoteRows], [localRows, remoteRows]);
   listIds.current = all.map(r => r.threadId);
 
-  const cursor = useIdCursor(all.map(r => r.threadId));
+  // Read here, not above `Reopenable`: a Try again remount starts fresh instead of snapping back to the saved row.
+  const restore = useReturnRestore(SEARCH_RETURN_KEY);
+  const cursor = useIdCursor(
+    all.map(r => r.threadId),
+    restore,
+  );
   const cursorRow = all.find(r => r.threadId === cursor.key);
+  useReturnSource(SEARCH_RETURN_KEY, () => ({
+    cursorId: cursor.key,
+    order: cursor.ids,
+    scrollTop: scrollTopOf(document.getElementById(cursorRow?.id ?? '')),
+    extra: { search: stateRef.current },
+  }));
+  useRestoreScroll(restore, cursorRow?.id ?? null);
   const live = useRef<{ row: CursorRow | undefined }>({ row: undefined });
   live.current = {
     row: cursorRow

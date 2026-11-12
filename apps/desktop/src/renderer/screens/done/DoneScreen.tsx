@@ -20,7 +20,7 @@ export interface DoneScreenProps {
 }
 
 function DoneBody(props: DoneScreenProps) {
-  const list = useMailList(DONE_CONFIG, props);
+  const list = useMailList(DONE_CONFIG, { ...props, returnKey: 'done' });
   useDoneKeys(list.actions);
   return <MailListView list={list} />;
 }

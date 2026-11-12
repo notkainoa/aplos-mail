@@ -7,10 +7,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useHold, useView, type HoldController } from '../../data';
 import type { Account, AccountId, ThreadId, ThreadRow, ViewResult } from '../../data';
-import { dismissToast, pushToast, useRegisterCommands } from '../../shell';
+import {
+  dismissToast,
+  pushToast,
+  scrollTopOf,
+  useRegisterCommands,
+  useRestoreScroll,
+  useReturnRestore,
+  useReturnSource,
+  type ReturnPoint,
+} from '../../shell';
 import type { Density, ListRowProps, LowSheetGroup } from '../../ui/props';
 import { LowSheet } from '../../ui/list';
-import { neighbourKeys, stepKey } from '../lists/listModel';
+import { absoluteIndex, neighbourKeys, stepKey } from '../lists/listModel';
+import { useRestoreWindow, windowReaches } from '../lists/restoreWindow';
 import { useIdCursor } from '../lists/useIdCursor';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf } from './homeRows';
@@ -30,6 +40,9 @@ export interface LowSheetHostProps {
 }
 
 const lowDomId = (id: string): string => `home-low-row-${id}`;
+
+/** The key the open sheet is saved under when a thread opens over it, beside Home's own. */
+const RETURN_KEY = 'home/low';
 
 /** The sender groups of the view, each with its threads in window order. */
 export function groupsOf(
@@ -52,8 +65,20 @@ export function groupsOf(
  * The sheet's cursor is a thread id, so mail arriving above it never moves the highlighted row; each step also holds
  * the rows around it, so a re-rank does not reorder them behind the highlight (DESIGN 5 rule 6).
  */
-function useSheetCursor(source: readonly string[], hold: HoldController) {
-  const cursor = useIdCursor(source);
+function useSheetCursor(
+  view: ViewResult<ThreadRow>,
+  hold: HoldController,
+  restore: ReturnPoint | null,
+) {
+  useRestoreWindow(view, restore);
+  const cursor = useIdCursor(view.ids, restore, windowReaches(restore, view));
+  useReturnSource(RETURN_KEY, () => ({
+    cursorId: cursor.key,
+    order: cursor.ids,
+    scrollTop: scrollTopOf(document.getElementById(cursor.key ? lowDomId(cursor.key) : '')),
+    index: absoluteIndex(view.position, view.ids.indexOf(cursor.key ?? '')),
+  }));
+  useRestoreScroll(restore, cursor.key ? lowDomId(cursor.key) : null);
   const latest = useRef({ cursor, hold });
   useEffect(() => {
     latest.current = { cursor, hold };
@@ -84,7 +109,7 @@ export function LowSheetHost(props: LowSheetHostProps) {
   );
   const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const cursorId = useSheetCursor(view.ids, hold);
+  const cursorId = useSheetCursor(view, hold, useReturnRestore(RETURN_KEY));
   // More low-importance threads than one window: the window follows the cursor, so every thread can be reached.
   useFollowWindow(view, cursorId ?? null, hold.isHeld);
   const rowProps = (row: ThreadRow): ListRowProps =>
