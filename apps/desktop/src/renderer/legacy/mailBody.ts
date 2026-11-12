@@ -42,6 +42,53 @@ export function inlineAttachments(message: Message): Attachment[] {
   );
 }
 
+/**
+ * What the sanitizer takes out before any content is mounted: acquisition by style, srcset, background or poster, and
+ * SVG and MathML outright (their `image`, `feImage` and `use` elements fetch remote content the img gate never sees),
+ * like the new sanitizer in `packages/mail-html`.
+ */
+const SANITIZE = {
+  FORBID_TAGS: [
+    'style',
+    'link',
+    'iframe',
+    'form',
+    'input',
+    'video',
+    'audio',
+    'object',
+    'embed',
+    'svg',
+    'math',
+  ],
+  FORBID_ATTR: ['srcset', 'style', 'background', 'poster'],
+};
+
+type BodyOptions = { remote: boolean; spam: boolean; inline: Record<string, Attachment> };
+
+/**
+ * Applies the image rules to the already sanitized fragment: spam hides every image, `cid:` images become inline data,
+ * remote ones stay off until the owner loads them. Returns whether the message had remote images (counted before they
+ * are hidden, from the same sanitized result the owner sees).
+ */
+function gateImages(node: HTMLTemplateElement, message: Message, options: BodyOptions): boolean {
+  let hasRemoteImages = false;
+  for (const image of node.content.querySelectorAll('img')) {
+    const source = image.getAttribute('src') ?? '';
+    if (/^https?:\/\//i.test(source)) hasRemoteImages = true;
+    if (options.spam) hideImage(image, 'Image hidden in Spam');
+    else if (source.startsWith('cid:')) {
+      const attachment = message.attachments.find(item => item.contentId === contentId(source));
+      const ready = attachment && (attachment.data ? attachment : options.inline[attachment.id]);
+      if (ready?.data && ready.type.startsWith('image/'))
+        image.setAttribute('src', `data:${ready.type};base64,${ready.data}`);
+      else hideImage(image, 'Inline image unavailable');
+    } else if (!options.remote && !source.startsWith('data:'))
+      hideImage(image, 'Remote image hidden');
+  }
+  return hasRemoteImages;
+}
+
 export function prepareMessageBody(
   message: Message,
   options: { remote: boolean; spam: boolean; inline: Record<string, Attachment>; query?: string },
@@ -59,24 +106,8 @@ export function prepareMessageBody(
     }
     html = '<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>';
   }
-  const node = template(html);
-  for (const image of node.content.querySelectorAll('img')) {
-    const source = image.getAttribute('src') ?? '';
-    if (options.spam) hideImage(image, 'Image hidden in Spam');
-    else if (source.startsWith('cid:')) {
-      const attachment = message.attachments.find(item => item.contentId === contentId(source));
-      const ready = attachment && (attachment.data ? attachment : options.inline[attachment.id]);
-      if (ready?.data && ready.type.startsWith('image/'))
-        image.setAttribute('src', `data:${ready.type};base64,${ready.data}`);
-      else hideImage(image, 'Inline image unavailable');
-    } else if (!options.remote && !source.startsWith('data:'))
-      hideImage(image, 'Remote image hidden');
-  }
-  // Strip background/srcset/style acquisition too, before any content is mounted.
-  node.innerHTML = DOMPurify.sanitize(node.innerHTML, {
-    FORBID_TAGS: ['style', 'link', 'iframe', 'form', 'input', 'video', 'audio', 'object', 'embed'],
-    FORBID_ATTR: ['srcset', 'style', 'background', 'poster'],
-  });
+  const node = template(DOMPurify.sanitize(html, SANITIZE));
+  const hasRemoteImages = gateImages(node, message, options);
   const quote = template('');
   const outlook = node.content.querySelector('#divRplyFwdMsg');
   if (outlook) {
@@ -118,8 +149,5 @@ export function prepareMessageBody(
       }
     }
   }
-  const hasRemoteImages = [...template(html).content.querySelectorAll('img')].some(image =>
-    /^https?:\/\//i.test(image.getAttribute('src') ?? ''),
-  );
   return { body: node.innerHTML, quoted: quote.innerHTML, hasRemoteImages };
 }

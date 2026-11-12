@@ -34,6 +34,7 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  returnReady,
   searchPage,
   submit,
   typeField,
@@ -445,4 +446,14 @@ test('free terms bold in subjects and snippets; quoted phrases stay whole', () =
   assert.equal(row.remote, true);
   assert.equal(row.marks.attachment, true);
   assert.equal(row.marks.bookmarked, true);
+});
+
+test('a saved cursor lands once its row is there, or once the local window has settled (never on a local neighbour early)', () => {
+  const local = ['l1', 'l2'];
+  assert.equal(returnReady('g1', local, 'opening'), false, 'the window is still opening');
+  assert.equal(returnReady('g1', local, 'live'), true, 'settled without it: the row is gone');
+  assert.equal(returnReady('g1', [...local, 'g1'], 'opening'), true, 'its row has arrived');
+  assert.equal(returnReady('l1', local, 'live'), true);
+  assert.equal(returnReady(undefined, [], 'live'), true);
+  assert.equal(returnReady('g1', [], 'failed'), true, 'a failed window will not bring it');
 });

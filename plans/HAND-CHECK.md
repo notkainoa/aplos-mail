@@ -1,13 +1,13 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-11 from `revamp` `61f5378`, includes the go-live flip and every
+The app to check (built 2026-11-11 from `revamp` `ffe43c3`, includes the go-live flip and every
 earlier fix batch plus: calendar accounts UI + "No calendars" vs "Syncing…" #356/#364/#365, the
 real AI path #369–#383 — Ask with citations, background summaries, follow-up nudges, the consent
 card, Settings → AI provider setup — the one-by-one card #421/#426/#451, Home low-importance lanes
 #387–#402, calendar writes + Enable editing #393/#394/#410/#417, Settings Diagnostics/Export/Tools
 #416–#439, recipient suggestions #395, theme/menu/show-full fixes #448–#458, calendar holds with
 Retry/Discard in the Queue inspector #437/#478–#481, Event/plan extraction #404, and the
-legacy-renderer banner #477):
+legacy-renderer banner #477, and Escape-returns-to-your-spot #482):
 
 `~/Applications-test/Aplos Mail (revamp).app`
 

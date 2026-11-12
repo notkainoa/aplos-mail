@@ -10,7 +10,6 @@ import { api, useRow, type ThreadRow } from '../../data';
 import {
   closeThread,
   dismissToast,
-  navigate,
   openCompose,
   openThread,
   pushToast,
@@ -127,11 +126,8 @@ function useReaderActions(
       go: openThread,
       markGone: (id, gone) => markGone({ id, gone }),
       reopen: whileOpen(open, openThread),
-      leave: () => {
-        closeThread();
-        const { backTo } = live.current.props;
-        if (backTo) navigate(backTo);
-      },
+      // One call: a second `navigate(backTo)` after the close would be a screen shown other than through Esc and drop the saved places.
+      leave: () => closeThread(live.current.props.backTo),
       act: args => api.thread.act(args),
       push: pushToast,
       dismiss: dismissToast,

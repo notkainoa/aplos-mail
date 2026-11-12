@@ -20,6 +20,12 @@ export function beginSession(ids: readonly string[]): Session {
   return { walk: startWalk(ids), pending: null, acted: [] };
 }
 
+/** A session at the thread the owner was reading when the reader opened over the walk (`at`: its place in `ids`). */
+export function resumeSession(ids: readonly string[], at: number): Session {
+  const session = beginSession(ids);
+  return at <= 0 ? session : { ...session, walk: { ...session.walk, index: at } };
+}
+
 /** The thread showing: the walk's current live id, null once the walk is over. */
 export function shownId(session: Session, live: ReadonlySet<string>): string | null {
   return currentId(session.walk, live);

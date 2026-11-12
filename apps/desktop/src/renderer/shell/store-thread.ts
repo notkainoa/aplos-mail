@@ -5,6 +5,7 @@
  */
 import { createStore } from './store-core';
 import { getScreen, setScreen } from './store-route';
+import { armReturn, followReturnCursor } from './store-return';
 import type { Screen } from './store-route';
 import type { ThreadId } from '../data';
 
@@ -64,12 +65,21 @@ export function setOpenThread(id: ThreadId | null, options?: OpenThreadOptions):
   threadStore.set(id);
 }
 
-/** Leaves the thread screen for the screen the thread was opened from (Home when none was recorded) and clears the thread. */
-export function leaveOpenThread(): void {
-  const from = contextStore.get().from ?? 'home';
+/**
+ * Leaves the thread screen for the screen the thread was opened from (Home when none was recorded), or for `to` when the
+ * caller names one, and clears the thread. The return is armed for the screen actually shown, so its saved places survive.
+ */
+export function leaveOpenThread(to?: Screen): void {
+  const from = to ?? contextStore.get().from ?? 'home';
   const wasOpen = onThreadScreen();
+  const current = threadStore.get();
   setOpenThread(null);
-  if (wasOpen) setScreen(from);
+  // A named screen is shown even when the thread screen is not (the old close-then-navigate did).
+  if (!wasOpen && to === undefined) return;
+  // The place comes back as it was left, on the thread last read (the one opened, or where J and K got to).
+  followReturnCursor(current);
+  armReturn(from);
+  setScreen(from);
 }
 
 export const getOpenThread = threadStore.get;

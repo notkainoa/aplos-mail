@@ -244,6 +244,20 @@ export interface LocalResults {
   readonly error?: Pick<ErrorBody, 'type' | 'reasonCode' | 'resumeAt'> | null;
 }
 
+/**
+ * Whether a saved cursor may land yet: its row is in the list, else the local window has settled (so the row really is
+ * gone and its neighbour is right). Landing earlier would put a Google result's cursor on a local neighbour when the
+ * local rows arrive before the rows the saved search had added.
+ */
+export function returnReady(
+  savedId: string | null | undefined,
+  ids: readonly string[],
+  status: LocalResults['status'],
+): boolean {
+  if (savedId && ids.includes(savedId)) return true;
+  return status === 'live' || status === 'reset' || status === 'failed';
+}
+
 /** The line under the results about Google. */
 export type RemoteLine =
   | { readonly kind: 'offer'; readonly text: string }
