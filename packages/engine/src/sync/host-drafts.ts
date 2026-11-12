@@ -8,14 +8,31 @@ import type {
 } from '../ports/provider';
 
 /**
- * What a remote-draft call needs from a started account: its adapter, its mail budget (for errors only) and the
- * account actor's context, the only door to the governor. The host hands over the entry it keeps for exactly the
- * account the caller named, never another's.
+ * What a remote-draft or send call needs from a started account: its adapter, its mail budget (for errors only)
+ * and the account actor's context, the only door to the governor. The host hands over the entry it keeps for
+ * exactly the account the caller named, never another's.
  */
 export interface DraftTarget {
   adapter: ProviderAdapter;
   budget: BudgetId;
   context(): AdapterContext;
+}
+
+/**
+ * An account actor entry as a `DraftTarget`, or undefined when the account is not started. Draft and send calls
+ * share the shape; `entry` stays the host's own record type by taking it structurally.
+ */
+export function entryTarget(
+  entry:
+    | {
+        adapter: ProviderAdapter;
+        budget: BudgetId;
+        actor: { context(): AdapterContext };
+      }
+    | undefined,
+): DraftTarget | undefined {
+  if (!entry) return undefined;
+  return { adapter: entry.adapter, budget: entry.budget, context: () => entry.actor.context() };
 }
 
 /**
@@ -27,11 +44,11 @@ function refused(method: string, reason: string, provider: string): ProviderErro
 }
 
 /**
- * An account that is not started right now: the draft calls arrive before `start` or in the moment a restart
+ * An account that is not started right now: the draft or send calls arrive before `start` or in the moment a restart
  * stops the account, so this is a `transient` refusal that provably wrote nothing (`NotSentError`). The engine
  * tries again after its retry delay instead of parking the draft in a problem state.
  */
-function notStarted(method: string): NotSentError {
+export function notStarted(method: string): NotSentError {
   return new NotSentError({
     class: 'transient',
     provider: 'engine',
@@ -44,7 +61,11 @@ function notStarted(method: string): NotSentError {
  * The account's context, checked against the account the caller named. The host keys its entries by account, so a
  * mismatch is a bug; it throws rather than let one account's draft reach another account's mailbox.
  */
-function contextFor(account: AccountId, target: DraftTarget, method: string): AdapterContext {
+export function contextFor(
+  account: AccountId,
+  target: DraftTarget,
+  method: string,
+): AdapterContext {
   const ctx = target.context();
   if (ctx.account.id !== account) throw refused(method, 'accountMismatch', target.budget);
   return ctx;

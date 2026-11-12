@@ -50,7 +50,8 @@ import {
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
 import { calendarTargetOf, lazyCalendarPort } from '../calendar/write-target';
-import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
+import { removeRemoteDraft, saveRemoteDraft } from './host-drafts';
+import { entryTarget, sendPortOf } from './host-send';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
 import { nextOpRetry, readFence } from './ops';
@@ -711,10 +712,10 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
   /** Event writes, routed to the named account's calendar. A separate object: `remove` is taken by drafts. */
   readonly calendarPort = lazyCalendarPort(account => calendarTargetOf(this.actors.get(account)));
 
-  private draftTarget(account: AccountId): DraftTarget | undefined {
-    const entry = this.actors.get(account);
-    if (!entry) return undefined;
-    return { adapter: entry.adapter, budget: entry.budget, context: () => entry.actor.context() };
+  readonly sendPort = sendPortOf(() => this.governor, this.actors);
+
+  private draftTarget(account: AccountId) {
+    return entryTarget(this.actors.get(account));
   }
 
   // ---------------------------------------------------------------- helpers
