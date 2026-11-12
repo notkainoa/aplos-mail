@@ -1,5 +1,6 @@
 import type { Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
+import type { MethodContext } from '../methods/types';
 import { renderKey, withReporter, type FrameRenderInput } from '@aplos/mail-html/frame';
 import type { EngineServices } from '../runtime/services';
 import { cidsOf, loadBody, type MessageRef } from './message';
@@ -148,4 +149,25 @@ export function issueFrame(
     hasRemoteImages: result.hasRemoteImages,
     quotedCount: result.quotedCount,
   };
+}
+
+/**
+ * A letter that cannot open must leave a trace (fix-bodies, 2026-11-11: every HTML body answered `unavailable` and the
+ * log said nothing). The runtime answers a `ContractError` as-is and never logs it, so the body methods log it here as
+ * `rpc.failed` with the method and `contract.<type>` only: no id, subject, address or text. Any other throw is left to
+ * the runtime's `toContractError`, which logs its own classified reason. Lives here, in the lazy render chunk, so the core
+ * pays nothing for it.
+ */
+export async function logBodyFailure<R>(
+  method: string,
+  ctx: MethodContext,
+  run: () => Promise<R>,
+): Promise<R> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ContractError)
+      ctx.services.log.event('rpc.failed', { method, reason: `contract.${error.body.type}` });
+    throw error;
+  }
 }

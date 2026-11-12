@@ -687,3 +687,9 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 ## 2026-11-11 — prov-cal: guest RSVP falls back to the account address
 
 - A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
+
+## 2026-11-11 — fix-bodies: HTML email bodies open on the real engine
+
+- Owner bug (release blocker): on the packaged real-engine build every email waited, then showed "Couldn't load this email." Cause: `realComposeOptions` never passed the `html` (sanitiser) or `images` (proxy) port, so every HTML body answered `unavailable` after its Gmail fetch; every engine test injects its own `mailHtml`, so nothing caught it. Wiring the port alone stopped the packaged engine at start: the sanitiser's parser packages were not in `apps/desktop` dependencies (the bundled engine leaves third-party packages external).
+- Fix: `realHostPorts()` (`html: mailHtml`, `images: createImageProxy()`), the three parser packages added to `apps/desktop/package.json`, and `MessageBody/get`, `Mail/frame`, `Mail/toggleQuotes` now log a `ContractError` as `rpc.failed` with `contract.<type>` only (in the lazy render chunk: engine core unchanged at 469,026 B).
+- Evidence: `tests/eng-contract/real-ports.test.ts` (real port set, an HTML letter through the composed host, the redacted log line, and a manifest walk of the bundled engine's third-party deps); fails on the old composition. Packaged ad-hoc build + headless CDP probe on isolated demo data with HTML bodies: before, every open showed the error; after, the sealed frame reports in 100-210 ms.
