@@ -49,13 +49,15 @@ import {
   type LeaseRecord,
 } from './lease';
 import { compactMode, ownerClock, settleOwnerLift } from './host-clock';
-import { attachmentBytes, openThreadRemote, originalRemote } from './host-read';
 import { calendarTargetOf, lazyCalendarPort } from '../calendar/write-target';
 import { removeRemoteDraft, saveRemoteDraft, type DraftTarget } from './host-drafts';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
 import { nextOpRetry, readFence } from './ops';
 import { governorWrite, readAccount, readGovernor, readMemory, readStates } from './persist';
+
+/** The provider reads (`host-read.ts`): loaded on the first thread open, attachment or original, not with the core. */
+const Read = () => import('./host-read');
 
 /** What the host needs from a governor beyond `GovernorPort` (F3 has no way to express either; see the port gaps). */
 type GovernorExtras = Partial<Pick<Governor, 'bindConnect' | 'setBudgets'>>;
@@ -655,14 +657,9 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     remoteThreadId: string,
     opts: { knownCount?: number; lane?: 'interactive' | 'prefetch' } = {},
   ): Promise<OpenedThread> {
-    return openThreadRemote(
-      this.entry(account),
-      this.deps.store,
-      () => this.newId(),
-      account,
-      remoteThreadId,
-      opts,
-    );
+    const { sharedOpen } = await Read();
+    const entry = this.entry(account);
+    return sharedOpen(entry, this.deps.store, () => this.newId(), account, remoteThreadId, opts);
   }
 
   async search(
@@ -689,7 +686,7 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
   }
 
   async attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>> {
-    return attachmentBytes(this.entry(account), ref);
+    return (await Read()).attachmentBytes(this.entry(account), ref);
   }
 
   async original(
@@ -697,7 +694,7 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     remoteMessageId: string,
     options?: { signal?: AbortSignal },
   ): Promise<AsyncIterable<Uint8Array>> {
-    return originalRemote(this.entry(account), remoteMessageId, options);
+    return (await Read()).originalRemote(this.entry(account), remoteMessageId, options);
   }
 
   // ---------------------------------------------------------------- DraftSyncPort
