@@ -5,10 +5,12 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import type { HomeView, ThreadId } from '../../data';
+import { restoreKey, type ReturnPoint } from '../../shell';
 import { doNowIdsOf, doNowQueue, failedIds, liveDoNow } from './oneByOneQueue';
 import {
   beginSession,
   markActed,
+  resumeSession,
   sessionProgress,
   settleSession,
   shownId,
@@ -32,11 +34,22 @@ export interface WalkState {
   readonly acted: (id: ThreadId) => void;
 }
 
-export function useWalkSession(home: HomeView): WalkState {
+/** A new walk over `queue`: from its start, or from the thread the reader closed over (the nearest one still queued). */
+function startSession(queue: readonly string[], restore: ReturnPoint | null): Session {
+  const id = restore ? restoreKey(restore, queue) : null;
+  return id === null ? beginSession(queue) : resumeSession(queue, queue.indexOf(id));
+}
+
+/** `restore` starts the walk where the reader opened over it (Esc); every other visit starts at the first thread. */
+export function useWalkSession(home: HomeView, restore: ReturnPoint | null = null): WalkState {
   const [stored, setStored] = useState<Session | null>(null);
   const ids = doNowIdsOf(home);
   const live = liveDoNow(ids);
-  const fresh = () => beginSession(doNowQueue(ids, id => home.rows.get(id)));
+  const fresh = () =>
+    startSession(
+      doNowQueue(ids, id => home.rows.get(id)),
+      restore,
+    );
   const read = stored ?? (home.status === 'live' ? fresh() : null);
   // While the window is reopening `live` is empty, which must not read as "everything left".
   const session =

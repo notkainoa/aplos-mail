@@ -5,6 +5,7 @@
  */
 import { createStore } from './store-core';
 import { getScreen, setScreen } from './store-route';
+import { armReturn, followReturnCursor } from './store-return';
 import type { Screen } from './store-route';
 import type { ThreadId } from '../data';
 
@@ -68,8 +69,13 @@ export function setOpenThread(id: ThreadId | null, options?: OpenThreadOptions):
 export function leaveOpenThread(): void {
   const from = contextStore.get().from ?? 'home';
   const wasOpen = onThreadScreen();
+  const current = threadStore.get();
   setOpenThread(null);
-  if (wasOpen) setScreen(from);
+  if (!wasOpen) return;
+  // The place comes back as it was left, on the thread last read (the one opened, or where J and K got to).
+  followReturnCursor(current);
+  armReturn(from);
+  setScreen(from);
 }
 
 export const getOpenThread = threadStore.get;

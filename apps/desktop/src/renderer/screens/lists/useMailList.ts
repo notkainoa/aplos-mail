@@ -33,8 +33,13 @@ import {
   useCommandTarget,
   dismissToast,
   pushToast,
+  scrollTopOf,
+  useRestoreScroll,
+  useReturnRestore,
+  useReturnSource,
   useShellKeyLayer,
   useShellRegistry,
+  type ReturnPoint,
 } from '../../shell';
 import { toSyncStatus } from '../../shell/status-map';
 import { statusCopy } from '../../ui/status';
@@ -71,6 +76,8 @@ export interface MailListOptions {
    * it knows). The cursor and the keys then never land on a thread nobody can see. Default: every id of the window.
    */
   readonly drawnIds?: (view: ViewResult<unknown>) => readonly string[];
+  /** The key this list is saved under when a thread opens over it, so Esc brings it back as it was (`returnKeyOf` of its screen). */
+  readonly returnKey?: string;
 }
 
 /** The sync states in which an empty list is not really empty. */
@@ -148,6 +155,22 @@ function useScrollToCursor(config: ListConfig, key: string | null): void {
   }, [config, key]);
 }
 
+/** Saves the list's place when a thread opens over it, and puts the scroll offset back when the reader closes. */
+function useListReturn(
+  config: ListConfig,
+  returnKey: string | undefined,
+  cursor: IdCursor,
+  restore: ReturnPoint | null,
+): void {
+  const rowId = cursor.key === null ? null : rowDomId(config, cursor.key);
+  useReturnSource(returnKey, () => ({
+    cursorId: cursor.key,
+    order: cursor.ids,
+    scrollTop: scrollTopOf(document.getElementById(rowId ?? '')),
+  }));
+  useRestoreScroll(restore, rowId);
+}
+
 /** Asks the engine for the window around the cursor when the view is longer than one window. */
 function useFollowCursor(view: ViewResult<unknown>, key: string | null): void {
   const { ids, position, total, move } = view;
@@ -200,7 +223,9 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
   const empty = useEmptyState(accountId);
 
   const rowOf = useCallback((id: string) => asListRow(view.rows.get(id)), [view.rows]);
-  const cursor = useIdCursor(options.drawnIds ? options.drawnIds(view) : view.ids);
+  const restore = useReturnRestore(options.returnKey);
+  const cursor = useIdCursor(options.drawnIds ? options.drawnIds(view) : view.ids, restore);
+  useListReturn(config, options.returnKey, cursor, restore);
   useScrollToCursor(config, cursor.key);
   useFollowCursor(view, cursor.key);
 

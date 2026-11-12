@@ -8,6 +8,7 @@
  */
 import { parseSettingRoute } from '../commands';
 import { createStore } from './store-core';
+import { settleReturn } from './store-return';
 import type { SettingSection } from '../commands';
 import type { ShellRoute } from './index';
 
@@ -48,6 +49,8 @@ function sameScreen(a: Screen, b: Screen): boolean {
  * opened, so showing any other screen drops it (a stale link must not steer the next visit).
  */
 export function setScreen(screen: Screen): void {
+  // Showing a screen other than through Esc in the reader drops the places saved for that return.
+  if (typeof screen === 'string' || screen.label !== 'thread') settleReturn(screen);
   if (screen !== 'settings' && routeStore.get()) routeStore.set(null);
   if (!sameScreen(screenStore.get(), screen)) screenStore.set(screen);
 }

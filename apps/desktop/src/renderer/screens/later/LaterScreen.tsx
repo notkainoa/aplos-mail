@@ -58,7 +58,7 @@ function useHeldGroups(next: LaterGroup[], held: boolean): LaterGroup[] {
 }
 
 function BookmarksBody(props: LaterScreenProps) {
-  const list = useMailList(BOOKMARKS_CONFIG, props);
+  const list = useMailList(BOOKMARKS_CONFIG, { ...props, returnKey: 'later' });
   useListKeys(list.actions);
   return <MailListView list={list} />;
 }
@@ -73,6 +73,7 @@ function LaterBody(props: LaterScreenProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const list = useMailList(LATER_CONFIG, {
     ...props,
+    returnKey: 'later',
     modal: picker.open ? 'datePicker' : null,
     drawnIds: drawn => flatIds(groupsOf(drawn.ids, drawn.sections, drawn.position)),
   });

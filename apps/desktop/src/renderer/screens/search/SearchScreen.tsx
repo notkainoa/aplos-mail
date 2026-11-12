@@ -22,10 +22,16 @@ import type { Account, AccountId, ErrorBody, ThreadId } from '../../data';
 import type { CommandId } from '../../ui/props';
 import {
   navigate,
+  returnKeyOf,
+  scrollTopOf,
   useAccountScope,
   useCommandTarget,
   useRegisterCommands,
+  useRestoreScroll,
+  useReturnRestore,
+  useReturnSource,
   useShellKeyLayer,
+  type ReturnPoint,
 } from '../../shell';
 import { accountMark, densityOf } from '../home/homeRows';
 import { requestPaletteOpen } from '../palette';
@@ -105,15 +111,25 @@ interface CursorRow {
 }
 
 interface SearchBodyProps extends SearchScreenProps {
+  readonly restore: ReturnPoint | null;
   readonly state: SearchState;
   readonly onState: (next: SearchState) => void;
 }
 
+/** The search as the owner left it when a result opened in the reader: query and tokens kept, a request still in flight forgotten (its frames went with the screen). */
+function restoredSearch(point: ReturnPoint | null): SearchState {
+  const saved = (point?.extra as { readonly search?: SearchState } | undefined)?.search;
+  if (saved === undefined) return initialSearch;
+  const inFlight = saved.remote.phase === 'starting' || saved.remote.phase === 'running';
+  return inFlight ? { ...saved, remote: { phase: 'idle' } } : saved;
+}
+
 export function SearchScreen(props: SearchScreenProps): ReactElement {
-  const [state, setState] = useState<SearchState>(initialSearch);
+  const restore = useReturnRestore(returnKeyOf(SEARCH_SCREEN));
+  const [state, setState] = useState<SearchState>(() => restoredSearch(restore));
   return (
     <Reopenable>
-      <SearchBody {...props} state={state} onState={setState} />
+      <SearchBody {...props} restore={restore} state={state} onState={setState} />
     </Reopenable>
   );
 }
@@ -220,8 +236,18 @@ function SearchBody(props: SearchBodyProps): ReactElement {
   const all = useMemo(() => [...localRows, ...remoteRows], [localRows, remoteRows]);
   listIds.current = all.map(r => r.threadId);
 
-  const cursor = useIdCursor(all.map(r => r.threadId));
+  const cursor = useIdCursor(
+    all.map(r => r.threadId),
+    props.restore,
+  );
   const cursorRow = all.find(r => r.threadId === cursor.key);
+  useReturnSource(returnKeyOf(SEARCH_SCREEN), () => ({
+    cursorId: cursor.key,
+    order: cursor.ids,
+    scrollTop: scrollTopOf(document.getElementById(cursorRow?.id ?? '')),
+    extra: { search: stateRef.current },
+  }));
+  useRestoreScroll(props.restore, cursorRow?.id ?? null);
   const live = useRef<{ row: CursorRow | undefined }>({ row: undefined });
   live.current = {
     row: cursorRow

@@ -286,13 +286,13 @@ export function listOpener(
 
 /** Home's "Go one by one" in the screen slot: Back, Esc or the end of the walk return to Home. */
 function OneByOneSlot() {
-  const { accountId, onOpen } = useHomeShellProps();
+  const { accountId, onOpenFromWalk } = useHomeShellProps();
   return (
     <OneByOneScreen
       key={accountId ?? 'all'}
       accountId={accountId}
       onExit={() => navigate('home')}
-      onOpen={onOpen}
+      onOpen={onOpenFromWalk}
     />
   );
 }
