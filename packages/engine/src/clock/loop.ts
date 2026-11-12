@@ -79,9 +79,14 @@ export function createTimerLoop({
   let started = false;
 
   /** A log port that throws must not change what the loop does next: every loop log line goes through here. */
-  const note = (kind: 'timer_drift', lagMs: number) => {
+  const note = (kind: 'timer_drift', lagMs: number, slot?: Slot) => {
     try {
-      log.event('engine.watchdog', { kind, lagMs });
+      // The source's kind only (`sync:<account>` -> `sync`): which source keeps backing off, without an account id.
+      log.event('engine.watchdog', {
+        kind,
+        lagMs,
+        ...(slot ? { source: slot.source.id.split(':')[0] } : {}),
+      });
     } catch {
       // Diagnostics only.
     }
@@ -224,7 +229,7 @@ export function createTimerLoop({
       // An unreadable source retries like a stuck one, never silently drops its deadlines.
       slot.next = clock.now();
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
-      note('timer_drift', lagMs);
+      note('timer_drift', lagMs, slot);
       return false;
     }
   };
@@ -245,7 +250,7 @@ export function createTimerLoop({
       // Hung (or the wait itself failed): serve the other sources. The id stays out of play until the call really
       // settles, and the hold keeps a clock that cannot sleep from turning the settle into a microtask loop.
       slot.backoffUntil = clock.now() + MIN_FIRE_GAP_MS;
-      note('timer_drift', waited === TIMED_OUT ? FIRE_TIMEOUT_MS : 0);
+      note('timer_drift', waited === TIMED_OUT ? FIRE_TIMEOUT_MS : 0, slot);
       return;
     }
     // Unregistered or replaced while its fire ran: the slot is orphaned and the source is not read again.
@@ -255,7 +260,7 @@ export function createTimerLoop({
     if (slot.next !== undefined && slot.next <= now) {
       // The hold is set before the log line: a log that throws must not turn the backoff into an immediate re-fire.
       slot.backoffUntil = now + MIN_FIRE_GAP_MS;
-      note('timer_drift', MIN_FIRE_GAP_MS);
+      note('timer_drift', MIN_FIRE_GAP_MS, slot);
     } else slot.backoffUntil = undefined;
   };
 

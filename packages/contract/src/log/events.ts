@@ -393,9 +393,11 @@ export const logEvents = {
     why: f.oneOf(['disk_full', 'corrupt', 'crash_loop', 'migration_failed', 'selftest_failed']),
     exits: opt(f.count()),
   }),
-  'engine.watchdog': event('warn', ['eng-host'], {
+  'engine.watchdog': event('warn', ['eng-host', 'eng-time'], {
     kind: f.oneOf(['event_loop', 'actor_stalled', 'timer_drift']),
     lagMs: f.duration(),
+    /** `timer_drift`: the deadline source's kind (`outbox`, `sync`, ...), never its account part. */
+    source: opt(f.code()),
   }),
   'power.changed': event('info', ['eng-host'], {
     state: f.oneOf(['sleep', 'wake', 'lock', 'unlock', 'battery', 'ac']),

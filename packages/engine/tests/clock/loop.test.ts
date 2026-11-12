@@ -280,3 +280,28 @@ test('the system clock never fires early and sleep honours abort', async () => {
   abort.abort(new Error('quit'));
   await assert.rejects(slept, /quit/);
 });
+
+test('a drift line names the source kind that keeps backing off, never its account part', async () => {
+  const clock = fakeClock();
+  const records: LogRecord[] = [];
+  const log = createLogger({
+    sink: { write: r => records.push(r) },
+    salt: 's',
+    clock,
+    level: 'debug',
+  });
+  const loop = createTimerLoop({ clock, log });
+  // Stays due after every fire: the loop backs it off and says so.
+  loop.register({
+    id: 'sync:acct-secret@example.com',
+    next: async () => clock.now(),
+    fire: async () => {},
+  });
+  loop.start();
+  await clock.flush();
+  await clock.advance(2_000);
+  const drift = records.filter(r => r.event === 'engine.watchdog');
+  assert.ok(drift.length > 0, 'the source is reported');
+  assert.ok(drift.every(r => r.data.source === 'sync'));
+  assert.ok(!JSON.stringify(drift).includes('acct-secret'), 'no account part in the line');
+});
