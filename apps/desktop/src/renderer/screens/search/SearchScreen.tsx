@@ -67,6 +67,7 @@ export interface SearchScreenProps {
 }
 
 const SEARCH_SCREEN = { label: 'Search' } as const;
+const SEARCH_RETURN_KEY = returnKeyOf(SEARCH_SCREEN);
 
 function errorBody(error: unknown): ErrorBody {
   return (
@@ -111,7 +112,6 @@ interface CursorRow {
 }
 
 interface SearchBodyProps extends SearchScreenProps {
-  readonly restore: ReturnPoint | null;
   readonly state: SearchState;
   readonly onState: (next: SearchState) => void;
 }
@@ -125,11 +125,11 @@ function restoredSearch(point: ReturnPoint | null): SearchState {
 }
 
 export function SearchScreen(props: SearchScreenProps): ReactElement {
-  const restore = useReturnRestore(returnKeyOf(SEARCH_SCREEN));
-  const [state, setState] = useState<SearchState>(() => restoredSearch(restore));
+  const saved = useReturnRestore(SEARCH_RETURN_KEY);
+  const [state, setState] = useState<SearchState>(() => restoredSearch(saved));
   return (
     <Reopenable>
-      <SearchBody {...props} restore={restore} state={state} onState={setState} />
+      <SearchBody {...props} state={state} onState={setState} />
     </Reopenable>
   );
 }
@@ -236,18 +236,20 @@ function SearchBody(props: SearchBodyProps): ReactElement {
   const all = useMemo(() => [...localRows, ...remoteRows], [localRows, remoteRows]);
   listIds.current = all.map(r => r.threadId);
 
+  // Read here, not above `Reopenable`: a Try again remount starts fresh instead of snapping back to the saved row.
+  const restore = useReturnRestore(SEARCH_RETURN_KEY);
   const cursor = useIdCursor(
     all.map(r => r.threadId),
-    props.restore,
+    restore,
   );
   const cursorRow = all.find(r => r.threadId === cursor.key);
-  useReturnSource(returnKeyOf(SEARCH_SCREEN), () => ({
+  useReturnSource(SEARCH_RETURN_KEY, () => ({
     cursorId: cursor.key,
     order: cursor.ids,
     scrollTop: scrollTopOf(document.getElementById(cursorRow?.id ?? '')),
     extra: { search: stateRef.current },
   }));
-  useRestoreScroll(props.restore, cursorRow?.id ?? null);
+  useRestoreScroll(restore, cursorRow?.id ?? null);
   const live = useRef<{ row: CursorRow | undefined }>({ row: undefined });
   live.current = {
     row: cursorRow

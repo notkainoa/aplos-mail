@@ -119,8 +119,9 @@ test.describe('Esc from an open email returns to the same spot', () => {
     const first = await cursorId(page);
     const next = await rowAfter(page, first ?? '');
     await openWithEnter(page);
+    const read = await page.locator(READER).innerText();
     await page.keyboard.press('j');
-    await page.waitForTimeout(300);
+    await expect(page.locator(READER)).not.toHaveText(read);
     await backWithEscape(page);
     expect(await cursorId(page)).toBe(next);
   });
@@ -134,8 +135,15 @@ test.describe('Esc from an open email returns to the same spot', () => {
     await page.keyboard.press('j');
     const opened = await cursorId(page);
     await openWithEnter(page);
+    const read = await page.locator(READER).innerText();
     await page.keyboard.press('e');
-    await page.waitForTimeout(300);
+    // Done takes the reader to the next email (or out of it): either way the email on show changes.
+    await expect
+      .poll(async () => {
+        const open = page.locator(READER);
+        return (await open.count()) === 0 || (await open.innerText()) !== read;
+      })
+      .toBe(true);
     await page.keyboard.press('Escape');
     await expect(page.locator(READER)).toHaveCount(0);
     await expect(page.locator(CURSOR).first()).toBeVisible();

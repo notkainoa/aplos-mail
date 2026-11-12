@@ -45,13 +45,20 @@ export function registerReturnSource(key: string, read: ReturnReader): () => voi
   };
 }
 
+/** The point with its cursor on `id` (a row of its order), its absolute index shifted by the same distance. */
+function withCursor(point: ReturnPoint, id: string): ReturnPoint {
+  const was = point.cursorId === null ? -1 : point.order.indexOf(point.cursorId);
+  const shift = was < 0 || point.index === undefined ? 0 : point.order.indexOf(id) - was;
+  const index = point.index === undefined ? undefined : point.index + shift;
+  return { ...point, cursorId: id, index };
+}
+
 /** Reads every mounted surface, pointing each one that holds `opened` at it. Surfaces that are not mounted keep what they had. */
 export function saveReturnPoints(opened: string): void {
   for (const { key, read } of sources.values()) {
     const point = read();
     if (point === null) continue;
-    const holds = point.order.includes(opened);
-    points.set(key, holds ? { ...point, cursorId: opened } : point);
+    points.set(key, point.order.includes(opened) ? withCursor(point, opened) : point);
   }
 }
 
@@ -60,7 +67,7 @@ export function followReturnCursor(current: string | null): void {
   if (current === null) return;
   for (const [key, point] of points) {
     if (point.order.includes(current) && point.cursorId !== current) {
-      points.set(key, { ...point, cursorId: current });
+      points.set(key, withCursor(point, current));
     }
   }
 }

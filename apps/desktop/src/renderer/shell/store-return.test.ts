@@ -126,3 +126,13 @@ test('another account selected while the reader is open drops the saved place', 
   setAccountScope(null);
   assert.equal(takeReturnPoint('home'), null);
 });
+
+test('the saved index follows the cursor when the reader moved it', () => {
+  registerReturnSource('all', () => ({ cursorId: 'b', order: ORDER, scrollTop: 0, index: 301 }));
+  openThread('b', { from: 'all' });
+  openThread('d');
+  closeThread();
+  const point = takeReturnPoint('all');
+  assert.equal(point?.cursorId, 'd');
+  assert.equal(point?.index, 303);
+});
