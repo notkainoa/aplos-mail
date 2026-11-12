@@ -21,7 +21,16 @@ import {
 } from '../../data';
 import type { ContextName } from '../../commands';
 import { toSyncStatus } from '../../shell/status-map';
-import { useCommandTarget, useCurrentTarget, useShellKeyLayer } from '../../shell';
+import {
+  scrollTopOf,
+  useCommandTarget,
+  useCurrentTarget,
+  useRestoreScroll,
+  useReturnRestore,
+  useReturnSource,
+  useShellKeyLayer,
+  type ReturnPoint,
+} from '../../shell';
 import { statusCopy } from '../../ui/status';
 import { CommitTemplates } from '../CommitTemplates';
 import { BulkMenu } from '../lists/BulkMenu';
@@ -115,6 +124,26 @@ function useScrollToCursor(key: string | null): void {
   }, [key]);
 }
 
+/** The Low importance sheet was open when the reader opened over Home. */
+function restoredLowOpen(point: ReturnPoint | null): boolean {
+  return (point?.extra as { readonly lowOpen?: boolean } | undefined)?.lowOpen === true;
+}
+
+/** Saves Home's place (cursor, scroll, an open Low sheet) when a thread opens over it. */
+function useHomeReturn(snapshot: { readonly current: HomeSnapshot }, lowOpen: boolean): void {
+  const open = useRef(lowOpen);
+  open.current = lowOpen;
+  useReturnSource('home', () => {
+    const { key, items } = snapshot.current;
+    return {
+      cursorId: key,
+      order: items.map(keyOf),
+      scrollTop: scrollTopOf(document.getElementById(activeDomId(key) ?? '')),
+      extra: { lowOpen: open.current },
+    };
+  });
+}
+
 /** The key contexts above Home's own: a sheet, the date presets or the trash question, whichever is open. */
 function keyContexts(lowOpen: boolean, datePickerOpen: boolean, asking: boolean): ContextName[] {
   if (lowOpen) return ['lowImportance'];
@@ -185,7 +214,9 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const layout = orderLayout(layoutOf(home), rowOf, hold.isHeld);
   const empty = home.status === 'live' && home.total === 0 && home.low.count === 0;
   const listHidden = listIsHidden(accounts.length === 0 || empty, home, layout);
-  const cursor = useHomeCursor(buildItems(layout));
+  const restore = useReturnRestore('home');
+  const cursor = useHomeCursor(buildItems(layout), restore);
+  useRestoreScroll(restore, activeDomId(cursor.key));
   useScrollToCursor(cursor.key);
   useFollowHomeCursor(accountId, cursor.key, hold.isHeld);
   const pick = useHomePick(cursor.items, home.state);
@@ -216,7 +247,8 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
       : null,
   );
 
-  const [lowOpen, setLowOpen] = useState(false);
+  const [lowOpen, setLowOpen] = useState(() => restoredLowOpen(restore));
+  useHomeReturn(snapshot, lowOpen);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [why, setWhy] = useState<WhyTarget | null>(null);
   const templates = useRef<HTMLDivElement>(null);

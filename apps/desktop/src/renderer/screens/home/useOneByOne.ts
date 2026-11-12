@@ -15,10 +15,13 @@ import {
   type ThreadRow,
 } from '../../data';
 import {
+  returnKeyOf,
   usePaneHeaderPart,
   useCommandTarget,
   useCurrentTarget,
   useRegisterCommands,
+  useReturnRestore,
+  useReturnSource,
   useShellKeyLayer,
   type PaneHeaderPart,
 } from '../../shell';
@@ -109,9 +112,19 @@ export interface OneByOne {
   readonly exit: () => void;
 }
 
+/** The key the walk is saved under when a thread opens over it. */
+const ONE_BY_ONE_RETURN_KEY = returnKeyOf({ label: 'one by one' });
+
 export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps): OneByOne {
   const home = useHome({ accountId });
-  const walk = useWalkSession(home);
+  const restore = useReturnRestore(ONE_BY_ONE_RETURN_KEY);
+  const walk = useWalkSession(home, restore);
+  const queue = walk.session?.walk.queue;
+  useReturnSource(ONE_BY_ONE_RETURN_KEY, () => ({
+    cursorId: walk.shown,
+    order: queue ?? [],
+    scrollTop: 0,
+  }));
   const hold = useHold('oneByOne');
   const density = densityOf(useSettings()?.ui.density);
   const target = useCurrentTarget();

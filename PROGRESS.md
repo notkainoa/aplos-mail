@@ -687,3 +687,10 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 ## 2026-11-11 — prov-cal: guest RSVP falls back to the account address
 
 - A guest's RSVP names their own entry; if Google's copy of that entry carries no `email`, the account address is used (the PATCH would otherwise be a 400). One test, mutation-checked.
+
+## 2026-11-11 — ui-reader: Esc from an open email returns to the same spot
+
+- Opening a thread now saves where the owner was (`shell/store-return.ts`): each mounted surface (Home, Low importance sheet, every list, Later, Done, a label, Search, the one-by-one walk) registers what it holds (cursor row, row order, scroll offset, plus extras: sheet open, search query). Esc/Back (`leaveOpenThread`) arms the return and the screen comes back from that point once; any other way of showing a screen (sidebar, command) drops it, so a later visit starts fresh.
+- The cursor lands on the thread last read (the opened one, or where J and K got to). If that row left meanwhile (Done, archived), it takes the row that took its place, then the one above, then outwards (`restoreKey`); rows still loading never reset it to the first row.
+- One by one now opens threads `from` the walk (it used to say Home), and resumes on the same thread.
+- Tests: `store-return.test.ts`, `useIdCursor.restore.test.ts`, `oneByOneResume.test.ts`, and `tests/visual/escape-return.spec.ts` (scrolled list, Home, Low sheet, one by one, Done, and "Esc with a menu open closes only the menu"; five of six fail on the previous revamp head).
