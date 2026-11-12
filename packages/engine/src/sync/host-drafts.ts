@@ -44,9 +44,10 @@ function refused(method: string, reason: string, provider: string): ProviderErro
 }
 
 /**
- * An account that is not started right now: the draft or send calls arrive before `start` or in the moment a restart
- * stops the account, so this is a `transient` refusal that provably wrote nothing (`NotSentError`). The engine
- * tries again after its retry delay instead of parking the draft in a problem state.
+ * An account that is not started right now: the draft calls arrive before `start` or in the moment a restart stops
+ * the account, so this is a `transient` refusal that provably wrote nothing (`NotSentError`). The engine tries
+ * again after its retry delay instead of parking the draft in a problem state. The send lane does not share this:
+ * the outbox settles a `NotSentError` as `failed`, so `host-send.ts` pauses instead.
  */
 export function notStarted(method: string): NotSentError {
   return new NotSentError({
