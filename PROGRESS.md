@@ -699,3 +699,12 @@ Not verified: a live provider accepting a real key from the Settings field (Test
 - The cursor lands on the thread last read (the opened one, or where J and K got to). If that row left meanwhile (Done, archived), it takes the row that took its place, then the one above, then outwards (`restoreKey`); rows still loading never reset it to the first row.
 - One by one now opens threads `from` the walk (it used to say Home), and resumes on the same thread.
 - Tests: `store-return.test.ts`, `useIdCursor.restore.test.ts`, `oneByOneResume.test.ts`, and `tests/visual/escape-return.spec.ts` (scrolled list, Home, Low sheet, one by one, Done, and "Esc with a menu open closes only the menu"; five of six fail on the previous revamp head).
+
+## 2026-11-11 — fix-bodies: fewer and recoverable body loads (S2, R3, R2/R1 of plans/improve/reader-load-notes.md)
+
+- S2: `ActorHost.openThread` shares a read in flight per lane, account and thread (`sharedOpen`), so `Thread/open` and `MessageBody/get` no longer fetch the same thread twice on the interactive lane (one reserved Gmail slot, so the second waited for the first). An interactive open never joins a prefetch read.
+- R3: `openedWrites` no longer stores a body for a message whose parts did not arrive (`partial`), and leaves the thread `complete: false`, so the next open fetches it instead of showing a blank letter forever.
+- R2/R1 (renderer `BodyStore`): a failed letter is asked again when reopened, and a `paused` refusal is asked again after its `resumeAt` while the letter is open. Try again is unchanged.
+- Engine core budget: the provider reads (`sync/host-read.ts`, now with `openedWrites`) load on the first read via `import()`, so core drops 469,026 → 468,276 B with S2 and R3 in.
+- Evidence: `packages/engine/tests/sync-host-open.test.ts` (3) and `apps/desktop/src/renderer/data/bodies.test.ts` (4); 5 of the 7 fail on the old code (the other two pin unchanged behaviour). Engine sync, mail and views suites: 549 pass.
+- Not done here (follow-ups in STATUS): S1 cancellation of stale interactive opens, S3 serving stored `cid:` parts locally, R4 reserving relay slots for documents, R5 the swallowed `Thread/open` failure.
