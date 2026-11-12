@@ -19,7 +19,8 @@ import {
 } from '../../shell';
 import type { Density, ListRowProps, LowSheetGroup } from '../../ui/props';
 import { LowSheet } from '../../ui/list';
-import { neighbourKeys, stepKey } from '../lists/listModel';
+import { absoluteIndex, neighbourKeys, stepKey } from '../lists/listModel';
+import { useRestoreWindow, windowReaches } from '../lists/restoreWindow';
 import { useIdCursor } from '../lists/useIdCursor';
 import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf } from './homeRows';
@@ -65,15 +66,17 @@ export function groupsOf(
  * the rows around it, so a re-rank does not reorder them behind the highlight (DESIGN 5 rule 6).
  */
 function useSheetCursor(
-  source: readonly string[],
+  view: ViewResult<ThreadRow>,
   hold: HoldController,
   restore: ReturnPoint | null,
 ) {
-  const cursor = useIdCursor(source, restore);
+  useRestoreWindow(view, restore);
+  const cursor = useIdCursor(view.ids, restore, windowReaches(restore, view));
   useReturnSource(RETURN_KEY, () => ({
     cursorId: cursor.key,
     order: cursor.ids,
     scrollTop: scrollTopOf(document.getElementById(cursor.key ? lowDomId(cursor.key) : '')),
+    index: absoluteIndex(view.position, view.ids.indexOf(cursor.key ?? '')),
   }));
   useRestoreScroll(restore, cursor.key ? lowDomId(cursor.key) : null);
   const latest = useRef({ cursor, hold });
@@ -106,7 +109,7 @@ export function LowSheetHost(props: LowSheetHostProps) {
   );
   const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
-  const cursorId = useSheetCursor(view.ids, hold, useReturnRestore(RETURN_KEY));
+  const cursorId = useSheetCursor(view, hold, useReturnRestore(RETURN_KEY));
   // More low-importance threads than one window: the window follows the cursor, so every thread can be reached.
   useFollowWindow(view, cursorId ?? null, hold.isHeld);
   const rowProps = (row: ThreadRow): ListRowProps =>

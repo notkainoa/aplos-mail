@@ -33,24 +33,25 @@ export interface IdCursor {
 }
 
 /** The key after a render: a pending return lands on its row once there are rows, and waits for them until then. */
-function keyAfter(state: CursorState, ids: readonly string[]): string | null {
+function keyAfter(state: CursorState, ids: readonly string[], ready: boolean): string | null {
   if (state.restore === null) return settleKey(state.ids, ids, state.key);
-  if (ids.length === 0) return state.key;
+  if (ids.length === 0 || !ready) return state.key;
   return restoreKey(state.restore, ids) ?? settleKey(state.ids, ids, state.key);
 }
 
 /**
  * `restore` (the point the reader closed over) puts the cursor back on its row, or on the nearest row still there when
- * that one left, as soon as the list has rows.
+ * that one left, as soon as the list has rows. `ready` is false while the window does not yet reach the saved row.
  */
 export function useIdCursor(
   source: readonly string[],
   restore: ReturnPoint | null = null,
+  ready = true,
 ): IdCursor {
   const ids = useStableIds(source);
   const [state, setState] = useState<CursorState>({ key: restore?.cursorId ?? null, ids, restore });
-  const key = keyAfter(state, ids);
-  const landed = state.restore !== null && ids.length > 0;
+  const key = keyAfter(state, ids, ready);
+  const landed = state.restore !== null && ids.length > 0 && ready;
   if (state.ids !== ids || state.key !== key || landed) {
     setState({ key, ids, restore: landed ? null : state.restore });
   }

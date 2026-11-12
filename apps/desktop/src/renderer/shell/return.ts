@@ -38,20 +38,32 @@ export function useReturnRestore(key: string | undefined): ReturnPoint | null {
   return point;
 }
 
+/** Tries this many renders to reach the saved offset (rows may still be arriving) before leaving the scroll alone. */
+const SCROLL_ATTEMPTS = 5;
+
 /**
- * Puts the saved scroll offset back as soon as the cursor's row is drawn (before paint), once. The row decides when:
- * a surface whose rows arrive late waits for them.
+ * Puts the saved scroll offset back as soon as the cursor's row is drawn (before paint). The row decides when: a
+ * surface whose rows arrive late waits for them. An offset the content is still too short for is tried again on the
+ * next renders; once the cursor has moved on, or after a few tries, the owner's scroll is left alone.
  */
 export function useRestoreScroll(
   point: ReturnPoint | null,
   rowId: string | null | undefined,
 ): void {
-  const done = useRef(false);
+  const state = useRef<{ row: string | null; tries: number; done: boolean }>({
+    row: null,
+    tries: 0,
+    done: false,
+  });
   useLayoutEffect(() => {
-    if (done.current || point === null || !rowId) return;
-    const scroller = scrollParent(document.getElementById(rowId));
+    const now = state.current;
+    if (now.done || point === null || !rowId) return;
+    if (now.row !== null && now.row !== rowId) now.done = true;
+    const scroller = now.done ? null : scrollParent(document.getElementById(rowId));
     if (scroller === null) return;
     scroller.scrollTop = point.scrollTop;
-    done.current = true;
+    now.row = rowId;
+    now.tries += 1;
+    now.done = scroller.scrollTop >= point.scrollTop - 1 || now.tries >= SCROLL_ATTEMPTS;
   });
 }

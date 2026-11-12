@@ -103,16 +103,43 @@ test.describe('Esc from an open email returns to the same spot', () => {
   test('Home: the row under the cursor and the scroll come back', async ({ page }) => {
     await openState(page, stateOf('home-full'), { theme: 'light' });
     await expect(page.locator(CURSOR).first()).toBeVisible();
-    await page.keyboard.press('j');
-    await page.keyboard.press('j');
-    await page.keyboard.press('j');
-    await page.keyboard.press('j');
+    for (let step = 0; step < 8; step += 1) await page.keyboard.press('j');
     const opened = await cursorId(page);
     const before = await scrollOf(page);
+    expect(before, 'Home must scroll for this check to mean anything').toBeGreaterThan(0);
     await openWithEnter(page);
     await backWithEscape(page);
     expect(await cursorId(page)).toBe(opened);
     expect(Math.abs((await scrollOf(page)) - before)).toBeLessThanOrEqual(1);
+  });
+
+  test('J in the reader, then Esc: the list is on the email last read', async ({ page }) => {
+    await openState(page, stateOf('list-all-mail'), { theme: 'light' });
+    await page.locator(ROWS).nth(3).click();
+    const first = await cursorId(page);
+    const next = await rowAfter(page, first ?? '');
+    await openWithEnter(page);
+    await page.keyboard.press('j');
+    await page.waitForTimeout(300);
+    await backWithEscape(page);
+    expect(await cursorId(page)).toBe(next);
+  });
+
+  test('the email was marked Done while open: the cursor lands on a neighbour', async ({
+    page,
+  }) => {
+    await openState(page, stateOf('home-full'), { theme: 'light' });
+    await expect(page.locator(CURSOR).first()).toBeVisible();
+    await page.keyboard.press('j');
+    await page.keyboard.press('j');
+    const opened = await cursorId(page);
+    await openWithEnter(page);
+    await page.keyboard.press('e');
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(READER)).toHaveCount(0);
+    await expect(page.locator(CURSOR).first()).toBeVisible();
+    expect(await cursorId(page)).not.toBe(opened);
   });
 
   test('the Low importance sheet opens again on the same email', async ({ page }) => {

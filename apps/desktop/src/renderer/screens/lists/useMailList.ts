@@ -59,6 +59,7 @@ import { asListRow, targetOf, type ListRowData, type OpenKind } from './listRows
 import { useBulk, threadSpecOf, type BulkState } from './useBulk';
 import { useBulkBar, type BulkMenu } from './useBulkBar';
 import { useIdCursor, type IdCursor } from './useIdCursor';
+import { useRestoreWindow, windowReaches } from './restoreWindow';
 import { useListMotion } from './useListMotion';
 
 /** What a list screen is given. */
@@ -160,13 +161,14 @@ function useListReturn(
   config: ListConfig,
   returnKey: string | undefined,
   cursor: IdCursor,
-  restore: ReturnPoint | null,
+  { restore, view }: { readonly restore: ReturnPoint | null; readonly view: ViewResult<unknown> },
 ): void {
   const rowId = cursor.key === null ? null : rowDomId(config, cursor.key);
   useReturnSource(returnKey, () => ({
     cursorId: cursor.key,
     order: cursor.ids,
     scrollTop: scrollTopOf(document.getElementById(rowId ?? '')),
+    index: absoluteIndex(view.position, view.ids.indexOf(cursor.key ?? '')),
   }));
   useRestoreScroll(restore, rowId);
 }
@@ -224,8 +226,13 @@ export function useMailList(config: ListConfig, options: MailListOptions): MailL
 
   const rowOf = useCallback((id: string) => asListRow(view.rows.get(id)), [view.rows]);
   const restore = useReturnRestore(options.returnKey);
-  const cursor = useIdCursor(options.drawnIds ? options.drawnIds(view) : view.ids, restore);
-  useListReturn(config, options.returnKey, cursor, restore);
+  useRestoreWindow(view, restore);
+  const cursor = useIdCursor(
+    options.drawnIds ? options.drawnIds(view) : view.ids,
+    restore,
+    windowReaches(restore, view),
+  );
+  useListReturn(config, options.returnKey, cursor, { restore, view });
   useScrollToCursor(config, cursor.key);
   useFollowCursor(view, cursor.key);
 

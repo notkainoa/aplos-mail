@@ -18,6 +18,8 @@ export interface ReturnPoint {
   readonly order: readonly string[];
   /** The scroll offset of the surface's scroller. */
   readonly scrollTop: number;
+  /** The cursor row's index in the whole view, for a list longer than one window (the window must reach it before the cursor can land). */
+  readonly index?: number;
   /** Whatever else the surface wants back (an open sheet, a search's query). */
   readonly extra?: unknown;
 }

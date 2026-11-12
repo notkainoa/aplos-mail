@@ -36,3 +36,14 @@ test('rows still loading: the cursor waits for them instead of falling back to t
 test('no saved place: the first row, as before', () => {
   assert.equal(keyAfterReturn(null, ORDER), 'a');
 });
+
+test('a window that does not reach the saved row yet: the cursor waits instead of landing on a neighbour', () => {
+  let seen: string | null = null;
+  renderToString(
+    createElement(() => {
+      seen = useIdCursor(['x', 'y'], point('c'), false).key;
+      return null;
+    }),
+  );
+  assert.equal(seen, 'c');
+});
