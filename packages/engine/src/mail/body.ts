@@ -2,9 +2,9 @@ import type { Input, Output } from '@aplos/contract';
 import type { MethodContext } from '../methods/types';
 import type { BodyRecord } from '../store/port';
 import { htmlToText } from '../outbox/mime';
-import { loadBody, requireMessage } from './message';
+import { requireMessage } from './message';
 import { readAllowList, readRemoteImages, resolveImagePolicy } from './policy';
-import { logBodyFailure, renderMessage } from './render';
+import { loadBody, logBodyFailure, renderMessage } from './render';
 
 // `MessageBody/get`: the plain-text rendering and quote ranges of a body, fetched on the interactive lane when it is
 // not stored. HTML is never returned: an HTML body is run through the sanitizer only for its counts (the same render

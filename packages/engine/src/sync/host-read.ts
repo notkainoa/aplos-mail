@@ -43,12 +43,23 @@ export function attachmentBytes(
 
 /** Thread reads in flight, per mailbox (`sharedOpen`). */
 const inFlight = new WeakMap<StorePort, Map<string, Promise<OpenedThread>>>();
+/** Threads whose last open left a body part behind, per mailbox (`sharedOpen`). */
+const leftPartial = new WeakMap<StorePort, Set<string>>();
+
+function perStore<T>(map: WeakMap<StorePort, T>, store: StorePort, make: () => T): T {
+  const found = map.get(store) ?? make();
+  map.set(store, found);
+  return found;
+}
 
 /**
- * `openThreadRemote` with reads in flight shared, by lane, account and thread (fix-bodies S2): one open of an email used
- * to fetch the thread twice (`Thread/open` and `MessageBody/get`, both interactive), each a full `threads.get` waiting
- * its turn for the one reserved slot. A second caller on the same lane joins the read already going out; an interactive
- * caller never joins a prefetch read, so it never waits behind the slow lane.
+ * `openThreadRemote` with reads in flight shared (fix-bodies S2): one open of an email used to fetch the thread twice
+ * (`Thread/open` and `MessageBody/get`, both interactive), each a full `threads.get` waiting its turn for the one
+ * reserved slot. A caller joins a read already going out with the same lane, account, thread, known count and actor
+ * generation; an interactive caller never joins a prefetch read, so it never waits behind the slow lane.
+ *
+ * A thread whose last open left a body part behind (a pause, a failed part) is read again only when someone opens it,
+ * never by a prefetch: otherwise every hover or focus would spend another full `threads.get` on it.
  */
 export function sharedOpen(
   entry: ReadEntry,
@@ -58,15 +69,24 @@ export function sharedOpen(
   remoteThreadId: string,
   opts: { knownCount?: number; lane?: 'interactive' | 'prefetch' },
 ): Promise<OpenedThread> {
-  const opening = inFlight.get(store) ?? new Map<string, Promise<OpenedThread>>();
-  inFlight.set(store, opening);
-  const key = `${opts.lane ?? 'interactive'} ${account} ${remoteThreadId}`;
+  const lane = opts.lane ?? 'interactive';
+  const thread = `${account} ${remoteThreadId}`;
+  const partial = perStore(leftPartial, store, () => new Set<string>());
+  if (lane === 'prefetch' && partial.has(thread))
+    return Promise.resolve({ messages: [], costUnits: 0 });
+  const opening = perStore(inFlight, store, () => new Map<string, Promise<OpenedThread>>());
+  const key = `${lane} ${thread} ${opts.knownCount ?? ''} ${entry.actor.context().generation}`;
   const going = opening.get(key);
   if (going) return going;
   const read = openThreadRemote(entry, store, newId, account, remoteThreadId, opts);
   opening.set(key, read);
-  const done = () => opening.delete(key);
-  read.then(done, done);
+  const settled = (opened?: OpenedThread) => {
+    opening.delete(key);
+    if (!opened) return;
+    if (opened.messages.some(m => m.partial)) partial.add(thread);
+    else partial.delete(thread);
+  };
+  read.then(settled, () => settled());
   return read;
 }
 

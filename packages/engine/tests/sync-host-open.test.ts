@@ -129,3 +129,40 @@ test('a message whose body part did not arrive is not stored, and the thread sta
     await done();
   }
 });
+
+test('a thread left partial is not read again by a prefetch, only by an open', async () => {
+  const { w, adapter, done } = await rig();
+  try {
+    adapter.answer = async () => ({ messages: [message('m-1', true, '')], costUnits: 1 });
+    await w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    await w.host.openThread(ACCOUNT, 't-1', { lane: 'prefetch' });
+    await w.host.openThread(ACCOUNT, 't-1', { lane: 'prefetch' });
+    assert.deepEqual(adapter.opens, ['interactive t-1'], 'no prefetch spends a read on it');
+    adapter.answer = async () => ({ messages: [message('m-1', false, '<p>Hi</p>')], costUnits: 1 });
+    await w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive' });
+    await w.host.openThread(ACCOUNT, 't-1', { lane: 'prefetch' });
+    assert.deepEqual(
+      adapter.opens,
+      ['interactive t-1', 'interactive t-1', 'prefetch t-1'],
+      'an open reads it; once complete, a prefetch may again',
+    );
+  } finally {
+    await done();
+  }
+});
+
+test('opens with a different known count do not share a read', async () => {
+  const { w, adapter, done } = await rig();
+  try {
+    const gate = deferred<OpenedThread>();
+    adapter.answer = () => gate.promise;
+    const one = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive', knownCount: 1 });
+    const two = w.host.openThread(ACCOUNT, 't-1', { lane: 'interactive', knownCount: 2 });
+    await settle();
+    assert.equal(adapter.opens.length, 2);
+    gate.resolve({ messages: [], costUnits: 1 });
+    await Promise.all([one, two]);
+  } finally {
+    await done();
+  }
+});

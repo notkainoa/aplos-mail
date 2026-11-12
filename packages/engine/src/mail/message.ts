@@ -1,11 +1,10 @@
 import { ContractError } from '@aplos/contract/contract-error';
-import { readBody } from '../store/bodies';
 import type { BodyRecord, StoreReader } from '../store/port';
 import type { EngineServices } from '../runtime/services';
 import { splitId } from '../views/compile';
 
-// A stored message by contract id (`accountId:remoteId`) and its provider-original body (ARCH 3.3), fetched through
-// `ProviderPort.openThread` when it is not stored (absent, or evicted after 90 days).
+// A stored message by contract id (`accountId:remoteId`). Its provider-original body (ARCH 3.3) is read or fetched by
+// `loadBody` in the lazy `render.ts`.
 
 export interface MessageRef {
   /** The contract id the caller named. */
@@ -63,27 +62,6 @@ export function requireMessage(services: EngineServices, messageId: string): Mes
   const ref = services.store.read(q => findMessage(q, messageId));
   if (!ref) throw messageGone();
   return ref;
-}
-
-export function storedBody(services: EngineServices, ref: MessageRef): BodyRecord | undefined {
-  return services.store.read(q => readBody(q, ref.accountId, ref.remoteId));
-}
-
-/** The stored body, or the provider's after opening the thread on `lane`; `notFound` when there is none to have. */
-export async function loadBody(
-  services: EngineServices,
-  ref: MessageRef,
-  lane: 'interactive' | 'prefetch' = 'interactive',
-): Promise<BodyRecord> {
-  const stored = storedBody(services, ref);
-  if (stored) return stored;
-  await services.accounts.openThread(ref.accountId, ref.threadRemoteId, {
-    ...(ref.remoteCount !== null ? { knownCount: ref.remoteCount } : {}),
-    lane,
-  });
-  const fetched = storedBody(services, ref);
-  if (!fetched) throw messageGone();
-  return fetched;
 }
 
 /** The inline parts' Content-IDs in the stored order: `cid/<n>` is `cids[n]`. */

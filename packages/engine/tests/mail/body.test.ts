@@ -36,6 +36,29 @@ describe('MessageBody/get', () => {
       assert.equal(w.calls.opened.length, 1);
     }));
 
+  // fix-bodies follow-up: an open that stored no body for a message that still exists (a part did not arrive) is
+  // retryable, not "no longer available"; during an account pause it says when to ask again.
+  it('answers unavailable when the open brought no body for a message that still exists', () =>
+    withWorld(async w => {
+      w.remote.delete('r3');
+      await assert.rejects(
+        w.windowA.call('MessageBody/get', { messageId: IDS.remote }),
+        (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+      );
+    }));
+
+  it('answers paused with the pause end when the account is paused', () =>
+    withWorld(async w => {
+      w.remote.delete('r3');
+      const until = w.clock.now() + 60_000;
+      w.setAccountStatus({ status: { state: 'paused', until, class: 'rateLimit', reason: 'x' } });
+      await assert.rejects(
+        w.windowA.call('MessageBody/get', { messageId: IDS.remote }),
+        (e: unknown) =>
+          e instanceof ContractError && e.type === 'paused' && e.body.resumeAt === until,
+      );
+    }));
+
   it('derives text for an HTML-only letter instead of answering an empty string', () =>
     withWorld(async w => {
       w.store.commit({
