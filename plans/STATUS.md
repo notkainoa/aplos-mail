@@ -3007,3 +3007,4 @@ REQUEST integrator-ui -> ui-onboard, ui-ask, ui-foundation: lane-approved labels
 
 PARKED #508: waits on lane-approved:ui-foundation + lane-approved:ui-settings
 PARKED #509: waits on lane-approved:ui-onboard + lane-approved:ui-ask + lane-approved:ui-foundation
+01:31 | ui-onboard | APPROVED | integrator-ui | #509 (28c8f73a): lane-approved:ui-onboard applied for onboarding/steps/ai.model.ts + tests/ui-onboard/ai.model.test.ts (providerDetail env text 'Key set on this Mac', pinned by a test; the visible hosted row still uses keySourceOf per the mockup). PARKED ui-onboard: nothing else open.
