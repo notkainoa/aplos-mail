@@ -491,6 +491,15 @@ describe('images', () => {
     assert.equal(bodyOf(unsized), '<img alt="Logo">');
   });
 
+  it('caps a blocked placeholder height, so a hero image cannot fill the first screen', () => {
+    const result = html(
+      '<img src="https://cdn.example/hero.png" width="640" height="900" alt="Trip">',
+    );
+    const rule = /img\.aplos-blocked\{[^}]*max-height:(\d+)px!important/.exec(result.document);
+    assert.ok(rule, 'the reading CSS limits a blocked image height, even against an inline height');
+    assert.ok(Number(rule[1]) <= 64);
+  });
+
   it('rewrites allowed remote images, backgrounds and CSS images to img/<n>, each URL once', () => {
     const result = html(
       '<table background="https://cdn.example/bg.png"><tr><td style="background:url(https://cdn.example/td.png)">' +

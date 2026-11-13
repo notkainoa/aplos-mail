@@ -115,6 +115,8 @@ export const READING_CSS = [
   'details.aplos-quote>summary{cursor:default;color:#6b7079;font-size:13px;list-style:none;user-select:none}',
   'details.aplos-quote>summary::-webkit-details-marker{display:none}',
   'details.aplos-quote>summary::before{content:"\\2026";display:inline-block;padding:0 8px;margin-right:6px;border-radius:6px;background:#eef0f3}',
-  'img.aplos-blocked{background:#f1f2f4;border-radius:4px}',
+  // A blocked image keeps its width but never its height: a hero image (an itinerary, a newsletter banner) would
+  // otherwise leave a gray slab filling the first screen and push the text below the fold.
+  'img.aplos-blocked{background:#f1f2f4;border-radius:4px;max-height:48px!important}',
   PLAIN_CSS,
 ].join('\n');

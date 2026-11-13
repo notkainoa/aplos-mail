@@ -83,3 +83,11 @@ test('the host draws a trusted-plain email on the card (no inset, no rounding, i
     colorScheme: 'light',
   });
 });
+
+test('a blocked image never keeps the height of the picture, whatever the email says', () => {
+  const hero =
+    '<img src="https://cdn.example/hero.png" width="640" height="900" style="height:900px">';
+  const { srcdoc } = frameDocument(hero, 'block', undefined, false);
+  assert.match(srcdoc, /img\[data-blocked\]\{max-height:\d+px!important\}/);
+  assert.match(srcdoc, /<img[^>]*data-blocked/);
+});
