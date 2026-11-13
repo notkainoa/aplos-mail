@@ -15,13 +15,13 @@ import {
   TOP_PLACES,
   placeRoute,
   placeScreen,
-  screenPlace,
+  currentPlace,
   type Place,
   type PlaceId,
 } from './nav';
 import { handleRegionItemKey } from './regions';
 import { SidebarSlotView } from './SidebarSlotView';
-import { openRoute, useSidebarSlotValue, type Screen } from './index';
+import { openRoute, useSettingsSection, useSidebarSlotValue, type Screen } from './index';
 
 const MAIL_HEAD_ID = 'sidebar-mail';
 
@@ -95,7 +95,7 @@ export function Sidebar({
   accountSwitcher,
   status,
 }: SidebarProps) {
-  const selected = screenPlace(screen);
+  const selected = currentPlace(screen, useSettingsSection());
   const group = { counts, selected, onNavigate };
   const slot = useSidebarSlotValue();
   return (
