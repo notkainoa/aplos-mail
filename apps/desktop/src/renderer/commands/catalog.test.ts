@@ -442,3 +442,13 @@ test('the sheet says how to open a selected email: Return or O, and a second cli
   assert.match(open?.keys ?? '', /O/);
   assert.ok(lists?.rows.some(r => r.kind === 'pointer' && r.keys === 'Click it again'));
 });
+
+test('⌘Z undoes like Z, but never inside a text field, and ⇧⌘Z is not undo', () => {
+  const registry = wiredRegistry();
+  const list = context(['global', 'list']);
+  const field = context(['global', 'compose'], { focus: 'text' });
+  assert.equal(registry.resolve(keydown('z'), list)?.commandId, 'app.undo');
+  assert.equal(registry.resolve(keydown('z', { metaKey: true }), list)?.commandId, 'app.undo');
+  assert.equal(registry.resolve(keydown('z', { metaKey: true }), field), null);
+  assert.equal(registry.resolve(keydown('z', { metaKey: true, shiftKey: true }), list), null);
+});
