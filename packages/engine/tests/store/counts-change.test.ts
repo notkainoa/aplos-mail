@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { StorePort } from '../../src/store';
+import { openStore, type StorePort } from '../../src/store';
+import { laneExtensions } from '../../src/index';
 import { observeCommits } from '../../src/runtime/frames';
-import { ACCOUNT, accountWrite, folderWrites, msg, withStore } from './helpers';
+import { ACCOUNT, accountWrite, folderWrites, msg, tempDb, withStore } from './helpers';
 
 /*
  * `Counts/get` is re-read by the renderer only when a `state` frame carries the `Counts` type, so every commit that
@@ -96,4 +97,39 @@ test('no Counts row lands in the durable changes log', () => {
     if (since.status !== 'ok') return;
     assert.ok(!since.changes.some(c => c.type === 'Counts'));
   });
+});
+
+test('a change type counts cannot move on derives no Counts (mutation guard)', () => {
+  // A `client` lane write marks `Client` — not a count-affecting type — so the frame must not carry Counts.
+  const file = tempDb();
+  const store = openStore(file.open(), { extensions: laneExtensions() });
+  try {
+    const types: Record<string, number>[] = [];
+    const obs = observeCommits(store, { changed: t => types.push(t), reset: () => {} });
+    obs.commit({
+      opId: 'grant-1',
+      origin: 'local',
+      writes: [
+        {
+          kind: 'client',
+          id: 'dev-1',
+          grant: {
+            name: 'T3 Code',
+            clientKind: 'desktop',
+            tokenHash: 'hash',
+            scopes: ['mail'],
+            createdAt: 0,
+          },
+        } as never,
+      ],
+    });
+    assert.ok(
+      types.some(t => 'Client' in t),
+      'the Client mark arrived',
+    );
+    assert.ok(!types.some(t => 'Counts' in t), 'Counts was not derived for it');
+  } finally {
+    store.close();
+    file.cleanup();
+  }
 });

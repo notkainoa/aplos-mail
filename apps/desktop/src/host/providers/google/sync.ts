@@ -36,6 +36,8 @@ export const RESYNC_THREADS = 50;
 /** Threads fetched per step, so each commit holds about 50 (plan 20 PV0 item 4). */
 export const CHUNK = 50;
 const LIST_PAGE = 500;
+/** A lazy folder's open page: small enough to ride the `interactive` lane beside the owner's own opens. */
+const FOLDER_PAGE = 50;
 const SENT_DAYS = 30;
 const BACKFILL_DAYS = 90;
 const DAY = 86_400_000;
@@ -837,7 +839,9 @@ function stepLane(state: SyncState, spec: ListSpec): SyncLane {
 
 /**
  * `ProviderAdapter.listFolder`: one page of a `lazy` folder (Spam, Trash, Starred, a user label) the UI opened.
- * Newest first, `LIST_PAGE` ids a page; only messages this device lacks are fetched, so a re-open of a folder the
+ * Newest first, `FOLDER_PAGE` ids a page — the fetch rides the `interactive` lane next to the owner's own thread
+ * opens, so it stays small (Opus review: a `LIST_PAGE` page could bill ~2,500 quota units an open). Only messages
+ * this device lacks are fetched, so a re-open of a folder the
  * walk already covered costs one `messages.list`. STARRED ids land as `flagged` facts (the Bookmarks view), label
  * ids as placements on the page's own folder and every other label the messages carry.
  */
@@ -856,7 +860,7 @@ export async function listFolder(
     path: '/messages',
     query: {
       labelIds: [folder],
-      maxResults: LIST_PAGE,
+      maxResults: FOLDER_PAGE,
       pageToken,
       // The default listing excludes Spam and Trash; an explicit label page must not.
       includeSpamTrash: 'true',

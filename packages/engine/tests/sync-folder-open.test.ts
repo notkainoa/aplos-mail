@@ -37,29 +37,102 @@ const done = (state: SyncState) => async (): Promise<StepResult> => ({
   costUnits: 5,
 });
 
+/** `Account` change rows above `base`: the only way `lastSyncAt` reaches the renderer. */
+const accountMarks = (w: ReturnType<typeof world>, base: number) =>
+  w.store.read(q =>
+    q.all<{ type: string }>('SELECT type FROM changes WHERE seq > ? AND type = ?', base, 'Account'),
+  );
+
 test('a successful step marks Account, even when nothing about the row changed (lastSyncAt)', async () => {
   const d = disk();
-  const adapter = new FakeAdapter(
-    input => (input.states.some(s => s.scope === 'window:inbox') ? [] : [idleStep]),
+  // `notBefore` schedules each step on the fake clock: the actor `clock.sleep`s to the due time, so `advance`
+  // lands each step's commit in the display minute the test intends.
+  const times: number[] = [];
+  const adapter: FakeAdapter = new FakeAdapter(
+    (): PlannedStep[] =>
+      adapter.calls.length < times.length
+        ? [{ ...idleStep, notBefore: times[adapter.calls.length] }]
+        : [],
     { 'window:inbox': done({ scope: 'window:inbox', generation: 0, updatedAt: 0 }) },
   );
   const w = world(d, () => adapter);
-  // The baseline is taken before start: the old code wrote no Account row at all, so a `seq > base` mark is new.
-  const base = w.store.seq();
   try {
+    times.push(w.clock.now(), w.clock.now() + 60_001);
     await w.host.start(ACCOUNT);
-    await until(() => adapter.calls.includes('window:inbox:'), 'the step to run');
-    const marks = w.store.read(q =>
-      q.all<{ type: string }>(
-        'SELECT type FROM changes WHERE seq > ? AND type = ?',
-        base,
-        'Account',
-      ),
-    );
+    await until(() => adapter.calls.length >= 1, 'the first step to run');
+    await settle();
+    // The baseline sits after start: the status write there already marks Account, so a `seq > base` row can only
+    // come from the step's own commit (the old code wrote none — Opus caught the baseline-before-start version
+    // passing either way).
+    const base = w.store.seq();
+    await w.clock.advance(60_001);
+    await until(() => adapter.calls.length >= 2, 'the second step to run');
+    await settle();
     assert.deepEqual(
-      marks.map(m => m.type),
+      accountMarks(w, base).map(m => m.type),
       ['Account'],
     );
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('the Account touch is once a display minute', async () => {
+  const d = disk();
+  const times: number[] = [];
+  const adapter: FakeAdapter = new FakeAdapter(
+    (): PlannedStep[] =>
+      adapter.calls.length < times.length
+        ? [{ ...idleStep, notBefore: times[adapter.calls.length] }]
+        : [],
+    { 'window:inbox': done({ scope: 'window:inbox', generation: 0, updatedAt: 0 }) },
+  );
+  const w = world(d, () => adapter);
+  try {
+    const t0 = w.clock.now();
+    times.push(t0, t0 + 1, t0 + 60_001);
+    await w.host.start(ACCOUNT);
+    await until(() => adapter.calls.length >= 1, 'the first step to run');
+    await settle();
+    // Same display minute as the first step: no second touch — the Settings row cannot show it anyway.
+    const base = w.store.seq();
+    await w.clock.advance(1);
+    await until(() => adapter.calls.length >= 2, 'the second step to run');
+    await settle();
+    assert.deepEqual(accountMarks(w, base), []);
+    // The next display minute touches again.
+    await w.clock.advance(60_001);
+    await until(() => adapter.calls.length >= 3, 'the third step to run');
+    await settle();
+    assert.deepEqual(
+      accountMarks(w, base).map(m => m.type),
+      ['Account'],
+    );
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('a failed step touches nothing', async () => {
+  const d = disk();
+  const adapter: FakeAdapter = new FakeAdapter(
+    (): PlannedStep[] => (adapter.calls.length === 0 ? [idleStep] : []),
+    {
+      'window:inbox': async () => {
+        throw new Error('down');
+      },
+    },
+  );
+  const w = world(d, () => adapter);
+  try {
+    await w.host.start(ACCOUNT);
+    await until(() => adapter.calls.length >= 1, 'the step to run');
+    await settle();
+    const base = w.store.seq();
+    await settle();
+    assert.deepEqual(accountMarks(w, base), []);
   } finally {
     await w.kill();
     d.cleanup();
@@ -113,7 +186,7 @@ test('listFolder commits the page as sync facts under the folder and stamps fold
   }
 });
 
-test('listFolder re-reads the head every open and continues a held walk on top of it', async () => {
+test('listFolder fetches one page per open: a held token continues the walk, none re-reads the head', async () => {
   const d = disk();
   const adapter = new FakeAdapter(() => [], {}) as FakeAdapter & ProviderAdapter;
   const seen: (string | undefined)[] = [];
@@ -148,18 +221,9 @@ test('listFolder re-reads the head every open and continues a held walk on top o
     assert.equal(stateOf(w.store, 'folder:TRASH')?.page_token, 'p2');
     await w.clock.advance(FOLDER_REFETCH_MS + 1);
     await w.host.listFolder(ACCOUNT, 'TRASH');
-    // Head first (fresh), then the held token: the walk completes and the head's remainder stays bookmarked.
-    assert.deepEqual(seen, [undefined, undefined, 'p2']);
-    assert.equal(stateOf(w.store, 'folder:TRASH')?.page_token, 'p2');
-    await w.clock.advance(FOLDER_REFETCH_MS + 1);
-    seen.length = 0;
-    adapter.listFolder = async (_f: string, t: string | undefined) => {
-      seen.push(t);
-      return { upserts: [] };
-    };
-    await w.host.listFolder(ACCOUNT, 'TRASH');
-    // The walk finished (no token anywhere): the bookmark clears, the next open is head-only.
+    // Exactly one call per open (Opus: a head-plus-continuation open could bill ~5,000 quota units).
     assert.deepEqual(seen, [undefined, 'p2']);
+    // The walk completed: the bookmark clears, so the next open re-reads the head.
     assert.equal(stateOf(w.store, 'folder:TRASH')?.page_token, null);
     assert.deepEqual(messagesIn(w.store, 'TRASH').sort(), ['trash-1', 'trash-2']);
   } finally {
@@ -168,7 +232,7 @@ test('listFolder re-reads the head every open and continues a held walk on top o
   }
 });
 
-test('a rejected walk token is dropped and the fresh head page still commits', async () => {
+test('a rejected walk token clears the bookmark; the next open re-reads the head', async () => {
   const d = disk();
   const adapter = new FakeAdapter(() => [], {}) as FakeAdapter & ProviderAdapter;
   const seen: (string | undefined)[] = [];
@@ -204,10 +268,13 @@ test('a rejected walk token is dropped and the fresh head page still commits', a
     assert.equal(stateOf(w.store, 'folder:TRASH')?.page_token, 'bad');
     await w.clock.advance(FOLDER_REFETCH_MS + 1);
     seen.length = 0;
-    await w.host.listFolder(ACCOUNT, 'TRASH');
-    assert.deepEqual(seen, [undefined, 'bad']);
-    // The token is cleared instead of wedging the folder; head mail still landed.
+    await assert.rejects(w.host.listFolder(ACCOUNT, 'TRASH'), /invalid pageToken/);
+    // The token is cleared instead of wedging the folder.
+    assert.deepEqual(seen, ['bad']);
     assert.equal(stateOf(w.store, 'folder:TRASH')?.page_token, null);
+    await w.clock.advance(FOLDER_REFETCH_MS + 1);
+    await w.host.listFolder(ACCOUNT, 'TRASH');
+    assert.deepEqual(seen, ['bad', undefined]);
     assert.deepEqual(messagesIn(w.store, 'TRASH'), ['head-1']);
   } finally {
     await w.kill();
@@ -242,23 +309,23 @@ test('a total listFolder failure stamps the backoff row and the next open waits'
     await w.host.start(ACCOUNT);
     await settle();
     await assert.rejects(w.host.listFolder(ACCOUNT, 'TRASH'), /offline/);
-    // One retry of the head page, then the row is stamped so the next open backs off.
-    assert.deepEqual(seen, [undefined, undefined]);
+    // One call, then the row is stamped so the next open backs off.
+    assert.deepEqual(seen, [undefined]);
     const state = stateOf(w.store, 'folder:TRASH');
     assert.ok(state, 'the backoff stamp is written');
     assert.equal(state!.page_token, null);
     await w.host.listFolder(ACCOUNT, 'TRASH');
-    assert.deepEqual(seen, [undefined, undefined]);
+    assert.deepEqual(seen, [undefined]);
     await w.clock.advance(FOLDER_REFETCH_MS + 1);
     await assert.rejects(w.host.listFolder(ACCOUNT, 'TRASH'), /offline/);
-    assert.deepEqual(seen, [undefined, undefined, undefined, undefined]);
+    assert.deepEqual(seen, [undefined, undefined]);
   } finally {
     await w.kill();
     d.cleanup();
   }
 });
 
-test('overlapping opens of one folder share the in-flight fetch', async () => {
+test('overlapping opens of one folder share the in-flight fetch, even across a commit', async () => {
   const d = disk();
   const adapter = new FakeAdapter(() => [], {}) as FakeAdapter & ProviderAdapter;
   const seen: (string | undefined)[] = [];
@@ -287,10 +354,66 @@ test('overlapping opens of one folder share the in-flight fetch', async () => {
     await w.host.start(ACCOUNT);
     await settle();
     const a = w.host.listFolder(ACCOUNT, 'TRASH');
+    // A commit in between bumps the store seq; the second open still joins the first (the key holds no fence).
+    w.store.commit({
+      opId: 'between',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'syncState',
+          accountId: ACCOUNT,
+          scope: 'window:inbox',
+          generation: 0,
+          cursor: 'x',
+        },
+      ],
+    });
     const b = w.host.listFolder(ACCOUNT, 'TRASH');
     release({ upserts: [] });
     await Promise.all([a, b]);
     assert.deepEqual(seen, [undefined]);
+  } finally {
+    await w.kill();
+    d.cleanup();
+  }
+});
+
+test('the folder page commits under the read fence (placements cannot outrun the mutation log)', async () => {
+  const d = disk();
+  const adapter = new FakeAdapter(() => [], {}) as FakeAdapter & ProviderAdapter;
+  adapter.listFolder = async () => ({
+    upserts: [fact('trash-1', 3, { placements: [{ folder: 'TRASH' }] })],
+  });
+  const w = world(d, () => adapter);
+  try {
+    w.store.commit({
+      opId: 'folders',
+      origin: 'sync',
+      writes: [
+        {
+          kind: 'folder',
+          accountId: ACCOUNT,
+          remoteId: 'TRASH',
+          name: 'Trash',
+          role: 'trash',
+          folderKind: 'system',
+        },
+      ],
+    });
+    await w.host.start(ACCOUNT);
+    await settle();
+    const commits: { fenceSeq?: number }[] = [];
+    const orig = w.store.commit.bind(w.store);
+    w.store.commit = ((input: Parameters<typeof orig>[0]) => {
+      commits.push(input);
+      return orig(input);
+    }) as typeof orig;
+    await w.host.listFolder(ACCOUNT, 'TRASH');
+    const page = commits.find(c =>
+      (c as { writes?: { kind: string }[] }).writes?.some(x => x.kind === 'message'),
+    );
+    assert.ok(page, 'the page commit ran through the store');
+    assert.equal(typeof page!.fenceSeq, 'number', 'the commit carries the read fence');
   } finally {
     await w.kill();
     d.cleanup();
