@@ -31,16 +31,6 @@ export const shellSettingsStates: readonly VisualState[] = [
     filled: 0,
   },
   {
-    id: 'shell-send-failed',
-    frame: 'shell',
-    title:
-      'Shell: a send failed; the error toast with its alert icon and a close button, and the sidebar notice',
-    components: ['Toast', 'ToastStack', 'Sidebar'],
-    design: '7.13, 7.15',
-    mockup: 'toasts.html (default)',
-    filled: 1,
-  },
-  {
     id: 'shell-send-failed-faded',
     frame: 'shell',
     title: 'Shell: the failure toast has gone; the sidebar notice stays with Try again and Edit',

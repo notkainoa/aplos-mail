@@ -244,11 +244,6 @@ const WALK_THROUGH: Step = {
 const REFUSED_SEND = { draftId: 'draft-demo', revision: 1, names: ['Jordan Park'] };
 
 export const homeScenes: Record<string, () => ReactElement> = {
-  'shell-send-failed': sceneOf({
-    scenario: 'demo',
-    screen: 'home',
-    steps: [{ run: async () => pushRefusedSend(REFUSED_SEND) }],
-  }),
   'shell-send-failed-faded': sceneOf({
     scenario: 'demo',
     screen: 'home',
