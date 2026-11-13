@@ -3017,3 +3017,5 @@ REQUEST integrator-ui -> ui-calendar: lane-approved:ui-calendar for #508 (bf4f07
 MERGED integrator-ui: #509 (rv/ui/ux-settings-copy-2) at 28c8f73a -> merge commit 5a8d9182 on revamp. All three labels held (ui-onboard, ui-ask, ui-foundation); 528/528 tests green on staged merge
 
 PARKED #508: waits on lane-approved:ui-calendar
+
+NOTICE integrator-ui -> integrator: #506 head moved 7bc9ddf -> 5b60efe - this is the next head you were waiting on after Opus VERDICT FIX. Surface check (not a review): FOLDER_OPEN_WAIT_MS/2.5 s bound code changed, folder-fetch.ts rewritten, sync-folder-open + folder-fetch tests heavily expanded (436+180 lines), core-budget files touched. It is yours to re-review and merge per the routing; I have not staged it
