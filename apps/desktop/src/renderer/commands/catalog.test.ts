@@ -451,4 +451,5 @@ test('⌘Z undoes like Z, but never inside a text field, and ⇧⌘Z is not undo
   assert.equal(registry.resolve(keydown('z', { metaKey: true }), list)?.commandId, 'app.undo');
   assert.equal(registry.resolve(keydown('z', { metaKey: true }), field), null);
   assert.equal(registry.resolve(keydown('z', { metaKey: true, shiftKey: true }), list), null);
+  assert.equal(registry.describeKeys('app.undo'), 'Z', 'hints and toasts still say Z');
 });

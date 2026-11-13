@@ -10,6 +10,8 @@ import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { api } from '../../../apps/desktop/src/renderer/data';
 import { navigate, openRoute, type Screen } from '../../../apps/desktop/src/renderer/shell';
+import { pushRefusedSend } from '../../../apps/desktop/src/renderer/screens/compose/runtime/sendNotices';
+import { dismissToast } from '../../../apps/desktop/src/renderer/shell';
 import { resetToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
@@ -239,7 +241,22 @@ const WALK_THROUGH: Step = {
 
 /* ------------------------------ the scenes ------------------------------ */
 
+const REFUSED_SEND = { draftId: 'draft-demo', revision: 1, names: ['Jordan Park'] };
+
 export const homeScenes: Record<string, () => ReactElement> = {
+  'shell-send-failed': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [{ run: async () => pushRefusedSend(REFUSED_SEND) }],
+  }),
+  'shell-send-failed-faded': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [
+      { run: async () => pushRefusedSend(REFUSED_SEND) },
+      { run: async () => dismissToast('send-refused-draft-demo') },
+    ],
+  }),
   'shell-calendar-sidebar': sceneOf({ scenario: 'demo', screen: 'calendar' }),
   'shell-help-sidebar': sceneOf({
     scenario: 'demo',

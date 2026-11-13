@@ -2,7 +2,7 @@
  * The sidebar (DESIGN 7.1), transparent on the gray shell. Top to bottom: the account switcher and the compose pencil;
  * an unlabelled group (Search, Home, Later, Calendar); a quiet "Mail" label over All mail, Done, Drafts, Sent, Spam and
  * Trash; then, when the mounted screen sets one, its slot (Calendar's MiniMonth, Calendars list and accounts); then the footer,
- * which is the status slot, Settings and Help. Each group is one `Puck`, so selection is the
+ * which is the outbox notice (only while a send has failed), the status slot, Settings and Help. Each group is one `Puck`, so selection is the
  * shared `slide` puck and counts use `count`. The component draws what it is given; the shell supplies the live data.
  */
 import type { ReactNode } from 'react';
@@ -20,6 +20,7 @@ import {
   type PlaceId,
 } from './nav';
 import { handleRegionItemKey } from './regions';
+import { OutboxHost } from './OutboxHost';
 import { SidebarSlotView } from './SidebarSlotView';
 import { openRoute, useSettingsSection, useSidebarSlotValue, type Screen } from './index';
 
@@ -131,6 +132,7 @@ export function Sidebar({
       <PlaceGroup label="Mail" places={MAIL_PLACES} {...group} />
       {slot ? <SidebarSlotView slot={slot} /> : null}
       <div className="aplos-sidebar__foot">
+        <OutboxHost />
         {status}
         <PlaceGroup label="App" places={FOOTER_PLACES} {...group} />
       </div>

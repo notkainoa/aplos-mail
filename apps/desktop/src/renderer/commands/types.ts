@@ -208,6 +208,8 @@ export type KeySpec =
       readonly inTextField?: boolean;
       /** ← / → swap with the swipe-direction setting (DESIGN §8 Home and one by one). */
       readonly followsSwipe?: boolean;
+      /** A second way to press the command that works but is never named in tooltips, toasts or the palette (⌘Z beside Z). */
+      readonly quiet?: boolean;
     };
 
 export interface UndoSpec {
@@ -294,6 +296,8 @@ export interface Binding {
   /** The owner's `holdFor`. */
   readonly holdFor?: CommandId;
   readonly followsSwipe: boolean;
+  /** Works, but key hints leave it out (see `KeySpec.quiet`). */
+  readonly quiet?: boolean;
 }
 
 /**
