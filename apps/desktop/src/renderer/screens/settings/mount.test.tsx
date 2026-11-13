@@ -386,6 +386,15 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
+  test('the lease palette entry is named for both states of the row it opens', () => {
+    const entry = entryFor(
+      SETTING_ROWS.find(r => r.section === 'accounts' && r.anchor === 'lease')!,
+    );
+    assert.equal(entry.label, 'Where it syncs');
+    assert.ok(entry.keywords?.includes('syncs on this mac'));
+    assert.ok(entry.keywords?.includes('syncs on another mac'));
+  });
+
   test('while Account/get has not answered, the per-account rows stay offered', () => {
     const offered = [
       ['accounts', 'accountAi'],

@@ -117,7 +117,14 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'provider',
   ]),
   row('accounts', 'accountColour', 'Account color', ['swatch', 'tag', 'color']),
-  row('accounts', 'lease', 'Syncs on this Mac', ['primary mac', 'use this mac', 'device', 'lease']),
+  row('accounts', 'lease', 'Where it syncs', [
+    'syncs on this mac',
+    'syncs on another mac',
+    'primary mac',
+    'use this mac',
+    'device',
+    'lease',
+  ]),
   // Keyboard
   row('keyboard', 'singleKeys', 'Single-key shortcuts', ['letters', 'wcag', 'accessibility']),
   row('keyboard', 'holdMs', 'Hold time', ['dictation', 'tap', 'hold', 'milliseconds']),
