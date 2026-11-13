@@ -126,16 +126,6 @@ export function formatLaterUntil(iso: IsoDateTime): string {
   return isMidnight(d) ? day : `${day}, ${formatTime(d)}`;
 }
 
-/** The Done stamp column (done.html): "Done 9:41 AM", "Done Wed 8:52 AM", "Done Oct 23". */
-export function formatDoneStamp(iso: IsoDateTime): string {
-  const d = parse(iso);
-  if (!d) return 'Done';
-  const off = dayOffset(d);
-  if (off === 0) return `Done ${formatTime(d)}`;
-  if (off < 0 && off > -7) return `Done ${weekdayShort(d)} ${formatTime(d)}`;
-  return `Done ${monthDay(d)}`;
-}
-
 /** The reader's sender-line time: "10:00 AM" today, otherwise day plus time. */
 export function formatReaderTime(iso: IsoDateTime): string {
   const d = parse(iso);

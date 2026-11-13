@@ -33,7 +33,7 @@ export interface RowAction {
   label: string;
 }
 
-/** Column layout of a row. 'home' = 148 px sender; 'list' = 152 px sender + date; 'later' = the `laterUntil` chip in the date column; 'done' = fixed "Done 9:41 AM" stamp column with the hover action to its left (DESIGN §4.4, §7.3, §7.4). */
+/** Column layout of a row. 'home' = 148 px sender; 'list' = 152 px sender + date; 'later' = the `laterUntil` chip in the date column; 'done' = fixed stamp column (the date it was finished behind a quiet check) with the hover action to its left (DESIGN §4.4, §7.3, §7.4). */
 export type RowLayout = 'home' | 'list' | 'later' | 'done';
 
 /** A mail row: fixed height per density, unread dot, sender, summary or subject, due chip, date; no avatar (DESIGN §4.1 Rows, §6 ListRow, §7.2–7.4). Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions. Mockups: home.html, inbox.html, later.html, done.html, search.html, errors.html (row-error). Plain + refines: ui-foundation; used by ui-home, ui-ask (search). */
@@ -46,6 +46,8 @@ export interface ListRowProps {
   density: Density;
   /** Who column: sender, or recipients on Sent. */
   sender: string;
+  /** The tooltip of the who column when it differs from the text, e.g. the full addresses behind "To: Jordan". */
+  senderTitle?: string;
   /** Main line: the summary, or the subject with no AI provider (DESIGN §7.2 No AI). */
   primary: string;
   /** Second phrase after the main line, e.g. a search snippet. */
@@ -60,7 +62,7 @@ export interface ListRowProps {
   due?: DueInfo;
   /** 'later' layout only: when it comes back; replaces the date column with a 'laterUntil' Chip (DESIGN §7.3). */
   laterUntil?: LaterUntil;
-  /** For 'done' layout: when it was finished ("Done 9:41 AM"). */
+  /** For 'done' layout: when it was finished, drawn as the date in the stamp column. */
   doneAt?: IsoDateTime;
   /** Meta marks before the date: replied, bookmarked, attachment. */
   marks?: { replied?: boolean; bookmarked?: boolean; attachment?: boolean };
