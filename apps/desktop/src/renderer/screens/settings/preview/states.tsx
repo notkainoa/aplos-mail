@@ -513,7 +513,6 @@ export const STATES: Record<string, StateSpec> = {
   'device-sync-later': {
     title: 'General, device sync is not available yet',
     section: 'general',
-    anchor: 'deviceSync',
     data: dataOf({ workflow: { enabled: false, available: false } }),
   },
   'tools-on': {
