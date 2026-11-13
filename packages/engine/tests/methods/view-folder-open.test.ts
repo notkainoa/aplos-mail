@@ -19,6 +19,7 @@ const ctx = (services: Record<string, unknown>, calls: [AccountId, string][]): M
     connectionId: 'test',
     services: {
       store: services.store,
+      clock: { now: () => 0, sleep: () => new Promise<void>(() => {}) },
       accounts: {
         listFolder: async (a: AccountId, f: string) => void calls.push([a, f]),
       },

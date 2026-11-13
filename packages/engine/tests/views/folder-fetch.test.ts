@@ -5,7 +5,8 @@ import type { AccountId } from '../../src/ports';
 import type { EngineServices } from '../../src/runtime/services';
 import type { FolderRole, FolderWrite, StorePort } from '../../src/store';
 import { openStore } from '../../src/store';
-import { ensureFolders, folderTargets } from '../../src/views/folder-fetch';
+import { COLD_OPEN_MS, ensureFolders, folderTargets } from '../../src/views/folder-fetch';
+import { FakeClock } from '../../../emulators/src/kit/clock';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb, withStore } from '../store/helpers';
 
 /*
@@ -38,15 +39,17 @@ const base = (store: StorePort, extra: Parameters<StorePort['commit']>[0]['write
 
 function rig(store: StorePort) {
   const calls: [AccountId, string][] = [];
+  const clock = new FakeClock({ auto: false });
   const services = {
     store,
+    clock,
     accounts: {
       listFolder: async (account: AccountId, remoteId: string) => {
         calls.push([account, remoteId]);
       },
     },
   } as unknown as EngineServices;
-  return { calls, services };
+  return { calls, clock, services };
 }
 
 test('mailbox specs resolve their role folders; inbox, all and archive resolve none', () => {
@@ -59,7 +62,7 @@ test('mailbox specs resolve their role folders; inbox, all and archive resolve n
     ]);
     for (const role of ['spam', 'trash', 'starred', 'sent', 'important'] as const) {
       const targets = folderTargets({ store }, { kind: 'mailbox', role });
-      const expect = (remoteId: string) => [{ accountId: ACCOUNT, remoteId, hasRows: false }];
+      const expect = (remoteId: string) => [{ accountId: ACCOUNT, remoteId, warm: false }];
       assert.deepEqual(
         targets,
         role === 'spam'
@@ -83,7 +86,7 @@ test('label specs resolve their stored folder, never the Inbox row or a missing 
   withStore(store => {
     base(store);
     assert.deepEqual(folderTargets({ store }, { kind: 'label', folderId: `${ACCOUNT}:Label_1` }), [
-      { accountId: ACCOUNT, remoteId: 'Label_1', hasRows: false },
+      { accountId: ACCOUNT, remoteId: 'Label_1', warm: false },
     ]);
     assert.deepEqual(folderTargets({ store }, { kind: 'label', folderId: `${ACCOUNT}:INBOX` }), []);
     assert.deepEqual(
@@ -141,8 +144,10 @@ test('a folder with stored rows opens without waiting; an empty one waits for th
     const calls: [AccountId, string][] = [];
     let release!: () => void;
     const gate = new Promise<void>(r => (release = r));
+    const clock = new FakeClock({ auto: false });
     const services = {
       store,
+      clock,
       accounts: {
         listFolder: async (account: AccountId, remoteId: string) => {
           calls.push([account, remoteId]);
@@ -173,6 +178,70 @@ test('a folder with stored rows opens without waiting; an empty one waits for th
       [ACCOUNT, 'TRASH'],
       [ACCOUNT, 'SPAM'],
     ]);
+  } finally {
+    store.close();
+    file.cleanup();
+  }
+});
+
+test('a stalled cold fetch releases the open at COLD_OPEN_MS on the engine clock', async () => {
+  const file = tempDb();
+  const store = openStore(file.open());
+  try {
+    base(store, [FOLDER('SPAM', 'Spam', 'spam')]);
+    const clock = new FakeClock({ auto: false });
+    const services = {
+      store,
+      clock,
+      accounts: {
+        // A fetch that never settles: half-open socket, captive portal, a governor hold — the open cannot wait on it.
+        listFolder: () => new Promise<void>(() => {}),
+      },
+    } as unknown as EngineServices;
+    let settled = false;
+    const open = ensureFolders(services, { kind: 'mailbox', role: 'spam' }).then(
+      () => (settled = true),
+    );
+    await clock.advance(COLD_OPEN_MS - 1);
+    assert.equal(settled, false, 'still waiting one tick under the bound');
+    await clock.advance(1);
+    assert.ok(settled, 'the bound released the open while the fetch still runs');
+    await open;
+  } finally {
+    store.close();
+    file.cleanup();
+  }
+});
+
+test('a folder fetched before opens warm on the next open, even with zero rows (Starred, an empty Spam)', async () => {
+  const file = tempDb();
+  const store = openStore(file.open());
+  try {
+    base(store, [FOLDER('STARRED', 'Starred', 'starred')]);
+    // The first fetch stamped the throttle row; STARRED is a flag label, so message_folders never gets rows for it.
+    store.commit({
+      opId: 'walked',
+      origin: 'sync',
+      writes: [{ kind: 'syncState', accountId: ACCOUNT, scope: 'folder:STARRED', generation: 0 }],
+    });
+    assert.equal(
+      folderTargets({ store } as EngineServices, { kind: 'mailbox', role: 'starred' })[0]?.warm,
+      true,
+      'a stamped folder counts as warm without stored rows',
+    );
+    const clock = new FakeClock({ auto: false });
+    const services = {
+      store,
+      clock,
+      accounts: { listFolder: () => new Promise<void>(() => {}) },
+    } as unknown as EngineServices;
+    let settled = false;
+    const open = ensureFolders(services, { kind: 'mailbox', role: 'starred' }).then(
+      () => (settled = true),
+    );
+    await Promise.resolve();
+    assert.ok(settled, 'the second open does not wait on a hanging fetch');
+    await open;
   } finally {
     store.close();
     file.cleanup();

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FolderList, PlannedStep, ProviderAdapter, StepResult, SyncState } from '../src/ports';
+import { ProviderError } from '../src/ports/base';
 import { FOLDER_REFETCH_MS } from '../src/sync/host-read';
 import {
   ACCOUNT,
@@ -117,22 +118,49 @@ test('the Account touch is once a display minute', async () => {
 
 test('a failed step touches nothing', async () => {
   const d = disk();
+  const times: number[] = [];
   const adapter: FakeAdapter = new FakeAdapter(
-    (): PlannedStep[] => (adapter.calls.length === 0 ? [idleStep] : []),
+    (): PlannedStep[] =>
+      adapter.calls.length < times.length
+        ? [{ ...idleStep, notBefore: times[adapter.calls.length] }]
+        : [],
     {
       'window:inbox': async () => {
-        throw new Error('down');
+        // Failures commit only status writes (an account write carrying `status`); the lastSyncAt touch is the
+        // only bare account write anywhere, so the spy tells "touch in the failure path" from "status changed".
+        if (adapter.calls.length === 1) throw new Error('down');
+        throw new ProviderError({
+          class: 'permission',
+          provider: 'google',
+          method: 'gmail.test',
+          reason: 'denied',
+        });
       },
     },
   );
   const w = world(d, () => adapter);
   try {
+    // The first failure backs the scope off ~30 s; the second runs once the backoff ends.
+    times.push(w.clock.now(), w.clock.now() + 90_000);
+    const bare: unknown[] = [];
+    const orig = w.store.commit.bind(w.store);
+    w.store.commit = ((input: Parameters<typeof orig>[0]) => {
+      for (const wr of input.writes ?? [])
+        if (wr.kind === 'account' && !('status' in wr)) bare.push(wr);
+      return orig(input);
+    }) as typeof orig;
     await w.host.start(ACCOUNT);
-    await until(() => adapter.calls.length >= 1, 'the step to run');
+    await until(() => adapter.calls.length >= 1, 'the first failure');
     await settle();
     const base = w.store.seq();
+    await w.clock.advance(90_000);
+    await until(() => adapter.calls.length >= 2, 'the classified failure');
     await settle();
-    assert.deepEqual(accountMarks(w, base), []);
+    assert.deepEqual(bare, [], 'no bare account touch lands in a failure commit');
+    assert.ok(
+      accountMarks(w, base).length > 0,
+      'the failures committed their status writes, so the path ran',
+    );
   } finally {
     await w.kill();
     d.cleanup();
@@ -354,17 +382,19 @@ test('overlapping opens of one folder share the in-flight fetch, even across a c
     await w.host.start(ACCOUNT);
     await settle();
     const a = w.host.listFolder(ACCOUNT, 'TRASH');
-    // A commit in between bumps the store seq; the second open still joins the first (the key holds no fence).
+    // A marked commit in between advances the store seq; the second open still joins the first fetch — if the
+    // in-flight key carried the seq/generation again, it would pay a second call here (a syncState-only commit
+    // writes no change rows and does not advance seq, so it could not catch that).
     w.store.commit({
       opId: 'between',
       origin: 'sync',
       writes: [
         {
-          kind: 'syncState',
+          kind: 'folder',
           accountId: ACCOUNT,
-          scope: 'window:inbox',
-          generation: 0,
-          cursor: 'x',
+          remoteId: 'Label_9',
+          name: 'Misc',
+          folderKind: 'label',
         },
       ],
     });
@@ -408,12 +438,38 @@ test('the folder page commits under the read fence (placements cannot outrun the
       commits.push(input);
       return orig(input);
     }) as typeof orig;
+    // A queued op pins the fence below the op's own commit seq — without it the fence equals the plain seq and a
+    // dropped readFence would go unnoticed.
+    w.store.commit({
+      opId: 'op-1',
+      origin: 'local',
+      writes: [
+        {
+          kind: 'op',
+          opId: 'op-1',
+          accountId: ACCOUNT,
+          opKind: 'archive',
+          targets: [`${ACCOUNT}:t-1`],
+          payload: '{}',
+          effect: [],
+          scope: 'test',
+        },
+      ],
+    });
+    const opSeq = w.store.read(q =>
+      q.get<{ created_seq: number }>('SELECT created_seq FROM ops WHERE op_id = ?', 'op-1'),
+    )?.created_seq;
+    assert.ok(opSeq, 'the op is queued');
     await w.host.listFolder(ACCOUNT, 'TRASH');
     const page = commits.find(c =>
       (c as { writes?: { kind: string }[] }).writes?.some(x => x.kind === 'message'),
     );
     assert.ok(page, 'the page commit ran through the store');
-    assert.equal(typeof page!.fenceSeq, 'number', 'the commit carries the read fence');
+    assert.equal(
+      page!.fenceSeq,
+      opSeq! - 1,
+      'the commit fences below the oldest queued op, not at the latest seq',
+    );
   } finally {
     await w.kill();
     d.cleanup();
