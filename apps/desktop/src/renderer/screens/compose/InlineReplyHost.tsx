@@ -157,7 +157,12 @@ export function InlineReplyView({
     popOut: onPop,
     dictationSource: props.dictationSource,
   });
-  const shared = useSharedComposerProps(binding, controls, { label: 'Reply', focusTo: false });
+  const shared = useSharedComposerProps(binding, controls, {
+    label: 'Reply',
+    focusTo: false,
+    // DESIGN 7.6: with two or more accounts a reply shows the account it goes from, as plain text (no menu).
+    from: true,
+  });
   const reducedMotion = useReducedMotion();
   const { session, state, view } = binding;
   const { startDictation, endDictation } = controls;
