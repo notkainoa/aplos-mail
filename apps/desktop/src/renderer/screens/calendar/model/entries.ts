@@ -377,14 +377,21 @@ const startMs = (e: CalendarEventData): number => new Date(e.start).getTime();
 
 /**
  * The same all-day event on the same days (a holiday two subscribed calendars both carry, a copied birthday) reads as one
- * chip: the first by id stays. A meeting with guests and anything not an event is never merged.
+ * chip: the first by id stays. A meeting with guests, anything not an event, and an entry that is not saved yet (a
+ * change in flight: the owner's new event) is never merged, so a new event never vanishes behind an older twin.
  */
 export function collapseAllDayDuplicates(
   entries: readonly CalendarEventData[],
 ): CalendarEventData[] {
   const seen = new Set<string>();
   return entries.filter(e => {
-    if (!e.allDay || e.kind !== 'event' || (e.guests && e.guests.length > 0)) return true;
+    if (
+      !e.allDay ||
+      e.kind !== 'event' ||
+      e.persisted === false ||
+      (e.guests && e.guests.length > 0)
+    )
+      return true;
     const key = `${e.title.trim().toLowerCase()}|${e.start}|${e.end}`;
     if (seen.has(key)) return false;
     seen.add(key);
