@@ -220,6 +220,9 @@ async function askProvider(services: EngineServices, args: Args): Promise<Outcom
 }
 
 async function askAccounts(services: EngineServices, args: Args): Promise<Outcome> {
+  const text = (await import('./remote-text')).remoteText(args.query);
+  // Nothing the provider can look for (a place or bookmark alone): the local answer is the whole answer.
+  if (!text) return {};
   const accounts = args.accountId ? [args.accountId] : services.store.read(q => accountIds(q));
   const pauseMap = pauses.get(services.views) ?? new Map<string, number>();
   pauses.set(services.views, pauseMap);
@@ -236,7 +239,7 @@ async function askAccounts(services: EngineServices, args: Args): Promise<Outcom
     if (until !== undefined) pauseMap.delete(account);
     try {
       asked += 1;
-      await services.accounts.search(account, { text: args.query.text, limit: REMOTE_LIMIT });
+      await services.accounts.search(account, { text, limit: REMOTE_LIMIT });
       pauseMap.delete(account);
     } catch (error) {
       const resume = resumeHint(error, now());

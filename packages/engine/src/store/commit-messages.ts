@@ -11,6 +11,7 @@ import {
 import { FLAG, HDR, PART, MESSAGE_COLS, type CommitRun, type MessageRow } from './commit';
 import { folderId as messageFolderId } from './commit-folders';
 import { countCorrespondents } from './correspondents';
+import { dropIfChanged } from './fts';
 
 const ID_SLOTS = 4096,
   MAX_SECONDS = 2 ** 32;
@@ -165,6 +166,8 @@ export function message(run: CommitRun, w: MessageWrite) {
   let id: number;
   if (existing) {
     id = existing.id;
+    // subject, snippet, then from_addr through bcc_json: what the search index holds.
+    dropIfChanged(run, id, [fields[10], fields[11], ...fields.slice(4, 9)]);
     // A search hit never downgrades a synced row; a sync adopts a search or local row.
     run
       .q(

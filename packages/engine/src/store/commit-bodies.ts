@@ -22,7 +22,7 @@ export function body(run: CommitRun, w: BodyWrite) {
   const parts = run
     .q('SELECT parts FROM messages WHERE id = ?')
     .get<{ parts: number }>(m.id)!.parts;
-  // The body changes what search indexes: drop the row and the bit, and the paced indexer picks it up again.
+  // The body changes what search indexes: drop the row and the bit, and this commit indexes the message again.
   if (parts & PART.fts) run.q('DELETE FROM messages_fts WHERE rowid = ?').run(m.id);
   const next =
     (parts & ~(PART.text | PART.html | PART.fts | PART.evicted)) |

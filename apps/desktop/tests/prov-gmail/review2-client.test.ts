@@ -15,7 +15,7 @@ import {
 } from '@aplos/engine/ports';
 import { FakeClock } from '@aplos/emulators';
 import { classifyGoogle, type GoogleFailure } from '../../src/host/providers/google/classify';
-import { GmailClient, GmailPacer } from '../../src/host/providers/google/client';
+import { GmailClient, GmailPacer, parseAnswer } from '../../src/host/providers/google/client';
 import { GMAIL_COSTS } from '../../src/host/providers/google/costs';
 import { rig, type Rig } from './harness';
 
@@ -476,4 +476,37 @@ test('prov-gmail review2 D9 a search with a hit that could not be fetched throws
     r.adapter.search!({ text: 'subject:Notes', limit: 25 }, r.ctx()),
     (error: unknown) => error instanceof ProviderError && error.error.class === 'transient',
   );
+});
+
+// ---- fix-search: a read answered 204 is the empty answer ----
+
+test('fix-search a read answered 204 (a list whose fields mask leaves nothing) is the empty answer, not invalidResponse', async () => {
+  const r = await rig({
+    adapter: { fetch: async () => new Response(null, { status: 204 }) },
+  });
+  const client = new GmailClient(
+    {
+      fetch: async () => new Response(null, { status: 204 }),
+      costs: GMAIL_COSTS,
+      userAgent: 'test',
+      closed: new AbortController().signal,
+    },
+    r.ctx(),
+  );
+  // What a `drafts.list` on an account with no drafts answers: parsed as JSON before, it came out `invalidResponse`
+  // and the drafts sync retried forever.
+  const page = await client.call<{ drafts?: unknown[] }>({
+    method: 'gmail.drafts.list',
+    path: '/drafts',
+    fields: 'drafts(id),nextPageToken',
+    lane: 'opFlush',
+  });
+  assert.deepEqual(page, {});
+});
+
+test('fix-search parseAnswer: 204 on a read is {}, on a write undefined; an empty or broken body otherwise throws', () => {
+  assert.deepEqual(parseAnswer('', 204, 'read'), {});
+  assert.equal(parseAnswer('', 200, 'write'), undefined);
+  assert.throws(() => parseAnswer('', 200, 'read'));
+  assert.throws(() => parseAnswer('not json', 200, 'read'));
 });
