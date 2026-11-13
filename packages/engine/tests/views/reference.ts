@@ -377,12 +377,20 @@ function inArchive(r: Ref, t: RThread): boolean {
   return r.visible(t) && (inbox === undefined || !t.lists.has(inbox));
 }
 
-function placeOk(r: Ref, t: RThread, place?: string): boolean {
-  if (place === undefined) return r.visible(t);
-  const p = place.toLowerCase();
+/** A thread only a provider search found: word search shows it with no place or `all` (fix-search, 2026-11-12). */
+const searchHit = (r: Ref, t: RThread) =>
+  t.msgs.some(
+    m =>
+      !(m.flags & 8) &&
+      m.origin === 'search' &&
+      !m.folders.some(f => awayRoles.has(r.role(f) ?? '')),
+  );
+
+function placeOk(r: Ref, t: RThread, place: string | undefined, words: boolean): boolean {
+  const p = place?.toLowerCase() ?? 'all';
+  if (p === 'all') return r.visible(t) || (words && searchHit(r, t));
   if (p === 'starred') return !!t.flagged;
   if (p === 'done' || p === 'later') return t.status === p;
-  if (p === 'all') return r.visible(t);
   if (p === 'archive') return inArchive(r, t);
   if (['inbox', 'sent', 'trash', 'spam', 'important'].includes(p))
     return [...t.lists].some(f => r.role(f) === p);
@@ -390,7 +398,13 @@ function placeOk(r: Ref, t: RThread, place?: string): boolean {
   return !!f && t.lists.has(f.row);
 }
 
-function threadOk(r: Ref, t: RThread, qy: SearchQuery, startOf: (day: string) => number): boolean {
+function threadOk(
+  r: Ref,
+  t: RThread,
+  qy: SearchQuery,
+  startOf: (day: string) => number,
+  words: boolean,
+): boolean {
   if (qy.hasAttachment !== undefined && !!t.attach !== qy.hasAttachment) return false;
   if (qy.before && !(t.last < startOf(qy.before))) return false;
   if (qy.after && !(t.last >= startOf(qy.after))) return false;
@@ -400,7 +414,7 @@ function threadOk(r: Ref, t: RThread, qy: SearchQuery, startOf: (day: string) =>
     if (f === 'flagged' && !t.flagged) return false;
     if (f === 'bookmarked' && !t.bookmarked) return false;
   }
-  return placeOk(r, t, qy.in);
+  return placeOk(r, t, qy.in, words);
 }
 
 function searchExpected(
@@ -410,7 +424,9 @@ function searchExpected(
   fts: boolean,
 ): Expected {
   const qy = spec.query;
-  const list = r.d.threads.filter(t => r.inAcct(spec.accountId)(t) && threadOk(r, t, qy, startOf));
+  const list = r.d.threads.filter(
+    t => r.inAcct(spec.accountId)(t) && threadOk(r, t, qy, startOf, fts),
+  );
   if (fts) {
     const hit = list.filter(t =>
       t.msgs.some(

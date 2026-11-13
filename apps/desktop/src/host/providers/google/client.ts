@@ -186,8 +186,7 @@ export class GmailClient {
         if (!response.ok) return fail(googleError(failure));
         let data: T;
         try {
-          // `batchModify` answers 204 with no body: success, nothing to parse.
-          data = (text === '' && kind !== 'read' ? undefined : JSON.parse(text)) as T;
+          data = parseAnswer<T>(text, response.status, kind);
         } catch {
           return fail(googleError(failure));
         }
@@ -327,7 +326,7 @@ export class GmailClient {
         });
       } else {
         try {
-          const data = JSON.parse(part.body) as T;
+          const data = parseAnswer<T>(part.body, part.status, 'read');
           this.spent += costs[i];
           return { ok: true, data };
         } catch {
@@ -526,4 +525,15 @@ class PacedGovernor implements BoundGovernor {
   batchSize(budget: BudgetId): number {
     return this.inner.batchSize(budget);
   }
+}
+
+/**
+ * A 2xx body. `batchModify` answers 204 with no body: success, nothing to parse. A read answers 204 when its `fields`
+ * mask leaves nothing (Google drops the empty object: `drafts.list` with no drafts, a search with no hits), which is
+ * the empty answer `{}`, never `invalidResponse`. Any other empty or broken body throws.
+ */
+export function parseAnswer<T>(text: string, status: number, kind: string): T {
+  if (text === '' && kind !== 'read') return undefined as T;
+  if (text.trim() === '' && status === 204) return {} as T;
+  return JSON.parse(text) as T;
 }

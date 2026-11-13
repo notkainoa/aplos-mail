@@ -178,7 +178,11 @@ function workflow(r: Rng, account: string, thread: string, now: number): StoreWr
   };
 }
 
-/** Rows other lanes write later (eng-time's drafts and submissions, store-4's FTS), inserted directly. */
+/**
+ * Rows other lanes write later (eng-time's drafts and submissions), inserted directly, and the FTS rows replaced with
+ * fixed body words the reference search reads. The indexer loads with the engine (after this fixture commits), so the
+ * indexed bit is set here too: the start-up backlog pass leaves the controlled rows alone.
+ */
 function laneRows(db: SqlDatabase, r: Rng, now: number) {
   const draft = db.prepare(
     'INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, ?, 1, ?, ?)',
@@ -199,6 +203,7 @@ function laneRows(db: SqlDatabase, r: Rng, now: number) {
         r.pick(['queued', 'scheduled', 'sending', 'sent', 'cancelled', 'failed']),
       );
   }
+  db.exec("INSERT INTO messages_fts(messages_fts) VALUES('delete-all')");
   const fts = db.prepare(
     'INSERT INTO messages_fts(rowid, subject, people, body) VALUES(?, ?, ?, ?)',
   );
@@ -207,6 +212,7 @@ function laneRows(db: SqlDatabase, r: Rng, now: number) {
     .all<{ id: number; subject: string; from_addr: string; from_name: string; to_json: string }>();
   for (const m of rows)
     fts.run(m.id, m.subject, `${m.from_name} ${m.from_addr} ${m.to_json}`, bodyOf(m.id));
+  db.exec('UPDATE messages SET parts = parts | 8');
 }
 
 /** A message's indexed body text (the reference search reads the same words). */

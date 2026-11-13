@@ -9,6 +9,7 @@ import { op, opSettle, applyEffect } from './commit-ops';
 import { body, attachments, attachmentState } from './commit-bodies';
 import { syncState, sweep, meta } from './commit-sync';
 import { ingest } from './ingest';
+import { ftsIndex, indexWritten } from './fts';
 import type { WriteScope } from './scope';
 import {
   StoreError,
@@ -93,6 +94,7 @@ export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
   'eventDelete',
   'eventSweep',
   'eventHidden',
+  'ftsIndex',
 ]);
 
 /** Op states whose effect is still replayed over sync (ARCH 4.3). */
@@ -113,8 +115,8 @@ export const COUNTS_TYPES = new Set<string>([
  * The commit (F4): every write in one transaction, then pending ops replayed over the sync facts (ARCH 4.3), then thread
  * rollups and folder lists recomputed from the messages, one `changes` row per changed item, `seq` bumped once. Lane
  * kinds run in their extension inside the same transaction, and ingest (correspondents, `laneFor`, the lanes' `ingest`
- * hooks) runs after the rollups. A replayed `opId` is a no-op. Still to come in Phase 1 (store-4): FTS, without
- * changing `CommitInput`.
+ * hooks) runs after the rollups, then the search index takes the messages and bodies written (`fts.ts`). A replayed
+ * `opId` is a no-op.
  */
 export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResult {
   if (typeof input?.opId !== 'string' || !input.opId)
@@ -134,6 +136,7 @@ export function applyCommit(ctx: CommitContext, input: CommitInput): CommitResul
     run.replayOps();
     run.rollups();
     ingest(run);
+    indexWritten(run);
     const changed = run.writeChanges();
     const seq = changed > 0 ? current + 1 : current;
     if (changed > 0) ctx.stmt("UPDATE meta SET value = ? WHERE key = 'seq'").run(String(seq));
@@ -469,4 +472,5 @@ const WRITE_HANDLERS: ReadonlyMap<string, Handler> = new Map<string, Handler>([
   ['eventDelete', eventDelete],
   ['eventSweep', eventSweep],
   ['eventHidden', eventHidden],
+  ['ftsIndex', ftsIndex],
 ]);
