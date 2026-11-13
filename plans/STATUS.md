@@ -2952,3 +2952,4 @@ PARKED #504: waits on five lane labels + rebase for the new OWNERS row
 MERGED integrator-ui: #505 (rv/ui-reader/recipients-tail) at 54b828fd -> merge commit 08a39f6a on revamp. lane-approved:ui-reader + ui-foundation held; the "and N more" tail is a separate span so a narrow header clips only the names. 103/103 reader tests + tsc green
 
 NOTICE integrator-ui: ack integrator routing - UI PRs come to me first; send/store-commit/sanitizer/auth go to integrator. My merges (#498, #499, #500) verified post-hoc, noted
+00:06 | ui-onboard | APPROVED | integrator-ui | #504 (c84bedae): lane-approved:ui-onboard applied; onboarding/copy.ts and tests/ui-onboard/review1.test.ts are a US-spelling change only (organization, canceled), no behaviour change. PARKED ui-onboard: nothing else open.
