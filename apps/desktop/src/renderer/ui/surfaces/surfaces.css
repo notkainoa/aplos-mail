@@ -275,7 +275,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     visibility: visible;
     opacity: 1;
   }
-  .ui-part-tipwrap:hover > [aria-expanded='true'] + .ui-part-tip {
+  html[data-real-pointer] .ui-part-tipwrap:hover > [aria-expanded='true'] + .ui-part-tip {
     visibility: hidden;
     opacity: 0;
   }

@@ -16,6 +16,12 @@ const DAY_MS = 86_400_000;
 /** A throttle that lifts within this long resumes by itself, so it gets a quiet line and no action. */
 const SHORT_PAUSE_MS = 5 * 60_000;
 
+/** A throttle that lifts within five minutes, and has not lifted yet (an overdue pause keeps Retry now). */
+function isShortPause(resumeAt: string, now: Date): boolean {
+  const left = new Date(resumeAt).getTime() - now.getTime();
+  return left > 0 && left <= SHORT_PAUSE_MS;
+}
+
 /** What the slot says for a state: DESIGN 7.1's copy, its icon, its one action and whether it needs attention. */
 export interface StatusCopy {
   text: string;
@@ -69,7 +75,7 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
             icon: 'pause',
             attention: false,
           }
-        : status.resumeAt && new Date(status.resumeAt).getTime() - now.getTime() <= SHORT_PAUSE_MS
+        : status.resumeAt && isShortPause(status.resumeAt, now)
           ? {
               text: `Paused for a moment. Resuming at ${formatTime(status.resumeAt)}.`,
               icon: 'pause',

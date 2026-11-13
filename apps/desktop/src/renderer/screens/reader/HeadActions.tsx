@@ -4,7 +4,7 @@
  * toast); the bell says whether the email notified, and stays neutral until the engine reports that; ⋯ lists the
  * actions the reader already has handlers for. Every control is a real button with a name, and Esc closes a menu.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadRow } from '../../data';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Button, Icon } from '../../ui/buttons-keys';
@@ -212,7 +212,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
   }, [topBarMore, isOpen, show, close]);
   useRegisterCommands(table);
   // The bar's ⋯ is the pane's own button: while its menu is open it says so, which also hides its tooltip.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!from || !isOpen) return undefined;
     from.setAttribute('aria-expanded', 'true');
     return () => from.removeAttribute('aria-expanded');

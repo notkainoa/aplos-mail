@@ -227,6 +227,25 @@ describe('ThreadMessage', () => {
     );
   });
 
+  test('a folded card with the sender mark reads like the open one: mark, name, when, then who it went to', () => {
+    const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
+    const html = render(
+      <ThreadMessage
+        id="e2"
+        from="Jordan Park"
+        toLabel="to you"
+        leading={<span className="mark">J</span>}
+        date="2026-10-20T09:00:00-07:00"
+        cursor={false}
+        fold={fold}
+        excerpt="Kicking off."
+      />,
+    );
+    const at = (needle: string) => html.indexOf(needle);
+    assert.ok(at('ui-thread-message__from') < at('ui-thread-message__when'), 'name, then time');
+    assert.ok(at('ui-thread-message__when') < at('ui-thread-message__to'), 'time, then to');
+  });
+
   test('an earlier message is a compact card: its own first words, a visible Show full button, aria-expanded, no body', () => {
     const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
     const folded = render(

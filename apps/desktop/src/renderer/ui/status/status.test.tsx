@@ -147,6 +147,11 @@ describe('statusCopy (DESIGN 7.1 table)', () => {
     assert.equal(copy?.text, 'Paused for a moment. Resuming at 10:03 AM.');
     assert.equal(copy?.action, undefined);
     assert.equal(copy?.attention, false);
+    const overdue = statusCopy(
+      { kind: 'paused', reason: 'throttle', resumeAt: '2026-10-29T09:50:00-07:00' },
+      NOW,
+    );
+    assert.equal(overdue?.action?.label, 'Retry now', 'an overdue pause keeps Retry now');
     const late = statusCopy({ kind: 'paused', reason: 'throttle', resumeAt: RESUME }, NOW);
     assert.equal(late?.action?.label, 'Retry now');
   });
