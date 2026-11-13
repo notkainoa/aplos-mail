@@ -7,6 +7,16 @@ export interface Extent {
   readonly clientHeight: number;
 }
 
+/** The measures that say whether more content waits below the visible part. */
+export interface ScrollExtent extends Extent {
+  readonly scrollTop: number;
+}
+
+/** True while the region scrolls and its bottom is not yet in view: the slot draws a hairline there as the cue. */
+export function moreBelow(el: ScrollExtent): boolean {
+  return overflows(el) && el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+}
+
 /** True while the content is taller than the element (one pixel of rounding slack). */
 export function overflows(el: Extent): boolean {
   return el.scrollHeight > el.clientHeight + 1;

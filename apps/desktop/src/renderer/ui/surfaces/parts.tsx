@@ -427,6 +427,8 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     let x = a.left;
     let y = a.bottom + gap;
     if (placement === 'below-end') x = a.right - w;
+    // Out of room on the right: line up with the anchor's right edge instead of sitting flush against the window.
+    if (placement === 'below-start' && x + w > vw - pad && a.right - w >= pad) x = a.right - w;
     if (placement === 'above-start') y = a.top - h - gap;
     if (placement === 'left') {
       x = a.left - w - gap;

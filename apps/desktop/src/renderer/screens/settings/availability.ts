@@ -6,7 +6,7 @@
  */
 import type { Account, AiProvider, Session } from '../../data';
 import type { SettingSection } from '../../commands';
-import { hasCapability, hiddenUntilBuilt, paidSwitch } from './settings.model';
+import { hasCapability, hiddenUntilBuilt, leaseLine, paidSwitch } from './settings.model';
 
 /** What a row's availability reads: accounts (demo, missing permissions, lease), providers and the session. */
 export interface AvailabilityData {
@@ -62,10 +62,7 @@ export function rowAvailable(
     case 'accounts/accountColour':
       return pending || realAccount(data);
     case 'accounts/lease':
-      return (
-        pending ||
-        data.accounts.some(a => !a.demo && (hasCapability(data.session, 'workflowSync') || a.lease))
-      );
+      return pending || data.accounts.some(a => !a.demo && leaseLine(a, '').action !== null);
     case 'notifications/perAccount':
       return hasCapability(data.session, 'notifications') && (pending || realAccount(data));
     case 'ai/geminiPaid':

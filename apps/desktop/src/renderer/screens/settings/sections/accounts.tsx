@@ -8,8 +8,37 @@ import { accountLabel } from '../../../ui/accountLabel';
 import { Switch, SwatchPicker } from '../../../ui/controls';
 import { calendarAccessOf } from '../../calendar/accountCalendarState';
 import { Group, Row } from '../parts';
-import { accountRows, hasCapability, leaseLine, NOT_AVAILABLE, tagColor } from '../settings.model';
+import { accountRows, leaseLine, NOT_AVAILABLE, tagColor } from '../settings.model';
 import type { SectionProps } from './types';
+
+type Props = Pick<SectionProps, 'data' | 'view' | 'actions'>;
+
+/** Which Mac syncs: drawn only when there is something to choose, so there is never a row with no control. */
+function LeaseRow({
+  account,
+  data,
+  view,
+  actions,
+}: Props & { account: Props['data']['accounts'][number] }) {
+  const lease = leaseLine(account, data.session.device.name, data.settings.ui.devDetails);
+  if (lease.action === null) return null;
+  return (
+    <Row
+      section="accounts"
+      anchor="lease"
+      idSuffix={account.id}
+      label={lease.text}
+      control={
+        <Button
+          variant="text"
+          label={lease.action === 'use' ? 'Use this Mac' : 'Let Aplos choose'}
+          busy={view.busy[`lease:${account.id}`] === true}
+          onPress={() => void actions.takeLease(account.id, lease.action === 'use')}
+        />
+      }
+    />
+  );
+}
 
 export function Accounts({ data, view, actions, host }: SectionProps) {
   const rows = accountRows(data.accounts, data.now);
@@ -114,7 +143,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             section="accounts"
             anchor="accountAi"
             idSuffix={account.id}
-            description="On for new accounts. Off keeps this mailbox out of every AI feature."
+            description="Off keeps this mailbox out of every AI feature."
             control={id => (
               <Switch
                 label={`Use ${accountLabel(account)} mail for AI`}
@@ -137,33 +166,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
               />
             )}
           />
-          {hasCapability(data.session, 'workflowSync') || account.lease
-            ? (() => {
-                const lease = leaseLine(
-                  account,
-                  data.session.device.name,
-                  data.settings.ui.devDetails,
-                );
-                return (
-                  <Row
-                    section="accounts"
-                    anchor="lease"
-                    idSuffix={account.id}
-                    label={lease.text}
-                    control={
-                      lease.action ? (
-                        <Button
-                          variant="text"
-                          label={lease.action === 'use' ? 'Use this Mac' : 'Let Aplos choose'}
-                          busy={view.busy[`lease:${account.id}`] === true}
-                          onPress={() => void actions.takeLease(account.id, lease.action === 'use')}
-                        />
-                      ) : undefined
-                    }
-                  />
-                );
-              })()
-            : null}
+          <LeaseRow account={account} {...{ data, view, actions }} />
         </Group>
       ))}
     </>

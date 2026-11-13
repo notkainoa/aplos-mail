@@ -32,7 +32,7 @@ export interface ListConfig {
   readonly emptyIcon: IconName;
   /** A second, quieter line under the empty sentence, only where it helps. */
   readonly emptyDetail?: string;
-  /** Date groups ("Today", "Yesterday") use section labels in All mail, Done, Drafts and Sent (DESIGN 7.4). */
+  /** Date groups ("Today", "Yesterday") use section labels in All mail, Done, Drafts, Sent, Trash and Spam (DESIGN 7.4). */
   readonly dateGroups: boolean;
   /** Which date a date group reads: when the thread last moved, or when it was finished. */
   readonly dateField: 'lastDate' | 'doneAt';
@@ -110,27 +110,33 @@ export const SENT_CONFIG: ListConfig = {
   dateGroups: true,
 };
 
-export const TRASH_CONFIG: ListConfig = config({
-  kind: 'trash',
-  id: 'list-trash',
-  name: 'Trash',
-  scope: 'list:trash',
-  view: { kind: 'mailbox', role: 'trash' },
-  empty: 'Trash is empty',
-  emptyIcon: 'trash',
-  hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Restore' }],
-});
+export const TRASH_CONFIG: ListConfig = {
+  ...config({
+    kind: 'trash',
+    id: 'list-trash',
+    name: 'Trash',
+    scope: 'list:trash',
+    view: { kind: 'mailbox', role: 'trash' },
+    empty: 'Trash is empty',
+    emptyIcon: 'trash',
+    hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Restore' }],
+  }),
+  dateGroups: true,
+};
 
-export const SPAM_CONFIG: ListConfig = config({
-  kind: 'spam',
-  id: 'list-spam',
-  name: 'Spam',
-  scope: 'list:spam',
-  view: { kind: 'mailbox', role: 'spam' },
-  empty: 'Spam is empty',
-  emptyIcon: 'spam',
-  hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Not spam' }],
-});
+export const SPAM_CONFIG: ListConfig = {
+  ...config({
+    kind: 'spam',
+    id: 'list-spam',
+    name: 'Spam',
+    scope: 'list:spam',
+    view: { kind: 'mailbox', role: 'spam' },
+    empty: 'Spam is empty',
+    emptyIcon: 'spam',
+    hoverActions: [{ commandId: 'mail.restore', icon: 'undo', label: 'Not spam' }],
+  }),
+  dateGroups: true,
+};
 
 /** The Done place (DESIGN 7.4): the stamp column, one icon-only action to its left, E and L inactive. */
 export const DONE_CONFIG: ListConfig = {

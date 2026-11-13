@@ -168,7 +168,7 @@ test('a missing permission uses its own line', async () => {
 for (const [scenario, expected] of [
   ['offline', /Offline/],
   ['backfilling', /Importing 120 of 2,400/],
-  ['rate-limited', /Google asked us to slow down\. Resuming at /],
+  ['rate-limited', /Paused for a moment\. Resuming at /],
 ] as const) {
   test(`the ${scenario} scenario fills the status slot`, async () => {
     await boot(scenario);

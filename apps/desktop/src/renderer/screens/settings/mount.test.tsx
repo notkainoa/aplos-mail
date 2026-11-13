@@ -361,26 +361,20 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
-  test('the lease row mirrors the drawn condition: a truthy lease or the workflow capability', () => {
-    const noSync = session({ capabilities: { ...session().capabilities, workflowSync: false } });
+  test('the lease row is drawn only when there is a Mac to choose, never as a line with no control', () => {
     const noLease = account({ id: 'x', address: 'x@example.com', lease: undefined });
+    const other = { lease: { role: 'secondary' as const, holderDeviceName: 'MacBook Air' } };
+    const pinned = { lease: { role: 'primary' as const, pinned: true } };
     try {
-      publishAvailability({ accounts: [noLease], providers: providers(), session: noSync });
-      assert.equal(rowAvailable('accounts', 'lease'), false);
-      publishAvailability({
-        accounts: [{ ...noLease, lease: null as unknown as Account['lease'] }],
-        providers: providers(),
-        session: noSync,
-      });
-      assert.equal(rowAvailable('accounts', 'lease'), false, 'a null lease draws no row');
-      publishAvailability({ accounts: [ALEX], providers: providers(), session: noSync });
-      assert.equal(rowAvailable('accounts', 'lease'), true, 'the fixture lease draws the row');
-      publishAvailability({ accounts: [noLease], providers: providers(), session: session() });
-      assert.equal(
-        rowAvailable('accounts', 'lease'),
-        true,
-        'workflowSync draws the row for every real account',
-      );
+      const offered = (accounts: Account[]) => {
+        publishAvailability({ accounts, providers: providers(), session: session() });
+        return rowAvailable('accounts', 'lease');
+      };
+      assert.equal(offered([noLease]), false, 'a lone Mac has nothing to choose');
+      assert.equal(offered([{ ...noLease, lease: null as unknown as Account['lease'] }]), false);
+      assert.equal(offered([ALEX]), false, 'syncing here with no pin has no control');
+      assert.equal(offered([{ ...noLease, ...other }]), true, 'another Mac holds it: Use this Mac');
+      assert.equal(offered([{ ...noLease, ...pinned }]), true, 'pinned here: Let Aplos choose');
     } finally {
       clearAvailability();
     }

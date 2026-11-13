@@ -455,8 +455,10 @@ test('a draft in the palette reads plain names, and a future date groups the way
 
 test('Drafts and Sent group by date like All mail; Done groups by when it was finished', () => {
   assert.deepEqual(
-    [ALL_CONFIG, DRAFTS_CONFIG, SENT_CONFIG, DONE_CONFIG].map(c => c.dateGroups),
-    [true, true, true, true],
+    [ALL_CONFIG, DRAFTS_CONFIG, SENT_CONFIG, DONE_CONFIG, TRASH_CONFIG, SPAM_CONFIG].map(
+      c => c.dateGroups,
+    ),
+    [true, true, true, true, true, true],
   );
   const draft = (id: string, updatedAt: number) =>
     ({ id, revision: 1, html: '', subject: id, to: [], updatedAt }) as unknown as Draft;

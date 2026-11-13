@@ -137,7 +137,7 @@ export function General({ data, actions }: SectionProps) {
       </Group>
 
       <Tools {...{ data, actions }} />
-      <DeviceSync {...{ data }} />
+      {data.workflow?.available ? <DeviceSync {...{ data }} /> : null}
     </>
   );
 }
@@ -244,7 +244,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
   );
 }
 
-/** Device sync: one calm row. The engine says whether it exists yet; no control is drawn until it does (STATUS, ui-settings DECIDED). */
+/** Device sync: drawn only once the engine says it exists; until then there is no row and no section. */
 function DeviceSync({ data }: Pick<SectionProps, 'data'>) {
   return (
     <Group id="set-general-sync" label="Your Macs">

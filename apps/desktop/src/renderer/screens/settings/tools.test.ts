@@ -376,7 +376,7 @@ describe('ui-settings: Add a tool', () => {
     assert.match(revokeConfirm('Notes').question, /Revoke “Notes”\?/);
   });
 
-  test('device sync reads one calm sentence and draws no control while the engine says it is not available', () => {
+  test('device sync draws no row and no section while the engine says it is not available', () => {
     assert.equal(
       workflowLine({ enabled: false, available: false }),
       'Device sync comes in a later version.',
@@ -384,8 +384,7 @@ describe('ui-settings: Add a tool', () => {
     assert.equal(workflowLine(undefined), 'Device sync comes in a later version.');
     assert.match(workflowLine({ enabled: true, available: true }), /between Macs/);
     const markup = renderToStaticMarkup(staticScreen(STATES['device-sync-later']));
-    assert.match(markup, /Device sync comes in a later version\./);
-    assert.doesNotMatch(markup, /set-general-deviceSync[^]*role="switch"/);
+    assert.doesNotMatch(markup, /Device sync|Your Macs|set-general-sync/);
   });
 
   test('Cancel after a failed grant takes its Retry away; an MCP tool is told which permissions do nothing', async () => {

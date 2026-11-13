@@ -53,6 +53,11 @@ export function visibleToasts(toasts: readonly ToastData[], reserved: number): T
   return planToasts(toasts, reserved).shown;
 }
 
+/** The countdown reads in whole seconds, rounded up, never "9.806 s". */
+export function wholeSeconds(secondsLeft: number): number {
+  return Math.max(0, Math.ceil(secondsLeft));
+}
+
 function UndoSendNotice({
   state,
   reducedMotion,
@@ -65,7 +70,7 @@ function UndoSendNotice({
   useEffect(() => {
     if (announced.current || !announce || state.kind !== 'sending') return;
     announced.current = true;
-    announce(`Sending to ${state.recipients} in ${state.secondsLeft} seconds.`);
+    announce(`Sending to ${state.recipients} in ${wholeSeconds(state.secondsLeft)} seconds.`);
   }, [announce, state]);
 
   const verb = (action: UndoTrayAction, label: string, withKeys = false) => (
@@ -84,7 +89,7 @@ function UndoSendNotice({
   let verbs: ReactElement[] = [];
   switch (state.kind) {
     case 'sending':
-      message = `Sending to ${state.recipients} in ${state.secondsLeft} s`;
+      message = `Sending to ${state.recipients} in ${wholeSeconds(state.secondsLeft)} s`;
       verbs = [verb('undo', 'Undo', true), verb('sendNow', 'Send now')];
       break;
     case 'uncertain':

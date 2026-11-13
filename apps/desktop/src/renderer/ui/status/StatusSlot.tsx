@@ -13,6 +13,8 @@ import { PartButton, PartIcon, SrOnly, dayWord, formatCount, formatTime } from '
 import { ProgressSegments } from './ProgressSegments';
 
 const DAY_MS = 86_400_000;
+/** A throttle that lifts within this long resumes by itself, so it gets a quiet line and no action. */
+const SHORT_PAUSE_MS = 5 * 60_000;
 
 /** What the slot says for a state: DESIGN 7.1's copy, its icon, its one action and whether it needs attention. */
 export interface StatusCopy {
@@ -67,14 +69,20 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
             icon: 'pause',
             attention: false,
           }
-        : {
-            text: status.resumeAt
-              ? `Google asked us to slow down. Resuming at ${formatTime(status.resumeAt)}.`
-              : 'Google asked us to slow down.',
-            icon: 'pause',
-            action: { kind: 'retry', label: 'Retry now', tone: 'default' },
-            attention: false,
-          };
+        : status.resumeAt && new Date(status.resumeAt).getTime() - now.getTime() <= SHORT_PAUSE_MS
+          ? {
+              text: `Paused for a moment. Resuming at ${formatTime(status.resumeAt)}.`,
+              icon: 'pause',
+              attention: false,
+            }
+          : {
+              text: status.resumeAt
+                ? `Google asked us to slow down. Resuming at ${formatTime(status.resumeAt)}.`
+                : 'Google asked us to slow down.',
+              icon: 'pause',
+              action: { kind: 'retry', label: 'Retry now', tone: 'default' },
+              attention: false,
+            };
     case 'needsReauth':
       return {
         text: 'Google needs you to sign in again.',
@@ -195,10 +203,10 @@ export function StatusSlot({
                       data-color={named.color}
                       aria-hidden="true"
                     />
-                    <SrOnly>{`${named.address}: `}</SrOnly>
                   </>
                 ) : null}
                 {copy.text}
+                {named ? <SrOnly>{` For ${named.address}.`}</SrOnly> : null}
               </p>
             )}
             {status.kind === 'syncing' && status.firstWindow && account ? (
