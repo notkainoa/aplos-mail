@@ -3,7 +3,7 @@
  * command, and how a place maps to a screen. No React here, so the grouping is testable on its own.
  */
 import type { CountsBlock } from '../data';
-import type { SettingRoute } from '../commands';
+import type { SettingRoute, SettingSection } from '../commands';
 import type { CommandId, IconName } from '../ui/props';
 import type { Screen } from './index';
 
@@ -97,6 +97,12 @@ export function screenPlace(screen: Screen): PlaceId | null {
     id => LABEL_SCREENS[id] === screen.label,
   );
   return found ?? null;
+}
+
+/** The one place that is current: Help while Settings shows its Help section, so Settings and Help never both mark. */
+export function currentPlace(screen: Screen, section: SettingSection | null): PlaceId | null {
+  if (screen === 'settings' && section === 'help') return 'help';
+  return screenPlace(screen);
 }
 
 /** A place by id; throws on an unknown id, which would be a bug in this file. */

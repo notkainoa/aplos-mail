@@ -1203,6 +1203,13 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-toast__icon[data-tone='dusk'] {
   color: var(--dusk);
 }
+.ui-toast__icon[data-tone='stamp'] {
+  color: var(--stamp-ink);
+}
+.ui-toast__dismiss {
+  display: inline-flex;
+  flex: none;
+}
 .ui-toast__message {
   min-width: 0;
   display: -webkit-box;

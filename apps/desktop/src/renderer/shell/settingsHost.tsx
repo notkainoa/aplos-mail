@@ -27,6 +27,7 @@ import {
   openSheet,
   dismissToast,
   pushToast,
+  setSettingsSection,
   useSettingsTarget,
   type PushedToast,
   type RouteTarget,
@@ -190,6 +191,11 @@ export function SettingsMount() {
     if (arrivalFocus({ row, activeIsPage: focusIsOnPage() }) === 'region')
       region.current?.focus({ preventScroll: true });
   }, []);
+  const section = current.route ? parseSettingRoute(current.route)?.section : undefined;
+  useEffect(() => {
+    setSettingsSection(section ?? null);
+    return () => setSettingsSection(null);
+  }, [section]);
   const host = useMemo(() => createSettingsHost(), []);
   const onRoute = useCallback(
     (route: SettingRoute) => setHeld(prev => routeChosen(prev, route)),

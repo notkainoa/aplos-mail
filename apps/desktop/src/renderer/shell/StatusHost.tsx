@@ -17,8 +17,8 @@ function ignore(): void {
   return undefined;
 }
 
-function notify(id: string, message: string): void {
-  pushToast({ id, kind: 'info', message, undoable: false });
+function notify(id: string, message: string, failed = false): void {
+  pushToast({ id, kind: failed ? 'error' : 'info', message, undoable: false });
 }
 
 /** A verb that throws before it returns a promise fails the same way as one that rejects. */
@@ -29,13 +29,13 @@ function attempt(call: () => Promise<unknown>): Promise<unknown> {
 function copyDiagnostics(): void {
   attempt(() => api.diagnostics.copy()).then(
     () => notify(DIAGNOSTICS_TOAST_ID, 'Diagnostics copied. They hold no mail.'),
-    () => notify(DIAGNOSTICS_TOAST_ID, DIAGNOSTICS_FAILED_COPY),
+    () => notify(DIAGNOSTICS_TOAST_ID, DIAGNOSTICS_FAILED_COPY, true),
   );
 }
 
 function retryNow(state: StatusSlotState): void {
   attempt(() => api.sync.request({ accountId: state.account?.id, force: true })).then(ignore, () =>
-    notify(RETRY_FAILED_TOAST_ID, RECONNECT_FAILED_COPY),
+    notify(RETRY_FAILED_TOAST_ID, RECONNECT_FAILED_COPY, true),
   );
 }
 

@@ -1,6 +1,7 @@
 /**
  * What a screen puts under the place groups (`useSidebarSlot`): the MiniMonth and the Calendars list, drawn here from
- * the screen's props so a screen never styles the sidebar. The region scrolls when the window is too short for it, and
+ * the screen's props (the accounts block last, so it scrolls with the legend instead of crowding Settings and Help) so a
+ * screen never styles the sidebar. The region scrolls when the window is too short for it, and
  * only then is it a tab stop (a scroller nobody can reach by keyboard fails the accessibility check).
  */
 import { useEffect, useRef, useState } from 'react';
@@ -38,13 +39,13 @@ export interface SidebarSlotViewProps {
 
 export function SidebarSlotView({ slot }: SidebarSlotViewProps) {
   const [ref, scrolls] = useScrolls(partsKey(slot));
-  // `calendarAccounts` is drawn by the sidebar itself above the foot, so it never makes this scrolling slot non-empty.
-  if (!slot.miniMonth && !slot.calendars) return null;
+  if (!slot.miniMonth && !slot.calendars && !slot.calendarAccounts) return null;
   const reach = scrolls ? { tabIndex: 0, role: 'region', 'aria-label': 'Calendar' } : {};
   return (
     <div ref={ref} className="aplos-sidebar__slot" {...reach}>
       {slot.miniMonth ? <MiniMonth {...slot.miniMonth} /> : null}
       {slot.calendars ? <CalendarList {...slot.calendars} /> : null}
+      {slot.calendarAccounts ?? null}
     </div>
   );
 }
