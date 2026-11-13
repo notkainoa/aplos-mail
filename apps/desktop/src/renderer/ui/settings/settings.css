@@ -111,6 +111,10 @@
   color: var(--dim);
 }
 
+.ui-setting-row__description .ui-set-icon {
+  margin-top: var(--space-half);
+}
+
 .ui-setting-row__description-text {
   min-width: 0;
   overflow-wrap: anywhere;
