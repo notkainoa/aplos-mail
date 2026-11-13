@@ -150,6 +150,11 @@ const CONDITIONAL: readonly string[] = [
   'ai/geminiPaid',
   'ai/accountMail',
   'help/demoLoad',
+  // The placeholder rows behind SHOW_UNBUILT_ROWS: not drawn, so not offered, until their capability is on.
+  'general/allowTools',
+  'general/addTool',
+  'general/tools',
+  'help/queue',
 ];
 
 /** True for rows whose anchor is conditional, including the per-provider rows (`provider-*`, `server-*`). */
