@@ -18,6 +18,12 @@ test('available: the row is named "Device sync", never the raw anchor', () => {
   assert.doesNotMatch(html, />deviceSync</);
 });
 
+test('available and on: the on line, still named "Device sync"', () => {
+  const html = general({ enabled: true, available: true });
+  assert.match(html, />Device sync</);
+  assert.match(html, /On\. Done and Later follow you between Macs\./);
+});
+
 test('not available: no row and no "Your Macs" group', () => {
   const html = general({ enabled: false, available: false });
   assert.doesNotMatch(html, /Your Macs/);
