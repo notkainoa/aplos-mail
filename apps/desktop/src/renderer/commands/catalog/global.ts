@@ -95,7 +95,13 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
     group: 'Settings',
     keywords: ['keyboard', 'help', 'keys'],
   },
-  { id: 'app.undo', label: 'Undo', keys: ['z'], contexts: ['global'], group: 'Actions' },
+  {
+    id: 'app.undo',
+    label: 'Undo',
+    keys: ['z', { chord: 'meta+z', quiet: true }],
+    contexts: ['global'],
+    group: 'Actions',
+  },
   {
     id: 'nav.home',
     label: 'Home',

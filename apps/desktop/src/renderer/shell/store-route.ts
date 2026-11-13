@@ -40,6 +40,7 @@ const KEEPS_RETURN: readonly string[] = ['thread', 'compose'];
 
 const screenStore = createStore<Screen>('home');
 const routeStore = createStore<RouteTarget | null>(null);
+const sectionStore = createStore<SettingSection | null>(null);
 let seq = 0;
 
 function sameScreen(a: Screen, b: Screen): boolean {
@@ -68,6 +69,11 @@ export function setRoute(route: ShellRoute): void {
   setScreen('settings');
 }
 
+/** Settings reports the section it shows (null when it closes or shows its default), so the sidebar can mark Help. */
+export function setSettingsSection(section: SettingSection | null): void {
+  if (sectionStore.get() !== section) sectionStore.set(section);
+}
+
 /** Marks the pending route handled; ignored when a newer route has arrived. */
 export function consumeRoute(handled: number): void {
   if (routeStore.get()?.seq === handled) routeStore.set(null);
@@ -77,3 +83,5 @@ export const getScreen = screenStore.get;
 export const subscribeScreen = screenStore.subscribe;
 export const getRoute = routeStore.get;
 export const subscribeRoute = routeStore.subscribe;
+export const getSettingsSection = sectionStore.get;
+export const subscribeSettingsSection = sectionStore.subscribe;
