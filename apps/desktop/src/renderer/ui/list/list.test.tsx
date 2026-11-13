@@ -363,7 +363,8 @@ describe('FocusSlot and FocusLetter', () => {
         {...letter({ summary: { state: 'pending', subject: 'A quieter home' }, narrow: true })}
       />,
     );
-    assert.match(pending, /class="ui-summary-placeholder" aria-busy="true"/);
+    assert.match(pending, /class="ui-summary-placeholder"/);
+    assert.match(pending, /class="ui-focus-letter"[^>]*aria-busy="true"/);
     assert.match(pending, /Summarizing…/);
     assert.doesNotMatch(pending, /ui-summary"/, 'no subject line in the space while pending');
     assert.match(pending, /data-narrow="true"/);

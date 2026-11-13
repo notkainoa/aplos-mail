@@ -5,7 +5,7 @@
 /** Two soft lines and a small label where the serif summary will land. */
 export function SummaryPlaceholder({ subject }: { readonly subject: string }) {
   return (
-    <div className="ui-summary-placeholder" aria-busy="true">
+    <div className="ui-summary-placeholder">
       <span className="ui-list-sr">{subject}</span>
       <span className="ui-summary-placeholder__row">
         <span className="ui-summary-placeholder__bar" data-width="long" aria-hidden="true" />

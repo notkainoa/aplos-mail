@@ -972,7 +972,7 @@
 .ui-summary-placeholder__bar {
   flex: none;
   height: var(--space-3);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background-color: var(--line);
   /* Only the lines breathe; the label stays at full contrast. */
   animation: ui-summary-placeholder-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
