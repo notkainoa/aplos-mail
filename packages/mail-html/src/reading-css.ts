@@ -97,7 +97,7 @@ const PLAIN_CSS = [
  * outrank the layer.
  */
 export const BLOCKED_IMAGE_CAP = 48;
-const BLOCKED_IMAGE_RULE = `img.aplos-blocked{max-height:${BLOCKED_IMAGE_CAP}px!important;min-height:0!important;padding:0!important}`;
+const BLOCKED_IMAGE_RULE = `img.aplos-blocked{max-height:${BLOCKED_IMAGE_CAP}px!important;min-height:0!important;padding:0!important;border-width:0!important;margin-block:0!important;zoom:1!important}`;
 
 export const READING_CSS = [
   ':root{color-scheme:light}',
