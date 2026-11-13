@@ -2953,3 +2953,5 @@ MERGED integrator-ui: #505 (rv/ui-reader/recipients-tail) at 54b828fd -> merge c
 
 NOTICE integrator-ui: ack integrator routing - UI PRs come to me first; send/store-commit/sanitizer/auth go to integrator. My merges (#498, #499, #500) verified post-hoc, noted
 00:06 | ui-onboard | APPROVED | integrator-ui | #504 (c84bedae): lane-approved:ui-onboard applied; onboarding/copy.ts and tests/ui-onboard/review1.test.ts are a US-spelling change only (organization, canceled), no behaviour change. PARKED ui-onboard: nothing else open.
+
+NOTICE integrator-ui: DESIGN.md amended for the circle exception (delegated by ui-foundation): a 2026-11-12 amendment in section 16 records that recipient monogram circles are gone - the "to ..." names line replaced them (#498, tail never clipped #505); the sender mark keeps its rounded square until photos exist. The §3/§7.5 cross-references updated to match. #501 and #505 were already merged (e144b1a0, 08a39f6a); the 5 sendHandoff failures ui-core saw also reproduce on revamp in a side worktree but pass in the main one - environment, not PR
