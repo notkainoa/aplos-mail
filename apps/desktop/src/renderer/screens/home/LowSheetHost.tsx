@@ -155,6 +155,7 @@ export function LowSheetHost(props: LowSheetHostProps) {
         activeDescendantId: cursorId ? lowDomId(cursorId) : undefined,
       }}
       groups={groups}
+      total={view.total}
       armed={armed}
       markAllCommandId="lowImportance.markAllDone"
       preview={

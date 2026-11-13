@@ -478,7 +478,17 @@ export class AccountActor {
       step: step.origin,
       fenceSeq: fence,
       changes: step.origin === 'backfill' ? 'coarse' : 'fine',
-      writes: [...writes, ...statusWrites],
+      // The account touch marks `Account` so `lastSyncAt` below reaches the UI even when the status itself did not
+      // change (sync_state rows alone mark nothing the renderer reads). Once a display minute, the precision the
+      // Settings row shows — a finer rate would wake the UI every poll for a timestamp it cannot render.
+      writes: [
+        ...writes,
+        ...statusWrites,
+        ...(this.runtime.lastSyncAt === undefined ||
+        Math.floor(now / 60_000) > Math.floor(this.runtime.lastSyncAt / 60_000)
+          ? [{ kind: 'account' as const, id: this.id }]
+          : []),
+      ],
     });
     const firstBaseline = this.runtime.baselineDoneAt === undefined && baselineDoneAt !== undefined;
     if (baselineDoneAt !== undefined) this.runtime.baselineDoneAt = baselineDoneAt;

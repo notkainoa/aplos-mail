@@ -9,6 +9,8 @@ import type { AreaHandlers } from './types';
 export const handlers: AreaHandlers<'view'> = {
   'View/watch': async (args, ctx) => {
     await ensureViewKind(args.spec.kind);
+    if (args.spec.kind === 'label' || args.spec.kind === 'mailbox')
+      await (await import('../views/folder-fetch')).ensureFolders(ctx.services, args.spec);
     return ctx.services.views.watch(args, ctx.connectionId);
   },
   'View/move': (args, ctx) => ctx.services.views.move(args, ctx.connectionId),
@@ -24,7 +26,12 @@ export const handlers: AreaHandlers<'view'> = {
     ctx.services.views.release(args.windowId, args.ids, ctx.connectionId);
     return { ok: true };
   },
-  'View/query': (args, ctx) => ctx.services.views.query(args),
+  'View/query': async (args, ctx) => {
+    await ensureViewKind(args.spec.kind);
+    if (args.spec.kind === 'label' || args.spec.kind === 'mailbox')
+      await (await import('../views/folder-fetch')).ensureFolders(ctx.services, args.spec);
+    return ctx.services.views.query(args);
+  },
   'Folder/get': (args, ctx) => ctx.services.views.folders(args.accountId),
   'Counts/get': (_args, ctx) => ctx.services.views.counts(),
   'SenderGroup/get': (args, ctx) => ctx.services.views.senderGroups(args.ids),

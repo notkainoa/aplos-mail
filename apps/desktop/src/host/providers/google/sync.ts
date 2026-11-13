@@ -1,5 +1,6 @@
 import {
   type AdapterContext,
+  type FolderList,
   type MessageFacts,
   type ProviderError,
   type PlacementDelta,
@@ -832,4 +833,47 @@ function endStep(env: ListEnv, round: ListRound, doneBefore: number): StepResult
 function stepLane(state: SyncState, spec: ListSpec): SyncLane {
   if (spec.scope !== 'window:inbox') return 'backfill';
   return state.phase === 'more' ? 'backfill' : 'incremental';
+}
+
+/**
+ * `ProviderAdapter.listFolder`: one page of a `lazy` folder (Spam, Trash, Starred, a user label) the UI opened.
+ * Newest first, `LIST_PAGE` ids a page; only messages this device lacks are fetched, so a re-open of a folder the
+ * walk already covered costs one `messages.list`. STARRED ids land as `flagged` facts (the Bookmarks view), label
+ * ids as placements on the page's own folder and every other label the messages carry.
+ */
+export async function listFolder(
+  rt: SyncRuntime,
+  folder: string,
+  pageToken: string | undefined,
+  ctx: AdapterContext,
+): Promise<FolderList> {
+  const client = new GmailClient(rt.deps, ctx);
+  const page = await client.call<{
+    messages?: { id: string; threadId: string }[];
+    nextPageToken?: string;
+  }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: {
+      labelIds: [folder],
+      maxResults: LIST_PAGE,
+      pageToken,
+      // The default listing excludes Spam and Trash; an explicit label page must not.
+      includeSpamTrash: 'true',
+    },
+    fields: LIST_FIELDS,
+    lane: 'interactive',
+  });
+  const ids = (page.messages ?? []).map(m => m.id);
+  const known = ids.length ? await ctx.lookup.knownMessages(ids) : new Set<string>();
+  const out = await fetchMetadata(
+    client,
+    ids.filter(id => !known.has(id)),
+    { lane: 'interactive', self: ctx.account.address, memo: rt.memo, now: ctx.clock.now() },
+  );
+  if (out.error) throw out.error;
+  return {
+    upserts: out.facts,
+    ...(page.nextPageToken !== undefined ? { nextPageToken: page.nextPageToken } : {}),
+  };
 }

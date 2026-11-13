@@ -1,6 +1,7 @@
 import type { Frame } from '@aplos/contract';
 import type { Clock, StorePort, Timer } from '../ports';
 import type { Caller } from '../methods/types';
+import { COUNTS_TYPES } from '../store/commit';
 
 /** `state` frames coalesce over this long (ARCH 9.2: 50 to 250 ms). */
 export const STATE_COALESCE_MS = 100;
@@ -221,8 +222,12 @@ function touchedSince(store: StorePort, from: number): Record<string, number> | 
   for (;;) {
     const page = store.changesSince(since);
     if (page.status !== 'ok') return undefined;
-    for (const change of page.changes)
+    for (const change of page.changes) {
       types[change.type] = Math.max(change.seq, types[change.type] ?? 0);
+      // `Counts/get` derives from these rows, so any of them re-reads the badges — a derived mark, never a
+      // changes row: the durable log and `Session/changes` keep only what was written (fix-counts).
+      if (COUNTS_TYPES.has(change.type)) types.Counts = Math.max(change.seq, types.Counts ?? 0);
+    }
     if (!page.hasMore || page.toSeq <= since) return types;
     since = page.toSeq;
   }

@@ -15,7 +15,7 @@ import type {
 import { transaction, type SqlDatabase, type SqlStatement } from './sql';
 
 export * from './port';
-export { CORE_WRITE_KINDS, FLAG, HDR, PART } from './commit';
+export { CORE_WRITE_KINDS, COUNTS_TYPES, FLAG, HDR, PART } from './commit';
 export { readBody } from './bodies';
 export { createKnownLookup } from './known';
 export { LANE_TEXT_CAP, STORED_HEADER } from './ingest';

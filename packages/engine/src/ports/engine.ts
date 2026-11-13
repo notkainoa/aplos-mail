@@ -49,6 +49,14 @@ export interface ProviderPort {
     account: AccountId,
     query: ServerSearch,
   ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }>;
+  /**
+   * Fetches one page of a folder's listing into the store, for a `lazy` folder opened in the UI (ARCH `sync_scope`).
+   * The account's `folder:<remoteId>` sync_state row throttles re-opens and carries the page token: an open within a
+   * minute of the last fetch resolves having changed nothing, a completed walk re-reads the head page. Rows commit
+   * as `origin='sync'` (their placements count, unlike `search`'s). Optional and additive: an adapter without it
+   * resolves having fetched nothing.
+   */
+  listFolder?(account: AccountId, remoteFolderId: string): Promise<void>;
   attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>>;
   /**
    * The message's raw RFC822 for "Show original" and `.eml` export (`Message/original`, plans/engine/blob-area.md

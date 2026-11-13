@@ -520,6 +520,13 @@ export interface SearchResult {
   costUnits: number;
 }
 
+/** One page of a `lazy` folder's listing (`ProviderAdapter.listFolder`); committed as `origin='sync'`. */
+export interface FolderList {
+  upserts: MessageFacts[];
+  /** Present while the folder has more to list: the next open continues from here; absent re-reads the head. */
+  nextPageToken?: string;
+}
+
 /** Data-free push hint (ARCH 4.2 rule 8): it only triggers the normal checkpointed pull. */
 export type Hint = { kind: 'changed'; scope?: ScopeId } | { kind: 'alive' };
 
@@ -802,6 +809,16 @@ export interface ProviderAdapter {
   findSent(internetId: string, since: number, ctx: AdapterContext): Promise<FindSentResult>;
   /** Server search, on Enter only (D2). */
   search?(query: ServerSearch, ctx: AdapterContext): Promise<SearchResult>;
+  /**
+   * One page of a `lazy` folder's listing, newest first (`ProviderPort.listFolder`): the folder's remote id, the
+   * page token the last open left (undefined asks for the head page). Only the page's unknown messages are fetched;
+   * each upsert carries its complete folder set, so a STARRED page lands as `flagged`, a SPAM page as placements.
+   */
+  listFolder?(
+    folder: string,
+    pageToken: string | undefined,
+    ctx: AdapterContext,
+  ): Promise<FolderList>;
   /** IDLE, EventSource; Gmail has none. Ends when `ctx.signal` aborts. The actor iterates it only on the primary device (IMAP's second connection). */
   watch?(ctx: AdapterContext): AsyncIterable<Hint>;
   workflow?: WorkflowChannel;
