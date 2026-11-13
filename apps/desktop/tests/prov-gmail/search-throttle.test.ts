@@ -91,3 +91,15 @@ test('prov-gmail search: a concurrent-limit refusal surfaces concurrency:true in
       error.error.concurrency === true,
   );
 });
+
+test('fix-search prov-gmail search: no words is no Gmail call and no hits (never a list of recent mail)', async () => {
+  const r = await rig({ threads: 12 });
+  const before = r.fetches.length;
+  for (const text of ['', '   '])
+    assert.deepEqual(await r.adapter.search!({ text, limit: 25 }, r.ctx()), {
+      upserts: [],
+      remoteThreadIds: [],
+      costUnits: 0,
+    });
+  assert.equal(r.fetches.length, before, 'nothing went to Gmail');
+});

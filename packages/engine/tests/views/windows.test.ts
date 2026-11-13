@@ -472,17 +472,22 @@ test('Search/remote asks the provider and the results join the search window', a
     assert.deepEqual(asked.sort(), ['acct-1:garden', 'imap:2:garden']);
     const progress = t.frames.filter(f => f.frame === 'progress');
     assert.equal(progress.at(-1)?.kind, 'done');
-    // The provider commits what it found; the window picks it up like any commit (the FTS row is store-4's job, so the test adds it).
-    arrive(t, 'found-t');
-    const rowid = world.db
-      .prepare("SELECT id FROM messages WHERE remote_id = 'found-t-m'")
-      .get<{ id: number }>()!.id;
-    world.db
-      .prepare('INSERT INTO messages_fts(rowid, subject, people, body) VALUES(?, ?, ?, ?)')
-      .run(rowid, 'garden party', 'x@mail.example', 'garden');
-    t.commit([patch('acct-1:found-t', { bookmarked: true })]);
+    // The provider commits what it found as `origin='search'` rows, as the real host does (step 'search'): a thread in
+    // no local list. The commit indexes them, and the window picks the thread up like any commit (fix-search: before,
+    // nothing wrote the index and the search kind's visibility left search-only threads out).
+    t.store.commit({
+      opId: 'found',
+      origin: 'sync',
+      step: 'search',
+      writes: [incoming('found-t')],
+    });
     await t.advance(300);
     assert.ok(frameOf(t, win.windowId)?.ids.includes('acct-1:found-t'));
+    const inbox = await t.call('View/query', {
+      spec: { kind: 'mailbox', role: 'inbox' },
+      limit: 200,
+    });
+    assert.ok(!inbox.ids.includes('acct-1:found-t'), 'a search hit stays out of the lists');
   } finally {
     await t.close();
     world.cleanup();

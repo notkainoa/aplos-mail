@@ -27,6 +27,11 @@ const ARCHIVE_PRED = `(EXISTS (SELECT 1 FROM thread_folders px JOIN folders pf O
     AND NOT EXISTS (SELECT 1 FROM thread_folders ix JOIN folders xf ON xf.id = ix.folder_id WHERE ix.thread_id = %s AND xf.role = 'inbox')
     AND %v))`;
 const FLAGGED = 'EXISTS (SELECT 1 FROM threads sf WHERE sf.id = %s AND sf.flagged = 1)';
+/**
+ * `visible` for word search: also a thread only a provider search found (`origin='search'` rows are in no list, so
+ * `visible` leaves them out); drafts, Trash and Spam stay out as there.
+ */
+const searchVisible = (col: string) => visible(col).replace(" AND vm.origin <> 'search'", '');
 const hasWordChar = /[\p{L}\p{N}]/u;
 
 /** One FTS5 prefix phrase per word; a word without a letter or digit is dropped (it would match nothing). */
@@ -69,9 +74,12 @@ function messagePreds(query: SearchQuery): Pred[] {
   return out;
 }
 
-/** Place: a folder role, `done`, `later` or a folder id. Without one, Trash and Spam are left out. */
+/**
+ * Place: a folder role, `done`, `later` or a folder id. Without one (or `all`), Trash and Spam are left out and the
+ * threads a provider search found are in.
+ */
 function placePred(q: StoreReader, place: string | undefined, col: string): Pred {
-  if (place === undefined) return [visible(col)];
+  if (place === undefined || place.toLowerCase() === 'all') return [searchVisible(col)];
   const p = place.toLowerCase();
   // Starred is a flag at Gmail, not a folder.
   if (p === 'starred') return [FLAGGED.replace('%s', col)];
@@ -80,7 +88,6 @@ function placePred(q: StoreReader, place: string | undefined, col: string): Pred
       `EXISTS (SELECT 1 FROM thread_workflow pw WHERE pw.thread_id = ${col} AND pw.status = ?)`,
       p,
     ];
-  if (p === 'all') return [visible(col)];
   if (p === 'archive') return [ARCHIVE_PRED.replace(/%s/g, col).replace('%v', visible(col))];
   if (ROLES.has(p))
     return [
