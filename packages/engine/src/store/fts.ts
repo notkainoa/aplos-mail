@@ -1,5 +1,5 @@
 import { PART, type CommitRun } from './commit';
-import type { SqlValue } from './sql';
+import type { FtsIndexWrite } from './port';
 
 /*
  * The search index (ARCH 3.4): one contentless FTS5 row per message, rowid = `messages.id`, and `parts` bit 8 says the
@@ -13,8 +13,8 @@ import type { SqlValue } from './sql';
 export interface SearchIndexer {
   /** Index the messages and bodies a commit wrote. */
   written(run: CommitRun): void;
-  /** `ftsIndex`: a batch of backlog messages, their threads marked so open search windows run again. */
-  backlog(run: CommitRun): void;
+  /** `ftsIndex`: these backlog messages, their threads marked so open search windows run again. */
+  backlog(run: CommitRun, ids: readonly number[]): void;
 }
 let indexer: SearchIndexer | undefined;
 export function installIndexer(installed: SearchIndexer) {
@@ -26,23 +26,22 @@ export function indexWritten(run: CommitRun) {
   indexer?.written(run);
 }
 
-/** A write with no backlog (or no indexer yet) changes nothing. */
-export function ftsIndex(run: CommitRun) {
-  indexer?.backlog(run);
+/** A write naming no unindexed message (or with no indexer yet) changes nothing. */
+export function ftsIndex(run: CommitRun, w: FtsIndexWrite) {
+  indexer?.backlog(run, Array.isArray(w.ids) ? w.ids : []);
 }
 
 /**
- * Before a message write replaces an indexed row's fields: when subject, snippet or people change, the stale row and
- * its bit go (contentless rows cannot be updated), and the write is indexed again by `indexWritten`. `fields` are the
- * new values, in `json_array` order. Runs even before the indexer loads: an old session's row must not stay stale.
+ * Wraps a message row's update: when subject, snippet or people changed, the indexed row and its bit go (contentless
+ * rows cannot be updated) and `indexWritten` indexes the message again. Compares the row itself before and after, so
+ * it does not depend on how the update lists its columns. Runs before the indexer loads too: no row may stay stale.
  */
-export function dropIfChanged(run: CommitRun, id: number, fields: SqlValue[]) {
-  const dropped = run
-    .q(
-      `UPDATE messages SET parts = parts & ~${PART.fts} WHERE id = ? AND (parts & ${PART.fts}) <> 0
-      AND json_array(subject, snippet, from_addr, from_name, to_json, cc_json, bcc_json) IS NOT
-        json_array(?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(id, ...fields).changes;
-  if (dropped) run.q('DELETE FROM messages_fts WHERE rowid = ?').run(id);
+export function keepIndexCurrent(run: CommitRun, id: number, update: () => void) {
+  const indexed = `SELECT json_array(subject, snippet, from_addr, from_name, to_json, cc_json, bcc_json) AS v
+    FROM messages WHERE id = ? AND (parts & ${PART.fts}) <> 0`;
+  const before = run.q(indexed).get<{ v: string }>(id)?.v;
+  update();
+  if (before === undefined || run.q(indexed).get<{ v: string }>(id)?.v === before) return;
+  run.q(`UPDATE messages SET parts = parts & ~${PART.fts} WHERE id = ?`).run(id);
+  run.q('DELETE FROM messages_fts WHERE rowid = ?').run(id);
 }

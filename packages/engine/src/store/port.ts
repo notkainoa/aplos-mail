@@ -421,9 +421,10 @@ export interface SweepWrite {
   uidTo?: number;
 }
 
-/** Indexes a batch of messages written before the search index existed (`fts.ts`); changes nothing once none are left. */
+/** Indexes these messages if they have no search index row yet (the start-up backlog pass, `fts.ts`). */
 export interface FtsIndexWrite {
   kind: 'ftsIndex';
+  ids: number[];
 }
 
 /** Engine-owned key/values (`import_state`, `imported_from`, `consent_version`). `null` deletes. Reserved keys refuse. */

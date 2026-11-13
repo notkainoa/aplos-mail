@@ -11,7 +11,7 @@ import {
 import { FLAG, HDR, PART, MESSAGE_COLS, type CommitRun, type MessageRow } from './commit';
 import { folderId as messageFolderId } from './commit-folders';
 import { countCorrespondents } from './correspondents';
-import { dropIfChanged } from './fts';
+import { keepIndexCurrent } from './fts';
 
 const ID_SLOTS = 4096,
   MAX_SECONDS = 2 ** 32;
@@ -166,17 +166,17 @@ export function message(run: CommitRun, w: MessageWrite) {
   let id: number;
   if (existing) {
     id = existing.id;
-    // subject, snippet, then from_addr through bcc_json: what the search index holds.
-    dropIfChanged(run, id, [fields[10], fields[11], ...fields.slice(4, 9)]);
     // A search hit never downgrades a synced row; a sync adopts a search or local row.
-    run
-      .q(
-        `UPDATE messages SET thread_id = ?, internet_id = ?, in_reply_to = ?, refs = ?, from_addr = ?, from_name = ?,
+    keepIndexCurrent(run, id, () =>
+      run
+        .q(
+          `UPDATE messages SET thread_id = ?, internet_id = ?, in_reply_to = ?, refs = ?, from_addr = ?, from_name = ?,
       to_json = ?, cc_json = ?, bcc_json = ?, reply_to = ?, subject = ?, snippet = ?, date = ?, internal_date = ?, size = ?,
       flags = ?, hdr = ?, list_unsub = ?, list_auth = ?, origin = CASE WHEN ? = 'search' THEN origin ELSE ? END, rev = ?, local_seq = ?
       WHERE id = ?`,
-      )
-      .run(...fields, origin, origin, run.seq, localSeq, id);
+        )
+        .run(...fields, origin, origin, run.seq, localSeq, id),
+    );
     if (existing.thread_id !== tid) run.touched.add(existing.thread_id);
     // A draft sent in place keeps its id: it counts when it stops being a draft.
     if (existing.flags & FLAG.draft && !(flags & FLAG.draft)) countCorrespondents(run, w);

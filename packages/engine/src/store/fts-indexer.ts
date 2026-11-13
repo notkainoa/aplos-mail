@@ -4,7 +4,7 @@ import { PART, type CommitRun } from './commit';
 import { installIndexer } from './fts';
 
 /** Most backlog messages one `ftsIndex` write indexes. */
-export const FTS_BATCH = 500;
+export const FTS_BATCH = 200;
 
 /*
  * The lazy half of the search index (`store/fts.ts` holds the always-loaded half): what one index row is made of and
@@ -41,17 +41,48 @@ function addresses(json: string | null): string[] {
   }
 }
 
-/** Visible text of an HTML body: no style or script, no tags, the common entities decoded. */
-function htmlText(html: string): string {
-  return html
-    .replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/gi, '&');
+/** HTML read for the index: four times the body cap, so stripping never walks a multi-megabyte body (fix-search review). */
+export const FTS_HTML_SCAN = FTS_BODY_CAP * 4;
+const ENTITIES: Record<string, string> = {
+  nbsp: ' ',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  '#39': "'",
+  amp: '&',
+};
+
+/**
+ * Visible text of an HTML body, in one left-to-right pass of `indexOf` (no backtracking regex, which took minutes on
+ * 100 KB of `<` inside the commit): tags become spaces, style and script lose their content, and an unclosed tag or
+ * element ends the text. Only the first `FTS_HTML_SCAN` characters are read.
+ */
+export function htmlText(source: string): string {
+  const html = source.slice(0, FTS_HTML_SCAN);
+  const lower = html.toLowerCase();
+  let out = '';
+  let at = 0;
+  while (at < html.length) {
+    const open = html.indexOf('<', at);
+    if (open < 0) {
+      out += html.slice(at);
+      break;
+    }
+    out += `${html.slice(at, open)} `;
+    const close = html.indexOf('>', open);
+    if (close < 0) break;
+    at = close + 1;
+    const raw = /^<(style|script)\b/.exec(lower.slice(open, open + 8))?.[1];
+    if (raw === undefined) continue;
+    const end = lower.indexOf(`</${raw}`, at);
+    const after = end < 0 ? -1 : lower.indexOf('>', end);
+    if (after < 0) break;
+    at = after + 1;
+  }
+  return out.replace(
+    /&(nbsp|lt|gt|quot|#39|amp);/gi,
+    (m, name: string) => ENTITIES[name.toLowerCase()] ?? m,
+  );
 }
 
 /** The stored body's text (plain, else the HTML's), or the snippet when there is no body or it cannot be read. */
@@ -88,22 +119,49 @@ function indexOne(run: CommitRun, id: number): boolean {
   return true;
 }
 
+let report: EngineServices['log'] | undefined;
+let reported = false;
+
+/**
+ * One message, isolated in a savepoint: a row that cannot be built or written is rolled back with its bit left clear (the
+ * next start's backlog pass tries it again) and never fails the sync or body commit it belongs to. The first failure
+ * after each engine start is logged, as a reason code only (a broken index would otherwise log on every commit).
+ */
+function indexSafely(run: CommitRun, id: number): boolean {
+  const db = run.ctx.db;
+  db.exec('SAVEPOINT fts_row');
+  try {
+    const wrote = indexOne(run, id);
+    db.exec('RELEASE fts_row');
+    return wrote;
+  } catch {
+    db.exec('ROLLBACK TO fts_row');
+    db.exec('RELEASE fts_row');
+    if (report && !reported) {
+      report.event('rpc.failed', { method: 'Search/index', reason: 'row' });
+      reported = true;
+    }
+    return false;
+  }
+}
+
 installIndexer({
   written(run) {
-    for (const id of new Set([...run.ingested.keys(), ...run.bodied])) indexOne(run, id);
+    for (const id of new Set([...run.ingested.keys(), ...run.bodied])) indexSafely(run, id);
   },
-  backlog(run) {
-    const rows = run
-      .q(
-        `SELECT m.id, t.account_id AS acct, t.remote_id AS remote, t.id AS tid FROM messages m
-        JOIN threads t ON t.id = m.thread_id
-        WHERE (m.parts & ${PART.fts}) = 0 ORDER BY m.id DESC LIMIT ${FTS_BATCH}`,
-      )
-      .all<{ id: number; acct: string; remote: string; tid: number }>();
-    for (const r of rows) {
-      if (!indexOne(run, r.id)) continue;
-      run.q('UPDATE threads SET rev = ? WHERE id = ?').run(run.seq, r.tid);
-      run.mark('Thread', r.acct, r.remote, 'u');
+  backlog(run, ids) {
+    const marked = new Set<number>();
+    for (const id of ids) {
+      if (!indexSafely(run, id)) continue;
+      const t = run
+        .q(
+          'SELECT t.id, t.account_id AS acct, t.remote_id AS remote FROM messages m JOIN threads t ON t.id = m.thread_id WHERE m.id = ?',
+        )
+        .get<{ id: number; acct: string; remote: string }>(id);
+      if (!t || marked.has(t.id)) continue;
+      marked.add(t.id);
+      run.q('UPDATE threads SET rev = ? WHERE id = ?').run(run.seq, t.id);
+      run.mark('Thread', t.acct, t.remote, 'u');
     }
   },
 });
@@ -111,19 +169,29 @@ installIndexer({
 /**
  * Mail stored before the index existed (or before this loaded) is indexed here at start, a batch per commit with a
  * yield between, so a big backlog never holds the engine. Idempotent: an indexed message is skipped, and a store with
- * no backlog costs one empty commit.
+ * no backlog costs one read.
  */
 export async function indexBacklog(services: EngineServices, signal: AbortSignal) {
+  report = services.log;
+  reported = false;
   const id = () =>
     `fts:${Array.from(services.randomBytes(8), b => b.toString(16).padStart(2, '0')).join('')}`;
+  // Keyset paging, newest first, through the partial index `messages_unindexed`: a row that fails stays unindexed but
+  // is passed, so it can never hold the pass in place.
+  let below = Number.MAX_SAFE_INTEGER;
   try {
     while (!signal.aborted) {
-      const done = services.store.commit({
-        opId: id(),
-        origin: 'system',
-        writes: [{ kind: 'ftsIndex' }],
-      });
-      if (done.changed === 0) return;
+      const ids = services.store.read(q =>
+        q
+          .all<{ id: number }>(
+            `SELECT id FROM messages WHERE (parts & ${PART.fts}) = 0 AND id < ? ORDER BY id DESC LIMIT ${FTS_BATCH}`,
+            below,
+          )
+          .map(r => r.id),
+      );
+      if (ids.length === 0) return;
+      below = ids[ids.length - 1];
+      services.store.commit({ opId: id(), origin: 'system', writes: [{ kind: 'ftsIndex', ids }] });
       await services.clock.sleep(0, signal);
     }
   } catch {
