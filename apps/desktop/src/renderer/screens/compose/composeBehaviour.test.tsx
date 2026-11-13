@@ -192,7 +192,7 @@ test('Tab keeps the dim AI text; it is drawn in the serif after the caret, with 
     session.dispatch({ type: 'suggest', suggestion });
     const shown = reply(session);
     assert.match(shown, /class="aplos-compose-editor__suggestion">[^<]*Thursday works/);
-    assert.match(shown, /The grey sentence is a suggestion\./);
+    assert.match(shown, /The gray sentence is a suggestion\./);
     assert.doesNotMatch(shown, /<textarea[^>]*>[^<]*Thursday/, 'not part of the text until kept');
     const { press } = keys(session);
     assert.equal(press('Tab').id, 'compose.keepSuggestion');
@@ -231,7 +231,7 @@ test('Esc dismisses the dim text before it closes anything; with AI unavailable 
     const html = reply(session);
     assert.doesNotMatch(
       html,
-      /aplos-compose-editor__suggestion|ui-suggestion|grey sentence|\bAI\b/,
+      /aplos-compose-editor__suggestion|ui-suggestion|gray sentence|\bAI\b/,
     );
     session.dispose();
   } finally {

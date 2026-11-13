@@ -5,6 +5,7 @@
  * `calendarEditingOf`: quiet "Enable editing" while it is off (a refused write reads "Turn on editing" in
  * attention tone instead), nothing once it is on. */
 import { Button } from '../../../ui/buttons-keys';
+import { accountLabel } from '../../../ui/accountLabel';
 import { Switch } from '../../../ui/controls';
 import {
   CALENDAR_ACCESS_COPY,
@@ -73,7 +74,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
               section="calendar"
               anchor="calendarPermission"
               idSuffix={a.id}
-              label={a.name || a.address}
+              label={accountLabel(a)}
               mark={tagColor(a, i)}
               description={line ?? undefined}
               descriptionTone={attention ? 'attention' : 'default'}
@@ -82,7 +83,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
                   <Button
                     variant="text"
                     label={action.label}
-                    ariaLabel={`${a.name || a.address}: ${action.label}`}
+                    ariaLabel={`${accountLabel(a)}: ${action.label}`}
                     onPress={() => actions.startReconnect(a.id, action.mode)}
                   />
                 ) : undefined

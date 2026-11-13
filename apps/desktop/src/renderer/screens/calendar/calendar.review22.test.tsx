@@ -66,7 +66,7 @@ const hold = (over: Partial<FailedHold> = {}): FailedHold => ({
   id: 'cal:op-1',
   opId: 'op-1',
   reason: "That change wasn't sent in time. Check the event, then send it again.",
-  account: 'Alex Moreno',
+  account: 'alex.moreno@example.com',
   canRetry: true,
   canDiscard: true,
   ...over,

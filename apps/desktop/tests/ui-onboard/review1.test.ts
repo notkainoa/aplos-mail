@@ -575,7 +575,7 @@ describe('review1 finding 4: copy', () => {
     assert.doesNotMatch(keyFailureSentence('unknown', 'OpenAI'), /Groq|didn’t take/);
     assert.equal(
       keySaveSentence('auth.adminPolicy', 'Groq'),
-      'Your organisation has turned off saving keys.',
+      'Your organization has turned off saving keys.',
     );
     assert.doesNotMatch(
       source('steps/ai.model.ts'),

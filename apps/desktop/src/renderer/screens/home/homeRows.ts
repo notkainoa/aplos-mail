@@ -3,6 +3,7 @@
  * `FocusLetter` (DESIGN 7.2, 9). Nothing here reads the engine or draws; callers add the handlers.
  */
 import { toIsoDateTime, type Account, type ThreadAction, type ThreadRow } from '../../data';
+import { accountLabel } from '../../ui/accountLabel';
 import type {
   Density,
   DueInfo,
@@ -169,7 +170,7 @@ export function accountMark(
   if (!account) return undefined;
   const tagged = ACCOUNT_COLORS.find(color => color === account.colorTag);
   return {
-    label: account.name || account.address,
+    label: accountLabel(account),
     color: tagged ?? ACCOUNT_COLORS[index % ACCOUNT_COLORS.length] ?? 'sky',
   };
 }
