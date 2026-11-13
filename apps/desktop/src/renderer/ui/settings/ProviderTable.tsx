@@ -9,7 +9,7 @@ import type {
   ProviderTableProps,
 } from '../props';
 import { SetIcon } from './icons';
-import { FEATURE_COPY, keySourceText, PROVIDER_NAMES } from './names';
+import { envKeyReason, FEATURE_COPY, keySourceText, PROVIDER_NAMES } from './names';
 import { SettingRow } from './SettingRow';
 
 type LocalId = 'ollama' | 'lmstudio' | 'custom';
@@ -99,9 +99,7 @@ function RowButton({
 }
 
 function removeReason(source: KeySource): string | undefined {
-  return source.kind === 'environment'
-    ? `This key comes from ${source.variable} in your environment. Remove it there.`
-    : undefined;
+  return source.kind === 'environment' ? envKeyReason(source.variable) : undefined;
 }
 
 /** The actions of a keyed row: Test, then Replace key and Remove, or Add key when no key is set. */
@@ -188,7 +186,7 @@ function Fix({
         <SetIcon name="alert" />
         <span>
           {env
-            ? `${name} refused the key from your environment, so nothing was sent. Fix ${source.variable} there. Your other providers are not affected.`
+            ? `${name} refused the key set on this Mac, so nothing was sent. Fix it where it was set${source.variable ? ` (${source.variable})` : ''}. Your other providers are not affected.`
             : `${name} refused the saved key, so nothing was sent. Replace it with a fresh one. Your other providers are not affected.`}
         </span>
         {env ? null : (

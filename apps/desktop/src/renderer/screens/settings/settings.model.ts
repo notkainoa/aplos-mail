@@ -30,8 +30,9 @@ import type {
   SyncStatus,
   TagColor,
 } from '../../ui/props';
-import { FEATURE_COPY, keySourceText, PROVIDER_NAMES } from '../../ui/settings/names';
+import { envKeyReason, FEATURE_COPY, keySourceText, PROVIDER_NAMES } from '../../ui/settings/names';
 import { statusCopy, syncedLine } from '../../ui/status';
+import { accountLabel } from '../../ui/accountLabel';
 
 export type { SettingSection } from '../../commands';
 
@@ -44,6 +45,23 @@ export type ListenerInfo = Output<'Listener/get'>;
 export type BundleInfo = Output<'Diagnostics/preview'>;
 
 export const NOT_AVAILABLE = 'Not available yet';
+
+/**
+ * The one switch for rows that have no engine behind them yet (Tools on this Mac, the queue inspector). While it is
+ * false a row whose capability is off is not drawn and not offered from ⌘K, instead of showing "Not available yet".
+ * Flip it to true to bring those placeholders back; the rows' code and models stay.
+ */
+export const SHOW_UNBUILT_ROWS = false;
+const UNBUILT_ROWS: ReadonlySet<string> = new Set([
+  'general/allowTools',
+  'general/addTool',
+  'general/tools',
+  'help/queue',
+]);
+/** True when `section/anchor` is a placeholder row that stays out of sight until its capability is on. */
+export function hiddenUntilBuilt(section: string, anchor: string): boolean {
+  return !SHOW_UNBUILT_ROWS && UNBUILT_ROWS.has(`${section}/${anchor}`);
+}
 const DAY_MS = 86_400_000;
 
 /* ───────────────────────── sections and capabilities ───────────────────────── */
@@ -72,9 +90,24 @@ export function hasCapability(
   return session?.capabilities?.[key] === true;
 }
 
-/** "Version 0.3.0 · macOS" (DESIGN 10). Without a build number, just "macOS". */
-export function versionLine(session: Pick<Session, 'appVersion'> | undefined): string {
-  return session?.appVersion ? `Version ${session.appVersion} · macOS` : 'macOS';
+/** What the build says about itself: the short git commit and a channel suffix, injected by vite.config.ts. */
+export interface BuildInfo {
+  readonly commit: string;
+  readonly channel: string;
+}
+declare const __APLOS_BUILD__: BuildInfo | undefined;
+/** The injected build info; "dev" when the define is absent (tests, tools that skip Vite). */
+export const BUILD_INFO: BuildInfo =
+  typeof __APLOS_BUILD__ === 'undefined' ? { commit: 'dev', channel: '' } : __APLOS_BUILD__;
+
+/** "Version 0.3.0-revamp (build abc1234) · macOS" (DESIGN 10). Without a version, just "macOS". */
+export function versionLine(
+  session: Pick<Session, 'appVersion'> | undefined,
+  build: BuildInfo = BUILD_INFO,
+): string {
+  if (!session?.appVersion) return 'macOS';
+  const channel = build.channel ? `-${build.channel}` : '';
+  return `Version ${session.appVersion}${channel} (build ${build.commit}) · macOS`;
 }
 
 /* ───────────────────────── patches ───────────────────────── */
@@ -337,7 +370,7 @@ export function accountRow(account: Account, index: number, now: number): Accoun
   }
   return {
     id: account.id,
-    name: account.name || account.address,
+    name: accountLabel(account),
     address: account.address,
     meta: providerLabel(account.provider),
     mark: tagColor(account, index),
@@ -393,7 +426,7 @@ function mailAccountsTarget(
 ): string {
   if (ids.length !== 1) return `${ids.length} accounts`;
   const a = accounts.find(x => x.id === ids[0]);
-  return a ? a.name || a.address : 'that account';
+  return a ? accountLabel(a) : 'that account';
 }
 
 /** The one failure line's op for the bulk "Mail for AI" write: "Couldn’t turn on mail for AI on …". */
@@ -441,15 +474,23 @@ export const REMOVE_DEMO_CONFIRM = {
     'The demo accounts and their sample mail are deleted. Your own accounts are not touched. This cannot be undone, but Help can load it again.',
 } as const;
 
-/** "Background work runs on: MacBook Pro" and the one action that follows (ARCH 6.5). */
+/**
+ * Which Mac does this account's background work, and the one action that follows (ARCH 6.5): "Syncs on this Mac" or
+ * "Syncs on another Mac". The Mac's name is a technical detail and joins the line only with Developer details on.
+ */
 export function leaseLine(
   account: Pick<Account, 'lease'>,
   thisDevice: string,
+  devDetails = false,
 ): { readonly text: string; readonly action: 'use' | 'auto' | null } {
   const lease = account.lease;
-  if (!lease) return { text: `Background work runs on: ${thisDevice}`, action: null };
-  const holder = lease.role === 'primary' ? thisDevice : (lease.holderDeviceName ?? 'another Mac');
-  const text = `Background work runs on: ${holder}`;
+  const line = (here: boolean, name: string): string => {
+    const base = here ? 'Syncs on this Mac' : 'Syncs on another Mac';
+    return devDetails && name ? `${base} · ${name}` : base;
+  };
+  if (!lease) return { text: line(true, thisDevice), action: null };
+  const here = lease.role === 'primary';
+  const text = line(here, here ? thisDevice : (lease.holderDeviceName ?? ''));
   if (lease.role === 'secondary') return { text, action: 'use' };
   return { text, action: lease.pinned ? 'auto' : null };
 }
@@ -479,24 +520,29 @@ export function featureLabel(feature: string): string {
 }
 
 /** Where a provider's key comes from. Key characters are never part of any value here. */
-export function toKeySource(p: Pick<AiProvider, 'id' | 'keySource' | 'envVar'>): KeySource {
-  if (p.keySource === 'env') return { kind: 'environment', variable: p.envVar };
+export function toKeySource(
+  p: Pick<AiProvider, 'id' | 'keySource' | 'envVar'>,
+  devDetails = false,
+): KeySource {
+  const variable = devDetails ? p.envVar : '';
+  if (p.keySource === 'env') return { kind: 'environment', variable };
   if (p.keySource === 'keychain') return { kind: 'keychain' };
   // Ollama and LM Studio need no key; a custom server's is optional and can be added.
   if (p.id === 'ollama' || p.id === 'lmstudio') return { kind: 'local' };
-  return { kind: 'none', variable: p.envVar };
+  return { kind: 'none', variable };
 }
 
-/** "From environment: GROQ_API_KEY", "Saved in Keychain", "Not set · reads ANTHROPIC_API_KEY". */
-export function keySourceLine(p: Pick<AiProvider, 'id' | 'keySource' | 'envVar'>): string {
-  return keySourceText(toKeySource(p));
+/** "Key set on this Mac", "Saved in Keychain", "No key yet"; the variable name joins them with Developer details on. */
+export function keySourceLine(
+  p: Pick<AiProvider, 'id' | 'keySource' | 'envVar'>,
+  devDetails = false,
+): string {
+  return keySourceText(toKeySource(p, devDetails));
 }
 
 /** Why Remove is disabled: a key from the environment wins and can only be removed there. Undefined when Remove works. */
 export function removeDisabledReason(source: KeySource): string | undefined {
-  return source.kind === 'environment'
-    ? `This key comes from ${source.variable} in your environment. Remove it there.`
-    : undefined;
+  return source.kind === 'environment' ? envKeyReason(source.variable) : undefined;
 }
 
 /** A provider's status cell, from the engine's status and a live test result when there is one. */
@@ -536,6 +582,7 @@ const byId = (providers: readonly AiProvider[], id: string) => providers.find(p 
 export function hostedRows(
   providers: readonly AiProvider[],
   testing: Partial<Record<ProviderId, ProviderStatus>> = {},
+  devDetails = false,
 ): Extract<ProviderTableProps, { kind: 'hosted' }>['rows'] {
   return HOSTED_ORDER.flatMap(id => {
     const p = byId(providers, id);
@@ -544,7 +591,7 @@ export function hostedRows(
           {
             provider: id,
             isDefault: id === 'groq',
-            keySource: toKeySource(p),
+            keySource: toKeySource(p, devDetails),
             status: providerStatus(p, testing[id]),
           },
         ]
@@ -556,6 +603,7 @@ export function localRows(
   providers: readonly AiProvider[],
   settings: Pick<Settings, 'ai'>,
   testing: Partial<Record<ProviderId, ProviderStatus>> = {},
+  devDetails = false,
 ): Extract<ProviderTableProps, { kind: 'local' }>['rows'] {
   return LOCAL_ORDER.flatMap(id => {
     const p = byId(providers, id);
@@ -569,7 +617,7 @@ export function localRows(
         address: settings.ai.providers[id]?.address ?? '',
         defaultAddress: p.defaultAddress ?? '',
         running: p.running,
-        keySource: toKeySource(p),
+        keySource: toKeySource(p, devDetails),
         status,
       },
     ];
@@ -807,9 +855,7 @@ export function notifyRows(
   accounts: readonly Account[],
 ): readonly { id: string; name: string; mark: TagColor; on: boolean }[] {
   return accounts.flatMap((a, i) =>
-    a.demo
-      ? []
-      : [{ id: a.id, name: a.name || a.address, mark: tagColor(a, i), on: a.notifications }],
+    a.demo ? [] : [{ id: a.id, name: accountLabel(a), mark: tagColor(a, i), on: a.notifications }],
   );
 }
 

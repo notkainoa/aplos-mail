@@ -26,7 +26,7 @@ const row = (
 
 export const SETTING_ROWS: readonly RowSpec[] = [
   // General
-  row('general', 'theme', 'Theme', ['appearance', 'light', 'dark', 'system', 'colour']),
+  row('general', 'theme', 'Theme', ['appearance', 'light', 'dark', 'system', 'color']),
   row('general', 'density', 'Density', [
     'row height',
     'compact',
@@ -36,7 +36,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   ]),
   row('general', 'keyHints', 'Show all key hints', ['shortcuts', 'keycaps', 'keys']),
   row('general', 'swipeDirection', 'Swipe direction', ['arrows', 'done', 'later', 'triage']),
-  row('general', 'sidebarMinimised', 'Minimised sidebar', ['hide sidebar', 'menu']),
+  row('general', 'sidebarMinimised', 'Minimized sidebar', ['hide sidebar', 'menu']),
   row('general', 'openAtLogin', 'Open Aplos when you log in', ['login', 'startup', 'launch']),
   row('general', 'menuBar', 'Keep Aplos in the menu bar', [
     'background',
@@ -87,7 +87,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'allow',
     'existing accounts',
   ]),
-  row('ai', 'background', 'Summarise in the background', ['consent', 'automatic summaries']),
+  row('ai', 'background', 'Summarize in the background', ['consent', 'automatic summaries']),
   row('ai', 'dailyCap', 'Daily limit', ['cap', 'tokens', 'budget', 'pause']),
   // Notifications
   row('notifications', 'enabled', 'Show notifications', ['banners', 'alerts']),
@@ -116,13 +116,8 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'exclude',
     'provider',
   ]),
-  row('accounts', 'accountColour', 'Account colour', ['swatch', 'tag', 'colour']),
-  row('accounts', 'lease', 'Background work runs on', [
-    'primary mac',
-    'use this mac',
-    'device',
-    'lease',
-  ]),
+  row('accounts', 'accountColour', 'Account color', ['swatch', 'tag', 'color']),
+  row('accounts', 'lease', 'Syncs on this Mac', ['primary mac', 'use this mac', 'device', 'lease']),
   // Keyboard
   row('keyboard', 'singleKeys', 'Single-key shortcuts', ['letters', 'wcag', 'accessibility']),
   row('keyboard', 'holdMs', 'Hold time', ['dictation', 'tap', 'hold', 'milliseconds']),
