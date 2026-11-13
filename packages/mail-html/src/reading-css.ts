@@ -89,6 +89,16 @@ const PLAIN_CSS = [
   `${PLAIN} details.aplos-quote>summary::before{background:${PLAIN_DARK.rule}}}`,
 ].join('\n');
 
+/**
+ * A blocked image keeps its width but never its height: a hero image (an itinerary, a newsletter banner) would otherwise
+ * leave a gray slab filling the first screen and push the text below the fold. It sits in the `aplos-reading` layer (see
+ * below) so the mail's own `!important` rules cannot undo it, and `min-height` and `padding` are neutralized because
+ * `min-height` outranks `max-height`. The placeholder carries no `style` attribute (sanitize.ts `image`), which would
+ * outrank the layer.
+ */
+export const BLOCKED_IMAGE_CAP = 48;
+const BLOCKED_IMAGE_RULE = `img.aplos-blocked{max-height:${BLOCKED_IMAGE_CAP}px!important;min-height:0!important;padding:0!important}`;
+
 export const READING_CSS = [
   ':root{color-scheme:light}',
   // The frame is sized to the letter, so the letter must size itself: the root and body keep an auto height,
@@ -104,7 +114,7 @@ export const READING_CSS = [
   // away the ways measured to follow the frame (height, shape and orientation features in @media and
   // @container, `if()` and its `media()` conditions, `writing-mode` under any prefix, scroll-driven animation
   // timelines), but a layout that follows the frame by some other means is not covered.
-  `@layer ${READING_LAYER}{${ROOT_RULE}${BODY_RULE}}`,
+  `@layer ${READING_LAYER}{${ROOT_RULE}${BODY_RULE}${BLOCKED_IMAGE_RULE}}`,
   'body{margin:0;padding:16px 20px;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f2328;overflow-wrap:break-word;word-break:normal}',
   'img{max-width:100%;height:auto}',
   'pre{white-space:pre-wrap}',
