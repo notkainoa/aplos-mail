@@ -227,10 +227,10 @@ function touchedSince(store: StorePort, from: number): Record<string, number> | 
   for (;;) {
     const page = store.changesSince(since);
     if (page.status !== 'ok') return undefined;
-    for (const change of page.changes) {
-      types[change.type] = Math.max(change.seq, types[change.type] ?? 0);
-      if (COUNTS_TYPES.includes(` ${change.type} `))
-        types.Counts = Math.max(change.seq, types.Counts ?? 0);
+    for (const { type, seq } of page.changes) {
+      const put = (t: string) => (types[t] = Math.max(seq, types[t] ?? 0));
+      put(type);
+      if (COUNTS_TYPES.includes(` ${type} `)) put('Counts');
     }
     if (!page.hasMore || page.toSeq <= since) return types;
     since = page.toSeq;

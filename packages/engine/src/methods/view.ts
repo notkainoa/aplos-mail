@@ -9,9 +9,8 @@ import type { AreaHandlers, EngineServices } from './types';
  */
 /** `ensureFolders` from the lazy module, only for specs that name folders. */
 const fetchFolders = (args: { spec: ViewSpec }, ctx: { services: EngineServices }) =>
-  args.spec.kind === 'label' || args.spec.kind === 'mailbox'
-    ? import('../views/folder-fetch').then(m => m.ensureFolders(ctx.services, args.spec))
-    : undefined;
+  'label mailbox'.includes(args.spec.kind) &&
+  import('../views/folder-fetch').then(m => m.ensureFolders(ctx.services, args.spec));
 
 export const handlers: AreaHandlers<'view'> = {
   'View/watch': async (args, ctx) => {

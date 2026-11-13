@@ -674,8 +674,9 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
 
   /** `ProviderPort.listFolder`: a `lazy` folder's open, through the same lazy read module as `openThread`. */
   async listFolder(account: AccountId, remoteFolderId: string): Promise<void> {
-    const { ensureFolder } = await Read();
-    await ensureFolder(
+    await (
+      await Read()
+    ).ensureFolder(
       this.entry(account),
       this.deps.store,
       () => this.newId(),
