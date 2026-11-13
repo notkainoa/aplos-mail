@@ -42,15 +42,21 @@ const UNBUILT_CAPABILITY: Readonly<Record<string, string>> = {
   'help/queue': 'queueInspector',
 };
 
-/** True when the row `section/anchor` is drawn with the published data (or none was published yet). */
-export function rowAvailable(section: SettingSection, anchor: string): boolean {
+/** True when the row `section/anchor` is drawn with the published data (or none was published yet, except the unbuilt placeholders, which need their capability). */
+export function rowAvailable(
+  section: SettingSection,
+  anchor: string,
+  showUnbuilt?: boolean,
+): boolean {
   const data = current;
+  // The placeholder rows are not drawn while their capability is off, so they are not offered from anywhere, including
+  // from the inbox where Settings is not mounted and nothing is published.
+  const capability = UNBUILT_CAPABILITY[`${section}/${anchor}`];
+  if (capability && hiddenUntilBuilt(section, anchor, showUnbuilt))
+    return data ? hasCapability(data.session, capability) : false;
   if (!data) return true;
   // While `Account/get` has not answered, `accounts` is [] and says nothing: rows drawn per account stay offered.
   const pending = data.accountsLoaded === false;
-  const capability = UNBUILT_CAPABILITY[`${section}/${anchor}`];
-  if (capability)
-    return !hiddenUntilBuilt(section, anchor) || hasCapability(data.session, capability);
   switch (`${section}/${anchor}`) {
     case 'accounts/accountAi':
     case 'accounts/accountColour':

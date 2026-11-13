@@ -32,6 +32,14 @@
   margin-top: var(--group-gap);
 }
 
+/* An account's address heads its group: it wraps rather than cutting off its distinguishing tail. */
+.settings-group .ui-section-header__label {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .settings-anchor {
   min-width: 0;
   scroll-margin-block: var(--space-10);
