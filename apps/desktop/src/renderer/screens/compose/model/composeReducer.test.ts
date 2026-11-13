@@ -460,6 +460,29 @@ function describe_from(): void {
     assert.deepEqual(gone.sort(), ['d1', 'd2']);
   });
 
+  test('From: a discard whose move-save fails still removes the draft left in the old account', () => {
+    const moved = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    const out = run(
+      moved.state,
+      { type: 'askDiscard' },
+      { type: 'confirmDiscard' },
+      { type: 'saveFailed', seq: 1, now: T0 + 20 },
+    );
+    assert.ok(out.effects.some(e => e.type === 'destroy' && e.draftId === 'd1'));
+  });
+
+  test('From: choosing another account after a failed create tries again at once', () => {
+    const first = run(freshCompose(NEW), { type: 'edit', patch: { body: 'Hi' }, now: T0 });
+    const failed = run(first.state, { type: 'saveFailed', seq: 1, now: T0 + 5 });
+    assert.equal(failed.state.save.draftId, null);
+    const again = run(failed.state, { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    assert.equal(again.state.context.accountId, 'a2');
+    assert.ok(
+      again.effects.some(e => e.type === 'save' && e.context.accountId === 'a2'),
+      'a save in the new account starts at once',
+    );
+  });
+
   test('From: choosing the same account does nothing', () => {
     const before = saved();
     const step = composeReducer(before, { type: 'setAccount', accountId: 'a1', now: T0 });

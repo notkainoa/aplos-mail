@@ -81,7 +81,10 @@ function onSaveFailed(state: ComposeState, event: Event<'saveFailed'>): Step {
   const next: ComposeState = { ...state, save: failSave(state.save, event.now) };
   if (state.discarding) {
     const id = next.save.draftId;
-    return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+    // The draft From left behind in the old account goes too (the move's save failed, so it is the only copy).
+    const old = leavingEffects(state, id ?? undefined);
+    if (id) return { state: next, effects: [...old, { type: 'destroy', draftId: id }] };
+    return { state: next, effects: [...old, ...discardedStep(next).effects] };
   }
   // Gone, stale or locked: a retry on the same base would fail for ever, so the text moves on (saveConflict.ts).
   if (event.cause && state.save.draftId !== null)
@@ -166,7 +169,11 @@ function onSetAccount(state: ComposeState, event: Event<'setAccount'>): Step {
   const context = { ...state.context, accountId: event.accountId };
   const old = state.save.draftId;
   // Nothing saved yet, or the first save is still being retried: only the account changes (the session mints a new create key).
-  if (old === null) return still({ ...state, context });
+  if (old === null) {
+    // A failed create waits out its backoff; a changed account is a fresh try, so "Couldn't save" does not linger.
+    const retry = state.save.failures > 0 ? retryNow(state.save, event.now) : state.save;
+    return saveIfDue({ ...state, context, save: retry }, event.now);
+  }
   const moved: ComposeState = {
     ...state,
     context,
