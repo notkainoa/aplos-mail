@@ -184,15 +184,14 @@ describe('demo controls (gap list decision 9)', () => {
 
 describe('background work lease', () => {
   test('names the holder and offers the one action that applies', () => {
-    assert.deepEqual(leaseLine(ALEX, 'MacBook Pro'), {
-      text: 'Background work runs on: MacBook Pro',
-      action: null,
-    });
+    assert.deepEqual(leaseLine(ALEX, 'MacBook Pro'), { text: 'Syncs on this Mac', action: null });
     const away = { lease: { role: 'secondary' as const, holderDeviceName: 'MacBook Air' } };
     assert.deepEqual(leaseLine(away, 'MacBook Pro'), {
-      text: 'Background work runs on: MacBook Air',
+      text: 'Syncs on another Mac',
       action: 'use',
     });
+    assert.equal(leaseLine(away, 'MacBook Pro', true).text, 'Syncs on another Mac · MacBook Air');
+    assert.equal(leaseLine(ALEX, 'MacBook Pro', true).text, 'Syncs on this Mac · MacBook Pro');
     const pinned = { lease: { role: 'primary' as const, pinned: true } };
     assert.equal(leaseLine(pinned, 'MacBook Pro').action, 'auto');
   });
@@ -201,9 +200,11 @@ describe('background work lease', () => {
 describe('AI: key source, Remove, providers', () => {
   const [groq, openai, claude] = providers();
   test('key source line never carries a key', () => {
-    assert.equal(keySourceLine(groq), 'From environment: GROQ_API_KEY');
+    assert.equal(keySourceLine(groq), 'Key set on this Mac');
+    assert.equal(keySourceLine(groq, true), 'Key set on this Mac · GROQ_API_KEY');
     assert.equal(keySourceLine(openai), 'Saved in Keychain');
-    assert.equal(keySourceLine(claude), 'Not set · reads ANTHROPIC_API_KEY');
+    assert.equal(keySourceLine(claude), 'No key yet');
+    assert.equal(keySourceLine(claude, true), 'No key yet · reads ANTHROPIC_API_KEY');
     const poisoned = { ...groq, apiKey: 'gsk_SECRET', last4: 'CRET' } as typeof groq;
     assert.doesNotMatch(
       JSON.stringify([keySourceLine(poisoned), toKeySource(poisoned)]),
@@ -214,6 +215,10 @@ describe('AI: key source, Remove, providers', () => {
   test('Remove is disabled for a key from the environment, with the reason; a saved key can be removed', () => {
     assert.equal(
       removeDisabledReason(toKeySource(groq)),
+      'This key is set outside Aplos, so it can only be removed where it was set.',
+    );
+    assert.equal(
+      removeDisabledReason(toKeySource(groq, true)),
       'This key comes from GROQ_API_KEY in your environment. Remove it there.',
     );
     assert.equal(removeDisabledReason(toKeySource(openai)), undefined);
@@ -416,8 +421,17 @@ describe('patches, nav, copy', () => {
     assert.equal(items.find(i => i.id === 'ai')?.icon, 'bubble');
   });
 
-  test('"Version 0.3.0 · macOS"; a missing build number leaves just "macOS"', () => {
-    assert.equal(versionLine({ appVersion: '0.3.0' }), 'Version 0.3.0 · macOS');
+  test('the version line names the channel and build; no git falls back to "dev"', () => {
+    const build = { commit: 'abc1234', channel: 'revamp' };
+    assert.equal(
+      versionLine({ appVersion: '0.3.0' }, build),
+      'Version 0.3.0-revamp (build abc1234) · macOS',
+    );
+    assert.equal(
+      versionLine({ appVersion: '0.3.0' }, { commit: 'abc1234', channel: '' }),
+      'Version 0.3.0 (build abc1234) · macOS',
+    );
+    assert.equal(versionLine({ appVersion: '0.3.0' }), 'Version 0.3.0 (build dev) · macOS');
     assert.equal(versionLine({} as never), 'macOS');
     assert.equal(versionLine(undefined), 'macOS');
   });

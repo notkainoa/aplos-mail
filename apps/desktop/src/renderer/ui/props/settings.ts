@@ -47,9 +47,9 @@ export type ProviderId =
 /** Where a provider's key comes from; key characters are never shown (DESIGN §7.10). */
 export type KeySource =
   | {
-      /** "From environment: GROQ_API_KEY"; Remove is disabled with the reason in a tooltip. */
+      /** "Key set on this Mac"; Remove is disabled with the reason in a tooltip. The variable name joins the line only with Developer details on. */
       kind: 'environment';
-      /** Variable name. */
+      /** Variable name; empty unless Developer details is on. */
       variable: string;
     }
   | {
@@ -57,9 +57,9 @@ export type KeySource =
       kind: 'keychain';
     }
   | {
-      /** "Not set · reads ANTHROPIC_API_KEY"; the row offers "Add key". */
+      /** "No key yet"; the row offers "Add key". The variable name joins the line only with Developer details on. */
       kind: 'none';
-      /** Variable the engine would read. */
+      /** Variable the engine would read; empty unless Developer details is on. */
       variable: string;
     }
   | {

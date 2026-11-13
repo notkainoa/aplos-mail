@@ -119,3 +119,17 @@
 .compose-suggest {
   display: contents;
 }
+
+/* The From row: its address reads like the recipient rows' text, not like a control, when the account cannot change. */
+.aplos-from {
+  align-items: center;
+}
+.aplos-from .ui-recipient-field__label {
+  padding-top: 0;
+}
+.aplos-from__address {
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}

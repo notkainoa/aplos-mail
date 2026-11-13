@@ -152,6 +152,7 @@ export function ComposePageView({
   const shared = useSharedComposerProps(binding, controls, {
     label: 'Message',
     focusTo: binding.state.fields.to.length === 0,
+    from: true,
   });
   const { session, state, view } = binding;
   const cards = useCardStyle(props.cardStyle);

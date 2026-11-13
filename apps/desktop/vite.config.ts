@@ -1,10 +1,28 @@
 import { defineConfig, type Plugin } from 'vite';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 // Development ports can move (APLOS_VITE_PORT / APLOS_API_PORT) so several checkouts preview side by side; the CSP follows them.
 const vitePort = Number(process.env.APLOS_VITE_PORT) || 5173,
   apiPort = Number(process.env.VITE_APLOS_API_PORT || process.env.APLOS_API_PORT) || 4317;
 // The workspace packages are TypeScript source; the alias matches the tsconfig paths.
 const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
+
+/**
+ * What Help & about says about this build: the short git commit ("dev" when git is unavailable) and the channel suffix
+ * ("revamp" until a release build, which sets APLOS_RELEASE_BUILD=1 and shows the plain version).
+ */
+export function buildInfo(env: NodeJS.ProcessEnv): { commit: string; channel: string } {
+  const channel = env.APLOS_BUILD_CHANNEL ?? (env.APLOS_RELEASE_BUILD === '1' ? '' : 'revamp');
+  try {
+    const out = execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return { commit: out.trim() || 'dev', channel };
+  } catch {
+    return { commit: 'dev', channel };
+  }
+}
 
 /**
  * The renderer's Content-Security-Policy (plan 40 Q2.5, stage 1). index.html carries the dev
@@ -122,6 +140,7 @@ function csp(): Plugin[] {
 
 export default defineConfig({
   base: './',
+  define: { __APLOS_BUILD__: JSON.stringify(buildInfo(process.env)) },
   resolve: { alias: [{ find: /^@aplos\/(engine|contract)\//, replacement: `${packages}$1/src/` }] },
   server: {
     host: '127.0.0.1',

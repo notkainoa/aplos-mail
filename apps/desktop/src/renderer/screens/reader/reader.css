@@ -228,10 +228,9 @@
 }
 
 /* ---------- The card header's "To" and its details popover (owner request 2026-11-10; images B and C) ----------
-   "To", up to three overlapping monogram circles and a chevron, as one button (24 px tall, so a comfortable target);
-   its popover lists From, To, Cc, Bcc, Reply-to and Date as label and value rows between hairlines. Circles are
-   --raised with an --ink-2 letter and a ring in the card's own surface so they overlap cleanly; hover changes only a
-   colour, never a size or a position. */
+   "to me" (or the name or address) and a chevron, as one button (24 px tall, so a comfortable target); its popover
+   lists From, To, Cc, Bcc, Reply-to and Date as label and value rows between hairlines. A long line is cut with an
+   ellipsis; hover changes only a colour, never a size or a position. */
 .aplos-recipients {
   display: inline-flex;
   flex: none;
@@ -261,67 +260,22 @@
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
+/* The names give way (an ellipsis) so "and N more" is always drawn whole. */
 .aplos-recipients__to {
-  margin-right: var(--space-half);
-}
-.aplos-circles {
-  isolation: isolate;
   display: inline-flex;
-  flex-direction: row-reverse;
-  align-items: center;
-  padding-left: var(--space-2);
+  min-width: 0;
+  max-width: 40ch;
+  white-space: nowrap;
 }
-/* Positioned so the circles paint in DOM order (last to first), which puts the first person on top: an unpositioned
-   flex row paints its reversed items the other way, and each circle then hid the letter beside it. */
-.aplos-circle {
-  --circle-ring: var(--canvas);
-  --circle-fill: var(--sunken);
-  position: relative;
-  box-sizing: border-box;
-  display: inline-flex;
+.aplos-recipients__names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.aplos-recipients__more {
   flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-xs);
-  height: var(--control-xs);
-  margin-left: calc(-1 * var(--space-2));
-  border-radius: var(--radius-pill);
-  background-color: var(--circle-fill);
-  box-shadow: 0 0 0 var(--space-half) var(--circle-ring);
-  color: var(--ink-2);
-  font: var(--type-caption);
-  font-weight: 600;
-  letter-spacing: var(--track-caption);
-  font-variant-numeric: tabular-nums;
+  white-space: pre;
 }
-/* Every circle but the first (the DOM's last) has its leading side under the one before it, so its letter sits in the
-   part you see. */
-.aplos-circle:not(:last-child) {
-  padding-left: var(--space-2);
-}
-/* "+N" is a count. Its leading side sits under the circle before it, so that side's padding clears the overlap and the
-   part you see is one circle wide ("+3"); a longer count grows into a pill that keeps every digit inside it ("+497"). */
-.aplos-circle[data-more='true'] {
-  width: auto;
-  min-width: calc(var(--control-xs) + var(--space-2) + var(--space-half));
-  /* The overlap plus the ring of the circle on top, so the "+" is never under that ring. */
-  padding-left: calc(var(--space-2) + var(--space-half));
-  /* Physical sides, like the overlap's margin-left. */
-  padding-right: var(--space-1);
-}
-.aplos-circle::before {
-  content: attr(data-mark);
-}
-.aplos-circle[data-me='true'] {
-  color: var(--ink);
-}
-.aplos-reader[data-cards='a'] .aplos-circle {
-  --circle-ring: var(--paper);
-}
-:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-circle {
-  --circle-ring: var(--raised);
-}
-
 .aplos-details {
   box-sizing: border-box;
   /* A long recipient list scrolls inside a popover that still fits under the To button, instead of filling the window
@@ -492,11 +446,10 @@
   margin-top: 0;
 }
 
-/* In the dark theme the marks are a soft lift of the card, not the near-black --sunken (opaque, so overlapping circles stay clean). */
-:root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-circle,
+/* In the dark theme the mark is a soft lift of the card, not the near-black --sunken (opaque). */
 :root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-sender-mark {
-  --circle-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
-  background-color: var(--circle-fill);
+  --mark-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
+  background-color: var(--mark-fill);
 }
 
 /* Only a message with the card head (the sender's mark) indents its plain body to the name's column. */

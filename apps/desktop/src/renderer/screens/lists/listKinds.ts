@@ -32,7 +32,7 @@ export interface ListConfig {
   readonly emptyIcon: IconName;
   /** A second, quieter line under the empty sentence, only where it helps. */
   readonly emptyDetail?: string;
-  /** Date groups ("Today", "Yesterday") use section labels in All mail and Done (DESIGN 7.4). */
+  /** Date groups ("Today", "Yesterday") use section labels in All mail, Done, Drafts and Sent (DESIGN 7.4). */
   readonly dateGroups: boolean;
   /** Which date a date group reads: when the thread last moved, or when it was finished. */
   readonly dateField: 'lastDate' | 'doneAt';
@@ -82,27 +82,33 @@ export const ALL_CONFIG: ListConfig = {
   dateGroups: true,
 };
 
-export const DRAFTS_CONFIG: ListConfig = config({
-  kind: 'drafts',
-  id: 'list-drafts',
-  name: 'Drafts',
-  scope: 'list:drafts',
-  view: { kind: 'drafts' },
-  empty: 'No drafts',
-  emptyIcon: 'file',
-  hoverActions: [],
-});
+export const DRAFTS_CONFIG: ListConfig = {
+  ...config({
+    kind: 'drafts',
+    id: 'list-drafts',
+    name: 'Drafts',
+    scope: 'list:drafts',
+    view: { kind: 'drafts' },
+    empty: 'No drafts',
+    emptyIcon: 'file',
+    hoverActions: [],
+  }),
+  dateGroups: true,
+};
 
-export const SENT_CONFIG: ListConfig = config({
-  kind: 'sent',
-  id: 'list-sent',
-  name: 'Sent',
-  scope: 'list:sent',
-  view: { kind: 'mailbox', role: 'sent' },
-  empty: 'Nothing sent yet',
-  emptyIcon: 'send',
-  hoverActions: TRIAGE_ACTIONS,
-});
+export const SENT_CONFIG: ListConfig = {
+  ...config({
+    kind: 'sent',
+    id: 'list-sent',
+    name: 'Sent',
+    scope: 'list:sent',
+    view: { kind: 'mailbox', role: 'sent' },
+    empty: 'Nothing sent yet',
+    emptyIcon: 'send',
+    hoverActions: TRIAGE_ACTIONS,
+  }),
+  dateGroups: true,
+};
 
 export const TRASH_CONFIG: ListConfig = config({
   kind: 'trash',

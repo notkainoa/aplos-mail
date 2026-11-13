@@ -1,14 +1,14 @@
 /**
  * Rows as the shared list wants them: the pure mapping from a thread, a draft or a submission to the props of
  * `ListRow` (DESIGN 4.1, 7.4). Thread rows reuse Home's mapping; Drafts rows are Draft rows (recipients and the time
- * they were edited), Sent shows the recipients, Done adds the "Done 9:41 AM" stamp. Nothing here reads the engine.
+ * they were edited), Sent shows the recipients, Done adds the date-it-was-done stamp. Nothing here reads the engine.
  */
 import { toIsoDateTime, type Draft, type Submission, type ThreadRow } from '../../data';
 import type { LaterUntil, ListRowProps } from '../../ui/props';
 import {
+  cleanName,
   joinNames,
   listRowProps,
-  otherNames,
   primaryOf,
   senderOf,
   type RowContext,
@@ -47,20 +47,70 @@ export function openKindOf(row: ListRowData): OpenKind {
   return isSubmission(row) ? 'submission' : 'thread';
 }
 
+/** A person as a recipient column may name them. */
+interface Who {
+  readonly name?: string;
+  readonly address?: string;
+  readonly me?: boolean;
+}
+
+const BARE_ADDRESS = /^[^\s@]+@[^\s@]+$/;
+
+/** The short form of a name or address: an address gives its local part, a display name stays whole. */
+export function shortWho(text: string): string {
+  const clean = cleanName(text);
+  return BARE_ADDRESS.test(clean) ? clean.slice(0, clean.indexOf('@')) : clean;
+}
+
+function shortOf(who: Who): string {
+  return shortWho(cleanName(who.name) || cleanName(who.address));
+}
+
+/** The full form for the tooltip: "Name <address>", or the address, or the name. */
+function fullOf(who: Who): string {
+  const name = cleanName(who.name);
+  const address = cleanName(who.address);
+  if (name && address && name !== address) return `${name} <${address}>`;
+  return address || name;
+}
+
+/** A recipients column: "To: name, name and 2 more" with the full addresses for the tooltip. */
+export interface RecipientsLine {
+  readonly text: string;
+  readonly title: string;
+}
+
+/** The "To: ..." line of Drafts and Sent: display names (or local parts) first, every full address in the tooltip. */
+export function recipientsLine(people: readonly Who[]): RecipientsLine | undefined {
+  const named = people.filter(who => shortOf(who) !== '');
+  if (named.length === 0) return undefined;
+  return {
+    text: `To: ${joinNames(named.map(shortOf))}`,
+    title: `To: ${named.map(fullOf).join(', ')}`,
+  };
+}
+
+const NO_RECIPIENT: RecipientsLine = { text: 'No recipient', title: 'No recipient' };
+
 /** Sent's who column: the people the thread went to (the newest message the owner sent), never the owner. */
-export function recipientsOfThread(row: ThreadRow): string {
-  const to = otherNames(row.recipients);
-  if (to.length > 0) return joinNames(to);
-  const names = otherNames(row.participants);
-  return names.length > 0 ? joinNames(names) : senderOf(row);
+export function recipientsOfThread(row: ThreadRow): RecipientsLine {
+  const to = (row.recipients ?? []).filter(who => who.me !== true);
+  const others = row.participants.filter(who => who.me !== true);
+  const line = recipientsLine(to) ?? recipientsLine(others);
+  if (line) return line;
+  const sender = senderOf(row);
+  return { text: sender, title: sender };
 }
 
 /** A draft's who column: its recipients, or "No recipient" for a draft with none yet. */
-export function recipientsOfDraft(draft: Draft): string {
-  const names = draft.to
-    .map(person => (person.name || person.address).trim())
-    .filter(name => name.length > 0);
-  return names.length > 0 ? joinNames(names) : 'No recipient';
+export function recipientsOfDraft(draft: Draft): RecipientsLine {
+  return recipientsLine(draft.to) ?? NO_RECIPIENT;
+}
+
+/** A submission's who column. */
+function recipientsOfSubmission(submission: Submission): RecipientsLine {
+  const names = submission.toNames.map(name => ({ name }));
+  return recipientsLine(names) ?? NO_RECIPIENT;
 }
 
 const TAG = /<[^>]*>/g;
@@ -85,12 +135,19 @@ function submissionLine(submission: Submission): string {
   return subject.length > 0 ? subject : 'No subject';
 }
 
+/**
+ * When a thread was finished: the engine's `doneAt` when it says one, else the thread's last message (the real engine
+ * does not stamp it yet, and a row never reads as "Done" with no date or lumps under Today).
+ */
+export function doneMsOf(row: ThreadRow): number {
+  return row.workflow.doneAt ?? row.lastDate;
+}
+
 /** The moment a row sorts and groups by: last activity, or when it was finished in Done. */
 export function dateMsOf(row: ListRowData, field: ListConfig['dateField']): number | undefined {
   if (isDraft(row)) return row.updatedAt;
   if (isSubmission(row)) return row.sentAt ?? row.notBefore;
-  if (field === 'doneAt') return row.workflow.doneAt;
-  return row.lastDate;
+  return field === 'doneAt' ? doneMsOf(row) : row.lastDate;
 }
 
 /** The part of `ListRowProps` the screen decides. */
@@ -115,11 +172,13 @@ export function laterUntilOf(row: ThreadRow, nowMs: number): LaterUntil {
 type UnpickedProps = Omit<ListRowProps, 'picked' | 'picking'>;
 
 function draftProps(draft: Draft, context: ListRowContext): UnpickedProps {
+  const who = recipientsOfDraft(draft);
   return {
     id: context.domId,
     layout: context.config.layout,
     density: context.density,
-    sender: recipientsOfDraft(draft),
+    sender: who.text,
+    senderTitle: who.title,
     primary: draftLine(draft),
     unread: false,
     date: toIsoDateTime(draft.updatedAt),
@@ -134,11 +193,13 @@ function draftProps(draft: Draft, context: ListRowContext): UnpickedProps {
 
 function submissionProps(submission: Submission, context: ListRowContext): UnpickedProps {
   const at = submission.sentAt ?? submission.notBefore;
+  const who = recipientsOfSubmission(submission);
   return {
     id: context.domId,
     layout: context.config.layout,
     density: context.density,
-    sender: joinNames(submission.toNames.filter(name => name.trim().length > 0)) || 'No recipient',
+    sender: who.text,
+    senderTitle: who.title,
     primary: submissionLine(submission),
     unread: false,
     date: toIsoDateTime(at),
@@ -150,19 +211,19 @@ function submissionProps(submission: Submission, context: ListRowContext): Unpic
   };
 }
 
-/** When the thread was finished; absent when the engine does not say, so the stamp reads a bare "Done". */
+/** When the thread was finished, for the Done stamp column. */
 function doneStampOf(row: ThreadRow): ListRowProps['doneAt'] {
-  const at = row.workflow.doneAt;
-  return at === undefined ? undefined : toIsoDateTime(at);
+  return toIsoDateTime(doneMsOf(row));
 }
 
 function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
   const { config } = context;
   const base = listRowProps(row, { ...context, layout: config.layout });
-  const who = config.kind === 'sent' ? recipientsOfThread(row) : base.sender;
+  const sent = config.kind === 'sent' ? recipientsOfThread(row) : undefined;
   return {
     ...base,
-    sender: who.trim() || 'No sender',
+    sender: (sent?.text ?? base.sender).trim() || 'No sender',
+    senderTitle: sent?.title,
     primary: primaryOf(row),
     hoverActions: config.hoverActions,
     doneAt: config.layout === 'done' ? doneStampOf(row) : undefined,
@@ -187,7 +248,12 @@ export function targetOf(row: ListRowData): {
   detail: string;
 } {
   if (isDraft(row)) {
-    return { kind: 'draft', id: row.id, title: recipientsOfDraft(row), detail: draftLine(row) };
+    return {
+      kind: 'draft',
+      id: row.id,
+      title: recipientsOfDraft(row).title,
+      detail: draftLine(row),
+    };
   }
   if (isSubmission(row)) {
     return {

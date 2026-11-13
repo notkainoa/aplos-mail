@@ -4,8 +4,16 @@
  * a draft is never discarded without the confirmation, the text the engine confirmed is never thrown away, and one
  * press makes at most one `Submission/set send`.
  */
-import { failSave, finishSave, isDirty, noteEdit, retryNow, saveIsDue } from './autosave';
-import type { ComposeEvent, ComposeState, Step } from './composeState';
+import {
+  FRESH_SAVE,
+  failSave,
+  finishSave,
+  isDirty,
+  noteEdit,
+  retryNow,
+  saveIsDue,
+} from './autosave';
+import type { ComposeEffect, ComposeEvent, ComposeState, Step } from './composeState';
 import { fieldsFromDraft, isBlank, type ComposeFields } from './fields';
 import {
   onAccepted,
@@ -46,19 +54,37 @@ function onEdit(state: ComposeState, event: Event<'edit'>): Step {
   return saveIfDue(next, event.now);
 }
 
+/** The draft From left behind in the old account goes once its replacement is saved (or the composer is discarded). */
+function leavingEffects(state: ComposeState, keep: string | undefined): ComposeEffect[] {
+  const old = state.leaving;
+  return old !== undefined && old !== keep ? [{ type: 'destroy', draftId: old, quiet: true }] : [];
+}
+
 function onSaved(state: ComposeState, event: Event<'saved'>): Step {
-  const next: ComposeState = { ...state, save: finishSave(state.save, event.seq, event.draft) };
+  const next: ComposeState = {
+    ...state,
+    save: finishSave(state.save, event.seq, event.draft),
+    leaving: undefined,
+  };
+  const old = leavingEffects(state, event.draft.id);
   if (state.discarding)
-    return { state: next, effects: [{ type: 'destroy', draftId: event.draft.id }] };
-  if (state.send.kind !== 'pending') return still(next);
-  return isDirty(next.save) ? saveStep(next) : submitStep(next);
+    return {
+      state: next,
+      effects: [...old, { type: 'destroy', draftId: event.draft.id }],
+    };
+  if (state.send.kind !== 'pending') return { state: next, effects: old };
+  const step = isDirty(next.save) ? saveStep(next) : submitStep(next);
+  return { state: step.state, effects: [...old, ...step.effects] };
 }
 
 function onSaveFailed(state: ComposeState, event: Event<'saveFailed'>): Step {
   const next: ComposeState = { ...state, save: failSave(state.save, event.now) };
   if (state.discarding) {
     const id = next.save.draftId;
-    return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+    // The draft From left behind in the old account goes too (the move's save failed, so it is the only copy).
+    const old = leavingEffects(state, id ?? undefined);
+    if (id) return { state: next, effects: [...old, { type: 'destroy', draftId: id }] };
+    return { state: next, effects: [...old, ...discardedStep(next).effects] };
   }
   // Gone, stale or locked: a retry on the same base would fail for ever, so the text moves on (saveConflict.ts).
   if (event.cause && state.save.draftId !== null)
@@ -119,6 +145,46 @@ function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
   return still(next);
 }
 
+/**
+ * From (the account a new message is written in). A draft belongs to one account for good, so one the engine already
+ * holds is saved again in the account chosen and only then destroyed (quietly), so the text is never in memory alone. Only a new message can change
+ * account (a reply belongs to the thread's), and only while nothing is in flight: a save that is mid-air, a send, a
+ * discard or a conflict wait would race the move.
+ */
+export function canChangeAccount(state: ComposeState): boolean {
+  return (
+    state.open &&
+    !state.discarding &&
+    state.context.mode === 'new' &&
+    state.send.kind === 'none' &&
+    // Another window pressed Send on this draft: destroying it would cancel that send without a word.
+    state.remote?.submissionId === undefined &&
+    state.save.flightSeq === null &&
+    !state.save.waitingForRemote
+  );
+}
+
+function onSetAccount(state: ComposeState, event: Event<'setAccount'>): Step {
+  if (!canChangeAccount(state) || state.context.accountId === event.accountId) return still(state);
+  const context = { ...state.context, accountId: event.accountId };
+  const old = state.save.draftId;
+  // Nothing saved yet, or the first save is still being retried: only the account changes (the session mints a new create key).
+  if (old === null) {
+    // A failed create waits out its backoff; a changed account is a fresh try, so "Couldn't save" does not linger.
+    const retry = state.save.failures > 0 ? retryNow(state.save, event.now) : state.save;
+    return saveIfDue({ ...state, context, save: retry }, event.now);
+  }
+  const moved: ComposeState = {
+    ...state,
+    context,
+    save: noteEdit(FRESH_SAVE, event.now),
+    leaving: old,
+    remote: undefined,
+    attempt: 0,
+  };
+  return saveIfDue(moved, event.now);
+}
+
 function onEscape(state: ComposeState): Step {
   if (state.suggestion) return still({ ...state, suggestion: null });
   if (state.confirm) return still({ ...state, confirm: null });
@@ -155,7 +221,11 @@ function onConfirmDiscard(state: ComposeState): Step {
   // A save in flight may be creating the draft: the destroy follows its answer (`onSaved`).
   if (state.save.flightSeq !== null) return still(next);
   const id = state.save.draftId;
-  return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+  const old = leavingEffects(state, id ?? undefined);
+  if (id) return { state: next, effects: [...old, { type: 'destroy', draftId: id }] };
+  return old.length > 0
+    ? { state: next, effects: [...old, ...discardedStep(next).effects] }
+    : discardedStep(next);
 }
 
 function onDiscardFailed(state: ComposeState): Step {
@@ -248,6 +318,8 @@ function saveReducer(state: ComposeState, event: SaveEvent): Step {
 export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
   if (isSaveEvent(event)) return saveReducer(state, event);
   switch (event.type) {
+    case 'setAccount':
+      return onSetAccount(state, event);
     case 'undoLost':
       return { state, effects: [{ type: 'notify', notice: 'alreadySent' }] };
     case 'undoRefused':

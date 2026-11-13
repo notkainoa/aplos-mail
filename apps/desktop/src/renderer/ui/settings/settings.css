@@ -41,6 +41,8 @@
 .ui-setting-row[data-has-description='true'] .ui-setting-row__main,
 .ui-setting-row[data-has-description='true'] .ui-setting-row__toggle {
   min-height: var(--row-roomy);
+  /* A long description wraps instead of clipping; the padding keeps wrapped rows calm. */
+  padding-block: var(--space-1);
 }
 
 .ui-setting-row__text {
@@ -101,7 +103,7 @@
 
 .ui-setting-row__description {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-1);
   min-width: 0;
   font: var(--type-small);
@@ -109,11 +111,13 @@
   color: var(--dim);
 }
 
+.ui-setting-row__description .ui-set-icon {
+  margin-top: var(--space-half);
+}
+
 .ui-setting-row__description-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .ui-setting-row__description[data-tone='attention'],

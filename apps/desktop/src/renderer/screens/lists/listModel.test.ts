@@ -34,11 +34,15 @@ import {
   stepKey,
 } from './listModel';
 import {
+  dateMsOf,
+  doneMsOf,
   draftLine,
   listRowPropsFor,
   plainText,
+  recipientsLine,
   recipientsOfDraft,
   recipientsOfThread,
+  shortWho,
 } from './listRows';
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${i}`);
@@ -265,8 +269,15 @@ test('a Sent thread shows the recipients, not the owner', () => {
       { address: 'jo@x.example' },
     ],
   });
-  assert.equal(recipientsOfThread(row), 'Studio team, jo@x.example');
-  assert.equal(listRowPropsFor(row, context(SENT_CONFIG)).sender, 'Studio team, jo@x.example');
+  assert.equal(recipientsOfThread(row).text, 'To: Studio team, jo');
+  assert.equal(
+    recipientsOfThread(row).title,
+    'To: Studio team <team@x.example>, jo@x.example',
+    'the tooltip keeps the full addresses',
+  );
+  const props = listRowPropsFor(row, context(SENT_CONFIG));
+  assert.equal(props.sender, 'To: Studio team, jo');
+  assert.equal(props.senderTitle, 'To: Studio team <team@x.example>, jo@x.example');
 });
 
 test('a Sent thread prefers who the owner sent it to over who else wrote in it', () => {
@@ -283,8 +294,8 @@ test('a Sent thread prefers who the owner sent it to over who else wrote in it',
       { address: 'jo@x.example' },
     ],
   } as ThreadRow;
-  assert.equal(recipientsOfThread(sent), 'Priya Raman, jo@x.example');
-  assert.equal(listRowPropsFor(sent, context(SENT_CONFIG)).sender, 'Priya Raman, jo@x.example');
+  assert.equal(recipientsOfThread(sent).text, 'To: Priya Raman, jo');
+  assert.equal(listRowPropsFor(sent, context(SENT_CONFIG)).sender, 'To: Priya Raman, jo');
 });
 
 test('a Draft row shows recipients, subject and the edited time; an empty draft says so', () => {
@@ -300,12 +311,13 @@ test('a Draft row shows recipients, subject and the edited time; an empty draft 
     updatedAt: NOW,
   } as unknown as Draft;
   const props = listRowPropsFor(draft, context(DRAFTS_CONFIG));
-  assert.equal(props.sender, 'Jordan Park');
+  assert.equal(props.sender, 'To: Jordan Park');
+  assert.equal(props.senderTitle, 'To: Jordan Park <jordan@x.example>');
   assert.equal(props.primary, 'Hi Jordan , Thoughts to follow.');
   assert.match(props.date, /^2026-10-29T10:00:00/);
   assert.equal(props.hoverActions.length, 0, 'Drafts has no quick action');
   const empty = { ...draft, to: [], subject: '  ', html: '<p></p>' } as unknown as Draft;
-  assert.equal(recipientsOfDraft(empty), 'No recipient');
+  assert.equal(recipientsOfDraft(empty).text, 'No recipient');
   assert.equal(draftLine(empty), 'No subject');
   assert.equal(plainText('<script>x</script>a<br>b'), 'x a b');
 });
@@ -320,7 +332,7 @@ test('a Sent submission shows its recipients, subject and send time', () => {
     state: 'sent',
   } as unknown as Submission;
   const props = listRowPropsFor(submission, context(SENT_CONFIG));
-  assert.equal(props.sender, 'Jordan Park');
+  assert.equal(props.sender, 'To: Jordan Park');
   assert.equal(props.primary, 'No subject');
   assert.match(props.date, /^2026-10-29T09:59:00/);
 });
@@ -336,6 +348,112 @@ test('a Done row carries the stamp time and the Move to Home action only', () =>
   assert.deepEqual(
     props.hoverActions.map(a => a.commandId),
     ['done.moveToHome'],
+  );
+});
+
+test('a recipients column leads with the display name or the local part and keeps full addresses in the tooltip', () => {
+  const long =
+    'alexandra.montgomery-featherstonehaugh@a-rather-long-subdomain.example-company.co.uk';
+  assert.deepEqual(recipientsLine([{ address: long }]), {
+    text: 'To: alexandra.montgomery-featherstonehaugh',
+    title: `To: ${long}`,
+  });
+  assert.deepEqual(recipientsLine([{ name: long, address: long }]), {
+    text: 'To: alexandra.montgomery-featherstonehaugh',
+    title: `To: ${long}`,
+  });
+  const line = recipientsLine([
+    { name: 'Jordan Park', address: 'jordan@x.example' },
+    { address: 'mina@x.example' },
+    { name: '  ' },
+    { name: 'Dev Rao', address: 'dev@x.example' },
+    { name: 'Sam Lee', address: 'sam@x.example' },
+  ]);
+  assert.equal(line?.text, 'To: Jordan Park, mina, Dev Rao and 1 more');
+  assert.equal(
+    line?.title,
+    'To: Jordan Park <jordan@x.example>, mina@x.example, Dev Rao <dev@x.example>, Sam Lee <sam@x.example>',
+  );
+  assert.equal(recipientsLine([]), undefined);
+  assert.equal(shortWho('  Mina   Cho '), 'Mina Cho');
+});
+
+test('Drafts and Sent group by date like All mail; Done groups by when it was finished', () => {
+  assert.deepEqual(
+    [ALL_CONFIG, DRAFTS_CONFIG, SENT_CONFIG, DONE_CONFIG].map(c => c.dateGroups),
+    [true, true, true, true],
+  );
+  const draft = (id: string, updatedAt: number) =>
+    ({ id, revision: 1, html: '', subject: id, to: [], updatedAt }) as unknown as Draft;
+  const drafts = [
+    draft('a', day(0, 8)),
+    draft('b', day(1)),
+    draft('c', day(1, 8)),
+    draft('d', day(20)),
+  ];
+  const groups = groupByDate(
+    drafts.map(d => d.id),
+    id =>
+      dateMsOf(
+        drafts.find(d => d.id === id)!,
+        DRAFTS_CONFIG.dateField,
+      ),
+    NOW,
+  );
+  assert.deepEqual(
+    groups.map(g => [g.label, g.ids]),
+    [
+      ['Today', ['a']],
+      ['Yesterday', ['b', 'c']],
+      ['Earlier in October', ['d']],
+    ].map(([label, ids]) => [label, ids]),
+  );
+});
+
+test('Done rows group and stamp by the finish time, else by the last message, never all under Today', () => {
+  const finished = thread({
+    id: 'f',
+    lastDate: day(9),
+    workflow: {
+      bookmarked: false,
+      status: 'done',
+      hiddenFromHome: false,
+      doneAt: day(0, 8),
+    } as never,
+  });
+  const unstamped = thread({
+    id: 'u',
+    lastDate: day(1, 14),
+    workflow: { bookmarked: false, status: 'done', hiddenFromHome: false } as never,
+  });
+  const older = thread({
+    id: 'o',
+    lastDate: day(40),
+    workflow: { bookmarked: false, status: 'done', hiddenFromHome: false } as never,
+  });
+  assert.equal(doneMsOf(finished), day(0, 8));
+  assert.equal(doneMsOf(unstamped), day(1, 14), 'the real engine does not stamp doneAt yet');
+  const rows = [finished, unstamped, older];
+  const groups = groupByDate(
+    rows.map(r => r.id),
+    id =>
+      dateMsOf(
+        rows.find(r => r.id === id)!,
+        DONE_CONFIG.dateField,
+      ),
+    NOW,
+  );
+  assert.deepEqual(
+    groups.map(g => g.label),
+    ['Today', 'Yesterday', 'September'],
+  );
+  assert.match(
+    listRowPropsFor(unstamped, context(DONE_CONFIG)).doneAt ?? '',
+    /^2026-10-28T14:00:00/,
+  );
+  assert.match(
+    listRowPropsFor(finished, context(DONE_CONFIG)).doneAt ?? '',
+    /^2026-10-29T08:00:00/,
   );
 });
 

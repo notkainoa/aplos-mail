@@ -1,12 +1,12 @@
 /**
  * Who a message went to, as the card header and its details popover want it (owner request 2026-11-10): the pure
- * mapping from a `Message` and the owner's addresses to the recipient circles and the From/To/Cc/Bcc/Reply-to/Date rows.
+ * mapping from a `Message` and the owner's addresses to the recipient list and the From/To/Cc/Bcc/Reply-to/Date rows.
  * It reads only what the message carries; there are no photos, mailed-by or signed-by facts to show, so nothing is made up.
  */
 import type { Address, Message } from '../../data';
 import { nameOf } from './readerRows';
 
-/** One person on a message, as the circles and the popover show them. */
+/** One person on a message, as the header line and the popover show them. */
 export interface Person {
   /** Unique within a message's list: the lower-cased address, else the name. */
   readonly key: string;
@@ -24,8 +24,8 @@ export type DetailRow =
   | { readonly kind: 'people'; readonly label: string; readonly people: readonly Person[] }
   | { readonly kind: 'text'; readonly label: string; readonly text: string; readonly iso: string };
 
-/** The most circles drawn before the rest become one "+N" circle. */
-export const MAX_CIRCLES = 3;
+/** The most names the header's "to …" shows before the rest become "and N more". */
+export const MAX_NAMED = 2;
 
 function initialOf(text: string): string {
   const first = Array.from(text.trim().replace(/^[^\p{L}\p{N}]+/u, ''))[0];
@@ -58,10 +58,10 @@ function meFirst(people: readonly Person[]): readonly Person[] {
 }
 
 /**
- * The people the circles stand for: To and Cc, the owner first. A message that arrived in the owner's mailbox without
+ * The people the header names: To and Cc, the owner first. A message that arrived in the owner's mailbox without
  * their address in either (Bcc, a list) still went to them, so "You" is added; a message the owner sent is not.
  */
-export function recipientCircles(message: Message, me: ReadonlySet<string>): readonly Person[] {
+export function recipientPeople(message: Message, me: ReadonlySet<string>): readonly Person[] {
   const listed = unique([...message.to, ...message.cc].map(a => personOf(a, me)));
   const arrived = !message.fromMe && !listed.some(p => p.me);
   const youAddress = arrived ? ([...me][0] ?? '') : '';
@@ -69,12 +69,44 @@ export function recipientCircles(message: Message, me: ReadonlySet<string>): rea
   return meFirst(arrived ? [...listed, you] : listed);
 }
 
-/** "you, Mina Cho and 4 more" (or "no one"): who the circles stand for, for the button's accessible name after "To". */
-export function recipientsPhrase(people: readonly Person[]): string {
-  const shown = people.slice(0, MAX_CIRCLES).map(p => (p.me ? 'you' : p.name));
-  if (shown.length === 0) return 'no one';
+/** The longest a name runs in the header's line before it is cut, so "and N more" is never the part that is clipped. */
+const MAX_NAME = 16;
+
+function shortName(name: string): string {
+  const chars = Array.from(name);
+  // An address is shown whole (the owner wants to see who it is): only a display name is cut.
+  return !name.includes('@') && chars.length > MAX_NAME
+    ? `${chars
+        .slice(0, MAX_NAME - 1)
+        .join('')
+        .trimEnd()}…`
+    : name;
+}
+
+/** The header line in two parts: the names (which a narrow header may cut) and the "and N more" tail (which it must not). */
+export interface RecipientParts {
+  readonly names: string;
+  /** " and 4 more", with its leading space; '' when everyone is named. */
+  readonly more: string;
+}
+
+/**
+ * The header's recipients, in plain words: "to me", "to Mina Cho", "to me, Mina Cho and 4 more". A recipient without a
+ * display name shows as the address, so the line always says who it went to.
+ */
+export function recipientParts(people: readonly Person[]): RecipientParts {
+  // One more than the limit is named too: "and 1 more" would only hide a name that fits.
+  const limit = people.length === MAX_NAMED + 1 ? people.length : MAX_NAMED;
+  const shown = people.slice(0, limit).map(p => (p.me ? 'me' : shortName(p.name)));
+  if (shown.length === 0) return { names: 'to undisclosed recipients', more: '' };
   const rest = people.length - shown.length;
-  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+  return { names: `to ${shown.join(', ')}`, more: rest > 0 ? ` and ${rest} more` : '' };
+}
+
+/** The same line as one string: the button's accessible name. */
+export function recipientLabel(people: readonly Person[]): string {
+  const { names, more } = recipientParts(people);
+  return names + more;
 }
 
 function sameAddresses(a: readonly Address[], b: readonly Address[]): boolean {

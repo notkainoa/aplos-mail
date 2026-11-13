@@ -107,7 +107,7 @@ test('DraftState writes the three lines of DESIGN 7.6', () => {
 
 test('Suggestion says what DESIGN says for an AI draft and for the follow-up nudge', () => {
   const draft = html(<Suggestion kind="draft" onKeep={noop} onDismiss={noop} />);
-  assert.equal(text(draft), 'The grey sentence is a suggestion.KeepTabDismissEsc');
+  assert.equal(text(draft), 'The gray sentence is a suggestion.KeepTabDismissEsc');
   assert.match(draft, /role="status"/);
   assert.match(draft, /<kbd[^>]*>Tab<\/kbd>/);
   assert.match(draft, /<kbd[^>]*>Esc<\/kbd>/);
@@ -284,7 +284,7 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
 test('Composer: AI draft hint, Polish bar, follow-up hint and dictation from an empty body', () => {
   assert.match(
     text(html(composer({ suggestion: { kind: 'draft', onKeep: noop, onDismiss: noop } }))),
-    /The grey sentence is a suggestion\./,
+    /The gray sentence is a suggestion\./,
   );
   assert.match(
     text(html(composer({ suggestion: { kind: 'followUp', onKeep: noop, onDismiss: noop } }))),

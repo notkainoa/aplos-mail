@@ -48,7 +48,7 @@ export type SyncStatus =
       kind: 'needsPermission';
     }
   | {
-      /** "Your organisation has blocked Aplos. Ask your administrator." */
+      /** "Your organization has blocked Aplos. Ask your administrator." */
       kind: 'needsAdmin';
     }
   | {
@@ -74,7 +74,7 @@ export type SyncStatus =
 export interface SyncAccount {
   /** Address; also the progress bar's label "<address> sync" (DESIGN §7.12 Accessibility). */
   address: string;
-  /** Account colour dot. */
+  /** Account color dot. */
   color: TagColor;
 }
 
