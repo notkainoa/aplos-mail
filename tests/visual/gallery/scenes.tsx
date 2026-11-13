@@ -95,7 +95,8 @@ function useAnchor(): [(el: HTMLElement | null) => void, HTMLElement | null] {
 
 /* ------------------------------ scenes ------------------------------ */
 
-function HomeFocus(): ReactElement {
+/** The focus card in the three summary states (owner decision 2026-11-13): ready, being written, none coming. */
+function HomeFocus({ summary = SUMMARY }: { summary?: FocusLetterProps['summary'] }): ReactElement {
   return (
     <Column>
       <ListBox binding={{ id: 'home', label: 'Home', activeDescendantId: 'focus-jordan' }}>
@@ -108,8 +109,8 @@ function HomeFocus(): ReactElement {
             action: { label: 'Go one by one', commandId: 'home.oneByOne', onSelect: noop },
           }}
         >
-          <FocusSlot density="comfortable">
-            <FocusLetter {...letter()} />
+          <FocusSlot density="comfortable" fit={summary.state === 'absent' ? 'content' : 'fixed'}>
+            <FocusLetter {...letter({ summary })} />
           </FocusSlot>
           <ListRow
             {...row({
@@ -628,7 +629,13 @@ function ConfirmScene(): ReactElement {
 }
 
 export const scenes: Record<string, () => ReactElement> = {
-  'home-focus': HomeFocus,
+  'home-focus': () => <HomeFocus />,
+  'home-focus-pending': () => (
+    <HomeFocus summary={{ state: 'pending', subject: SUMMARY.subject }} />
+  ),
+  'home-focus-no-summary': () => (
+    <HomeFocus summary={{ state: 'absent', subject: SUMMARY.subject }} />
+  ),
   'home-held-zero': HomeHeldZero,
   'list-rows': ListRows,
   'done-rows': DoneRows,

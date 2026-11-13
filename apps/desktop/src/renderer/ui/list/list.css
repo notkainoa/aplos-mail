@@ -974,7 +974,7 @@
   flex: none;
   height: var(--space-3);
   border-radius: var(--radius-pill);
-  background-color: var(--sunken);
+  background-color: var(--line);
 }
 .ui-summary-placeholder__bar[data-width='long'] {
   width: 90%;

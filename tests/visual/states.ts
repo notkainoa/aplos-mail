@@ -5,6 +5,7 @@
 
 import { calendarStates } from './states.calendar';
 import { emptyStates } from './states.empty';
+import { focusStates } from './states.focus';
 import { readerStates } from './states.reader';
 import { shellSettingsStates } from './states.shell';
 
@@ -795,6 +796,8 @@ export const STATES: readonly VisualState[] = [
     mockup: 'calendar-week.html (default)',
     filled: 0,
   },
+  // the Home focus card's summary space
+  ...focusStates,
   // ui-reader
   ...emptyStates,
   ...readerStates,
