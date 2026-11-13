@@ -613,7 +613,7 @@ export function localRows(
     const p = byId(providers, id);
     if (!p) return [];
     const status: ProviderStatus =
-      testing[id] ?? (p.running === false ? { kind: 'unreachable' } : providerStatus(p));
+      testing[id] ?? (p.running === false ? { kind: 'notRunning' } : providerStatus(p));
     return [
       {
         provider: id,

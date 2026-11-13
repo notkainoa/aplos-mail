@@ -240,15 +240,16 @@ export function escape(state: PaletteState): { state: PaletteState; closed: bool
 
 /* ───────────────────────── the view ───────────────────────── */
 
-/** Places offered under Go to on first open, in this order after the recent ones. */
+/** Places offered under Go to on first open, in this order after the recent ones: the ⌃1–⌃6 places in key order, so
+ * the keycaps count up without a gap, then the rest. */
 export const FIRST_OPEN_PLACES: readonly CommandId[] = [
   'nav.home',
   'nav.later',
   'nav.allMail',
   'nav.drafts',
+  'nav.sent',
   'nav.calendar',
   'nav.done',
-  'nav.sent',
   'nav.trash',
   'nav.spam',
   'nav.search',

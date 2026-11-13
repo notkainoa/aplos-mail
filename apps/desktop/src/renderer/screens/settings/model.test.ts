@@ -244,7 +244,8 @@ describe('AI: key source, Remove, providers', () => {
   test('local rows: running or not, optional key only for a custom server, address is what was typed', () => {
     const rows = localRows(providers(), baseSettings());
     assert.equal(rows[0].keySource?.kind, 'local');
-    assert.equal(rows[1].status?.kind, 'unreachable');
+    // Not running is a quiet status until the owner presses Test; red follows a failed Test only.
+    assert.equal(rows[1].status?.kind, 'notRunning');
     assert.equal(rows[2].keySource?.kind, 'none');
     assert.equal(rows[0].address, '');
     assert.equal(rows[0].defaultAddress, 'http://localhost:11434/v1');

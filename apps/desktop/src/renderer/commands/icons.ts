@@ -24,6 +24,8 @@ export const UI_ICON_FOR_COMMAND: Readonly<Record<IconName, UiIconName>> = {
   gearshape: 'settings',
   house: 'home',
   tray: 'tray',
+  paperplane: 'send',
+  shield: 'spam',
   keyboard: 'keyboard',
 };
 

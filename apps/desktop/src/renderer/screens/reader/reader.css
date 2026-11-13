@@ -233,8 +233,15 @@
    ellipsis; hover changes only a colour, never a size or a position. */
 .aplos-recipients {
   display: inline-flex;
-  flex: none;
+  /* The sender's name has priority: the "to" line gives way first (a shrink factor so far above the name's that the name
+     loses nothing while the line can still give), the names inside it first of all. */
+  flex: 0 1000000 auto;
   align-items: center;
+  min-width: 0;
+}
+/* But never the tail: with "and N more" the line keeps room for it and the chevron, and then the name gives way. */
+.aplos-recipients:has(.aplos-recipients__more) {
+  min-width: calc(var(--space-10) + var(--space-7));
 }
 .aplos-recipients__button {
   appearance: none;
@@ -243,6 +250,7 @@
   gap: var(--space-1);
   box-sizing: border-box;
   height: var(--control-xs);
+  min-width: 0;
   margin: 0;
   padding: 0 var(--space-1) 0 var(--space-2);
   border: 0;

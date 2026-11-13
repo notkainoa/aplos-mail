@@ -213,6 +213,11 @@
 .ui-chip[data-overdue='true'] .ui-list-icon {
   background-color: transparent;
 }
+/* Later (DESIGN 7.3): the Later-until chip on the right carries the one overdue fill, so the due chip before the
+   summary keeps its words and clock but sheds the tint (the section label and that chip already say overdue). */
+.ui-list-row[data-layout='later'] .ui-list-row__line .ui-chip[data-overdue='true'] {
+  background-color: var(--raised);
+}
 .ui-chip[data-kind='label'][data-color] {
   box-shadow: inset 0 0 0 1px var(--swatch);
 }
@@ -846,7 +851,11 @@
 .ui-focus-letter[data-picked='true'] {
   background-color: var(--accent-wash);
 }
-/* The same pick mark a row shows, in the card's left padding so nothing moves. */
+/* The sender steps right once the card is picked, so the mark and the name keep the row's 12 px gap. */
+.ui-focus-letter[data-picked='true'] .ui-focus-letter__meta {
+  padding-left: var(--space-2);
+}
+/* The same pick mark a row shows, in the card's left padding. */
 .ui-focus-letter__pick {
   position: absolute;
   top: var(--space-5);
