@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { STATES } from './states';
 import { openState } from './support/gallery';
 
-// The reader's card header (owner request 2026-11-10): "To", the recipient circles and a chevron open the message's
-// details in a popover; by keyboard it opens, Esc closes it and focus returns to the button. Circles are monograms,
-// never an <img>, so no avatar is fetched.
+// The reader's card header (owner request 2026-11-10): who the message went to ("to me") and a chevron open the message's
+// details in a popover; by keyboard it opens, Esc closes it and focus returns to the button. No avatar is drawn,
+// and none is fetched.
 const state = STATES.find(s => s.id === 'reader-rich-project')!;
 const LETTER = '.aplos-reader__letter[data-paper="true"]';
 const BUTTON = `${LETTER} .aplos-recipients__button`;

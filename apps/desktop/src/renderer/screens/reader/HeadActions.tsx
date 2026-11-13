@@ -40,8 +40,11 @@ export interface HeadActionsProps {
   /** The filled suggestion's verb and icon, for the menu's first row. */
   readonly suggestion: SuggestedAction;
   readonly controls: HeadControls;
-  /** The letter is on paper: only it answers the pane header's ⋯ (an off-paper letter is still laying itself out). */
-  readonly paper?: boolean;
+  /**
+   * This letter answers the pane header's ⋯ (`list.more`): the reader's letter on paper. An off-paper letter is still
+   * laying itself out, and one by one has its own menu for the key.
+   */
+  readonly topBarMore?: boolean;
 }
 
 const noop = () => undefined;
@@ -188,7 +191,7 @@ function headerMoreButton(): HTMLElement | null {
   return document.querySelector<HTMLElement>('.ui-pane__tools [aria-label="More"]');
 }
 
-function MoreMenu({ row, suggestion, controls, paper }: HeadActionsProps) {
+function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
   const menu = useMenuButton('suggested');
   const [from, setFrom] = useState<HTMLElement | null>(null);
   const close = useCallback(() => {
@@ -196,16 +199,17 @@ function MoreMenu({ row, suggestion, controls, paper }: HeadActionsProps) {
     menu.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `menu.close` only sets state
   }, []);
-  const { show } = menu;
-  // The top bar's ⋯ runs `list.more`: the same menu, under the bar's button.
+  const { show, open: isOpen } = menu;
+  // The top bar's ⋯ and the . key run `list.more`: the same menu, under the bar's button; a second press closes it.
   const table = useMemo<CommandHandlerTable>(() => {
-    if (!paper) return NO_HANDLERS;
+    if (!topBarMore) return NO_HANDLERS;
     const run = () => {
+      if (isOpen) return close();
       setFrom(headerMoreButton());
       show();
     };
     return { 'list.more': { run } };
-  }, [paper, show]);
+  }, [topBarMore, isOpen, show, close]);
   useRegisterCommands(table);
   const run: Readonly<Record<string, () => void>> = {
     suggested: controls.suggest,

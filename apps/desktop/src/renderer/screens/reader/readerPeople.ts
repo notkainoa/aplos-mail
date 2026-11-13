@@ -6,7 +6,7 @@
 import type { Address, Message } from '../../data';
 import { nameOf } from './readerRows';
 
-/** One person on a message, as the circles and the popover show them. */
+/** One person on a message, as the header line and the popover show them. */
 export interface Person {
   /** Unique within a message's list: the lower-cased address, else the name. */
   readonly key: string;
@@ -58,10 +58,10 @@ function meFirst(people: readonly Person[]): readonly Person[] {
 }
 
 /**
- * The people the circles stand for: To and Cc, the owner first. A message that arrived in the owner's mailbox without
+ * The people the header names: To and Cc, the owner first. A message that arrived in the owner's mailbox without
  * their address in either (Bcc, a list) still went to them, so "You" is added; a message the owner sent is not.
  */
-export function recipientCircles(message: Message, me: ReadonlySet<string>): readonly Person[] {
+export function recipientPeople(message: Message, me: ReadonlySet<string>): readonly Person[] {
   const listed = unique([...message.to, ...message.cc].map(a => personOf(a, me)));
   const arrived = !message.fromMe && !listed.some(p => p.me);
   const youAddress = arrived ? ([...me][0] ?? '') : '';
@@ -74,7 +74,9 @@ export function recipientCircles(message: Message, me: ReadonlySet<string>): rea
  * display name shows as the address, so the line always says who it went to. It is also the button's accessible name.
  */
 export function recipientLabel(people: readonly Person[]): string {
-  const shown = people.slice(0, MAX_NAMED).map(p => (p.me ? 'me' : p.name));
+  // One more than the limit is named too: "and 1 more" would only hide a name that fits.
+  const limit = people.length === MAX_NAMED + 1 ? people.length : MAX_NAMED;
+  const shown = people.slice(0, limit).map(p => (p.me ? 'me' : p.name));
   if (shown.length === 0) return 'to undisclosed recipients';
   const rest = people.length - shown.length;
   return `to ${rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')}`;

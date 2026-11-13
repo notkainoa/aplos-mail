@@ -38,3 +38,14 @@ test('choosing Bookmark from the top bar menu runs it', async ({ page }) => {
   await page.locator(BAR_MORE).click();
   await expect(page.getByRole('menuitem', { name: /Remove bookmark/ })).toBeVisible();
 });
+
+test('pressing the top-bar ⋯ again closes the menu', async ({ page }) => {
+  await openState(page, HOME, { theme: 'light' });
+  await page.keyboard.press('Enter');
+  await expect(page.locator(LETTER)).toBeVisible();
+  await page.locator(BAR_MORE).click();
+  const menu = page.getByRole('menu', { name: 'More' });
+  await expect(menu).toBeVisible();
+  await page.locator(BAR_MORE).click();
+  await expect(menu).toBeHidden();
+});

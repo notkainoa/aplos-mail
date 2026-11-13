@@ -65,6 +65,8 @@ export interface ReaderLetterProps {
   readonly controls: LetterControls;
   /** The card treatment: 'a' (the default) is the email card with nothing above it (owner sketch 2026-11-10); 'off' keeps DESIGN 7.5's column, with the big summary on top. */
   readonly cards?: 'a' | 'off';
+  /** The reader's own letters answer the pane header's ⋯ and the . key; one by one (which has its own menu) does not. */
+  readonly topBarMore?: boolean;
   /** The letter's body is laid out and measured (or it is gone or failed, which is an answer too). */
   readonly onReady: (threadId: string) => void;
 }
@@ -231,7 +233,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
             message={m}
             suggestion={barSuggestion(suggestionFor(row))}
             controls={controls}
-            paper={props.paper}
+            topBarMore={props.paper && props.topBarMore}
           />
         ) : undefined
       }

@@ -10,7 +10,7 @@ import { Icon } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
 import {
   detailRows,
-  recipientCircles,
+  recipientPeople,
   recipientLabel,
   type DetailRow,
   type Person,
@@ -84,9 +84,9 @@ function useCloseOnScroll(open: boolean, close: () => void): void {
   }, [open, close]);
 }
 
-/** "To", the circles and the chevron, with the details popover they open. */
+/** "to me" (or the names), the chevron and the details popover they open. */
 export function RecipientsLine({ message, me }: RecipientsLineProps) {
-  const label = recipientLabel(recipientCircles(message, me));
+  const label = recipientLabel(recipientPeople(message, me));
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   useCloseOnScroll(open, () => setOpen(false));

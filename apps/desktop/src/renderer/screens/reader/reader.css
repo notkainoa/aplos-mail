@@ -438,8 +438,8 @@
 
 /* In the dark theme the mark is a soft lift of the card, not the near-black --sunken (opaque). */
 :root[data-theme='dark'] .aplos-reader[data-cards='a'] .aplos-sender-mark {
-  --circle-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
-  background-color: var(--circle-fill);
+  --mark-fill: color-mix(in srgb, var(--ink) 12%, var(--raised));
+  background-color: var(--mark-fill);
 }
 
 /* Only a message with the card head (the sender's mark) indents its plain body to the name's column. */

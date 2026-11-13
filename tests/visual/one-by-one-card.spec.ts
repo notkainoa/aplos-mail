@@ -13,6 +13,17 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('one by one: the email card', () => {
+  test('the . key keeps one by one’s own menu (Set a date, Why it’s here), not the reader’s', async ({
+    page,
+  }) => {
+    await open(page);
+    await page.keyboard.press('.');
+    const menu = page.getByRole('menu').first();
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /Set a date/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /Why it/ })).toBeVisible();
+  });
+
   test('the card holds the header with the bell, Importance and More, and the pinned bar', async ({
     page,
   }) => {

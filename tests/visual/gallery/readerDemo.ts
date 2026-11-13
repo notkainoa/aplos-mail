@@ -381,7 +381,7 @@ const newsletter: DemoThread = {
   ],
 };
 
-/* ------------------------------ (f) a crowd: many recipients, to pin the To circles and the details popover ------------------------------ */
+/* ------------------------------ (f) a crowd: many recipients, to pin the "to …" line and the details popover ------------------------------ */
 
 /** `count` invented guests on a `.example` domain, in a fixed order. */
 function guests(count: number): DemoPerson[] {
