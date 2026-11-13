@@ -13,6 +13,30 @@
   padding-bottom: var(--space-10);
 }
 
+/* An empty Later or Bookmarks keeps its Later | Bookmarks switch at the top, but the empty line centres in the whole
+   pane like every other list's (owner decision 2026-11-05, DECISIONS.md): the switch and the line share one grid cell,
+   so the line sits exactly where Spam's does and the switch floats over it. */
+.aplos-screen:has(> .aplos-list-column > .ui-empty-line[data-placement='pane']) {
+  display: flex;
+  flex-direction: column;
+}
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) {
+  display: grid;
+  flex: 1 0 auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  padding-bottom: 0;
+}
+.aplos-list-column > .ui-empty-line[data-placement='pane'],
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) > .ui-page-head {
+  grid-area: 1 / 1;
+}
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) > .ui-page-head {
+  position: relative;
+  z-index: var(--z-sticky);
+  align-self: start;
+}
+
 /* Bookmarks sit inside Later's column. */
 .aplos-list-column .aplos-list-column {
   width: auto;

@@ -22,6 +22,15 @@ export function armedLine(key: string, total: number): string {
 /** Elements Tab can reach inside the panel (pointer duplicates carry tabIndex -1 and are skipped). */
 const TABBABLE = 'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]';
 
+/** Focus the rows' listbox, or "Back to Home" when the sheet is empty, or the panel itself. */
+function focusInto(panel: HTMLElement | null): void {
+  const target =
+    panel?.querySelector<HTMLElement>('.ui-list-box') ??
+    panel?.querySelector<HTMLElement>('.ui-empty-line button') ??
+    panel;
+  target?.focus();
+}
+
 /** The Low-importance sheet. */
 export function LowSheet({
   open,
@@ -48,29 +57,25 @@ export function LowSheet({
     if (open && armed && announce) announce(armedLine(key, total));
   }, [open, armed, announce, key, total]);
 
-  // On open, focus moves into the dialog: the rows' listbox, or "Back to Home" when the sheet is empty. On close
-  // it returns to whatever had it before (the Home listbox), so focus is never lost (DESIGN §11.2).
+  // On open, focus moves into the dialog. On close it returns to whatever had it before (the Home listbox or the
+  // Low importance row), so focus is never lost (DESIGN §11.2).
   useLayoutEffect(() => {
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const panel = panelRef.current;
-    const target =
-      panel?.querySelector<HTMLElement>('.ui-list-box') ??
-      panel?.querySelector<HTMLElement>('.ui-empty-line button') ??
-      panel;
-    target?.focus();
+    focusInto(panelRef.current);
     return () => {
       if (opener?.isConnected) opener.focus();
     };
   }, [open]);
 
-  // When the rows run out while open, the listbox unmounts; keep focus inside on "Back to Home".
+  // The sheet opens before its rows arrive (and swaps between rows and the empty line as mail is cleared): whenever the
+  // element that held focus unmounts, focus falls to the page, so it is moved back inside. Esc then always reaches the sheet.
   useLayoutEffect(() => {
-    if (!open || !empty) return;
     const panel = panelRef.current;
-    if (panel && !panel.contains(document.activeElement))
-      panel.querySelector<HTMLElement>('.ui-empty-line button')?.focus();
-  }, [open, empty]);
+    if (!open || !panel || panel.contains(document.activeElement)) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) focusInto(panel);
+  });
 
   if (!open) return null;
 

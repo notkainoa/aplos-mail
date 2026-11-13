@@ -4,8 +4,9 @@
  * toast); the bell says whether the email notified, and stays neutral until the engine reports that; ⋯ lists the
  * actions the reader already has handlers for. Every control is a real button with a name, and Esc closes a menu.
  */
-import { useId, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadRow } from '../../data';
+import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Button, Icon } from '../../ui/buttons-keys';
 import type { MenuEntry, SuggestedAction } from '../../ui/props';
 import { Menu } from '../../ui/surfaces';
@@ -39,9 +40,16 @@ export interface HeadActionsProps {
   /** The filled suggestion's verb and icon, for the menu's first row. */
   readonly suggestion: SuggestedAction;
   readonly controls: HeadControls;
+  /**
+   * This letter answers the pane header's ⋯ (`list.more`): the reader's letter on paper. An off-paper letter is still
+   * laying itself out, and one by one has its own menu for the key.
+   */
+  readonly topBarMore?: boolean;
 }
 
 const noop = () => undefined;
+
+const NO_HANDLERS: CommandHandlerTable = {};
 
 const IMPORTANCE_ENTRIES: readonly MenuEntry[] = (['important', 'low'] as const).map(choice => ({
   kind: 'item',
@@ -62,7 +70,11 @@ function useMenuButton(first: string) {
     setActive(first);
     setOpen(value => !value);
   };
-  return { open, ref, id, active, setActive, toggle, close: () => setOpen(false) };
+  const show = useCallback(() => {
+    setActive(first);
+    setOpen(true);
+  }, [first]);
+  return { open, ref, id, active, setActive, toggle, show, close: () => setOpen(false) };
 }
 
 function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'controls'>) {
@@ -174,8 +186,31 @@ export function moreEntries(
   ];
 }
 
-function MoreMenu({ row, suggestion, controls }: HeadActionsProps) {
+/** The pane header's ⋯ button, which the reader's top bar draws above the card (the menu opens under it). */
+function headerMoreButton(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.ui-pane__tools [aria-label="More"]');
+}
+
+function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
   const menu = useMenuButton('suggested');
+  const [from, setFrom] = useState<HTMLElement | null>(null);
+  const close = useCallback(() => {
+    setFrom(null);
+    menu.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `menu.close` only sets state
+  }, []);
+  const { show, open: isOpen } = menu;
+  // The top bar's ⋯ and the . key run `list.more`: the same menu, under the bar's button; a second click of the bar's ⋯ closes it.
+  const table = useMemo<CommandHandlerTable>(() => {
+    if (!topBarMore) return NO_HANDLERS;
+    const run = () => {
+      if (isOpen) return close();
+      setFrom(headerMoreButton());
+      show();
+    };
+    return { 'list.more': { run } };
+  }, [topBarMore, isOpen, show, close]);
+  useRegisterCommands(table);
   const run: Readonly<Record<string, () => void>> = {
     suggested: controls.suggest,
     replyAll: controls.replyAll ?? noop,
@@ -193,21 +228,24 @@ function MoreMenu({ row, suggestion, controls }: HeadActionsProps) {
         icon="more"
         label="More"
         popup={{ kind: 'menu', expanded: menu.open, controls: menu.id }}
-        onPress={menu.toggle}
+        onPress={() => {
+          setFrom(null);
+          menu.toggle();
+        }}
       />
       <Menu
         id={menu.id}
         open={menu.open}
-        anchor={menu.ref.current}
+        anchor={from ?? menu.ref.current}
         label="More"
         entries={moreEntries(row, suggestion, controls.replyAll !== undefined)}
         activeId={menu.active}
         onActiveChange={menu.setActive}
         onSelect={id => {
-          menu.close();
+          close();
           run[id]?.();
         }}
-        onClose={menu.close}
+        onClose={close}
       />
     </>
   );

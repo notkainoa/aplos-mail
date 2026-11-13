@@ -107,7 +107,11 @@ export function createComposeSession(
   let cancelTimer: (() => void) | null = null;
   const listeners = new Set<() => void>();
   // A create that has not been confirmed: its retries reuse the key, so a lost reply never makes a second draft.
-  let pendingCreate: { readonly opId: string; readonly seq: number } | null = null;
+  let pendingCreate: {
+    readonly opId: string;
+    readonly seq: number;
+    readonly accountId: string;
+  } | null = null;
   const mintOpId = deps.mintOpId ?? randomOpId;
 
   function dispatch(event: ComposeEvent): void {
@@ -147,7 +151,7 @@ export function createComposeSession(
       case 'submission':
         return runFollowUp(effect);
       case 'destroy':
-        return runDestroy(effect.draftId);
+        return runDestroy(effect.draftId, effect.quiet === true);
       case 'preserve':
         return runPreserve(effect.draft);
       case 'checkSent':
@@ -157,16 +161,17 @@ export function createComposeSession(
     }
   }
 
-  /** The key of this create: the first attempt's, while it is unconfirmed. */
-  function createFor(seq: number): { readonly opId: string; readonly seq: number } {
-    pendingCreate ??= { opId: mintOpId(), seq };
+  /** The key of this create: the first attempt's while it is unconfirmed and still for the same account (a draft cannot move account). */
+  function createFor(seq: number, accountId: string) {
+    if (pendingCreate?.accountId !== accountId)
+      pendingCreate = { opId: mintOpId(), seq, accountId };
     return pendingCreate;
   }
 
   function saveTarget(effect: Extract<ComposeEffect, { type: 'save' }>) {
     if (effect.draftId !== null)
       return { id: effect.draftId, baseRevision: effect.baseRevision ?? undefined };
-    return { opId: createFor(effect.seq).opId };
+    return { opId: createFor(effect.seq, effect.context.accountId).opId };
   }
 
   async function runSave(effect: Extract<ComposeEffect, { type: 'save' }>): Promise<void> {
@@ -233,12 +238,13 @@ export function createComposeSession(
     if (outcome.kind === 'refused') dispatch({ type: 'undoRefused', message: outcome.message });
   }
 
-  async function runDestroy(draftId: string): Promise<void> {
+  async function runDestroy(draftId: string, quiet: boolean): Promise<void> {
     try {
       await deps.api.destroyDraft({ id: draftId });
-      dispatch({ type: 'discarded' });
+      if (!quiet) dispatch({ type: 'discarded' });
     } catch {
-      dispatch({ type: 'discardFailed' });
+      // A draft that only moved account and could not be removed stays in the old account's Drafts: nothing is lost.
+      if (!quiet) dispatch({ type: 'discardFailed' });
     }
   }
 

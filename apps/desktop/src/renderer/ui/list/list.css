@@ -626,7 +626,7 @@
   --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
-  --ui-date-w: calc(var(--space-10) * 2 + var(--space-7));
+  --ui-date-w: calc(var(--space-10) + var(--space-8));
 }
 
 .ui-list-row__lead {

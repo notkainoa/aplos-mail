@@ -1,4 +1,4 @@
-// The reader states for a message to many people (ui-polish): six recipients, where the To circles stop at three, and
+// The reader states for a message to many people (ui-polish): six recipients, where the header names two and counts the rest, and
 // five hundred, where the details popover scrolls inside the window. Kept apart from scenes.reader.tsx, which is at its
 // line limit.
 

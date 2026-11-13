@@ -7,6 +7,8 @@ import { describe, it } from 'node:test';
 import type { ToastData } from '../props';
 import { Confirm, Dialog, Popover, Puck, Toast, ToastStack } from './index';
 import { planToasts, visibleToasts } from './ToastStack';
+import { toastLife } from './Toast';
+import { timing } from '../generated/motion';
 import {
   SUBJECT_300,
   EMAIL_80,
@@ -268,6 +270,56 @@ const t = (id: string, over: Partial<ToastData> = {}): ToastData => ({
 });
 
 describe('Toast', () => {
+  it('a failure wears the alert in --stamp-ink, never a check, and can be closed', () => {
+    const html = render(
+      <Toast
+        id="f1"
+        kind="error"
+        message="Couldn’t send to Jordan. Your draft is saved."
+        actions={[{ id: 'retry', label: 'Try again' }]}
+        undoable={false}
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.match(html, /data-tone="stamp"><svg[^>]*data-icon="alert"/);
+    assert.ok(!html.includes('data-icon="check"'));
+    assert.match(html, /<button[^>]*aria-label="Dismiss"/);
+    assertClean(html);
+  });
+  it('a plain toast has no close button', () => {
+    const html = render(
+      <Toast
+        id="p1"
+        kind="info"
+        message="Saved"
+        undoable={false}
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.ok(!html.includes('Dismiss'));
+  });
+  it('a persistent toast that is not an error has no close button', () => {
+    const html = render(
+      <Toast
+        id="h1"
+        kind="info"
+        message="Sending to Jordan in 6 s"
+        undoable
+        persistent
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.ok(!html.includes('Dismiss'));
+  });
+  it('lifetimes: plain 4 s, Undo and error 8 s, persistent none', () => {
+    assert.equal(toastLife({ kind: 'info', undoable: false }), timing.toast);
+    assert.equal(toastLife({ kind: 'done', undoable: true }), timing.toastUndo);
+    assert.equal(toastLife({ kind: 'error', undoable: false }), timing.toastUndo);
+    assert.equal(toastLife({ kind: 'error', undoable: false, persistent: true }), null);
+  });
   it('Moved to Later · Set a date D · Undo Z, with the clock in dusk, polite', () => {
     const html = render(
       <Toast

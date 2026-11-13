@@ -10,6 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Submission } from '../../../data';
+import { getOutbox, resetOutbox } from '../../../shell/store-outbox';
 import { getToasts, resetToasts } from '../../../shell/store-toast';
 import { pageDone, pendingUndoTable } from '../ComposeScreen';
 import { composeFromDraft, freshCompose, type ComposeState } from '../model/composeState';
@@ -84,9 +85,12 @@ test('a refused send after the page closed says so on the toast stack, never sil
     toast.actions?.map(a => a.label),
     ['Try again', 'Edit'],
   );
-  assert.equal(toast.persistent, true, 'it stays until dealt with');
+  assert.equal(toast.kind, 'error');
+  assert.ok(!toast.persistent, 'the toast fades; the sidebar notice stays until dealt with');
+  assert.equal(getOutbox().length, 1);
   assert.equal(htmlToText(kit.draft(state.save.draftId!)!.html), 'Hello', 'the draft is saved');
   resetToasts();
+  resetOutbox();
 });
 
 test('an Undo that reaches the engine after the send left says "Already sent."', async () => {

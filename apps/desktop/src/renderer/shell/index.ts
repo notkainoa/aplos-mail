@@ -26,10 +26,12 @@ import { addToast, getToasts, patchToast, removeToast, subscribeToasts } from '.
 import {
   getRoute,
   getScreen,
+  getSettingsSection,
   setRoute,
   setScreen,
   subscribeRoute,
   subscribeScreen,
+  subscribeSettingsSection,
 } from './store-route';
 import type { Screen } from './store-route';
 import type { RouteTarget } from './store-route';
@@ -54,7 +56,7 @@ import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import { getCalendarTarget, subscribeCalendarTarget } from './store-calendar';
 import type { CalendarTarget } from './store-calendar';
 import type { ComposeRequest } from './store-compose';
-import type { ContextName, SettingRoute, TargetSummary } from '../commands';
+import type { ContextName, SettingRoute, SettingSection, TargetSummary } from '../commands';
 import type { AccountId, AiProviderId, ThreadId } from '../data';
 import type { ToastData } from '../ui/props';
 
@@ -239,6 +241,8 @@ export function useToasts(): readonly ToastData[] {
   return useSyncExternalStore(subscribeToasts, getToasts, getToasts);
 }
 
+export { addOutboxNotice, removeOutboxNotice } from './store-outbox';
+export type { OutboxNotice } from './store-outbox';
 export {
   holdToast,
   isUndoToast,
@@ -280,12 +284,17 @@ export function useAppRoute(): Screen {
   return useSyncExternalStore(subscribeScreen, getScreen, getScreen);
 }
 
+/** The Settings section on show, live; null when Settings is not open or shows its first section. */
+export function useSettingsSection(): SettingSection | null {
+  return useSyncExternalStore(subscribeSettingsSection, getSettingsSection, getSettingsSection);
+}
+
 /** Shows a screen. Additive. */
 export function navigate(screen: Screen): void {
   setScreen(screen);
 }
 
-export { consumeRoute } from './store-route';
+export { consumeRoute, setSettingsSection } from './store-route';
 export { screenLabel } from './nav';
 export type { RouteTarget, Screen } from './store-route';
 

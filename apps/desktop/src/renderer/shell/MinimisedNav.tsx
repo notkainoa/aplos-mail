@@ -11,12 +11,12 @@ import {
   FOOTER_PLACES,
   MAIL_PLACES,
   TOP_PLACES,
-  screenPlace,
+  currentPlace,
   type Place,
   type PlaceId,
 } from './nav';
 import { selectPlace } from './Sidebar';
-import type { Screen } from './index';
+import { useSettingsSection, type Screen } from './index';
 
 const GROUPS: readonly (readonly Place[])[] = [TOP_PLACES, MAIL_PLACES, FOOTER_PLACES];
 
@@ -47,6 +47,7 @@ export interface MinimisedNavProps {
 }
 
 export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) {
+  const section = useSettingsSection();
   const menuId = useId();
   const trigger = useRef<HTMLButtonElement | null>(null);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -76,7 +77,7 @@ export function MinimisedNav({ screen, counts, onNavigate }: MinimisedNavProps) 
         entries={entries}
         activeId={active.activeId}
         onActiveChange={active.onActiveChange}
-        checkedId={screenPlace(screen) ?? undefined}
+        checkedId={currentPlace(screen, section) ?? undefined}
         onSelect={id => {
           close();
           selectPlace(id as PlaceId, onNavigate);

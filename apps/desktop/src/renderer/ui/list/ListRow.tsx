@@ -9,7 +9,7 @@ import type { CommitKind, IconName, ListRowProps } from '../props';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
-import { formatDoneStamp, formatFull, formatListDate } from './internal/format';
+import { formatFull, formatListDate } from './internal/format';
 import { Icon } from './internal/Icon';
 import { useKeycapFor, useTooltipText } from './internal/keys';
 
@@ -38,6 +38,21 @@ function highlighted(text: string, terms: readonly string[] | undefined): ReactN
 
 type RowProps = ListRowProps;
 
+/**
+ * The Done stamp column: the date it was finished, like every other list's date column, behind a quiet hill-coloured
+ * check that is named "Done". With no date at all only the check shows.
+ */
+function DoneStamp({ doneAt }: { doneAt: RowProps['doneAt'] }) {
+  return (
+    <span className="ui-list-row__stamp" title={doneAt ? `Done ${formatFull(doneAt)}` : undefined}>
+      <span role="img" aria-label="Done" className="ui-list-row__stamp-mark">
+        <Icon name="check" size="sm" />
+      </span>
+      {doneAt ? <time dateTime={doneAt}>{formatListDate(doneAt)}</time> : null}
+    </span>
+  );
+}
+
 /** The Done stamp, the Later-until chip or the date, whichever the layout puts in the date column. */
 function DateColumn({
   layout,
@@ -45,14 +60,7 @@ function DateColumn({
   doneAt,
   laterUntil,
 }: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'laterUntil'>) {
-  if (layout === 'done') {
-    return (
-      <span className="ui-list-row__stamp" title={doneAt ? formatFull(doneAt) : undefined}>
-        <Icon name="check" size="sm" />
-        {doneAt ? formatDoneStamp(doneAt) : 'Done'}
-      </span>
-    );
-  }
+  if (layout === 'done') return <DoneStamp doneAt={doneAt} />;
   if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
@@ -233,7 +241,7 @@ export function ListRow(props: ListRowProps) {
       </span>
       {unread ? <span className="ui-list-sr">Unread. </span> : null}
 
-      <span className="ui-list-row__sender" dir="auto" title={sender}>
+      <span className="ui-list-row__sender" dir="auto" title={props.senderTitle ?? sender}>
         {sender}
       </span>
 

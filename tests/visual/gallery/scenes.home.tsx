@@ -9,7 +9,9 @@ import type { Scenario } from '@aplos/contract-fixture';
 import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { api } from '../../../apps/desktop/src/renderer/data';
-import { navigate, type Screen } from '../../../apps/desktop/src/renderer/shell';
+import { navigate, openRoute, type Screen } from '../../../apps/desktop/src/renderer/shell';
+import { pushRefusedSend } from '../../../apps/desktop/src/renderer/screens/compose/runtime/sendNotices';
+import { dismissToast } from '../../../apps/desktop/src/renderer/shell';
 import { resetToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
@@ -206,6 +208,58 @@ const EMPTY_DRAFTS: Step = {
   },
 };
 
+type Recipient = { name?: string; address: string };
+
+/** Adds one draft to the given recipients (original data); the stand-in list window shows one new row per load. */
+function addDraft(subject: string, to: Recipient[]): Step {
+  return {
+    run: async () => {
+      try {
+        await createDraft(subject, to);
+      } catch (error) {
+        console.error('gallery draft failed', error);
+      }
+    },
+  };
+}
+
+async function createDraft(subject: string, to: Recipient[]): Promise<void> {
+  const client = boot('demo');
+  const window = await client.api.view.watch({ spec: { kind: 'drafts' } });
+  const first = await client.api.draft.get({ ids: window.ids.slice(0, 1) });
+  await client.api.view.unwatch({ windowId: window.windowId });
+  const accountId = first.list[0]?.accountId;
+  if (!accountId) return;
+  await api.draft.set({
+    fields: {
+      accountId,
+      mode: 'new',
+      to,
+      cc: [],
+      bcc: [],
+      subject,
+      html: '<p>Draft.</p>',
+      attachments: [],
+      signature: false,
+    },
+  });
+  // The list window catches up on a timer, not a frame.
+  await new Promise(resolve => setTimeout(resolve, 1200));
+}
+
+const LONG_ADDRESS: Recipient = {
+  address: 'alexandra.montgomery-featherstonehaugh@a-rather-long-subdomain.example-company.co.uk',
+};
+
+const LONG_DRAFT = addDraft('Quarterly planning notes for the whole group', [LONG_ADDRESS]);
+
+const MANY_DRAFT = addDraft('Agenda for Thursday', [
+  { name: 'Priya Raman-Okonkwo', address: 'priya.raman-okonkwo@example-studio.example' },
+  { address: 'jordan.park.design.review@example-studio.example' },
+  { name: 'Dev Rao', address: 'dev@example-studio.example' },
+  { name: 'Sam Lee', address: 'sam@example-studio.example' },
+]);
+
 /** Types a query nothing matches; the field's onChange does the rest (the remote offer joins the line). */
 const SEARCH_NO_MATCH: Step = {
   run: async () => {
@@ -239,7 +293,23 @@ const WALK_THROUGH: Step = {
 
 /* ------------------------------ the scenes ------------------------------ */
 
+const REFUSED_SEND = { draftId: 'draft-demo', revision: 1, names: ['Jordan Park'] };
+
 export const homeScenes: Record<string, () => ReactElement> = {
+  'shell-send-failed-faded': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [
+      { run: async () => pushRefusedSend(REFUSED_SEND) },
+      { run: async () => dismissToast('send-refused-draft-demo') },
+    ],
+  }),
+  'shell-calendar-sidebar': sceneOf({ scenario: 'demo', screen: 'calendar' }),
+  'shell-help-sidebar': sceneOf({
+    scenario: 'demo',
+    screen: 'settings',
+    steps: [{ run: async () => openRoute('settings/help') }],
+  }),
   'home-full': sceneOf({ scenario: 'demo', screen: 'home' }),
   'home-menu': sceneOf({ scenario: 'demo', screen: 'home', steps: [{ key: '.' }] }),
   'home-with-cursor-focusslot': sceneOf({
@@ -309,6 +379,8 @@ export const homeScenes: Record<string, () => ReactElement> = {
     steps: [{ key: 'x' }, { key: 'j', times: 3 }, { key: 'X', mods: { shift: true } }],
   }),
   'list-drafts': sceneOf({ scenario: 'demo', screen: 'drafts' }),
+  'list-drafts-long': sceneOf({ scenario: 'demo', screen: 'drafts', steps: [LONG_DRAFT] }),
+  'list-drafts-many': sceneOf({ scenario: 'demo', screen: 'drafts', steps: [MANY_DRAFT] }),
   'list-sent': sceneOf({ scenario: 'demo', screen: 'sent' }),
   'list-trash': sceneOf({ scenario: 'demo', screen: 'trash' }),
   'list-spam': sceneOf({ scenario: 'demo', screen: 'spam' }),

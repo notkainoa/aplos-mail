@@ -6,13 +6,20 @@
  * Each toast's id is its send's, so a send never has two. Nothing here sends mail by itself: every verb is the owner's.
  */
 import { api, getNow, type Submission } from '../../../data';
-import { dismissToast, navigate, openCompose, pushToast, type PushedToast } from '../../../shell';
+import {
+  addOutboxNotice,
+  dismissToast,
+  navigate,
+  openCompose,
+  pushToast,
+  removeOutboxNotice,
+} from '../../../shell';
 import { UNDO_ACTION } from '../../undoOperation';
 import { recipientPhrase } from '../model/recipients';
 import { SEND_COPY } from '../model/sendState';
 import { undoRefusalOutcome } from '../model/undoRefusal';
 import { refusalOf } from './composeApi';
-import { releaseSend } from './sendHandoff';
+import { refusedNoticeId, releaseSend } from './sendHandoff';
 
 const TRY_AGAIN = { id: 'retry', label: 'Try again' } as const;
 const EDIT = { id: 'edit', label: 'Edit' } as const;
@@ -32,7 +39,7 @@ export interface RefusedSend {
 export function pushAlreadySent(id: string): void {
   pushToast({
     id: `send-late-undo-${id}`,
-    kind: 'info',
+    kind: 'error',
     message: SEND_COPY.alreadySent,
     undoable: false,
   });
@@ -40,7 +47,7 @@ export function pushAlreadySent(id: string): void {
 
 /** A refused Undo the engine explained: its own sentence (or the plain fallback), never nothing. */
 function pushUndoRefused(id: string, message: string): void {
-  pushToast({ id: `send-undo-refused-${id}`, kind: 'info', message, undoable: false });
+  pushToast({ id: `send-undo-refused-${id}`, kind: 'error', message, undoable: false });
 }
 
 /**
@@ -62,15 +69,28 @@ function unconfirmedToastId(key: string): string {
 
 /** "Couldn’t confirm this was sent." · Check Sent, for a send whose `Submission/set` never answered before its page went. */
 export function pushUnconfirmedSend(key: string): void {
+  const id = unconfirmedToastId(key);
+  const open = (actionId: string) => {
+    if (actionId === CHECK_SENT.id) navigate('sent');
+  };
   pushToast({
-    id: unconfirmedToastId(key),
-    kind: 'info',
+    id,
+    kind: 'error',
     message: SEND_COPY.unconfirmed,
     actions: [CHECK_SENT],
     undoable: false,
-    persistent: true,
     onAction: actionId => {
-      if (actionId === CHECK_SENT.id) navigate('sent');
+      removeOutboxNotice(id);
+      open(actionId);
+    },
+  });
+  addOutboxNotice({
+    id,
+    message: SEND_COPY.unconfirmed,
+    actions: [CHECK_SENT],
+    onAction: actionId => {
+      dismissToast(id);
+      open(actionId);
     },
   });
 }
@@ -78,22 +98,37 @@ export function pushUnconfirmedSend(key: string): void {
 /** The late answer came: the unconfirmed notice goes (the stack follows the send, or says it failed). */
 export function dropUnconfirmedSend(key: string): void {
   dismissToast(unconfirmedToastId(key));
+  removeOutboxNotice(unconfirmedToastId(key));
 }
 
-function failedToast(
-  id: string,
-  recipient: string,
-  onAction: (actionId: string) => void,
-): PushedToast {
-  return {
+/**
+ * A failed send says so twice, in the same words with the same verbs: a toast that fades after 8 s so it never sits
+ * over the pane, and an outbox notice in the sidebar that stays until the owner deals with it. Either one's verb
+ * resolves both. The draft is always saved.
+ */
+function pushFailure(id: string, recipient: string, onAction: (actionId: string) => void): void {
+  const message = SEND_COPY.failed(recipient);
+  const actions = [TRY_AGAIN, EDIT];
+  pushToast({
     id,
-    kind: 'info',
-    message: SEND_COPY.failed(recipient),
-    actions: [TRY_AGAIN, EDIT],
+    kind: 'error',
+    message,
+    actions,
     undoable: false,
-    persistent: true,
-    onAction,
-  };
+    onAction: actionId => {
+      removeOutboxNotice(id);
+      onAction(actionId);
+    },
+  });
+  addOutboxNotice({
+    id,
+    message,
+    actions,
+    onAction: actionId => {
+      dismissToast(id);
+      onAction(actionId);
+    },
+  });
 }
 
 /** Sends a refused draft again with what the press asked for; a second refusal comes back as the same notice. */
@@ -115,14 +150,12 @@ function sendAgain(refused: RefusedSend): void {
 
 /** "Couldn’t send to Jordan. Your draft is saved." · Try again · Edit, for a send refused with no thread showing it. */
 export function pushRefusedSend(refused: RefusedSend): void {
-  const id = `send-refused-${refused.draftId}`;
+  const id = refusedNoticeId(refused.draftId);
   const recipient = recipientPhrase(refused.names);
-  pushToast(
-    failedToast(id, recipient, actionId => {
-      if (actionId === TRY_AGAIN.id) sendAgain(refused);
-      if (actionId === EDIT.id) openCompose({ draftId: refused.draftId });
-    }),
-  );
+  pushFailure(id, recipient, actionId => {
+    if (actionId === TRY_AGAIN.id) sendAgain(refused);
+    if (actionId === EDIT.id) openCompose({ draftId: refused.draftId });
+  });
 }
 
 /** Edit after a failed send: the submission lets the draft go, then the compose page opens on it. */
@@ -144,12 +177,10 @@ function retryFailed(row: Submission): void {
 /** The same notice for a handed-off submission that failed; one per failure (`rev`). */
 export function pushFailedSubmission(row: Submission): void {
   const recipient = recipientPhrase(row.toNames);
-  pushToast(
-    failedToast(`send-failed-${row.id}-${row.rev}`, recipient, actionId => {
-      if (actionId === TRY_AGAIN.id) retryFailed(row);
-      if (actionId === EDIT.id) editFailed(row);
-    }),
-  );
+  pushFailure(`send-failed-${row.id}-${row.rev}`, recipient, actionId => {
+    if (actionId === TRY_AGAIN.id) retryFailed(row);
+    if (actionId === EDIT.id) editFailed(row);
+  });
 }
 
 /** "Scheduled for …" · Undo, or "Saved here · will sync", once per send. */

@@ -401,7 +401,9 @@ class Walker {
     }
     // Blocked: a quiet placeholder that keeps the image's size, or its alt text when unsized.
     if (!hasSize(element.attrs)) return this.imageWithoutSource(element);
-    const attributes = this.attributes(element, NO_CLASS);
+    // No `style`: an element's own style outranks every cascade layer, and the layer holds the height cap (reading-css.ts).
+    const bare: ElementNode = { ...element, attrs: placeholderAttributes(element.attrs) };
+    const attributes = this.attributes(bare, NO_CLASS);
     this.out.push(`<img src="${TRANSPARENT_GIF}" class="aplos-blocked"${attributes}>`);
   }
 
@@ -429,6 +431,22 @@ function keptValue(name: string, value: string): string | undefined {
   if (name === 'id' || name === 'name') return value ? scopeId(value) : undefined;
   if (ID_LIST_ATTRIBUTES.has(name)) return scopeIdList(value) || undefined;
   return value;
+}
+
+/**
+ * A blocked image's attributes without its `style`: a size that only the style gave (`style="width:640px;height:900px"`)
+ * moves to the `width` and `height` attributes, so the placeholder keeps its box (the height is capped by the reading CSS).
+ */
+function placeholderAttributes(attrs: Map<string, string>): Map<string, string> {
+  const kept = new Map([...attrs].filter(([name]) => name !== 'style'));
+  const style = attrs.get('style');
+  if (style === undefined) return kept;
+  const declarations = readDeclarations(style);
+  for (const name of ['width', 'height']) {
+    const value = /^\s*(\d+(?:\.\d+)?)(px|%)?\s*$/.exec(declarations.get(name) ?? '');
+    if (!kept.has(name) && value) kept.set(name, value[2] === '%' ? `${value[1]}%` : value[1]!);
+  }
+  return kept;
 }
 
 function hasSize(attrs: Map<string, string>): boolean {
