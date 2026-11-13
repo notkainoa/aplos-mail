@@ -473,6 +473,18 @@ describe('Keyboard model', () => {
     );
   });
 
+  test('the quiet ⌘Z is not listed beside Z, and stays out of hints after a remap', () => {
+    const undo = shortcutGroups(ui())
+      .flatMap(g => g.rows)
+      .find(r => r.commandId === 'app.undo')!;
+    assert.deepEqual(undo.chords, ['z']);
+    assert.equal(createAppRegistry().describeKeys('app.undo'), 'Z');
+    const keymap = { 'app.undo': [{ chord: 'meta+z' }] };
+    const registry = createAppRegistry();
+    registry.configure({ ...DEFAULT_KEY_PREFS, keymap });
+    assert.equal(registry.describeKeys('app.undo'), '', 'a quiet default stays quiet when stored');
+  });
+
   test('pressing L while remapping Done shows "Already used by Later"; replace moves it; the store holds overrides only', () => {
     const verdict = judgeChord('mail.done', 'l', ui());
     assert.deepEqual(verdict, {

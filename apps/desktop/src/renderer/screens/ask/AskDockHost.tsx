@@ -73,6 +73,7 @@ import { AskPanel } from './AskPanel';
 import { ConsentLine } from './AskConsent';
 import { oncePerTask } from './oncePerTask';
 import { askStore, defaultDockWidth, dockWidthPersisted, useDock } from './askStore';
+import { accountLabel } from '../../ui/accountLabel';
 import { setFormatClock } from '../../ui/ask/format';
 import './ask-screen.css';
 
@@ -219,7 +220,10 @@ export function AskDockHost(props: AskDockHostProps) {
         .map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt })),
     [history.ids, history.rows],
   );
-  const accountNames = useMemo(() => new Map(accounts.map(a => [a.id, a.name])), [accounts]);
+  const accountNames = useMemo(
+    () => new Map(accounts.map(a => [a.id, accountLabel(a)])),
+    [accounts],
+  );
   const inputs: AskInputs = {
     conversation,
     frames,

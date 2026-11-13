@@ -35,11 +35,16 @@ for (const theme of ['light', 'dark'] as const)
     await expect(page.locator('.ui-draft-state')).toContainText(/Saved|Draft/i);
   });
 
-test('a reply shows the thread’s account and no menu', async ({ page }) => {
+test('a reply shows the thread’s account as plain text, with no menu (DESIGN 7.6)', async ({
+  page,
+}) => {
   await openState(page, HOME, { theme: 'light' });
   await page.keyboard.press('Enter');
   await page.locator('.aplos-reader__letter[data-paper="true"]').waitFor();
   await page.keyboard.press('r');
   await page.locator('.ui-inline-reply').waitFor();
-  await expect(page.locator(FROM)).toHaveCount(0);
+  const row = page.locator(`.ui-inline-reply ${FROM}`);
+  await expect(row).toHaveCount(1);
+  await expect(row.locator('.aplos-from__address')).toHaveText(/@/);
+  await expect(row.getByRole('button')).toHaveCount(0);
 });

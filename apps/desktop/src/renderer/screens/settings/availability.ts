@@ -1,7 +1,7 @@
 /**
  * Live availability for the palette's conditional rows (U7 acceptance 2 follow-up): an entry for a row that is not
  * drawn in the current state is not offered from ⌘K. `SettingsContainer` publishes its data while mounted; before
- * the first mount and after unmount every row stays offered, so availability only ever hides a row whose state was
+ * the first mount and after unmount every row stays offered (except the unbuilt placeholders, which stay hidden until their capability is on), so availability only ever hides a row whose state was
  * actually seen. A deep link typed straight in still lands, on the row or on the quiet "not shown" line.
  */
 import type { Account, AiProvider, Session } from '../../data';
@@ -42,15 +42,21 @@ const UNBUILT_CAPABILITY: Readonly<Record<string, string>> = {
   'help/queue': 'queueInspector',
 };
 
-/** True when the row `section/anchor` is drawn with the published data (or none was published yet). */
-export function rowAvailable(section: SettingSection, anchor: string): boolean {
+/** True when the row `section/anchor` is drawn with the published data (or none was published yet, except the unbuilt placeholders, which need their capability). */
+export function rowAvailable(
+  section: SettingSection,
+  anchor: string,
+  showUnbuilt?: boolean,
+): boolean {
   const data = current;
+  // The placeholder rows are not drawn while their capability is off, so they are not offered from anywhere, including
+  // from the inbox where Settings is not mounted and nothing is published.
+  const capability = UNBUILT_CAPABILITY[`${section}/${anchor}`];
+  if (capability && hiddenUntilBuilt(section, anchor, showUnbuilt))
+    return data ? hasCapability(data.session, capability) : false;
   if (!data) return true;
   // While `Account/get` has not answered, `accounts` is [] and says nothing: rows drawn per account stay offered.
   const pending = data.accountsLoaded === false;
-  const capability = UNBUILT_CAPABILITY[`${section}/${anchor}`];
-  if (capability)
-    return !hiddenUntilBuilt(section, anchor) || hasCapability(data.session, capability);
   switch (`${section}/${anchor}`) {
     case 'accounts/accountAi':
     case 'accounts/accountColour':

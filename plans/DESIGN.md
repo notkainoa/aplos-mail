@@ -665,7 +665,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 - **Per-mailbox details:** Drafts shows the edited time. Sent shows the recipients. Trash and Spam have Restore as their only quick action.
 - **Empty:** one line in the pane ("No drafts.", "Nothing sent yet.", "Trash is empty.", "Spam is empty."). This fixes the inconsistency where only Spam kept its header [V: baseline §6.6].
 - **Done** is the place for mail you finished.
-  - Rows show a fixed stamp column, "Done 9:41 AM". The only hover action is an icon-only "Move to Home" (H), placed to the left of the stamp so it never covers it.
+  - Rows show a fixed stamp column: a quiet check named "Done" and the date as every other list writes it (time today, Yesterday, a weekday, then Oct 23), not "Done 9:41 AM" (2026-11-12 owner pass, #503; the real engine has no `done_at` yet, so the date is the last message date until it does). Rows group under the same date labels as All mail, and Drafts and Sent get date groups too. The only hover action is an icon-only "Move to Home" (H), placed to the left of the stamp so it never covers it.
   - E and L do nothing on done rows.
   - The sidebar item's tooltip says "Mail you finished. Press H to move one back to Home."
   - Search reaches it with `in:done`.
@@ -717,13 +717,14 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
 
 - **Inline reply.** R, the `ReplyStub`, or Space on a reply suggestion opens one card (`--elev-card`, `settle`) under the message, so the thread stays visible:
   - the To line with its recipients, plus Cc and Pop out on the right;
+  - the From account as plain text, only with two or more accounts (the reply goes from the thread's account; there is no menu, 2026-11-13, #511);
   - the text in `read`;
   - Send (⌘↩), "Draft saved", and attach and ⋯ on the right.
   - While it is open, the composer owns the filled button, and the summary's suggestion becomes a text button.
   - Pop out moves the reply to the compose page.
 - **New message** is a page in the pane, not a floating sheet. It is non-modal: the sidebar and the dock stay available.
-  - **Header:** close (Esc), "New message", then ⋯ (send from, schedule, discard) and Ask.
-  - **Body:** a To row, then the subject as a `heading`-sized field, then the text in `read`. The From row lives in ⋯. Nothing decorates the top.
+  - **Header:** close (Esc), "New message", then ⋯ (schedule, discard) and Ask. **From** is a visible row under the header, only with two or more accounts, and only for a new message (a reply or forward shows its account as plain text); it is no longer in the ⋯ menu (2026-11-12 owner pass, #500; changing it moves the draft to the other account and the old copy is removed only after the new one is saved).
+  - **Body:** a To row, then the subject as a `heading`-sized field, then the text in `read`. Nothing decorates the top.
   - **Footer:** a hairline, then Send (⌘↩), "Draft saved", attach and format (⌘/).
 - **Draft state** is one line: "Saving…", "Draft saved", "Couldn't save · Retry". After "Draft saved", Esc just closes. That fixes "✓ Saved" followed by "Save this draft?" [V: baseline §6.9 #3].
 - **Send.** The composer closes (`settle` out), and the message `arrive`s in its thread with the `UndoTray`: a `--raised` line, "Sending to Jordan in 8 s · Undo Z · Send now", with a neutral 2 px bar that drains along its bottom (`undo-send`) and a static text countdown under reduced motion.
@@ -732,7 +733,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - ⌘⇧Return sends and marks the thread Done.
 - **Dictation:** hold Space in an empty body, or hold R from the reader. A small `--stamp` `LevelMeter` and one line appear: "Listening. Release R to keep, Esc to cancel." The text stays editable.
 - **Blocked send** outlines the field and explains in one sentence. The shake is removed.
-- **AI draft** is dim suggestion text at the caret, with the line "The grey sentence is a suggestion. Tab keep, Esc dismiss." Typing replaces it.
+- **AI draft** is dim suggestion text at the caret, with the line "The gray sentence is a suggestion. Tab keep, Esc dismiss." Typing replaces it.
 - **Polish** is a quiet bar, "Polish suggests 3 changes. Yours stays until you choose.", with an inline diff. It never overwrites your text.
 - **Follow-up nudge** (§7.2): the same suggestion, with "Aplos drafted this follow-up from your last email. Tab keep, Esc dismiss." The mockup draws it on the compose page as a stand-in; in the app it opens as the inline reply.
 
@@ -802,7 +803,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
 - **AI.**
   - The Features table comes first: Ask, Summaries, Drafts, Plans and Voice, each with a provider and model picker. Voice lists only speech-to-text providers (Groq, OpenAI).
   - Providers follow, in two groups: hosted (Groq, the default; OpenAI; Claude; Gemini; OpenRouter; OpenCode Go) and "On this Mac and custom" (Ollama, LM Studio, a custom OpenAI-compatible server, each with an editable address and its default port).
-  - Each provider row shows its status and key source ("From environment: GROQ_API_KEY" or "Saved in Keychain"). **Key characters are never shown.** Each has Test. A key from the environment shows Remove disabled, with the reason in a tooltip. Providers with no key show "Add key".
+  - Each provider row shows its status and key source ("Key found in the environment as `GROQ_API_KEY`", the variable in mono, or "Saved in Keychain"; the onboarding AI step reads the same way). **Key characters are never shown.** Each has Test. A key from the environment shows Remove disabled, with the reason in a tooltip. Providers with no key show "Add key".
   - The privacy text sits behind a "How your mail is used" disclosure. It is the one privacy explanation in the app.
 - **Keyboard.** Generated from the registry, with remapping, conflict marks, the single-key switch (WCAG 2.1.4) and "Show all key hints".
 - **Accounts.** One name per account everywhere [V: baseline §6.6]. The connection state sits on the row. **Reconnect** appears on the row for `needsReauth`, `needsPermission` and when `reconnectBy` is within 24 hours, and opens the reconnect sheet (§7.1). The demo account has Reset and Remove.
@@ -1023,7 +1024,7 @@ These phrases are on the lint ban list (§12.2): "Swipe through them", "Hold to 
 | Delete or discard refused | "Couldn’t delete that. It is still here." / "Couldn’t discard the draft. It is still saved." |
 | Engine unreachable | "Aplos can’t reach its mail engine." / "Couldn’t restart. Your mail is safe on this Mac." |
 | Diagnostics | "Diagnostics copied" / "Diagnostics copied. They hold no mail." / "Diagnostics exported" / "Couldn’t get the diagnostics." |
-| Reconnect sheet failures | "That was a different account. Sign in with the same one.", "Sign-in was cancelled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
+| Reconnect sheet failures | "That was a different account. Sign in with the same one.", "Sign-in was canceled. Nothing changed.", "Sign-in timed out. Nothing changed.", "Couldn’t reconnect. Your mail is safe here and local changes are kept." |
 | Confirms | "Delete this email forever?" (button "Delete forever"); "Discard this draft?" (button "Discard") |
 | Toasts | "Bookmarked", "Bookmark removed", "Reminder set", "Restored", "Deleted forever", "Draft discarded", "Moved to Home", "Account added" (after Add an account connects) |
 | Spam quick action | "Not spam" (this replaces "Restore" for Spam) |

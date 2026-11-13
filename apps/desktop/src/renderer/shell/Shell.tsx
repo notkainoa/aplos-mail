@@ -36,6 +36,7 @@ import { listenFullscreen, macChrome, toggleCollapsed, useChrome } from './chrom
 import { focusRegion, type RegionRoot } from './regions';
 import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
+import { OutboxFlag } from './OutboxHost';
 import { SheetHost } from './SheetHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
@@ -364,6 +365,7 @@ export function ShellLayout(props: ShellLayoutProps) {
           </Pane>
         ) : null}
       </div>
+      {minimised || collapsed ? <OutboxFlag /> : null}
       {props.overlay}
     </div>
   );

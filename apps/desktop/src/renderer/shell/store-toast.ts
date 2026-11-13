@@ -3,8 +3,8 @@
  *
  * Rules the store keeps: one operation, one notice (a push with a live id updates that toast in
  * place); the stack holds three; when a fourth arrives the oldest toast that is neither an Undo
- * toast nor `persistent` goes. An Undo toast is never replaced or evicted: a toast is an Undo toast
- * when `undoable` is true or one of its actions runs `app.undo`. A persistent toast (a failure or a
+ * toast, an `error` toast nor `persistent` goes. An Undo toast is never replaced or evicted: a toast is an Undo toast
+ * when `undoable` is true or one of its actions runs `app.undo`. A persistent toast (a held send or a
  * pending operation) is never evicted either. If nothing else can go the stack exceeds the cap and
  * `ToastStack` shows the last three. The store runs no timers: the `Toast` component owns the
  * life (plain 4 s, Undo 8 s, `persistent` never), pauses it on hover and focus, fades out and then
@@ -16,7 +16,7 @@ import { createStore } from './store-core';
 import type { ToastData } from '../ui/props';
 import type { PushedToast } from './index';
 
-/** Most toasts the stack keeps (Undo toasts may exceed it; plain ones never do). */
+/** Most toasts the stack keeps (Undo, error and persistent toasts may exceed it; plain ones never do). */
 export const TOAST_LIMIT = 3;
 /** How long a plain toast lasts. */
 export const PLAIN_TOAST_MS = 4_000;
@@ -55,12 +55,13 @@ function dismissToastNow(id: string): void {
 }
 
 function evictable(toast: PushedToast): boolean {
-  return !toast.persistent && !isUndoToast(toast);
+  return !toast.persistent && toast.kind !== 'error' && !isUndoToast(toast);
 }
 
-function evictOldest(): void {
+/** Makes room for the toast just pushed (`keep`): it is never the one that goes, as in `planToasts`. */
+function evictOldest(keep: string): void {
   while (live.size > TOAST_LIMIT) {
-    const victim = [...live].find(([, toast]) => evictable(toast));
+    const victim = [...live].find(([id, toast]) => id !== keep && evictable(toast));
     if (!victim) return;
     live.delete(victim[0]);
   }
@@ -71,7 +72,7 @@ export function addToast(toast: PushedToast): string {
   const existing = live.get(toast.id);
   if (existing && isUndoToast(existing) && !isUndoToast(toast)) return toast.id;
   live.set(toast.id, toast);
-  evictOldest();
+  evictOldest(toast.id);
   publish();
   return toast.id;
 }

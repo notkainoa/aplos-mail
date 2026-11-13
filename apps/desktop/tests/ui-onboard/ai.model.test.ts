@@ -116,6 +116,8 @@ describe('providers', () => {
     assert.equal(vm.rows[0].selected, true);
     assert.deepEqual(vm.rows[0].keySource, { kind: 'environment', variable: 'GROQ_API_KEY' });
     assert.equal(providerDetail(hosted('x', 'X', 'X_KEY', 'keychain')).text, 'Saved in Keychain');
+    // A key from the environment reads in plain words, with no variable name in it.
+    assert.equal(providerDetail(hosted('x', 'X', 'X_KEY', 'env')).text, 'Key set on this Mac');
     assert.equal(vm.keyField, undefined);
     assert.equal(vm.canContinue, true);
   });

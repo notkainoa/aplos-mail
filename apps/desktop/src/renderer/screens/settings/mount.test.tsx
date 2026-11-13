@@ -11,7 +11,7 @@ import { clearAvailability, publishAvailability, rowAvailable } from './availabi
 import { createController } from './controller';
 import { entryFor, isConditional, SETTING_ROWS } from './paletteEntries';
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
-import { mergeAccounts, type AccountWrite } from './settings.model';
+import { hiddenUntilBuilt, mergeAccounts, type AccountWrite } from './settings.model';
 import { INITIAL_VIEW, type SettingsView } from './view';
 import {
   ALEX,
@@ -172,6 +172,29 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
+  test('with nothing published (Settings not mounted) the unbuilt rows are still not offered; SHOW_UNBUILT_ROWS brings them back', () => {
+    clearAvailability();
+    const unbuilt = [
+      ['general', 'allowTools'],
+      ['general', 'addTool'],
+      ['general', 'tools'],
+      ['help', 'queue'],
+    ] as const;
+    const ids = paletteIds();
+    for (const [section, anchor] of unbuilt) {
+      assert.equal(rowAvailable(section, anchor), false, `${section}/${anchor} not offered`);
+      assert.ok(
+        !ids.includes(`setting.${section}.${anchor}`),
+        `${section}.${anchor} not in the palette`,
+      );
+      assert.equal(
+        rowAvailable(section, anchor, true),
+        true,
+        `${section}/${anchor} offered when shown`,
+      );
+    }
+  });
+
   test('the unbuilt placeholder rows are not offered from the palette until their capability is on', () => {
     const ids = [
       'setting.general.allowTools',
@@ -243,8 +266,13 @@ describe('conditional rows and palette availability', () => {
   test('account and demo rows follow the account list; every row is offered with nothing published', () => {
     try {
       clearAvailability();
+      // Every row but the unbuilt placeholders, which need their capability (tested above).
       for (const spec of SETTING_ROWS)
-        assert.equal(rowAvailable(spec.section, spec.anchor), true, spec.anchor);
+        assert.equal(
+          rowAvailable(spec.section, spec.anchor),
+          !hiddenUntilBuilt(spec.section, spec.anchor),
+          spec.anchor,
+        );
       const demo = account({ id: 'demo', address: 'demo@example.com', demo: true });
       publishAvailability({ accounts: [demo], providers: providers(), session: session() });
       assert.equal(
@@ -356,6 +384,18 @@ describe('conditional rows and palette availability', () => {
     } finally {
       clearAvailability();
     }
+  });
+
+  test('the lease palette entry is named for both states of the row it opens', () => {
+    const entry = entryFor(
+      SETTING_ROWS.find(r => r.section === 'accounts' && r.anchor === 'lease')!,
+    );
+    assert.equal(entry.label, 'Where it syncs');
+    assert.ok(entry.keywords?.includes('syncs on this mac'));
+    assert.ok(entry.keywords?.includes('syncs on another mac'));
+    // The palette matches keywords by prefix only: bare 'mac', 'this mac' and 'another mac' must stay reachable.
+    for (const word of ['mac', 'this mac', 'another mac'])
+      assert.ok(entry.keywords?.includes(word), word);
   });
 
   test('while Account/get has not answered, the per-account rows stay offered', () => {
