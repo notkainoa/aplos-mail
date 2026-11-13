@@ -147,7 +147,7 @@ export function createComposeSession(
       case 'submission':
         return runFollowUp(effect);
       case 'destroy':
-        return runDestroy(effect.draftId);
+        return runDestroy(effect.draftId, effect.quiet === true);
       case 'preserve':
         return runPreserve(effect.draft);
       case 'checkSent':
@@ -233,12 +233,13 @@ export function createComposeSession(
     if (outcome.kind === 'refused') dispatch({ type: 'undoRefused', message: outcome.message });
   }
 
-  async function runDestroy(draftId: string): Promise<void> {
+  async function runDestroy(draftId: string, quiet: boolean): Promise<void> {
     try {
       await deps.api.destroyDraft({ id: draftId });
-      dispatch({ type: 'discarded' });
+      if (!quiet) dispatch({ type: 'discarded' });
     } catch {
-      dispatch({ type: 'discardFailed' });
+      // A draft that only moved account and could not be removed stays in the old account's Drafts: nothing is lost.
+      if (!quiet) dispatch({ type: 'discardFailed' });
     }
   }
 

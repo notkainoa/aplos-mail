@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Draft, Submission } from '../../../data';
 import { AUTOSAVE } from './autosave';
-import { composeReducer } from './composeReducer';
+import { canChangeAccount, composeReducer } from './composeReducer';
 import {
   composeFromDraft,
   freshCompose,
@@ -395,3 +395,59 @@ test('reopen (R again) brings a closed draft back, never a sent or discarded one
   assert.equal(run({ ...closed, ended: 'sent' }, { type: 'reopen' }).state.open, false);
   assert.equal(run({ ...closed, ended: 'discarded' }, { type: 'reopen' }).state.open, false);
 });
+
+describe_from();
+
+function describe_from(): void {
+  const NEW = { accountId: 'a1', mode: 'new' as const };
+  const typed = (): ComposeState =>
+    run(freshCompose(NEW), { type: 'edit', patch: { body: 'Hello' }, now: T0 }).state;
+  const saved = (): ComposeState =>
+    run(typed(), { type: 'saved', seq: 1, draft: { id: 'd1', revision: 1, rev: 1 } }).state;
+
+  test('From: before anything is saved, the account just changes', () => {
+    const step = composeReducer(freshCompose(NEW), {
+      type: 'setAccount',
+      accountId: 'a2',
+      now: T0,
+    });
+    assert.equal(step.state.context.accountId, 'a2');
+    assert.deepEqual(step.effects, []);
+  });
+
+  test('From: a saved draft is destroyed quietly and the same text is saved again in the new account', () => {
+    const { state, effects } = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    assert.equal(state.context.accountId, 'a2');
+    assert.equal(state.fields.body, 'Hello');
+    assert.deepEqual(effects[0], { type: 'destroy', draftId: 'd1', quiet: true });
+    const save = effects.find(e => e.type === 'save');
+    assert.ok(save && save.type === 'save');
+    assert.equal(save.draftId, null, 'a new draft, so the account is the new one');
+    assert.equal(save.context.accountId, 'a2');
+    assert.equal(save.fields.body, 'Hello');
+  });
+
+  test('From: choosing the same account does nothing', () => {
+    const before = saved();
+    const step = composeReducer(before, { type: 'setAccount', accountId: 'a1', now: T0 });
+    assert.equal(step.state, before);
+    assert.deepEqual(step.effects, []);
+  });
+
+  test('From: a reply keeps the thread’s account, and so does a send or a save in flight', () => {
+    const reply = fresh();
+    assert.equal(canChangeAccount(reply), false);
+    const moved = composeReducer(reply, { type: 'setAccount', accountId: 'a2', now: T0 });
+    assert.equal(moved.state.context.accountId, 'a1');
+    const flying = typed();
+    assert.notEqual(flying.save.flightSeq, null);
+    assert.equal(canChangeAccount(flying), false);
+    const addressed = run(saved(), { type: 'edit', patch: { to: [JORDAN] }, now: T0 + 5 }).state;
+    const sending = run(
+      run(addressed, { type: 'saved', seq: 2, draft: { id: 'd1', revision: 2, rev: 2 } }).state,
+      { type: 'send', now: T0 + 6, undoSeconds: 5 },
+    ).state;
+    assert.notEqual(sending.send.kind, 'none');
+    assert.equal(canChangeAccount(sending), false);
+  });
+}

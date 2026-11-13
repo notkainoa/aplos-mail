@@ -4,7 +4,15 @@
  * a draft is never discarded without the confirmation, the text the engine confirmed is never thrown away, and one
  * press makes at most one `Submission/set send`.
  */
-import { failSave, finishSave, isDirty, noteEdit, retryNow, saveIsDue } from './autosave';
+import {
+  FRESH_SAVE,
+  failSave,
+  finishSave,
+  isDirty,
+  noteEdit,
+  retryNow,
+  saveIsDue,
+} from './autosave';
 import type { ComposeEvent, ComposeState, Step } from './composeState';
 import { fieldsFromDraft, isBlank, type ComposeFields } from './fields';
 import {
@@ -117,6 +125,42 @@ function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
   // A send of this draft exists (this composer's answer is late, another composer sent it, or the app reloaded).
   if (draft.submissionId && untracked && !unsaved) return trackFoundSend(next, draft.submissionId);
   return still(next);
+}
+
+/**
+ * From (the account a new message is written in). A draft belongs to one account for good, so one the engine already
+ * holds is destroyed quietly and the same text is saved again in the account chosen. Only a new message can change
+ * account (a reply belongs to the thread's), and only while nothing is in flight: a save that is mid-air, a send, a
+ * discard or a conflict wait would race the move.
+ */
+export function canChangeAccount(state: ComposeState): boolean {
+  return (
+    state.open &&
+    !state.discarding &&
+    state.context.mode === 'new' &&
+    state.send.kind === 'none' &&
+    state.save.flightSeq === null &&
+    !state.save.waitingForRemote
+  );
+}
+
+function onSetAccount(state: ComposeState, event: Event<'setAccount'>): Step {
+  if (!canChangeAccount(state) || state.context.accountId === event.accountId) return still(state);
+  const context = { ...state.context, accountId: event.accountId };
+  const old = state.save.draftId;
+  if (old === null) return still({ ...state, context });
+  const moved: ComposeState = {
+    ...state,
+    context,
+    save: noteEdit(FRESH_SAVE, event.now),
+    remote: undefined,
+    attempt: 0,
+  };
+  const saved = saveIfDue(moved, event.now);
+  return {
+    state: saved.state,
+    effects: [{ type: 'destroy', draftId: old, quiet: true }, ...saved.effects],
+  };
 }
 
 function onEscape(state: ComposeState): Step {
@@ -248,6 +292,8 @@ function saveReducer(state: ComposeState, event: SaveEvent): Step {
 export function composeReducer(state: ComposeState, event: ComposeEvent): Step {
   if (isSaveEvent(event)) return saveReducer(state, event);
   switch (event.type) {
+    case 'setAccount':
+      return onSetAccount(state, event);
     case 'undoLost':
       return { state, effects: [{ type: 'notify', notice: 'alreadySent' }] };
     case 'undoRefused':

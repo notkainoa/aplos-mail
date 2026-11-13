@@ -4,7 +4,7 @@
  * button only while open; neither renders at all when closed.
  */
 import { useRef, type ReactNode, type RefObject } from 'react';
-import { getNow } from '../../../data';
+import { getNow, useAccounts } from '../../../data';
 import type {
   ComposeCommands,
   DictationState,
@@ -15,7 +15,9 @@ import type {
 import type { ComposeFields } from '../model/fields';
 import type { ComposerControls } from '../runtime/useComposerControls';
 import type { ComposeBinding } from '../runtime/useComposeSession';
+import { canChangeAccount } from '../model/composeReducer';
 import { BodyEditor } from './BodyEditor';
+import { FromRow } from './FromRow';
 import { RecipientRows } from './RecipientRows';
 
 /** Registry ids for the footer (DESIGN 8 Compose): ⌘↩, ⌘⇧A, ⌘/, ⌘⇧C. */
@@ -44,24 +46,37 @@ export interface SharedComposerProps {
 export function useSharedComposerProps(
   binding: ComposeBinding,
   controls: ComposerControls,
-  options: { readonly label: string; readonly focusTo: boolean },
+  options: { readonly label: string; readonly focusTo: boolean; readonly from?: boolean },
 ): SharedComposerProps {
   const { session, state, view } = binding;
+  const accounts = useAccounts();
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const edit = (patch: Partial<ComposeFields>) =>
     session.dispatch({ type: 'edit', patch, now: getNow() });
   const suggestion = view.suggestion;
   return {
     recipients: (
-      <RecipientRows
-        fields={state.fields}
-        accountId={state.context.accountId}
-        onChange={edit}
-        showCc={controls.showCc}
-        onShowCc={() => controls.setShowCc(true)}
-        invalid={view.invalid}
-        autoFocus={options.focusTo}
-      />
+      <>
+        {options.from ? (
+          <FromRow
+            accounts={accounts}
+            accountId={state.context.accountId}
+            canChange={canChangeAccount(state)}
+            onChange={accountId =>
+              session.dispatch({ type: 'setAccount', accountId, now: getNow() })
+            }
+          />
+        ) : null}
+        <RecipientRows
+          fields={state.fields}
+          accountId={state.context.accountId}
+          onChange={edit}
+          showCc={controls.showCc}
+          onShowCc={() => controls.setShowCc(true)}
+          invalid={view.invalid}
+          autoFocus={options.focusTo}
+        />
+      </>
     ),
     editor: (
       <BodyEditor
