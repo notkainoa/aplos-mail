@@ -48,7 +48,7 @@ export function openKindOf(row: ListRowData): OpenKind {
 }
 
 /** A person as a recipient column may name them. */
-interface Who {
+export interface Who {
   readonly name?: string;
   readonly address?: string;
   readonly me?: boolean;
@@ -56,41 +56,74 @@ interface Who {
 
 const BARE_ADDRESS = /^[^\s@]+@[^\s@]+$/;
 
+const ANGLE_ADDRESS = /\s*<[^<>]*>\s*$/;
+const QUOTES = /^["'\u201c\u2018]+|["'\u201d\u2019]+$/g;
+
+/** A display name as written, with a trailing "<address>" and the quotes around it removed ("Park, Jordan" stays whole). */
+function plainName(text: string): string {
+  return cleanName(text).replace(ANGLE_ADDRESS, '').replace(QUOTES, '').trim();
+}
+
 /** The short form of a name or address: an address gives its local part, a display name stays whole. */
 export function shortWho(text: string): string {
-  const clean = cleanName(text);
+  const clean = plainName(text);
   return BARE_ADDRESS.test(clean) ? clean.slice(0, clean.indexOf('@')) : clean;
 }
 
+/** The address of a person: their own, else the one a display name carries in angle brackets. */
+function addressOf(who: Who): string {
+  const own = cleanName(who.address);
+  return own || (/<([^<>]*)>\s*$/.exec(cleanName(who.name))?.[1] ?? '').trim();
+}
+
 function shortOf(who: Who): string {
-  return shortWho(cleanName(who.name) || cleanName(who.address));
+  const name = plainName(who.name ?? '');
+  const address = addressOf(who);
+  // A name that is itself an address, and not this person's own, is kept whole rather than cut to its local part.
+  if (BARE_ADDRESS.test(name) && address !== '' && name.toLowerCase() !== address.toLowerCase())
+    return name;
+  return shortWho(name || address);
 }
 
 /** The full form for the tooltip: "Name <address>", or the address, or the name. */
 function fullOf(who: Who): string {
-  const name = cleanName(who.name);
-  const address = cleanName(who.address);
-  if (name && address && name !== address) return `${name} <${address}>`;
-  return address || name;
+  const name = plainName(who.name ?? '');
+  const address = addressOf(who);
+  if (!name) return address;
+  if (!address || name.toLowerCase() === address.toLowerCase()) return name;
+  return `${name} <${address}>`;
 }
 
 /** A recipients column: "To: name, name and 2 more" with the full addresses for the tooltip. */
 export interface RecipientsLine {
   readonly text: string;
   readonly title: string;
+  /** The plain joined names, with no "To:" and no addresses (the palette's context line). */
+  readonly names: string;
+}
+
+/** How many full addresses the tooltip lists before it says "and N more" (a reply-all can hold 500). */
+const TITLE_ADDRESSES = 5;
+
+function titleOf(people: readonly Who[]): string {
+  const shown = people.slice(0, TITLE_ADDRESSES).map(fullOf).join(', ');
+  const more = people.length - TITLE_ADDRESSES;
+  return more > 0 ? `To: ${shown} and ${more} more` : `To: ${shown}`;
 }
 
 /** The "To: ..." line of Drafts and Sent: display names (or local parts) first, every full address in the tooltip. */
 export function recipientsLine(people: readonly Who[]): RecipientsLine | undefined {
   const named = people.filter(who => shortOf(who) !== '');
   if (named.length === 0) return undefined;
-  return {
-    text: `To: ${joinNames(named.map(shortOf))}`,
-    title: `To: ${named.map(fullOf).join(', ')}`,
-  };
+  const names = joinNames(named.map(shortOf));
+  return { text: `To: ${names}`, title: titleOf(named), names };
 }
 
-const NO_RECIPIENT: RecipientsLine = { text: 'No recipient', title: 'No recipient' };
+const NO_RECIPIENT: RecipientsLine = {
+  text: 'No recipient',
+  title: 'No recipient',
+  names: 'No recipient',
+};
 
 /** Sent's who column: the people the thread went to (the newest message the owner sent), never the owner. */
 export function recipientsOfThread(row: ThreadRow): RecipientsLine {
@@ -99,7 +132,7 @@ export function recipientsOfThread(row: ThreadRow): RecipientsLine {
   const line = recipientsLine(to) ?? recipientsLine(others);
   if (line) return line;
   const sender = senderOf(row);
-  return { text: sender, title: sender };
+  return { text: sender, title: sender, names: sender };
 }
 
 /** A draft's who column: its recipients, or "No recipient" for a draft with none yet. */
@@ -216,6 +249,11 @@ function doneStampOf(row: ThreadRow): ListRowProps['doneAt'] {
   return toIsoDateTime(doneMsOf(row));
 }
 
+/** True when the stamp is the last message's date, not a finish time the engine reported. */
+function doneIsEstimated(row: ThreadRow): boolean {
+  return row.workflow.doneAt === undefined;
+}
+
 function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
   const { config } = context;
   const base = listRowProps(row, { ...context, layout: config.layout });
@@ -227,6 +265,7 @@ function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
     primary: primaryOf(row),
     hoverActions: config.hoverActions,
     doneAt: config.layout === 'done' ? doneStampOf(row) : undefined,
+    doneEstimated: config.layout === 'done' ? doneIsEstimated(row) : undefined,
     laterUntil:
       config.layout === 'later' ? laterUntilOf(row, context.nowMs ?? Date.now()) : undefined,
   };
@@ -251,7 +290,7 @@ export function targetOf(row: ListRowData): {
     return {
       kind: 'draft',
       id: row.id,
-      title: recipientsOfDraft(row).title,
+      title: recipientsOfDraft(row).names,
       detail: draftLine(row),
     };
   }

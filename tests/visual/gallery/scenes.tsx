@@ -323,6 +323,43 @@ function DoneRows(): ReactElement {
   );
 }
 
+/** The worst Done row: the three marks and the account dot before a stamp from last year, beside a plain one. */
+function DoneRowsCrowded(): ReactElement {
+  const move = [{ commandId: 'done.moveToHome', icon: 'home', label: 'Move to Home' }] as const;
+  return (
+    <Column>
+      <ListBox binding={{ id: 'done-crowded', label: 'Done' }}>
+        <ListGroup header={{ id: 'sec-year', label: 'October 2025', variant: 'section', count: 2 }}>
+          <ListRow
+            {...row({
+              id: 'c-1',
+              layout: 'done',
+              sender: 'Priya Raman',
+              primary: 'Print run for November, with the proofs attached for the whole group',
+              doneAt: '2025-10-22T08:03:00-07:00',
+              marks: { replied: true, bookmarked: true, attachment: true },
+              showAccountDot: true,
+              account: { label: 'Studio', color: 'hill' },
+              cursor: true,
+              hoverActions: [...move],
+            })}
+          />
+          <ListRow
+            {...row({
+              id: 'c-2',
+              layout: 'done',
+              sender: 'Leah Okafor',
+              primary: 'Lunch for six tomorrow',
+              doneAt: '2025-10-22T08:52:00-07:00',
+              hoverActions: [...move],
+            })}
+          />
+        </ListGroup>
+      </ListBox>
+    </Column>
+  );
+}
+
 function ReaderHeadScene({ summary }: { summary: SummaryContent }): ReactElement {
   return (
     <Column width="reader">
@@ -596,6 +633,7 @@ export const scenes: Record<string, () => ReactElement> = {
   'home-held-zero': HomeHeldZero,
   'list-rows': ListRows,
   'done-rows': DoneRows,
+  'done-rows-crowded': DoneRowsCrowded,
   'reader-head': () => <ReaderHeadScene summary={SUMMARY} />,
   'reader-head-pending': () => (
     <ReaderHeadScene summary={{ state: 'pending', subject: SUMMARY.subject }} />

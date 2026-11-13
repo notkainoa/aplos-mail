@@ -42,9 +42,21 @@ type RowProps = ListRowProps;
  * The Done stamp column: the date it was finished, like every other list's date column, behind a quiet hill-coloured
  * check that is named "Done". With no date at all only the check shows.
  */
-function DoneStamp({ doneAt }: { doneAt: RowProps['doneAt'] }) {
+function DoneStamp({
+  doneAt,
+  estimated,
+}: {
+  doneAt: RowProps['doneAt'];
+  estimated: RowProps['doneEstimated'];
+}) {
+  // Only a reported finish time may say "Done"; the fallback date is the last message's.
+  const title = doneAt
+    ? estimated
+      ? formatFull(doneAt)
+      : `Done ${formatFull(doneAt)}`
+    : undefined;
   return (
-    <span className="ui-list-row__stamp" title={doneAt ? `Done ${formatFull(doneAt)}` : undefined}>
+    <span className="ui-list-row__stamp" title={title}>
       <span role="img" aria-label="Done" className="ui-list-row__stamp-mark">
         <Icon name="check" size="sm" />
       </span>
@@ -58,9 +70,10 @@ function DateColumn({
   layout,
   date,
   doneAt,
+  doneEstimated,
   laterUntil,
-}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'laterUntil'>) {
-  if (layout === 'done') return <DoneStamp doneAt={doneAt} />;
+}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'>) {
+  if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
   if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
@@ -264,6 +277,7 @@ export function ListRow(props: ListRowProps) {
           layout={layout}
           date={props.date}
           doneAt={props.doneAt}
+          doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}

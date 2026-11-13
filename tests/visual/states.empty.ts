@@ -62,6 +62,23 @@ export const emptyStates: readonly VisualState[] = [
     filled: 0,
   },
   {
+    id: 'done-rows-crowded',
+    title: 'Done: a row with every mark and the account dot, beside a plain one',
+    components: ['ListBox', 'ListRow', 'SectionHeader'],
+    design: '7.4',
+    mockup: 'done.html (default)',
+    filled: 0,
+  },
+  {
+    id: 'list-bookmarks-empty',
+    frame: 'shell',
+    title: 'Bookmarks: none (the Later | Bookmarks switch stays, the line is centered)',
+    components: ['EmptyLine', 'Puck'],
+    design: '7.3, 7.14',
+    mockup: 'empty.html (default)',
+    filled: 0,
+  },
+  {
     id: 'list-trash-empty',
     frame: 'shell',
     title: 'Trash: empty',
