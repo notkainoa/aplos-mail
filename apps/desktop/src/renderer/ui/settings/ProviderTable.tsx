@@ -21,7 +21,7 @@ export function latencyText(ms: number): string {
 
 interface StatusView {
   text: string;
-  tone: 'ok' | 'neutral' | 'busy' | 'bad';
+  tone: 'ok' | 'neutral' | 'quiet' | 'busy' | 'bad';
   icon?: 'check' | 'alert';
 }
 
@@ -31,6 +31,8 @@ function statusView(status: ProviderStatus): StatusView {
       return { text: 'Ready', tone: 'ok' };
     case 'needsKey':
       return { text: 'Needs a key', tone: 'neutral' };
+    case 'notRunning':
+      return { text: 'Not running', tone: 'quiet' };
     case 'testing':
       return { text: 'Testing…', tone: 'busy' };
     case 'works':

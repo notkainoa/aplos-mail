@@ -817,6 +817,14 @@
     inset 0 var(--hairline) 0 var(--line);
 }
 
+/* The last column closes with the same right hairline as the week grid's. */
+.ui-calendar-grid__mcell:last-child {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset calc(-1 * var(--hairline)) 0 0 var(--line);
+}
+
 .ui-calendar-grid__mcell[data-today='true'] {
   background: var(--today-tint);
 }

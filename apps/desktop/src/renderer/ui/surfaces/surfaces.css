@@ -1152,7 +1152,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
-  align-items: center;
+  /* One column: the stack is as wide as its widest toast and every toast fills it. */
+  align-items: stretch;
   gap: var(--space-2);
   width: max-content;
   max-width: calc(100% - var(--space-6) * 2);
@@ -1211,6 +1212,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   flex: none;
 }
 .ui-toast__message {
+  flex: 1 1 auto;
   min-width: 0;
   display: -webkit-box;
   -webkit-box-orient: vertical;

@@ -1,6 +1,12 @@
 /* The Calendar screen's own wrappers (DESIGN 7.8; mockups cal.css). Layout only, tokens only: every control, event,
    grid line and surface is styled by its component in ui/. */
 
+/* The slot is as tall as the pane body, so the hours scroll inside the grid (and open near now) instead of the whole
+   pane scrolling from midnight. */
+.aplos-screen:has(> .cal-screen) {
+  height: 100%;
+}
+
 .cal-screen {
   height: 100%;
   min-height: 0;

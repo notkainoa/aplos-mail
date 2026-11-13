@@ -189,6 +189,8 @@ export type IconName =
   | 'gearshape'
   | 'house'
   | 'tray'
+  | 'paperplane'
+  | 'shield'
   | 'keyboard';
 
 /**
