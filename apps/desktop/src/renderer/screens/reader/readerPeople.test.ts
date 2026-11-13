@@ -14,6 +14,7 @@ import {
   personOf,
   recipientPeople,
   recipientLabel,
+  recipientParts,
 } from './readerPeople';
 
 const ME = new Set(['alex@studio.example']);
@@ -142,4 +143,13 @@ test('right-to-left names: the monogram is the first letter of the name, whateve
     'م',
     'quotes are skipped',
   );
+});
+
+test('the header line comes in two parts, so a narrow header can cut the names and never the count', () => {
+  const many = ['a', 'b', 'c', 'd', 'e'].map(n =>
+    personOf({ name: n, address: `${n}@x.example` }, ME),
+  );
+  assert.deepEqual(recipientParts(many), { names: 'to a, b', more: ' and 3 more' });
+  assert.deepEqual(recipientParts(many.slice(0, 2)), { names: 'to a, b', more: '' });
+  assert.deepEqual(recipientParts([]), { names: 'to undisclosed recipients', more: '' });
 });

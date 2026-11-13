@@ -24,6 +24,28 @@ test.describe('many recipients', () => {
     expect(clipped, 'the "and 5 more" tail is fully drawn').toBeLessThanOrEqual(0);
   });
 
+  test('a long address is cut with an ellipsis and the count stays whole', async ({ page }) => {
+    await openState(page, FEW, { theme: 'light' });
+    const line = page.locator(`${LETTER} .aplos-recipients__to`);
+    await expect(line).toBeVisible();
+    // Worst case: an address a header cannot hold, then "and 497 more".
+    const drawn = await line.evaluate(el => {
+      const names = el.querySelector<HTMLElement>('.aplos-recipients__names')!;
+      const more = el.querySelector<HTMLElement>('.aplos-recipients__more')!;
+      names.textContent = 'to me, bartholomew.fitzgerald@northwind-industries.example';
+      more.textContent = ' and 497 more';
+      return {
+        namesCut: names.scrollWidth > names.clientWidth,
+        moreRight: more.getBoundingClientRect().right,
+        lineRight: el.getBoundingClientRect().right,
+        moreCut: more.scrollWidth > more.clientWidth,
+      };
+    });
+    expect(drawn.namesCut, 'the names give way').toBe(true);
+    expect(drawn.moreCut, 'the count is not clipped').toBe(false);
+    expect(drawn.moreRight).toBeLessThanOrEqual(drawn.lineRight + 1);
+  });
+
   for (const theme of ['light', 'dark'] as const)
     test(`five hundred recipients: the details popover stays inside the window and scrolls, ${theme}`, async ({
       page,

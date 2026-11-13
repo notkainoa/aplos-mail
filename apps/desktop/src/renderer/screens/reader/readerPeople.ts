@@ -83,17 +83,30 @@ function shortName(name: string): string {
     : name;
 }
 
+/** The header line in two parts: the names (which a narrow header may cut) and the "and N more" tail (which it must not). */
+export interface RecipientParts {
+  readonly names: string;
+  /** " and 4 more", with its leading space; '' when everyone is named. */
+  readonly more: string;
+}
+
 /**
  * The header's recipients, in plain words: "to me", "to Mina Cho", "to me, Mina Cho and 4 more". A recipient without a
- * display name shows as the address, so the line always says who it went to. It is also the button's accessible name.
+ * display name shows as the address, so the line always says who it went to.
  */
-export function recipientLabel(people: readonly Person[]): string {
+export function recipientParts(people: readonly Person[]): RecipientParts {
   // One more than the limit is named too: "and 1 more" would only hide a name that fits.
   const limit = people.length === MAX_NAMED + 1 ? people.length : MAX_NAMED;
   const shown = people.slice(0, limit).map(p => (p.me ? 'me' : shortName(p.name)));
-  if (shown.length === 0) return 'to undisclosed recipients';
+  if (shown.length === 0) return { names: 'to undisclosed recipients', more: '' };
   const rest = people.length - shown.length;
-  return `to ${rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')}`;
+  return { names: `to ${shown.join(', ')}`, more: rest > 0 ? ` and ${rest} more` : '' };
+}
+
+/** The same line as one string: the button's accessible name. */
+export function recipientLabel(people: readonly Person[]): string {
+  const { names, more } = recipientParts(people);
+  return names + more;
 }
 
 function sameAddresses(a: readonly Address[], b: readonly Address[]): boolean {
