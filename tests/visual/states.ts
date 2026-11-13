@@ -350,7 +350,7 @@ export const STATES: readonly VisualState[] = [
   {
     id: 'shell-status-needs-admin',
     frame: 'shell',
-    title: 'Status slot: blocked by the organisation',
+    title: 'Status slot: blocked by the organization',
     components: ['StatusSlot'],
     design: '7.1, 7.15',
     mockup: 'errors.html (status)',

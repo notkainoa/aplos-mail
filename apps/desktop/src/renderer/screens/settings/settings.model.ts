@@ -59,8 +59,12 @@ const UNBUILT_ROWS: ReadonlySet<string> = new Set([
   'help/queue',
 ]);
 /** True when `section/anchor` is a placeholder row that stays out of sight until its capability is on. */
-export function hiddenUntilBuilt(section: string, anchor: string): boolean {
-  return !SHOW_UNBUILT_ROWS && UNBUILT_ROWS.has(`${section}/${anchor}`);
+export function hiddenUntilBuilt(
+  section: string,
+  anchor: string,
+  show: boolean = SHOW_UNBUILT_ROWS,
+): boolean {
+  return !show && UNBUILT_ROWS.has(`${section}/${anchor}`);
 }
 const DAY_MS = 86_400_000;
 

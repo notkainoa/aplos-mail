@@ -34,7 +34,7 @@
   column-gap: var(--space-4);
   width: 100%;
   min-height: var(--row);
-  padding: 0 var(--space-3);
+  padding: var(--space-1) var(--space-3);
   text-align: left;
 }
 
@@ -63,9 +63,8 @@
 
 .ui-setting-row__label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* A long address is the label now: it wraps so its distinguishing tail stays readable. */
+  overflow-wrap: anywhere;
   font-weight: 400;
 }
 
@@ -75,7 +74,8 @@
 
 .ui-setting-row__meta,
 .ui-setting-row__tag {
-  flex: 0 1 auto;
+  /* A wrapping label gives way first; the provider word beside it keeps its width (capped at half the row). */
+  flex: none;
   max-width: 50%;
   min-width: 0;
   overflow: hidden;
