@@ -131,6 +131,9 @@ const lazyModules = [
   // The provider reads (a thread's open, an attachment, the raw original) load on the first read via `import()` in
   // sync/host.ts (fix-bodies, 2026-11-11).
   join(src, 'sync', 'host-read.ts'),
+  // The `lazy`-folder open (which folder a label or mailbox view needs, then `ProviderPort.listFolder`) loads on the
+  // first such `View/watch` or `View/query` via `import()` in methods/view.ts (fix-counts, 2026-11-12).
+  join(src, 'views', 'folder-fetch.ts'),
   // The FTS row builder and the start-up backlog pass load on engine start via `import()` in views/module.ts; the
   // always-loaded half (`store/fts.ts`) only marks and schedules (fix-search, 2026-11-12).
   join(src, 'store', 'fts-indexer.ts'),

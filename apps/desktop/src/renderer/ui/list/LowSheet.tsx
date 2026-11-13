@@ -36,6 +36,7 @@ export function LowSheet({
   open,
   binding,
   groups,
+  total: shown,
   armed,
   markAllCommandId,
   preview,
@@ -46,7 +47,7 @@ export function LowSheet({
   announce,
 }: LowSheetProps) {
   const titleId = useId();
-  const total = groups.reduce((n, g) => n + g.rows.length, 0);
+  const total = shown ?? groups.reduce((n, g) => n + g.rows.length, 0);
   const key = useKeycapFor(markAllCommandId) || '→';
   const markEventKey = key === '←' ? 'ArrowLeft' : 'ArrowRight';
   const panelRef = useRef<HTMLDivElement>(null);

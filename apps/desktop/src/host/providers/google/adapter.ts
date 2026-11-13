@@ -42,7 +42,7 @@ import { applyOp, coalesceOps } from './ops';
 import { retryStep } from './retry';
 import { search } from './search';
 import { findSentCopy, sendSubmission } from './send';
-import { FactsMemo, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
+import { FactsMemo, listFolder, listStep, plan, type SyncRuntime, type WindowCall } from './sync';
 import { GmailWorkflowTransport, type TransportLimits } from './workflow';
 import type { WorkflowTransport } from './workflow-state';
 
@@ -313,6 +313,11 @@ export class GmailAdapter implements ProviderAdapter {
 
   search(query: ServerSearch, ctx: AdapterContext): Promise<SearchResult> {
     return search(this.rt.deps, query, this.paced(ctx));
+  }
+
+  /** `ProviderPort.listFolder`'s adapter half: one page of a `lazy` folder the UI opened (Spam, Trash, Starred…). */
+  listFolder(folder: string, pageToken: string | undefined, ctx: AdapterContext) {
+    return listFolder(this.rt, folder, pageToken, this.paced(ctx));
   }
 
   coalesce(ops: PendingOp[]): CoalescedOp[] {

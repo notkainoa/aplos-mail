@@ -260,6 +260,11 @@ export interface LowSheetProps {
   binding: ListboxBinding;
   /** Sender groups; empty shows the empty line. */
   groups: readonly LowSheetGroup[];
+  /**
+   * Every low-importance thread (the view's total), for the count in the header and the mark-all copy. The window
+   * may show fewer rows than exist, so it is never counted from `groups`; absent, the groups' rows are summed.
+   */
+  total?: number;
   /** The first → was pressed: the component shows "Press → again to mark all <n> done · Esc cancels" (copy pending DESIGN). */
   armed: boolean;
   /** Registry command for → (the keycap in the armed line). */

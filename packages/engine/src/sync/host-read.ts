@@ -3,11 +3,13 @@ import type {
   AdapterAccount,
   AdapterContext,
   AttachmentRef,
+  FolderList,
   OpenedThread,
   ProviderAdapter,
+  ServerSearch,
 } from '../ports/provider';
 import type { StorePort, StoreWrite } from '../store/port';
-import { messageWrites } from './facts';
+import { messageWrite, messageWrites } from './facts';
 import { readFence } from './ops';
 
 /**
@@ -17,7 +19,10 @@ import { readFence } from './ops';
  * counts against the engine core.
  */
 export interface ReadEntry {
-  adapter: Pick<ProviderAdapter, 'kind' | 'fetchAttachment' | 'openThread'> & {
+  adapter: Pick<
+    ProviderAdapter,
+    'kind' | 'fetchAttachment' | 'openThread' | 'listFolder' | 'search'
+  > & {
     /**
      * The adapter's optional raw-RFC822 read (`ProviderPort.original`); the Gmail adapter has it
      * (`bodies.ts fetchOriginal`). Declared structurally: an adapter that cannot serve it leaves it out.
@@ -113,6 +118,119 @@ export async function openThreadRemote(
     writes: openedWrites(ctx.account, remoteThreadId, opened),
   });
   return opened;
+}
+
+/**
+ * `ProviderPort.search` (D2): the adapter read plus the fence and commit the host owes the store. The caller
+ * checks `entry.adapter.search` exists first; committed under `step: 'search'` so the rows never count as synced
+ * facts a sweep could remove.
+ */
+export async function searchRemote(
+  entry: ReadEntry,
+  store: StorePort,
+  newId: () => string,
+  account: AccountId,
+  query: ServerSearch,
+): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }> {
+  const ctx = entry.actor.context();
+  const fence = readFence(store, account, ctx.generation);
+  const result = await entry.adapter.search!(query, ctx);
+  store.commit({
+    opId: newId(),
+    origin: 'sync',
+    step: 'search',
+    fenceSeq: fence,
+    writes: result.upserts.map(m => messageWrite(account, ctx.account.address, m)),
+  });
+  return {
+    remoteThreadIds: result.remoteThreadIds,
+    ...(result.nextPageToken !== undefined ? { nextPageToken: result.nextPageToken } : {}),
+    ...(result.partial !== undefined ? { partial: result.partial } : {}),
+  };
+}
+
+/**
+ * A `lazy` folder opened in the UI (`ProviderPort.listFolder`): the account's `folder:<remoteId>` sync_state row is
+ * the throttle, the failure backoff and the deep walk's bookmark. An open sooner than `FOLDER_REFETCH_MS` after the
+ * last stamp changes nothing. Each open pays exactly one provider page on the `interactive` lane — a held token
+ * continues the walk, none re-reads the head — so opening Spam or a big label never competes with the owner's own
+ * thread opens. A failure stamps the row anyway (token cleared, throttle held): the next open backs off instead of
+ * paying the same call, and a rejected token can never wedge the folder. The commit is `origin='sync'` with NULL
+ * `seen_gen` (no sweep owns these placements); later history keeps them honest.
+ */
+export const FOLDER_REFETCH_MS = 60_000;
+
+/** Folder opens in flight, per mailbox: overlapping `View/watch`/`View/query` callers join the one fetch. */
+const openingFolder = new WeakMap<StorePort, Map<string, Promise<void>>>();
+
+export async function ensureFolder(
+  entry: ReadEntry,
+  store: StorePort,
+  newId: () => string,
+  account: AccountId,
+  remoteFolderId: string,
+): Promise<void> {
+  if (!entry.adapter.listFolder) return;
+  // The key holds no fence/generation: opens on either side of a commit are the same fetch.
+  const key = `${account} ${remoteFolderId}`;
+  const going = perStore(openingFolder, store, () => new Map<string, Promise<void>>());
+  const held = going.get(key);
+  if (held) return held;
+  const run = fetchFolder(entry, store, newId, account, remoteFolderId);
+  going.set(key, run);
+  run.then(
+    () => going.delete(key),
+    () => going.delete(key),
+  );
+  return run;
+}
+
+async function fetchFolder(
+  entry: ReadEntry,
+  store: StorePort,
+  newId: () => string,
+  account: AccountId,
+  remoteFolderId: string,
+): Promise<void> {
+  const ctx = entry.actor.context();
+  const scope = `folder:${remoteFolderId}`;
+  const state = store.read(q =>
+    q.get<{ page_token: string | null; updated_at: number }>(
+      'SELECT page_token, updated_at FROM sync_state WHERE account_id = ? AND scope = ?',
+      account,
+      scope,
+    ),
+  );
+  if (state && ctx.clock.now() - state.updated_at < FOLDER_REFETCH_MS) return;
+  const fence = readFence(store, account, ctx.generation);
+  let result: FolderList;
+  try {
+    result = await entry.adapter.listFolder!(remoteFolderId, state?.page_token ?? undefined, ctx);
+  } catch (error) {
+    // A failure or a refused token clears the bookmark and holds the throttle — never a wedge, never a hammer.
+    store.commit({
+      opId: newId(),
+      origin: 'sync',
+      fenceSeq: fence,
+      writes: [{ kind: 'syncState', accountId: account, scope, generation: ctx.generation }],
+    });
+    throw error;
+  }
+  store.commit({
+    opId: newId(),
+    origin: 'sync',
+    fenceSeq: fence,
+    writes: [
+      ...result.upserts.map(m => messageWrite(account, ctx.account.address, m)),
+      {
+        kind: 'syncState',
+        accountId: account,
+        scope,
+        generation: ctx.generation,
+        ...(result.nextPageToken !== undefined ? { pageToken: result.nextPageToken } : {}),
+      },
+    ],
+  });
 }
 
 /**

@@ -1,6 +1,12 @@
 import type { Frame } from '@aplos/contract';
 import type { Clock, StorePort, Timer } from '../ports';
 import type { Caller } from '../methods/types';
+/**
+ * The change types `Counts/get` can move on; a durable change of one marks `Counts` in the `state` frame — a
+ * derived mark, never a changes row, so the durable log and `Session/changes` keep only what was written
+ * (fix-counts). Space-delimited so `includes` cannot match a substring of another type.
+ */
+const COUNTS_TYPES = ' Thread Message Folder Draft Submission Account Settings ';
 
 /** `state` frames coalesce over this long (ARCH 9.2: 50 to 250 ms). */
 export const STATE_COALESCE_MS = 100;
@@ -221,8 +227,11 @@ function touchedSince(store: StorePort, from: number): Record<string, number> | 
   for (;;) {
     const page = store.changesSince(since);
     if (page.status !== 'ok') return undefined;
-    for (const change of page.changes)
-      types[change.type] = Math.max(change.seq, types[change.type] ?? 0);
+    for (const { type, seq } of page.changes) {
+      const put = (t: string) => (types[t] = Math.max(seq, types[t] ?? 0));
+      put(type);
+      if (COUNTS_TYPES.includes(` ${type} `)) put('Counts');
+    }
     if (!page.hasMore || page.toSeq <= since) return types;
     since = page.toSeq;
   }

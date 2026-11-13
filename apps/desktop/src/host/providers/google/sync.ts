@@ -1,5 +1,6 @@
 import {
   type AdapterContext,
+  type FolderList,
   type MessageFacts,
   type ProviderError,
   type PlacementDelta,
@@ -35,6 +36,8 @@ export const RESYNC_THREADS = 50;
 /** Threads fetched per step, so each commit holds about 50 (plan 20 PV0 item 4). */
 export const CHUNK = 50;
 const LIST_PAGE = 500;
+/** A lazy folder's open page: small enough to ride the `interactive` lane beside the owner's own opens. */
+const FOLDER_PAGE = 50;
 const SENT_DAYS = 30;
 const BACKFILL_DAYS = 90;
 const DAY = 86_400_000;
@@ -832,4 +835,49 @@ function endStep(env: ListEnv, round: ListRound, doneBefore: number): StepResult
 function stepLane(state: SyncState, spec: ListSpec): SyncLane {
   if (spec.scope !== 'window:inbox') return 'backfill';
   return state.phase === 'more' ? 'backfill' : 'incremental';
+}
+
+/**
+ * `ProviderAdapter.listFolder`: one page of a `lazy` folder (Spam, Trash, Starred, a user label) the UI opened.
+ * Newest first, `FOLDER_PAGE` ids a page — the fetch rides the `interactive` lane next to the owner's own thread
+ * opens, so it stays small (Opus review: a `LIST_PAGE` page could bill ~2,500 quota units an open). Only messages
+ * this device lacks are fetched, so a re-open of a folder the
+ * walk already covered costs one `messages.list`. STARRED ids land as `flagged` facts (the Bookmarks view), label
+ * ids as placements on the page's own folder and every other label the messages carry.
+ */
+export async function listFolder(
+  rt: SyncRuntime,
+  folder: string,
+  pageToken: string | undefined,
+  ctx: AdapterContext,
+): Promise<FolderList> {
+  const client = new GmailClient(rt.deps, ctx);
+  const page = await client.call<{
+    messages?: { id: string; threadId: string }[];
+    nextPageToken?: string;
+  }>({
+    method: 'gmail.messages.list',
+    path: '/messages',
+    query: {
+      labelIds: [folder],
+      maxResults: FOLDER_PAGE,
+      pageToken,
+      // The default listing excludes Spam and Trash; an explicit label page must not.
+      includeSpamTrash: 'true',
+    },
+    fields: LIST_FIELDS,
+    lane: 'interactive',
+  });
+  const ids = (page.messages ?? []).map(m => m.id);
+  const known = ids.length ? await ctx.lookup.knownMessages(ids) : new Set<string>();
+  const out = await fetchMetadata(
+    client,
+    ids.filter(id => !known.has(id)),
+    { lane: 'interactive', self: ctx.account.address, memo: rt.memo, now: ctx.clock.now() },
+  );
+  if (out.error) throw out.error;
+  return {
+    upserts: out.facts,
+    ...(page.nextPageToken !== undefined ? { nextPageToken: page.nextPageToken } : {}),
+  };
 }

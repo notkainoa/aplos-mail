@@ -32,7 +32,7 @@ import {
 import { ProviderError } from '../ports/base';
 import { contractError } from '../runtime/errors';
 import { AccountActor, type Role } from './actor';
-import { messageWrite, syncStateWrite } from './facts';
+import { syncStateWrite } from './facts';
 import type { Governor } from './governor';
 import {
   clockReading,
@@ -54,7 +54,7 @@ import { removeRemoteDraft, saveRemoteDraft } from './host-drafts';
 import { entryTarget, sendPortOf } from './host-send';
 import { storeLookup } from './lookup';
 import { hasRequiredScope } from './scopes';
-import { nextOpRetry, readFence } from './ops';
+import { nextOpRetry } from './ops';
 import { governorWrite, readAccount, readGovernor, readMemory, readStates } from './persist';
 
 /** The provider reads (`host-read.ts`): loaded on the first thread open, attachment or original, not with the core. */
@@ -669,21 +669,20 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
   ): Promise<{ remoteThreadIds: string[]; nextPageToken?: string; partial?: boolean }> {
     const entry = this.entry(account);
     if (!entry.adapter.search) return { remoteThreadIds: [] };
-    const ctx = entry.actor.context();
-    const fence = readFence(this.deps.store, account, ctx.generation);
-    const result = await entry.adapter.search(query, ctx);
-    this.deps.store.commit({
-      opId: this.newId(),
-      origin: 'sync',
-      step: 'search',
-      fenceSeq: fence,
-      writes: result.upserts.map(m => messageWrite(account, ctx.account.address, m)),
-    });
-    return {
-      remoteThreadIds: result.remoteThreadIds,
-      ...(result.nextPageToken !== undefined ? { nextPageToken: result.nextPageToken } : {}),
-      ...(result.partial !== undefined ? { partial: result.partial } : {}),
-    };
+    return (await Read()).searchRemote(entry, this.deps.store, () => this.newId(), account, query);
+  }
+
+  /** `ProviderPort.listFolder`: a `lazy` folder's open, through the same lazy read module as `openThread`. */
+  async listFolder(account: AccountId, remoteFolderId: string): Promise<void> {
+    await (
+      await Read()
+    ).ensureFolder(
+      this.entry(account),
+      this.deps.store,
+      () => this.newId(),
+      account,
+      remoteFolderId,
+    );
   }
 
   async attachment(account: AccountId, ref: AttachmentRef): Promise<AsyncIterable<Uint8Array>> {

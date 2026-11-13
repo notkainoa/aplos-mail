@@ -3,9 +3,11 @@
  * labels, the neutral keyboard cursor, hover actions over the date column, the empty sentence, and a confirmation for
  * the destructive verbs. Presentational over `MailListState`: every change goes out through its actions.
  */
+import { useEffect, useState } from 'react';
 import { useNow } from '../../data';
 import { CommitTemplates } from '../CommitTemplates';
 import { ListBox, ListGroup, ListRow } from '../../ui/list';
+import { LoadingLine } from '../../ui/reader';
 import type { ListboxBinding } from '../../ui/props';
 import { failurePhrase } from '../home/homeRows';
 import type { ListActions } from './listActions';
@@ -101,9 +103,25 @@ function Groups({ list }: { readonly list: MailListState }) {
   ));
 }
 
+/** A first open may fetch a `lazy` folder from the provider: the quiet line appears only once it is slow. */
+const OPENING_SLOW_MS = 1_500;
+
+function useSlow(opening: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!opening) return;
+    const timer = setTimeout(() => setSlow(true), OPENING_SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [opening]);
+  return slow;
+}
+
 /** The list, or its empty line once the view is live and holds nothing. */
 export function MailListView({ list }: { readonly list: MailListState }) {
   const { config, view, cursor, actions, confirmation, pointer } = list;
+  const opening = view.status !== 'live' && view.status !== 'failed' && view.ids.length === 0;
+  const slow = useSlow(opening);
   if (view.status === 'live' && view.ids.length === 0 && view.total === 0)
     return (
       <ListEmpty
@@ -114,7 +132,7 @@ export function MailListView({ list }: { readonly list: MailListState }) {
       />
     );
   if (view.status === 'failed' && view.ids.length === 0) return <ListFailed />;
-  if (view.status !== 'live' && view.ids.length === 0) return null;
+  if (opening) return slow ? <LoadingLine label={`Loading ${config.name}…`} /> : null;
   const binding: ListboxBinding = {
     id: config.id,
     label: config.name,

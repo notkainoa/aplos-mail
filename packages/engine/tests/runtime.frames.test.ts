@@ -26,7 +26,12 @@ test('commits leave as one coalesced state frame, stamped with dbEpoch and seq',
     assert.equal(state!.frame, 'state');
     assert.equal(state!.dbEpoch, store.dbEpoch);
     assert.equal(state!.seq, store.seq());
-    assert.deepEqual(state!.frame === 'state' && state!.types, { Account: 1, Folder: 2 });
+    // `Counts` is derived at fan-out (counts live on threads, folders, accounts): it marks, never writes a row.
+    assert.deepEqual(state!.frame === 'state' && state!.types, {
+      Account: 1,
+      Folder: 2,
+      Counts: 2,
+    });
     // A replayed commit lands nothing and sends nothing.
     store.commit({ opId: 'a', origin: 'sync', writes: [accountWrite] });
     t.clock.advance(1_000);
