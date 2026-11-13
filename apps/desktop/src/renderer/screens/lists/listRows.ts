@@ -56,23 +56,42 @@ export interface Who {
 
 const BARE_ADDRESS = /^[^\s@]+@[^\s@]+$/;
 
+const ANGLE_ADDRESS = /\s*<[^<>]*>\s*$/;
+const QUOTES = /^["'\u201c\u2018]+|["'\u201d\u2019]+$/g;
+
+/** A display name as written, with a trailing "<address>" and the quotes around it removed ("Park, Jordan" stays whole). */
+function plainName(text: string): string {
+  return cleanName(text).replace(ANGLE_ADDRESS, '').replace(QUOTES, '').trim();
+}
+
 /** The short form of a name or address: an address gives its local part, a display name stays whole. */
 export function shortWho(text: string): string {
-  const clean = cleanName(text);
+  const clean = plainName(text);
   return BARE_ADDRESS.test(clean) ? clean.slice(0, clean.indexOf('@')) : clean;
 }
 
+/** The address of a person: their own, else the one a display name carries in angle brackets. */
+function addressOf(who: Who): string {
+  const own = cleanName(who.address);
+  return own || (/<([^<>]*)>\s*$/.exec(cleanName(who.name))?.[1] ?? '').trim();
+}
+
 function shortOf(who: Who): string {
-  return shortWho(cleanName(who.name) || cleanName(who.address));
+  const name = plainName(who.name ?? '');
+  const address = addressOf(who);
+  // A name that is itself an address, and not this person's own, is kept whole rather than cut to its local part.
+  if (BARE_ADDRESS.test(name) && address !== '' && name.toLowerCase() !== address.toLowerCase())
+    return name;
+  return shortWho(name || address);
 }
 
 /** The full form for the tooltip: "Name <address>", or the address, or the name. */
 function fullOf(who: Who): string {
-  const name = cleanName(who.name);
-  const address = cleanName(who.address);
-  const embedded = address !== '' && name.toLowerCase().includes(address.toLowerCase());
-  if (name && address && name !== address && !embedded) return `${name} <${address}>`;
-  return name && (embedded || !address) ? name : address || name;
+  const name = plainName(who.name ?? '');
+  const address = addressOf(who);
+  if (!name) return address;
+  if (!address || name.toLowerCase() === address.toLowerCase()) return name;
+  return `${name} <${address}>`;
 }
 
 /** A recipients column: "To: name, name and 2 more" with the full addresses for the tooltip. */

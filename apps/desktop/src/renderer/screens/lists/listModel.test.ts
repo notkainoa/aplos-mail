@@ -400,6 +400,20 @@ test('the recipients line: three names fit, more are counted, the tooltip is cap
   );
 });
 
+test('recipient names: an angle address, quotes and "Last, First" read cleanly; an address-like name is kept whole', () => {
+  assert.equal(
+    recipientsLine([{ name: 'Jo <jo@x.example>', address: 'jo@x.example' }])?.text,
+    'To: Jo',
+  );
+  assert.equal(recipientsLine([{ name: 'Jo <jo@x.example>' }])?.title, 'To: Jo <jo@x.example>');
+  const park = recipientsLine([{ name: '"Park, Jordan"', address: 'jordan@x.example' }]);
+  assert.equal(park?.text, 'To: Park, Jordan');
+  assert.equal(park?.title, 'To: Park, Jordan <jordan@x.example>');
+  const odd = recipientsLine([{ name: 'a@x.example', address: 'real.person@y.example' }]);
+  assert.equal(odd?.text, 'To: a@x.example', 'not cut to "a"');
+  assert.equal(shortWho('"Park, Jordan" <jordan@x.example>'), 'Park, Jordan');
+});
+
 test('a Sent thread leaves the owner out of both the recipients and the fallback people', () => {
   const row = thread({
     id: 'me',

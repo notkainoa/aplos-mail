@@ -184,6 +184,17 @@ function actOnView(spec: ViewSpec, action: ActionBody): Step {
   };
 }
 
+/** Switches Later's Later | Bookmarks switch to Bookmarks. */
+const OPEN_BOOKMARKS: Step = {
+  run: async () => {
+    const tab = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      el => el.textContent?.trim() === 'Bookmarks',
+    );
+    if (!tab) throw new Error('no Bookmarks tab');
+    tab.click();
+  },
+};
+
 /** Home with nothing left: every thread it holds, the Low importance band and Follow up included, is Done. */
 const CLEAR_HOME: readonly Step[] = [
   actOnView({ kind: 'home' }, { type: 'done' }),
@@ -383,6 +394,11 @@ export const homeScenes: Record<string, () => ReactElement> = {
     scenario: 'demo',
     screen: 'later',
     steps: [actOnView({ kind: 'later' }, { type: 'done' })],
+  }),
+  'list-bookmarks-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'later',
+    steps: [actOnView({ kind: 'bookmarks' }, { type: 'bookmark', on: false }), OPEN_BOOKMARKS],
   }),
   'list-all-mail': sceneOf({ scenario: 'demo', screen: 'all' }),
   'list-all-bulk': sceneOf({

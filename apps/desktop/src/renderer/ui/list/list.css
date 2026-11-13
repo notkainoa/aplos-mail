@@ -626,7 +626,8 @@
   --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
-  --ui-date-w: calc(var(--space-10) + var(--space-8) + var(--space-3));
+  /* Sized for the worst row: three marks, the account dot, the check and a dated stamp ("Oct 22, 2025"). */
+  --ui-date-w: calc(var(--space-10) * 2 + var(--space-7) + var(--space-3));
 }
 
 .ui-list-row__lead {
