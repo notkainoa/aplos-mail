@@ -90,14 +90,13 @@ const PLAIN_CSS = [
 ].join('\n');
 
 /**
- * A blocked image keeps its width but never its height: a hero image (an itinerary, a newsletter banner) would otherwise
- * leave a gray slab filling the first screen and push the text below the fold. It sits in the `aplos-reading` layer (see
- * below) so the mail's own `!important` rules cannot undo it, and `min-height` and `padding` are neutralized because
- * `min-height` outranks `max-height`. The placeholder carries no `style` attribute (sanitize.ts `image`), which would
- * outrank the layer.
+ * A blocked image collapses to nothing (owner's hands-on pass 2026-11-12, round 3): a placeholder strip per image (an
+ * itinerary or a newsletter has dozens) hides the text, and "Load images" brings the pictures back. The rule sits in the
+ * `aplos-reading` layer (see below) so the mail's own `!important` rules cannot undo it; the placeholder carries no
+ * `style` attribute (sanitize.ts `image`), which would outrank the layer. An image with no size shows its alt text instead
+ * and is not an `aplos-blocked` image.
  */
-export const BLOCKED_IMAGE_CAP = 48;
-const BLOCKED_IMAGE_RULE = `img.aplos-blocked{max-height:${BLOCKED_IMAGE_CAP}px!important;min-height:0!important;padding:0!important;border-width:0!important;margin-block:0!important;zoom:1!important}`;
+const BLOCKED_IMAGE_RULE = 'img.aplos-blocked{display:none!important}';
 
 export const READING_CSS = [
   ':root{color-scheme:light}',
@@ -125,6 +124,5 @@ export const READING_CSS = [
   'details.aplos-quote>summary{cursor:default;color:#6b7079;font-size:13px;list-style:none;user-select:none}',
   'details.aplos-quote>summary::-webkit-details-marker{display:none}',
   'details.aplos-quote>summary::before{content:"\\2026";display:inline-block;padding:0 8px;margin-right:6px;border-radius:6px;background:#eef0f3}',
-  'img.aplos-blocked{background:#f1f2f4;border-radius:4px}',
   PLAIN_CSS,
 ].join('\n');
