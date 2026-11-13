@@ -1,16 +1,17 @@
 /**
  * Toast: one opaque notice, --paper, --elev-float, radius 12, `ui` text, up to 440 px (DESIGN 6, 7.13).
- * Wears its kind's icon (meaning never rides on colour alone). Plain toasts live 4 s, Undo toasts 8 s, then fade
+ * Wears its kind's icon (meaning never rides on colour alone; a failure wears the alert in --stamp-ink, never a check).
+ * Plain toasts live 4 s, Undo and error toasts 8 s, then fade
  * over 400 ms (120 ms reduced); hover, focus or a hidden window pauses the clock. Durations come from motion.ts.
  * Announced politely by the stack's persistent live region (a region inserted with its text already inside is
  * often not read); it never takes focus.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
-import type { ComponentPropsMap, IconName, ToastKind } from '../props';
-import { PartIcon, PartKeys, prefersReducedMotion, useKeysFor } from './parts';
+import type { ComponentPropsMap, IconName, ToastData, ToastKind } from '../props';
+import { PartButton, PartIcon, PartKeys, prefersReducedMotion, useKeysFor } from './parts';
 
-const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' }> = {
+const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' | 'stamp' }> = {
   done: { icon: 'check', tone: 'hill' },
   later: { icon: 'clock', tone: 'dusk' },
   trash: { icon: 'trash' },
@@ -21,6 +22,7 @@ const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' }> = {
   offline: { icon: 'cloud-off' },
   tip: { icon: 'keyboard' },
   info: { icon: 'check' },
+  error: { icon: 'alert', tone: 'stamp' },
 };
 
 type PauseReason = 'hover' | 'focus' | 'hidden';
@@ -83,6 +85,14 @@ function useLifetime(life: number | null, onExpire: () => void) {
   };
 }
 
+/** How long a toast stays before it fades: plain 4 s, Undo and error 8 s, a persistent one (a held send) until it is replaced. */
+export function toastLife(
+  toast: Pick<ToastData, 'kind' | 'undoable' | 'persistent'>,
+): number | null {
+  if (toast.persistent) return null;
+  return toast.undoable || toast.kind === 'error' ? timing.toastUndo : timing.toast;
+}
+
 export function Toast({
   kind,
   message,
@@ -95,7 +105,8 @@ export function Toast({
   const [leaving, setLeaving] = useState(false);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
-  const life = persistent ? null : undoable ? timing.toastUndo : timing.toast;
+  const closable = kind === 'error';
+  const life = toastLife({ kind, undoable, persistent });
   const clock = useLifetime(leaving ? null : life, () => setLeaving(true));
 
   useEffect(() => {
@@ -137,6 +148,17 @@ export function Toast({
           <PartKeys chords={keysOf(action.commandId ?? action.keysFrom)} />
         </button>
       ))}
+      {closable ? (
+        <span className="ui-toast__dismiss">
+          <PartButton
+            variant="icon"
+            size="sm"
+            icon="close"
+            label="Dismiss"
+            onPress={() => setLeaving(true)}
+          />
+        </span>
+      ) : null}
     </div>
   );
 }

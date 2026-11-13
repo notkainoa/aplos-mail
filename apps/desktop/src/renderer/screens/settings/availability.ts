@@ -6,7 +6,7 @@
  */
 import type { Account, AiProvider, Session } from '../../data';
 import type { SettingSection } from '../../commands';
-import { hasCapability, paidSwitch } from './settings.model';
+import { hasCapability, hiddenUntilBuilt, paidSwitch } from './settings.model';
 
 /** What a row's availability reads: accounts (demo, missing permissions, lease), providers and the session. */
 export interface AvailabilityData {
@@ -34,12 +34,23 @@ const realAccount = (data: AvailabilityData) => data.accounts.some(a => !a.demo)
 const hasProvider = (data: AvailabilityData, id: string): boolean =>
   data.providers === undefined || data.providers.some(p => p.id === id);
 
+/** The placeholder rows behind `SHOW_UNBUILT_ROWS`: offered only when their capability is on. */
+const UNBUILT_CAPABILITY: Readonly<Record<string, string>> = {
+  'general/allowTools': 'listener',
+  'general/addTool': 'clients',
+  'general/tools': 'clients',
+  'help/queue': 'queueInspector',
+};
+
 /** True when the row `section/anchor` is drawn with the published data (or none was published yet). */
 export function rowAvailable(section: SettingSection, anchor: string): boolean {
   const data = current;
   if (!data) return true;
   // While `Account/get` has not answered, `accounts` is [] and says nothing: rows drawn per account stay offered.
   const pending = data.accountsLoaded === false;
+  const capability = UNBUILT_CAPABILITY[`${section}/${anchor}`];
+  if (capability)
+    return !hiddenUntilBuilt(section, anchor) || hasCapability(data.session, capability);
   switch (`${section}/${anchor}`) {
     case 'accounts/accountAi':
     case 'accounts/accountColour':

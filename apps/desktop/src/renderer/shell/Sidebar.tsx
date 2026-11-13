@@ -1,8 +1,8 @@
 /**
  * The sidebar (DESIGN 7.1), transparent on the gray shell. Top to bottom: the account switcher and the compose pencil;
  * an unlabelled group (Search, Home, Later, Calendar); a quiet "Mail" label over All mail, Done, Drafts, Sent, Spam and
- * Trash; then, when the mounted screen sets one, its slot (Calendar's MiniMonth and Calendars list); then the footer,
- * which is the status slot, Settings and Help. Each group is one `Puck`, so selection is the
+ * Trash; then, when the mounted screen sets one, its slot (Calendar's MiniMonth, Calendars list and accounts); then the footer,
+ * which is the outbox notice (only while a send has failed), the status slot, Settings and Help. Each group is one `Puck`, so selection is the
  * shared `slide` puck and counts use `count`. The component draws what it is given; the shell supplies the live data.
  */
 import type { ReactNode } from 'react';
@@ -15,13 +15,14 @@ import {
   TOP_PLACES,
   placeRoute,
   placeScreen,
-  screenPlace,
+  currentPlace,
   type Place,
   type PlaceId,
 } from './nav';
 import { handleRegionItemKey } from './regions';
+import { OutboxHost } from './OutboxHost';
 import { SidebarSlotView } from './SidebarSlotView';
-import { openRoute, useSidebarSlotValue, type Screen } from './index';
+import { openRoute, useSettingsSection, useSidebarSlotValue, type Screen } from './index';
 
 const MAIL_HEAD_ID = 'sidebar-mail';
 
@@ -95,7 +96,7 @@ export function Sidebar({
   accountSwitcher,
   status,
 }: SidebarProps) {
-  const selected = screenPlace(screen);
+  const selected = currentPlace(screen, useSettingsSection());
   const group = { counts, selected, onNavigate };
   const slot = useSidebarSlotValue();
   return (
@@ -131,7 +132,7 @@ export function Sidebar({
       <PlaceGroup label="Mail" places={MAIL_PLACES} {...group} />
       {slot ? <SidebarSlotView slot={slot} /> : null}
       <div className="aplos-sidebar__foot">
-        {slot?.calendarAccounts ?? null}
+        <OutboxHost />
         {status}
         <PlaceGroup label="App" places={FOOTER_PLACES} {...group} />
       </div>

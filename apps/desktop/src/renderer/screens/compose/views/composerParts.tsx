@@ -4,7 +4,7 @@
  * button only while open; neither renders at all when closed.
  */
 import { useRef, type ReactNode, type RefObject } from 'react';
-import { getNow } from '../../../data';
+import { getNow, useAccounts } from '../../../data';
 import type {
   ComposeCommands,
   DictationState,
@@ -16,6 +16,7 @@ import type { ComposeFields } from '../model/fields';
 import type { ComposerControls } from '../runtime/useComposerControls';
 import type { ComposeBinding } from '../runtime/useComposeSession';
 import { BodyEditor } from './BodyEditor';
+import { FromRow } from './FromRow';
 import { RecipientRows } from './RecipientRows';
 
 /** Registry ids for the footer (DESIGN 8 Compose): ⌘↩, ⌘⇧A, ⌘/, ⌘⇧C. */
@@ -41,27 +42,51 @@ export interface SharedComposerProps {
   readonly editorRef: RefObject<HTMLTextAreaElement | null>;
 }
 
+/**
+ * From: asks the composer to write in another account. A save that is in flight makes the reducer refuse for the moment
+ * (the draft cannot move mid-save), so the choice is asked again once the queue has settled.
+ */
+function chooseAccount(session: ComposeBinding['session'], accountId: string): void {
+  session.dispatch({ type: 'setAccount', accountId, now: getNow() });
+  if (session.getState().context.accountId === accountId) return;
+  void session.settled().then(() => {
+    if (session.getState().context.accountId !== accountId)
+      session.dispatch({ type: 'setAccount', accountId, now: getNow() });
+  });
+}
+
 export function useSharedComposerProps(
   binding: ComposeBinding,
   controls: ComposerControls,
-  options: { readonly label: string; readonly focusTo: boolean },
+  options: { readonly label: string; readonly focusTo: boolean; readonly from?: boolean },
 ): SharedComposerProps {
   const { session, state, view } = binding;
+  const accounts = useAccounts();
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const edit = (patch: Partial<ComposeFields>) =>
     session.dispatch({ type: 'edit', patch, now: getNow() });
   const suggestion = view.suggestion;
   return {
     recipients: (
-      <RecipientRows
-        fields={state.fields}
-        accountId={state.context.accountId}
-        onChange={edit}
-        showCc={controls.showCc}
-        onShowCc={() => controls.setShowCc(true)}
-        invalid={view.invalid}
-        autoFocus={options.focusTo}
-      />
+      <>
+        {options.from ? (
+          <FromRow
+            accounts={accounts}
+            accountId={state.context.accountId}
+            canChange={state.context.mode === 'new'}
+            onChange={accountId => chooseAccount(session, accountId)}
+          />
+        ) : null}
+        <RecipientRows
+          fields={state.fields}
+          accountId={state.context.accountId}
+          onChange={edit}
+          showCc={controls.showCc}
+          onShowCc={() => controls.setShowCc(true)}
+          invalid={view.invalid}
+          autoFocus={options.focusTo}
+        />
+      </>
     ),
     editor: (
       <BodyEditor

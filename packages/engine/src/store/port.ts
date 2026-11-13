@@ -118,7 +118,8 @@ export type CoreWrite =
   | EventWrite
   | EventDeleteWrite
   | EventSweepWrite
-  | EventHiddenWrite;
+  | EventHiddenWrite
+  | FtsIndexWrite;
 
 /**
  * Lane write kinds, added by declaration merging from the lane's own file, e.g. in `outbox/store.ts`:
@@ -418,6 +419,12 @@ export interface SweepWrite {
   until?: number;
   uidFrom?: number;
   uidTo?: number;
+}
+
+/** Indexes these messages if they have no search index row yet (the start-up backlog pass, `fts.ts`). */
+export interface FtsIndexWrite {
+  kind: 'ftsIndex';
+  ids: number[];
 }
 
 /** Engine-owned key/values (`import_state`, `imported_from`, `consent_version`). `null` deletes. Reserved keys refuse. */

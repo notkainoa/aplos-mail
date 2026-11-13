@@ -350,7 +350,7 @@ const HALLOWEEN = allDay('halloween', 'Halloween', HOLIDAYS, '2026-10-31', '2026
 // ---------------------------------------------------------------------------
 
 const LONG_TITLE =
-  'Quarterly planning and budget alignment session with the whole studio, the two freelance illustrators, the print shop liaison and the accountant, covering invoices, reprints, the spring catalogue and more';
+  'Quarterly planning and budget alignment session with the whole studio, the two freelance illustrators, the print shop liaison and the accountant, covering invoices, reprints, the spring catalog and more';
 
 const WORST: readonly Event[] = [
   // DST: clocks fall back at 2:00 AM on Sunday, November 1; 1:00 to 3:00 AM is three hours long.
@@ -797,7 +797,7 @@ const FIXTURES: Record<string, Fixture> = {
         id: 'cal:op-hold-design',
         opId: 'op-hold-design',
         reason: "That change wasn't sent in time. Check the event, then send it again.",
-        account: 'Alex Moreno',
+        account: 'alex.moreno@example.com',
         canRetry: true,
         canDiscard: true,
       },
@@ -812,7 +812,7 @@ const FIXTURES: Record<string, Fixture> = {
         id: 'cal:op-hold-design',
         opId: 'op-hold-design',
         reason: "That change wasn't sent in time. Check the event, then send it again.",
-        account: 'Alex Moreno',
+        account: 'alex.moreno@example.com',
         accountId: 'acct-alex',
         canRetry: true,
         canDiscard: true,
@@ -821,7 +821,7 @@ const FIXTURES: Record<string, Fixture> = {
         id: 'cal:op-hold-jordan',
         opId: 'op-hold-jordan',
         reason: 'Sign in to Google again to send this change.',
-        account: 'Jordan Lee',
+        account: 'jordan.lee@example.com',
         accountId: 'acct-jordan',
         recovery: 'reconnect',
         canRetry: true,
@@ -831,7 +831,7 @@ const FIXTURES: Record<string, Fixture> = {
         id: 'cal:op-hold-uncertain',
         opId: 'op-hold-uncertain',
         reason: "We couldn't confirm that went through. Check your calendar before trying again.",
-        account: 'Alex Moreno',
+        account: 'alex.moreno@example.com',
         uncertain: true,
         canRetry: false,
         canDiscard: true,

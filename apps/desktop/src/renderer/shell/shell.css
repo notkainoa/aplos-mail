@@ -124,6 +124,12 @@
   -webkit-app-region: drag;
 }
 
+/* The sidebar holds still: nothing but the screen's slot gives up height, so the places, their label and the footer sit
+   at the same place on every screen. */
+.aplos-sidebar > * {
+  flex-shrink: 0;
+}
+
 /* Rows are 28 px with no gaps; groups sit 20 px apart (NavHead carries its own margin). */
 .aplos-sidebar > .ui-puck + .ui-puck {
   margin-top: var(--space-5);
@@ -177,7 +183,7 @@
   flex: 0 1 auto;
   flex-direction: column;
   gap: var(--space-5);
-  min-height: calc(var(--control-md) * 3);
+  min-height: var(--control-md);
   /* A 4 px inset on every side, taken back with the negative margin, so keyboard focus rings are not clipped by the
      scroll container (the controls inside span the full width and the first and last rows touch its edges). */
   padding: var(--space-1);
@@ -186,11 +192,47 @@
   overflow-y: auto;
 }
 
+/* A failed send's notice: StatusSlot's shape, two or three short lines, never a banner. */
+.aplos-outbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  color: var(--stamp-ink);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.aplos-outbox__item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.aplos-outbox__item > .ui-part-icon {
+  margin-top: var(--space-half);
+}
+.aplos-outbox__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.aplos-outbox__text {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.aplos-outbox__actions {
+  /* The 28 px text buttons' labels line up with the sentence above them. */
+  display: flex;
+  flex-wrap: wrap;
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-3));
+}
+
 .aplos-sidebar__foot {
   display: flex;
   flex-direction: column;
   margin-top: auto;
-  padding-top: var(--space-3);
+  padding-top: var(--space-5);
 }
 
 .aplos-rail {

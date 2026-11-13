@@ -2016,3 +2016,13 @@ Decision: the spec is rewritten — the card gets focus by click / `.focus()` an
 - **Drafts and Sent get date groups** like All mail and Done. Their who column reads "To: name" (display name, else the local part of the address; ellipsis at the end; the first five full addresses in the tooltip).
 - **Empty lines stay centered in the pane** per the 2026-11-05 override, which supersedes `mockups/empty.html`'s top-left line. Later and Bookmarks now follow it: the Later | Bookmarks switch shares a grid cell with the line instead of pushing it down.
 - A date ahead of the clock groups as "Tomorrow" or "Upcoming", matching the row text, instead of Today.
+
+## 2026-11-12 fix-search: the search index is written by every commit (#497)
+
+- **Chosen:** the "paced FTS job" (ARCH 3.4) was never built, so `messages_fts` stayed empty and search found nothing on the real engine. Each commit now indexes the messages and bodies it wrote (subject; sender, To, Cc and Bcc names and addresses; the body's text, or the snippet until a body is stored, capped at 16 KB), and a start-up pass indexes the backlog in batches of 200 (about 1 s for the owner's 341 messages in one batch of 500 on a copy, so 200 keeps each writer hold short), keyset-paged through `messages_unindexed`. The row builder is a lazy module (`store/fts-indexer.ts`); `store/fts.ts` keeps only the hooks and the stale-row drop in the core, which must stay there because the host starts the account actors before `createEngine` loads the indexer.
+- **Safety:** HTML is stripped by a linear `indexOf` scan over at most 64 KB (the review measured 36 s for 50 KB of `<` with the first regex version, inside the commit). Each row is indexed in a savepoint: a failure rolls that row back with its bit clear, never fails the sync or body commit, and is logged once per start as `rpc.failed {method: 'Search/index', reason: 'row'}`.
+- **Note for body eviction:** when eviction is written, it must drop the message's index row (and its bit) or re-index it from the snippet; otherwise the index keeps the text of evicted mail.
+- **Note on search hits:** messages found only by a Google search (`origin='search'`) are indexed and stay searchable locally, shown by word search (not by lists), until a sync takes them over or deletes them (ARCH 3.4's 7-day sweep of unopened hits is not built yet).
+- **Note on Ask:** Ask now reads real index hits; it leaves out Trash and Spam but not drafts.
+- **Core cost:** 469,742 of 470,000 at this head (base revamp 468,752).
+

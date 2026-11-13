@@ -1,19 +1,18 @@
 /**
- * The card header's "To" (owner request 2026-11-10, image B): the word, one overlapping circle per recipient (the owner
- * included) and a chevron. The whole group is one button that opens the message's details in a Popover (image C): From
+ * The card header's recipients (owner request 2026-11-10, image B; owner's hands-on pass 2026-11-12: the one-letter
+ * circles meant nothing): "to me" or the name or address, and a chevron. The whole group is one button that opens the message's details in a Popover (image C): From
  * with name and address, To, Cc, Bcc, Reply-to when it differs, Date. Esc closes it and focus returns to the button.
- * Circles are monograms drawn from a data attribute by CSS (so the button's visible text is just "To", and its name starts
- * with it); no remote avatar is ever loaded by the renderer.
+ * No avatar of any kind is drawn, and none is ever loaded by the renderer.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { Message } from '../../data';
 import { Icon } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
 import {
-  MAX_CIRCLES,
   detailRows,
-  recipientCircles,
-  recipientsPhrase,
+  recipientPeople,
+  recipientLabel,
+  recipientParts,
   type DetailRow,
   type Person,
 } from './readerPeople';
@@ -22,36 +21,6 @@ import {
 export interface RecipientsLineProps {
   readonly message: Message;
   readonly me: ReadonlySet<string>;
-}
-
-function Circle({ person }: { readonly person: Person }) {
-  return (
-    <span
-      className="aplos-circle"
-      data-me={person.me ? 'true' : undefined}
-      data-mark={person.initial}
-      aria-hidden="true"
-    />
-  );
-}
-
-/**
- * Up to three circles, then one "+N" circle for the rest. They overlap with the first on top, so each monogram stays
- * readable: the DOM runs last to first and the row is laid out in reverse.
- */
-function Circles({ people }: { readonly people: readonly Person[] }) {
-  const shown = people.slice(0, MAX_CIRCLES);
-  const rest = people.length - shown.length;
-  return (
-    <span className="aplos-circles" aria-hidden="true">
-      {rest > 0 ? (
-        <span className="aplos-circle" data-more="true" data-mark={`+${rest}`} aria-hidden="true" />
-      ) : null}
-      {[...shown].reverse().map(person => (
-        <Circle key={person.key} person={person} />
-      ))}
-    </span>
-  );
 }
 
 function PersonLine({ person }: { readonly person: Person }) {
@@ -116,9 +85,11 @@ function useCloseOnScroll(open: boolean, close: () => void): void {
   }, [open, close]);
 }
 
-/** "To", the circles and the chevron, with the details popover they open. */
+/** "to me" (or the names), the chevron and the details popover they open. */
 export function RecipientsLine({ message, me }: RecipientsLineProps) {
-  const people = recipientCircles(message, me);
+  const people = recipientPeople(message, me);
+  const label = recipientLabel(people);
+  const { names, more } = recipientParts(people);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   useCloseOnScroll(open, () => setOpen(false));
@@ -130,13 +101,13 @@ export function RecipientsLine({ message, me }: RecipientsLineProps) {
         className="aplos-recipients__button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`To ${recipientsPhrase(people)}, show details`}
+        aria-label={`${label}, show details`}
         onClick={() => setOpen(value => !value)}
       >
         <span className="aplos-recipients__to" aria-hidden="true">
-          To
+          <span className="aplos-recipients__names">{names}</span>
+          {more === '' ? null : <span className="aplos-recipients__more">{more}</span>}
         </span>
-        <Circles people={people} />
         <Icon name="chevron-down" size="sm" />
       </button>
       <Popover

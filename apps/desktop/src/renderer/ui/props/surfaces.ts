@@ -345,7 +345,8 @@ export type ToastKind =
   | 'pending'
   | 'offline'
   | 'tip'
-  | 'info';
+  | 'info'
+  | 'error';
 
 /** A verb on a toast with its keycap, e.g. "Undo" Z, "Set a date" D. */
 export interface ToastAction {
@@ -371,7 +372,7 @@ export interface ToastData {
   actions?: readonly ToastAction[];
   /** True when one action is Undo: lives 8 s instead of 4 s, then fades over 400 ms. */
   undoable: boolean;
-  /** Stays until dismissed (e.g. a pending op until it confirms). */
+  /** Stays until dismissed (e.g. a pending op until it confirms). An `error` toast is not persistent: it lives 8 s, can be closed with ×, and the shell keeps what needs the owner somewhere calmer. */
   persistent?: boolean;
 }
 

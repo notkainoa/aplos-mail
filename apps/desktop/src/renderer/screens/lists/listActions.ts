@@ -179,15 +179,20 @@ function createRowVerbs(deps: ListDeps) {
 
 /** Delete forever and discard a draft, once the owner has confirmed. */
 function createDestroyers(deps: ListDeps) {
-  function notice(id: string, message: string, persistent = false): void {
-    deps.push({ id, kind: 'info', message, undoable: false, persistent });
+  function notice(id: string, message: string): void {
+    deps.push({ id, kind: 'info', message, undoable: false });
+  }
+
+  /** A refusal: the alert icon and a close button, and it fades after 8 s like any error toast. */
+  function failure(id: string, message: string): void {
+    deps.push({ id, kind: 'error', message, undoable: false });
   }
 
   function confirmDelete(ids: readonly string[]): void {
     holdRows(deps, null, ids);
     deps.deleteForever(ids).then(
       () => notice(`delete-${ids.join(',')}`, 'Deleted forever'),
-      () => notice('delete-failed', 'Couldn’t delete that. It is still here.', true),
+      () => failure('delete-failed', 'Couldn’t delete that. It is still here.'),
     );
   }
 
@@ -195,7 +200,7 @@ function createDestroyers(deps: ListDeps) {
   function discardMany(ids: readonly string[]): void {
     Promise.all(ids.map(id => deps.discardDraft(id))).then(
       () => notice(`discard-${ids.join(',')}`, countedMessage('Drafts discarded', ids.length)),
-      () => notice('discard-failed', 'Couldn’t discard the drafts. Some are still saved.', true),
+      () => failure('discard-failed', 'Couldn’t discard the drafts. Some are still saved.'),
     );
   }
 
@@ -205,7 +210,7 @@ function createDestroyers(deps: ListDeps) {
     for (const id of ids) {
       deps.discardDraft(id).then(
         () => notice(`discard-${id}`, 'Draft discarded'),
-        () => notice('discard-failed', 'Couldn’t discard the draft. It is still saved.', true),
+        () => failure('discard-failed', 'Couldn’t discard the draft. It is still saved.'),
       );
     }
   }

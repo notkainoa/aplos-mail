@@ -48,6 +48,8 @@ export async function search(
   query: ServerSearch,
   ctx: AdapterContext,
 ): Promise<SearchResult> {
+  // No words: `() -in:drafts` would list recent mail, which is not a search answer.
+  if (!query.text.trim()) return { upserts: [], remoteThreadIds: [], costUnits: 0 };
   const client = new GmailClient(deps, ctx);
   const page = await client.call<{
     messages?: { id: string; threadId: string }[];

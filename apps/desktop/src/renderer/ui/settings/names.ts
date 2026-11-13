@@ -21,16 +21,26 @@ export const FEATURE_COPY: Record<AiFeature, { label: string; description: strin
   voice: { label: 'Voice', description: 'Turns speech into text for dictation.' },
 };
 
-/** Where a key comes from, in words. Key characters are never shown, so none are ever passed in. */
+/**
+ * Where a key comes from, in words. Key characters are never shown, so none are ever passed in. The variable name is
+ * technical: the screen passes it only when Developer details is on, and an empty name leaves it out.
+ */
 export function keySourceText(source: KeySource): string {
   switch (source.kind) {
     case 'environment':
-      return `From environment: ${source.variable}`;
+      return source.variable ? `Key set on this Mac · ${source.variable}` : 'Key set on this Mac';
     case 'keychain':
       return 'Saved in Keychain';
     case 'none':
-      return `Not set · reads ${source.variable}`;
+      return source.variable ? `No key yet · reads ${source.variable}` : 'No key yet';
     case 'local':
       return 'On this Mac · no key needed';
   }
+}
+
+/** Why a key set outside Aplos cannot be removed here; the variable is named only when the screen passes it. */
+export function envKeyReason(variable: string): string {
+  return variable
+    ? `This key comes from ${variable} in your environment. Remove it there.`
+    : 'This key is set outside Aplos, so it can only be removed where it was set.';
 }

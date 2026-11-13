@@ -9,6 +9,7 @@ import type { Account, Calendar } from '../../data';
 import type { SidebarSlot } from '../../shell/store-sidebar';
 import type { IsoDate } from '../../ui/props';
 import { yearMonthOf } from '../../ui/calendar/dates';
+import { accountLabel } from '../../ui/accountLabel';
 import {
   busyDays,
   calendarInfos,
@@ -56,7 +57,7 @@ export function accountLinesOf(
   return {
     lines: accounts.map((account, index) => ({
       accountId: account.id,
-      name: account.name || account.address,
+      name: accountLabel(account),
       mark: accountTag(account, index),
       state: calendarAccessOf(account, calendars),
     })),

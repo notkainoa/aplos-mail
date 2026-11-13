@@ -4,6 +4,7 @@
  * only the first account that needs one gets the filled button. The demo account has Reset and Remove.
  */
 import { Button } from '../../../ui/buttons-keys';
+import { accountLabel } from '../../../ui/accountLabel';
 import { Switch, SwatchPicker } from '../../../ui/controls';
 import { calendarAccessOf } from '../../calendar/accountCalendarState';
 import { Group, Row } from '../parts';
@@ -108,11 +109,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
       </Group>
 
       {real.map(({ account, index }) => (
-        <Group
-          key={account.id}
-          id={`set-accounts-${account.id}`}
-          label={account.name || account.address}
-        >
+        <Group key={account.id} id={`set-accounts-${account.id}`} label={accountLabel(account)}>
           <Row
             section="accounts"
             anchor="accountAi"
@@ -120,7 +117,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             description="On for new accounts. Off keeps this mailbox out of every AI feature."
             control={id => (
               <Switch
-                label={`Use ${account.name || account.address} mail for AI`}
+                label={`Use ${accountLabel(account)} mail for AI`}
                 labelledBy={id}
                 checked={account.aiAllowed}
                 onChange={on => void actions.setAccount(account.id, { aiAllowed: on })}
@@ -133,7 +130,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
             idSuffix={account.id}
             control={id => (
               <SwatchPicker
-                label="Colour"
+                label="Color"
                 labelledBy={id}
                 value={tagColor(account, index)}
                 onChange={c => void actions.setAccount(account.id, { colorTag: c })}
@@ -142,7 +139,11 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
           />
           {hasCapability(data.session, 'workflowSync') || account.lease
             ? (() => {
-                const lease = leaseLine(account, data.session.device.name);
+                const lease = leaseLine(
+                  account,
+                  data.session.device.name,
+                  data.settings.ui.devDetails,
+                );
                 return (
                   <Row
                     section="accounts"

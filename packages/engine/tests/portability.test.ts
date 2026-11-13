@@ -131,6 +131,11 @@ const lazyModules = [
   // The provider reads (a thread's open, an attachment, the raw original) load on the first read via `import()` in
   // sync/host.ts (fix-bodies, 2026-11-11).
   join(src, 'sync', 'host-read.ts'),
+  // The FTS row builder and the start-up backlog pass load on engine start via `import()` in views/module.ts; the
+  // always-loaded half (`store/fts.ts`) only marks and schedules (fix-search, 2026-11-12).
+  join(src, 'store', 'fts-indexer.ts'),
+  // The provider search text (Gmail operators) loads on the first `Search/remote` via `import()` in views/remote.ts.
+  join(src, 'views', 'remote-text.ts'),
   // Calendar writes are rare: the port that runs them (and its error mapping) loads on the first write via
   // `import()` in calendar/write-target.ts.
   join(src, 'calendar', 'write-port.ts'),

@@ -48,5 +48,22 @@ export function createModule(services: EngineServices): LaneModule {
   const journal = createJournal();
   const threadOps = createThreadOps(deps, journal);
   const senders = createSenderOps({ ...deps, journal });
-  return { services: { views, threadOps, senders }, stop: () => views.close() };
+  const stopped = new AbortController();
+  return {
+    services: { views, threadOps, senders },
+    // The search indexer is a lazy module (`store/fts-indexer`): loading it installs the row builder every commit
+    // calls, then the backlog pass indexes mail stored before it existed, a batch per commit in the background.
+    start: async () => {
+      try {
+        const fts = await import('../store/fts-indexer');
+        void fts.indexBacklog(services, stopped.signal);
+      } catch {
+        services.log.event('rpc.failed', { method: 'Search/index', reason: 'load' });
+      }
+    },
+    stop: () => {
+      stopped.abort();
+      views.close();
+    },
+  };
 }

@@ -172,6 +172,35 @@ describe('conditional rows and palette availability', () => {
     }
   });
 
+  test('the unbuilt placeholder rows are not offered from the palette until their capability is on', () => {
+    const ids = [
+      'setting.general.allowTools',
+      'setting.general.addTool',
+      'setting.general.tools',
+      'setting.help.queue',
+    ];
+    const withCapabilities = (on: boolean) =>
+      session({
+        capabilities: { ...session().capabilities, listener: on, clients: on, queueInspector: on },
+      });
+    try {
+      publishAvailability({
+        accounts: [ALEX],
+        providers: providers(),
+        session: withCapabilities(false),
+      });
+      for (const id of ids) assert.ok(!paletteIds().includes(id), `${id} is hidden while off`);
+      publishAvailability({
+        accounts: [ALEX],
+        providers: providers(),
+        session: withCapabilities(true),
+      });
+      for (const id of ids) assert.ok(paletteIds().includes(id), `${id} is offered when on`);
+    } finally {
+      clearAvailability();
+    }
+  });
+
   test('with no Gemini key the paid-plan entry is not offered; with a key it is', () => {
     try {
       publishAvailability({

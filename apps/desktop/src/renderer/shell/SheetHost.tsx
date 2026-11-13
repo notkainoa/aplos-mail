@@ -21,7 +21,7 @@ export function failureReason(reasonCode: string | undefined): string {
       return 'That was a different account. Sign in with the same one.';
     case 'auth.cancelled':
     case 'auth.denied':
-      return 'Sign-in was cancelled. Nothing changed.';
+      return 'Sign-in was canceled. Nothing changed.';
     case 'auth.timeout':
       return 'Sign-in timed out. Nothing changed.';
     default:

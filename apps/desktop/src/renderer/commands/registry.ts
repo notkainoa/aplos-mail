@@ -225,7 +225,7 @@ function makeBinding(
   owner: Owner,
   chord: KeyChord,
   context: ContextName,
-  rest: Pick<Binding, 'phase' | 'inTextField' | 'followsSwipe'>,
+  rest: Pick<Binding, 'phase' | 'inTextField' | 'followsSwipe' | 'quiet'>,
 ): Binding {
   const binding: Binding = { commandId: owner.id, chord, context, repeat: owner.repeat, ...rest };
   return {
@@ -249,6 +249,7 @@ export function expandKeys(owner: Owner, keys: readonly KeySpec[]): Binding[] {
           phase: entry.phase ?? 'tap',
           inTextField: entry.inTextField ?? false,
           followsSwipe: entry.followsSwipe ?? false,
+          ...(entry.quiet ? { quiet: true } : {}),
         }),
       );
     }
@@ -663,7 +664,7 @@ export function createRegistry(
 
   function describeKeys(id: CommandId, stack?: readonly ContextName[]): string {
     if (stack && disabledHere(id, stack)) return '';
-    return formatAlternatives(keysFor(id, stack));
+    return formatAlternatives(keysFor(id, stack).filter(b => !b.quiet));
   }
 
   function labelOf(id: CommandId, spec: CommandSpec, ctx: CommandContext): string {

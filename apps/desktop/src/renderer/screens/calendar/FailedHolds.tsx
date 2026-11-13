@@ -24,6 +24,7 @@ import { api, type Account } from '../../data';
 import { addToast, getToasts, subscribeToasts } from '../../shell/store-toast';
 import type { Announce } from '../../ui/props';
 import { Button } from '../../ui/buttons-keys';
+import { accountLabel } from '../../ui/accountLabel';
 import { Popover } from '../../ui/surfaces';
 import { writeFailureOf, type WriteFailure } from './writeErrors';
 import { CALENDAR_ACCESS_COPY, EDITING_COPY } from './accountCalendarState';
@@ -122,7 +123,7 @@ export function holdAccount(
   accountId: string | undefined,
 ): string | undefined {
   const account = accountId === undefined ? undefined : accounts.find(a => a.id === accountId);
-  return account ? account.name || account.address : undefined;
+  return account ? accountLabel(account) : undefined;
 }
 
 /** How `failedHoldsOf` narrows the queue's `cal:` items to what this pane may act on (review21). */

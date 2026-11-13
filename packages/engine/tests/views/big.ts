@@ -63,6 +63,7 @@ function prepareInserts(db: SqlDatabase, withFts: boolean) {
       db.prepare(
         "INSERT INTO messages_fts(rowid, subject, people, body) VALUES(?, 'subject', ?, ?)",
       ),
+    indexed: db.prepare('UPDATE messages SET parts = parts | 8 WHERE id = ?'),
     wf: db.prepare(
       `INSERT INTO thread_workflow(thread_id, account_id, sync_key, status, later_until, due_date, bookmarked, reply_status,
       hidden_from_home, lane, importance, due_band, last_date) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
@@ -117,7 +118,11 @@ function insertMessages(r: Rng, ins: Inserts, folder: FolderIds, t: number, mid:
       (s.unread ? 0 : 1) | (s.fromMe && !k ? 16 : 0),
     );
     for (const f of s.folders) ins.place.run(mid, folder.get(`${s.account}/${f}`)!);
-    if (ins.fts) ins.fts.run(mid, s.sender, r.chance(0.01) ? 'budget review' : 'other words');
+    // Marked indexed (bit 8), so the engine's start-up backlog pass does not index the row a second time.
+    if (ins.fts) {
+      ins.fts.run(mid, s.sender, r.chance(0.01) ? 'budget review' : 'other words');
+      ins.indexed.run(mid);
+    }
   }
   return mid;
 }
