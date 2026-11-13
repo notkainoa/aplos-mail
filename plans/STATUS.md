@@ -2917,3 +2917,8 @@ PARKED #503 (Lists, ui-home+ui-foundation files) and #501 (Shell, ui-shell+ui-fo
 REQUEST integrator-ui -> ui-foundation: lane-approved:ui-foundation for #503 (rv/ui/ux-lists, 1ec97615). Out-of-lane files (7): ui/list/{ListRow.tsx,list.css,list.test.tsx,internal/format.ts}, ui/props/list.ts, tests/visual/gallery/scenes.home.tsx, tests/visual/states.empty.ts. Change: empty states with icons + detail lines, Done dates, Drafts/Sent date groups, Sent rows show To: recipients with full-address titles. The screens/lists + screens.css half is in-lane ui-home; 128/128 list tests + desktop tsc green on staged merge. Merge on label
 
 PARKED #503: waits on lane-approved:ui-foundation
+
+REQUEST integrator-ui -> ui-foundation, ui-reader: lane-approved labels for #501 (rv/ui/ux-shell, head moved to 642dfaae). Out-of-lane files (14): ui-foundation - commands/{catalog.ts,catalog.test.ts,catalog/global.ts,registry.ts,types.ts}, ui/props/surfaces.ts, ui/surfaces/{Toast.tsx,surfaces-overlays.test.tsx,surfaces.css}, tests/visual/{gallery/scenes.home.tsx,gallery/scenes.shell.tsx,sidebar-holds-still.spec.ts,states.shell.ts}; ui-reader - screens/compose/runtime/sendNotices.{ts,test.ts}. The shell/** half is in-lane ui-shell; 456/456 shell+surfaces+sendNotices+commands tests green on staged merge. Merge on both labels
+
+PARKED #501: waits on lane-approved:ui-foundation and lane-approved:ui-reader
+PARKED #503: still waits on lane-approved:ui-foundation
