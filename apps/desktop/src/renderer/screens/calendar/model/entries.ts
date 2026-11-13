@@ -375,6 +375,23 @@ export interface EntryInputs {
 
 const startMs = (e: CalendarEventData): number => new Date(e.start).getTime();
 
+/**
+ * The same all-day event on the same days (a holiday two subscribed calendars both carry, a copied birthday) reads as one
+ * chip: the first by id stays. A meeting with guests and anything not an event is never merged.
+ */
+export function collapseAllDayDuplicates(
+  entries: readonly CalendarEventData[],
+): CalendarEventData[] {
+  const seen = new Set<string>();
+  return entries.filter(e => {
+    if (!e.allDay || e.kind !== 'event' || (e.guests && e.guests.length > 0)) return true;
+    const key = `${e.title.trim().toLowerCase()}|${e.start}|${e.end}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** The entries a period draws: visible calendars only, cancelled and Aplos-hidden events left out, open plans, overlay applied, in time order. */
 export function entriesFor(input: EntryInputs): CalendarEventData[] {
   const { events, plans, calendars, solo, period, planCalendarId, overlay = EMPTY_OVERLAY } = input;
@@ -399,7 +416,7 @@ export function entriesFor(input: EntryInputs): CalendarEventData[] {
     : { id: '', name: 'Not on a calendar yet', color: 'dusk' as TagColor };
   for (const p of plans) if (p.state === 'open') out.push(planData(p, planRef));
   for (const a of overlay.added) if (!out.some(e => e.id === a.id)) out.push(a);
-  return out
+  const shown = out
     .filter(e => !overlay.removed.has(e.id))
     .map(e => {
       const patch = overlay.patch.get(e.id);
@@ -412,6 +429,7 @@ export function entriesFor(input: EntryInputs): CalendarEventData[] {
         Number(!a.allDay) - Number(!b.allDay) ||
         a.id.localeCompare(b.id),
     );
+  return collapseAllDayDuplicates(shown);
 }
 
 /** Entries on one day, in reading order: all-day first, then by start. */

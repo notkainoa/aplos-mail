@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import type { ToastData } from '../props';
 import { Confirm, Dialog, Popover, Puck, Toast, ToastStack } from './index';
-import { planToasts, visibleToasts } from './ToastStack';
+import { planToasts, visibleToasts, wholeSeconds } from './ToastStack';
 import { toastLife } from './Toast';
 import { timing } from '../generated/motion';
 import {
@@ -542,6 +542,26 @@ describe('ToastStack', () => {
     assert.match(html, /class="ui-toast__drain" aria-hidden="true" style="--drain:0.75"/);
     assert.ok(html.includes('>Done<'), 'the Undo toast stays');
     assertClean(html);
+  });
+
+  it('undo-send countdown shows whole seconds, rounded up', () => {
+    assert.equal(wholeSeconds(9.806), 10);
+    assert.equal(wholeSeconds(0.2), 1);
+    assert.equal(wholeSeconds(-0.4), 0);
+    const html = render(
+      <ToastStack
+        toasts={[]}
+        undoSend={{
+          reducedMotion: true,
+          undoCommandId: 'app.undo',
+          onAction: noop,
+          state: { kind: 'sending', recipients: 'Jordan', secondsLeft: 9.806, totalSeconds: 10 },
+        }}
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.match(textOf(html), /Sending to Jordan in 10 s/);
   });
 
   it('undo-send states: reduced motion has no drain; uncertain, suspended and deferred copy', () => {

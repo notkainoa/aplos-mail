@@ -66,8 +66,10 @@ function HeadLine({
         <span id={fromId} className="ui-thread-message__from" dir="auto">
           {from}
         </span>
+        {/* One header for a card, folded or open: mark, name, when, then who it went to. */}
+        {card ? <TimeText date={date} /> : null}
         {recipients === undefined ? <span className="ui-thread-message__to">{toLabel}</span> : null}
-        <TimeText date={date} />
+        {card ? null : <TimeText date={date} />}
         {recipients}
         {actions === undefined ? null : (
           <span className="ui-thread-message__actions">{actions}</span>

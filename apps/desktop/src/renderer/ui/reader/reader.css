@@ -204,7 +204,7 @@
   gap: var(--space-1);
   margin-left: auto;
 }
-/* An earlier message's head (owner feedback 2026-11-11): the line (who, when) and, folded, its own first words, with the fold
+/* An earlier message's head (owner feedback 2026-11-11; folded and open share one header, the time inline after the name): the line (who, when) and, folded, its own first words, with the fold
    button as the grid's right column: "Show full" and a chevron on a folded row, "Show less" and a chevron once open. The one
    button stays last in the DOM, so it is one node through a fold and keeps focus. A folded card's button is stretched by a
    pseudo-element over the whole card (nothing moves), so the whole row is its target; once open only the button is, so links,
@@ -250,14 +250,6 @@
   content: '';
   position: absolute;
   inset: 0;
-}
-/* A folded row's time sits at the right, just before the button; an opened earlier message has the card's header row, so its
-   time follows the name like the latest card's and only "Show less" is on the far right. */
-.ui-thread-message[data-fold='folded']
-  .ui-thread-message__head[data-fold]
-  .ui-thread-message__line[data-layout='card']
-  .ui-thread-message__when {
-  margin-left: auto;
 }
 .ui-thread-message__excerpt[data-empty='true'] {
   color: var(--dim);

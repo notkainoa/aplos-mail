@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNow } from '../../data';
+import { timing } from '../../ui/generated/motion';
 import { CommitTemplates } from '../CommitTemplates';
 import { ListBox, ListGroup, ListRow } from '../../ui/list';
 import { LoadingLine } from '../../ui/reader';
@@ -103,8 +104,8 @@ function Groups({ list }: { readonly list: MailListState }) {
   ));
 }
 
-/** A first open may fetch a `lazy` folder from the provider: the quiet line appears only once it is slow. */
-const OPENING_SLOW_MS = 1_500;
+/** A first open may fetch a `lazy` folder from the provider: the quiet line appears after the 150 ms spinner wait (DESIGN 5 rule 12), so the pane is never blank for long. */
+const OPENING_SLOW_MS = timing.spinnerDelay;
 
 function useSlow(opening: boolean): boolean {
   const [slow, setSlow] = useState(false);

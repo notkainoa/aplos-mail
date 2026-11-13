@@ -141,6 +141,15 @@ describe('statusCopy (DESIGN 7.1 table)', () => {
       'Google asked us to slow down.',
     );
   });
+  it('a throttle that lifts within five minutes is a quiet line with no Retry now', () => {
+    const soon = '2026-10-29T10:03:00-07:00';
+    const copy = statusCopy({ kind: 'paused', reason: 'throttle', resumeAt: soon }, NOW);
+    assert.equal(copy?.text, 'Paused for a moment. Resuming at 10:03 AM.');
+    assert.equal(copy?.action, undefined);
+    assert.equal(copy?.attention, false);
+    const late = statusCopy({ kind: 'paused', reason: 'throttle', resumeAt: RESUME }, NOW);
+    assert.equal(late?.action?.label, 'Retry now');
+  });
   it('the hover line for a healthy account', () => {
     assert.equal(syncedLine('2026-10-29T09:58:00-07:00', NOW), 'Synced 2 min ago');
     assert.equal(syncedLine('2026-10-29T09:59:40-07:00', NOW), 'Synced just now');
@@ -169,6 +178,7 @@ describe('StatusSlot', () => {
         status={{ kind: 'paused', reason: 'throttle', resumeAt: RESUME }}
         account={{ address: EMAIL_80, color: 'sky' }}
         multipleAccounts
+        now={NOW.toISOString()}
         onAction={noop}
       />,
     );
@@ -176,10 +186,13 @@ describe('StatusSlot', () => {
     assert.ok(!html.includes('ui-status-slot__account'));
     assert.match(
       html,
-      /<p class="ui-status-slot__text"><i class="ui-status-slot__dot" data-color="sky" aria-hidden="true"><\/i><span class="ui-sr-only">[^<]+: <\/span>Google asked us/,
+      /<p class="ui-status-slot__text"><i class="ui-status-slot__dot" data-color="sky" aria-hidden="true"><\/i>Google asked us/,
     );
     assert.match(html, new RegExp(`ui-part-tip__detail">${EMAIL_80}<`));
-    assert.match(textOf(html), /Google asked us to slow down\. Resuming at 2:14 PM\. Retry now/);
+    assert.match(
+      textOf(html),
+      /Google asked us to slow down\. Resuming at 2:14 PM\. For \S+\. Retry now/,
+    );
     assert.match(html, /data-icon="pause"/);
     assert.ok(!html.includes('data-tone="attention"'));
   });

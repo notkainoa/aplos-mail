@@ -191,6 +191,10 @@
   overflow-x: hidden;
   overflow-y: auto;
 }
+/* While the Calendars list runs on below the visible part, a hairline at the bottom edge says it scrolls. */
+.aplos-sidebar__slot[data-more='below'] {
+  box-shadow: inset 0 -1px 0 var(--line);
+}
 
 /* Minimised or collapsed there is no sidebar to hold the notice: a small alert sits in the window's bottom-left
    corner, in the rail's empty space or over the pane's margin, and opens Drafts. */

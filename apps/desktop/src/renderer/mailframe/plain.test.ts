@@ -84,13 +84,10 @@ test('the host draws a trusted-plain email on the card (no inset, no rounding, i
   });
 });
 
-test('a blocked image keeps neither the height of the picture nor a min-height, in the host layer', () => {
+test('a blocked image collapses to nothing in the host layer, so no gray strip is left', () => {
   const hero =
     '<img src="https://cdn.example/hero.png" width="640" height="900" style="height:900px">';
   const { srcdoc } = frameDocument(hero, 'block', undefined, false);
-  assert.match(
-    srcdoc,
-    /img\[data-blocked\]\{max-height:\d+px!important;min-height:0!important;padding:0!important;border-width:0!important;margin-block:0!important\}/,
-  );
+  assert.match(srcdoc, /img\[data-blocked\]\{display:none!important\}/);
   assert.match(srcdoc, /<img[^>]*data-blocked/);
 });
