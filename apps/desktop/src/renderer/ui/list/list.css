@@ -827,7 +827,7 @@
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
-  left: 0;
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
   width: var(--select-bar);
   border-radius: var(--radius-pill);
   background-color: var(--accent);
@@ -1117,7 +1117,7 @@
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
-  left: 0;
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
   width: var(--select-bar);
   border-radius: var(--radius-pill);
   background-color: var(--accent);

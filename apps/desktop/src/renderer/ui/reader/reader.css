@@ -96,11 +96,13 @@
   position: absolute;
   top: var(--space-6);
   bottom: 0;
-  /* The column and a 24 px margin each side: all the text and card edges there are, so nothing needs a pane-wide scrim. */
-  inset-inline: calc(-1 * var(--space-6));
+  /* The column's own width: all the text and card edges there are, so the fade never shows as a box wider than the
+     cards (a wider scrim lifted the pane's own colour beside them in the dark theme). */
+  inset-inline: 0;
   background: var(--canvas);
-  /* The soft edge is a blurred shadow in the same colour (no gradient): solid 12 px above the pill, fading over 24. */
-  box-shadow: 0 0 var(--space-6) var(--space-3) var(--canvas);
+  /* The soft edge is a blurred shadow in the same colour (DESIGN 2.4 forbids gradients): solid 12 px above the pill,
+     fading over 24, with no spread sideways past the column. */
+  box-shadow: 0 calc(-1 * var(--space-6)) var(--space-6) calc(-1 * var(--space-3)) var(--canvas);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;
@@ -113,6 +115,14 @@
   background-color: var(--paper);
   box-shadow: var(--elev-float);
   pointer-events: auto;
+}
+/* "Replying" is a state, not an action: a muted label (the icon and the word in --dim), with no hover fill. */
+.ui-reader-actions .ui-list-btn[aria-pressed='true'],
+.ui-reader-actions .ui-list-btn[aria-pressed='true'] .ui-list-icon,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover .ui-list-icon {
+  background: none;
+  color: var(--dim);
 }
 /* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
 .ui-reader-actions[data-demoted='true'] {
@@ -259,10 +269,12 @@
 .ui-thread-message__excerpt[data-empty='true'] {
   color: var(--dim);
 }
-/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. */
+/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. A card with the sender's mark
+   starts it in the name's column (`--plain-indent`), the same column the open card's body starts in. */
 .ui-thread-message__excerpt {
   display: -webkit-box;
   margin-top: var(--space-3);
+  margin-left: var(--plain-indent, 0px);
   overflow: hidden;
   color: var(--ink-2);
   font: var(--type-read);

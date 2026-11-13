@@ -385,7 +385,9 @@ describe('states, copy and design rules', () => {
     );
     assert.match(ai, /Default/);
     assert.match(ai, /On this Mac · running · no key needed/);
-    assert.match(ai, /On this Mac · not running/);
+    // A stopped local server says "Not running" once, in its status; the description does not repeat it.
+    assert.match(ai, /On this Mac · no key needed/);
+    assert.equal(ai.match(/not running/gi)?.length, 1);
     assert.match(ai, /Any OpenAI-compatible server · key optional/);
     assert.match(ai, /Daily limit/);
     assert.match(ai, /150,000 tokens/);

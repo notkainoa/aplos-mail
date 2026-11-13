@@ -249,7 +249,9 @@ function localDescription(
   const where =
     row.provider === 'custom'
       ? 'Any OpenAI-compatible server'
-      : `On this Mac · ${row.running ? 'running' : 'not running'}`;
+      : row.status?.kind === 'notRunning'
+        ? 'On this Mac'
+        : `On this Mac · ${row.running ? 'running' : 'not running'}`;
   const source = row.keySource;
   if (!source || source.kind === 'local')
     return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;

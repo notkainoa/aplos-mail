@@ -19,6 +19,11 @@ export function armedLine(key: string, total: number): string {
   return `Press ${key} again to mark all ${formatCount(total)} done · Esc cancels`;
 }
 
+/** A single row whose sender is the group's name, with no per-sender action: the header adds nothing. */
+function isRedundantHeader(group: LowSheetProps['groups'][number]): boolean {
+  return group.rows.length === 1 && group.rows[0].sender === group.sender && !group.onUnsubscribe;
+}
+
 /** Elements Tab can reach inside the panel (pointer duplicates carry tabIndex -1 and are skipped). */
 const TABBABLE = 'button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]';
 
@@ -147,33 +152,45 @@ export function LowSheet({
           <>
             <div className="ui-low-sheet__body">
               <ListBox binding={binding}>
-                {groups.map(group => (
-                  <ListGroup
-                    key={group.id}
-                    header={{
-                      id: group.id,
-                      label: group.sender,
-                      variant: 'section',
-                      count: group.rows.length,
-                      held: true,
-                      action: group.onUnsubscribe
-                        ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe }
-                        : undefined,
-                    }}
-                  >
-                    {group.rows.map(row => (
-                      <div
-                        key={row.id}
-                        className="ui-low-sheet__row"
-                        role="presentation"
-                        onPointerEnter={onPreview ? () => onPreview(row.id) : undefined}
-                        onPointerLeave={onPreview ? () => onPreview(null) : undefined}
-                      >
-                        <ListRow {...row} />
+                {groups.map(group => {
+                  const rows = group.rows.map(row => (
+                    <div
+                      key={row.id}
+                      className="ui-low-sheet__row"
+                      role="presentation"
+                      onPointerEnter={onPreview ? () => onPreview(row.id) : undefined}
+                      onPointerLeave={onPreview ? () => onPreview(null) : undefined}
+                    >
+                      <ListRow {...row} />
+                    </div>
+                  ));
+                  // One row that already names the sender, with nothing to do for the sender: the header would
+                  // only repeat it ("Parcel Trail 1" above "Parcel Trail"), so the group keeps its name unseen.
+                  if (isRedundantHeader(group)) {
+                    return (
+                      <div key={group.id} role="group" aria-label={group.sender}>
+                        {rows}
                       </div>
-                    ))}
-                  </ListGroup>
-                ))}
+                    );
+                  }
+                  return (
+                    <ListGroup
+                      key={group.id}
+                      header={{
+                        id: group.id,
+                        label: group.sender,
+                        variant: 'section',
+                        count: group.rows.length,
+                        held: true,
+                        action: group.onUnsubscribe
+                          ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe }
+                          : undefined,
+                      }}
+                    >
+                      {rows}
+                    </ListGroup>
+                  );
+                })}
               </ListBox>
             </div>
             <p className="ui-low-sheet__preview" aria-live="off">

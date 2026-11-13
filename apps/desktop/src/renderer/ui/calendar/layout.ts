@@ -68,6 +68,35 @@ export function allDayOn(events: readonly CalendarEventData[], day: IsoDate): Ca
   });
 }
 
+/**
+ * One row per all-day entry across the visible days, so a multi-day entry sits on the same row in every column it
+ * covers and reads as one bar. Longest and earliest first; an entry takes the first row free on all its days.
+ */
+export function allDayRows(
+  events: readonly CalendarEventData[],
+  days: readonly IsoDate[],
+): Map<string, number> {
+  const covering = new Map<string, number[]>();
+  days.forEach((day, i) => {
+    for (const e of allDayOn(events, day)) covering.set(e.id, [...(covering.get(e.id) ?? []), i]);
+  });
+  const order = [...covering.entries()].sort(
+    ([aId, a], [bId, b]) => b.length - a.length || a[0] - b[0] || aId.localeCompare(bId),
+  );
+  const taken: Array<Set<number>> = [];
+  const rows = new Map<string, number>();
+  for (const [id, span] of order) {
+    let row = taken.findIndex(used => span.every(i => !used.has(i)));
+    if (row < 0) {
+      row = taken.length;
+      taken.push(new Set());
+    }
+    for (const i of span) taken[row].add(i);
+    rows.set(id, row);
+  }
+  return rows;
+}
+
 export function sortTimed<T extends Timed>(list: readonly T[]): T[] {
   return [...list].sort(
     (a, b) => a.at - b.at || b.end - b.at - (a.end - a.at) || a.event.id.localeCompare(b.event.id),

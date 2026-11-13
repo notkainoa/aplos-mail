@@ -101,7 +101,11 @@
 .aplos-compose[data-cards='a'] .ui-composer__subject {
   margin-top: var(--space-1);
 }
-/* The footer's Send and icons sit on the card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+/* The footer is the card's last row: full card width, so its hairline runs edge to edge, with Send and the icons on the
+   card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+.aplos-compose:not([data-cards='off']) .ui-composer__page > .ui-composer__foot {
+  margin-inline: 0;
+}
 .aplos-compose:not([data-cards='off']) .ui-composer__foot .ui-compose-footer {
   box-sizing: border-box;
   padding-inline: var(--space-6) var(--space-5);
@@ -122,7 +126,9 @@
 
 /* The From row: its address reads like the recipient rows' text, not like a control, when the account cannot change. */
 .aplos-from {
-  align-items: center;
+  align-items: baseline;
+  /* The 28 px control sits where the To row's chips do; the label's baseline follows the address's. */
+  padding-top: calc((var(--control-lg) - var(--control-sm)) / 2);
 }
 .aplos-from .ui-recipient-field__label {
   padding-top: 0;

@@ -5,7 +5,7 @@
  */
 import { useId, useState } from 'react';
 import type { Account, AccountId } from '../data';
-import type { MenuEntry, TagColor } from '../ui/props';
+import type { MenuEntry } from '../ui/props';
 import { statusCopy } from '../ui/status';
 import { AccountSwitcher, Menu } from '../ui/surfaces';
 import { useMenuActive } from './menu-active';
@@ -46,15 +46,14 @@ function accountEntry(account: Account, onReconnect: AccountMenuProps['onReconne
   };
 }
 
-/** The menu's rows: All accounts (stacked dots), each account, a separator, Add an account. */
+/** The menu's rows: All accounts (the people icon, never a dot), each account, a separator, Add an account. */
 export function accountEntries(
   accounts: readonly Account[],
   onReconnect: AccountMenuProps['onReconnect'],
 ): MenuEntry[] {
-  const colors: TagColor[] = [...new Set(accounts.map(accountColor))];
   return [
     { kind: 'label', label: 'Accounts' },
-    { kind: 'item', id: ALL_ID, label: ALL_LABEL, swatch: colors },
+    { kind: 'item', id: ALL_ID, label: ALL_LABEL, icon: 'users' },
     ...accounts.map(account => accountEntry(account, onReconnect)),
     { kind: 'separator' },
     { kind: 'item', id: ADD_ID, label: 'Add an account', icon: 'plus' },

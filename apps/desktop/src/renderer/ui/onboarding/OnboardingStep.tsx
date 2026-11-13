@@ -107,17 +107,22 @@ export function OnboardingStep({
 
       <footer className="ui-onboarding-step__foot">
         {dashes ? (
-          <div
-            className="ui-onboarding-step__dashes"
-            role="img"
-            aria-label={`Step ${dashes.step} of ${dashes.of}`}
-          >
-            {Array.from({ length: dashes.of }, (_, i) => (
-              <i
-                key={i}
-                data-state={i + 1 < dashes.step ? 'done' : i + 1 === dashes.step ? 'on' : 'todo'}
-              />
-            ))}
+          <div className="ui-onboarding-step__steps">
+            <div
+              className="ui-onboarding-step__dashes"
+              role="img"
+              aria-label={`Step ${dashes.step} of ${dashes.of}`}
+            >
+              {Array.from({ length: dashes.of }, (_, i) => (
+                <i
+                  key={i}
+                  data-state={i + 1 < dashes.step ? 'done' : i + 1 === dashes.step ? 'on' : 'todo'}
+                />
+              ))}
+            </div>
+            <span className="ui-onboarding-step__where" aria-hidden="true">
+              {`Step ${dashes.step} of ${dashes.of}`}
+            </span>
           </div>
         ) : null}
         <span className="ui-onboarding-step__note">

@@ -116,7 +116,9 @@
   margin-top: var(--space-2);
   overflow: hidden;
   border-radius: var(--radius-xs);
-  background: var(--line);
+  background: var(
+    --line-strong
+  ); /* --line vanishes on the white pane; the ring token reads as a track */
 }
 .ui-progress-segments[data-variant='waiting'] .ui-progress-segments__track {
   margin-top: 0;
@@ -220,7 +222,7 @@
   height: var(--seg-h);
   overflow: hidden;
   border-radius: var(--radius-xs);
-  background: var(--line);
+  background: var(--line-strong);
 }
 .ui-progress-segments__seg[data-state='done'] {
   background: var(--ink-2);

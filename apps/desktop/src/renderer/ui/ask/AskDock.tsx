@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import type { AskDockProps, AskEmptyData } from '../props';
 import { DictationLine } from '../compose/DictationLine';
 import { describeKeys } from '../compose/keycaps';
+import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
 import { formatRecent } from './format';
 
@@ -38,12 +39,14 @@ function EmptyView({ empty, listId }: { empty: AskEmptyData; listId: string }) {
             key={`${index}:${question}`}
             id={`${listId}-s${index}`}
             className="ui-ask-dock__option"
+            data-kind="suggestion"
             role="option"
             aria-selected={cursorIndex === index}
             data-cursor={cursorIndex === index ? 'true' : undefined}
             onMouseDown={event => event.preventDefault()}
             onClick={() => onPickSuggestion(question)}
           >
+            <Icon name="bubble" size="sm" />
             <span className="ui-ask-dock__option-text" dir="auto">
               {question}
             </span>

@@ -76,6 +76,8 @@ export interface ThreadMessageProps {
   remoteImages?: RemoteImages;
   /** Quoted text toggle. `commandId` (O) only where O really toggles quoted text: on the latest message, never on a card O folds. */
   quoted?: { shown: boolean; onToggle: () => void; commandId?: CommandId };
+  /** An invite email's own HTML repeats the invitation block: it folds behind "Show original" (a text button, no key). */
+  original?: { shown: boolean; onToggle: () => void };
   /** The undo-send line under a message you just sent (placement 'thread'). */
   undoTray?: Omit<UndoTrayProps, 'placement'>;
   /** Element ref for `arrive` and scrolling the cursor into view. */

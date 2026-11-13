@@ -238,6 +238,7 @@ const quiet = (label: string, extra: Partial<StepButton> = {}): StepButton => ({
   ...extra,
 });
 
+/** The real Accounts step in its choose state: round 1 connects Google only, and the row itself is the choice. */
 export function OnboardingScene(): ReactElement {
   return (
     <OnboardingStep
@@ -246,15 +247,6 @@ export function OnboardingScene(): ReactElement {
       titleId="onb-title"
       lede="Aplos reads your mail on this Mac. Pick an account to connect."
       onTryDemo={noop}
-      actions={[
-        {
-          label: 'Continue with Google',
-          emphasis: 'filled',
-          keys: 'Return',
-          keyHint: 'always',
-          onSelect: noop,
-        },
-      ]}
       footer={{
         dashes: { step: 2, of: 4 },
         note: 'setupContinues',
@@ -266,13 +258,6 @@ export function OnboardingScene(): ReactElement {
         role="link"
         label="Google"
         detail="Gmail and Google Calendar"
-        icon="mail"
-      />
-      <ChoiceRow
-        id="acc-ms"
-        role="link"
-        label="Microsoft"
-        detail="Outlook and Microsoft 365"
         icon="mail"
       />
     </OnboardingStep>

@@ -67,6 +67,7 @@ export function EventBlock(props: EventBlockProps) {
       data-density={density}
       data-selected={selected ? 'true' : 'false'}
       data-wide={placement.wide ? 'true' : 'false'}
+      data-crowded={placement.lanes > 1 ? 'true' : undefined}
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}

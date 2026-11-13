@@ -483,6 +483,33 @@ export function highlightTerms(query: SearchQuery): string[] {
   return [...new Set(terms)];
 }
 
+/** How many characters of snippet may come before the first match; the rest of the cell is for the match itself. */
+const SNIPPET_LEAD = 20;
+/** A subject cell is narrower: its match may start this far in before the subject is cut to show it. */
+const SUBJECT_FITS = 18;
+const SUBJECT_LEAD = 6;
+
+/**
+ * The snippet with its first match near the left edge, so the one ellipsis the cell draws at its end never hides the
+ * matched word. A leading "…" marks the cut; text with no match or a match already near the start is unchanged.
+ */
+export function snippetAround(
+  text: string,
+  terms: readonly string[],
+  lead = SNIPPET_LEAD,
+  fits = SNIPPET_LEAD,
+): string {
+  const words = terms.map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
+  const lower = text.toLowerCase();
+  const found = words.map(w => lower.indexOf(w)).filter(i => i >= 0);
+  if (found.length === 0) return text;
+  const at = Math.min(...found);
+  if (at <= fits) return text;
+  const boundary = text.indexOf(' ', at - lead);
+  const start = boundary >= 0 && boundary < at ? boundary + 1 : at - lead;
+  return `…${text.slice(start)}`;
+}
+
 /** One row from a thread. */
 export function resultRow(
   thread: Pick<
@@ -501,13 +528,16 @@ export function resultRow(
   remote: boolean,
   account?: { label: string },
 ): ResultRow {
+  const highlight = highlightTerms(query);
   return {
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,
     threadId: thread.id,
     sender: thread.fromName || '(no sender)',
-    primary: thread.subject || '(no subject)',
-    secondary: thread.snippet || undefined,
-    highlight: highlightTerms(query),
+    primary: thread.subject
+      ? snippetAround(thread.subject, highlight, SUBJECT_LEAD, SUBJECT_FITS)
+      : '(no subject)',
+    secondary: thread.snippet ? snippetAround(thread.snippet, highlight) : undefined,
+    highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),
     marks: {

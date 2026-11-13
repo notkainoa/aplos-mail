@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CalendarGrid } from './index';
+import { allDayRows } from './layout';
 import { noop, html, assertCleanCopy, ev, gridProps } from './fixtures.test';
 
 /* ---------------------------------- CalendarGrid ---------------------------------- */
@@ -377,4 +378,17 @@ test('CalendarGrid worst case: hundreds of entries in one slot, CJK and RTL titl
     />,
   );
   assert.ok(agenda.includes(longTitle));
+});
+
+test('all-day entries keep one row across the days they cover, so a multi-day entry reads as one bar', () => {
+  const span = ev('span', 'Offsite', '2026-10-29T00:00:00', '2026-10-31T00:00:00', {
+    allDay: true,
+  });
+  const one = ev('one', 'Holiday', '2026-10-30T00:00:00', '2026-10-31T00:00:00', { allDay: true });
+  const rows = allDayRows([one, span], ['2026-10-29', '2026-10-30', '2026-10-31']);
+  assert.equal(rows.get('span'), 0, 'the longer entry takes the first row');
+  assert.equal(rows.get('one'), 1, 'the one-day entry sits under it on the shared day');
+  const out = html(<CalendarGrid {...gridProps({ events: [span, one] })} />);
+  assert.equal((out.match(/data-joins-after="true"/g) ?? []).length, 1, 'Thu joins on to Fri');
+  assert.equal((out.match(/data-joins-before="true"/g) ?? []).length, 1, 'Fri continues from Thu');
 });

@@ -675,9 +675,13 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-menu__check .ui-part-icon {
   color: var(--ink);
 }
+/* The dots sit centred in an icon-wide column, so a row's label starts in the same place whether it wears a dot or an icon. */
 .ui-menu__swatches {
   display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon);
 }
 .ui-menu__item[data-detail='true'] .ui-menu__swatches,
 .ui-menu__item[data-detail='true'] > .ui-part-icon {
@@ -1086,6 +1090,15 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   box-shadow: var(--elev-puck);
 }
 
+/* Dark: --paper is barely lighter than the track, so the thumb takes --puck (the token's role for segmented
+   thumbs), which reads clearly against --sunken. */
+:root[data-theme='dark'] .ui-puck[data-kind='segmented'] > .ui-puck__thumb,
+:root[data-theme='dark']
+  .ui-puck[data-kind='segmented']:not([data-ready])
+  .ui-puck__item[data-selected='true'] {
+  background: var(--puck);
+}
+
 /* selection: rows with a --puck fill (sidebar, Settings nav) */
 .ui-puck[data-kind='selection'] > .ui-puck__thumb {
   border-radius: var(--radius-md);
@@ -1152,11 +1165,11 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
-  /* One column: the stack is as wide as its widest toast and every toast fills it. */
+  /* One column, one width: the stack is --toast-max wide (less in a narrow pane) and every toast fills it, so a single
+     toast, a persistent error and a stack of three are the same width; the words wrap inside. */
   align-items: stretch;
   gap: var(--space-2);
-  width: max-content;
-  max-width: calc(100% - var(--space-6) * 2);
+  width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -1166,7 +1179,6 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: var(--toast-max);
   min-height: var(--control-lg);
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
   overflow: hidden;

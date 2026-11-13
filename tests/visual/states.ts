@@ -210,7 +210,7 @@ export const STATES: readonly VisualState[] = [
     components: ['OnboardingStep', 'ChoiceRow'],
     design: '7.11',
     mockup: 'onboarding-accounts.html (default)',
-    filled: 1,
+    filled: 0,
   },
   {
     id: 'progress-first-sync',

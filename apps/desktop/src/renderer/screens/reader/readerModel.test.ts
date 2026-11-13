@@ -9,6 +9,7 @@ import { EMPTY_BUFFER, reduce } from './model/letterBuffer';
 import {
   NO_MEMORY,
   afterRemoval,
+  crumbPlace,
   crumbPosition,
   staleReady,
   stepMessage,
@@ -85,6 +86,12 @@ test('the crumb counts from one and is absent for a thread outside the list', ()
   assert.deepEqual(crumbPosition(IDS, 'c'), { index: 3, of: 4 });
   assert.equal(crumbPosition(IDS, 'zzz'), null);
   assert.equal(crumbPosition(IDS, null), null);
+});
+
+test('the screen counts a thread outside the list as its first, so every reader shows the crumb', () => {
+  assert.deepEqual(crumbPlace(IDS, 'c'), { index: 3, of: 4 });
+  assert.deepEqual(crumbPlace(IDS, 'zzz'), { index: 1, of: 5 });
+  assert.equal(crumbPlace(IDS, null), null);
 });
 
 test('only letters that are on paper or asked for stay buffered', () => {

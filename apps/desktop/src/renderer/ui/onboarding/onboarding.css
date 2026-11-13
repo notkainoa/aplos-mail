@@ -313,6 +313,23 @@
   margin-left: auto;
 }
 
+.ui-onboarding-step__steps {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: var(--space-2);
+}
+
+/* The dashes only draw progress; the words say where you are. */
+.ui-onboarding-step__where {
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
 .ui-onboarding-step__dashes {
   display: flex;
   gap: var(--space-1);

@@ -88,6 +88,19 @@ function useQuoted(body: MessageBody | undefined, expanded: boolean, keyed: bool
   };
 }
 
+/**
+ * An invite email's own HTML repeats the invitation block above it (the same table, a second set of Yes/Maybe/No), so
+ * the original stays laid out but hidden behind "Show original"; a find in the thread opens it. Other mail has no toggle.
+ */
+function useOriginal(invited: boolean, finding: boolean) {
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const shown = !invited || (chosen ?? finding);
+  return {
+    shown,
+    toggle: invited ? { shown, onToggle: () => setChosen(!shown) } : undefined,
+  };
+}
+
 const FOLD_COMMAND = 'reader.expand' as const;
 
 /** The fold, with O's command: an earlier message folds and opens with a click, Enter, Space or O on its card. */
@@ -112,22 +125,28 @@ export function ReaderMessage(props: ReaderMessageProps) {
   const policy = imagesLoaded ? 'load' : 'block';
   const hasImages = body.body?.hasRemoteImages === true;
   const trackersNote = trackersLine(trackers);
+  const original = useOriginal(
+    props.invite !== undefined,
+    props.findQuery !== undefined && props.findQuery !== '',
+  );
   const frame = open ? (
     <>
       {props.invite ? <InviteCard invite={props.invite} /> : null}
-      <MailFrame
-        messageId={message.id}
-        imagePolicy={policy}
-        findQuery={props.findQuery}
-        showQuoted={quoted.shown}
-        label={props.loadingLabel}
-        onReady={ready => {
-          setTrackers(ready.trackers);
-          onFrame(message.id, ready);
-        }}
-        onKey={props.onKey}
-      />
-      {trackersNote ? <p className="aplos-reader__trackers">{trackersNote}</p> : null}
+      <div className="aplos-reader__original" hidden={!original.shown}>
+        <MailFrame
+          messageId={message.id}
+          imagePolicy={policy}
+          findQuery={props.findQuery}
+          showQuoted={quoted.shown}
+          label={props.loadingLabel}
+          onReady={ready => {
+            setTrackers(ready.trackers);
+            onFrame(message.id, ready);
+          }}
+          onKey={props.onKey}
+        />
+        {trackersNote ? <p className="aplos-reader__trackers">{trackersNote}</p> : null}
+      </div>
     </>
   ) : undefined;
   return (
@@ -143,7 +162,8 @@ export function ReaderMessage(props: ReaderMessageProps) {
       fold={foldOf(fold)}
       excerpt={open ? undefined : excerptOf(message)}
       body={frame}
-      quoted={open ? quoted.toggle : undefined}
+      quoted={open && original.shown ? quoted.toggle : undefined}
+      original={open ? original.toggle : undefined}
       attachments={open ? chips : undefined}
       remoteImages={
         open

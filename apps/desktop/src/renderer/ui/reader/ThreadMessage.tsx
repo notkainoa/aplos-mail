@@ -137,6 +137,7 @@ export function ThreadMessage({
   attachments,
   remoteImages,
   quoted,
+  original,
   undoTray,
   ref,
 }: ThreadMessageProps) {
@@ -196,6 +197,18 @@ export function ThreadMessage({
           {body}
         </div>
       )}
+
+      {original ? (
+        <div className="ui-thread-message__quoted">
+          <Action
+            variant="text"
+            size="sm"
+            label={original.shown ? 'Hide original' : 'Show original'}
+            expanded={original.shown}
+            onPress={() => original.onToggle()}
+          />
+        </div>
+      ) : null}
 
       {quoted ? (
         <div className="ui-thread-message__quoted">

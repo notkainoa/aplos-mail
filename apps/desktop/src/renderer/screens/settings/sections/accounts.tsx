@@ -123,7 +123,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
         <Row
           section="accounts"
           anchor="addAccount"
-          description={host.renderAddAccount ? 'Connect another Google account.' : NOT_AVAILABLE}
+          description={host.renderAddAccount ? 'Connect another account.' : NOT_AVAILABLE}
           control={
             host.renderAddAccount ? (
               <Button

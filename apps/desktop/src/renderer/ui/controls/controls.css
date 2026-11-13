@@ -244,7 +244,7 @@
 }
 .ui-text-field-box:focus-within {
   outline: var(--focus-width) solid var(--accent);
-  outline-offset: var(--focus-gap);
+  outline-offset: 0;
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 .ui-text-field[data-state='invalid'] .ui-text-field-box {

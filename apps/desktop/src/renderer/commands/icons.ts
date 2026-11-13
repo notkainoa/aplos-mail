@@ -15,6 +15,7 @@ export const UI_ICON_FOR_COMMAND: Readonly<Record<IconName, UiIconName>> = {
   'arrowshape.turn.up.left': 'reply',
   'arrowshape.turn.up.left.2': 'reply-all',
   'arrowshape.turn.up.right': 'forward',
+  'arrow.right': 'arrow-right',
   magnifyingglass: 'search',
   paperclip: 'paperclip',
   link: 'link',

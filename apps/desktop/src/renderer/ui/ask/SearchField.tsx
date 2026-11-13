@@ -84,7 +84,10 @@ export function SearchField(props: SearchFieldProps) {
       <div className="ui-search-field__meta">
         <span className="ui-search-field__tokens">
           {tokens.length === 0 ? (
-            <span className="ui-search-field__hint">{SEARCH_HINT}</span>
+            // The hint belongs to an empty field: once there is text, the results are what matter.
+            value.length === 0 ? (
+              <span className="ui-search-field__hint">{SEARCH_HINT}</span>
+            ) : null
           ) : (
             tokens.map((token, index) => (
               <OperatorToken

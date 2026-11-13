@@ -180,6 +180,7 @@ export type IconName =
   | 'arrowshape.turn.up.left'
   | 'arrowshape.turn.up.left.2'
   | 'arrowshape.turn.up.right'
+  | 'arrow.right'
   | 'magnifyingglass'
   | 'paperclip'
   | 'link'

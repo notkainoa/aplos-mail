@@ -94,8 +94,8 @@ table {
   font-variant-numeric: tabular-nums;
 }
 
-/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap, 3px
-   under Increase Contrast through --focus-width. Pointer focus shows no ring. */
+/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap (none on a filled button or a field, below),
+   3px under Increase Contrast through --focus-width. Pointer focus shows no ring. */
 :focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
@@ -103,6 +103,15 @@ table {
 
 :focus:not(:focus-visible) {
   outline: none;
+}
+
+/* A filled button and a field draw their own edge, so the ring hugs it: no gap, or the ring reads as border, white
+   gap and ring. Text buttons, icon buttons and rows keep the gap. The three button families name their own focus rule
+   at (0,2,0), so these carry the variant to win. */
+.ui-button[data-variant='filled']:focus-visible,
+.ui-compose-btn[data-variant='filled']:focus-visible,
+.ui-onb-button[data-variant='filled']:focus-visible {
+  outline-offset: 0;
 }
 
 /* Selected text turns ink on the accent tint. --selection is opaque (the

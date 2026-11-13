@@ -467,3 +467,11 @@
   ) {
   --plain-indent: calc(var(--control-xs) + var(--space-2));
 }
+
+/* An invite email's own HTML, folded behind "Show original" while the native invitation block is shown. */
+.aplos-reader__original[hidden] {
+  display: none;
+}
+.aplos-reader:not([data-cards='off']) .aplos-reader__invite:has(+ .aplos-reader__original[hidden]) {
+  margin-bottom: 0;
+}

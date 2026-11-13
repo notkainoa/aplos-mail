@@ -30,7 +30,7 @@ import { LoadingLine } from '../../ui/reader';
 import type { SuggestedAction } from '../../ui/props';
 import { senderOf, subjectOf } from '../home/homeRows';
 import { loadingLabel } from './readerRows';
-import { crumbPosition, stepThread } from './readerModel';
+import { crumbPlace, stepThread } from './readerModel';
 import { readerHeader } from './readerHeader';
 import { settleFocus } from './readerFocus';
 import {
@@ -166,7 +166,7 @@ function useReaderHeader(input: {
   const latest = useLive({ back });
   const goBack = useCallback(() => latest.current.back(), [latest]);
   const origin = screenLabel(from ?? 'home');
-  const place = crumbPosition(ids, at);
+  const place = crumbPlace(ids, at);
   const index = place?.index;
   const of = place?.of;
   const subject = row ? subjectOf(row) : '';

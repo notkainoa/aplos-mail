@@ -472,14 +472,23 @@ export interface HomeShellProps {
   /** A reply (R, ⇧R, hold R, the nudge) opens the reader with its reply card up; 'open' (or none) is a plain open. */
   readonly onOpen: (id: ThreadId, how?: 'open' | ThreadReply) => void;
   /** Opens a thread from the one-by-one walk: Esc in the reader comes back to the walk, on that thread. */
-  readonly onOpenFromWalk: (id: ThreadId, how?: 'open' | ThreadReply) => void;
+  readonly onOpenFromWalk: (
+    id: ThreadId,
+    how?: 'open' | ThreadReply,
+    listIds?: readonly ThreadId[],
+  ) => void;
   readonly onOneByOne: () => void;
 }
 
 const ONE_BY_ONE_SCREEN = { label: 'one by one' } as const;
 
-function openOptions(from: Screen, how: 'open' | ThreadReply | undefined): OpenThreadOptions {
-  return how === undefined || how === 'open' ? { from } : { from, reply: how };
+function openOptions(
+  from: Screen,
+  how: 'open' | ThreadReply | undefined,
+  listIds?: readonly ThreadId[],
+): OpenThreadOptions {
+  const base = how === undefined || how === 'open' ? { from } : { from, reply: how };
+  return listIds ? { ...base, listIds } : base;
 }
 
 /** The props Home needs from the shell: `<HomeScreen {...useHomeShellProps()} />`. Stable between scope changes. */
@@ -489,7 +498,8 @@ export function useHomeShellProps(): HomeShellProps {
     () => ({
       accountId: scope ?? undefined,
       onOpen: (id, how) => openThread(id, openOptions('home', how)),
-      onOpenFromWalk: (id, how) => openThread(id, openOptions(ONE_BY_ONE_SCREEN, how)),
+      onOpenFromWalk: (id, how, listIds) =>
+        openThread(id, openOptions(ONE_BY_ONE_SCREEN, how, listIds)),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

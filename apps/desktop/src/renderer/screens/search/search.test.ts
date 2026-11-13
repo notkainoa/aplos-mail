@@ -34,6 +34,7 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  snippetAround,
   returnReady,
   searchPage,
   submit,
@@ -445,6 +446,17 @@ test('free terms bold in subjects and snippets; quoted phrases stay whole', () =
   assert.equal(row.remote, true);
   assert.equal(row.marks.attachment, true);
   assert.equal(row.marks.bookmarked, true);
+});
+
+test('a snippet whose match sits far in starts a few words before it, one leading ellipsis', () => {
+  const text =
+    'The printer queue was cleared overnight, and the invoice reminder went out before nine';
+  assert.equal(
+    snippetAround(text, ['invoice']),
+    '…overnight, and the invoice reminder went out before nine',
+  );
+  assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
+  assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
 });
 
 test('a saved cursor lands once its row is there, or once the local window has settled (never on a local neighbour early)', () => {

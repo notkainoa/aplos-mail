@@ -627,6 +627,8 @@
 }
 .ui-composer__subject::placeholder {
   color: var(--dim);
+  /* Weight 400 like the other placeholders: at 500 the empty field read as a filled-in gray word. */
+  font-weight: 400;
 }
 .ui-composer__subject:focus-visible,
 .ui-composer__to .ui-recipient-field__input:focus-visible {
@@ -665,14 +667,18 @@
   font: var(--type-read);
   letter-spacing: var(--track-read);
 }
+/* The footer is the card's last row, under its own hairline, in the card's 640 px column. It rests under the text and,
+   when the text outgrows the pane, stays at the pane's bottom edge on the card's own fill. */
 .ui-composer__foot {
-  flex: none;
+  position: sticky;
+  bottom: 0;
+  margin-inline: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: inherit;
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 .ui-composer__foot .ui-compose-footer {
-  width: min(var(--composer-w), 100% - 2 * var(--gutter));
   height: var(--space-10);
-  margin: 0 auto;
 }
 
 /* ---------- InlineReply: one card under the message ---------- */
