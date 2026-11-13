@@ -154,6 +154,8 @@ export function canChangeAccount(state: ComposeState): boolean {
     !state.discarding &&
     state.context.mode === 'new' &&
     state.send.kind === 'none' &&
+    // Another window pressed Send on this draft: destroying it would cancel that send without a word.
+    state.remote?.submissionId === undefined &&
     state.save.flightSeq === null &&
     !state.save.waitingForRemote
   );

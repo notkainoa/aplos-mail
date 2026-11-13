@@ -498,6 +498,7 @@ function describe_from(): void {
       forward: { ...settled, context: { ...settled.context, mode: 'forward' } },
       sending: { ...settled, send: { kind: 'pending', alsoDone: false } as ComposeState['send'] },
       waiting: { ...settled, save: { ...settled.save, waitingForRemote: true } },
+      sentElsewhere: { ...settled, remote: { submissionId: 's1' } as ComposeState['remote'] },
       flying: { ...settled, save: { ...settled.save, flightSeq: 3 } },
     };
     for (const [name, state] of Object.entries(refused)) {
