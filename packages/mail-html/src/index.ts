@@ -9,7 +9,7 @@ import { sanitizeHtml, type WalkOutput } from './sanitize';
 // change: it is part of each rendered body's cache key, so a fix reaches mail already stored.
 // A message over the size limits (sanitize.ts LIMITS) is cut, and the frame says so at the cut.
 
-export const MAIL_HTML_VERSION = 'mail-html/8';
+export const MAIL_HTML_VERSION = 'mail-html/9';
 
 /**
  * Always this doctype, whatever the mail declared: HTML 4.01 Transitional WITH its system identifier, which Chromium

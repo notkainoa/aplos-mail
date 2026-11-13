@@ -401,7 +401,12 @@ class Walker {
     }
     // Blocked: a quiet placeholder that keeps the image's size, or its alt text when unsized.
     if (!hasSize(element.attrs)) return this.imageWithoutSource(element);
-    const attributes = this.attributes(element, NO_CLASS);
+    // No `style`: an element's own style outranks every cascade layer, and the layer holds the height cap (reading-css.ts).
+    const bare: ElementNode = {
+      ...element,
+      attrs: new Map([...element.attrs].filter(([name]) => name !== 'style')),
+    };
+    const attributes = this.attributes(bare, NO_CLASS);
     this.out.push(`<img src="${TRANSPARENT_GIF}" class="aplos-blocked"${attributes}>`);
   }
 
