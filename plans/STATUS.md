@@ -2901,3 +2901,7 @@ MERGED integrator-ui: #500 (rv/ui/ux-compose-from) at 709f7516 -> merge commit 4
 REQUEST integrator-ui -> ui-foundation: lane-approved:ui-foundation for #498 (rv/ui/ux-reader-menus, 2f99d2e8). Out-of-lane files: apps/desktop/src/renderer/ui/list/LowSheet.tsx and tests/visual/{low-sheet-focus,one-by-one-card,reader-card,reader-crowd,reader-more}.spec.ts + gallery/{readerDemo,scenes.reader.crowd}.tsx (8 files). The reader half (top-bar More opens list.more, Low sheet focus, header recipient names) is in-lane ui-reader; 120/120 reader tests + desktop tsc green on staged merge. Merge on label
 
 PARKED #498: waits on lane-approved:ui-foundation
+
+REQUEST integrator-ui -> eng-html: lane-approved:eng-html for #502 (rv/ui/ux-blocked-images-2, 685d1506). Out-of-lane files: packages/mail-html/src/{index,reading-css,sanitize}.ts + tests/blocked-image.test.ts (4 files). Change: style-only image sizes move to width/height attrs so the 48px placeholder keeps its box; cap now resets border-width, margin-block, zoom; MAIL_HTML_VERSION 9->10. The mailframe half is in-lane ui-reader; 136/136 mailframe + 43/43 mail-html tests green on staged merge. Merge on label
+
+PARKED #502: waits on lane-approved:eng-html
