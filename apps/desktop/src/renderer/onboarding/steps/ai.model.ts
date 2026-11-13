@@ -144,7 +144,7 @@ export function providerDetail(p: AiProvider): { text: string; dot?: 'ok' | 'off
       ? { text: `Found at ${hostOf(p.address ?? p.defaultAddress)}`, dot: 'ok' }
       : { text: 'Not running', dot: 'off' };
   }
-  if (p.keySource === 'env') return { text: `From environment: ${p.envVar}` };
+  if (p.keySource === 'env') return { text: 'Key set on this Mac' };
   if (p.keySource === 'keychain') return { text: 'Saved in Keychain' };
   return { text: 'No key yet' };
 }
