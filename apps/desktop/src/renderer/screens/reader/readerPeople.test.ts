@@ -8,12 +8,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../data';
 import {
-  MAX_CIRCLES,
+  MAX_NAMED,
   detailDate,
   detailRows,
   personOf,
   recipientCircles,
-  recipientsPhrase,
+  recipientLabel,
 } from './readerPeople';
 
 const ME = new Set(['alex@studio.example']);
@@ -75,21 +75,23 @@ test('mail that arrived without the owner on it still went to them; a sent messa
   );
 });
 
-test('the phrase names who the circles stand for', () => {
+test('the label says who it went to in plain words: "to me", a name, or the address', () => {
+  assert.equal(recipientLabel(recipientCircles(message({ to: [ALEX] }), ME)), 'to me');
   assert.equal(
-    recipientsPhrase(recipientCircles(message({ to: [ALEX, MINA] }), ME)),
-    'you, Mina Cho',
+    recipientLabel(recipientCircles(message({ to: [ALEX, MINA] }), ME)),
+    'to me, Mina Cho',
   );
-  assert.equal(recipientsPhrase([]), 'no one');
+  const bare = recipientCircles(
+    message({ fromMe: true, to: [{ name: '', address: 'sam@studio.example' }] }),
+    ME,
+  );
+  assert.equal(recipientLabel(bare), 'to sam@studio.example');
+  assert.equal(recipientLabel([]), 'to undisclosed recipients');
   const many = ['a', 'b', 'c', 'd', 'e'].map(n =>
     personOf({ name: n, address: `${n}@x.example` }, ME),
   );
-  assert.equal(
-    recipientsPhrase(many),
-    'a, b, c and 2 more',
-    'a long list never becomes a paragraph',
-  );
-  assert.ok(MAX_CIRCLES >= 3);
+  assert.equal(recipientLabel(many), 'to a, b and 3 more', 'a long list never becomes a paragraph');
+  assert.ok(MAX_NAMED >= 2);
 });
 
 test('details: From, Date, then To and Cc (the long lists last); Bcc and Reply-to only when present, Reply-to only when it differs', () => {

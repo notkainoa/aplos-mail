@@ -14,7 +14,7 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('reader card header', () => {
-  test('the head carries the sender mark, name, time and the To circles; there is no subject row or summary above', async ({
+  test('the head carries the sender mark, name, time and who it went to ("to me"); there is no subject row or summary above', async ({
     page,
   }) => {
     await open(page);
@@ -23,7 +23,8 @@ test.describe('reader card header', () => {
     const head = page.locator(`${LETTER} .ui-thread-message`).last();
     await expect(head.locator('.ui-thread-message__from')).toBeVisible();
     await expect(head.locator('.ui-thread-message__when')).toBeVisible();
-    await expect(page.locator(`${BUTTON} .aplos-circle`).first()).toBeVisible();
+    await expect(page.locator(BUTTON)).toHaveText(/^to /);
+    await expect(page.locator(`${BUTTON} .aplos-circle`)).toHaveCount(0);
     await expect(page.locator(`${LETTER} .ui-thread-message__line img`)).toHaveCount(0);
   });
 

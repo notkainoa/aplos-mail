@@ -1,6 +1,6 @@
 /**
  * Who a message went to, as the card header and its details popover want it (owner request 2026-11-10): the pure
- * mapping from a `Message` and the owner's addresses to the recipient circles and the From/To/Cc/Bcc/Reply-to/Date rows.
+ * mapping from a `Message` and the owner's addresses to the recipient list and the From/To/Cc/Bcc/Reply-to/Date rows.
  * It reads only what the message carries; there are no photos, mailed-by or signed-by facts to show, so nothing is made up.
  */
 import type { Address, Message } from '../../data';
@@ -24,8 +24,8 @@ export type DetailRow =
   | { readonly kind: 'people'; readonly label: string; readonly people: readonly Person[] }
   | { readonly kind: 'text'; readonly label: string; readonly text: string; readonly iso: string };
 
-/** The most circles drawn before the rest become one "+N" circle. */
-export const MAX_CIRCLES = 3;
+/** The most names the header's "to …" shows before the rest become "and N more". */
+export const MAX_NAMED = 2;
 
 function initialOf(text: string): string {
   const first = Array.from(text.trim().replace(/^[^\p{L}\p{N}]+/u, ''))[0];
@@ -69,12 +69,15 @@ export function recipientCircles(message: Message, me: ReadonlySet<string>): rea
   return meFirst(arrived ? [...listed, you] : listed);
 }
 
-/** "you, Mina Cho and 4 more" (or "no one"): who the circles stand for, for the button's accessible name after "To". */
-export function recipientsPhrase(people: readonly Person[]): string {
-  const shown = people.slice(0, MAX_CIRCLES).map(p => (p.me ? 'you' : p.name));
-  if (shown.length === 0) return 'no one';
+/**
+ * The header's recipients, in plain words: "to me", "to Mina Cho", "to me, Mina Cho and 4 more". A recipient without a
+ * display name shows as the address, so the line always says who it went to. It is also the button's accessible name.
+ */
+export function recipientLabel(people: readonly Person[]): string {
+  const shown = people.slice(0, MAX_NAMED).map(p => (p.me ? 'me' : p.name));
+  if (shown.length === 0) return 'to undisclosed recipients';
   const rest = people.length - shown.length;
-  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+  return `to ${rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')}`;
 }
 
 function sameAddresses(a: readonly Address[], b: readonly Address[]): boolean {

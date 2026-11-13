@@ -231,6 +231,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
             message={m}
             suggestion={barSuggestion(suggestionFor(row))}
             controls={controls}
+            paper={props.paper}
           />
         ) : undefined
       }

@@ -2,26 +2,21 @@ import { expect, test } from '@playwright/test';
 import { STATES } from './states';
 import { openState } from './support/gallery';
 
-// A message to many people (ui-polish): the header's To circles stop at three and say how many more, and the details
+// A message to many people (ui-polish): the header says who it went to in words and how many more, and the details
 // popover for five hundred recipients stays inside the window and scrolls instead of growing past it.
 const FEW = STATES.find(s => s.id === 'reader-rich-crowd')!;
 const MANY = STATES.find(s => s.id === 'reader-rich-crowd-details')!;
 const LETTER = '.aplos-reader__letter[data-paper="true"]';
 
 test.describe('many recipients', () => {
-  test('the circles stop at three and the rest is one “+N” circle', async ({ page }) => {
+  test('the header names two people and says how many more, in words', async ({ page }) => {
     await openState(page, FEW, { theme: 'light' });
-    const circles = page.locator(`${LETTER} .aplos-recipients__button .aplos-circle`);
-    await expect(circles.first()).toBeVisible();
-    // Three people circles and the "+4" one: Alex is among the seven, so three shown leaves four.
-    await expect(circles).toHaveCount(4);
-    await expect(
-      page.locator(`${LETTER} .aplos-recipients__button .aplos-circle[data-more="true"]`),
-    ).toHaveAttribute('data-mark', '+4');
-    await expect(page.locator(`${LETTER} .aplos-recipients__button`)).toHaveAttribute(
-      'aria-label',
-      /and 4 more, show details$/,
-    );
+    const button = page.locator(`${LETTER} .aplos-recipients__button`);
+    await expect(button).toBeVisible();
+    await expect(page.locator(`${LETTER} .aplos-circle`)).toHaveCount(0);
+    // Two named, then the rest: Alex is among the seven, so "me", one name and five more.
+    await expect(button).toHaveText(/^to me, .+ and 5 more$/);
+    await expect(button).toHaveAttribute('aria-label', /^to me, .+ and 5 more, show details$/);
   });
 
   for (const theme of ['light', 'dark'] as const)
