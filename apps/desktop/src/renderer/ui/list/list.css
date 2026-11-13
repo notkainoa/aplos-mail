@@ -756,7 +756,8 @@
   gap: var(--space-half);
   padding-left: var(--space-3);
 }
-/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp keeps its size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
+/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp
+   keeps its size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
    crowded row never spills over the summary. The meta cell itself is not clipped, so the hover actions still show. */
 .ui-list-row[data-layout='done'] .ui-list-row__mark {
   flex: 0 1 auto;

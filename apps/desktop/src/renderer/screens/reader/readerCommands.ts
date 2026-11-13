@@ -11,7 +11,7 @@ function run(action: () => void) {
   return { run: () => action() };
 }
 
-/** J/K, Done, Later, Trash, Bookmark, Z, Space, R, ⇧R, hold R and Esc. */
+/** J/K, Done, Later, Trash, Bookmark, U, Z, Space, R, ⇧R, hold R and Esc. */
 export function commandsForReader(actions: ReaderActions): CommandHandlerTable {
   return {
     'reader.nextThread': run(() => actions.step('next')),
@@ -20,6 +20,7 @@ export function commandsForReader(actions: ReaderActions): CommandHandlerTable {
     'mail.later': run(actions.later),
     'mail.trash': run(actions.trash),
     'mail.bookmark': run(actions.bookmark),
+    'mail.toggleRead': run(actions.toggleRead),
     'app.undo': run(actions.undo),
     'mail.suggested': run(actions.suggest),
     'mail.reply': run(actions.reply),

@@ -22,7 +22,7 @@ import { useKeycapFor, useTooltipText } from './internal/keys';
 function SummarySpace({ id, summary }: Pick<FocusLetterProps, 'id' | 'summary'>) {
   const before = useRef<{ id: string; state: string } | null>(null);
   const arrived =
-    summary.state === 'ready' && before.current?.id === id && before.current.state === 'pending';
+    summary.state === 'ready' && before.current?.id === id && before.current.state !== 'ready';
   useEffect(() => {
     before.current = { id, state: summary.state };
   });

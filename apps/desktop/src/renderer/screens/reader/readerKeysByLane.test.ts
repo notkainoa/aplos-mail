@@ -67,6 +67,11 @@ for (const lane of ['do', 'update', 'follow'] as const) {
         await undo();
       }
 
+      const read = getToasts().length;
+      assert.equal(press('u'), 'ran', 'U marks it read or unread');
+      assert.equal(getToasts().length, read + 1);
+      await undo();
+
       const toastsBefore = getToasts().length;
       const repliesBefore = state.replies.length;
       const suggestedBefore = state.suggested.length;

@@ -7,6 +7,11 @@ import { useEffect, useReducer } from 'react';
 
 export const SUMMARY_WAIT_MS = 20_000;
 
+/** Threads tracked at once; far more than a window holds, so the map cannot grow without bound. */
+const MAX_TRACKED = 500;
+/** The timer fires this long after the deadline, so a clock a millisecond behind never leaves the card waiting. */
+const TIMER_SLACK_MS = 100;
+
 const firstSeen = new Map<string, number>();
 
 /** Milliseconds left to wait, or null when nothing is pending (the clock for this thread resets). */
@@ -21,6 +26,7 @@ export function waitLeft(
     return null;
   }
   const start = seen.get(id) ?? now;
+  if (seen.size > MAX_TRACKED) seen.clear();
   seen.set(id, start);
   return Math.max(0, SUMMARY_WAIT_MS - (now - start));
 }
@@ -31,7 +37,7 @@ export function useSummaryGaveUp(id: string, pending: boolean): boolean {
   const left = waitLeft(id, pending, Date.now());
   useEffect(() => {
     if (left === null || left === 0) return undefined;
-    const timer = setTimeout(wake, left);
+    const timer = setTimeout(wake, left + TIMER_SLACK_MS);
     return () => clearTimeout(timer);
   }, [id, pending, left === 0]);
   return left === 0;
