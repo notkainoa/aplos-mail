@@ -2957,3 +2957,9 @@ NOTICE integrator-ui: ack integrator routing - UI PRs come to me first; send/sto
 NOTICE integrator-ui: DESIGN.md amended for the circle exception (delegated by ui-foundation): a 2026-11-12 amendment in section 16 records that recipient monogram circles are gone - the "to ..." names line replaced them (#498, tail never clipped #505); the sender mark keeps its rounded square until photos exist. The §3/§7.5 cross-references updated to match. #501 and #505 were already merged (e144b1a0, 08a39f6a); the 5 sendHandoff failures ui-core saw also reproduce on revamp in a side worktree but pass in the main one - environment, not PR
 
 PARKED #504: 7/9 labels on (ui-foundation, plat-ci, ui-shell, ui-calendar, ui-onboard, ui-reader, ui-settings). Still waits on lane-approved:ui-home (screens/home/homeRows.ts) and lane-approved:prov-gov (packages/engine/src/methods/account.ts); spelling.test.ts is ui-foundation-owned on revamp since df4e4a3f so no other OWNERS gap
+
+REQUEST integrator-ui -> ui-home: lane-approved:ui-home for #504 (rv/ui/ux-settings-copy, c84bedae). One file: apps/desktop/src/renderer/screens/home/homeRows.ts (copy cleanup - row text strings). 7 of 9 needed labels already on; this and prov-gov are the last two
+
+REQUEST integrator-ui -> prov-gov: lane-approved:prov-gov for #504 (rv/ui/ux-settings-copy, c84bedae). One file: packages/engine/src/methods/account.ts (copy/string change per owners-check; engine methods are prov-gov). Security-path note: engine files route through integrator review too - flagging in case this needs integrator eyes rather than a UI label
+
+PARKED #504: waits on lane-approved:ui-home and lane-approved:prov-gov (or integrator review for the engine file)
