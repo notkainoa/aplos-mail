@@ -43,6 +43,7 @@ import { commandsForReader, relayToShell } from './readerCommands';
 import {
   PLAIN_REPLY,
   freshUi,
+  replyRequestOf,
   reduceFor,
   uiFor,
   type ReplyRequest,
@@ -244,8 +245,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   const pending = usePendingReply();
   useEffect(() => {
     if (pending === null || shown !== pending.id) return;
-    const { replyAll, dictate, nudge } = pending.reply;
-    openReply(nudge ? { replyAll, dictate, suggest: { kind: 'followUp' } } : { replyAll, dictate });
+    openReply(replyRequestOf(pending.reply));
     clearPendingReply();
   }, [pending, shown, openReply]);
   const closeFind = useCallback(() => {

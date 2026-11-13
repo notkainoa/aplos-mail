@@ -514,6 +514,10 @@ for (const lane of LANE_CARDS) {
       assert.equal(press('r'), 'ran');
       assert.equal(press('R', { shiftKey: true }), 'ran');
       assert.deepEqual(opened(), [`open:reply:${id}`, `open:replyAll:${id}`]);
+      const reads = getToasts().length;
+      assert.equal(press('u'), 'ran', 'U marks it read or unread');
+      assert.equal(getToasts().length, reads + 1);
+      undo();
 
       // Space runs the suggestion the button shows: Done, or the reply (the nudge on Follow up), or a plain open.
       const row = world.home.snapshot().rows.get(id) as ThreadRow;

@@ -9,7 +9,7 @@ import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { createReaderActions } from './readerActions';
 import { commandsForReader } from './readerCommands';
-import { PLAIN_REPLY } from './readerUi';
+import { PLAIN_REPLY, replyRequestOf } from './readerUi';
 import { boot, depsOver } from './readerTestKit';
 
 /** Every normal shortcut works in the reader on a thread from every Home lane, whatever its suggestion is (owner decision 2026-11-13). */
@@ -89,3 +89,18 @@ for (const lane of ['do', 'update', 'follow'] as const) {
     }
   });
 }
+
+test('a thread opened for a reply asks the reader for that reply card', () => {
+  const reply = { replyAll: false, dictate: false, nudge: false };
+  assert.deepEqual(replyRequestOf(reply), PLAIN_REPLY);
+  assert.deepEqual(replyRequestOf({ ...reply, replyAll: true }), {
+    replyAll: true,
+    dictate: false,
+  });
+  assert.deepEqual(replyRequestOf({ ...reply, dictate: true }), { replyAll: false, dictate: true });
+  assert.deepEqual(replyRequestOf({ ...reply, nudge: true }), {
+    replyAll: false,
+    dictate: false,
+    suggest: { kind: 'followUp' },
+  });
+});

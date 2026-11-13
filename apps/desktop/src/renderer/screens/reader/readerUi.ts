@@ -16,6 +16,16 @@ export interface ReplyRequest {
   readonly suggest?: InlineReplyHostProps['suggest'];
 }
 
+/** The reply card a thread was opened for (R, ⇧R, hold R or the Follow up nudge on Home or one by one). */
+export function replyRequestOf(reply: {
+  readonly replyAll: boolean;
+  readonly dictate: boolean;
+  readonly nudge: boolean;
+}): ReplyRequest {
+  const { replyAll, dictate, nudge } = reply;
+  return nudge ? { replyAll, dictate, suggest: { kind: 'followUp' } } : { replyAll, dictate };
+}
+
 /** A plain R. */
 export const PLAIN_REPLY: ReplyRequest = { replyAll: false, dictate: false };
 
