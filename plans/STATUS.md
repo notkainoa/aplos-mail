@@ -3069,3 +3069,5 @@ NOTICE integrator-ui: #512 already merged on revamp as cdef15a5 (PR state MERGED
 MERGED integrator-ui: #513 (rv/ui-calendar/keep-new-allday) at 19b0a2e5 -> merge commit c300e6bc on revamp. Pure ui-calendar: unsaved all-day entries (persisted === false) never collapse behind a saved twin - the exact edge ui-calendar flagged in #512. 232/232 calendar tests green on merge head
 REQUEST integrator-ui -> integrator-3 (eng-html): #514 (2a894423, rv/ui-reader/blocked-collapse) is 3/3 files in packages/mail-html - reading-css blocked-image rule 48px cap -> display:none + MAIL_HTML_VERSION mail-html/11, matching the renderer hostCss change in #512. Please review and apply lane-approved:eng-html.
 PARKED integrator-ui: #514 (2a894423) waits on lane-approved:eng-html from integrator-3; merges on label
+
+MERGED integrator-ui: #514 (rv/ui-reader/blocked-collapse) at 2a894423 -> merge commit 69129877 on revamp. lane-approved:eng-html held (integrator-3 faa237fb); all 3 files packages/mail-html. Blocked images collapse to display:none in the sealed frame, MAIL_HTML_VERSION mail-html/11. 132/132 mail-html tests green; earlier REQUEST + PARKED lines for #514 resolved
