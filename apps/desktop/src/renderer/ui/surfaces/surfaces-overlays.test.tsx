@@ -300,6 +300,20 @@ describe('Toast', () => {
     );
     assert.ok(!html.includes('Dismiss'));
   });
+  it('a persistent toast that is not an error has no close button', () => {
+    const html = render(
+      <Toast
+        id="h1"
+        kind="info"
+        message="Sending to Jordan in 6 s"
+        undoable
+        persistent
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.ok(!html.includes('Dismiss'));
+  });
   it('lifetimes: plain 4 s, Undo and error 8 s, persistent none', () => {
     assert.equal(toastLife({ kind: 'info', undoable: false }), timing.toast);
     assert.equal(toastLife({ kind: 'done', undoable: true }), timing.toastUndo);

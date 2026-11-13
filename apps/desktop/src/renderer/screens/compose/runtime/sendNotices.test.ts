@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { getOutbox, resetOutbox, runOutboxAction } from '../../../shell/store-outbox';
 import { getToasts, resetToasts, runToastAction } from '../../../shell/store-toast';
 import { SEND_COPY } from '../model/sendState';
+import type { Submission } from '../../../data';
+import { dismissOutboxNotice } from '../../../shell/OutboxHost';
+import { releaseSend } from './sendHandoff';
 import { dropUnconfirmedSend, pushRefusedSend, pushUnconfirmedSend } from './sendNotices';
 
 beforeEach(() => {
@@ -59,4 +62,24 @@ test('an unconfirmed send is an error toast with a notice, and both go when the 
   dropUnconfirmedSend('k');
   assert.equal(getToasts().length, 0);
   assert.equal(getOutbox().length, 0);
+});
+
+test('closing the notice closes its toast too', () => {
+  pushRefusedSend(refused);
+  dismissOutboxNotice(getOutbox()[0]?.id ?? '');
+  assert.equal(getToasts().length, 0);
+  assert.equal(getOutbox().length, 0);
+});
+
+test('a later send of the same draft clears the stale failure', () => {
+  pushRefusedSend(refused);
+  releaseSend('sub-1', true, { id: 'sub-1', draftId: 'd1' } as Submission);
+  assert.equal(getToasts().length, 0);
+  assert.equal(getOutbox().length, 0);
+});
+
+test('a send of another draft leaves the failure alone', () => {
+  pushRefusedSend(refused);
+  releaseSend('sub-2', true, { id: 'sub-2', draftId: 'other' } as Submission);
+  assert.equal(getOutbox().length, 1);
 });

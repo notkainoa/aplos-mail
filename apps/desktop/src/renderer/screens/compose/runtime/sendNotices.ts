@@ -19,7 +19,7 @@ import { recipientPhrase } from '../model/recipients';
 import { SEND_COPY } from '../model/sendState';
 import { undoRefusalOutcome } from '../model/undoRefusal';
 import { refusalOf } from './composeApi';
-import { releaseSend } from './sendHandoff';
+import { refusedNoticeId, releaseSend } from './sendHandoff';
 
 const TRY_AGAIN = { id: 'retry', label: 'Try again' } as const;
 const EDIT = { id: 'edit', label: 'Edit' } as const;
@@ -39,7 +39,7 @@ export interface RefusedSend {
 export function pushAlreadySent(id: string): void {
   pushToast({
     id: `send-late-undo-${id}`,
-    kind: 'info',
+    kind: 'error',
     message: SEND_COPY.alreadySent,
     undoable: false,
   });
@@ -47,7 +47,7 @@ export function pushAlreadySent(id: string): void {
 
 /** A refused Undo the engine explained: its own sentence (or the plain fallback), never nothing. */
 function pushUndoRefused(id: string, message: string): void {
-  pushToast({ id: `send-undo-refused-${id}`, kind: 'info', message, undoable: false });
+  pushToast({ id: `send-undo-refused-${id}`, kind: 'error', message, undoable: false });
 }
 
 /**
@@ -150,7 +150,7 @@ function sendAgain(refused: RefusedSend): void {
 
 /** "Couldn’t send to Jordan. Your draft is saved." · Try again · Edit, for a send refused with no thread showing it. */
 export function pushRefusedSend(refused: RefusedSend): void {
-  const id = `send-refused-${refused.draftId}`;
+  const id = refusedNoticeId(refused.draftId);
   const recipient = recipientPhrase(refused.names);
   pushFailure(id, recipient, actionId => {
     if (actionId === TRY_AGAIN.id) sendAgain(refused);

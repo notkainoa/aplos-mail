@@ -105,7 +105,7 @@ export function Toast({
   const [leaving, setLeaving] = useState(false);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
-  const closable = kind === 'error' || persistent === true;
+  const closable = kind === 'error';
   const life = toastLife({ kind, undoable, persistent });
   const clock = useLifetime(leaving ? null : life, () => setLeaving(true));
 

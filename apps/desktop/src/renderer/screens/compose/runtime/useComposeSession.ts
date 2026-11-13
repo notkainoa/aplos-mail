@@ -43,7 +43,7 @@ const NOTICE_COPY: Record<ComposeNotice, string> = {
 function notify(notice: ComposeNotice, message?: string): void {
   pushToast({
     id: `compose-${notice}-${getNow()}`,
-    kind: 'info',
+    kind: notice === 'discarded' ? 'info' : 'error',
     message: message ?? NOTICE_COPY[notice],
     undoable: false,
   });

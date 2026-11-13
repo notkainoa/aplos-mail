@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react';
 import { Button } from '../ui/buttons-keys';
 import { PartIcon } from '../ui/surfaces/parts';
+import { dismissToast } from './index';
 import { getOutbox, removeOutboxNotice, runOutboxAction, subscribeOutbox } from './store-outbox';
 import type { OutboxNotice } from './store-outbox';
 
@@ -21,7 +22,7 @@ export interface OutboxViewProps {
 export function OutboxView({ notices, onAction, onDismiss }: OutboxViewProps) {
   if (notices.length === 0) return null;
   return (
-    <section className="aplos-outbox" aria-label="Outbox" role="status">
+    <section className="aplos-outbox" aria-label="Messages that did not send">
       {notices.map(notice => (
         <div key={notice.id} className="aplos-outbox__item">
           <PartIcon name="alert" size="sm" />
@@ -52,8 +53,16 @@ export function OutboxView({ notices, onAction, onDismiss }: OutboxViewProps) {
   );
 }
 
+/** Closing the notice also closes its toast, so resolving either one resolves both. */
+export function dismissOutboxNotice(id: string): void {
+  dismissToast(id);
+  removeOutboxNotice(id);
+}
+
 /** The sidebar's outbox, live. */
 export function OutboxHost() {
   const notices = useSyncExternalStore(subscribeOutbox, getOutbox, getOutbox);
-  return <OutboxView notices={notices} onAction={runOutboxAction} onDismiss={removeOutboxNotice} />;
+  return (
+    <OutboxView notices={notices} onAction={runOutboxAction} onDismiss={dismissOutboxNotice} />
+  );
 }

@@ -12,7 +12,7 @@ const SIZES = [
 interface Layout {
   readonly mail: { top: number; height: number };
   readonly settingsTop: number;
-  readonly helpTop: number;
+  readonly helpBottom: number;
   readonly marked: string[];
 }
 
@@ -32,7 +32,7 @@ async function layoutOf(page: Page, id: string, size: (typeof SIZES)[number]): P
     return {
       mail: { top: box(head).top, height: box(head).height },
       settingsTop: box(row('Settings')).top,
-      helpTop: box(row('Help')).top,
+      helpBottom: box(row('Help')).bottom,
       marked: [...side.querySelectorAll('[aria-current]')].map(el => (el.textContent ?? '').trim()),
     };
   });
@@ -46,8 +46,8 @@ test.describe('sidebar holds still', () => {
       expect(calendar.mail).toEqual(home.mail);
       expect(calendar.mail.height).toBe(28);
       expect(calendar.settingsTop).toBe(home.settingsTop);
-      expect(calendar.helpTop).toBe(home.helpTop);
-      expect(calendar.helpTop, 'Help stays inside the window').toBeLessThanOrEqual(size.height);
+      expect(calendar.helpBottom).toBe(home.helpBottom);
+      expect(calendar.helpBottom, 'Help stays inside the window').toBeLessThanOrEqual(size.height);
     });
   }
 
