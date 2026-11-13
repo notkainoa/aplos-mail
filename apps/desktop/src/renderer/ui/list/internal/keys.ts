@@ -5,7 +5,7 @@
 
 import { useContext } from 'react';
 import { createAppRegistry, formatChord, type Registry } from '../../../commands';
-import { CommandKeysContext, parseKeyText } from '../../buttons-keys/keyHints';
+import { CommandKeysContext, displayChord, parseKeyText } from '../../buttons-keys/keyHints';
 import type { CommandId, LiteralKey } from '../../props';
 
 let registry: Registry | null = null;
@@ -58,7 +58,7 @@ export function literalKeycap(key: LiteralKey): string {
 }
 
 function withKey(label: string, key: string): string {
-  return key ? `${label} · ${key}` : label;
+  return key ? `${label} · ${displayChord(key)}` : label;
 }
 
 /** Tooltip text from the default registry: label plus its key, e.g. "Done · →". Prefer `useTooltipText` in a component. */

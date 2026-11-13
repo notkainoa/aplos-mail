@@ -54,6 +54,12 @@ describe('ListRow', () => {
     assert.doesNotMatch(m, /ui-list-row__dot/);
   });
 
+  test('a tag is a quiet word before the line, so a draft never reads as sent mail', () => {
+    const m = render(<ListRow {...row({ layout: 'list', tag: 'Draft' })} />);
+    assert.match(m, /<span class="ui-list-row__tag">Draft<\/span>/);
+    assert.doesNotMatch(render(<ListRow {...row({ layout: 'list' })} />), /ui-list-row__tag/);
+  });
+
   test('done layout: fixed stamp column, "Move to Home" is the only action', () => {
     const m = render(
       <ListRow

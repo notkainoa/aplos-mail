@@ -94,9 +94,15 @@ export interface RecipientParts {
  * The header's recipients, in plain words: "to me", "to Mina Cho", "to me, Mina Cho and 4 more". A recipient without a
  * display name shows as the address, so the line always says who it went to.
  */
-export function recipientParts(people: readonly Person[]): RecipientParts {
-  // One more than the limit is named too: "and 1 more" would only hide a name that fits.
-  const limit = people.length === MAX_NAMED + 1 ? people.length : MAX_NAMED;
+export function recipientParts(people: readonly Person[], maxNames?: number): RecipientParts {
+  // One more than the limit is named too: "and 1 more" would only hide a name that fits. A narrow header asks for fewer
+  // names (`maxNames`) so the line ends at a name boundary, never mid-name.
+  const limit =
+    maxNames !== undefined
+      ? Math.max(1, Math.min(maxNames, people.length))
+      : people.length === MAX_NAMED + 1
+        ? people.length
+        : MAX_NAMED;
   const shown = people.slice(0, limit).map(p => (p.me ? 'me' : shortName(p.name)));
   if (shown.length === 0) return { names: 'to undisclosed recipients', more: '' };
   const rest = people.length - shown.length;

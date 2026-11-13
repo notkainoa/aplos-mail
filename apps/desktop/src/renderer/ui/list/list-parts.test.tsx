@@ -29,7 +29,7 @@ describe('LowBand and LowSheet', () => {
     );
     assert.match(m, /role="option" aria-selected="false" class="ui-low-band"/);
     assert.match(text(m), /^Low importance Field Notes, Cedar Market, Google and 3 more 6$/);
-    assert.match(m, /title="Open low importance · Return"/);
+    assert.match(m, /title="Open low importance · ↩"/);
     assert.equal(lowBandNames(['A']), 'A');
     assert.equal(lowBandNames(['A', 'B']), 'A and B');
     assert.equal(lowBandNames(['A', 'B', 'C']), 'A, B and C');
@@ -365,7 +365,7 @@ describe('EmptyLine', () => {
         }}
       />,
     );
-    assert.match(text(search), /Search all mail on Google Return$/);
+    assert.match(text(search), /Search all mail on Google ↩$/);
   });
 });
 

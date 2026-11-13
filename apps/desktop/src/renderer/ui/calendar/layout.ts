@@ -68,6 +68,13 @@ export function allDayOn(events: readonly CalendarEventData[], day: IsoDate): Ca
   });
 }
 
+/** An all-day entry that covers more than one day. */
+export function isMultiDay(event: CalendarEventData): boolean {
+  if (!event.allDay) return false;
+  const last = isoOf(new Date(new Date(event.end).getTime() - 60000));
+  return last > dayOf(event.start);
+}
+
 /**
  * One row per all-day entry across the visible days, so a multi-day entry sits on the same row in every column it
  * covers and reads as one bar. Longest and earliest first; an entry takes the first row free on all its days.

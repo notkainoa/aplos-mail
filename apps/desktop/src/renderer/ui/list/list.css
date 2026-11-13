@@ -129,7 +129,9 @@
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
 .ui-list-btn[data-variant='filled'] .ui-list-kbd {
-  background-color: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 .ui-list-btn[data-tone='danger'],
@@ -689,6 +691,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ui-list-row__tag {
+  flex: none;
+  color: var(--dim);
+  font-weight: 500;
+}
 .ui-list-row__primary {
   flex: 1 1 auto;
 }
@@ -832,6 +839,10 @@
   border-radius: var(--radius-pill);
   background-color: var(--accent);
 }
+/* While rows are picked the pick box fills the lead column, so the bar moves to the slab's edge and clears it. */
+.ui-list-row[data-cursor='true'][data-picking='true']::before {
+  left: 0;
+}
 /* --accent-wash is for bulk-picked rows only. */
 .ui-list-row[data-picked='true'],
 .ui-list-row[data-picked='true'] .ui-list-row__actions-fill {
@@ -876,7 +887,8 @@
 .ui-focus-slot {
   position: relative;
   height: var(--focus-letter);
-  margin: var(--space-2) 0;
+  /* The slot's own bottom margin is the card's air above the first row; sections stay a group gap apart. */
+  margin: var(--space-2) 0 var(--space-5);
 }
 .ui-focus-slot[data-density='roomy'] {
   height: var(--focus-letter-roomy);
@@ -1203,7 +1215,8 @@
   box-sizing: border-box;
   display: -webkit-box;
   flex: none;
-  height: var(--space-9);
+  /* One line, reserved so the sheet holds still on hover, but no taller than the quiet gap above the hint. */
+  height: var(--space-6);
   margin: var(--space-2) 0 0;
   padding: var(--space-1) var(--space-3);
   overflow: hidden;
@@ -1213,7 +1226,7 @@
   letter-spacing: var(--track-small);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 /* Until a row is hovered the slot keeps its room (the sheet holds still) but drops its rule, so no empty band shows. */
 .ui-low-sheet__preview:empty {

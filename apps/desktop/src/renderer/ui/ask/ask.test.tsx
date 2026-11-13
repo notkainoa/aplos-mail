@@ -168,7 +168,7 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
   assert.match(pending, /data-state="pending"/);
   assert.match(pending, /aria-labelledby/);
   assert.match(pending, /--swatch:var\(--tag-ember\)/);
-  assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>Return<\/kbd>/);
+  assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>↩<\/kbd>/);
   assert.match(pending, /title="Not now \(Esc\)"[^>]*>.*Not now/);
   assert.doesNotMatch(pending, /Not now<\/span><kbd/);
   assert.equal((pending.match(/data-variant="filled"/g) ?? []).length, 1);
@@ -592,11 +592,8 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
   assert.match(markup, /role="group"[^>]*aria-labelledby/);
   assert.match(text(markup), /Delete forever\?/);
   assert.ok(markup.indexOf('Cancel') < markup.indexOf('Delete forever</span>'), 'Cancel row first');
-  assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>Return<\/kbd>/);
-  assert.match(
-    markup,
-    /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧Return<\/kbd>/,
-  );
+  assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>↩<\/kbd>/);
+  assert.match(markup, /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧↩<\/kbd>/);
   assert.match(markup, /readOnly|readonly/);
   assert.doesNotMatch(markup, /role="listbox"/);
   assert.doesNotMatch(markup, /For: /);
@@ -618,7 +615,7 @@ test('Palette plain confirm makes the confirm row the default', () => {
       },
     }),
   );
-  assert.match(markup, /data-primary="true"[^>]*><span>Discard<\/span><kbd[^>]*>Return<\/kbd>/);
+  assert.match(markup, /data-primary="true"[^>]*><span>Discard<\/span><kbd[^>]*>↩<\/kbd>/);
   assert.match(markup, /><span>Keep editing<\/span><kbd[^>]*>Esc<\/kbd>/);
 });
 

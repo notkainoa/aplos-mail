@@ -2,6 +2,7 @@ import { useId, useRef } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { CalendarEventData, EventDetailProps, EventGuest, RsvpAnswer } from '../props';
 import { dayOf, isoOf, longDay, rangeOf, shortDay, timeOf } from './dates';
+import { displayChord } from '../buttons-keys/keyHints';
 import { calVar } from './eventText';
 import { CalIcon } from './icons';
 import { keycapOf } from './keycaps';
@@ -253,7 +254,7 @@ export function EventDetail({
               onClick={() => reply.onSend()}
             >
               Send reply
-              <kbd className="ui-cal-kbd">Return</kbd>
+              <kbd className="ui-cal-kbd">{displayChord('Return')}</kbd>
             </button>
           </div>
         </div>

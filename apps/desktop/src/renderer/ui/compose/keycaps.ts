@@ -8,12 +8,13 @@
 import { createAppRegistry } from '../../commands';
 import type { Registry } from '../../commands';
 import type { CommandId } from '../props';
+import { displayChord } from '../buttons-keys/keyHints';
 
 let registry: Registry | undefined;
 
-/** "⌘Return" becomes "⌘↩"; a bare "Return" stays "Return" (DESIGN §8: Return on dialogs and proposals). */
+/** "⌘Return" becomes "⌘↩" and a bare "Return" "↩": the one key-label convention (see `displayChord`). */
 export function displayKey(text: string): string {
-  return text.replace(/^([⌃⌥⇧]*⌘[⌃⌥⇧]*)Return$/, '$1↩');
+  return displayChord(text);
 }
 
 /** The registry's text for a command exactly as it describes it ("⌘Return", "J or ↓"), for running copy such as "⌘Return sends now". */

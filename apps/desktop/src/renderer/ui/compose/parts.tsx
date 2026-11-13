@@ -5,12 +5,17 @@
  */
 import type { MouseEvent, ReactNode, Ref } from 'react';
 import type { CommandId, IconName, LiteralKey } from '../props';
+import { displayChord } from '../buttons-keys/keyHints';
 import { Icon } from './icons';
 import { keycapsFor } from './keycaps';
 
 /** One keycap (18 px, `--sunken`). Never revealed by hover. */
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="ui-compose-kbd">{children}</kbd>;
+  return (
+    <kbd className="ui-compose-kbd">
+      {typeof children === 'string' ? displayChord(children) : children}
+    </kbd>
+  );
 }
 
 /** The keycaps of a registry command, or one literal key where DESIGN requires it (Return, Esc, Tab). */

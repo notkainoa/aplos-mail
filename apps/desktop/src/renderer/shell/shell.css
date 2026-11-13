@@ -383,3 +383,9 @@
   margin-top: 0;
   gap: var(--space-3);
 }
+
+/* The account menu opens under the switcher and stays inside the sidebar: 12 px in from the pane's edge (not flush), so the
+   pane's rounded corner and shadow never touch it. */
+.ui-menu[aria-label='Accounts'] {
+  min-width: calc(var(--menu-min) - var(--space-3));
+}

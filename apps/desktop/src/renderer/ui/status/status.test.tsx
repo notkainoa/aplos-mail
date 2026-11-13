@@ -187,12 +187,10 @@ describe('StatusSlot', () => {
         onAction={noop}
       />,
     );
-    // Folded into the sentence, not a line of its own: the colour dot leads, the address is spoken and in the tooltip.
+    // Folded into the sentence, not a line of its own, and with one marker (the icon): no account dot; the address is spoken and in the tooltip.
     assert.ok(!html.includes('ui-status-slot__account'));
-    assert.match(
-      html,
-      /<p class="ui-status-slot__text"><i class="ui-status-slot__dot" data-color="sky" aria-hidden="true"><\/i>Google asked us/,
-    );
+    assert.ok(!html.includes('ui-status-slot__dot'));
+    assert.match(html, /<p class="ui-status-slot__text">Google asked us/);
     assert.match(html, new RegExp(`ui-part-tip__detail">${EMAIL_80}<`));
     assert.match(
       textOf(html),
@@ -575,7 +573,7 @@ describe('ReconnectSheet', () => {
     assert.equal(count(html, 'data-variant="filled"'), 1);
     assert.match(
       html,
-      /data-variant="filled"[^>]*><span class="ui-part-button__label">Try again<\/span>.*?Return/,
+      /data-variant="filled"[^>]*><span class="ui-part-button__label">Try again<\/span>.*?↩/,
     );
     assert.ok(html.includes(EMAIL_80));
     const ms = render(
@@ -623,7 +621,7 @@ describe('FatalScreen', () => {
     assert.match(html, /<p class="ui-fatal-screen__safe">Your mail is safe on this Mac\.<\/p>/);
     assert.match(
       html,
-      /data-variant="filled"[^>]*><span class="ui-part-button__label">Restart engine<\/span>.*?<kbd class="ui-part-kbd">Return<\/kbd>/,
+      /data-variant="filled"[^>]*><span class="ui-part-button__label">Restart engine<\/span>.*?<kbd class="ui-part-kbd">↩<\/kbd>/,
     );
     assert.match(html, />Copy diagnostics</);
     assert.doesNotMatch(textOf(html), /Aplos needs a moment|Making room/);
@@ -645,7 +643,7 @@ describe('FatalScreen', () => {
     const parked = render(
       <FatalScreen kind="parked" restarting={false} onRestart={noop} onDiagnostics={noop} />,
     );
-    assert.match(textOf(parked), /Try again Return Export diagnostics/);
+    assert.match(textOf(parked), /Try again ↩ Export diagnostics/);
   });
 });
 

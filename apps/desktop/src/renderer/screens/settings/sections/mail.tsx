@@ -1,7 +1,7 @@
 /** Settings → Mail: undo send, Follow up, remote images, the image allow-list and how long message text is kept (DESIGN 7.10). */
 import { Button } from '../../../ui/buttons-keys';
 import { Puck } from '../../../ui/surfaces';
-import { Group, Row, Select } from '../parts';
+import { Group, InlineLabel, Row, Select } from '../parts';
 import {
   FOLLOW_UP_OPTIONS,
   IMAGE_ITEMS,
@@ -127,6 +127,7 @@ export function Mail({ data, actions }: SectionProps) {
           description={retentionLine(retention.bodyDays, retention.maxBodyBytes)}
           control={
             <>
+              <InlineLabel>for</InlineLabel>
               <Select
                 label="Keep message text for"
                 options={withCurrent(
@@ -137,6 +138,7 @@ export function Mail({ data, actions }: SectionProps) {
                 value={String(retention.bodyDays)}
                 onChange={v => void set({ retention: { bodyDays: Number(v) } }, 'change storage')}
               />
+              <InlineLabel>up to</InlineLabel>
               <Select
                 label="Keep up to"
                 options={withCurrent(

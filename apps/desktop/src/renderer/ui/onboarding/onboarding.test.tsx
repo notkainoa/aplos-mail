@@ -87,15 +87,15 @@ test('OnboardingStep welcome: a centred display line, one sentence, one filled b
   assert.equal((out.match(/data-variant="filled"/g) ?? []).length, 1);
   assert.match(
     out,
-    /data-size="lg"[^>]*>.*?Add an account.*?<kbd class="ui-onb-kbd" data-key-hint="always">Return<\/kbd>/,
+    /data-size="lg"[^>]*>.*?Add an account.*?<kbd class="ui-onb-kbd" data-key-hint="always">↩<\/kbd>/,
   );
   assert.match(out, /Setup continues in the background\./);
-  assert.match(out, /aria-label="Step 1 of 4"/);
+  assert.match(out, />Step 1 of 4</);
   assert.doesNotMatch(out, /<svg/);
   assertCleanCopy(out);
 });
 
-test('OnboardingStep: "Try demo mail" with its tooltip, the footer dashes and note, the hidden status line', () => {
+test('OnboardingStep: "Try demo mail" with its tooltip, the footer step words and note, the hidden status line', () => {
   const out = html(
     <OnboardingStep
       {...step({
@@ -116,10 +116,8 @@ test('OnboardingStep: "Try demo mail" with its tooltip, the footer dashes and no
     out,
     /<p class="ui-onboarding-step__sr" role="status">Connected\. Looking for your mail\.<\/p>/,
   );
-  assert.match(out, /role="img" aria-label="Step 3 of 4"/);
-  assert.equal((out.match(/data-state="done"/g) ?? []).length, 2);
-  assert.equal((out.match(/data-state="on"/g) ?? []).length, 1);
-  assert.equal((out.match(/data-state="todo"/g) ?? []).length, 1);
+  assert.match(out, /<span class="ui-onboarding-step__where">Step 3 of 4<\/span>/);
+  assert.doesNotMatch(out, /ui-onboarding-step__dashes/, 'the words say it; no dashes beside them');
   // The footer Esc is a hint: present in the markup, hidden until "Show all key hints".
   assert.match(out, /<kbd class="ui-onb-kbd" data-key-hint="hint">Esc<\/kbd>/);
   const none = html(<OnboardingStep {...step({ phaseStatus: undefined })} />);
@@ -143,10 +141,7 @@ test('OnboardingStep: step layout has a heading title, children, "More options" 
   assert.match(out, /<p>Body<\/p>/);
   assert.match(out, /aria-expanded="false"[^>]*aria-controls="[^"]+"[^>]*>.*?More options/);
   assert.match(out, /hidden=""[^>]*><p>Own key<\/p>/);
-  assert.match(
-    out,
-    />Continue<\/span><kbd class="ui-onb-kbd" data-key-hint="always">Return<\/kbd>/,
-  );
+  assert.match(out, />Continue<\/span><kbd class="ui-onb-kbd" data-key-hint="always">↩<\/kbd>/);
   assert.match(out, />Skip for now</);
   assert.match(out, /autofocus=""/);
   // A text verb carries its key in the tooltip only.
@@ -422,7 +417,7 @@ test('ConsentCard: provider, model and what is sent in one card, Allow with Retu
   assert.match(out, /Attachments are not sent\./);
   assert.match(
     out,
-    /data-variant="filled"[^>]*autofocus=""[^>]*title="Allow · Return"[^>]*>.*?Allow<\/span><kbd class="ui-onb-kbd" data-key-hint="always">Return<\/kbd>/,
+    /data-variant="filled"[^>]*autofocus=""[^>]*title="Allow · ↩"[^>]*>.*?Allow<\/span><kbd class="ui-onb-kbd" data-key-hint="always">↩<\/kbd>/,
   );
   assert.match(out, />Not now</);
   assert.doesNotMatch(out, /Ollama and LM Studio keep/);

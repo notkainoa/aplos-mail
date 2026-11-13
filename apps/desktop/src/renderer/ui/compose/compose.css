@@ -101,7 +101,9 @@
     inset 0 calc(-1 * var(--hairline)) 0 var(--press-lo);
 }
 .ui-compose-btn[data-variant='filled'] .ui-compose-kbd {
-  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 .ui-compose-btn[data-tone='danger'],
@@ -344,6 +346,12 @@
   padding-top: calc(var(--control-lg) / 2 - var(--space-3));
   line-height: var(--space-6);
 }
+.ui-recipient-field__more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+}
 .ui-recipient-field__people {
   display: flex;
   flex: 1;
@@ -515,8 +523,20 @@
 .ui-compose-footer__right {
   display: inline-flex;
   flex: none;
+  align-items: center;
   gap: var(--space-half);
   margin-left: auto;
+}
+.ui-compose-footer__close {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
 }
 /* In a narrow pane (the 900 px window with the dock open) the draft or dictation line drops to its own row under
    Send and the icons, so nothing is clipped and nothing overlaps. Width is the container's, not the window's. */
@@ -689,10 +709,12 @@
   box-shadow: var(--elev-card);
 }
 .ui-inline-reply__head {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
-  padding: 0 var(--space-3) 0 var(--space-4);
+  /* The 24 px gutter of the card's text: Cc and Bcc end where the reply text does. */
+  padding: 0 var(--space-4) 0 var(--space-4);
   box-shadow: 0 var(--hairline) 0 var(--line);
 }
 .ui-inline-reply__to {
@@ -701,6 +723,14 @@
 }
 .ui-inline-reply__head > .ui-compose-btn {
   margin-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+}
+/* With a From row, Pop out floats at the head's top right, beside From: the To row below runs the full width, so Cc and
+   Bcc reach the gutter. Without one, Pop out stays in the To row, after Cc and Bcc. */
+.ui-inline-reply__head:has(.aplos-from) > .ui-compose-btn {
+  position: absolute;
+  top: calc((var(--control-lg) - var(--control-sm)) / 2);
+  right: var(--space-3);
+  margin-top: 0;
 }
 .ui-inline-reply__to .ui-recipient-field {
   font: var(--type-ui);

@@ -224,7 +224,7 @@ function Select({
   label: string;
   value: string;
   options: readonly string[];
-  /** Display names for option values (provider ids to "OpenCode Go"). */
+  /** Display names for option values (provider ids to "OpenCode Go", model ids to "GPT-OSS 120B"). */
   names?: Readonly<Record<string, string>>;
   onChange: (value: string) => void;
 }) {
@@ -296,6 +296,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                     label={`${copy.label} model`}
                     value={row.model}
                     options={row.modelOptions}
+                    names={row.modelNames}
                     onChange={model => onChange(row.feature, { provider: row.provider, model })}
                   />
                 </span>

@@ -293,7 +293,7 @@ test('Composer: AI draft hint, Polish bar, follow-up hint and dictation from an 
 
   const polish = html(composer({ polish: { changes: 3, onUse: noop, onKeep: noop } }));
   assert.match(text(polish), /Polish suggests 3 changes\. Yours stays until you choose\./);
-  assert.match(polish, /Use these.*<kbd[^>]*>Return<\/kbd>/);
+  assert.match(polish, /Use these.*<kbd[^>]*>↩<\/kbd>/);
   assert.match(polish, /Keep mine.*<kbd[^>]*>Esc<\/kbd>/);
   assert.match(
     text(html(composer({ polish: { changes: 1, onUse: noop, onKeep: noop } }))),

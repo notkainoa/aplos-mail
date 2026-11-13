@@ -198,8 +198,8 @@ test('DatePresets: five presets with digits always visible, fixed copy, Return o
   assert.match(out, /Thu 6:00 PM/);
   assert.match(out, /Fri 8:00 AM/);
   assert.match(out, /Pick a date…/);
-  assert.equal((out.match(/<kbd class="ui-date-presets__kbd">Return<\/kbd>/g) ?? []).length, 1);
-  assert.match(out, /data-id="tomorrow"[^>]*>.*?Return/);
+  assert.equal((out.match(/<kbd class="ui-date-presets__kbd">↩<\/kbd>/g) ?? []).length, 1);
+  assert.match(out, /data-id="tomorrow"[^>]*>.*?↩/);
   assert.match(out, /aria-activedescendant="[^"]*-tomorrow"/);
   assert.equal((out.match(/role="menuitem"/g) ?? []).length, 6);
   assert.doesNotMatch(out, /ui-date-presets__calendar/);
@@ -217,7 +217,7 @@ test('DatePresets calendar: month grid of six weeks, picked day, time list, "Mov
   assert.match(out, /data-picked="true"[^>]*aria-label="Wed, Nov 4"/);
   assert.match(out, /Wed, Nov 4<\/span>/);
   assert.match(out, /<option value="08:00" selected="">8:00 AM<\/option>/);
-  assert.match(out, /Move to Later<kbd class="ui-cal-kbd">Return<\/kbd>/);
+  assert.match(out, /Move to Later<kbd class="ui-cal-kbd">↩<\/kbd>/);
   assert.doesNotMatch(out, /disabled=""/);
   const none = html(<DatePresets {...presetsProps({ activeId: 'date', calendarOpen: true })} />);
   assert.match(none, /<button[^>]*disabled=""[^>]*>Move to Later/);

@@ -96,7 +96,7 @@ import {
   type Ref,
 } from 'react';
 import { createAppRegistry, type Registry } from '../../commands/index';
-import { CommandKeysContext } from '../buttons-keys/keyHints';
+import { CommandKeysContext, displayChord } from '../buttons-keys/keyHints';
 import type { Anchor, CommandId, IconName, KeyHint, LiteralKey } from '../props';
 
 /* ───────────── Icons: the closed IconName set, Lucide fallback (DESIGN 4.7) ───────────── */
@@ -238,7 +238,7 @@ export function PartKeys({
       {chords.map((chord, i) => (
         <span key={chord} className="ui-part-keys__group">
           {i > 0 ? <span className="ui-part-keys__or">or</span> : null}
-          <kbd className="ui-part-kbd">{chord}</kbd>
+          <kbd className="ui-part-kbd">{displayChord(chord)}</kbd>
         </span>
       ))}
     </span>
@@ -312,7 +312,7 @@ function wantsTip(props: PartButtonProps, chords: ReturnType<typeof keysFor>): b
     (variant === 'icon' ||
       detail !== undefined ||
       tipLabel !== undefined ||
-      (chords.length > 0 && keyHint === 'tooltip'))
+      (chords.length > 0 && keyHint !== 'always'))
   );
 }
 

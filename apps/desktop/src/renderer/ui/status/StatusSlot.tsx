@@ -151,6 +151,12 @@ function hoverLine(status: SyncStatus, now: Date): string | undefined {
   return syncedLine(status.lastSyncedAt, now);
 }
 
+/** The tooltip: the healthy account's "Synced …" line, else the account a notice is for (it has no dot of its own). */
+function tipOf(hover: string | undefined, named: { readonly address: string } | undefined) {
+  if (hover !== undefined) return hover;
+  return named ? `For ${named.address}` : undefined;
+}
+
 export function StatusSlot({
   status,
   account,
@@ -182,7 +188,7 @@ export function StatusSlot({
     <div
       className="ui-status-slot"
       role="status"
-      title={hover}
+      title={tipOf(hover, named)}
       data-status={status.kind}
       data-tone={copy?.attention ? 'attention' : undefined}
       data-state={copy === null ? 'empty' : revealed ? 'shown' : 'waiting'}
@@ -202,15 +208,7 @@ export function StatusSlot({
               </div>
             ) : (
               <p className="ui-status-slot__text" aria-live={ticking ? 'off' : undefined}>
-                {named ? (
-                  <>
-                    <i
-                      className="ui-status-slot__dot"
-                      data-color={named.color}
-                      aria-hidden="true"
-                    />
-                  </>
-                ) : null}
+                {/* One marker: the icon. The account is named for screen readers and in the tooltip, not by a second dot. */}
                 {copy.text}
                 {named ? <SrOnly>{` For ${named.address}.`}</SrOnly> : null}
               </p>

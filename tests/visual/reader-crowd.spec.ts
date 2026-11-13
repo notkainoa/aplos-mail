@@ -14,14 +14,16 @@ test.describe('many recipients', () => {
     const button = page.locator(`${LETTER} .aplos-recipients__button`);
     await expect(button).toBeVisible();
     await expect(page.locator(`${LETTER} .aplos-circle`)).toHaveCount(0);
-    // Two named, then the rest: Alex is among the seven, so "me", one name and five more.
-    await expect(button).toHaveText(/^to me, .+ and 5 more$/);
-    await expect(button).toHaveAttribute('aria-label', /^to me, .+ and 5 more, show details$/);
+    // The reader column is 640 wide, so the header names as many people as fit whole (Alex is among the seven: "me",
+    // maybe one more) and counts the rest. A name is never cut mid-word, so no ellipsis is drawn.
+    await expect(button).toHaveText(/^to me(, [^…]+)? and [56] more$/);
+    const drawn = ((await button.textContent()) ?? '').trim();
+    await expect(button).toHaveAttribute('aria-label', `${drawn}, show details`);
     // What is drawn, not just what is in the DOM: the count at the end must not be clipped.
     const clipped = await button
       .locator('.aplos-recipients__to')
       .evaluate(el => el.scrollWidth - el.clientWidth);
-    expect(clipped, 'the "and 5 more" tail is fully drawn').toBeLessThanOrEqual(0);
+    expect(clipped, 'the "and N more" tail is fully drawn').toBeLessThanOrEqual(0);
   });
 
   test('a long address is cut with an ellipsis and the count stays whole', async ({ page }) => {

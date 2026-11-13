@@ -392,3 +392,20 @@ test('all-day entries keep one row across the days they cover, so a multi-day en
   assert.equal((out.match(/data-joins-after="true"/g) ?? []).length, 1, 'Thu joins on to Fri');
   assert.equal((out.match(/data-joins-before="true"/g) ?? []).length, 1, 'Fri continues from Thu');
 });
+
+test('CalendarGrid month: a multi-day entry is one bar, labelled once per week row and joined across its cells', () => {
+  const trip = ev('trip', 'Offsite prep', '2026-10-29T00:00:00', '2026-10-31T00:00:00', {
+    allDay: true,
+  });
+  const out = html(
+    <CalendarGrid
+      {...gridProps({ view: 'month', start: '2026-10-01', events: [trip], label: 'October 2026' })}
+    />,
+  );
+  const bars = [...out.matchAll(/<button[^>]*data-bar="true"[^>]*>/g)].map(m => m[0]);
+  assert.equal(bars.length, 2);
+  assert.doesNotMatch(bars[0], /data-joins-before/);
+  assert.match(bars[0], /data-joins-after="true"/);
+  assert.match(bars[1], /data-joins-before="true"/);
+  assert.doesNotMatch(bars[1], /data-joins-after/);
+});

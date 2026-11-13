@@ -3,8 +3,8 @@
 // "Load images from this sender" when remote images are blocked, the `read` body at 64ch, quoted text on O,
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
 // An earlier message is a compact card (owner review 2026-11-03; owner feedback 2026-11-11): its row shows who, when and the
-// message's own first sentence or two (never an AI summary: those are per thread), with a visible "Show full" and a chevron
-// at the right. The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
+// message's own first sentence or two (never an AI summary: those are per thread), with a bare chevron
+// at the right edge (its name is "Show full, message from …"). The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
 // click anywhere on a folded card, Enter, Space or O opens the full message in place with the same header row (the sender's
 // mark, the name, the time, the "To" circles) and the same button now reads "Show less". The button is one DOM node,
 // last in the head, folded or open, so keyboard focus survives a fold; once open only it is the target, so links,
@@ -97,7 +97,7 @@ interface FoldButtonProps {
   readonly describedBy: string | undefined;
 }
 
-/** "Show full" and a chevron on a folded row, "Show less" once open: the one button of an earlier message. */
+/** A bare chevron (named "Show full" folded, "Show less" open): the one button of an earlier message. */
 function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
   const tip = useTooltipText();
   const label = fold.open ? 'Show less' : 'Show full';
@@ -113,9 +113,6 @@ function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
       onFocus={fold.onFocus}
       onClick={fold.onToggle}
     >
-      <span className="ui-thread-message__toggle-label" aria-hidden="true">
-        {label}
-      </span>
       <Icon name={fold.open ? 'chevron-up' : 'chevron-down'} size="sm" />
     </button>
   );

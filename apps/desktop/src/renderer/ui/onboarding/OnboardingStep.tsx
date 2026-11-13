@@ -108,31 +108,18 @@ export function OnboardingStep({
       <footer className="ui-onboarding-step__foot">
         {dashes ? (
           <div className="ui-onboarding-step__steps">
-            <div
-              className="ui-onboarding-step__dashes"
-              role="img"
-              aria-label={`Step ${dashes.step} of ${dashes.of}`}
-            >
-              {Array.from({ length: dashes.of }, (_, i) => (
-                <i
-                  key={i}
-                  data-state={i + 1 < dashes.step ? 'done' : i + 1 === dashes.step ? 'on' : 'todo'}
-                />
-              ))}
-            </div>
-            <span className="ui-onboarding-step__where" aria-hidden="true">
-              {`Step ${dashes.step} of ${dashes.of}`}
-            </span>
+            {/* The words alone say where you are: dashes beside "Step 2 of 4" only said it twice. */}
+            <span className="ui-onboarding-step__where">{`Step ${dashes.step} of ${dashes.of}`}</span>
           </div>
         ) : null}
         <span className="ui-onboarding-step__note">
           {note === 'setupContinues' ? (
             'Setup continues in the background.'
-          ) : (
+          ) : note === 'escOpensAplos' ? (
             <>
               <kbd className="ui-onb-kbd">Esc</kbd> opens Aplos
             </>
-          )}
+          ) : null}
         </span>
         <div className="ui-onboarding-step__buttons">
           {buttons.map(button => (

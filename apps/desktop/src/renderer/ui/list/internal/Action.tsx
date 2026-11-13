@@ -4,6 +4,7 @@
 
 import { createContext, useContext, type MouseEvent } from 'react';
 import type { IconName, KeyHint } from '../../props';
+import { displayChord } from '../../buttons-keys/keyHints';
 import { Icon } from './Icon';
 import { showsInline, useShowKeys } from './keyHints';
 
@@ -20,7 +21,7 @@ export function Keycap({ chord, reveal }: { chord: string; reveal?: 'hint' | 'ba
   if (!chord) return null;
   return (
     <kbd className="ui-list-kbd" data-reveal={reveal} aria-hidden={reveal ? true : undefined}>
-      {chord}
+      {displayChord(chord)}
     </kbd>
   );
 }

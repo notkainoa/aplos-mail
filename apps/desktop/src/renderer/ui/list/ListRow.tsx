@@ -107,10 +107,11 @@ function Underlays({ swipe }: { swipe: NonNullable<RowProps['swipe']> }) {
 function RowLine({
   rejected,
   due,
+  tag,
   primary,
   secondary,
   highlight,
-}: Pick<RowProps, 'rejected' | 'due' | 'primary' | 'secondary' | 'highlight'>) {
+}: Pick<RowProps, 'rejected' | 'due' | 'tag' | 'primary' | 'secondary' | 'highlight'>) {
   return (
     <span className="ui-list-row__line">
       {rejected ? (
@@ -123,6 +124,7 @@ function RowLine({
       ) : (
         <>
           {due ? <Chip kind="due" due={due} format="short" /> : null}
+          {tag ? <span className="ui-list-row__tag">{tag}</span> : null}
           <span
             className="ui-list-row__primary"
             dir="auto"
@@ -260,6 +262,7 @@ export function ListRow(props: ListRowProps) {
       <RowLine
         rejected={rejected}
         due={laterOverdue ? undefined : props.due}
+        tag={props.tag}
         primary={props.primary}
         secondary={props.secondary}
         highlight={props.highlight}

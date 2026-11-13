@@ -220,7 +220,7 @@
   margin-left: auto;
 }
 /* An earlier message's head (owner feedback 2026-11-11; folded and open share one header, the time inline after the name): the line (who, when) and, folded, its own first words, with the fold
-   button as the grid's right column: "Show full" and a chevron on a folded row, "Show less" and a chevron once open. The one
+   button as the grid's right column: a bare chevron (named "Show full" folded, "Show less" once open). The one
    button stays last in the DOM, so it is one node through a fold and keeps focus. A folded card's button is stretched by a
    pseudo-element over the whole card (nothing moves), so the whole row is its target; once open only the button is, so links,
    attachments and the body keep their own clicks. */
@@ -249,13 +249,15 @@
   align-items: center;
   gap: var(--space-1);
   box-sizing: border-box;
+  justify-content: center;
+  width: var(--control-xs);
   height: var(--control-xs);
   margin: 0;
-  padding: 0 var(--space-2);
+  padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--ink-2);
+  color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
   white-space: nowrap;

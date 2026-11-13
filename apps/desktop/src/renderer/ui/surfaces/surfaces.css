@@ -158,7 +158,9 @@
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
 .ui-part-button[data-variant='filled'] .ui-part-kbd {
-  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 .ui-part-button[data-tone='danger'],
@@ -360,6 +362,16 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   flex: none;
   color: var(--dim);
   font-weight: 400;
+}
+/* The bar starts on the list column's text edge (the section labels and the pick boxes), not the pane's corner. */
+.ui-pane__bulk {
+  margin-inline-start: max(
+    0px,
+    calc(
+      (100% + var(--space-6) - min(var(--list-w), 100% + var(--space-6) - 2 * var(--gutter))) / 2 -
+        var(--space-3) + var(--space-2)
+    )
+  );
 }
 .ui-pane__bulk-count {
   margin: 0 var(--space-2) 0 var(--space-1);
@@ -949,6 +961,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
+  /* Both rows carry the same ring, so neither reads as the lesser choice. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
   color: var(--ink-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -973,7 +987,12 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   font-weight: 500;
 }
 .ui-confirm__row[data-tone='danger'] {
+  background: var(--stamp-tint);
   color: var(--stamp-ink);
+}
+/* A destructive pair: the default (Cancel) row keeps its fill but not extra weight, so the two rows weigh the same. */
+.ui-confirm__rows:has(.ui-confirm__row[data-tone='danger']) .ui-confirm__row[data-primary='true'] {
+  font-weight: inherit;
 }
 .ui-confirm__row:focus-visible {
   outline: var(--focus-width) solid var(--accent);

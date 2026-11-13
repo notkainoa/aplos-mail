@@ -12,7 +12,7 @@ import type {
 import { DictationLine } from './DictationLine';
 import { DraftState } from './DraftState';
 import { Icon } from './icons';
-import { Btn } from './parts';
+import { Btn, Kbd } from './parts';
 
 /** A blocked send: one plain sentence, an icon and the stamp ink; the field it belongs to is outlined by CSS. No shake. */
 export function BlockedLine({ id, blocked }: { id: string; blocked: BlockedSend }) {
@@ -54,8 +54,10 @@ export function ComposeFooter(props: {
   dictation?: DictationState;
   onSend: () => void;
   trailing: readonly FooterAction[];
+  /** The inline reply's "Esc closes" line: Esc closes the card and keeps the draft. */
+  closeHint?: boolean;
 }) {
-  const { commands, draftState, onRetrySave, dictation, onSend, trailing } = props;
+  const { commands, draftState, onRetrySave, dictation, onSend, trailing, closeHint } = props;
   return (
     <div className="ui-compose-footer">
       <Btn
@@ -73,6 +75,11 @@ export function ComposeFooter(props: {
         <DraftState state={draftState} onRetry={onRetrySave} />
       )}
       <span className="ui-compose-footer__right">
+        {closeHint ? (
+          <span className="ui-compose-footer__close">
+            <Kbd>Esc</Kbd> closes
+          </span>
+        ) : null}
         {trailing.map(action => (
           <Btn
             key={action.label}

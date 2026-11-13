@@ -37,7 +37,7 @@ export function Welcome({ chrome, onAddAccount, onSkip }: WelcomeProps) {
       ]}
       footer={{
         ...(chrome.dashes ? { dashes: chrome.dashes } : {}),
-        note: 'setupContinues',
+        note: 'none',
         buttons: [
           { label: 'Skip setup', emphasis: 'text', keys: 'Esc', keyHint: 'hint', onSelect: onSkip },
         ],

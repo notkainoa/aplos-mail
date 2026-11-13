@@ -1,4 +1,5 @@
 import type { StepButton } from '../props';
+import { displayChord } from '../buttons-keys/keyHints';
 import { OnbIcon } from './icons';
 import { keycapOfButton } from './keycaps';
 
@@ -30,7 +31,7 @@ export function StepAction({
       aria-busy={button.busy ? true : undefined}
       disabled={button.disabled}
       autoFocus={autoFocus}
-      title={key ? `${button.label} · ${key}` : undefined}
+      title={key ? `${button.label} · ${displayChord(key)}` : undefined}
       onClick={button.onSelect}
     >
       {button.icon ? <OnbIcon name={button.icon} /> : null}
@@ -38,7 +39,7 @@ export function StepAction({
       {button.busy ? <span className="ui-onb-spinner" aria-hidden="true" /> : null}
       {key && hint !== 'tooltip' ? (
         <kbd className="ui-onb-kbd" data-key-hint={hint}>
-          {key}
+          {displayChord(key)}
         </kbd>
       ) : null}
     </button>

@@ -98,6 +98,8 @@ export type ProviderTableProps =
         model: string;
         providerOptions: readonly ProviderId[];
         modelOptions: readonly string[];
+        /** Display names for model ids ("GPT-OSS 120B"), where the provider's catalogue has one; an id without one shows as it is. */
+        modelNames?: Readonly<Record<string, string>>;
       }[];
       /** A picker changed. */
       onChange: (feature: AiFeature, choice: { provider: ProviderId; model: string }) => void;

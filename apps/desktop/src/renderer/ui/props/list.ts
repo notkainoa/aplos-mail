@@ -50,6 +50,8 @@ export interface ListRowProps {
   senderTitle?: string;
   /** Main line: the summary, or the subject with no AI provider (DESIGN §7.2 No AI). */
   primary: string;
+  /** A quiet word before the main line that says what kind of row this is: "Draft" in Drafts, so it never reads as sent mail. */
+  tag?: string;
   /** Second phrase after the main line, e.g. a search snippet. */
   secondary?: string;
   /** Search terms to bold in `primary` and `secondary` (search.html). */

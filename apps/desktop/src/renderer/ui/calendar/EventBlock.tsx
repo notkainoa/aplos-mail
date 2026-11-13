@@ -1,9 +1,12 @@
 import { useContext } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { EventBlockProps } from '../props';
-import { rangeOf, timeOf } from './dates';
+import { minutesBetween, rangeOf, timeOf } from './dates';
 import { calVar, densityOf, eventDomId, eventLabel, stackDomId, walkAt } from './eventText';
 import { ActiveStack, FirstSegment } from './segment';
+
+/** From this length a block has the height for a third title line when its lane is narrow. */
+const LONG_MINUTES = 90;
 
 /**
  * One entry on the grid: radius 6, a 2 px leading rule in the calendar colour, the DESIGN 4.2 fill composited over
@@ -68,6 +71,7 @@ export function EventBlock(props: EventBlockProps) {
       data-selected={selected ? 'true' : 'false'}
       data-wide={placement.wide ? 'true' : 'false'}
       data-crowded={placement.lanes > 1 ? 'true' : undefined}
+      data-long={minutesBetween(event.start, event.end) >= LONG_MINUTES ? 'true' : undefined}
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}

@@ -125,13 +125,15 @@
 }
 
 /* The From row: its address reads like the recipient rows' text, not like a control, when the account cannot change. */
-.aplos-from {
+.ui-recipient-field.aplos-from {
+  /* Two classes: the shared field's `flex-start` is declared later and would win a single one. */
   align-items: baseline;
   /* The 28 px control sits where the To row's chips do; the label's baseline follows the address's. */
   padding-top: calc((var(--control-lg) - var(--control-sm)) / 2);
 }
 .aplos-from .ui-recipient-field__label {
   padding-top: 0;
+  line-height: inherit;
 }
 .aplos-from__address {
   color: var(--ink-2);

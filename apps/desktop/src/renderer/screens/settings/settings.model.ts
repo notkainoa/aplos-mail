@@ -642,6 +642,15 @@ export function modelIds(models: readonly AiModelInfo[] | undefined, feature: Ai
     .map(m => m.id);
 }
 
+/** Catalogue names for a provider's model ids; an id whose name is the id itself needs none. */
+export function modelNames(
+  models: readonly AiModelInfo[] | undefined,
+): Readonly<Record<string, string>> {
+  const names: Record<string, string> = {};
+  for (const m of models ?? []) if (m.label && m.label !== m.id) names[m.id] = m.label;
+  return names;
+}
+
 /** The Features table: Ask, Summaries, Drafts, Plans, Voice, each with the providers it may use and their models. */
 export function featureRows(
   settings: Pick<Settings, 'ai'>,
@@ -663,6 +672,7 @@ export function featureRows(
       model: choice.model,
       providerOptions: options,
       modelOptions: modelIds(models[provider], feature),
+      modelNames: modelNames(models[provider]),
     };
   });
 }
