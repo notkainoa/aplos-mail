@@ -117,11 +117,15 @@ export function primaryOf(row: ThreadRow): string {
   );
 }
 
-/** What the focus letter's summary slot shows: serif when written, the subject in SF otherwise. */
-export function summaryOf(row: ThreadRow): SummaryContent {
+/**
+ * What the focus letter's summary slot shows: serif when written, the placeholder while it is being made, and the
+ * subject alone (the space collapses) when no summary is coming. `gaveUp`: it was pending too long (owner decision
+ * 2026-11-13: never a placeholder that spins forever, never an error on the card).
+ */
+export function summaryOf(row: ThreadRow, gaveUp = false): SummaryContent {
   const { state, text, provider, local } = row.summary;
   const subject = subjectOf(row);
-  if (state === 'pending') return { state: 'pending', subject };
+  if (state === 'pending' && !gaveUp) return { state: 'pending', subject };
   if ((state === 'ready' || state === 'stale') && text)
     return {
       state: 'ready',

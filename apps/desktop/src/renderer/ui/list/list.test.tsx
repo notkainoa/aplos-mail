@@ -357,16 +357,15 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(m, />Space<\/kbd>/);
   });
 
-  test('pending and absent summaries show the subject in SF; narrow drops labels but keeps the verb', () => {
+  test('pending shows the placeholder, absent the subject alone; narrow drops labels but keeps the verb', () => {
     const pending = render(
       <FocusLetter
         {...letter({ summary: { state: 'pending', subject: 'A quieter home' }, narrow: true })}
       />,
     );
-    assert.match(
-      pending,
-      /data-state="pending" data-clamp="two-lines" aria-busy="true">A quieter home</,
-    );
+    assert.match(pending, /class="ui-summary-placeholder" aria-busy="true"/);
+    assert.match(pending, /Summarizing…/);
+    assert.doesNotMatch(pending, /ui-summary"/, 'no subject line in the space while pending');
     assert.match(pending, /data-narrow="true"/);
     assert.match(pending, /data-label-hidden="true" aria-label="Later"/);
     assert.match(pending, />Reply<\/span>/);
@@ -374,7 +373,7 @@ describe('FocusSlot and FocusLetter', () => {
       <FocusLetter {...letter({ summary: { state: 'absent', subject: WORST.subject } })} />,
     );
     assert.match(absent, /data-state="absent"/);
-    assert.doesNotMatch(absent, /Summary by/);
+    assert.doesNotMatch(absent, /Summary by|ui-summary-placeholder|Summarizing/);
   });
 
   test('key hints: ⌘ held shows a badge on More; Later and Done show their caps always', () => {

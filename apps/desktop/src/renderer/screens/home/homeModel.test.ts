@@ -447,6 +447,20 @@ test('the Low importance sheet pages: every one of 230 and of 1000 threads is re
   assert.deepEqual(fits, { reached: LIST_WINDOW, asked: 0 }, 'one window never asks');
 });
 
+test('a pending summary shows the placeholder until the card gives up, then the subject alone', () => {
+  const pending = {
+    ...row({ id: 'p' }),
+    subject: 'Print run',
+    summary: { state: 'pending' },
+  } as ThreadRow;
+  assert.deepEqual(summaryOf(pending), { state: 'pending', subject: 'Print run' });
+  assert.deepEqual(summaryOf(pending, true), { state: 'absent', subject: 'Print run' });
+  const failed = { ...pending, summary: { state: 'failed' } } as ThreadRow;
+  assert.equal(summaryOf(failed).state, 'absent');
+  const none = { ...pending, summary: { state: 'none' } } as ThreadRow;
+  assert.equal(summaryOf(none).state, 'absent');
+});
+
 test('a row with no sender name and no subject still reads something', () => {
   const blank = { ...row({ id: 'b' }), subject: '', fromName: '', participants: [] } as ThreadRow;
   assert.equal(senderOf(blank), 'No sender');

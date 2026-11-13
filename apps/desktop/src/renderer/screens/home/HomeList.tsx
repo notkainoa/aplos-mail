@@ -6,6 +6,7 @@
 import type { Account, HomeSectionView, HomeView, ThreadId, ThreadRow } from '../../data';
 import type { CommandAction, Density, ListboxBinding, SectionHeaderProps } from '../../ui/props';
 import { FocusLetter, FocusSlot, ListBox, ListGroup, ListRow, LowBand } from '../../ui/list';
+import { useSummaryGaveUp } from './summaryWait';
 import { LOW_KEY, showsLowBand, type HomeLayout, type SectionKey } from './homeModel';
 import {
   dateOf,
@@ -128,14 +129,16 @@ function LetterSlot(
   },
 ) {
   const { row, section, density, demoted, handlers, rejected } = props;
+  const gaveUp = useSummaryGaveUp(row.id, row.summary.state === 'pending');
+  const summary = summaryOf(row, gaveUp);
   return (
-    <FocusSlot density={density}>
+    <FocusSlot density={density} fit={summary.state === 'absent' ? 'content' : 'fixed'}>
       <FocusLetter
         id={rowDomId(row.id)}
         sender={senderOf(row)}
         due={dueOf(row)}
         date={dateOf(row)}
-        summary={summaryOf(row)}
+        summary={summary}
         suggestion={suggestionOf(row, section)}
         commands={{
           suggest: 'mail.suggested',

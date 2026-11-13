@@ -5,13 +5,34 @@
 // then ⋯. No subject, no bookmark icon. The buttons are pointer duplicates of their keys inside the option.
 
 import type { FocusLetterProps } from '../props';
+import { useEffect, useRef } from 'react';
 import { Summary } from '../reader/Summary';
+import { SummaryPlaceholder } from './SummaryPlaceholder';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
 import { Icon } from './internal/Icon';
 import { formatFull, formatListDate } from './internal/format';
 import { useKeycapFor, useTooltipText } from './internal/keys';
+
+/**
+ * The summary space: a quiet placeholder while it is being written, the serif line when it lands (a short fade
+ * only when it replaces the placeholder), or the subject alone when no summary will come (the slot then fits it).
+ */
+function SummarySpace({ id, summary }: Pick<FocusLetterProps, 'id' | 'summary'>) {
+  const before = useRef<{ id: string; state: string } | null>(null);
+  const arrived =
+    summary.state === 'ready' && before.current?.id === id && before.current.state === 'pending';
+  useEffect(() => {
+    before.current = { id, state: summary.state };
+  });
+  if (summary.state === 'pending') return <SummaryPlaceholder subject={summary.subject} />;
+  return (
+    <div className="ui-focus-letter__summary" data-arrive={arrived ? 'true' : undefined}>
+      <Summary {...summary} clamp="two-lines" />
+    </div>
+  );
+}
 
 /** The Home focus letter, the selected option of the Home listbox. */
 export function FocusLetter({
@@ -62,7 +83,7 @@ export function FocusLetter({
         </time>
       </div>
 
-      <Summary {...summary} clamp="two-lines" />
+      <SummarySpace id={id} summary={summary} />
 
       {rejected ? (
         <ErrorLine

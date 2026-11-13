@@ -926,9 +926,77 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.ui-focus-letter .ui-summary {
+.ui-focus-letter .ui-summary,
+.ui-focus-letter .ui-summary-placeholder {
   flex: none;
   margin-top: var(--space-2);
+}
+/* A summary lands in place of the placeholder: opacity only, no layout (owner decision 2026-11-13). */
+.ui-focus-letter__summary[data-arrive='true'] {
+  animation: ui-summary-arrive var(--dur-arrive) var(--ease-out) both;
+}
+@keyframes ui-summary-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* No summary coming: the slot fits the card (sender and date, the subject, the buttons) with no blank gap. */
+.ui-focus-slot[data-fit='content'] {
+  height: auto;
+}
+.ui-focus-slot[data-fit='content'] .ui-focus-letter {
+  height: auto;
+}
+.ui-focus-slot[data-fit='content'] .ui-focus-letter__actions {
+  margin-top: var(--space-4);
+}
+
+/* ---------- Summary placeholder: two soft lines and a label in the two-line space ---------- */
+
+.ui-summary-placeholder {
+  display: flex;
+  flex-direction: column;
+  font: var(--type-summary);
+  color: var(--dim);
+  animation: ui-summary-placeholder-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
+  animation-play-state: var(--play-breathe);
+}
+.ui-summary-placeholder__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 1lh;
+}
+.ui-summary-placeholder__bar {
+  flex: none;
+  height: var(--space-3);
+  border-radius: var(--radius-pill);
+  background-color: var(--sunken);
+}
+.ui-summary-placeholder__bar[data-width='long'] {
+  width: 90%;
+}
+.ui-summary-placeholder__bar[data-width='short'] {
+  width: 65%;
+}
+.ui-summary-placeholder__label {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes ui-summary-placeholder-breathe {
+  from {
+    opacity: var(--breathe-lo);
+  }
+  to {
+    opacity: var(--breathe-hi);
+  }
 }
 .ui-focus-letter .ui-error-line {
   margin-top: var(--space-1);

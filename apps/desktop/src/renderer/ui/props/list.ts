@@ -145,6 +145,8 @@ export interface SectionHeaderProps {
 export interface FocusSlotProps {
   /** Sets the fixed height. */
   density: Density;
+  /** 'fixed' (default) holds the density's height for a card with a summary or its placeholder; 'content' fits a card with no summary coming (owner decision 2026-11-13). */
+  fit?: 'fixed' | 'content';
   /** The FocusLetter. */
   children: ReactNode;
   /** Element ref for `deal` and the flight ghost. */
@@ -154,13 +156,13 @@ export interface FocusSlotProps {
 /** What a summary slot shows (DESIGN §6 Summary, §9 rules 3, 5, 7). */
 export type SummaryContent =
   | {
-      /** Waiting: the subject in SF, breathing (`breathe`). */
+      /** Waiting: the focus card shows the quiet "Summarizing…" placeholder in the summary's space (owner decision 2026-11-13). */
       state: 'pending';
-      /** Shown in SF while pending. */
+      /** The accessible name of the card's text while pending; not drawn on the card. */
       subject: string;
     }
   | {
-      /** No provider or no summary: the subject in SF, nothing else changes, no error. */
+      /** No provider, Summaries off, the account excluded, or no summary will come (failed, timed out): the subject in SF, the space collapses, no error. */
       state: 'absent';
       /** Shown in SF. */
       subject: string;
