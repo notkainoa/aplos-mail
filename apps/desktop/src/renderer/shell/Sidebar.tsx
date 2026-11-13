@@ -131,8 +131,8 @@ export function Sidebar({
       <NavHead label="Mail" id={MAIL_HEAD_ID} />
       <PlaceGroup label="Mail" places={MAIL_PLACES} {...group} />
       {slot ? <SidebarSlotView slot={slot} /> : null}
+      <OutboxHost />
       <div className="aplos-sidebar__foot">
-        <OutboxHost />
         {status}
         <PlaceGroup label="App" places={FOOTER_PLACES} {...group} />
       </div>

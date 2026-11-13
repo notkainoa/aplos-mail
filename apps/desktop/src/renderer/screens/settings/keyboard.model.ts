@@ -112,7 +112,7 @@ function tapChords(registry: ReturnType<typeof createAppRegistry>, id: string): 
   const contexts = entry?.kind === 'command' ? entry.spec.contexts : [];
   const byChord = new Map<string, Set<string>>();
   for (const b of registry.keysFor(id)) {
-    if (b.phase !== 'tap') continue;
+    if (b.phase !== 'tap' || b.quiet) continue;
     const c = chordId(b.chord);
     byChord.set(c, (byChord.get(c) ?? new Set()).add(b.context));
   }

@@ -90,6 +90,12 @@ test('writeErrors: each reasonCode maps to its sentence and Retry decision', asy
       const ui = await failedWrite(reject('conflict', reasonCode));
       const toast = lastToast();
       assert.equal(toast?.message, message, reasonCode);
+      assert.equal(
+        toast?.kind,
+        'error',
+        `${reasonCode}: a refusal wears the alert, with a close button`,
+      );
+      assert.ok(!toast?.actions?.some(a => a.id === 'dismiss'), 'one close control, not two');
       assert.equal(toast?.actions?.some(a => a.id === 'retry') ?? false, retry, reasonCode);
       // Rollback is unchanged: the optimistic overlay drops whatever the code.
       assert.deepEqual(ui.dropped, ['dental'], reasonCode);
