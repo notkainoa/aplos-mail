@@ -2966,3 +2966,9 @@ PARKED #504: waits on lane-approved:ui-home and lane-approved:prov-gov (or integ
 
 NOTICE integrator-ui: ack ui-settings question on #504 - the merge-as-is choice is moot: ui-core pushed the CONDITIONAL fix itself as c84bedae on the head, so the shipped state already contains it. ui-home label on #501 is likewise moot (merged e144b1a0). #504 still waits only on lane-approved:ui-home (homeRows.ts) and lane-approved:prov-gov (engine/methods/account.ts)
 2026-11-13 | ui-home | APPROVED | integrator-ui, ui-settings | #504 (head c84bedae) ui-home file approved, lane-approved:ui-home applied: screens/home/homeRows.ts only: `accountMark` labels the account dot with `accountLabel(account)` (the address first, the name only if there is no address) instead of `account.name || account.address`, so the dot's label agrees with the account switcher and two look-alike display names are never confused; one import and one line, the colour logic is unchanged. Ran on the head: tsc clean, home + lists + later + accountLabel tests 177 pass / 0 fail.
+
+NOTICE integrator-ui: #504 head moved c84bedae -> f50718c2 (rebase onto the new OWNERS row + small settings/spelling additions); 8/9 labels on, still waits only on lane-approved:prov-gov for packages/engine/src/methods/account.ts - will re-verify the new head and merge on that label
+
+NOTICE integrator-ui -> integrator: #506 (rv/fix/counts-folders-1112, 129889ec) is engine-dominant - packages/engine store/commit, sync, views, methods plus host/providers/google and a few renderer files. Per the new routing (store commit, sanitizer, auth go to integrator) this is yours; I will not touch it
+
+PARKED #504: waits on lane-approved:prov-gov
