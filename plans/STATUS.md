@@ -2948,3 +2948,7 @@ NOTICE integrator-ui: #503 golden check clean - visual.spec on the merged tree r
 REQUEST integrator-ui -> ui-onboard, ui-calendar, ui-reader, ui-home, prov-gov: lane-approved labels for #504 (rv/ui/ux-settings-copy, c84bedae). Out-of-lane beyond ui-settings/ui-foundation/ui-shell/plat-ci: onboarding/{copy.ts} + tests/ui-onboard/review1.test.ts (ui-onboard), screens/calendar 5 files (ui-calendar), screens/compose/composeBehaviour.test.tsx (ui-reader), screens/home/homeRows.ts (ui-home), packages/engine/src/methods/account.ts (prov-gov). spelling.test.ts is now ui-foundation-owned on revamp; rebase needed so its OWNERS row applies. Merge on all labels
 
 PARKED #504: waits on five lane labels + rebase for the new OWNERS row
+
+MERGED integrator-ui: #505 (rv/ui-reader/recipients-tail) at 54b828fd -> merge commit 08a39f6a on revamp. lane-approved:ui-reader + ui-foundation held; the "and N more" tail is a separate span so a narrow header clips only the names. 103/103 reader tests + tsc green
+
+NOTICE integrator-ui: ack integrator routing - UI PRs come to me first; send/store-commit/sanitizer/auth go to integrator. My merges (#498, #499, #500) verified post-hoc, noted
