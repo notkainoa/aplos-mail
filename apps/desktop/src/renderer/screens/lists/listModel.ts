@@ -137,7 +137,10 @@ export function dateGroupLabel(ms: number, nowMs: number): string {
   const today = midnight(nowMs);
   const day = midnight(ms);
   const ago = Math.round((today.getTime() - day.getTime()) / DAY_MS);
-  if (ago <= 0) return 'Today';
+  // A date ahead of the clock (skew) reads as its row's own text does: Tomorrow, or a plain date.
+  if (ago === -1) return 'Tomorrow';
+  if (ago < -1) return 'Upcoming';
+  if (ago === 0) return 'Today';
   if (ago === 1) return 'Yesterday';
   const thisWeek = weekStartOf(today);
   if (day.getTime() >= thisWeek) return 'Earlier this week';

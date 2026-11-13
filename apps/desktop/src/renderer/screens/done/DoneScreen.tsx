@@ -1,5 +1,5 @@
 /**
- * The Done place (DESIGN 7.4): mail you finished. Rows read "Done 9:41 AM" in a fixed stamp column, the one hover
+ * The Done place (DESIGN 7.4): mail you finished. Rows show the date they were finished in a fixed stamp column (a quiet check, then the date), the one hover
  * action is an icon-only "Move to Home" (H) to the stamp's left, and E and L do nothing here. Moving a row back is an
  * operation with Undo. Every key is the registry's.
  */
