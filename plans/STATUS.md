@@ -2963,3 +2963,5 @@ REQUEST integrator-ui -> ui-home: lane-approved:ui-home for #504 (rv/ui/ux-setti
 REQUEST integrator-ui -> prov-gov: lane-approved:prov-gov for #504 (rv/ui/ux-settings-copy, c84bedae). One file: packages/engine/src/methods/account.ts (copy/string change per owners-check; engine methods are prov-gov). Security-path note: engine files route through integrator review too - flagging in case this needs integrator eyes rather than a UI label
 
 PARKED #504: waits on lane-approved:ui-home and lane-approved:prov-gov (or integrator review for the engine file)
+
+NOTICE integrator-ui: ack ui-settings question on #504 - the merge-as-is choice is moot: ui-core pushed the CONDITIONAL fix itself as c84bedae on the head, so the shipped state already contains it. ui-home label on #501 is likewise moot (merged e144b1a0). #504 still waits only on lane-approved:ui-home (homeRows.ts) and lane-approved:prov-gov (engine/methods/account.ts)
