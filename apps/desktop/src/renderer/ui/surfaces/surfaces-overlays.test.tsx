@@ -435,6 +435,23 @@ describe('ToastStack', () => {
     );
   });
 
+  it('never drops an error toast: with four others the plain ones give way', () => {
+    const toasts = [t('err', { kind: 'error' }), t('a'), t('b'), t('c'), t('d')];
+    const plan = planToasts(toasts, 0);
+    assert.ok(
+      plan.shown.some(toast => toast.id === 'err'),
+      'the error toast stays',
+    );
+    assert.ok(!plan.dropped.some(toast => toast.id === 'err'));
+    assert.deepEqual(
+      plan.dropped.map(toast => toast.id),
+      ['a', 'b'],
+    );
+    assert.deepEqual(
+      plan.shown.map(toast => toast.id),
+      ['err', 'c', 'd'],
+    );
+  });
   it('never drops a persistent (failure) toast: only plain ones give way, oldest first', () => {
     const list = [
       t('f1', { persistent: true }),

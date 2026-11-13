@@ -13,6 +13,7 @@ interface Layout {
   readonly mail: { top: number; height: number };
   readonly settingsTop: number;
   readonly helpBottom: number;
+  readonly settingsBottom: number;
   readonly marked: string[];
 }
 
@@ -33,6 +34,7 @@ async function layoutOf(page: Page, id: string, size: (typeof SIZES)[number]): P
       mail: { top: box(head).top, height: box(head).height },
       settingsTop: box(row('Settings')).top,
       helpBottom: box(row('Help')).bottom,
+      settingsBottom: box(row('Settings')).bottom,
       marked: [...side.querySelectorAll('[aria-current]')].map(el => (el.textContent ?? '').trim()),
     };
   });
@@ -50,6 +52,19 @@ test.describe('sidebar holds still', () => {
       expect(calendar.helpBottom, 'Help stays inside the window').toBeLessThanOrEqual(size.height);
     });
   }
+
+  test('with a failed-send notice Help stays inside a 900 x 600 window, on Home and on Calendar', async ({
+    page,
+  }) => {
+    const size = SIZES[1];
+    for (const id of ['shell-send-failed-faded', 'shell-calendar-send-failed']) {
+      const layout = await layoutOf(page, id, size);
+      expect(layout.helpBottom, `${id}: Help's bottom edge`).toBeLessThanOrEqual(size.height);
+      expect(layout.settingsBottom, `${id}: Settings' bottom edge`).toBeLessThanOrEqual(
+        size.height,
+      );
+    }
+  });
 
   test('on Help only Help is marked, not Settings as well', async ({ page }) => {
     const help = await layoutOf(page, 'shell-help-sidebar', SIZES[0]);

@@ -1,7 +1,7 @@
 /**
  * ToastStack: up to three toasts, bottom-centre of the main pane, never under the dock (DESIGN 6, 7.13).
  * Newest on top. When more than three are waiting, the oldest plain toasts give way and are dismissed for good
- * (onDismiss), never hidden and brought back later. The newest toast, an Undo toast and a persistent (failure)
+ * (onDismiss), never hidden and brought back later. The newest toast, an Undo toast, an error toast and a persistent
  * toast are never silently replaced: when those alone outnumber the room, the stack grows past three rather
  * than drop one (past six the oldest of them are hidden, still queued). The undo-send notice always keeps
  * its place. The stack itself is the persistent polite live region, so each new toast is read once; it never
@@ -28,8 +28,8 @@ export interface ToastPlan {
 }
 
 /**
- * Which toasts to show. While more than fit, the oldest plain toast (neither undoable nor persistent) that is not
- * the newest gives way; the newest toast, Undo toasts and persistent toasts are never dropped, so a burst of them
+ * Which toasts to show. While more than fit, the oldest plain toast (not undoable, error or persistent) that is not
+ * the newest gives way; the newest toast, Undo toasts, error toasts and persistent toasts are never dropped, so a burst of them
  * may exceed three. Past six mounted, the oldest of those are hidden (kept queued, not dismissed) until newer close.
  */
 export function planToasts(toasts: readonly ToastData[], reserved: number): ToastPlan {
@@ -38,7 +38,8 @@ export function planToasts(toasts: readonly ToastData[], reserved: number): Toas
   const dropped: ToastData[] = [];
   while (list.length > room) {
     const plain = list.findIndex(
-      (toast, i) => i < list.length - 1 && !toast.undoable && !toast.persistent,
+      (toast, i) =>
+        i < list.length - 1 && !toast.undoable && !toast.persistent && toast.kind !== 'error',
     );
     if (plain === -1) break;
     dropped.push(...list.splice(plain, 1));

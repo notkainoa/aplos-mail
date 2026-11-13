@@ -337,6 +337,7 @@ export function expandKeymapEntries(
         `${formatChord(chord)} ${why}, so it can’t run ${owner.id}`,
       );
     }
+    const quietDefault = defaults.some(d => d.quiet && chordId(d.chord) === chordId(chord));
     for (const context of owner.contexts) {
       const fieldOwner = defaults.some(d => d.inTextField && d.context === context);
       const types = isCharacterChord(chord) && !isModal(context);
@@ -345,9 +346,20 @@ export function expandKeymapEntries(
           phase: entry.phase,
           inTextField: fieldOwner && !types && !isTextEditingChord(chord),
           followsSwipe: false,
+          ...(quietDefault ? { quiet: true } : {}),
         }),
       );
     }
+  }
+  // A quiet default is never listed or remapped, so a stored keymap would drop it: it stays (Reset clears the entry).
+  for (const quiet of defaults.filter(d => d.quiet)) {
+    const held = out.some(
+      b =>
+        b.context === quiet.context &&
+        b.phase === quiet.phase &&
+        chordId(b.chord) === chordId(quiet.chord),
+    );
+    if (!held) out.push(quiet);
   }
   return out;
 }
