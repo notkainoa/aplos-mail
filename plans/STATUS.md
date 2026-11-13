@@ -2911,3 +2911,5 @@ PARKED #502: waits on lane-approved:eng-html
 MERGED integrator-ui: #502 (rv/ui/ux-blocked-images-2) at 685d1506 -> merge commit ca880d6f on revamp. lane-approved:eng-html held for the 4 mail-html files; 136/136 mailframe + 43/43 mail-html tests green on staged merge
 
 MERGED integrator-ui: #498 (rv/ui/ux-reader-menus) at 2f99d2e8 -> merge commit 60bebd8f on revamp. lane-approved:ui-foundation held for LowSheet + 7 visual/gallery files (ui-foundation ran them 40/40 + ui/list 57/57); 120/120 reader tests + desktop tsc green on staged merge
+
+PARKED #503 (Lists, ui-home+ui-foundation files) and #501 (Shell, ui-shell+ui-foundation+ui-reader files): both wait on owning-lane reviews and lane-approved labels before integrator-ui merges
