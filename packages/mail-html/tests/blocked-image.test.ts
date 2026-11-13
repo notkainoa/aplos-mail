@@ -28,4 +28,16 @@ describe('blocked image placeholder', () => {
     assert.match(layer[1]!, /min-height:0!important/);
     assert.ok(BLOCKED_IMAGE_CAP <= 64);
   });
+
+  it('keeps the box of an image sized only by its style, as attributes', () => {
+    const result = render({
+      html: '<img src="https://cdn.example/hero.png" alt="Trip" style="width:640px;height:900px;display:block">',
+      cids: [],
+      imagePolicy: 'block',
+    });
+    assert.equal(result.bodyKind, 'html');
+    if (result.bodyKind !== 'html') return;
+    assert.match(result.document, /class="aplos-blocked" alt="Trip" width="640" height="900">/);
+    assert.doesNotMatch(result.document, /<img[^>]*style=/);
+  });
 });

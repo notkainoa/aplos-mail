@@ -90,7 +90,7 @@ test('a blocked image keeps neither the height of the picture nor a min-height, 
   const { srcdoc } = frameDocument(hero, 'block', undefined, false);
   assert.match(
     srcdoc,
-    /img\[data-blocked\]\{max-height:\d+px!important;min-height:0!important;padding:0!important\}/,
+    /img\[data-blocked\]\{max-height:\d+px!important;min-height:0!important;padding:0!important;border-width:0!important;margin-block:0!important\}/,
   );
   assert.match(srcdoc, /<img[^>]*data-blocked/);
 });
