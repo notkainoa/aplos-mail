@@ -93,7 +93,7 @@ describe('statusCopy (DESIGN 7.1 table)', () => {
     [{ kind: 'needsPermission' }, 'Aplos needs permission to read your Gmail.', 'Reconnect'],
     [
       { kind: 'needsAdmin' },
-      'Your organisation has blocked Aplos. Ask your administrator.',
+      'Your organization has blocked Aplos. Ask your administrator.',
       undefined,
     ],
     [{ kind: 'misconfigured' }, 'Google sign-in isn’t set up in this build.', 'Copy diagnostics'],

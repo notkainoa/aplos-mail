@@ -374,10 +374,15 @@ describe('states, copy and design rules', () => {
 
   test('AI: key sources, disabled Remove with a reason, Default tag, and local rows', () => {
     const ai = render('ai-default');
-    assert.match(ai, /From environment: GROQ_API_KEY/);
+    assert.match(ai, /Key set on this Mac</);
     assert.match(ai, /Saved in Keychain/);
-    assert.match(ai, /Not set · reads ANTHROPIC_API_KEY/);
-    assert.match(ai, /This key comes from GROQ_API_KEY in your environment\. Remove it there\./);
+    assert.match(ai, /No key yet</);
+    assert.match(ai, /This key is set outside Aplos, so it can only be removed where it was set\./);
+    assert.doesNotMatch(
+      ai,
+      /GROQ_API_KEY|ANTHROPIC_API_KEY/,
+      'variable names are developer details',
+    );
     assert.match(ai, /Default/);
     assert.match(ai, /On this Mac · running · no key needed/);
     assert.match(ai, /On this Mac · not running/);
@@ -446,7 +451,7 @@ describe('states, copy and design rules', () => {
   });
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {
-    assert.match(render('help'), /Version 0\.3\.0 · macOS/);
+    assert.match(render('help'), /Version 0\.3\.0 \(build dev\) · macOS/);
     assert.match(render('help'), />Show welcome</);
     const q = render('queue-inspector');
     assert.match(q, /Archive 3 threads/);
@@ -471,13 +476,19 @@ describe('states, copy and design rules', () => {
 
   test('every capability that is off reads "Not available yet" with no dead control', () => {
     const general = render('capabilities-off');
-    assert.equal((general.match(/Not available yet/g) ?? []).length, 5);
+    assert.equal((general.match(/Not available yet/g) ?? []).length, 2);
+    assert.doesNotMatch(
+      general,
+      /Tools on this Mac|Add a tool|Connected tools/,
+      'unbuilt rows stay hidden',
+    );
     assert.doesNotMatch(
       general,
       /role="switch"[^>]*aria-checked="true"[^>]*aria-labelledby="set-general-(allowTools|openAtLogin|menuBar)"/,
     );
     const help = render('capabilities-off-help');
-    assert.equal((help.match(/Not available yet/g) ?? []).length, 3);
+    assert.equal((help.match(/Not available yet/g) ?? []).length, 2);
+    assert.doesNotMatch(help, /Queue inspector/, 'unbuilt rows stay hidden');
     assert.doesNotMatch(help, />Preview<|>Open</);
     assert.doesNotMatch(help, /role="switch"[^>]*set-help-verboseLogging/);
   });
@@ -552,7 +563,7 @@ describe('accessibility in markup', () => {
     );
     assert.ok(control, 'the disabled Remove button');
     assert.doesNotMatch(control[0], /\sdisabled(=|>|\s)/, 'it stays focusable');
-    const reason = new RegExp(`id="${control[1]}"[^>]*>This key comes from GROQ_API_KEY`);
+    const reason = new RegExp(`id="${control[1]}"[^>]*>This key is set outside Aplos`);
     assert.match(ai, reason, 'the reason is a describedby twin');
   });
 

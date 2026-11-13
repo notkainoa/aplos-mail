@@ -94,7 +94,7 @@ test('review20: a failed cal: item is listed with its account resolved', () => {
   assert.equal(holds.length, 1);
   assert.equal(holds[0].id, 'cal:op-1');
   assert.equal(holds[0].opId, 'op-1');
-  assert.equal(holds[0].account, 'Alex Moreno');
+  assert.equal(holds[0].account, 'alex.moreno@example.com');
 });
 
 test('review20: an uncertain hold offers Discard only', () => {
@@ -113,7 +113,7 @@ test('review20: an uncertain hold offers Discard only', () => {
   assert.equal(uncertain.canDiscard, true);
   const html = row(uncertain);
   assert.match(html, /A calendar change/);
-  assert.match(html, /Alex Moreno/);
+  assert.match(html, /alex\.moreno@example\.com/);
   assert.match(html, />Discard</);
   assert.doesNotMatch(html, />Retry</);
 });

@@ -10,6 +10,7 @@ import {
   densityFromUi,
   densityToUi,
   hasCapability,
+  hiddenUntilBuilt,
   listenerLine,
   workflowLine,
   SWIPE_OPTIONS,
@@ -92,7 +93,7 @@ export function General({ data, actions }: SectionProps) {
           description="Hide the sidebar until you press [."
           control={id => (
             <Switch
-              label="Minimised sidebar"
+              label="Minimized sidebar"
               labelledBy={id}
               checked={ui.sidebarMinimised}
               onChange={on => void actions.setUi({ sidebarMinimised: on })}
@@ -147,6 +148,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
   const clientsOn = hasCapability(data.session, 'clients');
   const enabled = data.listener?.enabled === true;
   const tools = toolRows(data.clients, data.now);
+  const nothingToShow = !listenerOn && !clientsOn && hiddenUntilBuilt('general', 'allowTools');
 
   // DESIGN 11.2: a revoke leaves the DOM the confirm's answer was standing on, and focus lands on the
   // page. Once the question's own focus restore has run, hand it to the next tool row still standing
@@ -166,6 +168,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
     row?.focus({ preventScroll: true });
   });
 
+  if (nothingToShow) return null;
   return (
     <Group id="set-general-tools-group" label="Tools on this Mac">
       {listenerOn ? (
