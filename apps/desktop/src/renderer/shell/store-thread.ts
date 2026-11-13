@@ -19,14 +19,38 @@ export interface OpenThreadContext {
   readonly listIds: readonly string[] | null;
 }
 
+/** How a thread asks to open straight into a reply (R, ⇧R, hold R, or the Follow up nudge on Space). */
+export interface ThreadReply {
+  readonly replyAll: boolean;
+  readonly dictate: boolean;
+  /** The Follow up nudge: the reply card starts with the dim nudge text. */
+  readonly nudge: boolean;
+}
+
 /** What a caller may say when it opens a thread. */
 export interface OpenThreadOptions {
   readonly from?: Screen;
   readonly listIds?: readonly string[];
+  /** Open the reader with its reply card already up (a triage key on Home or one by one). */
+  readonly reply?: ThreadReply;
 }
 
 const NO_CONTEXT: OpenThreadContext = { from: null, listIds: null };
 const contextStore = createStore<OpenThreadContext>(NO_CONTEXT);
+
+/** The reply a thread was opened for; the reader takes it once the letter shows (`clearPendingReply`). */
+export interface PendingReply {
+  readonly id: ThreadId;
+  readonly reply: ThreadReply;
+}
+
+const replyStore = createStore<PendingReply | null>(null);
+
+function pendingFor(id: ThreadId | null, options: unknown): PendingReply | null {
+  if (id === null || typeof options !== 'object' || options === null) return null;
+  const { reply } = options as OpenThreadOptions;
+  return reply ? { id, reply } : null;
+}
 
 function onThreadScreen(): boolean {
   const screen = getScreen();
@@ -62,6 +86,7 @@ function publishContext(next: OpenThreadContext): void {
 export function setOpenThread(id: ThreadId | null, options?: OpenThreadOptions): void {
   if (id === null) publishContext(NO_CONTEXT);
   else publishContext(contextFor(options, contextStore.get()));
+  replyStore.set(pendingFor(id, options));
   threadStore.set(id);
 }
 
@@ -82,6 +107,13 @@ export function leaveOpenThread(to?: Screen): void {
   setScreen(from);
 }
 
+/** The reader took the reply it was asked to open (or the thread changed). */
+export function clearPendingReply(): void {
+  replyStore.set(null);
+}
+
+export const getPendingReply = replyStore.get;
+export const subscribePendingReply = replyStore.subscribe;
 export const getOpenThread = threadStore.get;
 export const subscribeOpenThread = threadStore.subscribe;
 export const getOpenThreadContext = contextStore.get;

@@ -5,7 +5,7 @@
  */
 import type { CommandHandlers } from '../../commands';
 import type { CommandHandlerTable } from '../../shell';
-import type { HomeActions } from './homeActions';
+import { DICTATE, REPLY_ALL, type HomeActions } from './homeActions';
 
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
@@ -15,7 +15,7 @@ function run(action: () => void): CommandHandlers {
 export interface OneByOneControls {
   /** J and K. */
   readonly step: (delta: 1 | -1) => void;
-  /** Return, O and R: the thread in the reader (the reader lane owns reply). */
+  /** Return and O: the thread in the reader. */
   readonly open: () => void;
   readonly more: () => void;
   readonly why: () => void;
@@ -38,7 +38,10 @@ export function commandsForOneByOne(
     'mail.later': run(() => actions.later()),
     'mail.suggested': run(() => actions.suggested()),
     'mail.open': run(controls.open),
-    'mail.reply': run(controls.open),
+    'mail.reply': run(() => actions.reply()),
+    'mail.replyAll': run(() => actions.reply(REPLY_ALL)),
+    'mail.dictateReply': run(() => actions.reply(DICTATE)),
+    'mail.toggleRead': run(() => actions.toggleRead()),
     'mail.setDate': run(() => actions.setDate()),
     'mail.bookmark': run(() => actions.bookmark()),
     'mail.trash': run(() => actions.trash()),

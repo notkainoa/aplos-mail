@@ -66,7 +66,7 @@ function Overlays({ view }: { readonly view: OneByOne }) {
   );
 }
 
-/** What the card's buttons do: Home's own actions on the thread showing, so the toasts, Undo and holds are Home's. Reply opens the reader. */
+/** What the card's buttons do: Home's own actions on the thread showing, so the toasts, Undo and holds are Home's. Reply opens the reader with its reply card up. */
 function controlsOf(view: OneByOne): LetterControls {
   const { actions } = view;
   return {
@@ -76,7 +76,7 @@ function controlsOf(view: OneByOne): LetterControls {
     bookmark: () => actions.bookmark(),
     trash: () => actions.trash(),
     lane: view.laneTo,
-    reply: view.open,
+    reply: () => actions.reply(),
     relayKey: relayToShell,
   };
 }

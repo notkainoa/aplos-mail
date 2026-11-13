@@ -25,7 +25,7 @@ import {
 import { harnessClock } from '../../data/clock';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { pushToast, dismissToast, runToastAction } from '../../shell';
-import { createHomeActions, type HomeDeps, type HomeSnapshot, type RunStatus } from './homeActions';
+import { createHomeActions, describeHow, type HomeDeps, type HomeSnapshot } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import {
@@ -33,7 +33,9 @@ import {
   initialKey,
   layoutOf as homeLayoutOf,
   orderLayout,
+  suggestedCommand,
   type HomeLayout,
+  type SectionKey,
 } from './homeModel';
 import { HomeList } from './HomeList';
 import { HomeScreen } from './HomeScreen';
@@ -103,7 +105,6 @@ function layoutOf(
 function depsOver(world: Awaited<ReturnType<typeof boot>>, key: { current: string | null }) {
   const rowOf = (id: string) => world.home.snapshot().rows.get(id) as ThreadRow | undefined;
   const calls: string[] = [];
-  const ran: string[] = [];
   let offer: string | null = null;
   const deps: HomeDeps = {
     snapshot: (): HomeSnapshot => {
@@ -128,11 +129,7 @@ function depsOver(world: Awaited<ReturnType<typeof boot>>, key: { current: strin
       offer = id;
     },
     reminderOffer: () => offer,
-    runCommand: (id): RunStatus => {
-      ran.push(id);
-      return 'unhandled';
-    },
-    openThread: (id, how) => void calls.push(`open:${how}:${id}`),
+    openThread: (id, how) => void calls.push(`open:${describeHow(how)}:${id}`),
     openLow: () => void calls.push('low'),
     oneByOne: () => void calls.push('oneByOne'),
     openMore: () => void calls.push('more'),
@@ -140,7 +137,7 @@ function depsOver(world: Awaited<ReturnType<typeof boot>>, key: { current: strin
     commit: (kind, _ids, rowId) => void calls.push(`commit:${kind}:${rowId}`),
     undoLabel: (_id, fallback) => fallback,
   };
-  return { deps, calls, ran, offer: () => offer };
+  return { deps, calls, offer: () => offer };
 }
 
 test('Home renders Do now, Important updates, the Low band, Follow up in that order with one fixed focus slot', async () => {
@@ -370,18 +367,17 @@ test('Option-Down and Option-Up move a thread one lane, with Undo and Always do 
   }
 });
 
-test('Space on a Follow up row runs Reply (the nudge), falling back to open-for-reply when nothing handles it', async () => {
+test('Space on a Follow up row opens the reader with the nudge', async () => {
   resetToasts();
   const world = await boot();
   try {
     const follow = layoutOf(world.home.snapshot()).follow[0]!;
     const key = { current: follow as string | null };
-    const { deps, ran, calls } = depsOver(world, key);
+    const { deps, calls } = depsOver(world, key);
     createHomeActions(deps).suggested();
-    assert.deepEqual(ran, ['mail.reply']);
     assert.deepEqual(
       calls.filter(c => c.startsWith('open:')),
-      [`open:reply:${follow}`],
+      [`open:nudge:${follow}`],
     );
   } finally {
     world.connection.close();
@@ -458,6 +454,85 @@ test("the registry runs Home's commands: E is Done, Next section jumps, Z undoes
     world.connection.close();
   }
 });
+
+const LANE_CARDS: readonly HomeSection[] = ['do', 'update', 'follow'];
+
+/** Every normal list shortcut works on the focus card of every lane, whatever its suggested action is (owner decision 2026-11-13). */
+for (const lane of LANE_CARDS) {
+  test(`the ${lane} focus card answers → E ← L R ⇧R Space, whatever its suggestion is`, async () => {
+    resetToasts();
+    const world = await boot();
+    try {
+      const id = layoutOf(world.home.snapshot())[lane][0];
+      assert.ok(id, `the demo has a ${lane} row`);
+      const key = { current: id as string | null };
+      const { deps, calls } = depsOver(world, key);
+      const registry = createAppRegistry();
+      const detach = shellRegistryFor(registry).register(
+        commandsForHome(createHomeActions(deps), {
+          oneByOne: () => undefined,
+          more: () => undefined,
+          why: () => undefined,
+          undo: () => void undoStack.undoLast(),
+        }),
+      );
+      const context: CommandContext = {
+        stack: ['global', 'list', 'home'],
+        target: null,
+        selection: [],
+        conditions: {},
+        prefs: DEFAULT_KEY_PREFS,
+        focus: 'none',
+      };
+      const press = (k: string, mods: Partial<KeyboardEvent> = {}) => {
+        const resolution = registry.resolve(
+          { key: k, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods },
+          context,
+        );
+        assert.ok(resolution, `${k} resolves`);
+        return registry.run(resolution.commandId, context).status;
+      };
+      const opened = () => calls.filter(c => c.startsWith('open:'));
+      const toasted = (kind: string) => getToasts().filter(t => t.kind === kind).length;
+      const undo = () => {
+        assert.equal(press('z'), 'ran');
+        key.current = id;
+      };
+
+      for (const k of ['ArrowRight', 'e']) {
+        const before = toasted('done');
+        assert.equal(press(k), 'ran', k);
+        assert.equal(toasted('done'), before + 1, `${k} is Done on the ${lane} card`);
+        undo();
+      }
+      for (const k of ['ArrowLeft', 'l']) {
+        const before = toasted('later');
+        assert.equal(press(k), 'ran', k);
+        assert.equal(toasted('later'), before + 1, `${k} is Later on the ${lane} card`);
+        undo();
+      }
+      assert.equal(press('r'), 'ran');
+      assert.equal(press('R', { shiftKey: true }), 'ran');
+      assert.deepEqual(opened(), [`open:reply:${id}`, `open:replyAll:${id}`]);
+
+      // Space runs the suggestion the button shows: Done, or the reply (the nudge on Follow up), or a plain open.
+      const row = world.home.snapshot().rows.get(id) as ThreadRow;
+      const command = suggestedCommand(row, lane as SectionKey);
+      const doneBefore = toasted('done');
+      const openedBefore = opened().length;
+      assert.equal(press(' '), 'ran');
+      if (command === 'mail.done') assert.equal(toasted('done'), doneBefore + 1);
+      else {
+        const how = command === 'mail.open' ? 'open' : lane === 'follow' ? 'nudge' : 'reply';
+        assert.equal(opened()[openedBefore], `open:${how}:${id}`);
+      }
+      detach();
+      await world.flush();
+    } finally {
+      world.connection.close();
+    }
+  });
+}
 
 test('a toast Undo undoes its own operation, not the newest one', async () => {
   resetToasts();

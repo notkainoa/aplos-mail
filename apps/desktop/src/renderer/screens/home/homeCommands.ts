@@ -2,18 +2,10 @@
  * Home's handlers for the shell's CommandRegistry, as a pure table. The registry owns the keys, the palette and the
  * tooltips; Home only says what each command does while it is mounted (`useRegisterCommands` attaches the table).
  */
-import {
-  DEFAULT_KEY_PREFS,
-  buildStack,
-  focusKindOf,
-  type CommandContext,
-  type CommandHandlers,
-  type ContextName,
-  type TargetSummary,
-} from '../../commands';
+import type { CommandHandlers } from '../../commands';
 import type { CommandHandlerTable } from '../../shell';
 import type { CommandAction } from '../../ui/props';
-import type { HomeActions } from './homeActions';
+import { DICTATE, REPLY_ALL, type HomeActions } from './homeActions';
 
 function run(action: () => void): CommandHandlers {
   return { run: () => action() };
@@ -39,6 +31,10 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.bookmark': run(() => actions.bookmark()),
     'mail.why': run(extra.why),
     'mail.suggested': run(() => actions.suggested()),
+    'mail.reply': run(() => actions.reply()),
+    'mail.replyAll': run(() => actions.reply(REPLY_ALL)),
+    'mail.dictateReply': run(() => actions.reply(DICTATE)),
+    'mail.toggleRead': run(() => actions.toggleRead()),
     'mail.open': run(() => actions.open()),
     'home.clearFromHome': run(() => actions.clearFromHome()),
     'mail.remindIfNoReply': run(() => actions.remind()),
@@ -64,24 +60,4 @@ export interface HomeExtras {
   /** I: "Why it's here" for the row under the cursor. */
   readonly why: () => void;
   readonly undo: () => void;
-}
-
-/** What a command run from Home's own code (Space on a reply) gets: the stack the shell reports for Home. */
-export function homeRunContext(
-  target: TargetSummary | null,
-  lowSheetOpen: boolean,
-  remindOffer: boolean,
-  focusTarget: unknown,
-): CommandContext {
-  const contexts: ContextName[] = lowSheetOpen
-    ? ['global', 'home', 'lowImportance']
-    : ['global', 'home'];
-  return {
-    stack: buildStack(contexts),
-    target,
-    selection: [],
-    conditions: { remindOffer },
-    prefs: DEFAULT_KEY_PREFS,
-    focus: focusKindOf(focusTarget),
-  };
 }

@@ -24,7 +24,6 @@ import { toSyncStatus } from '../../shell/status-map';
 import {
   scrollTopOf,
   useCommandTarget,
-  useCurrentTarget,
   useRestoreScroll,
   useReturnRestore,
   useReturnSource,
@@ -52,7 +51,7 @@ import { HomeOverlays } from './HomeOverlays';
 import type { WhyTarget } from './WhyHost';
 import type { HomeActions, HomeSnapshot, OpenHow } from './homeActions';
 import type { HomeBulkDeps } from './homeBulk';
-import { homeBarActions, homeRunContext } from './homeCommands';
+import { homeBarActions } from './homeCommands';
 import {
   buildItems,
   keyOf,
@@ -73,7 +72,7 @@ import { isGate, useHomeMotion } from './useHomeMotion';
 export interface HomeScreenProps {
   /** One account, or absent for All accounts. */
   readonly accountId?: AccountId;
-  /** Open a thread in the reader, or its reply (the reader lane owns both; absent until it lands). */
+  /** Open a thread in the reader, or in the reader with its reply card up (R, ⇧R, hold R, the nudge). */
   readonly onOpen?: (id: ThreadId, how: OpenHow) => void;
   /** "Go one by one" (S): the reader stepping through Do now. */
   readonly onOneByOne?: () => void;
@@ -253,19 +252,7 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const [why, setWhy] = useState<WhyTarget | null>(null);
   const templates = useRef<HTMLDivElement>(null);
   const motionCommit = useHomeMotion(hold, templates);
-  const target = useCurrentTarget();
 
-  const keyState = useRef({ lowSheetOpen: lowOpen, remindOffer: false, target });
-  const context = useCallback(
-    () =>
-      homeRunContext(
-        keyState.current.target,
-        keyState.current.lowSheetOpen,
-        keyState.current.remindOffer,
-        document.activeElement,
-      ),
-    [],
-  );
   const commit = useCallback(
     (kind: 'done' | 'later' | 'trash', ids: readonly string[], rowId: ThreadId) => {
       // The row acted on, which is not the one under the cursor when a hover button was pressed.
@@ -300,7 +287,6 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
   const bulkMore = useRef<() => void>(ignore);
   const { actions, remindOffer } = useHomeActions({
     snapshot,
-    context,
     hold,
     bulk: pick.deps,
     setCursor: cursor.setCursor,
@@ -313,7 +299,6 @@ function HomeBody({ accountId, onOpen, onOneByOne }: HomeScreenProps) {
     openDatePicker: datePicker.open,
     why: openWhy,
   });
-  keyState.current = { lowSheetOpen: lowOpen, remindOffer, target };
   useShellKeyLayer({
     contexts: keyContexts(lowOpen, datePicker.isOpen && !listHidden, pick.confirmation !== null),
     conditions: pick.bulk.picking ? { remindOffer, selection: true } : { remindOffer },

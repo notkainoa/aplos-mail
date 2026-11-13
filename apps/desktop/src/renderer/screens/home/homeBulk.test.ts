@@ -147,7 +147,6 @@ function bulkHome(world: World, start: string | null = null) {
     offerReminder: () => undefined,
     reminderOffer: () => null,
     openDatePicker: () => undefined,
-    runCommand: () => 'unhandled',
     openThread: () => undefined,
     openLow: () => undefined,
     oneByOne: () => undefined,
