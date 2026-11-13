@@ -64,6 +64,8 @@ export interface ListRowProps {
   laterUntil?: LaterUntil;
   /** For 'done' layout: when it was finished, drawn as the date in the stamp column. */
   doneAt?: IsoDateTime;
+  /** For 'done' layout: `doneAt` is the last message's date, not a finish time (the tooltip must not claim one). */
+  doneEstimated?: boolean;
   /** Meta marks before the date: replied, bookmarked, attachment. */
   marks?: { replied?: boolean; bookmarked?: boolean; attachment?: boolean };
   /** The row's account; the 8 px dot renders only when `showAccountDot` (DESIGN decision 16). Always in the row tooltip. */

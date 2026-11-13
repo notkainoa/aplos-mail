@@ -184,6 +184,17 @@ function actOnView(spec: ViewSpec, action: ActionBody): Step {
   };
 }
 
+/** Switches Later's Later | Bookmarks switch to Bookmarks. */
+const OPEN_BOOKMARKS: Step = {
+  run: async () => {
+    const tab = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      el => el.textContent?.trim() === 'Bookmarks',
+    );
+    if (!tab) throw new Error('no Bookmarks tab');
+    tab.click();
+  },
+};
+
 /** Home with nothing left: every thread it holds, the Low importance band and Follow up included, is Done. */
 const CLEAR_HOME: readonly Step[] = [
   actOnView({ kind: 'home' }, { type: 'done' }),
@@ -210,17 +221,36 @@ const EMPTY_DRAFTS: Step = {
 
 type Recipient = { name?: string; address: string };
 
-/** Adds one draft to the given recipients (original data); the stand-in list window shows one new row per load. */
+/**
+ * Adds one draft to the given recipients (original data); the stand-in list window shows one new row per load. The
+ * scene fails loudly (the gallery's `__galleryError`) when the draft never reaches the list, so a slow machine cannot
+ * shoot a state that silently looks like plain Drafts.
+ */
 function addDraft(subject: string, to: Recipient[]): Step {
   return {
     run: async () => {
       try {
         await createDraft(subject, to);
+        await untilRowShows(subject);
       } catch (error) {
-        console.error('gallery draft failed', error);
+        const reason = error instanceof Error ? error.message : String(error);
+        window.__galleryError = `draft "${subject}" did not reach the list: ${reason}`;
       }
     },
   };
+}
+
+const ROW_WAIT_MS = 15_000;
+
+/** Polls (bounded) until a list row's main line reads `text`. */
+async function untilRowShows(text: string): Promise<void> {
+  const started = Date.now();
+  const shown = () =>
+    [...document.querySelectorAll('.ui-list-row__primary')].some(el => el.textContent === text);
+  while (!shown()) {
+    if (Date.now() - started > ROW_WAIT_MS) throw new Error(`no row reads "${text}"`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
 }
 
 async function createDraft(subject: string, to: Recipient[]): Promise<void> {
@@ -229,7 +259,7 @@ async function createDraft(subject: string, to: Recipient[]): Promise<void> {
   const first = await client.api.draft.get({ ids: window.ids.slice(0, 1) });
   await client.api.view.unwatch({ windowId: window.windowId });
   const accountId = first.list[0]?.accountId;
-  if (!accountId) return;
+  if (!accountId) throw new Error('no draft to take the account from');
   await api.draft.set({
     fields: {
       accountId,
@@ -243,8 +273,6 @@ async function createDraft(subject: string, to: Recipient[]): Promise<void> {
       signature: false,
     },
   });
-  // The list window catches up on a timer, not a frame.
-  await new Promise(resolve => setTimeout(resolve, 1200));
 }
 
 const LONG_ADDRESS: Recipient = {
@@ -366,6 +394,11 @@ export const homeScenes: Record<string, () => ReactElement> = {
     scenario: 'demo',
     screen: 'later',
     steps: [actOnView({ kind: 'later' }, { type: 'done' })],
+  }),
+  'list-bookmarks-empty': sceneOf({
+    scenario: 'demo',
+    screen: 'later',
+    steps: [actOnView({ kind: 'bookmarks' }, { type: 'bookmark', on: false }), OPEN_BOOKMARKS],
   }),
   'list-all-mail': sceneOf({ scenario: 'demo', screen: 'all' }),
   'list-all-bulk': sceneOf({
