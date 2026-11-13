@@ -23,6 +23,7 @@ import {
   labelConfig,
   viewSpecOf,
 } from './listKinds';
+import { formatListDate, setFormatClock } from '../../ui/list/internal/format';
 import {
   LIST_WINDOW,
   confirmationIsStale,
@@ -43,6 +44,7 @@ import {
   recipientsOfDraft,
   recipientsOfThread,
   shortWho,
+  targetOf,
 } from './listRows';
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${i}`);
@@ -354,14 +356,13 @@ test('a Done row carries the stamp time and the Move to Home action only', () =>
 test('a recipients column leads with the display name or the local part and keeps full addresses in the tooltip', () => {
   const long =
     'alexandra.montgomery-featherstonehaugh@a-rather-long-subdomain.example-company.co.uk';
-  assert.deepEqual(recipientsLine([{ address: long }]), {
+  const expected = {
     text: 'To: alexandra.montgomery-featherstonehaugh',
     title: `To: ${long}`,
-  });
-  assert.deepEqual(recipientsLine([{ name: long, address: long }]), {
-    text: 'To: alexandra.montgomery-featherstonehaugh',
-    title: `To: ${long}`,
-  });
+    names: 'alexandra.montgomery-featherstonehaugh',
+  };
+  assert.deepEqual(recipientsLine([{ address: long }]), expected);
+  assert.deepEqual(recipientsLine([{ name: long, address: long }]), expected);
   const line = recipientsLine([
     { name: 'Jordan Park', address: 'jordan@x.example' },
     { address: 'mina@x.example' },
@@ -376,6 +377,66 @@ test('a recipients column leads with the display name or the local part and keep
   );
   assert.equal(recipientsLine([]), undefined);
   assert.equal(shortWho('  Mina   Cho '), 'Mina Cho');
+});
+
+test('the recipients line: three names fit, more are counted, the tooltip is capped, an embedded address shows once', () => {
+  const three = ['Ann', 'Bo', 'Cy'].map(name => ({ name }));
+  assert.equal(recipientsLine(three)?.text, 'To: Ann, Bo, Cy');
+  assert.equal(recipientsLine([...three, { name: 'Di' }])?.text, 'To: Ann, Bo, Cy and 1 more');
+  const crowd = Array.from({ length: 12 }, (_, i) => ({ address: `p${i}@x.example` }));
+  const title = recipientsLine(crowd)?.title ?? '';
+  assert.equal(
+    title,
+    'To: p0@x.example, p1@x.example, p2@x.example, p3@x.example, p4@x.example and 7 more',
+  );
+  assert.equal(
+    recipientsLine([{ name: 'Jo <jo@x.example>', address: 'jo@x.example' }])?.title,
+    'To: Jo <jo@x.example>',
+  );
+  assert.equal(
+    recipientsLine(crowd)?.names,
+    'p0, p1, p2 and 9 more',
+    'plain names for the palette',
+  );
+});
+
+test('a Sent thread leaves the owner out of both the recipients and the fallback people', () => {
+  const row = thread({
+    id: 'me',
+    participants: [
+      { name: 'Alex Morgan', address: 'alex@x.example', me: true },
+      { name: 'Priya Raman', address: 'priya@x.example' },
+    ],
+  });
+  const sent = { ...row, recipients: [{ name: 'Alex Morgan', me: true }, { name: 'Dev Rao' }] };
+  assert.equal(recipientsOfThread(sent as ThreadRow).text, 'To: Dev Rao');
+  assert.equal(
+    recipientsOfThread(row).text,
+    'To: Priya Raman',
+    'no recipients: the other participants',
+  );
+});
+
+test('a draft in the palette reads plain names, and a future date groups the way its row reads', () => {
+  const draft = {
+    id: 'd9',
+    revision: 1,
+    html: '<p>Hi</p>',
+    subject: '',
+    to: [{ name: 'Jordan Park', address: 'jordan@x.example' }],
+    attachments: [],
+    updatedAt: NOW,
+  } as unknown as Draft;
+  assert.equal(targetOf(draft).title, 'Jordan Park');
+  const tomorrow = new Date(2026, 9, 30, 9).getTime();
+  assert.equal(dateGroupLabel(tomorrow, NOW), 'Tomorrow');
+  assert.equal(dateGroupLabel(new Date(2026, 10, 4, 9).getTime(), NOW), 'Upcoming');
+  const row = thread({ id: 'f', lastDate: tomorrow });
+  const props = listRowPropsFor(row, context(ALL_CONFIG));
+  setFormatClock(() => NOW);
+  const text = formatListDate(props.date);
+  setFormatClock(null);
+  assert.equal(text, 'Tomorrow', 'the row text and its group header agree');
 });
 
 test('Drafts and Sent group by date like All mail; Done groups by when it was finished', () => {

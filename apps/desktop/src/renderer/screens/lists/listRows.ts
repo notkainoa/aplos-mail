@@ -48,7 +48,7 @@ export function openKindOf(row: ListRowData): OpenKind {
 }
 
 /** A person as a recipient column may name them. */
-interface Who {
+export interface Who {
   readonly name?: string;
   readonly address?: string;
   readonly me?: boolean;
@@ -70,27 +70,41 @@ function shortOf(who: Who): string {
 function fullOf(who: Who): string {
   const name = cleanName(who.name);
   const address = cleanName(who.address);
-  if (name && address && name !== address) return `${name} <${address}>`;
-  return address || name;
+  const embedded = address !== '' && name.toLowerCase().includes(address.toLowerCase());
+  if (name && address && name !== address && !embedded) return `${name} <${address}>`;
+  return name && (embedded || !address) ? name : address || name;
 }
 
 /** A recipients column: "To: name, name and 2 more" with the full addresses for the tooltip. */
 export interface RecipientsLine {
   readonly text: string;
   readonly title: string;
+  /** The plain joined names, with no "To:" and no addresses (the palette's context line). */
+  readonly names: string;
+}
+
+/** How many full addresses the tooltip lists before it says "and N more" (a reply-all can hold 500). */
+const TITLE_ADDRESSES = 5;
+
+function titleOf(people: readonly Who[]): string {
+  const shown = people.slice(0, TITLE_ADDRESSES).map(fullOf).join(', ');
+  const more = people.length - TITLE_ADDRESSES;
+  return more > 0 ? `To: ${shown} and ${more} more` : `To: ${shown}`;
 }
 
 /** The "To: ..." line of Drafts and Sent: display names (or local parts) first, every full address in the tooltip. */
 export function recipientsLine(people: readonly Who[]): RecipientsLine | undefined {
   const named = people.filter(who => shortOf(who) !== '');
   if (named.length === 0) return undefined;
-  return {
-    text: `To: ${joinNames(named.map(shortOf))}`,
-    title: `To: ${named.map(fullOf).join(', ')}`,
-  };
+  const names = joinNames(named.map(shortOf));
+  return { text: `To: ${names}`, title: titleOf(named), names };
 }
 
-const NO_RECIPIENT: RecipientsLine = { text: 'No recipient', title: 'No recipient' };
+const NO_RECIPIENT: RecipientsLine = {
+  text: 'No recipient',
+  title: 'No recipient',
+  names: 'No recipient',
+};
 
 /** Sent's who column: the people the thread went to (the newest message the owner sent), never the owner. */
 export function recipientsOfThread(row: ThreadRow): RecipientsLine {
@@ -99,7 +113,7 @@ export function recipientsOfThread(row: ThreadRow): RecipientsLine {
   const line = recipientsLine(to) ?? recipientsLine(others);
   if (line) return line;
   const sender = senderOf(row);
-  return { text: sender, title: sender };
+  return { text: sender, title: sender, names: sender };
 }
 
 /** A draft's who column: its recipients, or "No recipient" for a draft with none yet. */
@@ -216,6 +230,11 @@ function doneStampOf(row: ThreadRow): ListRowProps['doneAt'] {
   return toIsoDateTime(doneMsOf(row));
 }
 
+/** True when the stamp is the last message's date, not a finish time the engine reported. */
+function doneIsEstimated(row: ThreadRow): boolean {
+  return row.workflow.doneAt === undefined;
+}
+
 function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
   const { config } = context;
   const base = listRowProps(row, { ...context, layout: config.layout });
@@ -227,6 +246,7 @@ function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
     primary: primaryOf(row),
     hoverActions: config.hoverActions,
     doneAt: config.layout === 'done' ? doneStampOf(row) : undefined,
+    doneEstimated: config.layout === 'done' ? doneIsEstimated(row) : undefined,
     laterUntil:
       config.layout === 'later' ? laterUntilOf(row, context.nowMs ?? Date.now()) : undefined,
   };
@@ -251,7 +271,7 @@ export function targetOf(row: ListRowData): {
     return {
       kind: 'draft',
       id: row.id,
-      title: recipientsOfDraft(row).title,
+      title: recipientsOfDraft(row).names,
       detail: draftLine(row),
     };
   }

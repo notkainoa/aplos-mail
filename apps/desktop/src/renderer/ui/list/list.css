@@ -626,7 +626,7 @@
   --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
-  --ui-date-w: calc(var(--space-10) + var(--space-8));
+  --ui-date-w: calc(var(--space-10) + var(--space-8) + var(--space-3));
 }
 
 .ui-list-row__lead {
@@ -731,6 +731,7 @@
 }
 .ui-list-row__stamp {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--space-1);
 }
@@ -760,7 +761,14 @@
   gap: var(--space-half);
   padding-left: var(--space-3);
 }
-/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. */
+/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp and the
+   account dot keep their size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
+   crowded row never spills over the summary. The meta cell itself is not clipped, so the hover actions still show. */
+.ui-list-row[data-layout='done'] .ui-list-row__mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
 .ui-list-row[data-layout='done'] .ui-list-row__meta {
   min-width: 0;
 }

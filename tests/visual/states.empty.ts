@@ -62,6 +62,14 @@ export const emptyStates: readonly VisualState[] = [
     filled: 0,
   },
   {
+    id: 'done-rows-crowded',
+    title: 'Done: a row with every mark and the account dot, beside a plain one',
+    components: ['ListBox', 'ListRow', 'SectionHeader'],
+    design: '7.4',
+    mockup: 'done.html (default)',
+    filled: 0,
+  },
+  {
     id: 'list-trash-empty',
     frame: 'shell',
     title: 'Trash: empty',

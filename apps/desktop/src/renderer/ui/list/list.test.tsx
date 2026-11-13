@@ -88,6 +88,19 @@ describe('ListRow', () => {
     assert.doesNotMatch(older, /Done Yesterday/, 'the word is not repeated before the date');
   });
 
+  test('done layout: only a reported finish time says "Done" in the tooltip', () => {
+    const reported = render(
+      <ListRow {...row({ layout: 'done', doneAt: '2026-10-28T08:52:00-07:00' })} />,
+    );
+    assert.match(reported, /class="ui-list-row__stamp" title="Done Wednesday/);
+    const estimated = render(
+      <ListRow
+        {...row({ layout: 'done', doneAt: '2026-10-28T08:52:00-07:00', doneEstimated: true })}
+      />,
+    );
+    assert.match(estimated, /class="ui-list-row__stamp" title="Wednesday/);
+  });
+
   test('later layout: the laterUntil chip takes the date column', () => {
     const m = render(
       <ListRow
