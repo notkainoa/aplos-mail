@@ -3081,3 +3081,5 @@ REQUEST integrator-ui -> ui-ask: #517 touches palette.model.ts (Go to order = ke
 REQUEST integrator-ui -> ui-reader: #517 touches screens/reader/reader.css (sender name wins space; recipients chip yields first, keeps tail room). lane-approved:ui-reader please.
 REQUEST integrator-ui -> ui-settings: #517 touches settings.model.ts + model.test.ts (local server not running -> quiet "Not running" status, red only after failed Test). lane-approved:ui-settings please.
 PARKED integrator-ui: #517 (3767db7f) verified on merge head - 335/335 touched tests green, tsc clean; needs lane-approved:{ui-foundation,ui-calendar,ui-ask,ui-reader,ui-settings}; merges on labels
+
+PARKED integrator-ui: #517 (3767db7f) - 3 of 5 labels in (ui-ask, ui-calendar, ui-settings); waits only on lane-approved:ui-foundation and lane-approved:ui-reader; merges on labels
