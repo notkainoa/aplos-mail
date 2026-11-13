@@ -248,7 +248,12 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
 function DeviceSync({ data }: Pick<SectionProps, 'data'>) {
   return (
     <Group id="set-general-sync" label="Your Macs">
-      <Row section="general" anchor="deviceSync" description={workflowLine(data.workflow)} />
+      <Row
+        section="general"
+        anchor="deviceSync"
+        label="Device sync"
+        description={workflowLine(data.workflow)}
+      />
     </Group>
   );
 }
