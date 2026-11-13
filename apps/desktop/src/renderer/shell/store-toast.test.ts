@@ -40,12 +40,12 @@ test('the fourth toast drops the oldest plain one; undo toasts are never evicted
   assert.deepEqual(ids(), ['u1', 'p3', 'u2']);
 });
 
-test('with three undo toasts open, a plain newcomer is the one dropped; more undo toasts all stay', () => {
+test('with three undo toasts open, a plain newcomer still shows, and is the first to go once another arrives', () => {
   pushToast(undo('u1'));
   pushToast(undo('u2'));
   pushToast(undo('u3'));
   pushToast(plain('p1'));
-  assert.deepEqual(ids(), ['u1', 'u2', 'u3']);
+  assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'p1']);
   pushToast(undo('u4'));
   assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'u4']);
 });
@@ -127,7 +127,7 @@ test('with three undo toasts open a persistent newcomer stays, and the stack exc
   pushToast({ ...plain('e'), persistent: true });
   assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'e']);
   pushToast(plain('p'));
-  assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'e']);
+  assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'e', 'p']);
 });
 
 test('runToastAction runs the command through the runner, or onAction, then closes the toast', () => {
@@ -186,4 +186,12 @@ test('an error toast is never evicted: the oldest plain one goes instead', () =>
   pushToast(plain('b'));
   pushToast(plain('c'));
   assert.deepEqual(ids(), ['e', 'b', 'c']);
+});
+
+test('three error toasts and a plain push: the plain one stays live', () => {
+  pushToast({ ...plain('e1'), kind: 'error' });
+  pushToast({ ...plain('e2'), kind: 'error' });
+  pushToast({ ...plain('e3'), kind: 'error' });
+  pushToast(plain('saved'));
+  assert.deepEqual(ids(), ['e1', 'e2', 'e3', 'saved']);
 });

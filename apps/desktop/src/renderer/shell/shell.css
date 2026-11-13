@@ -200,6 +200,11 @@
   left: var(--space-3);
   z-index: var(--z-sticky);
 }
+/* Collapsed, the pane reaches the window's margin: the flag sits inside its corner, clear of the rounded edge. */
+.aplos-shell[data-collapsed='true'] .aplos-outbox-flag {
+  bottom: calc(var(--shell-pad) + var(--space-3));
+  left: calc(var(--shell-pad) + var(--space-3));
+}
 
 /* A failed send's notice: StatusSlot's shape, two or three short lines, never a banner. */
 .aplos-outbox {

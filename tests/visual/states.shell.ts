@@ -48,4 +48,22 @@ export const shellSettingsStates: readonly VisualState[] = [
     mockup: 'errors.html (send-failed)',
     filled: 0,
   },
+  {
+    id: 'shell-send-failed-minimised',
+    frame: 'shell',
+    title: 'Shell: a failed send with the minimised sidebar; the alert flag opens Drafts',
+    components: ['Button', 'Pane'],
+    design: '7.1, 7.15',
+    mockup: 'errors.html (send-failed)',
+    filled: 1,
+  },
+  {
+    id: 'shell-send-failed-collapsed',
+    frame: 'shell',
+    title: 'Shell: a failed send with the sidebar collapsed; the alert flag opens Drafts',
+    components: ['Button', 'Pane'],
+    design: '7.1, 7.15',
+    mockup: 'errors.html (send-failed)',
+    filled: 1,
+  },
 ];

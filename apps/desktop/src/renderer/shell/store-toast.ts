@@ -58,9 +58,10 @@ function evictable(toast: PushedToast): boolean {
   return !toast.persistent && toast.kind !== 'error' && !isUndoToast(toast);
 }
 
-function evictOldest(): void {
+/** Makes room for the toast just pushed (`keep`): it is never the one that goes, as in `planToasts`. */
+function evictOldest(keep: string): void {
   while (live.size > TOAST_LIMIT) {
-    const victim = [...live].find(([, toast]) => evictable(toast));
+    const victim = [...live].find(([id, toast]) => id !== keep && evictable(toast));
     if (!victim) return;
     live.delete(victim[0]);
   }
@@ -71,7 +72,7 @@ export function addToast(toast: PushedToast): string {
   const existing = live.get(toast.id);
   if (existing && isUndoToast(existing) && !isUndoToast(toast)) return toast.id;
   live.set(toast.id, toast);
-  evictOldest();
+  evictOldest(toast.id);
   publish();
   return toast.id;
 }

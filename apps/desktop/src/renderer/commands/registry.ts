@@ -351,6 +351,16 @@ export function expandKeymapEntries(
       );
     }
   }
+  // A quiet default is never listed or remapped, so a stored keymap would drop it: it stays (Reset clears the entry).
+  for (const quiet of defaults.filter(d => d.quiet)) {
+    const held = out.some(
+      b =>
+        b.context === quiet.context &&
+        b.phase === quiet.phase &&
+        chordId(b.chord) === chordId(quiet.chord),
+    );
+    if (!held) out.push(quiet);
+  }
   return out;
 }
 

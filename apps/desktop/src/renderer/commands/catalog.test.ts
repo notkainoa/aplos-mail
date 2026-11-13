@@ -443,6 +443,16 @@ test('the sheet says how to open a selected email: Return or O, and a second cli
   assert.ok(lists?.rows.some(r => r.kind === 'pointer' && r.keys === 'Click it again'));
 });
 
+test('a remapped Undo still answers ⌘Z and never names it', () => {
+  const registry = wiredRegistry();
+  registry.configure({ ...DEFAULT_KEY_PREFS, keymap: { 'app.undo': [{ chord: 'ctrl+u' }] } });
+  const list = context(['global', 'list']);
+  assert.equal(registry.resolve(keydown('u', { ctrlKey: true }), list)?.commandId, 'app.undo');
+  assert.equal(registry.resolve(keydown('z', { metaKey: true }), list)?.commandId, 'app.undo');
+  assert.equal(registry.resolve(keydown('z'), list), null, 'plain Z was replaced');
+  assert.equal(registry.describeKeys('app.undo'), '⌃U');
+});
+
 test('⌘Z undoes like Z, but never inside a text field, and ⇧⌘Z is not undo', () => {
   const registry = wiredRegistry();
   const list = context(['global', 'list']);

@@ -9,6 +9,7 @@ import type { Scenario } from '@aplos/contract-fixture';
 import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { api } from '../../../apps/desktop/src/renderer/data';
+import { toggleCollapsed } from '../../../apps/desktop/src/renderer/shell/chrome';
 import { navigate, openRoute, type Screen } from '../../../apps/desktop/src/renderer/shell';
 import { pushRefusedSend } from '../../../apps/desktop/src/renderer/screens/compose/runtime/sendNotices';
 import { dismissToast } from '../../../apps/desktop/src/renderer/shell';
@@ -296,6 +297,31 @@ const WALK_THROUGH: Step = {
 const REFUSED_SEND = { draftId: 'draft-demo', revision: 1, names: ['Jordan Park'] };
 
 export const homeScenes: Record<string, () => ReactElement> = {
+  'shell-send-failed-minimised': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [
+      {
+        run: async () => {
+          await api.settings.set({
+            opId: 'visual-minimised',
+            patch: { ui: { sidebarMinimised: true } },
+          });
+        },
+      },
+      { run: async () => pushRefusedSend(REFUSED_SEND) },
+      { run: async () => dismissToast('send-refused-draft-demo') },
+    ],
+  }),
+  'shell-send-failed-collapsed': sceneOf({
+    scenario: 'demo',
+    screen: 'home',
+    steps: [
+      { run: async () => toggleCollapsed() },
+      { run: async () => pushRefusedSend(REFUSED_SEND) },
+      { run: async () => dismissToast('send-refused-draft-demo') },
+    ],
+  }),
   'shell-calendar-send-failed': sceneOf({
     scenario: 'demo',
     screen: 'calendar',

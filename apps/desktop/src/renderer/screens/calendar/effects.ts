@@ -257,7 +257,7 @@ function failureToast(opId: string, failure: WriteFailure, retry: () => void): v
   }
   pushToast({
     id,
-    kind: 'info',
+    kind: 'error',
     message: failure.message,
     ...(failure.retry === 'none' ? {} : { actions: [{ id: 'retry', label: 'Retry' }] }),
     undoable: false,
