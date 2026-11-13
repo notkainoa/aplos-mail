@@ -631,7 +631,7 @@
   --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
-  /* Sized for the worst row: three marks, the account dot, the check and a dated stamp ("Oct 22, 2025"). */
+  /* Sized for the worst row: three marks, the check and a dated stamp ("Oct 22, 2025"). */
   --ui-date-w: calc(var(--space-10) * 2 + var(--space-7) + var(--space-3));
 }
 
@@ -639,14 +639,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.ui-list-row__dot {
-  width: var(--unread-dot);
-  height: var(--unread-dot);
-  border-radius: var(--radius-pill);
-}
-.ui-list-row[data-unread='true'] .ui-list-row__dot {
-  background-color: var(--accent);
 }
 .ui-list-row__pick {
   display: inline-flex;
@@ -685,6 +677,10 @@
 }
 .ui-list-row[data-unread='true'] .ui-list-row__line {
   color: var(--ink-2);
+}
+.ui-list-row[data-unread='true'] .ui-list-row__primary {
+  /* Unread reads in weight, not in a dot: a 500 line under the 600 sender (owner decision 2026-11-13). */
+  font-weight: 500;
 }
 .ui-list-row__primary,
 .ui-list-row__secondary {
@@ -728,13 +724,6 @@
   display: inline-flex;
   color: var(--faint);
 }
-.ui-list-row__account {
-  flex: none;
-  width: var(--mark-dot);
-  height: var(--mark-dot);
-  border-radius: var(--radius-pill);
-  background-color: var(--swatch);
-}
 .ui-list-row__stamp {
   display: inline-flex;
   flex: none;
@@ -767,8 +756,7 @@
   gap: var(--space-half);
   padding-left: var(--space-3);
 }
-/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp and the
-   account dot keep their size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
+/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp keeps its size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
    crowded row never spills over the summary. The meta cell itself is not clipped, so the hover actions still show. */
 .ui-list-row[data-layout='done'] .ui-list-row__mark {
   flex: 0 1 auto;

@@ -36,7 +36,7 @@ export interface RowAction {
 /** Column layout of a row. 'home' = 148 px sender; 'list' = 152 px sender + date; 'later' = the `laterUntil` chip in the date column; 'done' = fixed stamp column (the date it was finished behind a quiet check) with the hover action to its left (DESIGN §4.4, §7.3, §7.4). */
 export type RowLayout = 'home' | 'list' | 'later' | 'done';
 
-/** A mail row: fixed height per density, unread dot, sender, summary or subject, due chip, date; no avatar (DESIGN §4.1 Rows, §6 ListRow, §7.2–7.4). Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions. Mockups: home.html, inbox.html, later.html, done.html, search.html, errors.html (row-error). Plain + refines: ui-foundation; used by ui-home, ui-ask (search). */
+/** A mail row: fixed height per density, sender, summary or subject, due chip, date; no avatar (DESIGN §4.1 Rows, §6 ListRow, §7.2–7.4). Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions. Mockups: home.html, inbox.html, later.html, done.html, search.html, errors.html (row-error). Plain + refines: ui-foundation; used by ui-home, ui-ask (search). */
 export interface ListRowProps {
   /** DOM id of the `option`, used by the list's `aria-activedescendant`. */
   id: string;
@@ -54,7 +54,7 @@ export interface ListRowProps {
   secondary?: string;
   /** Search terms to bold in `primary` and `secondary` (search.html). */
   highlight?: readonly string[];
-  /** Unread: 600 `--ink` sender, `--ink-2` line, 6 px accent dot. */
+  /** Unread: 600 `--ink` sender and a 500 `--ink-2` line; no dot (owner decision 2026-11-13). Screen readers hear "Unread". */
   unread: boolean;
   /** Received (list, home), edited (Drafts) or sent (Sent) time for the date column. */
   date: IsoDateTime;
@@ -68,10 +68,8 @@ export interface ListRowProps {
   doneEstimated?: boolean;
   /** Meta marks before the date: replied, bookmarked, attachment. */
   marks?: { replied?: boolean; bookmarked?: boolean; attachment?: boolean };
-  /** The row's account; the 8 px dot renders only when `showAccountDot` (DESIGN decision 16). Always in the row tooltip. */
-  account?: { label: string; color: TagColor };
-  /** True only when two or more accounts are connected; the screen decides. */
-  showAccountDot: boolean;
+  /** The row's account name, shown only in the row tooltip (owner decision 2026-11-13: no account dot on rows). Screens pass it when two or more accounts are connected. */
+  account?: { label: string };
   /** Under the keyboard cursor: `--puck` fill + 2 px accent bar (DESIGN §4.1). */
   cursor: boolean;
   /** Bulk-picked: `--accent-wash` (DESIGN §7.4). */

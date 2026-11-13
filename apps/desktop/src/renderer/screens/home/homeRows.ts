@@ -14,7 +14,6 @@ import type {
   SuggestedAction,
   SuggestionIcon,
   SummaryContent,
-  TagColor,
 } from '../../ui/props';
 import type { SectionKey } from './homeModel';
 
@@ -158,21 +157,13 @@ export function suggestionOf(row: ThreadRow, section: SectionKey): SuggestedActi
   return { verb: 'Reply', icon: 'reply', isDone: false };
 }
 
-const ACCOUNT_COLORS: readonly TagColor[] = ['sky', 'hill', 'dusk', 'sand', 'ember', 'stamp'];
-
-/** An account's dot: its name, and a colour from its tag when it names one of the six, else by position. */
+/** An account's name for a row's tooltip. Rows carry no account colour (owner decision 2026-11-13). */
 export function accountMark(
   accountId: string,
   accounts: readonly Account[],
-): { label: string; color: TagColor } | undefined {
-  const index = accounts.findIndex(account => account.id === accountId);
-  const account = accounts[index];
-  if (!account) return undefined;
-  const tagged = ACCOUNT_COLORS.find(color => color === account.colorTag);
-  return {
-    label: accountLabel(account),
-    color: tagged ?? ACCOUNT_COLORS[index % ACCOUNT_COLORS.length] ?? 'sky',
-  };
+): { label: string } | undefined {
+  const account = accounts.find(candidate => candidate.id === accountId);
+  return account ? { label: accountLabel(account) } : undefined;
 }
 
 /** The handlers a row needs from its screen. */
@@ -199,7 +190,6 @@ export interface RowContext {
 
 /** Everything `ListRow` needs for one thread. */
 export function listRowProps(row: ThreadRow, context: RowContext): ListRowProps {
-  const showAccountDot = context.accounts.length >= 2;
   return {
     id: context.domId,
     layout: context.layout,
@@ -210,8 +200,8 @@ export function listRowProps(row: ThreadRow, context: RowContext): ListRowProps 
     date: dateOf(row),
     due: dueOf(row),
     marks: { bookmarked: row.workflow.bookmarked, attachment: row.hasAttachments },
-    account: showAccountDot ? accountMark(row.accountId, context.accounts) : undefined,
-    showAccountDot,
+    account:
+      context.accounts.length >= 2 ? accountMark(row.accountId, context.accounts) : undefined,
     cursor: context.cursor,
     picked: context.picked === true,
     picking: context.picking === true,

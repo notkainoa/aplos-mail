@@ -135,7 +135,6 @@ export function Drill({ state, now, registry, onKey, onPick }: DrillProps) {
         primary={letter.subject}
         unread
         date={date}
-        showAccountDot={false}
         cursor={cursor}
         picked={false}
         picking={false}

@@ -96,7 +96,6 @@ function render(
       localRows: over.localRows ?? [],
       remoteRows: over.remoteRows ?? [],
       density: 'comfortable',
-      showAccountDot: false,
       scopeLabel: 'All accounts',
       handlers: HANDLERS,
     }),

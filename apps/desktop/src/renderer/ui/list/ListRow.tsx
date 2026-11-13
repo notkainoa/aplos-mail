@@ -1,7 +1,7 @@
 // ListRow (DESIGN §4.1 Rows, §4.4, §5 rules 11 and 17, §6, §7.2–7.4). Mockups: home.html, inbox.html,
 // later.html, done.html, search.html, errors.html (row-error).
 // Fixed height per density, no avatar. Read: 400 --ink-2 sender, --dim line. Unread: 600 --ink sender,
-// --ink-2 line, the 6 px accent dot. Cursor: --puck plus a 2 px accent bar on the leading edge. Picked:
+// --ink-2 line; no dots on a row (owner decision 2026-11-13). Cursor: --puck plus a 2 px accent bar on the leading edge. Picked:
 // --accent-wash. Hover actions overlay the date column (or sit left of the Done stamp) and never reflow.
 
 import type { CSSProperties, ReactNode, Ref } from 'react';
@@ -208,17 +208,13 @@ function HoverActions({
 
 /** A mail row in any list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search, the Low sheet. */
 export function ListRow(props: ListRowProps) {
-  const { id, layout, density, sender, account, showAccountDot, unread, cursor, picked } = props;
+  const { id, layout, density, sender, account, unread, cursor, picked } = props;
   const { picking, hoverActions, swipe, rejected, lifted, onSelect, onOpen, onAction, ref } = props;
 
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
     hoverActions.length > 0
       ? ({ '--ui-actions': hoverActions.length } as CSSProperties)
-      : undefined;
-  const accountStyle =
-    account && showAccountDot
-      ? ({ '--swatch': `var(--tag-${account.color})` } as CSSProperties)
       : undefined;
 
   return (
@@ -248,9 +244,7 @@ export function ListRow(props: ListRowProps) {
           <span className="ui-list-row__pick">
             {picked ? <Icon name="check" size="xs" /> : null}
           </span>
-        ) : (
-          <span className="ui-list-row__dot" />
-        )}
+        ) : null}
       </span>
       {unread ? <span className="ui-list-sr">Unread. </span> : null}
 
@@ -268,11 +262,6 @@ export function ListRow(props: ListRowProps) {
 
       <span className="ui-list-row__meta">
         <RowMarks marks={props.marks} />
-        {accountStyle && account ? (
-          <span className="ui-list-row__account" style={accountStyle}>
-            <span className="ui-list-sr">{account.label}</span>
-          </span>
-        ) : null}
         <DateColumn
           layout={layout}
           date={props.date}

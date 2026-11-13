@@ -11,7 +11,7 @@
  */
 import { toIsoDateTime } from '../../data';
 import type { ErrorBody, ProgressFrame, SearchQuery, ThreadRow } from '../../data';
-import type { SearchOperator, TagColor } from '../../ui/props';
+import type { SearchOperator } from '../../ui/props';
 import {
   absorbTokens,
   currentSearch,
@@ -465,7 +465,7 @@ export interface ResultRow {
   readonly unread: boolean;
   readonly date: string;
   readonly marks: { readonly attachment?: boolean; readonly bookmarked?: boolean };
-  readonly account?: { readonly label: string; readonly color: TagColor };
+  readonly account?: { readonly label: string };
   /** Remote rows carry the same actions: they are real Gmail threads. */
   readonly remote: boolean;
 }
@@ -499,7 +499,7 @@ export function resultRow(
   >,
   query: SearchQuery,
   remote: boolean,
-  account?: { label: string; color: TagColor },
+  account?: { label: string },
 ): ResultRow {
   return {
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,

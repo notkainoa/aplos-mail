@@ -338,8 +338,7 @@ function DoneRowsCrowded(): ReactElement {
               primary: 'Print run for November, with the proofs attached for the whole group',
               doneAt: '2025-10-22T08:03:00-07:00',
               marks: { replied: true, bookmarked: true, attachment: true },
-              showAccountDot: true,
-              account: { label: 'Studio', color: 'hill' },
+              account: { label: 'Studio' },
               cursor: true,
               hoverActions: [...move],
             })}
