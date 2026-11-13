@@ -12,6 +12,7 @@ import {
   detailRows,
   recipientPeople,
   recipientLabel,
+  recipientParts,
   type DetailRow,
   type Person,
 } from './readerPeople';
@@ -86,7 +87,9 @@ function useCloseOnScroll(open: boolean, close: () => void): void {
 
 /** "to me" (or the names), the chevron and the details popover they open. */
 export function RecipientsLine({ message, me }: RecipientsLineProps) {
-  const label = recipientLabel(recipientPeople(message, me));
+  const people = recipientPeople(message, me);
+  const label = recipientLabel(people);
+  const { names, more } = recipientParts(people);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   useCloseOnScroll(open, () => setOpen(false));
@@ -102,7 +105,8 @@ export function RecipientsLine({ message, me }: RecipientsLineProps) {
         onClick={() => setOpen(value => !value)}
       >
         <span className="aplos-recipients__to" aria-hidden="true">
-          {label}
+          <span className="aplos-recipients__names">{names}</span>
+          {more === '' ? null : <span className="aplos-recipients__more">{more}</span>}
         </span>
         <Icon name="chevron-down" size="sm" />
       </button>

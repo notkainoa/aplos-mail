@@ -260,11 +260,21 @@
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
 }
+/* The names give way (an ellipsis) so "and N more" is always drawn whole. */
 .aplos-recipients__to {
+  display: inline-flex;
+  min-width: 0;
   max-width: 40ch;
+  white-space: nowrap;
+}
+.aplos-recipients__names {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.aplos-recipients__more {
+  flex: none;
+  white-space: pre;
 }
 .aplos-details {
   box-sizing: border-box;
