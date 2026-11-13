@@ -337,6 +337,7 @@ export function expandKeymapEntries(
         `${formatChord(chord)} ${why}, so it can’t run ${owner.id}`,
       );
     }
+    const quietDefault = defaults.some(d => d.quiet && chordId(d.chord) === chordId(chord));
     for (const context of owner.contexts) {
       const fieldOwner = defaults.some(d => d.inTextField && d.context === context);
       const types = isCharacterChord(chord) && !isModal(context);
@@ -345,6 +346,7 @@ export function expandKeymapEntries(
           phase: entry.phase,
           inTextField: fieldOwner && !types && !isTextEditingChord(chord),
           followsSwipe: false,
+          ...(quietDefault ? { quiet: true } : {}),
         }),
       );
     }

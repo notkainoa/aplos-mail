@@ -7,7 +7,7 @@
 import { useSyncExternalStore } from 'react';
 import { Button } from '../ui/buttons-keys';
 import { PartIcon } from '../ui/surfaces/parts';
-import { dismissToast } from './index';
+import { dismissToast, navigate } from './index';
 import { getOutbox, removeOutboxNotice, runOutboxAction, subscribeOutbox } from './store-outbox';
 import type { OutboxNotice } from './store-outbox';
 
@@ -24,7 +24,7 @@ export function OutboxView({ notices, onAction, onDismiss }: OutboxViewProps) {
   return (
     <section className="aplos-outbox" aria-label="Messages that did not send">
       {notices.map(notice => (
-        <div key={notice.id} className="aplos-outbox__item">
+        <div key={notice.id} className="aplos-outbox__item" data-notice-id={notice.id}>
           <PartIcon name="alert" size="sm" />
           <div className="aplos-outbox__body">
             <p className="aplos-outbox__text">{notice.message}</p>
@@ -59,10 +59,62 @@ export function dismissOutboxNotice(id: string): void {
   removeOutboxNotice(id);
 }
 
+/**
+ * Where focus goes when the pressed button's notice is about to leave: the first button of another notice, else the
+ * Settings row. Taken before the notice goes, so focus never drops to the page.
+ */
+export function focusAfterLeaving(id: string): HTMLElement | null {
+  const items = [...document.querySelectorAll<HTMLElement>('.aplos-outbox__item')];
+  const here = items.findIndex(item => item.dataset.noticeId === id);
+  const other = items[here + 1] ?? items[here - 1];
+  return (
+    other?.querySelector<HTMLElement>('button') ??
+    document.querySelector<HTMLElement>('[data-puck-id="settings"] button')
+  );
+}
+
+function leaving(id: string, run: () => void): void {
+  focusAfterLeaving(id)?.focus();
+  run();
+}
+
 /** The sidebar's outbox, live. */
 export function OutboxHost() {
   const notices = useSyncExternalStore(subscribeOutbox, getOutbox, getOutbox);
   return (
-    <OutboxView notices={notices} onAction={runOutboxAction} onDismiss={dismissOutboxNotice} />
+    <OutboxView
+      notices={notices}
+      onAction={(id, actionId) => leaving(id, () => runOutboxAction(id, actionId))}
+      onDismiss={id => leaving(id, () => dismissOutboxNotice(id))}
+    />
   );
+}
+
+/** Props for `OutboxFlagView`. */
+export interface OutboxFlagViewProps {
+  readonly count: number;
+  readonly onPress: () => void;
+}
+
+/** The small stand-in for the notice where the sidebar is not drawn (minimised or collapsed): an alert with a name. */
+export function OutboxFlagView({ count, onPress }: OutboxFlagViewProps) {
+  if (count === 0) return null;
+  return (
+    <div className="aplos-outbox-flag">
+      <Button
+        variant="icon"
+        size="sm"
+        icon="alert"
+        tone="danger"
+        label="Messages that did not send"
+        onPress={onPress}
+      />
+    </div>
+  );
+}
+
+/** The flag, live; it opens Drafts, where every unsent message is saved. */
+export function OutboxFlag() {
+  const notices = useSyncExternalStore(subscribeOutbox, getOutbox, getOutbox);
+  return <OutboxFlagView count={notices.length} onPress={() => navigate('drafts')} />;
 }

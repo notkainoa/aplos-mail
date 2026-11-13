@@ -192,11 +192,24 @@
   overflow-y: auto;
 }
 
+/* Minimised or collapsed there is no sidebar to hold the notice: a small alert sits in the window's bottom-left
+   corner, in the rail's empty space or over the pane's margin, and opens Drafts. */
+.aplos-outbox-flag {
+  position: absolute;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  z-index: var(--z-sticky);
+}
+
 /* A failed send's notice: StatusSlot's shape, two or three short lines, never a banner. */
 .aplos-outbox {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* On a short window the notice is what gives way, and it scrolls: Settings and Help never leave the window. */
+  flex-shrink: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--space-2);
   color: var(--stamp-ink);
   font: var(--type-small);
@@ -233,6 +246,15 @@
   flex-direction: column;
   margin-top: auto;
   padding-top: var(--space-5);
+}
+/* The outbox notice sits just above the footer; the footer then no longer needs the auto margin or the wide gap. */
+.aplos-sidebar > .aplos-outbox {
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+.aplos-outbox + .aplos-sidebar__foot {
+  margin-top: 0;
+  padding-top: var(--space-2);
 }
 
 .aplos-rail {

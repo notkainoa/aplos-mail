@@ -244,6 +244,14 @@ const WALK_THROUGH: Step = {
 const REFUSED_SEND = { draftId: 'draft-demo', revision: 1, names: ['Jordan Park'] };
 
 export const homeScenes: Record<string, () => ReactElement> = {
+  'shell-calendar-send-failed': sceneOf({
+    scenario: 'demo',
+    screen: 'calendar',
+    steps: [
+      { run: async () => pushRefusedSend(REFUSED_SEND) },
+      { run: async () => dismissToast('send-refused-draft-demo') },
+    ],
+  }),
   'shell-send-failed-faded': sceneOf({
     scenario: 'demo',
     screen: 'home',

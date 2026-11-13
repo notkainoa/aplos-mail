@@ -39,4 +39,13 @@ export const shellSettingsStates: readonly VisualState[] = [
     mockup: 'errors.html (send-failed)',
     filled: 1,
   },
+  {
+    id: 'shell-calendar-send-failed',
+    frame: 'shell',
+    title: 'Shell: Calendar with a failed-send notice; Settings and Help stay in the window',
+    components: ['Sidebar', 'Pane', 'MiniMonth', 'CalendarList'],
+    design: '7.1, 7.8, 7.15',
+    mockup: 'errors.html (send-failed)',
+    filled: 0,
+  },
 ];

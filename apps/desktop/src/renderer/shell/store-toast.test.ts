@@ -179,3 +179,11 @@ test('a command action keeps the toast unless the registry says the command ran'
   runToastAction('u', 'undo');
   assert.deepEqual(ids(), []);
 });
+
+test('an error toast is never evicted: the oldest plain one goes instead', () => {
+  pushToast({ ...plain('e'), kind: 'error' });
+  pushToast(plain('a'));
+  pushToast(plain('b'));
+  pushToast(plain('c'));
+  assert.deepEqual(ids(), ['e', 'b', 'c']);
+});
