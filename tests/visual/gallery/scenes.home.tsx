@@ -9,7 +9,7 @@ import type { Scenario } from '@aplos/contract-fixture';
 import { App, type AppClient } from '../../../apps/desktop/src/renderer/App';
 import { connectStandInDataLayer } from '../../../apps/desktop/src/renderer/data/standin-layer';
 import { api } from '../../../apps/desktop/src/renderer/data';
-import { navigate, type Screen } from '../../../apps/desktop/src/renderer/shell';
+import { navigate, openRoute, type Screen } from '../../../apps/desktop/src/renderer/shell';
 import { resetToasts } from '../../../apps/desktop/src/renderer/shell/store-toast';
 import '../../../apps/desktop/src/renderer/shell/shell.css';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
@@ -240,6 +240,12 @@ const WALK_THROUGH: Step = {
 /* ------------------------------ the scenes ------------------------------ */
 
 export const homeScenes: Record<string, () => ReactElement> = {
+  'shell-calendar-sidebar': sceneOf({ scenario: 'demo', screen: 'calendar' }),
+  'shell-help-sidebar': sceneOf({
+    scenario: 'demo',
+    screen: 'settings',
+    steps: [{ run: async () => openRoute('settings/help') }],
+  }),
   'home-full': sceneOf({ scenario: 'demo', screen: 'home' }),
   'home-menu': sceneOf({ scenario: 'demo', screen: 'home', steps: [{ key: '.' }] }),
   'home-with-cursor-focusslot': sceneOf({
