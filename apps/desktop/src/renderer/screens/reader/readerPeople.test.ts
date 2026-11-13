@@ -8,12 +8,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../data';
 import {
-  MAX_CIRCLES,
+  MAX_NAMED,
   detailDate,
   detailRows,
   personOf,
-  recipientCircles,
-  recipientsPhrase,
+  recipientPeople,
+  recipientLabel,
 } from './readerPeople';
 
 const ME = new Set(['alex@studio.example']);
@@ -41,17 +41,17 @@ test('a person is a monogram of the first letter; the owner reads "You" with the
   assert.deepEqual([me.name, me.initial, me.me], ['You', 'A', true]);
 });
 
-test('circles: the owner first, duplicates once, To then Cc', () => {
-  const people = recipientCircles(message({ to: [JORDAN, ALEX], cc: [MINA, JORDAN] }), ME);
+test('people: the owner first, duplicates once, To then Cc', () => {
+  const people = recipientPeople(message({ to: [JORDAN, ALEX], cc: [MINA, JORDAN] }), ME);
   assert.deepEqual(
     people.map(p => p.name),
     ['You', 'Jordan Park', 'Mina Cho'],
   );
 });
 
-test('every address of the owner is one circle', () => {
+test('every address of the owner is one person', () => {
   const both = new Set(['alex@studio.example', 'alex@home.example']);
-  const people = recipientCircles(
+  const people = recipientPeople(
     message({ to: [ALEX], cc: [{ name: 'Alex', address: 'alex@home.example' }] }),
     both,
   );
@@ -62,34 +62,42 @@ test('every address of the owner is one circle', () => {
 });
 
 test('mail that arrived without the owner on it still went to them; a sent message did not', () => {
-  const arrived = recipientCircles(message({ to: [MINA] }), ME);
+  const arrived = recipientPeople(message({ to: [MINA] }), ME);
   assert.deepEqual(
     arrived.map(p => p.name),
     ['You', 'Mina Cho'],
   );
   assert.equal(arrived[0]?.address, 'alex@studio.example');
-  const sent = recipientCircles(message({ fromMe: true, to: [MINA] }), ME);
+  const sent = recipientPeople(message({ fromMe: true, to: [MINA] }), ME);
   assert.deepEqual(
     sent.map(p => p.name),
     ['Mina Cho'],
   );
 });
 
-test('the phrase names who the circles stand for', () => {
+test('the label says who it went to in plain words: "to me", a name, or the address', () => {
+  assert.equal(recipientLabel(recipientPeople(message({ to: [ALEX] }), ME)), 'to me');
   assert.equal(
-    recipientsPhrase(recipientCircles(message({ to: [ALEX, MINA] }), ME)),
-    'you, Mina Cho',
+    recipientLabel(recipientPeople(message({ to: [ALEX, MINA] }), ME)),
+    'to me, Mina Cho',
   );
-  assert.equal(recipientsPhrase([]), 'no one');
+  const bare = recipientPeople(
+    message({ fromMe: true, to: [{ name: '', address: 'sam@studio.example' }] }),
+    ME,
+  );
+  assert.equal(recipientLabel(bare), 'to sam@studio.example');
+  assert.equal(recipientLabel([]), 'to undisclosed recipients');
   const many = ['a', 'b', 'c', 'd', 'e'].map(n =>
     personOf({ name: n, address: `${n}@x.example` }, ME),
   );
+  assert.equal(recipientLabel(many), 'to a, b and 3 more', 'a long list never becomes a paragraph');
+  const long = personOf({ name: 'Bartholomew Featherstonehaugh', address: 'b@x.example' }, ME);
   assert.equal(
-    recipientsPhrase(many),
-    'a, b, c and 2 more',
-    'a long list never becomes a paragraph',
+    recipientLabel([long, ...many]),
+    'to Bartholomew Fea…, a and 4 more',
+    'a long name is cut so the count stays whole',
   );
-  assert.ok(MAX_CIRCLES >= 3);
+  assert.ok(MAX_NAMED >= 2);
 });
 
 test('details: From, Date, then To and Cc (the long lists last); Bcc and Reply-to only when present, Reply-to only when it differs', () => {
