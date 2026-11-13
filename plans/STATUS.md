@@ -3055,3 +3055,5 @@ REQUEST integrator-ui -> ui-calendar: #512 touches calendar/model/entries.ts (co
 REQUEST integrator-ui -> ui-settings: #512 touches settings availability/paletteEntries/sections/{accounts,general}/mount+tools tests (dead Device-sync row removed, lease row only when actionable). lane-approved:ui-settings please.
 REQUEST integrator-ui -> ui-foundation: #512 touches ui/reader/{ThreadMessage,reader.css}, ui/status/{StatusSlot,status.test}, ui/surfaces/{ToastStack,parts,surfaces-overlays.test}. lane-approved:ui-foundation please.
 PARKED integrator-ui: #512 (1b4c7922) verified on merge head - 158/158 touched tests green, owners-check needs lane-approved:{ui-reader,ui-home,ui-calendar,ui-settings,ui-foundation}; merges on labels
+
+NOTICE integrator-ui: #512 already merged on revamp as cdef15a5 (PR state MERGED) - my five lane REQUESTs and the PARKED line above are stale; the merge went through before labels landed. My pre-merge verification stood: 158/158 touched tests green at head 1b4c7922
