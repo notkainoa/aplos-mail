@@ -39,6 +39,11 @@ export interface ComposeState {
   readonly discarding: boolean;
   /** Sends of this draft that ended cancelled in this composer; part of the next send's idempotency key. */
   readonly attempt: number;
+  /**
+   * From moved the text to another account: the draft the engine still holds in the old one. It is destroyed (quietly)
+   * only once the new account's draft is saved, so a failed save never leaves the text in memory alone.
+   */
+  readonly leaving?: string;
   /** The newest engine row seen for this draft (a refused stale save is resolved against it). */
   readonly remote?: Draft;
 }
@@ -110,7 +115,9 @@ export type ComposeEvent =
   | { readonly type: 'keepSuggestion'; readonly now: number }
   | { readonly type: 'dismissSuggestion' }
   | { readonly type: 'dictated'; readonly text: string; readonly now: number }
-  | { readonly type: 'reopen' };
+  | { readonly type: 'reopen' }
+  /** From: write this new message in another account (see `canChangeAccount`). */
+  | { readonly type: 'setAccount'; readonly accountId: string; readonly now: number };
 
 /** A `Submission/set` action other than `send`. */
 export type FollowUpAction = Exclude<SubmissionAction, { type: 'send' }>;
@@ -133,7 +140,8 @@ export type ComposeEffect =
       readonly notBefore?: number;
     }
   | { readonly type: 'submission'; readonly action: FollowUpAction }
-  | { readonly type: 'destroy'; readonly draftId: string }
+  /** `quiet`: the draft is only moving to another account, so no "Draft discarded" notice follows. */
+  | { readonly type: 'destroy'; readonly draftId: string; readonly quiet?: boolean }
   | { readonly type: 'checkSent' }
   /** Keep a newer remote revision as a draft of its own before the local text is saved over it. */
   | { readonly type: 'preserve'; readonly draft: Draft }
