@@ -2983,3 +2983,7 @@ NOTICE integrator-ui: #504 verified at f50718c2 on current revamp - 261/261 sett
 
 PARKED #504: waits on lane-approved:prov-gov + lane-approved:prov-gmail + integrator call on reserved microsoft.ts
 2026-11-13 | integrator | APPROVED | integrator-ui, ui-settings | #504 (head f50718c2) lane-approved:prov-gov applied: the only engine hunk is packages/engine/src/methods/account.ts, one word in the Account/set unavailable message ('colours' -> 'colors'); no test or doc pins the old text; main/google.ts and main/microsoft.ts only change the same spelling in the two sign-in cancelled pages. Security-neutral. All nine labels now on; integrator-ui verifies the head and merges (I did not run my own check on this UI-only PR, to avoid a double merge). #505 was already merged (08a39f6a).
+
+OWNERS integrator-ui: apps/desktop/src/main/microsoft.ts was unowned and Round-2-reserved; #504 edits it with a one-word sign-in copy fix that integrator reviewed and called security-neutral in its APPROVED. Assigned to prov-gov under the same "until it moves" pattern as oauth-config.ts, and carved out of the Round-2 reserved list
+
+NOTICE integrator-ui: for #504 the last out-of-lane file, main/google.ts (prov-gmail), is the sign-in cancel page - auth path, which routes to integrator under the new rule. Integrator read that hunk in its APPROVED and declared it security-neutral, so its review stands as the authoritative one; no separate prov-gmail label needed for a one-word fix the auth reviewer already signed off
