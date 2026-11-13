@@ -46,7 +46,7 @@ function hostCss(mark: string, plain: boolean, dark: boolean): string {
     `body{margin:0;${plain ? `background:${dark ? d.surface : p.paper};letter-spacing:${p.letterSpacing};` : ''}color:${dark ? d.ink : p.ink};font-family:${p.fontFamily};font-size:var(--aplos-read-size);line-height:var(--aplos-read-leading);overflow-wrap:anywhere}`,
     `img,table{max-width:100%}`,
     // A blocked image is a small placeholder, never a slab the height of the picture (it would push the text below the fold).
-    `img[data-blocked]{max-height:48px!important}`,
+    `img[data-blocked]{max-height:48px!important;min-height:0!important;padding:0!important}`,
     `pre,.aplos-flat{white-space:pre-wrap}`,
     `a{color:${dark ? d.accent : p.accent}}`,
     `mark[${mark}]{all:unset!important;background:color-mix(in srgb,${p.accent} 18%,${p.canvas})!important;color:inherit!important}`,
