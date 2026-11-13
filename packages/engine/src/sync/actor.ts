@@ -484,8 +484,7 @@ export class AccountActor {
       writes: [
         ...writes,
         ...statusWrites,
-        ...(this.runtime.lastSyncAt === undefined ||
-        Math.floor(now / 60_000) > Math.floor(this.runtime.lastSyncAt / 60_000)
+        ...(Math.floor(now / 6e4) > Math.floor((this.runtime.lastSyncAt ?? -1) / 6e4)
           ? [{ kind: 'account' as const, id: this.id }]
           : []),
       ],

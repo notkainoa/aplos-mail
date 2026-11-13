@@ -1,16 +1,22 @@
 import { searchRemote } from '../views/remote';
 import { ensureViewKind } from '../views/registry';
-import type { AreaHandlers } from './types';
+import type { ViewSpec } from '@aplos/contract';
+import type { AreaHandlers, EngineServices } from './types';
 
 /**
  * The `view` area, owned by lane `eng-views`: live windows, one-shot reads, the sidebar's numbers and remote search.
  * Arguments arrive validated; the window engine (`services.views`) does the work, per connection.
  */
+/** `ensureFolders` from the lazy module, only for specs that name folders. */
+const fetchFolders = (args: { spec: ViewSpec }, ctx: { services: EngineServices }) =>
+  args.spec.kind === 'label' || args.spec.kind === 'mailbox'
+    ? import('../views/folder-fetch').then(m => m.ensureFolders(ctx.services, args.spec))
+    : undefined;
+
 export const handlers: AreaHandlers<'view'> = {
   'View/watch': async (args, ctx) => {
     await ensureViewKind(args.spec.kind);
-    if (args.spec.kind === 'label' || args.spec.kind === 'mailbox')
-      await (await import('../views/folder-fetch')).ensureFolders(ctx.services, args.spec);
+    await fetchFolders(args, ctx);
     return ctx.services.views.watch(args, ctx.connectionId);
   },
   'View/move': (args, ctx) => ctx.services.views.move(args, ctx.connectionId),
@@ -28,8 +34,7 @@ export const handlers: AreaHandlers<'view'> = {
   },
   'View/query': async (args, ctx) => {
     await ensureViewKind(args.spec.kind);
-    if (args.spec.kind === 'label' || args.spec.kind === 'mailbox')
-      await (await import('../views/folder-fetch')).ensureFolders(ctx.services, args.spec);
+    await fetchFolders(args, ctx);
     return ctx.services.views.query(args);
   },
   'Folder/get': (args, ctx) => ctx.services.views.folders(args.accountId),

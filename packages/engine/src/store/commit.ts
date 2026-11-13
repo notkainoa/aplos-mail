@@ -100,17 +100,6 @@ export const CORE_WRITE_KINDS: ReadonlySet<string> = new Set([
 /** Op states whose effect is still replayed over sync (ARCH 4.3). */
 const REPLAYED_OPS = `state IN ('queued', 'inflight')`;
 
-/** The change types `Counts/get` can move on; a commit touching one marks `Counts` in the `state` frame (frames.ts). */
-export const COUNTS_TYPES = new Set<string>([
-  'Thread',
-  'Message',
-  'Folder',
-  'Draft',
-  'Submission',
-  'Account',
-  'Settings',
-]);
-
 /**
  * The commit (F4): every write in one transaction, then pending ops replayed over the sync facts (ARCH 4.3), then thread
  * rollups and folder lists recomputed from the messages, one `changes` row per changed item, `seq` bumped once. Lane
