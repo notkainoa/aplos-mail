@@ -186,17 +186,19 @@ test('every list renders its own rows: groups in All mail, recipients in Drafts 
     const rows = (html: string) => html.match(/role="option"/g)?.length ?? 0;
     assert.equal(rows(all), world.windows.get('all')!.snapshot().ids.length);
 
-    const drafts = text(renderToStaticMarkup(createElement(ListScreen, { which: 'drafts' })));
-    assert.match(drafts, /Jordan Park/);
+    const draftsHtml = renderToStaticMarkup(createElement(ListScreen, { which: 'drafts' }));
+    const drafts = text(draftsHtml);
+    assert.match(draftsHtml, /ui-section-header/, 'Drafts has date groups');
+    assert.match(drafts, /To: Jordan Park/);
     assert.match(drafts, /Re: A quieter home for our project/);
 
     const sent = renderToStaticMarkup(createElement(ListScreen, { which: 'sent' }));
-    assert.match(sent, /ui-list-row__sender" dir="auto" title="Studio team">Studio team</);
-    assert.doesNotMatch(
+    assert.match(
       sent,
-      /ui-list-row__sender" dir="auto" title="Alex Morgan">Alex Morgan</,
-      'Sent shows who it went to, not the owner',
+      /ui-list-row__sender" dir="auto" title="To: Studio team[^"]*">To: Studio team</,
     );
+    assert.match(sent, /ui-section-header/, 'Sent has date groups');
+    assert.doesNotMatch(sent, />To: Alex Morgan</, 'Sent shows who it went to, not the owner');
 
     const trash = renderToStaticMarkup(createElement(ListScreen, { which: 'trash' }));
     assert.match(trash, /aria-label="Trash"/);
@@ -206,12 +208,14 @@ test('every list renders its own rows: groups in All mail, recipients in Drafts 
 
     const done = renderToStaticMarkup(createElement(DoneScreen));
     assert.match(done, /aria-label="Done mail"/);
-    assert.match(text(done), /Done (\w{3} )?\d{1,2}:\d{2} (AM|PM)/, 'rows read "Done <time>"');
+    assert.match(done, /ui-section-header/, 'Done has date groups');
+    assert.match(done, /<time dateTime="[^"]+">[^<]+<\/time><\/span>/, 'rows show the date');
+    assert.match(done, /role="img" aria-label="Done"/, 'the quiet check is named Done');
     assert.doesNotMatch(done, /id="[^"]* [^"]*"/, 'no DOM id has a space');
     assert.match(done, /Move to Home/);
     assert.doesNotMatch(
       done,
-      /aria-label="Later"|aria-label="Done"/,
+      /<button[^>]*aria-label="(Later|Done)"/,
       'no Done or Later on a done row',
     );
   } finally {
@@ -220,7 +224,7 @@ test('every list renders its own rows: groups in All mail, recipients in Drafts 
   }
 });
 
-test('a row finished today reads "Done 9:41 AM"', () => {
+test('a row finished today shows its time beside the Done check', () => {
   const doneAt = new Date(2026, 9, 29, 9, 41).getTime();
   const row = {
     id: 'd',
@@ -247,14 +251,15 @@ test('a row finished today reads "Done 9:41 AM"', () => {
   });
   const html = renderToStaticMarkup(createElement(ListRow, props));
   setFormatClock(null);
-  assert.match(text(html), /Done 9:41 AM/);
+  assert.match(text(html), /9:41 AM/);
+  assert.doesNotMatch(text(html), /Done/, 'the check carries the name, not the text');
   assert.deepEqual(
     props.hoverActions.map(action => action.commandId),
     ['done.moveToHome'],
   );
 });
 
-test('a Done row with no finish time reads a bare "Done", never a time it was not finished', () => {
+test('a Done row with no finish time shows the date of its last message, not the word', () => {
   const row = {
     id: 'd',
     accountId: 'a1',
@@ -277,8 +282,12 @@ test('a Done row with no finish time reads a bare "Done", never a time it was no
     accounts: [],
     handlers: { onSelect: () => undefined, onOpen: () => undefined, onAction: () => undefined },
   });
-  assert.equal(props.doneAt, undefined);
-  assert.doesNotMatch(text(renderToStaticMarkup(createElement(ListRow, props))), /2:07|Done \d/);
+  assert.match(props.doneAt ?? '', /^2026-10-28T14:07:00/);
+  setFormatClock(() => new Date(2026, 9, 29, 10, 0).getTime());
+  const html = text(renderToStaticMarkup(createElement(ListRow, props)));
+  setFormatClock(null);
+  assert.match(html, /Yesterday/);
+  assert.doesNotMatch(html, /Done/);
 });
 
 test('an empty list is one plain sentence centred in the pane, and first sync is never called empty', () => {

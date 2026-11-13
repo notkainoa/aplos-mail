@@ -76,12 +76,16 @@ describe('ListRow', () => {
       />,
     );
     assert.match(m, /data-layout="done"/);
-    assert.match(m, /class="ui-list-row__stamp"[^>]*>.*Done 9:41 AM<\/span>/);
+    assert.match(
+      m,
+      /class="ui-list-row__stamp"[^>]*>.*aria-label="Done".*>9:41 AM<\/time><\/span>/,
+    );
     assert.match(m, /aria-label="Move to Home" title="Move to Home · H"/);
     const older = render(
       <ListRow {...row({ layout: 'done', doneAt: '2026-10-28T08:52:00-07:00' })} />,
     );
-    assert.match(older, /Done Wed 8:52 AM/);
+    assert.match(older, />Yesterday<\/time>/);
+    assert.doesNotMatch(older, /Done Yesterday/, 'the word is not repeated before the date');
   });
 
   test('later layout: the laterUntil chip takes the date column', () => {
