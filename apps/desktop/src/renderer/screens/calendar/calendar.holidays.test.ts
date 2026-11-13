@@ -52,3 +52,34 @@ test('a timed event, a plan and an all-day meeting with guests are never merged'
   ] as never);
   assert.equal(kept.length, 4);
 });
+
+test('review23: a new all-day event that is not saved yet is never hidden behind an older twin', () => {
+  const chip = calRef({ id: 'x', name: 'X' });
+  const base = {
+    title: 'Holiday',
+    start: '2026-11-11T00:00:00',
+    end: '2026-11-12T00:00:00',
+    allDay: true,
+    calendar: chip,
+    kind: 'event',
+  } as const;
+  // The new entry sorts AFTER the saved one by id: it used to be the one collapsed away.
+  const kept = collapseAllDayDuplicates([
+    { ...base, id: 'a-saved', persisted: true },
+    { ...base, id: 'new:1', persisted: false },
+  ] as never);
+  assert.deepEqual(
+    kept.map(e => e.id),
+    ['a-saved', 'new:1'],
+  );
+  // Two saved twins still collapse to one, and an unsaved entry never hides a saved one.
+  const twins = collapseAllDayDuplicates([
+    { ...base, id: 'b', persisted: false },
+    { ...base, id: 'c', persisted: true },
+    { ...base, id: 'd', persisted: true },
+  ] as never);
+  assert.deepEqual(
+    twins.map(e => e.id),
+    ['b', 'c'],
+  );
+});
