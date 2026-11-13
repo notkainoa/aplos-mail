@@ -150,9 +150,9 @@ export interface DraftStateProps {
   onRetry?: () => void;
 }
 
-/** The hint line under the body for dim AI text: "The grey sentence is a suggestion. Tab keep, Esc dismiss." The dim text itself is editor data rendered by ui-reader's editor (DESIGN §6 Suggestion, §7.6, §9 rule 6). Mockups: compose.html (ai-draft, follow-up: `p.suggest-hint`). Plain + refines: ui-foundation; used by ui-reader via Composer and InlineReply. */
+/** The hint line under the body for dim AI text: "The gray sentence is a suggestion. Tab keep, Esc dismiss." The dim text itself is editor data rendered by ui-reader's editor (DESIGN §6 Suggestion, §7.6, §9 rule 6). Mockups: compose.html (ai-draft, follow-up: `p.suggest-hint`). Plain + refines: ui-foundation; used by ui-reader via Composer and InlineReply. */
 export interface SuggestionProps {
-  /** 'draft' = "The grey sentence is a suggestion."; 'followUp' = "Aplos drafted this follow-up from your last email." */
+  /** 'draft' = "The gray sentence is a suggestion."; 'followUp' = "Aplos drafted this follow-up from your last email." */
   kind: 'draft' | 'followUp';
   /** Tab: keep it as ordinary text. */
   onKeep: () => void;

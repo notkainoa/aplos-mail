@@ -91,7 +91,7 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
       };
     case 'needsAdmin':
       return {
-        text: 'Your organisation has blocked Aplos. Ask your administrator.',
+        text: 'Your organization has blocked Aplos. Ask your administrator.',
         icon: 'alert',
         attention: true,
       };

@@ -12,7 +12,7 @@ import { Menu, Text } from '../../ui/surfaces';
 import { SettingRow } from '../../ui/settings';
 import type { CommandAction, ErrorLineKind, SettingRowProps } from '../../ui/props';
 import type { WriteFailure } from './ports';
-import { NOT_AVAILABLE, type Option } from './settings.model';
+import { hiddenUntilBuilt, NOT_AVAILABLE, type Option } from './settings.model';
 import { rowSpec } from './paletteEntries';
 
 /** The DOM id of a row's label, which its control names itself by. */
@@ -101,6 +101,7 @@ export function NotAvailable({
   anchor: string;
   label?: string;
 }) {
+  if (hiddenUntilBuilt(section, anchor)) return null;
   return <Row section={section} anchor={anchor} label={label} description={NOT_AVAILABLE} />;
 }
 

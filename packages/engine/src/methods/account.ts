@@ -70,7 +70,7 @@ function set(args: Input<'Account/set'>, ctx: MethodContext): Output<'Account/se
   if (args.colorTag !== undefined || args.notifications !== undefined) {
     throw new ContractError({
       type: 'unavailable',
-      message: 'Account colours and notification switches cannot be saved yet.',
+      message: 'Account colors and notification switches cannot be saved yet.',
     });
   }
   const { opId, accountId, name, aiAllowed } = args;

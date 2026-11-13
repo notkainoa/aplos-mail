@@ -103,6 +103,12 @@ function worstCase(): SettingsData {
   });
 }
 
+/** Two accounts whose display names look alike: only the address tells them apart. */
+const SIMILAR = [
+  { ...ALEX, name: 'Kainoa Newton', address: 'kainoa.newton@example.com' },
+  { ...JORDAN, name: 'Kainoa', address: 'kainoa@example.org', aiAllowed: true },
+];
+
 const tools = (over: Partial<SettingsData> = {}) =>
   dataOf({ listener: { enabled: true }, clients: clients(), ...over });
 
@@ -548,6 +554,21 @@ export const STATES: Record<string, StateSpec> = {
     section: 'ai',
     anchor: 'server-custom',
     data: worstCase(),
+  },
+  'accounts-similar-names': {
+    title: 'Accounts, two display names that look alike',
+    section: 'accounts',
+    data: dataOf({ accounts: SIMILAR }),
+  },
+  'notifications-similar-names': {
+    title: 'Notifications, two display names that look alike',
+    section: 'notifications',
+    data: dataOf({ accounts: SIMILAR }),
+  },
+  'calendar-similar-names': {
+    title: 'Calendar, two display names that look alike',
+    section: 'calendar',
+    data: dataOf({ accounts: SIMILAR }),
   },
   'worst-case-accounts': {
     title: 'Worst case, accounts',

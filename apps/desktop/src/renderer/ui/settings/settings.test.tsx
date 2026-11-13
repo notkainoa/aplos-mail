@@ -247,9 +247,9 @@ test('ProviderTable hosted: key source and status in words, Default tag, never a
   const out = html(<ProviderTable {...hosted()} />);
   assert.match(out, />Groq</);
   assert.match(out, />Default</);
-  assert.match(out, /From environment: GROQ_API_KEY/);
+  assert.match(out, /Key set on this Mac · GROQ_API_KEY/);
   assert.match(out, /Saved in Keychain/);
-  assert.match(out, /Not set · reads ANTHROPIC_API_KEY/);
+  assert.match(out, /No key yet · reads ANTHROPIC_API_KEY/);
   assert.match(out, /Works · 0\.4 s/);
   assert.match(out, /Testing…/);
   assert.match(out, /Needs a key/);
@@ -319,7 +319,7 @@ test('ProviderTable hosted: no key offers "Add key"; a refused key adds a plain 
   );
   assert.match(
     env,
-    /Groq refused the key from your environment, so nothing was sent\. Fix GROQ_API_KEY there\./,
+    /Groq refused the key set on this Mac, so nothing was sent\. Fix it where it was set \(GROQ_API_KEY\)\./,
   );
   assert.doesNotMatch(env, />Replace key</);
 });

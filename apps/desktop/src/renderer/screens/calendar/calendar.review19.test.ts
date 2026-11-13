@@ -118,10 +118,13 @@ test('review19: the row names the account the item names, when the screen knows 
   const accounts = [
     account({ id: 'acct-alex', name: 'Alex Moreno', address: 'alex.moreno@example.com' }),
   ];
-  assert.equal(holdAccount(accounts, 'acct-alex'), 'Alex Moreno');
+  assert.equal(holdAccount(accounts, 'acct-alex'), 'alex.moreno@example.com');
   assert.equal(holdAccount(accounts, 'acct-none'), undefined);
   assert.equal(holdAccount(accounts, undefined), undefined);
-  assert.equal(failedHoldsOf([calItem()], new Set(), accounts)[0].account, 'Alex Moreno');
+  assert.equal(
+    failedHoldsOf([calItem()], new Set(), accounts)[0].account,
+    'alex.moreno@example.com',
+  );
   // An account the screen does not have stays out of the row.
   assert.equal(
     failedHoldsOf([calItem({ accountId: 'acct-none' })], new Set(), accounts)[0].account,

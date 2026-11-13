@@ -6,6 +6,7 @@
  * Privacy sits behind one disclosure, and the background switch, consent re-review and daily cap follow.
  */
 import { Button } from '../../../ui/buttons-keys';
+import { accountLabel } from '../../../ui/accountLabel';
 import { Switch } from '../../../ui/controls';
 import { ErrorLine } from '../../../ui/list';
 import { ProviderTable, SettingRow } from '../../../ui/settings';
@@ -61,6 +62,7 @@ function moveFocusOffAccountMail(): void {
 
 export function Ai({ data, view, actions }: SectionProps) {
   const { settings } = data;
+  const devDetails = settings.ui.devDetails;
   const providers = data.providers;
   if (!providers) {
     return (
@@ -72,8 +74,8 @@ export function Ai({ data, view, actions }: SectionProps) {
   const consent = consentView(data.consent, settings);
   const notices = aiNotices(settings, providers);
   const features = featureRows(settings, providers, data.models ?? {});
-  const hosted = hostedRows(providers, view.testing);
-  const local = localRows(providers, settings, view.testing).map(r => ({
+  const hosted = hostedRows(providers, view.testing, devDetails);
+  const local = localRows(providers, settings, view.testing, devDetails).map(r => ({
     ...r,
     address: view.addressDraft[r.provider] ?? r.address,
   }));
@@ -200,7 +202,7 @@ export function Ai({ data, view, actions }: SectionProps) {
             anchor="accountMail"
             description={
               offAccounts.length === 1
-                ? `${offAccounts[0]!.name || offAccounts[0]!.address} keeps its mail out of AI.`
+                ? `${accountLabel(offAccounts[0]!)} keeps its mail out of AI.`
                 : `${offAccounts.length} accounts keep their mail out of AI.`
             }
             control={
@@ -221,7 +223,7 @@ export function Ai({ data, view, actions }: SectionProps) {
           description={backgroundLine(settings)}
           control={id => (
             <Switch
-              label="Summarise in the background"
+              label="Summarize in the background"
               labelledBy={id}
               checked={settings.ai.background}
               onChange={on => actions.setBackground(on)}

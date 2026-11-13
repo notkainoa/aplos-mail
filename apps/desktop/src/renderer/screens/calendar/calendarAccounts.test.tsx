@@ -41,7 +41,7 @@ const reauth = google({
 describe('the accounts block under the Calendars list', () => {
   test('on: every account shows its name and “Calendar on · N calendars”', () => {
     const html = render(accountLinesOf([google()], true, [CAL, { ...CAL, id: 'cal-2' }]));
-    assert.match(html, /Alex Moreno/);
+    assert.match(html, /alex\.moreno@example\.com/);
     assert.match(html, /Calendar on · 2 calendars/);
     assert.match(html, /cal-account__dot/);
     assert.doesNotMatch(html, /Allow calendar access/);
@@ -94,15 +94,23 @@ describe('the accounts block under the Calendars list', () => {
     assert.doesNotMatch(html, /No accounts yet/);
   });
 
-  test('demo and non-Google accounts show the name with no claim', () => {
+  test('demo and non-Google accounts show the address with no claim', () => {
     const html = render(
       accountLinesOf(
-        [google({ id: 'demo', demo: true, provider: 'demo', name: 'Demo mail' })],
+        [
+          google({
+            id: 'demo',
+            demo: true,
+            provider: 'demo',
+            name: 'Demo mail',
+            address: 'demo@example.com',
+          }),
+        ],
         true,
         [],
       ),
     );
-    assert.match(html, /Demo mail/);
+    assert.match(html, /demo@example\.com/);
     assert.doesNotMatch(html, /Calendar on/);
     assert.doesNotMatch(html, /not allowed/);
   });
@@ -151,9 +159,9 @@ describe('an empty legend', () => {
   test('a non-empty list draws the legend', () => {
     assert.ok(sidebarFor([google()], { calendars: [CAL] }));
   });
-  test('each action names its account (two accounts, two names)', () => {
+  test('each action names its account (two accounts, two addresses)', () => {
     const html = render(accountLinesOf([missing, reauth], true, []));
-    assert.match(html, /aria-label="Jordan Lee: Allow calendar access"/);
-    assert.match(html, /aria-label="Sam Kim: Sign in again"/);
+    assert.match(html, /aria-label="jordan.lee@example.com: Allow calendar access"/);
+    assert.match(html, /aria-label="sam.kim@example.com: Sign in again"/);
   });
 });

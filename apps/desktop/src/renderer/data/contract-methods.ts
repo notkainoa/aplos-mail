@@ -170,7 +170,7 @@ export const CONTRACT_METHODS = {
     method: 'Ai/request',
     kind: 'call',
     gaps: ['F9-21'],
-    notes: 'opId minted; kind summary re-summarises',
+    notes: 'opId minted; kind summary re-summarizes',
   },
   'ai.draft': { method: 'Ai/draft', kind: 'call', gaps: ['F9-21'], notes: 'requestId minted' },
   'ai.polish': {

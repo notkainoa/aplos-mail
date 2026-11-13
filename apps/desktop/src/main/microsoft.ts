@@ -1152,7 +1152,7 @@ export async function createMicrosoft(options: MicrosoftOptions): Promise<Micros
         res.setHeader('Cache-Control', 'no-store');
         const code = url.searchParams.get('code');
         if (url.searchParams.has('error') || !code) {
-          res.end('<p>Sign-in cancelled. Return to Aplos Mail.</p>');
+          res.end('<p>Sign-in canceled. Return to Aplos Mail.</p>');
           rejectCode(new Error('Microsoft sign-in was declined.'));
           return;
         }
