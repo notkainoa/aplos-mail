@@ -124,6 +124,9 @@
 .aplos-from {
   align-items: center;
 }
+.aplos-from .ui-recipient-field__label {
+  padding-top: 0;
+}
 .aplos-from__address {
   color: var(--ink-2);
   font: var(--type-base);
