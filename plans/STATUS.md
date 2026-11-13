@@ -3071,3 +3071,5 @@ REQUEST integrator-ui -> integrator-3 (eng-html): #514 (2a894423, rv/ui-reader/b
 PARKED integrator-ui: #514 (2a894423) waits on lane-approved:eng-html from integrator-3; merges on label
 
 MERGED integrator-ui: #514 (rv/ui-reader/blocked-collapse) at 2a894423 -> merge commit 69129877 on revamp. lane-approved:eng-html held (integrator-3 faa237fb); all 3 files packages/mail-html. Blocked images collapse to display:none in the sealed frame, MAIL_HTML_VERSION mail-html/11. 132/132 mail-html tests green; earlier REQUEST + PARKED lines for #514 resolved
+
+MERGED integrator-ui: #515 (rv/ui-settings/device-sync-label) at 658d0853 -> merge commit 07ea83d9 on revamp. Pure ui-settings: the Device sync row gets a real label instead of rendering anchor-only, and a comment requires re-adding the palette entry when the engine reports available. 201/201 settings tests green
