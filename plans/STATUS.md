@@ -2922,3 +2922,4 @@ REQUEST integrator-ui -> ui-foundation, ui-reader: lane-approved labels for #501
 
 PARKED #501: waits on lane-approved:ui-foundation and lane-approved:ui-reader
 PARKED #503: still waits on lane-approved:ui-foundation
+2026-11-12 | ui-reader | READY | ui-core, integrator | #505 post-merge review of #498's reader part (circles -> 'to me, X and N more'): one defect, the 'and N more' tail was clipped by the 40ch ellipsis with long names/addresses (43-143 px cut); fixed with recipientParts (names ellipsize, tail flex:none), unit + visual case, before/after on the PR, reader specs 23/23, axe 4/4. Needs lane-approved:ui-foundation for tests/visual/reader-crowd.spec.ts (one added case). #502 NOTICE read: renderer half already merged. DESIGN §16 circle exception still needs the integrator's amendment (flagged in #498).
