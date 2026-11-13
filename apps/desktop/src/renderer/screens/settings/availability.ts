@@ -1,7 +1,7 @@
 /**
  * Live availability for the palette's conditional rows (U7 acceptance 2 follow-up): an entry for a row that is not
  * drawn in the current state is not offered from ⌘K. `SettingsContainer` publishes its data while mounted; before
- * the first mount and after unmount every row stays offered, so availability only ever hides a row whose state was
+ * the first mount and after unmount every row stays offered (except the unbuilt placeholders, which stay hidden until their capability is on), so availability only ever hides a row whose state was
  * actually seen. A deep link typed straight in still lands, on the row or on the quiet "not shown" line.
  */
 import type { Account, AiProvider, Session } from '../../data';
