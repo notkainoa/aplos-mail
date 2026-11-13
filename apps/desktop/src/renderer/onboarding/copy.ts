@@ -30,10 +30,10 @@ const account: Record<string, string> = {
   'auth.expired': 'Google needs you to sign in again.',
   'auth.testingModeExpiry': 'Google needs you to sign in again.',
   'auth.revoked': 'Access to this account was turned off. Sign in again to reconnect.',
-  'auth.adminPolicy': 'Your organisation has blocked Aplos. Ask your administrator.',
-  'auth.adminConsent': 'Your organisation has blocked Aplos. Ask your administrator.',
+  'auth.adminPolicy': 'Your organization has blocked Aplos. Ask your administrator.',
+  'auth.adminConsent': 'Your organization has blocked Aplos. Ask your administrator.',
   'auth.denied': 'Google sign-in was declined. Nothing changed.',
-  'auth.cancelled': 'Sign-in was cancelled. Nothing changed.',
+  'auth.cancelled': 'Sign-in was canceled. Nothing changed.',
   'auth.timeout': 'Google sign-in took too long. Try again.',
   'permission.mailModify': 'Aplos needs permission to read your Gmail.',
   'permission.filters': 'Aplos needs permission to manage your Gmail filters.',
@@ -79,7 +79,7 @@ export function connectSentence(code: AnyReasonCode | undefined, facts: ReasonFa
  * the key was for, never another one.
  */
 export function keySaveSentence(code: AnyReasonCode | null | undefined, provider: string): string {
-  if (isAdminBlock(code ?? undefined)) return 'Your organisation has turned off saving keys.';
+  if (isAdminBlock(code ?? undefined)) return 'Your organization has turned off saving keys.';
   if (code === 'ai.missingKey' || (code && code.startsWith('auth.'))) {
     return `${provider} didn’t take that key. Paste it again, or skip for now.`;
   }

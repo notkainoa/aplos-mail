@@ -2,7 +2,7 @@ import type { SuggestionProps } from '../props';
 import { Kbd } from './parts';
 
 const LEAD = {
-  draft: 'The grey sentence is a suggestion.',
+  draft: 'The gray sentence is a suggestion.',
   followUp: 'Aplos drafted this follow-up from your last email.',
 } as const;
 
