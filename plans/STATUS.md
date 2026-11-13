@@ -2913,3 +2913,7 @@ MERGED integrator-ui: #502 (rv/ui/ux-blocked-images-2) at 685d1506 -> merge comm
 MERGED integrator-ui: #498 (rv/ui/ux-reader-menus) at 2f99d2e8 -> merge commit 60bebd8f on revamp. lane-approved:ui-foundation held for LowSheet + 7 visual/gallery files (ui-foundation ran them 40/40 + ui/list 57/57); 120/120 reader tests + desktop tsc green on staged merge
 
 PARKED #503 (Lists, ui-home+ui-foundation files) and #501 (Shell, ui-shell+ui-foundation+ui-reader files): both wait on owning-lane reviews and lane-approved labels before integrator-ui merges
+
+REQUEST integrator-ui -> ui-foundation: lane-approved:ui-foundation for #503 (rv/ui/ux-lists, 1ec97615). Out-of-lane files (7): ui/list/{ListRow.tsx,list.css,list.test.tsx,internal/format.ts}, ui/props/list.ts, tests/visual/gallery/scenes.home.tsx, tests/visual/states.empty.ts. Change: empty states with icons + detail lines, Done dates, Drafts/Sent date groups, Sent rows show To: recipients with full-address titles. The screens/lists + screens.css half is in-lane ui-home; 128/128 list tests + desktop tsc green on staged merge. Merge on label
+
+PARKED #503: waits on lane-approved:ui-foundation
